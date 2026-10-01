@@ -8,8 +8,10 @@ baseline's run-to-run noise band:
   mean p99(candidate) <= max p99 over the baseline repeats, and
   mean tps(candidate) >= min tps over the baseline repeats.
 The noise column shows the baseline spread ((max - min) / mean). `bulk`
-compares WAL MB/s as throughput. The CPU columns are the WAL tier's CPU time
-per transaction (per MB for bulk), from run.sh; they are reported, not gated.
+(a sustained 1 GB write) compares WAL MB/s as throughput and gates.
+`bulk-burst` (250 MB, which the drive cache absorbs) is reported but does not
+count toward pass or fail. The CPU columns are the WAL tier's CPU time per
+transaction (per MB for bulk), from run.sh; they are reported, not gated.
 Prints a Markdown table; exits 1 if the gate fails.
 """
 import argparse
@@ -66,17 +68,26 @@ def main():
             ok = False
             continue
         b, c = base[name], cand[name]
-        keys = ["wal_mb_per_s"] if name == "bulk" else ["p99_ms", "tps"]
+        bulk = name in ("bulk", "bulk-burst")
+        keys = ["wal_mb_per_s"] if bulk else ["p99_ms", "tps"]
         if any(w.get(k) is None for w in b + c for k in keys):
             print(f"| {name} | – | incomplete | – | – | incomplete | – | – | FAIL |")
             ok = False
             continue
-        if name == "bulk":
+        if bulk:
             bt, ct = mean([w["wal_mb_per_s"] for w in b]), mean([w["wal_mb_per_s"] for w in c])
             nt = spread([w["wal_mb_per_s"] for w in b])
             passed = ct >= min(w["wal_mb_per_s"] for w in b)
-            print(f"| bulk (WAL MB/s; CPU ms/MB) | – | – | {nt:.0%} | {bt:.1f} | {ct:.1f} "
-                  f"| {cpu(b, 'wal_cpu_ms_per_mb')} | {cpu(c, 'wal_cpu_ms_per_mb')} | {'pass' if passed else 'FAIL'} |")
+            if name == "bulk-burst":
+                # Reported only: the drive cache absorbs a 250 MB burst.
+                label = "bulk-burst (WAL MB/s; CPU ms/MB; not gated)"
+                verdict = "reported"
+                passed = True
+            else:
+                label = "bulk (WAL MB/s, sustained 1 GB; CPU ms/MB)"
+                verdict = "pass" if passed else "FAIL"
+            print(f"| {label} | – | – | {nt:.0%} | {bt:.1f} | {ct:.1f} "
+                  f"| {cpu(b, 'wal_cpu_ms_per_mb')} | {cpu(c, 'wal_cpu_ms_per_mb')} | {verdict} |")
         else:
             b50, c50 = mean([w["p50_ms"] for w in b]), mean([w["p50_ms"] for w in c])
             bp, cp = mean([w["p99_ms"] for w in b]), mean([w["p99_ms"] for w in c])
