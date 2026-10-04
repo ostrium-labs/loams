@@ -30,6 +30,8 @@ import socket
 
 import pytest
 from connectrpc.code import Code
+from google.protobuf.any_pb2 import Any
+
 from connectrpc.errors import ConnectError
 
 from loams import (
@@ -41,7 +43,7 @@ from loams import (
 )
 from loams._gen.facade import REASON_CODES, REASONS
 from loams.errors.v1.errors_pb2 import ErrorInfo
-from loams.runtime.errors import to_loams_error
+from loams.runtime.errors import _unpack, is_loams_error, to_loams_error
 
 #: The class each code raises, for the codes the SDK names. A caller branching on
 #: the coarse category depends on this mapping.
@@ -155,3 +157,78 @@ def test_each_reason_survives_a_round_trip(reason: str) -> None:
     error = to_loams_error(_wire(code, reason, hint="a hint"))
     assert error.reason == reason
     assert error.hint == "a hint", f"the hint was dropped for {reason}"
+
+# -- the parts the reason mapping stands on -----------------------------------
+
+
+def test_is_loams_error_separates_our_failures_from_a_raw_connect_error() -> None:
+    """A caller wrapping one `except` needs this to tell the two apart.
+
+    `ConnectError` is what the transport raises and `LoamsError` is what the SDK
+    hands back, so the check is the boundary between "the API said no" and
+    "something below the API broke".
+    """
+    assert is_loams_error(to_loams_error(_wire(Code.UNAVAILABLE, "internal")))
+    assert not is_loams_error(ConnectError(Code.UNAVAILABLE, "socket closed"))
+    assert not is_loams_error(ValueError("not an error at all"))
+
+
+def test_a_detail_the_pool_cannot_answer_is_parsed_from_its_bytes() -> None:
+    """`_unpack`'s fallback, forced deterministically.
+
+    The happy path asks the descriptor pool whether it recognises the detail. A
+    pool that has not registered `loams.errors.v1` **answers no**, and the wire
+    bytes of an `Any` are the serialised message anyway -- so they are parsed
+    directly. Without that, `reason` goes missing and, for `token_expired`, the
+    refresh-and-retry path silently never runs.
+
+    The trigger is `Is` returning False, not raising. That distinction is easy to
+    get wrong in a stub and worth being explicit about: the `except` below
+    catches a *raising* `Is` and gives up. In this process the pool does know
+    `ErrorInfo`, because the test imports it, so the real path never falls through
+    on its own and a stub is the only honest way to reach it.
+    """
+
+    class _PoolDoesNotKnow:
+        def Is(self, descriptor):  # noqa: N802 - the name Any.Is uses
+            return False
+
+        def __init__(self, value: bytes) -> None:
+            self.value = value
+
+    packed = ErrorInfo(reason="token_expired", hint="sign in again")
+    detail = _PoolDoesNotKnow(packed.SerializeToString())
+
+    message = ErrorInfo()
+    assert _unpack(detail, message) is True
+    assert message.reason == "token_expired", (
+        f"the fallback decoded reason={message.reason!r} from {detail.value!r}"
+    )
+
+
+def test_a_detail_whose_is_raises_is_treated_as_unreadable() -> None:
+    """The guard above the fallback, pinned so a refactor cannot change it quietly.
+
+    A `TypeError` out of the pool is read as "this detail is not ours" rather than
+    as "fall through to the bytes", so a detail that raises yields `False` and its
+    bytes are never parsed. That is a deliberate reading, not an accident: it is
+    the difference between a foreign detail being ignored and a foreign detail
+    being decoded into an `ErrorInfo` because its bytes happened to parse.
+    """
+
+    class _RaisingIs:
+        def Is(self, descriptor):  # noqa: N802
+            raise TypeError("descriptor pool has no entry for this type")
+
+        value = b""
+
+    assert _unpack(_RaisingIs(), ErrorInfo()) is False
+
+
+def test_a_detail_the_pool_knows_takes_the_fast_path() -> None:
+    """Both branches of `_unpack`, so the fallback is not the only one working."""
+    detail = Any()
+    detail.Pack(ErrorInfo(reason="internal"))
+    message = ErrorInfo()
+    assert _unpack(detail, message) is True
+    assert message.reason == "internal"

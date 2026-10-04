@@ -194,12 +194,16 @@ def test_a_burst_inside_one_millisecond_still_sorts_and_stays_unique(monkeypatch
     assert keys == sorted(keys), (
         "keys minted inside one frozen millisecond did not sort in issue order"
     )
-    # The borrow should have advanced the timestamp by exactly one millisecond
-    # past the wrap, not further.
+    # The borrow advances the timestamp, but how far depends on where the random
+    # per-millisecond seed landed: 5000 keys over 4096 slots wraps once if the
+    # seed started low and twice if it started high. So the span is 1 or 2, not a
+    # fixed number -- an earlier version of this test asserted exactly 1 and
+    # passed only when the seed happened to be low.
     first, last = uuidv7_time(keys[0]), uuidv7_time(keys[-1])
     assert first == 1_700_000_000_000, f"the first key read back as {first}"
-    assert last == first + 1, (
-        f"the burst spanned {last - first} ms, want 1 for 5000 keys over 4096 slots"
+    assert last - first in (1, 2), (
+        f"the burst spanned {last - first} ms, want 1 or 2 for 5000 keys over "
+        "4096 slots; wrapping instead of borrowing would span 0"
     )
 
 
