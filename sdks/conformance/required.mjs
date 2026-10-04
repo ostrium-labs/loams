@@ -113,8 +113,13 @@ export const LANGUAGES = {
   java: {
     dir: 'sdks/java',
     verified: false,
-    runOne: ['./gradlew', ['test', '--tests']],
-    runAll: ['./gradlew', ['test']],
+    // Not Gradle: neither mvn nor gradle is installed on the machines this SDK
+    // is developed on, so sdks/java/build.sh is plain javac/java plus curl and
+    // a JDK is the only requirement. `./gradlew test` named a command that does
+    // not exist in this SDK, so the entry could only ever have failed if a CI
+    // job ever started running it.
+    runOne: ['./build.sh', ['test', '-t']],
+    runAll: ['./build.sh', ['test']],
   },
   csharp: {
     dir: 'sdks/csharp',
