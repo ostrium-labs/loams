@@ -160,7 +160,13 @@ fn a_primary_key_uuid_renders_the_same_tag() {
     // The bytes are what the old `{other:?}` sink would have written; the
     // tag carries none of them.
     let debug = format!("{uuid:?}");
-    assert!(debug.contains('[') && debug.contains(']'), "{debug}");
+    // The message is deliberately static: interpolating `debug` here would
+    // copy the secret bytes into the test log on failure, which is the very
+    // sink this test exists to close (and is what CodeQL flags).
+    assert!(
+        debug.contains('[') && debug.contains(']'),
+        "a uuid's Debug should carry a bracketed tag"
+    );
     assert!(!messages(&Coerced::Str(SECRET.to_string()))[0].contains(&debug));
 }
 
