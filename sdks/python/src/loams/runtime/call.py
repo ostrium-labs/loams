@@ -368,7 +368,14 @@ class CallInvoker(_BaseInvoker):
                 method=method,
                 headers=call_headers(call_options, bearer, consistency),
                 timeout_ms=call_options.timeout_ms,
-                use_get=method.idempotency_level == IDEMPOTENCY_LEVELS["no_side_effects"],
+                # Unary calls go out as POST even for `no_side_effects`
+                # methods. D438 notes reads are marked NO_SIDE_EFFECTS
+                # "(HTTP GET)", but every recorded fixture in
+                # `sdks/fixtures/recorded` is a POST, the fixture server keys
+                # cases on the method, and the Go and Rust SDKs post. A GET
+                # gets a 404 and the whole conformance suite fails.
+                # POST, as in the sync path above.
+                use_get=False,
             )
 
         response = call_with_retry(
@@ -481,7 +488,7 @@ class AsyncCallInvoker(_BaseInvoker):
                 method=method,
                 headers=call_headers(call_options, bearer, consistency),
                 timeout_ms=call_options.timeout_ms,
-                use_get=method.idempotency_level == IDEMPOTENCY_LEVELS["no_side_effects"],
+                use_get=False,
             )
 
         response = await async_call_with_retry(
