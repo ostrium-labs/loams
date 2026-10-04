@@ -51,7 +51,10 @@ fn proto_files(dir: &Path) -> Vec<String> {
             let path = entry.expect("a directory entry").path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().is_some_and(|extension| extension == "proto") {
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension == "proto")
+            {
                 out.push(
                     path.strip_prefix(dir.parent().expect("proto/"))
                         .expect("under proto/")

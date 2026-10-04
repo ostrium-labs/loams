@@ -85,8 +85,8 @@ pub fn snake(name: &str) -> String {
     let mut out = String::new();
     for (index, character) in chars.iter().enumerate() {
         if character.is_uppercase() {
-            let after_lower_or_digit = index > 0
-                && (chars[index - 1].is_lowercase() || chars[index - 1].is_ascii_digit());
+            let after_lower_or_digit =
+                index > 0 && (chars[index - 1].is_lowercase() || chars[index - 1].is_ascii_digit());
             let before_lower = chars.get(index + 1).is_some_and(|next| next.is_lowercase());
             if index > 0 && !out.ends_with('_') && (after_lower_or_digit || before_lower) {
                 out.push('_');

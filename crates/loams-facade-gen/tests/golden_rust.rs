@@ -81,7 +81,10 @@ fn the_module_catalogue_matches_the_model() {
     let rendered = render();
     for module in &model.modules {
         assert!(
-            rendered.contains(&format!("pub trait {}Module", naming::type_name(&module.name))),
+            rendered.contains(&format!(
+                "pub trait {}Module",
+                naming::type_name(&module.name)
+            )),
             "loams.{} has no module trait",
             module.name
         );

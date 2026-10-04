@@ -91,7 +91,10 @@ fn the_module_catalogue_matches_the_model() {
     let rendered = render();
     for module in &model.modules {
         assert!(
-            rendered.contains(&format!("class {}Module(Protocol):", naming::type_name(&module.name))),
+            rendered.contains(&format!(
+                "class {}Module(Protocol):",
+                naming::type_name(&module.name)
+            )),
             "loams.{} has no module protocol",
             module.name
         );
@@ -140,8 +143,7 @@ fn packages() -> loams_facade_gen::PackageMap {
 }
 
 fn model() -> Model {
-    let reasons =
-        reasons::read(&root().join("docs/api/reasons.md")).expect("the reason registry");
+    let reasons = reasons::read(&root().join("docs/api/reasons.md")).expect("the reason registry");
     model_from_request(protoreq::code_generator_request(), reasons).expect("the descriptors")
 }
 

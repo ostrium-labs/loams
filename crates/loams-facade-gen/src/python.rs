@@ -74,7 +74,11 @@ fn header(out: &mut String) {
          from typing import ClassVar, Final, Literal, Protocol\n\
          \n",
     );
-    writeln!(out, "from {RUNTIME} import CallOptions, LoamsError, ResponseStream").ok();
+    writeln!(
+        out,
+        "from {RUNTIME} import CallOptions, LoamsError, ResponseStream"
+    )
+    .ok();
 }
 
 /// The proto revision, which is what `loams.system.version()` checks against the
@@ -181,9 +185,7 @@ fn package_clients(model: &Model, package: &str) -> Vec<String> {
 /// exhaustive and a reason the registry has lost stops typechecking
 /// (design §44 §7.4, D611).
 fn reasons(out: &mut String, model: &Model) {
-    out.push_str(
-        "Reason = Literal[\n",
-    );
+    out.push_str("Reason = Literal[\n");
     for reason in &model.reasons {
         writeln!(out, "    \"{}\",", reason.reason).ok();
     }
@@ -414,7 +416,10 @@ fn signature(call: &Call, packages: &PackageMap, sync: bool) -> Result<String, S
     let head = if streaming {
         format!("    def {name}(\n", name = naming::snake(&call.name))
     } else {
-        format!("    {prefix}def {name}(\n", name = naming::snake(&call.name))
+        format!(
+            "    {prefix}def {name}(\n",
+            name = naming::snake(&call.name)
+        )
     };
     let _ = keyword;
     Ok(format!(

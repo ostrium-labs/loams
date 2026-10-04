@@ -91,7 +91,10 @@ fn method_names_are_pascal_case() {
         ),
         "{rendered}"
     );
-    assert!(rendered.contains("ProtoName: \"getInstance\""), "{rendered}");
+    assert!(
+        rendered.contains("ProtoName: \"getInstance\""),
+        "{rendered}"
+    );
 }
 
 /// A server stream is a `*Stream` the caller receives from, which is Go's

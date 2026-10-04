@@ -87,7 +87,10 @@ fn enums(out: &mut String) {
                 "Idempotent",
                 "Repeating it changes nothing beyond the first call.",
             ),
-            ("None", "Nothing declared: repeating it may do the work twice."),
+            (
+                "None",
+                "Nothing declared: repeating it may do the work twice.",
+            ),
         ],
         &[
             ("NoSideEffects", "no_side_effects"),
@@ -122,19 +125,17 @@ fn enums(out: &mut String) {
     variants(
         out,
         "Streaming",
-        &[("Unary", "One request, one response."), ("Server", "One request, a stream of responses.")],
+        &[
+            ("Unary", "One request, one response."),
+            ("Server", "One request, a stream of responses."),
+        ],
         &[("Unary", "unary"), ("Server", "server")],
     );
 }
 
 /// One generated enum: its variants with their doc comments, and the
 /// `as_str` that gives each the `snake_case` name the other SDKs use.
-fn variants(
-    out: &mut String,
-    name: &str,
-    variants: &[(&str, &str)],
-    names: &[(&str, &str)],
-) {
+fn variants(out: &mut String, name: &str, variants: &[(&str, &str)], names: &[(&str, &str)]) {
     for (variant, doc) in variants {
         writeln!(out, "    /// {doc}").ok();
         writeln!(out, "    {variant},").ok();

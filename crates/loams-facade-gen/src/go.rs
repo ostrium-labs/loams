@@ -395,9 +395,7 @@ fn service_constructors(
         )
         .ok();
     }
-    out.push_str(
-        "\tdefault:\n\t\treturn nil\n\t}\n}\n",
-    );
+    out.push_str("\tdefault:\n\t\treturn nil\n\t}\n}\n");
     Ok(())
 }
 
