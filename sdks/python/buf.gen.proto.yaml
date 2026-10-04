@@ -58,8 +58,13 @@ plugins:
   # maintained `protobuf` distribution. Verified by running both plugins over
   # `proto/` and importing the result against connectrpc 0.12.1 and protobuf
   # 7.36.2.
-  - remote: buf.build/connectrpc/python:v0.12.1
+  - remote: buf.build/connectrpc/python:v0.10.1
     out: sdks/python/src
     opt:
       - protobuf=google
-clean: true
+# NOT `clean: true`. This template's `out` is `sdks/python/src`, which also
+# holds the hand-written runtime (`loams.py`, `aio.py`, `runtime/*.py` and the
+# package `__init__.py` files). buf's `clean: true` empties the entire `out`
+# directory, so it deleted hand-written code on every run. `sdks/rust/
+# buf.gen.yaml` and `sdks/go/buf.gen.go.yaml` already use `clean: false`.
+clean: false
