@@ -192,6 +192,11 @@ class AsyncLoams:
 
     def binding(self, module: str, call: str) -> CallBinding:
         """The binding a module and call name identify, or a clear error."""
+        # Checked before the lookup, for the reason the sync client does it: the
+        # lookup's error for an empty module names the call and an empty module,
+        # which reads like a typo in the call name rather than a missing module.
+        if module == "":
+            raise LoamsError("a module name is required")
         return self._invoker.binding_for(module, call)
 
     def invalidate_catalogue(self) -> None:

@@ -251,10 +251,16 @@ class Loams:
 
     def binding(self, module: str, call: str) -> CallBinding:
         """The binding a module and call name identify, or a clear error."""
-        found = self._invoker.binding_for(module, call)
-        if found.streaming != "server" and module == "":
+        # Checked before the lookup, because the lookup's own error for an empty
+        # module reads `loams. has no generated call watch` -- naming the call and
+        # an empty module, which sends a caller who simply forgot the module
+        # looking for a typo in the call name instead. The guard used to be
+        # `found.streaming != "server" and module == ""`, which made it
+        # unreachable: `binding_for("")` always raised first, and the one case it
+        # was meant to catch -- a streaming call -- is excluded by the condition.
+        if module == "":
             raise LoamsError("a module name is required")
-        return found
+        return self._invoker.binding_for(module, call)
 
     def invalidate_catalogue(self) -> None:
         """Forgets the cached service catalogue, so the next check calls again."""

@@ -144,24 +144,21 @@ def test_binding_refuses_a_module_the_generator_has_not_seen(factory) -> None:
 # -- invalidating the catalogue ------------------------------------------------
 
 
-def test_invalidate_catalogue_delegates_to_the_system_api() -> None:
+@pytest.mark.parametrize("factory", [Loams, AsyncLoams])
+def test_invalidate_catalogue_delegates_to_the_system_api(factory) -> None:
     """It is a one-line forward, but it is the escape hatch from a stale
-    `GetInstance.services[]`, so it should be proven to reach the system API."""
+    `GetInstance.services[]`, so it should be proven to actually reach
+    `loams.system`.
+
+    Counting the `invalidate` call rather than a `catalogue()` call: `catalogue()`
+    dials the instance, and a test about delegation should not need a server (or
+    an expected connection-refused to swallow).
+    """
+    client = factory(ENDPOINT)
     calls: list[int] = []
-    client = Loams(ENDPOINT)
-    original = client.system.catalogue
-
-    def counting() -> object:
-        calls.append(1)
-        return original
-
-    client.system.catalogue = counting  # type: ignore[method-assign]
+    client.system.invalidate = lambda: calls.append(1)  # type: ignore[method-assign]
     client.invalidate_catalogue()
-    client.system.catalogue()
     assert calls == [1], "invalidate_catalogue did not reach loams.system"
-
-
-# -- pagination, before there is anything to paginate ------------------------
 
 
 def _refusal(call) -> str:
@@ -235,3 +232,80 @@ def test_stream_refuses_an_unknown_module_and_call(factory) -> None:
         assert "nosuchcall" in str(by_call.value)
 
     asyncio.run(walk())
+
+# -- the convenience constructor paths -----------------------------------------
+#
+# Every other test in this suite authenticates with `auth=`. So the `api_key=`
+# shortcut -- the argument most callers will actually use -- had never been
+# constructed on either client, and neither had `__repr__` on a module, which is
+# what a debugger shows.
+
+
+@pytest.mark.parametrize("factory", [Loams, AsyncLoams])
+def test_the_api_key_shortcut_builds_a_credential(factory) -> None:
+    """`api_key="k"` is sugar for `auth=api_key("k")`, and it takes a different
+    branch in the constructor: `auth` is None and `api_key` is not.
+
+    Read through the protocol rather than called directly, because the two clients
+    get different sources -- the async one is `_AsyncStatic`, whose `token` is a
+    coroutine function. Calling it synchronously leaves an un-awaited coroutine,
+    which pytest surfaces as an unraisable exception rather than a clean failure.
+    """
+    client = factory(ENDPOINT, api_key="k")
+    assert client.consistency is None, "the shortcut also turned on a session"
+    source = client._invoker._token_source
+    assert source is not None, "api_key= built no token source at all"
+
+    if factory is Loams:
+        assert source.token() == "k", f"the shortcut produced {source.token()!r}"
+        return
+
+    async def read() -> str:
+        token: str = await source.token()
+        return token
+
+    assert asyncio.run(read()) == "k"
+
+
+@pytest.mark.parametrize("factory", [Loams, AsyncLoams])
+def test_no_credential_at_all_builds_no_token_source(factory) -> None:
+    """`auth=None` is a valid anonymous client, so this must not raise."""
+    assert factory(ENDPOINT)._invoker._token_source is None
+
+
+@pytest.mark.parametrize("factory", [Loams, AsyncLoams])
+def test_a_module_repr_names_its_module_and_service(factory) -> None:
+    """`repr(loams.live)` is what a debugger prints, and `tables` and `live` are two
+    names over the same service -- so the repr has to carry both to tell them
+    apart."""
+    client = factory(ENDPOINT)
+    assert repr(client.live) == "<loams.live (loams.live.v1.LiveService)>"
+    assert repr(client.tables) == "<loams.tables (loams.live.v1.LiveService)>"
+    assert repr(client.instance) == "<loams.instance (loams.instance.v1.InstanceService)>"
+
+
+def test_binding_refuses_an_empty_module_name() -> None:
+    """`client.binding("", "watch")` is a caller who forgot the module. The
+    streaming branch lets an empty module through to the lookup, so this is the
+    guard that stops it."""
+    with Loams(ENDPOINT) as client:
+        with pytest.raises(LoamsError) as caught:
+            client.binding("", "watch")
+        assert "module" in str(caught.value).lower()
+
+
+@pytest.mark.parametrize("factory", [Loams, AsyncLoams])
+def test_paginate_names_a_call_the_module_does_not_have(factory) -> None:
+    """A real module with a call it does not expose. Distinct from the unknown
+    *module* case, and it is what a typo in the call name produces."""
+    client = factory(ENDPOINT)
+    request = GetInstanceRequest()
+
+    async def drain() -> None:
+        async for _ in client.paginate("live", "nosuchcall", request):
+            pass
+
+    message = _refusal(lambda: drain() if factory is AsyncLoams else list(
+        client.paginate("live", "nosuchcall", request)
+    ))
+    assert "nosuchcall" in message, f"the refusal does not name the call: {message}"

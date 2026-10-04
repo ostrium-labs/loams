@@ -741,3 +741,136 @@ def test_a_stream_refreshes_at_most_once() -> None:
         f"the server saw {started.attempts} attempts, want 2, not a loop: {started.bearers}"
     )
     assert len(fetches) == 2, f"the source was fetched {len(fetches)} times, want 2"
+
+
+def test_the_sync_client_stream_reads_a_message() -> None:
+    """`Loams.stream(module, call, request)` -- the generic door -- on the sync side.
+
+    `client.live.watch(...)` is the other door, and it is covered. This one was
+    not called at all: the sync generic path had only its *refusals* tested, which
+    is the shape of gap that leaves the success path unexecuted -- the same shape
+    as `AsyncLoams.stream` returning a coroutine, which the async refusals never
+    could have caught.
+    """
+    # The key matches straight away, so this exercises the generic wiring rather
+    # than the refresh path (which has its own tests above).
+    started = _ExpiringStreamServer("fresh")
+    try:
+        with Loams(started.url, api_key="fresh") as client:
+            versions = [
+                t.end.ts
+                for t in client.stream(
+                    "live", "watch", WatchRequest(initial=QuerySet(version=1))
+                )
+            ]
+    finally:
+        started.close()
+    assert versions == [1], f"the sync generic stream produced {versions}"
+
+
+def test_a_resume_with_no_cursor_restarts_from_the_original_request() -> None:
+    """`ResumeOptions(resume=...)` with no `cursor` cannot build a resume field.
+
+    `WatchRequest.resume` is a message, not a string, so a cursor has to be packed
+    into it. With no `cursor=` given, `cursor_field` is asked for a `cursor` field
+    that `Transition` does not have, so there is nothing to resume from and the
+    reconnect replays the original request. That is the documented fallback, and
+    it is the *only* correct answer: sending a resume with an empty cursor would
+    tell the server to resume from nothing, which reads as "from the beginning of
+    time" or as a malformed request depending on the server.
+    """
+    binding = _watch_binding()
+    requests: list[WatchRequest] = []
+
+    def open_stream(request: WatchRequest, options: object = None):
+        requests.append(request)
+        if len(requests) == 1:
+            yield _transition(1)
+            raise UnavailableError("the node went away", code=Code.UNAVAILABLE)
+        yield _transition(2)
+
+    # A resume callable, but no cursor: the default cursor lookup finds nothing.
+    resume = ResumeOptions(
+        resume=lambda _cursor, original: original,
+        max_retries=3,
+    )
+
+    versions = [t.end.ts for t in watch(binding, open_stream, WatchRequest(initial=QuerySet(version=1)), None, resume)]
+
+    assert versions == [1, 2], f"the stream produced {versions}"
+    assert len(requests) == 2, f"the stream was opened {len(requests)} times, want 2"
+    assert not requests[1].HasField("resume"), (
+        "a resume was sent with no cursor, which the server cannot act on"
+    )
+
+
+def test_on_cursor_sees_every_message_and_the_latest_value() -> None:
+    """`on_cursor` is how a caller learns where to resume from, so it has to fire
+    per message and carry the running value -- not just the last one seen."""
+    binding = _watch_binding()
+    seen: list[tuple[str | None, int]] = []
+
+    resume = ResumeOptions(
+        resume=_resume_request,
+        cursor=lambda t: _decode(t.end),
+        on_cursor=lambda cursor, message: seen.append((cursor, message.end.ts)),
+    )
+
+    versions = [
+        t.end.ts
+        for t in watch(
+            binding,
+            lambda request, options=None: iter([_transition(1), _transition(2), _transition(3)]),
+            WatchRequest(initial=QuerySet(version=1)),
+            None,
+            resume,
+        )
+    ]
+
+    assert versions == [1, 2, 3]
+    assert [ts for _, ts in seen] == [1, 2, 3], (
+        f"on_cursor saw {[ts for _, ts in seen]}, want one call per message"
+    )
+    assert seen[0][0] is not None, "the first on_cursor call carried no cursor"
+
+
+def test_resume_options_can_declare_a_call_unsafe() -> None:
+    """`retry_safe=False` on a stream means a disconnect is the caller's problem.
+
+    `retry_safe` defaults to True for a stream because re-opening one is
+    idempotent from the SDK's point of view, but a caller who has side effects
+    attached to the cursor wants the failure surfaced instead.
+    """
+    binding = _watch_binding()
+    opens = 0
+
+    def open_stream(request: WatchRequest, options: object = None):
+        nonlocal opens
+        opens += 1
+        raise UnavailableError("the node went away", code=Code.UNAVAILABLE)
+        yield  # pragma: no cover - unreachable, keeps this a generator
+
+    resume = ResumeOptions(resume=_resume_request, retry_safe=False, max_retries=5)
+
+    with pytest.raises(UnavailableError):
+        list(
+            watch(
+                binding,
+                open_stream,
+                WatchRequest(initial=QuerySet(version=1)),
+                None,
+                resume,
+            )
+        )
+    assert opens == 1, (
+        f"a stream declared unsafe was re-opened {opens} times, want 1: the "
+        "disconnect should have been reported, not retried"
+    )
+
+
+def test_a_module_and_its_repr_name_themselves() -> None:
+    """`repr(loams.live)` is what a debugger shows, so it has to say which module
+    and which service -- two modules over the same service otherwise look alike."""
+    with Loams("http://127.0.0.1:1") as client:
+        text = repr(client.live)
+    assert "live" in text and "LiveService" in text, f"the module repr was {text!r}"

@@ -19,6 +19,7 @@ re-sent the second.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import http.server
 import threading
@@ -259,6 +260,143 @@ def test_one_in_flight_fetch_is_shared_by_concurrent_callers() -> None:
         count = fetches
     assert count == 1, f"the source was fetched {count} times, want 1 for one burst"
     assert tokens == ["shared"] * 20
+
+
+# -- the async unary path -----------------------------------------------------
+#
+# `async_call_with_retry` is a separate implementation of the same refresh-once-
+# and-retry decision, and every test above drives `Loams`. The async equivalent
+# of the wire-level refresh had no test at all, which is how `refresh()` managed to
+# be a no-op over a populated cache for so long: the sync path agreed with the
+# contract, so the divergence was invisible from the sync side.
+
+
+def test_an_async_call_refreshes_once_and_retries() -> None:
+    """One refresh, one retry, on the wire, through `AsyncLoams`."""
+    from loams import AsyncLoams, async_refreshing
+
+    fetch_lock = threading.Lock()
+    fetches: list[str] = []
+
+    async def fetch() -> str:
+        with fetch_lock:
+            value = "stale" if not fetches else "fresh"
+            fetches.append(value)
+            return value
+
+    started = _Server("fresh")
+    try:
+        async def walk() -> str:
+            async with AsyncLoams(started.url, auth=async_refreshing(fetch)) as client:
+                info = await client.instance.get_instance(GetInstanceRequest())
+                return info.name
+
+        name = asyncio.run(walk())
+    finally:
+        started.close()
+
+    assert name == "Loams"
+    assert started.bearers == ["Bearer stale", "Bearer fresh"], (
+        f"the async call sent {started.bearers}, want the stale bearer then a fresh one"
+    )
+    # Two fetches: one seeding the empty cache, one for the refresh. A third would
+    # mean the retry fetched again instead of reading the refreshed cache.
+    assert fetches == ["stale", "fresh"], f"the async source was fetched {fetches}"
+
+
+def test_an_async_second_expiry_is_reported_not_looped_on() -> None:
+    """The refresh-once bound holds on the async path too."""
+    from loams import AsyncLoams, async_refreshing
+
+    fetch_lock = threading.Lock()
+    fetches: list[str] = []
+
+    async def fetch() -> str:
+        with fetch_lock:
+            fetches.append(f"token-{len(fetches)}")
+            return fetches[-1]
+
+    started = _Server("never-matches")
+    try:
+        async def walk() -> None:
+            async with AsyncLoams(started.url, auth=async_refreshing(fetch)) as client:
+                await client.instance.get_instance(GetInstanceRequest())
+
+        with pytest.raises(TokenExpiredError):
+            asyncio.run(walk())
+    finally:
+        started.close()
+
+    assert started.attempts == 2, (
+        f"the server saw {started.attempts} async attempts, want 2: {started.bearers}"
+    )
+    assert len(fetches) == 2, f"the async source was fetched {len(fetches)} times, want 2"
+
+
+def test_an_async_rejection_without_a_reason_does_not_refresh() -> None:
+    """Without an `ErrorInfo.reason` there is nothing to refresh against, so the
+    async path must not retry -- which would only replay the same bearer."""
+    from loams import AsyncLoams, async_refreshing
+
+    fetch_lock = threading.Lock()
+    fetches: list[str] = []
+
+    async def fetch() -> str:
+        with fetch_lock:
+            fetches.append("always-stale")
+            return "always-stale"
+
+    started = _Server("fresh", with_error=False)
+    try:
+        async def walk() -> None:
+            async with AsyncLoams(started.url, auth=async_refreshing(fetch)) as client:
+                await client.instance.get_instance(GetInstanceRequest())
+
+        with pytest.raises(UnauthenticatedError):
+            asyncio.run(walk())
+    finally:
+        started.close()
+
+    assert started.attempts == 1, (
+        f"the server saw {started.attempts} async attempts, want 1: {started.bearers}"
+    )
+    assert fetches == ["always-stale"], f"the async source was fetched {fetches}"
+
+
+def test_one_in_flight_fetch_is_shared_by_concurrent_async_callers() -> None:
+    """A hundred concurrent async readers must not mint a hundred tokens."""
+    from loams import AsyncLoams, async_refreshing
+
+    fetch_lock = threading.Lock()
+    fetches = 0
+
+    async def fetch() -> str:
+        nonlocal fetches
+        with fetch_lock:
+            fetches += 1
+        # Hold the exchange open so the other callers pile up behind it, which is
+        # the case a lock-per-await implementation gets wrong.
+        await asyncio.sleep(0.2)
+        return "shared"
+
+    started = _Server("shared")
+    try:
+        async def walk() -> list[str]:
+            async with AsyncLoams(started.url, auth=async_refreshing(fetch)) as client:
+                results = await asyncio.gather(
+                    *(client.instance.get_instance(GetInstanceRequest()) for _ in range(100))
+                )
+                return [r.name for r in results]
+
+        names = asyncio.run(walk())
+    finally:
+        started.close()
+
+    with fetch_lock:
+        count = fetches
+    assert count == 1, f"the async source was fetched {count} times for one burst, want 1"
+    assert names == ["Loams"] * 100
+
 
 def test_a_detail_that_already_carries_a_type_url_still_refreshes() -> None:
     """A peer that sends the full type URL must not lose the reason.
