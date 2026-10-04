@@ -46,7 +46,7 @@ from loams.runtime.pagination import async_paginate
 from loams.runtime.retry import DEFAULT_MAX_RETRIES
 from loams.runtime.streams import ResumeOptions, async_watch
 from loams.runtime.token_source import AsyncTokenSource
-from loams.runtime.token_source import api_key as async_api_key_source
+from loams.runtime.token_source import async_api_key as async_api_key_source
 from loams.runtime.transports import TransportOptions, make_async_client, protocol_of
 from loams.system import AsyncSystemApi
 

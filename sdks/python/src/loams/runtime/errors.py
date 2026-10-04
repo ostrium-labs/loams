@@ -21,11 +21,12 @@ Three cases stay distinct (R8):
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, cast
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from google.protobuf.any_pb2 import Any
+from google.protobuf import descriptor
 from google.protobuf.message import Message
 
 from loams.errors.v1.errors_pb2 import ErrorInfo
@@ -208,7 +209,11 @@ def is_loams_error(value: object) -> bool:
 def _unpack(detail: Any, message: Message) -> bool:
     """Unpacks a packed detail into `message`, whether or not the pool knows it."""
     try:
-        if detail.Is(message.DESCRIPTOR):
+        # The stubs type DESCRIPTOR as descriptor.Descriptor, but the _upb
+        # runtime hands back its own Descriptor type. They are the same object;
+        # the stubs just do not say so.
+        descriptor = cast("descriptor.Descriptor", message.DESCRIPTOR)
+        if detail.Is(descriptor):
             detail.Unpack(message)
             return True
     except (TypeError, ValueError, KeyError):
