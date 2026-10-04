@@ -1063,6 +1063,22 @@ jobs:
         run: |
           cargo fmt -- --check
           cargo clippy -j 4 --all-targets -- -D warnings
+      # `scripts/sdk/gen.sh` resolves buf from web's node_modules, so the
+      # drift check below cannot run without this. sdk-rust had no pnpm setup at
+      # all, so the step died before checking anything:
+      #   sdks/typescript/packages/client/node_modules/.bin/buf is missing:
+      #   run 'pnpm install' in web/ first
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
       # The generated stubs are protoc's output verbatim and are committed, so a
       # proto edit that moved the SDK surface cannot pass with a stale file.
       - name: the Rust SDK's generated code is not stale
