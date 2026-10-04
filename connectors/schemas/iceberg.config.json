@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/iceberg.config.json",
+  "title": "Iceberg connector instance config (loams.flow/v1)",
+  "description": "One Iceberg connector instance's settings: the catalog it reads or writes through, the warehouse, the namespace and table, and the snapshot cursor the incremental scan resumes from. Covers both directions of the ★ Iceberg connector (design §33 §8 row 7; CN1 plan Task 9, Lakekeeper as the catalog in CI). `s3.access_key_id` and `s3.secret_access_key` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["catalog_url", "warehouse"],
+  "properties": {
+    "catalog_url": {
+      "description": "The REST catalog endpoint, Lakekeeper's in CN1.",
+      "type": "string",
+      "minLength": 1
+    },
+    "warehouse": {
+      "description": "The warehouse location the catalog serves.",
+      "type": "string",
+      "minLength": 1
+    },
+    "namespace": {
+      "description": "The Iceberg namespace, as its parts in one string, for example `analytics.events`.",
+      "type": "string",
+      "minLength": 1
+    },
+    "table": {
+      "description": "The table this instance scans or writes; may be omitted when a route names it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "snapshot_cursor": {
+      "description": "The last snapshot id the source committed; an incremental scan reads the snapshots after it and an absent value means a full scan (CN1 Task 9).",
+      "type": "string",
+      "minLength": 1
+    },
+    "scan_mode": {
+      "description": "How the source treats snapshots it did not create: incremental reads only append snapshots, and an overwrite snapshot is rescanned whole and flagged (CN1 Task 9's iceberg_overwrite_rescans_and_flags).",
+      "type": "string",
+      "enum": ["incremental", "full"],
+      "default": "incremental"
+    },
+    "flag_overwrite_snapshots": {
+      "description": "Emit the loamsoverwrite extension on an event read out of a rescanned overwrite snapshot.",
+      "type": "boolean",
+      "default": true
+    },
+    "partitions": {
+      "description": "Parallel readers the scan is split across.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 8
+    },
+    "commit_mode": {
+      "description": "How the sink commits: an Iceberg append, or Fluss tiering for a Fabric table, which runs nothing (CN1 Task 9).",
+      "type": "string",
+      "enum": ["append", "fluss_tiering", "iggy_iceberg_sink"],
+      "default": "append"
+    },
+    "partition_by": {
+      "description": "The declared key the bulk path partitions by (D356).",
+      "type": "string",
+      "minLength": 1
+    },
+    "s3": {
+      "description": "Object-store access for the warehouse's data and metadata files.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": { "description": "An S3-compatible endpoint, for RustFS or MinIO in development and CI.", "type": "string", "minLength": 1 },
+        "region": { "description": "The warehouse's region.", "type": "string", "default": "us-east-1" },
+        "access_key_id": {
+          "description": "The static access key id. Resolved through the secret store (D189); absent when a role chain is used.",
+          "type": "string",
+          "minLength": 1,
+          "writeOnly": true
+        },
+        "secret_access_key": {
+          "description": "The static secret access key. Resolved through the secret store (D189); absent when a role chain is used.",
+          "type": "string",
+          "minLength": 1,
+          "writeOnly": true
+        }
+      }
+    },
+    "oauth2": {
+      "description": "OAuth2 (or workload-identity federation) settings for a cloud warehouse; the manifest's auth slugs iam, sa and oauth2.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "token_url": { "description": "The token endpoint credentials are fetched from.", "type": "string", "minLength": 1 },
+        "scope": { "description": "The scope requested.", "type": "string" },
+        "audience": { "description": "The audience requested, where the provider needs one.", "type": "string" }
+      }
+    }
+  }
+}

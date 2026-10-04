@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/adbc.config.json",
+  "title": "ADBC (generic) connector instance config (loams.flow/v1)",
+  "description": "One generic ADBC connector instance's settings: which driver to load out of the namespace's allowlist, where to connect, the projecting SELECT the source runs, and the ingest target and mode the sink bulk-loads into. A driver is native code in the Loams process, so it loads by path from an allowlist with a SHA-256 check (CN1 Ruling 9; CN1 Task 11's driver_outside_allowlist_is_refused and driver_checksum_mismatch_is_refused). `password` and `token` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["driver", "entry_point"],
+  "properties": {
+    "driver": {
+      "description": "The ADBC driver name; it must be in the namespace's adbc.drivers allowlist (CN1 Ruling 9) and load only from /opt/loams/adbc/<name>/<version>/.",
+      "type": "string",
+      "enum": ["flight_sql", "sqlite", "duckdb", "postgres", "snowflake", "bigquery"],
+      "default": "flight_sql"
+    },
+    "driver_version": {
+      "description": "The pinned driver build to load out of /opt/loams/adbc/<driver>/<version>/.",
+      "type": "string",
+      "minLength": 1
+    },
+    "driver_sha256": {
+      "description": "The expected SHA-256 of the driver shared library; the load is refused on a mismatch (CN1 Ruling 9).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "entry_point": {
+      "description": "The ADBC entry point the driver is loaded through, as adbc_driver_manager expects it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "uri": {
+      "description": "The driver's connection URI. Required for every driver except sqlite and duckdb, which address a file.",
+      "type": "string",
+      "minLength": 1
+    },
+    "path": {
+      "description": "The database file, for the sqlite and duckdb drivers.",
+      "type": "string",
+      "minLength": 1
+    },
+    "password": {
+      "description": "The database password, for the drivers that take one. Resolved through the secret store (D189); the rendered driver options read it from a mounted file.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "token": {
+      "description": "A bearer or OAuth2 token, for the drivers that take one (Snowflake OAUTH, BigQuery). Resolved through the secret store (D189).",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "query": {
+      "description": "A projecting SELECT for the source, when the route does not name one.",
+      "type": "string",
+      "minLength": 1
+    },
+    "target_table": {
+      "description": "The sink's bulk-ingest target table (adbc.ingest.target_table, CN1 Task 11).",
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "description": "The sink's ingest mode: bulk_ingest append or create_append per Arrow batch, or a staged MERGE where the driver supports it (CN1 Task 11).",
+      "type": "string",
+      "enum": ["append", "create_append", "merge"],
+      "default": "append"
+    },
+    "merge_key": {
+      "description": "The key a `merge` mode staged MERGE matches on; required when mode is `merge`.",
+      "type": "string",
+      "minLength": 1
+    },
+    "partitions": {
+      "description": "Partitions the source splits the read across: ExecutePartitions where the driver supports it (Snowflake and BigQuery do, verify), else by key ranges (CN1 Task 11).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 8
+    },
+    "partition_by": {
+      "description": "The declared key the bulk path partitions by (D356).",
+      "type": "string",
+      "minLength": 1
+    },
+    "batch_rows": {
+      "description": "Rows per Arrow batch (CN1 Ruling 3's default).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    }
+  }
+}

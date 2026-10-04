@@ -1,0 +1,58 @@
+# Webhooks — ★ connector 17 of §33 §8; CN1 plan Task 4.
+# Runtime: native Rust, loams_flow::connectors::webhook (design §33 §5, D354) —
+# signed-webhook routes on loams-fabric ingest's listener, verifying HMAC
+# SHA-256, GitHub, Stripe, Slack and Shopify signatures (CN1 Task 4).
+# category is `messaging`: §33 Appendix A.1 puts ★ Webhooks in A.1 Messaging and
+# streaming, next to ★ Kafka and ★ Kinesis.
+# Source only: a webhook receiver is a source, so capabilities.sink is omitted.
+apiVersion: loams.flow/v1
+kind: Connector
+id: webhooks
+name: Webhooks
+specVersion: 1.0.0
+category: messaging
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::webhook
+  version: "loams-fabric ingest (built in)"
+licence:
+  component: Apache-2.0
+  dependencies:
+    reqwest: MIT                      # the listener's HTTP stack; hmac and sha2 are RustCrypto dual MIT/Apache-2.0
+capabilities:
+  source:
+    streaming: true               # a delivery arrives and becomes an event immediately
+    batch: false
+    cdc: false
+    webhook: true                 # §33 §4: receives webhooks as a source (CN1 Task 4's schemes)
+    resumable: false              # a webhook source holds no committed position
+    position: ""
+    # Replays are handled by dedup on the provider's delivery id, not by a
+    # position (CN1 Task 4's webhook_replay_is_deduplicated), so no
+    # kill-restart suite is claimed below.
+  delivery: { source: at_least_once, sink: at_least_once }
+    # A provider retries until it gets a 2xx, so a delivery is at-least-once;
+    # the delivery id dedupes the replay (CN1 Task 4).
+  ordering: none                   # deliveries arrive in the provider's order, not a Loams guarantee
+  formats: [cloudevents-binary, cloudevents-structured, json]
+    # A structured CloudEvents webhook is accepted as-is (§33 §6).
+  schema: { registry: none, evolution: backward }
+  bulk: { arrow: false, max_batch_rows: 65536 }
+  backpressure: push-with-ack     # the provider's retry is the acknowledgement; 401 on a bad signature
+auth: [hmac, key]                 # §33 Appendix A.1: hmac, key
+config:
+  $ref: schemas/webhooks.config.json
+secrets: [hmac.secret]
+envelope:
+  emits: io.loams.dev.flow.webhooks.delivery.v1
+  consumes: "*"
+  passthrough: true
+    # §33 §6: a structured CloudEvents webhook keeps its producer type, source
+    # and id; the connector adds only loamsconnector and loamsinstance.
+    # §33 §6 names exactly four pass-through manifests and this is one of them.
+limits: { max_record_bytes: 16777216 }
+conformance: [contract, dup-check]
+docs: docs/guides/connectors/webhooks.md

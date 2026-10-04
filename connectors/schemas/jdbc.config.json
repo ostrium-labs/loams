@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/jdbc.config.json",
+  "title": "JDBC connector instance config (loams.flow/v1)",
+  "description": "One JDBC connector instance's settings: the driver class loaded from a mounted directory, the URL template, and the source's high-water query and key column. loams-connect renders the Camel route from this config; drivers are not shipped (CN1 Ruling 8). `password` resolves through the namespace's secret store (D189) and is exactly the manifest's `secrets` list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["driver_class", "url"],
+  "properties": {
+    "driver_class": {
+      "description": "The JDBC driver class, loaded by loams-connect from the mounted driver directory rather than from the image (CN1 Ruling 8). The PostgreSQL driver is BSD-2-Clause and MariaDB Connector/J is LGPL-2.1-or-later, loaded and not modified; MySQL Connector/J is GPL-2.0 with a FOSS exception and is the user's choice.",
+      "type": "string",
+      "minLength": 1
+    },
+    "driver_path": {
+      "description": "The driver jar or shared object inside the mounted driver directory; a bare class name uses the driver's own service entry.",
+      "type": "string",
+      "minLength": 1
+    },
+    "url": {
+      "description": "The JDBC URL, with {database} and {schema} placeholders the route fills in.",
+      "type": "string",
+      "minLength": 1
+    },
+    "user": { "description": "The database user.", "type": "string", "minLength": 1 },
+    "password": {
+      "description": "The database password. Resolved through the secret store (D189); the rendered route and Camel's application.properties read it from a mounted file.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "database": { "description": "The database, when it is not carried in the URL.", "type": "string", "minLength": 1 },
+    "table": { "description": "The table read or written; may be omitted when a route names the table.", "type": "string", "minLength": 1 },
+    "query": {
+      "description": "The source's high-water SELECT (CN1 Task 12: `timer` → `sql` with a high-water query). It must take the high-water value as a bind parameter and order by the key column.",
+      "type": "string",
+      "minLength": 1
+    },
+    "key_column": {
+      "description": "The key column the high-water query orders by and the CloudEvent id is built from (CN1 Task 12: the id from the table and key).",
+      "type": "string",
+      "minLength": 1
+    },
+    "batch_rows": {
+      "description": "Rows per read or per batch insert (CN1 Task 12's JDBC sink route does batch inserts).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    },
+    "polling_interval_ms": {
+      "description": "How often the source's timer fires.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 60000
+    },
+    "idempotent_repository": {
+      "description": "Where the high-water value is kept (CN1 Task 12: a Camel caffeine or file-backed idempotent repository, verify which survives restarts).",
+      "type": "string",
+      "enum": ["file", "caffeine", "sql"],
+      "default": "file"
+    },
+    "idempotent_repository_path": {
+      "description": "The file the idempotent repository keeps its state in, when it is the file repository.",
+      "type": "string",
+      "minLength": 1
+    },
+    "column_mappings": {
+      "description": "Column name to CloudEvents extension, for the sink route's jq transform.",
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    }
+  }
+}

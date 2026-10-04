@@ -1,0 +1,74 @@
+# Slack messages -> Zulip messages — CN1 Task 15 (D628).
+#
+# Runtime: `loams-connect`, CN1 Task 12's Java service. **Java is deferred**: this
+# template is the declarative half of Task 12 and is reviewable now, but nothing
+# executes it until that task lands. Camel 4.22.1's YAML DSL, its built-in `jq` and
+# `jsonata` languages, and `camel-cloudevents` are all that is needed; no custom
+# component is required.
+#
+# Source side: Slack is an Appendix A P2 row on Camel's `slack` component (present
+# at tag camel-4.22.1) and lands in **CN2**, so this route has no runnable source
+# until then.
+#
+# At-least-once throughout — §6 forbids claiming exactly-once where the target does
+# not deduplicate — with idempotence carried by Zulip's Idempotency-Key.
+#
+# Secrets are referenced, never inlined. Each credential resolves through the
+# namespace's secret store (D189) under the names the manifest's `secrets` declares.
+
+- route:
+    id: slack-messages-to-zulip
+    from:
+      uri: "slack:channel"
+      parameters:
+        channel: "{{slack.channel}}"
+        # Zulip's budget is 200 requests per 60 seconds, **shared across every
+        # endpoint with no read-only tier above it**. A bulk import therefore
+        # competes with ordinary dashboard reads for one budget, so this route is
+        # rate-limited well below it and the sink additionally self-throttles from
+        # X-RateLimit-Limit / -Remaining / -Reset, stopping at or below
+        # `rate_limit_floor` until reset rather than waiting for a 429.
+        maximumMessagesPerSecond: 2
+      steps:
+        # One Zulip message per Slack message. The Slack thread's reply count is
+        # preserved in the body rather than expanded: expanding it would cost one
+        # Zulip request per reply against the shared budget above.
+        - setBody:
+            expression: |
+              {
+                "stream":  "{{zulip.stream}}",
+                # Topic-per-thread: one Zulip topic per Slack thread, so a
+                # conversation stays a conversation on the other side.
+                "topic":   (payload.thread_ts != null ? payload.thread_ts : payload.ts),
+                "content": ("*<" + payload.user + ">*: " + payload.text),
+                "type":    "stream"
+              }
+        - marshal:
+            expression: "camel-cloudevents:struct"
+
+- route:
+    id: zulip-import
+    from:
+      uri: "platform-http:/api/v1"
+      parameters:
+        # Zulip's REST prefix is `/api/v1` and is never `/json/`.
+        baseUrl: "{{zulip.base_url}}"
+      steps:
+        - marshal:
+            expression: "camel-cloudevents:struct"
+        # Idempotent on the CloudEvent id. Zulip API keys carry no scopes, so one
+        # credential both reads and writes, and Zulip honours Idempotency-Key on
+        # a message post.
+        - setHeader:
+            name: "Idempotency-Key"
+            expression: "header('ce_id')"
+        - to:
+            uri: "zulip:post-message"
+            parameters:
+              apiKey: "{{secret:api_key}}"
+              # HTTP basic with the account's DELIVERY email, not its login email.
+              deliveryEmail: "{{zulip.delivery_email}}"
+              idempotencyKey: "{{header:Idempotency-Key}}"
+              # The floor at which the sink stops issuing calls and waits for
+              # X-RateLimit-Reset.
+              rateLimitFloor: 10

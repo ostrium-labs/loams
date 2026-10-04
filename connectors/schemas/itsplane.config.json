@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/itsplane.config.json",
+  "title": "ItsPlane connector instance config (loams.flow/v1)",
+  "description": "One ItsPlane connector instance's settings: the workspace's API root, the project the connector reads and writes, and the filter window the source pages by. ItsPlane is reached at the `API_URL` its deployment is configured with and has **no** `/api/v1` prefix; its API key travels in an `x-api-key` header, not as an Authorization bearer. `api_key` resolves through the namespace's secret store (D189) and is exactly the manifest's `secrets` list. CN1 Task 15, D628.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["base_url", "project_key"],
+  "properties": {
+    "base_url": {
+      "description": "The API root of the ItsPlane deployment, which is the `API_URL` that deployment was configured with. There is no version prefix to add and no success envelope to unwrap.",
+      "type": "string",
+      "minLength": 1
+    },
+    "api_key": {
+      "description": "The workspace API key, sent as `x-api-key`. Provisioned by a signed-in session, shown once, and rotated rather than extended: its expiry is fixed at creation, so a rotation invalidates this instance. Resolved through the secret store (D189); never stored in the instance.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "workspace_slug": {
+      "description": "The workspace the project belongs to.",
+      "type": "string",
+      "minLength": 1
+    },
+    "project_key": {
+      "description": "The project identifier the source reads and the sink writes, as it appears in the API path.",
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "description": "The state or cycle the sink writes into. ItsPlane's own API calls this a cycle; the field is optional because a route may target a state instead.",
+      "type": "string",
+      "minLength": 1
+    },
+    "cycle_id": {
+      "description": "The cycle identifier the sink writes into, when the route targets a cycle rather than a state.",
+      "type": "string",
+      "minLength": 1
+    },
+    "page_size": {
+      "description": "The page size for GET /projects/{key}/issues. **ItsPlane truncates at this value with no total and no cursor**, so the source pages by its own filter window and records that window as the position; it never treats this number as a count.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "default": 100
+    },
+    "poll_interval_secs": {
+      "description": "How long the source waits between window reads. ItsPlane allows 100 requests per second per API key, but does not publish the remaining budget, so the caller budgets for it rather than reading it from a header.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600,
+      "default": 60
+    },
+    "id_prefix": {
+      "description": "The prefix of the human identifier the sink is idempotent on, for example PROJ. ItsPlane issues the identifier itself, so this is informational for an import and required only to reconcile.",
+      "type": "string",
+      "minLength": 1
+    },
+    "projection": {
+      "description": "The jq or jsonata projection applied to each fetched issue before it becomes a CloudEvent, so a GitHub or Jira payload does not cross the wire whole (D356).",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
