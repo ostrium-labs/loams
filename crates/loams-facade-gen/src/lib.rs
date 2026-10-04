@@ -20,7 +20,11 @@
 //! which is how an admin-only RPC such as `LiveService/Deploy` stays out of
 //! every SDK by default.
 
+pub mod go;
+pub mod naming;
+pub mod python;
 pub mod reasons;
+pub mod rust;
 pub mod typescript;
 pub mod wire;
 
@@ -207,9 +211,11 @@ impl Model {
 }
 
 /// Where a language's SDK imports a proto package's generated types from:
-/// `loams.instance.v1` is `@loams/proto/instance`, `loams.live.v1` is
-/// `@loams/live/live`. A `buf.gen.yaml` passes this, so the generator itself
-/// carries no per-language knowledge of where a package lives.
+/// `loams.instance.v1` is `@loams/proto/instance` in TypeScript,
+/// `loams.instance.v1.instance_pb2` in Python, `loams.dev/go/gen/loams/instance/v1`
+/// in Go and `loams_proto::loams::instance::v1` in Rust. A `buf.gen.yaml` passes
+/// this, so the generator itself carries no per-language knowledge of where a
+/// package lives.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PackageMap {
     entries: BTreeMap<String, String>,
@@ -237,7 +243,8 @@ impl PackageMap {
         Ok(map)
     }
 
-    /// The npm module a proto package's generated types are imported from.
+    /// Where a proto package's generated types are imported from, in whatever
+    /// module path the language uses.
     pub fn get(&self, package: &str) -> Option<&str> {
         self.entries.get(package).map(String::as_str)
     }

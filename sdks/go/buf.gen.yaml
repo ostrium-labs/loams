@@ -1,0 +1,55 @@
+# The Go SDK facade of design §44 §7.3 (D606): protoc-gen-loams-facade reads
+# the `loams.options.v1` annotations off the descriptors and writes module
+# `loams.dev/go`'s generated facade — one interface per annotated service, one
+# method per `FacadeOptions` call, the binding table the hand-written runtime
+# dispatches through, and the reason table generated from
+# `docs/api/reasons.md`.
+#
+# The stubs are not generated here: `sdks/go/buf.gen.proto.yaml` writes them
+# with the pinned remote plugins, and the facade imports their types.
+#
+# Run `scripts/sdk/gen.sh go`, which builds the plugin, substitutes the path
+# into a copy of this template and runs buf on that. buf does not expand
+# environment variables in a `local:` plugin path, and the path cannot be
+# committed either: the repository's cargo config sends build output outside the
+# tree. CI regenerates and fails on a diff.
+#
+# The package map names each proto package's generated messages by the import
+# path buf's managed mode produces under `go_package_prefix: loams.dev/go/gen`
+# (`sdks/go/buf.gen.proto.yaml`). Those paths are not a guess: running the pinned
+# `protoc-gen-go` 1.36.11 and `protoc-gen-connect-go` 1.21.0 over `proto/` with
+# that prefix writes the messages to `loams/<package path>/v1/*.pb.go` and the
+# Connect stubs to `loams/<package path>/v1/v1connect/*.connect.go`.
+#
+# The facade goes in its own package at the module root, not under `gen/`,
+# because `buf.gen.proto.yaml` cleans `sdks/go/gen` and a facade nested inside
+# it would be removed by every stub regeneration. The import is
+# `loams.dev/go/facade`.
+#
+# `loams.dev/go` is a vanity path (Q607). `go get` resolves it through a
+# `go-import` meta tag on `loams.dev`, which is a `loam-cloud` change; the tag
+# itself is in `sdks/templates/go/go-import.meta.html`. Until that tag is
+# served, `go get loams.dev/go/...` fails, which is why the mirror repository
+# `github.com/ostrium-labs/loams-go` is the documented fallback.
+version: v2
+inputs:
+  # The whole proto module, as one image, so the plugin is invoked once with
+  # every file: the facade is one aggregate file, not one file per proto.
+  - directory: proto
+plugins:
+  # Substituted by scripts/sdk/gen.sh. The default is the plain cargo layout.
+  - local: ${LOAMS_FACADE_PLUGIN}
+    out: sdks/go/facade
+    strategy: all
+    opt:
+      - lang=go
+      - reasons=docs/api/reasons.md
+      # The proto revision this SDK declares (§44 §10.3).
+      - proto_rev=v1
+      - package=loams.instance.v1=loams.dev/go/gen/loams/instance/v1
+      - package=loams.devices.v1=loams.dev/go/gen/loams/devices/v1
+      - package=loams.approvals.v1=loams.dev/go/gen/loams/approvals/v1
+      - package=loams.operations.v1=loams.dev/go/gen/loams/operations/v1
+      - package=loams.notifications.v1=loams.dev/go/gen/loams/notifications/v1
+      - package=loams.live.v1=loams.dev/go/gen/loams/live/v1
+clean: true
