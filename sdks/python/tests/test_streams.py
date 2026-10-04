@@ -43,6 +43,7 @@ from connectrpc.code import Code
 
 from loams import (
     AsyncLoams,
+    TokenExpiredError,
     FeatureNotInVariantError,
     Loams,
     LoamsError,
@@ -53,6 +54,7 @@ from loams._gen.facade import MODULES
 from loams.errors.v1.errors_pb2 import ErrorInfo
 from loams.live.v1.live_pb2 import QuerySet, Resume, StateVersion, Transition, WatchRequest
 from loams.runtime.streams import ResumeOptions, async_watch, watch
+from loams.runtime.token_source import refreshing
 
 WATCH_RPC = "loams.live.v1.LiveService/Watch"
 
@@ -521,3 +523,212 @@ def test_a_binding_error_is_raised_when_the_stream_is_opened_not_iterated() -> N
             assert "nosuchmodule" in str(caught.value)
 
     asyncio.run(open_bad_module())
+
+
+# -- a stream that outlives its token ------------------------------------------
+
+
+class _ExpiringStreamServer:
+    """Rejects a stale bearer once, then streams a message.
+
+    A watch is the one call a client holds open long enough for its credential to
+    expire underneath it, so it is the call where "refresh and reconnect" has to
+    work. `_mapped`/`_async_mapped` have to notice the refusal *before* the caller
+    has seen a message -- so there is nothing to yield yet and nothing to resume
+    from.
+
+    The refusal is an HTTP 200 with the error inside an end-stream frame, because
+    that is how Connect reports a streaming error and there is no other way to
+    report one. Two wrong shapes got tried first, and both failed *silently*
+    rather than loudly, which is the note worth keeping:
+
+    - 401 with a framed end-stream: connect-python does not read frames from a
+      non-2xx, so it decoded a bare `UnauthenticatedError` with no reason -- which
+      the runtime correctly refuses to refresh against.
+    - 401 with `content-type: application/json`: that is the *unary* JSON content
+      type, so the streaming client treated the body as one unary response, found
+      no `Transition` in it, and returned an empty stream. No exception, no retry,
+      one request. A watch that silently ends looks exactly like a healthy watch
+      that saw no changes.
+
+    So: 200, `application/connect+json`, and the end-stream payload is the error
+    document wrapped as `{"error": {...}}` -- which is a different shape from the
+    unwrapped `{"code": ..., "details": [...]}` a unary 401 uses.
+    """
+
+    def __init__(self, expected: str) -> None:
+        self.expected = expected
+        self.bearers: list[str] = []
+        self._lock = threading.Lock()
+
+        info = ErrorInfo(reason="token_expired", hint="refresh and try again")
+        encoded = base64.b64encode(info.SerializeToString()).decode("ascii")
+        refusal = json.dumps(
+            {
+                "error": {
+                    "code": "unauthenticated",
+                    "message": "the access token expired",
+                    "details": [{"type": "loams.errors.v1.ErrorInfo", "value": encoded}],
+                }
+            }
+        ).encode()
+        refusal_frame = bytes([0x02]) + len(refusal).to_bytes(4, "big") + refusal
+
+        message = _transition(1).SerializeToString()
+        message_frame = bytes([0x00]) + len(message).to_bytes(4, "big") + message
+        # The end-of-stream frame carries the end-stream JSON document, which in
+        # Connect is at least `{}`. A zero-length payload here parses as nothing
+        # and the stream comes back *empty* rather than raising, which reads like
+        # a client bug rather than a malformed frame -- the first version of this
+        # test asserted [1] and got [].
+        end_payload = b"{}"
+        end_frame = bytes([0x02]) + len(end_payload).to_bytes(4, "big") + end_payload
+
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args: object) -> None:
+                """Keep the test output clean."""
+
+            def do_POST(self) -> None:
+                self.rfile.read(int(self.headers.get("content-length", "0")))
+                bearer = self.headers.get("authorization", "")
+                with outer._lock:
+                    outer.bearers.append(bearer)
+                if bearer != f"Bearer {outer.expected}":
+                    # The label must match the codec the client asked for, or
+                    # connect-python rejects it with `invalid content-type ...
+                    # expecting 'application/connect+proto'` before the reason is
+                    # ever read. The end-stream *payload* stays JSON either way:
+                    # the Connect protocol defines that frame as JSON regardless
+                    # of codec, which is why `_EnvelopeServer` can label a JSON
+                    # payload `+json` and this one labels the same shape `+proto`.
+                    self.send_response(200)
+                    self.send_header("content-type", "application/connect+proto")
+                    self.send_header("content-length", str(len(refusal_frame)))
+                    self.end_headers()
+                    self.wfile.write(refusal_frame)
+                    return
+                body = message_frame + end_frame
+                self.send_response(200)
+                self.send_header("content-type", "application/connect+proto")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        self._httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._httpd.server_address[1]}"
+        # Binding is not serving: without this the socket accepts into the
+        # backlog and every request hangs instead of erroring.
+        self._serving = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._serving.start()
+
+    def close(self) -> None:
+        self._httpd.shutdown()
+        self._httpd.server_close()
+        self._serving.join(timeout=5)
+
+    @property
+    def attempts(self) -> int:
+        with self._lock:
+            return len(self.bearers)
+
+
+def _expiring_fetch() -> "tuple[list[str], object]":
+    """A source that seeds `stale` then refreshes to `fresh`, counting fetches."""
+    lock = threading.Lock()
+    fetches: list[str] = []
+
+    def fetch() -> str:
+        with lock:
+            value = "stale" if not fetches else "fresh"
+            fetches.append(value)
+            return value
+
+    return fetches, refreshing(fetch)
+
+
+def test_a_stream_refreshes_its_token_and_reconnects() -> None:
+    """One refresh, one reconnect, and the caller sees the message either way.
+
+    Without this, a watch opened on a token that expires mid-flight simply dies:
+    the reconnect is inside `_mapped`, and a bug there is invisible until a
+    credential outlives a long-poll.
+    """
+    started = _ExpiringStreamServer("fresh")
+    fetches, source = _expiring_fetch()
+    try:
+        with Loams(started.url, auth=source) as client:
+            versions = [t.end.ts for t in client.live.watch(WatchRequest(initial=QuerySet(version=1)))]
+    finally:
+        started.close()
+
+    assert versions == [1], f"the stream produced {versions}"
+    assert started.attempts == 2, (
+        f"the server saw {started.attempts} attempts, want 2: {started.bearers}"
+    )
+    assert started.bearers[0] == "Bearer stale", f"the first attempt sent {started.bearers[0]!r}"
+    assert started.bearers[1] == "Bearer fresh", f"the reconnect sent {started.bearers[1]!r}"
+    # Two fetches: one seeding the empty cache, one for the refresh. A third would
+    # mean the reconnect fetched again instead of reading the refreshed cache.
+    assert fetches == ["stale", "fresh"], f"the source was fetched {fetches}"
+
+
+def test_an_async_stream_refreshes_its_token_and_reconnects() -> None:
+    """The async half, which is a separate implementation of the same decision.
+
+    `_async_mapped` has its own `refreshed` flag and its own `await refresh()`; a
+    bug in it would leave the async watch broken while the sync one recovered.
+    """
+    from loams import async_refreshing
+
+    started = _ExpiringStreamServer("fresh")
+    lock = threading.Lock()
+    fetches: list[str] = []
+
+    async def fetch() -> str:
+        with lock:
+            value = "stale" if not fetches else "fresh"
+            fetches.append(value)
+            return value
+
+    async def walk() -> list[int]:
+        async with AsyncLoams(started.url, auth=async_refreshing(fetch)) as client:
+            return [
+                t.end.ts
+                async for t in client.live.watch(WatchRequest(initial=QuerySet(version=1)))
+            ]
+
+    try:
+        versions = asyncio.run(walk())
+    finally:
+        started.close()
+
+    assert versions == [1], f"the async stream produced {versions}"
+    assert started.attempts == 2, (
+        f"the server saw {started.attempts} async attempts, want 2: {started.bearers}"
+    )
+    assert started.bearers == ["Bearer stale", "Bearer fresh"], (
+        f"the async stream sent {started.bearers}"
+    )
+    assert fetches == ["stale", "fresh"], f"the async source was fetched {fetches}"
+
+
+def test_a_stream_refreshes_at_most_once() -> None:
+    """A second expiry is reported. Refreshing again turns an auth outage into a
+    refresh storm, and the watch would never surface the failure at all."""
+    started = _ExpiringStreamServer("never-matches")
+    fetches, source = _expiring_fetch()
+    try:
+        with Loams(started.url, auth=source) as client:
+            with pytest.raises(TokenExpiredError):
+                list(client.live.watch(WatchRequest(initial=QuerySet(version=1))))
+    finally:
+        started.close()
+
+    assert started.attempts == 2, (
+        f"the server saw {started.attempts} attempts, want 2, not a loop: {started.bearers}"
+    )
+    assert len(fetches) == 2, f"the source was fetched {len(fetches)} times, want 2"

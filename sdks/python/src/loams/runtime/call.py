@@ -414,29 +414,42 @@ class CallInvoker(_BaseInvoker):
         method = _method_of(binding)
         client = self._client
         assert isinstance(client, ConnectClientSync)
-        source = client.execute_server_stream(
-            request=request,
-            method=method,
-            headers=call_headers(call_options, self._bearer(), consistency),
-            timeout_ms=call_options.timeout_ms,
-        )
-        return self._mapped(source, binding.rpc, session, call_options)
+
+        def open_stream() -> Iterator[Message]:
+            """A fresh stream per call, so a refresh can actually re-open one.
+
+            Deliberately a callable and not a stream built once here: `_mapped`
+            re-opens after a token expiry by calling this again, and a stream
+            built eagerly could only be re-iterated -- which silently yields
+            nothing, because the first attempt already consumed it. The bearer is
+            read per attempt for the same reason the retry loop reads it per
+            attempt: the whole point is to send the *new* token.
+            """
+            return client.execute_server_stream(
+                request=request,
+                method=method,
+                headers=call_headers(call_options, self._bearer(), consistency),
+                timeout_ms=call_options.timeout_ms,
+            )
+
+        return self._mapped(open_stream, binding.rpc, session, call_options)
 
     def _bearer(self) -> str | None:
         return self._token_source.token() if self._token_source is not None else None
 
     def _mapped(
         self,
-        source: Iterator[Message],
+        open_stream: Callable[[], Iterator[Message]],
         rpc: str,
         session: ConsistencyTokenStore | None,
         options: CallOptions,
     ) -> Iterator[Message]:
-        """Wraps an iterator so every throw becomes a `LoamsError`."""
+        """Wraps a stream so every throw becomes a `LoamsError`."""
         refreshed = False
         yielded = False
         refresh = self._refresh
         while True:
+            source = open_stream()
             try:
                 for message in source:
                     yielded = True
@@ -540,16 +553,24 @@ class AsyncCallInvoker(_BaseInvoker):
         client = self._client
         assert isinstance(client, ConnectClient)
 
-        async def open() -> AsyncIterator[Message]:
+        async def open_stream() -> AsyncIterator[Message]:
+            """A fresh stream per call, so a refresh can actually re-open one.
+
+            The same reason as the sync `stream`, and the same bug if it is built
+            once: `_async_mapped` re-opens by calling this again, and re-iterating
+            a consumed async iterator silently yields nothing.
+            """
             bearer = await self._bearer()
-            source = client.execute_server_stream(
+            return client.execute_server_stream(
                 request=request,
                 method=method,
                 headers=call_headers(call_options, bearer, consistency),
                 timeout_ms=call_options.timeout_ms,
             )
+
+        async def open() -> AsyncIterator[Message]:
             async for message in _async_mapped(
-                source, binding.rpc, session, self._refresh, call_options
+                open_stream, binding.rpc, session, self._refresh, call_options
             ):
                 yield message
 
@@ -557,17 +578,18 @@ class AsyncCallInvoker(_BaseInvoker):
 
 
 async def _async_mapped(
-    source: AsyncIterator[Message],
+    open_stream: Callable[[], Awaitable[AsyncIterator[Message]]],
     rpc: str,
     session: ConsistencyTokenStore | None,
     refresh: Callable[[], Awaitable[None]] | None,
     options: CallOptions,
 ) -> AsyncIterator[Message]:
-    """Wraps an async iterator so every throw becomes a `LoamsError`."""
+    """Wraps an async stream so every throw becomes a `LoamsError`."""
     del options
     refreshed = False
     yielded = False
     while True:
+        source = await open_stream()
         try:
             async for message in source:
                 yielded = True

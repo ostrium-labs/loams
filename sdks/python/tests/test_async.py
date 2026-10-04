@@ -164,3 +164,96 @@ def test_a_structural_protocol_check_cannot_tell_the_two_forms_apart() -> None:
         inspect.iscoroutinefunction(type(factory(*args, **kwargs)).token)
         for factory, args, kwargs in ASYNC_FACTORIES
     ), "an async factory handed back a synchronous source"
+
+
+def test_an_async_refresh_re_fetches_over_a_populated_cache() -> None:
+    """`refresh()` must actually refresh. The cache being full is the normal case.
+
+    This is the regression test for the bug that made the async client unable to
+    recover from an expired token: `_AsyncRefreshing.refresh` fetched only when
+    the cache was *empty*, so over a populated cache it did nothing at all. R1's
+    refresh-once-and-retry then re-opened the stream and resent the very token the
+    server had just rejected, and the watch ended as if it had seen no changes.
+    Nothing raised anywhere -- which is why only a wire-level test found it.
+    """
+    from loams.runtime.token_source import async_refreshing, refreshing
+
+    calls: list[str] = []
+
+    async def fetch_async() -> str:
+        calls.append("fetch")
+        return f"token-{len(calls)}"
+
+    def fetch_sync() -> str:
+        calls.append("fetch")
+        return f"token-{len(calls)}"
+
+    async def walk_async() -> tuple[str, str]:
+        source = async_refreshing(fetch_async)
+        first = await source.token()
+        await source.refresh()
+        second = await source.token()
+        return first, second
+
+    assert asyncio.run(walk_async()) == ("token-1", "token-2")
+    assert len(calls) == 2, f"a refresh over a full cache fetched {len(calls) - 1} times, want 1"
+
+    calls.clear()
+    sync_source = refreshing(fetch_sync)
+    assert sync_source.token() == "token-1"
+    sync_source.refresh()
+    assert sync_source.token() == "token-2", "the sync source does not agree, which would be news"
+
+
+def test_concurrent_async_refreshes_share_one_fetch() -> None:
+    """The sharing guarantee survives the move to a `Task`.
+
+    Twenty callers refreshing at once must produce one exchange, not twenty --
+    against a token endpoint that would otherwise see a stampede. This is why the
+    in-flight slot holds a `Task`: a coroutine can be awaited once, so concurrent
+    awaiters on one would raise instead of sharing.
+    """
+    import asyncio
+
+    calls = 0
+
+    async def fetch() -> str:
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.01)  # a real exchange is not instant
+        return f"token-{calls}"
+
+    async def walk() -> None:
+        source = async_refreshing(fetch)
+        await source.token()  # seed, so the refreshes below start from a full cache
+        await asyncio.gather(*(source.refresh() for _ in range(20)))
+        assert await source.token() == "token-2"
+
+    asyncio.run(walk())
+    assert calls == 2, f"a seed plus 20 concurrent refreshes made {calls} fetches, want 2"
+
+
+def test_a_failed_async_refresh_is_not_left_in_flight() -> None:
+    """A transient failure must not poison the source for the rest of the process."""
+    import asyncio
+
+    calls = 0
+
+    async def fetch() -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("the token endpoint is down")
+        return "token-ok"
+
+    async def walk() -> str:
+        source = async_refreshing(fetch)
+        with pytest.raises(RuntimeError):
+            await source.token()
+        return await source.token()
+
+    assert asyncio.run(walk()) == "token-ok", (
+        "one failed fetch left a dead awaitable in the in-flight slot, so the "
+        "retry never happened"
+    )
+    assert calls == 2, f"the source was fetched {calls} times, want 2"
