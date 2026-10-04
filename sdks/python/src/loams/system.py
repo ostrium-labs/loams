@@ -21,9 +21,10 @@ or whose instance changed variant underneath a long-lived client.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Awaitable, Callable, Protocol
 
 from connectrpc.code import Code
 
@@ -235,23 +236,44 @@ class AsyncSystemApi:
         self._get_instance = get_instance
         self._config = config
         self._catalogue: Catalogue | None = None
-        self._in_flight: Any = None
+        self._in_flight: asyncio.Task[GetInstanceResponse] | None = None
 
     async def catalogue(self) -> Catalogue:
         """The service catalogue, cached, with one in-flight fetch shared.
 
         Concurrent readers share the fetch, so a cold start with twenty
         availability checks makes one call, not twenty.
+
+        The shared fetch is an `asyncio.Task`, not a coroutine, and the slot is
+        cleared in a `finally`. Both matter, and both were wrong:
+
+        * a coroutine can be awaited exactly once, so the second reader that
+          joined the in-flight fetch got `RuntimeError: cannot reuse already
+          awaited coroutine` instead of the catalogue -- the promise above, on a
+          cold start with any real RPC in it, which suspends. A Task is
+          awaitable as many times as there are readers.
+        * without the `finally`, a fetch that raised left the dead awaitable in
+          the slot forever, so every later check failed the same way instead of
+          retrying. One `GetInstance` error permanently broke `loams.system`,
+          with a `RuntimeError` that named neither the RPC nor the cause.
+
+        The clear is identity-checked so a waiter that finished late cannot drop
+        a newer fetch that a later caller has already started.
         """
         if self._catalogue is not None:
             return self._catalogue
-        if self._in_flight is None:
-            self._in_flight = self._get_instance(GetInstanceRequest(), options=self._config)
-        response = await self._in_flight
-        catalogue = to_catalogue(tuple(response.services))
-        self._catalogue = catalogue
-        self._in_flight = None
-        return catalogue
+        task = self._in_flight
+        if task is None:
+            task = self._in_flight = asyncio.ensure_future(
+                self._get_instance(GetInstanceRequest(), options=self._config)
+            )
+        try:
+            catalogue = to_catalogue(tuple((await task).services))
+            self._catalogue = catalogue
+            return catalogue
+        finally:
+            if self._in_flight is task:
+                self._in_flight = None
 
     def invalidate(self) -> None:
         """Drops the cached catalogue."""
