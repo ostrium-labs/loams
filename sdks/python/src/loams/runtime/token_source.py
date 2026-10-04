@@ -131,7 +131,7 @@ class _Env:
 def api_key(key: str) -> TokenSource:
     """A Loams API key. The key does not expire, so there is nothing to refresh."""
     source = _Static(key, "api_key")
-    return source  # type: ignore[return-value]
+    return source
 
 
 def async_api_key(key: str) -> AsyncTokenSource:
@@ -143,7 +143,7 @@ def async_api_key(key: str) -> AsyncTokenSource:
 def static_token(token: str) -> TokenSource:
     """A token that is already valid, for a caller who manages its own."""
     source = _Static(token, "static_token")
-    return source  # type: ignore[return-value]
+    return source
 
 
 def async_static_token(token: str) -> AsyncTokenSource:
@@ -155,7 +155,7 @@ def async_static_token(token: str) -> AsyncTokenSource:
 def env_token(environment: Mapping[str, str] | None = None) -> TokenSource:
     """`LOAMS_API_KEY`, then `LOAMS_TOKEN`, then nothing."""
     source = _Env(environment)
-    return source  # type: ignore[return-value]
+    return source
 
 
 def async_env_token(environment: Mapping[str, str] | None = None) -> AsyncTokenSource:
@@ -256,13 +256,13 @@ class _AsyncRefreshing:
 def refreshing(fetch: Callable[[], str]) -> TokenSource:
     """A source that caches and calls `fetch` when asked to refresh."""
     source = _Refreshing(fetch, _Cache())
-    return source  # type: ignore[return-value]
+    return source
 
 
 def async_refreshing(fetch: Callable[[], Awaitable[str]]) -> AsyncTokenSource:
     """A source that caches and awaits `fetch` when asked to refresh."""
     source = _AsyncRefreshing(fetch, _Cache())
-    return source  # type: ignore[return-value]
+    return source
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +338,7 @@ def _exchange(options: OidcExchangeOptions) -> str:
 def oidc_exchange(options: OidcExchangeOptions) -> TokenSource:
     """The token exchange a person signed in through Authentik needs."""
     source = _Refreshing(lambda: _exchange(options), _Cache())
-    return source  # type: ignore[return-value]
+    return source
 
 
 async def _exchange_in_executor(options: OidcExchangeOptions) -> str:
@@ -350,4 +350,4 @@ async def _exchange_in_executor(options: OidcExchangeOptions) -> str:
 def async_oidc_exchange(options: OidcExchangeOptions) -> AsyncTokenSource:
     """`oidc_exchange` for `AsyncLoams`."""
     source = _AsyncRefreshing(lambda: _exchange_in_executor(options), _Cache())
-    return source  # type: ignore[return-value]
+    return source

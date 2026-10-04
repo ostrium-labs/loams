@@ -259,7 +259,7 @@ def to_loams_error(value: object, rpc: str | None = None) -> LoamsError:
     if known and raw == FEATURE_NOT_IN_VARIANT:
         metadata = dict(info.metadata) if info is not None else {}
         return FeatureNotInVariantError(
-            value.message, variant=metadata.get("variant"), **fields  # type: ignore[arg-type]
+            value.message, variant=metadata.get("variant"), **fields
         )
     if value.code == Code.UNAUTHENTICATED and known and raw == TOKEN_EXPIRED:
         return TokenExpiredError(value.message, **fields)  # type: ignore[arg-type]

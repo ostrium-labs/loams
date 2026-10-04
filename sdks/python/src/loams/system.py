@@ -176,7 +176,7 @@ class SystemApi:
         raise FeatureNotInVariantError(
             f"{name} is not in this instance's build variant",
             code=Code.UNIMPLEMENTED,
-            reason="feature_not_in_variant",  # type: ignore[arg-type]
+            reason="feature_not_in_variant",
             metadata={"package": name},
             rpc="loams.instance.v1.InstanceService/GetInstance",
             variant=None,
@@ -257,7 +257,7 @@ class AsyncSystemApi:
         raise FeatureNotInVariantError(
             f"{name} is not in this instance's build variant",
             code=Code.UNIMPLEMENTED,
-            reason="feature_not_in_variant",  # type: ignore[arg-type]
+            reason="feature_not_in_variant",
             metadata={"package": name},
             rpc="loams.instance.v1.InstanceService/GetInstance",
             variant=None,

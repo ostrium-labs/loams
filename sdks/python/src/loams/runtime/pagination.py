@@ -79,7 +79,7 @@ def paginate(
         attempt = request if page_token is None else _set_page_token(request, token_field, page_token)
         page = fetch(attempt, options)
         for item in getattr(page, pagination.items):
-            yield item  # type: ignore[misc]
+            yield item
         next_token = getattr(page, pagination.next_page_token)
         if not isinstance(next_token, str) or next_token == "":
             return
@@ -106,7 +106,7 @@ async def async_paginate(
         attempt = request if page_token is None else _set_page_token(request, token_field, page_token)
         page = await fetch(attempt, options)  # type: ignore[misc]
         for item in getattr(page, pagination.items):
-            yield item  # type: ignore[misc]
+            yield item
         next_token = getattr(page, pagination.next_page_token)
         if not isinstance(next_token, str) or next_token == "":
             return
