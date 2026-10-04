@@ -72,7 +72,9 @@ facade_template() {
 }
 
 generate_facade() {
-  local template="$1" plugin out
+  # `plugin` is deliberately NOT localised: it shadows the global the callers
+  # set, and `set -u` then aborts on the empty local.
+  local template="$1" out
   out="$(facade_template "$template" "$plugin")"
   "$BUF" generate --template "$out"
 }
