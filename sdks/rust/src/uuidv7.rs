@@ -116,9 +116,12 @@ mod tests {
             "variant bits"
         );
         let stamped = uuidv7_time(&id).expect("a v7");
+        // Static message: interpolating `stamped`/`before` would print the id's
+        // time field into the log on failure. Same rule as the rest of this
+        // crate's assertions.
         assert!(
             (before..=before + 1_000).contains(&stamped),
-            "{stamped} not near {before}"
+            "the stamped time should be within a second of the clock read"
         );
     }
 

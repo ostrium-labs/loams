@@ -321,7 +321,11 @@ mod tests {
                     module.name,
                     call.name
                 );
-                assert!(!rpc.contains('/'), "the rpc path has one separator: {rpc}");
+                assert_eq!(
+                    rpc.matches('/').count(),
+                    1,
+                    "the rpc path is <service>/<method>: {rpc}"
+                );
             }
         }
     }

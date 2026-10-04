@@ -115,15 +115,25 @@ impl TransportOptions {
     /// Returns a [`LoamsError`] when the endpoint is not an absolute URI with a
     /// scheme and an authority, which is the one thing a base URL must have.
     pub fn uri(&self) -> Result<Uri, LoamsError> {
-        let trimmed = self.endpoint.trim_end_matches('/');
+        let bad = || {
+            LoamsError::internal(format!(
+                "`{}` has no scheme or authority; an endpoint looks like https://acme.loams.dev",
+                self.endpoint
+            ))
+        };
+        let trimmed = self.endpoint.trim().trim_end_matches('/');
         let uri: Uri = trimmed.parse().map_err(|error| {
             LoamsError::internal(format!("`{}` is not a base URL: {error}", self.endpoint))
         })?;
-        if uri.scheme().is_none() || uri.authority().is_none() {
-            return Err(LoamsError::internal(format!(
-                "`{}` has no scheme or authority; an endpoint looks like https://acme.loams.dev",
-                self.endpoint
-            )));
+        // `http::Uri` happily parses a bare path-and-query, so parsing alone does
+        // not prove there is an endpoint here: `://x` arrives as a relative
+        // reference. Require the scheme Connect actually speaks, and a host.
+        match uri.scheme_str() {
+            Some("http") | Some("https") => {}
+            _ => return Err(bad()),
+        }
+        if uri.authority().map(|authority| authority.host()).unwrap_or("").is_empty() {
+            return Err(bad());
         }
         Ok(uri)
     }
@@ -232,7 +242,11 @@ mod tests {
             .timeout(Duration::from_secs(5))
             .config()
             .expect("a base URL");
-        assert_eq!(config.base_uri().to_string(), "https://acme.loams.dev");
+        // `http::Uri` normalises an empty path to "/", so compare the parts the
+        // endpoint actually names rather than its re-serialised string.
+        let base = config.base_uri();
+        assert_eq!(base.scheme_str(), Some("https"));
+        assert_eq!(base.authority().map(|a| a.as_str()), Some("acme.loams.dev"));
         assert_eq!(config.protocol(), Protocol::Grpc);
         assert_eq!(config.codec_format(), connectrpc::codec::CodecFormat::Json);
         assert_eq!(config.default_timeout(), Some(Duration::from_secs(5)));
