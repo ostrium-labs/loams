@@ -18,12 +18,13 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FAULTS, REQUIRED_FAULTS } from './faults.mjs';
 import { FIXTURES_DIR, loadManifest } from './required.mjs';
 import { collectAll } from './record-fixtures.mjs';
+import { encodingMismatch } from './encodings.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -367,5 +368,99 @@ describe('SDK1 Task 4 — the conformance corpus', () => {
       catalogue.faults.map((fault) => fault.name).sort(),
       Object.keys(FAULTS).sort(),
     );
+  });
+});
+
+// The encoding check, tested on its own.
+//
+// `live_watch` shipped with a JSON end-of-stream body filed under
+// `application/connect+proto`. Every status and frame-count expectation passed,
+// the harness replayed it byte for byte, and the corpus read as healthy -- so the
+// first SDK to decode it got an `InternalError` with no reason instead of the
+// `feature_not_in_variant` the recording exists to pin. Neither layer could see
+// it, because neither one decodes the body. These are the tests for the check
+// that closes that gap.
+const stepsOf = (fixture) => (Array.isArray(fixture.steps) ? fixture.steps : [fixture]);
+
+describe('encoding agreement between a recorded body and its content-type', () => {
+  /** One Connect streaming frame as bytes: a 1-byte flag, a 4-byte length, then the payload. */
+  const frame = (payload, flag = 0) => {
+    const body = Buffer.from(payload);
+    const head = Buffer.alloc(5);
+    head.writeUInt8(flag, 0);
+    head.writeUInt32BE(body.length, 1);
+    return Buffer.concat([head, body]);
+  };
+  /** The same, base64 as a recording stores it. */
+  const wire = (...frames) => Buffer.concat(frames).toString('base64');
+
+  it('passes a proto frame declared proto', () => {
+    // Not JSON, and that is all this check asks.
+    const body = wire(frame(Buffer.from([0x0a, 0x03, 0x66, 0x6f, 0x6f])));
+    assert.equal(encodingMismatch('application/connect+proto', body), null);
+  });
+
+  it('passes a JSON frame declared JSON', () => {
+    const body = wire(frame(JSON.stringify({ error: { code: 'unimplemented' } }), 0x02));
+    assert.equal(encodingMismatch('application/connect+json', body), null);
+  });
+
+  it('catches a JSON frame declared proto, which is what live_watch shipped', () => {
+    const body = wire(frame(JSON.stringify({ error: { code: 'unimplemented' } }), 0x02));
+    assert.match(encodingMismatch('application/connect+proto', body), /frame is JSON/);
+  });
+
+  it('catches a frame that is not JSON but is declared JSON', () => {
+    const body = wire(frame(Buffer.from([0x0a, 0x03, 0x66, 0x6f, 0x6f])));
+    assert.match(encodingMismatch('application/connect+json', body), /does not parse as JSON/);
+  });
+
+  it('judges every frame in a multi-frame body', () => {
+    const good = frame(Buffer.from([0x0a, 0x01, 0x61]));
+    const bad = frame(JSON.stringify({ error: {} }), 0x02);
+    assert.equal(encodingMismatch('application/connect+proto', wire(good)), null);
+    assert.match(encodingMismatch('application/connect+proto', wire(good, bad)), /frame is JSON/);
+  });
+
+  it('says nothing about gRPC-Web, whose trailers share the data framing', () => {
+    // A gRPC-Web error response puts `grpc-status:` trailers in a frame flagged
+    // as trailers. Reading those bytes as a message produces a false alarm, so
+    // the check deliberately declines to judge them.
+    const trailers = wire(frame(Buffer.from('grpc-status: 12\r\ngrpc-message: no\r\n'), 0x80));
+    assert.equal(encodingMismatch('application/grpc-web+json', trailers), null);
+    assert.equal(encodingMismatch('application/grpc-web+proto', trailers), null);
+  });
+
+  it('says nothing about a body it cannot read', () => {
+    assert.equal(encodingMismatch('application/connect+proto', ''), null);
+    assert.equal(encodingMismatch('application/connect+proto', null), null);
+    assert.equal(encodingMismatch('', wire(frame(Buffer.from([0x0a])))), null);
+    // Truncated: a length that runs past the end of the body.
+    assert.equal(encodingMismatch('application/connect+proto', Buffer.from([0x02, 0, 0, 0, 9, 0x7b]).toString('base64')), null);
+  });
+
+  it('leaves the committed corpus with exactly one known defect', () => {
+    // So that fixing `live_watch` and this count going to zero are the same
+    // event, and a new mislabelled recording cannot hide behind the old one.
+    const dir = join(FIXTURES_DIR, 'recorded');
+    const offenders = [];
+    for (const sub of ['', join('apps-mock')]) {
+      let names;
+      try {
+        names = readdirSync(join(dir, sub));
+      } catch {
+        continue;
+      }
+      for (const name of names.filter((n) => n.endsWith('.json'))) {
+        const fixture = JSON.parse(readFileSync(join(dir, sub, name), 'utf8'));
+        for (const [at, step] of stepsOf(fixture).entries()) {
+          const type = step.response?.headers?.['content-type'] ?? '';
+          if (encodingMismatch(type, step.response?.bodyBase64)) {
+            offenders.push(`${fixture.name} step ${at}`);
+          }
+        }
+      }
+    }
+    assert.deepEqual(offenders, ['live_watch step 0']);
   });
 });
