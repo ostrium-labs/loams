@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
 from types import TracebackType
-from typing import Any, Self, cast
+from typing import Any, TypeVar, cast
 
 from google.protobuf.message import Message
 
@@ -85,6 +85,12 @@ class _AsyncModule:
 def build_async_modules(invoker: AsyncCallInvoker) -> dict[str, Any]:
     """One object per generated module, for `AsyncLoams`."""
     return {binding.name: _AsyncModule(binding, invoker) for binding in MODULES}
+
+
+# `typing.Self` is 3.11+, and this SDK supports 3.10. A bound TypeVar is
+# the 3.10 spelling of the same idea: `with Loams(...) as c` keeps `c`
+# typed as the concrete subclass rather than widening to the base.
+_SelfT = TypeVar("_SelfT", bound="AsyncLoams")
 
 
 class AsyncLoams:
@@ -150,7 +156,7 @@ class AsyncLoams:
         """Releases the transport's connections."""
         await self._client.close()
 
-    async def __aenter__(self) -> Self:
+    async def __aenter__(self: _SelfT) -> _SelfT:
         return self
 
     async def __aexit__(

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from types import TracebackType
-from typing import Any, Self, cast
+from typing import Any, TypeVar, cast
 
 from google.protobuf.message import Message
 
@@ -99,6 +99,12 @@ def build_modules(invoker: CallInvoker) -> dict[str, Any]:
     for binding in MODULES:
         modules[binding.name] = _Module(binding, invoker)
     return modules
+
+
+# `typing.Self` is 3.11+, and this SDK supports 3.10. A bound TypeVar is
+# the 3.10 spelling of the same idea: `with Loams(...) as c` keeps `c`
+# typed as the concrete subclass rather than widening to the base.
+_SelfT = TypeVar("_SelfT", bound="Loams")
 
 
 class Loams:
@@ -192,7 +198,7 @@ class Loams:
         """Releases the transport's connections."""
         self._client.close()
 
-    def __enter__(self) -> Self:
+    def __enter__(self: _SelfT) -> _SelfT:
         return self
 
     def __exit__(
