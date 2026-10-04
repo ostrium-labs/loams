@@ -1046,6 +1046,12 @@ jobs:
     runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     steps:
       - uses: actions/checkout@v7
+      # crates/loams-live-proto/build.rs shells out to the system protoc
+      # (connectrpc_build), so without this the SDK build dies in the build
+      # script before a single test runs. The other 13 jobs that build the
+      # workspace install it here; sdk-rust was missed.
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       # -j 4: the SDK path-depends on loams-proto and loams-live-proto, and the
       # runners are 4 vCPU.
