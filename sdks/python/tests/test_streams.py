@@ -295,6 +295,22 @@ def test_the_recorded_watch_case_cannot_be_replayed_yet() -> None:
     unary ones already have `_proto` and `_json` variants, and not a relabelled
     single case. That is a corpus decision, so it is recorded here rather than
     worked around. The SDK's half is proven by the test above, which passes.
+
+    **connect-python cannot read this recording in any configuration**, which is
+    the part that matters. It validates the response content-type against the
+    encoding it asked for: asking for proto and getting the `+proto` label means
+    it parses JSON as proto and fails with an empty `InternalError`; asking for
+    JSON means it gets a `+proto` label back and fails with "invalid
+    content-type". Both verified.
+
+    Go reads the same bytes without trouble. `TestGoStreamReportsEnvelopeRefusal`
+    in `sdks/go/stream_resume_test.go` drives `Watch` at the same fixture server
+    and asserts the refusal maps to the right type, and it passes (71 assertions
+    green in `go test -count=1 .`). So Go's green is not evidence the recording is
+    sound -- connect-go sniffs the frame where connect-python trusts the label.
+    That makes this a client-compatibility problem for every SDK built on a
+    strict Connect client, not just this one, and it is why the fix belongs in
+    the recording rather than in a workaround here.
     """
     recorded = json.loads(
         (
