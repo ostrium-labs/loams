@@ -51,6 +51,17 @@
 //! * `chdb_stream_query` returns in about a millisecond — the embedded engine runs
 //!   the statement on its own thread — so starting a query and cancelling it are
 //!   different threads' work.
+//! * **A cancellation spends the connection it happened on**: the next streaming
+//!   statement on that connection answers `"No active streaming query"`, so a
+//!   cancelled [`Session`] opens a new one. And a second `chdb_connect` is only
+//!   accepted when its arguments match the first one's exactly.
+//! * **Neither Arrow direction works at v26.9.0.** `chdb_arrow_scan` never returns,
+//!   and the stream `chdb_stream_query_arrow` produces hangs in its `get_schema` —
+//!   and either of them **terminates the process with SIGSEGV** once
+//!   `chdb_set_signal_handlers_enabled(0)` has been called, which is what
+//!   [`EngineConfig::install_signal_handlers`] being false means. The API is
+//!   implemented as the header describes and `tests/arrow.rs` runs it in a child
+//!   process, so the defect is measured rather than asserted away.
 //! * `chdb_stream_cancel_query` does **not** interrupt a statement: it blocks
 //!   until the statement finishes on its own (275 s for
 //!   `SELECT count() FROM numbers(1e12)` on this machine) and then tears the stream

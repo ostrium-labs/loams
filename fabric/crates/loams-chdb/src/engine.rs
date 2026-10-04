@@ -46,9 +46,23 @@ pub struct EngineConfig {
     /// existing connections first, which shuts the engine down, and Task 1
     /// measured that the second connect then simply fails.
     pub tmp_dir: PathBuf,
-    /// Where the filesystem cache lives (`--filesystem_cache_path`).
+    /// Where the filesystem cache lives (`--filesystem_caches_path`).
+    ///
+    /// Ruling 2 writes this setting as `filesystem_cache_path`, and that is not
+    /// what v26.9.0 has: the server setting is `filesystem_caches_path`, in the
+    /// plural, and Task 1 confirmed it in `system.server_settings` against the
+    /// pinned library. `chdb_connect` accepts either spelling silently, so the
+    /// difference is invisible without reading the settings table.
     pub cache_dir: PathBuf,
     /// The cache's size limit in bytes (`--filesystem_cache_size_limit`).
+    ///
+    /// **This cannot be set through the C ABI at v26.9.0.** There is no server
+    /// setting of that name in `system.server_settings` and no query setting of
+    /// that name in `system.settings`: a cache's size limit lives in the
+    /// filesystem cache's configuration profile, which the C ABI does not expose.
+    /// The argument is passed because Ruling 2 asks for it and chDB accepts it, and
+    /// [`EngineConfig::to_args`] says plainly that it has no effect, so nobody
+    /// reads a working cache size into this field.
     pub cache_bytes: u64,
     /// The engine's memory ceiling in bytes (`--max_server_memory_usage`).
     pub max_server_memory: u64,
@@ -83,7 +97,7 @@ impl EngineConfig {
     pub fn to_args(&self) -> Vec<String> {
         vec![
             format!("--path={}", self.tmp_dir.display()),
-            format!("--filesystem_cache_path={}", self.cache_dir.display()),
+            format!("--filesystem_caches_path={}", self.cache_dir.display()),
             format!("--filesystem_cache_size_limit={}", self.cache_bytes),
             format!("--max_server_memory_usage={}", self.max_server_memory),
         ]
@@ -352,7 +366,7 @@ mod tests {
         assert!(args.iter().any(|arg| arg.starts_with("--path=")));
         assert!(
             args.iter()
-                .any(|arg| arg.starts_with("--filesystem_cache_path=")),
+                .any(|arg| arg.starts_with("--filesystem_caches_path=")),
             "Ruling 2 asks for a filesystem cache: {args:?}"
         );
         assert!(

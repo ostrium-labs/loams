@@ -27,7 +27,10 @@ arrow = { version = "59", features = ["ffi"] }
 # hand-written prototype segfaults, so the bindings are generated from the
 # header rather than written. 0.72 is the line the plan's Tech Stack names;
 # 0.73.2 is out but 0.72.1 is the newest 0.72. Needs `libclang` at build time,
-# as `loams-flow-proto` needs `protoc`. MIT OR Apache-2.0.
+# as `loams-flow-proto` needs `protoc`. BSD-3-Clause, from its Cargo.toml and
+# shipped LICENSE — not "MIT OR Apache-2.0", which is the common assumption and
+# what an earlier draft of this comment claimed; crates.io reports
+# `license = "BSD-3-Clause"` for 0.72.1, read 2026-10-04.
 bindgen = "0.72"
 # The cheap reference-counted byte buffers `QueryStream::next_chunk` returns,
 # so streaming a result does not copy each block (FL2 Task 1). MIT.
