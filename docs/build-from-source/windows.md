@@ -1,12 +1,16 @@
 # Building Loams on Windows
 
-For building from source on **Windows**, because Loams ships **no Windows
-artifacts** and does not intend to in the near term. Read
+For building from source on **Windows**. Loams now ships an **unsigned** Windows
+`.zip` on each release, so this page is for *building it yourself* — which is
+still the right answer, because a locally built binary carries no
+Mark-of-the-Web and no SmartScreen prompt at all. Read
 [the short version](#the-short-version) first; it is the whole answer if you
 just want a binary.
 
 The macOS page is [`macos.md`](macos.md). What is signed and what is not, and
-why, is [`docs/release/signing.md`](../release/signing.md).
+why, is [`docs/release/signing.md`](../release/signing.md). What the release zip
+contains and how the release job builds it is
+[`docs/release/packaging.md`](../release/packaging.md).
 
 ## How to read the markers
 
@@ -60,7 +64,7 @@ all. Concretely:
 | The web console and `@loams/ui` (`web/`) | **Yes.** Node/pnpm; see [the console](#the-web-console). |
 | A Tauri desktop app | **No.** There is no Tauri crate in `Cargo.lock` and no Tauri dependency in `web/pnpm-lock.yaml`. The desktop app is a plan ([`docs/plans/2026-10-01-ap1-desktop-tauri.md`](../plans/2026-10-01-ap1-desktop-tauri.md)), not code. |
 | Android or iOS apps | **No.** No `android/`, no `ios/`, no Gradle or Xcode project in the tree. Those live in a separate repository. |
-| A binary release pipeline | **No.** D292's cargo-dist pipeline is still planned, so **there are no Loams Windows binaries to download at all** — signed or unsigned. Building from source is currently the *only* way to get one. |
+| A binary release pipeline | **Partly.** `.github/workflows/release-package.yml` builds an **unsigned** `.zip` — `loams.exe`, the built console and the licence files — on `windows-latest` and attaches it to each release. There is **no MSI and no setup `.exe`**, and no Authenticode signature (**D630**). Building from source is still the better path for your own machine, because a local build prompts for nothing. |
 
 Two of the prerequisites people expect for a desktop app are therefore not
 needed here, and this page will not pretend otherwise:
@@ -299,6 +303,26 @@ Run it:
 .\target\release\loams.exe dev
 ```
 
+### Reproducing the release artifact exactly
+
+`release-package.yml`'s `windows` job runs on `windows-latest` and does this:
+
+```powershell
+choco install --no-progress -y protobuf
+choco install --no-progress -y nasm
+cargo build --release -j 4 -p loams --bin loams --locked
+# then: the console, and scripts/release/build-artifacts.py windows-zip
+```
+
+**[unverified]** — the job has not run yet; no Windows machine and no CI run took
+part in writing this. The individual commands above are **[verified]** from the
+pages that follow, and the MSVC host choice is **[verified]** from
+`rust-toolchain.toml` and the C dependencies the workspace links.
+
+Two differences from the commands at the top of this page, both deliberate:
+the release job uses `--locked`, and it installs **NASM** rather than setting
+`AWS_LC_SYS_PREBUILT_NASM=1`.
+
 ## Test
 
 **[verified, platform-pending]** — these are the commands CI runs, minus the
@@ -469,11 +493,10 @@ Windows attaches to files **downloaded** from the internet. `cargo build` output
 has no such stream, so a local build runs without any prompt. The section above
 matters for a *distributed* copy of a build, not for your own.
 
-There are currently no Loams Windows binaries to distribute — see
-[what you do not get](#what-you-get-and-what-you-do-not) — so this is about the
-day a release pipeline exists, and about copies you hand to someone else. The
-decision to leave Windows unsigned is recorded as
-[Q615](../design/13-decision-log.md) and
+A release `.zip` is published on each release and **is** unsigned, so a
+*downloaded* copy does trigger the prompt above. This matters for a copy you
+hand to someone else, not for your own build. The decision to leave Windows
+unsigned is recorded as [Q615](../design/13-decision-log.md) and
 [D620](../design/13-decision-log.md); `docs/release/signing.md` explains why
 shipping a binary signed in SignPath Foundation's name was judged the wrong
 trade for a project with no Windows certificate of its own.

@@ -1,4 +1,4 @@
-//! The docked sidebar browser (design §37 §18, plan [SF1](../../docs/plans/2026-10-02-sf1-collab-ui-plugins.md), decision **D620**).
+//! The docked sidebar browser (design §37 §18, plan [SF1](../../docs/plans/2026-10-02-sf1-collab-ui-plugins.md), decision **D627**).
 //!
 //! # What this is
 //!
@@ -61,6 +61,7 @@ pub mod navigate;
 pub mod net_policy;
 pub mod panel;
 pub mod profile;
+pub mod record;
 pub mod session;
 
 pub use boundary::{assert_cookies_exclude, audit_profile};
@@ -80,6 +81,10 @@ pub use net_policy::{
 };
 pub use panel::{FramePump, PanelInput, PanelState, start_screencast_params};
 pub use profile::{PROFILE_MANIFEST, ProfileKey};
+pub use record::{
+    Container, FFMPEG_BIN_ENV, FrameDisposition, RecorderConfig, RecordingSummary, StartOutcome,
+    VideoRecorder, resolve_ffmpeg,
+};
 pub use session::{
     CookieAttributes, EmbeddedOrigin, LoamsCredential, SameSite, ScopedSessionCookie,
 };

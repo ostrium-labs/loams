@@ -1,6 +1,6 @@
 [package]
 name = "loams-sidebar-browser"
-description = "The docked sidebar browser: Obscura over CDP, with a persistent per-(environment, app) profile and a credential boundary that keeps Loams tokens out of the engine (design §37 §18, D620)."
+description = "The docked sidebar browser: Obscura over CDP, with a persistent per-(environment, app) profile and a credential boundary that keeps Loams tokens out of the engine (design §37 §18, D627)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,7 +11,7 @@ authors.workspace = true
 publish = false
 
 [features]
-# D620 supersedes SF1 Task 0's ruling E1. The feature is **on** by default:
+# D627 supersedes SF1 Task 0's ruling E1. The feature is **on** by default:
 # there is no longer a per-platform webview whose ephemeral store or missing
 # WebAuthn implementation could block it, because there is no webview. The
 # flag stays so the panel can still be compiled out of a build that must not
@@ -24,9 +24,20 @@ base64.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# The recorder's scratch directory. Already in the tree as a dev-dependency
+# for the profile tests, so promoting it here adds no new crate to the lockfile
+# and nothing for cargo-deny to check. MIT OR Apache-2.0, both allowed.
+tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-tungstenite.workspace = true
+# The WebSocket client for the CDP transport to Obscura. Obscura exposes its
+# DevTools endpoint as `ws://127.0.0.1:<port>/devtools/browser` and nothing
+# else, and `obscura-cdp` is not published to crates.io (D627), so the engine
+# is reached over the wire rather than as a library. `connect` and `handshake`
+# only: the endpoint is loopback plaintext by design (`--host` defaults to
+# 127.0.0.1), so no TLS stack is pulled in. Declared per-crate, not via the
+# workspace, so this stays true alongside loams-web-bridge's TLS client.
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "handshake"] }
 tracing.workspace = true
 url.workspace = true
 
@@ -35,7 +46,6 @@ base64.workspace = true
 futures.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
-tokio-tungstenite.workspace = true
 url.workspace = true
 
 [lints]
