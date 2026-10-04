@@ -2,7 +2,7 @@
 
 The docked sidebar browser for Loams Desktop (design
 [§37 §18.5](../../docs/design/37-desktop-and-mobile-apps.md), decision
-**D620**): [Obscura](https://github.com/h4ckf0r0day/obscura) driven over the
+**D627**): [Obscura](https://github.com/h4ckf0r0day/obscura) driven over the
 Chrome DevTools Protocol, with a persistent profile per
 `(environment, app)` and a credential boundary that keeps Loams tokens out of
 the engine.
@@ -14,7 +14,7 @@ The `sidebar-browser` cargo feature is **on by default**.
 SF1 Task 0 concluded that the sidebar browser "does not ship on any operating
 system" (ruling **E1**), because the per-platform webview it would have been
 built on had an ephemeral website-data store on both platforms, no WebAuthn on
-the GTK and WPE WebKit ports, and no Windows implementation at all. **D620
+the GTK and WPE WebKit ports, and no Windows implementation at all. **D627
 supersedes E1.** This crate is what ships instead.
 
 **No webview is forked, vendored or embedded.** That was not a cost decision:
@@ -101,7 +101,7 @@ a general one. What would falsify it: an app whose UI depends on a Chromium-only
 behaviour (a `:has()`/container-query interaction, a WebGL or `<canvas>`
 visualisation, a `content-visibility` layout assumption), or a target outside
 this set. If Loams later embeds something like that, the honest fallback is
-`AppOpener` into the system browser, which is what D620 leaves in place — the
+`AppOpener` into the system browser, which is what D627 leaves in place — the
 engine path is additive, and nothing removes the system-browser route.
 
 ## Recording a product demo

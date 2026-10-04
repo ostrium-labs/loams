@@ -6,7 +6,7 @@
 //! navigation control, and the mechanism it recorded is the model here
 //! (`crates/ui/src/browser/model.rs:131-138` in that project): `http` and
 //! `https` only, a host is required, and any URL carrying userinfo is
-//! refused. D620 replaces the webview but not that policy — the policy is what
+//! refused. D627 replaces the webview but not that policy — the policy is what
 //! makes a browser pointed at an agent-controlled surface safe to leave running.
 //!
 //! On top of zeron's three rules this adds the one zeron did not need:

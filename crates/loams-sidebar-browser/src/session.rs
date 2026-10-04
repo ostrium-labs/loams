@@ -2,7 +2,7 @@
 //!
 //! # The constraint
 //!
-//! SF1's Global Constraint is **"embeds never hold a Loams token."** D620
+//! SF1's Global Constraint is **"embeds never hold a Loams token."** D627
 //! supersedes E1 and ships the embed anyway, so the constraint has to hold in
 //! code rather than by the accident of an ephemeral store — which is the only
 //! reason E1 could claim it was "easy to keep" (SF1 Task 0, Decision 1).

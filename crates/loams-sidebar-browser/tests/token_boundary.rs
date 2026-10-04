@@ -3,7 +3,7 @@
 //!
 //! # Why this test is the important one
 //!
-//! D620 supersedes E1 and ships the embed on a **persistent** engine profile.
+//! D627 supersedes E1 and ships the embed on a **persistent** engine profile.
 //! E1 could claim the constraint was easy to keep precisely because the store
 //! it was reasoning about was ephemeral, and an ephemeral store retains
 //! nothing. A persistent profile is the opposite case: it retains everything,
