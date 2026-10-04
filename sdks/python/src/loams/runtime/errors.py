@@ -61,6 +61,7 @@ _KNOWN_REASONS: Final[frozenset[str]] = frozenset(REASONS)
 #: packed detail. Matched rather than assumed, so a service that adds a detail
 #: of its own does not move `reason` out from under a caller.
 _ERROR_INFO_URL: Final[str] = "type.googleapis.com/loams.errors.v1.ErrorInfo"
+_TYPE_URL_PREFIX: Final[str] = "type.googleapis.com/"
 
 
 class LoamsError(Exception):
@@ -225,14 +226,37 @@ def _unpack(detail: Any, message: Message) -> bool:
     return True
 
 
+#: The bare message name, which is what Connect's JSON encoding puts in a
+#: detail's `type` and what both sides of the lookup normalize to.
+_ERROR_INFO_MESSAGE: Final[str] = "loams.errors.v1.ErrorInfo"
+
+
+def _message_name(type_url: str) -> str:
+    """Strip every `type.googleapis.com/` prefix, so a doubled URL still names
+    the message. Any prefix, not just our own, since the input is untrusted."""
+    name = type_url
+    while name.startswith(_TYPE_URL_PREFIX):
+        name = name[len(_TYPE_URL_PREFIX):]
+    return name
+
+
 def error_info(error: ConnectError) -> ErrorInfo | None:
     """The `ErrorInfo` a Connect error carries, if any.
 
-    Looked up by its type URL rather than by position, so a service that adds a
-    detail of its own does not move `reason` out from under a caller.
+    Looked up by type rather than by position, so a service that adds a detail
+    of its own does not move `reason` out from under a caller.
+
+    The type is normalized before it is compared. Connect's JSON encoding puts
+    the bare message name in `type` and the client prefixes it with
+    `type.googleapis.com/`, but a recorder or a Go peer that already sends the
+    full type URL gets that prefix applied *again*, arriving here as
+    `type.googleapis.com/type.googleapis.com/loams.errors.v1.ErrorInfo`. An
+    exact match only ever finds the first of those two shapes, and the symptom
+    is a `token_expired` refusal arriving as a bare `UnauthenticatedError` with
+    the reason dropped -- which silently disables the refresh-and-retry path.
     """
     for detail in error.details:
-        if detail.type_url == _ERROR_INFO_URL:
+        if _message_name(detail.type_url) == _ERROR_INFO_MESSAGE:
             return ErrorInfo.FromString(detail.value)
     return None
 

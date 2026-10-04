@@ -13,6 +13,24 @@ sync ``api_key`` under the name ``async_api_key_source``.
 
 from loams.aio import AsyncLoams
 from loams.loams import Loams
+from loams.runtime.errors import (
+    AbortedError,
+    AlreadyExistsError,
+    DeadlineExceededError,
+    FailedPreconditionError,
+    FeatureNotInVariantError,
+    InternalError,
+    InvalidArgumentError,
+    LoamsError,
+    NotFoundError,
+    PermissionDeniedError,
+    ResourceExhaustedError,
+    TokenExpiredError,
+    UnauthenticatedError,
+    UnavailableError,
+    UnimplementedError,
+    is_loams_error,
+)
 from loams.runtime.token_source import (
     OidcExchangeOptions,
     api_key,
@@ -28,6 +46,22 @@ from loams.runtime.token_source import (
 )
 
 __all__ = [
+    "AbortedError",
+    "AlreadyExistsError",
+    "DeadlineExceededError",
+    "FailedPreconditionError",
+    "FeatureNotInVariantError",
+    "InternalError",
+    "InvalidArgumentError",
+    "LoamsError",
+    "NotFoundError",
+    "PermissionDeniedError",
+    "ResourceExhaustedError",
+    "TokenExpiredError",
+    "UnauthenticatedError",
+    "UnavailableError",
+    "UnimplementedError",
+    "is_loams_error",
     "AsyncLoams",
     "Loams",
     "OidcExchangeOptions",
