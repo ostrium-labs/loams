@@ -44,6 +44,9 @@ jobs:
       protos: ${{ steps.filter.outputs.protos }}
       app-protos: ${{ steps.filter.outputs.app-protos }}
       sdk-typescript: ${{ steps.filter.outputs.sdk-typescript }}
+      sdk-rust: ${{ steps.filter.outputs.sdk-rust }}
+      sdk-python: ${{ steps.filter.outputs.sdk-python }}
+      sdk-go: ${{ steps.filter.outputs.sdk-go }}
       web: ${{ steps.filter.outputs.web }}
       dapr-edge: ${{ steps.filter.outputs.dapr-edge }}
       spec: ${{ steps.filter.outputs.spec }}
@@ -174,6 +177,37 @@ jobs:
               - "scripts/sdk/**"
               - "sdks/**"
               - "web/pnpm-lock.yaml"
+            # SDK2 Task 3: the Rust SDK. It is its own cargo workspace, so the
+            # server's "Rust tests" jobs never compile or run it -- which is how
+            # PR #340 merged with four failing tests and a green board.
+            sdk-rust:
+              - ".github/workflows/**"
+              - "rust-toolchain*"
+              - "crates/loams-proto/**"
+              - "crates/loams-live-proto/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/rust/**"
+              - "sdks/conformance/**"
+            # SDK2 Task 1: the Python SDK. CI's Python jobs are the qdrant smoke
+            # and static analysis, neither of which imports the SDK.
+            sdk-python:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/python/**"
+              - "sdks/conformance/**"
+            # SDK2 Task 2: the Go SDK, whose module sits outside the web
+            # workspace and so had no job of its own.
+            sdk-go:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/go/**"
+              - "sdks/conformance/**"
             web:
               - ".github/workflows/**"
               - "web/**"
@@ -995,6 +1029,86 @@ jobs:
           done
           sdks/typescript/packages/client/node_modules/.bin/buf --version
 
+  # SDK2 Task 3: the Rust SDK (design section 44 row 4). sdks/rust is its own
+  # cargo workspace, so the server's Rust jobs never touch it -- PR #340 merged
+  # with four failing tests because nothing ran them. This job is what makes a
+  # green board mean something for a language SDK.
+  sdk-rust:
+    name: the Rust SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-rust == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # -j 4: the SDK path-depends on loams-proto and loams-live-proto, and the
+      # runners are 4 vCPU.
+      - name: the Rust SDK's tests
+        working-directory: sdks/rust
+        run: cargo test -j 4 --locked
+      - name: lint the Rust SDK
+        working-directory: sdks/rust
+        run: |
+          cargo fmt -- --check
+          cargo clippy -j 4 --all-targets -- -D warnings
+      # The generated stubs are protoc's output verbatim and are committed, so a
+      # proto edit that moved the SDK surface cannot pass with a stale file.
+      - name: the Rust SDK's generated code is not stale
+        run: |
+          ./scripts/sdk/gen.sh rust
+          git diff --exit-code -- sdks/rust/gen || {
+            echo "sdks/rust/gen is stale: run 'scripts/sdk/gen.sh rust' and commit"; exit 1;
+          }
+
+  # SDK2 Task 1: the Python SDK. CI's existing Python jobs are the qdrant
+  # smoke and static analysis, neither of which imports this package.
+  sdk-python:
+    name: the Python SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-python == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: install the SDK
+        working-directory: sdks/python
+        run: uv sync --frozen --all-extras --dev
+      - name: the Python SDK's tests
+        working-directory: sdks/python
+        run: uv run pytest -q
+      - name: the SDK typechecks under --strict
+        working-directory: sdks/python
+        run: uv run mypy --strict src
+      # A generation difference must be a dependency bump, not whatever the
+      # runner resolved, so the runtime pins stay exact.
+      - name: the SDK's runtime dependencies are exact pins
+        working-directory: sdks/python
+        run: |
+          for pin in 'connect-python==' 'protobuf=='; do
+            grep -qF "$pin" pyproject.toml || {
+              echo "pyproject.toml must pin $pin exactly, not a range"; exit 1;
+            }
+          done
+
+  # SDK2 Task 2: the Go SDK, whose module sits outside the web workspace.
+  sdk-go:
+    name: the Go SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-go == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.24.0'
+          cache-dependency-path: sdks/go/go.sum
+      - name: the Go SDK's tests
+        working-directory: sdks/go
+        run: go test -count=1 ./...
+      - name: vet the Go SDK
+        working-directory: sdks/go
+        run: go vet ./...
+
   deny:
     name: licenses, advisories, sources
     needs: changes
@@ -1144,6 +1258,9 @@ jobs:
       - live-protos
       - app-protos
       - sdk-typescript
+      - sdk-rust
+      - sdk-python
+      - sdk-go
       - deny
       - web
       - dapr-edge
