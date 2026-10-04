@@ -218,6 +218,12 @@ fn reasons(out: &mut String, model: &Model) {
          #: the same question from `GetInstance.services[]` without a failing call.\n\
          FEATURE_NOT_IN_VARIANT: Final[Reason] = \"feature_not_in_variant\"\n\
          \n\
+         #: The reason a rejected access token answers with. Named for the same\n\
+         #: reason as `FEATURE_NOT_IN_VARIANT`: `REASONS` carries every reason, but\n\
+         #: the runtime compares against this one on the token path, and\n\
+         #: `runtime/errors.py` imports it by name.\n\
+         TOKEN_EXPIRED: Final[Reason] = \"token_expired\"\n\
+         \n\
          Idempotency = Literal[\"no_side_effects\", \"idempotent\", \"none\"]\n\
          Retry = Literal[\"safe\", \"manual\"]\n\
          Streaming = Literal[\"unary\", \"server\"]\n\
