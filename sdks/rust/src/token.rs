@@ -162,7 +162,17 @@ struct Cache {
 /// The one refresh a burst of callers joins. Not `Debug`: a boxed future has no
 /// readable state, and `Refreshing`'s own `Debug` prints the fetcher's type
 /// instead.
-type InFlight = Pin<Box<dyn Future<Output = Result<Arc<str>, String>> + Send>>;
+/// A shared refresh, and what is left of it once it has run.
+///
+/// Callers that join a refresh already in flight must end up with its
+/// **result**, not merely the lock released after it finished. Holding only the
+/// future meant a second caller locked the slot and polled a future that had
+/// already completed, which panics with "`async fn` resumed after completion".
+/// So the slot keeps the outcome once it is known, and later callers read it.
+enum InFlight {
+    Running(Pin<Box<dyn Future<Output = Result<Arc<str>, String>> + Send>>),
+    Done(Result<Arc<str>, String>),
+}
 
 /// The single in-flight refresh, shared by every caller that finds it.
 type Shared<T> = Arc<tokio::sync::Mutex<T>>;
@@ -209,10 +219,9 @@ where
                     // `Box<dyn Future>` must not borrow the source: the lock
                     // below is dropped before anything is awaited.
                     let produced = (self.fetch)();
-                    let in_flight: Shared<InFlight> =
-                        Arc::new(tokio::sync::Mutex::new(Box::pin(async move {
-                            produced.await.map(Arc::from)
-                        })));
+                    let in_flight: Shared<InFlight> = Arc::new(tokio::sync::Mutex::new(
+                        InFlight::Running(Box::pin(async move { produced.await.map(Arc::from) })),
+                    ));
                     state.in_flight = Some(Arc::clone(&in_flight));
                     Some(in_flight)
                 }
@@ -223,10 +232,18 @@ where
         };
         let token = {
             let mut guard = future.lock().await;
-            // The future is shared and may already have run: a caller that joined
-            // an in-flight refresh waits behind the one that started it rather
-            // than starting a second exchange.
-            guard.as_mut().await?
+            match &mut *guard {
+                // This refresh already ran: hand back what it produced rather
+                // than polling the future a second time.
+                InFlight::Done(result) => result.clone()?,
+                InFlight::Running(fut) => {
+                    let result = fut.as_mut().await;
+                    // Keep it for the callers that join after this one.
+                    let result = result.clone();
+                    *guard = InFlight::Done(result.clone());
+                    result?
+                }
+            }
         };
         let mut state = self
             .state
@@ -543,8 +560,12 @@ mod tests {
         );
         assert!(form.contains("subject_token=id-token"));
         assert!(form.contains("client_id=loams-auth"));
-        // A `+` in a bearer token must not survive as a space.
-        assert!(form.contains(&percent_encode("a+b=c")));
+        // A `+` in a bearer token must not survive as a space, and a `=` must
+        // not read as the next pair's separator. Assert against a subject that
+        // actually contains them: the form above was built from "id-token", so
+        // `a+b=c` never appeared in it and this assertion could not pass.
+        let with_symbols = source.form("a+b=c");
+        assert!(with_symbols.contains(&percent_encode("a+b=c")));
         assert!(percent_encode("a+b=c").contains("%2B"));
     }
 
