@@ -1,0 +1,76 @@
+# The Go SDK stubs of design §44 §7.3 (D606, D730): `protoc-gen-go` writes the
+# messages and `protoc-gen-connect-go` writes the service clients, into
+# `sdks/go/gen/loams/...`. One module, one import path per proto package, so
+# `loams.dev/go/gen/loams/instance/v1` is `loams.instance.v1` and
+# `.../instancev1connect` is the client.
+#
+# **This template is the Go counterpart of `sdks/typescript/buf.gen.yaml`, and
+# the package map is the same idea in buf's syntax.** buf does not expand
+# environment variables in a `plugin` path, so unlike the TypeScript template
+# there is nothing to substitute: the remote plugins are versioned, not local.
+#
+# The facade (`gen/facade`) is **not** generated here. Its Go renderer has not
+# landed, so `gen/facade/facade.go` is the Q604 hand-written fallback and says so
+# at the top. When `crates/loams-facade-gen/src/go.rs` lands it becomes a `local:`
+# plugin with `strategy: all`, `out: sdks/go/gen/facade` and `opt: lang=go`,
+# exactly parallel to the TypeScript template, and this file gains one `plugins:`
+# entry.
+#
+# Run `scripts/sdk/gen.sh go` once the `go` case exists there; until then, from
+# this directory:
+#
+#	go run google.golang.org/buf/cmd/buf@v1.47.2 generate --template buf.gen.go.yaml
+#
+# `M` maps each **proto file path** to the Go import path of its generated
+# types. It is needed because none of the protos declares `go_package`: Go's
+# generated-code convention is to name the package in the proto, and adding it
+# there would be a change to eight protos that every other language's generator
+# also reads. buf's `opt` entries take `;` for the package alias, which is why
+# `loams.live.v1` is `.../live/v1;livev1` rather than the alias buf would guess
+# from the directory.
+#
+# The `module=` prefix on both plugins is what makes the output land under
+# `sdks/go/gen` rather than at the repository root: protoc-gen-go strips the
+# module prefix from each mapped import path and writes what is left, relative to
+# the output directory.
+version: v2
+inputs:
+  # The whole proto module, as one image. Every file matters: the error packages
+  # and the annotations are imported by the ones a client calls.
+  - directory: proto
+plugins:
+  # Remote plugins, pinned by version as D615 requires, so a regeneration does not
+  # silently change the output because an upstream release did.
+  - remote: buf.build/protocolbuffers/go:v1.36.9
+    out: sdks/go
+    opt:
+      - module=loams.dev/go
+      - Mloams/approvals/v1/approvals.proto=loams.dev/go/gen/loams/approvals/v1;approvalsv1
+      - Mloams/devices/v1/devices.proto=loams.dev/go/gen/loams/devices/v1;devicesv1
+      - Mloams/errors/v1/errors.proto=loams.dev/go/gen/loams/errors/v1;errorsv1
+      - Mloams/instance/v1/instance.proto=loams.dev/go/gen/loams/instance/v1;instancev1
+      - Mloams/notifications/v1/notifications.proto=loams.dev/go/gen/loams/notifications/v1;notificationsv1
+      - Mloams/operations/v1/operations.proto=loams.dev/go/gen/loams/operations/v1;operationsv1
+      - Mloams/options/v1/options.proto=loams.dev/go/gen/loams/options/v1;optionsv1
+      - Mloams/live/v1/catalog.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/live/v1/idempotency.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/live/v1/journal.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/live/v1/live.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/live/v1/value.proto=loams.dev/go/gen/loams/live/v1;livev1
+  - remote: buf.build/connectrpc/go:v1.19.2
+    out: sdks/go
+    opt:
+      - module=loams.dev/go
+      - Mloams/approvals/v1/approvals.proto=loams.dev/go/gen/loams/approvals/v1;approvalsv1
+      - Mloams/devices/v1/devices.proto=loams.dev/go/gen/loams/devices/v1;devicesv1
+      - Mloams/errors/v1/errors.proto=loams.dev/go/gen/loams/errors/v1;errorsv1
+      - Mloams/instance/v1/instance.proto=loams.dev/go/gen/loams/instance/v1;instancev1
+      - Mloams/notifications/v1/notifications.proto=loams.dev/go/gen/loams/notifications/v1;notificationsv1
+      - Mloams/operations/v1/operations.proto=loams.dev/go/gen/loams/operations/v1;operationsv1
+      - Mloams/options/v1/options.proto=loams.dev/go/gen/loams/options/v1;optionsv1
+      - Mloams/live/v1/catalog.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/live/v1/idempotency.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/live/v1/journal.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/live/v1/live.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/live/v1/value.proto=loams.dev/go/gen/loams/live/v1;livev1
+clean: false

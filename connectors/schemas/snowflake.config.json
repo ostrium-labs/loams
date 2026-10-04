@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/snowflake.config.json",
+  "title": "Snowflake connector instance config (loams.flow/v1)",
+  "description": "One Snowflake connector instance's settings: the account, warehouse, database and schema, the projecting SELECT the source runs, the ingest target the sink bulk-loads into, and the driver path. The driver is native code in the Loams process, so it loads by path from the namespace's allowlist with a SHA-256 check (CN1 Ruling 9, Q349). `password` and `token` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["account", "warehouse", "database", "schema"],
+  "properties": {
+    "account": { "description": "The Snowflake account identifier.", "type": "string", "minLength": 1 },
+    "user": { "description": "The Snowflake user.", "type": "string", "minLength": 1 },
+    "password": {
+      "description": "The user's password, when authenticating by password. Resolved through the secret store (D189); the rendered driver options read it from a mounted file.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "authenticator": {
+      "description": "How the driver authenticates; the manifest's auth slugs key, oauth2 and basic (§33 Appendix A.4).",
+      "type": "string",
+      "enum": ["SNOWFLAKE", "KEY_PAIR_JWT", "OAUTH", "EXTERNALBROWSER"],
+      "default": "SNOWFLAKE"
+    },
+    "private_key_pem": {
+      "description": "The key-pair private key, as PEM, when authenticating by KEY_PAIR_JWT. Resolved through the secret store (D189).",
+      "type": "string",
+      "writeOnly": true
+    },
+    "private_key_passphrase": {
+      "description": "The passphrase protecting `private_key_pem`, when it has one. Resolved through the secret store (D189).",
+      "type": "string",
+      "writeOnly": true
+    },
+    "token": {
+      "description": "An OAuth2 access token, when authenticating by OAUTH. Resolved through the secret store (D189).",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "warehouse": { "description": "The warehouse the source's query runs on and the sink loads into.", "type": "string", "minLength": 1 },
+    "database": { "description": "The database.", "type": "string", "minLength": 1 },
+    "schema": { "description": "The schema.", "type": "string", "minLength": 1 },
+    "role": { "description": "The role assumed.", "type": "string" },
+    "query": {
+      "description": "A projecting SELECT for the source, when the route does not name one.",
+      "type": "string",
+      "minLength": 1
+    },
+    "partitions": {
+      "description": "Partitions the source splits the read across, using ExecutePartitions where the driver supports it (CN1 Task 11: Snowflake does, verify).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 8
+    },
+    "target_table": {
+      "description": "The sink's bulk-ingest target table (adbc.ingest.target_table, CN1 Task 11).",
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "description": "The sink's ingest mode (CN1 Task 11: bulk_ingest append or create_append).",
+      "type": "string",
+      "enum": ["append", "create_append", "merge"],
+      "default": "append"
+    },
+    "partition_by": {
+      "description": "The declared key the bulk path partitions by (D356).",
+      "type": "string",
+      "minLength": 1
+    },
+    "driver": {
+      "description": "The ADBC driver to load, by its allowlist name from the namespace config (CN1 Ruling 9); only from /opt/loams/adbc/<name>/<version>/ with a SHA-256 check.",
+      "type": "string",
+      "enum": ["snowflake"],
+      "default": "snowflake"
+    },
+    "driver_version": {
+      "description": "The pinned driver build to load out of /opt/loams/adbc/snowflake/<version>/.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

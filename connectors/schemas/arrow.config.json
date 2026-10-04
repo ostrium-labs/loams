@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/arrow.config.json",
+  "title": "Arrow IPC / Flight codec instance config (loams.flow/v1)",
+  "description": "One Arrow IPC / Flight codec instance's settings: the IPC variant, the schema source, and the Flight endpoint with its ticket and TLS. A format is a codec used by other connectors, not a source, so this config holds no credentials and no secrets (§33 Appendix A.6; CN1 plan Task 5; design §33 §8 row 10). The manifest's `secrets` list is empty because no property here carries a secret.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ipc_format"],
+  "properties": {
+    "ipc_format": {
+      "description": "The Arrow IPC variant (CN1 Task 5: stream and file).",
+      "type": "string",
+      "enum": ["stream", "file"],
+      "default": "stream"
+    },
+    "schema_source": {
+      "description": "Where the Arrow schema comes from; an IPC stream carries it inline, so this only matters when a schema must be pinned.",
+      "type": "string",
+      "enum": ["inline", "explicit", "url"],
+      "default": "inline"
+    },
+    "schema": {
+      "description": "The pinned Arrow schema as its JSON form, when schema_source is `explicit`.",
+      "type": "object"
+    },
+    "schema_url": {
+      "description": "A URL the Arrow schema is fetched from, when schema_source is `url`.",
+      "type": "string",
+      "minLength": 1
+    },
+    "compression": {
+      "description": "The IPC body compression codec.",
+      "type": "string",
+      "enum": ["none", "lz4", "zstd"],
+      "default": "zstd"
+    },
+    "batch_rows": {
+      "description": "Rows per emitted record batch (CN1 Ruling 3's default).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    },
+    "flight": {
+      "description": "Flight settings for DoGet and DoPut, including Loams's own Flight SQL endpoint for collections and streams (CN1 Task 5's flight_doget_from_loams).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint"],
+      "properties": {
+        "endpoint": {
+          "description": "The Flight endpoint, as grpc+tls://host:port or grpc://host:port.",
+          "type": "string",
+          "minLength": 1
+        },
+        "ticket": {
+          "description": "The DoGet ticket, for a source. A ticket that names a path or SQL statement is the usual form.",
+          "type": "string",
+          "minLength": 1
+        },
+        "database": { "description": "The Flight SQL database to qualify the ticket with.", "type": "string" },
+        "auth": {
+          "description": "How the Flight call authenticates; the manifest's auth slugs none, mtls and jwt (§33 Appendix A.6).",
+          "type": "string",
+          "enum": ["none", "mtls", "jwt"],
+          "default": "none"
+        },
+        "tls": {
+          "description": "TLS material for a grpc+tls:// endpoint.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ca_pem": { "description": "The CA bundle, as PEM.", "type": "string" },
+            "verify_full": { "description": "Whether the server certificate's hostname is verified.", "type": "boolean", "default": true }
+          }
+        },
+        "write_timeout_ms": {
+          "description": "DoPut's write deadline.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 30000
+        }
+      }
+    },
+    "dictionary_batch_rows": {
+      "description": "Rows per dictionary batch; 0 disables dictionary encoding.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 65536
+    }
+  }
+}

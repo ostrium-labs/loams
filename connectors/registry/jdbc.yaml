@@ -1,0 +1,68 @@
+# JDBC — ★ connector 18 of §33 §8; CN1 plan Task 12.
+# Runtime: unmodified Apache Camel 4.22 in loams-connect, the `jdbc` and `sql`
+# components, driven by generated YAML-DSL routes (design §33 §5, D354; CN1
+# Ruling 7).  Loams writes no Java in CN1 — routes are YAML and transforms use
+# Camel's built-in jq.
+# category is `protocol`: §33 Appendix A.17 lists ★ JDBC under generic
+# protocols.
+# Drivers are not shipped (CN1 Ruling 8): loams-connect loads them from a
+# mounted directory, so the manifest declares no in-process driver dependency
+# and the per-driver licences are the operator's.
+apiVersion: loams.flow/v1
+kind: Connector
+id: jdbc
+name: JDBC
+specVersion: 1.0.0
+category: protocol
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: camel
+  ref: jdbc
+  version: "Apache Camel 4.22.x (jdbc, sql components in loams-connect)"
+  # The `sql` component carries the source's high-water query and the sink's
+  # batch inserts (CN1 Task 12); both run in the same Camel route.
+licence:
+  component: Apache-2.0            # Apache Camel, unmodified (§33 §5, D359)
+capabilities:
+  source:
+    streaming: false              # §33 Appendix A.17 marks Streaming · for JDBC
+    batch: true
+    cdc: false
+    webhook: false
+    resumable: true
+    position: the high-water value
+    # CN1 Task 12: the high-water value is kept in a Camel idempotent repository
+    # and is the source's position; jdbc_source_postgres_high_water proves it.
+  sink:
+    streaming: false
+    batch: true
+    transactional: false          # camel-sql's batch insert is not declared as one transaction
+    upsert: false                 # CN1's sink route does batch inserts only
+    delete: false
+    idempotent: false
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_key               # the high-water query reads rows in key order
+  formats: [cloudevents-binary, cloudevents-structured, json]
+  schema: { registry: none, evolution: backward }
+  bulk: { arrow: false, max_batch_rows: 65536 }
+    # §33 §8 row 18 notes bulk reads go through Arrow's JDBC adapter with the
+    # Java packaging still to verify, so no Arrow batch is declared in CN1.
+  backpressure: pull
+auth: [per-driver]                # §33 Appendix A.17 says "per driver"
+config:
+  $ref: schemas/jdbc.config.json
+secrets: [password]
+envelope:
+  emits: io.loams.dev.flow.jdbc.rows.v1
+    # CN1 Task 12 fixes this type explicitly for the JDBC source's jq transform.
+  consumes: "*"
+  passthrough: false
+    # §33 §6's pass-through list is kafka, the two Debeziums and webhooks.
+    # CN1 Task 12 notes that if exact CloudEvents binary-mode headers turn out
+    # to need Java, the connector declares the narrower capability and the gap
+    # is recorded for when Java is un-deferred.
+limits: { batch_rows: 65536, batch_bytes: 8388608 }
+conformance: [contract, roundtrip]
+docs: docs/guides/connectors/jdbc.md

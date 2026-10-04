@@ -1,0 +1,121 @@
+# The Loams SDK for Rust (design §44 §9 row 4, SDK2 Task 3).
+#
+# **Its own cargo workspace, on purpose.** The SDK's crate is `loams`, the
+# name D400 reserves on crates.io, and `crates/loams` in this repository is the
+# *server* binary (also `loams`, and `publish = false`). Two packages of one
+# name cannot be members of one workspace, and reusing the server's name for a
+# client — or the client's for the server — is the collision the SDK2 plan's
+# file-ownership rule exists to prevent. So `sdks/rust` is its own workspace,
+# path-depending on the generated proto crates the *server* also builds
+# (`loams-proto`, `loams-live-proto`), which is what D128's "one toolchain"
+# means: one protobuf stack, two consumers.
+#
+# A consequence worth knowing: `cargo fmt --all` / `cargo test` at the repository
+# root do not cover this crate. Run them here (`sdks/rust`), and CI must add it.
+[workspace]
+resolver = "3"
+members = []
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+authors = ["The Loams Authors"]
+
+[workspace.dependencies]
+async-trait = "0.1"
+base64 = "0.22"
+bytes = "1"
+getrandom = "0.3"
+futures = "0.3"
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "net", "rt", "rt-multi-thread", "sync", "time"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
+[package]
+name = "loams"
+description = "The Loams SDK for Rust: one Loams client with namespaced modules over the unified Connect API, generated from proto/."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository = "https://github.com/ostrium-labs/loams"
+homepage = "https://loams.dev"
+documentation = "https://docs.rs/loams"
+readme = "README.md"
+keywords = ["loams", "connect", "grpc", "sdk", "client"]
+categories = ["api-bindings", "database"]
+# `publish = false` until the crates.io trusted-publisher is confirmed (D400,
+# D619). The plan's gate is "do not publish until the owner confirmed the
+# registry account"; this flag is what stops an accidental `cargo publish`
+# before then, and it comes off in the PR that does publish. See
+# docs/release/publishing.md.
+publish = false
+
+[features]
+default = ["tls"]
+# `https://` endpoints. `connectrpc`'s client transport needs a rustls
+# configuration, and the SDK builds one from `webpki-roots`; a `http://`
+# endpoint (which is what `loams dev` serves, and what the conformance corpus
+# replays) needs none of it.
+tls = ["connectrpc/client-tls", "dep:rustls", "dep:webpki-roots"]
+
+[dependencies]
+async-trait.workspace = true
+# The Connect protocol over connect-rust, the server's own stack (D128, D362).
+# `tonic` is deliberately absent: the plan rules it out for this SDK, and the
+# workspace keeps it only for crates this SDK does not touch.
+connectrpc = { version = "0.9.1", default-features = false, features = ["client", "gzip", "json"] }
+# `buffa` is the code generator's runtime: message encoding, decoding an
+# `ErrorInfo` detail out of an error body, and the generated clients' types.
+buffa = { version = "0.9.2", features = ["json"] }
+# The Connect protocol sends an error detail as base64 protobuf, and connect-rust
+# keeps its base64 decoder private, so the SDK decodes it itself. The two
+# alphabets (padded and unpadded) both appear in the wild and both are accepted.
+base64.workspace = true
+bytes.workspace = true
+futures.workspace = true
+# OS entropy for the UUIDv7 tail and the retry jitter. The standard library has
+# no random source (`std::random` is still unstable), and a UUIDv7's tail wants
+# real entropy rather than a hash of a counter: an idempotency key that another
+# client could guess is a key that can be replayed.
+getrandom = { workspace = true, features = ["std"] }
+http.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["sync", "time"] }
+# The generated `loams.*.v1` packages and their clients, from the same build
+# the server compiles them with. `client` is the connect-rust client transport;
+# `crates/loams-proto`'s own docs name this crate as the one the SDKs build on.
+loams-proto = { path = "../../crates/loams-proto", version = "0.0.1", features = ["client"] }
+loams-live-proto = { path = "../../crates/loams-live-proto", version = "0.0.1", features = ["client"] }
+
+# TLS only.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"], optional = true }
+webpki-roots = { version = "1", optional = true }
+
+[dev-dependencies]
+bytes.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

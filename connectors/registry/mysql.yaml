@@ -1,0 +1,57 @@
+# MySQL — ★ connector 3 of §33 §8; CN1 plan Task 7.
+# Runtime: native Rust, loams_flow::connectors::mysql (design §33 §5, D354).
+# Same shape as postgresql.yaml — the same plan task, the same bulk and
+# delivery rules — with MySQL's chunked key-range read and its
+# INSERT … ON DUPLICATE KEY UPDATE sink (CN1 Task 7).
+apiVersion: loams.flow/v1
+kind: Connector
+id: mysql
+name: MySQL
+specVersion: 1.0.0
+category: relational
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::mysql
+  version: "mysql_async 0.37"
+licence:
+  component: Apache-2.0
+  dependencies:
+    mysql_async: MIT
+capabilities:
+  source:
+    streaming: false              # §33 §8: "source (batch)"
+    batch: true
+    cdc: false                    # external MySQL CDC is Debezium's job (D357)
+    webhook: false
+    resumable: true
+    position: the last chunked key or the cursor_column value
+    # §33 §6's as-of position for a MySQL batch read is the key the chunked
+    # SELECT … WHERE pk > ? ORDER BY pk LIMIT n finished at, or the
+    # cursor_column high-water mark in incremental mode (CN1 Task 7).
+  sink:
+    streaming: false
+    batch: true
+    transactional: true           # a batch of ON DUPLICATE KEY UPDATE rows is one transaction
+    upsert: true                  # INSERT … ON DUPLICATE KEY UPDATE; `key` is in the config schema
+    delete: true                  # deletes for loamsop = d (§33 §6)
+    idempotent: true              # the upsert by the declared key dedupes a redelivered batch
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_key               # chunks are read in primary-key order (CN1 Task 7)
+  formats: [cloudevents-binary, cloudevents-structured, json, arrow]
+  schema: { registry: none, evolution: backward }
+  bulk: { arrow: true, max_batch_rows: 65536 }
+  backpressure: pull
+auth: [basic, mtls, iam]          # §33 Appendix A.2
+config:
+  $ref: schemas/mysql.config.json
+secrets: [password, tls.key_pem]
+envelope:
+  emits: io.loams.dev.flow.mysql.rows.v1
+  consumes: "*"
+  passthrough: false
+limits: { batch_rows: 65536, batch_bytes: 8388608 }   # Ruling 3's defaults
+conformance: [contract, roundtrip, kill-restart, dup-check, bulk]
+docs: docs/guides/connectors/mysql.md

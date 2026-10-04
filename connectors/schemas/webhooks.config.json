@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/webhooks.config.json",
+  "title": "Webhooks connector instance config (loams.flow/v1)",
+  "description": "One webhook connector instance's settings: which provider's signature scheme to verify, the header the signature arrives in, and the timestamp tolerance a replay check allows. The listener is ingest's own loopback route POST /v1/namespaces/{ns}/fabric/webhooks/{instance} (D111, §33 §2.2's remote-ingress note), so the path is derived from the instance and is not configured here. `hmac.secret` resolves through the namespace's secret store (D189) and is exactly the manifest's `secrets` list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verification"],
+  "properties": {
+    "verification": {
+      "description": "The signature scheme (CN1 Task 4: hmac-sha256, github, stripe, slack, shopify). A failed signature is a 401 and a counter.",
+      "type": "string",
+      "enum": ["hmac-sha256", "github", "stripe", "slack", "shopify"]
+    },
+    "hmac": {
+      "description": "HMAC material, for the hmac-sha256 scheme and for the provider schemes' shared secret.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["secret"],
+      "properties": {
+        "secret": {
+          "description": "The shared secret the signature is computed over. Resolved through the secret store (D189); never stored in the instance.",
+          "type": "string",
+          "minLength": 1,
+          "writeOnly": true
+        },
+        "algorithm": {
+          "description": "The digest the signature uses.",
+          "type": "string",
+          "enum": ["sha256", "sha512"],
+          "default": "sha256"
+        }
+      }
+    },
+    "signature_header": {
+      "description": "The header the signature arrives in. Each scheme has its provider's default (X-Hub-Signature-256, Stripe-Signature, X-Slack-Signature, X-Shopify-Hmac-Sha256), so this only overrides them (CN1 Task 4).",
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp_header": {
+      "description": "The header carrying the signed timestamp, for the schemes that sign one (Slack's X-Slack-Request-Timestamp).",
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp_tolerance_secs": {
+      "description": "How old a signed request may be before it is refused as a replay. CN1 Task 4 sets 300 s for Stripe.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 300
+    },
+    "delivery_id_header": {
+      "description": "The header carrying the provider's delivery id, which becomes the CloudEvent id and the replay dedup key (CN1 Task 4: the provider's delivery id header where one exists, else SHA-256 of the body and timestamp).",
+      "type": "string",
+      "minLength": 1
+    },
+    "api_key_header": {
+      "description": "The header an opaque API key arrives in, for the `key` auth slug on a provider that has no signature.",
+      "type": "string",
+      "minLength": 1
+    },
+    "body_limit_bytes": {
+      "description": "The largest delivery body accepted.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 8388608
+    }
+  }
+}

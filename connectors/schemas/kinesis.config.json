@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/kinesis.config.json",
+  "title": "Kinesis connector instance config (loams.flow/v1)",
+  "description": "One Kinesis connector instance's settings: the stream, its region, where the per-shard checkpoints are kept, and the consumer's options including enhanced fan-out. `access_key_id` and `secret_access_key` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list; with the AWS role chain they are absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["stream"],
+  "properties": {
+    "stream": { "description": "The Kinesis stream name or ARN.", "type": "string", "minLength": 1 },
+    "region": { "description": "The stream's region.", "type": "string", "minLength": 1 },
+    "endpoint": {
+      "description": "A Kinesis-compatible endpoint, for floci (D60) in CI (CN1 Tech Stack). AWS when absent.",
+      "type": "string",
+      "minLength": 1
+    },
+    "access_key_id": {
+      "description": "The static access key id. Resolved through the secret store (D189); absent when the role chain is used.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "secret_access_key": {
+      "description": "The static secret access key. Resolved through the secret store (D189); absent when the role chain is used.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "session_token": {
+      "description": "A session token, when the credentials are temporary. Resolved through the secret store (D189).",
+      "type": "string",
+      "writeOnly": true
+    },
+    "role_arn": {
+      "description": "The role Loams assumes; the default AWS credential chain is used when absent (the manifest's `iam` auth slug).",
+      "type": "string"
+    },
+    "shards": {
+      "description": "The shards to read, or all of them when absent; the source checkpoints a sequence number per shard.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "consumer_name": {
+      "description": "The enhanced-fan-out consumer registered against the stream (CN1 Task 13: enhanced fan-out optional).",
+      "type": "string",
+      "minLength": 1
+    },
+    "enhanced_fan_out": {
+      "description": "Register a consumer and use SubscribeToShard, which gives per-shard server-side filtering but costs a subscription per shard.",
+      "type": "boolean",
+      "default": false
+    },
+    "checkpoint_table": {
+      "description": "The Fabric table the per-shard sequence numbers are committed to, as <namespace>._fabric.flow_positions is for native sources (CN1 plan Architecture); absent uses the Fabric's own position store.",
+      "type": "string",
+      "minLength": 1
+    },
+    "follow_parent_shards": {
+      "description": "Keep reading through a resharding by following a closed shard's parent and then its children (CN1 Task 13's kinesis_resharding_followed).",
+      "type": "boolean",
+      "default": true
+    },
+    "batch_records": {
+      "description": "Records per GetRecords or PutRecords call.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 500
+    },
+    "poll_interval_ms": {
+      "description": "How long a GetRecords call waits before returning empty.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 1000
+    },
+    "parallel_gets": {
+      "description": "Concurrent GetRecords calls across the shards.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 2
+    },
+    "partial_failure_retries": {
+      "description": "Retries of the failed records in a partial PutRecords failure (CN1 Task 13's kinesis_put_records_partial_failure).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 3
+    },
+    "partition_key": {
+      "description": "The explicit partition key for the sink, where the route does not set the partitionkey extension.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

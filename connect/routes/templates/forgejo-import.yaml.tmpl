@@ -1,0 +1,78 @@
+# GitHub issues -> Forgejo issues — CN1 Task 15 (D628).
+#
+# Runtime: `loams-connect`, CN1 Task 12's Java service. **Java is deferred**: this
+# template is the declarative half of Task 12 and is reviewable now, but nothing
+# executes it until that task lands. Camel 4.22.1's YAML DSL, its built-in `jq` and
+# `jsonata` languages, and `camel-cloudevents` are all that is needed; no custom
+# component is required.
+#
+# Source side: GitHub is an Appendix A P2 row on Camel's `github2` component
+# (present at tag camel-4.22.1) and lands in **CN2**, so this route has no runnable
+# source until then.
+#
+# At-least-once throughout — §6 forbids claiming exactly-once where the target does
+# not deduplicate — with idempotence carried by Forgejo's own issue key.
+#
+# Secrets are referenced, never inlined. Each credential resolves through the
+# namespace's secret store (D189) under the names the manifest's `secrets` declares.
+
+- route:
+    id: github-issues-to-forgejo
+    from:
+      uri: "github:{{endpoint}}/repos/{{owner}}/{{repo}}/issues"
+      parameters:
+        state: open
+        # Forgejo's page ceiling. Sending more is not an error: Forgejo silently
+        # clamps `limit` to 50 with nothing in the response, so the route sends 50.
+        limit: 50
+      steps:
+        # Only the fields a Forgejo issue actually has. A GitHub payload carries
+        # reactions, timeline entries and arbitrary base64 that none of them need,
+        # and pushing it whole across the wire is exactly what D356 rules out.
+        - setBody:
+            expression: |
+              {
+                "title":     payload.title,
+                "body":      payload.body,
+                "labels":    [payload.labels[]?.name],
+                "milestone": payload.milestone?.title,
+                "assignees": [payload.assignees[]?.login],
+                "state":     (payload.state == "closed") ? "closed" : "open"
+              }
+        # The CloudEvents structured payload, so the envelope is the transport
+        # format rather than a wrapper each template reinvents.
+        - marshal:
+            expression: "camel-cloudevents:struct"
+
+- route:
+    id: forgejo-import
+    from:
+      uri: "platform-http:/api/v1"
+      parameters:
+        baseUrl: "{{forgejo.base_url}}"
+      steps:
+        - pollEnrich:
+            # The sink's write token is a SEPARATE credential from the read token:
+            # Forgejo fixes a token's scopes at mint time and derives the required
+            # scope from the HTTP method, so `read:*` and `write:issue` cannot
+            # coexist in one token. Minting it is a provisioning step outside
+            # Loams. A deployment missing it fails here, by name, rather than on a
+            # confusing 403 from the first write.
+            missingSecret: "write_token"
+        - marshal:
+            expression: "camel-cloudevents:struct"
+        # Idempotent on the source issue's own key, so a re-run updates the
+        # existing Forgejo issue instead of creating a second one.
+        - setHeader:
+            name: "X-Loams-Source-Key"
+            expression: "header('ce_id')"
+        - to:
+            uri: "forgejo:write-issue?owner={{forgejo.owner}}&repo={{forgejo.repo}}"
+            parameters:
+              # A Forgejo token is sent as `Authorization: token <t>` — neither a
+              # bearer nor basic.
+              token: "{{secret:write_token}}"
+              idempotencyKey: "{{header:X-Loams-Source-Key}}"
+              # Forgejo sends no 429 and no rate-limit headers at all, so the only
+              # brake is this route's own in-flight concurrency.
+              maxConcurrentRequests: 4

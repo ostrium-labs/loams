@@ -240,6 +240,8 @@ Other directories:
 | [`web`](web/README.md) | The web console and the `@loams/ui` design system |
 | [`sdks`](sdks) | Client SDKs (the Loams Live TypeScript SDK) |
 | [`proto`](proto), [`api`](api) | Protobuf and OpenAPI contracts |
+| [`fabric`](fabric) | The `fabric/` workspace: Loams Flow's event fabric and its connectors (design §32, §33) |
+| [`connectors`](connectors) | The connector registry: the 200-row catalog, the manifests and their JSON Schemas (§33) |
 | [`conformance`](conformance) | External client conformance suites |
 | [`deploy`](deploy) | Local compose files for TiKV and companion services |
 | [`scripts`](scripts) | Development and CI helper scripts |

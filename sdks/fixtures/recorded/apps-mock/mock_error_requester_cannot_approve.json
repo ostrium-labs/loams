@@ -1,0 +1,68 @@
+{
+  "name": "mock_error_requester_cannot_approve",
+  "kind": "error",
+  "about": "A `permission_denied` that names the *shape* of the refusal: an agent requested the operation, so the human who asked the agent cannot be the one to approve it. Two actors, one credential, and the answer is about the actor chain rather than the role.",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R8"
+  ],
+  "reason": "requester_cannot_approve",
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:11.244Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "about": "Dana decides what the agent requested on her behalf.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_dana"
+        },
+        "body": "{\"approvalId\":\"apr_01J9ZCREATEKEY\",\"revision\":\"1\",\"decision\":\"DECISION_KIND_REJECT\",\"reason\":\"no longer needed\"}"
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "permission_denied",
+          "message": "you requested this operation (or an agent did for you), so someone else must decide",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChhyZXF1ZXN0ZXJfY2Fubm90X2FwcHJvdmU"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 403,
+        "reason": "requester_cannot_approve"
+      }
+    }
+  ]
+}

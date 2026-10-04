@@ -1,0 +1,81 @@
+# ClickHouse — ★ connector 12 of §33 §8; CN1 plan Task 10.
+# Runtime: the native Rust task loams_flow::connectors::clickhouse.
+#
+# Split-runtime finding.  §33 §8 row 12 gives two implementations for one
+# system: an Iggy `clickhouse_sink` for the sink direction, and a native Rust
+# source over HTTP with the `clickhouse` crate in ArrowStream format, which is
+# CN1 Task 10's fabric/crates/loams-flow/src/connectors/clickhouse.rs ("source
+# only").  §33 §4 rule 2 says the manifest describes the runtime Loams ships,
+# and runtime.ref holds one value, so this manifest names the native task: the
+# sink's config it writes is the Iggy plugin's (CN1 Task 10 renders
+# deploy/fabric/connectors/iggy/clickhouse_sink.toml.tmpl), and the capability
+# block covers both directions.  A second manifest with kind `iggy` would give
+# the registry two entries for one §33 §8 row.  Reviewer decision noted.
+#
+# Loams House is itself a ClickHouse endpoint, so the same source is tested
+# against the FL2 reference server and against House (CN1 Task 10).
+apiVersion: loams.flow/v1
+kind: Connector
+id: clickhouse
+name: ClickHouse
+specVersion: 1.0.0
+category: warehouse
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::clickhouse
+  version: "clickhouse 0.15 (source); Iggy clickhouse_sink (sink)"
+  # The sink's runtime is Iggy's `clickhouse_sink` plugin (§33 §8 row 12,
+  # CN1 Task 10); IggyRuntime renders its config from this instance.
+licence:
+  component: Apache-2.0
+  dependencies:
+    clickhouse: Apache-2.0
+    iggy-connectors: Apache-2.0
+capabilities:
+  source:
+    streaming: false              # SELECT … FORMAT ArrowStream in key-range partitions (CN1 Task 10)
+    batch: true
+    cdc: false
+    webhook: false
+    resumable: true
+    position: the cursor_column value
+    # CN1 Task 10: the source is incremental by a cursor column, and that value
+    # is the as-of position §33 §6 puts into the batch event's run-id.
+  sink:
+    streaming: true               # the Iggy plugin writes as batches arrive
+    batch: true
+    transactional: false          # ClickHouse inserts are not transactional across a batch
+    upsert: false                 # ReplacingMergeTree merges in the background; CN1 claims no upsert
+    delete: false                 # a lightweight delete is not declared until CN1 Task 10 proves it
+    idempotent: false             # a retried insert duplicates rows without a deduplication setting
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_key               # key-range partitions, so per key the rows are ordered
+  formats: [cloudevents-binary, cloudevents-structured, json, arrow]
+    # arrow because the native source reads FORMAT ArrowStream (CN1 Task 10).
+  schema: { registry: none, evolution: backward }
+    # Warehouses evolve additively; no registry (§33 D356).
+  bulk: { arrow: true, max_batch_rows: 65536 }
+    # The native source reads `SELECT … FORMAT ArrowStream` in key-range
+    # partitions (CN1 Task 10), so its batches are Arrow end to end and never
+    # per-row JSON (D356). The sink path is Iggy's clickhouse_sink, whose bulk
+    # API is not an Arrow path.
+  backpressure: pull
+auth: [basic]                     # §33 Appendix A.4
+config:
+  $ref: schemas/clickhouse.config.json
+secrets: [password]
+envelope:
+  emits: io.loams.dev.flow.clickhouse.rows.v1
+    # A batch-of-rows event carrying an Arrow IPC stream, the same shape as the
+    # Postgres, MySQL and ADBC reads (CN1 Ruling 3). CN1 Ruling 2's event list
+    # does not name ClickHouse; the type follows Ruling 2's pattern
+    # io.loams.dev.flow.<connector-id>.<event>.v1 (CN1 "Rulings made during
+    # execution", row 2).
+  consumes: "*"
+  passthrough: false
+limits: { batch_rows: 65536, batch_bytes: 8388608 }
+conformance: [contract, roundtrip]
+docs: docs/guides/connectors/clickhouse.md

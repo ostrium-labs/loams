@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/mysql.config.json",
+  "title": "MySQL connector instance config (loams.flow/v1)",
+  "description": "One MySQL connector instance's settings: where the server is, what to read or write, and the chunk size for the key-range read. Covers the batch source and the upsert sink of the ★ MySQL connector (design §33 §8 row 3; CN1 plan Task 7). `password` and `tls.key_pem` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list. The sink's `key` is required by CN1 Task 1's rule that a sink declaring `upsert` declares a key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["host", "database", "key"],
+  "properties": {
+    "dsn": {
+      "description": "A mysql_async URL, as an alternative to host/port/database/user.",
+      "type": "string",
+      "minLength": 1
+    },
+    "host": { "description": "The server host.", "type": "string", "minLength": 1 },
+    "port": { "description": "The server port.", "type": "integer", "minimum": 1, "default": 3306 },
+    "database": { "description": "The schema name.", "type": "string", "minLength": 1 },
+    "user": { "description": "The account the connector authenticates as.", "type": "string", "minLength": 1 },
+    "password": {
+      "description": "The account's password, or an AWS RDS IAM token when iam is configured. Resolved through the secret store (D189); never stored in the instance.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "table": {
+      "description": "The table this instance reads or writes; may be omitted when a route names the table.",
+      "type": "string",
+      "minLength": 1
+    },
+    "partitions": {
+      "description": "Parallel workers the key range is split across (CN1 Task 7).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 8
+    },
+    "chunk_size": {
+      "description": "Rows per chunk of SELECT … WHERE pk > ? ORDER BY pk LIMIT n (CN1 Task 7).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    },
+    "cursor_column": {
+      "description": "Incremental mode's high-water column. Without it the source reads the full key range.",
+      "type": "string",
+      "minLength": 1
+    },
+    "key_column": {
+      "description": "The primary key the chunked read walks in order.",
+      "type": "string",
+      "minLength": 1
+    },
+    "key": {
+      "description": "The sink's upsert key: INSERT … ON DUPLICATE KEY UPDATE. Required because the manifest declares capabilities.sink.upsert: true (CN1 Task 1's semantic rule).",
+      "type": "string",
+      "minLength": 1
+    },
+    "batch_rows": {
+      "description": "Rows per upsert batch; CN1 Ruling 3 defaults the Arrow batch to 65536.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    },
+    "append": {
+      "description": "Sink mode: plain INSERT instead of ON DUPLICATE KEY UPDATE.",
+      "type": "boolean",
+      "default": false
+    },
+    "apply_deletes": {
+      "description": "Apply deletes for events carrying loamsop = d (§33 §6).",
+      "type": "boolean",
+      "default": true
+    },
+    "tls": {
+      "description": "TLS material. CN1 Task 7 verifies the server with verify-full.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "description": "Whether TLS is on at all.", "type": "boolean", "default": false },
+        "ca_pem": { "description": "The CA bundle, as PEM.", "type": "string" },
+        "key_pem": {
+          "description": "The client certificate's private key. Resolved through the secret store (D189).",
+          "type": "string",
+          "writeOnly": true
+        },
+        "verify_full": { "description": "Whether the server certificate's hostname is verified.", "type": "boolean", "default": true }
+      }
+    },
+    "iam": {
+      "description": "AWS RDS IAM token auth (CN1 Task 7), which replaces the password.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["region"],
+      "properties": {
+        "region": { "description": "The AWS region of the instance.", "type": "string", "minLength": 1 },
+        "role_arn": { "description": "The role Loams assumes; the default chain is used when absent.", "type": "string" }
+      }
+    }
+  }
+}

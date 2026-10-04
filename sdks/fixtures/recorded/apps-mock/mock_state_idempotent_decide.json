@@ -1,0 +1,195 @@
+{
+  "name": "mock_state_idempotent_decide",
+  "kind": "state",
+  "about": "R3, recorded rather than argued: **the same** `DecideApproval` sent twice with the same `idempotency_key`, against a mock whose approval state really moved between the two calls. Both answers are identical bytes and the approval is at revision 2, so the second call did not write. A client that regenerates the key per attempt (or drops it on the retry) turns this into a second write — which is the failure the field exists to prevent.",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R3"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:11.308Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "about": "First attempt. Writes.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{\"approvalId\":\"apr_01J9ZCREATEKEY\",\"revision\":\"1\",\"decision\":\"DECISION_KIND_APPROVE\",\"idempotencyKey\":\"conformance-idempotency-1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "approval": {
+            "id": "apr_01J9ZCREATEKEY",
+            "revision": "2",
+            "operationId": "op-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+            "promiseId": "prm_create_key",
+            "kind": "key.create",
+            "environment": {
+              "id": "env_dev",
+              "project": "prj_search",
+              "name": "development",
+              "namespace": "search-dev"
+            },
+            "requestedBy": {
+              "id": "usr_dana",
+              "kind": "PRINCIPAL_KIND_USER",
+              "displayName": "Dana",
+              "email": "dana@example.com"
+            },
+            "actorChain": [
+              {
+                "id": "usr_dana",
+                "kind": "PRINCIPAL_KIND_USER",
+                "displayName": "Dana",
+                "email": "dana@example.com"
+              }
+            ],
+            "summary": "Create an API key for search-dev",
+            "detailLines": [
+              "Scopes: collections:read, query"
+            ],
+            "risk": "RISK_LOW",
+            "policy": {
+              "requiredApprovals": 1,
+              "approverRoles": [
+                "project_admin"
+              ],
+              "stepUp": "STEP_UP_NONE"
+            },
+            "decisions": [
+              {
+                "by": {
+                  "id": "usr_omar",
+                  "kind": "PRINCIPAL_KIND_USER",
+                  "displayName": "Omar",
+                  "email": "omar@example.com"
+                },
+                "decision": "DECISION_KIND_APPROVE",
+                "at": "2026-10-04T05:54:11.302281361Z"
+              }
+            ],
+            "state": "APPROVAL_STATE_APPROVED",
+            "createdAt": "2026-10-04T05:53:41.297389242Z",
+            "expiresAt": "2026-10-07T05:54:11.297389242Z"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "state": "APPROVAL_STATE_APPROVED",
+        "revision": "2"
+      }
+    },
+    {
+      "about": "The retry, byte-identical including the key. Does not write again.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{\"approvalId\":\"apr_01J9ZCREATEKEY\",\"revision\":\"1\",\"decision\":\"DECISION_KIND_APPROVE\",\"idempotencyKey\":\"conformance-idempotency-1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "approval": {
+            "id": "apr_01J9ZCREATEKEY",
+            "revision": "2",
+            "operationId": "op-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+            "promiseId": "prm_create_key",
+            "kind": "key.create",
+            "environment": {
+              "id": "env_dev",
+              "project": "prj_search",
+              "name": "development",
+              "namespace": "search-dev"
+            },
+            "requestedBy": {
+              "id": "usr_dana",
+              "kind": "PRINCIPAL_KIND_USER",
+              "displayName": "Dana",
+              "email": "dana@example.com"
+            },
+            "actorChain": [
+              {
+                "id": "usr_dana",
+                "kind": "PRINCIPAL_KIND_USER",
+                "displayName": "Dana",
+                "email": "dana@example.com"
+              }
+            ],
+            "summary": "Create an API key for search-dev",
+            "detailLines": [
+              "Scopes: collections:read, query"
+            ],
+            "risk": "RISK_LOW",
+            "policy": {
+              "requiredApprovals": 1,
+              "approverRoles": [
+                "project_admin"
+              ],
+              "stepUp": "STEP_UP_NONE"
+            },
+            "decisions": [
+              {
+                "by": {
+                  "id": "usr_omar",
+                  "kind": "PRINCIPAL_KIND_USER",
+                  "displayName": "Omar",
+                  "email": "omar@example.com"
+                },
+                "decision": "DECISION_KIND_APPROVE",
+                "at": "2026-10-04T05:54:11.302281361Z"
+              }
+            ],
+            "state": "APPROVAL_STATE_APPROVED",
+            "createdAt": "2026-10-04T05:53:41.297389242Z",
+            "expiresAt": "2026-10-07T05:54:11.297389242Z"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "state": "APPROVAL_STATE_APPROVED",
+        "revision": "2",
+        "identicalToStep": 0
+      }
+    }
+  ]
+}

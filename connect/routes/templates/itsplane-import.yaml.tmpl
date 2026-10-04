@@ -1,0 +1,71 @@
+# GitHub issues -> ItsPlane issues — CN1 Task 15 (D628).
+#
+# Runtime: `loams-connect`, CN1 Task 12's Java service. **Java is deferred**: this
+# template is the declarative half of Task 12 and is reviewable now, but nothing
+# executes it until that task lands. Camel 4.22.1's YAML DSL, its built-in `jq` and
+# `jsonata` languages, and `camel-cloudevents` are all that is needed; no custom
+# component is required.
+#
+# Source side: GitHub is an Appendix A P2 row on Camel's `github2` component
+# (present at tag camel-4.22.1) and lands in **CN2**, so this route has no runnable
+# source until then. Jira, on Camel's `jira` component, is the same story.
+#
+# At-least-once throughout — §6 forbids claiming exactly-once where the target does
+# not deduplicate — with idempotence carried by ItsPlane's own human identifier.
+#
+# Secrets are referenced, never inlined. Each credential resolves through the
+# namespace's secret store (D189) under the names the manifest's `secrets` declares.
+
+- route:
+    id: github-issues-to-itsplane
+    from:
+      uri: "github:{{endpoint}}/repos/{{owner}}/{{repo}}/issues"
+      parameters:
+        state: open
+        limit: 100
+      steps:
+        # Only what an ItsPlane issue has: a name, a description and a priority.
+        - setBody:
+            expression: |
+              {
+                "name":        payload.title,
+                "description": ((payload.body // "") + "\n\n---\nImported from " + payload.html_url),
+                "priority":    "medium"
+              }
+        - marshal:
+            expression: "camel-cloudevents:struct"
+
+- route:
+    id: itsplane-import
+    from:
+      uri: "platform-http:/"
+      parameters:
+        # ItsPlane is reached at the API_URL its deployment was configured with.
+        # There is no `/api/v1` prefix to add.
+        baseUrl: "{{itsplane.base_url}}"
+      steps:
+        - marshal:
+            expression: "camel-cloudevents:struct"
+        # Idempotent on ItsPlane's own human identifier (MKT-42). ItsPlane issues
+        # that identifier itself, so a re-run matches the existing issue rather
+        # than creating a second one.
+        - setHeader:
+            name: "X-Loams-Identifier"
+            expression: "header('ce_id')"
+        - to:
+            uri: "itsplane:write-issue?projectKey={{itsplane.project_key}}"
+            parameters:
+              # ItsPlane authenticates with an `x-api-key` header, not an
+              # Authorization bearer.
+              apiKey: "{{secret:api_key}}"
+              idempotencyKey: "{{header:X-Loams-Identifier}}"
+              # ItsPlane's issue listing truncates **silently** at `limit`: the
+              # response carries no total and no cursor, so a caller cannot tell
+              # "no more" from "cut off at the limit". The source therefore pages
+              # by its own filter window and records that window as the position,
+              # and this route never treats a returned count as complete.
+              pageByWindow: true
+              # ItsPlane allows 100 requests per second per API key but publishes
+              # no remaining-budget header, so unlike the Zulip route this one
+              # cannot self-throttle from a response and the caller must budget.
+              maxConcurrentRequests: 8

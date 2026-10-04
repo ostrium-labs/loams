@@ -2,7 +2,7 @@
 //!
 //! # What is being claimed
 //!
-//! D620 ships the sidebar browser on a **persistent** engine profile. That is
+//! D627 ships the sidebar browser on a **persistent** engine profile. That is
 //! the opposite of the situation SF1 Task 0 relied on when it said the
 //! constraint was easy to keep: an ephemeral store cannot retain a token
 //! because it retains nothing. So the claim has to be earned, and this module

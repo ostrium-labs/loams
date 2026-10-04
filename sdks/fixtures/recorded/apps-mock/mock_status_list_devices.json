@@ -1,0 +1,70 @@
+{
+  "name": "mock_status_list_devices",
+  "kind": "status",
+  "about": "The paired phone in the seed. `ListDevices` is marked `NO_SIDE_EFFECTS` in the proto, so it is also the one app RPC an SDK should issue as a cacheable GET (design §44 §4).",
+  "transport": "connect",
+  "required": false,
+  "pinnedBy": [
+    "R5"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:12.508Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/loams.devices.v1.DeviceService/ListDevices",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "devices": [
+            {
+              "id": "dev_01J9ZPHONE",
+              "name": "Omar's iPhone",
+              "platform": "PLATFORM_IOS",
+              "model": "iPhone16,2",
+              "appVersion": "0.1.0",
+              "createdAt": "2026-09-27T05:54:12.501584520Z",
+              "lastSeenAt": "2026-10-04T04:54:12.501584520Z",
+              "decisionKeyThumbprint": "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

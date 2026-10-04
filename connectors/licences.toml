@@ -1,0 +1,440 @@
+# Loams connector licence gate input (design §33 D359; CN1 Task 2).
+#
+# D359: every manifest names the licence of its runtime component and of every library or
+# driver it loads, and CI refuses AGPL, BSL, SSPL, ELv2 and unlicensed dependencies (D11) for
+# anything Loams ships or runs by default. This file is the gate's input: it lists each
+# component with its SPDX id, so the gate can refuse a flagged one without parsing manifests.
+# The gate's test is CN1 Task 2's `licence_gate_refuses_flagged`, which asserts that the ids
+# under [deny] are refused; `scripts/connectors/gen_registry.py --check` reads the same file and
+# fails when a component's spdx is refused, missing a source, or not an SPDX id.
+#
+# kinds: runtime (a runtime Loams supervises), driver (a driver or shared library loaded from a
+# mounted directory or an allowlist), library (a Rust crate compiled into loams-flow),
+# service (a service the test stack or a companion runs).
+#
+# Names: Loams, loams-*, io.loams.dev.* (owner rulings, 2026-10-01).
+
+[deny]
+# The ids CN1's licence gate refuses, in the order CN1's Global Constraints lists them:
+# "CI refuses AGPL, BSL, SSPL, ELv2, NOASSERTION and unknown ids for anything in the image or
+# the default compose" (D359). `unknown` is the literal id an unclassified component carries,
+# and it is refused like a real id.
+ids = [
+  "AGPL-3.0-only",
+  "AGPL-3.0-or-later",
+  "BUSL-1.1",
+  "SSPL-1.0",
+  "Elastic-2.0",
+  "NOASSERTION",
+  "unknown",
+]
+
+# ----------------------------------------------------------------------------------------
+# Runtimes (§33 §5, D354)
+# ----------------------------------------------------------------------------------------
+
+[components.camel]
+name = "Apache Camel"
+spdx = "Apache-2.0"
+kind = "runtime"
+# The long tail runs on the unmodified Camel runtime in loams-connect (D354): every P2/P3 row
+# whose catalog.csv `runtime` column is `camel`. `jdbc` is the only starred one (§8 #18).
+used_by = ["jdbc"]
+source = "https://github.com/apache/camel"
+
+[components.iggy-connectors]
+name = "Apache Iggy connectors runtime"
+spdx = "Apache-2.0"
+kind = "runtime"
+# Iggy's Rust-plugin connectors runtime: the sinks Iggy already has, plus Loams's own
+# fluss_sink and loams_sink plugins (§5, §32 D336). The starred rows that use it are the ones
+# §8 pins to an iggy plugin.
+used_by = ["elasticsearch", "clickhouse", "postgresql", "s3", "iceberg"]
+source = "https://github.com/apache/iggy"
+
+[components.iggy-server]
+name = "Apache Iggy server"
+spdx = "Apache-2.0"
+kind = "runtime"
+# The message layer every source writes to and every sink reads from (CN1 Architecture): the
+# starred native connectors lease tasks against it.
+used_by = [
+  "kafka",
+  "kinesis",
+  "postgresql",
+  "mysql",
+  "s3",
+  "iceberg",
+  "clickhouse",
+  "snowflake",
+  "bigquery",
+  "adbc",
+  "http",
+  "webhooks",
+  "redis",
+  "opentelemetry",
+]
+source = "https://github.com/apache/iggy"
+
+[components.fluss-server]
+name = "Apache Fluss"
+spdx = "Apache-2.0"
+kind = "runtime"
+# The Fabric's own storage engine (D331-D333), not a connector runtime: the current-state PK
+# tables and the history log tables that CDC and tiering write (§7, D357). No connector lists
+# it as its runtime, so used_by is empty; the Fabric reaches it through loams-fabric.
+used_by = []
+source = "https://github.com/apache/fluss"
+
+[components.debezium-server]
+name = "Apache Debezium Server"
+spdx = "Apache-2.0"
+kind = "runtime"
+# Unmodified Debezium Server 3.7 with its HTTP sink posting CloudEvents to loams-fabric ingest
+# (D357); one container per source database (CN1 Ruling 6).
+used_by = ["debezium-postgres", "debezium-mysql"]
+source = "https://github.com/debezium/debezium-server"
+
+[components.kafka]
+name = "Apache Kafka"
+spdx = "Apache-2.0"
+kind = "runtime"
+# The broker behind the kafka connector, and the test broker of the `connectors` compose
+# profile (Apache Kafka 4.x in KRaft mode). Debezium posts to ingest, not to Kafka, in CN1.
+used_by = ["kafka", "kafka-connect"]
+source = "https://github.com/apache/kafka"
+
+[components.kestra]
+name = "Kestra"
+spdx = "Apache-2.0"
+kind = "service"
+# A companion, not a runtime (D354, Q356): its catalog is a cross-check in Appendix A and its
+# scheduler duplicates Resonate (D210). Apache-2.0 core; the Enterprise Edition is proprietary
+# and is not used by CN1.
+used_by = ["kestra-companion"]
+source = "https://github.com/kestra-io/kestra"
+
+# ----------------------------------------------------------------------------------------
+# Libraries compiled into loams-flow (CN1 Tech Stack)
+# ----------------------------------------------------------------------------------------
+
+[components.rdkafka]
+name = "rdkafka"
+spdx = "MIT"
+kind = "library"
+used_by = ["kafka"]
+source = "https://crates.io/crates/rdkafka"
+
+[components.librdkafka]
+name = "librdkafka"
+spdx = "BSD-2-Clause"
+kind = "library"
+# The C client behind the rdkafka crate, built statically with cmake-build and ssl-vendored
+# (§33 Q348; CN1 Global Constraints' build-machine note).
+used_by = ["kafka"]
+source = "https://github.com/farsightsec/librdkafka"
+
+[components.tokio-postgres]
+name = "tokio-postgres"
+spdx = "MIT"
+kind = "library"
+used_by = ["postgresql"]
+source = "https://crates.io/crates/tokio-postgres"
+
+[components.mysql_async]
+name = "mysql_async"
+spdx = "MIT"
+kind = "library"
+used_by = ["mysql"]
+source = "https://crates.io/crates/mysql_async"
+
+[components.object_store]
+name = "object_store"
+spdx = "Apache-2.0"
+kind = "library"
+used_by = ["s3"]
+source = "https://crates.io/crates/object_store"
+
+[components.iceberg-rust]
+name = "iceberg-rust"
+spdx = "Apache-2.0"
+kind = "library"
+used_by = ["iceberg"]
+source = "https://crates.io/crates/iceberg"
+
+[components.parquet]
+name = "parquet"
+spdx = "Apache-2.0"
+kind = "library"
+used_by = ["parquet", "iceberg", "s3"]
+source = "https://crates.io/crates/parquet"
+
+[components.arrow]
+name = "arrow"
+spdx = "Apache-2.0"
+kind = "library"
+# Arrow is the bulk path everywhere: ADBC reads, Parquet and Iceberg objects and the Postgres
+# batch reader all produce Arrow IPC batches (D356, CN1 Ruling 3).
+used_by = ["arrow", "parquet", "iceberg", "adbc", "snowflake", "bigquery", "postgresql"]
+source = "https://crates.io/crates/arrow"
+
+[components.apache-avro]
+name = "apache-avro"
+spdx = "Apache-2.0"
+kind = "library"
+# Avro only at Kafka and schema-registry boundaries (D356); the Confluent wire format when a
+# registry is configured (§8 #9).
+used_by = ["avro", "kafka"]
+source = "https://crates.io/crates/apache-avro"
+
+[components.adbc_core]
+name = "adbc_core"
+spdx = "Apache-2.0"
+kind = "library"
+used_by = ["adbc", "snowflake", "bigquery"]
+source = "https://crates.io/crates/adbc_core"
+
+[components.adbc_driver_manager]
+name = "adbc_driver_manager"
+spdx = "Apache-2.0"
+kind = "library"
+# The manager that loads the shared libraries below by path from an allowlist, with a SHA-256
+# check (CN1 Ruling 9; Q349).
+used_by = ["adbc", "snowflake", "bigquery"]
+source = "https://crates.io/crates/adbc_driver_manager"
+
+[components.clickhouse]
+name = "clickhouse"
+spdx = "Apache-2.0"
+kind = "library"
+# The HTTP client for ClickHouse's ArrowStream format; Loams House is itself a ClickHouse
+# endpoint (§8 #12).
+used_by = ["clickhouse"]
+source = "https://crates.io/crates/clickhouse"
+
+[components.redis]
+name = "redis"
+spdx = "BSD-3-Clause"
+kind = "library"
+used_by = ["redis"]
+source = "https://crates.io/crates/redis"
+
+[components.reqwest]
+name = "reqwest"
+spdx = "MIT"
+kind = "library"
+used_by = ["http", "webhooks"]
+source = "https://crates.io/crates/reqwest"
+
+[components.opentelemetry-proto]
+name = "opentelemetry-proto"
+spdx = "Apache-2.0"
+kind = "library"
+used_by = ["opentelemetry"]
+source = "https://crates.io/crates/opentelemetry-proto"
+
+[components.aws-sdk-kinesis]
+name = "aws-sdk-kinesis"
+spdx = "Apache-2.0"
+kind = "library"
+# The Kinesis Data Streams client for the shard iterators and PutRecords of the native Kinesis
+# connector (§8 #19, CN1 Task 13). Recorded here because D359 requires naming every library a
+# shipped connector loads, and because `gen_registry.py --check` resolves each manifest's
+# `licence.dependencies` key against this file.
+used_by = ["kinesis"]
+source = "https://crates.io/crates/aws-sdk-kinesis"
+
+# ----------------------------------------------------------------------------------------
+# Drivers loaded, never compiled in
+# ----------------------------------------------------------------------------------------
+
+[components.postgresql-jdbc]
+name = "PostgreSQL JDBC Driver"
+spdx = "BSD-2-Clause"
+kind = "driver"
+# A JDBC driver, so kind is `driver` rather than `library`: it is loaded into the JVM of
+# loams-connect from a mounted directory and never shipped in an image (CN1 Ruling 8).
+used_by = ["postgresql", "jdbc"]
+source = "https://github.com/pgjdbc/pgjdbc"
+
+[components.mariadb-java-client]
+name = "MariaDB Connector/J"
+spdx = "LGPL-2.1-or-later"
+kind = "driver"
+# Loaded into loams-connect's JVM, not modified and not shipped (CN1 Ruling 8). LGPL-2.1 is
+# not in the refused set: it is not AGPL, BSL, SSPL or ELv2 (D359).
+used_by = ["mysql", "jdbc"]
+source = "https://github.com/mariadb-corporation/mariadb-connector-j"
+
+[components.adbc-driver-snowflake]
+name = "ADBC Snowflake driver"
+spdx = "Apache-2.0"
+kind = "driver"
+used_by = ["snowflake"]
+source = "https://github.com/adbc-drivers/snowflake"
+
+[components.adbc-driver-bigquery]
+name = "ADBC BigQuery driver"
+spdx = "Apache-2.0"
+kind = "driver"
+used_by = ["bigquery"]
+source = "https://github.com/adbc-drivers/bigquery"
+
+[components.adbc-driver-postgres]
+name = "ADBC Postgres driver"
+spdx = "Apache-2.0"
+kind = "driver"
+used_by = ["adbc", "postgresql"]
+source = "https://github.com/apache/arrow-adbc/tree/main/driver/postgresql"
+
+[components.adbc-driver-sqlite]
+name = "ADBC SQLite driver"
+spdx = "Apache-2.0"
+kind = "driver"
+used_by = ["adbc"]
+source = "https://github.com/apache/arrow-adbc/tree/main/driver/sqlite"
+
+[components.adbc-driver-duckdb]
+name = "ADBC DuckDB driver"
+spdx = "Apache-2.0"
+kind = "driver"
+used_by = ["adbc", "duckdb"]
+source = "https://github.com/apache/arrow-adbc/tree/main/driver/duckdb"
+
+[components.adbc-driver-flightsql]
+name = "ADBC Flight SQL driver"
+spdx = "Apache-2.0"
+kind = "driver"
+used_by = ["adbc", "arrow"]
+source = "https://github.com/apache/arrow-adbc/tree/main/driver/flightsql"
+
+[components.mysql-connector-j]
+name = "MySQL Connector/J"
+spdx = "GPL-2.0-with-classpath-exception"
+kind = "driver"
+# Not shipped, and not loaded by default: CN1 Ruling 8 makes the JDBC drivers the operator's
+# choice, and this one is GPL-2.0 with the FOSS classpath exception. It is listed here so the
+# gate has an id for it if a user mounts it; used_by is empty because CN1 depends on none. No
+# GPL text is copied into this repository.
+used_by = []
+source = "https://github.com/mysql/mysql-connector-j"
+
+# ----------------------------------------------------------------------------------------
+# Services of the `connectors` compose profile and of the CN1 exit gate (§33 §9)
+# ----------------------------------------------------------------------------------------
+
+[components.rustfs]
+name = "RustFS"
+spdx = "Apache-2.0"
+kind = "service"
+used_by = ["s3"]
+source = "https://github.com/rustfs/rustfs"
+
+[components.lakekeeper]
+name = "Lakekeeper"
+spdx = "Apache-2.0"
+kind = "service"
+used_by = ["iceberg"]
+source = "https://github.com/lakekeeper/lakekeeper"
+
+[components.opensearch]
+name = "OpenSearch"
+spdx = "Apache-2.0"
+kind = "service"
+# The third-party check for the Elasticsearch sink, next to Loams's own ES gateway (§33 §9).
+used_by = ["elasticsearch"]
+source = "https://github.com/opensearch-project/OpenSearch"
+
+[components.valkey]
+name = "Valkey"
+spdx = "BSD-3-Clause"
+kind = "service"
+# The Redis-compatible server of the test stack, and the Redis-compatible service a deployment
+# can run in place of Redis.
+used_by = ["redis", "redis-streams", "valkey"]
+source = "https://github.com/valkey-io/valkey"
+
+[components.floci]
+name = "floci"
+spdx = "MIT"
+kind = "service"
+# Local Kinesis and S3-event emulation for Kinesis and the S3 event notifications (D60).
+used_by = ["kinesis", "s3"]
+source = "https://github.com/cloudlib/floci"
+
+[components.debezium-postgres]
+name = "Debezium Postgres connector"
+spdx = "Apache-2.0"
+kind = "service"
+# A Debezium connector module, run inside debezium-server rather than shipped on its own (D357).
+used_by = ["debezium-postgres"]
+source = "https://github.com/debezium/debezium/tree/main/debezium-connector-postgres"
+
+[components.debezium-mysql]
+name = "Debezium MySQL connector"
+spdx = "Apache-2.0"
+kind = "service"
+# A Debezium connector module, run inside debezium-server rather than shipped on its own (D357).
+used_by = ["debezium-mysql"]
+source = "https://github.com/debezium/debezium/tree/main/debezium-connector-mysql"
+
+# ----------------------------------------------------------------------------------------
+# Appendix A.18's Loams applications. These are `kind = "service"`: Loams neither
+# ships nor links any of them, and reaches each over its public HTTP API, which is
+# D359's carve-out. They are listed so that D359's "every runtime component and
+# driver is named" is literally true for every manifest in the registry, not so
+# that the gate can license-check code it does not contain.
+# ----------------------------------------------------------------------------------------
+
+[components.zulip]
+name = "Zulip"
+spdx = "Apache-2.0"
+kind = "service"
+# A self-hosted Zulip realm, reached at its /api/v1 REST prefix (never /json/). Apache-2.0, and
+# in any case an HTTP surface rather than a dependency (D359, D628, CN1 Task 15).
+used_by = ["zulip"]
+source = "https://zulip.com/api/"
+
+[components.itsplane]
+name = "ItsPlane"
+spdx = "AGPL-3.0"
+kind = "service"
+# ItsPlane's upstream is **AGPL-3.0**, and it is deliberately NOT in [deny]. The deny list gates
+# what Loams ships or links; this connector ships and links neither, and reaches ItsPlane only
+# over its public HTTP API with an `x-api-key` header. That is the same position D359 takes for
+# a SaaS service reached through its public API, and it is why the AGPL identifier appears here
+# as an identifier and nowhere else: no AGPL text is vendored, and scripts/spec/provenance.sh
+# passes. The gate's negative test proves the distinction is live — an AGPL row of
+# kind = "library" is refused, this AGPL row of kind = "service" is accepted.
+#
+# This is ItsPlane, the self-hosted tracker in ostrium-labs/loams-plugins, not plane.so;
+# CN1 "Rulings made during execution" row 12 records that identification.
+used_by = ["itsplane"]
+source = "https://github.com/ostrium-labs/loams-plugins/tree/main/packages/plugin-itsaplan-adapter"
+
+[components.forgejo]
+name = "Forgejo"
+spdx = "MIT"
+kind = "service"
+# A self-hosted Forgejo server, reached at its /api/v1 REST prefix (not /api/forgejo/v1). MIT,
+# and again an HTTP surface rather than a dependency (D359, D628, CN1 Task 15).
+#
+# One provisioning fact belongs here because it is not a code question: Forgejo derives a token's
+# scope from the HTTP method its calls make, so the read scopes and `write:issue` cannot share a
+# token. The manifest's `secrets` therefore names two credentials, and the write token must be
+# minted before the sink can run.
+used_by = ["forgejo"]
+source = "https://codeberg.org/forgejo/forgejo"
+
+# ----------------------------------------------------------------------------------------
+# D359's carve-outs, in prose. The gate reads [deny] and [components]; this stanza is for the
+# humans who ask why a component is or is not listed.
+# ----------------------------------------------------------------------------------------
+
+[notes]
+saas_public_api = "A SaaS service that Loams reaches through its public API is not a licence question (D359): the gateway is Loams's own Apache-2.0 OpenAPI-generated connector, and the service's terms, not its source licence, are the operator's concern. That is why the A.9-A.12 SaaS rows have no component entry here, and why airbyte's ELv2 platform is a product decision rather than a gate failure."
+airbyte = "Airbyte is not a runtime (D359): its platform is ELv2 and its connectors carry mixed licences, so CN1 reads its open connectors as API references only. Appendix A keeps the row, flagged, with runtime openapi."
+redpanda_connect = "Redpanda Connect is not a runtime (D359): Apache-2.0 core plus the Redpanda Community License on part of its connectors, which is exactly the kind of mixed licence the gate refuses. Appendix A's `Redpanda` row is Kafka-protocol and runs through Camel's kafka component."
+kafka_connect = "Kafka Connect is not a runtime in CN1 (D354, §32 Q331): it arrives only through Iggy's Kafka gateway once Iggy supports consumer groups with offsets. The Appendix A row is a P3 stub."
+mysql_connector_j = "MySQL Connector/J is GPL-2.0 with the FOSS classpath exception and is neither shipped nor loaded by CN1 (CN1 Ruling 8): the operator mounts the JDBC driver directory and chooses. It is listed with its SPDX id so the gate can refuse or accept it explicitly, and no part of it is copied here."
+test_services = "The services of the `connectors` compose profile (rustfs, lakekeeper, opensearch, valkey, floci) exist only for the contract tests of §33 §9 and the CN1 exit gate; they are not part of a Loams image."

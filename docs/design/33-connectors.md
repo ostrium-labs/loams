@@ -244,7 +244,7 @@ All read on 2026-10-01: `github.com/apache/camel` tag `camel-4.22.1` (`component
 
 ## Appendix A. The connector matrix
 
-Columns: **Source / Sink** — the connector reads from / writes to the system. **Streaming** — continuous, low-latency delivery. **Batch** — bulk or scheduled transfer. **CDC** — row-level change capture. **Webhook** — receives (as a source) or sends (as a sink) webhooks. **Auth** — the methods the Loams manifest will declare: `none`, `basic` (user and password), `key` (API key or token), `oauth2`, `jwt`, `hmac` (signed payloads), `mtls`, `sasl` (PLAIN/SCRAM), `iam` (AWS), `sa` (GCP service account or workload identity), `aad` (Entra ID), `ssh`, `kerb` (Kerberos), `cs` (connection string). **Camel** — the Camel 4.22.1 component(s) that cover it, or `·`. **Kestra** — the Kestra plugin (and sub-module) that covers it, or `·`. **Priority** — P1 = ★ (CN1), P2 = CN2 (stock Camel or Iggy plugins), P3 = CN3 (long tail, OpenAPI-generated). `Y` = yes, `·` = no.
+Columns: **Source / Sink** — the connector reads from / writes to the system. **Streaming** — continuous, low-latency delivery. **Batch** — bulk or scheduled transfer. **CDC** — row-level change capture. **Webhook** — receives (as a source) or sends (as a sink) webhooks. **Auth** — the methods the Loams manifest will declare: `none`, `basic` (user and password), `key` (API key or token), `oauth2`, `jwt`, `hmac` (signed payloads), `mtls`, `sasl` (PLAIN/SCRAM), `iam` (AWS), `sa` (GCP service account or workload identity), `aad` (Entra ID), `ssh`, `kerb` (Kerberos), `cs` (connection string). **Camel** — the Camel 4.22.1 component(s) that cover it, or `·`. **Kestra** — the Kestra plugin (and sub-module) that covers it, or `·`. **Priority** — P1 = CN1, of which the 21 marked ★ are the précis' hot-path set; P2 = CN2 (stock Camel or Iggy plugins); P3 = CN3 (long tail, OpenAPI-generated). A P1 row that is not ★ is still built in CN1, as A.18's three Loams applications are. `Y` = yes, `·` = no.
 
 The Camel and Kestra columns were filled from the component and plugin lists read on 2026-10-01; the capability cells are the planned manifest values and are **(verify)** until each connector's contract tests pass (D353 rule 3). CN1 Task 2 generates this table from the registry and fails CI if they disagree.
 
@@ -325,7 +325,7 @@ The Camel and Kestra columns were filled from the component and plugin lists rea
 |---|---|---|---|---|---|---|---|---|---|---|
 | ★ Snowflake | Y | Y | · | Y | · | · | key, oauth2, basic | `sql`, `jdbc` | `plugin-jdbc` (snowflake) | P1 |
 | ★ BigQuery | Y | Y | Y | Y | · | · | sa | `google-bigquery` | `plugin-gcp` (bigquery) | P1 |
-| Redshift | Y | Y | · | Y | · | · | basic, iam | `aws2-redshift`, `sql` | `plugin-jdbc` (redshift) | P2 |
+| Redshift | Y | Y | · | Y | · | · | basic, iam | `aws2-redshift-data`, `sql` | `plugin-jdbc` (redshift) | P2 |
 | Databricks | Y | Y | · | Y | · | · | oauth2, key | `sql`, `jdbc` | `plugin-databricks` | P2 |
 | ★ ClickHouse | Y | Y | Y | Y | · | · | basic | `clickhouse`, `sql` | `plugin-jdbc` (clickhouse) | P1 |
 | DuckDB | Y | Y | · | Y | · | · | none | `duckdb` | `plugin-jdbc` (duckdb) | P2 |
@@ -489,7 +489,7 @@ Formats are codecs used by other connectors; "Source" and "Sink" mean decode and
 
 | Connector | Source | Sink | Streaming | Batch | CDC | Webhook | Auth | Camel | Kestra | Priority |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Kubernetes | Y | Y | Y | · | · | · | sa, mtls | `kubernetes` | `plugin-kubernetes` | P3 |
+| Kubernetes | Y | Y | Y | · | · | · | sa, mtls | `kubernetes-pods`, `kubernetes-deployments`, `kubernetes-services` | `plugin-kubernetes` | P3 |
 | Docker | Y | Y | Y | · | · | · | mtls | `docker` | `plugin-docker` | P3 |
 | Terraform | · | Y | · | Y | · | · | none | · | `plugin-terraform` | P3 |
 | Ansible | · | Y | · | Y | · | · | ssh | · | `plugin-ansible` | P3 |
@@ -534,7 +534,19 @@ AI connectors are mostly sinks used as enrichment steps (embedding, classificati
 | OpenAPI-generated | Y | Y | · | Y | · | Y | per spec | `rest-openapi` | · | P3 |
 | ★ JDBC | Y | Y | · | Y | · | · | per driver | `jdbc`, `sql` | `plugin-jdbc` | P1 |
 | ★ ADBC | Y | Y | · | Y | · | · | per driver | · | · | P1 |
-| SMTP / IMAP | Y | Y | Y | · | · | · | basic, oauth2 | `mail` | `plugin-notifications` (mail), `plugin-email` | P3 |
+| SMTP / IMAP | Y | Y | Y | · | · | · | basic, oauth2 | `smtp`, `imaps` | `plugin-notifications` (mail), `plugin-email` | P3 |
 | RSS / Atom | Y | · | Y | · | · | · | none | `rss`, `atom` | · | P3 |
 
-Totals: 200 connectors; 21 ★ (P1), and the P2 and P3 counts are computed by CN1 Task 2's generator.
+### A.18 Loams's own applications (3)
+
+Loams's collaboration applications (design §39, SF1). They are import **targets** — the sinks a route writes into when data comes from Slack, GitHub or Jira — and sources in their own right. Camel has no component for any of them, so all three are **native** Rust connectors in `loams-flow` that speak each app's public REST API (D354's "native Rust where Loams owns the hot path"; §33's `runtime.kind` values). They are **P1 but not ★**: they ship in CN1, but they are not part of the précis' 21-connector hot path, so D358's ★ count is unchanged.
+
+| Connector | Source | Sink | Streaming | Batch | CDC | Webhook | Auth | Camel | Kestra | Priority |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Zulip | Y | Y | Y | Y | · | Y | key | · | · | P1 |
+| ItsPlane | Y | Y | Y | Y | · | Y | key | · | · | P1 |
+| Forgejo | Y | Y | Y | Y | · | Y | key | · | · | P1 |
+
+Each is a `native` sink whose credential comes from the `SecretStore` (D189) and whose upstream is reached only over its public HTTP API. That is D359's carve-out, and it is why no upstream application's own licence is a gate here: Loams neither ships nor links any of them. ItPlane's upstream is AGPL-3.0 and Forgejo's is MIT; both are read as API surfaces, and `connectors/licences.toml` records that explicitly rather than leaving it implicit. Forgejo's write capability is a **provisioning** fact, not a code fact: Forgejo derives the token scope from the HTTP method, so a `write:issue` token must be minted before the sink can run (its read scopes and its write scopes cannot live in one token).
+
+Totals: 203 connectors; 21 ★ (P1), and the P2 and P3 counts are computed by CN1 Task 2's generator.

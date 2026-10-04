@@ -1,0 +1,1102 @@
+{
+  "about": "The authority on the 100% bar (design §44 §10.4, D617). `sdks/conformance/required.mjs` reads this file and nothing else, so \"a language cannot skip a required fixture\" has one definition rather than one per runner.",
+  "rule": "A language passes conformance when it has run every fixture with `required: true`. The only permitted skip is a fixture marked `transport: grpc-only` on the Connect-unary fallback transport (D613, for Ruby and PHP hosts without a native gRPC extension). Every other skip is a failure, and a fixture that is absent from this file is a failure too.",
+  "recordedFrom": {
+    "loams dev": "crates/loams — the primary target",
+    "loams-apps-mock": "crates/loams-apps-mock — the app packages and state"
+  },
+  "volatile": "The response fields a re-recording is allowed to move: the server-generated `instance_id`, and the mock seed timestamps. `verify-corpus.mjs --drift` masks exactly these and fails on any other difference.",
+  "counts": {
+    "total": 33,
+    "required": 28,
+    "optional": 5
+  },
+  "clauses": {
+    "R1": {
+      "title": "Credentials: bearer from a token source, one refresh on `token_expired`.",
+      "covered": true,
+      "fixtures": [
+        "mock_error_step_up_required",
+        "mock_status_unauthenticated"
+      ],
+      "note": null
+    },
+    "R2": {
+      "title": "Retry classes and backoff.",
+      "covered": false,
+      "fixtures": [],
+      "note": "**No fixture, and none is possible from either server today.** A retryable `unavailable` needs a dependency to be down and a `resource_exhausted` needs a loaded server; `RetryInfo` is on no proto at all (runtime-contract.md, R2). `mock_injects_retryable_errors` is the SDK1 Task 4 answer and it is **not built** — see `faults.json`. R2 is pinned against a stub in every language."
+    },
+    "R3": {
+      "title": "One idempotency key per logical call, reused on every retry.",
+      "covered": true,
+      "fixtures": [
+        "mock_state_idempotent_decide"
+      ],
+      "note": null
+    },
+    "R4": {
+      "title": "Consistency tokens on reads and writes.",
+      "covered": false,
+      "fixtures": [],
+      "note": "**No fixture, and none is possible.** No RPC carries a `consistency_token`: `ListCollections` and the write paths arrive with API1 Tasks 2–4, and the token's encoding is not in the protos yet (runtime-contract.md, R4). R4 is pinned against a stub, deliberately — a silently-merged token reads stale data, which is worse than a failure."
+    },
+    "R5": {
+      "title": "Unavailable services: the catalogue and the refusal.",
+      "covered": true,
+      "fixtures": [
+        "instance_get_instance_grpc_web",
+        "instance_get_instance_grpc_web_json",
+        "instance_get_instance_json",
+        "instance_get_instance_proto",
+        "live_query_grpc_web",
+        "live_query_grpc_web_json",
+        "live_query_json",
+        "live_query_proto",
+        "live_watch",
+        "mock_status_list_devices"
+      ],
+      "note": null
+    },
+    "R6": {
+      "title": "Pagination: `page_size` in, `next_page_token` out, an iterator of items.",
+      "covered": false,
+      "fixtures": [
+        "mock_status_list_is_not_paged",
+        "mock_status_list_operations",
+        "mock_status_notifications"
+      ],
+      "note": "**No paged RPC exists on any server**, so there is nothing to record. `mock_status_list_is_not_paged` is the recording that pins this fact: `ListApprovals` declares both fields and honours neither, so there is still no end-to-end page to page. R6 is pinned against a stub; the end-to-end half arrives with API1 Task 2. Marked `required: false` precisely so no language is blocked on it."
+    },
+    "R7": {
+      "title": "Streams: an async iterable that resumes from a cursor without loss.",
+      "covered": true,
+      "fixtures": [
+        "live_watch",
+        "mock_state_stream_heartbeat",
+        "mock_state_stream_resume",
+        "mock_state_stream_resume_remove",
+        "mock_state_stream_snapshot_reset"
+      ],
+      "note": null
+    },
+    "R8": {
+      "title": "Errors: the code gives the class, the `reason` is the branch.",
+      "covered": true,
+      "fixtures": [
+        "instance_who_am_i_grpc_web",
+        "instance_who_am_i_grpc_web_json",
+        "instance_who_am_i_json",
+        "instance_who_am_i_proto",
+        "live_query_grpc_web",
+        "live_query_grpc_web_json",
+        "live_query_json",
+        "live_query_proto",
+        "live_watch",
+        "mock_error_approval_already_decided",
+        "mock_error_approval_expired",
+        "mock_error_approval_stale_revision",
+        "mock_error_encodings",
+        "mock_error_not_implemented",
+        "mock_error_reason_required",
+        "mock_error_requester_cannot_approve",
+        "mock_error_step_up_required",
+        "mock_status_not_found_without_reason",
+        "mock_status_unauthenticated"
+      ],
+      "note": null
+    },
+    "R9": {
+      "title": "Version reporting: `PROTO_REV` beside the server's `api_versions`.",
+      "covered": true,
+      "fixtures": [
+        "instance_get_instance_grpc_web",
+        "instance_get_instance_grpc_web_json",
+        "instance_get_instance_json",
+        "instance_get_instance_proto",
+        "mock_status_get_instance"
+      ],
+      "note": null
+    },
+    "R10": {
+      "title": "The browser is a first-class target: gRPC-Web with no Node built-in.",
+      "covered": true,
+      "fixtures": [
+        "mock_error_encodings"
+      ],
+      "note": null
+    }
+  },
+  "required": [
+    "instance_get_instance_grpc_web",
+    "instance_get_instance_grpc_web_json",
+    "instance_get_instance_json",
+    "instance_get_instance_proto",
+    "instance_who_am_i_grpc_web",
+    "instance_who_am_i_grpc_web_json",
+    "instance_who_am_i_json",
+    "instance_who_am_i_proto",
+    "live_query_grpc_web",
+    "live_query_grpc_web_json",
+    "live_query_json",
+    "live_query_proto",
+    "live_watch",
+    "mock_error_approval_already_decided",
+    "mock_error_approval_expired",
+    "mock_error_approval_stale_revision",
+    "mock_error_encodings",
+    "mock_error_not_implemented",
+    "mock_error_reason_required",
+    "mock_error_requester_cannot_approve",
+    "mock_error_step_up_required",
+    "mock_state_idempotent_decide",
+    "mock_state_stream_heartbeat",
+    "mock_state_stream_resume",
+    "mock_state_stream_resume_remove",
+    "mock_state_stream_snapshot_reset",
+    "mock_status_get_instance",
+    "mock_status_unauthenticated"
+  ],
+  "byClause": {
+    "R5": [
+      "instance_get_instance_grpc_web",
+      "instance_get_instance_grpc_web_json",
+      "instance_get_instance_json",
+      "instance_get_instance_proto",
+      "live_query_grpc_web",
+      "live_query_grpc_web_json",
+      "live_query_json",
+      "live_query_proto",
+      "live_watch"
+    ],
+    "R9": [
+      "instance_get_instance_grpc_web",
+      "instance_get_instance_grpc_web_json",
+      "instance_get_instance_json",
+      "instance_get_instance_proto",
+      "mock_status_get_instance"
+    ],
+    "R8": [
+      "instance_who_am_i_grpc_web",
+      "instance_who_am_i_grpc_web_json",
+      "instance_who_am_i_json",
+      "instance_who_am_i_proto",
+      "live_query_grpc_web",
+      "live_query_grpc_web_json",
+      "live_query_json",
+      "live_query_proto",
+      "live_watch",
+      "mock_error_approval_already_decided",
+      "mock_error_approval_expired",
+      "mock_error_approval_stale_revision",
+      "mock_error_encodings",
+      "mock_error_not_implemented",
+      "mock_error_reason_required",
+      "mock_error_requester_cannot_approve",
+      "mock_error_step_up_required",
+      "mock_status_unauthenticated"
+    ],
+    "R7": [
+      "live_watch",
+      "mock_state_stream_heartbeat",
+      "mock_state_stream_resume",
+      "mock_state_stream_resume_remove",
+      "mock_state_stream_snapshot_reset"
+    ],
+    "R10": [
+      "mock_error_encodings"
+    ],
+    "R1": [
+      "mock_error_step_up_required",
+      "mock_status_unauthenticated"
+    ],
+    "R3": [
+      "mock_state_idempotent_decide"
+    ],
+    "R6": [
+      "mock_status_list_is_not_paged",
+      "mock_status_list_operations",
+      "mock_status_notifications"
+    ]
+  },
+  "fixtures": [
+    {
+      "name": "instance_get_instance_grpc_web",
+      "kind": "unary",
+      "server": "loams dev",
+      "file": "recorded/instance_get_instance_grpc_web.json",
+      "required": true,
+      "transport": "grpc-web",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R9"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "response.bodyBase64"
+      ],
+      "about": "A successful unary call, no auth: what this instance is. This is the case a client makes before anything else, on a cold start. (gRPC-Web, the framing a browser sends. One length-prefixed frame: flag 0 and a zero-length message.)"
+    },
+    {
+      "name": "instance_get_instance_grpc_web_json",
+      "kind": "unary",
+      "server": "loams dev",
+      "file": "recorded/instance_get_instance_grpc_web_json.json",
+      "required": true,
+      "transport": "grpc-web",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R9"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "response.bodyBase64"
+      ],
+      "about": "A successful unary call, no auth: what this instance is. This is the case a client makes before anything else, on a cold start. (gRPC-Web carrying the proto3 JSON mapping, which a browser SDK can ask for.)"
+    },
+    {
+      "name": "instance_get_instance_json",
+      "kind": "unary",
+      "server": "loams dev",
+      "file": "recorded/instance_get_instance_json.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R9"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "body.instanceId"
+      ],
+      "about": "A successful unary call, no auth: what this instance is. This is the case a client makes before anything else, on a cold start. (The proto3 JSON mapping, which is what `curl` sends (design §44 §4).)"
+    },
+    {
+      "name": "instance_get_instance_proto",
+      "kind": "unary",
+      "server": "loams dev",
+      "file": "recorded/instance_get_instance_proto.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R9"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "response.bodyBase64"
+      ],
+      "about": "A successful unary call, no auth: what this instance is. This is the case a client makes before anything else, on a cold start. (The binary encoding, which is what an SDK sends by default.)"
+    },
+    {
+      "name": "instance_who_am_i_grpc_web",
+      "kind": "error",
+      "server": "loams dev",
+      "file": "recorded/instance_who_am_i_grpc_web.json",
+      "required": true,
+      "transport": "grpc-web",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [],
+      "about": "A structured-reason error: `unimplemented` carrying an ErrorInfo whose reason is `not_implemented`, because this build has no authentication yet. An SDK branches on the reason, never on the message. (gRPC-Web, the framing a browser sends. One length-prefixed frame: flag 0 and a zero-length message.)"
+    },
+    {
+      "name": "instance_who_am_i_grpc_web_json",
+      "kind": "error",
+      "server": "loams dev",
+      "file": "recorded/instance_who_am_i_grpc_web_json.json",
+      "required": true,
+      "transport": "grpc-web",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [],
+      "about": "A structured-reason error: `unimplemented` carrying an ErrorInfo whose reason is `not_implemented`, because this build has no authentication yet. An SDK branches on the reason, never on the message. (gRPC-Web carrying the proto3 JSON mapping, which a browser SDK can ask for.)"
+    },
+    {
+      "name": "instance_who_am_i_json",
+      "kind": "error",
+      "server": "loams dev",
+      "file": "recorded/instance_who_am_i_json.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [],
+      "about": "A structured-reason error: `unimplemented` carrying an ErrorInfo whose reason is `not_implemented`, because this build has no authentication yet. An SDK branches on the reason, never on the message. (The proto3 JSON mapping, which is what `curl` sends (design §44 §4).)"
+    },
+    {
+      "name": "instance_who_am_i_proto",
+      "kind": "error",
+      "server": "loams dev",
+      "file": "recorded/instance_who_am_i_proto.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [],
+      "about": "A structured-reason error: `unimplemented` carrying an ErrorInfo whose reason is `not_implemented`, because this build has no authentication yet. An SDK branches on the reason, never on the message. (The binary encoding, which is what an SDK sends by default.)"
+    },
+    {
+      "name": "live_query_grpc_web",
+      "kind": "error",
+      "server": "loams dev",
+      "file": "recorded/live_query_grpc_web.json",
+      "required": true,
+      "transport": "grpc-web",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [],
+      "about": "The unavailable-service path on a unary RPC: `loams.live.v1` is a `full`-variant engine, so every one of its RPCs answers `unimplemented` with reason `feature_not_in_variant` and the variant in `metadata`. (gRPC-Web, the framing a browser sends. One length-prefixed frame: flag 0 and a zero-length message.)"
+    },
+    {
+      "name": "live_query_grpc_web_json",
+      "kind": "error",
+      "server": "loams dev",
+      "file": "recorded/live_query_grpc_web_json.json",
+      "required": true,
+      "transport": "grpc-web",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [],
+      "about": "The unavailable-service path on a unary RPC: `loams.live.v1` is a `full`-variant engine, so every one of its RPCs answers `unimplemented` with reason `feature_not_in_variant` and the variant in `metadata`. (gRPC-Web carrying the proto3 JSON mapping, which a browser SDK can ask for.)"
+    },
+    {
+      "name": "live_query_json",
+      "kind": "error",
+      "server": "loams dev",
+      "file": "recorded/live_query_json.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [],
+      "about": "The unavailable-service path on a unary RPC: `loams.live.v1` is a `full`-variant engine, so every one of its RPCs answers `unimplemented` with reason `feature_not_in_variant` and the variant in `metadata`. (The proto3 JSON mapping, which is what `curl` sends (design §44 §4).)"
+    },
+    {
+      "name": "live_query_proto",
+      "kind": "error",
+      "server": "loams dev",
+      "file": "recorded/live_query_proto.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [],
+      "about": "The unavailable-service path on a unary RPC: `loams.live.v1` is a `full`-variant engine, so every one of its RPCs answers `unimplemented` with reason `feature_not_in_variant` and the variant in `metadata`. (The binary encoding, which is what an SDK sends by default.)"
+    },
+    {
+      "name": "live_watch",
+      "kind": "error",
+      "server": "loams dev",
+      "file": "recorded/live_watch.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5",
+        "R7",
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [],
+      "about": "The unavailable-service path on a server stream: the refusal arrives inside the Connect streaming envelope, not as an HTTP status. An SDK that reports it has to read the envelope."
+    },
+    {
+      "name": "mock_error_approval_already_decided",
+      "kind": "error",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_error_approval_already_decided.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": "approval_already_decided",
+      "steps": 2,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "The double-submit refusal. It is recorded as its own scenario rather than as a second step of `mock_state_idempotent_decide`, because it is the answer to a **different** request (no idempotency key) and a client must be able to tell \"you already did this\" from \"here is the same result again\"."
+    },
+    {
+      "name": "mock_error_approval_expired",
+      "kind": "error",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_error_approval_expired.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": "approval_expired",
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "A `failed_precondition` whose condition is **time**, not state: the approval was still pending and is no longer. The seed carries one expired approval precisely so this is reachable without waiting."
+    },
+    {
+      "name": "mock_error_approval_stale_revision",
+      "kind": "error",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_error_approval_stale_revision.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": "approval_stale_revision",
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "Optimistic concurrency as a *reason*: the caller decided revision 9, the server is on revision 1. An SDK surfaces this as \"reload it\" rather than as a generic precondition failure, because the caller can act on it."
+    },
+    {
+      "name": "mock_error_encodings",
+      "kind": "error",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_error_encodings.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8",
+        "R10"
+      ],
+      "reason": "not_implemented",
+      "steps": 4,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "The **same** refusal in every encoding, which is what proves the SDK has to read the body and not the status. Connect answers 501 with a JSON error; the gRPC-Web encodings answer 200 and put `grpc-status: 12` in the trailers. A client that reads only status codes passes the first and silently succeeds on the others."
+    },
+    {
+      "name": "mock_error_not_implemented",
+      "kind": "error",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_error_not_implemented.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": "not_implemented",
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "A stub handler that has not landed: `unimplemented` with reason `not_implemented`. This is the reason R8 says is distinct from `feature_not_in_variant` — one means \"never built\", the other \"not in this build variant\", and an SDK that conflates them cannot tell whether to offer a feature or report the binary as wrong."
+    },
+    {
+      "name": "mock_error_reason_required",
+      "kind": "error",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_error_reason_required.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": "reason_required",
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "A `invalid_argument` refusal that is a **policy** rule, not a parse failure: rejecting an approval, or approving a destructive one, needs a reason. The message is for a person; the branch is `reason_required`."
+    },
+    {
+      "name": "mock_error_requester_cannot_approve",
+      "kind": "error",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_error_requester_cannot_approve.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": "requester_cannot_approve",
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "A `permission_denied` that names the *shape* of the refusal: an agent requested the operation, so the human who asked the agent cannot be the one to approve it. Two actors, one credential, and the answer is about the actor chain rather than the role."
+    },
+    {
+      "name": "mock_error_step_up_required",
+      "kind": "error",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_error_step_up_required.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R1",
+        "R8"
+      ],
+      "reason": "step_up_required",
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "The `token_expired` sibling R1 needs and the reason the registry has for it: an `unauthenticated` on a credential that is *valid but too old* for this decision. An SDK must refresh once and retry (R1); `token_expired` itself no server can produce yet — see the `unproducible` list in `error.json`."
+    },
+    {
+      "name": "mock_state_idempotent_decide",
+      "kind": "state",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_state_idempotent_decide.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R3"
+      ],
+      "reason": null,
+      "steps": 2,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "R3, recorded rather than argued: **the same** `DecideApproval` sent twice with the same `idempotency_key`, against a mock whose approval state really moved between the two calls. Both answers are identical bytes and the approval is at revision 2, so the second call did not write. A client that regenerates the key per attempt (or drops it on the retry) turns this into a second write — which is the failure the field exists to prevent."
+    },
+    {
+      "name": "mock_state_stream_heartbeat",
+      "kind": "state",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_state_stream_heartbeat.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R7"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at",
+        "response.bodyBase64",
+        "frames.payload"
+      ],
+      "about": "The heartbeat, recorded: an empty frame the server sends on a timer so proxies do not idle the connection out (§37 §8.3). A client must treat it as liveness and **not** as data — a stream that yields heartbeats to a UI is a stream that renders empty rows every fifteen seconds."
+    },
+    {
+      "name": "mock_state_stream_resume",
+      "kind": "state",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_state_stream_resume.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R7"
+      ],
+      "reason": null,
+      "steps": 3,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at",
+        "response.bodyBase64",
+        "frames.payload"
+      ],
+      "about": "R7 end to end, which `loams dev` cannot do because `LiveService/Watch` is `feature_not_in_variant` in every variant. Three steps: open the stream and take the snapshot and its cursor; **change something while the client is disconnected**; resume from that cursor. The resumed stream sends the change, not the snapshot, which is exactly \"no loss and no re-yield\": a client that re-opened from scratch would re-send the snapshot, and one that resumed from nothing would miss the decision."
+    },
+    {
+      "name": "mock_state_stream_resume_remove",
+      "kind": "state",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_state_stream_resume_remove.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R7"
+      ],
+      "reason": null,
+      "steps": 3,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at",
+        "response.bodyBase64",
+        "frames.payload"
+      ],
+      "about": "The same resume, watched with the **default** filter (pending only), and it is a different frame. Deciding the approval takes it *out of* the filter, so the resumed stream sends `remove`, not `upsert`. An SDK that handles only `upsert` leaves the decided approval on screen forever, which is the \"quietly stale sync UI\" R7 calls worse than an error."
+    },
+    {
+      "name": "mock_state_stream_snapshot_reset",
+      "kind": "state",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_state_stream_snapshot_reset.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R7"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at",
+        "response.bodyBase64",
+        "frames.payload"
+      ],
+      "about": "The other half of R7: a cursor the server no longer has. The registry says explicitly that `cursor_expired` is **not** a reason — a watch whose cursor is too old resets with a fresh snapshot and `snapshot_reset = true` rather than failing. An SDK that treats this as an error leaves a user watching an empty stream forever."
+    },
+    {
+      "name": "mock_status_get_instance",
+      "kind": "status",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_status_get_instance.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R9"
+      ],
+      "reason": null,
+      "steps": 2,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at",
+        "response.bodyBase64"
+      ],
+      "about": "`GetInstance` with **no credential at all**, which is the R9 contract: the version check must work before a caller has a token, and the SDK reports `api_versions` beside its own `PROTO_REV`. Note what is absent: there is no `services[]` here, so the R5 catalogue half is still unexercised outside `loams dev` (D600 has not landed in the mock)."
+    },
+    {
+      "name": "mock_status_list_devices",
+      "kind": "status",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_status_list_devices.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R5"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "The paired phone in the seed. `ListDevices` is marked `NO_SIDE_EFFECTS` in the proto, so it is also the one app RPC an SDK should issue as a cacheable GET (design §44 §4)."
+    },
+    {
+      "name": "mock_status_list_is_not_paged",
+      "kind": "status",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_status_list_is_not_paged.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R6"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "Recorded to pin a **fact about the corpus**: `ListApprovals` declares `page_size` and answers `next_page_token` in its response message, but the mock honours neither — it returns every matching approval and no token, whatever `page_size` says. So there is still **no paged RPC anywhere** and R6 remains pinned against a stub. This fixture is what turns that claim from an assertion into a recording: when API1 Task 2 lands a real `ListCollections`, this case starts returning a token and the fixture changes."
+    },
+    {
+      "name": "mock_status_list_operations",
+      "kind": "status",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_status_list_operations.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R6"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "The running import in the seed, which is also the `WatchOperations` subject."
+    },
+    {
+      "name": "mock_status_not_found_without_reason",
+      "kind": "status",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_status_not_found_without_reason.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "Recorded because it is a **gap in the server**, and a fixture is the cheapest way to make that visible: `GetApproval` on an unknown id answers `404` with `{\"code\":\"not_found\"}` and **no `ErrorInfo` detail**, so there is no `reason` even though `not_found` is in the registry. An SDK mapping `not_found` therefore has to fall back to the Connect code, which is exactly the fallback R8 allows — but the reason is not there. Kept at `required: false`: the missing detail is the server's to fix, and a language must not be blocked on it."
+    },
+    {
+      "name": "mock_status_notifications",
+      "kind": "status",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_status_notifications.json",
+      "required": false,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R6"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "The one inbox item the seed carries, recorded so a suite can assert on a real `CloudEvent` `type` (`io.loams.dev.…`) without inventing one."
+    },
+    {
+      "name": "mock_status_unauthenticated",
+      "kind": "status",
+      "server": "loams-apps-mock",
+      "file": "recorded/apps-mock/mock_status_unauthenticated.json",
+      "required": true,
+      "transport": "connect",
+      "grpcOnly": false,
+      "pinnedBy": [
+        "R1",
+        "R8"
+      ],
+      "reason": null,
+      "steps": 1,
+      "volatile": [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "decidedAt",
+        "startedAt",
+        "finishedAt",
+        "lastSeenAt",
+        "at",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "decided_at",
+        "started_at",
+        "finished_at",
+        "last_seen_at"
+      ],
+      "about": "R1 and R8's third case: a failure from **below the API** — no credential at all. The mock answers `unauthenticated` with **no** `ErrorInfo` detail, so there is no `reason` to branch on. An SDK must not invent one: this is the shape R8 says is distinct from a mapped reason, and conflating it with `token_expired` would make a refresh loop on a request that has no credential to refresh."
+    }
+  ]
+}

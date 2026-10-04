@@ -1,4 +1,4 @@
-//! The docked sidebar browser (design §37 §18, plan [SF1](../../docs/plans/2026-10-02-sf1-collab-ui-plugins.md), decision **D620**).
+//! The docked sidebar browser (design §37 §18, plan [SF1](../../docs/plans/2026-10-02-sf1-collab-ui-plugins.md), decision **D627**).
 //!
 //! # What this is
 //!

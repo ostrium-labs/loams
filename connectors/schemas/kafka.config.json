@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/kafka.config.json",
+  "title": "Apache Kafka connector instance config (loams.flow/v1)",
+  "description": "One Kafka connector instance's settings: the brokers and topics it reads or writes, the consumer group, and the SASL/TLS material. Covers both directions of the ★ Kafka connector (design §33 §8 row 1; CN1 plan Task 6). Secrets are named, never stored here: `sasl.password` and `tls.key_pem` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list (CN1 Task 1's semantic rule).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["brokers", "topics", "group_id_prefix"],
+  "properties": {
+    "brokers": {
+      "description": "Bootstrap brokers as host:port, comma separated. Required: there is no default cluster.",
+      "type": "string",
+      "minLength": 1
+    },
+    "topics": {
+      "description": "Topics this instance reads or writes. A route narrows the set further (§33 D355, `source` in a route).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "group_id_prefix": {
+      "description": "Prefix of the consumer group; CN1 Task 6 names the group `loams-<ns>-<instance>`, so this is normally the namespace and instance name the runtime already knows.",
+      "type": "string",
+      "minLength": 1
+    },
+    "group_id": {
+      "description": "Full consumer group id, when an instance overrides the runtime's `loams-<ns>-<instance>` default (CN1 Task 6).",
+      "type": "string",
+      "minLength": 1
+    },
+    "enable_idempotence": {
+      "description": "The idempotent producer (CN1 Task 6: enable.idempotence=true with acks=all). Sink only; it may not be turned off, which is why the manifest declares sink.idempotent: true.",
+      "type": "boolean",
+      "default": true
+    },
+    "acks": {
+      "description": "The producer's acks setting. all is required with the idempotent producer.",
+      "type": "string",
+      "enum": ["all", "-1", "0", "1"],
+      "default": "all"
+    },
+    "max_poll_records": {
+      "description": "Records per poll; the native source's batch size before the Fabric acknowledges (Ruling 4).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    },
+    "auto_offset_reset": {
+      "description": "Where a group with no committed offset starts. earliest replays the topic; CN1 defaults to latest so a new instance does not ingest history.",
+      "type": "string",
+      "enum": ["earliest", "latest", "none"],
+      "default": "latest"
+    },
+    "security_protocol": {
+      "description": "The transport security (CN1 Task 6: SASL PLAIN/SCRAM over TLS, mTLS, MSK IAM).",
+      "type": "string",
+      "enum": ["plaintext", "ssl", "sasl_plaintext", "sasl_ssl"],
+      "default": "ssl"
+    },
+    "sasl": {
+      "description": "SASL material. Present only when security_protocol starts with sasl_.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mechanism": {
+          "description": "The SASL mechanism (the manifest's auth slugs sasl-plain, sasl-scram-256, sasl-scram-512, aws-msk-iam).",
+          "type": "string",
+          "enum": ["plain", "scram-sha-256", "scram-sha-512", "OAUTHBEARER"],
+          "default": "scram-sha-512"
+        },
+        "username": {
+          "description": "The SASL username.",
+          "type": "string",
+          "minLength": 1
+        },
+        "password": {
+          "description": "The SASL password. Resolved through the secret store (D189); never stored in the instance (CN1 Global Constraints).",
+          "type": "string",
+          "minLength": 1,
+          "writeOnly": true
+        }
+      },
+      "required": ["username", "password"]
+    },
+    "tls": {
+      "description": "TLS material. Present only when security_protocol ends with _ssl or is ssl.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Whether TLS is on at all.",
+          "type": "boolean",
+          "default": true
+        },
+        "ca_pem": {
+          "description": "The CA bundle that verifies the broker, as PEM.",
+          "type": "string"
+        },
+        "key_pem": {
+          "description": "The client private key for mTLS, as PEM. Resolved through the secret store (D189).",
+          "type": "string",
+          "writeOnly": true
+        },
+        "verify_full": {
+          "description": "Whether the broker certificate's hostname is verified (CN1 Task 6 uses verify-full for the analogous SQL drivers).",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "schema_registry": {
+      "description": "Confluent registry, for the Avro wire format at the Kafka boundary (D356). Optional because the manifest declares schema.registry: optional (§33 §4).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": { "description": "The registry base URL.", "type": "string", "minLength": 1 },
+        "subject_prefix": {
+          "description": "Subject prefix for this instance's topics.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

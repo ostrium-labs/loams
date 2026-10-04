@@ -5,7 +5,7 @@
 //! SF1 Task 0's ruling E1 blocked the sidebar browser partly because the
 //! per-platform webview's website-data store was ephemeral
 //! (`WKWebsiteDataStore::nonPersistentDataStore` on macOS,
-//! `webkit_web_context_new_ephemeral()` on the Linux helper). D620 supersedes
+//! `webkit_web_context_new_ephemeral()` on the Linux helper). D627 supersedes
 //! E1 by replacing the webview, and the replacement has a real on-disk store.
 //! This module is the part of that we own: it decides *where* that store
 //! lives, and it guarantees two properties the feature depends on.

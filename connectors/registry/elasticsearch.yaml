@@ -1,0 +1,70 @@
+# Elasticsearch — ★ connector 11 of §33 §8; CN1 plan Task 10.
+# Runtime: Iggy's connectors runtime (§33 §5, D354).  §33 §8 row 11 ships both
+# `elasticsearch_sink` and `elasticsearch_source`; this manifest's runtime.ref
+# is the sink plugin because that is the runtime value fixed for the ★ row, and
+# the source's plugin is named in the comment below.  §33 §4 rule 2: the one
+# manifest describes the runtime Loams ships, and Loams renders both plugin
+# configs from the one instance config (CN1 Task 10).
+apiVersion: loams.flow/v1
+kind: Connector
+id: elasticsearch
+name: Elasticsearch
+specVersion: 1.0.0
+category: search
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: iggy
+  ref: elasticsearch_sink
+  version: "iggy connectors runtime (iggy_connector_sdk 0.5.0)"
+  # The source direction is Iggy's `elasticsearch_source`: same runtime, same
+  # instance config; §33 §8 row 11 names both plugins.
+licence:
+  component: Apache-2.0
+  dependencies:
+    iggy-connectors: Apache-2.0    # the runtime the plugin runs in (§33 §5)
+capabilities:
+  source:
+    streaming: false              # Iggy's source reads by scroll or point-in-time in batches
+    batch: true
+    cdc: false
+    webhook: false
+    resumable: true
+    position: the last scroll or point-in-time id
+    # CN1 Task 10's es_source_scroll_resumes: the source resumes from the scroll
+    # or PIT cursor it committed.
+  sink:
+    streaming: true               # the bulk index API is a continuous write
+    batch: true
+    transactional: false          # Elasticsearch has no multi-document transaction
+    upsert: true                  # an index with an explicit _id is an upsert, and
+                                  #   `key` is declared in the config schema (CN1 Task 1's rule)
+    delete: true                  # a delete by _id applies a loamsop = d change
+    idempotent: true              # indexing the same document id twice leaves one document
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_key               # per document id, which is the declared key
+  formats: [cloudevents-binary, cloudevents-structured, json]
+  schema: { registry: none, evolution: backward }
+    # Elasticsearch maps its own schema and accepts additive fields, which is
+    # backward evolution; no registry is involved (§33 D356).
+  bulk: { arrow: false, max_batch_rows: 65536 }
+    # The plugin's bulk API takes NDJSON documents, so no Arrow batches are
+    # declared here; the Arrow path ends at a `map` step or an ADBC source (§33 §3).
+  backpressure: pull              # an Iggy plugin commits its offsets after the target acks
+auth: [basic, key]                # §33 Appendix A.3: basic, key
+config:
+  $ref: schemas/elasticsearch.config.json
+secrets: [basic.password, api_key]
+envelope:
+  emits: io.loams.dev.flow.elasticsearch.document.v1
+    # One CloudEvent per document read by Iggy's elasticsearch_source, so the
+    # unit is a document rather than a row batch (D355). CN1 Ruling 2's event
+    # list predates this connector's source and does not name it; the type
+    # follows Ruling 2's pattern, io.loams.dev.flow.<connector-id>.<event>.v1
+    # (CN1 "Rulings made during execution", row 2).
+  consumes: "*"
+  passthrough: false
+limits: { max_record_bytes: 16777216 }
+conformance: [contract, roundtrip]
+docs: docs/guides/connectors/elasticsearch.md
