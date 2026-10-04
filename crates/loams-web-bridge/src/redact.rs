@@ -136,8 +136,13 @@ mod tests {
     #[test]
     fn an_unregistered_bearer_header_is_still_scrubbed() {
         let out = scrub("Authorization: Bearer abcdef0123456789abcdef");
-        assert!(!out.contains("abcdef0123456789abcdef"), "{out}");
-        assert!(out.contains(REDACTED), "{out}");
+        // A failing scrub is exactly when `out` would still hold the secret, so the
+        // message must not interpolate it.
+        assert!(
+            !out.contains("abcdef0123456789abcdef"),
+            "an unregistered bearer header is still scrubbed"
+        );
+        assert!(out.contains(REDACTED), "the bearer token is replaced");
     }
 
     #[test]
@@ -148,8 +153,11 @@ mod tests {
             "client_secret: abcdefghijklmnop",
         ] {
             let out = scrub(input);
-            assert!(!out.contains("hunter2"), "{out}");
-            assert!(out.contains(REDACTED), "{out}");
+            assert!(
+                !out.contains("hunter2"),
+                "a credential-shaped value is scrubbed"
+            );
+            assert!(out.contains(REDACTED), "the credential is replaced");
         }
     }
 

@@ -153,8 +153,17 @@ mod tests {
     #[test]
     fn kitesurf_selects_the_engine_and_never_sends_keep_alive() {
         let endpoint = websocket_endpoint("acct", Engine::Kitesurf, None);
-        assert!(endpoint.ends_with("?browser=kitesurf"), "{endpoint}");
-        assert!(!endpoint.contains("keep_alive"), "{endpoint}");
+        // Static messages: `assert!` formats its message only on failure, so
+        // interpolating a URL built from the account id would put it in the CI
+        // log. Same rule as the SecretValue tests below.
+        assert!(
+            endpoint.ends_with("?browser=kitesurf"),
+            "kitesurf selects the engine"
+        );
+        assert!(
+            !endpoint.contains("keep_alive"),
+            "kitesurf never sends keep_alive"
+        );
         assert!(
             check_endpoint(Engine::Kitesurf, Some(Duration::from_secs(60))).is_err(),
             "keep_alive with kitesurf is refused"
@@ -170,8 +179,14 @@ mod tests {
         };
         let headers = headers(&token, Some(&guardrails));
         let rendered = format!("{headers:?}");
-        assert!(!rendered.contains("0123456789abcdef"), "{rendered}");
-        assert!(rendered.contains("cf-brapi-guardrails"), "{rendered}");
+        assert!(
+            !rendered.contains("0123456789abcdef"),
+            "the handshake headers must not carry the token"
+        );
+        assert!(
+            rendered.contains("cf-brapi-guardrails"),
+            "the handshake headers must carry the guardrails header"
+        );
     }
 
     #[test]
