@@ -14,7 +14,7 @@ The owner ruled on 2026-10-03, and it is not the split issue #253 assumed:
 
 | Platform | State | What that means for a user |
 |---|---|---|
-| **Linux** | **Signed**, through SignPath, once the handoff is done. Until then: unsigned, and every run says so. | Nothing changes for a Linux user. Linux package managers verify their own repository signatures; a detached signature on the Loams binary is provenance, not install trust. |
+| **Linux** | **Signed**, once the handoff is done — but **not all by SignPath**, because SignPath's free programme can only sign the `.rpm`. The `.deb` and the `.pkg.tar.zst` are signed at build time with the project GPG key; the `.rpm` goes through SignPath. See [below](#what-signpaths-free-programme-can-and-cannot-sign) and [`docs/release/packaging.md`](packaging.md). Until the handoff is done: unsigned, and every run says so. | Nothing changes for a Linux user. Linux package managers verify their own repository signatures; a detached signature on the Loams binary is provenance, not install trust. |
 | **Windows** | **Unsigned**, by decision. Build it yourself: [`docs/build-from-source/windows.md`](../build-from-source/windows.md). | SmartScreen shows *Windows protected your PC* on first run because the publisher is unknown. It is an unknown-publisher warning, not a detected-malware warning, and it clears per-file once the user unblocks it. |
 | **macOS** | **Unsigned**, by decision. Build it yourself: [`docs/build-from-source/macos.md`](../build-from-source/macos.md). | Gatekeeper blocks a quarantined download — either *the developer cannot be verified* or *Apple cannot check it for malicious software*, depending on how the file arrived. Right-click → Open, or `xattr -dr com.apple.quarantine`, runs it. There is no Developer ID, no notarisation ticket and no `spctl` acceptance. |
 
@@ -74,8 +74,10 @@ requires that *"All signed binaries must have metadata attributes set and
 enforced"* — product name set to the project's name, product version identical
 across a build. SignPath's metadata-restriction attributes exist for `<pe-file>`,
 `<msi-file>` and `<xml-file>` only, so for an RPM that obligation lands on the
-packaging's own `Name`/`Version`/`Summary`. It is part of the RPM work and is
-recorded as [Q618](#decision-log-rows).
+packaging's own `Name`/`Version`/`Summary`. `release/nfpm.yaml` sets `name:
+loams`, the workspace `version` and `vendor: ostrium-labs`, so the obligation is
+met and can be checked; it was recorded as [Q618](#decision-log-rows) before the
+RPM existed.
 
 `scripts/ci/signpath-artifacts.py` enforces the platform scope mechanically. It
 classifies every file before a request is built and refuses anything that is not
@@ -289,13 +291,12 @@ is five `gh` commands that any token with repository write access can run.
 Two related gaps worth knowing about, both verified 2026-10-03 and neither in
 this change's scope:
 
-- **There is no RPM packaging in this repository**, and no binary release
-  pipeline at all (D292's cargo-dist pipeline is still planned). The Foundation
-  also requires that a project *"must already be released in the form that
-  should be signed"*, so this is the binding constraint: the Linux signing path
-  has nothing to sign yet. It signs an `.rpm` once one exists, and today it warns
-  and stops. Building the RPM is the next piece of work, and it belongs to the
-  release pipeline rather than to this page ([Q618](#decision-log-rows)).
+- **There was no RPM packaging in this repository, and no binary release pipeline
+  at all** (D292's cargo-dist pipeline is still planned), which meant the Linux
+  signing path had nothing to sign. **That is no longer true**: `.deb`, `.rpm` and
+  `.pkg.tar.zst` packages are now built by `release-package.yml` — see
+  [`docs/release/packaging.md`](packaging.md) — so the `sign` job's requirement
+  that an `.rpm` be in the set (D625) can now be met.
 
 ## Decision-log rows
 
@@ -308,9 +309,12 @@ In [`docs/design/13-decision-log.md`](../design/13-decision-log.md):
 | **D622** | The pipeline warns or fails; it never reports success without signing. |
 | **D623** | The platform scope is enforced by a script, and the `sign` job stays on GitHub-hosted runners. |
 | **D624** | Build-from-source documentation replaces #264's Apple-ID signing path. |
+| **D629** | The `.rpm` is built unsigned and signed by SignPath; the `.deb` and the pacman package are signed at build time with the project GPG key. |
+| **D631** | No package repository is published until SignPath has signed the `.rpm`. |
 
 **Q615** (confirm Windows stays unsigned), **Q616** (confirm RPM-only for Linux),
-**Q617** (who fills the Foundation's three signing roles), **Q618** (build the RPM)
+**Q617** (who fills the Foundation's three signing roles), **Q618** (now done:
+the RPM is built — see `docs/release/packaging.md`)
 and **Q619** (create the `crates-io` environment) are the open items that follow.
 
 ## Verifying this page
