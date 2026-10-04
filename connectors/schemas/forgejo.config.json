@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/forgejo.config.json",
+  "title": "Forgejo connector instance config (loams.flow/v1)",
+  "description": "One Forgejo connector instance's settings: the server's API root, the repository the connector reads and writes, and the paging the source uses. Forgejo's REST prefix is `/api/v1`, not `/api/forgejo/v1`. **Two tokens are required and they cannot be the same token**: Forgejo derives a token's scope from the HTTP method a call makes, so a read scope and a write scope cannot live together (D628). `read_token` and `write_token` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list. CN1 Task 15.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["base_url", "owner", "repo", "read_token", "write_token"],
+  "properties": {
+    "base_url": {
+      "description": "The server's base URL, for example https://git.acme.example. The connector appends `/api/v1` itself; do not include it here.",
+      "type": "string",
+      "minLength": 1
+    },
+    "read_token": {
+      "description": "A token holding only `read:*` scopes, used for every GET. Resolved through the secret store (D189); never stored in the instance.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "write_token": {
+      "description": "A **separate** token holding `write:issue` and `write:repository`. It cannot be the read token: Forgejo fixes a token's scopes at mint time and derives the required scope from the HTTP method, so one token cannot serve both directions. Minting it is a provisioning step outside Loams — a configuration naming only `read_token` is refused with a message naming the missing scope. Resolved through the secret store (D189); never stored in the instance.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "owner": {
+      "description": "The repository owner or organisation.",
+      "type": "string",
+      "minLength": 1
+    },
+    "repo": {
+      "description": "The repository name.",
+      "type": "string",
+      "minLength": 1
+    },
+    "page_size": {
+      "description": "The `limit` sent with each page. **Forgejo's maximum is 50 and it silently clamps a larger value with no error and nothing in the response**, so the client caps it too; a page-size bug here would otherwise be invisible.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 50
+    },
+    "issue_state": {
+      "description": "The `state` filter for the issue listing: open, closed or all.",
+      "type": "string",
+      "enum": ["open", "closed", "all"],
+      "default": "open"
+    },
+    "since_cursor_secs": {
+      "description": "How far back the source reads `updated_at` on its first pass when the instance has no stored position. After that the source advances on the maximum `updated_at` it has seen, which is the only pagination-free incremental primitive Forgejo offers.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 86400
+    },
+    "poll_interval_secs": {
+      "description": "How long the source waits between `since` passes. Forgejo publishes no upstream rate limit at all, so the only brake is the connector's own concurrency.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600,
+      "default": 60
+    },
+    "projection": {
+      "description": "The jq or jsonata projection applied to each fetched issue before it becomes a CloudEvent, so a Jira or GitHub payload does not cross the wire whole (D356).",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

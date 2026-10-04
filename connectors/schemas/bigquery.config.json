@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/bigquery.config.json",
+  "title": "BigQuery connector instance config (loams.flow/v1)",
+  "description": "One BigQuery connector instance's settings: the project, the dataset and table, the projecting SELECT the source runs, the ingest target and mode, and the driver path. The driver is native code in the Loams process, so it loads by path from the namespace's allowlist with a SHA-256 check (CN1 Ruling 9, Q349). `password` and `token` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list: `password` is the passphrase protecting the service-account private key, `token` an OAuth2 access token.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "dataset"],
+  "properties": {
+    "project": { "description": "The Google Cloud project id.", "type": "string", "minLength": 1 },
+    "dataset": { "description": "The BigQuery dataset.", "type": "string", "minLength": 1 },
+    "table": { "description": "The table read or written.", "type": "string", "minLength": 1 },
+    "location": { "description": "The dataset's location, for a job's write location.", "type": "string" },
+    "user": { "description": "The identity the service account acts as; the attached service account is used when omitted.", "type": "string" },
+    "password": {
+      "description": "The passphrase protecting the service-account private key, when the key file is encrypted. Resolved through the secret store (D189); the rendered driver options read it from a mounted file.",
+      "type": "string",
+      "writeOnly": true
+    },
+    "token": {
+      "description": "An OAuth2 access token, for workload-identity federation or a token the operator supplies. Resolved through the secret store (D189); the rendered driver options read it from a mounted file.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "auth": {
+      "description": "How the driver authenticates; the manifest's `sa` auth slug covers service-account JSON and workload identity.",
+      "type": "string",
+      "enum": ["service_account", "workload_identity", "oauth_token"],
+      "default": "service_account"
+    },
+    "query": {
+      "description": "A projecting SELECT for the source, when the route does not name one. The précis' warehouse-to-Elasticsearch example projects its ~15 fields here (CN1 Task 11).",
+      "type": "string",
+      "minLength": 1
+    },
+    "partitions": {
+      "description": "Partitions the source splits the read across, using ExecutePartitions where the driver supports it (CN1 Task 11: BigQuery does, verify).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 8
+    },
+    "target_table": {
+      "description": "The sink's bulk-ingest target table (adbc.ingest.target_table, CN1 Task 11).",
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "description": "The sink's ingest mode (CN1 Task 11: bulk_ingest append or create_append; the Storage Write API's default stream plus MERGE is the upsert path under verification).",
+      "type": "string",
+      "enum": ["append", "create_append", "merge"],
+      "default": "append"
+    },
+    "partition_by": {
+      "description": "The declared key the bulk path partitions by (D356).",
+      "type": "string",
+      "minLength": 1
+    },
+    "driver": {
+      "description": "The ADBC driver to load, by its allowlist name from the namespace config (CN1 Ruling 9); only from /opt/loams/adbc/<name>/<version>/ with a SHA-256 check.",
+      "type": "string",
+      "enum": ["bigquery"],
+      "default": "bigquery"
+    },
+    "driver_version": {
+      "description": "The pinned driver build to load out of /opt/loams/adbc/bigquery/<version>/.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

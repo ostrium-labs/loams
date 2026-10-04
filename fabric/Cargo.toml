@@ -1,0 +1,57 @@
+# The `fabric/` workspace: Loams Flow's event fabric and its connectors
+# (design §32 D343, FL1 plan Task 1, CN1 plan Task 1). It is separate from the
+# engine workspace at the repository root: the Fabric links Iggy and Fluss, and
+# `loams-flow` links the connector stack, so neither belongs in the engine's
+# default build.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+authors = ["The Loams Authors"]
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+# The generated `loams.flow.v1` types and, from CN1 Task 3, the connect-rust
+# `FlowService` trait: connect-rust's code generator, as `loams-live-proto` does
+# for `loams.live.v1` (R1 plan Task 7). CN1 Task 0 measured 0.9.1 as the version
+# that builds alongside `prost` 0.14.
+connectrpc-build = "0.9"
+indexmap = "2"
+# The manifest schema validator (CN1 plan Task 1). The plan's Tech Stack says
+# `jsonschema` 0.30+; Task 0 moved it to the current 0.58 line (MIT), whose API
+# is unchanged for `validator_for` and `is_valid`. `default-features = false`
+# drops the HTTP and file resolvers: `connectors/schema/connector.schema.json`
+# has no external `$ref`, so the manifest validator never needs them, and an
+# instance config's `$ref` is a repository path `loams-flow` resolves itself
+# (D352).
+jsonschema = { version = "0.58", default-features = false }
+prost = "0.14"
+semver = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# serde_yaml is unmaintained; `serde_norway` is the maintained fork CN1 Task 0
+# picked (plan "Rulings made during execution" row 1). Apache-2.0/MIT.
+serde_norway = "0.9"
+thiserror = "2"
+tracing = "0.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
+# Mirrors the root workspace's `[profile.dev]` (CN1 plan Task 1: the Fabric
+# workspace keeps the engine's debug settings so a `cargo build` in either tree
+# produces comparable binaries).
+[profile.dev]
+debug = "line-tables-only"

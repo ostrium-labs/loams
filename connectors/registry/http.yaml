@@ -1,0 +1,65 @@
+# HTTP / REST — ★ connector 16 of §33 §8; CN1 plan Task 4.
+# Runtime: native Rust, loams_flow::connectors::http (design §33 §5, D354) —
+# a reqwest sink with retries and Idempotency-Key, and a polling source with
+# cursors.  Iggy's `http_source` is the alternative for the polling source
+# (§33 §8 row 16); §33 §4 rule 2 records it in a comment, not a second entry.
+# category is `protocol`: §33 Appendix A.17 lists ★ HTTP / REST under generic
+# protocols.
+apiVersion: loams.flow/v1
+kind: Connector
+id: http
+name: HTTP / REST
+specVersion: 1.0.0
+category: protocol
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::http
+  version: "reqwest 0.12"
+  # The polling source may instead run through Iggy's `http_source` (§33 §8 row 16).
+licence:
+  component: Apache-2.0
+  dependencies:
+    reqwest: MIT
+capabilities:
+  source:                          # polling source with a cursor
+    streaming: false              # §33 §8 row 16: "source (polling)"
+    batch: true
+    cdc: false
+    webhook: false                # the webhook receiver is the webhooks connector, not this one
+    resumable: true
+    position: the extracted cursor
+    # CN1 Task 4: the cursor is read with a JSON pointer (or a Link header) and
+    # is the source's position; http_poll_follows_cursor_and_resumes proves it.
+  sink:
+    streaming: true               # one POST per event, CloudEvents binary or structured
+    batch: false
+    transactional: false          # the target's transaction is not ours
+    upsert: false
+    delete: false
+    idempotent: true              # §33 §6: the sink sends Idempotency-Key: <ce_id>, so a retry is deduped
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: none                   # each event is its own request; nothing orders them
+  formats: [cloudevents-binary, cloudevents-structured, json]
+  schema: { registry: none, evolution: backward }
+    # A REST API takes JSON; there is no registry and no Loams-side evolution (§33 D356).
+  bulk: { arrow: false, max_batch_rows: 65536 }
+  backpressure: pull              # the sink pulls batches and backs off on 429 / Retry-After
+auth: [none, basic, key, oauth2, jwt, mtls]   # §33 Appendix A.17
+config:
+  $ref: schemas/http.config.json
+secrets: [auth.basic.password, auth.bearer_token, auth.jwt, auth.oauth2.client_secret, tls.key_pem]
+    # The coordinator's list was [auth.basic.password, auth.bearer_token,
+    # tls.key_pem].  This manifest declares the `jwt` and `oauth2` auth slugs
+    # (§33 Appendix A.17), so the config needs somewhere to put a JWT and a
+    # client secret; both are writeOnly secrets and are listed here to keep CN1
+    # Task 1's equality rule exact.  Reviewer decision noted.
+envelope:
+  emits: io.loams.dev.flow.http.response-item.v1
+  consumes: "*"
+  passthrough: false              # §33 §6's pass-through list is kafka, the two Debeziums and webhooks
+limits: { max_record_bytes: 16777216 }
+conformance: [contract, roundtrip, dup-check]
+docs: docs/guides/connectors/http.md

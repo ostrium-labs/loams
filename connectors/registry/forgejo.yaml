@@ -1,0 +1,82 @@
+# Forgejo — Appendix A.18 "Loams's own applications"; CN1 plan Task 15; D628.
+# Runtime: native Rust, loams_flow::connectors::forgejo. Camel 4.22.1 has no
+# Forgejo component — `camel-gitea` is absent at tag camel-4.22.1, and Forgejo is
+# a Gitea fork whose API Camel does not cover — so D354's buy-first has nothing to
+# buy and this is a hand-written connector (design §33 §5).
+# This is an import **target**: a route carries data from GitHub or Jira into it.
+apiVersion: loams.flow/v1
+kind: Connector
+id: forgejo
+name: Forgejo
+specVersion: 1.0.0
+category: saas
+priority: P1
+starred: false              # D628: P1 but not ★; A.18 is not the précis' hot path
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::forgejo
+licence:
+  component: Apache-2.0
+  dependencies: {}
+    # Forgejo's own upstream is MIT, recorded in connectors/licences.toml as a
+    # `kind = "service"` entry. Loams neither ships nor links it; it is reached
+    # over its public REST API at the /api/v1 prefix (D359's carve-out).
+capabilities:
+  source:
+    streaming: true          # A.18: Streaming Y
+    batch: true               # A.18: Batch Y
+    cdc: false
+    webhook: true             # A.18: Webhook Y
+    resumable: true
+    position: the maximum updated_at already emitted, per repository
+      # Forgejo publishes no rate limit at all and offers exactly one
+      # pagination-free incremental primitive: `since` on the issue listing,
+      # filtered to type=issues. The source tracks the maximum updated_at it has
+      # seen per repository and passes it back. `sha` plus `not` on the commit
+      # listing is the same idea for commits.
+  sink:
+    streaming: true
+    batch: true
+    transactional: false      # no transaction spanning an issue write
+    upsert: false             # an issue is created, then commented on; not upserted
+    delete: false
+    idempotent: true          # keyed on the issue's own identity
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_key          # ordering is per repository
+  formats: [cloudevents-binary, cloudevents-structured, json]
+  schema: { registry: none, evolution: none }
+    # Forgejo repositories are Git trees and carry no schema registry contract
+    # for the connector to honour.
+  bulk: { arrow: false, max_batch_rows: 65536 }
+  backpressure: pull
+    # Forgejo sends no 429 and no rate-limit headers, ever. The only brake is the
+    # connector's own in-flight concurrency.
+auth: [key]
+    # A Forgejo access token, sent as `Authorization: token <t>` — not a bearer
+    # and not basic.
+config:
+  $ref: schemas/forgejo.config.json
+secrets: [read_token, write_token]
+    # **Two tokens, and they cannot be one token** (D628). Forgejo fixes a
+    # token's scopes at mint time and derives the required scope from the HTTP
+    # method a call makes, so a `read:*` scope and a `write:issue` scope cannot
+    # coexist in one token. Minting the write token is a provisioning step
+    # outside Loams; a configuration naming only `read_token` is refused with a
+    # message naming the missing scope. This is also why the ostrium-labs/
+    # loams-plugins Forgejo adapter is GET-only by design: a GET can only ever
+    # need a read scope.
+envelope:
+  emits: ""
+    # A target, so it emits nothing; CN1 Task 15 names no event type for A.18.
+  consumes: "*"
+  passthrough: false
+    # A Forgejo webhook body is in Forgejo's own shape, not a CloudEvent.
+limits:
+  max_record_bytes: 1048576
+  batch_rows: 50
+    # Forgejo **silently clamps `limit` to 50** with no error and nothing in the
+    # response, so the client caps it too. A page-size bug here would otherwise be
+    # invisible, which is why the ceiling is 50 and not 1000.
+conformance: [contract, dup-check]
+docs: docs/guides/connectors/forgejo.md

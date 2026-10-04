@@ -1,0 +1,58 @@
+# Redis — ★ connector 20 of §33 §8; CN1 plan Task 13.
+# Runtime: native Rust, loams_flow::connectors::redis, the `redis` crate with
+# consumer groups on Streams (design §33 §5, D354).
+# category is `nosql`: §33 Appendix A.3 puts ★ Redis under NoSQL, search, vector
+# and graph.  (★ Redis Streams is the A.1 row for the same system; the ★ row of
+# §33 §8 is A.3's plain "Redis", whose auth cell is basic, mtls — the one this
+# manifest follows.)
+apiVersion: loams.flow/v1
+kind: Connector
+id: redis
+name: Redis
+specVersion: 1.0.0
+category: nosql
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::redis
+  version: "redis 1.7"
+licence:
+  component: Apache-2.0
+  dependencies:
+    redis: BSD-3-Clause           # the crate; CN1 Tech Stack
+capabilities:
+  source:                          # Streams with XREADGROUP in group loams-<instance>
+    streaming: true
+    batch: true                   # a read returns a block of entries
+    cdc: false
+    webhook: false
+    resumable: true
+    position: the stream consumer-group position
+    # CN1 Task 13: XACK after the Fabric acknowledges the batch (Ruling 4), so
+    # the consumer group's last-delivered-id is the position.
+  sink:                            # XADD, or SET/HSET by key template, or PUBLISH
+    streaming: true
+    batch: true
+    transactional: false          # neither XADD nor SET is a transaction here
+    upsert: false                 # a keyed SET is a write, but CN1 declares no upsert route for it
+    delete: false
+    idempotent: true              # SET/HSET by a key derived from ce_id leaves one value
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_key                # a stream's entries keep their id order per key
+  formats: [cloudevents-binary, cloudevents-structured, json]
+  schema: { registry: none, evolution: backward }
+  bulk: { arrow: false, max_batch_rows: 65536 }
+  backpressure: push-with-ack     # XADD's reply and the consumer group's PEL are the acknowledgement
+auth: [basic, mtls]               # §33 Appendix A.3: basic, mtls
+config:
+  $ref: schemas/redis.config.json
+secrets: [password, tls.key_pem]
+envelope:
+  emits: io.loams.dev.flow.redis.stream-entry.v1
+  consumes: "*"
+  passthrough: false
+limits: { max_record_bytes: 16777216 }
+conformance: [contract, kill-restart, dup-check]
+docs: docs/guides/connectors/redis.md

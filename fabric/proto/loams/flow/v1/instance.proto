@@ -1,0 +1,106 @@
+// The connector instance: one namespace's configured, credentialed use of a
+// connector (design §33 D352; CN1 plan Task 3).
+//
+// D352 splits a connector from its instances on purpose: the registry holds the
+// versioned manifest (what the connector *can* do), while an instance is a
+// namespace object holding the endpoints, tables and credentials that make it
+// run, and a route (§32 D337) references instances rather than connectors. This
+// file is therefore the only part of the protobuf form that carries anything
+// namespace-scoped, and the only part that a secret could reach — which is why
+// it holds names, never values (CN1's Global Constraints, "no secret in a
+// manifest, an instance spec, a rendered config, a log line or an error").
+//
+// Buf wiring is not this task's. The root `buf.yaml` declares
+// `modules: - path: proto`, so `fabric/proto` is outside the module today; CN1
+// Task 3's `flow.proto` (which owns `FlowService` and its instance RPCs) and
+// FL1's `.github/workflows/fabric.yml` job are what add this tree to the module.
+// The file is kept lint-clean against the STANDARD rules by inspection until
+// then: PascalCase message names, lower_snake_case fields, UPPER_SNAKE_CASE enum
+// values prefixed with their enum's name, an `_UNSPECIFIED` zero value, no
+// `optional` scalars, and `package loams.flow.v1` matching the directory.
+syntax = "proto3";
+
+package loams.flow.v1;
+
+import "google/protobuf/struct.proto";
+
+// One connector instance in one namespace. Stored in the Fabric's system table
+// `_fabric.flow_objects` (CN1 Task 3), keyed `(namespace, kind, name)`, with the
+// spec serialised as bytes; `version` is the optimistic-concurrency counter
+// that makes `instance_versions_increment` hold.
+message Instance {
+  // The engine namespace that owns the instance (u64, like every namespace in
+  // the Fabric API).
+  uint64 namespace = 1;
+  // The instance's name, unique per namespace and kind.
+  string name = 2;
+  // The `id` of the manifest this instance runs.
+  string connector = 3;
+  // The *major* of the manifest's `specVersion`, pinned at creation (§33 §4
+  // rule 4: routes pinned to the old major keep running until migrated, and
+  // `ListConnectors` shows both). Narrowing a capability bumps this major and
+  // leaves existing instances on their pin.
+  uint64 connector_major = 4;
+  // The instance's settings, validated against the manifest's
+  // `connectors/schemas/<id>.config.json` (D353: the manifest declares its
+  // config schema). `google.protobuf.Struct` because the schema is
+  // user-authored JSON, so no generated message can model it.
+  google.protobuf.Struct config = 5;
+  // Secrets this instance needs, by config field name. The values live in the
+  // namespace's secret store (`SecretStore`, Dapr's secrets building block per
+  // D189) and are resolved only inside the runtime at start (CN1 Task 3).
+  map<string, SecretRef> secrets = 6;
+  Direction direction = 7;
+  // What the instance reads from or writes to in the Fabric: a source produces
+  // into the topic or table it is bound to, a sink consumes from it.
+  FabricBinding fabric = 8;
+  // False for an instance that is created but not started (CN1 Task 3's
+  // `StartInstance`/`StopInstance`).
+  bool enabled = 9;
+  // The instance's revision, incremented on every update; a write with a stale
+  // version is refused rather than silently merged.
+  uint64 version = 10;
+}
+
+// A secret, by name.
+//
+// No secret value ever appears in a manifest, an instance spec, a rendered
+// config, a log line or an error (CN1's Global Constraints). An instance
+// carries the key's name; the value is resolved from the namespace's
+// `SecretStore` at start and, for the rendered Iggy, Camel and Debezium
+// configs, passed as a file path to a file mounted at run time. The rendered
+// configs and captured logs are grepped for the test secrets' values in CN1
+// Task 3's `no_secret_in_rendered_configs_or_logs`.
+message SecretRef {
+  // The secret's name in the namespace's secret store, for example
+  // "sasl.password".
+  string name = 1;
+}
+
+// Which way an instance runs (CN1 Task 3's `Direction`). A connector that
+// declares both a `source` and a `sink` under `capabilities` may be bound in
+// either direction per instance.
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  SOURCE = 1;             // reads the external system, produces into the Fabric
+  SINK = 2;               // consumes from the Fabric, writes the external system
+  BIDIRECTIONAL = 3;      // both, as one instance
+}
+
+// What a source instance writes into or a sink instance reads from (§32 D336's
+// link targets: the `fluss_sink` and `loams_sink` plugins, and the Kafka link).
+message FabricBinding {
+  oneof target {
+    // An Iggy topic, for example "<db>.<schema>.<table>" for a CDC source.
+    string topic = 1;
+    // A Fluss PK table (a current-state table) or Log table (history).
+    string table = 2;
+    // A Loams collection, which an Elasticsearch or vector sink reaches
+    // through its own API.
+    string collection = 3;
+  }
+  // The partition count for a topic or table binding; 0 leaves the target's
+  // default. Ruling 3 partitions Arrow batches by a declared key across these
+  // partitions and writes them with parallel tasks (D356).
+  uint32 partitions = 4;
+}

@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/http.config.json",
+  "title": "HTTP / REST connector instance config (loams.flow/v1)",
+  "description": "One HTTP connector instance's settings: the sink's request template and retries, and the polling source's request template, cursor and items pointers, poll interval and rate limit. One instance may declare both directions; a route uses the one it needs. `auth.basic.password`, `auth.bearer_token` and `tls.key_pem` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["url"],
+  "properties": {
+    "url": {
+      "description": "The sink's endpoint, or the polling source's request URL. Required: an instance has no meaning without it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "method": {
+      "description": "The HTTP method.",
+      "type": "string",
+      "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"],
+      "default": "GET"
+    },
+    "mode": {
+      "description": "The CloudEvents content mode the sink sends: binary (ce-* headers) or structured (a JSON envelope body). §33 §6 has HTTP sinks send ce-* headers and Idempotency-Key: <ce_id> in binary mode.",
+      "type": "string",
+      "enum": ["binary", "structured"],
+      "default": "binary"
+    },
+    "headers": {
+      "description": "Static request headers, as name to value. A secret-bearing header belongs in `auth` or `tls` instead, so nothing here is writeOnly.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "body_template": {
+      "description": "The sink's request body template, with {ce_json} and the event's own fields as placeholders.",
+      "type": "string",
+      "minLength": 1
+    },
+    "response_cursor_pointer": {
+      "description": "A JSON pointer into the poll response that holds the next cursor; the source's position is that value (CN1 Task 4).",
+      "type": "string",
+      "minLength": 1
+    },
+    "response_cursor_header": {
+      "description": "A Link header parsed for the cursor, where the API paginates by Link rather than by body (CN1 Task 4).",
+      "type": "string",
+      "minLength": 1
+    },
+    "items_pointer": {
+      "description": "A JSON pointer into the poll response that holds the array of items; one event is emitted per item (CN1 Task 4).",
+      "type": "string",
+      "minLength": 1
+    },
+    "item_key_pointer": {
+      "description": "A JSON pointer to the item field that goes into the event id, \"<url>#<item key>\" (CN1 Task 4). The first field is used when absent.",
+      "type": "string",
+      "minLength": 1
+    },
+    "cursor_param": {
+      "description": "The query parameter the cursor is sent back on, so the next poll resumes from it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "poll_interval_secs": {
+      "description": "How often the source polls.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 60
+    },
+    "rate_limit_per_sec": {
+      "description": "The source's request ceiling; the source sleeps to stay under it (CN1 Task 4).",
+      "type": "integer",
+      "minimum": 1
+    },
+    "retry_attempts": {
+      "description": "Attempts before an event goes to the DLQ (CN1 Task 4: exponential backoff 100 ms to 30 s, 10 attempts).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 10
+    },
+    "retry_base_ms": {
+      "description": "The first backoff step; each further attempt doubles it up to 30 s.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 100
+    },
+    "retry_max_ms": {
+      "description": "The backoff ceiling.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 30000
+    },
+    "dlq_topic": {
+      "description": "The Fabric topic 4xx responses other than 408, 425 and 429 go to (CN1 Task 4).",
+      "type": "string",
+      "minLength": 1
+    },
+    "timeout_ms": {
+      "description": "Per-request timeout.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 30000
+    },
+    "auth": {
+      "description": "How the call authenticates; the manifest's auth slugs none, basic, key, oauth2, jwt and mtls (§33 Appendix A.17).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "basic": {
+          "description": "HTTP basic auth.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["username", "password"],
+          "properties": {
+            "username": { "description": "The basic-auth user.", "type": "string", "minLength": 1 },
+            "password": {
+              "description": "The basic-auth password. Resolved through the secret store (D189); never stored in the instance.",
+              "type": "string",
+              "minLength": 1,
+              "writeOnly": true
+            }
+          }
+        },
+        "bearer_token": {
+          "description": "An Authorization: Bearer token, the `key` and `oauth2` slugs' usual form. Resolved through the secret store (D189).",
+          "type": "string",
+          "minLength": 1,
+          "writeOnly": true
+        },
+        "jwt": {
+          "description": "A JWT presented as a bearer token, when the target validates its signature rather than an opaque token.",
+          "type": "string",
+          "minLength": 1,
+          "writeOnly": true
+        },
+        "oauth2": {
+          "description": "OAuth2 client-credentials settings; the token is fetched and cached rather than stored.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["token_url"],
+          "properties": {
+            "token_url": { "description": "The token endpoint.", "type": "string", "minLength": 1 },
+            "scope": { "description": "The scope requested.", "type": "string" },
+            "client_id": { "description": "The client id.", "type": "string", "minLength": 1 },
+            "client_secret": {
+              "description": "The client secret. Resolved through the secret store (D189).",
+              "type": "string",
+              "minLength": 1,
+              "writeOnly": true
+            }
+          }
+        }
+      }
+    },
+    "tls": {
+      "description": "TLS material for an https:// URL.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ca_pem": { "description": "The CA bundle, as PEM.", "type": "string" },
+        "key_pem": {
+          "description": "The client certificate's private key, for the `mtls` auth slug. Resolved through the secret store (D189).",
+          "type": "string",
+          "writeOnly": true
+        },
+        "verify_full": { "description": "Whether the server certificate's hostname is verified.", "type": "boolean", "default": true }
+      }
+    }
+  }
+}

@@ -1,0 +1,90 @@
+# Zulip — Appendix A.18 "Loams's own applications"; CN1 plan Task 15; D628.
+# Runtime: native Rust, loams_flow::connectors::zulip. Camel 4.22.1 has no Zulip
+# component (`camel-zulip` is absent at tag camel-4.22.1), so D354's buy-first has
+# nothing to buy and this is a hand-written connector (design §33 §5).
+# This is an import **target**: a route carries data from Slack, GitHub or Jira
+# into it. It is also a source. Neither direction is ★ — D628 keeps the précis'
+# 21 unchanged, which is why this row is P1 and unstarred.
+apiVersion: loams.flow/v1
+kind: Connector
+id: zulip
+name: Zulip
+specVersion: 1.0.0
+category: saas
+priority: P1
+starred: false              # D628: P1 but not ★; A.18 is not the précis' hot path
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::zulip
+licence:
+  component: Apache-2.0
+  dependencies: {}
+    # D359's carve-out: Zulip's own Apache-2.0 licence is not a dependency here.
+    # Loams neither ships nor links Zulip; it is reached over its public REST API
+    # at the /api/v1 prefix, and its id is recorded in connectors/licences.toml.
+capabilities:
+  source:
+    streaming: true          # A.18: Streaming Y
+    batch: true               # A.18: Batch Y
+    cdc: false
+    webhook: true             # A.18: Webhook Y
+    resumable: true
+    position: the highest Zulip message id already emitted
+      # Zulip's pagination is anchor-based rather than offset or cursor based: a
+      # page's returned `anchor` is fed back with num_after: 0, and the walk
+      # stops on found_oldest. The anchor is therefore the position, and it is
+      # the only resume point the API offers.
+  sink:
+    streaming: true
+    batch: true
+    transactional: false      # Zulip offers no transaction spanning a message post
+    upsert: false             # a message is append-only; there is no key to upsert on
+    delete: false
+    idempotent: true          # Idempotency-Key: <ce_id> on POST /api/v1/messages
+  delivery: { source: at_least_once, sink: at_least_once }
+    # §6: every runtime is at-least-once. Nothing here is exactly-once, because
+    # Zulip's own dedupe is the caller's Idempotency-Key, not a target guarantee.
+  ordering: per_key          # ordering is per stream and topic
+  formats: [cloudevents-binary, cloudevents-structured, json]
+  schema: { registry: none, evolution: none }
+    # Zulip messages carry no schema registry and no schema evolution contract.
+  bulk: { arrow: false, max_batch_rows: 65536 }
+    # No Arrow path: a Zulip message is a rendered message body, not a columnar
+    # batch, so this connector stays off the bulk Arrow path entirely (D356).
+  backpressure: pull
+    # Zulip's budget is a hard upstream limit, not an acknowledgement signal:
+    # 200 requests per 60 seconds shared across every endpoint, with **no
+    # read-only tier above it**. A bulk import therefore competes with ordinary
+    # dashboard reads for one budget. The sink self-throttles from the
+    # X-RateLimit-Limit / -Remaining / -Reset headers rather than waiting for a
+    # 429, and stops issuing calls at or below `rate_limit_floor` until reset.
+auth: [key]                  # A.18's Auth column
+    # Zulip API keys carry no scopes, so one credential both reads and writes.
+    # It authenticates as HTTP basic with the account's **delivery** email, not
+    # its login email, which is why the config schema has `delivery_email`.
+config:
+  $ref: schemas/zulip.config.json
+secrets: [api_key]
+envelope:
+  emits: ""
+    # This is a target: it emits nothing. CN1 Task 15 names no event type for
+    # A.18's three connectors, and §4's envelope.emits description allows "" for
+    # a connector that emits none. Deliberately not invented here.
+  consumes: "*"              # a route may bring any event type; §4's kafka example does this
+  passthrough: false
+    # Not pass-through, although §6 lists Zulip-shaped webhook payloads as a
+    # pass-through shape: §6's rule is about a payload that is *already* a
+    # CloudEvent, and a Zulip webhook body is an ordinary event envelope in the
+    # upstream's own format, so it is converted rather than forwarded.
+limits:
+  max_record_bytes: 1048576   # a Zulip message body, not the 16 MiB streaming default
+  batch_rows: 100
+    # The messages_per_page default. The binding limit here is not bytes but the
+    # shared 200-per-60-second request budget: enumerating 200 channels' topics
+    # costs 200 requests, which is the entire minute's budget once.
+conformance: [contract, dup-check]
+    # Only what CN1 tests. Task 15 names a contract test and a per-app
+    # idempotence test for each of A.18's three; there is no kill-restart,
+    # roundtrip, bulk or cdc suite for Zulip, so none is claimed.
+docs: docs/guides/connectors/zulip.md

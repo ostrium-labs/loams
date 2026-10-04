@@ -1,0 +1,62 @@
+# Snowflake — ★ connector 13 of §33 §8; CN1 plan Task 11.
+# Runtime: native Rust, loams_flow::connectors::adbc, with the Apache-2.0
+# Snowflake driver loaded by adbc_driver_manager 0.24 (§33 §8 row 13, D356).
+# The driver is native code in the Loams process, so it loads by path from the
+# namespace's allowlist with a SHA-256 check (CN1 Ruling 9).
+apiVersion: loams.flow/v1
+kind: Connector
+id: snowflake
+name: Snowflake
+specVersion: 1.0.0
+category: warehouse
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::adbc
+  version: "adbc_driver_manager 0.24 (Snowflake ADBC driver)"
+licence:
+  component: Apache-2.0
+  dependencies:
+    adbc_driver_manager: Apache-2.0
+    adbc-driver-snowflake: Apache-2.0
+capabilities:
+  source:
+    streaming: false              # §33 Appendix A.4 marks Streaming · for Snowflake
+    batch: true
+    cdc: false
+    webhook: false
+    resumable: true
+    position: the query as-of position
+    # §33 §6: a batch read's as-of position is the statement's watermark, which
+    # goes into the run-id so a re-read at the same position gives the same ids.
+  sink:
+    streaming: false
+    batch: true
+    transactional: true           # bulk_ingest per Arrow batch; MERGE goes through a temporary table (CN1 Task 11)
+    upsert: false                 # the MERGE path is verified in Task 11 and is not declared in CN1
+    delete: false
+    idempotent: false             # a retried bulk_ingest appends again without a dedup key
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_key               # D356: bulk is partitioned by a declared key
+  formats: [cloudevents-binary, cloudevents-structured, json, arrow]
+  schema: { registry: none, evolution: backward }
+  bulk: { arrow: true, max_batch_rows: 65536 }
+  backpressure: pull
+auth: [key, oauth2, basic]        # §33 Appendix A.4: key, oauth2, basic
+config:
+  $ref: schemas/snowflake.config.json
+secrets: [password, private_key_pem, private_key_passphrase, token]
+    # The coordinator's list for the warehouses was [password, token]; key-pair
+    # authentication is Snowflake's primary method and the manifest's `key` auth
+    # slug requires it, so the two key properties are writeOnly secrets too and
+    # are listed here to keep CN1 Task 1's equality rule exact.  Reviewer decision
+    # noted: either accept the longer list or drop KEY_PAIR_JWT from the config.
+envelope:
+  emits: io.loams.dev.flow.snowflake.rows.v1
+  consumes: "*"
+  passthrough: false
+limits: { batch_rows: 65536, batch_bytes: 8388608 }
+conformance: [contract, roundtrip, bulk]
+docs: docs/guides/connectors/snowflake.md

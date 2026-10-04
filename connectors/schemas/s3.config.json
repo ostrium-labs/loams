@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/s3.config.json",
+  "title": "S3 connector instance config (loams.flow/v1)",
+  "description": "One S3 connector instance's settings: the bucket and prefix it lists or writes, how object notifications reach it, and how the Parquet writer rolls files. Covers both directions of the ★ S3 connector (design §33 §8 row 6; CN1 plan Task 9). `access_key_id` and `secret_access_key` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list; with iam configured they are absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bucket"],
+  "properties": {
+    "bucket": { "description": "The bucket name.", "type": "string", "minLength": 1 },
+    "prefix": {
+      "description": "The key prefix the source lists under and the sink writes under.",
+      "type": "string",
+      "default": ""
+    },
+    "endpoint": {
+      "description": "An S3-compatible endpoint, for RustFS or MinIO in development and CI (CN1 Tech Stack). AWS when absent.",
+      "type": "string",
+      "minLength": 1
+    },
+    "region": { "description": "The bucket's region.", "type": "string", "default": "us-east-1" },
+    "access_key_id": {
+      "description": "The static access key id. Resolved through the secret store (D189); absent when iam is used.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "secret_access_key": {
+      "description": "The static secret access key. Resolved through the secret store (D189); absent when iam is used.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "iam": {
+      "description": "AWS credential chain settings; the role chain is used when these are absent.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role_arn": { "description": "The role Loams assumes.", "type": "string" },
+        "session_name": { "description": "The assumed-role session name.", "type": "string", "default": "loams-flow" }
+      }
+    },
+    "notifications": {
+      "description": "S3 event notifications through SQS, for the source's low-latency path (CN1 Task 9, floci in CI).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["queue_url"],
+      "properties": {
+        "queue_url": { "description": "The SQS queue the bucket's notifications arrive on.", "type": "string", "minLength": 1 },
+        "poll_interval_secs": { "description": "How often the queue is drained when notifications are absent.", "type": "integer", "minimum": 1, "default": 5 }
+      }
+    },
+    "decode_formats": {
+      "description": "Suffixes whose objects are decoded into Arrow batch events instead of being emitted as whole-object events (CN1 Task 9). An object whose suffix is not listed is one `object` event with its metadata and no data.",
+      "type": "array",
+      "items": { "type": "string", "enum": ["parquet", "csv", "ndjson", "avro"] },
+      "default": []
+    },
+    "roll_bytes": {
+      "description": "The Parquet writer's file-size roll (CN1 Task 9: 128 MiB).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 134217728
+    },
+    "roll_interval_secs": {
+      "description": "The Parquet writer's time roll (CN1 Task 9: 5 min).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 300
+    },
+    "key_template": {
+      "description": "Sink key template, with {topic}, {partitionkey}, {subject} and {ce_id} placeholders; a lexicographic template keeps the sink's ordering per_key.",
+      "type": "string",
+      "minLength": 1
+    },
+    "compression": {
+      "description": "The Parquet writer's compression codec.",
+      "type": "string",
+      "enum": ["snappy", "zstd", "gzip", "none"],
+      "default": "zstd"
+    }
+  }
+}
