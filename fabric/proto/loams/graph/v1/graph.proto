@@ -1,0 +1,195 @@
+// The Loams Graph service — Loams's own graph engine's control plane (design §33 D634).
+//
+// Loams's graph surface is GQL, the ISO standard (ISO/IEC 39075), and the engine behind it is
+// Grafeo, a graph database written in Rust that Loams **embeds in the Fabric process**. There is
+// therefore no Bolt anywhere on this path and no second deployment unit: this contract is
+// Connect-RPC, the same internal protocol every other Loams service already speaks, and the
+// implementation calls the engine in process.
+//
+// Why GQL rather than Cypher: GQL is the ISO standard and Cypher is one vendor's dialect, so a
+// GQL contract stays portable across Neo4j, Memgraph and anything GQL-conformant. That is what
+// lets a connector be written once (D634 (a)).
+//
+// Why an embedded engine rather than a remote one: Grafeo is Rust with no required C
+// dependencies, and embedding it removes the wire protocol, the second deployment unit and the
+// credential to get wrong (D634 (b)). The cost is one graph per Loams process, which is why
+// `Open` takes a namespace and a name rather than a URL.
+
+syntax = "proto3";
+
+package loams.graph.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/ostrium-labs/client-go/graph/v1;graphv1";
+
+// Serves Loams's embedded graph engine over Connect-RPC.
+service GraphService {
+  // Reports the engine's version and which query languages it was built with. A client that asks
+  // for a language this build does not have gets UNIMPLEMENTED from `Execute`, and this is how it
+  // finds out beforehand rather than by failing a statement.
+  rpc GetEngineInfo(google.protobuf.Empty) returns (EngineInfo) {}
+
+  // Opens or returns a named graph. Idempotent per (namespace, name): opening the same graph
+  // twice returns the same handle's identity rather than a second engine.
+  rpc Open(OpenRequest) returns (Graph) {}
+
+  // Lists the graphs open in this process.
+  rpc ListGraphs(ListGraphsRequest) returns (ListGraphsResponse) {}
+
+  // Closes a graph and releases its storage. Refuses a graph that is still open in a session.
+  rpc Close(CloseRequest) returns (google.protobuf.Empty) {}
+
+  // Runs one statement and returns its rows. `gql` is the ISO standard and the engine's
+  // default; the other languages depend on feature flags the build may not have enabled, which
+  // `GetEngineInfo` reports.
+  //
+  // `read_only` is a request-side assertion, not a hint: a statement that writes when this is
+  // true is refused rather than executed. The engine's own MVCC gives snapshot isolation per
+  // session, so a session's reads within one statement see a consistent snapshot.
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse) {}
+
+  // Runs many statements as one engine transaction, so a write batch either lands whole or not at
+  // all. This is the one place `chsurface`-style exactly-once reasoning does not apply: Grafeo's
+  // ACID transactions are real, and the idempotence question is about retries, not about the
+  // engine's durability.
+  rpc ExecuteBatch(ExecuteBatchRequest) returns (ExecuteBatchResponse) {}
+}
+
+// Which query language a statement is written in. GQL is ISO/IEC 39075 and is the engine's
+// default (D634 (a)); the rest are available only when the corresponding Grafeo feature is on.
+enum QueryLanguage {
+  QUERY_LANGUAGE_UNSPECIFIED = 0;  // equivalent to GQL
+  QUERY_LANGUAGE_GQL = 1;          // ISO/IEC 39075
+  QUERY_LANGUAGE_CYPHER = 2;       // Neo4j-style, for migrating an existing Neo4j corpus
+  QUERY_LANGUAGE_SQL_PGQ = 3;      // SQL:2023 GRAPH_TABLE
+  QUERY_LANGUAGE_GREMLIN = 4;
+  QUERY_LANGUAGE_GRAPHQL = 5;
+  QUERY_LANGUAGE_SPARQL = 6;       // RDF triple stores
+}
+
+// The engine behind the contract.
+message EngineInfo {
+  // Grafeo's own version string. Distinct from the GQL standard it implements.
+  string engine_version = 1;
+  // The query languages this build was compiled with. A language absent here answers
+  // UNIMPLEMENTED from `Execute` rather than failing the statement.
+  repeated QueryLanguage languages = 2;
+  // True when the engine is embedded in this process rather than reached over a network. Always
+  // true for Loams's own engine, and recorded because a client may otherwise assume a deployment
+  // it can restart.
+  bool embedded = 3;
+  // Set when the engine holds no persistent storage and the graph lives only in this process.
+  bool ephemeral = 4;
+}
+
+// One graph. A namespace is the isolation boundary; a name distinguishes graphs inside it, which
+// mirrors how CN1's connectors are per namespace.
+message Graph {
+  string namespace = 1;
+  string name = 2;
+  // The engine's own identifier for the graph, opaque to clients.
+  string handle = 3;
+  // Whether the graph's storage survives the process.
+  bool persistent = 4;
+  // Statements executed against this graph since it was opened.
+  uint64 statements_executed = 5;
+}
+
+message OpenRequest {
+  string namespace = 1;
+  string name = 2;
+  // A directory for persistent storage. Empty means in-memory and ephemeral.
+  string database_path = 3;
+  // Opens read-only: every writing statement is refused.
+  bool read_only = 4;
+}
+
+message ListGraphsRequest {
+  // Empty means every namespace.
+  string namespace = 1;
+}
+
+message ListGraphsResponse {
+  repeated Graph graphs = 1;
+}
+
+message CloseRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message ExecuteRequest {
+  string namespace = 1;
+  string name = 2;
+  // The statement, in `language`. It is passed to the engine **unchanged**: this service does not
+  // parse, rewrite or classify it. Classification and rewriting belong to the connector layer
+  // (design §33 §4), and a graph statement that Loams edited would no longer be the statement the
+  // user wrote.
+  string statement = 3;
+  QueryLanguage language = 4;
+  // A request-side assertion. A writing statement is refused when this is true.
+  bool read_only = 5;
+}
+
+message ExecuteResponse {
+  // The statement's rows, as a table. A statement that returns no rows — an INSERT, say — leaves
+  // this empty and sets `rows_affected`.
+  RowSet rows = 1;
+  // Rows the statement changed. Zero for a read.
+  uint64 rows_affected = 2;
+  // Statements counted from the engine's statistics: rows read and bytes read, so a caller can see
+  // what a traversal actually cost rather than only how long it took.
+  uint64 rows_read = 3;
+  uint64 bytes_read = 4;
+  // Nanoseconds, from the engine's own elapsed counter.
+  uint64 elapsed_nanos = 5;
+}
+
+// A result table. `columns` names the fields and `rows` carries them in the same order, so a client
+// does not have to trust a row's own keys — a graph result legitimately repeats a key across a
+// path, which a map would collapse.
+message RowSet {
+  repeated string columns = 1;
+  repeated Row rows = 2;
+  // Column type names as the engine reports them (for example "Int64", "String", "Node"). A
+  // language tag names the graph type rather than a SQL type, and that is deliberate: the surface
+  // is GQL.
+  repeated string column_types = 3;
+}
+
+message Row {
+  // Values positionally aligned with `RowSet.columns`.
+  repeated google.protobuf.Value values = 1;
+  // Node and relationship identifiers the statement touched, so a client can address them in a
+  // later statement without a second lookup.
+  repeated string node_ids = 2;
+  repeated string relationship_ids = 3;
+}
+
+message ExecuteBatchRequest {
+  string namespace = 1;
+  string name = 2;
+  repeated Statement statements = 3;
+  // Run as one transaction. A false value runs each statement in its own transaction, which is
+  // what a caller wants for a series of independent writes.
+  bool atomic = 4;
+  QueryLanguage language = 5;
+}
+
+message Statement {
+  string statement = 1;
+  // Per-statement bindings, by name. A statement referring to a name absent here is refused
+  // rather than run with the name silently interpolated: string-interpolating a graph query is
+  // how a value becomes Cypher.
+  map<string, google.protobuf.Value> parameters = 2;
+  // Overrides the batch's language for this statement only.
+  QueryLanguage language = 3;
+}
+
+message ExecuteBatchResponse {
+  repeated ExecuteResponse results = 1;
+  // True when the batch was one transaction and committed.
+  bool committed = 2;
+}

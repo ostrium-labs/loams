@@ -244,6 +244,66 @@ kind = "library"
 used_by = ["kinesis"]
 source = "https://crates.io/crates/aws-sdk-kinesis"
 
+# Grafeo's five crates, one stanza each (D634; read from crates.io on 2026-10-04). All five are
+# **Apache-2.0**, which is what admits them: D359 refuses an unclassified or non-SPDX id, and
+# `surrealdb` is excluded outright on exactly that ground (crates.io reports
+# `license = "non-standard"` for it, which is not an SPDX id). `kind = "library"` for all of
+# them because D634(b) embeds the engine: Loams links it into the Fabric process and calls it
+# in process, so these are compiled into loams-flow and are not loaded from a mounted directory
+# the way the JDBC drivers below are.
+#
+# They are named one per crate rather than as a single "grafeo" row because D359 asks for every
+# library a shipped connector loads, and because the split is where the risk is recorded: D634(f)
+# rules that Grafeo is a *test target* for GQL, not a foundation. Its 23 701 crates.io downloads
+# are two orders of magnitude behind `neo4rs` and its performance claims are self-reported, so
+# if Grafeo proves unmaintained the standard still stands and only the reference engine changes.
+# No crate here is in [deny], and none needs to be: Apache-2.0 is not a refused id.
+[components.grafeo]
+name = "grafeo"
+spdx = "Apache-2.0"
+kind = "library"
+# The facade crate Loams depends on, at 0.5.43 (D634).
+used_by = ["grafeo"]
+source = "https://crates.io/crates/grafeo"
+
+[components.grafeo-core]
+name = "grafeo-core"
+spdx = "Apache-2.0"
+kind = "library"
+# The core database types behind the facade: nodes, edges, properties and the LPG/RDF models
+# (D634; the spike's Finding 4).
+used_by = ["grafeo"]
+source = "https://crates.io/crates/grafeo-core"
+
+[components.grafeo-engine]
+name = "grafeo-engine"
+spdx = "Apache-2.0"
+kind = "library"
+# The engine itself: the GQL parser and planner, the cost-based optimizer, columnar storage and
+# the MVCC transactions with snapshot isolation that the manifest's `transactional: true` and
+# `position` rest on (D634; the spike's Finding 4).
+used_by = ["grafeo"]
+source = "https://crates.io/crates/grafeo-engine"
+
+[components.grafeo-adapters]
+name = "grafeo-adapters"
+spdx = "Apache-2.0"
+kind = "library"
+# The adapters, which is where the five non-GQL query languages are gated behind cargo feature
+# flags: `cypher`, `sql-pgq`, `gremlin`, `graphql` and `sparql` are selectable per instance and
+# GQL is the default (D634(a); the spike's Finding 4).
+used_by = ["grafeo"]
+source = "https://crates.io/crates/grafeo-adapters"
+
+[components.grafeo-common]
+name = "grafeo-common"
+spdx = "Apache-2.0"
+kind = "library"
+# The types the other four share, so this crate is what makes the set one dependency rather
+# than five (D634).
+used_by = ["grafeo"]
+source = "https://crates.io/crates/grafeo-common"
+
 # ----------------------------------------------------------------------------------------
 # Drivers loaded, never compiled in
 # ----------------------------------------------------------------------------------------
