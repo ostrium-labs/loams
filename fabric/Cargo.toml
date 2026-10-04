@@ -16,12 +16,32 @@ authors = ["The Loams Authors"]
 
 [workspace.dependencies]
 anyhow = "1"
+# Arrow 59, not 60: CN1 Ruling 4 established that `adbc_core` 0.24 constrains
+# `arrow-array` to `>=58, <60`, so arrow 60 is out of the workspace. FL2's Tech
+# Stack says 59 with the `ffi` feature, which agrees once the constraint is
+# applied; `ffi` is what carries the Arrow C stream interface that
+# `loams-chdb-sys`'s `chdb_query_arrow`/`chdb_arrow_scan` speak (FL2 Ruling 1,
+# Task 1). Apache-2.0.
+arrow = { version = "59", features = ["ffi"] }
+# `bindgen` over the pinned `chdb.h` (FL2 Ruling 1). Task 0 measured that a
+# hand-written prototype segfaults, so the bindings are generated from the
+# header rather than written. 0.72 is the line the plan's Tech Stack names;
+# 0.73.2 is out but 0.72.1 is the newest 0.72. Needs `libclang` at build time,
+# as `loams-flow-proto` needs `protoc`. MIT OR Apache-2.0.
+bindgen = "0.72"
+# The cheap reference-counted byte buffers `QueryStream::next_chunk` returns,
+# so streaming a result does not copy each block (FL2 Task 1). MIT.
+bytes = "1"
 clap = { version = "4", features = ["derive"] }
 # The generated `loams.flow.v1` types and, from CN1 Task 3, the connect-rust
 # `FlowService` trait: connect-rust's code generator, as `loams-live-proto` does
 # for `loams.live.v1` (R1 plan Task 7). CN1 Task 0 measured 0.9.1 as the version
 # that builds alongside `prost` 0.14.
 connectrpc-build = "0.9"
+# gzip: `build.rs` unpacks the libchdb tarball (FL2 Ruling 2), and Task 2's
+# HTTP interface reads and writes gzip request bodies and responses. MIT OR
+# Apache-2.0.
+flate2 = "1"
 indexmap = "2"
 # The manifest schema validator (CN1 plan Task 1). The plan's Tech Stack says
 # `jsonschema` 0.30+; Task 0 moved it to the current 0.58 line (MIT), whose API
@@ -32,14 +52,39 @@ indexmap = "2"
 # (D352).
 jsonschema = { version = "0.58", default-features = false }
 prost = "0.14"
+# The `parquet` reader, which `select_one_in_every_format` uses to prove the
+# Parquet bytes chDB wrote are a Parquet file and not merely non-empty
+# (FL2 Task 1). Same 59 line as `arrow`, for the same reason. Apache-2.0.
+parquet = "59"
+# sha2 for the digest `build.rs` fails closed on (FL2 Ruling 2). MIT OR
+# Apache-2.0.
+sha2 = "0.10"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # serde_yaml is unmaintained; `serde_norway` is the maintained fork CN1 Task 0
 # picked (plan "Rulings made during execution" row 1). Apache-2.0/MIT.
 serde_norway = "0.9"
+# The tar reader `build.rs` unpacks the libchdb release archive with, beside
+# `flate2` (FL2 Ruling 2). MIT OR Apache-2.0.
+tar = "0.4"
+# tokio for the async side of `loams-chdb`: every FFI call an async caller
+# makes runs through `tokio::task::spawn_blocking`, as FL2 Task 1's Semantics
+# paragraph requires. Only the features the crate uses: the current-thread
+# runtime and macros for its tests, `time` for the cancellation test's deadline
+# and `sync` for the registry locks. MIT.
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 thiserror = "2"
 tracing = "0.1"
+# The blocking HTTP client `build.rs` fetches the libchdb release with, when
+# `LIBCHDB_DIR` is unset (FL2 Ruling 2). 3.x is the current line; the crate is
+# the only HTTP client a build may use, so it is deliberately small. MIT OR
+# Apache-2.0.
+ureq = "3"
+# UUID v4 for the query ids `loams-chdb` generates per statement, which Task 2's
+# `X-ClickHouse-Query-Id` header echoes and `KILL QUERY` names. MIT OR
+# Apache-2.0.
+uuid = { version = "1", features = ["v4"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
