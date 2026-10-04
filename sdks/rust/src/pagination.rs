@@ -117,41 +117,42 @@ where
     let pages = stream::unfold(
         Some((request, None::<String>, Vec::<String>::new())),
         move |state| {
-        let call = call.clone();
-        async move {
-            let (base, token, mut seen) = state?;
-            let request = match &token {
-                Some(token) => base.with_page_token(token),
-                None => base.clone(),
-            };
-            // A failed page is yielded as one failed *item* and ends the
-            // iteration: retrying here would loop against an RPC the caller has
-            // already been told has failed, and the retry policy belongs to the
-            // call, not to the iterator.
-            let page = match call.page(request).await {
-                Ok(page) => page,
-                Err(error) => return Some((Err(error), None)),
-            };
-            let next = page
-                .next_page_token()
-                .filter(|token| !token.is_empty())
-                .map(str::to_owned)
-                .filter(|token| {
-                    // A repeated token means the server is not advancing. End
-                    // the iteration instead of asking forever.
-                    if seen.iter().any(|asked| asked == token) {
-                        return false;
-                    }
-                    seen.push(token.clone());
-                    true
-                });
-            let items: Vec<Resp::Item> = page.items().to_vec();
-            Some((
-                Ok::<Vec<Resp::Item>, LoamsError>(items),
-                next.map(|next| (base, Some(next), seen)),
-            ))
-        }
-    });
+            let call = call.clone();
+            async move {
+                let (base, token, mut seen) = state?;
+                let request = match &token {
+                    Some(token) => base.with_page_token(token),
+                    None => base.clone(),
+                };
+                // A failed page is yielded as one failed *item* and ends the
+                // iteration: retrying here would loop against an RPC the caller has
+                // already been told has failed, and the retry policy belongs to the
+                // call, not to the iterator.
+                let page = match call.page(request).await {
+                    Ok(page) => page,
+                    Err(error) => return Some((Err(error), None)),
+                };
+                let next = page
+                    .next_page_token()
+                    .filter(|token| !token.is_empty())
+                    .map(str::to_owned)
+                    .filter(|token| {
+                        // A repeated token means the server is not advancing. End
+                        // the iteration instead of asking forever.
+                        if seen.iter().any(|asked| asked == token) {
+                            return false;
+                        }
+                        seen.push(token.clone());
+                        true
+                    });
+                let items: Vec<Resp::Item> = page.items().to_vec();
+                Some((
+                    Ok::<Vec<Resp::Item>, LoamsError>(items),
+                    next.map(|next| (base, Some(next), seen)),
+                ))
+            }
+        },
+    );
     // One `Result` per item, not per page: a caller iterating items sees a
     // failure at the item that failed rather than losing a whole page's worth.
     pages
@@ -343,7 +344,11 @@ mod tests {
                 // one-element list, not an empty one -- so the page looked
                 // non-empty, handed back "p2" forever and never terminated.
                 let asked = request.page_token;
-                let items = if asked.is_empty() { Vec::new() } else { vec![asked] };
+                let items = if asked.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![asked]
+                };
                 Ok::<Sparse, LoamsError>(Sparse(items))
             }
         });
