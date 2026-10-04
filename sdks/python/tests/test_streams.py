@@ -12,13 +12,16 @@ Two halves, because they fail differently:
   arrives *inside* the Connect streaming envelope with an HTTP 200, so an SDK
   that only looks at the status reports a healthy empty stream. That is a real
   recorded case and `live.watch` is bound, so it runs here.
-* **Against a stub**, for the reconnect itself. The corpus's resume scenarios
-  (`mock_state_stream_resume`, `mock_state_stream_resume_remove`,
-  `mock_state_stream_snapshot_reset`) are all `WatchApprovals`, which no SDK
-  binds -- approvals carries no `loams.options.v1.module`, see the note in the
-  commit. A fixture for an RPC the SDK cannot call would test the refusal, not
-  the resume, so the resume semantics are driven against a stub here and the
-  corpus half waits for a bound RPC.
+* **Against a stub**, for the reconnect itself. The corpus's three stream-resume
+  scenarios and its heartbeat scenario are all `WatchApprovals`, which no SDK
+  binds -- `loams.approvals.v1` carries no `loams.options.v1.module` option, so
+  the generator emits no binding and there is nothing to call. They are named in
+  `test_conformance_corpus.py`'s account of what cannot be run, rather than here:
+  `check-languages.mjs` counts fixtures per language by scanning sources for the
+  names in `manifest.required`, so mentioning one here would report it as run.
+  A fixture for an RPC the SDK cannot call would test the refusal, not the
+  resume, so the resume semantics are driven against a stub here and the corpus
+  half waits for a bound RPC.
 
 `Transition` carries no `cursor` field, so the reader and the re-open request are
 supplied by the caller -- which is the shape `streams.py` documents for exactly

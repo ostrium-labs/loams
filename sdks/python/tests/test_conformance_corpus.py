@@ -48,6 +48,43 @@ ENCODINGS = {
     "application/connect+json": ("connect", True),
 }
 
+#: The required fixtures this SDK runs, named literally so
+#: `check-languages.mjs` can see them. Go and TypeScript do the same, and it is
+#: how the gap gets reported: `--drift` counts fixtures per language by scanning
+#: sources, so a suite that walks `manifest.json` dynamically runs the fixtures
+#: and reports none of them.
+#:
+#: The list is not a second source of truth to drift -- the test asserts it
+#: equals the reachable set computed from the manifest and the generated facade.
+#: A newly reachable RPC fails here rather than being quietly left unlisted, and
+#: a fixture that stops being reachable fails too.
+REACHABLE_FIXTURES = (
+    "instance_get_instance_grpc_web",
+    "instance_get_instance_grpc_web_json",
+    "instance_get_instance_json",
+    "instance_get_instance_proto",
+    "instance_who_am_i_grpc_web",
+    "instance_who_am_i_grpc_web_json",
+    "instance_who_am_i_json",
+    "instance_who_am_i_proto",
+    "live_query_grpc_web",
+    "live_query_grpc_web_json",
+    "live_query_json",
+    "live_query_proto",
+    "mock_status_get_instance",
+)
+
+# The unreachable half is deliberately **not** written out here.
+#
+# `check-languages.mjs` counts fixtures per language by scanning sources for the
+# names in `manifest.required`, so naming a fixture here would report it as run.
+# Listing the 14 this SDK cannot reach would push python to "28 fixtures" in
+# `--list`, ahead of Go's honest 13, and the gap it is meant to surface would
+# disappear behind the number it inflated. The unreachable set is computed from
+# the manifest and the generated facade instead, and
+# `test_the_unreachable_fixtures_are_exactly_the_unbound_ones` pins it to the
+# RPCs no SDK binds. `docs/sdk/fixtures.md` records the same gap for TypeScript.
+
 #: Fixtures the SDK cannot call, and why. Pinned so the gap is visible rather
 #: than inferred from a count.
 UNREACHABLE_RPCS = {
@@ -88,11 +125,19 @@ def _bound_modules() -> dict[str, tuple[str, str]]:
     return bound
 
 
-#: Recorded cases this SDK cannot consume, and why. Each is a defect in the
-#: recording, reported rather than edited -- see the commit message.
-KNOWN_DEFECTIVE = {
+#: Required fixtures that are bound and would run, but whose recording is
+#: defective. Named so the gap is legible: `live_watch` is reachable as far as
+#: the SDK is concerned, and the only thing stopping it is the recording.
+#: `test_streams.py` says more about what is wrong with it.
+KNOWN_DEFECTIVE_FIXTURES = (
+    "live_watch",
+)
+
+#: Why each is skipped, by name. Reported rather than edited -- the recording is
+#: shared authority for thirteen languages.
+KNOWN_DEFECTIVE_REASONS = {
     "live_watch": (
-        "records a JSON end-stream body labelled application/connect+proto; "
+        "records a JSON end-stream body labelled application/connect+proto, and "
         "family() hands that same case to proto clients, which cannot parse JSON "
         "as a proto EndStreamResponse"
     ),
@@ -133,7 +178,7 @@ def test_python_conformance_all_required_fixtures(endpoint: str) -> None:
             unreachable[name] = paths
             continue
 
-        if name in KNOWN_DEFECTIVE:
+        if name in KNOWN_DEFECTIVE_REASONS:
             defective.append(name)
             continue
 
@@ -176,10 +221,10 @@ def test_python_conformance_all_required_fixtures(endpoint: str) -> None:
             ran.add(name)
 
     assert ran, "no required fixture was exercised, so this proves nothing"
-    assert sorted(defective) == sorted(KNOWN_DEFECTIVE), (
-        f"unexpected defective fixtures: {sorted(set(defective) - set(KNOWN_DEFECTIVE))}"
+    assert sorted(defective) == sorted(KNOWN_DEFECTIVE_FIXTURES), (
+        f"unexpected defective fixtures: {sorted(set(defective) - set(KNOWN_DEFECTIVE_FIXTURES))}"
     )
-    expected = {name for name in _reachable() if name not in KNOWN_DEFECTIVE}
+    expected = {name for name in _reachable() if name not in KNOWN_DEFECTIVE_FIXTURES}
     assert ran == expected, f"ran {sorted(ran)} but the reachable set is {sorted(expected)}"
     # `ran` is what a results report would carry. It is asserted rather than
     # written out, because writing it would claim coverage the SDK does not have.
@@ -202,6 +247,29 @@ def test_the_unreachable_fixtures_are_exactly_the_unbound_ones() -> None:
     assert not offending, (
         f"required fixtures are unreachable for a reason this test does not know: {offending}. "
         "Either bind those RPCs or record why they cannot run."
+    )
+
+
+def test_the_named_lists_match_the_manifest() -> None:
+    """Keeps the literal lists above honest, in both directions.
+
+    Without this they would be a second source of truth that drifts silently,
+    and a list is only useful to `check-languages.mjs` if it is actually true.
+    """
+    required = set(_required())
+    named = set(REACHABLE_FIXTURES) | set(KNOWN_DEFECTIVE_FIXTURES)
+    assert named <= required, f"named fixtures that are not required: {sorted(named - required)}"
+    # Every required fixture is either one this suite runs or one it cannot, and
+    # neither list may quietly gain or lose one.
+    unreachable = set(_required()) - set(_reachable())
+    assert named | unreachable == required, (
+        "a required fixture is neither run nor accounted for: "
+        f"{sorted(required - named - unreachable)}"
+    )
+    assert set(_reachable()) == set(REACHABLE_FIXTURES) | set(KNOWN_DEFECTIVE_FIXTURES), (
+        f"the reachable set is now {sorted(_reachable())}, but REACHABLE_FIXTURES "
+        f"plus KNOWN_DEFECTIVE_FIXTURES says "
+        f"{sorted(set(REACHABLE_FIXTURES) | set(KNOWN_DEFECTIVE_FIXTURES))}"
     )
 
 
