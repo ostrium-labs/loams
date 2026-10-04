@@ -1046,6 +1046,12 @@ jobs:
     runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     steps:
       - uses: actions/checkout@v7
+      # `loams-proto`'s build.rs shells out to protoc, and the runner image has no
+      # protoc, so without this the job died in ~60s at
+      # `failed to spawn protoc ('protoc'): No such file or directory`. The
+      # TypeScript job already installs it for the same reason.
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       # -j 4: the SDK path-depends on loams-proto and loams-live-proto, and the
       # runners are 4 vCPU.
