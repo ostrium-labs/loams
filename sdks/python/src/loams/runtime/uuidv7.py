@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import secrets
+import threading
 import time
 from typing import Final
 
@@ -24,17 +25,63 @@ _V7: Final[re.Pattern[str]] = re.compile(
 )
 
 
+#: `rand_a` is 12 bits, so 4096 keys fit inside one millisecond.
+_COUNTER_BITS: Final[int] = 12
+_COUNTER_MAX: Final[int] = (1 << _COUNTER_BITS) - 1
+
+_tick_lock = threading.Lock()
+_tick_ms = 0
+_tick_counter = 0
+
+
+def _next_tick() -> tuple[int, int]:
+    """`(milliseconds, counter-within-the-millisecond)`, monotonic per process.
+
+    RFC 9562 allows `rand_a` to be random or to be a counter, and this is the
+    counter. The difference is observable: with random bits, two keys minted in
+    the same millisecond sort in *random* order, which is the case that matters,
+    because a burst of mutations or a retry storm is exactly what lands inside one
+    millisecond -- and the sort is the feature. A docstring claiming a counter
+    over random bits is a claim the code did not keep.
+
+    The counter is seeded randomly per millisecond, so two processes minting in
+    the same millisecond still differ; the 62 random bits after it carry the rest
+    of the uniqueness. A wall clock that steps backwards keeps the last timestamp
+    and carries the counter on, rather than issuing a key that sorts before one
+    already handed out.
+    """
+    global _tick_ms, _tick_counter
+    with _tick_lock:
+        now = int(time.time() * 1000)
+        if now > _tick_ms:
+            _tick_ms = now
+            _tick_counter = secrets.randbits(_COUNTER_BITS)
+        else:
+            _tick_counter += 1
+            if _tick_counter > _COUNTER_MAX:
+                # 4096 keys in one millisecond. Borrow from the next millisecond
+                # rather than wrapping: wrapping would reuse a counter and hand
+                # out a key that sorts before one already issued. 48 bits of
+                # milliseconds lasts to the year 10889, so borrowing is free.
+                _tick_ms += 1
+                _tick_counter = 0
+        return _tick_ms, _tick_counter
+
+
 def uuidv7() -> str:
     """A fresh UUIDv7 as the canonical hyphenated string."""
     random = bytearray(secrets.token_bytes(16))
     # The 48-bit timestamp is big-endian, so it is written in with shifts rather
     # than by dividing and masking: dividing keeps the fractional bits of the
     # lower digits and truncates the carry, which puts the wrong byte in.
-    now = int(time.time() * 1000)
+    millis, counter = _next_tick()
     for index in range(6):
         shift = (5 - index) * 8
-        random[index] = (now >> shift) & 0xFF
-    random[6] = (random[6] & 0x0F) | 0x70
+        random[index] = (millis >> shift) & 0xFF
+    # `rand_a`: the counter, which is what makes keys minted in one millisecond
+    # sort in the order they were issued.
+    random[6] = 0x70 | ((counter >> 8) & 0x0F)
+    random[7] = counter & 0xFF
     random[8] = (random[8] & 0x3F) | 0x80
     value = random.hex()
     return (
