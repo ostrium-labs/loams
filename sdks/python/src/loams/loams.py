@@ -36,10 +36,10 @@ from loams._gen.facade import (
     PROTO_PACKAGES,
     PROTO_REV,
     CallBinding,
-    InstanceModule,
-    LiveModule,
+    InstanceModuleSync,
+    LiveModuleSync,
     ModuleBinding,
-    TablesModule,
+    TablesModuleSync,
 )
 from loams.runtime.call import CallInvoker
 from loams.runtime.consistency import ConsistencySession
@@ -105,11 +105,11 @@ class Loams:
     """One SDK, over one instance."""
 
     #: `loams.instance` — what this instance is, and who the caller is.
-    instance: InstanceModule
+    instance: InstanceModuleSync
     #: `loams.live` — the live sync session half. Its package is `unstable`.
-    live: LiveModule
+    live: LiveModuleSync
     #: `loams.tables` — the table half of the same service (design §44 §7.2).
-    tables: TablesModule
+    tables: TablesModuleSync
     #: The module catalogue, feature detection and the version check.
     system: SystemApi
 
@@ -181,9 +181,9 @@ class Loams:
         #: module the generator has not seen yet is absent, so `modules` is how a
         #: caller asks what this build can do before naming one.
         self.modules: Mapping[str, Any] = modules
-        self.instance = cast(InstanceModule, modules["instance"])
-        self.live = cast(LiveModule, modules["live"])
-        self.tables = cast(TablesModule, modules["tables"])
+        self.instance = cast(InstanceModuleSync, modules["instance"])
+        self.live = cast(LiveModuleSync, modules["live"])
+        self.tables = cast(TablesModuleSync, modules["tables"])
         self.system = SystemApi(self.instance.get_instance)
 
     # -- lifecycle ---------------------------------------------------------
