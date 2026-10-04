@@ -1,0 +1,69 @@
+{
+  "name": "mock_error_step_up_required",
+  "kind": "error",
+  "about": "The `token_expired` sibling R1 needs and the reason the registry has for it: an `unauthenticated` on a credential that is *valid but too old* for this decision. An SDK must refresh once and retry (R1); `token_expired` itself no server can produce yet — see the `unproducible` list in `error.json`.",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R1",
+    "R8"
+  ],
+  "reason": "step_up_required",
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:11.260Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "about": "A session from 10 minutes ago decides a STEP_UP_SESSION approval.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-stale-usr_omar"
+        },
+        "body": "{\"approvalId\":\"apr_01J9ZDROPDOCS\",\"revision\":\"1\",\"decision\":\"DECISION_KIND_APPROVE\",\"reason\":\"approved after review\"}"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "unauthenticated",
+          "message": "sign in again (or decide from a paired device) to decide this approval",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChBzdGVwX3VwX3JlcXVpcmVk"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 401,
+        "reason": "step_up_required"
+      }
+    }
+  ]
+}
