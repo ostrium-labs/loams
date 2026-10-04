@@ -97,8 +97,19 @@ packager's own vocabulary (`gcc`/`glibc` for rpm, `gcc-libs`/`glibc` for Arch).
 **[verified]** — the mapping was checked against the JSON schema nFPM ships, so a
 dependency renamed upstream fails the build rather than the install.
 
-That list is the `DT_NEEDED` set of the **default-feature** build: the server's
-`reqwest` is `default-features = false`, so it links no TLS or proxy library.
+That list matches the `DT_NEEDED` set of the packaged build, which `readelf -d`
+gives as exactly `libgcc_s.so.1`, `libc.so.6`, `libm.so.6` and
+`ld-linux-x86-64.so.2`. **[verified]** — read off a real
+`cargo build --release -p loams --bin loams` of this tree.
+
+**`libm.so.6` is deliberately not declared separately.** Every target's glibc
+package already ships it — `libc6` on Debian and Ubuntu (glibc has carried libm
+since 2.34), `glibc` on Fedora/RHEL/openSUSE, and `glibc` on Arch and CachyOS
+(`pacman -Qo` confirms the last). There is no `libm` package on Debian to name,
+so declaring one would produce a dependency that does not exist.
+
+The list this short is a consequence of the server's `reqwest` being
+`default-features = false`, so it links no TLS or proxy library.
 **[verified]** — see [the feature set](#the-feature-set).
 
 ### The feature set, and what is not in the package
@@ -277,9 +288,22 @@ ordering is the only thing missing.
 ## Reproducibility
 
 Packages bake in the **release commit's** timestamp (`--mtime`), never the build
-machine's clock, and the staging tree is built once and packed three ways. Two
-builds of the same commit therefore produce the same bytes. **[verified]** by
-the packaging self-test, which builds real packages from a fixture.
+machine's clock, and the staging tree is built once and packed three ways.
+
+**An unsigned package is byte-identical across builds of the same commit.**
+**[verified]** — two builds of the same binary at the same `--mtime` produce an
+identical `.deb`, `.rpm` and `.pkg.tar.zst`, compared by sha256.
+
+**A signed `.deb` is not**, and this is a property of GPG rather than of this
+pipeline: a signature embeds its own creation time, so the `_gpgorigin` member
+differs between two runs. **[verified]** — with the same inputs, the `.deb`'s
+`control` and `data` members are byte-identical between two builds and only
+`_gpgorigin` differs; the unsigned `.deb` is identical outright. The pacman
+`.sig` differs for the same reason, while the `.pkg.tar.zst` it signs does not.
+
+So the reproducibility guarantee covers the package contents. Anything that
+verifies a signature should compare the extracted members or the sha256 the
+release publishes, not a locally rebuilt signed `.deb`.
 
 ## Verifying this page
 

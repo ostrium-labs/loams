@@ -31,9 +31,12 @@ release: ${LOAMS_PACKAGE_RELEASE}
 # No `epoch`, and no `mtime` placeholder: nFPM decodes both as typed values
 # before it expands `${...}`, so a placeholder in either field fails the build.
 # build-artifacts.py injects `mtime` as a literal timestamp taken from the
-# release commit, never from the build machine's clock, which is what makes two
-# builds of the same source byte-identical. Verified by the self-test, which
-# builds a real .deb.
+# release commit, never from the build machine's clock, which is what makes an
+# unsigned package byte-identical across two builds of the same commit
+# (verified 2026-10-04: identical sha256 for the .deb, .rpm and .pkg.tar.zst).
+# A *signed* .deb is not byte-identical, because a GPG signature embeds its own
+# creation time; only the _gpgorigin member differs. See
+# docs/release/packaging.md#reproducibility.
 
 section: database
 priority: optional
@@ -49,11 +52,21 @@ description: |
   console under /usr/share/loams/console, and the systemd units loams.service
   and loams@.service.
 
-# The shared library set of a x86_64-unknown-linux-gnu Rust binary: verified
-# 2026-10-04 with `readelf -d` on a binary built by this repository's toolchain
-# (rust-toolchain.toml, 1.97.1), whose DT_NEEDED entries are exactly
-# libgcc_s.so.1, libc.so.6 and ld-linux-x86-64.so.2. The server's reqwest is
-# `default-features = false` (Cargo.toml), so it links no TLS or proxy library.
+# The shared library set of a x86_64-unknown-linux-gnu Rust binary. Verified
+# 2026-10-04 with `readelf -d` on a `cargo build --release -p loams --bin loams`
+# of this tree (rust-toolchain.toml, 1.97.1), whose DT_NEEDED entries are exactly:
+#
+#   libgcc_s.so.1  libc.so.6  libm.so.6  ld-linux-x86-64.so.2
+#
+# The server's reqwest is `default-features = false` (Cargo.toml), so it links no
+# TLS or proxy library -- that is the reason the list this short.
+#
+# libm.so.6 is NOT declared separately, because every target's glibc package
+# already ships it: `libc6` on Debian and Ubuntu (glibc has carried libm since
+# 2.34), `glibc` on Fedora/RHEL/openSUSE, and `glibc` on Arch and CachyOS.
+# Verified on Arch-family by `pacman -Qo /usr/lib/libm.so.6` -> "owned by glibc".
+# There is no `libm` package on Debian to name, so declaring it would produce a
+# dependency that does not exist.
 depends:
   - libgcc-s1
   - libc6
