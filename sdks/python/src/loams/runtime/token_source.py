@@ -107,9 +107,6 @@ class _Static:
     def token(self) -> str:
         return self._value
 
-    async def atoken(self) -> str:
-        return self._value
-
 
 class _Env:
     """`LOAMS_API_KEY`, then `LOAMS_TOKEN`, then nothing."""
@@ -124,8 +121,40 @@ class _Env:
     def token(self) -> str | None:
         return self._read()
 
-    async def atoken(self) -> str | None:
+
+class _AsyncStatic:
+    """`_Static` for `AsyncLoams`: the same credential, awaited.
+
+    Separate rather than a subclass because the two protocols disagree on
+    `token`'s return type -- `str` against `Coroutine[..., str]` -- and a class
+    cannot be both. Handing the sync object to an async client was worse than a
+    type error: `await source.token()` on a `str` fails at the first call with
+    "object str can't be used in 'await' expression", which surfaces as an
+    opaque `LoamsError` from the retry loop rather than as a wrong credential.
+    """
+
+    def __init__(self, value: str, name: str) -> None:
+        if value == "":
+            raise ValueError(f"{name}: the credential is empty")
+        self._value = value
+
+    async def token(self) -> str:
+        return self._value
+
+
+class _AsyncEnv:
+    """`_Env` for `AsyncLoams`. Same lookup order, awaited."""
+
+    def __init__(self, environment: Mapping[str, str] | None = None) -> None:
+        self._environment = environment
+
+    def _read(self) -> str | None:
+        environment = self._environment if self._environment is not None else os.environ
+        return environment.get(ENV_API_KEY) or environment.get(ENV_TOKEN) or None
+
+    async def token(self) -> str | None:
         return self._read()
+
 
 
 def api_key(key: str) -> TokenSource:
@@ -136,8 +165,7 @@ def api_key(key: str) -> TokenSource:
 
 def async_api_key(key: str) -> AsyncTokenSource:
     """`api_key` for `AsyncLoams`."""
-    source = _Static(key, "api_key")
-    return source  # type: ignore[return-value]
+    return _AsyncStatic(key, "api_key")
 
 
 def static_token(token: str) -> TokenSource:
@@ -148,8 +176,7 @@ def static_token(token: str) -> TokenSource:
 
 def async_static_token(token: str) -> AsyncTokenSource:
     """`static_token` for `AsyncLoams`."""
-    source = _Static(token, "static_token")
-    return source  # type: ignore[return-value]
+    return _AsyncStatic(token, "static_token")
 
 
 def env_token(environment: Mapping[str, str] | None = None) -> TokenSource:
@@ -160,8 +187,7 @@ def env_token(environment: Mapping[str, str] | None = None) -> TokenSource:
 
 def async_env_token(environment: Mapping[str, str] | None = None) -> AsyncTokenSource:
     """`env_token` for `AsyncLoams`."""
-    source = _Env(environment)
-    return source  # type: ignore[return-value]
+    return _AsyncEnv(environment)
 
 
 # ---------------------------------------------------------------------------
