@@ -299,7 +299,7 @@ requires-dist = [
     { name = "adbc-driver-flightsql", marker = "extra == 'flight'", specifier = ">=1.0.0" },
     { name = "connect-python", specifier = "==0.9.0" },
     { name = "polars", marker = "extra == 'polars'", specifier = ">=1.0.0" },
-    { name = "protobuf", specifier = ">=7.35,<8" },
+    { name = "protobuf", specifier = "==7.36.2" },
     { name = "pyarrow", marker = "extra == 'arrow'", specifier = ">=17.0.0" },
 ]
 provides-extras = ["flight", "arrow", "polars"]
