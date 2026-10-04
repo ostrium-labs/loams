@@ -86,7 +86,11 @@ fn header(out: &mut String) {
     // an annotation, which `from __future__ import annotations` leaves as a
     // string, so nothing is resolved at import time. LoamsError and
     // ResponseStream were imported here and never referenced.
-    writeln!(out, "if TYPE_CHECKING:\n    from {OPTIONS} import CallOptions").ok();
+    writeln!(
+        out,
+        "if TYPE_CHECKING:\n    from {OPTIONS} import CallOptions"
+    )
+    .ok();
     // Runtime, not type-only: `IDEMPOTENCY_LEVELS` binds `IdempotencyLevel`
     // members at import time, and `Message` is the protobuf base the
     // `MethodInfo` type parameters are declared over.
