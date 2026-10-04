@@ -104,6 +104,96 @@ this set. If Loams later embeds something like that, the honest fallback is
 `AppOpener` into the system browser, which is what D627 leaves in place — the
 engine path is additive, and nothing removes the system-browser route.
 
+## Recording a product demo
+
+`record::VideoRecorder` turns the frames the panel already receives into one
+playable video file, so a demo of a Zulip thread or a Plane issue can be sent to
+someone who does not have Loams installed (**D628**).
+
+```rust
+use loams_sidebar_browser::{Container, RecorderConfig, VideoRecorder};
+
+let recorder = VideoRecorder::new(
+    RecorderConfig::new(demo_dir.join("zulip-thread.webm"))
+        .with_container(Container::WebM),
+);
+
+recorder.start().await?;                     // AlreadyRecording if already running
+// ... on each decoded frame, with the moment it arrived:
+recorder.write_frame(&frame, std::time::Instant::now()).await?;
+// ... when the user presses stop:
+let summary = recorder.stop().await?;       // None if nothing was recording
+```
+
+### What it guarantees
+
+- **Starting twice is safe.** The second `start` returns
+  `StartOutcome::AlreadyRecording` and touches nothing: no second scratch
+  directory, no second screencast, no second encoder. The transition happens
+  under the same lock `stop` takes, so racing callers cannot both see `Idle`.
+- **Stopping always works, including after a failed start, and stopping an idle
+  recorder is `Ok(None)`** rather than an error. The screencast release in
+  `stop_all` cannot fail the stop: a dead engine still leaves the caller wanting
+  the video.
+- **The output is always a finished, playable container, or there is no output
+  file at all.** Frames are written to a scratch directory beside the output;
+  finalisation encodes them to `<output>.loams-partial.<ext>`, fsyncs it, and
+  **renames** it into place. Nothing else ever writes to the output path. A
+  zero-frame recording publishes nothing and says so, because a zero-length
+  video is not a short video.
+- **The failure path produces the same file as the graceful path.** The frames
+  are still on disk when the recorder is dropped, so `Drop` runs the same
+  finalisation. This is the reason for the whole design: a streaming encoder
+  that gets killed leaves an unrepairable container.
+- **Every timestamp is monotonic.** Frame holds come from `std::time::Instant`
+  deltas, never the wall clock, so a clock step cannot produce negative frame
+  lengths or a duration players disagree about.
+- **Nothing is left behind.** Stop, error and drop all delete the scratch
+  directory and remove the partial. `tests/recording.rs` asserts no leftover for
+  every terminal path.
+
+### The fidelity limits, stated rather than discovered
+
+- **Video only. No audio, ever.** No microphone, no system audio, no narration
+  track. The engine has no audio output and the screencast carries none.
+- **No editing and no post-processing.** Nothing is trimmed, re-timed,
+  speed-changed, colour-graded, annotated or composited. What the page rendered
+  is what the file contains. *(Note one internal exception, which is a
+  correctness requirement rather than an edit: frames are scaled to even
+  dimensions for `yuv420p`, at most one pixel, in the encoder and never on the
+  PNGs on disk.)*
+- **The recording is only as good as the panel's frames**, so everything under
+  "Fidelity" above applies: no scroll momentum, no caret, no text selection,
+  coarser-than-60 Hz updates, and not pixel-identical to Chromium.
+- **The frame rate is a cap, not a target.** Frames arriving inside the
+  interval are dropped and counted (`RecordingSummary::dropped`) rather than
+  queued, so a fast animation is recorded as sampled frames.
+- **A still page is a still frame.** The engine is activity-driven and emits
+  nothing while a page is idle, so a quiet stretch is a held frame. Real holds
+  mean it is held for the *right* length, but `max_gap` (default 2s) clamps a
+  single frame's hold so a stalled agent or a closed laptop lid does not become
+  a frozen minute.
+
+### `ffmpeg` is an optional runtime dependency
+
+Encoding shells out to `ffmpeg`, resolved like the engine is: `LOAMS_FFMPEG_BIN`
+wins, otherwise it is found on `PATH`. **The sidebar browser does not need
+it** — a machine without `ffmpeg` gets a working panel, and only `start` is
+refused, with an error naming the variable. The encoder the chosen container
+needs is probed at `start`, so an `ffmpeg` built without `libvpx` fails
+immediately with the list of what it does have, rather than after a two-minute
+recording.
+
+Why an external binary rather than a pure-Rust encoder, in short: a pure-Rust
+path needs three new dependencies (PNG decode, encode, mux) and its only
+encoder-quality option is `rav1e`, which is heavyweight and slow on flat UI
+content. `ffmpeg` adds zero Rust dependencies, so `cargo deny` has nothing new
+to check and the `libvpx`/`libx264` licence questions attach to a distribution
+of ffmpeg rather than to Loams. It also means the file can actually be verified:
+`tests/recording.rs` opens the output with `ffprobe` and asserts on the stream
+it reports. The costs are disk for the recording's length and a pause at stop
+while encoding runs.
+
 ## The credential boundary
 
 SF1's Global Constraint is **"embeds never hold a Loams token."** E1 could claim
@@ -211,7 +301,10 @@ reports how many frames were dropped in the meantime — that number is how a
 
 ## Tests
 
-65 tests, no engine binary required:
+106 tests, no engine binary required (9 of them — everything in
+`tests/recording.rs` that needs an encoder — also need `ffmpeg` and `ffprobe`
+on `PATH`; they print a SKIP and return if either is absent, so a green run
+without an encoder is never mistaken for proof of playback):
 
 | File | What it holds |
 |---|---|
@@ -222,6 +315,7 @@ reports how many frames were dropped in the meantime — that number is how a
 | `tests/net_policy.rs` | localhost consoles are permitted with the engine relaxed; public origins are not; the metadata endpoint is refused by Loams |
 | `tests/launch_spec.rs` | one platform-neutral command line for all three operating systems; the version pin; `--allow-file-access` never set |
 | `tests/wire_contract.rs` | the CDP contract against a fake engine: frames decode and are acknowledged with an integer session id, input becomes the right parameter objects, events are buffered, engine errors keep their message |
+| `tests/recording.rs` | recording against a fake engine and a synthetic frame source: a double start opens no second screencast; stopping an idle recorder is a no-op; a failed start leaves nothing behind; frames are acknowledged with an **integer** `sessionId`; the cadence comes from monotonic timestamps and counts what it dropped; a burst is sampled rather than queued; a long silence is clamped; dropping the recorder still publishes; abandoning publishes nothing; and **`.webm` and `.mp4` are opened by `ffprobe`**, which reports the codec, the dimensions, the frame count and a duration matching the recorded holds |
 
 ```console
 $ cargo test -p loams-sidebar-browser -j 4

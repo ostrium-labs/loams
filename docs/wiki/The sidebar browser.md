@@ -34,6 +34,29 @@ some things a browser window gives you are missing:
   a Chromium-only behaviour, or that draws itself with WebGL or `<canvas>`, is
   the kind of thing that would show it.
 
+## Recording a demo
+
+You can record the panel to a video file, so you can show someone a walkthrough
+of a thread or an issue without asking them to install anything.
+
+The recording is **silent**. There is no microphone capture, no system sound and
+no narration, and nothing is edited afterwards — what appears on screen is what
+gets saved, untrimmed. If your demo needs narration, record your voice
+separately and put the two together in your own editor.
+
+Two things worth knowing before you share one:
+
+- **A still page stays still.** The recording captures what the panel draws, and
+  the panel only redraws when the page changes. If you leave something on screen
+  while you talk, that stretch is held rather than showing motion.
+- **Motion is sampled, not captured at full speed.** Frames that arrive faster
+  than the recording's frame cap are dropped rather than queued, so a fast
+  animation appears at a lower frame rate than you saw it.
+
+The panel itself is unaffected by recording, and recording needs a program
+called **ffmpeg** installed on your machine. If it is missing, everything else
+about the sidebar still works and only recording is unavailable.
+
 ## When to use "Open in browser" instead
 
 The sidebar is for **reading and light interaction** — a Zulip thread, a Plane

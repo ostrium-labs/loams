@@ -78,6 +78,25 @@ pub enum SidebarBrowserError {
     #[error("frame decode: {0}")]
     Frame(String),
 
+    /// A recording could not be produced, or could not be published.
+    ///
+    /// Kept distinct from [`SidebarBrowserError::Encoder`] because the two
+    /// have different owners: an encoder error means `ffmpeg` said no, and a
+    /// recording error means *this crate* could not give the caller something
+    /// playable. The second is the one a user should never see, so it says
+    /// what was thrown away and where, rather than only what went wrong.
+    #[error("recording: {0}")]
+    Recording(String),
+
+    /// The optional `ffmpeg` binary is missing, unusable, or cannot produce
+    /// the codec the chosen container needs.
+    ///
+    /// Separate from [`SidebarBrowserError::Engine`] for the same reason:
+    /// Obscura is required by the sidebar browser and `ffmpeg` is required only
+    /// by recording, and a user missing one of them needs to be told which.
+    #[error("encoder: {0}")]
+    Encoder(String),
+
     /// A profile-directory read or write failed.
     #[error("profile {path}: {source}")]
     ProfileIo {
