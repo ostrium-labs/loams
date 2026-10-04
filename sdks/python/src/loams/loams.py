@@ -161,14 +161,18 @@ class Loams:
 
             So this is currently a no-op that costs an allocation. It is kept
             because the flag is the documented shape of the feature and the store
-            is correct once a token can reach it; `loams.conformance_token()`
-            returning `None` is how you can tell. `tests/test_consistency.py`
-            pins the gap, and fails on a connect-python upgrade that would let us
-            close it.
+            is correct once a token can reach it. `loams.consistency` is `None`
+            when the flag is off; with it on, the store is there and
+            `loams.consistency.current()` is still `None`, which is how you can
+            tell. `tests/test_consistency.py` pins the gap, and fails on a
+            connect-python upgrade that would let us close it.
         """
         if api_key is not None and auth is not None:
             raise ValueError("pass api_key or auth, not both: they answer the same question")
-        if not endpoint:
+        # Stripped for the check only, so a blank address from an environment
+        # variable or a config file is refused here rather than becoming a request
+        # to a URL that is nothing but whitespace.
+        if not endpoint.strip():
             raise ValueError("endpoint is empty")
 
         from loams.runtime.transports import protocol_of

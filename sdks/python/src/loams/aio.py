@@ -120,7 +120,10 @@ class AsyncLoams:
         """
         if api_key is not None and auth is not None:
             raise ValueError("pass api_key or auth, not both: they answer the same question")
-        if not endpoint:
+        # Stripped for the check only, so a blank address from an environment
+        # variable or a config file is refused here rather than becoming a request
+        # to a URL that is nothing but whitespace.
+        if not endpoint.strip():
             raise ValueError("endpoint is empty")
 
         options = transport_options or TransportOptions(
