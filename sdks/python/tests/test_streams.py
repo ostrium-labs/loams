@@ -283,80 +283,86 @@ def test_a_stream_refusal_is_read_out_of_the_envelope() -> None:
     assert caught.value.hint is None or isinstance(caught.value.hint, str)
 
 
-def test_the_recorded_watch_case_cannot_be_replayed_yet() -> None:
-    """Why the recorded half of this test is absent, asserted so it cannot rot.
+def test_the_recorded_watch_case_replays_and_reports_the_refusal() -> None:
+    """The corpus half, which used to be an xfail on a premise that turned out false.
 
-    `sdks/fixtures/recorded/live_watch.json` files its response under
-    `application/connect+proto` but the body is Connect **JSON**: flags 0x02,
-    length 229, then `{"error":{...}}`. Two independent problems, and fixing
-    only the first does not help:
+    This test asserted that `live_watch` could not be replayed, on the reasoning
+    that connect-python "cannot read this recording in any configuration" -- asking
+    for proto and getting the `+proto` label meant it parsed JSON as proto and
+    failed. Replaying the recorded bytes directly says otherwise:
 
-    1. The recording contradicts itself, which `encodingMismatch` in
-       `sdks/conformance/encodings.mjs` now fails the corpus gate on.
-    2. `family()` in `fixture-server.mjs` maps `+json` and `+proto` to one
-       family, so that single case is served to proto clients too. Relabelling
-       it to `+json` does make the corpus verify, and the SDK still fails -- it
-       requests the binary encoding by default and gets JSON back. Verified
-       both ways: probing the server returns `200 application/connect+json` with
-       the same 234 JSON bytes for either client content-type, and only a
-       `proto_json=True` client reads the reason.
+        messages: 0 | error: FeatureNotInVariantError: ... not in the standard variant
 
-    So this needs per-encoding recordings for the streaming case, the way the
-    unary ones already have `_proto` and `_json` variants, and not a relabelled
-    single case. That is a corpus decision, so it is recorded here rather than
-    worked around. The SDK's half is proven by the test above, which passes.
+    The recording is a valid Connect stream: one empty data frame, then a
+    JSON-encoded end-of-stream frame, under `application/connect+proto`. The
+    Connect protocol defines that end frame as JSON *whatever the codec is*, and
+    connect-python implements it that way. `verify-corpus.mjs` was flagging the
+    same recording, because its encoder check judged every frame against the
+    codec label; both are corrected, and this is now an assertion rather than a
+    standing excuse.
 
-    **connect-python cannot read this recording in any configuration**, which is
-    the part that matters. It validates the response content-type against the
-    encoding it asked for: asking for proto and getting the `+proto` label means
-    it parses JSON as proto and fails with an empty `InternalError`; asking for
-    JSON means it gets a `+proto` label back and fails with "invalid
-    content-type". Both verified.
-
-    Go reads the same bytes without trouble. `TestGoStreamReportsEnvelopeRefusal`
-    in `sdks/go/stream_resume_test.go` drives `Watch` at the same fixture server
-    and asserts the refusal maps to the right type, and it passes (71 assertions
-    green in `go test -count=1 .`). So Go's green is not evidence the recording is
-    sound -- connect-go sniffs the frame where connect-python trusts the label.
-    That makes this a client-compatibility problem for every SDK built on a
-    strict Connect client, not just this one, and it is why the fix belongs in
-    the recording rather than in a workaround here.
+    It is worth being explicit about how that went wrong, because the failure mode
+    was not a bug report -- it was a plausible story. The observation that
+    connect-go reads the bytes happily sat next to "connect-python cannot", and
+    the tidy conclusion was that connect-go sniffs where connect-python is strict,
+    so the recording must be at fault. Both halves of that were unverified. The
+    cheap check nobody ran was: serve the exact bytes at the exact content-type and
+    see what the client does.
     """
-    recorded = json.loads(
-        (
-            pathlib.Path(__file__).resolve().parent.parent.parent
-            / "fixtures"
-            / "recorded"
-            / "live_watch.json"
-        ).read_text()
-    )
+    root = pathlib.Path(__file__).resolve().parent.parent.parent
+    recorded = json.loads((root / "fixtures" / "recorded" / "live_watch.json").read_text())
     response_type = recorded["response"]["headers"]["content-type"]
     body = base64.b64decode(recorded["response"]["bodyBase64"])
+
+    assert response_type == "application/connect+proto", (
+        f"the recording changed to {response_type!r}; the reason a proto client "
+        "reads is the JSON end frame the protocol requires under that label"
+    )
+
+    # The refusal is still in there, and still says what it is for.
     payload = json.loads(body[5:].decode("utf-8"))
     assert "error" in payload, "the recorded frame no longer carries a refusal"
     assert payload["error"]["code"] == "unimplemented", (
         f"the recorded refusal changed to {payload['error']['code']!r}"
     )
 
-    # Everything above is invariant and passes today. Re-pointing this at the
-    # corpus is the part that cannot: it needs the per-encoding recordings, so
-    # it is an xfail rather than an assertion that would go red on a corpus the
-    # SDK cannot influence. Not strict, so the fix flips it to a pass.
-    pytest.xfail(
-        f"live_watch declares {response_type} over a JSON body and is served to "
-        "proto clients as well; it needs per-encoding recordings before the "
-        "corpus can pin live.watch"
+    class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *args: object) -> None:
+            """Keep the test output clean."""
+
+        def do_POST(self) -> None:
+            self.close_connection = True
+            self.rfile.read(int(self.headers.get("content-length", "0")))
+            self.send_response(200)
+            self.send_header("content-type", response_type)
+            self.send_header("content-length", str(len(body)))
+            self.send_header("connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    url = f"http://127.0.0.1:{httpd.server_address[1]}"
+    # Binding is not serving: without this the socket accepts into the backlog and
+    # every request hangs instead of erroring.
+    serving = threading.Thread(target=httpd.serve_forever, daemon=True)
+    serving.start()
+    try:
+        with Loams(url) as client:
+            with pytest.raises(FeatureNotInVariantError) as caught:
+                list(
+                    client.live.watch(WatchRequest(initial=QuerySet(version=1)))
+                )
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        serving.join(timeout=5)
+
+    assert caught.value.reason == "feature_not_in_variant", (
+        f"the reason came back as {caught.value.reason!r}, so the recorded "
+        "refusal is not surviving the round trip"
     )
-    assert response_type.endswith("+json")
-
-
-# -- the async half -----------------------------------------------------------
-#
-# Every test above drives the synchronous client. That left `AsyncLoams.stream`
-# and `async_watch` unexecuted while R7 was being built, and the async token
-# factories were broken for exactly that reason -- a sync/async split that only
-# mypy was standing behind. These are the same scenarios through the async path,
-# in the same file, so the two halves cannot drift apart unnoticed.
 
 
 def test_the_async_stream_resumes_rather_than_restarts() -> None:

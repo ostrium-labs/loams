@@ -71,6 +71,7 @@ REACHABLE_FIXTURES = (
     "live_query_grpc_web_json",
     "live_query_json",
     "live_query_proto",
+    "live_watch",
     "mock_status_get_instance",
 )
 
@@ -126,22 +127,24 @@ def _bound_modules() -> dict[str, tuple[str, str]]:
 
 
 #: Required fixtures that are bound and would run, but whose recording is
-#: defective. Named so the gap is legible: `live_watch` is reachable as far as
-#: the SDK is concerned, and the only thing stopping it is the recording.
-#: `test_streams.py` says more about what is wrong with it.
-KNOWN_DEFECTIVE_FIXTURES = (
-    "live_watch",
-)
+#: defective. **Empty**, and it was not always.
+#:
+#: It used to hold `live_watch`, on the reasoning that its JSON end-stream body
+#: under an `application/connect+proto` label was a mislabelled recording that
+#: connect-python could not read "in any configuration". Replaying the recorded
+#: bytes says otherwise -- the Connect protocol defines the end-of-stream frame as
+#: JSON whatever the codec is, connect-python implements it that way, and the
+#: reason comes back intact. So the recording was sound, `verify-corpus.mjs` was
+#: the thing inventing the defect, and the fixture is now simply replayed.
+#:
+#: The list stays, rather than being deleted, because it is the honest place for a
+#: future "bound and reachable but the recording is wrong" to be *named* instead of
+#: quietly skipped. An empty tuple is a claim: nothing is currently in it.
+KNOWN_DEFECTIVE_FIXTURES = ()
 
 #: Why each is skipped, by name. Reported rather than edited -- the recording is
-#: shared authority for thirteen languages.
-KNOWN_DEFECTIVE_REASONS = {
-    "live_watch": (
-        "records a JSON end-stream body labelled application/connect+proto, and "
-        "family() hands that same case to proto clients, which cannot parse JSON "
-        "as a proto EndStreamResponse"
-    ),
-}
+#: shared authority for thirteen languages. Empty for the same reason as above.
+KNOWN_DEFECTIVE_REASONS: dict[str, str] = {}
 
 
 def _consume(result: object) -> object:
