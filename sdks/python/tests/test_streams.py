@@ -30,6 +30,7 @@ this case.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import http.server
 import json
@@ -40,11 +41,18 @@ import pytest
 
 from connectrpc.code import Code
 
-from loams import FeatureNotInVariantError, Loams, UnimplementedError, UnavailableError
+from loams import (
+    AsyncLoams,
+    FeatureNotInVariantError,
+    Loams,
+    LoamsError,
+    UnimplementedError,
+    UnavailableError,
+)
 from loams._gen.facade import MODULES
 from loams.errors.v1.errors_pb2 import ErrorInfo
 from loams.live.v1.live_pb2 import QuerySet, Resume, StateVersion, Transition, WatchRequest
-from loams.runtime.streams import ResumeOptions, watch
+from loams.runtime.streams import ResumeOptions, async_watch, watch
 
 WATCH_RPC = "loams.live.v1.LiveService/Watch"
 
@@ -338,3 +346,178 @@ def test_the_recorded_watch_case_cannot_be_replayed_yet() -> None:
         "corpus can pin live.watch"
     )
     assert response_type.endswith("+json")
+
+
+# -- the async half -----------------------------------------------------------
+#
+# Every test above drives the synchronous client. That left `AsyncLoams.stream`
+# and `async_watch` unexecuted while R7 was being built, and the async token
+# factories were broken for exactly that reason -- a sync/async split that only
+# mypy was standing behind. These are the same scenarios through the async path,
+# in the same file, so the two halves cannot drift apart unnoticed.
+
+
+def test_the_async_stream_resumes_rather_than_restarts() -> None:
+    """`async_watch` carries the cursor across a reconnect, exactly as `watch` does.
+
+    The async path is a separate implementation, not a wrapper, so it needs its
+    own proof: if it re-opened from the beginning the client would replay 1, 2, 3
+    and if it lost the cursor it would skip 4 and 5.
+    """
+    binding = _watch_binding()
+    reopened: list[str | None] = []
+
+    async def open_stream(request: WatchRequest, options: object = None):
+        reopened.append(None if request.HasField("resume") else "fresh")
+        if len(reopened) == 1:
+            yield _transition(1)
+            yield _transition(2)
+            yield _transition(3)
+            raise UnavailableError("the node went away", code=Code.UNAVAILABLE)
+        assert request.resume.last_version.ts == 3, (
+            f"the reconnect resumed at ts={request.resume.last_version.ts}, want 3"
+        )
+        yield _transition(4)
+        yield _transition(5)
+
+    resume = ResumeOptions(resume=_resume_request, cursor=lambda t: _decode(t.end), max_retries=3)
+
+    async def walk():
+        return [
+            t.end.ts
+            async for t in async_watch(
+                binding, open_stream, WatchRequest(initial=QuerySet(version=1)), None, resume
+            )
+        ]
+
+    versions = asyncio.run(walk())
+    assert versions == [1, 2, 3, 4, 5], f"the async stream produced {versions}"
+    assert len(reopened) == 2, f"the async stream was opened {len(reopened)} times, want 2"
+
+
+def test_a_heartbeat_does_not_erase_the_cursor_on_the_async_path() -> None:
+    """A repeated version is not a cursor, and must not reset the reconnect."""
+    binding = _watch_binding()
+    reopened: list[WatchRequest] = []
+
+    async def open_stream(request: WatchRequest, options: object = None):
+        reopened.append(request)
+        if len(reopened) == 1:
+            yield _transition(1)
+            yield _transition(1)
+            raise UnavailableError("the node went away", code=Code.UNAVAILABLE)
+        yield _transition(2)
+
+    resume = ResumeOptions(resume=_resume_request, cursor=lambda t: _decode(t.end), max_retries=2)
+
+    async def walk():
+        return [
+            t.end.ts
+            async for t in async_watch(
+                binding, open_stream, WatchRequest(initial=QuerySet(version=1)), None, resume
+            )
+        ]
+
+    assert asyncio.run(walk()) == [1, 1, 2]
+    assert reopened[1].resume.last_version.ts == 1, (
+        f"the async reconnect resumed at ts={reopened[1].resume.last_version.ts}, want 1"
+    )
+
+
+def test_an_unimplemented_async_stream_is_reported_not_spun_on() -> None:
+    """`unimplemented` is not a disconnect, so retrying it would loop forever."""
+    binding = _watch_binding()
+    opens = 0
+
+    async def open_stream(request: WatchRequest, options: object = None):
+        nonlocal opens
+        opens += 1
+        raise UnimplementedError(
+            "Watch is not implemented in this variant yet", code=Code.UNIMPLEMENTED
+        )
+        yield  # pragma: no cover - unreachable, keeps this an async generator
+
+    resume = ResumeOptions(resume=_resume_request, max_retries=5)
+
+    async def walk():
+        return [
+            t
+            async for t in async_watch(
+                binding, open_stream, WatchRequest(initial=QuerySet(version=1)), None, resume
+            )
+        ]
+
+    with pytest.raises(UnimplementedError):
+        asyncio.run(walk())
+    assert opens == 1, f"an unimplemented async stream was opened {opens} times, want 1"
+
+
+def test_an_async_stream_refusal_is_read_out_of_the_envelope() -> None:
+    """End to end through `AsyncLoams.stream`, over a real connection.
+
+    This is the only test that runs the wiring the sync one cannot: the async
+    facade lookup, the generated async module method, connect-python's async
+    streaming client and `async_watch`, all against HTTP 200 with the refusal
+    inside the envelope. `async_watch` on a stub proves the cursor logic; this
+    proves the bytes still arrive.
+    """
+    started = _EnvelopeServer("feature_not_in_variant")
+
+    async def walk() -> None:
+        try:
+            async with AsyncLoams(started.url, proto_json=True) as client:
+                async for _ in client.live.watch(WatchRequest(initial=QuerySet(version=1))):
+                    pass
+        finally:
+            started.close()
+
+    with pytest.raises(FeatureNotInVariantError) as caught:
+        asyncio.run(walk())
+    assert caught.value.reason == "feature_not_in_variant", (
+        f"the reason came back as {caught.value.reason!r}"
+    )
+
+
+def test_async_loams_stream_reaches_the_same_failure() -> None:
+    """`AsyncLoams.stream(...)` is a third door into the same machinery.
+
+    The module call (`client.live.watch`) and the generic `stream` are separate
+    wirings into `async_watch`, and the coroutine bug took out both. This one
+    takes explicit `resume_options`, so it is the shape a caller who cares about
+    the cursor would reach for.
+    """
+    started = _EnvelopeServer("feature_not_in_variant")
+
+    async def walk() -> None:
+        try:
+            async with AsyncLoams(started.url, proto_json=True) as client:
+                async for _ in client.stream(
+                    "live",
+                    "watch",
+                    WatchRequest(initial=QuerySet(version=1)),
+                    resume_options=ResumeOptions(resume=_resume_request, cursor=lambda t: _decode(t.end)),
+                ):
+                    pass
+        finally:
+            started.close()
+
+    with pytest.raises(FeatureNotInVariantError) as caught:
+        asyncio.run(walk())
+    assert caught.value.reason == "feature_not_in_variant"
+
+
+def test_a_binding_error_is_raised_when_the_stream_is_opened_not_iterated() -> None:
+    """The eager half stays eager: a bad call fails at the call, as it does sync.
+
+    Only the token resolution is deferred, because it is the one thing that must
+    be awaited. If the whole body moved into the generator, `client.stream` on a
+    module that does not exist would return quietly and fail on first iteration,
+    which is a worse error to get and a difference from the sync client.
+    """
+    async def open_bad_module() -> None:
+        async with AsyncLoams("http://127.0.0.1:1") as client:
+            with pytest.raises(LoamsError) as caught:
+                client.stream("nosuchmodule", "watch", WatchRequest(initial=QuerySet(version=1)))
+            assert "nosuchmodule" in str(caught.value)
+
+    asyncio.run(open_bad_module())

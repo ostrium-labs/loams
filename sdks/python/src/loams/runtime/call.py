@@ -506,25 +506,44 @@ class AsyncCallInvoker(_BaseInvoker):
             return None
         return await self._token_source.token()
 
-    async def stream(
+    def stream(
         self, binding: CallBinding, request: Message, options: CallOptions | None = None
-    ) -> Any:
-        """One async server stream, with the errors mapped."""
-        from collections.abc import AsyncIterator
+    ) -> AsyncIterator[Message]:
+        """One async server stream, with the errors mapped.
 
+        A plain `def` returning the iterator, not an `async def` returning one,
+        because that is what the generated `LiveModule.watch` declares --
+        `def watch(...) -> AsyncIterator[Transition]` -- and it is what
+        `AsyncLoams.stream` passes to `async_watch`. As an `async def` this
+        returned a coroutine, so `async for t in client.live.watch(req)` raised
+        `TypeError: 'async for' requires an object with __aiter__ method, got
+        coroutine`, and `AsyncLoams.stream` was broken by the same cause. Neither
+        path had ever been run.
+
+        The shape mirrors the sync `stream`: validation stays eager so a bad
+        binding fails at the call, and only the token resolution is deferred,
+        since that is the one thing that has to be awaited.
+        """
         call_options = options or CallOptions()
         _, _, _, session, consistency = self._plan(binding, call_options, request)
         method = _method_of(binding)
         client = self._client
         assert isinstance(client, ConnectClient)
-        bearer = await self._bearer()
-        source = client.execute_server_stream(
-            request=request,
-            method=method,
-            headers=call_headers(call_options, bearer, consistency),
-            timeout_ms=call_options.timeout_ms,
-        )
-        return _async_mapped(source, binding.rpc, session, self._refresh, call_options)
+
+        async def open() -> AsyncIterator[Message]:
+            bearer = await self._bearer()
+            source = client.execute_server_stream(
+                request=request,
+                method=method,
+                headers=call_headers(call_options, bearer, consistency),
+                timeout_ms=call_options.timeout_ms,
+            )
+            async for message in _async_mapped(
+                source, binding.rpc, session, self._refresh, call_options
+            ):
+                yield message
+
+        return open()
 
 
 async def _async_mapped(
