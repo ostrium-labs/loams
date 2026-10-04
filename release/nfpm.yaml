@@ -1,0 +1,123 @@
+# nFPM configuration for the three Linux package formats Loams ships.
+#
+# One file, three formats: .deb (Debian, Ubuntu), .rpm (Fedora, RHEL, openSUSE)
+# and .pkg.tar.zst (Arch, CachyOS). scripts/release/build-artifacts.py runs
+# `nfpm package -p <format> -f release/nfpm.yaml` and injects the `deb.signature`
+# and `rpm.signature` blocks itself, because signing is conditional on a key that
+# does not exist yet. Do not put a signing key path in this file.
+#
+# `${...}` values come from the environment build-artifacts.py sets; see
+# `ENVIRONMENT` in that script for what each one is. nfpm expands them itself, so
+# this file stays the single place a packager field lives.
+#
+# Why nFPM and not cargo-dist: cargo-dist 0.33.0 (D292) builds archives, shell
+# and PowerShell installers, npm, Homebrew and MSI, and nothing else -- its
+# documented installer list has no deb, no rpm and no Arch package (D627). nFPM
+# is the packager half of GoReleaser, is MIT licensed, ships as one static
+# binary, and produces all three formats from this single file.
+#
+# The Arch package is the CachyOS package. CachyOS is Arch-based: it installs
+# with `pacman` and reads `.pkg.tar.zst`. It has no use for an .rpm, and an .rpm
+# offered to a CachyOS machine silently installs nothing.
+name: loams
+arch: ${LOAMS_PACKAGE_ARCH}
+platform: ${LOAMS_PACKAGE_PLATFORM}
+# The workspace version. `version_schema: semver` is what maps 0.1.0 onto
+# rpm 0.1.0-1, deb 0.1.0 and Arch pkgver 0.1.0-1; `release` is the packaging
+# revision, bumped only when the package itself changes and the version does not.
+version: ${LOAMS_VERSION}
+version_schema: semver
+release: ${LOAMS_PACKAGE_RELEASE}
+# No `epoch`, and no `mtime` placeholder: nFPM decodes both as typed values
+# before it expands `${...}`, so a placeholder in either field fails the build.
+# build-artifacts.py injects `mtime` as a literal timestamp taken from the
+# release commit, never from the build machine's clock, which is what makes two
+# builds of the same source byte-identical. Verified by the self-test, which
+# builds a real .deb.
+
+section: database
+priority: optional
+vendor: ostrium-labs
+maintainer: The Loams Authors <maintainers@loams.dev>
+homepage: https://loams.dev
+license: Apache-2.0
+description: |
+  The Loams server: the native HTTP API, the Qdrant and Elasticsearch gateways,
+  and the dev, standalone, cluster, warm and durable commands.
+  .
+  This package installs the `loams` binary under /usr/bin, the built web
+  console under /usr/share/loams/console, and the systemd units loams.service
+  and loams@.service.
+
+# The shared library set of a x86_64-unknown-linux-gnu Rust binary: verified
+# 2026-10-04 with `readelf -d` on a binary built by this repository's toolchain
+# (rust-toolchain.toml, 1.97.1), whose DT_NEEDED entries are exactly
+# libgcc_s.so.1, libc.so.6 and ld-linux-x86-64.so.2. The server's reqwest is
+# `default-features = false` (Cargo.toml), so it links no TLS or proxy library.
+depends:
+  - libgcc-s1
+  - libc6
+
+# nFPM maps the same list onto each packager's own vocabulary:
+#   deb        libgcc-s1, libc6                (already in that vocabulary)
+#   rpm        gcc, glibc
+#   archlinux  gcc-libs, glibc
+# build-artifacts.py checks the mapping against the JSON schema nFPM ships, so a
+# dependency renamed upstream fails the build rather than the install.
+
+deb:
+  # The archive inside the .deb. xz needs no extra package on any supported
+  # Debian or Ubuntu, and dpkg has read xz since Debian 9.
+  compression: xz
+
+rpm:
+  compression: xz
+  group: Applications/Databases
+
+archlinux:
+  pkgbase: loams
+  # Without this, `pacman -Si loams` reports "Packager: Unknown Packager".
+  packager: The Loams Authors <maintainers@loams.dev>
+
+contents:
+  # The binary itself.
+  - src: staging/usr/bin/loams
+    dst: /usr/bin/loams
+    file_info:
+      mode: 0755
+
+  # The built web console (web/apps/console/dist, the `pnpm build` output). The
+  # server binary does not serve it: no static-file route exists in the engine
+  # today, and the console is deployed to Cloudflare by console-deploy.yml. It
+  # is packaged so an operator running their own front end has the exact assets
+  # the release built, byte for byte, next to the binary they installed.
+  - src: staging/usr/share/loams/console
+    dst: /usr/share/loams/console
+    file_info:
+      mode: 0644
+
+  # Licence and notices, where each packaging convention looks for them.
+  - src: staging/usr/share/doc/loams/LICENSE
+    dst: /usr/share/doc/loams/LICENSE
+    file_info:
+      mode: 0644
+  - src: staging/usr/share/doc/loams/NOTICE
+    dst: /usr/share/doc/loams/NOTICE
+    file_info:
+      mode: 0644
+  - src: staging/usr/share/doc/loams/README.md
+    dst: /usr/share/doc/loams/README.md
+    file_info:
+      mode: 0644
+
+  # systemd units. /usr/lib/systemd/system is the location Debian, Ubuntu,
+  # Fedora, RHEL, openSUSE, Arch and CachyOS all read (Arch and CachyOS also
+  # read /etc, but a packaged unit belongs under /usr).
+  - src: staging/usr/lib/systemd/system/loams.service
+    dst: /usr/lib/systemd/system/loams.service
+    file_info:
+      mode: 0644
+  - src: staging/usr/lib/systemd/system/loams@.service
+    dst: /usr/lib/systemd/system/loams@.service
+    file_info:
+      mode: 0644

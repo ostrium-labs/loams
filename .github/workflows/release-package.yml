@@ -1,0 +1,467 @@
+name: Release packages (Linux + Windows)
+
+# Linux packages and the Windows zip for a published release. This is the piece
+# that gives .github/workflows/release-sign.yml something to sign: its `sign`
+# job refuses to submit unless an .rpm is in the set (D625), because SignPath's
+# free Open Source Code Signing programme can sign `<rpm-sign>` and nothing else
+# Loams builds (D621). Before this workflow the repository produced no .rpm at
+# all, so the signing pipeline had nothing to sign and said so.
+#
+# docs/release/packaging.md is the page a maintainer reads. It names every
+# secret and variable below, what is signed, and what is not. Read that before
+# changing this file.
+#
+# What this workflow produces, per release tag:
+#
+#   Linux    loams_<v>_amd64.deb, loams-<v>-1.x86_64.rpm,
+#            loams-<v>-1-x86_64.pkg.tar.zst  (+ .sig when a GPG key exists)
+#   Windows  loams-<v>-windows-x86_64.zip, holding loams.exe and the console
+#
+# Signing, and the shape of the gate:
+#
+#   * The .deb and the .pkg.tar.zst are signed here, with the project's GPG key,
+#     because SignPath's free programme cannot sign either (D621). nFPM writes the
+#     .deb's _gpgorigin and gpg writes the pacman .sig.
+#   * The .rpm is NOT signed here. nFPM 2.47.0 cannot sign an RPM at all, so the
+#     .rpm goes to .github/workflows/release-sign.yml, which submits it to
+#     SignPath's <rpm-sign>. That is the whole reason the .rpm is built here.
+#   * Windows is unsigned, by decision (D620). There is no code-signing
+#     certificate in this project. The zip says so on its face.
+#
+# The gate is the same shape as release-sign.yml's: with no configuration the run
+# builds the artifacts, warns loudly that they are unsigned, and does not
+# pretend otherwise; dispatch with require_signing: true and it fails, naming
+# exactly what is missing. No step in this file reports a signature it did not
+# produce -- scripts/release/build-artifacts.py reads every signature back off
+# the finished artifact and writes signing.json.
+#
+# Repository publication is deliberately NOT done here. Publishing an apt, dnf
+# or pacman repository means putting packages in a public registry, and
+# scripts/release/make-repo.py refuses to build a repository from an unsigned
+# package at all. See "Repositories" in docs/release/packaging.md.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published release tag to package, vX.Y.Z. Defaults to the dispatched release.'
+        required: false
+        default: ''
+      require_signing:
+        description: >-
+          Fail the run when no GPG signing key is configured, instead of building
+          unsigned packages. Use this once the key exists, so a release cannot
+          quietly ship unsigned.
+        type: boolean
+        required: false
+        default: false
+
+# `contents: write` is what attaches the artifacts to the release. This workflow
+# does hold write permission, because attaching a package to a release is its
+# entire purpose; release-sign.yml deliberately does not, because submitting a
+# signing request and publishing are different powers.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-package-${{ github.event.release.tag_name || inputs.tag || github.run_id }}
+  # Two runs attaching to one release would interleave their asset lists.
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_BRANCH: ${{ vars.RELEASE_BRANCH || github.event.repository.default_branch }}
+
+jobs:
+  # The same guard release-crates.yml and release-sign.yml run: the tag must be a
+  # published release on the release branch, at the workspace version. The code
+  # that runs is the branch's, and the source under review includes the build
+  # scripts and the packaging definitions, which is what makes the artifact
+  # traceable to a reviewed commit.
+  guard:
+    name: release tag guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.guard.outputs.tag }}
+      version: ${{ steps.guard.outputs.version }}
+      mtime: ${{ steps.guard.outputs.mtime }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ vars.RELEASE_BRANCH || github.event.repository.default_branch }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - name: the tag is a published release on the release branch
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          test -n "$TAG" || { echo 'no release tag: dispatch with the tag input'; exit 1; }
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "$TAG is not a vX.Y.Z(-pre) tag"; exit 1
+          fi
+          gh release view "$TAG" --json isDraft,tagName -q '"release " + .tagName' \
+            || { echo "$TAG is not a published release"; exit 1; }
+          git rev-parse --verify "refs/tags/$TAG^{commit}" > "$RUNNER_TEMP/tag.sha" \
+            || { echo "$TAG has no commit in this repository"; exit 1; }
+          tag_sha=$(cat "$RUNNER_TEMP/tag.sha")
+          git merge-base --is-ancestor "$tag_sha" HEAD \
+            || { echo "$TAG is not on $RELEASE_BRANCH; refusing to package a tag from anywhere else"; exit 1; }
+          version=$(python3 -c 'import tomllib,sys;print(tomllib.load(open(sys.argv[1],"rb"))["workspace"]["package"]["version"])' Cargo.toml)
+          if [ "${TAG#v}" != "$version" ]; then
+            echo "the workspace version is $version but the release tag is $TAG"; exit 1
+          fi
+          # The packages bake this timestamp in, rather than the build machine's
+          # clock, so two builds of the same commit produce the same bytes.
+          mtime=$(git show -s --format=%cI "$tag_sha")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "mtime=$mtime" >> "$GITHUB_OUTPUT"
+          echo "$TAG ($version) is a published release on $RELEASE_BRANCH at $tag_sha, mtime $mtime"
+
+  # Decides, out loud, whether this run signs. Same rule as release-sign.yml's
+  # preflight: warn and continue by default, fail when the dispatcher asked for
+  # signing and there is no key.
+  preflight:
+    name: GPG signing configuration
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.decide.outputs.mode }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: decide whether this run signs
+        id: decide
+        env:
+          LOAMS_GPG_PRIVATE_KEY: ${{ secrets.LOAMS_GPG_PRIVATE_KEY }}
+          LOAMS_GPG_KEY_ID: ${{ vars.LOAMS_GPG_KEY_ID }}
+          REQUIRE_SIGNING: ${{ inputs.require_signing == true }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${LOAMS_GPG_PRIVATE_KEY:-}" ]] || missing+=("secret LOAMS_GPG_PRIVATE_KEY")
+          [[ -n "${LOAMS_GPG_KEY_ID:-}" ]] || missing+=("variable LOAMS_GPG_KEY_ID")
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "mode=sign" >> "$GITHUB_OUTPUT"
+            echo "A GPG key is configured; the .deb and the .pkg.tar.zst will be signed."
+            echo "The .rpm will still be unsigned here and is signed by .github/workflows/release-sign.yml (SignPath <rpm-sign>)."
+            echo "The Windows zip is unsigned by decision and will not be signed by this workflow."
+            exit 0
+          fi
+          if [ "$REQUIRE_SIGNING" = true ]; then
+            echo "::error::No GPG signing key is configured and require_signing was set, so this release would ship unsigned."
+            printf 'missing: %s\n' "${missing[@]}"
+            echo "docs/release/packaging.md has the setup, including the two steps that need an organisation owner."
+            exit 1
+          fi
+          echo "mode=skip" >> "$GITHUB_OUTPUT"
+          echo "::warning title=No GPG signing key::The .deb and the .pkg.tar.zst will be UNSIGNED. Missing: ${missing[*]}."
+          echo "::warning title=No signature was produced::The Linux packages are unsigned. The .rpm is unsigned until SignPath runs; the Windows zip is unsigned by decision. Do not describe this release as signed."
+
+  linux:
+    name: Linux packages (deb, rpm, pkg.tar.zst)
+    needs: [guard, preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      assets: ${{ steps.collect.outputs.assets }}
+      summary: ${{ steps.collect.outputs.summary }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Six build.rs scripts in this workspace shell out to protoc (see
+      # docs/build-from-source/windows.md for the crate-by-crate list). CI
+      # installs it the same way.
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      # The packaging scripts' own tests. They build real .deb, .rpm and
+      # .pkg.tar.zst files from fixtures, so a packaging definition that nFPM
+      # rejects fails here rather than on a release.
+      - name: the packaging self-tests
+        run: |
+          set -euo pipefail
+          bash scripts/release/install-nfpm.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          python3 scripts/release/build-artifacts.py --self-test
+          python3 scripts/release/make-repo.py --self-test
+
+      # The console is a separate pnpm workspace. Its build is deliberately
+      # non-fatal: the server binary does not serve it, and a TypeScript error in
+      # the console must not stop the .deb, the .rpm and the pacman package from
+      # being produced. The packaging script then ships the packages without the
+      # console and says so on stderr.
+      - name: the web console (non-fatal)
+        id: console
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          cd web
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+          test -f apps/console/dist/index.html
+
+      - name: build the server binary
+        run: cargo build --release -j 4 -p loams --bin loams --locked
+
+      # Recorded in the release notes so a reader can see what the binary
+      # actually links against, next to the depends list nfpm.yaml declares.
+      - name: the binary's dynamic dependencies
+        run: |
+          set -euo pipefail
+          readelf -d target/release/loams | grep NEEDED | tee "$RUNNER_TEMP/needed.txt"
+
+      - name: build the three Linux packages
+        id: package
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          MTIME: ${{ needs.guard.outputs.mtime }}
+          SIGN: ${{ needs.preflight.outputs.mode == 'sign' }}
+          LOAMS_GPG_PRIVATE_KEY: ${{ secrets.LOAMS_GPG_PRIVATE_KEY }}
+          LOAMS_GPG_KEY_ID: ${{ vars.LOAMS_GPG_KEY_ID }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/packages"
+          mkdir -p "$out"
+          nfpm package --version | tail -1
+
+          args=(--version "$VERSION" --binary target/release/loams
+                --format deb --format rpm --format archlinux
+                --out "$out" --mtime "$MTIME")
+
+          # The console is packaged when it built, and its absence is the
+          # script's problem to report rather than a reason to fail here.
+          if [ -f web/apps/console/dist/index.html ]; then
+            args+=(--console web/apps/console/dist)
+          else
+            echo "::notice::no console build; the packages will ship without /usr/share/loams/console"
+          fi
+
+          if [ "$SIGN" = true ]; then
+            # The key is a secret; the file goes in the runner's temp directory,
+            # is imported by the script, and is removed below. The runner is
+            # ephemeral, and this is the same key material the SignPath policy
+            # holds. The .rpm is deliberately left unsigned here.
+            printf '%s' "$LOAMS_GPG_PRIVATE_KEY" > "$RUNNER_TEMP/loams-signing-key.asc"
+            chmod 600 "$RUNNER_TEMP/loams-signing-key.asc"
+            args+=(--gpg-key "$RUNNER_TEMP/loams-signing-key.asc"
+                   --gpg-key-id "$LOAMS_GPG_KEY_ID")
+          fi
+
+          python3 scripts/release/build-artifacts.py "${args[@]}"
+          rm -f "$RUNNER_TEMP/loams-signing-key.asc"
+          ls -l "$out"
+
+      - name: attach the packages to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.guard.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # --clobber so a re-run of the same tag replaces the previous
+          # artifacts instead of failing on the ones already there.
+          gh release upload "$TAG" "$RUNNER_TEMP"/packages/* --clobber
+
+      - name: report what was built and what was signed
+        id: collect
+        env:
+          OUT: ${{ runner.temp }}/packages
+        run: |
+          set -euo pipefail
+          # signing.json is written by build-artifacts.py from signatures read
+          # back off the finished artifacts, so this table is that file, not a
+          # restatement of which key was configured.
+          python3 -c '
+          import json, sys
+          from pathlib import Path
+          out = Path(sys.argv[1])
+          report = json.loads((out / "signing.json").read_text(encoding="utf-8"))
+          for name, entry in sorted(report.items()):
+              state = "signed" if entry["signed"] else "UNSIGNED"
+              print("\t".join([name, entry["format"], state, entry["method"]]))
+          ' "$OUT" | tee "$RUNNER_TEMP/signing.tsv"
+          {
+            echo "assets<<EOF"
+            (cd "$OUT" && ls | grep -E '\.(deb|rpm|pkg\.tar\.zst|sig|json)$')
+            echo "EOF"
+            echo "summary<<EOF"
+            cat "$RUNNER_TEMP/signing.tsv"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: loams-linux-${{ needs.guard.outputs.tag }}
+          path: ${{ runner.temp }}/packages
+          if-no-files-found: error
+          retention-days: 30
+
+  windows:
+    name: Windows zip (unsigned)
+    needs: [guard]
+    runs-on: windows-latest
+    timeout-minutes: 120
+    outputs:
+      assets: ${{ steps.collect.outputs.assets }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Documented, per crate, in docs/build-from-source/windows.md: six build.rs
+      # scripts need protoc, and aws-lc-sys needs NASM on windows+x86_64 unless
+      # AWS_LC_SYS_PREBUILT_NASM=1. Visual Studio Build Tools and the MSVC target
+      # are already present on windows-latest.
+      - name: protoc and NASM
+        shell: pwsh
+        run: |
+          choco install --no-progress -y protobuf
+          choco install --no-progress -y nasm
+          $env:Path += ";$env:ChocolateyInstall\bin"
+          protoc --version
+          nasm -v
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: the web console (non-fatal)
+        id: console
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Set-Location web
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm build
+          if (-not (Test-Path apps/console/dist/index.html)) { throw 'no dist/index.html' }
+
+      - name: build the server binary
+        run: cargo build --release -j 4 -p loams --bin loams --locked
+
+      - name: report the toolchain and the binary
+        shell: pwsh
+        run: |
+          rustc -Vv
+          cargo -V
+          (Get-Item target/release/loams.exe).Length
+
+      - name: build the Windows zip
+        id: package
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'windows'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          python scripts/release/build-artifacts.py windows-zip `
+            --version $env:VERSION `
+            --binary target/release/loams.exe `
+            --console web/apps/console/dist `
+            --out $out
+          Get-ChildItem $out
+
+      - name: attach the zip to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.guard.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # There is no Authenticode signature on loams.exe (D620), so say so in
+          # the log before the file goes anywhere a user can reach it.
+          Write-Warning 'loams.exe carries NO Authenticode signature. Windows SmartScreen will show an unknown-publisher warning for a downloaded copy. See docs/build-from-source/windows.md.'
+          gh release upload $env:TAG (Join-Path $env:RUNNER_TEMP 'windows/*') --clobber
+
+      - name: report what was built
+        id: collect
+        shell: pwsh
+        run: |
+          $names = (Get-ChildItem (Join-Path $env:RUNNER_TEMP 'windows') -File).Name -join "`n"
+          "assets<<EOF`n$names`nEOF" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: loams-windows-${{ needs.guard.outputs.tag }}
+          path: ${{ runner.temp }}/windows
+          if-no-files-found: error
+          retention-days: 30
+
+  # One job edits the release notes, so the Linux and Windows notes cannot
+  # interleave. The warnings here are the point: a reader who downloads a file
+  # from this release must not have to guess whether it is signed.
+  notes:
+    name: release notes
+    needs: [guard, linux, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: append the packaging and signature status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          LINUX_ASSETS: ${{ needs.linux.outputs.assets }}
+          LINUX_SUMMARY: ${{ needs.linux.outputs.summary }}
+          WINDOWS_ASSETS: ${{ needs.windows.outputs.assets }}
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo "## Linux packages and the Windows zip"
+            echo
+            echo "### Linux"
+            echo
+            echo "| File | Format | Signature | By |"
+            echo "|---|---|---|---|"
+            printf '%s\n' "$LINUX_SUMMARY" | while IFS=$'\t' read -r name format state method; do
+              [ -n "$name" ] || continue
+              echo "| \`$name\` | $format | $state | $method |"
+            done
+            echo
+            echo "- The **.deb** and the **.pkg.tar.zst** are signed with the project GPG key at build time."
+            echo "- The **.rpm is not signed by this workflow**: nFPM cannot sign an RPM, so it is submitted to"
+            echo "  SignPath's \`<rpm-sign>\` by [\`.github/workflows/release-sign.yml\`](../../.github/workflows/release-sign.yml)."
+            echo "  Until that workflow has run against this tag, the .rpm is unsigned."
+            echo
+            echo "### Windows"
+            echo
+            echo "| File | Signature |"
+            echo "|---|---|"
+            printf '%s\n' "$WINDOWS_ASSETS" | grep -E '\.zip$' | while read -r name; do
+              [ -n "$name" ] || continue
+              echo "| \`$name\` | **UNSIGNED** |"
+            done
+            echo
+            echo "> **The Windows binary has no Authenticode signature.** Windows SmartScreen will show"
+            echo "> *Windows protected your PC* on a downloaded copy. That is an unknown-publisher warning,"
+            echo "> not a malware detection, and it clears once the user unblocks the file. Building from"
+            echo "> source produces no such prompt: [\`docs/build-from-source/windows.md\`](../../docs/build-from-source/windows.md)."
+            echo
+            echo "### Not in this release"
+            echo
+            echo "- **No macOS artifact.** macOS is unsigned and unbuilt by decision; build it yourself"
+            echo "  ([\`docs/build-from-source/macos.md\`](../../docs/build-from-source/macos.md))."
+            echo "- **No Android APK.** There is no Android or Gradle project in this repository."
+            echo "- **No AUR package in-tree.** A PKGBUILD is at [\`release/aur/PKGBUILD\`](../../release/aur/PKGBUILD);"
+            echo "  the AUR submission path is documented in [\`release/aur/README.md\`](../../release/aur/README.md)."
+          } >> "$RUNNER_TEMP/notes.md"
+
+          body=$(gh release view "$TAG" --json body -q .body)
+          marker="## Linux packages and the Windows zip"
+          case "$body" in
+            *"$marker"*)
+              echo "the release notes already carry the packaging section; leaving them alone"
+              exit 0
+              ;;
+          esac
+          { printf '%s\n' "$body"; cat "$RUNNER_TEMP/notes.md"; } > "$RUNNER_TEMP/body.md"
+          gh release edit "$TAG" --notes-file "$RUNNER_TEMP/body.md"
+          echo "release notes updated"

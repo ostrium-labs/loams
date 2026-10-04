@@ -1,0 +1,81 @@
+# Maintainer: The Loams Authors <maintainers@loams.dev>
+# Contributor: The Loams Authors <maintainers@loams.dev>
+#
+# This file is in the Loams repository, not in the AUR. Read
+# release/aur/README.md for how it gets into the AUR and what has to be true
+# first. Nothing here is submitted on the maintainer's behalf: the AUR is
+# public, and publishing under ostrium-labs is a human decision.
+
+pkgname=loams
+pkgver=0.0.1
+pkgrel=1
+pkgdesc="Object-storage-native database: native HTTP API, Qdrant and Elasticsearch gateways"
+arch=('x86_64')
+url="https://loams.dev"
+license=('Apache-2.0')
+
+# The default feature set, exactly as release/nfpm.yaml packages it: es, flight,
+# hnsw, qdrant. See docs/release/packaging.md for why `durable` and `tikv` are
+# not in the packaged build -- if you enable one here, this PKGBUILD no longer
+# matches the .deb and the .rpm, and its dependency list is then wrong.
+makedepends=('cargo' 'rust' 'protobuf-compiler')
+
+depends=('gcc-libs')
+optdepends=(
+  'qdrant: the Qdrant gateway (`loams dev` expects it on 127.0.0.1:6333)'
+  'elasticsearch: the Elasticsearch gateway (`loams dev` expects it on 127.0.0.1:9200)'
+)
+provides=('loams-server')
+backup=('etc/default/loams')
+source=("https://github.com/ostrium-labs/loams/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+# A source package, like every other AUR package, builds from source. The
+# prebuilt .pkg.tar.zst that Loams publishes for pacman is a *different* thing
+# and does not belong here: AUR packages that wrap a prebuilt binary need the
+# binary's checksum pinned, and pinning a checksum that changes every release
+# means a maintainer edit on every release. If you would rather not compile
+# ~500 crates on the user's machine, install the published repository instead --
+# see release/aur/README.md.
+build() {
+  cd "$srcdir/loams-$pkgver"
+  # --locked so a stale Cargo.lock fails the build instead of silently updating.
+  cargo build --release --locked -j "$(nproc)" -p loams --bin loams
+}
+
+# check() runs the crates' own tests. It is commented out on purpose: a full
+# `cargo test --workspace` takes hours and needs live Qdrant, Elasticsearch and
+# TiKV services, none of which a PKGBUILD review machine has. Uncomment it if
+# you are validating a new Loams version and have the services.
+# check() {
+#   cd "$srcdir/loams-$pkgver"
+#   cargo test --release --locked -p loams
+# }
+
+package() {
+  cd "$srcdir/loams-$pkgver"
+
+  install -Dm755 "target/release/loams" "$pkgdir/usr/bin/loams"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 NOTICE "$pkgdir/usr/share/licenses/$pkgname/NOTICE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+  # The same units the .deb and the .rpm install, from release/systemd/.
+  install -Dm644 release/systemd/loams.service \
+    "$pkgdir/usr/lib/systemd/system/loams.service"
+  install -Dm644 release/systemd/loams@.service \
+    "$pkgdir/usr/lib/systemd/system/loams@.service"
+
+  # The unit reads this through EnvironmentFile=-, so an empty file is correct:
+  # the unit runs with `dev`'s own defaults. See docs/release/packaging.md.
+  install -Dm644 /dev/null "$pkgdir/etc/default/loams"
+}
+
+# No post_install hook starts the server. Enabling a network service from a
+# package install without the operator asking is not something this package
+# should do. The README says to run:
+#
+#   sudo systemctl enable --now loams
+#
+# and release/aur/README.md says it too.
