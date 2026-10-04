@@ -30,7 +30,13 @@ use crate::{Call, Model, Module, PackageMap, naming};
 /// absolutely so the generated file reads the same wherever it is placed inside
 /// the `loams` package. §44 §7.3 splits the SDK into the generated facade and
 /// the hand-written runtime; these are the runtime's types.
-const RUNTIME: &str = "loams.runtime.call";
+///
+/// `CallOptions` is named from where it is *defined*, not where it happens to be
+/// re-exported. `loams.runtime.call` only re-exports it, and importing through
+/// the re-export means the facade appears to depend on the whole call machinery
+/// -- which imports the facade, so that dependency has to stay type-only, and
+/// mypy rejects importing a name a module does not explicitly export.
+const OPTIONS: &str = "loams.runtime.options";
 
 /// Renders `facade.py`.
 pub fn render(model: &Model, packages: &PackageMap, rev: &str) -> Result<String, String> {
@@ -80,7 +86,7 @@ fn header(out: &mut String) {
     // an annotation, which `from __future__ import annotations` leaves as a
     // string, so nothing is resolved at import time. LoamsError and
     // ResponseStream were imported here and never referenced.
-    writeln!(out, "if TYPE_CHECKING:\n    from {RUNTIME} import CallOptions").ok();
+    writeln!(out, "if TYPE_CHECKING:\n    from {OPTIONS} import CallOptions").ok();
     // Runtime, not type-only: `IDEMPOTENCY_LEVELS` binds `IdempotencyLevel`
     // members at import time, and `Message` is the protobuf base the
     // `MethodInfo` type parameters are declared over.

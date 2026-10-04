@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, ClassVar, Final, Literal, Protocol
 
 import loams
 if TYPE_CHECKING:
-    from loams.runtime.call import CallOptions
+    from loams.runtime.options import CallOptions
 from connectrpc.method import IdempotencyLevel, MethodInfo
 from google.protobuf.message import Message
 from loams.instance.v1.instance_pb2 import GetInstanceRequest, GetInstanceResponse, WhoAmIRequest, WhoAmIResponse
