@@ -1122,10 +1122,18 @@ jobs:
       - uses: actions/checkout@v7
       - name: the Swift toolchain's version
         run: swift --version
+      # The filter also matches `.github/workflows/**`, so this job runs on the
+      # PR that adds it, when sdks/swift may not be on the base yet. Skip
+      # honestly rather than fail on a directory that is not there.
+      - name: the Swift SDK is present
+        id: present
+        run: test -f sdks/swift/Package.swift
       - name: the Swift SDK builds
+        if: steps.present.outcome == 'success'
         working-directory: sdks/swift
         run: swift build
       - name: the Swift SDK's tests
+        if: steps.present.outcome == 'success'
         working-directory: sdks/swift
         run: swift test
 
