@@ -15,6 +15,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Final, Literal, Protocol
+
+import loams
 if TYPE_CHECKING:
     from loams.runtime.call import CallOptions
 from connectrpc.method import IdempotencyLevel, MethodInfo

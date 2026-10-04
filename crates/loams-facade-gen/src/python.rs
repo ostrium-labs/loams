@@ -71,7 +71,9 @@ fn header(out: &mut String) {
          \n\
          from collections.abc import AsyncIterator, Iterator\n\
          from dataclasses import dataclass\n\
-         from typing import TYPE_CHECKING, ClassVar, Final, Literal, Protocol\n",
+         from typing import TYPE_CHECKING, ClassVar, Final, Literal, Protocol\n\
+         \n\
+         import loams\n",
     );
     // Type-only: the runtime imports *this* module's binding table, so a
     // module-level import back into it is a cycle. Every use of CallOptions is
