@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Protocol
 
 from connectrpc.code import Code
 
@@ -104,12 +104,34 @@ def _call_options(config: CallOptions | None) -> CallOptions | None:
     return config
 
 
+class _GetInstance(Protocol):
+    """The `instance.get_instance` the catalogue check is built on.
+
+    A `Callable[[...], ...]` cannot say that `options` is keyword-only, and the
+    generated module methods declare it that way, so a positional Callable type
+    rejected every one of them. Spelling the signature out keeps the keyword-only
+    contract enforced rather than weakening it to `Callable[...]`.
+    """
+
+    def __call__(
+        self, request: GetInstanceRequest, *, options: CallOptions | None = ...
+    ) -> GetInstanceResponse: ...
+
+
+class _GetInstanceAsync(Protocol):
+    """`_GetInstance` for `AsyncSystemApi`."""
+
+    def __call__(
+        self, request: GetInstanceRequest, *, options: CallOptions | None = ...
+    ) -> Awaitable[GetInstanceResponse]: ...
+
+
 class SystemApi:
     """The catalogue, the version check and the guard."""
 
     def __init__(
         self,
-        get_instance: Callable[[GetInstanceRequest, CallOptions | None], GetInstanceResponse],
+        get_instance: _GetInstance,
         config: CallOptions | None = None,
     ) -> None:
         """`get_instance` is `loams.instance.get_instance`, the one RPC used here.
@@ -134,7 +156,7 @@ class SystemApi:
             return self._catalogue
         with self._lock:
             if self._in_flight is None:
-                self._in_flight = self._get_instance(GetInstanceRequest(), self._config)
+                self._in_flight = self._get_instance(GetInstanceRequest(), options=self._config)
             response = self._in_flight
         try:
             catalogue = to_catalogue(tuple(response.services))
@@ -189,7 +211,7 @@ class SystemApi:
         for the modules that are there, and the caller decides what a missing one
         means.
         """
-        response = self._get_instance(GetInstanceRequest(), self._config)
+        response = self._get_instance(GetInstanceRequest(), options=self._config)
         api_versions = tuple(response.api_versions)
         spoken = spoken_packages()
         missing = tuple(name for name in spoken if name not in api_versions)
@@ -207,9 +229,7 @@ class AsyncSystemApi:
 
     def __init__(
         self,
-        get_instance: Callable[
-            [GetInstanceRequest, CallOptions | None], Awaitable[GetInstanceResponse]
-        ],
+        get_instance: _GetInstanceAsync,
         config: CallOptions | None = None,
     ) -> None:
         self._get_instance = get_instance
@@ -226,7 +246,7 @@ class AsyncSystemApi:
         if self._catalogue is not None:
             return self._catalogue
         if self._in_flight is None:
-            self._in_flight = self._get_instance(GetInstanceRequest(), self._config)
+            self._in_flight = self._get_instance(GetInstanceRequest(), options=self._config)
         response = await self._in_flight
         catalogue = to_catalogue(tuple(response.services))
         self._catalogue = catalogue
@@ -265,7 +285,7 @@ class AsyncSystemApi:
 
     async def version(self) -> VersionReport:
         """The proto revision check (R9)."""
-        response = await self._get_instance(GetInstanceRequest(), self._config)
+        response = await self._get_instance(GetInstanceRequest(), options=self._config)
         api_versions = tuple(response.api_versions)
         spoken = spoken_packages()
         missing = tuple(name for name in spoken if name not in api_versions)
