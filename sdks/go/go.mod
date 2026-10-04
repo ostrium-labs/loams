@@ -1,6 +1,6 @@
 module loams.dev/go
 
-go 1.24.0
+go 1.25.0
 
 require (
 	connectrpc.com/connect v1.19.2
@@ -8,6 +8,6 @@ require (
 )
 
 require (
-	golang.org/x/net v0.33.0
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/net v0.55.0
+	golang.org/x/text v0.37.0 // indirect
 )
