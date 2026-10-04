@@ -149,10 +149,12 @@ time-fmt = "0.3.8"
 toml = "0.8"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["net"] }
-# Browser Run's CDP endpoint is a WebSocket (design §42 §4, AP1c). rustls with the
-# webpki roots: the endpoint is always api.cloudflare.com, so the system trust
-# store is not needed. MIT/Apache-2.0 (cargo deny).
-tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+# tokio-tungstenite is deliberately NOT a workspace dependency: its two
+# consumers need incompatible shapes and Cargo unions features across a
+# shared declaration. loams-web-bridge speaks wss:// to api.cloudflare.com
+# and needs rustls; loams-sidebar-browser speaks ws:// to a loopback Obscura
+# process only, and keeps no TLS stack in its graph. Each crate declares its
+# own; the cost is two semver-incompatible copies during coexistence.
 tokio-util = { version = "0.7", default-features = false }
 tonic = "0.14"
 tonic-prost = "0.14"
