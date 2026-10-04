@@ -40,7 +40,7 @@ const EXCEPTION_PREFIX: &str = "DB::Exception: ";
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChdbError {
     /// The ClickHouse error code: `60` for `UNKNOWN_TABLE`, `394` for
-    /// `CANCELLED`.
+    /// `QUERY_WAS_CANCELLED`.
     pub code: i32,
     /// The ClickHouse error name: `UNKNOWN_TABLE`.
     pub name: String,
@@ -101,14 +101,20 @@ impl ChdbError {
     /// chDB itself does not answer 394 after `chdb_stream_cancel_query`: the
     /// handle is gone and the next fetch says `"No active streaming query"`,
     /// with no code and no name (measured, v26.9.0). A client that killed a
-    /// statement expects `Code: 394 … (CANCELLED)`, and the House's own
+    /// statement expects `Code: 394. DB::Exception: … (QUERY_WAS_CANCELLED)`, and the House's own
     /// `KILL QUERY` path (Task 4) needs a code to answer with, so a stream that
     /// Loams itself cancelled reports 394 and keeps the engine's words as the
     /// message.
+    ///
+    /// The name is ClickHouse's, read from `APPLY_FOR_BUILTIN_ERROR_CODES` in
+    /// `src/Common/ErrorCodes.cpp` at tag `v26.9.4.3-stable`: 394 is
+    /// `QUERY_WAS_CANCELLED`. An earlier draft here said `CANCELLED`, which is
+    /// not a ClickHouse error name at all, so a client matching on the name would
+    /// have failed on a cancellation it caused itself.
     pub fn cancelled(query_id: &str, detail: impl Into<String>) -> Self {
         Self {
             code: Self::CANCELLED,
-            name: "CANCELLED".to_string(),
+            name: "QUERY_WAS_CANCELLED".to_string(),
             message: format!("query {query_id} was cancelled: {}", detail.into()),
         }
     }

@@ -1227,6 +1227,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-house"
+version = "0.0.1"
+dependencies = [
+ "loams-chdb",
+ "loams-chdb-sys",
+ "thiserror",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"

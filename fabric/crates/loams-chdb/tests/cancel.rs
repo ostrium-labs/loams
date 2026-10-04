@@ -16,7 +16,7 @@
 //!   on: `system.processes` lists ids the engine generated itself.
 //!
 //! So the cancellation a client sees is Loams': `Session::cancel` registers it, the
-//! stream answers `394 CANCELLED` at once, and the engine is asked to stop in the
+//! stream answers `394 QUERY_WAS_CANCELLED` at once, and the engine is asked to stop in the
 //! background. That is what "cancelled within 1 s" can mean against this ABI, and
 //! this test is what says so.
 
@@ -95,7 +95,10 @@ fn cancel_stops_a_long_query() {
         err.code, 394,
         "ClickHouse's code for a cancelled statement, got {err}"
     );
-    assert_eq!(err.name, "CANCELLED", "and its name");
+    assert_eq!(
+        err.name, "QUERY_WAS_CANCELLED",
+        "and ClickHouse's name for 394"
+    );
     assert!(
         err.message.contains(query_id),
         "the message names the statement that was cancelled: {}",
