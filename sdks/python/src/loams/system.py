@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from connectrpc.code import Code
 

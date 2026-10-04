@@ -18,8 +18,15 @@ written once as free functions so the two cannot drift on the parts R1–R4 pin.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterator, Mapping, MutableMapping
-from typing import TypeVar
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Iterator,
+    Mapping,
+    MutableMapping,
+)
+from typing import Any, TypeVar
 
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code

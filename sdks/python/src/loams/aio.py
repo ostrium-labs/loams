@@ -29,13 +29,14 @@ from typing import Any, Self, cast
 from google.protobuf.message import Message
 
 from loams._gen.facade import (
-    MODULES,
-    PROTO_PACKAGES,
-    PROTO_REV,
-    CallBinding,
+    CallBinding   ,
     InstanceModule,
-    LiveModule,
-    TablesModule,
+    LiveModule    ,
+    MODULES       ,
+    ModuleBinding ,
+    PROTO_PACKAGES,
+    PROTO_REV     ,
+    TablesModule  ,
 )
 from loams.runtime.call import AsyncCallInvoker
 from loams.runtime.consistency import ConsistencySession
