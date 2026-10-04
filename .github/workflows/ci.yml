@@ -1112,7 +1112,13 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.24.0'
+          # Must be >= sdks/go/go.mod's `go 1.25.0`. This job also sets
+          # GOTOOLCHAIN=local, so Go cannot self-upgrade past what setup-go
+          # installed and the mismatch is a hard failure:
+          #   go: go.mod requires go >= 1.25.0 (running go 1.24.0;
+          #       GOTOOLCHAIN=local)
+          # It was the only job pinning an exact 1.24.0; the others use "1.24".
+          go-version: '1.25.0'
           cache-dependency-path: sdks/go/go.sum
       - name: the Go SDK's tests
         working-directory: sdks/go
