@@ -27,12 +27,19 @@ this case.
 
 from __future__ import annotations
 
+import base64
+import http.server
+import json
+import pathlib
+import threading
+
 import pytest
 
 from connectrpc.code import Code
 
 from loams import FeatureNotInVariantError, Loams, UnimplementedError, UnavailableError
 from loams._gen.facade import MODULES
+from loams.errors.v1.errors_pb2 import ErrorInfo
 from loams.live.v1.live_pb2 import QuerySet, Resume, StateVersion, Transition, WatchRequest
 from loams.runtime.streams import ResumeOptions, watch
 
@@ -186,35 +193,129 @@ def test_without_a_resume_policy_the_stream_reopens_from_the_beginning() -> None
     assert requests[1].initial.version == 1, "and from the caller's original query set"
 
 
-def test_the_recorded_watch_refusal_is_read_out_of_the_streaming_envelope(endpoint: str) -> None:
-    """`live_watch`: HTTP 200, and the failure is inside the envelope.
+class _EnvelopeServer:
+    """Serves one Connect end-of-stream error frame, as `loams dev` does.
 
-    The recorded case is an `unimplemented` carrying `reason =
-    feature_not_in_variant`, delivered as a Connect end-of-stream error frame
-    behind an HTTP 200. An SDK that reports the status code reports a healthy
-    empty watch, so this is the case that proves the envelope is read.
-
-    xfail, and the reason is a defect in the recorded case rather than in this
-    SDK: `sdks/fixtures/recorded/live_watch.json` records its response with
-    `content-type: application/connect+proto` but a **JSON** body --
-    `AgAAAOV7ImVycm9yIjp7...`, flags 0x02 and then `{"error":{...}}`. The
-    fixture server keys both Connect encodings as one family, so it hands that
-    same JSON-labelled-proto case to a proto client, which cannot parse JSON as
-    a proto `EndStreamResponse`. Verified by probing the server directly: both
-    `application/connect+json` and `application/connect+proto` get
-    `200 application/connect+proto` with the same 234 JSON bytes.
-
-    Fixing the corpus -- relabel the content-type, or record a real proto
-    end-of-stream frame -- makes this pass. Not strict, so it flips to a real
-    pass rather than a failure when that happens.
+    The refusal is inside the envelope behind an HTTP 200, which is the whole
+    point: an SDK that reports the status code reports a healthy empty watch.
     """
-    pytest.xfail(
-        "sdks/fixtures/recorded/live_watch.json labels a JSON end-stream body as "
-        "application/connect+proto, so no Connect client can parse it"
-    )
-    with Loams(endpoint) as client:
-        with pytest.raises(FeatureNotInVariantError) as caught:
-            list(client.live.watch(WatchRequest(initial=QuerySet(version=1))))
+
+    def __init__(self, reason: str) -> None:
+        info = ErrorInfo(reason=reason)
+        detail = json.dumps(
+            {
+                "type": "loams.errors.v1.ErrorInfo",
+                "value": base64.b64encode(info.SerializeToString()).decode("ascii"),
+            }
+        )
+        payload = json.dumps(
+            {
+                "error": {
+                    "code": "unimplemented",
+                    "message": "loams.live.v1.LiveService/Watch is not in the standard variant",
+                    "details": [json.loads(detail)],
+                }
+            }
+        ).encode()
+        frame = bytes([0x02]) + len(payload).to_bytes(4, "big") + payload
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args: object) -> None:
+                """Keep the test output clean."""
+
+            def do_POST(self) -> None:
+                self.rfile.read(int(self.headers.get("content-length", "0")))
+                self.send_response(200)
+                self.send_header("content-type", "application/connect+json")
+                self.send_header("content-length", str(len(frame)))
+                self.end_headers()
+                self.wfile.write(frame)
+
+        self._httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._httpd.server_address[1]}"
+        # Binding is not serving: without this a request hangs instead of
+        # failing, which reads like an SDK bug rather than a harness one.
+        self._serving = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._serving.start()
+
+    def close(self) -> None:
+        self._httpd.shutdown()
+        self._httpd.server_close()
+        self._serving.join(timeout=5)
+
+
+def test_a_stream_refusal_is_read_out_of_the_envelope() -> None:
+    """HTTP 200, and the failure is inside the end-of-stream frame.
+
+    R7 and R8 on a stream: the refusal has to arrive as the reason the server
+    gave, not as an empty stream and not as a bare `InternalError`. This is the
+    behaviour `live_watch` exists to pin against the corpus.
+    """
+    started = _EnvelopeServer("feature_not_in_variant")
+    try:
+        # `proto_json` because the frame is Connect JSON. The SDK's default is
+        # the binary encoding, which is correct -- see the note on the recorded
+        # case below for why the corpus cannot serve that here.
+        with Loams(started.url, proto_json=True) as client:
+            with pytest.raises(FeatureNotInVariantError) as caught:
+                list(client.live.watch(WatchRequest(initial=QuerySet(version=1))))
+    finally:
+        started.close()
     assert caught.value.reason == "feature_not_in_variant", (
         f"the reason came back as {caught.value.reason!r}"
     )
+    assert caught.value.hint is None or isinstance(caught.value.hint, str)
+
+
+def test_the_recorded_watch_case_cannot_be_replayed_yet() -> None:
+    """Why the recorded half of this test is absent, asserted so it cannot rot.
+
+    `sdks/fixtures/recorded/live_watch.json` files its response under
+    `application/connect+proto` but the body is Connect **JSON**: flags 0x02,
+    length 229, then `{"error":{...}}`. Two independent problems, and fixing
+    only the first does not help:
+
+    1. The recording contradicts itself, which `encodingMismatch` in
+       `sdks/conformance/encodings.mjs` now fails the corpus gate on.
+    2. `family()` in `fixture-server.mjs` maps `+json` and `+proto` to one
+       family, so that single case is served to proto clients too. Relabelling
+       it to `+json` does make the corpus verify, and the SDK still fails -- it
+       requests the binary encoding by default and gets JSON back. Verified
+       both ways: probing the server returns `200 application/connect+json` with
+       the same 234 JSON bytes for either client content-type, and only a
+       `proto_json=True` client reads the reason.
+
+    So this needs per-encoding recordings for the streaming case, the way the
+    unary ones already have `_proto` and `_json` variants, and not a relabelled
+    single case. That is a corpus decision, so it is recorded here rather than
+    worked around. The SDK's half is proven by the test above, which passes.
+    """
+    recorded = json.loads(
+        (
+            pathlib.Path(__file__).resolve().parent.parent.parent
+            / "fixtures"
+            / "recorded"
+            / "live_watch.json"
+        ).read_text()
+    )
+    response_type = recorded["response"]["headers"]["content-type"]
+    body = base64.b64decode(recorded["response"]["bodyBase64"])
+    payload = json.loads(body[5:].decode("utf-8"))
+    assert "error" in payload, "the recorded frame no longer carries a refusal"
+    assert payload["error"]["code"] == "unimplemented", (
+        f"the recorded refusal changed to {payload['error']['code']!r}"
+    )
+
+    # Everything above is invariant and passes today. Re-pointing this at the
+    # corpus is the part that cannot: it needs the per-encoding recordings, so
+    # it is an xfail rather than an assertion that would go red on a corpus the
+    # SDK cannot influence. Not strict, so the fix flips it to a pass.
+    pytest.xfail(
+        f"live_watch declares {response_type} over a JSON body and is served to "
+        "proto clients as well; it needs per-encoding recordings before the "
+        "corpus can pin live.watch"
+    )
+    assert response_type.endswith("+json")
