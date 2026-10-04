@@ -7,7 +7,6 @@ from typing import Protocol
 
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
-from connectrpc.codec import Codec
 from connectrpc.compression import Compression
 from connectrpc.errors import ConnectError
 from connectrpc.interceptor import Interceptor, InterceptorSync
@@ -47,7 +46,7 @@ class DeviceService(Protocol):
 
 
 class DeviceServiceASGIApplication(ConnectASGIApplication[DeviceService]):
-    def __init__(self, service: DeviceService | AsyncGenerator[DeviceService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: DeviceService | AsyncGenerator[DeviceService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -145,7 +144,6 @@ class DeviceServiceASGIApplication(ConnectASGIApplication[DeviceService]):
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -340,9 +338,6 @@ class DeviceServiceClient(ConnectClient):
         )
 
 
-
-
-
 class DeviceServiceSync(Protocol):
     def create_pairing(self, request: loams_dot_devices_dot_v1_dot_devices__pb2.CreatePairingRequest, ctx: RequestContext) -> loams_dot_devices_dot_v1_dot_devices__pb2.CreatePairingResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
@@ -365,7 +360,7 @@ class DeviceServiceSync(Protocol):
 
 
 class DeviceServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: DeviceServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: DeviceServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             endpoints={
                 "/loams.devices.v1.DeviceService/CreatePairing": EndpointSync.unary(
@@ -462,7 +457,6 @@ class DeviceServiceWSGIApplication(ConnectWSGIApplication):
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -655,5 +649,3 @@ class DeviceServiceClientSync(ConnectClientSync):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
-

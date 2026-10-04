@@ -14,9 +14,11 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
-from typing import ClassVar, Final, Literal, Protocol
-
-from loams.runtime.call import CallOptions, LoamsError, ResponseStream
+from typing import TYPE_CHECKING, ClassVar, Final, Literal, Protocol
+if TYPE_CHECKING:
+    from loams.runtime.call import CallOptions
+from connectrpc.method import IdempotencyLevel, MethodInfo
+from google.protobuf.message import Message
 from loams.instance.v1.instance_pb2 import GetInstanceRequest, GetInstanceResponse, WhoAmIRequest, WhoAmIResponse
 from loams.instance.v1.instance_connect import InstanceServiceClient, InstanceServiceClientSync
 from loams.live.v1.live_pb2 import DeployRequest, DeployResponse, ModifyQuerySetRequest, ModifyQuerySetResponse, MutateRequest, MutateResponse, QueryRequest, QueryResponse, Transition, WatchRequest
@@ -331,50 +333,50 @@ METHODS: Final[dict[str, MethodInfo[Message, Message]]] = {
     "loams.instance.v1.InstanceService/GetInstance": MethodInfo(
         name="GetInstance",
         service_name="loams.instance.v1.InstanceService",
-        input=loams.instance.v1.v1_pb2.GetInstanceRequest,
-        output=loams.instance.v1.v1_pb2.GetInstanceResponse,
+        input=GetInstanceRequest,
+        output=GetInstanceResponse,
         idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
     ),
     "loams.instance.v1.InstanceService/WhoAmI": MethodInfo(
         name="WhoAmI",
         service_name="loams.instance.v1.InstanceService",
-        input=loams.instance.v1.v1_pb2.WhoAmIRequest,
-        output=loams.instance.v1.v1_pb2.WhoAmIResponse,
+        input=WhoAmIRequest,
+        output=WhoAmIResponse,
         idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
     ),
     "loams.live.v1.LiveService/ModifyQuerySet": MethodInfo(
         name="ModifyQuerySet",
         service_name="loams.live.v1.LiveService",
-        input=loams.live.v1.v1_pb2.ModifyQuerySetRequest,
-        output=loams.live.v1.v1_pb2.ModifyQuerySetResponse,
+        input=ModifyQuerySetRequest,
+        output=ModifyQuerySetResponse,
         idempotency_level=IDEMPOTENCY_LEVELS["none"],
     ),
     "loams.live.v1.LiveService/Watch": MethodInfo(
         name="Watch",
         service_name="loams.live.v1.LiveService",
-        input=loams.live.v1.v1_pb2.WatchRequest,
-        output=loams.live.v1.v1_pb2.Transition,
+        input=WatchRequest,
+        output=Transition,
         idempotency_level=IDEMPOTENCY_LEVELS["none"],
     ),
     "loams.live.v1.LiveService/Deploy": MethodInfo(
         name="Deploy",
         service_name="loams.live.v1.LiveService",
-        input=loams.live.v1.v1_pb2.DeployRequest,
-        output=loams.live.v1.v1_pb2.DeployResponse,
+        input=DeployRequest,
+        output=DeployResponse,
         idempotency_level=IDEMPOTENCY_LEVELS["none"],
     ),
     "loams.live.v1.LiveService/Mutate": MethodInfo(
         name="Mutate",
         service_name="loams.live.v1.LiveService",
-        input=loams.live.v1.v1_pb2.MutateRequest,
-        output=loams.live.v1.v1_pb2.MutateResponse,
+        input=MutateRequest,
+        output=MutateResponse,
         idempotency_level=IDEMPOTENCY_LEVELS["none"],
     ),
     "loams.live.v1.LiveService/Query": MethodInfo(
         name="Query",
         service_name="loams.live.v1.LiveService",
-        input=loams.live.v1.v1_pb2.QueryRequest,
-        output=loams.live.v1.v1_pb2.QueryResponse,
+        input=QueryRequest,
+        output=QueryResponse,
         idempotency_level=IDEMPOTENCY_LEVELS["none"],
     ),
 }

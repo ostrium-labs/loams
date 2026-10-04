@@ -27,7 +27,7 @@ from typing import Awaitable, Callable
 
 from connectrpc.code import Code
 
-from loams.gen.facade import (
+from loams._gen.facade import (
     FEATURE_NOT_IN_VARIANT,
     MODULES,
     PROTO_PACKAGES,

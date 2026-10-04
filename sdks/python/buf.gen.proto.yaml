@@ -58,7 +58,7 @@ plugins:
   # maintained `protobuf` distribution. Verified by running both plugins over
   # `proto/` and importing the result against connectrpc 0.12.1 and protobuf
   # 7.36.2.
-  - remote: buf.build/connectrpc/python:v0.10.1
+  - remote: buf.build/connectrpc/python:v0.9.0
     out: sdks/python/src
     opt:
       - protobuf=google

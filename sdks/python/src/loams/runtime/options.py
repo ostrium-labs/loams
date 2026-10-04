@@ -1,6 +1,6 @@
 """The types both sides of the call path need, in one leaf module.
 
-`loams.gen.facade` is generated and imports from here so its typed module
+`loams._gen.facade` is generated and imports from here so its typed module
 protocols can name a call's options; `loams.runtime.call` imports the same types
 so it can honour them. Nothing here imports either, which is what keeps the
 direction of the dependency one-way.

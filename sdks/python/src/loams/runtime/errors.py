@@ -3,7 +3,7 @@
 A failed RPC carries a Connect code and one `loams.errors.v1.ErrorInfo` in its
 details. The `reason` is what callers branch on: it is a stable `snake_case`
 string, registered in `docs/api/reasons.md` and generated into
-`loams.gen.facade`'s `Reason`, so `error.reason == "feature_not_in_variant"`
+`loams._gen.facade`'s `Reason`, so `error.reason == "feature_not_in_variant"`
 means one thing and a reason the registry has lost stops type-checking. The
 `message` is for people and may change; nothing in an SDK branches on it.
 
@@ -29,7 +29,7 @@ from google.protobuf.any_pb2 import Any
 from google.protobuf.message import Message
 
 from loams.errors.v1.errors_pb2 import ErrorInfo
-from loams.gen.facade import FEATURE_NOT_IN_VARIANT, REASONS, TOKEN_EXPIRED, Reason
+from loams._gen.facade import FEATURE_NOT_IN_VARIANT, REASONS, TOKEN_EXPIRED, Reason
 
 __all__ = [
     "AbortedError",

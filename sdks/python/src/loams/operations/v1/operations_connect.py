@@ -7,7 +7,6 @@ from typing import Protocol
 
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
-from connectrpc.codec import Codec
 from connectrpc.compression import Compression
 from connectrpc.errors import ConnectError
 from connectrpc.interceptor import Interceptor, InterceptorSync
@@ -32,7 +31,7 @@ class OperationsService(Protocol):
 
 
 class OperationsServiceASGIApplication(ConnectASGIApplication[OperationsService]):
-    def __init__(self, service: OperationsService | AsyncGenerator[OperationsService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: OperationsService | AsyncGenerator[OperationsService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -80,7 +79,6 @@ class OperationsServiceASGIApplication(ConnectASGIApplication[OperationsService]
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -175,9 +173,6 @@ class OperationsServiceClient(ConnectClient):
         )
 
 
-
-
-
 class OperationsServiceSync(Protocol):
     def get_operation(self, request: loams_dot_operations_dot_v1_dot_operations__pb2.GetOperationRequest, ctx: RequestContext) -> loams_dot_operations_dot_v1_dot_operations__pb2.GetOperationResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
@@ -190,7 +185,7 @@ class OperationsServiceSync(Protocol):
 
 
 class OperationsServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: OperationsServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: OperationsServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             endpoints={
                 "/loams.operations.v1.OperationsService/GetOperation": EndpointSync.unary(
@@ -237,7 +232,6 @@ class OperationsServiceWSGIApplication(ConnectWSGIApplication):
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -330,5 +324,3 @@ class OperationsServiceClientSync(ConnectClientSync):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
-

@@ -7,7 +7,6 @@ from typing import Protocol
 
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
-from connectrpc.codec import Codec
 from connectrpc.compression import Compression
 from connectrpc.errors import ConnectError
 from connectrpc.interceptor import Interceptor, InterceptorSync
@@ -32,7 +31,7 @@ class ApprovalService(Protocol):
 
 
 class ApprovalServiceASGIApplication(ConnectASGIApplication[ApprovalService]):
-    def __init__(self, service: ApprovalService | AsyncGenerator[ApprovalService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: ApprovalService | AsyncGenerator[ApprovalService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -80,7 +79,6 @@ class ApprovalServiceASGIApplication(ConnectASGIApplication[ApprovalService]):
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -175,9 +173,6 @@ class ApprovalServiceClient(ConnectClient):
         )
 
 
-
-
-
 class ApprovalServiceSync(Protocol):
     def list_approvals(self, request: loams_dot_approvals_dot_v1_dot_approvals__pb2.ListApprovalsRequest, ctx: RequestContext) -> loams_dot_approvals_dot_v1_dot_approvals__pb2.ListApprovalsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
@@ -190,7 +185,7 @@ class ApprovalServiceSync(Protocol):
 
 
 class ApprovalServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: ApprovalServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: ApprovalServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             endpoints={
                 "/loams.approvals.v1.ApprovalService/ListApprovals": EndpointSync.unary(
@@ -237,7 +232,6 @@ class ApprovalServiceWSGIApplication(ConnectWSGIApplication):
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -330,5 +324,3 @@ class ApprovalServiceClientSync(ConnectClientSync):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
-

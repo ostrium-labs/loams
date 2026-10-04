@@ -71,14 +71,23 @@ fn header(out: &mut String) {
          \n\
          from collections.abc import AsyncIterator, Iterator\n\
          from dataclasses import dataclass\n\
-         from typing import ClassVar, Final, Literal, Protocol\n\
-         \n",
+         from typing import TYPE_CHECKING, ClassVar, Final, Literal, Protocol\n",
     );
+    // Type-only: the runtime imports *this* module's binding table, so a
+    // module-level import back into it is a cycle. Every use of CallOptions is
+    // an annotation, which `from __future__ import annotations` leaves as a
+    // string, so nothing is resolved at import time. LoamsError and
+    // ResponseStream were imported here and never referenced.
+    writeln!(out, "if TYPE_CHECKING:\n    from {RUNTIME} import CallOptions").ok();
+    // Runtime, not type-only: `IDEMPOTENCY_LEVELS` binds `IdempotencyLevel`
+    // members at import time, and `Message` is the protobuf base the
+    // `MethodInfo` type parameters are declared over.
     writeln!(
         out,
-        "from {RUNTIME} import CallOptions, LoamsError, ResponseStream"
+        "from connectrpc.method import IdempotencyLevel, MethodInfo"
     )
     .ok();
+    writeln!(out, "from google.protobuf.message import Message").ok();
 }
 
 /// The proto revision, which is what `loams.system.version()` checks against the
@@ -381,11 +390,13 @@ fn methods_table(out: &mut String, model: &Model) -> Result<(), String> {
     Ok(())
 }
 
-/// A generated message class as Python writes it: the proto package's dotted
-/// path plus the `v1_pb2` module protoc emitted for it, then the bare name.
-fn message_ref(package: &str, message: &str) -> String {
-    let name = message.rsplit('.').next().unwrap_or(message);
-    format!("{package}.v1_pb2.{name}")
+/// A generated message class as Python writes it: the bare name, because the
+/// header already imports every message the protocols name from the `_pb2`
+/// module protoc emitted for its proto file. Spelling out the module would mean
+/// deriving the proto file's stem here, and the package's version segment is
+/// not it — `loams.instance.v1` is emitted as `instance_pb2`, not `v1_pb2`.
+fn message_ref(_package: &str, message: &str) -> String {
+    message.rsplit('.').next().unwrap_or(message).to_string()
 }
 
 /// One module's two protocols: the async client and the sync one.

@@ -7,7 +7,6 @@ from typing import Protocol
 
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
-from connectrpc.codec import Codec
 from connectrpc.compression import Compression
 from connectrpc.errors import ConnectError
 from connectrpc.interceptor import Interceptor, InterceptorSync
@@ -35,7 +34,7 @@ class LiveService(Protocol):
 
 
 class LiveServiceASGIApplication(ConnectASGIApplication[LiveService]):
-    def __init__(self, service: LiveService | AsyncGenerator[LiveService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: LiveService | AsyncGenerator[LiveService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -93,7 +92,6 @@ class LiveServiceASGIApplication(ConnectASGIApplication[LiveService]):
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -204,9 +202,6 @@ class LiveServiceClient(ConnectClient):
         )
 
 
-
-
-
 class LiveServiceSync(Protocol):
     def watch(self, request: loams_dot_live_dot_v1_dot_live__pb2.WatchRequest, ctx: RequestContext) -> Iterator[loams_dot_live_dot_v1_dot_live__pb2.Transition]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
@@ -221,7 +216,7 @@ class LiveServiceSync(Protocol):
 
 
 class LiveServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: LiveServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: LiveServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             endpoints={
                 "/loams.live.v1.LiveService/Watch": EndpointSync.server_stream(
@@ -278,7 +273,6 @@ class LiveServiceWSGIApplication(ConnectWSGIApplication):
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -387,5 +381,3 @@ class LiveServiceClientSync(ConnectClientSync):
             headers=headers,
             timeout_ms=timeout_ms,
         )
-
-

@@ -26,7 +26,7 @@ from connectrpc.code import Code
 from connectrpc.method import MethodInfo
 from google.protobuf.message import Message
 
-from loams.gen.facade import IDEMPOTENCY_LEVELS, METHODS, CallBinding, Pagination
+from loams._gen.facade import IDEMPOTENCY_LEVELS, METHODS, CallBinding, Pagination
 from loams.runtime.errors import LoamsError, TokenExpiredError, to_loams_error
 from loams.runtime.options import CallOptions, ConsistencyOptions, ConsistencyTokenStore
 from loams.runtime.retry import backoff_seconds, should_retry, sleep
@@ -306,7 +306,7 @@ class _BaseInvoker:
 
     def binding_for(self, module: str, call: str) -> CallBinding:
         """The binding a module and call name identify."""
-        from loams.gen.facade import MODULES
+        from loams._gen.facade import MODULES
 
         for entry in MODULES:
             if entry.name != module:

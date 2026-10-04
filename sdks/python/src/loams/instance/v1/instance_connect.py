@@ -7,7 +7,6 @@ from typing import Protocol
 
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
-from connectrpc.codec import Codec
 from connectrpc.compression import Compression
 from connectrpc.errors import ConnectError
 from connectrpc.interceptor import Interceptor, InterceptorSync
@@ -26,7 +25,7 @@ class InstanceService(Protocol):
 
 
 class InstanceServiceASGIApplication(ConnectASGIApplication[InstanceService]):
-    def __init__(self, service: InstanceService | AsyncGenerator[InstanceService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: InstanceService | AsyncGenerator[InstanceService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -54,7 +53,6 @@ class InstanceServiceASGIApplication(ConnectASGIApplication[InstanceService]):
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -109,9 +107,6 @@ class InstanceServiceClient(ConnectClient):
         )
 
 
-
-
-
 class InstanceServiceSync(Protocol):
     def get_instance(self, request: loams_dot_instance_dot_v1_dot_instance__pb2.GetInstanceRequest, ctx: RequestContext) -> loams_dot_instance_dot_v1_dot_instance__pb2.GetInstanceResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
@@ -120,7 +115,7 @@ class InstanceServiceSync(Protocol):
 
 
 class InstanceServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: InstanceServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None, codecs: Iterable[Codec] | None = None) -> None:
+    def __init__(self, service: InstanceServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None, compressions: Iterable[Compression] | None = None) -> None:
         super().__init__(
             endpoints={
                 "/loams.instance.v1.InstanceService/GetInstance": EndpointSync.unary(
@@ -147,7 +142,6 @@ class InstanceServiceWSGIApplication(ConnectWSGIApplication):
             interceptors=interceptors,
             read_max_bytes=read_max_bytes,
             compressions=compressions,
-            codecs=codecs,
         )
 
     @property
@@ -200,5 +194,3 @@ class InstanceServiceClientSync(ConnectClientSync):
             timeout_ms=timeout_ms,
             use_get=use_get,
         )
-
-

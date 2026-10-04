@@ -28,7 +28,7 @@ from typing import Any, Self, cast
 
 from google.protobuf.message import Message
 
-from loams.gen.facade import (
+from loams._gen.facade import (
     MODULES,
     PROTO_PACKAGES,
     PROTO_REV,

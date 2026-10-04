@@ -20,7 +20,7 @@ from typing import TypeVar
 
 from google.protobuf.message import Message
 
-from loams.gen.facade import CallBinding, Pagination
+from loams._gen.facade import CallBinding, Pagination
 from loams.runtime.options import CallOptions, PageRequestOptions
 
 __all__ = ["async_paginate", "paginate", "page_fields"]

@@ -10,7 +10,7 @@
         ...
 
 What is generated and what is hand-written, once more, because it decides where a
-change goes. The **module surface** is generated: `loams.gen.facade` has one
+change goes. The **module surface** is generated: `loams._gen.facade` has one
 typed protocol per annotated service, one method per `FacadeOptions` call, and
 `MODULES` says which service and which retry class each call has. The **runtime**
 behind those methods is hand-written, once, in `loams.runtime/`: transport,
@@ -31,7 +31,7 @@ from typing import Any, Self, cast
 
 from google.protobuf.message import Message
 
-from loams.gen.facade import (
+from loams._gen.facade import (
     MODULES,
     PROTO_PACKAGES,
     PROTO_REV,
