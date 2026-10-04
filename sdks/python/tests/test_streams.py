@@ -593,6 +593,13 @@ class _ExpiringStreamServer:
                 """Keep the test output clean."""
 
             def do_POST(self) -> None:
+                # One request per connection. This test is the only one here that
+                # gets a *second* request on the same socket -- the refresh-then-
+                # reconnect -- and with keep-alive the reconnect races the tail of
+                # the error response, which surfaced as a bare
+                # `InternalError: Bad Request` about one run in six. Closing after
+                # each response costs nothing at this size and removes the race.
+                self.close_connection = True
                 self.rfile.read(int(self.headers.get("content-length", "0")))
                 bearer = self.headers.get("authorization", "")
                 with outer._lock:
@@ -608,6 +615,7 @@ class _ExpiringStreamServer:
                     self.send_response(200)
                     self.send_header("content-type", "application/connect+proto")
                     self.send_header("content-length", str(len(refusal_frame)))
+                    self.send_header("connection", "close")
                     self.end_headers()
                     self.wfile.write(refusal_frame)
                     return
@@ -615,6 +623,7 @@ class _ExpiringStreamServer:
                 self.send_response(200)
                 self.send_header("content-type", "application/connect+proto")
                 self.send_header("content-length", str(len(body)))
+                self.send_header("connection", "close")
                 self.end_headers()
                 self.wfile.write(body)
 

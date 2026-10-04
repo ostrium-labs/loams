@@ -135,9 +135,16 @@ def resolve_session(
 
     Its own store if it brought one, the client's if it asked for the session's,
     none otherwise. Off by default (D609).
+
+    A call that expresses no preference takes the client's session, because that is
+    what `Loams(session_consistency=True)` means: the token is held *across calls*.
+    It used to return `None` here, which made the constructor flag inert -- every
+    call had to repeat `ConsistencyOptions(session=True)` or it joined no session at
+    all, and no error said so. `ConsistencyOptions(session=False)` is still how a
+    single call opts out.
     """
     if options is None:
-        return None
+        return client_session
     chosen = options.session
     if chosen is False:
         return None

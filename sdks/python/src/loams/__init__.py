@@ -31,6 +31,7 @@ from loams.runtime.errors import (
     UnimplementedError,
     is_loams_error,
 )
+from loams.runtime.options import CallOptions, ConsistencyOptions
 from loams.runtime.token_source import (
     OidcExchangeOptions,
     api_key,
@@ -46,6 +47,15 @@ from loams.runtime.token_source import (
 )
 
 __all__ = [
+    # The per-call options, because every generated method takes
+    # `options: CallOptions | None` and there is no other way to set a deadline, a
+    # caller header or an idempotency key on one call. They were reachable only as
+    # `loams.runtime.options`, which reads as internal and carries no stability
+    # promise -- so the documented parameter was unusable from the public surface.
+    # `OidcExchangeOptions` was already exported, so options types are public here
+    # too; these two are the ones a call site actually needs.
+    "CallOptions",
+    "ConsistencyOptions",
     "AbortedError",
     "AlreadyExistsError",
     "DeadlineExceededError",
