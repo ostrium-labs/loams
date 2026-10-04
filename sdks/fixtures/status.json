@@ -1,0 +1,903 @@
+{
+  "about": "What each transport answered, projected from the recordings in `recorded/`. A projection, not a source: `record-fixtures.mjs` rewrites this file from the bytes, so it cannot drift from the corpus. Design §44 §10.4.",
+  "note": "HTTP status is not the error. Connect answers a refusal with a status and a JSON body; gRPC-Web answers 200 and puts the code in `grpc-status`. A client that reads only status codes passes the first and silently succeeds on the second.",
+  "byTransport": {
+    "grpc-web": {
+      "httpStatuses": {
+        "200": 6
+      },
+      "grpcStatuses": {},
+      "cases": 6
+    },
+    "connect": {
+      "httpStatuses": {
+        "200": 22,
+        "400": 4,
+        "401": 2,
+        "403": 1,
+        "404": 1,
+        "501": 7
+      },
+      "grpcStatuses": {},
+      "cases": 37
+    }
+  },
+  "rows": [
+    {
+      "fixture": "instance_get_instance_grpc_web",
+      "step": 0,
+      "steps": 1,
+      "kind": "unary",
+      "about": "A successful unary call, no auth: what this instance is. This is the case a client makes before anything else, on a cold start. (gRPC-Web, the framing a browser sends. One length-prefixed frame: flag 0 and a zero-length message.)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "grpc-web",
+      "pinnedBy": [
+        "R5",
+        "R9"
+      ],
+      "path": "/loams.instance.v1.InstanceService/GetInstance",
+      "method": "POST",
+      "contentType": "application/grpc-web+proto",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "instance_get_instance_grpc_web_json",
+      "step": 0,
+      "steps": 1,
+      "kind": "unary",
+      "about": "A successful unary call, no auth: what this instance is. This is the case a client makes before anything else, on a cold start. (gRPC-Web carrying the proto3 JSON mapping, which a browser SDK can ask for.)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "grpc-web",
+      "pinnedBy": [
+        "R5",
+        "R9"
+      ],
+      "path": "/loams.instance.v1.InstanceService/GetInstance",
+      "method": "POST",
+      "contentType": "application/grpc-web+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "instance_get_instance_json",
+      "step": 0,
+      "steps": 1,
+      "kind": "unary",
+      "about": "A successful unary call, no auth: what this instance is. This is the case a client makes before anything else, on a cold start. (The proto3 JSON mapping, which is what `curl` sends (design §44 §4).)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R5",
+        "R9"
+      ],
+      "path": "/loams.instance.v1.InstanceService/GetInstance",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "instance_get_instance_proto",
+      "step": 0,
+      "steps": 1,
+      "kind": "unary",
+      "about": "A successful unary call, no auth: what this instance is. This is the case a client makes before anything else, on a cold start. (The binary encoding, which is what an SDK sends by default.)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R5",
+        "R9"
+      ],
+      "path": "/loams.instance.v1.InstanceService/GetInstance",
+      "method": "POST",
+      "contentType": "application/proto",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "instance_who_am_i_grpc_web",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "A structured-reason error: `unimplemented` carrying an ErrorInfo whose reason is `not_implemented`, because this build has no authentication yet. An SDK branches on the reason, never on the message. (gRPC-Web, the framing a browser sends. One length-prefixed frame: flag 0 and a zero-length message.)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "grpc-web",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.instance.v1.InstanceService/WhoAmI",
+      "method": "POST",
+      "contentType": "application/grpc-web+proto",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "instance_who_am_i_grpc_web_json",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "A structured-reason error: `unimplemented` carrying an ErrorInfo whose reason is `not_implemented`, because this build has no authentication yet. An SDK branches on the reason, never on the message. (gRPC-Web carrying the proto3 JSON mapping, which a browser SDK can ask for.)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "grpc-web",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.instance.v1.InstanceService/WhoAmI",
+      "method": "POST",
+      "contentType": "application/grpc-web+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "instance_who_am_i_json",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "A structured-reason error: `unimplemented` carrying an ErrorInfo whose reason is `not_implemented`, because this build has no authentication yet. An SDK branches on the reason, never on the message. (The proto3 JSON mapping, which is what `curl` sends (design §44 §4).)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.instance.v1.InstanceService/WhoAmI",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 501,
+      "grpcStatus": null,
+      "connectCode": "unimplemented",
+      "reason": null
+    },
+    {
+      "fixture": "instance_who_am_i_proto",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "A structured-reason error: `unimplemented` carrying an ErrorInfo whose reason is `not_implemented`, because this build has no authentication yet. An SDK branches on the reason, never on the message. (The binary encoding, which is what an SDK sends by default.)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.instance.v1.InstanceService/WhoAmI",
+      "method": "POST",
+      "contentType": "application/proto",
+      "httpStatus": 501,
+      "grpcStatus": null,
+      "connectCode": "unimplemented",
+      "reason": null
+    },
+    {
+      "fixture": "live_query_grpc_web",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "The unavailable-service path on a unary RPC: `loams.live.v1` is a `full`-variant engine, so every one of its RPCs answers `unimplemented` with reason `feature_not_in_variant` and the variant in `metadata`. (gRPC-Web, the framing a browser sends. One length-prefixed frame: flag 0 and a zero-length message.)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "grpc-web",
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "path": "/loams.live.v1.LiveService/Query",
+      "method": "POST",
+      "contentType": "application/grpc-web+proto",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "live_query_grpc_web_json",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "The unavailable-service path on a unary RPC: `loams.live.v1` is a `full`-variant engine, so every one of its RPCs answers `unimplemented` with reason `feature_not_in_variant` and the variant in `metadata`. (gRPC-Web carrying the proto3 JSON mapping, which a browser SDK can ask for.)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "grpc-web",
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "path": "/loams.live.v1.LiveService/Query",
+      "method": "POST",
+      "contentType": "application/grpc-web+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "live_query_json",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "The unavailable-service path on a unary RPC: `loams.live.v1` is a `full`-variant engine, so every one of its RPCs answers `unimplemented` with reason `feature_not_in_variant` and the variant in `metadata`. (The proto3 JSON mapping, which is what `curl` sends (design §44 §4).)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "path": "/loams.live.v1.LiveService/Query",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 501,
+      "grpcStatus": null,
+      "connectCode": "unimplemented",
+      "reason": null
+    },
+    {
+      "fixture": "live_query_proto",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "The unavailable-service path on a unary RPC: `loams.live.v1` is a `full`-variant engine, so every one of its RPCs answers `unimplemented` with reason `feature_not_in_variant` and the variant in `metadata`. (The binary encoding, which is what an SDK sends by default.)",
+      "server": "loams dev",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "path": "/loams.live.v1.LiveService/Query",
+      "method": "POST",
+      "contentType": "application/proto",
+      "httpStatus": 501,
+      "grpcStatus": null,
+      "connectCode": "unimplemented",
+      "reason": null
+    },
+    {
+      "fixture": "live_watch",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "The unavailable-service path on a server stream: the refusal arrives inside the Connect streaming envelope, not as an HTTP status. An SDK that reports it has to read the envelope.",
+      "server": "loams dev",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R5",
+        "R7",
+        "R8"
+      ],
+      "path": "/loams.live.v1.LiveService/Watch",
+      "method": "POST",
+      "contentType": "application/connect+proto",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_error_approval_already_decided",
+      "step": 0,
+      "steps": 2,
+      "kind": "error",
+      "about": "Decide without an idempotency key.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": "approval_already_decided"
+    },
+    {
+      "fixture": "mock_error_approval_already_decided",
+      "step": 1,
+      "steps": 2,
+      "kind": "error",
+      "about": "The same decision again, with no key to identify it.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 400,
+      "grpcStatus": null,
+      "connectCode": "failed_precondition",
+      "reason": "approval_already_decided"
+    },
+    {
+      "fixture": "mock_error_approval_expired",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "A `failed_precondition` whose condition is **time**, not state: the approval was still pending and is no longer. The seed carries one expired approval precisely so this is reachable without waiting.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 400,
+      "grpcStatus": null,
+      "connectCode": "failed_precondition",
+      "reason": "approval_expired"
+    },
+    {
+      "fixture": "mock_error_approval_stale_revision",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "Optimistic concurrency as a *reason*: the caller decided revision 9, the server is on revision 1. An SDK surfaces this as \"reload it\" rather than as a generic precondition failure, because the caller can act on it.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 400,
+      "grpcStatus": null,
+      "connectCode": "failed_precondition",
+      "reason": "approval_stale_revision"
+    },
+    {
+      "fixture": "mock_error_encodings",
+      "step": 0,
+      "steps": 4,
+      "kind": "error",
+      "about": "Connect, proto3 JSON.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8",
+        "R10"
+      ],
+      "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 501,
+      "grpcStatus": null,
+      "connectCode": "unimplemented",
+      "reason": "not_implemented"
+    },
+    {
+      "fixture": "mock_error_encodings",
+      "step": 1,
+      "steps": 4,
+      "kind": "error",
+      "about": "Connect, binary protobuf.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8",
+        "R10"
+      ],
+      "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+      "method": "POST",
+      "contentType": "application/proto",
+      "httpStatus": 501,
+      "grpcStatus": null,
+      "connectCode": "unimplemented",
+      "reason": "not_implemented"
+    },
+    {
+      "fixture": "mock_error_encodings",
+      "step": 2,
+      "steps": 4,
+      "kind": "error",
+      "about": "gRPC-Web, binary protobuf: HTTP 200, the code is in the trailers.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8",
+        "R10"
+      ],
+      "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+      "method": "POST",
+      "contentType": "application/grpc-web+proto",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": "not_implemented"
+    },
+    {
+      "fixture": "mock_error_encodings",
+      "step": 3,
+      "steps": 4,
+      "kind": "error",
+      "about": "gRPC-Web, proto3 JSON.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8",
+        "R10"
+      ],
+      "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+      "method": "POST",
+      "contentType": "application/grpc-web+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": "not_implemented"
+    },
+    {
+      "fixture": "mock_error_not_implemented",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "SendTestNotification is a declared RPC whose handler is a stub.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 501,
+      "grpcStatus": null,
+      "connectCode": "unimplemented",
+      "reason": "not_implemented"
+    },
+    {
+      "fixture": "mock_error_reason_required",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "Reject without a reason.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 400,
+      "grpcStatus": null,
+      "connectCode": "invalid_argument",
+      "reason": "reason_required"
+    },
+    {
+      "fixture": "mock_error_requester_cannot_approve",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "Dana decides what the agent requested on her behalf.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 403,
+      "grpcStatus": null,
+      "connectCode": "permission_denied",
+      "reason": "requester_cannot_approve"
+    },
+    {
+      "fixture": "mock_error_step_up_required",
+      "step": 0,
+      "steps": 1,
+      "kind": "error",
+      "about": "A session from 10 minutes ago decides a STEP_UP_SESSION approval.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R1",
+        "R8"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 401,
+      "grpcStatus": null,
+      "connectCode": "unauthenticated",
+      "reason": "step_up_required"
+    },
+    {
+      "fixture": "mock_state_idempotent_decide",
+      "step": 0,
+      "steps": 2,
+      "kind": "state",
+      "about": "First attempt. Writes.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R3"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_state_idempotent_decide",
+      "step": 1,
+      "steps": 2,
+      "kind": "state",
+      "about": "The retry, byte-identical including the key. Does not write again.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R3"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_state_stream_heartbeat",
+      "step": 0,
+      "steps": 1,
+      "kind": "state",
+      "about": "Snapshot, then a heartbeat with nothing in it.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R7"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/WatchApprovals",
+      "method": "POST",
+      "contentType": "application/connect+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_state_stream_resume",
+      "step": 0,
+      "steps": 3,
+      "kind": "state",
+      "about": "Open, watching pending and decided. One frame: the snapshot, cursor c0.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R7"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/WatchApprovals",
+      "method": "POST",
+      "contentType": "application/connect+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_state_stream_resume",
+      "step": 1,
+      "steps": 3,
+      "kind": "state",
+      "about": "The client is disconnected. The approval is decided.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R7"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_state_stream_resume",
+      "step": 2,
+      "steps": 3,
+      "kind": "state",
+      "about": "Resume from c0. The change as an upsert, not a snapshot.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R7"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/WatchApprovals",
+      "method": "POST",
+      "contentType": "application/connect+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_state_stream_resume_remove",
+      "step": 0,
+      "steps": 3,
+      "kind": "state",
+      "about": "Open with no filter: pending only.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R7"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/WatchApprovals",
+      "method": "POST",
+      "contentType": "application/connect+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_state_stream_resume_remove",
+      "step": 1,
+      "steps": 3,
+      "kind": "state",
+      "about": "The approval is decided while the client is disconnected.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R7"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_state_stream_resume_remove",
+      "step": 2,
+      "steps": 3,
+      "kind": "state",
+      "about": "Resume from c0. It left the filter, so: remove.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R7"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/WatchApprovals",
+      "method": "POST",
+      "contentType": "application/connect+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_state_stream_snapshot_reset",
+      "step": 0,
+      "steps": 1,
+      "kind": "state",
+      "about": "A cursor from beyond the end of the log.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R7"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/WatchApprovals",
+      "method": "POST",
+      "contentType": "application/connect+json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_status_get_instance",
+      "step": 0,
+      "steps": 2,
+      "kind": "status",
+      "about": "`GetInstance` with **no credential at all**, which is the R9 contract: the version check must work before a caller has a token, and the SDK reports `api_versions` beside its own `PROTO_REV`. Note what is absent: there is no `services[]` here, so the R5 catalogue half is still unexercised outside `loams dev` (D600 has not landed in the mock).",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R9"
+      ],
+      "path": "/loams.instance.v1.InstanceService/GetInstance",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_status_get_instance",
+      "step": 1,
+      "steps": 2,
+      "kind": "status",
+      "about": "The same call in binary protobuf: the fields must agree.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R9"
+      ],
+      "path": "/loams.instance.v1.InstanceService/GetInstance",
+      "method": "POST",
+      "contentType": "application/proto",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_status_list_devices",
+      "step": 0,
+      "steps": 1,
+      "kind": "status",
+      "about": "The paired phone in the seed. `ListDevices` is marked `NO_SIDE_EFFECTS` in the proto, so it is also the one app RPC an SDK should issue as a cacheable GET (design §44 §4).",
+      "server": "loams-apps-mock",
+      "required": false,
+      "transport": "connect",
+      "pinnedBy": [
+        "R5"
+      ],
+      "path": "/loams.devices.v1.DeviceService/ListDevices",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_status_list_is_not_paged",
+      "step": 0,
+      "steps": 1,
+      "kind": "status",
+      "about": "page_size 1 against a two-approval seed: both come back.",
+      "server": "loams-apps-mock",
+      "required": false,
+      "transport": "connect",
+      "pinnedBy": [
+        "R6"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/ListApprovals",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_status_list_operations",
+      "step": 0,
+      "steps": 1,
+      "kind": "status",
+      "about": "The running import in the seed, which is also the `WatchOperations` subject.",
+      "server": "loams-apps-mock",
+      "required": false,
+      "transport": "connect",
+      "pinnedBy": [
+        "R6"
+      ],
+      "path": "/loams.operations.v1.OperationsService/ListOperations",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_status_not_found_without_reason",
+      "step": 0,
+      "steps": 1,
+      "kind": "status",
+      "about": "Recorded because it is a **gap in the server**, and a fixture is the cheapest way to make that visible: `GetApproval` on an unknown id answers `404` with `{\"code\":\"not_found\"}` and **no `ErrorInfo` detail**, so there is no `reason` even though `not_found` is in the registry. An SDK mapping `not_found` therefore has to fall back to the Connect code, which is exactly the fallback R8 allows — but the reason is not there. Kept at `required: false`: the missing detail is the server's to fix, and a language must not be blocked on it.",
+      "server": "loams-apps-mock",
+      "required": false,
+      "transport": "connect",
+      "pinnedBy": [
+        "R8"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/GetApproval",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 404,
+      "grpcStatus": null,
+      "connectCode": "not_found",
+      "reason": null
+    },
+    {
+      "fixture": "mock_status_notifications",
+      "step": 0,
+      "steps": 1,
+      "kind": "status",
+      "about": "The one inbox item the seed carries, recorded so a suite can assert on a real `CloudEvent` `type` (`io.loams.dev.…`) without inventing one.",
+      "server": "loams-apps-mock",
+      "required": false,
+      "transport": "connect",
+      "pinnedBy": [
+        "R6"
+      ],
+      "path": "/loams.notifications.v1.NotificationService/ListNotifications",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 200,
+      "grpcStatus": null,
+      "connectCode": null,
+      "reason": null
+    },
+    {
+      "fixture": "mock_status_unauthenticated",
+      "step": 0,
+      "steps": 1,
+      "kind": "status",
+      "about": "R1 and R8's third case: a failure from **below the API** — no credential at all. The mock answers `unauthenticated` with **no** `ErrorInfo` detail, so there is no `reason` to branch on. An SDK must not invent one: this is the shape R8 says is distinct from a mapped reason, and conflating it with `token_expired` would make a refresh loop on a request that has no credential to refresh.",
+      "server": "loams-apps-mock",
+      "required": true,
+      "transport": "connect",
+      "pinnedBy": [
+        "R1",
+        "R8"
+      ],
+      "path": "/loams.approvals.v1.ApprovalService/ListApprovals",
+      "method": "POST",
+      "contentType": "application/json",
+      "httpStatus": 401,
+      "grpcStatus": null,
+      "connectCode": "unauthenticated",
+      "reason": null
+    }
+  ]
+}

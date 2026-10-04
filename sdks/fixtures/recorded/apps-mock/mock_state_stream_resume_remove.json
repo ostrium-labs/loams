@@ -1,0 +1,186 @@
+{
+  "name": "mock_state_stream_resume_remove",
+  "kind": "state",
+  "about": "The same resume, watched with the **default** filter (pending only), and it is a different frame. Deciding the approval takes it *out of* the filter, so the resumed stream sends `remove`, not `upsert`. An SDK that handles only `upsert` leaves the decided approval on screen forever, which is the \"quietly stale sync UI\" R7 calls worse than an error.",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R7"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:11.361Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at",
+    "response.bodyBase64",
+    "frames.payload"
+  ],
+  "steps": [
+    {
+      "about": "Open with no filter: pending only.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/WatchApprovals",
+        "headers": {
+          "content-type": "application/connect+json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "bodyBase64": "AAAAAAJ7fQ=="
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/connect+json",
+          "connect-accept-encoding": "gzip, zstd"
+        },
+        "frames": [
+          {
+            "flags": 0,
+            "payload": "eyJjdXJzb3IiOiJjMCIsInNuYXBzaG90Ijp7ImFwcHJvdmFscyI6W3siaWQiOiJhcHJfMDFKOVpDUkVBVEVLRVkiLCJyZXZpc2lvbiI6IjEiLCJvcGVyYXRpb25JZCI6Im9wLTBhMWIyYzNkNGU1ZjYwNzE4MjkzYTRiNWM2ZDdlOGY5IiwicHJvbWlzZUlkIjoicHJtX2NyZWF0ZV9rZXkiLCJraW5kIjoia2V5LmNyZWF0ZSIsImVudmlyb25tZW50Ijp7ImlkIjoiZW52X2RldiIsInByb2plY3QiOiJwcmpfc2VhcmNoIiwibmFtZSI6ImRldmVsb3BtZW50IiwibmFtZXNwYWNlIjoic2VhcmNoLWRldiJ9LCJyZXF1ZXN0ZWRCeSI6eyJpZCI6InVzcl9kYW5hIiwia2luZCI6IlBSSU5DSVBBTF9LSU5EX1VTRVIiLCJkaXNwbGF5TmFtZSI6IkRhbmEiLCJlbWFpbCI6ImRhbmFAZXhhbXBsZS5jb20ifSwiYWN0b3JDaGFpbiI6W3siaWQiOiJ1c3JfZGFuYSIsImtpbmQiOiJQUklOQ0lQQUxfS0lORF9VU0VSIiwiZGlzcGxheU5hbWUiOiJEYW5hIiwiZW1haWwiOiJkYW5hQGV4YW1wbGUuY29tIn1dLCJzdW1tYXJ5IjoiQ3JlYXRlIGFuIEFQSSBrZXkgZm9yIHNlYXJjaC1kZXYiLCJkZXRhaWxMaW5lcyI6WyJTY29wZXM6IGNvbGxlY3Rpb25zOnJlYWQsIHF1ZXJ5Il0sInJpc2siOiJSSVNLX0xPVyIsInBvbGljeSI6eyJyZXF1aXJlZEFwcHJvdmFscyI6MSwiYXBwcm92ZXJSb2xlcyI6WyJwcm9qZWN0X2FkbWluIl0sInN0ZXBVcCI6IlNURVBfVVBfTk9ORSJ9LCJzdGF0ZSI6IkFQUFJPVkFMX1NUQVRFX1BFTkRJTkciLCJjcmVhdGVkQXQiOiIyMDI2LTEwLTA0VDA1OjUzOjQxLjM0NzkyMDY4MFoiLCJleHBpcmVzQXQiOiIyMDI2LTEwLTA3VDA1OjU0OjExLjM0NzkyMDY4MFoifSx7ImlkIjoiYXByXzAxSjlaRFJPUERPQ1MiLCJyZXZpc2lvbiI6IjEiLCJvcGVyYXRpb25JZCI6Im9wLTVmMGMxZTJkM2I0YTU5Njg3NzY2NTU0NDMzMjIxMTAwIiwicHJvbWlzZUlkIjoicHJtX2Ryb3BfZG9jcyIsImtpbmQiOiJjb2xsZWN0aW9uLmRyb3AiLCJlbnZpcm9ubWVudCI6eyJpZCI6ImVudl9wcm9kIiwicHJvamVjdCI6InByal9zZWFyY2giLCJuYW1lIjoicHJvZHVjdGlvbiIsIm5hbWVzcGFjZSI6InNlYXJjaC1wcm9kIiwicHJvdGVjdGVkIjp0cnVlfSwicmVxdWVzdGVkQnkiOnsiaWQiOiJhZ3RfY2xhdWRlIiwia2luZCI6IlBSSU5DSVBBTF9LSU5EX0FHRU5UIiwiZGlzcGxheU5hbWUiOiJDbGF1ZGUgKGZvciBEYW5hKSJ9LCJhY3RvckNoYWluIjpbeyJpZCI6ImFndF9jbGF1ZGUiLCJraW5kIjoiUFJJTkNJUEFMX0tJTkRfQUdFTlQiLCJkaXNwbGF5TmFtZSI6IkNsYXVkZSAoZm9yIERhbmEpIn0seyJpZCI6InVzcl9kYW5hIiwia2luZCI6IlBSSU5DSVBBTF9LSU5EX1VTRVIiLCJkaXNwbGF5TmFtZSI6IkRhbmEiLCJlbWFpbCI6ImRhbmFAZXhhbXBsZS5jb20ifV0sInN1bW1hcnkiOiJEcm9wIHRoZSBjb2xsZWN0aW9uIGRvY3MgaW4gcHJvZHVjdGlvbiIsImRldGFpbExpbmVzIjpbIkNvbGxlY3Rpb246IGRvY3MgKDEgMjA0IDMzMSBkb2N1bWVudHMpIiwiUmVxdWVzdGVkIGJ5IENsYXVkZSwgYWN0aW5nIGZvciBEYW5hIiwiVGhpcyBjYW5ub3QgYmUgdW5kb25lLiJdLCJ0YXJnZXQiOnsibmFtZSI6ImRvY3MifSwicmlzayI6IlJJU0tfREVTVFJVQ1RJVkUiLCJwb2xpY3kiOnsicmVxdWlyZWRBcHByb3ZhbHMiOjEsImFwcHJvdmVyUm9sZXMiOlsicHJvamVjdF9hZG1pbiJdLCJzdGVwVXAiOiJTVEVQX1VQX1NFU1NJT04ifSwic3RhdGUiOiJBUFBST1ZBTF9TVEFURV9QRU5ESU5HIiwiY3JlYXRlZEF0IjoiMjAyNi0xMC0wNFQwNTo1MjoxMS4zNDc5MjA2ODBaIiwiZXhwaXJlc0F0IjoiMjAyNi0xMC0wN1QwNTo1NDoxMS4zNDc5MjA2ODBaIn1dfX0="
+          }
+        ],
+        "bodyBase64": "AAAAByV7ImN1cnNvciI6ImMwIiwic25hcHNob3QiOnsiYXBwcm92YWxzIjpbeyJpZCI6ImFwcl8wMUo5WkNSRUFURUtFWSIsInJldmlzaW9uIjoiMSIsIm9wZXJhdGlvbklkIjoib3AtMGExYjJjM2Q0ZTVmNjA3MTgyOTNhNGI1YzZkN2U4ZjkiLCJwcm9taXNlSWQiOiJwcm1fY3JlYXRlX2tleSIsImtpbmQiOiJrZXkuY3JlYXRlIiwiZW52aXJvbm1lbnQiOnsiaWQiOiJlbnZfZGV2IiwicHJvamVjdCI6InByal9zZWFyY2giLCJuYW1lIjoiZGV2ZWxvcG1lbnQiLCJuYW1lc3BhY2UiOiJzZWFyY2gtZGV2In0sInJlcXVlc3RlZEJ5Ijp7ImlkIjoidXNyX2RhbmEiLCJraW5kIjoiUFJJTkNJUEFMX0tJTkRfVVNFUiIsImRpc3BsYXlOYW1lIjoiRGFuYSIsImVtYWlsIjoiZGFuYUBleGFtcGxlLmNvbSJ9LCJhY3RvckNoYWluIjpbeyJpZCI6InVzcl9kYW5hIiwia2luZCI6IlBSSU5DSVBBTF9LSU5EX1VTRVIiLCJkaXNwbGF5TmFtZSI6IkRhbmEiLCJlbWFpbCI6ImRhbmFAZXhhbXBsZS5jb20ifV0sInN1bW1hcnkiOiJDcmVhdGUgYW4gQVBJIGtleSBmb3Igc2VhcmNoLWRldiIsImRldGFpbExpbmVzIjpbIlNjb3BlczogY29sbGVjdGlvbnM6cmVhZCwgcXVlcnkiXSwicmlzayI6IlJJU0tfTE9XIiwicG9saWN5Ijp7InJlcXVpcmVkQXBwcm92YWxzIjoxLCJhcHByb3ZlclJvbGVzIjpbInByb2plY3RfYWRtaW4iXSwic3RlcFVwIjoiU1RFUF9VUF9OT05FIn0sInN0YXRlIjoiQVBQUk9WQUxfU1RBVEVfUEVORElORyIsImNyZWF0ZWRBdCI6IjIwMjYtMTAtMDRUMDU6NTM6NDEuMzQ3OTIwNjgwWiIsImV4cGlyZXNBdCI6IjIwMjYtMTAtMDdUMDU6NTQ6MTEuMzQ3OTIwNjgwWiJ9LHsiaWQiOiJhcHJfMDFKOVpEUk9QRE9DUyIsInJldmlzaW9uIjoiMSIsIm9wZXJhdGlvbklkIjoib3AtNWYwYzFlMmQzYjRhNTk2ODc3NjY1NTQ0MzMyMjExMDAiLCJwcm9taXNlSWQiOiJwcm1fZHJvcF9kb2NzIiwia2luZCI6ImNvbGxlY3Rpb24uZHJvcCIsImVudmlyb25tZW50Ijp7ImlkIjoiZW52X3Byb2QiLCJwcm9qZWN0IjoicHJqX3NlYXJjaCIsIm5hbWUiOiJwcm9kdWN0aW9uIiwibmFtZXNwYWNlIjoic2VhcmNoLXByb2QiLCJwcm90ZWN0ZWQiOnRydWV9LCJyZXF1ZXN0ZWRCeSI6eyJpZCI6ImFndF9jbGF1ZGUiLCJraW5kIjoiUFJJTkNJUEFMX0tJTkRfQUdFTlQiLCJkaXNwbGF5TmFtZSI6IkNsYXVkZSAoZm9yIERhbmEpIn0sImFjdG9yQ2hhaW4iOlt7ImlkIjoiYWd0X2NsYXVkZSIsImtpbmQiOiJQUklOQ0lQQUxfS0lORF9BR0VOVCIsImRpc3BsYXlOYW1lIjoiQ2xhdWRlIChmb3IgRGFuYSkifSx7ImlkIjoidXNyX2RhbmEiLCJraW5kIjoiUFJJTkNJUEFMX0tJTkRfVVNFUiIsImRpc3BsYXlOYW1lIjoiRGFuYSIsImVtYWlsIjoiZGFuYUBleGFtcGxlLmNvbSJ9XSwic3VtbWFyeSI6IkRyb3AgdGhlIGNvbGxlY3Rpb24gZG9jcyBpbiBwcm9kdWN0aW9uIiwiZGV0YWlsTGluZXMiOlsiQ29sbGVjdGlvbjogZG9jcyAoMSAyMDQgMzMxIGRvY3VtZW50cykiLCJSZXF1ZXN0ZWQgYnkgQ2xhdWRlLCBhY3RpbmcgZm9yIERhbmEiLCJUaGlzIGNhbm5vdCBiZSB1bmRvbmUuIl0sInRhcmdldCI6eyJuYW1lIjoiZG9jcyJ9LCJyaXNrIjoiUklTS19ERVNUUlVDVElWRSIsInBvbGljeSI6eyJyZXF1aXJlZEFwcHJvdmFscyI6MSwiYXBwcm92ZXJSb2xlcyI6WyJwcm9qZWN0X2FkbWluIl0sInN0ZXBVcCI6IlNURVBfVVBfU0VTU0lPTiJ9LCJzdGF0ZSI6IkFQUFJPVkFMX1NUQVRFX1BFTkRJTkciLCJjcmVhdGVkQXQiOiIyMDI2LTEwLTA0VDA1OjUyOjExLjM0NzkyMDY4MFoiLCJleHBpcmVzQXQiOiIyMDI2LTEwLTA3VDA1OjU0OjExLjM0NzkyMDY4MFoifV19fQ==",
+        "truncated": true
+      },
+      "expect": {
+        "status": 200,
+        "frames": 1,
+        "frameKinds": [
+          "snapshot"
+        ],
+        "cursor": "c0"
+      }
+    },
+    {
+      "about": "The approval is decided while the client is disconnected.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{\"approvalId\":\"apr_01J9ZCREATEKEY\",\"revision\":\"1\",\"decision\":\"DECISION_KIND_APPROVE\",\"idempotencyKey\":\"conformance-stream-remove-1\"}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "approval": {
+            "id": "apr_01J9ZCREATEKEY",
+            "revision": "2",
+            "operationId": "op-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+            "promiseId": "prm_create_key",
+            "kind": "key.create",
+            "environment": {
+              "id": "env_dev",
+              "project": "prj_search",
+              "name": "development",
+              "namespace": "search-dev"
+            },
+            "requestedBy": {
+              "id": "usr_dana",
+              "kind": "PRINCIPAL_KIND_USER",
+              "displayName": "Dana",
+              "email": "dana@example.com"
+            },
+            "actorChain": [
+              {
+                "id": "usr_dana",
+                "kind": "PRINCIPAL_KIND_USER",
+                "displayName": "Dana",
+                "email": "dana@example.com"
+              }
+            ],
+            "summary": "Create an API key for search-dev",
+            "detailLines": [
+              "Scopes: collections:read, query"
+            ],
+            "risk": "RISK_LOW",
+            "policy": {
+              "requiredApprovals": 1,
+              "approverRoles": [
+                "project_admin"
+              ],
+              "stepUp": "STEP_UP_NONE"
+            },
+            "decisions": [
+              {
+                "by": {
+                  "id": "usr_omar",
+                  "kind": "PRINCIPAL_KIND_USER",
+                  "displayName": "Omar",
+                  "email": "omar@example.com"
+                },
+                "decision": "DECISION_KIND_APPROVE",
+                "at": "2026-10-04T05:54:11.356775298Z"
+              }
+            ],
+            "state": "APPROVAL_STATE_APPROVED",
+            "createdAt": "2026-10-04T05:53:41.347920680Z",
+            "expiresAt": "2026-10-07T05:54:11.347920680Z"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "state": "APPROVAL_STATE_APPROVED"
+      }
+    },
+    {
+      "about": "Resume from c0. It left the filter, so: remove.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/WatchApprovals",
+        "headers": {
+          "content-type": "application/connect+json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "bodyBase64": "AAAAABV7InJlc3VtZUN1cnNvciI6ImMwIn0="
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/connect+json",
+          "connect-accept-encoding": "gzip, zstd"
+        },
+        "frames": [
+          {
+            "flags": 0,
+            "payload": "eyJjdXJzb3IiOiJjMSIsInJlbW92ZSI6ImFwcl8wMUo5WkNSRUFURUtFWSJ9"
+          }
+        ],
+        "bodyBase64": "AAAAAC17ImN1cnNvciI6ImMxIiwicmVtb3ZlIjoiYXByXzAxSjlaQ1JFQVRFS0VZIn0=",
+        "truncated": true
+      },
+      "expect": {
+        "status": 200,
+        "frames": 1,
+        "frameKinds": [
+          "remove"
+        ],
+        "snapshotReset": false
+      }
+    }
+  ]
+}
