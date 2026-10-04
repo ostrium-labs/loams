@@ -1,0 +1,41 @@
+[Unit]
+Description=Loams server (single node, local data directory)
+Documentation=https://github.com/ostrium-labs/loams
+# The metastore's local database and the local object store both live under the
+# state directory, so nothing else has to be on disk for this unit to start.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Every knob is overridable without editing this unit. See
+# docs/release/packaging.md; the file is optional, so the unit runs as shipped.
+EnvironmentFile=-/etc/default/loams
+# No ${LOAMS_LISTEN} here on purpose. The EnvironmentFile above is optional, so
+# on a fresh install systemd expands an unset variable to the empty string and
+# the command becomes `loams dev --listen ` with no value, which clap rejects and
+# the unit fails to start. `dev`'s own default is 127.0.0.1:8080, so the unit
+# starts as shipped. To change the address, set LOAMS_ARGS=--listen 0.0.0.0:8080
+# in /etc/default/loams; see docs/release/packaging.md.
+ExecStart=/usr/bin/loams dev --data-dir /var/lib/loams
+StateDirectory=loams
+WorkingDirectory=/var/lib/loams
+Restart=on-failure
+RestartSec=5s
+# The process writes only its state directory and reads its own tree.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# Deliberately no MemoryDenyWriteExecute: the query engine's expression
+# evaluation and the vector index build are not this unit's to constrain, and
+# a hardening directive that silently breaks a query is worse than none.
+
+[Install]
+WantedBy=multi-user.target
