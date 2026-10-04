@@ -30,7 +30,7 @@ use crate::{Call, Model, Module, PackageMap, naming};
 /// absolutely so the generated file reads the same wherever it is placed inside
 /// the `loams` package. §44 §7.3 splits the SDK into the generated facade and
 /// the hand-written runtime; these are the runtime's types.
-const RUNTIME: &str = "loams._runtime.call";
+const RUNTIME: &str = "loams.runtime.call";
 
 /// Renders `facade.py`.
 pub fn render(model: &Model, packages: &PackageMap, rev: &str) -> Result<String, String> {
@@ -332,6 +332,60 @@ fn bindings(out: &mut String, model: &Model) {
         out.push_str("        ),\n    ),\n");
     }
     out.push_str(")\n\n");
+    methods_table(out, model).ok();
+}
+
+/// ``IDEMPOTENCY_LEVELS`` and ``METHODS``.
+///
+/// `connect-python` dispatches on a `MethodInfo` rather than on a generated
+/// client class, so this table is the whole of the generated stub surface the
+/// runtime needs -- no `_pb2_grpc.py` is generated or imported. The hand-written
+/// runtime imports `METHODS` and `IDEMPOTENCY_LEVELS` by name, so without them
+/// the package does not import at all.
+fn methods_table(out: &mut String, model: &Model) -> Result<(), String> {
+    out.push_str(
+        "#: The Connect idempotency level each declared idempotency maps to, so a\n\
+         #: binding can become a `MethodInfo` without the runtime guessing.\n\
+         IDEMPOTENCY_LEVELS: Final[dict[str, IdempotencyLevel]] = {\n\
+         \x20   \"no_side_effects\": IdempotencyLevel.NO_SIDE_EFFECTS,\n\
+         \x20   \"idempotent\": IdempotencyLevel.IDEMPOTENT,\n\
+         \x20   \"none\": IdempotencyLevel.UNKNOWN,\n\
+         }\n\n\
+         #: One ``MethodInfo`` per call, keyed by ``package.Service/Method``.\n\
+         METHODS: Final[dict[str, MethodInfo[Message, Message]]] = {\n",
+    );
+    for module in &model.modules {
+        for call in &module.calls {
+            let input = message_ref(&call.package, &call.input);
+            let output = message_ref(&call.package, &call.output);
+            writeln!(
+                out,
+                "    \"{rpc}\": MethodInfo(\n\
+                 \x20       name=\"{method}\",\n\
+                 \x20       service_name=\"{service}\",\n\
+                 \x20       input={input},\n\
+                 \x20       output={output},\n\
+                 \x20       idempotency_level=IDEMPOTENCY_LEVELS[\"{idempotency}\"],\n\
+                 \x20   ),",
+                rpc = escape(&call.rpc()),
+                method = escape(&call.method),
+                service = escape(&call.service),
+                input = input,
+                output = output,
+                idempotency = escape(call.idempotency.as_str()),
+            )
+            .ok();
+        }
+    }
+    out.push_str("}\n");
+    Ok(())
+}
+
+/// A generated message class as Python writes it: the proto package's dotted
+/// path plus the `v1_pb2` module protoc emitted for it, then the bare name.
+fn message_ref(package: &str, message: &str) -> String {
+    let name = message.rsplit('.').next().unwrap_or(message);
+    format!("{package}.v1_pb2.{name}")
 }
 
 /// One module's two protocols: the async client and the sync one.

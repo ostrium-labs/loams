@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from typing import ClassVar, Final, Literal, Protocol
 
-from loams._runtime.call import CallOptions, LoamsError, ResponseStream
+from loams.runtime.call import CallOptions, LoamsError, ResponseStream
 from loams.instance.v1.instance_pb2 import GetInstanceRequest, GetInstanceResponse, WhoAmIRequest, WhoAmIResponse
 from loams.instance.v1.instance_connect import InstanceServiceClient, InstanceServiceClientSync
 from loams.live.v1.live_pb2 import DeployRequest, DeployResponse, ModifyQuerySetRequest, ModifyQuerySetResponse, MutateRequest, MutateResponse, QueryRequest, QueryResponse, Transition, WatchRequest
@@ -126,6 +126,12 @@ REASON_CODES: Final[dict[Reason, str]] = {
 #: into a `FeatureNotInVariantError`, so `loams.system.available()` answers
 #: the same question from `GetInstance.services[]` without a failing call.
 FEATURE_NOT_IN_VARIANT: Final[Reason] = "feature_not_in_variant"
+
+#: The reason a rejected access token answers with. Named for the same
+#: reason as `FEATURE_NOT_IN_VARIANT`: `REASONS` carries every reason, but
+#: the runtime compares against this one on the token path, and
+#: `runtime/errors.py` imports it by name.
+TOKEN_EXPIRED: Final[Reason] = "token_expired"
 
 Idempotency = Literal["no_side_effects", "idempotent", "none"]
 Retry = Literal["safe", "manual"]
@@ -312,6 +318,66 @@ MODULES: Final[tuple[ModuleBinding, ...]] = (
     ),
 )
 
+#: The Connect idempotency level each declared idempotency maps to, so a
+#: binding can become a `MethodInfo` without the runtime guessing.
+IDEMPOTENCY_LEVELS: Final[dict[str, IdempotencyLevel]] = {
+    "no_side_effects": IdempotencyLevel.NO_SIDE_EFFECTS,
+    "idempotent": IdempotencyLevel.IDEMPOTENT,
+    "none": IdempotencyLevel.UNKNOWN,
+}
+
+#: One ``MethodInfo`` per call, keyed by ``package.Service/Method``.
+METHODS: Final[dict[str, MethodInfo[Message, Message]]] = {
+    "loams.instance.v1.InstanceService/GetInstance": MethodInfo(
+        name="GetInstance",
+        service_name="loams.instance.v1.InstanceService",
+        input=loams.instance.v1.v1_pb2.GetInstanceRequest,
+        output=loams.instance.v1.v1_pb2.GetInstanceResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.instance.v1.InstanceService/WhoAmI": MethodInfo(
+        name="WhoAmI",
+        service_name="loams.instance.v1.InstanceService",
+        input=loams.instance.v1.v1_pb2.WhoAmIRequest,
+        output=loams.instance.v1.v1_pb2.WhoAmIResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["no_side_effects"],
+    ),
+    "loams.live.v1.LiveService/ModifyQuerySet": MethodInfo(
+        name="ModifyQuerySet",
+        service_name="loams.live.v1.LiveService",
+        input=loams.live.v1.v1_pb2.ModifyQuerySetRequest,
+        output=loams.live.v1.v1_pb2.ModifyQuerySetResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.live.v1.LiveService/Watch": MethodInfo(
+        name="Watch",
+        service_name="loams.live.v1.LiveService",
+        input=loams.live.v1.v1_pb2.WatchRequest,
+        output=loams.live.v1.v1_pb2.Transition,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.live.v1.LiveService/Deploy": MethodInfo(
+        name="Deploy",
+        service_name="loams.live.v1.LiveService",
+        input=loams.live.v1.v1_pb2.DeployRequest,
+        output=loams.live.v1.v1_pb2.DeployResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.live.v1.LiveService/Mutate": MethodInfo(
+        name="Mutate",
+        service_name="loams.live.v1.LiveService",
+        input=loams.live.v1.v1_pb2.MutateRequest,
+        output=loams.live.v1.v1_pb2.MutateResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+    "loams.live.v1.LiveService/Query": MethodInfo(
+        name="Query",
+        service_name="loams.live.v1.LiveService",
+        input=loams.live.v1.v1_pb2.QueryRequest,
+        output=loams.live.v1.v1_pb2.QueryResponse,
+        idempotency_level=IDEMPOTENCY_LEVELS["none"],
+    ),
+}
 class InstanceModule(Protocol):
     """`loams.instance` — What this instance is, and who the caller is on it.
 
