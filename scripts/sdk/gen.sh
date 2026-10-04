@@ -33,8 +33,14 @@ workdirs=()
 cleanup() {
   local dir
   for dir in "${workdirs[@]:-}"; do
-    [ -n "$dir" ] && rm -rf "$dir"
+    if [ -n "$dir" ]; then
+      rm -rf "$dir"
+    fi
   done
+  # Explicit: the loop's last `[ -n ... ]` test returning false would otherwise
+  # become the script's exit status through the EXIT trap, and a successful
+  # generation would exit 1.
+  return 0
 }
 trap cleanup EXIT
 
