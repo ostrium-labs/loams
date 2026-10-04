@@ -149,6 +149,22 @@ class Loams:
         :param session_consistency: hold a session consistency token across calls
             (D609). **Off by default**: every read is then `STRONG` on its own,
             which is correct but does not give read-your-writes across processes.
+
+            **Turning this on does not yet give you read-your-writes, and nothing
+            warns you.** D609 puts the token in the response message *and* in the
+            response header `loams-consistency-token`. No generated message has a
+            `consistency_token` field, so that half of the contract is not there
+            to read; and `connect-python==0.9.0` exposes only `execute_unary` and
+            `execute_server_stream`, which return the message and discard the
+            response headers, so the other half is unreachable too. The store
+            therefore stays empty and no `loams-consistency` header is ever sent.
+
+            So this is currently a no-op that costs an allocation. It is kept
+            because the flag is the documented shape of the feature and the store
+            is correct once a token can reach it; `loams.conformance_token()`
+            returning `None` is how you can tell. `tests/test_consistency.py`
+            pins the gap, and fails on a connect-python upgrade that would let us
+            close it.
         """
         if api_key is not None and auth is not None:
             raise ValueError("pass api_key or auth, not both: they answer the same question")

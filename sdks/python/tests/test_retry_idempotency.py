@@ -27,6 +27,7 @@ Pinned:
 
 from __future__ import annotations
 
+import asyncio
 import http.server
 import threading
 import uuid
@@ -36,7 +37,7 @@ import pytest
 
 from connectrpc.code import Code
 
-from loams import Loams
+from loams import AsyncLoams, Loams, UnavailableError
 from loams.instance.v1.instance_pb2 import GetInstanceRequest, GetInstanceResponse
 from loams.live.v1.live_pb2 import (
     DeployRequest,
@@ -235,3 +236,86 @@ def test_a_read_retries_without_a_key_and_unavailable_is_retryable() -> None:
 
     assert started.attempts == 2, f"the read made {started.attempts} attempts, want 2"
     assert started.keys == ["", ""], "a read should carry no key on any attempt"
+
+
+# -- the async half -----------------------------------------------------------
+#
+# `async_call_with_retry` is a separate implementation, not a wrapper, and every
+# test above drives `Loams`. An async path that reapplied `apply_idempotency_key`
+# per attempt would mint a fresh key on the retry, which the server cannot
+# collapse -- a duplicated mutation that still returns success, so nothing above
+# would notice. Same reason the stream tests have an async half.
+
+
+def test_the_async_retry_reuses_the_idempotency_key() -> None:
+    """The required test's async twin, against the same recording server."""
+    started = _RecordingServer()
+    try:
+        async def call() -> None:
+            async with AsyncLoams(started.url) as client:
+                await client.tables.mutate(MutateRequest())
+
+        asyncio.run(call())
+    finally:
+        started.close()
+
+    assert started.attempts == 2, f"the server saw {started.attempts} attempts, want 2"
+    first, second = started.keys
+    assert first != "", "the first async attempt carried no idempotency key"
+    assert first == second, (
+        f"the async retry carried a different key ({first!r} then {second!r}), so "
+        "the write happened twice"
+    )
+
+
+def test_the_async_retry_does_not_mutate_the_callers_message() -> None:
+    """The key goes on a clone, so the same request object can be reused."""
+    started = _RecordingServer()
+    callers = MutateRequest()
+    try:
+        async def call() -> None:
+            async with AsyncLoams(started.url) as client:
+                await client.tables.mutate(callers)
+
+        asyncio.run(call())
+    finally:
+        started.close()
+    assert callers.idempotency_key == "", (
+        f"the async call mutated the caller's message to {callers.idempotency_key!r}"
+    )
+
+
+def test_the_async_retry_gives_up_and_reports(server: _RecordingServer) -> None:
+    """Retries are bounded, and the last failure is what the caller sees."""
+    server.fail_first = 99  # never succeeds
+
+    async def call() -> None:
+        async with AsyncLoams(server.url, max_retries=2) as client:
+            await client.tables.mutate(MutateRequest())
+
+    with pytest.raises(UnavailableError):
+        asyncio.run(call())
+    assert server.attempts == 3, (
+        f"the async client made {server.attempts} attempts with max_retries=2, want 3"
+    )
+
+
+def test_the_async_retry_does_not_retry_a_read_for_free(server: _RecordingServer) -> None:
+    """A read retries without a key, because it is `safe` -- a different reason.
+
+    Same shape as the sync case, pinned separately because the async retry loop
+    is its own code: conflating "retryable" with "keyed" in one of them would
+    either retry a mutation without a key or refuse to retry a read.
+    """
+    server.request_type = GetInstanceRequest
+    server.response_type = GetInstanceResponse
+
+    async def call() -> None:
+        async with AsyncLoams(server.url) as client:
+            await client.instance.get_instance(GetInstanceRequest())
+
+    asyncio.run(call())
+    assert server.attempts == 2, f"the read made {server.attempts} attempts, want 2"
+    assert server.keys == ["", ""], (
+        f"a read carried an idempotency key: {server.keys}"
+    )
