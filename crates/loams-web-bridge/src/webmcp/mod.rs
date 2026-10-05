@@ -743,7 +743,7 @@ fn malformed(what: &str) -> BridgeError {
 /// envelope: Windows drops a thrown exception's message entirely
 /// (design §37 §18.14.3), and a silent empty list is exactly the failure mode
 /// D568 rules out.
-fn thrown_in_page(raw: &Value) -> Result<(), BridgeError> {
+pub fn thrown_in_page(raw: &Value) -> Result<(), BridgeError> {
     let Some(details) = raw.get("exceptionDetails") else {
         return Ok(());
     };

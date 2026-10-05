@@ -571,3 +571,35 @@ async fn a_tool_name_is_validated_against_the_draft() {
         );
     }
 }
+
+/// A thrown script is reported from the protocol, not as a missing answer.
+///
+/// `exceptionDetails` sits *beside* `result`, not inside it. A remote provider
+/// that reads `result.value` alone sees an error object with no string value
+/// and reports "the browser returned no WebMCP answer" — losing the one fact
+/// that matters, which is that the page threw. This is the same drift the local
+/// provider does not have, so it is asserted against the remote one.
+#[tokio::test]
+async fn a_thrown_script_is_reported_and_not_read_as_a_missing_answer() {
+    let (_cdp, remote) = remote_with(vec![(
+        "loamsWebmcpList",
+        json!({
+            "result": { "type": "object", "subtype": "error" },
+            "exceptionDetails": { "text": "ReferenceError: bridge is not defined" },
+        }),
+    )]);
+    let page = open(remote.as_ref()).await;
+
+    let error = remote
+        .list_webmcp_tools(&page, &ListWebmcpToolsRequest::new())
+        .await
+        .expect_err("a thrown script is not a listing");
+
+    let message = error.to_string();
+    assert!(message.contains("threw in the page"), "{message}");
+    assert!(message.contains("ReferenceError"), "{message}");
+    assert!(
+        !message.contains("returned no WebMCP answer"),
+        "a thrown script must not be reported as a missing answer: {message}"
+    );
+}

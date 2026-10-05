@@ -197,7 +197,17 @@ pub(crate) fn call(name: &WebmcpToolName, input: &Value, timeout_ms: u64) -> Str
         }}, {timeout_ms});
       }});
       var options = controller ? {{ signal: controller.signal }} : {{}};
-      var settled = Promise.resolve(context.executeTool(found, input, options));
+      var settled;
+      try {{
+        // `executeTool` is page code: it can throw synchronously, before it
+        // ever returns a promise. Calling it bare would let that throw escape
+        // this fulfilment callback — where neither the rejection handler below
+        // nor the outer `catch` could see it — and leave the timeout running.
+        settled = Promise.resolve(context.executeTool(found, input, options));
+      }} catch (error) {{
+        clearTimer();
+        return JSON.stringify({{ loams: '{VERSION}', state: 'error', reason: nameOf(error) }});
+      }}
       return Promise.race([settled, guard]).then(function (text) {{
         clearTimer();
         return JSON.stringify({{ loams: '{VERSION}', state: 'ok', text: stringify(text) }});
