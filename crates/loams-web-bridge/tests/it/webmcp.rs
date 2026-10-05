@@ -337,6 +337,55 @@ async fn a_webkit_page_gets_an_answer_not_an_error_from_both_providers() {
 }
 
 #[tokio::test]
+async fn a_call_against_an_absent_api_is_never_reported_as_a_failed_tool() {
+    // What the injected call script actually answers on a page with no
+    // `document.modelContext`: the absent envelope, not `state: "error"`. A
+    // tool that "failed" would tell an agent its call was rejected by the site,
+    // which is the opposite of what happened.
+    let name = WebmcpToolName::parse("add_to_cart").unwrap_or_else(|e| panic!("{e}"));
+    let expression = loams_web_bridge::webmcp::WebmcpRequest::call(
+        &CallWebmcpToolRequest::bare("add_to_cart").unwrap_or_else(|e| panic!("{e}")),
+    )
+    .script();
+    assert!(expression.contains("document.modelContext"), "{expression}");
+    assert!(expression.contains("supported: false"), "{expression}");
+    assert!(
+        !expression.contains("state: 'error', reason: 'not-exposed'"),
+        "{expression}"
+    );
+    assert_eq!(name.as_str(), "add_to_cart");
+}
+
+#[tokio::test]
+async fn a_permissions_policy_refusal_on_a_call_is_typed_not_a_page_refusal() {
+    // The real `NotAllowedError` is a DOMException, so it carries a message the
+    // page wrote, and only its name is the bridge's to trust.
+    let (_cdp, provider) = remote_with(vec![(
+        "loamsWebmcpCall",
+        evaluate_json(loams_web_bridge::webmcp::envelope_call_error(
+            "NotAllowedError: Permission policy 'tools' is disallowed in this document",
+        )),
+    )]);
+    let page = open(provider.as_ref()).await;
+    let request = CallWebmcpToolRequest::bare("pay").unwrap_or_else(|e| panic!("{e}"));
+    let outcome = provider
+        .call_webmcp_tool(&page, &request)
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(!outcome.executed, "{outcome:?}");
+    assert_eq!(
+        outcome.availability.absent(),
+        Some(&WebmcpAbsent::BlockedByPermissionsPolicy),
+        "{outcome:?}"
+    );
+    assert!(
+        outcome.render().contains("Permissions Policy"),
+        "{}",
+        outcome.render()
+    );
+}
+
+#[tokio::test]
 async fn a_page_that_refuses_for_its_own_reasons_says_which() {
     // The `tools` Permissions Policy refusal is the page's configuration, not a
     // browser limitation, and only the page can fix it.

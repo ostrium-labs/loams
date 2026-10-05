@@ -76,6 +76,29 @@ fn an_absent_model_context_is_a_clear_answer_not_an_error() {
 }
 
 #[test]
+fn a_permissions_policy_refusal_is_typed_whatever_the_page_says_with_it() {
+    // A real `NotAllowedError` is a DOMException, so the script names it with
+    // its message too, and the message is the page's to write. The typed reason
+    // must come from the error's name, not from the whole string matching it.
+    for reason in [
+        "NotAllowedError",
+        "NotAllowedError: Permission policy 'tools' is disallowed in this document",
+        "NotAllowedError",
+    ] {
+        assert_eq!(
+            WebmcpAbsent::from_reason(reason),
+            WebmcpAbsent::BlockedByPermissionsPolicy,
+            "{reason:?}"
+        );
+    }
+    // Anything else stays a page's own refusal, with its text kept.
+    assert_eq!(
+        WebmcpAbsent::from_reason("TypeError: context.getTools is not a function"),
+        WebmcpAbsent::Rejected("TypeError: context.getTools is not a function".to_string())
+    );
+}
+
+#[test]
 fn the_permissions_policy_refusal_is_named_for_what_it_is() {
     let raw = envelope_absent("NotAllowedError");
     let listing = parse_listing(&raw, &ListWebmcpToolsRequest::new())
@@ -114,6 +137,36 @@ fn an_entry_that_names_no_usable_tool_is_counted_not_rendered() {
     let rendered = listing.render();
     assert!(!rendered.contains("has space"), "{rendered}");
     assert!(rendered.contains("no usable tool"), "{rendered}");
+}
+
+#[test]
+fn an_absent_model_context_answered_as_a_tool_error_is_still_a_typed_absence() {
+    // Defensive: the answer is untrusted (D509), so whichever envelope an
+    // absence arrives in, the tool must not report a tool that failed.
+    let request = CallWebmcpToolRequest::bare("add_to_cart").unwrap_or_else(|e| panic!("{e}"));
+    for raw in [
+        envelope_absent("not-exposed"),
+        envelope_call_error("not-exposed"),
+        json!({"state": "error", "reason": "insecure-context"}),
+    ] {
+        let outcome = parse_call(&raw, &request, ChangeSummary::default())
+            .unwrap_or_else(|error| panic!("{raw}: {error}"));
+        assert!(!outcome.executed, "{raw}: {outcome:?}");
+        let availability = outcome
+            .availability
+            .absent()
+            .unwrap_or_else(|| panic!("{raw} must be a typed absence"));
+        assert_ne!(
+            *availability,
+            WebmcpAbsent::Rejected(String::new()),
+            "{raw}"
+        );
+        let rendered = outcome.render();
+        assert!(
+            rendered.contains("was not called") && rendered.contains("take_snapshot"),
+            "{raw}: {rendered}"
+        );
+    }
 }
 
 #[test]

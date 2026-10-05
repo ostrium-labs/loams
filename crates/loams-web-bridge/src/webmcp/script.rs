@@ -27,24 +27,37 @@ use super::WebmcpToolName;
 /// script is distinguishable from this one's.
 const VERSION: &str = "webmcp/1";
 
-/// The JavaScript both scripts share: cloning a value out of the page, turning a
-/// tool's return value into text, and naming an error.
-const HELPERS: &str = r#"function clone(value) {
-      if (value === undefined || value === null) { return null; }
-      try { return JSON.parse(JSON.stringify(value)); } catch (error) { return null; }
-    }
-    function stringify(value) {
-      if (typeof value === 'string') { return value; }
-      if (value === undefined || value === null) { return ''; }
-      try { return JSON.stringify(value); } catch (error) { return String(value); }
-    }
-    function nameOf(error) {
-      if (!error) { return 'the page gave no reason'; }
+/// The JavaScript both scripts share: answering an absence, cloning a value out
+/// of the page, turning a tool's return value into text, and naming an error.
+///
+/// `absent` is what keeps the two scripts telling the same story: a page with no
+/// `document.modelContext` answers a listing and a call with the *same* envelope,
+/// so the bridge reads one typed fact out of both rather than a tool failure on
+/// one and an absence on the other.
+fn helpers() -> String {
+    format!(
+        r#"function absent(reason) {{
+      return JSON.stringify({{ loams: '{VERSION}', supported: false, reason: reason }});
+    }}
+    function clone(value) {{
+      if (value === undefined || value === null) {{ return null; }}
+      try {{ return JSON.parse(JSON.stringify(value)); }} catch (error) {{ return null; }}
+    }}
+    function stringify(value) {{
+      if (typeof value === 'string') {{ return value; }}
+      if (value === undefined || value === null) {{ return ''; }}
+      try {{ return JSON.stringify(value); }} catch (error) {{ return String(value); }}
+    }}
+    function nameOf(error) {{
+      if (!error) {{ return 'the page gave no reason'; }}
       var name = error.name ? String(error.name) : '';
       var message = error.message ? String(error.message) : '';
-      if (name && message) { return name + ': ' + message; }
+      if (name && message) {{ return name + ': ' + message; }}
       return name || message || 'the page gave no reason';
-    }"#;
+    }}"#,
+        VERSION = VERSION,
+    )
+}
 
 /// List the page's registered tools, keeping only those whose name contains
 /// `filter` (case-insensitively; no filter, or an empty one, keeps everything).
@@ -54,19 +67,19 @@ pub(crate) fn listing(filter: Option<&str>) -> String {
         r#"(function loamsWebmcpList() {{
   try {{
     if (typeof document === 'undefined' || !document) {{
-      return JSON.stringify({{ loams: '{VERSION}', supported: false, reason: 'not-exposed' }});
+      return absent('not-exposed');
     }}
     if (window.isSecureContext === false) {{
-      return JSON.stringify({{ loams: '{VERSION}', supported: false, reason: 'insecure-context' }});
+      return absent('insecure-context');
     }}
     var context = document.modelContext;
     if (!context || typeof context.getTools !== 'function') {{
-      return JSON.stringify({{ loams: '{VERSION}', supported: false, reason: 'not-exposed' }});
+      return absent('not-exposed');
     }}
     var wanted = {filter}.toLowerCase();
     return Promise.resolve(context.getTools()).then(function (tools) {{
       if (!tools || typeof tools.length !== 'number') {{
-        return JSON.stringify({{ loams: '{VERSION}', supported: false, reason: 'not-exposed' }});
+        return absent('not-exposed');
       }}
       var out = [];
       for (var index = 0; index < tools.length; index += 1) {{
@@ -97,16 +110,16 @@ pub(crate) fn listing(filter: Option<&str>) -> String {
       }}
       return JSON.stringify({{ loams: '{VERSION}', supported: true, tools: out }});
     }}, function (error) {{
-      return JSON.stringify({{ loams: '{VERSION}', supported: false, reason: nameOf(error) }});
+      return absent(nameOf(error));
     }});
   }} catch (error) {{
-    return JSON.stringify({{ loams: '{VERSION}', supported: false, reason: nameOf(error) }});
+    return absent(nameOf(error));
   }}
-  {HELPERS}
+  {helpers}
 }})()"#,
         filter = filter,
         VERSION = VERSION,
-        HELPERS = HELPERS,
+        helpers = helpers(),
     )
 }
 
@@ -128,12 +141,21 @@ pub(crate) fn call(name: &WebmcpToolName, input: &Value, timeout_ms: u64) -> Str
     }}
   }}
   try {{
-    if (typeof document === 'undefined' || !document || !document.modelContext) {{
-      return JSON.stringify({{ loams: '{VERSION}', state: 'error', reason: 'not-exposed' }});
+    // The same detection as the listing, and the same envelope: a call against
+    // a page with no `document.modelContext` reports the absence rather than a
+    // tool that failed, because no tool was ever reachable.
+    if (typeof document === 'undefined' || !document) {{
+      return absent('not-exposed');
+    }}
+    if (window.isSecureContext === false) {{
+      return absent('insecure-context');
+    }}
+    if (!document.modelContext) {{
+      return absent('not-exposed');
     }}
     var context = document.modelContext;
     if (typeof context.getTools !== 'function' || typeof context.executeTool !== 'function') {{
-      return JSON.stringify({{ loams: '{VERSION}', state: 'error', reason: 'not-exposed' }});
+      return absent('not-exposed');
     }}
     var wanted = {name};
     var input = JSON.parse({input});
@@ -187,20 +209,22 @@ pub(crate) fn call(name: &WebmcpToolName, input: &Value, timeout_ms: u64) -> Str
         return JSON.stringify({{ loams: '{VERSION}', state: 'error', reason: nameOf(error) }});
       }});
     }}, function (error) {{
+      // A refused `getTools()` never reached a tool, and the Permissions Policy
+      // refusal arrives here, so it is the absence rather than a failed call.
       clearTimer();
-      return JSON.stringify({{ loams: '{VERSION}', state: 'error', reason: nameOf(error) }});
+      return absent(nameOf(error));
     }});
   }} catch (error) {{
     clearTimer();
-    return JSON.stringify({{ loams: '{VERSION}', state: 'error', reason: nameOf(error) }});
+    return absent(nameOf(error));
   }}
-  {HELPERS}
+  {helpers}
 }})()"#,
         name = name,
         input = input,
         timeout_ms = timeout_ms,
         VERSION = VERSION,
-        HELPERS = HELPERS,
+        helpers = helpers(),
     )
 }
 
@@ -274,6 +298,29 @@ mod tests {
         assert!(expression.contains("getTools"), "{expression}");
         assert!(expression.contains("isSecureContext"), "{expression}");
         assert!(expression.contains("\"cart\""), "{expression}");
+    }
+
+    #[test]
+    fn the_call_script_reports_an_absent_api_as_an_absence_and_not_a_tool_failure() {
+        let name = WebmcpToolName::parse("add_to_cart").unwrap_or_else(|error| panic!("{error}"));
+        let expression = call(&name, &json!({}), 1000);
+        // The call and the listing report the same fact the same way, so
+        // `parse_call` reads a typed absence rather than a tool that failed.
+        assert!(expression.contains("supported: false"), "{expression}");
+        assert!(expression.contains("insecure-context"), "{expression}");
+        assert!(
+            !expression.contains("state: 'error', reason: 'not-exposed'"),
+            "an absent document.modelContext must not answer as a tool failure: {expression}"
+        );
+    }
+
+    #[test]
+    fn a_get_tools_refusal_on_a_call_is_an_absence_rather_than_a_tool_failure() {
+        let name = WebmcpToolName::parse("pay").unwrap_or_else(|error| panic!("{error}"));
+        let expression = call(&name, &json!({}), 1000);
+        // The rejection of `getTools()` is what the Permissions Policy refusal
+        // arrives as, so it must be the absent envelope.
+        assert!(expression.contains("absent(nameOf(error))"), "{expression}");
     }
 
     #[test]

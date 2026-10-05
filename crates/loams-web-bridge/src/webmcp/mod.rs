@@ -287,9 +287,29 @@ impl WebmcpAbsent {
         match reason {
             "" | "not-exposed" => WebmcpAbsent::NotExposed,
             "insecure-context" => WebmcpAbsent::InsecureContext,
-            "NotAllowedError" => WebmcpAbsent::BlockedByPermissionsPolicy,
-            other => WebmcpAbsent::Rejected(crate::tool::truncate(other, MAX_NAME_CHARS)),
+            other => {
+                // `nameOf` in the injected script names an exception with its
+                // message when it has one, and the message is the page's to
+                // write — a real `NotAllowedError` carries one. So the typed
+                // reason is read off the error's *name*, which is the part the
+                // page cannot rename, and only the name.
+                let name = other.split(':').next().unwrap_or(other).trim();
+                if name == "NotAllowedError" {
+                    return WebmcpAbsent::BlockedByPermissionsPolicy;
+                }
+                WebmcpAbsent::Rejected(crate::tool::truncate(other, MAX_NAME_CHARS))
+            }
         }
+    }
+
+    /// Whether this reason is one of the *named* absences rather than a page's
+    /// own refusal.
+    ///
+    /// A refusal keeps the page's own words because they are the only thing
+    /// that says what went wrong; a named absence is the bridge's own fact and
+    /// has a message of its own that names the way on.
+    fn is_named(&self) -> bool {
+        !matches!(self, WebmcpAbsent::Rejected(_))
     }
 }
 
@@ -867,6 +887,14 @@ pub fn parse_call(
                 .get("reason")
                 .and_then(Value::as_str)
                 .unwrap_or("the page gave no reason");
+            // The API being out of reach is not a tool that failed, so it is
+            // read out of whatever envelope it arrived in and answered as the
+            // typed absence it is. Only a refusal the bridge cannot name keeps
+            // the page's own words.
+            let absent = WebmcpAbsent::from_reason(reason);
+            if absent.is_named() {
+                return Ok(WebmcpCallOutcome::absent(request, absent));
+            }
             Ok(base(
                 format!(
                     "{} failed: {}; take_snapshot to see the page",
