@@ -169,6 +169,47 @@ describe('boot', () => {
     await handle.dispose();
   });
 
+  it('action_admission_uses_the_narrowed_service_list_not_the_manifest_one', async () => {
+    // A catalog row may narrow `inject` (it can never widen it). Admission must
+    // check the list the fiber actually receives: admitting against the wider
+    // manifest list would authorise a method-backed action for a service this
+    // plugin was deliberately denied, making a WebMCP tool strictly more capable
+    // than the UI beside it — which D569 forbids.
+    const opsPage: PluginModule = { inject: [], apply() {} };
+    const handle = await boot({
+      catalog: [{ id: 'ops', name: '@loams/plugin-ops', inject: [] }],
+      manifests: [
+        manifest('@loams/plugin-ops', ['rpc.operations'], {
+          actions: ['ops.cancel'],
+          permissions: ['operations:cancel'],
+        }),
+      ],
+      modules: { '@loams/plugin-ops': async () => ({ default: opsPage }) },
+      platform: platformWith(createMockControl().transport),
+    });
+    handle.actions.register({
+      name: 'ops.cancel',
+      plugin: 'ops',
+      description: 'Cancel an operation.',
+      risk: 'read',
+      permission: 'operations:cancel',
+      method: { service: 'rpc.operations', method: 'cancelOperation' },
+      execute: async () => 'cancelled',
+    });
+
+    // The row narrowed `rpc.operations` away, so the method is unreachable even
+    // though the manifest grants the permission that guards it.
+    const result = await handle.actions.invoke(
+      'ops.cancel',
+      {},
+      {
+        signal: new AbortController().signal,
+      },
+    );
+    expect(result.ok).toBe(false);
+    await handle.dispose();
+  });
+
   it('third_party_disabled_without_flag, and granted permissions never exceed the manifest', async () => {
     const mock = createMockControl({ features: { [THIRD_PARTY_FLAG]: false } });
     const handle = await boot({

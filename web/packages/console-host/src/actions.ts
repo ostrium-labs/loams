@@ -295,7 +295,25 @@ export class ActionRegistry {
     const permission = decidePermission(spec, row.permission, this.#admissions);
     if (!permission.ok) return denied(permission);
 
-    const args = validateInput(spec, input);
+    // Input is untrusted and can be a Proxy whose property access or enumeration
+    // throws, so inspecting it is itself a failure mode. `invoke` resolves an
+    // `ActionResult` and never rejects — a rejection would reach the WebMCP
+    // layer as an opaque `UnknownError` and take the caller's ability to read
+    // the reason with it — so a throw here is reported like any other refusal.
+    let args: ReturnType<typeof validateInput>;
+    try {
+      args = validateInput(spec, input);
+    } catch (cause) {
+      return {
+        ok: false,
+        error: {
+          code: 'invalid_input',
+          message: `${spec.name}: the input could not be read (${
+            cause instanceof Error ? cause.message : String(cause)
+          })`,
+        },
+      };
+    }
     if (!args.ok) return { ok: false, error: { code: 'invalid_input', message: args.message } };
 
     const requester = options.requester ?? DEFAULT_REQUESTER;

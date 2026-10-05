@@ -174,7 +174,14 @@ export async function boot(options: BootOptions): Promise<ConsoleHandle> {
         : manifest.permissions;
     admissions[entry.id] = {
       actions: manifest.actions,
-      policy: { services: manifest.inject, permissions },
+      // The service list admission checks must be the one the plugin fiber
+      // actually gets, not the manifest's wider one. A catalog row may narrow
+      // `inject` (it can never widen it — see `catalog.ts`), so admitting
+      // against `manifest.inject` would authorise a method-backed action for
+      // a service this plugin was deliberately denied: the tool would be
+      // strictly more capable than the UI beside it, which is the one thing
+      // D569's "exactly as the UI would" forbids.
+      policy: { services: entry.inject ?? manifest.inject, permissions },
     };
   }
   const actions = new ActionRegistry(admissions);

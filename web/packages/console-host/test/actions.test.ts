@@ -226,6 +226,37 @@ describe('invoking an action', () => {
     expect(result).toEqual({ ok: true, value: ['default', 'retry'] });
   });
 
+  it('refuses_input_it_cannot_read_instead_of_rejecting', async () => {
+    // Input arrives from a page, so it can be a Proxy whose own traps throw.
+    // `invoke` resolves an `ActionResult` and never rejects: a rejection would
+    // cross into the WebMCP layer as an opaque `UnknownError`, taking the
+    // reason with it. So a throw while *inspecting* the input is a refusal
+    // like any other.
+    const hostile = new Proxy(
+      {},
+      {
+        // Satisfies `required` so validation reaches `Object.entries`, then
+        // throws there — the point where a bare inspection would escape.
+        get: (_target, key) => (key === 'queue' ? 'critical' : undefined),
+        ownKeys() {
+          throw new Error('keys are not for you');
+        },
+      },
+    );
+    const registry = registryWith(
+      spec({
+        inputSchema: {
+          type: 'object',
+          properties: { queue: { type: 'string' } },
+          required: ['queue'],
+        },
+      }),
+    );
+    const result = await registry.invoke('jobs.list', hostile, call());
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.error.code).toBe('invalid_input');
+  });
+
   it('refuses_an_unknown_action', async () => {
     const registry = registryWith(spec());
     const result = await registry.invoke('jobs.purge', undefined, call());
