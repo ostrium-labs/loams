@@ -1,0 +1,60 @@
+[package]
+name = "loams-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Loams's embedded graph engine: Grafeo behind loams.graph.v1, GQL over Connect-RPC (D634)"
+publish = false
+
+[dependencies]
+# The engine. Rust, no required C dependencies, Apache-2.0 across `grafeo` and its four siblings
+# (`grafeo-core`, `grafeo-engine`, `grafeo-adapters`, `grafeo-common`) -- read on crates.io
+# 2026-10-04 and recorded in connectors/licences.toml. D634 (b): Loams **embeds** it rather than
+# running it as a service, so there is no wire protocol, no Bolt, and no credential in between.
+#
+# The feature set is `grafeo`'s **default** (`embedded`) plus `wal`, `spill` and `mmap`, and the
+# reason is measured rather than assumed (`grafeo` 0.5.43 `Cargo.toml`, read 2026-10-04):
+#
+#   * `default-features = false` was the first draft's choice and it is **wrong**: every language is
+#     a feature flag, so dropping the defaults drops `gql` too and leaves an engine that cannot
+#     parse a statement at all.
+#   * D634 (a) wants GQL and not the other five, and the defaults are the feature combination that
+#     gives the LPG data model and GQL while enabling **no other query language**: `cypher`,
+#     `gremlin`, `sql-pgq`, `sparql` and `graphql` are all off. That is what makes
+#     `EngineInfo.languages` and the `Unimplemented` answer honest rather than a policy choice
+#     Loams imposes on an engine that could have done more.
+#   * `lpg`, grafeo's own property-graph feature, is *not* usable here: it turns on `cypher`,
+#     `gremlin` and `sql-pgq` too. `edge` is the narrow alternative but needs `regex-lite`, which
+#     is a smaller regex engine than `regex` and would make `=~` behave differently from GQL.
+#   * `wal` is required by `GrafeoDB::open` (a `#[cfg(feature = "wal")]` constructor, so a graph with
+#     a `database_path` could not otherwise be opened at all), and `spill` and `mmap` bring
+#     `grafeo-engine` up to its own `default` set, which is the combination upstream exercises most.
+grafeo = { version = "0.5", features = ["wal", "spill", "mmap"] }
+# Named because it is forced, not chosen. `grafeo::Value::Map` holds an
+# `Arc<BTreeMap<PropertyKey, Value>>`, and `PropertyKey` lives in `grafeo-core`, which the `grafeo`
+# facade does not re-export -- so converting a protobuf Struct into an engine Map has to name the
+# sibling crate. It is already in the tree transitively at the same version as `grafeo` (0.5.43,
+# Apache-2.0, recorded in connectors/licences.toml), so this adds no new package, only an explicit
+# edge. D634 (b)'s point -- that the engine lives behind a facade -- is not weakened by naming a
+# type the facade's own signature requires.
+grafeo-common = "0.5"
+loams-graph-proto = { path = "../loams-graph-proto" }
+
+# The generated `loams.graph.v1` types. `connectrpc-build` 0.9 emits buffa messages, and
+# `Row.values` is a `google.protobuf.Value` built through buffa's own oneof wrapper, so the type has
+# to be nameable to fill a row at all. Apache-2.0, and already in the workspace's `Cargo.lock` as
+# `loams-graph-proto`'s dependency -- this adds no package to the graph.
+buffa-types = "0.9.2"
+connectrpc = "0.9"
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+# Nothing: the engine is synchronous, so every test here is a plain `#[test]`. A server that drives
+# this crate would bring tokio with it.
+
+[lints]
+workspace = true

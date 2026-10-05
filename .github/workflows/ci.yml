@@ -44,6 +44,10 @@ jobs:
       protos: ${{ steps.filter.outputs.protos }}
       app-protos: ${{ steps.filter.outputs.app-protos }}
       sdk-typescript: ${{ steps.filter.outputs.sdk-typescript }}
+      sdk-rust: ${{ steps.filter.outputs.sdk-rust }}
+      sdk-python: ${{ steps.filter.outputs.sdk-python }}
+      sdk-go: ${{ steps.filter.outputs.sdk-go }}
+      sdk-swift: ${{ steps.filter.outputs.sdk-swift }}
       web: ${{ steps.filter.outputs.web }}
       dapr-edge: ${{ steps.filter.outputs.dapr-edge }}
       spec: ${{ steps.filter.outputs.spec }}
@@ -174,6 +178,47 @@ jobs:
               - "scripts/sdk/**"
               - "sdks/**"
               - "web/pnpm-lock.yaml"
+            # SDK2 Task 3: the Rust SDK. It is its own cargo workspace, so the
+            # server's "Rust tests" jobs never compile or run it -- which is how
+            # PR #340 merged with four failing tests and a green board.
+            sdk-rust:
+              - ".github/workflows/**"
+              - "rust-toolchain*"
+              - "crates/loams-proto/**"
+              - "crates/loams-live-proto/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/rust/**"
+              - "sdks/conformance/**"
+            # SDK2 Task 1: the Python SDK. CI's Python jobs are the qdrant smoke
+            # and static analysis, neither of which imports the SDK.
+            sdk-python:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/python/**"
+              - "sdks/conformance/**"
+            # SDK2 Task 2: the Go SDK, whose module sits outside the web
+            # workspace and so had no job of its own.
+            sdk-go:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/go/**"
+              - "sdks/conformance/**"
+            # The Swift SDK (#288). It has no local toolchain on the machines
+            # that develop this repo, so macOS is the only thing that can
+            # compile it. Without this job it merges as unverified source.
+            sdk-swift:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/swift/**"
+              - "sdks/conformance/**"
             web:
               - ".github/workflows/**"
               - "web/**"
@@ -994,6 +1039,147 @@ jobs:
             }
           done
           sdks/typescript/packages/client/node_modules/.bin/buf --version
+
+  # SDK2 Task 3: the Rust SDK (design section 44 row 4). sdks/rust is its own
+  # cargo workspace, so the server's Rust jobs never touch it -- PR #340 merged
+  # with four failing tests because nothing ran them. This job is what makes a
+  # green board mean something for a language SDK.
+  #
+  # NOTE: sdk-rust, sdk-python and sdk-go are deliberately NOT in the required
+  # set yet. They were added after those SDKs had already merged unverified, so
+  # they are red today; making them required now would leave dev permanently red
+  # and block every PR. They report, and get promoted to required once the SDKs
+  # they police are green.
+  sdk-rust:
+    name: the Rust SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-rust == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      # crates/loams-live-proto/build.rs shells out to the system protoc
+      # (connectrpc_build), so without this the SDK build dies in the build
+      # script before a single test runs. The other 13 jobs that build the
+      # workspace install it here; sdk-rust was missed.
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # -j 4: the SDK path-depends on loams-proto and loams-live-proto, and the
+      # runners are 4 vCPU.
+      - name: the Rust SDK's tests
+        working-directory: sdks/rust
+        run: cargo test -j 4 --locked
+      - name: lint the Rust SDK
+        working-directory: sdks/rust
+        run: |
+          cargo fmt -- --check
+          cargo clippy -j 4 --all-targets -- -D warnings
+      # `scripts/sdk/gen.sh` resolves buf from web's node_modules, so the
+      # drift check below cannot run without this. sdk-rust had no pnpm setup at
+      # all, so the step died before checking anything:
+      #   sdks/typescript/packages/client/node_modules/.bin/buf is missing:
+      #   run 'pnpm install' in web/ first
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      # The generated stubs are protoc's output verbatim and are committed, so a
+      # proto edit that moved the SDK surface cannot pass with a stale file.
+      - name: the Rust SDK's generated code is not stale
+        run: |
+          ./scripts/sdk/gen.sh rust
+          git diff --exit-code -- sdks/rust/gen || {
+            echo "sdks/rust/gen is stale: run 'scripts/sdk/gen.sh rust' and commit"; exit 1;
+          }
+
+  # SDK2 Task 1: the Python SDK. CI's existing Python jobs are the qdrant
+  # smoke and static analysis, neither of which imports this package.
+  sdk-python:
+    name: the Python SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-python == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: install the SDK
+        working-directory: sdks/python
+        run: uv sync --frozen --all-extras --dev
+      - name: the Python SDK's tests
+        working-directory: sdks/python
+        run: uv run pytest -q
+      - name: the SDK typechecks under --strict
+        working-directory: sdks/python
+        run: uv run mypy --strict src
+      # A generation difference must be a dependency bump, not whatever the
+      # runner resolved, so the runtime pins stay exact.
+      - name: the SDK's runtime dependencies are exact pins
+        working-directory: sdks/python
+        run: |
+          for pin in 'connect-python==' 'protobuf=='; do
+            grep -qF "$pin" pyproject.toml || {
+              echo "pyproject.toml must pin $pin exactly, not a range"; exit 1;
+            }
+          done
+
+  # The Swift SDK (issue #288). Report-only like the other SDK gates: it must
+  # build and test on a runner that actually has a Swift toolchain, because no
+  # machine that develops this repo does. `Package.swift` declares no package
+  # dependencies, so this needs no resolution step and no cache.
+  sdk-swift:
+    name: the Swift SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-swift == 'true') }}
+    # macOS, not the Linux runner: the SDK is written against Foundation's
+    # async URLSession, and macos-latest ships a Swift toolchain preinstalled.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: the Swift toolchain's version
+        run: swift --version
+      # The filter also matches `.github/workflows/**`, so this job runs on the
+      # PR that adds it, when sdks/swift may not be on the base yet. `hashFiles`
+      # rather than a `test -f` step, because a failing step fails the job.
+      - name: the Swift SDK builds
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        working-directory: sdks/swift
+        run: swift build
+      - name: the Swift SDK's tests
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        working-directory: sdks/swift
+        run: swift test
+
+  # SDK2 Task 2: the Go SDK, whose module sits outside the web workspace.
+  sdk-go:
+    name: the Go SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-go == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # Must be >= sdks/go/go.mod's `go 1.25.0`. This job also sets
+          # GOTOOLCHAIN=local, so Go cannot self-upgrade past what setup-go
+          # installed and the mismatch is a hard failure:
+          #   go: go.mod requires go >= 1.25.0 (running go 1.24.0;
+          #       GOTOOLCHAIN=local)
+          # It was the only job pinning an exact 1.24.0; the others use "1.24".
+          go-version: '1.25.0'
+          cache-dependency-path: sdks/go/go.sum
+      - name: the Go SDK's tests
+        working-directory: sdks/go
+        run: go test -count=1 ./...
+      - name: vet the Go SDK
+        working-directory: sdks/go
+        run: go vet ./...
 
   deny:
     name: licenses, advisories, sources

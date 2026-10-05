@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/grafeo.config.json",
+  "title": "Grafeo connector instance config (loams.flow/v1)",
+  "description": "One Grafeo connector instance's settings: where the embedded database lives, which of Grafeo's six query languages the instance speaks, how many sessions it opens, how large a statement batch it commits at once, whether it refuses writes, and the projection that names the part of the graph the route reads or writes. **This schema declares no secret property and no \"writeOnly\" field, deliberately and for a reason.** D634(b) rules that Grafeo is *embedded in the Loams process* rather than run as a server: Loams links the engine and calls it in process, so there is no network hop, no listener, no remote peer and therefore no credential to present or store. The manifest's `auth: [none]` and its empty `secrets` list are the same fact, and CN1's rule 6 — that `secrets` and this schema's `writeOnly` set are exactly equal, in both directions — is satisfied by both sets being empty. An operator who adds a credential here has added a property the gate will not resolve through the namespace's secret store (D189). No field is required: an embedded engine with no configuration at all is an in-memory GQL database inside the Fabric process.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "database_path": {
+      "description": "Where the embedded database lives. The literal \":memory:\" selects an in-process database that is created empty and dies with the Fabric process, which is the default because a connector that declares a source needs no durable graph. Any other value is a directory on local disk, and is what makes the graph survive a Fabric restart — the embedded equivalent of the URL every remote connector's config schema requires.",
+      "type": "string",
+      "minLength": 1,
+      "default": ":memory:"
+    },
+    "query_language": {
+      "description": "Which of Grafeo's six query languages this instance speaks. Grafeo implements all six behind cargo feature flags, and **GQL (ISO/IEC 39075) is the default** and the reason D634 chose it: the standard makes the connector portable across Neo4j, Memgraph and anything GQL-conformant, where a Cypher manifest would be tied to one vendor's dialect. The other five are selectable per instance rather than removed, because a route that already carries Cypher is better served by a flag than by a rewrite — `cypher` for Neo4j-shaped GQL, `sql-pgq` for SQL:2023 `GRAPH_TABLE` (a direction, not a plan: ClickHouse implements no `GRAPH_TABLE`), and `gremlin`, `graphql` and `sparql` for the other data models the engine carries.",
+      "type": "string",
+      "enum": ["gql", "cypher", "sql-pgq", "gremlin", "graphql", "sparql"],
+      "default": "gql"
+    },
+    "max_sessions": {
+      "description": "How many Grafeo sessions the instance opens concurrently. Grafeo's sessions each read a consistent MVCC snapshot, and the Fabric already runs one process with many sessions (D634(b)), so this is the one knob that trades in-process concurrency against memory. `position` in the manifest is per session, so raising this does not change what a resume checkpoint means.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 64
+    },
+    "batch_size": {
+      "description": "Rows (nodes or edges) per statement batch, which is the batch this connector commits as one Grafeo transaction. It defaults to the manifest's `limits.batch_rows` and `capabilities.bulk.max_batch_rows` — CN1 Ruling 3's 65536 — and an instance should lower it, because the whole batch is held in memory until the transaction commits and there is no Arrow bulk path to stream it (D356).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    },
+    "read_only": {
+      "description": "Whether the instance refuses every write. A source-only route sets it, so a mis-wired route fails at the engine rather than mutating a graph nothing intended to change. A sink sets it false, which is the default.",
+      "type": "boolean",
+      "default": false
+    },
+    "projection": {
+      "description": "The part of the graph this instance reads or writes: the node labels and edge types in scope, and the properties projected into each record. It is the only place the graph's shape is named, because Grafeo exposes no schema registry to a connector — the manifest's `schema.registry` is `none` for that reason, and a projection is operator configuration rather than a registry contract, so it carries no evolution rule. Omitted, an instance sees the whole graph.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "labels": {
+          "description": "The node labels and edge types in scope. Omitted means every label in the database.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "properties": {
+          "description": "The properties projected into a record, by name. Omitted means every property of each entity in scope.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,173 @@
+# Grafeo — §33 A.3's second graph row; D634 (2026-10-04); the research behind it is
+# docs/plans/graph-db-rust-spike.md, on `research/graph-db-rust`. Hand-written, and listed
+# in connectors/registry/handwritten.txt so the generator never rewrites it (CN1 Ruling 1).
+#
+# A.3's row, verbatim: `| Grafeo | Y | Y | · | Y | · | · | none | · | · | P2 |` — both
+# directions, batch only, no CDC, no webhook, and **no auth**. The last cell is not an
+# oversight: D634(b) makes Grafeo an engine *embedded in the Fabric*, so there is no network
+# hop and therefore no credential. P2 per Appendix A, and **not** ★: D634 does not change
+# D358's 21, which is the point of a ruling that adds a connector without adding a star.
+apiVersion: loams.flow/v1
+kind: Connector
+id: grafeo
+name: Grafeo
+specVersion: 0.1.0
+  # 0.x while `status: planned`: no connector code exists yet, and §33 §4 rule 4's
+  # removal-or-narrowing bump is a major bump away from here, not a patch.
+category: graph
+priority: P2
+starred: false              # D634 adds a row to §33, not a name to §8's 21 (D358)
+status: planned
+runtime:
+  kind: native
+  ref: loams_flow::connectors::graph
+  # D634(b) is what makes `native` the only correct runtime, and it is the whole point of
+  # the row. Three measured facts, all from D634 and the spike:
+  #   * Camel 4.22.1 has no Grafeo component at all — `camel-catalog` 4.22.1 lists no
+  #     `grafeo` syntax — and the two graph components Camel *does* ship (`camel-neo4j`,
+  #     `camel-arangodb`) are `producerOnly: true`, so D354's buy-first has nothing to buy
+  #     and a generated OpenAPI connector would be the wrong shape for a database.
+  #   * Loams links the engine into its own process and calls it in process. The Fabric
+  #     already runs one process with many sessions and Grafeo's sessions carry MVCC
+  #     snapshot isolation, which is the same shape: no wire protocol, no second
+  #     deployment unit, no auth to get wrong.
+  #   * There is **no Bolt anywhere in this path** (D634(c)): `bolt-client` has had no
+  #     release since December 2022 and the one maintained Bolt client, `neo4rs` 0.8.0,
+  #     is Neo4j-specific rather than portable. Loams' internal connector-to-engine
+  #     contract is Connect-RPC, already the Fabric's protocol, so reaching the engine
+  #     over Bolt would add a second RPC stack to avoid one.
+licence:
+  component: Apache-2.0
+  dependencies: {}
+    # D634 read exactly these five crates from crates.io on 2026-10-04, and all five are
+    # **Apache-2.0**: `grafeo` 0.5.43 (the facade Loams depends on), `grafeo-core`,
+    # `grafeo-engine`, `grafeo-adapters` and `grafeo-common`. That is what makes Grafeo
+    # usable under D359 where `surrealdb` is not: crates.io reports `license =
+    # "non-standard"` for the latter, which is not an SPDX id. Each crate has a
+    # `kind = "library"` stanza in connectors/licences.toml, and none of them is in
+    # `[deny]`.
+    #
+    # What the licence does *not* settle is D634(f), the standing risk: 23 701 crates.io
+    # downloads is roughly two orders of magnitude behind `neo4rs` and the performance
+    # claims are self-reported. Loams depends on GQL (ISO/IEC 39075), the standard; Grafeo
+    # is the engine chosen because it can be embedded and tested. If Grafeo proves
+    # unmaintained the standard still stands and only this row's reference engine changes.
+capabilities:
+  source:
+    streaming: false           # A.3: Streaming ·
+    batch: true                # A.3: Batch Y
+    cdc: false                 # A.3: CDC ·
+    webhook: false             # A.3: Webhook ·
+    resumable: true
+    position: the committed EpochId, and the last entity key emitted under it
+      # Named for what Grafeo actually exposes. Read in grafeo-engine 0.5.43's source on
+      # 2026-10-04: `TransactionManager::commit` and `Transaction::commit` both return an
+      # `EpochId`, and `committed_epoch(tx)` returns the one for a transaction. There is no
+      # accessor called a "snapshot id", so this cell names `EpochId` rather than a plausible-
+      # sounding name the engine does not have.
+      #
+      # A Grafeo session reads a *consistent snapshot* — MVCC with snapshot isolation (D634 (b)) —
+      # so a batch is a function of the epoch its transaction began at. The checkpoint is the
+      # `EpochId` returned when that transaction committed, recorded once the Fabric
+      # acknowledges the batch (CN1 Ruling 4), together with the last entity key read under it; a
+      # restart opens a transaction and continues from that key. It is the same shape as §8 #6's
+      # "the exported snapshot id", which is the closest thing this registry already had.
+  sink:
+    streaming: false           # A.3: Streaming ·; the write path is a batch of statements
+    batch: true
+    transactional: true
+      # Grafeo has full ACID with MVCC snapshot isolation, so one batch of GQL statements is
+      # one transaction and commits or rolls back whole. This is the one place in the
+      # registry where a sink is genuinely transactional, and it is the shape D634(b)
+      # wanted: the Fabric's single process holds the engine's sessions rather than
+      # supervising a second deployment unit over a socket.
+    upsert: false
+    delete: false
+    idempotent: false
+      # **ACID is not dedup, and this field is where the difference has to be recorded.**
+      # A redelivered batch re-executes its INSERTs inside a *new* transaction, and a
+      # second INSERT of the same entity makes a second entity; the atomicity above
+      # guarantees both copies land, not that only one does. Dedupe would need a MERGE
+      # keyed on an entity key, and that is precisely the `upsert` capability this manifest
+      # does not declare — §33 §4 rule 1 refuses a route that upserts through a sink that
+      # does not. So `false`, with `delivery.sink: at_least_once` beside it: §33 §2.2's
+      # "effectively once" comes from a declared dedup key or primary key, and this
+      # connector has none. Claiming `idempotent: true` because the engine is ACID would be
+      # the first row in this registry to conflate durability with deduplication, and it
+      # would hide a real duplicate-node bug behind a green field.
+  delivery: { source: at_least_once, sink: at_least_once }
+    # §33 §6: every runtime is at-least-once underneath, and D634 does not change that.
+    # Embedding removes the network, not the guarantee — a Fabric crash between Grafeo's
+    # commit and the connector's checkpoint repeats the batch exactly as a remote sink
+    # would, which is the duplicate the `idempotent: false` above is honest about.
+  ordering: per_key
+    # Per entity key: one node's or one edge's writes keep their order, which is what MVCC
+    # snapshot isolation gives (§33 §4's per_key, the granularity this can honestly claim).
+  formats: [cloudevents-binary, cloudevents-structured, json]
+    # A GQL result is JSON, and the two CloudEvents encodings are what the Fabric's wrapper
+    # (D355) puts around a result row or a written entity. Avro is absent because there is no
+    # schema-registry boundary (D356).
+  schema: { registry: none, evolution: none }
+    # GQL (ISO/IEC 39075) is the *query* surface, and a query language is not a schema
+    # registry: Grafeo exposes no registry to a connector, so there is nothing to register
+    # and no compatibility rule to hold. What names the graph's shape is the instance
+    # config's `projection` (schemas/grafeo.config.json), which is operator configuration,
+    # not a registry contract.
+  bulk: { arrow: false, max_batch_rows: 65536 }
+    # The batch path is a batch of GQL (or Cypher) statements — one transaction over many
+    # nodes and edges — and **not** an Arrow bulk path, so `bulk.arrow: false` is literal:
+    # there is no Arrow IPC batch to take or produce. Ruling 3's 65536 is carried here as
+    # the default statement-batch size rather than as Arrow rows, and `limits.batch_rows`
+    # below is kept equal to it so the two cannot drift apart.
+  backpressure: pull
+    # Nothing pushes at an in-process engine. The connector takes the next statement batch
+    # when the Fabric asks for one, which is `pull` (§33 §4).
+auth:
+  - none
+    # A.3's Auth cell says `none`, and D634(b) is the reason: the engine is **embedded in
+    # the Loams process**, so there is no network hop, no listener to bind, no remote peer
+    # to authenticate and no credential to store. This is the interesting consequence of
+    # "embedded, not a server" — the auth column is a property of the deployment shape, not
+    # a `·` awaiting CN2. The same reasoning empties `secrets` below.
+config:
+  $ref: schemas/grafeo.config.json
+secrets: []
+    # Empty, and an equality in both directions, which is how CN1's execution ruling reads
+    # rule 6: `schemas/grafeo.config.json` marks **no** property `"writeOnly": true`,
+    # because an embedded engine holds no credential. Both sets are empty, which for this
+    # rule is the one configuration that is not a bug — and it is the same fact as
+    # `auth: [none]` above, said once more where a secret would otherwise be expected (D189).
+envelope:
+  emits: ""
+    # Grafeo is reached as an *engine*, not as a connector that emits its own events: it
+    # answers GQL queries and accepts GQL writes, and CN1 names no CloudEvents type for a
+    # query result. An emitted type must be concrete and never `*` (§33 §4), so there is
+    # nothing to name and the field is empty rather than a placeholder that would imply one
+    # is coming.
+  consumes: "*"
+    # §33 §4's kafka example, which sinks to anything: a route may hand this sink any event.
+  passthrough: false
+    # A GQL result row, or a written entity, is not already a CloudEvent, so nothing passes
+    # through: the Fabric's wrapper (D355) builds the event and this connector adds no
+    # pass-through guarantee of its own (§33 §6).
+limits:
+  max_record_bytes: 1048576
+    # 1 MiB for a single record — one node or one edge with its properties as a JSON
+    # CloudEvent. A graph record is a small document, so this is a ceiling that keeps one
+    # oversized property from reaching the engine, not a shape anything is expected to fill.
+  batch_rows: 65536
+    # Kept equal to `capabilities.bulk.max_batch_rows` (CN1 Ruling 3's default) so the two
+    # fields cannot disagree. A real instance lowers it with the config schema's
+    # `batch_size`, because 65536 pending writes are held in memory until one Grafeo
+    # transaction commits.
+conformance: [contract]
+    # **Only** a contract test is claimed, and nothing more is claimed because nothing more
+    # has been run. The contract suite is cheap here precisely because the engine is
+    # embedded: it exercises each declared capability in process. Not claimed: `roundtrip`
+    # (no second engine to read the writes back through), `kill-restart` (the Fabric is the
+    # process that holds the engine, so killing one kills the other and that is not this
+    # suite's claim), `dup-check` (it would test a guarantee `capabilities.sink.idempotent`
+    # explicitly does not make), `bulk` (there is no Arrow path) or `cdc` (A.3's CDC cell is
+    # `·`). §33 §4 rule 3 only forces a ★ connector to have tests for its declared
+    # capabilities, and Grafeo is not ★.
+docs: docs/guides/connectors/grafeo.md

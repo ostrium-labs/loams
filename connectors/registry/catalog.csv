@@ -55,6 +55,7 @@ weaviate,Weaviate,vector,P3,false,planned,camel,weaviate,,Y,,Y,,,key,weaviate,pl
 milvus,Milvus,vector,P3,false,planned,camel,milvus,,Y,,Y,,,basic|key,milvus,
 pgvector,pgvector,vector,P2,false,planned,camel,pgvector,Y,Y,,Y,,,basic,pgvector,plugin-jdbc (postgres)
 neo4j,Neo4j,graph,P2,false,planned,camel,neo4j,Y,Y,,Y,,,basic,neo4j,plugin-neo4j
+grafeo,Grafeo,graph,P2,false,planned,native,loams_flow::connectors::graph,Y,Y,,Y,,,none,,
 snowflake,Snowflake,warehouse,P1,true,preview,native,loams_flow::connectors::adbc,Y,Y,,Y,,,key|oauth2|basic,sql|jdbc,plugin-jdbc (snowflake)
 bigquery,BigQuery,warehouse,P1,true,preview,native,loams_flow::connectors::adbc,Y,Y,Y,Y,,,sa,google-bigquery,plugin-gcp (bigquery)
 redshift,Redshift,warehouse,P2,false,planned,camel,aws2-redshift-data,Y,Y,,Y,,,basic|iam,aws2-redshift-data|sql,plugin-jdbc (redshift)

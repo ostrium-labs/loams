@@ -1,0 +1,4 @@
+# The build directory: compiled classes, the fetched jars, and the javac source
+# lists. Nothing here is committed — the generated stubs in gen/ are, and they are
+# the only generated output in the tree (D604).
+.build/

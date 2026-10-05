@@ -294,7 +294,7 @@ The Camel and Kestra columns were filled from the component and plugin lists rea
 | SingleStore | Y | Y | · | Y | · | · | basic | `sql`, `jdbc` | `plugin-jdbc` (mysql) | P3 |
 | Vitess | Y | Y | Y | Y | Y | · | basic, mtls | `sql`, `jdbc` | `plugin-jdbc` (mysql) | P3 |
 
-### A.3 NoSQL, search, vector and graph (20)
+### A.3 NoSQL, search, vector and graph (21)
 
 | Connector | Source | Sink | Streaming | Batch | CDC | Webhook | Auth | Camel | Kestra | Priority |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -318,6 +318,9 @@ The Camel and Kestra columns were filled from the component and plugin lists rea
 | Milvus | · | Y | · | Y | · | · | basic, key | `milvus` | · | P3 |
 | pgvector | Y | Y | · | Y | · | · | basic | `pgvector` | `plugin-jdbc` (postgres) | P2 |
 | Neo4j | Y | Y | · | Y | · | · | basic | `neo4j` | `plugin-neo4j` | P2 |
+| Grafeo | Y | Y | · | Y | · | · | none | · | · | P2 |
+
+`Neo4j`'s source direction is served by a **native** connector over the engine's gRPC Query Service, not by `camel-neo4j`: `camel-catalog` 4.22.1 marks `camel-neo4j` (and `camel-arangodb`) `producerOnly: true`, so Camel can write to a graph and cannot read from one (D634). `Grafeo` is Loams's own graph engine, a Rust database embedded in the Fabric and reached over Connect-RPC with **GQL** — ISO/IEC 39075 — as its query surface, so the connector is not tied to one vendor's dialect. Both are P2 and neither is ★.
 
 ### A.4 Warehouse, lakehouse, OLAP and compute (20)
 
@@ -549,4 +552,4 @@ Loams's collaboration applications (design §39, SF1). They are import **targets
 
 Each is a `native` sink whose credential comes from the `SecretStore` (D189) and whose upstream is reached only over its public HTTP API. That is D359's carve-out, and it is why no upstream application's own licence is a gate here: Loams neither ships nor links any of them. ItPlane's upstream is AGPL-3.0 and Forgejo's is MIT; both are read as API surfaces, and `connectors/licences.toml` records that explicitly rather than leaving it implicit. Forgejo's write capability is a **provisioning** fact, not a code fact: Forgejo derives the token scope from the HTTP method, so a `write:issue` token must be minted before the sink can run (its read scopes and its write scopes cannot live in one token).
 
-Totals: 203 connectors; 21 ★ (P1), and the P2 and P3 counts are computed by CN1 Task 2's generator.
+Totals: 204 connectors; 21 ★ (P1), and the P2 and P3 counts are computed by CN1 Task 2's generator.

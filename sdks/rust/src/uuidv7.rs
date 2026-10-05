@@ -93,8 +93,12 @@ pub fn uuidv7_time(id: &str) -> Option<u64> {
         return None;
     }
     let mut millis = 0u64;
-    for at in 0..12 {
-        millis = (millis << 4) | u64::from_str_radix(hex.get(at..at + 2)?, 16).ok()?;
+    // Six byte-pairs, one shift of 8 each. Stepping `at` by 1 while reading a
+    // 2-char window parsed overlapping pairs at every character, so twelve
+    // nibble-shifts consumed the wrong digits and returned a stamp ~16x the
+    // real one -- which is what the "current stamp" test caught.
+    for at in (0..12).step_by(2) {
+        millis = (millis << 8) | u64::from_str_radix(hex.get(at..at + 2)?, 16).ok()?;
     }
     Some(millis)
 }
