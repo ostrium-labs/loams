@@ -1050,11 +1050,11 @@ jobs:
   # with four failing tests because nothing ran them. This job is what makes a
   # green board mean something for a language SDK.
   #
-  # NOTE: sdk-rust, sdk-python and sdk-go are deliberately NOT in the required
-  # set yet. They were added after those SDKs had already merged unverified, so
-  # they are red today; making them required now would leave dev permanently red
-  # and block every PR. They report, and get promoted to required once the SDKs
-  # they police are green.
+  # sdk-rust, sdk-python, sdk-go and sdk-swift are required as of 2026-10-05,
+  # which is the condition the earlier note set out: they were left out only
+  # because they were red, and #361 (Swift) and #356 (Python) made them green.
+  # All five language SDK jobs now gate `dev`, which is what makes a green board
+  # mean something for a language SDK.
   sdk-rust:
     name: the Rust SDK and its conformance suite
     needs: changes
@@ -1335,6 +1335,10 @@ jobs:
       - live-protos
       - app-protos
       - sdk-typescript
+      - sdk-rust
+      - sdk-python
+      - sdk-go
+      - sdk-swift
       - deny
       - web
       - dapr-edge
