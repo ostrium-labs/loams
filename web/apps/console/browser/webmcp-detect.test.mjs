@@ -169,25 +169,28 @@ describe("the console's WebMCP detection in a real Chrome (D638)", {
     //
     // On 149 the decoys are present and the API is not, so this build rules out
     // a detection that reports "available" off `navigator` alone. On 154 the
-    // API is present and the decoys are not, and the identity check in the test
-    // above rules out a detection that returned `navigator`'s object under the
-    // document's name. Both halves, whichever channel runs the job.
+    // API is present and the decoys are not, so this build rules out a
+    // detection that handed back `navigator`'s object under the document's
+    // name. Both halves, whichever channel runs the job.
     const u = untouched();
     const decoyPresent =
       u.navigatorModelContext !== 'undefined' || u.navigatorModelContextTesting !== 'undefined';
-    if (decoyPresent) {
-      console.log('# a navigator decoy is present in this build and was correctly not used');
-      assert.equal(
-        u.detectionContextIsDocumentAttribute,
-        null,
-        'the decoy must not be what detection resolved to',
-      );
-    } else {
-      console.log('# no navigator decoy in this build; the assertion above still holds');
-    }
-    // Either way: the answer follows the document attribute and nothing else.
+    console.log(
+      decoyPresent
+        ? '# a navigator decoy is present in this build and was correctly not used'
+        : '# no navigator decoy in this build; the assertions below still hold',
+    );
+    // The property, stated directly and **unconditionally**: detection resolves
+    // to `document.modelContext` when there is one and to nothing at all when
+    // there is not — never to a decoy, and never on a decoy's account.
+    //
+    // Deliberately not conditioned on `decoyPresent`. A build that carried both
+    // the decoy and the real API is the one case this must survive, and
+    // requiring `null` whenever a decoy exists would fail it while the console
+    // was behaving perfectly.
     assert.equal(u.detectionAvailable, native());
     assert.equal(u.detectionReason, native() ? 'available' : 'not-exposed');
+    assert.equal(u.detectionContextIsDocumentAttribute, native() ? true : null);
   });
 
   it('clears_without_throwing_on_a_real_document', () => {
