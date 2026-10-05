@@ -462,9 +462,20 @@ export async function runInChrome(options = {}) {
       close: () => teardown(state, cdp, site),
     };
   } catch (cause) {
-    if (cdp) cdp.close();
-    if (state) await teardown(state, undefined, site);
-    else await site.close();
+    // `cdp` is passed on even when it is half-built, so a failure after the
+    // socket opened can still send `Browser.close` instead of waiting out the
+    // SIGKILL timer. Cleanup is wrapped so that a failure *in cleanup* — `rm` on
+    // a profile the runner has already reaped, most likely — cannot replace the
+    // original cause, which is the one that says what actually went wrong.
+    try {
+      if (state) await teardown(state, cdp, site);
+      else {
+        if (cdp) cdp.close();
+        await site.close();
+      }
+    } catch {
+      // Keep the original failure.
+    }
     throw cause;
   }
 }

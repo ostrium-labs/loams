@@ -1235,17 +1235,31 @@ jobs:
   #
   # What it asserts, and what it deliberately does not: `document.modelContext`
   # is `[SecureContext]`, so it does not exist under jsdom and the vitest suite
-  # can only ever compare the module against an object the test built. Chrome's
-  # local-development WebMCP flag does *not* expose `document.modelContext` — it
-  # exposes `navigator.modelContext` and `navigator.modelContextTesting` — so
-  # the assertion here is the absent-API one, in a real browser, with the decoy
-  # spellings sitting right there on `navigator`. That is D568's path, and per
-  # D635 it is the production one: WebKit's standards position on WebMCP is
-  # closed and `oppose`.
+  # can only ever compare the module against an object the test built.
+  #
+  # The API's availability **moves with the Chrome channel**, which is the whole
+  # reason this job asserts an invariant rather than one browser's answer.
+  # Measured 2026-10-05 under the same flags: on Chrome 149.0.7827.155
+  # `document.modelContext` is absent and the decoy spellings
+  # `navigator.modelContext` / `navigator.modelContextTesting` are present; on
+  # Chrome 154.0.8037.57 it is the other way round — the real attribute is
+  # present, as a real `ModelContext`, and both decoys are gone. So what is
+  # asserted is that **the console agrees with whatever the browser reports**,
+  # in both directions: absent → `not-exposed` and a `register` that resolves
+  # `undefined` (D568's path, and per D635 the production one, since WebKit's
+  # standards position is closed and `oppose`); present → detection available, a
+  # handle returned, and `exposedTo` carrying only potentially-trustworthy
+  # origins.
+  #
+  # Unconditionally, on every channel: the `navigator` decoys are never mistaken
+  # for `document.modelContext`; a plaintext `http://` origin never reaches
+  # `registerTool`; `clear()` is idempotent and unregisters one abort per tool;
+  # and a partial registration failure keeps the working tools.
   #
   # Every assertion holds whether or not the flags still work, so a Chrome that
-  # renames or drops them cannot turn this job red. The resolved browser and its
-  # flags are printed either way.
+  # renames or drops them cannot turn this job red — the browser's real answer
+  # is logged as diagnostics instead, so a channel change is visible in this job's
+  # log rather than only as a red build.
   web-browser:
     name: console in a real Chrome (WebMCP detection)
     needs: changes
@@ -1256,6 +1270,10 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The job installs dependencies and runs browser tests from this
+          # checkout, so the token must not stay in the git config afterwards.
+          persist-credentials: false
       - uses: pnpm/action-setup@v6
         with:
           package_json_file: web/package.json
@@ -1264,14 +1282,33 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
-      # A browser job that finds no browser must fail, not skip, so the version
-      # is resolved and printed before anything else runs.
+      # A browser job that finds no browser must fail, not skip, so the browser
+      # is resolved and printed before anything else runs. The candidate list
+      # and the order are `findChrome()`'s own — the job must not pass on a
+      # browser the harness would have refused, nor fail on a runner where the
+      # harness would have found one.
       - name: the Chrome under test
         run: |
-          if command -v google-chrome > /dev/null; then google-chrome --version
-          elif command -v google-chrome-stable > /dev/null; then google-chrome-stable --version
-          elif command -v chromium > /dev/null; then chromium --version
-          else echo '::error::no Chrome or Chromium on this runner image'; exit 1; fi
+          set -euo pipefail
+          if [ -n "${LOAMS_CHROME:-}" ]; then
+            # `findChrome()` treats an explicit LOAMS_CHROME as the only answer
+            # and errors rather than falling back, so this step must too.
+            "$LOAMS_CHROME" --version
+            exit 0
+          fi
+          candidates=""
+          for name in google-chrome-stable google-chrome chromium chromium-browser chrome; do
+            path="$(command -v "$name" || true)"
+            [ -n "$path" ] && candidates="$candidates $path"
+          done
+          for path in /opt/google/chrome/chrome; do
+            [ -x "$path" ] && candidates="$candidates $path"
+          done
+          for path in $candidates; do
+            if "$path" --version; then exit 0; fi
+          done
+          echo '::error::no Chrome or Chromium on this runner image; this job refuses to skip'
+          exit 1
       - run: pnpm install --frozen-lockfile
       - name: WebMCP feature detection, in a real browser (D638)
         run: pnpm --filter @loams/console test:browser
