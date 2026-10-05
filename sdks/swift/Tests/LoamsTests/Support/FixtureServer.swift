@@ -46,6 +46,11 @@ import FoundationNetworking
 #endif
 import XCTest
 
+// `newTestClient` names `Loams`, the SDK's client type. Without this the file
+// builds for everything else and fails only on that one function, which reads
+// like a missing type rather than a missing import.
+import Loams
+
 /// A running fixture endpoint and how to stop it.
 struct FixtureServer {
     /// The base URL the client is built with.
@@ -67,14 +72,10 @@ struct FixtureServer {
     /// Runs the shared fixture server and reads the URL it prints on stdout.
     private static func startNodeFixtureServer() throws -> FixtureServer {
         let node = URL(fileURLWithPath: "#filePath")
-            .deletingLastPathComponent()   // Support
-            .deletingLastPathComponent()   // LoamsTests
             .deletingLastPathComponent()   // Tests
             .deletingLastPathComponent()   // swift
             .appendingPathComponent("conformance/fixture-server.mjs")
         let fixtures = URL(fileURLWithPath: "#filePath")
-            .deletingLastPathComponent()   // Support
-            .deletingLastPathComponent()   // LoamsTests
             .deletingLastPathComponent()   // Tests
             .deletingLastPathComponent()   // swift
             .appendingPathComponent("fixtures")
@@ -106,8 +107,11 @@ struct FixtureServer {
                 break
             }
             buffer.append(chunk)
-            for line in String(decoding: buffer, encoding: .utf8)?
-                .split(separator: "\n") ?? [] {
+            // `buffer` is `[UInt8]`, so it decodes directly: passing the
+            // optional from an `if let` that was never written made this a
+            // `String?` fed to a `Collection` parameter.
+            for line in String(decoding: buffer, as: UTF8.self)
+                .split(separator: "\n") {
                 guard let data = line.data(using: .utf8),
                       let parsed = try? JSONDecoder().decode(FixtureServerBanner.self, from: data),
                       !parsed.url.isEmpty,
@@ -180,8 +184,6 @@ struct FixtureCorpus: Decodable {
 /// suite that cannot see the corpus is not a suite.
 func readCorpus() throws -> FixtureCorpus {
     let index = URL(fileURLWithPath: "#filePath")
-        .deletingLastPathComponent()   // Support
-        .deletingLastPathComponent()   // LoamsTests
         .deletingLastPathComponent()   // Tests
         .deletingLastPathComponent()   // swift
         .appendingPathComponent("fixtures/index.json")
@@ -193,13 +195,27 @@ func readCorpus() throws -> FixtureCorpus {
 ///
 /// Unauthenticated because `GetInstance` needs no credential anyway, and because
 /// it keeps a bearer out of the test suite entirely.
-func newTestClient(_ endpoint: URL) throws -> Loams {
+/// - Parameters:
+///   - protocol_: the wire protocol to speak. The corpus records `Watch` only as
+///     `application/connect+proto`, so a client that cannot be configured for it
+///     cannot replay that fixture at all.
+///   - codec: the body encoding. `Watch` is recorded as proto; everything else in
+///     the corpus is recorded in all four encodings.
+func newTestClient(
+    _ endpoint: URL,
+    protocol_: WireProtocol = .connect,
+    codec: Codec = .json
+) throws -> Loams {
     let configuration = URLSessionConfiguration.ephemeral
     // A fixture server on loopback answers in milliseconds; twenty seconds is a
     // hang-detector, not a budget, and a suite that waits twenty seconds per
     // assertion teaches nothing.
     configuration.timeoutIntervalForRequest = 20
     return try Loams(
-        Options(endpoint: endpoint, session: URLSession(configuration: configuration))
+        Options(
+            endpoint: endpoint,
+            transport: TransportConfig(endpoint: endpoint, protocol_: protocol_, codec: codec),
+            session: URLSession(configuration: configuration)
+        )
     )
 }

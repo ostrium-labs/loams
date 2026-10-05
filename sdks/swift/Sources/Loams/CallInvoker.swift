@@ -65,7 +65,12 @@ public actor CallInvoker {
 
     /// The transport, so a resume can re-open without the runtime knowing how a
     /// transport is built.
-    var transport: any HTTPTransport { transport }
+    ///
+    /// Named for its role rather than repeating `transport`: a same-named
+    /// computed property over the same member is a redeclaration, not an
+    /// accessor, and the initialiser already stores the value.
+    var httpTransport: any HTTPTransport { transport }
+
 
     /// The bearer a call would send right now.
     ///

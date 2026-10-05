@@ -101,8 +101,14 @@ public struct GetInstanceResponse: LoamsMessage, Sendable, Equatable {
     public func loamsFields() -> [String: JSONValue] {
         [
             "name": .string(name),
-            "server_version": .string(serverVersion),
-            "api_versions": .array(apiVersions.map { .string($0) }),
+            // proto3 JSON, so camelCase: the wire key is the field's `json_name`,
+            // which is lowerCamelCase of the snake_case proto name. The recorded
+            // corpus agrees — `serverVersion` and `apiVersions`, not the proto
+            // spellings. Reading the proto spelling silently produced an empty
+            // `serverVersion`, because every field here is optional-with-default
+            // and a missing key is not a decode failure.
+            "serverVersion": .string(serverVersion),
+            "apiVersions": .array(apiVersions.map { .string($0) }),
             "services": .array(services.map { status in
                 .object([
                     "package": .string(status.package),
@@ -121,8 +127,8 @@ public struct GetInstanceResponse: LoamsMessage, Sendable, Equatable {
         // Every other field is optional with a documented default, because a
         // minimal server answers `GetInstance` with a name and nothing else —
         // and refusing that would make the SDK fail on a legal response.
-        self.serverVersion = fields["server_version"]?.stringValue ?? ""
-        self.apiVersions = fields["api_versions"]?.arrayValue?.compactMap(\.stringValue) ?? []
+        self.serverVersion = fields["serverVersion"]?.stringValue ?? ""
+        self.apiVersions = fields["apiVersions"]?.arrayValue?.compactMap(\.stringValue) ?? []
         self.services = (fields["services"]?.arrayValue ?? []).compactMap { entry in
             guard let object = entry.objectValue,
                   let package = object["package"]?.stringValue

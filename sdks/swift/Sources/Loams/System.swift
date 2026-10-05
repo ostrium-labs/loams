@@ -222,7 +222,11 @@ public actor LoamsSystem {
     ///
     /// The message names the package rather than the module, because the package
     /// is what the server knows about and what an operator will grep for.
-    public func guard(_ moduleOrPackage: String) async throws {
+    /// Backticked because `guard` is a Swift keyword: without them this cannot
+    /// be declared at all. The name is worth keeping — it is what the doc
+    /// examples and the conformance tests call, and renaming it would change the
+    /// SDK's public surface to work around a language rule.
+    public func `guard`(_ moduleOrPackage: String) async throws {
         let pkg = try loamsPackage(of: moduleOrPackage)
         if try await available(pkg) { return }
         // The guard learned this from the catalogue rather than from a refusal, so

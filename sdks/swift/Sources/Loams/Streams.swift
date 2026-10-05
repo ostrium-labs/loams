@@ -282,7 +282,7 @@ extension CallInvoker {
         request: Request
     ) async throws -> WireStream {
         let bearer = try await currentBearer()
-        return try await transport.serverStream(
+        return try await httpTransport.serverStream(
             WireRequest(rpc: binding.rpc, body: request.loamsFields(), serverStreaming: true),
             bearer: bearer
         )
