@@ -239,8 +239,13 @@ export function webmcpToolsFrom(
     ...(action.title === undefined ? {} : { title: action.title }),
     ...(action.inputSchema === undefined ? {} : { inputSchema: action.inputSchema }),
     annotations: {
-      readOnlyHint: (action.risk ?? 'read') === 'read',
-      consequentialHint: (action.risk ?? 'read') !== 'read',
+      // An absent risk is never read-only. D636 says an absent risk must not
+      // become `read`, and `readOnlyHint: true` is the dangerous claim here:
+      // it is what lets an agent treat a destructive action as safe to run
+      // without asking. So absence answers "not read-only", which is the
+      // cautious reading, rather than defaulting into the permissive one.
+      readOnlyHint: action.risk === 'read',
+      consequentialHint: action.risk !== 'read',
       untrustedContentHint: true,
     },
     // `input` is passed through as the browser gave it, including `undefined`
