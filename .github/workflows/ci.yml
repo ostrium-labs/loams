@@ -1225,6 +1225,57 @@ jobs:
       - name: the build stages for Workers static assets
         run: node apps/console/deploy/stage.mjs
 
+  # The console's WebMCP feature detection in a real browser (AP1d Task 4;
+  # design §42 §5, D635, D638).
+  #
+  # Separate from `web:` on purpose. This is the repository's first browser
+  # harness, it needs a Chrome binary that the other jobs never ask for, and it
+  # must not be able to hold up a lint, typecheck or build. Same path filter, so
+  # a change to the console runs both.
+  #
+  # What it asserts, and what it deliberately does not: `document.modelContext`
+  # is `[SecureContext]`, so it does not exist under jsdom and the vitest suite
+  # can only ever compare the module against an object the test built. Chrome's
+  # local-development WebMCP flag does *not* expose `document.modelContext` — it
+  # exposes `navigator.modelContext` and `navigator.modelContextTesting` — so
+  # the assertion here is the absent-API one, in a real browser, with the decoy
+  # spellings sitting right there on `navigator`. That is D568's path, and per
+  # D635 it is the production one: WebKit's standards position on WebMCP is
+  # closed and `oppose`.
+  #
+  # Every assertion holds whether or not the flags still work, so a Chrome that
+  # renames or drops them cannot turn this job red. The resolved browser and its
+  # flags are printed either way.
+  web-browser:
+    name: console in a real Chrome (WebMCP detection)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      # A browser job that finds no browser must fail, not skip, so the version
+      # is resolved and printed before anything else runs.
+      - name: the Chrome under test
+        run: |
+          if command -v google-chrome > /dev/null; then google-chrome --version
+          elif command -v google-chrome-stable > /dev/null; then google-chrome-stable --version
+          elif command -v chromium > /dev/null; then chromium --version
+          else echo '::error::no Chrome or Chromium on this runner image'; exit 1; fi
+      - run: pnpm install --frozen-lockfile
+      - name: WebMCP feature detection, in a real browser (D638)
+        run: pnpm --filter @loams/console test:browser
+
   # The Dapr trigger edge (deploy/dapr/edge): a standalone crate with its own
   # Cargo.lock, so the workspace jobs never build it.
   dapr-edge:
