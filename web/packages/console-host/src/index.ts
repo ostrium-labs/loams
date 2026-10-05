@@ -1,6 +1,23 @@
 // @loams/console-host: the console's host (§37 §5.2–§5.6, D422–D426).
 
 export {
+  type ActionContext,
+  ActionError,
+  type ActionErrorCode,
+  type ActionInputSchema,
+  ActionRegistry,
+  type ActionResult,
+  type ActionSpec,
+  type Admission,
+  type ApprovalDecision,
+  type ApprovalGate,
+  type ApprovalRequest,
+  DEFAULT_REQUESTER,
+  type InvokeOptions,
+  RISKS,
+  type Risk,
+} from './actions.js';
+export {
   type BootOptions,
   boot,
   type ConsoleHandle,

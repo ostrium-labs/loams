@@ -16,6 +16,7 @@ import { createClient, type Transport } from '@connectrpc/connect';
 import { Context, type Fiber, FiberStates } from '@loams/cordis';
 import { instance } from '@loams/proto';
 import { SlotRegistry } from '@loams/slots';
+import { ActionRegistry, type Admission } from './actions.js';
 import { type CatalogEntry, CatalogError } from './catalog.js';
 import { guard } from './guard.js';
 import { type PluginManifest, type Tier, validateManifest } from './manifest.js';
@@ -81,6 +82,8 @@ export interface BootOptions {
 export interface ConsoleHandle {
   ctx: Context;
   slots: SlotRegistry;
+  /** The callable surface plugins registered (the WebMCP tools' source). */
+  actions: ActionRegistry;
   plugins(): PluginRecord[];
   /** Plugins still waiting for services (the all-fibers sweep). */
   pending(): PendingReport[];
@@ -145,6 +148,40 @@ export async function boot(options: BootOptions): Promise<ConsoleHandle> {
     name: 'slots',
     apply(c: Context) {
       c.provide('slots', slots);
+    },
+  });
+
+  // The `actions` service (D569). Its admissions come from the manifests, so a
+  // plugin can register only the actions it declared and only call them with
+  // the permissions its manifest lists. A third-party row's permissions are the
+  // granted subset, the same expression the sandbox bridge uses, computed here
+  // rather than off `records` because the service has to exist before any
+  // plugin loads.
+  const admissions: Record<string, Admission> = {};
+  for (const entry of options.catalog) {
+    const manifest = manifests.get(entry.name);
+    if (!manifest) continue;
+    const tier = tierOf(
+      manifest,
+      options.sources?.[entry.name] ?? {
+        bundled: entry.name in options.modules,
+      },
+      options.trustedPublishers,
+    );
+    const permissions =
+      tier === 'third-party'
+        ? (options.grant?.(manifest) ?? []).filter((p) => manifest.permissions.includes(p))
+        : manifest.permissions;
+    admissions[entry.id] = {
+      actions: manifest.actions,
+      policy: { services: manifest.inject, permissions },
+    };
+  }
+  const actions = new ActionRegistry(admissions);
+  await ctx.plugin({
+    name: 'actions',
+    apply(c: Context) {
+      c.provide('actions', actions);
     },
   });
   await ctx.plugin({ name: options.platform.name ?? 'platform', apply: options.platform.apply });
@@ -255,6 +292,7 @@ export async function boot(options: BootOptions): Promise<ConsoleHandle> {
   const handle: ConsoleHandle = {
     ctx,
     slots,
+    actions,
     plugins: () => [...records.values()].map((r) => ({ ...r, status: statusOf(r) })),
     pending: () =>
       [...records.values()]

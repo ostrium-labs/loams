@@ -24,6 +24,12 @@
       "description": "Services it offers, in its own namespace (<plugin-id>.*) unless it is core."
     },
     "slots": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "actions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$" },
+      "description": "Action names the plugin may register in the console's action registry, which the WebMCP tools are generated from (design §42 §5, D569)."
+    },
     "permissions": {
       "type": "array",
       "uniqueItems": true,

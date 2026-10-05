@@ -21,6 +21,12 @@ export interface PluginManifest {
   inject: string[];
   provides: string[];
   slots: string[];
+  /**
+   * The action names this plugin may register in the `actions` registry
+   * (§42 §5, D569). Like `slots`, it is a gate: registering an action the
+   * manifest does not list fails.
+   */
+  actions: string[];
   permissions: Permission[];
   requires: { console: string; api: string[] };
   editions: Edition[];
@@ -39,6 +45,7 @@ const KEYS = new Set([
   'inject',
   'provides',
   'slots',
+  'actions',
   'permissions',
   'requires',
   'editions',
@@ -92,6 +99,17 @@ export function validateManifest(pkg: unknown): PluginManifest {
           `${name}: provides "${service}" outside its namespace "${id}.*" (only core plugins may)`,
         );
       }
+    }
+  }
+  // Action names are the intersection both consumers require (the WebMCP tool
+  // name rule and MCP's own), so the host refuses a manifest that declares one
+  // the console could not possibly expose.
+  const actions = strings(block.actions, 'actions', name);
+  for (const action of actions) {
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(action)) {
+      throw new ManifestError(
+        `${name}: "actions" entry "${action}" is not a usable action name (1-128 of [A-Za-z0-9_.-])`,
+      );
     }
   }
   const permissions = strings(block.permissions, 'permissions', name);
@@ -148,6 +166,7 @@ export function validateManifest(pkg: unknown): PluginManifest {
     inject: strings(block.inject, 'inject', name),
     provides,
     slots: strings(block.slots, 'slots', name),
+    actions,
     permissions: permissions as Permission[],
     requires: {
       console: typeof requires.console === 'string' ? requires.console : '*',
