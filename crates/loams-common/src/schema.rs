@@ -384,6 +384,13 @@ impl CollectionSchema {
     }
 
     /// Checks the schema on its own; the error names the offender.
+    ///
+    /// # Errors
+    ///
+    /// [`SchemaError`] naming the first rule the schema breaks: version 0, a
+    /// `max_fields` outside `1..=100_000`, a field or vector whose
+    /// name is not an ASCII identifier, a duplicated name, or a sparse vector
+    /// that declares itself.
     pub fn validate(&self) -> Result<(), SchemaError> {
         if self.version == 0 {
             return invalid("version 0");
@@ -452,6 +459,13 @@ impl CollectionSchema {
     /// dense vector as they are, in order, and may append more; its sparse
     /// vectors are unchanged; and its `max_fields` still holds everything.
     /// `dynamic` and `annotations` may change freely.
+    ///
+    /// # Errors
+    ///
+    /// [`SchemaError`] naming the first rule `next` breaks: a field or dense
+    /// vector changed or removed rather than appended, a sparse vector that
+    /// did not stay identical, or a `max_fields` that no longer holds
+    /// everything.
     pub fn check_additive(&self, next: &CollectionSchema) -> Result<(), SchemaError> {
         if !next.fields.starts_with(&self.fields) {
             return incompatible("fields may only be appended, never changed or removed");

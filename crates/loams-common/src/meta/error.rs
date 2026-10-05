@@ -86,7 +86,8 @@ pub enum ApplyError {
     UnknownCollection(String),
 }
 
-/// How far the proposer's clock lagged the metastore's, for a StaleObject refusal.
+/// How far the proposer's clock lagged the metastore's, for a [`ApplyError::StaleObject`]
+/// refusal.
 ///
 /// A proposer checks an object's deadline against its own clock before it
 /// proposes; the metastore checks it again against its clock when it
@@ -136,7 +137,8 @@ impl ApplyError {
     }
 }
 
-/// Logs a StaleObject refusal at WARN with every StaleLag field and the object path; no-op otherwise.
+/// Logs a [`ApplyError::StaleObject`] refusal at WARN with every
+/// [`StaleLag`] field and the object path; no-op otherwise.
 pub fn log_stale_object(err: &ApplyError, proposer_now_ms: u64) {
     let (ApplyError::StaleObject { object, .. }, Some(lag)) = (err, err.stale_lag(proposer_now_ms))
     else {

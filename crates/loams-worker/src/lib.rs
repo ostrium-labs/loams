@@ -44,7 +44,10 @@ pub enum Priority {
 /// (`None` for cluster-wide tasks such as GC); it drives fair share.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct TaskKey {
+    /// The tenant the task works for, or `None` for a cluster-wide task.
     pub namespace: Option<NamespaceId>,
+    /// The task's name, unique across the cluster: it names the lease
+    /// `task/<key>` that guards the task.
     pub key: String,
 }
 
@@ -80,6 +83,7 @@ impl fmt::Display for TaskKey {
 /// What a running task gets.
 #[derive(Clone, Debug)]
 pub struct TaskContext {
+    /// The task this run is for.
     pub key: TaskKey,
     /// The task lease at the epoch this run holds it. Every metastore commit
     /// the task makes must carry it, so that a run whose lease was taken over
@@ -88,6 +92,7 @@ pub struct TaskContext {
     /// Cancelled when the task must stop: its lease was lost or the worker is
     /// stopping. A task must stop promptly once it is cancelled.
     pub cancel: CancellationToken,
+    /// The metastore, already checked out for this namespace.
     pub meta: Arc<dyn MetaStore>,
 }
 
@@ -112,6 +117,8 @@ pub enum TaskError {
     Fenced,
     #[error("metastore: {0}")]
     Meta(#[from] MetaError),
+    /// Anything else the task failed with. The worker logs it and proposes
+    /// the task again on a later poll.
     #[error("{0}")]
     Failed(Box<dyn std::error::Error + Send + Sync>),
 }
@@ -124,8 +131,50 @@ impl TaskError {
 }
 
 /// A unit of background work. One run is guarded by one lease epoch.
+///
+/// # Examples
+///
+/// ```
+/// use async_trait::async_trait;
+/// use loams_common::meta::MetaStore;
+/// use loams_worker::{
+///     Candidate, Priority, Task, TaskContext, TaskError, TaskKey, TaskOutcome, TaskSource,
+/// };
+///
+/// /// A task with nothing to do.
+/// struct Noop;
+///
+/// #[async_trait]
+/// impl Task for Noop {
+///     async fn run(&self, _ctx: TaskContext) -> Result<TaskOutcome, TaskError> {
+///         Ok(TaskOutcome::Idle)
+///     }
+/// }
+///
+/// /// A source that proposes the one task, on every poll.
+/// struct OnlyNoop;
+///
+/// #[async_trait]
+/// impl TaskSource for OnlyNoop {
+///     fn priority(&self) -> Priority {
+///         Priority::Maintenance
+///     }
+///
+///     async fn candidates(
+///         &self,
+///         _meta: &dyn MetaStore,
+///     ) -> Result<Vec<Candidate>, TaskError> {
+///         Ok(vec![(TaskKey::cluster("noop"), std::sync::Arc::new(Noop))])
+///     }
+/// }
+/// ```
 #[async_trait]
 pub trait Task: Send + Sync {
+    /// Runs the task once.
+    ///
+    /// Every metastore commit must carry `ctx.fence`, or a run whose lease was
+    /// taken over could still change something. The run must return promptly
+    /// once `ctx.cancel` fires; it holds the lease until it does.
     async fn run(&self, ctx: TaskContext) -> Result<TaskOutcome, TaskError>;
 }
 

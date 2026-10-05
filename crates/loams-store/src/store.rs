@@ -1,3 +1,6 @@
+//! Object store handles: the backend-agnostic surface every Loams crate
+//! writes through, and the object metadata it reads back.
+
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -25,15 +28,20 @@ fn parse_path(path: &str) -> Result<Path, StoreError> {
 /// Opaque version of an object, used for compare-and-swap writes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObjectVersion {
+    /// The backend's entity tag, when it has one.
     pub e_tag: Option<String>,
+    /// The backend's own version marker, when it has one.
     pub version: Option<String>,
 }
 
 /// Metadata about a stored object.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObjectInfo {
+    /// The object's key, as [`Store::list`] and [`Store::head`] report it.
     pub path: String,
+    /// The object's size in bytes.
     pub size: u64,
+    /// The version a compare-and-swap write must present to overwrite it.
     pub version: ObjectVersion,
     /// When the object was last written, in ms since the Unix epoch, as the
     /// backend reports it.

@@ -15,8 +15,11 @@ use crate::types::{
     Point, SearchParams, check_points, check_query, check_spec, hit_order, sort_hits,
 };
 
+/// The engine name [`crate::engine_by_name`] accepts for the exact engine.
 pub const FLAT_ENGINE: &str = "flat";
+/// The file a built flat index lives in, inside the segment directory.
 pub const FLAT_FILE: &str = "flat.bin";
+/// The magic bytes at the start of [`FLAT_FILE`].
 pub const FLAT_MAGIC: &[u8; 4] = b"OPFV";
 const FLAT_VERSION: u16 = 1;
 /// Magic, version, dim, distance and count.
@@ -27,6 +30,30 @@ const HEADER_LEN: usize = 4 + 2 + 4 + 1 + 8;
 pub struct FlatEngine;
 
 /// Loams's score convention for one pair (rule 3); zero-length vectors score 0 under Cosine.
+///
+/// Larger is better for every distance, so Euclid and Manhattan scores are
+/// negated distances and a smaller distance ranks first.
+///
+/// # Examples
+///
+/// ```
+/// use loams_hnsw::{Distance, exact_score};
+///
+/// let a = [1.0, 0.0];
+/// let b = [0.0, 1.0];
+/// // Cosine is the angle between the vectors.
+/// assert!((exact_score(Distance::Cosine, &a, &b) - 0.0).abs() < 1e-6);
+/// // Dot is the raw product.
+/// assert!((exact_score(Distance::Dot, &a, &b) - 0.0).abs() < 1e-6);
+/// // Euclid is the negated distance, so identical vectors score highest.
+/// assert!((exact_score(Distance::Euclid, &a, &a) - 0.0).abs() < 1e-6);
+/// assert!((exact_score(Distance::Euclid, &a, &b) + 2f32.sqrt()).abs() < 1e-6);
+/// assert!(exact_score(Distance::Euclid, &a, &a) > exact_score(Distance::Euclid, &a, &b));
+/// // Manhattan likewise.
+/// assert!((exact_score(Distance::Manhattan, &a, &b) + 2.0).abs() < 1e-6);
+/// // A zero-length vector has no direction, so Cosine scores it 0.
+/// assert_eq!(exact_score(Distance::Cosine, &[], &a), 0.0);
+/// ```
 pub fn exact_score(distance: Distance, a: &[f32], b: &[f32]) -> f32 {
     let pairs = a.iter().zip(b).map(|(&x, &y)| (f64::from(x), f64::from(y)));
     let score = match distance {
