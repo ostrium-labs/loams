@@ -47,6 +47,7 @@ jobs:
       sdk-rust: ${{ steps.filter.outputs.sdk-rust }}
       sdk-python: ${{ steps.filter.outputs.sdk-python }}
       sdk-go: ${{ steps.filter.outputs.sdk-go }}
+      sdk-swift: ${{ steps.filter.outputs.sdk-swift }}
       web: ${{ steps.filter.outputs.web }}
       dapr-edge: ${{ steps.filter.outputs.dapr-edge }}
       spec: ${{ steps.filter.outputs.spec }}
@@ -207,6 +208,16 @@ jobs:
               - "docs/sdk/**"
               - "proto/**"
               - "sdks/go/**"
+              - "sdks/conformance/**"
+            # The Swift SDK (#288). It has no local toolchain on the machines
+            # that develop this repo, so macOS is the only thing that can
+            # compile it. Without this job it merges as unverified source.
+            sdk-swift:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/swift/**"
               - "sdks/conformance/**"
             web:
               - ".github/workflows/**"
@@ -1117,6 +1128,33 @@ jobs:
               echo "pyproject.toml must pin $pin exactly, not a range"; exit 1;
             }
           done
+
+  # The Swift SDK (issue #288). Report-only like the other SDK gates: it must
+  # build and test on a runner that actually has a Swift toolchain, because no
+  # machine that develops this repo does. `Package.swift` declares no package
+  # dependencies, so this needs no resolution step and no cache.
+  sdk-swift:
+    name: the Swift SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-swift == 'true') }}
+    # macOS, not the Linux runner: the SDK is written against Foundation's
+    # async URLSession, and macos-latest ships a Swift toolchain preinstalled.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: the Swift toolchain's version
+        run: swift --version
+      # The filter also matches `.github/workflows/**`, so this job runs on the
+      # PR that adds it, when sdks/swift may not be on the base yet. `hashFiles`
+      # rather than a `test -f` step, because a failing step fails the job.
+      - name: the Swift SDK builds
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        working-directory: sdks/swift
+        run: swift build
+      - name: the Swift SDK's tests
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        working-directory: sdks/swift
+        run: swift test
 
   # SDK2 Task 2: the Go SDK, whose module sits outside the web workspace.
   sdk-go:
