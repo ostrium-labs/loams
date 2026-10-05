@@ -1,0 +1,19 @@
+<!--
+  The `go-import` meta tag for the Go SDK's vanity module path (Q607).
+
+  `sdks/go/go.mod` declares `module loams.dev/go`, so `go get loams.dev/go/...`
+  resolves the path through this tag, which the Go command fetches as
+  `https://loams.dev/go?go-get=1`. Until `loams.dev` serves it, the documented
+  fallback is the mirror repository `github.com/ostrium-labs/loams-go`, which
+  §44 §11 row 4 says an `sdk-mirror` workflow writes.
+
+  Serving it is a `loam-cloud` change, not this repository's: the tag has to be
+  in the HTTP response for the `loams.dev/go` path. This file is the exact
+  markup to serve and the place to change if Q607 is answered the other way
+  (a plain `github.com/ostrium-labs/loams-go` module path needs no tag at all,
+  and `sdks/go/go.mod`'s first line is the only thing that changes).
+
+  Do not add a second tag: the Go command reads the first one and ignores the
+  rest, so a stale second tag is a trap.
+-->
+<meta name="go-import" content="loams.dev/go git https://github.com/ostrium-labs/loams-go">

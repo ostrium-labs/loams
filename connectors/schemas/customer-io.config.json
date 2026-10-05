@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/customer-io.config.json",
+  "title": "Customer.io instance config (placeholder)",
+  "description": "Placeholder for a Customer.io instance's settings. It is filled in when this connector's runtime is chosen: CN2 for the P2 rows, through the stock Apache Camel components in loams-connect or Iggy's plugins, and CN3 for the P3 long tail, through OpenAPI-generated native connectors (design §33 D354, §5). Until then it declares no field and requires none, and additionalProperties is true so an operator can already pass settings for an unimplemented connector; nothing reads them until the connector ships (design §33 D353; CN1 Task 2).",
+  "type": "object",
+  "additionalProperties": true,
+  "x-loams-generated-by": "scripts/connectors/gen_registry.py — a CN1 Task 2 placeholder; replace this file when the connector's runtime is chosen"
+}

@@ -1919,7 +1919,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower 0.5.3",
- "tower-http",
+ "tower-http 0.6.11",
  "tracing",
  "wasm-bindgen-futures",
  "zstd 0.13.3",
@@ -1952,6 +1952,38 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "connectrpc-health"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d20fc0ce78972ca7473b961953a8d57f5fd5943b184c65c971a96305f28bbebb"
+dependencies = [
+ "buffa",
+ "connectrpc",
+ "futures",
+ "http-body",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "connectrpc-reflection"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97d238bfbb8155bfa144b62b2f03b8285063c59cbdcba53b14dfb93b68e6673a"
+dependencies = [
+ "buffa",
+ "buffa-descriptor",
+ "connectrpc",
+ "futures",
+ "http-body",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -6251,9 +6283,13 @@ dependencies = [
  "arrow-schema",
  "async-trait",
  "axum 0.8.9",
- "base64 0.22.1",
+ "base64 0.23.1",
+ "buffa",
  "bytes",
  "clap",
+ "connectrpc",
+ "connectrpc-health",
+ "connectrpc-reflection",
  "datafusion",
  "datafusion-postgres",
  "fail 0.5.1",
@@ -6268,9 +6304,11 @@ dependencies = [
  "loams-hnsw",
  "loams-hot",
  "loams-link",
+ "loams-live-proto",
  "loams-log",
  "loams-meta",
  "loams-meta-tikv",
+ "loams-proto",
  "loams-qdrant",
  "loams-query",
  "loams-store",
@@ -6282,7 +6320,7 @@ dependencies = [
  "proptest",
  "prost 0.14.4",
  "prost-types",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "serde",
  "serde_json",
  "tempfile",
@@ -6342,7 +6380,7 @@ dependencies = [
 name = "loams-cloudevents"
 version = "0.0.1"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "http",
  "loams-log",
@@ -6439,7 +6477,7 @@ dependencies = [
  "clap",
  "httpmock",
  "humantime",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "serde_json",
  "tokio",
  "tracing",
@@ -6479,7 +6517,7 @@ name = "loams-es"
 version = "0.0.1"
 dependencies = [
  "axum 0.8.9",
- "base64 0.22.1",
+ "base64 0.23.1",
  "futures",
  "loams-collection",
  "loams-common",
@@ -6493,6 +6531,13 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "ulid 3.0.0",
+]
+
+[[package]]
+name = "loams-facade-gen"
+version = "0.0.1"
+dependencies = [
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -6543,7 +6588,7 @@ dependencies = [
  "proptest",
  "rand 0.9.5",
  "rand_chacha 0.9.0",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "roaring",
  "serde",
  "serde_json",
@@ -6554,7 +6599,7 @@ dependencies = [
  "tracing",
  "ulid 3.0.0",
  "xxhash-rust",
- "zstd 0.13.3",
+ "zstd 0.14.0",
 ]
 
 [[package]]
@@ -6633,6 +6678,7 @@ dependencies = [
  "postcard",
  "proptest",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -6660,7 +6706,7 @@ dependencies = [
  "rand 0.9.5",
  "rand_chacha 0.9.0",
  "redb",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "serde",
  "sha2 0.11.0",
  "tempfile",
@@ -6700,6 +6746,7 @@ dependencies = [
 name = "loams-pk"
 version = "0.0.1"
 dependencies = [
+ "async-trait",
  "bytes",
  "loams-store",
  "object_store 0.14.2",
@@ -6707,6 +6754,17 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "loams-proto"
+version = "0.0.1"
+dependencies = [
+ "buffa",
+ "buffa-types",
+ "connectrpc",
+ "connectrpc-build",
+ "serde",
 ]
 
 [[package]]
@@ -6746,7 +6804,7 @@ dependencies = [
  "anyhow",
  "arrow-flight",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "crc32c",
  "datafusion",
@@ -6797,7 +6855,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bitpacking",
  "bytes",
  "bytesize",
@@ -6853,6 +6911,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-sidebar-browser"
+version = "0.0.1"
+dependencies = [
+ "base64 0.23.1",
+ "futures",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite 0.24.0",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "loams-sim"
 version = "0.0.1"
 dependencies = [
@@ -6892,7 +6966,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "toml 0.8.23",
- "tower-http",
+ "tower-http 0.7.1",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -6905,9 +6979,9 @@ dependencies = [
  "hex",
  "postcard",
  "proptest",
- "rand 0.9.5",
+ "rand 0.10.3",
  "rand_chacha 0.9.0",
- "rand_core 0.9.5",
+ "rand_core 0.10.1",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -6935,7 +7009,7 @@ name = "loams-stream-grpc"
 version = "0.0.1"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "loams-cloudevents",
  "loams-common",
@@ -6985,7 +7059,7 @@ dependencies = [
  "loams-tikv",
  "proptest",
  "rand 0.9.5",
- "reqwest 0.12.28",
+ "reqwest 0.13.5",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -6993,6 +7067,27 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "loams-web-bridge"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "futures",
+ "loams-web-bridge",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "toml 0.8.23",
+ "tracing",
+ "url",
 ]
 
 [[package]]
@@ -9455,7 +9550,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-util",
  "tower 0.5.3",
- "tower-http",
+ "tower-http 0.6.11",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -9497,7 +9592,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-util",
  "tower 0.5.3",
- "tower-http",
+ "tower-http 0.6.11",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -9509,7 +9604,7 @@ dependencies = [
 [[package]]
 name = "resonate-auth"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "jsonwebtoken",
  "reqwest 0.12.28",
@@ -9522,7 +9617,7 @@ dependencies = [
 [[package]]
 name = "resonate-base"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -9537,7 +9632,7 @@ dependencies = [
 [[package]]
 name = "resonate-core"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -9553,7 +9648,7 @@ dependencies = [
 [[package]]
 name = "resonate-gateway-http"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -9563,14 +9658,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "tower-http",
+ "tower-http 0.6.11",
  "tracing",
 ]
 
 [[package]]
 name = "resonate-plugin"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "axum 0.7.9",
  "figment",
@@ -9583,7 +9678,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk"
 version = "0.6.0"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -9603,7 +9698,7 @@ dependencies = [
 [[package]]
 name = "resonate-sdk-macros"
 version = "0.1.0"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -9614,7 +9709,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-blob"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-trait",
  "chrono",
@@ -9635,7 +9730,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-mysql"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-trait",
  "resonate-core",
@@ -9652,7 +9747,7 @@ dependencies = [
 [[package]]
 name = "resonate-server-sqlite"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-trait",
  "resonate-core",
@@ -9670,7 +9765,7 @@ dependencies = [
 [[package]]
 name = "resonate-sql"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-trait",
  "lazy_static",
@@ -9689,7 +9784,7 @@ dependencies = [
 [[package]]
 name = "resonate-timer-wheel"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "tokio",
  "verus_builtin",
@@ -9700,7 +9795,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-poll"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -9717,7 +9812,7 @@ dependencies = [
 [[package]]
 name = "resonate-transport-http-push"
 version = "0.10.1"
-source = "git+https://github.com/dina-kar/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
+source = "git+https://github.com/ostrium-labs/resonate?rev=e3606698e6e3f2502bb018bba1e618deb63f907a#e3606698e6e3f2502bb018bba1e618deb63f907a"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",
@@ -10358,9 +10453,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.23.0"
+version = "3.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "935177bb8c0cd8ca1a4e6d1a2ac8988bea69cab4f9d3a31311e012ad27868ea4"
+checksum = "df9adc193c780ef8f159aee8b61e2d5801aaa555e6eb0947fe45530ec506296f"
 dependencies = [
  "base64 0.23.1",
  "bs58",
@@ -10379,9 +10474,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.23.0"
+version = "3.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d607aa01a3cb0ad757d6fd216136910db3c97b102fe686585689615a02dbcdc"
+checksum = "3e17bbc68e28663bbbb90df47e058aa7eda4fb445b89fe70457bb94fbccf6e49"
 dependencies = [
  "darling 0.24.1",
  "proc-macro2",
@@ -10608,9 +10703,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slatedb"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb40332f41e231926df3a0ef742c05316b43368ba4b520433d2a1eba1ab00f0f"
+checksum = "543da8a0c19e1a6af286a3c314a1c936af598603f3af98549514fffffb837334"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -10652,9 +10747,9 @@ dependencies = [
 
 [[package]]
 name = "slatedb-common"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b77f238f348e95e1653a5235f880ac703011b82582bd556f2aba405abf8180e"
+checksum = "b5cb9fe0fa807c333fbb5880b222f5e72889fa22e40b2f13f479490d8b22f192"
 dependencies = [
  "chrono",
  "log",
@@ -10668,9 +10763,9 @@ dependencies = [
 
 [[package]]
 name = "slatedb-txn-obj"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ad63b6c250219e26d71f497820f970274c301f896366daa56915f2a05df0e0a"
+checksum = "872044a3b57e2846a3761619bab7cb88052034d137cf17afb2382c63a24c3b11"
 dependencies = [
  "async-trait",
  "bytes",
@@ -11709,7 +11804,7 @@ dependencies = [
 [[package]]
 name = "tikv-client"
 version = "0.4.0"
-source = "git+https://github.com/dina-kar/client-rust?rev=1f8962b00b33ebc6f34b72d6c52d08b8a8e1906e#1f8962b00b33ebc6f34b72d6c52d08b8a8e1906e"
+source = "git+https://github.com/ostrium-labs/client-rust?rev=1f8962b00b33ebc6f34b72d6c52d08b8a8e1906e#1f8962b00b33ebc6f34b72d6c52d08b8a8e1906e"
 dependencies = [
  "async-recursion 0.3.2",
  "async-trait",
@@ -11874,6 +11969,34 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edc5f74e248dc973e0dbb7b74c7e0d6fcc301c694ff50049504004ef4d0cdcd9"
+dependencies = [
+ "futures-util",
+ "log",
+ "tokio",
+ "tungstenite 0.24.0",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
+dependencies = [
+ "futures-util",
+ "log",
+ "rustls",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
+ "tungstenite 0.30.0",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -12140,11 +12263,6 @@ dependencies = [
  "http",
  "http-body",
  "http-body-util",
- "http-range-header",
- "httpdate",
- "mime",
- "mime_guess",
- "percent-encoding",
  "pin-project-lite",
  "tokio",
  "tokio-util",
@@ -12153,6 +12271,31 @@ dependencies = [
  "tower-service",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "tower-http"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08a05a66a4fdd61cbbe0a1d755ffe0ca6aba159dd4820936a0ff8a8278245b9c"
+dependencies = [
+ "bitflags 2.13.2",
+ "bytes",
+ "futures-core",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "http-range-header",
+ "httpdate",
+ "mime",
+ "mime_guess",
+ "percent-encoding",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]
@@ -12234,6 +12377,42 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "tungstenite"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.8.8",
+ "sha1 0.10.7",
+ "thiserror 1.0.69",
+ "utf-8",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.10.3",
+ "rustls",
+ "rustls-pki-types",
+ "sha1 0.11.0",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "twox-hash"
@@ -12427,6 +12606,12 @@ dependencies = [
  "percent-encoding",
  "serde",
 ]
+
+[[package]]
+name = "utf-8"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8-ranges"
@@ -13334,9 +13519,9 @@ dependencies = [
 
 [[package]]
 name = "xxhash-rust"
-version = "0.8.18"
+version = "0.8.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aee1b19627c7c60102ab80d3a9cbe18de90bfe03bfa6c3715447681f0e8c8af6"
+checksum = "550a2b930b62486a393c52d5c3b84bff264b28aa437ed64694d31e93b1757af7"
 
 [[package]]
 name = "yansi"

@@ -1,0 +1,48 @@
+# The Java stubs for the Maven module `dev.loams:loams` (design §44 §9 row 2,
+# §10.1 points 2 and 3; SDK2 Task 6).
+#
+# `managed` sets `java_package_prefix` for every file to `dev.loams.gen`, which
+# is what puts the generated messages under `sdks/java/gen/dev/loams/gen/loams/…`
+# and keeps them out of `dev.loams`, the package the hand-written runtime uses.
+# Without it protoc would derive the package from the proto package alone and
+# the generated code would collide with the runtime's package root.
+#
+# **The output is committed**, the same as Go's (`STUBS_COMMITTED=yes` in
+# `sdks/templates/go/template.env`): a consumer that depends on the published
+# Maven artifact builds from that artifact, so the generated code has to be in
+# the repository (§44 §10.1 point 3).
+#
+# The remote plugin is pinned to an exact version, so a generation difference is
+# a version bump in a diff rather than whatever the runner happened to have.
+#
+# The **facade** is not generated here: `crates/loams-facade-gen` ships
+# renderers for TypeScript, Go, Python and Rust and none for Java, and this
+# task may not add one (it is outside `sdks/java/**`). The module surface in
+# `sdks/java/src/dev/loams/` is therefore the Q604 hand-written-facade fallback,
+# which design §44 §7.3 explicitly permits and which `sdks/go/gen/facade/` also
+# uses. See `sdks/java/README.md`.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: java_package_prefix
+      value: dev.loams.gen
+inputs:
+  - directory: proto
+    paths:
+      - proto/loams/options/v1
+      - proto/loams/errors/v1
+      - proto/loams/instance/v1
+      - proto/loams/devices/v1
+      - proto/loams/approvals/v1
+      - proto/loams/operations/v1
+      - proto/loams/notifications/v1
+      - proto/loams/live/v1
+plugins:
+  # `protoc-gen-java`: the messages and service descriptors. No `opt`, because
+  # the package prefix is managed mode's job above rather than a protoc flag —
+  # passing `java_package_prefix=…` as an option is an error the plugin rejects,
+  # since protoc-gen-java has no such flag.
+  - remote: buf.build/protocolbuffers/java:v29.3
+    out: sdks/java/gen
+clean: true

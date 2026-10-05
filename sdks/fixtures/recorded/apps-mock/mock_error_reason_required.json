@@ -1,0 +1,68 @@
+{
+  "name": "mock_error_reason_required",
+  "kind": "error",
+  "about": "A `invalid_argument` refusal that is a **policy** rule, not a parse failure: rejecting an approval, or approving a destructive one, needs a reason. The message is for a person; the branch is `reason_required`.",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R8"
+  ],
+  "reason": "reason_required",
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:11.165Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "about": "Reject without a reason.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{\"approvalId\":\"apr_01J9ZCREATEKEY\",\"revision\":\"1\",\"decision\":\"DECISION_KIND_REJECT\"}"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "invalid_argument",
+          "message": "a reason is required to reject, and for destructive approvals",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "Cg9yZWFzb25fcmVxdWlyZWQ"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400,
+        "reason": "reason_required"
+      }
+    }
+  ]
+}

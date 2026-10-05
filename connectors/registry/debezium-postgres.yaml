@@ -1,0 +1,62 @@
+# Debezium-Postgres — ★ connector 4 of §33 §8; CN1 plan Task 8.
+# Runtime: Debezium Server 3.7 unmodified (design §33 §5, D354), one container
+# per CDC instance (CN1 Ruling 6), its HTTP sink posting CloudEvents to
+# loams-fabric ingest (§33 §7, D357).
+# Source only: CDC flows one way, so capabilities.sink is omitted entirely
+# (§33 §4's capabilities description — source and sink are optional and which is
+# present says which).
+apiVersion: loams.flow/v1
+kind: Connector
+id: debezium-postgres
+name: Debezium-Postgres
+specVersion: 1.0.0
+category: cdc
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: debezium
+  ref: io.debezium.connector.postgresql.PostgresConnector
+  version: "3.7.0.Final"
+licence:
+  component: Apache-2.0            # Debezium Server, unmodified (§33 §5, D354)
+capabilities:
+  source:
+    streaming: true               # logical replication is continuous
+    batch: true                   # snapshot.mode=initial and incremental snapshots (CN1 Task 8)
+    cdc: true
+    webhook: false
+    resumable: true
+    position: the slot LSN
+    # §33 §6: Debezium's committed offset is source.lsn; CN1 Task 8 adds it as
+    # the loamslsn extension and loamsop from op.
+  delivery: { source: at_least_once, sink: at_least_once }
+    # sink is still declared because §33 §4 requires both directions on every
+    # manifest.  §33 §7 has Debezium commit its offsets only after the HTTP
+    # sink's 2xx, which is at-least-once; at_most_once is not claimed because
+    # ingest dedupes by source + id (D355).
+  ordering: per_partition
+    # Debezium preserves the source's transaction order inside a slot, so a
+    # change stream keeps LSN order (§33 §7 orders the current table on
+    # loamslsn).  per_partition, not total: several slots can be in flight.
+  formats: [cloudevents-binary, cloudevents-structured, json]
+    # Debezium's CloudEvents converter emits structured mode (CN1 Task 8).
+  schema: { registry: none, evolution: backward_transitive }
+    # No registry.  backward_transitive because Debezium emits schema-change
+    # events into <db>.schema_changes and each must be readable against every
+    # earlier schema (§33 §7; CN1 Task 8's ddl_add_column_evolves_table).
+  bulk: { arrow: false, max_batch_rows: 65536 }   # a change is a row event, not a batch
+  backpressure: pull              # ingest acks each batch (Ruling 4); the flow process polls slot lag
+auth: [basic, mtls]               # §33 Appendix A.7
+config:
+  $ref: schemas/debezium-postgres.config.json
+secrets: [password, tls.key_pem]
+envelope:
+  emits: io.loams.dev.flow.debezium-postgres.change.v1
+  consumes: "*"
+  passthrough: true
+    # §33 §6: Debezium's own CloudEvents keep their producer type, source and
+    # id; ingest adds only loamsconnector and loamsinstance.
+limits: { max_record_bytes: 16777216 }
+conformance: [contract, kill-restart, cdc]
+docs: docs/guides/connectors/debezium-postgres.md

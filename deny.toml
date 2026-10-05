@@ -35,6 +35,9 @@ license-files = [{ path = "LICENSE", hash = 0x0fb72a18 }]
 multiple-versions = "allow"
 wildcards = "deny"
 allow-wildcard-paths = true
+# Prefix variants are rejected by scripts/ci/no-metering.sh; cargo-deny package
+# selectors are exact names (https://embarkstudios.github.io/cargo-deny/checks/cfg.html).
+deny = [{ name = "loam-platform", reason = "The OSS engine cannot depend on the private platform (D551)" }]
 
 [advisories]
 yanked = "deny"
@@ -53,4 +56,4 @@ unknown-git = "deny"
 # tikv-client is pinned by rev to Loams's fork, branch `loam` (R1 plan rows R4
 # and F1). Resonate is pinned by rev to the fork's loam/0.10.1 (D1 plan Task
 # 1, D140).
-allow-git = ["https://github.com/dina-kar/client-rust", "https://github.com/dina-kar/resonate"]
+allow-git = ["https://github.com/ostrium-labs/client-rust", "https://github.com/ostrium-labs/resonate"]

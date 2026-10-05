@@ -1,0 +1,67 @@
+{
+  "name": "mock_error_approval_expired",
+  "kind": "error",
+  "about": "A `failed_precondition` whose condition is **time**, not state: the approval was still pending and is no longer. The seed carries one expired approval precisely so this is reachable without waiting.",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R8"
+  ],
+  "reason": "approval_expired",
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:11.185Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/DecideApproval",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{\"approvalId\":\"apr_01J9ZEXPIRED\",\"revision\":\"2\",\"decision\":\"DECISION_KIND_APPROVE\"}"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "failed_precondition",
+          "message": "the approval expired",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChBhcHByb3ZhbF9leHBpcmVk"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400,
+        "reason": "approval_expired"
+      }
+    }
+  ]
+}

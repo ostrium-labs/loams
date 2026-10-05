@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/avro.config.json",
+  "title": "Avro codec instance config (loams.flow/v1)",
+  "description": "One Avro codec instance's settings: the schema source, the codec's logical-type mapping and the Confluent registry framing used at a Kafka boundary. A format is a codec used by other connectors, not a source, so this config names no endpoint and holds no secrets (§33 Appendix A.6; CN1 plan Task 5; D356 keeps Avro at Kafka and registry boundaries only). The manifest's `secrets` list is empty because no property here carries a secret.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_source"],
+  "properties": {
+    "schema_source": {
+      "description": "Where the writer's Avro schema comes from. decode reads it from the container's header or the Confluent wire format's schema id.",
+      "type": "string",
+      "enum": ["explicit", "subject", "infer"],
+      "default": "explicit"
+    },
+    "schema": {
+      "description": "The Avro schema as its JSON form, when schema_source is `explicit`.",
+      "type": "object"
+    },
+    "subject_prefix": {
+      "description": "The Confluent subject prefix this instance registers and reads schemas under, so two instances of one connector do not collide on a subject. Only consulted when a registry is configured (CN1 Task 5).",
+      "type": "string",
+      "minLength": 1
+    },
+    "registry": {
+      "description": "The Confluent schema registry, for the wire format (magic byte 0x00 + a 4-byte schema id). CN1 Task 5 ships a client stub until Q344, so the URL is configuration and the calls are stubbed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": { "description": "The registry base URL.", "type": "string", "minLength": 1 },
+        "compatibility": {
+          "description": "The compatibility level the subjects are held to (D356; the manifest declares evolution: none for the codec itself).",
+          "type": "string",
+          "enum": ["NONE", "BACKWARD", "BACKWARD_TRANSITIVE", "FORWARD", "FULL"],
+          "default": "BACKWARD"
+        }
+      }
+    },
+    "container": {
+      "description": "Whether the encoder writes an object container file or a single-object encoding (CN1 Task 5 covers both).",
+      "type": "string",
+      "enum": ["object-container-file", "single-object"],
+      "default": "object-container-file"
+    },
+    "sync_marker_every": {
+      "description": "Objects between sync markers in an object container file.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 64000
+    },
+    "deflate_level": {
+      "description": "The deflate level for the `deflate` codec.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9
+    },
+    "logical_types": {
+      "description": "The Avro logical types mapped on decode and encode, per the Arrow project's rules (CN1 Task 5's avro_logical_types_map).",
+      "type": "array",
+      "items": { "type": "string", "enum": ["timestamp-millis", "timestamp-micros", "date", "decimal", "uuid", "time-millis", "time-micros"] },
+      "default": ["timestamp-millis", "timestamp-micros", "date", "decimal", "uuid"]
+    }
+  }
+}

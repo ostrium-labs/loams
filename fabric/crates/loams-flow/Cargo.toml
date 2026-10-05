@@ -1,0 +1,43 @@
+[package]
+name = "loams-flow"
+description = "Loams Flow's connector registry: the manifests of design §33 D352, their JSON Schema, the semantic rules and the 200-connector catalog."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# Not published: the crate reads `connectors/registry/*.yaml`,
+# `connectors/schema/connector.schema.json`, `connectors/registry/catalog.csv`
+# and `connectors/licences.toml` from the repository at run time (design §33
+# D352; D359's gate input), and a crate archive would not carry them.
+publish = false
+
+[dependencies]
+indexmap.workspace = true
+jsonschema.workspace = true
+loams-flow-proto = { path = "../loams-flow-proto" }
+# `buffa` is the generated-code runtime of `loams-flow-proto` (see that crate's
+# Cargo.toml): `connectrpc-build` 0.9 emits buffa messages, and an open-enum
+# field is a `buffa::EnumValue<E>` wrapper rather than a bare `E`. Translating a
+# manifest slug to a protobuf enum name and back means naming that wrapper, so
+# `loams-flow` takes the same `buffa` version its codegen runs on. It is pinned
+# inline rather than through `[workspace.dependencies]` because it is the proto
+# crate's runtime, not a shared dependency — the split `loams-proto` makes for
+# `buffa-types`.
+buffa = "0.9.2"
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_norway.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+# `Registry`, `check_use` and the licence gate are exercised over the real
+# `connectors/` tree, whose manifests carry semver `specVersion`s and the
+# config schemas are compared as JSON.
+semver.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

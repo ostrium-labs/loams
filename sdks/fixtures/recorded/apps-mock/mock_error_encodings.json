@@ -1,0 +1,149 @@
+{
+  "name": "mock_error_encodings",
+  "kind": "error",
+  "about": "The **same** refusal in every encoding, which is what proves the SDK has to read the body and not the status. Connect answers 501 with a JSON error; the gRPC-Web encodings answer 200 and put `grpc-status: 12` in the trailers. A client that reads only status codes passes the first and silently succeeds on the others.",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R8",
+    "R10"
+  ],
+  "reason": "not_implemented",
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:11.287Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "about": "Connect, proto3 JSON.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{}"
+      },
+      "response": {
+        "status": 501,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "unimplemented",
+          "message": "SendTestNotification is not implemented in loams-apps-mock yet",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "Cg9ub3RfaW1wbGVtZW50ZWQ"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 501,
+        "reason": "not_implemented"
+      }
+    },
+    {
+      "about": "Connect, binary protobuf.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+        "headers": {
+          "content-type": "application/proto",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "bodyBase64": ""
+      },
+      "response": {
+        "status": 501,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "unimplemented",
+          "message": "SendTestNotification is not implemented in loams-apps-mock yet",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "Cg9ub3RfaW1wbGVtZW50ZWQ"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 501,
+        "reason": "not_implemented"
+      }
+    },
+    {
+      "about": "gRPC-Web, binary protobuf: HTTP 200, the code is in the trailers.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+        "headers": {
+          "content-type": "application/grpc-web+proto",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "bodyBase64": "AAAAAAA="
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/grpc-web+proto"
+        },
+        "bodyBase64": "gAAAAS1ncnBjLXN0YXR1czogMTINCmdycGMtbWVzc2FnZTogU2VuZFRlc3ROb3RpZmljYXRpb24gaXMgbm90IGltcGxlbWVudGVkIGluIGxvYW1zLWFwcHMtbW9jayB5ZXQNCmdycGMtc3RhdHVzLWRldGFpbHMtYmluOiBDQXdTUGxObGJtUlVaWE4wVG05MGFXWnBZMkYwYVc5dUlHbHpJRzV2ZENCcGJYQnNaVzFsYm5SbFpDQnBiaUJzYjJGdGN5MWhjSEJ6TFcxdlkyc2dlV1YwR2tJS0xYUjVjR1V1WjI5dloyeGxZWEJwY3k1amIyMHZiRzloYlhNdVpYSnliM0p6TG5ZeExrVnljbTl5U1c1bWJ4SVJDZzl1YjNSZmFXMXdiR1Z0Wlc1MFpXUQ0K"
+      },
+      "expect": {
+        "status": 200,
+        "grpcStatus": 12,
+        "reason": "not_implemented"
+      }
+    },
+    {
+      "about": "gRPC-Web, proto3 JSON.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+        "headers": {
+          "content-type": "application/grpc-web+json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "bodyBase64": "AAAAAAJ7fQ=="
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/grpc-web+json"
+        },
+        "bodyBase64": "gAAAAS1ncnBjLXN0YXR1czogMTINCmdycGMtbWVzc2FnZTogU2VuZFRlc3ROb3RpZmljYXRpb24gaXMgbm90IGltcGxlbWVudGVkIGluIGxvYW1zLWFwcHMtbW9jayB5ZXQNCmdycGMtc3RhdHVzLWRldGFpbHMtYmluOiBDQXdTUGxObGJtUlVaWE4wVG05MGFXWnBZMkYwYVc5dUlHbHpJRzV2ZENCcGJYQnNaVzFsYm5SbFpDQnBiaUJzYjJGdGN5MWhjSEJ6TFcxdlkyc2dlV1YwR2tJS0xYUjVjR1V1WjI5dloyeGxZWEJwY3k1amIyMHZiRzloYlhNdVpYSnliM0p6TG5ZeExrVnljbTl5U1c1bWJ4SVJDZzl1YjNSZmFXMXdiR1Z0Wlc1MFpXUQ0K"
+      },
+      "expect": {
+        "status": 200,
+        "grpcStatus": 12,
+        "reason": "not_implemented"
+      }
+    }
+  ]
+}

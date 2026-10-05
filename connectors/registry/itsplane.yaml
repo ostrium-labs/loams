@@ -1,0 +1,80 @@
+# ItsPlane — Appendix A.18 "Loams's own applications"; CN1 plan Task 15; D628.
+# Runtime: native Rust, loams_flow::connectors::itsplane. Camel 4.22.1 has no
+# ItsPlane component, so D354's buy-first has nothing to buy and this is a
+# hand-written connector (design §33 §5). The product is **ItsPlane**, the
+# self-hosted tracker in ostrium-labs/loams-plugins, not plane.so; CN1 "Rulings
+# made during execution" row 12 records that and its AGPL-3.0 upstream.
+# This is an import **target**: a route carries data from GitHub or Jira into it.
+apiVersion: loams.flow/v1
+kind: Connector
+id: itsplane
+name: ItsPlane
+specVersion: 1.0.0
+category: saas
+priority: P1
+starred: false              # D628: P1 but not ★; A.18 is not the précis' hot path
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::itsplane
+licence:
+  component: Apache-2.0
+  dependencies: {}
+    # ItsPlane's own upstream is **AGPL-3.0**, and that is recorded in
+    # connectors/licences.toml as a `kind = "service"` entry. D359 refuses AGPL
+    # for anything Loams ships or links; this connector ships and links neither,
+    # and reaches ItsPlane only over its public HTTP API — the same carve-out a
+    # SaaS service gets. The AGPL identifier appears in licences.toml and in this
+    # comment; no AGPL text is vendored, and scripts/spec/provenance.sh passes.
+capabilities:
+  source:
+    streaming: true          # A.18: Streaming Y
+    batch: true               # A.18: Batch Y
+    cdc: false
+    webhook: true             # A.18: Webhook Y
+    resumable: true
+    position: the filter window the last read covered
+      # ItsPlane's issue listing takes `limit` and **truncates silently**: there
+      # is no total and no cursor in the response, so a caller cannot tell "no
+      # more" from "truncated at the limit". The source therefore pages by its
+      # own filter window and records that window as the position, and never
+      # treats the returned count as complete.
+  sink:
+    streaming: true
+    batch: true
+    transactional: false      # no transaction spanning an issue write
+    upsert: false             # an issue is created then updated, not upserted on a key
+    delete: false
+    idempotent: true          # keyed on the human identifier, for example MKT-42
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_key          # ordering is per project and per identifier
+  formats: [cloudevents-binary, cloudevents-structured, json]
+  schema: { registry: none, evolution: none }
+  bulk: { arrow: false, max_batch_rows: 65536 }
+    # No Arrow path: an ItsPlane issue is a document, not a columnar batch.
+  backpressure: pull
+    # ItsPlane allows 100 requests per second per API key but does **not**
+    # publish the remaining budget the way Zulip publishes X-RateLimit-*, so
+    # unlike the Zulip sink this one cannot self-throttle from a header and the
+    # caller must budget for it.
+auth: [key]
+    # ItsPlane's API key travels in an `x-api-key` header, not as an
+    # Authorization bearer. It is provisioned from a signed-in session, shown
+    # once, and **rotated rather than extended** — its expiry is fixed at
+    # creation, so a rotation invalidates the instance and needs a redeploy.
+config:
+  $ref: schemas/itsplane.config.json
+secrets: [api_key]
+envelope:
+  emits: ""
+    # A target, so it emits nothing; CN1 Task 15 names no event type for A.18.
+  consumes: "*"
+  passthrough: false
+    # ItsPlane's webhook body is in ItsPlane's own shape, not a CloudEvent.
+limits:
+  max_record_bytes: 1048576
+  batch_rows: 100
+    # The page_size default, which is also ItsPlane's own upper bound's midpoint:
+    # the hard range is 1–500 and truncation at the limit is silent.
+conformance: [contract, dup-check]
+docs: docs/guides/connectors/itsplane.md

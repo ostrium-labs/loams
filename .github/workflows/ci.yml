@@ -1,24 +1,10 @@
 name: CI
 
-# Docs-only changes run no CI at all. The nightly schedule is unfiltered.
+# Docs-only changes still run the required CI summary. The nightly schedule is unfiltered.
 on:
   push:
-    branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-      - "deploy/**/*.md"
-      - ".superpowers/**"
-      - "LICENSE*"
-      - ".coderabbit*"
+    branches: [main, dev]
   pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-      - "deploy/**/*.md"
-      - ".superpowers/**"
-      - "LICENSE*"
-      - ".coderabbit*"
   schedule:
     # Nightly: the long simulation sweep (M0.4 plan Task 6), the tail-merge
     # property test (M1.2 plan Task 15), the TiKV suites (R1 plan Task 1) and
@@ -28,18 +14,22 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   # Which parts of the tree a pull request touches. The jobs below run on a
   # pull request only when their filter matches; on a push to main and on the
-  # nightly schedule every job runs as before (this job is skipped there).
+  # nightly schedule the relevant jobs run (this job is skipped there).
   # dorny/paths-filter is MIT-licensed; pinned to v4.0.3.
   changes:
     name: changed paths
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     permissions:
       contents: read
       pull-requests: read
@@ -53,6 +43,11 @@ jobs:
       deny: ${{ steps.filter.outputs.deny }}
       protos: ${{ steps.filter.outputs.protos }}
       app-protos: ${{ steps.filter.outputs.app-protos }}
+      sdk-typescript: ${{ steps.filter.outputs.sdk-typescript }}
+      sdk-rust: ${{ steps.filter.outputs.sdk-rust }}
+      sdk-python: ${{ steps.filter.outputs.sdk-python }}
+      sdk-go: ${{ steps.filter.outputs.sdk-go }}
+      sdk-swift: ${{ steps.filter.outputs.sdk-swift }}
       web: ${{ steps.filter.outputs.web }}
       dapr-edge: ${{ steps.filter.outputs.dapr-edge }}
       spec: ${{ steps.filter.outputs.spec }}
@@ -160,7 +155,8 @@ jobs:
               - "proto/**"
               - "buf.yaml"
               - "buf.gen.yaml"
-              - "sdks/live-typescript/**"
+              - "sdks/typescript/buf.gen.live.yaml"
+              - "sdks/typescript/packages/live/**"
             # The app protos (design §37 §8, AP0) and @loams/proto.
             app-protos:
               - ".github/workflows/**"
@@ -169,6 +165,60 @@ jobs:
               - "buf.gen.*.yaml"
               - "web/packages/proto/**"
               - "web/pnpm-lock.yaml"
+            # SDK2 Task 0: the TypeScript SDK (@loams/client, @loams/live), its
+            # generator (crates/loams-facade-gen), and the conformance corpus.
+            sdk-typescript:
+              - ".github/workflows/**"
+              - "proto/**"
+              - "buf.yaml"
+              - "buf.gen.*.yaml"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "crates/loams-facade-gen/**"
+              - "scripts/sdk/**"
+              - "sdks/**"
+              - "web/pnpm-lock.yaml"
+            # SDK2 Task 3: the Rust SDK. It is its own cargo workspace, so the
+            # server's "Rust tests" jobs never compile or run it -- which is how
+            # PR #340 merged with four failing tests and a green board.
+            sdk-rust:
+              - ".github/workflows/**"
+              - "rust-toolchain*"
+              - "crates/loams-proto/**"
+              - "crates/loams-live-proto/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/rust/**"
+              - "sdks/conformance/**"
+            # SDK2 Task 1: the Python SDK. CI's Python jobs are the qdrant smoke
+            # and static analysis, neither of which imports the SDK.
+            sdk-python:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/python/**"
+              - "sdks/conformance/**"
+            # SDK2 Task 2: the Go SDK, whose module sits outside the web
+            # workspace and so had no job of its own.
+            sdk-go:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/go/**"
+              - "sdks/conformance/**"
+            # The Swift SDK (#288). It has no local toolchain on the machines
+            # that develop this repo, so macOS is the only thing that can
+            # compile it. Without this job it merges as unverified source.
+            sdk-swift:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/swift/**"
+              - "sdks/conformance/**"
             web:
               - ".github/workflows/**"
               - "web/**"
@@ -187,7 +237,9 @@ jobs:
               - "scripts/spec/**"
             # The Lean proofs and the Rust code they are the oracle for (RT0 Task 8, D312).
             lean:
-              - ".github/workflows/**"
+              - *toolchain
+              - "crates/loams-sqlrouter/Cargo.toml"
+              - "crates/loams-sqlrouter/tests/it/lean_oracle.rs"
               - "spec/lean/**"
               - "crates/loams-sqlrouter/src/ranges.rs"
               - "crates/loams-sqlrouter/src/reference/**"
@@ -206,15 +258,15 @@ jobs:
               - "spec/tla/**"
 
   check:
-    name: fmt, clippy, test
+    name: fmt and clippy
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: rustfmt
         run: cargo fmt --all --check
       - name: clippy
@@ -233,10 +285,15 @@ jobs:
           if cargo tree -p loams -e normal --prefix none --locked | grep -q '^tikv-client v'; then
             echo "loams's default features depend on tikv-client (owner ruling T7-3)"; exit 1
           fi
-      # The gateway's module doc holds its divergences from Qdrant (M1.4
-      # Task 11); its links must resolve.
-      - name: qdrant gateway docs
-        run: cargo doc -p loams-qdrant --no-deps --locked
+      # Intra-doc links must resolve in every crate that names its peers, or a
+      # renamed type leaves a broken link nobody notices (#133). The gateway's
+      # module doc holds its divergences from Qdrant (M1.4 Task 11).
+      - name: rustdoc links
+        run: >-
+          cargo doc
+          -p loams-qdrant -p loams-common -p loams-store -p loams-cache
+          -p loams-log -p loams-hnsw -p loams-worker
+          --no-deps --locked
         env:
           RUSTDOCFLAGS: "-D warnings"
       - name: metastore boundary
@@ -261,8 +318,38 @@ jobs:
             1) ;;
             *) echo "the boundary grep failed ($status)"; exit 1 ;;
           esac
-      - name: test
-        run: cargo test --workspace --locked
+      # nextest does not run doctests; keep the Cargo doc-test pass.
+      - name: doc tests
+        run: cargo test --workspace --doc --locked
+
+  rust-tests:
+    name: Rust tests (${{ matrix.partition }}/2)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
+      - name: workspace tests
+        run: cargo nextest run --workspace --locked --partition hash:${{ matrix.partition }}/2
+
+  feature-tests:
+    name: Rust feature tests
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: loams's MySQL wire listener (mysql-wire feature)
         run: 'cargo test -p loams --features mysql-wire --lib --locked mysql_wire::'
       - name: loams's PostgreSQL wire listener (pgwire feature)
@@ -281,17 +368,29 @@ jobs:
         run: cargo test -p loams-collection --features failpoints --locked
       - name: WAL service over TCP and the NVMe store (loams-safekeeper, features server, nvme)
         run: cargo test -p loams-safekeeper --features server,nvme --locked
+      - name: WAL restart regression (20 consecutive runs, no retries)
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          # Fail if a rename removes the exact tests from the repeated gate.
+          cargo test -p loams-safekeeper --features server,nvme --lib --locked -- --list | grep -Fx 'journal::tests::records_are_durable_readable_and_replayed: test'
+          cargo test -p loams-safekeeper --features server,nvme --test nvme_service --locked -- --list | grep -Fx 'pipelined_appends_are_acknowledged_when_durable_and_survive_a_restart: test'
+          for run in $(seq 1 20); do
+            echo "WAL restart regression run $run/20"
+            cargo test -p loams-safekeeper --features server,nvme --lib --locked journal::tests::records_are_durable_readable_and_replayed -- --exact
+            cargo test -p loams-safekeeper --features server,nvme --test nvme_service --locked pipelined_appends_are_acknowledged_when_durable_and_survive_a_restart -- --exact
+          done
 
   crash-gate:
     name: kill -9 crash gate
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.engine == 'true') }}
-    runs-on: ubuntu-latest
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.base_ref == 'main' && needs.changes.outputs.engine == 'true')) }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: clippy with failpoints
         run: cargo clippy -p loams --all-targets --features failpoints --locked -- -D warnings
       - name: crash gate
@@ -300,13 +399,13 @@ jobs:
   cluster:
     name: multi-process cluster
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.engine == 'true') }}
-    runs-on: ubuntu-latest
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.base_ref == 'main' && needs.changes.outputs.engine == 'true')) }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: build
         run: cargo build -p loams --locked
       - name: clippy with cluster tests
@@ -319,12 +418,12 @@ jobs:
     name: Python qdrant-client smoke
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.engine == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: build
         run: cargo build -p loams --locked
       - name: start loams dev
@@ -356,7 +455,7 @@ jobs:
     name: Elasticsearch client suite
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.es == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     # The Elasticsearch 8.19 oracle (plan M1.5 Task 11, owner ruling
     # O-M15-6): a CI-only test oracle, never vendored or shipped (R14).
     services:
@@ -375,8 +474,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: build
         run: cargo build -p loams --locked
       - uses: astral-sh/setup-uv@v7
@@ -388,6 +487,23 @@ jobs:
           ES_ORACLE_URL: http://127.0.0.1:9250
         run: conformance/es-client/run.sh
 
+  # The remaining light jobs (docs, TLA+, Lean, the boundary guard and the
+  # required summary) run the same light expression as `changes`: main takes
+  # RUNNER_MAIN, dev takes RUNNER_LIGHT. Until #268's routing reached them they
+  # pinned ubuntu-latest, so a single change to RUNNER_MAIN left five jobs
+  # behind on the default pool (ruling 6).
+  docs:
+    name: decision log IDs
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Decision ID checker self-test
+        run: scripts/docs/check-decision-ids.sh --self-test
+      - name: Unique decision and question declarations
+        run: scripts/docs/check-decision-ids.sh
+
   # RT0 Task 1 (D310): model-check the router's TLA+ specs. Pull requests run
   # the PR variants; the nightly schedule runs the larger bounds. Every result
   # must match its `expect` in spec/tla/*/specs.toml, so the unsafe variants
@@ -396,7 +512,7 @@ jobs:
     name: TLA+ specs
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.spec == 'true' || needs.changes.outputs.router == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -425,7 +541,7 @@ jobs:
     name: Lean proofs
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.lean == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     defaults:
       run:
         working-directory: spec/lean
@@ -498,12 +614,12 @@ jobs:
     name: simulation seed sweep
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sim == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: simulation (32 seeds x 300 steps)
         if: github.event_name != 'schedule'
         run: cargo test -p loams-sim --release --locked
@@ -519,19 +635,19 @@ jobs:
           TAIL_PROP_CASES: "256"
 
   # R1 plan Task 1: the TiKV-backed suites against a tiup playground (PD and
-  # TiKV v8.5.8 on API v2, port offset 17000). Pull requests run it only when
+  # TiKV v8.5.8 on API v2, port offset 17000). Promotion PRs run it only when
   # they touch the TiKV crates, their cluster config or scripts, or the Live
-  # protos (the `tikv` filter in the changes job).
+  # protos (the `tikv` filter in the changes job). Nightly has its own job.
   tikv:
     name: TiKV suites
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'schedule' && (github.event_name != 'pull_request' || needs.changes.outputs.tikv == 'true')) }}
-    runs-on: ubuntu-latest
+    if: ${{ !cancelled() && github.event_name != 'schedule' && (github.event_name != 'pull_request' || (github.base_ref == 'main' && needs.changes.outputs.tikv == 'true')) }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     steps:
       - uses: actions/checkout@v7
       - name: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: packages
         id: packages
         # The TiKV crates that exist so far (later R1 tasks add the rest).
@@ -568,7 +684,7 @@ jobs:
           cargo test -p loams-safekeeper --features tikv --test tikv --locked
       - name: playground logs
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: tikv-playground-logs-${{ github.job }}
           path: |
@@ -584,7 +700,7 @@ jobs:
   tikv-nightly:
     name: TiKV suites (nightly)
     if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     steps:
       - uses: actions/checkout@v7
       - name: paths
@@ -592,8 +708,8 @@ jobs:
         run: echo "run=true" >> "$GITHUB_OUTPUT"
       - name: protoc
         if: steps.paths.outputs.run == 'true'
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: steps.paths.outputs.run == 'true'
       - name: packages
         id: packages
@@ -647,7 +763,7 @@ jobs:
         run: cargo test -p loams --features failpoints,tikv --test crash --locked
       - name: playground logs
         if: failure() && steps.paths.outputs.run == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: tikv-playground-logs-${{ github.job }}
           path: |
@@ -667,15 +783,15 @@ jobs:
     name: durable execution (SQLite linearizability)
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'schedule' && (github.event_name != 'pull_request' || needs.changes.outputs.durable == 'true')) }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     timeout-minutes: 120
     env:
       DURABLE_FORK_TARGET_DIR: ${{ github.workspace }}/target/durable-fork-build
     steps:
       - uses: actions/checkout@v7
       - name: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: durable
       - uses: actions/setup-go@v7
@@ -694,7 +810,7 @@ jobs:
         run: scripts/durable/conformance.sh --store sqlite --clients 8 --ops 600
       - name: conformance output
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: durable-conformance-sqlite
           path: target/durable-conformance/
@@ -708,7 +824,7 @@ jobs:
   durable-tidb:
     name: durable execution on TiDB (nightly)
     if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     timeout-minutes: 180
     env:
       DURABLE_FORK_TARGET_DIR: ${{ github.workspace }}/target/durable-fork-build
@@ -716,7 +832,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: protoc and the mysql client
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler mysql-client
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: durable
       - uses: actions/setup-go@v7
@@ -753,7 +869,7 @@ jobs:
           done
       - name: conformance output and TiDB logs
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: durable-tidb-logs
           path: |
@@ -766,15 +882,15 @@ jobs:
         run: scripts/durable/tidb.sh down --tag loams-ci-durable
 
   # R1 plan Task 7: the loams.live.v1 protos pass `buf lint` (STANDARD), and
-  # the checked-in TypeScript in sdks/live-typescript/src/gen is what
+  # the checked-in TypeScript in sdks/typescript/packages/live/src/gen is what
   # `buf generate` writes from them. buf and protoc-gen-es are pinned in
-  # sdks/live-typescript/package.json. The Rust code is generated at build
+  # sdks/typescript/packages/live/package.json. The Rust code is generated at build
   # time (loams-live-proto's build.rs), so the check job covers it.
   live-protos:
     name: loams.live.v1 protos and generated TypeScript
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.protos == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -784,20 +900,22 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: sdks/live-typescript/pnpm-lock.yaml
+          # The TypeScript SDK is a workspace package of web/ (design §44
+          # §10.2), so its pinned buf and protoc-gen-es install with web's
+          # lockfile rather than one of their own.
+          cache-dependency-path: web/pnpm-lock.yaml
       - name: install
-        working-directory: sdks/live-typescript
+        working-directory: web
         run: pnpm install --frozen-lockfile
       - name: buf lint
-        run: sdks/live-typescript/node_modules/.bin/buf lint
+        run: web/packages/proto/node_modules/.bin/buf lint
       - name: regenerate the TypeScript
-        working-directory: sdks/live-typescript
-        run: pnpm run generate
+        run: ./scripts/sdk/gen.sh typescript-live
       - name: the generated code is up to date
         run: |
-          git add -N sdks/live-typescript/src/gen
-          git diff --exit-code -- sdks/live-typescript/src/gen || {
-            echo "sdks/live-typescript/src/gen is stale: run 'pnpm run generate' in sdks/live-typescript and commit the result"; exit 1;
+          git add -N sdks/typescript/packages/live/src/gen
+          git diff --exit-code -- sdks/typescript/packages/live/src/gen || {
+            echo "sdks/typescript/packages/live/src/gen is stale: run 'scripts/sdk/gen.sh typescript-live' and commit the result"; exit 1;
           }
 
   # AP0 Task 6: the app protos (loams.instance, devices, approvals,
@@ -811,7 +929,7 @@ jobs:
     name: app protos, @loams/proto and the mobile templates
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.app-protos == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -856,11 +974,223 @@ jobs:
           web/packages/proto/node_modules/.bin/buf generate --template buf.gen.kotlin.yaml -o "$out"
           find "$out/gen" -type f | sort
 
+  # SDK2 Task 0: the TypeScript SDK. The facade is generated from the
+  # loams.options.v1 annotations by crates/loams-facade-gen and committed, so
+  # this job regenerates and fails on a diff; the runtime suite replays the
+  # recorded conformance corpus (design §44 §10.4), which needs no server.
+  sdk-typescript:
+    name: the TypeScript SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-typescript == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      # The facade generator reads the descriptors and writes the SDK's
+      # generated module surface; `strategy: all` in the template is what makes
+      # buf invoke it once with the whole proto module.
+      - name: regenerate the SDK facade
+        run: ./scripts/sdk/gen.sh typescript
+      - name: the generated facade is up to date
+        run: |
+          git add -N sdks/typescript/packages/client/src/gen
+          git diff --exit-code -- sdks/typescript/packages/client/src/gen || {
+            echo "sdks/typescript/packages/client/src/gen is stale: run 'scripts/sdk/gen.sh typescript' and commit the result"; exit 1;
+          }
+      # The golden test compares the committed facade against the generator's
+      # output over the real proto/ tree, so a proto edit that changed the SDK
+      # surface cannot pass with a stale file.
+      - name: the facade generator's tests
+        run: cargo test -j 4 -p loams-facade-gen
+      - name: lint the facade generator
+        run: |
+          cargo fmt -p loams-facade-gen -- --check
+          cargo clippy -j 4 -p loams-facade-gen --all-targets -- -D warnings
+      - name: typecheck the SDK
+        working-directory: web
+        run: |
+          pnpm --filter @loams/client typecheck
+          pnpm --filter @loams/live typecheck
+          pnpm --filter @loams/proto typecheck
+      - name: the SDK conformance suite
+        working-directory: web
+        run: pnpm --filter @loams/client test
+      # The same suite against a real server. This is the job that can afford
+      # it, and it is what catches a recorded corpus that has drifted from the
+      # API (design §44 §10.4).
+      - name: the conformance suite against a live server
+        run: ./sdks/conformance/run.sh typescript
+      # A generation difference must be a dependency bump in a PR, not whatever
+      # the runner happened to have. The pins are exact versions for that
+      # reason, and this fails if one is ever loosened to a range.
+      - name: the generation tools are pinned to exact versions
+        run: |
+          for pin in '"@bufbuild/buf": "1.73.0"' '"@bufbuild/protoc-gen-es": "2.16.0"' '"@bufbuild/protobuf": "2.16.0"'; do
+            grep -qF "$pin" sdks/typescript/packages/client/package.json || {
+              echo "sdks/typescript/packages/client/package.json is missing the exact pin $pin"; exit 1;
+            }
+          done
+          sdks/typescript/packages/client/node_modules/.bin/buf --version
+
+  # SDK2 Task 3: the Rust SDK (design section 44 row 4). sdks/rust is its own
+  # cargo workspace, so the server's Rust jobs never touch it -- PR #340 merged
+  # with four failing tests because nothing ran them. This job is what makes a
+  # green board mean something for a language SDK.
+  #
+  # NOTE: sdk-rust, sdk-python and sdk-go are deliberately NOT in the required
+  # set yet. They were added after those SDKs had already merged unverified, so
+  # they are red today; making them required now would leave dev permanently red
+  # and block every PR. They report, and get promoted to required once the SDKs
+  # they police are green.
+  sdk-rust:
+    name: the Rust SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-rust == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      # crates/loams-live-proto/build.rs shells out to the system protoc
+      # (connectrpc_build), so without this the SDK build dies in the build
+      # script before a single test runs. The other 13 jobs that build the
+      # workspace install it here; sdk-rust was missed.
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # -j 4: the SDK path-depends on loams-proto and loams-live-proto, and the
+      # runners are 4 vCPU.
+      - name: the Rust SDK's tests
+        working-directory: sdks/rust
+        run: cargo test -j 4 --locked
+      - name: lint the Rust SDK
+        working-directory: sdks/rust
+        run: |
+          cargo fmt -- --check
+          cargo clippy -j 4 --all-targets -- -D warnings
+      # `scripts/sdk/gen.sh` resolves buf from web's node_modules, so the
+      # drift check below cannot run without this. sdk-rust had no pnpm setup at
+      # all, so the step died before checking anything:
+      #   sdks/typescript/packages/client/node_modules/.bin/buf is missing:
+      #   run 'pnpm install' in web/ first
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      # The generated stubs are protoc's output verbatim and are committed, so a
+      # proto edit that moved the SDK surface cannot pass with a stale file.
+      - name: the Rust SDK's generated code is not stale
+        run: |
+          ./scripts/sdk/gen.sh rust
+          git diff --exit-code -- sdks/rust/gen || {
+            echo "sdks/rust/gen is stale: run 'scripts/sdk/gen.sh rust' and commit"; exit 1;
+          }
+
+  # SDK2 Task 1: the Python SDK. CI's existing Python jobs are the qdrant
+  # smoke and static analysis, neither of which imports this package.
+  sdk-python:
+    name: the Python SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-python == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: install the SDK
+        working-directory: sdks/python
+        run: uv sync --frozen --all-extras --dev
+      - name: the Python SDK's tests
+        working-directory: sdks/python
+        run: uv run pytest -q
+      - name: the SDK typechecks under --strict
+        working-directory: sdks/python
+        run: uv run mypy --strict src
+      # A generation difference must be a dependency bump, not whatever the
+      # runner resolved, so the runtime pins stay exact.
+      - name: the SDK's runtime dependencies are exact pins
+        working-directory: sdks/python
+        run: |
+          for pin in 'connect-python==' 'protobuf=='; do
+            grep -qF "$pin" pyproject.toml || {
+              echo "pyproject.toml must pin $pin exactly, not a range"; exit 1;
+            }
+          done
+
+  # The Swift SDK (issue #288). Report-only like the other SDK gates: it must
+  # build and test on a runner that actually has a Swift toolchain, because no
+  # machine that develops this repo does. `Package.swift` declares no package
+  # dependencies, so this needs no resolution step and no cache.
+  sdk-swift:
+    name: the Swift SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-swift == 'true') }}
+    # macOS, not the Linux runner: the SDK is written against Foundation's
+    # async URLSession, and macos-latest ships a Swift toolchain preinstalled.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: the Swift toolchain's version
+        run: swift --version
+      # The filter also matches `.github/workflows/**`, so this job runs on the
+      # PR that adds it, when sdks/swift may not be on the base yet. `hashFiles`
+      # rather than a `test -f` step, because a failing step fails the job.
+      - name: the Swift SDK builds
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        working-directory: sdks/swift
+        run: swift build
+      - name: the Swift SDK's tests
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        working-directory: sdks/swift
+        run: swift test
+
+  # SDK2 Task 2: the Go SDK, whose module sits outside the web workspace.
+  sdk-go:
+    name: the Go SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-go == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # Must be >= sdks/go/go.mod's `go 1.25.0`. This job also sets
+          # GOTOOLCHAIN=local, so Go cannot self-upgrade past what setup-go
+          # installed and the mismatch is a hard failure:
+          #   go: go.mod requires go >= 1.25.0 (running go 1.24.0;
+          #       GOTOOLCHAIN=local)
+          # It was the only job pinning an exact 1.24.0; the others use "1.24".
+          go-version: '1.25.0'
+          cache-dependency-path: sdks/go/go.sum
+      - name: the Go SDK's tests
+        working-directory: sdks/go
+        run: go test -count=1 ./...
+      - name: vet the Go SDK
+        working-directory: sdks/go
+        run: go vet ./...
+
   deny:
     name: licenses, advisories, sources
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.deny == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     steps:
       - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -869,7 +1199,7 @@ jobs:
     name: console and @loams/ui
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     defaults:
       run:
         working-directory: web
@@ -889,7 +1219,11 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - name: the Cloudflare deploy scripts (issue #269)
+        run: node --test apps/console/deploy/*.test.mjs
       - run: pnpm build
+      - name: the build stages for Workers static assets
+        run: node apps/console/deploy/stage.mjs
 
   # The Dapr trigger edge (deploy/dapr/edge): a standalone crate with its own
   # Cargo.lock, so the workspace jobs never build it.
@@ -897,15 +1231,15 @@ jobs:
     name: Dapr trigger edge
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.dapr-edge == 'true') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
     defaults:
       run:
         working-directory: deploy/dapr/edge
     steps:
       - uses: actions/checkout@v7
       - name: protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - uses: Swatinem/rust-cache@v2
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: deploy/dapr/edge -> target
       - name: rustfmt
@@ -917,3 +1251,100 @@ jobs:
       - name: the manifests render
         working-directory: .
         run: kubectl kustomize deploy/dapr > /dev/null
+
+  no-metering:
+    name: open-core boundary (no metering)
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: boundary guard regression fixtures
+        run: python3 scripts/ci/test-no-metering.py
+      - name: audit all tracked files and Cargo packages
+        run: scripts/ci/no-metering.sh
+
+  # The Linux signing scope (issue #253, PR: SignPath). scripts/ci/
+  # signpath-artifacts.py is what refuses to submit a Windows or macOS artifact
+  # to SignPath, and the owner's ruling of 2026-10-03 is that those platforms
+  # stay unsigned. An unconditional job with no path filter on purpose: the
+  # invariant is "no artifact outside Linux is ever submitted", so it should be
+  # checked on every pull request rather than only on ones that touch the
+  # script. The self-test is pure-python fixtures and takes about a second.
+  signing:
+    name: Linux signing scope
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: the SignPath artifact guard self-test
+        run: python3 scripts/ci/signpath-artifacts.py --self-test
+
+  # release/nfpm.yaml and scripts/release/*.py define the .deb, the .rpm and the
+  # .pkg.tar.zst. nFPM is the only thing that validates a packager field, so a
+  # definition it rejects is invisible to every other gate here -- and the same
+  # is true of the apt repository layout, which is generated in Python. Both
+  # self-tests build real packages from fixtures and read every field back.
+  #
+  # Unconditional, no path filter, for the reason the `signing` job above gives:
+  # the invariant is "the packaging definitions are valid on every pull request",
+  # so it is checked on all of them. nFPM is installed by the repo's own pinned,
+  # SHA-256-checked script; createrepo_c is not installed, so that one repository
+  # layout is reported as skipped by the self-test rather than passing silently.
+  packaging:
+    name: Linux packaging definitions
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: PyYAML
+        run: python3 -m pip install --quiet --disable-pip-version-check PyYAML
+      - name: nFPM
+        run: |
+          bash scripts/release/install-nfpm.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: the artifact builder self-test
+        run: python3 scripts/release/build-artifacts.py --self-test
+      - name: the repository builder self-test
+        run: python3 scripts/release/make-repo.py --self-test
+
+  required:
+    name: CI required
+    if: always()
+    needs:
+      - changes
+      - no-metering
+      - signing
+      - packaging
+      - docs
+      - check
+      - rust-tests
+      - feature-tests
+      - crash-gate
+      - cluster
+      - qdrant-client
+      - es-client
+      - tla
+      - lean
+      - specview
+      - sim
+      - tikv
+      - tikv-nightly
+      - durable
+      - durable-tidb
+      - live-protos
+      - app-protos
+      - sdk-typescript
+      - deny
+      - web
+      - dapr-edge
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - name: Require all selected CI jobs to pass
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          if jq -e '[.[] | .result] | any(. == "failure" or . == "cancelled")' <<< "$NEEDS_JSON"; then
+            echo "A CI job failed or was cancelled" >&2
+            exit 1
+          fi

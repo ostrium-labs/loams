@@ -19,6 +19,21 @@ The crates are `loams-*` and the binary is `loams`. Packages will publish as `lo
 4. **Attribute derived code.** Code taken from other projects (for example Quickwit, Tantivy or Qdrant) keeps its original copyright header, gets a line in [NOTICE](NOTICE), and is called out in the PR description.
 5. **Keep PRs small.** One focused change per PR, with a description of what changed and why.
 
+## Open-core boundary
+
+The Multitenant BYOC Control Plane with GitOps, generic observability and quota
+enforcement are open source. Billing-grade metering, billing and commercial APIs
+belong in the private `loam-platform` repository. **Integrity** is the rule:
+"could a charge depend on this value, and could a tenant or an agent profit from
+forging it?" If so, its producer and validator belong in the private platform.
+
+Run `scripts/ci/no-metering.sh` before submitting changes. The guard scans tracked
+files and Cargo manifests/lockfiles; only the historical boundary documents named
+in [MT4 Task 8](docs/plans/2026-10-02-mt4-byoc-control-plane.md) may mention the
+private protocol's identifiers. New exceptions require a boundary review. The
+open engine never depends on a private platform package. See
+[open-core.md](docs/open-core.md) for the full boundary.
+
 ## Development setup
 
 ### Toolchain
@@ -108,12 +123,12 @@ The client conformance suites live in [`crates/loams-qdrant/tests/python`](crate
 
 ## Pull requests
 
-1. **Fork and branch** from `main`. Name the branch after the change, for example `log-retention-doc`.
+1. **Fork and branch** from `dev`. Open your PR against `dev`; `main` is the release branch. Name the branch after the change, for example `log-retention-doc`.
 2. **Keep it small.** A PR should do one thing. Split refactors from behavior changes, and stack PRs when a change is large.
 3. **Fill in the template.** Say what changed, why, and how you tested it.
 4. **Review.** [CodeRabbit](https://coderabbit.ai) reviews every PR automatically, and a maintainer reviews after it. Address or answer each comment; it is fine to disagree with a bot comment and say why. Small follow-ups can go in a follow-up PR if the reviewer agrees.
 5. **CI must be green** before merge. If a failure looks unrelated to your change, say so in the PR.
-6. **Merge.** Maintainers merge with a merge commit once the review is done and CI is green.
+6. **Merge.** Committers and maintainers merge into `dev` with a merge commit once the review is done and CI is green. Maintainers merge `dev` into `main` for releases. The contributor roles are described in [GOVERNANCE.md](GOVERNANCE.md), and the current maintainers are listed in [MAINTAINERS.md](MAINTAINERS.md).
 
 ## Commit messages
 
@@ -135,7 +150,7 @@ Loams uses the [Developer Certificate of Origin](https://developercertificate.or
 git commit -s -m "log: add a WAL object encoder"
 ```
 
-This adds a `Signed-off-by: Your Name <you@example.com>` trailer, certifying that you wrote the change or otherwise have the right to submit it under the project's license. To sign off commits you already made, run `git rebase --signoff main`.
+This adds a `Signed-off-by: Your Name <you@example.com>` trailer, certifying that you wrote the change or otherwise have the right to submit it under the project's license. To sign off commits you already made, run `git rebase --signoff dev`.
 
 ## Code of Conduct
 

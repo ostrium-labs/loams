@@ -1,7 +1,7 @@
 //! Point ids (plan M1.4 Task 1; Ruling 18; Review Focus 1).
 
 use loams_collection::PrimaryKey;
-use loams_qdrant::ids::{pk_predecessor, pk_to_json, point_id_from_grpc};
+use loams_qdrant::ids::{pk_predecessor, pk_to_grpc, pk_to_json, point_id_from_grpc};
 use loams_qdrant::proto::qdrant as pb;
 use loams_qdrant::{GatewayError, PointId};
 use proptest::prelude::*;
@@ -153,6 +153,34 @@ fn successor(pk: &PrimaryKey) -> Option<PrimaryKey> {
             .checked_add(1)
             .map(|n| PrimaryKey::Uuid(n.to_be_bytes())),
         PrimaryKey::Str(_) => None,
+    }
+}
+
+#[test]
+fn pk_to_grpc_uses_num_for_numbers_and_uuid_for_everything_else() {
+    use pb::point_id::PointIdOptions;
+    let options = |pk: &PrimaryKey| {
+        pk_to_grpc(pk)
+            .point_id_options
+            .expect("every id carries one option")
+    };
+    assert_eq!(options(&PrimaryKey::U64(7)), PointIdOptions::Num(7));
+    let bytes = [7u8; 16];
+    assert_eq!(
+        options(&PrimaryKey::Uuid(bytes)),
+        PointIdOptions::Uuid("07070707-0707-0707-0707-070707070707".to_string())
+    );
+    assert_eq!(
+        options(&PrimaryKey::Str("abc".into())),
+        PointIdOptions::Uuid("abc".to_string())
+    );
+}
+
+proptest! {
+    #[test]
+    fn grpc_ids_round_trip_through_pk(id in point_id()) {
+        let back = point_id_from_grpc(&pk_to_grpc(&id.to_pk()));
+        prop_assert_eq!(back.map_err(|e| e.to_string()), Ok(id));
     }
 }
 

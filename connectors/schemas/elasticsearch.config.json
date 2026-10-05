@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/elasticsearch.config.json",
+  "title": "Elasticsearch connector instance config (loams.flow/v1)",
+  "description": "One Elasticsearch connector instance's settings: the cluster URL, the index, the source's scroll window and the sink's bulk size. Loams renders both Iggy plugin configs from this one instance (design §33 §8 row 11; CN1 plan Task 10), so it covers the source and the sink. `basic.password` and `api_key` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list. The `key` property is required because the manifest declares capabilities.sink.upsert: true (CN1 Task 1's semantic rule); it is also the document _id the upsert and the delete use.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["url", "index", "key"],
+  "properties": {
+    "url": {
+      "description": "The cluster base URL. A Loams collection's ES gateway endpoint works unchanged (§33 §8 row 11).",
+      "type": "string",
+      "minLength": 1
+    },
+    "index": { "description": "The index read or written.", "type": "string", "minLength": 1 },
+    "basic": {
+      "description": "HTTP basic auth (the manifest's `basic` auth slug).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["username", "password"],
+      "properties": {
+        "username": { "description": "The basic-auth user.", "type": "string", "minLength": 1 },
+        "password": {
+          "description": "The basic-auth password. Resolved through the secret store (D189); the rendered Iggy config reads it from a mounted file.",
+          "type": "string",
+          "minLength": 1,
+          "writeOnly": true
+        }
+      }
+    },
+    "api_key": {
+      "description": "An API key, base64 of id:api_key. Resolved through the secret store (D189); the rendered Iggy config reads it from a mounted file.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "key": {
+      "description": "The sink's upsert key: the field whose value becomes the document _id. Required because the manifest declares capabilities.sink.upsert: true (CN1 Task 1's semantic rule).",
+      "type": "string",
+      "minLength": 1
+    },
+    "bulk_size": {
+      "description": "Documents per bulk request.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 5000
+    },
+    "flush_interval_ms": {
+      "description": "How often a partial bulk is flushed.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 1000
+    },
+    "scroll": {
+      "description": "The source's scroll or point-in-time window.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keep_alive": { "description": "How long a scroll stays open, as a duration string.", "type": "string", "default": "2m" },
+        "size": { "description": "Hits per scroll page.", "type": "integer", "minimum": 1, "default": 1000 },
+        "sort": {
+          "description": "The sort field the point-in-time read orders on; it must be unique and stable, and it is the source's position.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "apply_deletes": {
+      "description": "Apply deletes for events carrying loamsop = d, as a delete by _id.",
+      "type": "boolean",
+      "default": true
+    },
+    "tls": {
+      "description": "TLS material for an https:// URL.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ca_pem": { "description": "The CA bundle, as PEM.", "type": "string" },
+        "verify_full": { "description": "Whether the server certificate's hostname is verified.", "type": "boolean", "default": true }
+      }
+    }
+  }
+}

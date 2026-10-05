@@ -686,6 +686,9 @@ enum Command {
         /// Address of this node's HTTP listener (API, internal and metastore routes).
         #[arg(long)]
         listen: SocketAddr,
+        /// Use the listener inherited on stdin (cluster test harness only).
+        #[arg(long, hide = true)]
+        listen_stdin: bool,
         /// The ip:port other nodes reach this node at [default: --listen].
         #[arg(long)]
         advertise: Option<String>,
@@ -773,6 +776,7 @@ fn config(command: Command) -> ServerConfig {
             node_id,
             roles,
             listen,
+            listen_stdin,
             advertise,
             peers,
             bucket,
@@ -795,6 +799,7 @@ fn config(command: Command) -> ServerConfig {
             }
             let advertise = advertise.unwrap_or_else(|| listen.to_string());
             let mut cluster = ClusterConfig::new(node_id, roles, advertise, peers);
+            cluster.listen_stdin = listen_stdin;
             cluster.zone = zone;
             cluster.replication = replication;
             if let Some(v) = registry_ttl_ms {
@@ -833,6 +838,10 @@ fn config(command: Command) -> ServerConfig {
             }
             native.apply(&mut config, DEV_FLIGHT_SQL);
             tuning.apply(&mut config);
+            // Q603's proposed default: `loams dev` publishes the schema of
+            // the Connect API on the main port (design §44 §4), a production
+            // deployment does not unless it asks.
+            config.reflection = true;
             config
         }
         Command::Standalone {
@@ -1058,6 +1067,14 @@ mod tests {
     fn dev_config(args: &[&str]) -> ServerConfig {
         let cli = Cli::try_parse_from(["loams", "dev"].iter().chain(args)).expect("parse");
         config(cli.command)
+    }
+
+    /// Q603's proposed default: `loams dev` publishes the Connect schema on
+    /// the main port, and nothing else does unless it asks.
+    #[test]
+    fn dev_serves_reflection_and_the_other_commands_do_not() {
+        assert!(dev_config(&[]).reflection);
+        assert!(!ServerConfig::new("/tmp/x").reflection);
     }
 
     /// Ruling 22, controller ruling P2: `--gc-grace-ms` lowers every

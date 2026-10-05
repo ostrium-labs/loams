@@ -1,0 +1,90 @@
+{
+  "about": "The injected faults (design §44 §10.4, SDK1 Task 4). Read by `sdks/conformance/faults.mjs`, served by `fixture-server.mjs` when a request carries `loams-test-fault: <name>`.",
+  "notRecordings": "Every other file in `sdks/fixtures` was captured from a real server, because a hand-written expectation only proves the SDK agrees with whoever wrote it. These cannot be: a retryable `unavailable` needs a dependency to be down, a mid-stream disconnect needs something to drop the connection, and `token_expired` needs a token endpoint that does not exist yet (MT, API1 Task 7). What is still real is the wire shape — status, headers, Connect error envelope, gRPC-Web trailer frame — because that is what the SDK under test has to parse, and it is pinned here so it cannot drift from the recordings.",
+  "howToAsk": "Any request may carry `loams-test-fault: <name>`. `loams-test-fault-after: <n>` tells a `stream_drop` to stop after n frames. Nothing is injected without the header, so the same fixture server serves the plain corpus unchanged. An unknown name is a 400, never a pass-through.",
+  "verify": "`node sdks/conformance/verify-corpus.mjs` fails if this file and the `FAULTS` table in `sdks/conformance/faults.mjs` disagree about any status, code, reason or required flag.",
+  "tests": [
+    "mock_injects_retryable_errors",
+    "typescript_retry_reuses_idempotency_key",
+    "typescript_token_source_refresh",
+    "typescript_stream_resume_with_cursor"
+  ],
+  "faults": [
+    {
+      "name": "unavailable",
+      "required": true,
+      "about": "A retryable refusal (R2): the dependency this read needs is down. An SDK retries this one — base 100 ms, doubling, capped at 2 s, three retries, full jitter — and stops after that rather than spinning.",
+      "connectCode": "unavailable",
+      "reason": "unavailable",
+      "httpStatus": 503,
+      "grpcStatus": 14,
+      "retryable": true,
+      "registryRow": "docs/api/reasons.md",
+      "pinnedBy": ["R2"]
+    },
+    {
+      "name": "resource_exhausted",
+      "required": true,
+      "about": "The other retryable class, from backpressure. Distinct from `unavailable` because a caller usually wants to slow down rather than back off, which is why this is the one carrying `retry_after_ms` in its metadata.",
+      "connectCode": "resource_exhausted",
+      "reason": "resource_exhausted",
+      "httpStatus": 429,
+      "grpcStatus": 8,
+      "retryable": true,
+      "metadata": { "retry_after_ms": 250 },
+      "registryRow": "docs/api/reasons.md",
+      "pinnedBy": ["R2"]
+    },
+    {
+      "name": "deadline_exceeded",
+      "required": true,
+      "about": "The caller's own deadline passed. Retryable, but only because the client chose a deadline it can extend; a server that answers this has not done anything wrong, and an SDK must not treat it as a server fault.",
+      "connectCode": "deadline_exceeded",
+      "reason": "deadline_exceeded",
+      "httpStatus": 504,
+      "grpcStatus": 4,
+      "retryable": true,
+      "registryRow": "docs/api/reasons.md",
+      "pinnedBy": ["R2"]
+    },
+    {
+      "name": "retry_after",
+      "required": true,
+      "about": "R2's last sentence: a server-sent `RetryInfo.retry_delay` replaces the computed backoff, up to 30 s. **No proto carries `RetryInfo` yet**, so it is injected with the header a gRPC retry policy reads (`grpc-retry-pushback-ms`) and the one the API would use (`loams-retry-after-ms`). That makes this the fault whose shape is most likely to be wrong, and the one to re-check when `RetryInfo` lands.",
+      "connectCode": "unavailable",
+      "reason": "unavailable",
+      "httpStatus": 503,
+      "grpcStatus": 14,
+      "retryable": true,
+      "trailers": {
+        "grpc-retry-pushback-ms": "1500",
+        "loams-retry-after-ms": "1500"
+      },
+      "registryRow": "docs/api/reasons.md",
+      "pinnedBy": ["R2"]
+    },
+    {
+      "name": "token_expired",
+      "required": true,
+      "about": "R1's trigger, and the reason it is in the registry: a rejected access token, as distinct from one that was never sent. An SDK refreshes **once** and retries once, then reports a second expiry rather than looping. No server can produce this today — `loams dev` has no authentication at all and its `WhoAmI` answers `not_implemented` — so without this fault R1 is untestable against anything.",
+      "connectCode": "unauthenticated",
+      "reason": "token_expired",
+      "httpStatus": 401,
+      "grpcStatus": 16,
+      "retryable": false,
+      "registryRow": "docs/api/reasons.md",
+      "pinnedBy": ["R1"]
+    },
+    {
+      "name": "stream_drop",
+      "required": true,
+      "about": "The stream dies mid-flight: real frames from the corpus with real cursors, then the socket destroyed with no end frame and no `grpc-status: 0`. That is what a proxy timeout or a mobile handover looks like to a client. R7 says the client re-opens from the last cursor it applied and does not re-yield what it already yielded, and this is the only way to check it — a stream that ends cleanly proves nothing about resuming, and an SDK that only resumes after a clean end would pass here and be wrong in production.",
+      "connectCode": null,
+      "reason": null,
+      "stream": true,
+      "retryable": true,
+      "registryRow": null,
+      "pinnedBy": ["R7"]
+    }
+  ]
+}

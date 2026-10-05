@@ -1,0 +1,205 @@
+id,name,category,priority,starred,status,runtime,ref,source,sink,streaming,batch,cdc,webhook,auth,camel,kestra
+kafka,Kafka,messaging,P1,true,preview,native,loams_flow::connectors::kafka,Y,Y,Y,,,,sasl|mtls|iam,kafka,plugin-kafka
+redpanda,Redpanda,messaging,P2,false,planned,camel,kafka,Y,Y,Y,,,,sasl|mtls,kafka,plugin-kafka
+rabbitmq-amqp,RabbitMQ / AMQP,messaging,P2,false,planned,camel,amqp,Y,Y,Y,,,,basic|mtls,amqp,plugin-amqp
+activemq-jms,ActiveMQ / JMS,messaging,P2,false,planned,camel,activemq,Y,Y,Y,,,,basic|mtls,activemq|jms|sjms2,plugin-jms
+nats,NATS,messaging,P2,false,planned,camel,nats,Y,Y,Y,,,,key|jwt|mtls,nats,plugin-nats
+pulsar,Pulsar,messaging,P2,false,planned,camel,pulsar,Y,Y,Y,,,,jwt|oauth2|mtls,pulsar,plugin-pulsar
+mqtt,MQTT,messaging,P2,false,planned,camel,paho-mqtt5,Y,Y,Y,,,,basic|mtls,paho-mqtt5|paho,plugin-mqtt
+aws-sqs,AWS SQS,messaging,P2,false,planned,camel,aws2-sqs,Y,Y,Y,,,,iam,aws2-sqs,plugin-aws (sqs)
+aws-sns,AWS SNS,messaging,P2,false,planned,camel,aws2-sns,,Y,Y,,,Y,iam,aws2-sns,plugin-aws (sns)
+kinesis,Kinesis,messaging,P1,true,preview,native,loams_flow::connectors::kinesis,Y,Y,Y,,,,iam,aws2-kinesis,plugin-aws (kinesis)
+eventbridge,EventBridge,messaging,P2,false,planned,camel,aws2-eventbridge,Y,Y,Y,,,Y,iam,aws2-eventbridge,plugin-aws (eventbridge)
+google-pub-sub,Google Pub/Sub,messaging,P2,false,planned,camel,google-pubsub,Y,Y,Y,,,Y,sa,google-pubsub,plugin-gcp (pubsub)
+azure-event-hubs,Azure Event Hubs,messaging,P2,false,planned,camel,azure-eventhubs,Y,Y,Y,,,,aad|cs,azure-eventhubs,plugin-azure (eventhubs)
+azure-service-bus,Azure Service Bus,messaging,P2,false,planned,camel,azure-servicebus,Y,Y,Y,,,,aad|cs,azure-servicebus,plugin-azure (servicebus)
+azure-event-grid,Azure Event Grid,messaging,P2,false,planned,camel,azure-eventgrid,Y,Y,Y,,,Y,aad|key,azure-eventgrid,
+redis-streams,Redis Streams,messaging,P2,false,planned,camel,redis,Y,Y,Y,,,,basic|mtls,redis,plugin-redis
+websocket,WebSocket,messaging,P2,false,planned,camel,vertx-websocket,Y,Y,Y,,,,key|jwt,vertx-websocket|atmosphere-websocket,
+sse,SSE,messaging,P3,false,planned,openapi,openapi:sse,Y,,Y,,,,key|jwt,,
+webhooks,Webhooks,messaging,P1,true,preview,native,loams_flow::connectors::webhook,Y,Y,Y,,,Y,hmac|key,webhook|platform-http,core (Webhook trigger)
+grpc,gRPC,messaging,P2,false,planned,camel,grpc,Y,Y,Y,,,,mtls|jwt,grpc,
+postgresql,PostgreSQL,relational,P1,true,preview,native,loams_flow::connectors::postgres,Y,Y,Y,Y,Y,,basic|mtls|iam,sql|jdbc|pg-replication-slot|debezium-postgres,plugin-jdbc (postgres)|plugin-debezium
+mysql,MySQL,relational,P1,true,preview,native,loams_flow::connectors::mysql,Y,Y,Y,Y,Y,,basic|mtls|iam,sql|jdbc|debezium-mysql,plugin-jdbc (mysql)|plugin-debezium
+mariadb,MariaDB,relational,P2,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|mtls,sql|jdbc,plugin-jdbc (mariadb)|plugin-debezium
+sql-server,SQL Server,relational,P2,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|aad,sql|jdbc|debezium-sqlserver,plugin-jdbc (sqlserver)|plugin-debezium
+oracle,Oracle,relational,P2,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|kerb,sql|jdbc|debezium-oracle,plugin-jdbc (oracle)|plugin-debezium
+sqlite,SQLite,relational,P3,false,planned,camel,sql,Y,Y,,Y,,,none,sql|jdbc,plugin-jdbc (sqlite)
+cockroachdb,CockroachDB,relational,P2,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|mtls,sql|jdbc,plugin-jdbc (postgres)
+tidb,TiDB,relational,P3,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|mtls,sql|jdbc,plugin-jdbc (mysql)
+yugabytedb,YugabyteDB,relational,P3,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|mtls,sql|jdbc,plugin-jdbc (postgres)
+aurora,Aurora,relational,P2,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|iam,sql|jdbc|debezium-postgres|debezium-mysql,plugin-jdbc
+alloydb,AlloyDB,relational,P3,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|sa,sql|jdbc|debezium-postgres,plugin-jdbc (postgres)
+azure-sql,Azure SQL,relational,P2,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|aad,sql|jdbc|debezium-sqlserver,plugin-jdbc (sqlserver)
+cloud-sql,Cloud SQL,relational,P3,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|sa,sql|jdbc,plugin-jdbc
+db2,Db2,relational,P3,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic,sql|jdbc|debezium-db2,plugin-jdbc (db2)
+singlestore,SingleStore,relational,P3,false,planned,camel,sql,Y,Y,,Y,,,basic,sql|jdbc,plugin-jdbc (mysql)
+vitess,Vitess,relational,P3,false,planned,camel,sql,Y,Y,Y,Y,Y,,basic|mtls,sql|jdbc,plugin-jdbc (mysql)
+mongodb,MongoDB,nosql,P2,false,planned,camel,mongodb,Y,Y,Y,Y,Y,,basic|mtls,mongodb|debezium-mongodb,plugin-mongodb
+cassandra,Cassandra,nosql,P2,false,planned,camel,cql,Y,Y,,Y,,,basic|mtls,cql,plugin-cassandra
+scylladb,ScyllaDB,nosql,P3,false,planned,camel,cql,Y,Y,,Y,,,basic|mtls,cql,plugin-scylladb
+dynamodb,DynamoDB,nosql,P2,false,planned,camel,aws2-ddb,Y,Y,Y,Y,Y,,iam,aws2-ddb|aws2-ddbstream,plugin-aws (dynamodb)
+redis,Redis,nosql,P1,true,preview,native,loams_flow::connectors::redis,Y,Y,Y,Y,,,basic|mtls,redis,plugin-redis
+valkey,Valkey,nosql,P2,false,planned,camel,redis,Y,Y,Y,Y,,,basic|mtls,redis,plugin-redis
+couchbase,Couchbase,nosql,P3,false,planned,camel,couchbase,Y,Y,Y,Y,,,basic,couchbase,plugin-couchbase
+firestore,Firestore,nosql,P3,false,planned,camel,google-firestore,Y,Y,Y,Y,,,sa,google-firestore,plugin-gcp (firestore)
+cosmos-db,Cosmos DB,nosql,P3,false,planned,camel,azure-cosmosdb,Y,Y,Y,Y,Y,,aad|key,azure-cosmosdb,
+elasticsearch,Elasticsearch,search,P1,true,preview,iggy,elasticsearch_sink,Y,Y,Y,Y,,,basic|key,elasticsearch|elasticsearch-rest-client,plugin-elasticsearch
+opensearch,OpenSearch,search,P2,false,planned,camel,opensearch,Y,Y,Y,Y,,,basic|iam,opensearch,plugin-opensearch
+solr,Solr,search,P3,false,planned,camel,solr,Y,Y,,Y,,,basic,solr,
+meilisearch,Meilisearch,search,P3,false,planned,openapi,openapi:meilisearch,,Y,Y,Y,,,key,,plugin-meilisearch
+typesense,Typesense,search,P3,false,planned,openapi,openapi:typesense,,Y,,Y,,,key,,plugin-typesense
+qdrant,Qdrant,vector,P2,false,planned,camel,qdrant,Y,Y,,Y,,,key,qdrant,
+pinecone,Pinecone,vector,P3,false,planned,camel,pinecone,,Y,,Y,,,key,pinecone,plugin-pinecone
+weaviate,Weaviate,vector,P3,false,planned,camel,weaviate,,Y,,Y,,,key,weaviate,plugin-weaviate
+milvus,Milvus,vector,P3,false,planned,camel,milvus,,Y,,Y,,,basic|key,milvus,
+pgvector,pgvector,vector,P2,false,planned,camel,pgvector,Y,Y,,Y,,,basic,pgvector,plugin-jdbc (postgres)
+neo4j,Neo4j,graph,P2,false,planned,camel,neo4j,Y,Y,,Y,,,basic,neo4j,plugin-neo4j
+grafeo,Grafeo,graph,P2,false,planned,native,loams_flow::connectors::graph,Y,Y,,Y,,,none,,
+snowflake,Snowflake,warehouse,P1,true,preview,native,loams_flow::connectors::adbc,Y,Y,,Y,,,key|oauth2|basic,sql|jdbc,plugin-jdbc (snowflake)
+bigquery,BigQuery,warehouse,P1,true,preview,native,loams_flow::connectors::adbc,Y,Y,Y,Y,,,sa,google-bigquery,plugin-gcp (bigquery)
+redshift,Redshift,warehouse,P2,false,planned,camel,aws2-redshift-data,Y,Y,,Y,,,basic|iam,aws2-redshift-data|sql,plugin-jdbc (redshift)
+databricks,Databricks,warehouse,P2,false,planned,camel,sql,Y,Y,,Y,,,oauth2|key,sql|jdbc,plugin-databricks
+clickhouse,ClickHouse,warehouse,P1,true,preview,native,loams_flow::connectors::clickhouse,Y,Y,Y,Y,,,basic,clickhouse|sql,plugin-jdbc (clickhouse)
+duckdb,DuckDB,warehouse,P2,false,planned,camel,duckdb,Y,Y,,Y,,,none,duckdb,plugin-jdbc (duckdb)
+druid,Druid,warehouse,P3,false,planned,openapi,openapi:druid,Y,Y,Y,Y,,,basic,,plugin-jdbc (druid)
+pinot,Pinot,warehouse,P3,false,planned,openapi,openapi:pinot,Y,Y,Y,Y,,,basic,,plugin-jdbc (pinot)
+starrocks,StarRocks,warehouse,P3,false,planned,camel,sql,Y,Y,Y,Y,,,basic,sql|jdbc,plugin-jdbc (mysql)
+doris,Doris,warehouse,P3,false,planned,camel,sql,Y,Y,Y,Y,,,basic,sql|jdbc,plugin-jdbc (mysql)
+trino,Trino,warehouse,P2,false,planned,camel,sql,Y,,,Y,,,basic|jwt|oauth2,sql|jdbc,plugin-jdbc (trino)
+athena,Athena,warehouse,P3,false,planned,camel,aws2-athena,Y,,,Y,,,iam,aws2-athena,plugin-aws (athena)
+synapse-fabric,Synapse / Fabric,warehouse,P3,false,planned,camel,sql,Y,Y,,Y,,,aad,sql|jdbc,plugin-azure (synapse)|plugin-microsoft-fabric
+iceberg,Iceberg,lakehouse,P1,true,preview,native,loams_flow::connectors::iceberg,Y,Y,Y,Y,,,iam|sa|oauth2,,plugin-iceberg
+delta-lake,Delta Lake,lakehouse,P2,false,planned,openapi,openapi:delta-lake,Y,Y,,Y,,,iam|sa,,plugin-databricks
+hudi,Hudi,lakehouse,P3,false,planned,openapi,openapi:hudi,Y,Y,,Y,,,iam,,
+hive,Hive,warehouse,P3,false,planned,camel,sql,Y,Y,,Y,,,kerb|basic,sql|jdbc,
+spark,Spark,warehouse,P3,false,planned,openapi,openapi:spark,Y,Y,,Y,,,none,,plugin-spark
+flink,Flink,warehouse,P3,false,planned,camel,flink,,Y,,Y,,,none,flink,plugin-flink
+teradata,Teradata,warehouse,P3,false,planned,camel,sql,Y,Y,,Y,,,basic,sql|jdbc,
+s3,S3,object-storage,P1,true,preview,native,loams_flow::connectors::s3,Y,Y,Y,Y,,Y,iam,aws2-s3,plugin-aws (s3)
+minio-rustfs,MinIO / RustFS,object-storage,P2,false,planned,camel,minio,Y,Y,,Y,,Y,key,minio|aws2-s3,plugin-minio
+cloudflare-r2,Cloudflare R2,object-storage,P2,false,planned,camel,aws2-s3,Y,Y,,Y,,,key,aws2-s3,plugin-cloudflare
+gcs,GCS,object-storage,P2,false,planned,camel,google-storage,Y,Y,Y,Y,,Y,sa,google-storage,plugin-gcp (gcs)
+azure-blob,Azure Blob,object-storage,P2,false,planned,camel,azure-storage-blob,Y,Y,Y,Y,,Y,aad|key,azure-storage-blob,plugin-azure (storage)
+adls-gen2,ADLS Gen2,object-storage,P2,false,planned,camel,azure-storage-datalake,Y,Y,,Y,,,aad,azure-storage-datalake,plugin-azure (storage)
+sftp,SFTP,object-storage,P2,false,planned,camel,sftp,Y,Y,,Y,,,ssh|basic,sftp,plugin-fs (sftp)
+ftp-ftps,FTP / FTPS,object-storage,P3,false,planned,camel,ftp,Y,Y,,Y,,,basic,ftp|ftps,"plugin-fs (ftp, ftps)"
+smb-nfs,SMB / NFS,object-storage,P3,false,planned,camel,smb,Y,Y,,Y,,,basic|kerb,smb|file,"plugin-fs (smb, nfs)"
+local-fs-hdfs,Local FS / HDFS,object-storage,P3,false,planned,camel,file,Y,Y,,Y,,,none|kerb,file,plugin-fs (local)
+parquet,Parquet,format,P1,true,preview,native,loams_flow::formats::parquet,Y,Y,,Y,,,none,parquet-avro,plugin-serdes (parquet)
+avro,Avro,format,P1,true,preview,native,loams_flow::formats::avro,Y,Y,Y,Y,,,none,avro|jackson-avro,plugin-serdes (avro)
+orc,ORC,format,P3,false,planned,openapi,openapi:orc,Y,Y,,Y,,,none,,
+csv-ndjson,CSV / NDJSON,format,P2,false,planned,camel,csv,Y,Y,Y,Y,,,none,csv|jackson,"plugin-serdes (csv, json)"
+arrow,Arrow IPC / Flight,format,P1,true,preview,native,loams_flow::formats::arrow,Y,Y,Y,Y,,,none|mtls|jwt,,plugin-jdbc (arrow-flight)
+protobuf,Protobuf,format,P2,false,planned,camel,protobuf,Y,Y,Y,Y,,,none,protobuf|jackson-protobuf,plugin-serdes (protobuf)
+debezium-postgres,Debezium-Postgres,cdc,P1,true,preview,debezium,io.debezium.connector.postgresql.PostgresConnector,Y,,Y,,Y,,basic|mtls,debezium-postgres,plugin-debezium
+debezium-mysql,Debezium-MySQL,cdc,P1,true,preview,debezium,io.debezium.connector.mysql.MySqlConnector,Y,,Y,,Y,,basic|mtls,debezium-mysql,plugin-debezium
+debezium-sql-server-oracle,Debezium-SQL Server / Oracle,cdc,P2,false,planned,camel,debezium-sqlserver,Y,,Y,,Y,,basic,debezium-sqlserver|debezium-oracle,plugin-debezium
+debezium-mongodb,Debezium-MongoDB,cdc,P2,false,planned,camel,debezium-mongodb,Y,,Y,,Y,,basic,debezium-mongodb,plugin-debezium
+debezium-embedded-engine,Debezium Embedded engine,cdc,P3,false,planned,camel,debezium,Y,,Y,,Y,,basic,debezium-* (embedded),plugin-debezium
+dynamodb-streams,DynamoDB Streams,cdc,P2,false,planned,camel,aws2-ddbstream,Y,,Y,,Y,,iam,aws2-ddbstream,plugin-aws (dynamodb)
+camel-runtime,Camel (runtime),integration,P1,false,planned,camel,camel,Y,Y,Y,Y,,Y,per-component,(itself),plugin-camel
+kestra-companion,Kestra (companion),integration,P2,false,planned,openapi,openapi:kestra-companion,Y,Y,,Y,,Y,key|basic,,(itself)
+kafka-connect,Kafka Connect,integration,P3,false,planned,camel,kafka,Y,Y,Y,,Y,,sasl|mtls,kafka,
+airbyte,"Airbyte (licence flag, D359)",integration,P3,false,planned,openapi,openapi:airbyte,Y,Y,,Y,Y,,key,,plugin-airbyte
+dbt,dbt,integration,P3,false,planned,openapi,openapi:dbt,,Y,,Y,,,none,,plugin-dbt
+airflow,Airflow,integration,P3,false,planned,openapi,openapi:airflow,Y,,,Y,,Y,basic,,plugin-airflow
+segment,Segment,saas,P2,false,planned,openapi,openapi:segment,Y,Y,Y,,,Y,key,,
+rudderstack,RudderStack,saas,P3,false,planned,openapi,openapi:rudderstack,Y,Y,Y,,,Y,key,,
+mparticle,mParticle,saas,P3,false,planned,openapi,openapi:mparticle,Y,Y,Y,,,Y,key,,
+braze,Braze,saas,P3,false,planned,openapi,openapi:braze,Y,Y,Y,Y,,Y,key,,
+iterable,Iterable,saas,P3,false,planned,openapi,openapi:iterable,Y,Y,Y,,,Y,key,,
+klaviyo,Klaviyo,saas,P3,false,planned,openapi,openapi:klaviyo,Y,Y,,Y,,Y,key,,plugin-klaviyo
+mailchimp,Mailchimp,saas,P3,false,planned,openapi,openapi:mailchimp,Y,Y,,Y,,Y,key|oauth2,,
+sendgrid,SendGrid,saas,P2,false,planned,openapi,openapi:sendgrid,Y,Y,Y,,,Y,key,,plugin-notifications (sendgrid)
+amazon-ses,Amazon SES,saas,P2,false,planned,camel,aws2-ses,Y,Y,Y,,,Y,iam,aws2-ses,
+twilio-sms,Twilio SMS,saas,P2,false,planned,camel,twilio,Y,Y,Y,,,Y,key,twilio,plugin-notifications (twilio)
+whatsapp-business,WhatsApp Business,saas,P3,false,planned,camel,whatsapp,Y,Y,Y,,,Y,oauth2,whatsapp,plugin-notifications (whatsapp)
+fcm,FCM,saas,P3,false,planned,openapi,openapi:fcm,,Y,Y,,,,sa,,
+apns,APNs,saas,P3,false,planned,openapi,openapi:apns,,Y,Y,,,,jwt|mtls,,
+onesignal,OneSignal,saas,P3,false,planned,openapi,openapi:onesignal,,Y,Y,,,,key,,
+customer-io,Customer.io,saas,P3,false,planned,openapi,openapi:customer-io,Y,Y,Y,,,Y,key,,
+amplitude,Amplitude,saas,P3,false,planned,openapi,openapi:amplitude,Y,Y,Y,Y,,,key,,
+mixpanel,Mixpanel,saas,P3,false,planned,openapi,openapi:mixpanel,Y,Y,Y,Y,,,key|basic,,
+posthog,PostHog,saas,P2,false,planned,openapi,openapi:posthog,Y,Y,Y,Y,,Y,key,,plugin-posthog
+ga4,GA4,saas,P3,false,planned,openapi,openapi:ga4,Y,Y,Y,Y,,,sa|key,,
+meta-ads-capi,Meta Ads / CAPI,saas,P3,false,planned,openapi,openapi:meta-ads-capi,Y,Y,Y,Y,,Y,oauth2,,plugin-meta
+google-ads,Google Ads,saas,P3,false,planned,openapi,openapi:google-ads,Y,Y,,Y,,,oauth2,,
+linkedin-ads,LinkedIn Ads,saas,P3,false,planned,openapi,openapi:linkedin-ads,Y,Y,,Y,,,oauth2,,plugin-linkedin
+salesforce,Salesforce,saas,P2,false,planned,camel,salesforce,Y,Y,Y,Y,Y,Y,oauth2,salesforce,
+hubspot,HubSpot,saas,P2,false,planned,openapi,openapi:hubspot,Y,Y,,Y,,Y,oauth2|key,,plugin-hubspot
+pipedrive,Pipedrive,saas,P3,false,planned,openapi,openapi:pipedrive,Y,Y,,Y,,Y,key|oauth2,,plugin-pipedrive
+zoho,Zoho,saas,P3,false,planned,openapi,openapi:zoho,Y,Y,,Y,,Y,oauth2,,
+dynamics-365,Dynamics 365,saas,P3,false,planned,camel,olingo4,Y,Y,,Y,,Y,aad,olingo4,
+zendesk,Zendesk,saas,P2,false,planned,camel,zendesk,Y,Y,,Y,,Y,key|oauth2,zendesk,plugin-zendesk
+intercom,Intercom,saas,P3,false,planned,openapi,openapi:intercom,Y,Y,,Y,,Y,key,,
+freshdesk,Freshdesk,saas,P3,false,planned,openapi,openapi:freshdesk,Y,Y,,Y,,Y,key,,
+servicenow,ServiceNow,saas,P2,false,planned,camel,servicenow,Y,Y,,Y,,Y,basic|oauth2,servicenow,plugin-servicenow
+marketo,Marketo,saas,P3,false,planned,openapi,openapi:marketo,Y,Y,,Y,,,oauth2,,
+gainsight,Gainsight,saas,P3,false,planned,openapi,openapi:gainsight,Y,Y,,Y,,,key,,
+gong,Gong,saas,P3,false,planned,openapi,openapi:gong,Y,,,Y,,Y,key|oauth2,,
+stripe,Stripe,saas,P2,false,planned,camel,stripe,Y,Y,,Y,,Y,key|hmac,stripe,plugin-stripe
+shopify,Shopify,saas,P2,false,planned,openapi,openapi:shopify,Y,Y,,Y,,Y,oauth2|key|hmac,,plugin-shopify
+woocommerce,WooCommerce,saas,P3,false,planned,openapi,openapi:woocommerce,Y,Y,,Y,,Y,key,,
+magento,Magento,saas,P3,false,planned,openapi,openapi:magento,Y,Y,,Y,,Y,oauth2,,
+bigcommerce,BigCommerce,saas,P3,false,planned,openapi,openapi:bigcommerce,Y,Y,,Y,,Y,key,,
+paypal,PayPal,saas,P3,false,planned,openapi,openapi:paypal,Y,Y,,Y,,Y,oauth2,,
+razorpay,Razorpay,saas,P3,false,planned,openapi,openapi:razorpay,Y,Y,,Y,,Y,key|hmac,,
+adyen,Adyen,saas,P3,false,planned,openapi,openapi:adyen,Y,Y,,,,Y,key|hmac,,
+github,GitHub,saas,P2,false,planned,camel,github2,Y,Y,,Y,,Y,oauth2|key|hmac,github2,plugin-github
+gitlab,GitLab,saas,P2,false,planned,openapi,openapi:gitlab,Y,Y,,Y,,Y,key|oauth2,,plugin-gitlab
+bitbucket,Bitbucket,saas,P3,false,planned,openapi,openapi:bitbucket,Y,Y,,Y,,Y,oauth2|key,,
+jira,Jira,saas,P2,false,planned,camel,jira,Y,Y,,Y,,Y,basic|oauth2,jira,plugin-jira
+linear,Linear,saas,P3,false,planned,openapi,openapi:linear,Y,Y,,Y,,Y,key|oauth2,,plugin-linear
+confluence,Confluence,saas,P3,false,planned,openapi,openapi:confluence,Y,Y,,Y,,Y,basic|oauth2,,plugin-confluence
+notion,Notion,saas,P3,false,planned,openapi,openapi:notion,Y,Y,,Y,,Y,key|oauth2,,plugin-notion
+slack,Slack,saas,P2,false,planned,camel,slack,Y,Y,Y,,,Y,oauth2|hmac,slack,plugin-slack|plugin-notifications (slack)
+microsoft-teams,Microsoft Teams,saas,P3,false,planned,openapi,openapi:microsoft-teams,Y,Y,,,,Y,aad,,plugin-notifications (teams)
+discord,Discord,saas,P3,false,planned,openapi,openapi:discord,Y,Y,,,,Y,key,,plugin-discord
+google-workspace,Google Workspace,saas,P2,false,planned,camel,google-drive,Y,Y,,Y,,Y,oauth2|sa,google-drive|google-sheets|google-mail|google-calendar,plugin-googleworkspace
+microsoft-365,Microsoft 365,saas,P3,false,planned,camel,mail-microsoft-oauth,Y,Y,,Y,,Y,aad,mail-microsoft-oauth|olingo4,plugin-microsoft365
+airtable,Airtable,saas,P3,false,planned,openapi,openapi:airtable,Y,Y,,Y,,Y,key,,plugin-airtable
+telegram,Telegram,saas,P3,false,planned,camel,telegram,Y,Y,Y,,,Y,key,telegram,plugin-telegram
+prometheus,Prometheus,observability,P2,false,planned,openapi,openapi:prometheus,Y,Y,Y,,,,basic|key,,plugin-prometheus
+grafana,Grafana,observability,P3,false,planned,openapi,openapi:grafana,,Y,,,,Y,key,,plugin-grafana
+datadog,Datadog,observability,P3,false,planned,openapi,openapi:datadog,Y,Y,Y,,,Y,key,,
+new-relic,New Relic,observability,P3,false,planned,openapi,openapi:new-relic,,Y,Y,,,Y,key,,
+opentelemetry,OpenTelemetry,observability,P1,true,preview,native,loams_flow::connectors::otlp,Y,Y,Y,,,,key|mtls,,
+loki,Loki,observability,P3,false,planned,openapi,openapi:loki,Y,Y,Y,,,,basic,,
+splunk,Splunk,observability,P2,false,planned,camel,splunk,Y,Y,Y,Y,,,key,splunk|splunk-hec,
+sentry,Sentry,observability,P3,false,planned,openapi,openapi:sentry,Y,,,,,Y,key,,plugin-sentry
+pagerduty,PagerDuty,observability,P3,false,planned,openapi,openapi:pagerduty,Y,Y,,,,Y,key,,plugin-pagerduty
+cloudwatch,CloudWatch,observability,P3,false,planned,camel,aws2-cw,Y,Y,Y,Y,,,iam,aws2-cw,plugin-aws (cloudwatch)
+kubernetes,Kubernetes,infra,P3,false,planned,camel,kubernetes-pods,Y,Y,Y,,,,sa|mtls,kubernetes-pods|kubernetes-deployments|kubernetes-services,plugin-kubernetes
+docker,Docker,infra,P3,false,planned,camel,docker,Y,Y,Y,,,,mtls,docker,plugin-docker
+terraform,Terraform,infra,P3,false,planned,openapi,openapi:terraform,,Y,,Y,,,none,,plugin-terraform
+ansible,Ansible,infra,P3,false,planned,openapi,openapi:ansible,,Y,,Y,,,ssh,,plugin-ansible
+lambda-cloud-run-azure-functions,Lambda / Cloud Run / Azure Functions,infra,P2,false,planned,camel,aws2-lambda,Y,Y,Y,,,Y,iam|sa|aad,aws2-lambda|google-functions|azure-functions,plugin-aws (lambda)|plugin-gcp (function)|plugin-azure (function)
+vault,Vault,infra,P2,false,planned,camel,hashicorp-vault,Y,Y,,,,,key,hashicorp-vault,
+helm-argo-cd,Helm / Argo CD,infra,P3,false,planned,openapi,openapi:helm-argo-cd,,Y,,Y,,Y,key,,plugin-helm|plugin-argocd
+ssh-shell,SSH / Shell,infra,P3,false,planned,camel,ssh,Y,Y,,Y,,,ssh,ssh|exec,plugin-fs (ssh)|plugin-scripts
+okta,Okta,identity,P3,false,planned,openapi,openapi:okta,Y,Y,,Y,,Y,oauth2|key,,
+auth0,Auth0,identity,P3,false,planned,openapi,openapi:auth0,Y,Y,,Y,,Y,oauth2,,
+keycloak,Keycloak,identity,P2,false,planned,camel,keycloak,Y,Y,,Y,,Y,oauth2,keycloak,
+entra-id,Entra ID,identity,P3,false,planned,openapi,openapi:entra-id,Y,Y,,Y,,Y,aad,,
+openai,OpenAI,ai,P2,false,planned,camel,openai,,Y,,Y,,,key,openai|langchain4j-*,plugin-openai
+anthropic,Anthropic,ai,P2,false,planned,camel,langchain4j,,Y,,Y,,,key,langchain4j-*,plugin-anthropic
+gemini,Gemini,ai,P3,false,planned,camel,google-vertexai,,Y,,Y,,,key|sa,google-vertexai|langchain4j-*,plugin-gemini
+bedrock,Bedrock,ai,P3,false,planned,camel,aws-bedrock,,Y,,Y,,,iam,aws-bedrock,plugin-aws (bedrock)
+azure-openai,Azure OpenAI,ai,P3,false,planned,camel,langchain4j,,Y,,Y,,,aad|key,langchain4j-*,plugin-azure (aifoundry)
+ollama,Ollama,ai,P3,false,planned,camel,langchain4j,,Y,,Y,,,none,langchain4j-*,plugin-ollama
+vllm,vLLM,ai,P3,false,planned,camel,langchain4j,,Y,,Y,,,key,langchain4j-*,
+hugging-face,Hugging Face,ai,P3,false,planned,camel,huggingface,,Y,,Y,,,key,huggingface,plugin-huggingface
+mcp,MCP,ai,P2,false,planned,camel,mcp-server,Y,Y,,,,,oauth2,mcp-server,plugin-ai
+a2a,A2A,ai,P3,false,planned,camel,a2a,Y,Y,Y,,,,oauth2,a2a,
+http,HTTP / REST,protocol,P1,true,preview,native,loams_flow::connectors::http,Y,Y,Y,Y,,Y,none|basic|key|oauth2|jwt|mtls,http|rest,core (HTTP tasks)
+graphql,GraphQL,protocol,P2,false,planned,camel,graphql,Y,Y,,Y,,,key|oauth2,graphql,plugin-graphql
+soap,SOAP,protocol,P3,false,planned,camel,cxf,Y,Y,,Y,,,basic,cxf|soap,
+openapi-generated,OpenAPI-generated,protocol,P3,false,planned,camel,rest-openapi,Y,Y,,Y,,Y,per-spec,rest-openapi,
+jdbc,JDBC,protocol,P1,true,preview,camel,jdbc,Y,Y,,Y,,,per-driver,jdbc|sql,plugin-jdbc
+adbc,ADBC,protocol,P1,true,preview,native,loams_flow::connectors::adbc,Y,Y,,Y,,,per-driver,,
+smtp-imap,SMTP / IMAP,protocol,P3,false,planned,camel,smtp,Y,Y,Y,,,,basic|oauth2,smtp|imaps,plugin-notifications (mail)|plugin-email
+rss-atom,RSS / Atom,protocol,P3,false,planned,camel,rss,Y,,Y,,,,none,rss|atom,
+zulip,Zulip,saas,P1,false,preview,native,loams_flow::connectors::zulip,Y,Y,Y,Y,,Y,key,,
+itsplane,ItsPlane,saas,P1,false,preview,native,loams_flow::connectors::itsplane,Y,Y,Y,Y,,Y,key,,
+forgejo,Forgejo,saas,P1,false,preview,native,loams_flow::connectors::forgejo,Y,Y,Y,Y,,Y,key,,

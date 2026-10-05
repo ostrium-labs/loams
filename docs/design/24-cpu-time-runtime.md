@@ -99,7 +99,7 @@ A Rust server that implements Dapr's own gRPC service (`dapr.proto.runtime.v1.Da
 | wasmtime host | Rust, Apache-2.0, wasmtime v49.0.1 (or Spin or wasmCloud as the host, D172) | T1: Wasm components (WASI 0.2 `wasi:http`) | F1 |
 | gVisor (`runsc`) | Go, Apache-2.0, `release-20260921.0` | T2: Bun, Node, Python and native binaries in the `http-port` contract; also the outer sandbox around workerd | F2 |
 | `loams-dapr` | Rust (new) | The Dapr API subset (§5) plus tenant identity, secrets (D189) and metering hooks, over Loams's internal gRPC | F1 |
-| Resonate | Rust, Apache-2.0; fork `dina-kar/resonate` | Durable promises for long waits (D173); embedded in dev, a Deployment in clusters (§21, §22 §13b item 4) | F1 |
+| Resonate | Rust, Apache-2.0; fork `ostrium-labs/resonate` | Durable promises for long waits (D173); embedded in dev, a Deployment in clusters (§21, §22 §13b item 4) | F1 |
 | Shared `daprd` | Go, Apache-2.0, v1.18.4 | Long-tail bindings only (D183) | F1 (optional) |
 | Firecracker | Rust, Apache-2.0 | T3, deferred (D174) | Later |
 
@@ -367,7 +367,7 @@ pub struct InvokeResponse { pub response: http::Response<Bytes>, pub usage: Opti
 
 **Placement.** D170's advantage is placement next to the data; a function on Lambda loses it and pays the round trips and egress. External runners are for burst capacity and BYOC accounts that want their own cloud bill, not the default.
 
-**Usage (D376; superseded 2026-10-02 by D548).** The billing-grade usage rules for external runners (the host report on a node-local socket, the Lambda `getrusage` delta and its billed-duration cap, Q366, the additive `loams.meter.v1` fields) moved to `loam-platform` doc 06 and are no longer specified here. In this repository every runner, the supervisor included, calls `InvocationObserver` ([§27 §3.7](27-usage-hooks.md)) with plain measurements at the end of each invocation; nothing aggregates, rates or bills them (§38 D444, §41).
+**Usage (D376; superseded 2026-10-02 by D548).** The billing-grade usage rules for external runners (the host report on a node-local socket, the Lambda `getrusage` delta and its billed-duration cap, Q366, the additive private meter-record fields) moved to `loam-platform` doc 06 and are no longer specified here. In this repository every runner, the supervisor included, calls `InvocationObserver` ([§27 §3.7](27-usage-hooks.md)) with plain measurements at the end of each invocation; nothing aggregates, rates or bills them (§38 D444, §41).
 
 **Track F.** F1 is unchanged. RN1 adds `loams-runner` (the trait, `RunnerHost` and `InvocationObserver`, which F1's supervisor then calls), `ProcessRunner` and `LambdaRunner`; it does not build the supervisor. The reporter crate `loams-meter` that this paragraph once listed moved to `loam-platform` (D548).
 

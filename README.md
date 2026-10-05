@@ -74,6 +74,8 @@ Statuses reflect the `main` branch. **Available** means it is built and tested i
 - **protoc**, the Protocol Buffers compiler: `apt install protobuf-compiler`, `brew install protobuf`, or `pacman -S protobuf`.
 - **Memory.** The first build compiles DataFusion, Lance and Tantivy, so it is heavy. On machines with less than 32 GB of RAM, limit parallel jobs with `-j 4`.
 
+On **Windows** and **macOS** there are extra prerequisites — the MSVC Build Tools and NASM on Windows — and there are no binaries to download. See [`docs/build-from-source/`](docs/build-from-source/README.md).
+
 ### Run a dev server
 
 `loams dev` runs everything in one process, with data in a local directory (`.loams/` by default):
@@ -194,7 +196,7 @@ Writes that the pinned version does not hold yet (the plan's *tail*) are readabl
 | Qdrant | REST and gRPC | Existing Qdrant clients and framework integrations | [`crates/loams-qdrant`](crates/loams-qdrant) |
 | Elasticsearch subset | REST (JSON, NDJSON) | Existing Elasticsearch 8 clients, LangChain and LlamaIndex stores | [`crates/loams-es`](crates/loams-es) |
 | Resonate | HTTP | Durable promises and tasks from the Resonate SDKs (TypeScript, Python, Rust, Go, Java) | [`crates/loams-durable`](crates/loams-durable) |
-| Loams Live | Connect / gRPC (`loams.live.v1`) | Reactive documents and live queries (in progress) | [`proto/loams`](proto/loams), [`sdks/live-typescript`](sdks/live-typescript) |
+| Loams Live | Connect / gRPC (`loams.live.v1`) | Reactive documents and live queries (in progress) | [`proto/loams`](proto/loams), [`sdks/typescript`](sdks/typescript) |
 | Console API | REST (OpenAPI) | The web console (in progress, served by a mock for now) | [`api/console`](api/console) |
 
 Each gateway documents where it differs from the original in its crate's module docs.
@@ -238,6 +240,8 @@ Other directories:
 | [`web`](web/README.md) | The web console and the `@loams/ui` design system |
 | [`sdks`](sdks) | Client SDKs (the Loams Live TypeScript SDK) |
 | [`proto`](proto), [`api`](api) | Protobuf and OpenAPI contracts |
+| [`fabric`](fabric) | The `fabric/` workspace: Loams Flow's event fabric and its connectors (design §32, §33) |
+| [`connectors`](connectors) | The connector registry: the 200-row catalog, the manifests and their JSON Schemas (§33) |
 | [`conformance`](conformance) | External client conformance suites |
 | [`deploy`](deploy) | Local compose files for TiKV and companion services |
 | [`scripts`](scripts) | Development and CI helper scripts |
@@ -264,6 +268,8 @@ Contributions of every size are welcome: bug reports, compatibility reports from
 - **Roadmap board:** [Loams Roadmap](https://github.com/orgs/ostrium-labs/projects).
 - **Build on Loams:** [ECOSYSTEM.md](ECOSYSTEM.md) (upstream first), the [trademark policy](TRADEMARKS.md) and [Deploy buttons](docs/ecosystem/deploy-buttons.md).
 - **Publish to the marketplace:** [the developer guide](docs/marketplace/publishing.md).
+- **Release Loams itself:** [the registries, secrets and release path](docs/release/publishing.md) (nothing is published yet).
+- **Build from source on Windows or macOS:** [the build-from-source guides](docs/build-from-source/README.md). There are no Windows or macOS binaries and none are signed, so this is the only way to get one on those platforms.
 - **Sponsor** the maintainers through the Sponsor button once their GitHub Sponsors profiles are live.
 
 ## Built on

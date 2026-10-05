@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/clickhouse.config.json",
+  "title": "ClickHouse connector instance config (loams.flow/v1)",
+  "description": "One ClickHouse connector instance's settings: the HTTP endpoint, the database and table, the source's key-range partitions and its incremental cursor, and the columns the sink writes. The source is the native Rust task (SELECT … FORMAT ArrowStream); the sink is Iggy's clickhouse_sink, whose config loams-fabric renders from this same instance (design §33 §8 row 12; CN1 plan Task 10). `password` resolves through the namespace's secret store (D189) and is exactly the manifest's `secrets` list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["url", "table"],
+  "properties": {
+    "url": {
+      "description": "The ClickHouse HTTP endpoint. Loams House is itself a ClickHouse endpoint, so a House URL works here unchanged (CN1 Task 10).",
+      "type": "string",
+      "minLength": 1
+    },
+    "database": { "description": "The database.", "type": "string", "default": "default" },
+    "table": { "description": "The table read or written.", "type": "string", "minLength": 1 },
+    "user": { "description": "The ClickHouse user.", "type": "string", "default": "default" },
+    "password": {
+      "description": "The user's password. Resolved through the secret store (D189); the rendered Iggy config reads it from a mounted file.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "query": {
+      "description": "A projecting SELECT for the source, when the route does not name one. The précis' warehouse-to-Elasticsearch example projects its ~15 fields here (CN1 Task 11).",
+      "type": "string",
+      "minLength": 1
+    },
+    "partitions": {
+      "description": "Key-range partitions the source splits the read across (CN1 Task 10's clickhouse_source_arrow_partitions).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 8
+    },
+    "cursor_column": {
+      "description": "Incremental mode's high-water column (CN1 Task 10); without it the source reads the whole table.",
+      "type": "string",
+      "minLength": 1
+    },
+    "key_column": {
+      "description": "The column the key-range split walks, and the sink's ordering key.",
+      "type": "string",
+      "minLength": 1
+    },
+    "columns": {
+      "description": "The columns the sink writes, in table order; all table columns when omitted.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "batch_rows": {
+      "description": "Rows per insert batch.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    },
+    "async_insert": {
+      "description": "Whether the sink uses ClickHouse's asynchronous insert, trading a flush for throughput.",
+      "type": "boolean",
+      "default": false
+    },
+    "wait_for_async_insert": {
+      "description": "Whether an asynchronous insert waits for its flush before acknowledging; at-least-once needs it on.",
+      "type": "boolean",
+      "default": true
+    },
+    "tls": {
+      "description": "TLS material for an https:// URL.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ca_pem": { "description": "The CA bundle, as PEM.", "type": "string" },
+        "verify_full": { "description": "Whether the server certificate's hostname is verified.", "type": "boolean", "default": true }
+      }
+    }
+  }
+}

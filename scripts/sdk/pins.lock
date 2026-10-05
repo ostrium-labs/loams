@@ -1,0 +1,73 @@
+# scripts/sdk/pins.lock — the generation toolchain's pins, with an integrity for
+# each. Read by `scripts/sdk/check-pins.sh`.
+#
+# A pin that moves is a deliberate act: it is a line here *and* the regenerated
+# output in the same PR (SDK1's global constraint: "Remote plugins are pinned to
+# a version; a bump is its own PR with regenerated output"). The checker fails
+# when a tool's pin and this file disagree, when a pin is not exact, when a tool
+# this file does not know about appears in a template, or when a row has no
+# integrity.
+#
+# Format: one tool per line, fields separated by exactly ONE space (no column
+# alignment — this file is read by awk), `#` starts a comment:
+#
+#   <kind> <id> <version> <integrity> <what it is>
+#
+# `kind` is one of:
+#   npm     a package pinned in a package.json; `integrity` is the
+#           `resolution: {integrity: ...}` value from web/pnpm-lock.yaml
+#   pypi    a distribution pinned with `==`; `integrity` is the sha256 of the
+#           file PyPI serves, from https://pypi.org/pypi/<id>/<version>/json
+#   go      a module pinned in go.mod; `integrity` is the module and go.mod h1:
+#           hashes from sum.golang.org/lookup/<id>@<version>
+#   crate   a crate pinned in Cargo.toml; `integrity` is the sha256 Cargo.lock
+#           records for the resolved version
+#   bsr     a buf remote plugin; `integrity` is the plugin's upstream version,
+#           because buf publishes no digest for a protoc plugin (see below)
+#   buf     the buf CLI itself, pinned as an npm devDependency
+#
+# For a `bsr` row buf offers no checksum to record: the Buf Schema Registry
+# resolves a plugin label to one published build but exposes no digest for a
+# protoc plugin the way it does for a module. The strongest checkable pin is
+# therefore the upstream `protoc-gen-*` release the build wraps, which is what
+# `integrity` holds; the label in the template must equal it. Every other kind
+# carries a real hash from its registry.
+#
+# Verified 2026-10-04: every `bsr` and `buf` row was resolved by an actual
+# `buf generate`, and every library row was fetched from its registry on that
+# date.
+
+# --- buf and the TypeScript plugins (SDK2 Task 0 delivered these) ---
+buf 1.73.0 sha512-W3whb4P1y3Hs9bqwCu9++W1v1ofHZ3dBUCe6JSZq0Ff5OK5UKKZuMN4iunPbgdyXY4+4ujEYf2ESrN/6MbcFSQ== the buf CLI, a devDependency of @loams/client
+npm @bufbuild/protoc-gen-es 2.16.0 sha512-LbPrEaGd7bOxKbJHllTR5439+PZjqd6fM7xyDZkDVtZ+Efzr7TMdMqShG9Qkf/nYVyiNS/SK5r9JhRaBTFkfZw== the TypeScript stubs
+npm @bufbuild/protobuf 2.16.0 sha512-FWa0sPlqYGJgpTs6OxBRcL/AW4JT0OIO+W1ajerluoTVh8CV0B7XM1qsNCRgnkSCkRCgOICKHRQlY17jrsm0+Q== the message runtime
+npm @connectrpc/connect 2.2.0 sha512-M63OQ1ZFcPUm85CuewJ9G9CMV8LjzGR9935xOnXNQGSazAbwMb3x2W7vXBYM1zqrP7XFD8uxp/dUAhirclgwnQ== the Connect runtime for TypeScript
+
+# --- Python (design §44 §9 row 2; SDK2 Task 1) ---
+# The runtime distribution is `connectrpc`, from connectrpc/connect-py. It is NOT
+# `connect-python`: that name on PyPI is a different, third-party project whose
+# last release predates this SDK. Both are Apache-2.0; only one is Connect's.
+pypi connectrpc 0.12.1 da7ca41c6cd8d9ce640ad86ae325a71cd83dfdd1e43748976315cb4b0546fb69 the Connect runtime (sdist)
+pypi protoc-gen-connectrpc 0.12.1 dde1652e291be825c4e84e71d9398c6ddd3c5c50995f3872a78ea9e4e21464dc the code generator (sdist)
+# The maintained protobuf runtime, and the reason `sdks/python/buf.gen.proto.yaml`
+# passes `protobuf=google` to connectrpc's generator: its default pairs with the
+# generator's own `protobuf-py`, whose modules are named `*_pb.py`, while
+# protoc-gen-python writes `*_pb2.py`.
+pypi protobuf 7.36.2 497d0463ff3316681da6c0b9e8d06cb465d61abce00b613ab42226175644d1bb the protobuf runtime (sdist)
+bsr buf.build/protocolbuffers/python v35.0 protoc-35.0 the messages
+bsr buf.build/connectrpc/python v0.12.1 connect-py-0.12.1 the Connect clients
+
+# --- Go (design §44 §9 row 3; SDK2 Task 2) ---
+# connect-go v1 is the stable line. v2 is at v2.0.0-rc.1 (2026-09-30) and is not
+# pinned: a release candidate is not a pin.
+go connectrpc.com/connect v1.21.0 h1:LhqSJt7jHf5NJBo9Jq/t/9FjcYAideif0mg+qe2jCUs=+h1:A2ygJrukXwWy32vkCAAHNVguZrqZ+jeZ9rGRnGR4dN4= the Connect runtime
+go google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=+h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco= the protobuf runtime
+bsr buf.build/protocolbuffers/go v1.36.11 protoc-gen-go-1.36.11 the messages
+bsr buf.build/connectrpc/go v1.21.0 connect-go-1.21.0 the Connect clients
+
+# --- Rust (design §44 §9 row 4; SDK2 Task 3) ---
+# The same versions the workspace already resolves, so the SDK and the server
+# share one stack (D128). Not `tonic`.
+crate connectrpc 0.9.1 457cfa540c62e1b0b05db676cc9a9129162ad94d3a3eec6f2d19706c53acae7d the Connect runtime
+crate connectrpc-build 0.9.0 603619f92fc55725d971ed9292855cd75f7a2c52ed66c181e0ec531dd7f8dd9b the code generator, run from build.rs
+crate buffa 0.9.2 a92f2f5df67a9d5ccfc65237bfc954c56328aee40a04a9b92381ecba370be246 the code generator's schema layer

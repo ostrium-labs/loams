@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/postgresql.config.json",
+  "title": "PostgreSQL connector instance config (loams.flow/v1)",
+  "description": "One PostgreSQL connector instance's settings: where the database is, what to read or write, and how to split the read. Covers the batch source and the upsert sink of the ★ PostgreSQL connector (design §33 §8 row 2; CN1 plan Task 7). `password` and `tls.key_pem` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list. The sink's `key` is required by CN1 Task 1's rule that a sink declaring `upsert` declares a key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["host", "database", "key"],
+  "properties": {
+    "dsn": {
+      "description": "A libpq connection string, as an alternative to host/port/database/user. CN1 Task 7 uses tokio-postgres; the DSN wins when both are given.",
+      "type": "string",
+      "minLength": 1
+    },
+    "host": { "description": "The database host.", "type": "string", "minLength": 1 },
+    "port": { "description": "The database port.", "type": "integer", "minimum": 1, "default": 5432 },
+    "database": { "description": "The database name.", "type": "string", "minLength": 1 },
+    "user": { "description": "The role the connector authenticates as.", "type": "string", "minLength": 1 },
+    "password": {
+      "description": "The role's password, or an AWS RDS IAM token when iam is configured. Resolved through the secret store (D189); never stored in the instance.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "schema_name": {
+      "description": "The schema holding the table.",
+      "type": "string",
+      "default": "public"
+    },
+    "table": {
+      "description": "The table this instance reads or writes; may be omitted when a route names the table.",
+      "type": "string",
+      "minLength": 1
+    },
+    "partitions": {
+      "description": "Parallel workers the snapshot is split across, by primary-key range (CN1 Task 7).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 8
+    },
+    "cursor_column": {
+      "description": "Incremental mode's high-water column (CN1 Task 7). Set it for an incremental read; without it the source takes a full snapshot.",
+      "type": "string",
+      "minLength": 1
+    },
+    "key_column": {
+      "description": "The primary key the key-range split and the sink's upsert key use.",
+      "type": "string",
+      "minLength": 1
+    },
+    "key": {
+      "description": "The sink's upsert key: INSERT … ON CONFLICT (key) DO UPDATE. Required because the manifest declares capabilities.sink.upsert: true (CN1 Task 1's semantic rule).",
+      "type": "string",
+      "minLength": 1
+    },
+    "batch_rows": {
+      "description": "Rows per COPY chunk; CN1 Ruling 3 defaults the Arrow batch to 65536.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    },
+    "append": {
+      "description": "Sink mode: append with COPY instead of upserting. False keeps the declared upsert behaviour.",
+      "type": "boolean",
+      "default": false
+    },
+    "apply_deletes": {
+      "description": "Apply deletes for events carrying loamsop = d (§33 §6, CN1 Task 7's pg_delete_on_loamsop_d).",
+      "type": "boolean",
+      "default": true
+    },
+    "statement_timeout_ms": {
+      "description": "Server-side statement timeout for a COPY or an upsert batch.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    },
+    "tls": {
+      "description": "TLS material. CN1 Task 7 verifies the server with verify-full.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "description": "Whether TLS is on at all.", "type": "boolean", "default": false },
+        "ca_pem": { "description": "The CA bundle, as PEM.", "type": "string" },
+        "key_pem": {
+          "description": "The client certificate's private key, for verify-full with a client certificate. Resolved through the secret store (D189).",
+          "type": "string",
+          "writeOnly": true
+        },
+        "verify_full": { "description": "Whether the server certificate's hostname is verified.", "type": "boolean", "default": true }
+      }
+    },
+    "iam": {
+      "description": "AWS RDS IAM token auth (CN1 Task 7), which replaces the password.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["region"],
+      "properties": {
+        "region": { "description": "The AWS region of the instance.", "type": "string", "minLength": 1 },
+        "role_arn": { "description": "The role Loams assumes; the default chain is used when absent.", "type": "string" }
+      }
+    }
+  }
+}
