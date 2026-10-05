@@ -125,7 +125,13 @@ jobs:
     if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
     runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     env:
-      CATALOG_DIR: ${{ runner.temp }}/connector-drift
+      # A literal path under the runner's temp directory, not `runner.temp` and
+      # not `env.RUNNER_TEMP`: neither context is available in a job-level `env:`
+      # block. Referencing one made GitHub reject the whole file at parse time,
+      # so all 93 runs of this workflow since it was added failed with zero jobs
+      # created and nothing ever reported a cause. The path is fixed per step
+      # below rather than interpolated here.
+      CATALOG_DIR: /tmp/connector-drift
       # Apache Camel 4.22.1 (Apache-2.0), the version design §33 §5 records and
       # CN1 Task 0 pins. Apache-2.0, so the D359 licence gate is satisfied.
       CAMEL_CATALOG_URL: https://repo1.maven.org/maven2/org/apache/camel/camel-catalog/4.22.1/camel-catalog-4.22.1.jar
