@@ -132,7 +132,12 @@ impl TransportOptions {
             Some("http") | Some("https") => {}
             _ => return Err(bad()),
         }
-        if uri.authority().map(|authority| authority.host()).unwrap_or("").is_empty() {
+        if uri
+            .authority()
+            .map(|authority| authority.host())
+            .unwrap_or("")
+            .is_empty()
+        {
             return Err(bad());
         }
         Ok(uri)
