@@ -97,6 +97,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     // Deployment tests use node:test and run in the package test command.
-    exclude: [...configDefaults.exclude, 'deploy/**'],
+    // So do the browser tests (AP1d Task 4, D638), which need a real Chrome and
+    // run under `test:browser`. Under jsdom `document.modelContext` does not
+    // exist at all, which is the whole reason that harness is separate.
+    exclude: [...configDefaults.exclude, 'deploy/**', 'browser/**'],
   },
 });
