@@ -49,7 +49,7 @@ jobs:
             --duration "$DURATION" --warmup 60 --scale 50 --workloads "$WORKLOADS" --force
       - name: results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: loams-pg-bench-rf${{ inputs.replicas }}
           path: bench/results/

@@ -679,7 +679,7 @@ jobs:
           cargo test -p loams-safekeeper --features tikv --test tikv --locked
       - name: playground logs
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: tikv-playground-logs-${{ github.job }}
           path: |
@@ -758,7 +758,7 @@ jobs:
         run: cargo test -p loams --features failpoints,tikv --test crash --locked
       - name: playground logs
         if: failure() && steps.paths.outputs.run == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: tikv-playground-logs-${{ github.job }}
           path: |
@@ -805,7 +805,7 @@ jobs:
         run: scripts/durable/conformance.sh --store sqlite --clients 8 --ops 600
       - name: conformance output
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: durable-conformance-sqlite
           path: target/durable-conformance/
@@ -864,7 +864,7 @@ jobs:
           done
       - name: conformance output and TiDB logs
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: durable-tidb-logs
           path: |
