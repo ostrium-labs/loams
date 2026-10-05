@@ -104,7 +104,10 @@ public struct LiveModule: Sendable {
         resume: StreamResume<DynamicMessage, DynamicMessage>? = nil
     ) async throws -> ResumableServerStream<DynamicMessage, DynamicMessage> {
         let binding = try loamsRequireBinding(module: "live", call: "Watch")
-        var stream = try await invoker.serverStream(binding: binding, request: request)
+        var stream: ResumableServerStream<DynamicMessage, DynamicMessage> = try await invoker.serverStream(
+            binding: binding,
+            request: request
+        )
         stream.policy = resume
         return stream
     }
@@ -138,8 +141,8 @@ public struct TablesModule: Sendable {
         return try await invoker.unary(
             binding: binding,
             request: request,
-            overrides: options,
-            suppliedIdempotencyKey: options.idempotencyKey
+            suppliedIdempotencyKey: options.idempotencyKey,
+            overrides: options
         )
     }
 

@@ -116,7 +116,10 @@ public struct ResumableServerStream<Request: LoamsMessage, Response: LoamsMessag
     /// rather than created inside ``messages()`` so that a caller who holds the
     /// stream can ask for the applied cursor **after** iterating — which is the
     /// thing an application persists.
-    let state = CursorState()
+    ///
+    /// `fileprivate`, not `private`: `CursorState` is a `private` type, and Swift
+    /// requires a stored property's access to be no wider than its type's.
+    fileprivate let state = CursorState()
 
     /// The resume policy, or `nil` when the caller passed none.
     ///
@@ -269,7 +272,12 @@ extension CallInvoker {
     /// resume that minted a second key would be the same duplicate-write bug in a
     /// different place, which is why this method takes the request as the caller
     /// already keyed it.
-    func resumeSource<Request: LoamsMessage, Response: LoamsMessage>(
+    ///
+    /// Generic over `Request` only. The re-open returns a raw
+    /// ``WireStream``, so a `Response` parameter would be unused — and an
+    /// unused one cannot be inferred at the call site, which is what made
+    /// ``messages()`` fail to compile.
+    func resumeSource<Request: LoamsMessage>(
         binding: CallBinding,
         request: Request
     ) async throws -> WireStream {

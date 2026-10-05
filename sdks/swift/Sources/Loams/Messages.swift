@@ -66,6 +66,16 @@ public struct ServiceStatus: Sendable, Equatable {
 
 /// `loams.instance.v1.GetInstanceResponse`.
 public struct GetInstanceResponse: LoamsMessage, Sendable, Equatable {
+    /// An empty response: the protocol requires `init()`, and every field of
+    /// `GetInstanceResponse` is optional on the wire, so empty is a value a
+    /// real server can send.
+    public init() {
+        self.name = ""
+        self.serverVersion = ""
+        self.apiVersions = []
+        self.services = []
+    }
+
     /// The instance's name. `Loams` in the recorded corpus.
     public let name: String
     /// The instance's own semver.
