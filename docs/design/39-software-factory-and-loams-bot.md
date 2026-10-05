@@ -8,7 +8,7 @@ Status: **Proposed** · 2026-10-02. The direction is the owner's, from 2026-10-0
 
 This document turns that direction into decisions **D-SF-1–D-SF-20** and open questions **Q460–Q479** (recorded in the canonical decision log). Everything beyond the quoted direction (the embed rules, the A2A mapping, the loop's gates, the open/commercial split) is a **proposal** until the owner confirms it. **No code is written by this document.** The hosted factory and the marketplace are commercial and are designed in the private `loam-platform` repository (its doc 05); this document only states the interface between the two.
 
-**Numbering.** `main` ends at D459 and Q453 (§38). D-SF-1–D-SF-20 and Q460–Q479 are a block reserved for this document; renumber at merge if another branch took them. The private repository has its own numbers (PD47 onward).
+**Numbering.** The log this document is written against ends the §38 block at D459, and `dev` — the repository's default branch — now runs to D466 and Q499 (the D rows are contiguous to D466, the Q rows only to Q454, with Q479, Q491, Q494 and Q499 declared above it). D460–D466 are the Elasticsearch gateway decisions and are not §38's. D-SF-1–D-SF-20 and Q460–Q479 are this document's own block, declared and separate from every plain numeric range; renumber at merge if another branch took them. The private repository has its own numbers (PD47 onward).
 
 Markers: **(verified)** means read on the web on 2026-10-02 at the source in §17. **(verify)** means the plan that builds it checks it first. **(estimate)** means computed, not measured. "The harness" is the DeepSeek Harness (MIT) in its desktop and mobile forms (§37 §3); "our fork" is the harness code Loams adapts, per D421, never a copy-and-fork of the whole repository.
 
