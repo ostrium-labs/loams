@@ -66,6 +66,10 @@ pub use tool::{
     ActionOutcome, AxNode, Extracted, FillValue, FindQuery, Navigation, Screenshot, Snapshot,
     SnapshotMode, SnapshotNode, SnapshotRequest, Uid, WaitCondition, WaitOutcome, WaitRequest,
 };
+pub use webmcp::{
+    Availability, CallWebmcpToolRequest, ListWebmcpToolsRequest, WebmcpAbsent, WebmcpCallOutcome,
+    WebmcpListing, WebmcpRequest, WebmcpTool, WebmcpToolName,
+};
 
 use std::sync::Arc;
 
