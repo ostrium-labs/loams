@@ -118,6 +118,18 @@ extension JSONValue {
         guard let data = string.data(using: .utf8) else { return nil }
         return try? decoded(from: data)
     }
+
+    /// The object decoded from JSON bytes, or `nil` when the bytes are not JSON
+    /// or not a JSON object.
+    ///
+    /// Every wire path asks this question, and the answer has to be `nil` rather
+    /// than a throw in all of them: a body that is not a Loams response is a
+    /// failure to *report* with the bytes in the message, not a decoding error
+    /// that hides what the server actually said.
+    public static func decodedObject(from data: Data) -> [String: JSONValue]? {
+        guard let value = try? decoded(from: data) else { return nil }
+        return value.objectValue
+    }
 }
 
 // `JSONValue` is `Codable` through a hand-written implementation rather than
@@ -285,6 +297,19 @@ public struct DynamicMessage: LoamsMessage, Equatable, Hashable {
     }
 
     public func loamsFields() -> [String: JSONValue] { fields }
+
+    /// Empty, always.
+    ///
+    /// `LoamsMessage` requires this as a **static** member because a generated
+    /// type has one name for all its instances. A schema-free message does not:
+    /// its name is whatever the caller put in the instance property of the same
+    /// name, which varies per message. So the static form reports the only thing
+    /// true of every instance of this type — that there is no single type here.
+    ///
+    /// The wire never reads it. The Connect URL is built from the RPC name
+    /// (`Transport.url(for:rpc:)`), and the only other reader is a decode
+    /// failure's message text.
+    public static var protoTypeName: String { "" }
 
     public init?(loamsFields fields: [String: JSONValue]) {
         self.init(protoTypeName: "", fields: fields)

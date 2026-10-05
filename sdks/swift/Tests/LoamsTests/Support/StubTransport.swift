@@ -89,10 +89,16 @@ final class StubTransport: HTTPTransport, @unchecked Sendable {
         let call = StubCall(rpc: request.rpc, body: request.body, bearer: bearer)
         let reply = next(call)
         // Which leg of `streamPlan` this is: the count of stream opens so far.
-        lock.lock()
-        let leg = streamOpens
-        streamOpens += 1
-        lock.unlock()
+        //
+        // Read and bumped inside `withLock`, not with a bare `lock()`/`unlock()`
+        // pair: this is an `async` function, and holding an `NSLock` across a
+        // suspension point is a warning Swift is right to refuse — the lock
+        // could still be held when the continuation resumes on another thread.
+        // Nothing awaits inside the closure, so `withLock` returns immediately.
+        let leg = lock.withLock { () -> Int in
+            defer { streamOpens += 1 }
+            return streamOpens
+        }
 
         // A stream that was scripted to fail *after* messages uses `streamPlan`;
         // one scripted as a single reply fails immediately, which is the

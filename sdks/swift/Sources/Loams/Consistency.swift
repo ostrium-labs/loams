@@ -78,7 +78,7 @@ public actor ConsistencySession: ConsistencyTokenStore {
             return
         }
         conflictCount += 1
-        throw LoamsError(
+        throw LoamsError.loams(
             code: .failedPrecondition,
             reason: .failedPrecondition,
             unknownReason: nil,

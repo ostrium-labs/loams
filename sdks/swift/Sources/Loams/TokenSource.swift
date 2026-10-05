@@ -257,12 +257,12 @@ private func loamsOIDCRFC8693Exchange(
     ]
     form.sort { $0.0 < $1.0 }
     let body = form
-        .map { "\(loamsFormEscape($0.key))=\(loamsFormEscape($0.value))" }
+        .map { "\(loamsFormEscape($0.0))=\(loamsFormEscape($0.1))" }
         .joined(separator: "&")
 
     let payload = try await post(endpoint, Data(body.utf8))
-    guard let parsed = JSONValue.decoded(from: payload),
-          let accessToken = parsed.objectValue?["access_token"]?.stringValue,
+    guard let parsed = JSONValue.decodedObject(from: payload),
+          let accessToken = parsed["access_token"]?.stringValue,
           !accessToken.isEmpty
     else {
         throw LoamsError.internalError(
