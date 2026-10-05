@@ -91,7 +91,7 @@ final class RetryContractTests: XCTestCase {
     /// A mutation is not retried until it carries a key, and a cancellation is
     /// never retried whatever the class.
     func testShouldRetryRefusals() {
-        let unavailable = LoamsError(
+        let unavailable = LoamsError.loams(
             code: .unavailable,
             reason: .unavailable,
             unknownReason: nil,
@@ -131,7 +131,16 @@ final class IdempotencyContractTests: XCTestCase {
         let early = loamsUUIDv7(now: Date(timeIntervalSince1970: 1_000))
         let late = loamsUUIDv7(now: Date(timeIntervalSince1970: 2_000))
         XCTAssertEqual(early.count, 36, "the canonical lowercase hyphenated form is 36 characters")
-        XCTAssertTrue(early.hasPrefix("0190"), "48 bits of Unix milliseconds is the first 12 hex digits")
+        // 1_000 s after the epoch is 1_000_000 ms, which is 0x0000000f4240. The
+        // prefix asserted here used to be `0190`, which is the timestamp for
+        // mid-2024 and could never be produced by this input: it was the expected
+        // value for a "now" that had been replaced with a fixed 1_000 s and the
+        // expectation left behind. Asserting the arithmetic instead of a magic
+        // string is what makes it survive a change of input.
+        XCTAssertTrue(
+            early.hasPrefix("0000000f"),
+            "48 bits of Unix milliseconds is the first 12 hex digits; 1_000 s is 0x0000000f4240"
+        )
 
         // Sorting is the property an operator relies on to correlate keys in a log.
         XCTAssertLessThan(
@@ -315,12 +324,16 @@ final class TokenSourceContractTests: XCTestCase {
     /// The environment is read on **every** call, so a process that receives its
     /// credentials after the source is built still authenticates.
     func testEnvironmentIsReadEveryCall() async throws {
-        var backing = [String: String]()
-        let source = EnvTokenSource { backing[$0] }
+        // A lock, not a captured `var`: the lookup is `@Sendable` and this test
+        // is `async`, so a captured mutable local would be shared across
+        // concurrent executions — which is the thing this test exists to prove
+        // is not happening.
+        let backing = LockedValues()
+        let source = EnvTokenSource { backing.value(for: $0) }
         let empty = try await source.token()
         XCTAssertEqual(empty, "", "an unset environment yields no credential")
 
-        backing["LOAMS_TOKEN"] = "from-env"
+        backing.set("LOAMS_TOKEN", "from-env")
         let afterSet = try await source.token()
         XCTAssertEqual(afterSet, "from-env", "a value set after construction is picked up")
     }
@@ -364,7 +377,9 @@ final class StreamContractTests: XCTestCase {
         ])
         let invoker = CallInvoker(transport: transport, auth: nil, maxRetries: loamsDefaultMaxRetries)
         let binding = try loamsRequireBinding(module: "live", call: "Watch")
-        let stream = try await invoker.serverStream(
+        // `Response` is spelled out because the stream's type is only pinned
+        // by the assignment's use of `policy`, which leaves it unconstrained.
+        var stream: ResumableServerStream<DynamicMessage, DynamicMessage> = try await invoker.serverStream(
             binding: binding,
             request: DynamicMessage(protoTypeName: watchRequestTypeName)
         )
@@ -400,7 +415,9 @@ final class StreamContractTests: XCTestCase {
         )
         let invoker = CallInvoker(transport: transport, auth: nil, maxRetries: loamsDefaultMaxRetries)
         let binding = try loamsRequireBinding(module: "live", call: "Watch")
-        let stream = try await invoker.serverStream(
+        // `Response` is spelled out because the stream's type is only pinned
+        // by the assignment's use of `policy`, which leaves it unconstrained.
+        var stream: ResumableServerStream<DynamicMessage, DynamicMessage> = try await invoker.serverStream(
             binding: binding,
             request: DynamicMessage(protoTypeName: watchRequestTypeName)
         )
@@ -452,7 +469,13 @@ final class ReasonRegistryTests: XCTestCase {
         XCTAssertNil(loamsReason(from: ""))
         XCTAssertEqual(loamsReason(from: "not_found"), .notFound)
         XCTAssertTrue(loamsIsKnownReason(.notFound))
-        XCTAssertFalse(loamsIsKnownReason("nope".flatMap(loamsReason(from:)) ?? .aborted))
+        // A reason off the registry has no `Reason` at all, so it cannot be fed
+        // to `loamsIsKnownReason(_:)` — the assertion is that the lookup is
+        // `nil`, which the two `XCTAssertNil` lines above already make. What is
+        // left to check here is that a *known* reason round-trips, so a registry
+        // entry that fails to map back cannot pass unnoticed.
+        XCTAssertEqual(loamsReason(from: "aborted"), .aborted)
+        XCTAssertTrue(loamsIsKnownReason(.aborted))
     }
 
     /// The two reasons the SDK's own logic branches on, checked by code as well as
@@ -666,9 +689,11 @@ final class ErrorInfoCodecTests: XCTestCase {
             "type": .string("type.googleapis.com/loams.errors.v1.ErrorInfo"),
             "value": .string(encoded),
         ])
+        // `ErrorInfoShape.reason` is the raw string off the wire, so it is
+        // compared as one; mapping it to a `Reason` is `loamsReason(from:)`'s job.
         XCTAssertEqual(
             ConnectTransport.errorInfo(fromDetails: [detail])?.reason,
-            .aborted,
+            "aborted",
             "a type.googleapis.com/ prefix names the same message and must match"
         )
     }
@@ -817,5 +842,22 @@ final class ClientContractTests: XCTestCase {
         XCTAssertNotNil(store, "sessionConsistency: true turns it on")
         let current = await store?.current()
         XCTAssertNil(current, "and it starts empty, which is a different state from off")
+    }
+}
+/// A dictionary a `@Sendable` closure can read and an `async` test can write.
+///
+/// The alternative — a captured `var` — is exactly the bug
+/// `testEnvironmentIsReadEveryCall` exists to rule out, so the test's own
+/// fixture must not commit it.
+final class LockedValues: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String: String] = [:]
+
+    func value(for key: String) -> String? {
+        lock.withLock { storage[key] }
+    }
+
+    func set(_ key: String, _ value: String) {
+        lock.withLock { storage[key] = value }
     }
 }

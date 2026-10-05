@@ -338,11 +338,11 @@ extension LoamsError {
             }
             return LoamsError.transport(code: .unknown, rpc: rpc, message: nsError.localizedDescription)
         }
-        if #available(macOS 13.0, iOS 16.0, *) {
-            if error is ConcurrencyError || error is ClockError {
-                return LoamsError.transport(code: .unknown, rpc: rpc, message: "\(error)")
-            }
-        }
+        // No special case for the concurrency runtime's own errors: they are
+        // `NSError`-bridged like anything else, and they land on the same
+        // transport failure the fallthrough below reports. A separate arm for
+        // `ConcurrencyError` / `ClockError` was here and did the same thing, so
+        // it only added a version check that gated nothing.
         return LoamsError.transport(code: .unknown, rpc: rpc, message: "\(error)")
     }
 

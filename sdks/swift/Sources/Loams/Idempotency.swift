@@ -68,7 +68,11 @@ public func loamsUUIDv7(now: Date = Date(), randomBytes: [UInt8] = loamsRandomBy
 /// the standard library on every platform the SDK targets and is documented as
 /// drawing from the system CSPRNG, so the property that matters (a key is not
 /// predictable) holds on all of them.
-private func loamsRandomBytes16() -> [UInt8] {
+/// `public` because a default argument is evaluated in the *caller's* context,
+/// so it may not reference anything less visible than the function it defaults.
+/// It stays out of the documented API by not being named in the README's
+/// surface; a caller passes `randomBytes` explicitly only in a test.
+public func loamsRandomBytes16() -> [UInt8] {
     var generator = SystemRandomNumberGenerator()
     return (0..<16).map { _ in UInt8.random(in: UInt8.min...UInt8.max, using: &generator) }
 }

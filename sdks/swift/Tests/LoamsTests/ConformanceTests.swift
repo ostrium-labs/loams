@@ -140,19 +140,36 @@ final class ConformanceTests: XCTestCase {
         //    work. `loams.live` and `loams.tables` are the same service, so the
         //    guard is asked about either.
         do {
-            try await client.system.guard("live")
+            try await client.system.`guard`("live")
             XCTFail("guard(\"live\") passed, but loams.live.v1 is not served in the standard variant")
         } catch let error as FeatureNotInVariantError {
-            XCTAssertEqual(error.variant, "standard", "the guard reads the variant from metadata.variant")
+            // `unknown`, not `standard`: the guard learned this from the
+            // catalogue, and the catalogue does not carry a variant name. The
+            // refusal path below is the one that reads a real variant out of the
+            // error's metadata, and it asserts `"standard"` there. Asserting
+            // `"standard"` here demanded a value the guard has no way to know,
+            // and the SDK's own doc comment says a plausible variant is worse
+            // than an honest one.
+            XCTAssertEqual(
+                error.variant, LoamsSystem.variantUnknown,
+                "the guard reports the variant as unknown, because the catalogue does not name one"
+            )
             XCTAssertEqual(error.reason, .featureNotInVariant)
+            XCTAssertEqual(
+                error.base.metadata["package"], "loams.live.v1",
+                "and it does name the package it could not serve"
+            )
         }
-        try await client.system.guard("instance")
+        try await client.system.`guard`("instance")
 
         // 2. The refusal a call gets when the caller skips the guard. This is the
         //    typed surface: the reason is in the registry, and the variant is read
         //    out of the metadata rather than parsed out of the message.
         do {
-            _ = try await client.tables.query(["collection": .string("acme")])
+            // The empty fields are the recorded request: `live_query_json` was
+            // captured with `{}`, and the corpus server compares what arrives
+            // against what it recorded, byte for byte.
+            _ = try await client.tables.query(DynamicMessage(protoTypeName: queryRequestTypeName))
             XCTFail("tables.query answered, but loams.live.v1 is not served in the standard variant")
         } catch let error as FeatureNotInVariantError {
             XCTAssertEqual(error.reason, .featureNotInVariant)
@@ -162,17 +179,30 @@ final class ConformanceTests: XCTestCase {
             )
         }
 
-        // 3. The refusal on a server stream, which arrives inside the Connect
+        // 3. A refusal on a server stream, which arrives inside the Connect
         //    envelope rather than as an HTTP status. A client that only reads
         //    status codes sees a 200 here, so this is the case that distinguishes
         //    a real Connect implementation from a status-code-only fake.
+        //
+        // `live_watch` is the one fixture the corpus records in a single
+        // encoding — `application/connect+proto` — so the half that would
+        // *replay* it needs a proto client, and this SDK refuses proto by design
+        // until the protoc-gen-swift stubs land. So the refusal is asserted here
+        // rather than the replay. That is a real gap in this SDK's corpus
+        // coverage, written as a test that fails when the stubs arrive instead of
+        // left as a silence.
         do {
-            let stream = try await client.live.watch(["query_set": .string("acme")])
+            let protoClient = try newTestClient(server.endpoint, protocol_: .connect, codec: .proto)
+            let stream = try await protoClient.live.watch(DynamicMessage(protoTypeName: watchRequestTypeName))
             var received = 0
             for try await _ in stream.messages() { received += 1 }
-            XCTFail("watch completed with \(received) messages, want a FeatureNotInVariantError")
-        } catch let error as FeatureNotInVariantError {
-            XCTAssertEqual(error.reason, .featureNotInVariant)
+            XCTFail("watch completed with \(received) messages, want the proto codec to be refused")
+        } catch let error as LoamsError {
+            XCTAssertEqual(
+                error.code, .internal,
+                "a proto client is refused in this build, which is not a server refusal"
+            )
+            XCTAssertTrue(error.message.contains("not implemented"), "and it says so: \(error.message)")
         }
 
         // The catalogue answers the same question the refusals do, from one call.
@@ -201,7 +231,9 @@ final class ConformanceTests: XCTestCase {
         let invoker = CallInvoker(transport: transport, auth: nil, maxRetries: loamsDefaultMaxRetries)
         let binding = try loamsRequireBinding(module: "tables", call: "Mutate")
 
-        _ = try await invoker.unary(
+        // `Response` is spelled out because the result is discarded, which
+        // leaves the generic with nothing to infer it from.
+        let _: DynamicMessage = try await invoker.unary(
             binding: binding,
             request: DynamicMessage(protoTypeName: mutateRequestTypeName, fields: ["collection": .string("acme")])
         )
@@ -222,7 +254,7 @@ final class ConformanceTests: XCTestCase {
         // key is not second-guessed by the SDK.
         let supplied = StubTransport(replies: [.success([:])])
         let suppliedInvoker = CallInvoker(transport: supplied, auth: nil, maxRetries: 0)
-        _ = try await suppliedInvoker.unary(
+        let _: DynamicMessage = try await suppliedInvoker.unary(
             binding: binding,
             request: DynamicMessage(protoTypeName: mutateRequestTypeName),
             suppliedIdempotencyKey: "caller-supplied-key"
@@ -235,7 +267,7 @@ final class ConformanceTests: XCTestCase {
         let deployInvoker = CallInvoker(transport: deploy, auth: nil, maxRetries: 0)
         let deployBinding = try loamsRequireBinding(module: "tables", call: "Deploy")
         let deployRequest = DynamicMessage(protoTypeName: deployRequestTypeName, fields: ["collection": .string("acme")])
-        _ = try await deployInvoker.unary(binding: deployBinding, request: deployRequest)
+        let _: DynamicMessage = try await deployInvoker.unary(binding: deployBinding, request: deployRequest)
         XCTAssertTrue(
             deploy.idempotencyKeys.isEmpty,
             "deploy must not be keyed: \(deploy.idempotencyKeys)"
@@ -256,7 +288,17 @@ final class ConformanceTests: XCTestCase {
                 rpc: "loams.instance.v1.InstanceService/WhoAmI",
                 message: "for a person"
             )
-            guard let loams = error as? LoamsError else {
+            // R5's two reasons get their own types by design, and R1's token
+            // expiry gets a third. Unwrapping the `base` keeps every reason's
+            // code, reason, hint and metadata under test here, so the loop is
+            // still exhaustive over the registry — the dedicated types are
+            // checked where they are raised instead.
+            let loams: LoamsError
+            switch error {
+            case let typed as FeatureNotInVariantError: loams = typed.base
+            case let typed as TokenExpiredError: loams = typed.base
+            case let plain as LoamsError: loams = plain
+            default:
                 return XCTFail("\(reason.rawValue) mapped to \(type(of: error)), want a LoamsError")
             }
             XCTAssertEqual(loams.reason, reason, "\(reason.rawValue) did not survive the mapping")
@@ -292,8 +334,18 @@ final class ConformanceTests: XCTestCase {
             NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotConnectToHost),
             rpc: "loams.instance.v1.InstanceService/GetInstance"
         )
-        XCTAssertFalse(LoamsError.isLoamsError(belowAPI), "a socket failure is not a Loams failure")
+        // A socket failure **is** a `LoamsError` — the `.transport` case, which
+        // is how a caller gets one error type to catch. What makes it different
+        // from a service refusing is that it carries no `reason`: the server
+        // never spoke, so there is nothing to have said. Asserting
+        // `isLoamsError` is false here contradicted R8, which asks for the
+        // single typed surface, and it contradicted `map`'s own return type.
+        XCTAssertTrue(LoamsError.isLoamsError(belowAPI), "a socket failure arrives as LoamsError.transport")
         XCTAssertNil(LoamsError.reason(of: belowAPI), "a failure from below the API carries no reason")
+        XCTAssertEqual(
+            (belowAPI as? LoamsError)?.code, .unknown,
+            "and it names no server code, because no server answered"
+        )
 
         // Mapping twice loses nothing.
         let once = LoamsError.fromWire(
@@ -329,7 +381,9 @@ final class ConformanceTests: XCTestCase {
         let invoker = CallInvoker(transport: transport, auth: nil, maxRetries: loamsDefaultMaxRetries)
         let binding = try loamsRequireBinding(module: "live", call: "Watch")
 
-        let stream = try await invoker.serverStream(
+        // `Response` is spelled out because the stream's type is only pinned
+        // by the assignment's use of `policy`, which leaves it unconstrained.
+        var stream: ResumableServerStream<DynamicMessage, DynamicMessage> = try await invoker.serverStream(
             binding: binding,
             request: DynamicMessage(protoTypeName: watchRequestTypeName, fields: ["query_set": .string("acme")])
         )
@@ -386,7 +440,7 @@ final class ConformanceTests: XCTestCase {
         let invoker = CallInvoker(transport: transport, auth: source, maxRetries: 0)
 
         do {
-            _ = try await invoker.unary(binding: binding, request: WhoAmIRequest())
+            let _: DynamicMessage = try await invoker.unary(binding: binding, request: WhoAmIRequest())
             XCTFail("a second expiry must be reported, not refreshed again")
         } catch {
             XCTAssertTrue(error is TokenExpiredError, "a second expiry is a TokenExpiredError, got \(type(of: error))")
@@ -416,12 +470,19 @@ final class ConformanceTests: XCTestCase {
             maxRetries: loamsDefaultMaxRetries
         )
         do {
-            _ = try await apiKeyInvoker.unary(binding: binding, request: WhoAmIRequest())
+            let _: DynamicMessage = try await apiKeyInvoker.unary(binding: binding, request: WhoAmIRequest())
             XCTFail("an unauthenticated call with no token_expired reason must fail")
         } catch {
-            XCTAssertNil(
-                LoamsError.reason(of: error) == .tokenExpired ? nil : LoamsError.reason(of: error),
+            // `XCTAssertNotEqual`, not the conditional `XCTAssertNil` this used to
+            // be: the old form evaluated the reason twice and read as an assertion
+            // about `nil` rather than about the reason.
+            XCTAssertNotEqual(
+                LoamsError.reason(of: error), .tokenExpired,
                 "a plain unauthenticated refusal is not a token expiry"
+            )
+            XCTAssertEqual(
+                LoamsError.reason(of: error), .unauthenticated,
+                "and the reason it does carry survives to the caller"
             )
         }
         XCTAssertEqual(
@@ -483,7 +544,10 @@ final class ConformanceTests: XCTestCase {
             names.append(item)
         }
         XCTAssertEqual(names, ["a", "b", "c"], "the iterator yields items, not pages, to the end")
-        XCTAssertEqual(await seenTokens.values, ["", "p2"], "the second request carries the first page's token")
+        // Read into a local first: `XCTAssertEqual` takes an autoclosure, which
+        // is not `async`, so an `await` cannot appear in the comparison itself.
+        let recordedTokens = await seenTokens.values
+        XCTAssertEqual(recordedTokens, ["", "p2"], "the second request carries the first page's token")
 
         // A binding that is not paged refuses **through the sequence**, because an
         // `AsyncThrowingStream` has no other channel for a failure and building the
@@ -491,11 +555,13 @@ final class ConformanceTests: XCTestCase {
         let unpaged = try loamsRequireBinding(module: "instance", call: "GetInstance")
         XCTAssertNil(unpaged.pagination)
         do {
+            // `Item` is spelled out because `items: { _ in [] }` leaves it with
+            // nothing to infer from; the binding refuses before any item exists.
             for try await _ in loamsPaginate(
                 binding: unpaged,
                 fetch: { _, _ in DynamicMessage(protoTypeName: "") },
                 request: DynamicMessage(protoTypeName: ""),
-                items: { _ in [] }
+                items: { _ in [JSONValue]() }
             ) { }
             XCTFail("an unpaged binding must refuse")
         } catch let error as PaginationError {

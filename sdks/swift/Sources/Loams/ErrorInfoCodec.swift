@@ -118,6 +118,20 @@ struct ProtoReader {
 
 // MARK: - ErrorInfo
 
+/// Decodes base64 that may be unpadded.
+///
+/// The corpus ships unpadded base64 — `Cg9ub3RfaW1wbGVtZW50ZWQ`, 23 characters,
+/// which is not a multiple of four — and `Data(base64Encoded:)` rejects it, so
+/// every structured reason read as absent and every refusal lost its reason. The
+/// pad first, then fall back to the strict decoder so a string that *is*
+/// already padded still works.
+func loamsBase64(_ text: String) -> Data? {
+    if let data = Data(base64Encoded: text) { return data }
+    let padding = (4 - text.count % 4) % 4
+    guard padding > 0 else { return nil }
+    return Data(base64Encoded: text + String(repeating: "=", count: padding))
+}
+
 extension ConnectTransport {
     /// The `ErrorInfo` in a Connect error's `details`, looked up **by type**.
     ///
@@ -141,7 +155,7 @@ extension ConnectTransport {
                 continue
             }
             guard let encoded = object["value"]?.stringValue,
-                  let data = Data(base64Encoded: encoded)
+                  let data = loamsBase64(encoded)
             else { continue }
             if let info = errorInfo(fromProto: data) { return info }
         }
@@ -209,7 +223,7 @@ extension ConnectTransport {
                 continue
             }
             guard let payload = reader.readLengthDelimited() else { return nil }
-            if let info = errorInfo(fromGoogleRPCAny(payload)) { return info }
+            if let info = errorInfo(fromGoogleRPCAny: payload) { return info }
         }
         return nil
     }

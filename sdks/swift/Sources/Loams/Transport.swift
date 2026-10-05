@@ -209,7 +209,7 @@ public final class ConnectTransport: HTTPTransport, @unchecked Sendable {
         if let failure = ConnectTransport.failure(from: data, http: response, trailers: trailers) {
             return failure
         }
-        guard let body = JSONValue.decoded(from: data)?.objectValue else {
+        guard let body = JSONValue.decodedObject(from: data) else {
             // A body that is not JSON is not a Loams response. It is reported with
             // the bytes in the message rather than turned into an empty success:
             // a proxy's HTML 502 page must be visible, not swallowed.
@@ -247,7 +247,7 @@ public final class ConnectTransport: HTTPTransport, @unchecked Sendable {
             for frame in frames {
                 switch frame {
                 case .message(let payload):
-                    continuation.yield(WireMessage(fields: JSONValue.decoded(from: payload)?.objectValue))
+                    continuation.yield(WireMessage(fields: JSONValue.decodedObject(from: payload)))
                 case .trailers:
                     // Read above; nothing to do here.
                     break
@@ -266,7 +266,23 @@ public final class ConnectTransport: HTTPTransport, @unchecked Sendable {
                 // would end the stream **cleanly** on a refusal, which is the
                 // silently-wrong outcome R7 exists to prevent.
                 if let failure = ConnectTransport.failure(from: data, http: response, trailers: trailers) {
-                    continuation.finish(throwing: failure)
+                    // `failure` answers a `WireResponse`, not an `Error`: the
+                    // shape the stream would have carried. Unary calls match on
+                    // `.failure` and map it through `LoamsError.fromWire`, so the
+                    // same mapping happens here rather than throwing a value that
+                    // is not an `Error`.
+                    guard case .failure(let code, let message, let info, _) = failure else {
+                        continuation.finish()
+                        return
+                    }
+                    continuation.finish(
+                        throwing: LoamsError.fromWire(
+                            code: code,
+                            info: info,
+                            rpc: request.rpc,
+                            message: message
+                        )
+                    )
                 } else {
                     continuation.finish()
                 }
@@ -297,8 +313,16 @@ public final class ConnectTransport: HTTPTransport, @unchecked Sendable {
         var urlRequest = URLRequest(url: ConnectTransport.url(for: config.endpoint, rpc: request.rpc))
         urlRequest.httpMethod = "POST"
         urlRequest.httpBody = payload
-        urlRequest.setValue(contentType(protocol: config.protocol_, codec: config.codec, streaming: streaming),
-                            forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue(
+            // The static, not the stored `contentType`: that one is fixed at
+            // `streaming: false`, and a stream's Content-Type differs.
+            ConnectTransport.contentType(
+                protocol: config.protocol_,
+                codec: config.codec,
+                streaming: streaming
+            ),
+            forHTTPHeaderField: "Content-Type"
+        )
         urlRequest.setValue(String(payload.count), forHTTPHeaderField: "Content-Length")
         // The bearer travels in a header and **never** in the URL: a query string
         // ends up in proxy logs, in browser history and in `Referer` (R1).
@@ -412,7 +436,7 @@ public final class ConnectTransport: HTTPTransport, @unchecked Sendable {
         http: HTTPURLResponse,
         trailers: [String: String]
     ) -> WireResponse? {
-        let parsed = JSONValue.decoded(from: data)?.objectValue
+        let parsed = JSONValue.decodedObject(from: data)
 
         // (1) Connect unary. The body's `code` wins over the HTTP status because
         // the status is only a mapping of it, and a proxy's 502 in front of a
@@ -433,7 +457,7 @@ public final class ConnectTransport: HTTPTransport, @unchecked Sendable {
             var message = trailers["grpc-message"] ?? ""
             message = message.removingPercentEncoding ?? message
             var info: ErrorInfoShape?
-            if let binary = trailers["grpc-status-details-bin"], let data = Data(base64Encoded: binary) {
+            if let binary = trailers["grpc-status-details-bin"], let data = loamsBase64(binary) {
                 info = errorInfo(fromGoogleRPCStatus: data)
             }
             return .failure(code: code, message: message, info: info, trailers: trailers)
@@ -457,7 +481,7 @@ public final class ConnectTransport: HTTPTransport, @unchecked Sendable {
     /// A clean end is the literal `{}` (or an empty frame): the server finished,
     /// which is **not** an error and must not be reported as one.
     static func endStreamFailure(_ payload: Data) -> (any Error)? {
-        guard let parsed = JSONValue.decoded(from: payload)?.objectValue else { return nil }
+        guard let parsed = JSONValue.decodedObject(from: payload) else { return nil }
         guard let error = parsed["error"]?.objectValue else { return nil }
         let codeText = error["code"]?.stringValue ?? ""
         let code = Code(rawValue: codeText) ?? .unknown
