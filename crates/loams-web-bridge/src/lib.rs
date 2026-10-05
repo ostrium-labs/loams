@@ -49,6 +49,7 @@ pub mod provider;
 pub mod redact;
 pub mod secret;
 pub mod tool;
+pub mod webmcp;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod testing;

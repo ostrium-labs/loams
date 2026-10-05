@@ -9,3 +9,4 @@ mod contract;
 mod egress;
 mod remote;
 mod secrets;
+mod webmcp;
