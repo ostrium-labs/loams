@@ -107,9 +107,6 @@ class _Static:
     def token(self) -> str:
         return self._value
 
-    async def atoken(self) -> str:
-        return self._value
-
 
 class _Env:
     """`LOAMS_API_KEY`, then `LOAMS_TOKEN`, then nothing."""
@@ -124,44 +121,73 @@ class _Env:
     def token(self) -> str | None:
         return self._read()
 
-    async def atoken(self) -> str | None:
+
+class _AsyncStatic:
+    """`_Static` for `AsyncLoams`: the same credential, awaited.
+
+    Separate rather than a subclass because the two protocols disagree on
+    `token`'s return type -- `str` against `Coroutine[..., str]` -- and a class
+    cannot be both. Handing the sync object to an async client was worse than a
+    type error: `await source.token()` on a `str` fails at the first call with
+    "object str can't be used in 'await' expression", which surfaces as an
+    opaque `LoamsError` from the retry loop rather than as a wrong credential.
+    """
+
+    def __init__(self, value: str, name: str) -> None:
+        if value == "":
+            raise ValueError(f"{name}: the credential is empty")
+        self._value = value
+
+    async def token(self) -> str:
+        return self._value
+
+
+class _AsyncEnv:
+    """`_Env` for `AsyncLoams`. Same lookup order, awaited."""
+
+    def __init__(self, environment: Mapping[str, str] | None = None) -> None:
+        self._environment = environment
+
+    def _read(self) -> str | None:
+        environment = self._environment if self._environment is not None else os.environ
+        return environment.get(ENV_API_KEY) or environment.get(ENV_TOKEN) or None
+
+    async def token(self) -> str | None:
         return self._read()
+
 
 
 def api_key(key: str) -> TokenSource:
     """A Loams API key. The key does not expire, so there is nothing to refresh."""
     source = _Static(key, "api_key")
-    return source  # type: ignore[return-value]
+    return source
 
 
 def async_api_key(key: str) -> AsyncTokenSource:
     """`api_key` for `AsyncLoams`."""
-    source = _Static(key, "api_key")
-    return source  # type: ignore[return-value]
+    return _AsyncStatic(key, "api_key")
 
 
 def static_token(token: str) -> TokenSource:
     """A token that is already valid, for a caller who manages its own."""
     source = _Static(token, "static_token")
-    return source  # type: ignore[return-value]
+    return source
 
 
 def async_static_token(token: str) -> AsyncTokenSource:
     """`static_token` for `AsyncLoams`."""
-    source = _Static(token, "static_token")
-    return source  # type: ignore[return-value]
+    return _AsyncStatic(token, "static_token")
 
 
 def env_token(environment: Mapping[str, str] | None = None) -> TokenSource:
     """`LOAMS_API_KEY`, then `LOAMS_TOKEN`, then nothing."""
     source = _Env(environment)
-    return source  # type: ignore[return-value]
+    return source
 
 
 def async_env_token(environment: Mapping[str, str] | None = None) -> AsyncTokenSource:
     """`env_token` for `AsyncLoams`."""
-    source = _Env(environment)
-    return source  # type: ignore[return-value]
+    return _AsyncEnv(environment)
 
 
 # ---------------------------------------------------------------------------
@@ -224,20 +250,24 @@ class _Refreshing:
 class _AsyncRefreshing:
     """Async side: one in-flight fetch shared by concurrent awaiters.
 
-    The lock is what shares a single exchange, and the re-read *inside* it is
-    what stops a second waiter fetching again after the first populated the
-    cache.
+    A refresh **always** re-fetches, which is the whole point of calling one: the
+    sync `_Refreshing.refresh` does, and it is what R1's refresh-once-and-retry
+    depends on. This used to fetch only when the cache was empty, which made
+    `refresh()` a no-op over a populated cache -- so the async client's
+    refresh-and-retry re-opened the stream and resent the *same* rejected token,
+    and the caller's token source was never actually refreshed. Nothing raised;
+    the watch just ended as if it had seen no changes.
+
+    The in-flight fetch is a `Task`, not a bare coroutine, because a coroutine can
+    be awaited exactly once and concurrent awaiters would collide on it -- the
+    same trap as `AsyncSystemApi.catalogue`. A `Task` is awaitable as many times
+    as there are awaiters, so one exchange is shared and the rest wait for it.
     """
 
     def __init__(self, fetch: Callable[[], Awaitable[str]], cache: _Cache) -> None:
         self._fetch = fetch
         self._cache = cache
-        self._lock: asyncio.Lock | None = None
-
-    def _get_lock(self) -> asyncio.Lock:
-        if self._lock is None:
-            self._lock = asyncio.Lock()
-        return self._lock
+        self._in_flight: asyncio.Task[str] | None = None
 
     async def token(self) -> str:
         if self._cache.token_value is not None:
@@ -247,22 +277,33 @@ class _AsyncRefreshing:
         return self._cache.token_value
 
     async def refresh(self) -> None:
-        async with self._get_lock():
-            if self._cache.token_value is None:
-                self._cache.calls += 1
-                self._cache.token_value = await self._fetch()
+        task = self._in_flight
+        if task is None:
+            task = self._in_flight = asyncio.ensure_future(self._fetch_once())
+        try:
+            self._cache.token_value = await task
+        finally:
+            # Cleared even when the fetch raised, so a transient failure does not
+            # leave a dead awaitable in the slot -- the same poisoning the sync
+            # side's `finally` exists to avoid.
+            if self._in_flight is task:
+                self._in_flight = None
+
+    async def _fetch_once(self) -> str:
+        self._cache.calls += 1
+        return await self._fetch()
 
 
 def refreshing(fetch: Callable[[], str]) -> TokenSource:
     """A source that caches and calls `fetch` when asked to refresh."""
     source = _Refreshing(fetch, _Cache())
-    return source  # type: ignore[return-value]
+    return source
 
 
 def async_refreshing(fetch: Callable[[], Awaitable[str]]) -> AsyncTokenSource:
     """A source that caches and awaits `fetch` when asked to refresh."""
     source = _AsyncRefreshing(fetch, _Cache())
-    return source  # type: ignore[return-value]
+    return source
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +379,7 @@ def _exchange(options: OidcExchangeOptions) -> str:
 def oidc_exchange(options: OidcExchangeOptions) -> TokenSource:
     """The token exchange a person signed in through Authentik needs."""
     source = _Refreshing(lambda: _exchange(options), _Cache())
-    return source  # type: ignore[return-value]
+    return source
 
 
 async def _exchange_in_executor(options: OidcExchangeOptions) -> str:
@@ -350,4 +391,4 @@ async def _exchange_in_executor(options: OidcExchangeOptions) -> str:
 def async_oidc_exchange(options: OidcExchangeOptions) -> AsyncTokenSource:
     """`oidc_exchange` for `AsyncLoams`."""
     source = _AsyncRefreshing(lambda: _exchange_in_executor(options), _Cache())
-    return source  # type: ignore[return-value]
+    return source

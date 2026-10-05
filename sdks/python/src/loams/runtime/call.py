@@ -18,15 +18,22 @@ written once as free functions so the two cannot drift on the parts R1–R4 pin.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterator, Mapping, MutableMapping
-from typing import TypeVar
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Iterator,
+    Mapping,
+    MutableMapping,
+)
+from typing import Any, TypeVar
 
 from connectrpc.client import ConnectClient, ConnectClientSync
 from connectrpc.code import Code
 from connectrpc.method import MethodInfo
 from google.protobuf.message import Message
 
-from loams.gen.facade import IDEMPOTENCY_LEVELS, METHODS, CallBinding, Pagination
+from loams._gen.facade import IDEMPOTENCY_LEVELS, METHODS, CallBinding, Pagination
 from loams.runtime.errors import LoamsError, TokenExpiredError, to_loams_error
 from loams.runtime.options import CallOptions, ConsistencyOptions, ConsistencyTokenStore
 from loams.runtime.retry import backoff_seconds, should_retry, sleep
@@ -128,9 +135,16 @@ def resolve_session(
 
     Its own store if it brought one, the client's if it asked for the session's,
     none otherwise. Off by default (D609).
+
+    A call that expresses no preference takes the client's session, because that is
+    what `Loams(session_consistency=True)` means: the token is held *across calls*.
+    It used to return `None` here, which made the constructor flag inert -- every
+    call had to repeat `ConsistencyOptions(session=True)` or it joined no session at
+    all, and no error said so. `ConsistencyOptions(session=False)` is still how a
+    single call opts out.
     """
     if options is None:
-        return None
+        return client_session
     chosen = options.session
     if chosen is False:
         return None
@@ -233,6 +247,16 @@ def record_consistency(session: ConsistencyTokenStore | None, response: object) 
     A token the session cannot merge must not turn a committed write into a
     thrown error, because a caller that retries on that error performs the write
     twice. `ConsistencySession.conflicts` counts it instead.
+
+    This reads the response **message** field, which is one of the two places
+    D609 puts a token. The other is the response header `loams-consistency-token`
+    -- the only one that currently carries anything, since no generated message
+    has a `consistency_token` field -- and `connect-python==0.9.0` has no call
+    that returns response headers, so this function never sees it. Which is why
+    a `ConsistencySession` stays empty in practice and `session_consistency=True`
+    is inert rather than merely conservative. The Rust SDK reads the header
+    (`token_from_headers` in `sdks/rust/src/request.rs`); closing this needs
+    connect-python to expose headers, not a change here.
     """
     if session is None or response is None:
         return
@@ -306,7 +330,7 @@ class _BaseInvoker:
 
     def binding_for(self, module: str, call: str) -> CallBinding:
         """The binding a module and call name identify."""
-        from loams.gen.facade import MODULES
+        from loams._gen.facade import MODULES
 
         for entry in MODULES:
             if entry.name != module:
@@ -361,7 +385,14 @@ class CallInvoker(_BaseInvoker):
                 method=method,
                 headers=call_headers(call_options, bearer, consistency),
                 timeout_ms=call_options.timeout_ms,
-                use_get=method.idempotency_level == IDEMPOTENCY_LEVELS["no_side_effects"],
+                # Unary calls go out as POST even for `no_side_effects`
+                # methods. D438 notes reads are marked NO_SIDE_EFFECTS
+                # "(HTTP GET)", but every recorded fixture in
+                # `sdks/fixtures/recorded` is a POST, the fixture server keys
+                # cases on the method, and the Go and Rust SDKs post. A GET
+                # gets a 404 and the whole conformance suite fails.
+                # POST, as in the sync path above.
+                use_get=False,
             )
 
         response = call_with_retry(
@@ -390,29 +421,42 @@ class CallInvoker(_BaseInvoker):
         method = _method_of(binding)
         client = self._client
         assert isinstance(client, ConnectClientSync)
-        source = client.execute_server_stream(
-            request=request,
-            method=method,
-            headers=call_headers(call_options, self._bearer(), consistency),
-            timeout_ms=call_options.timeout_ms,
-        )
-        return self._mapped(source, binding.rpc, session, call_options)
+
+        def open_stream() -> Iterator[Message]:
+            """A fresh stream per call, so a refresh can actually re-open one.
+
+            Deliberately a callable and not a stream built once here: `_mapped`
+            re-opens after a token expiry by calling this again, and a stream
+            built eagerly could only be re-iterated -- which silently yields
+            nothing, because the first attempt already consumed it. The bearer is
+            read per attempt for the same reason the retry loop reads it per
+            attempt: the whole point is to send the *new* token.
+            """
+            return client.execute_server_stream(
+                request=request,
+                method=method,
+                headers=call_headers(call_options, self._bearer(), consistency),
+                timeout_ms=call_options.timeout_ms,
+            )
+
+        return self._mapped(open_stream, binding.rpc, session, call_options)
 
     def _bearer(self) -> str | None:
         return self._token_source.token() if self._token_source is not None else None
 
     def _mapped(
         self,
-        source: Iterator[Message],
+        open_stream: Callable[[], Iterator[Message]],
         rpc: str,
         session: ConsistencyTokenStore | None,
         options: CallOptions,
     ) -> Iterator[Message]:
-        """Wraps an iterator so every throw becomes a `LoamsError`."""
+        """Wraps a stream so every throw becomes a `LoamsError`."""
         refreshed = False
         yielded = False
         refresh = self._refresh
         while True:
+            source = open_stream()
             try:
                 for message in source:
                     yielded = True
@@ -474,7 +518,7 @@ class AsyncCallInvoker(_BaseInvoker):
                 method=method,
                 headers=call_headers(call_options, bearer, consistency),
                 timeout_ms=call_options.timeout_ms,
-                use_get=method.idempotency_level == IDEMPOTENCY_LEVELS["no_side_effects"],
+                use_get=False,
             )
 
         response = await async_call_with_retry(
@@ -492,39 +536,67 @@ class AsyncCallInvoker(_BaseInvoker):
             return None
         return await self._token_source.token()
 
-    async def stream(
+    def stream(
         self, binding: CallBinding, request: Message, options: CallOptions | None = None
-    ) -> Any:
-        """One async server stream, with the errors mapped."""
-        from collections.abc import AsyncIterator
+    ) -> AsyncIterator[Message]:
+        """One async server stream, with the errors mapped.
 
+        A plain `def` returning the iterator, not an `async def` returning one,
+        because that is what the generated `LiveModule.watch` declares --
+        `def watch(...) -> AsyncIterator[Transition]` -- and it is what
+        `AsyncLoams.stream` passes to `async_watch`. As an `async def` this
+        returned a coroutine, so `async for t in client.live.watch(req)` raised
+        `TypeError: 'async for' requires an object with __aiter__ method, got
+        coroutine`, and `AsyncLoams.stream` was broken by the same cause. Neither
+        path had ever been run.
+
+        The shape mirrors the sync `stream`: validation stays eager so a bad
+        binding fails at the call, and only the token resolution is deferred,
+        since that is the one thing that has to be awaited.
+        """
         call_options = options or CallOptions()
         _, _, _, session, consistency = self._plan(binding, call_options, request)
         method = _method_of(binding)
         client = self._client
         assert isinstance(client, ConnectClient)
-        bearer = await self._bearer()
-        source = client.execute_server_stream(
-            request=request,
-            method=method,
-            headers=call_headers(call_options, bearer, consistency),
-            timeout_ms=call_options.timeout_ms,
-        )
-        return _async_mapped(source, binding.rpc, session, self._refresh, call_options)
+
+        async def open_stream() -> AsyncIterator[Message]:
+            """A fresh stream per call, so a refresh can actually re-open one.
+
+            The same reason as the sync `stream`, and the same bug if it is built
+            once: `_async_mapped` re-opens by calling this again, and re-iterating
+            a consumed async iterator silently yields nothing.
+            """
+            bearer = await self._bearer()
+            return client.execute_server_stream(
+                request=request,
+                method=method,
+                headers=call_headers(call_options, bearer, consistency),
+                timeout_ms=call_options.timeout_ms,
+            )
+
+        async def open() -> AsyncIterator[Message]:
+            async for message in _async_mapped(
+                open_stream, binding.rpc, session, self._refresh, call_options
+            ):
+                yield message
+
+        return open()
 
 
 async def _async_mapped(
-    source: AsyncIterator[Message],
+    open_stream: Callable[[], Awaitable[AsyncIterator[Message]]],
     rpc: str,
     session: ConsistencyTokenStore | None,
     refresh: Callable[[], Awaitable[None]] | None,
     options: CallOptions,
 ) -> AsyncIterator[Message]:
-    """Wraps an async iterator so every throw becomes a `LoamsError`."""
+    """Wraps an async stream so every throw becomes a `LoamsError`."""
     del options
     refreshed = False
     yielded = False
     while True:
+        source = await open_stream()
         try:
             async for message in source:
                 yielded = True

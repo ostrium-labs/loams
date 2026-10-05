@@ -10,7 +10,7 @@
         ...
 
 What is generated and what is hand-written, once more, because it decides where a
-change goes. The **module surface** is generated: `loams.gen.facade` has one
+change goes. The **module surface** is generated: `loams._gen.facade` has one
 typed protocol per annotated service, one method per `FacadeOptions` call, and
 `MODULES` says which service and which retry class each call has. The **runtime**
 behind those methods is hand-written, once, in `loams.runtime/`: transport,
@@ -27,19 +27,19 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from types import TracebackType
-from typing import Any, Self, cast
+from typing import Any, TypeVar, cast
 
 from google.protobuf.message import Message
 
-from loams.gen.facade import (
+from loams._gen.facade import (
     MODULES,
     PROTO_PACKAGES,
     PROTO_REV,
     CallBinding,
-    InstanceModule,
-    LiveModule,
+    InstanceModuleSync,
+    LiveModuleSync,
     ModuleBinding,
-    TablesModule,
+    TablesModuleSync,
 )
 from loams.runtime.call import CallInvoker
 from loams.runtime.consistency import ConsistencySession
@@ -101,15 +101,21 @@ def build_modules(invoker: CallInvoker) -> dict[str, Any]:
     return modules
 
 
+# `typing.Self` is 3.11+, and this SDK supports 3.10. A bound TypeVar is
+# the 3.10 spelling of the same idea: `with Loams(...) as c` keeps `c`
+# typed as the concrete subclass rather than widening to the base.
+_SelfT = TypeVar("_SelfT", bound="Loams")
+
+
 class Loams:
     """One SDK, over one instance."""
 
     #: `loams.instance` — what this instance is, and who the caller is.
-    instance: InstanceModule
+    instance: InstanceModuleSync
     #: `loams.live` — the live sync session half. Its package is `unstable`.
-    live: LiveModule
+    live: LiveModuleSync
     #: `loams.tables` — the table half of the same service (design §44 §7.2).
-    tables: TablesModule
+    tables: TablesModuleSync
     #: The module catalogue, feature detection and the version check.
     system: SystemApi
 
@@ -143,10 +149,30 @@ class Loams:
         :param session_consistency: hold a session consistency token across calls
             (D609). **Off by default**: every read is then `STRONG` on its own,
             which is correct but does not give read-your-writes across processes.
+
+            **Turning this on does not yet give you read-your-writes, and nothing
+            warns you.** D609 puts the token in the response message *and* in the
+            response header `loams-consistency-token`. No generated message has a
+            `consistency_token` field, so that half of the contract is not there
+            to read; and `connect-python==0.9.0` exposes only `execute_unary` and
+            `execute_server_stream`, which return the message and discard the
+            response headers, so the other half is unreachable too. The store
+            therefore stays empty and no `loams-consistency` header is ever sent.
+
+            So this is currently a no-op that costs an allocation. It is kept
+            because the flag is the documented shape of the feature and the store
+            is correct once a token can reach it. `loams.consistency` is `None`
+            when the flag is off; with it on, the store is there and
+            `loams.consistency.current()` is still `None`, which is how you can
+            tell. `tests/test_consistency.py` pins the gap, and fails on a
+            connect-python upgrade that would let us close it.
         """
         if api_key is not None and auth is not None:
             raise ValueError("pass api_key or auth, not both: they answer the same question")
-        if not endpoint:
+        # Stripped for the check only, so a blank address from an environment
+        # variable or a config file is refused here rather than becoming a request
+        # to a URL that is nothing but whitespace.
+        if not endpoint.strip():
             raise ValueError("endpoint is empty")
 
         from loams.runtime.transports import protocol_of
@@ -181,9 +207,9 @@ class Loams:
         #: module the generator has not seen yet is absent, so `modules` is how a
         #: caller asks what this build can do before naming one.
         self.modules: Mapping[str, Any] = modules
-        self.instance = cast(InstanceModule, modules["instance"])
-        self.live = cast(LiveModule, modules["live"])
-        self.tables = cast(TablesModule, modules["tables"])
+        self.instance = cast(InstanceModuleSync, modules["instance"])
+        self.live = cast(LiveModuleSync, modules["live"])
+        self.tables = cast(TablesModuleSync, modules["tables"])
         self.system = SystemApi(self.instance.get_instance)
 
     # -- lifecycle ---------------------------------------------------------
@@ -192,7 +218,7 @@ class Loams:
         """Releases the transport's connections."""
         self._client.close()
 
-    def __enter__(self) -> Self:
+    def __enter__(self: _SelfT) -> _SelfT:
         return self
 
     def __exit__(
@@ -225,10 +251,16 @@ class Loams:
 
     def binding(self, module: str, call: str) -> CallBinding:
         """The binding a module and call name identify, or a clear error."""
-        found = self._invoker.binding_for(module, call)
-        if found.streaming != "server" and module == "":
+        # Checked before the lookup, because the lookup's own error for an empty
+        # module reads `loams. has no generated call watch` -- naming the call and
+        # an empty module, which sends a caller who simply forgot the module
+        # looking for a typo in the call name instead. The guard used to be
+        # `found.streaming != "server" and module == ""`, which made it
+        # unreachable: `binding_for("")` always raised first, and the one case it
+        # was meant to catch -- a streaming call -- is excluded by the condition.
+        if module == "":
             raise LoamsError("a module name is required")
-        return found
+        return self._invoker.binding_for(module, call)
 
     def invalidate_catalogue(self) -> None:
         """Forgets the cached service catalogue, so the next check calls again."""

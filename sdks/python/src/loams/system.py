@@ -21,13 +21,14 @@ or whose instance changed variant underneath a long-lived client.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Protocol
 
 from connectrpc.code import Code
 
-from loams.gen.facade import (
+from loams._gen.facade import (
     FEATURE_NOT_IN_VARIANT,
     MODULES,
     PROTO_PACKAGES,
@@ -104,12 +105,34 @@ def _call_options(config: CallOptions | None) -> CallOptions | None:
     return config
 
 
+class _GetInstance(Protocol):
+    """The `instance.get_instance` the catalogue check is built on.
+
+    A `Callable[[...], ...]` cannot say that `options` is keyword-only, and the
+    generated module methods declare it that way, so a positional Callable type
+    rejected every one of them. Spelling the signature out keeps the keyword-only
+    contract enforced rather than weakening it to `Callable[...]`.
+    """
+
+    def __call__(
+        self, request: GetInstanceRequest, *, options: CallOptions | None = ...
+    ) -> GetInstanceResponse: ...
+
+
+class _GetInstanceAsync(Protocol):
+    """`_GetInstance` for `AsyncSystemApi`."""
+
+    def __call__(
+        self, request: GetInstanceRequest, *, options: CallOptions | None = ...
+    ) -> Awaitable[GetInstanceResponse]: ...
+
+
 class SystemApi:
     """The catalogue, the version check and the guard."""
 
     def __init__(
         self,
-        get_instance: Callable[[GetInstanceRequest, CallOptions | None], GetInstanceResponse],
+        get_instance: _GetInstance,
         config: CallOptions | None = None,
     ) -> None:
         """`get_instance` is `loams.instance.get_instance`, the one RPC used here.
@@ -134,7 +157,7 @@ class SystemApi:
             return self._catalogue
         with self._lock:
             if self._in_flight is None:
-                self._in_flight = self._get_instance(GetInstanceRequest(), self._config)
+                self._in_flight = self._get_instance(GetInstanceRequest(), options=self._config)
             response = self._in_flight
         try:
             catalogue = to_catalogue(tuple(response.services))
@@ -176,7 +199,7 @@ class SystemApi:
         raise FeatureNotInVariantError(
             f"{name} is not in this instance's build variant",
             code=Code.UNIMPLEMENTED,
-            reason="feature_not_in_variant",  # type: ignore[arg-type]
+            reason="feature_not_in_variant",
             metadata={"package": name},
             rpc="loams.instance.v1.InstanceService/GetInstance",
             variant=None,
@@ -189,7 +212,7 @@ class SystemApi:
         for the modules that are there, and the caller decides what a missing one
         means.
         """
-        response = self._get_instance(GetInstanceRequest(), self._config)
+        response = self._get_instance(GetInstanceRequest(), options=self._config)
         api_versions = tuple(response.api_versions)
         spoken = spoken_packages()
         missing = tuple(name for name in spoken if name not in api_versions)
@@ -207,31 +230,50 @@ class AsyncSystemApi:
 
     def __init__(
         self,
-        get_instance: Callable[
-            [GetInstanceRequest, CallOptions | None], Awaitable[GetInstanceResponse]
-        ],
+        get_instance: _GetInstanceAsync,
         config: CallOptions | None = None,
     ) -> None:
         self._get_instance = get_instance
         self._config = config
         self._catalogue: Catalogue | None = None
-        self._in_flight: Any = None
+        self._in_flight: asyncio.Task[GetInstanceResponse] | None = None
 
     async def catalogue(self) -> Catalogue:
         """The service catalogue, cached, with one in-flight fetch shared.
 
         Concurrent readers share the fetch, so a cold start with twenty
         availability checks makes one call, not twenty.
+
+        The shared fetch is an `asyncio.Task`, not a coroutine, and the slot is
+        cleared in a `finally`. Both matter, and both were wrong:
+
+        * a coroutine can be awaited exactly once, so the second reader that
+          joined the in-flight fetch got `RuntimeError: cannot reuse already
+          awaited coroutine` instead of the catalogue -- the promise above, on a
+          cold start with any real RPC in it, which suspends. A Task is
+          awaitable as many times as there are readers.
+        * without the `finally`, a fetch that raised left the dead awaitable in
+          the slot forever, so every later check failed the same way instead of
+          retrying. One `GetInstance` error permanently broke `loams.system`,
+          with a `RuntimeError` that named neither the RPC nor the cause.
+
+        The clear is identity-checked so a waiter that finished late cannot drop
+        a newer fetch that a later caller has already started.
         """
         if self._catalogue is not None:
             return self._catalogue
-        if self._in_flight is None:
-            self._in_flight = self._get_instance(GetInstanceRequest(), self._config)
-        response = await self._in_flight
-        catalogue = to_catalogue(tuple(response.services))
-        self._catalogue = catalogue
-        self._in_flight = None
-        return catalogue
+        task = self._in_flight
+        if task is None:
+            task = self._in_flight = asyncio.ensure_future(
+                self._get_instance(GetInstanceRequest(), options=self._config)
+            )
+        try:
+            catalogue = to_catalogue(tuple((await task).services))
+            self._catalogue = catalogue
+            return catalogue
+        finally:
+            if self._in_flight is task:
+                self._in_flight = None
 
     def invalidate(self) -> None:
         """Drops the cached catalogue."""
@@ -257,7 +299,7 @@ class AsyncSystemApi:
         raise FeatureNotInVariantError(
             f"{name} is not in this instance's build variant",
             code=Code.UNIMPLEMENTED,
-            reason="feature_not_in_variant",  # type: ignore[arg-type]
+            reason="feature_not_in_variant",
             metadata={"package": name},
             rpc="loams.instance.v1.InstanceService/GetInstance",
             variant=None,
@@ -265,7 +307,7 @@ class AsyncSystemApi:
 
     async def version(self) -> VersionReport:
         """The proto revision check (R9)."""
-        response = await self._get_instance(GetInstanceRequest(), self._config)
+        response = await self._get_instance(GetInstanceRequest(), options=self._config)
         api_versions = tuple(response.api_versions)
         spoken = spoken_packages()
         missing = tuple(name for name in spoken if name not in api_versions)

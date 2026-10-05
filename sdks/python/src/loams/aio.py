@@ -24,18 +24,19 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
 from types import TracebackType
-from typing import Any, Self, cast
+from typing import Any, TypeVar, cast
 
 from google.protobuf.message import Message
 
-from loams.gen.facade import (
-    MODULES,
-    PROTO_PACKAGES,
-    PROTO_REV,
-    CallBinding,
+from loams._gen.facade import (
+    CallBinding   ,
     InstanceModule,
-    LiveModule,
-    TablesModule,
+    LiveModule    ,
+    MODULES       ,
+    ModuleBinding ,
+    PROTO_PACKAGES,
+    PROTO_REV     ,
+    TablesModule  ,
 )
 from loams.runtime.call import AsyncCallInvoker
 from loams.runtime.consistency import ConsistencySession
@@ -45,7 +46,7 @@ from loams.runtime.pagination import async_paginate
 from loams.runtime.retry import DEFAULT_MAX_RETRIES
 from loams.runtime.streams import ResumeOptions, async_watch
 from loams.runtime.token_source import AsyncTokenSource
-from loams.runtime.token_source import api_key as async_api_key_source
+from loams.runtime.token_source import async_api_key as async_api_key_source
 from loams.runtime.transports import TransportOptions, make_async_client, protocol_of
 from loams.system import AsyncSystemApi
 
@@ -86,6 +87,12 @@ def build_async_modules(invoker: AsyncCallInvoker) -> dict[str, Any]:
     return {binding.name: _AsyncModule(binding, invoker) for binding in MODULES}
 
 
+# `typing.Self` is 3.11+, and this SDK supports 3.10. A bound TypeVar is
+# the 3.10 spelling of the same idea: `with Loams(...) as c` keeps `c`
+# typed as the concrete subclass rather than widening to the base.
+_SelfT = TypeVar("_SelfT", bound="AsyncLoams")
+
+
 class AsyncLoams:
     """One SDK, over one instance, awaited."""
 
@@ -113,7 +120,10 @@ class AsyncLoams:
         """
         if api_key is not None and auth is not None:
             raise ValueError("pass api_key or auth, not both: they answer the same question")
-        if not endpoint:
+        # Stripped for the check only, so a blank address from an environment
+        # variable or a config file is refused here rather than becoming a request
+        # to a URL that is nothing but whitespace.
+        if not endpoint.strip():
             raise ValueError("endpoint is empty")
 
         options = transport_options or TransportOptions(
@@ -149,7 +159,7 @@ class AsyncLoams:
         """Releases the transport's connections."""
         await self._client.close()
 
-    async def __aenter__(self) -> Self:
+    async def __aenter__(self: _SelfT) -> _SelfT:
         return self
 
     async def __aexit__(
@@ -182,6 +192,11 @@ class AsyncLoams:
 
     def binding(self, module: str, call: str) -> CallBinding:
         """The binding a module and call name identify, or a clear error."""
+        # Checked before the lookup, for the reason the sync client does it: the
+        # lookup's error for an empty module names the call and an empty module,
+        # which reads like a typo in the call name rather than a missing module.
+        if module == "":
+            raise LoamsError("a module name is required")
         return self._invoker.binding_for(module, call)
 
     def invalidate_catalogue(self) -> None:

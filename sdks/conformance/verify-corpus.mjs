@@ -32,6 +32,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FAULTS, REQUIRED_FAULTS } from './faults.mjs';
 import { FIXTURES_DIR, loadFaults, loadManifest, maySkip } from './required.mjs';
+import { encodingMismatch } from './encodings.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -118,6 +119,11 @@ for (const fixture of manifest.fixtures) {
           'the steps say ' +
           JSON.stringify(steps.map((step) => step.expect?.reason ?? null)),
       );
+    }
+    const responseType = step.response?.headers?.['content-type'] ?? '';
+    const mismatch = encodingMismatch(responseType, step.response?.bodyBase64);
+    if (mismatch) {
+      fail(`${fixture.name} step ${at} ${mismatch}`);
     }
     const expectedFrames = expect.frames ?? steps.filter((s) => s.response.frames).length;
     if (step.response.frames && step.response.frames.length !== expectedFrames) {

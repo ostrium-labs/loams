@@ -27,7 +27,7 @@ from typing import Generic, TypeVar
 
 from google.protobuf.message import Message
 
-from loams.gen.facade import CallBinding
+from loams._gen.facade import CallBinding
 from loams.runtime.errors import LoamsError, to_loams_error
 from loams.runtime.options import CallOptions
 from loams.runtime.retry import DEFAULT_MAX_RETRIES, backoff_seconds, should_retry, sleep

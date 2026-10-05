@@ -3,7 +3,7 @@
 A failed RPC carries a Connect code and one `loams.errors.v1.ErrorInfo` in its
 details. The `reason` is what callers branch on: it is a stable `snake_case`
 string, registered in `docs/api/reasons.md` and generated into
-`loams.gen.facade`'s `Reason`, so `error.reason == "feature_not_in_variant"`
+`loams._gen.facade`'s `Reason`, so `error.reason == "feature_not_in_variant"`
 means one thing and a reason the registry has lost stops type-checking. The
 `message` is for people and may change; nothing in an SDK branches on it.
 
@@ -21,15 +21,16 @@ Three cases stay distinct (R8):
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, cast
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from google.protobuf.any_pb2 import Any
+from google.protobuf import descriptor
 from google.protobuf.message import Message
 
 from loams.errors.v1.errors_pb2 import ErrorInfo
-from loams.gen.facade import FEATURE_NOT_IN_VARIANT, REASONS, TOKEN_EXPIRED, Reason
+from loams._gen.facade import FEATURE_NOT_IN_VARIANT, REASONS, TOKEN_EXPIRED, Reason
 
 __all__ = [
     "AbortedError",
@@ -60,6 +61,7 @@ _KNOWN_REASONS: Final[frozenset[str]] = frozenset(REASONS)
 #: packed detail. Matched rather than assumed, so a service that adds a detail
 #: of its own does not move `reason` out from under a caller.
 _ERROR_INFO_URL: Final[str] = "type.googleapis.com/loams.errors.v1.ErrorInfo"
+_TYPE_URL_PREFIX: Final[str] = "type.googleapis.com/"
 
 
 class LoamsError(Exception):
@@ -208,7 +210,11 @@ def is_loams_error(value: object) -> bool:
 def _unpack(detail: Any, message: Message) -> bool:
     """Unpacks a packed detail into `message`, whether or not the pool knows it."""
     try:
-        if detail.Is(message.DESCRIPTOR):
+        # The stubs type DESCRIPTOR as descriptor.Descriptor, but the _upb
+        # runtime hands back its own Descriptor type. They are the same object;
+        # the stubs just do not say so.
+        descriptor = cast("descriptor.Descriptor", message.DESCRIPTOR)
+        if detail.Is(descriptor):
             detail.Unpack(message)
             return True
     except (TypeError, ValueError, KeyError):
@@ -220,14 +226,37 @@ def _unpack(detail: Any, message: Message) -> bool:
     return True
 
 
+#: The bare message name, which is what Connect's JSON encoding puts in a
+#: detail's `type` and what both sides of the lookup normalize to.
+_ERROR_INFO_MESSAGE: Final[str] = "loams.errors.v1.ErrorInfo"
+
+
+def _message_name(type_url: str) -> str:
+    """Strip every `type.googleapis.com/` prefix, so a doubled URL still names
+    the message. Any prefix, not just our own, since the input is untrusted."""
+    name = type_url
+    while name.startswith(_TYPE_URL_PREFIX):
+        name = name[len(_TYPE_URL_PREFIX):]
+    return name
+
+
 def error_info(error: ConnectError) -> ErrorInfo | None:
     """The `ErrorInfo` a Connect error carries, if any.
 
-    Looked up by its type URL rather than by position, so a service that adds a
-    detail of its own does not move `reason` out from under a caller.
+    Looked up by type rather than by position, so a service that adds a detail
+    of its own does not move `reason` out from under a caller.
+
+    The type is normalized before it is compared. Connect's JSON encoding puts
+    the bare message name in `type` and the client prefixes it with
+    `type.googleapis.com/`, but a recorder or a Go peer that already sends the
+    full type URL gets that prefix applied *again*, arriving here as
+    `type.googleapis.com/type.googleapis.com/loams.errors.v1.ErrorInfo`. An
+    exact match only ever finds the first of those two shapes, and the symptom
+    is a `token_expired` refusal arriving as a bare `UnauthenticatedError` with
+    the reason dropped -- which silently disables the refresh-and-retry path.
     """
     for detail in error.details:
-        if detail.type_url == _ERROR_INFO_URL:
+        if _message_name(detail.type_url) == _ERROR_INFO_MESSAGE:
             return ErrorInfo.FromString(detail.value)
     return None
 
@@ -259,7 +288,7 @@ def to_loams_error(value: object, rpc: str | None = None) -> LoamsError:
     if known and raw == FEATURE_NOT_IN_VARIANT:
         metadata = dict(info.metadata) if info is not None else {}
         return FeatureNotInVariantError(
-            value.message, variant=metadata.get("variant"), **fields  # type: ignore[arg-type]
+            value.message, variant=metadata.get("variant"), **fields
         )
     if value.code == Code.UNAUTHENTICATED and known and raw == TOKEN_EXPIRED:
         return TokenExpiredError(value.message, **fields)  # type: ignore[arg-type]

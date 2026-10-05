@@ -15,12 +15,12 @@ is the same iterator under its module and call names.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from typing import TypeVar
 
 from google.protobuf.message import Message
 
-from loams.gen.facade import CallBinding, Pagination
+from loams._gen.facade import CallBinding, Pagination
 from loams.runtime.options import CallOptions, PageRequestOptions
 
 __all__ = ["async_paginate", "paginate", "page_fields"]
@@ -79,7 +79,7 @@ def paginate(
         attempt = request if page_token is None else _set_page_token(request, token_field, page_token)
         page = fetch(attempt, options)
         for item in getattr(page, pagination.items):
-            yield item  # type: ignore[misc]
+            yield item
         next_token = getattr(page, pagination.next_page_token)
         if not isinstance(next_token, str) or next_token == "":
             return
@@ -88,7 +88,7 @@ def paginate(
 
 async def async_paginate(
     binding: CallBinding,
-    fetch: Callable[[Message, CallOptions | None], "object"],
+    fetch: Callable[[Message, CallOptions | None], Awaitable[RES]],
     request: REQ,
     options: CallOptions | None = None,
     page_options: PageRequestOptions | None = None,
@@ -104,9 +104,9 @@ async def async_paginate(
     page_token: str | None = None
     while True:
         attempt = request if page_token is None else _set_page_token(request, token_field, page_token)
-        page = await fetch(attempt, options)  # type: ignore[misc]
+        page = await fetch(attempt, options)
         for item in getattr(page, pagination.items):
-            yield item  # type: ignore[misc]
+            yield item
         next_token = getattr(page, pagination.next_page_token)
         if not isinstance(next_token, str) or next_token == "":
             return
