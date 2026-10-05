@@ -10,9 +10,18 @@ use std::net::SocketAddr;
 #[derive(Debug)]
 pub enum DurableError {
     /// `--durable-listen` named an address other peers could reach (D138).
-    NotLoopback { addr: SocketAddr },
+    NotLoopback {
+        /// The address `--durable-listen` named.
+        addr: SocketAddr,
+    },
     /// The listen address is taken, or cannot be bound.
-    Bind { addr: SocketAddr, source: String },
+    Bind {
+        /// The address that could not be bound.
+        addr: SocketAddr,
+        /// The operating system's message for the failure. A message, not an
+        /// error source: thiserror would read it as one.
+        source: String,
+    },
     /// The configuration was refused: a protected or unknown key, a bad value,
     /// or a store this build does not carry.
     Config(String),
@@ -23,7 +32,9 @@ pub enum DurableError {
     /// The server answered with a non-2xx status. `body` is the response's
     /// `data`.
     Protocol {
+        /// The HTTP status the server answered with.
         status: u16,
+        /// The response's `data` payload.
         body: serde_json::Value,
     },
 }

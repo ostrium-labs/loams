@@ -79,3 +79,61 @@ pub(crate) async fn wait_free(addr: SocketAddr, limit: Duration) -> bool {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr(text: &str) -> SocketAddr {
+        text.parse().expect("a literal socket address")
+    }
+
+    #[test]
+    fn localhost_is_trimmed_and_case_insensitive() {
+        assert_eq!(
+            parse_listen(" localhost:8001 ").expect("trimmed"),
+            addr("127.0.0.1:8001")
+        );
+        assert_eq!(
+            parse_listen("LOCALHOST:8001").expect("upper case"),
+            addr("127.0.0.1:8001")
+        );
+    }
+
+    #[test]
+    fn an_ipv4_mapped_loopback_is_accepted() {
+        assert_eq!(
+            parse_listen("[::ffff:127.0.0.1]:8001").expect("mapped loopback"),
+            addr("[::ffff:127.0.0.1]:8001")
+        );
+    }
+
+    #[test]
+    fn a_bad_or_missing_port_is_a_config_error() {
+        for bad in ["localhost:99999", "localhost:", "localhost", "8001"] {
+            assert!(
+                matches!(parse_listen(bad), Err(DurableError::Config(_))),
+                "{bad:?} must be refused as a configuration error"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reachable_address_is_a_not_loopback_error() {
+        for bad in ["[::]:8001", "[::ffff:10.0.0.1]:8001"] {
+            assert!(
+                matches!(parse_listen(bad), Err(DurableError::NotLoopback { .. })),
+                "{bad:?} must be refused as not loopback"
+            );
+        }
+    }
+
+    #[test]
+    fn is_loopback_covers_the_range_not_one_address() {
+        assert!(is_loopback(&addr("127.255.255.254:1")));
+        assert!(is_loopback(&addr("127.0.0.1:1")));
+        assert!(is_loopback(&addr("[::1]:1")));
+        assert!(!is_loopback(&addr("[::2]:1")));
+        assert!(!is_loopback(&addr("10.0.0.1:1")));
+    }
+}

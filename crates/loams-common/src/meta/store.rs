@@ -97,6 +97,10 @@ pub struct Tracked<T> {
 
 impl<T> Tracked<T> {
     /// The result, for callers that do not care about earlier attempts.
+    ///
+    /// # Errors
+    ///
+    /// Returns the recorded [`MetaError`], if any.
     pub fn into_result(self) -> MetaResult<T> {
         self.result
     }
@@ -113,6 +117,11 @@ pub trait ChangeWait: Send + Sync + fmt::Debug {
     /// Completes once a state change is applied after the previous call
     /// returned (for the first call, after the wait was created). May
     /// complete spuriously.
+    ///
+    /// # Errors
+    ///
+    /// [`MetaStopped`] once the metastore has stopped; no change will ever be
+    /// applied again, so the watch can never complete.
     async fn changed(&mut self) -> Result<(), MetaStopped>;
 }
 
@@ -131,6 +140,10 @@ impl MetaChanges {
 
     /// Waits for a change applied since this watch was created or since the
     /// previous call returned; `Err(MetaStopped)` once the metastore stopped.
+    ///
+    /// # Errors
+    ///
+    /// [`MetaStopped`] once the metastore has stopped.
     pub async fn changed(&mut self) -> Result<(), MetaStopped> {
         self.0.changed().await
     }

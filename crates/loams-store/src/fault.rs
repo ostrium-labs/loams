@@ -1,3 +1,7 @@
+//! Fault injection: an [`ObjectStore`] wrapper that fails, delays or
+//! violates preconditions on demand, so a test can drive the error paths a
+//! real backend only reaches under a network partition.
+
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -66,9 +70,13 @@ pub enum Fault {
 /// `precondition` on a GET) are drawn as plain errors.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FaultRates {
+    /// The chance a call fails before it does anything.
     pub error: f64,
+    /// The chance a call applies its effect and only then fails.
     pub error_after_apply: f64,
+    /// The chance a conditional write finds its precondition broken.
     pub precondition: f64,
+    /// The chance a call is delayed before it runs.
     pub delay: f64,
     /// Delays are drawn uniformly from zero to this.
     pub max_delay: Duration,
@@ -104,6 +112,8 @@ pub struct FaultyStore {
 }
 
 impl FaultyStore {
+    /// A store that passes every call through; faults come only from
+    /// [`FaultyStore::inject_nth`] and its siblings.
     pub fn new(inner: Arc<dyn ObjectStore>) -> Self {
         Self::random(inner, 0, FaultRates::none())
     }

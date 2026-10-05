@@ -13,7 +13,9 @@ use crate::proto::qdrant as pb;
 /// `PrimaryKey` canonical bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PointId {
+    /// An unsigned integer id, which sorts before every [`PointId::Uuid`].
     Num(u64),
+    /// A UUID id, sorted after every [`PointId::Num`] and then by its bytes.
     Uuid(Uuid),
 }
 
@@ -45,6 +47,9 @@ impl PointId {
             .map_err(|_| GatewayError::BadRequest(format!("Can not recognize \"{s}\" as point id")))
     }
 
+    /// The key this id names: `Num` is [`PrimaryKey::U64`], `Uuid` is
+    /// [`PrimaryKey::Uuid`] in canonical (big-endian) byte order. A string key
+    /// is not a `PointId`; only [`pk_to_grpc`] accepts one.
     pub fn to_pk(self) -> PrimaryKey {
         match self {
             PointId::Num(n) => PrimaryKey::U64(n),

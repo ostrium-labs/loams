@@ -37,6 +37,7 @@ loams-meta = { workspace = true, features = ["test-util"] }
 loams-worker = { workspace = true, features = ["test-util"] }
 object_store.workspace = true
 proptest.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 ulid.workspace = true
 

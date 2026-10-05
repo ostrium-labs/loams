@@ -12,7 +12,7 @@ use crate::error::{ErrorContext, EsError};
 
 /// The characters an index name must not contain (ES's
 /// `Strings.INVALID_FILENAME_CHARS`, in ES's order).
-const INVALID_CHARS: [char; 10] = [' ', ',', '"', '*', '\\', '<', '|', ',', '>', '/'];
+const INVALID_CHARS: [char; 10] = [' ', ',', '"', '*', '\\', '<', '|', '?', '>', '/'];
 /// ES's rendering of [`INVALID_CHARS`] (`?` included).
 const INVALID_CHARS_TEXT: &str = r#"[' ','"','*',',','/','<','>','?','\','|']"#;
 
@@ -30,7 +30,7 @@ pub fn validate_index_name(name: &str) -> Result<(), EsError> {
     if name.is_empty() {
         return Err(invalid("must not be empty".to_string()));
     }
-    if name.contains(INVALID_CHARS) || name.contains('?') {
+    if name.contains(INVALID_CHARS) {
         return Err(invalid(format!(
             "must not contain the following characters {INVALID_CHARS_TEXT}"
         )));
@@ -311,7 +311,9 @@ mod tests {
         assert!(why("Abc").ends_with("must be lowercase"), "{}", why("Abc"));
         assert!(why("_x").contains("must not start with '_', '-', or '+'"));
         assert!(why("-x").contains("must not start with"));
-        for bad in ["a b", "a*b", "a,b", "a/b", "a?b", "a\"b", "a<b", "a|b"] {
+        for bad in [
+            "a b", "a*b", "a,b", "a/b", "a?b", "a\"b", "a<b", "a|b", "a\\b", "a>b",
+        ] {
             assert!(
                 why(bad).contains(
                     r#"must not contain the following characters [' ','"','*',',','/','<','>','?','\','|']"#

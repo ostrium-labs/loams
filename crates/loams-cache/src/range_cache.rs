@@ -41,7 +41,9 @@ pub enum CacheError {
 /// configuration.
 #[derive(Clone, Debug)]
 pub struct DiskConfig {
+    /// Where the block files live.
     pub dir: PathBuf,
+    /// How many bytes of blocks the disk tier may hold.
     pub capacity_bytes: usize,
 }
 
@@ -69,8 +71,12 @@ impl Default for RangeCacheConfig {
 /// Hit/miss counters, in blocks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CacheStats {
+    /// Blocks served from the cache.
     pub hits: u64,
+    /// Blocks fetched from the store.
     pub misses: u64,
+    /// Blocks discarded because their stored checksum did not match; each was
+    /// refetched and served from the store.
     pub checksum_failures: u64,
     /// Lookups where the foyer cache itself returned an error (for example disk
     /// I/O on the disk tier). These are treated as misses and served from the
@@ -112,6 +118,12 @@ const CRC_LEN: usize = 4;
 const MAX_CONCURRENT_BLOCK_FETCHES: usize = 16;
 
 impl RangeCache {
+    /// Builds the cache over `store`.
+    ///
+    /// # Errors
+    ///
+    /// [`CacheError::Cache`] when `config.block_size` is zero, or when the
+    /// disk tier cannot be prepared under `config.disk`.
     pub async fn new(store: Store, config: RangeCacheConfig) -> Result<Self, CacheError> {
         if config.block_size == 0 {
             return Err(CacheError::Cache("block_size must be > 0".into()));
@@ -405,6 +417,21 @@ fn verify(sealed: &Bytes) -> Option<Bytes> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_zero_block_size_is_refused() {
+        let err = RangeCache::new(
+            Store::in_memory(),
+            RangeCacheConfig {
+                block_size: 0,
+                memory_bytes: 1 << 20,
+                disk: None,
+            },
+        )
+        .await
+        .expect_err("a zero block size would divide by zero");
+        assert!(err.to_string().contains("block_size must be > 0"), "{err}");
+    }
 
     #[tokio::test]
     async fn corrupted_block_is_detected_evicted_and_refetched() {
