@@ -40,6 +40,9 @@ import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FAULTS, REQUIRED_FAULTS, faultsCatalogue, injectFault } from './faults.mjs';
+// `family` lives in encodings.mjs because this module starts a server and loads every
+// fixture at import time, so a unit test can never import it to ask what `family` does.
+import { family } from './encodings.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -60,34 +63,6 @@ const HARNESS = '/__fixtures';
 function arg(name, fallback) {
   const at = process.argv.indexOf(`--${name}`);
   return at >= 0 && at + 1 < process.argv.length ? process.argv[at + 1] : fallback;
-}
-
-/**
- * The encoding of a content type, which is what a recorded case is keyed on:
- * `json`, `proto`, `grpc_web`, `grpc_web_json` and `connect` each have their own
- * response bytes. The gRPC-Web variants are kept apart because a client that
- * asks for gRPC-Web with protobuf must not be handed gRPC-Web with JSON, which
- * is the kind of mismatch that shows up as a parse error inside somebody's SDK
- * rather than as a failure here.
- */
-function family(contentType) {
-  const type = (contentType ?? '').split(';')[0].trim();
-  if (type === 'application/grpc-web+json') {
-    return 'grpc_web_json';
-  }
-  if (type.startsWith('application/grpc-web')) {
-    return 'grpc_web';
-  }
-  if (type.startsWith('application/connect')) {
-    return 'connect';
-  }
-  if (type === 'application/json') {
-    return 'json';
-  }
-  if (type === 'application/proto') {
-    return 'proto';
-  }
-  return type === '' ? 'none' : type;
 }
 
 /** The steps of a fixture: a scenario has several, a single-request case one. */

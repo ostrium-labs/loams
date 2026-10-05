@@ -97,3 +97,54 @@ export function encodingMismatch(contentType, body) {
   }
   return null;
 }
+
+/**
+ * The encoding of a content type, which is what `fixture-server.mjs` keys a recorded
+ * case on:
+ * `json`, `proto`, `grpc_web`, `grpc_web_json`, `connect` and `connect_json` each
+ * have their own response bytes.
+ *
+ * Every JSON variant is kept apart from its protobuf sibling, for the reason the
+ * gRPC-Web ones were: a client that asks for protobuf must not be handed JSON,
+ * which is the kind of mismatch that shows up as a parse error inside somebody's
+ * SDK rather than as a failure here.
+ *
+ * **Connect used to collapse.** `application/connect+json` and
+ * `application/connect+proto` both returned `connect`, while gRPC-Web -- the
+ * same shape, one line above -- was kept apart. Requests in this corpus do carry
+ * the `application/connect+*` types, so that was a live collision: six
+ * `WatchApprovals` fixtures over Connect JSON and one over Connect proto share a
+ * `method path connect` key, and a request that did not name its fixture would be
+ * resolved by fallback order rather than by encoding.
+ *
+ * It happened to be harmless today, and it is worth saying why rather than
+ * claiming a bug that changed nothing: the six colliding fixtures are all
+ * app-mock `WatchApprovals`, which no SDK currently binds, and the one Connect
+ * streaming fixture the SDKs *do* reach, `live_watch`, has a single owner. The
+ * harness also disambiguates by `loams-fixture-name` where a key overlaps. So
+ * nothing was mis-served -- but the protection was incidental, and it evaporates
+ * the moment those fixtures are bound, which is the direction the corpus is
+ * going.
+ */
+export function family(contentType) {
+  const type = (contentType ?? '').split(';')[0].trim();
+  if (type === 'application/grpc-web+json') {
+    return 'grpc_web_json';
+  }
+  if (type.startsWith('application/grpc-web')) {
+    return 'grpc_web';
+  }
+  if (type === 'application/connect+json') {
+    return 'connect_json';
+  }
+  if (type.startsWith('application/connect')) {
+    return 'connect';
+  }
+  if (type === 'application/json') {
+    return 'json';
+  }
+  if (type === 'application/proto') {
+    return 'proto';
+  }
+  return type === '' ? 'none' : type;
+}

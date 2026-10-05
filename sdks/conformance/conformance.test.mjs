@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { FAULTS, REQUIRED_FAULTS } from './faults.mjs';
 import { FIXTURES_DIR, loadManifest } from './required.mjs';
 import { collectAll } from './record-fixtures.mjs';
-import { encodingMismatch } from './encodings.mjs';
+import { encodingMismatch, family } from './encodings.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -526,5 +526,42 @@ describe('encoding agreement between a recorded body and its content-type', () =
       }
     }
     assert.deepEqual(offenders, []);
+  });
+});
+
+describe('the family a recorded case is keyed on', () => {
+  it('keeps every JSON variant apart from its protobuf sibling', () => {
+    // The rule the gRPC-Web branches were written for, applied to Connect as well.
+    // A client asking for protobuf must never be handed JSON: the mismatch shows
+    // up as a parse error inside somebody's SDK, not as a failure here.
+    const families = [
+      'application/connect+json',
+      'application/connect+proto',
+      'application/grpc-web+json',
+      'application/grpc-web+proto',
+      'application/json',
+      'application/proto',
+    ].map((ct) => family(ct));
+    assert.equal(new Set(families).size, families.length, `these collide: ${families}`);
+  });
+
+  it('separates Connect JSON from Connect proto, which is what it used to collapse', () => {
+    assert.notEqual(family('application/connect+json'), family('application/connect+proto'));
+    assert.equal(family('application/connect+json'), 'connect_json');
+    assert.equal(family('application/connect+proto'), 'connect');
+  });
+
+  it('ignores parameters and casing of the separator', () => {
+    assert.equal(family('application/connect+json; charset=utf-8'), 'connect_json');
+    assert.equal(family('  application/proto  '), 'proto');
+  });
+
+  it('has a name for a content type it does not recognise rather than a blank', () => {
+    // An unmapped type keys on itself, so two different unknown types cannot
+    // collide into one family and quietly share a fixture.
+    assert.equal(family('application/whatever'), 'application/whatever');
+    assert.equal(family(''), 'none');
+    assert.equal(family(undefined), 'none');
+    assert.notEqual(family('application/x'), family('application/y'));
   });
 });
