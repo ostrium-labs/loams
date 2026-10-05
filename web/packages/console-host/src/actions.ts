@@ -303,14 +303,16 @@ export class ActionRegistry {
     let args: ReturnType<typeof validateInput>;
     try {
       args = validateInput(spec, input);
-    } catch (cause) {
+    } catch {
+      // The message is fixed on purpose. Rendering the cause would mean calling
+      // `String()` on an object that came from the page, and a trap on
+      // `toString` would throw *here* — inside the handler meant to stop
+      // `invoke` throwing — putting the rejection straight back.
       return {
         ok: false,
         error: {
           code: 'invalid_input',
-          message: `${spec.name}: the input could not be read (${
-            cause instanceof Error ? cause.message : String(cause)
-          })`,
+          message: `${spec.name}: the input could not be read`,
         },
       };
     }

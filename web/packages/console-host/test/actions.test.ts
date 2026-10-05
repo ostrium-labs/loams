@@ -239,7 +239,22 @@ describe('invoking an action', () => {
         // throws there — the point where a bare inspection would escape.
         get: (_target, key) => (key === 'queue' ? 'critical' : undefined),
         ownKeys() {
-          throw new Error('keys are not for you');
+          // Thrown as a hostile object, not an `Error`: rendering it would call
+          // `String()`, so a message that interpolated the cause would throw
+          // inside the handler that exists to stop `invoke` throwing.
+          throw new Proxy(
+            {},
+            {
+              get(_target, key) {
+                if (key === 'toString' || key === Symbol.toPrimitive) {
+                  return () => {
+                    throw new Error('this cause refuses to be described');
+                  };
+                }
+                return undefined;
+              },
+            },
+          );
         },
       },
     );
