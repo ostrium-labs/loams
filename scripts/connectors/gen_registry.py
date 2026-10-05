@@ -3,7 +3,7 @@
 
 Sources of truth, and what each one fixes:
 
-  docs/design/33-connectors.md Appendix A   the 203-row matrix (D352, D358, D628, CN-R1)
+  docs/design/33-connectors.md Appendix A   the 204-row matrix (D352, D358, D628, D634, CN-R1)
   docs/design/33-connectors.md section 8    the 21 starred connectors and their runtime (§8, D358)
   connectors/schema/connector.schema.json   the manifest shape and the category/priority/status enums (CN1 Task 1)
   connectors/registry/catalog.csv           the one CSV the registry is generated from (CN1 Ruling 1)
@@ -117,7 +117,7 @@ APPENDIX_COLUMNS = [
     "priority",
 ]
 
-EXPECTED_ROW_COUNT = 203  # Appendix A's own "Totals: 203 connectors" line (D628, CN1 Task 15) and CN1 Task 2's registry_has_203_entries_and_21_starred
+EXPECTED_ROW_COUNT = 204  # Appendix A's own "Totals: 204 connectors" line: 203 from CN1 Task 15 (D628) plus Grafeo (D634). CN1 Task 2's registry gate, with its count bumped to match.
 EXPECTED_STARRED_COUNT = 21  # §8's 21 and D358's number, unchanged by A.18 (D628, CN1 Ruling 11)
 
 # §33 Appendix A's subsection id, its heading title (without the count, which is computed),
@@ -166,7 +166,7 @@ APPENDIX_HEADER_CELLS = [
     "Priority",
 ]
 TOTALS_LINE = (
-    "Totals: 203 connectors; 21 ★ (P1), and the P2 and P3 counts are computed by CN1 Task 2's generator."
+    "Totals: 204 connectors; 21 ★ (P1), and the P2 and P3 counts are computed by CN1 Task 2's generator."
 )
 
 # Per-row categories for the two mixed subsections. A.3's four families are named in
@@ -174,8 +174,21 @@ TOTALS_LINE = (
 # follows the subsection title ("Warehouse, lakehouse, OLAP and compute").
 # ClickHouse and Hive are not in either hand list; they are OLAP/warehouse systems and get
 # `warehouse` here. CN1 Task 2's `category` output is reported against §4's enum.
+# Loams-owned engines with no Camel component, keyed by connector **id** and mapped to
+# the `loams-flow` module that will implement them (D634 for Grafeo, D628 for A.18's
+# three). Every one of these has an
+# empty Camel cell in Appendix A, which the non-star rule below would otherwise resolve to
+# `openapi:<id>` -- an OpenAPI-generated connector, which is the wrong runtime for a
+# database Loams links into its own process.
+LOAMS_OWNED_NATIVE: dict[str, str] = {
+    "grafeo": "graph",
+    "zulip": "zulip",
+    "itsplane": "itsplane",
+    "forgejo": "forgejo",
+}
+
 CATEGORY_BY_ROW: dict[str, str] = {
-    # A.3 — NoSQL, search, vector and graph (20 rows).
+    # A.3 — NoSQL, search, vector and graph (21 rows; Grafeo joined in D634).
     "MongoDB": "nosql",
     "Cassandra": "nosql",
     "ScyllaDB": "nosql",
@@ -194,6 +207,11 @@ CATEGORY_BY_ROW: dict[str, str] = {
     "Pinecone": "vector",
     "Weaviate": "vector",
     "Milvus": "vector",
+    # Grafeo is Loams's own embedded graph engine (D634): a native Rust database reached
+    # over Connect-RPC, with GQL as its query surface. Camel 4.22.1 has no Grafeo
+    # component, so its Camel and Kestra cells are legitimately empty -- which means
+    # the non-star runtime rule below would otherwise fall through to `openapi`.
+    "Grafeo": "graph",
     "pgvector": "vector",
     "Neo4j": "graph",
     # A.4 — Warehouse, lakehouse, OLAP and compute (20 rows).
@@ -306,6 +324,20 @@ ACKNOWLEDGED_NOT_STARRED: dict[str, str] = {
 # `preview` rather than the `planned` a generated stub carries. It is the same
 # HANDWRITTEN_UNSTARRED set: a non-starred hand-written manifest is exactly A.18's three.
 HANDWRITTEN_PREVIEW = set(HANDWRITTEN_UNSTARRED)
+
+# The ids `handwritten.txt` may list without being starred, which is CN1 Ruling 1's "the
+# generator never overwrites a hand-written manifest" with the unstarred case spelled out.
+#
+# This is **not** the same set as HANDWRITTEN_PREVIEW, and D634 is why. A.3's Grafeo is a
+# hand-written manifest that is not starred — it is P2 (A.3's row), D634 adds a row to §33 and
+# not a name to §8's 21 — and it is `status: planned`, because a hand-written manifest is not
+# automatically a preview one: Grafeo's is hand-written because the engine is Loams's own and
+# there is no catalog cell to derive a capability detail from, and it is a CN2 build with no
+# code behind it yet. Folding it into HANDWRITTEN_UNSTARRED would have made the generator
+# stamp `preview` on A.3's Grafeo row and disagree with Appendix A, so the two sets are kept
+# apart: HANDWRITTEN_PREVIEW decides the status a hand-written row is given, and this set
+# decides which hand-written ids the check will accept at all.
+HAND_WRITTEN_UNSTARRED_IDS: set[str] = set(HANDWRITTEN_UNSTARRED) | {"grafeo"}
 
 # Which component in connectors/licences.toml each CSV runtime kind means, for the check that
 # every runtime the CSV names has a licence-gate entry. `native` and `openapi` are Loams's
@@ -576,6 +608,12 @@ def runtime_for(row: dict) -> tuple[str, str]:
         if not scheme or scheme.startswith("("):
             raise Problem(f"{cid}: Camel cell {row['camel']!r} has no usable scheme")
         return "camel", scheme
+    # A.18's three Loams applications, and A.3's Grafeo, are Loams-owned engines with no
+    # Camel component: they are native Rust reached over Connect-RPC (D634, D628). Naming
+    # them here keeps the openapi fallback meaning what it says -- "an OpenAPI spec will
+    # generate this connector" -- rather than swallowing a runtime Loams owns outright.
+    if cid in LOAMS_OWNED_NATIVE:
+        return "native", f"loams_flow::connectors::{LOAMS_OWNED_NATIVE[cid]}"
     return "openapi", f"openapi:{cid}"
 
 
@@ -810,16 +848,16 @@ def check(rows_from_doc: list[dict], problems: list[str], notes: list[str]) -> N
             problems.append(f"{cid}: in catalog.csv but not in Appendix A")
 
     # handwritten.txt lists the manifests a human wrote; each must be a real row that the
-    # generator will not overwrite — a starred one (the 21) or one of A.18's three, which are
-    # hand-written and unstarred by decision (D628, CN1 Task 15).
+    # generator will not overwrite — a starred one (the 21), one of A.18's three, which are
+    # hand-written and unstarred by decision (D628, CN1 Task 15), or A.3's Grafeo (D634).
     starred_ids = {row["id"] for row in csv_rows if row["starred"] == "true"}
     for cid in sorted(handwritten):
         if cid not in by_id:
             problems.append(f"handwritten.txt: {cid!r} is not a catalog.csv row")
-        elif cid not in starred_ids and cid not in HANDWRITTEN_PREVIEW:
+        elif cid not in starred_ids and cid not in HAND_WRITTEN_UNSTARRED_IDS:
             problems.append(
                 f"handwritten.txt: {cid!r} is neither starred nor one of the hand-written "
-                "unstarred rows, so it is a generated stub's id (CN1 Ruling 1, D628)"
+                "unstarred rows, so it is a generated stub's id (CN1 Ruling 1, D628, D634)"
             )
 
     # D353: a manifest declares the shape of its instance's settings, so every config.$ref must

@@ -1,0 +1,30 @@
+[package]
+name = "loams-graph-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Generated loams.graph.v1 types: Loams's own graph engine's control plane (D634)"
+# `build.rs` reads the protos from the workspace's `fabric/proto/` directory, which a crate
+# archive would not contain, so this crate is never published.
+publish = false
+
+[features]
+# The connect-rust `GraphServiceClient`, gated in build.rs. The server trait and the
+# message types are always present; only the client waits for this.
+client = ["connectrpc/client"]
+
+[dependencies]
+# The generated view types derive serde, so `serde` has to be nameable at the crate root. `json` on
+# both buffa crates is what carries the protobuf JSON mapping the messages are decoded through.
+serde = { workspace = true, features = ["derive"] }
+buffa = { version = "0.9.2", features = ["json"] }
+buffa-types = { version = "0.9.2", features = ["json"] }
+connectrpc = "0.9"
+
+[build-dependencies]
+connectrpc-build.workspace = true
+
+[lints]
+workspace = true

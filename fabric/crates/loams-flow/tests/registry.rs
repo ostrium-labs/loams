@@ -43,30 +43,50 @@ fn registry() -> Registry {
 // The registry
 // -------------------------------------------------------------------------------------
 
-/// CN1 Task 2's gate: 203 manifests, 21 of them ★.
+/// CN1 Task 2's gate: 204 manifests, 21 of them ★.
 ///
-/// **The two numbers differ on purpose.** CN1's "Rulings made during execution" row 11
-/// (with D628, 2026-10-04) raised the catalog from Appendix A's original 200 rows to
-/// 203 and renamed this gate `registry_has_200_entries_and_21_starred` →
-/// `registry_has_203_entries_and_21_starred`: §33 A.18's Zulip, ItsPlane and Forgejo
+/// **The two numbers differ on purpose, twice over.** CN1's "Rulings made during
+/// execution" row 11 (with D628, 2026-10-04) raised the catalog from Appendix A's
+/// original 200 rows to 203 and renamed this gate `registry_has_200_entries_and_21_starred`
+/// → `registry_has_203_entries_and_21_starred`: §33 A.18's Zulip, ItsPlane and Forgejo
 /// are **P1 and unstarred**, because they ship in CN1 (CN1 Task 15) and Loams owns the
-/// applications, but they are not part of the précis' 21-connector hot path. D358's ★
-/// count is therefore untouched at 21, and a reader must not read 203 as "24 ★".
+/// applications, but they are not part of the précis' 21-connector hot path. D634
+/// (2026-10-04) raised it once more to 204 by adding §33 A.3's Grafeo row, and renamed
+/// the gate a second time — the same way, because Grafeo is likewise **P2 and unstarred**:
+/// it is the engine D634 embeds in the Fabric, and adding it must not read as adding a
+/// star. D358's ★ count is untouched at 21 across both rulings, and a reader must not read
+/// 204 as "25 ★".
 #[test]
-fn registry_has_203_entries_and_21_starred() {
+fn registry_has_204_entries_and_21_starred() {
     let registry = registry();
     assert_eq!(
         registry.len(),
         CATALOG_ROWS,
-        "§33 Appendix A's totals line and CN1 Ruling 11 (D628) both say 203 rows; a \
-         shortfall names the manifests that have not been written"
+        "§33 Appendix A's totals line, CN1 Ruling 11 (D628) and D634 say 204 rows — 203 \
+         from D628 plus Grafeo; a shortfall names the manifests that have not been written"
     );
     assert_eq!(
         registry.starred().len(),
         STARRED_ROWS,
-        "§33 §8 counts 21 ★ (D358), which D628 did not change: A.18's three are P1 and \
-         unstarred"
+        "§33 §8 counts 21 ★ (D358), which neither D628 nor D634 changed: A.18's three and \
+         Grafeo are unstarred"
     );
+
+    // D634's own row, asserted field by field, because "it is in the registry" is not the
+    // claim being made. A.3's row is P2 and unstarred, and the runtime is **native** at
+    // `loams_flow::connectors::graph` — the engine is embedded in the Fabric (D634(b)),
+    // not run beside it, and there is no Bolt anywhere in the path (D634(c)). Before the
+    // generator's `LOAMS_OWNED_NATIVE` table named `grafeo`, A.3's empty Camel and Kestra
+    // cells fell through its non-★ runtime rule to `openapi:grafeo` — an OpenAPI-generated
+    // connector for a database Loams links into its own process, which is the wrong runtime
+    // outright. These three assertions are what stop that drift going unnoticed.
+    let grafeo = registry
+        .get("grafeo")
+        .expect("grafeo is in the registry: §33 A.3's second graph row (D634)");
+    assert!(!grafeo.starred, "grafeo is P2, not one of D358's 21 (D634)");
+    assert_eq!(grafeo.priority, Priority::P2);
+    assert_eq!(grafeo.runtime.kind, RuntimeKind::Native);
+    assert_eq!(grafeo.runtime.reference, "loams_flow::connectors::graph");
 
     for spec in registry.starred() {
         assert!(spec.starred, "{} is in the starred list", spec.id);
@@ -103,9 +123,14 @@ fn registry_has_203_entries_and_21_starred() {
         .copied()
         .collect();
     assert!(
-        hand_written_but_unstarred.is_subset(&A18.iter().copied().collect()),
-        "a hand-written manifest that is neither ★ nor one of A.18's three would be a \
-         generated stub's id (CN1 Ruling 1); found {hand_written_but_unstarred:?}"
+        hand_written_but_unstarred.is_subset(
+            &A18.iter()
+                .chain(HAND_WRITTEN_UNSTARRED_P2.iter())
+                .copied()
+                .collect()
+        ),
+        "a hand-written manifest that is neither ★, nor one of A.18's three, nor A.3's Grafeo \
+         (D634) would be a generated stub's id (CN1 Ruling 1); found {hand_written_but_unstarred:?}"
     );
 
     // The index and the filters agree with each other: every category the registry
@@ -294,10 +319,22 @@ const CSV_COLUMNS: [&str; 17] = [
 /// are one-to-one, and the assertion below compares them without an offset.
 const A18: [&str; 3] = ["forgejo", "itsplane", "zulip"];
 
-/// Ruling 11's row count, after D628 added A.18's three to the précis' 200.
-const CATALOG_ROWS: usize = 203;
+/// D634's Grafeo row: **P2 and hand-written**, unlike A.18's three.
+///
+/// `handwritten.txt` is how CN1 Ruling 1 keeps the generator from overwriting a hand-written
+/// manifest, and D634 added a hand-written row that is neither ★ nor an A.18 application:
+/// A.3's Grafeo is P2 because it is a CN2 build, and hand-written because the engine is
+/// Loams's own and there is nothing for the generator to derive a capability detail from.
+/// So the rule below, which once read "a hand-written manifest that is neither ★ nor one of
+/// A.18's three would be a generated stub's id", would now fail on Grafeo — correctly enough
+/// to notice, which is why the id is named rather than the rule loosened.
+const HAND_WRITTEN_UNSTARRED_P2: [&str; 1] = ["grafeo"];
 
-/// §33 §8 and D358's ★ count, which D628 deliberately did not change.
+/// Ruling 11's row count, after D628 added A.18's three to the précis' 200 and D634 added
+/// §33 A.3's Grafeo row.
+const CATALOG_ROWS: usize = 204;
+
+/// §33 §8 and D358's ★ count, which D628 and D634 both deliberately did not change.
 const STARRED_ROWS: usize = 21;
 
 /// Every data row of `connectors/registry/catalog.csv`.
@@ -798,10 +835,15 @@ fn licence_gate_refuses_flagged() {
     // the assertion below: `check_components` refuses a refused id on a `kind = "library"`
     // row, and must accept it on the `kind = "service"` row that follows, because Loams
     // neither ships nor links ItsPlane and reaches it only over its HTTP API (D359).
+    // D634 then added five more, all `kind = "library"` and all Apache-2.0: `grafeo` 0.5.43
+    // with `grafeo-core`, `grafeo-engine`, `grafeo-adapters` and `grafeo-common`, read from
+    // crates.io on 2026-10-04. They are on this side of the gate rather than in D359's
+    // carve-out precisely because D634(b) **links** the engine into the Fabric, so a
+    // `library` row is the honest kind and `check_components` really does licence-check them.
     assert_eq!(
         components.len(),
-        42,
-        "D359 records 42 components after CN1 Task 15"
+        47,
+        "D359 records 42 components after CN1 Task 15, plus D634's five Grafeo crates"
     );
     gate.check_components(&text, "connectors/licences.toml")
         .unwrap_or_else(|error| panic!("no component may be refused: {error}"));
