@@ -8,6 +8,8 @@ edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
 authors = ["The Loams Authors"]
+repository = "https://github.com/ostrium-labs/loams"
+homepage = "https://loams.dev"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -169,7 +171,9 @@ loams-live = { path = "crates/loams-live", version = "0.0.1" }
 loams-live-proto = { path = "crates/loams-live-proto", version = "0.0.1" }
 loams-log = { path = "crates/loams-log", version = "0.0.1" }
 loams-meta = { path = "crates/loams-meta", version = "0.0.1" }
-loams-meta-conformance = { path = "crates/loams-meta-conformance", version = "0.0.1" }
+# No version: a dev-dependency only, and publish = false, so `cargo publish`
+# strips it from the published manifests (#254).
+loams-meta-conformance = { path = "crates/loams-meta-conformance" }
 loams-meta-tikv = { path = "crates/loams-meta-tikv", version = "0.0.1" }
 loams-stream-grpc = { path = "crates/loams-stream-grpc", version = "0.0.1" }
 loams-pk = { path = "crates/loams-pk", version = "0.0.1" }

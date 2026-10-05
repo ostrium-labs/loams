@@ -6,6 +6,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+# The optional `tikv` feature depends on loams-tikv, which depends on a git
+# crate that crates.io refuses (R1 row R4, #254).
+publish = false
 
 [features]
 # The TiKV WalStore (the production hot tier). Off by default, so the crate

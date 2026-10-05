@@ -6,6 +6,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+# Optional dependencies on loams-durable, loams-tikv and loams-meta-tikv, which
+# depend on git crates (D140, R1 row R4) that crates.io refuses (#254). The
+# CLI ships through GitHub Releases (D292) until those are published.
+publish = false
 
 [[bin]]
 name = "loams"

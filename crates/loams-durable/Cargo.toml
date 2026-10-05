@@ -6,6 +6,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
 # The Resonate crates are git dependencies (D140), which crates.io refuses.
 publish = false
 
