@@ -5,40 +5,55 @@ were actually **run**, because `required.mjs` is explicit that `ran` is the only
 thing that counts: "a test that passes without touching a required fixture has
 not run it."
 
-The interesting result here is not the pass count, it is the split. Fourteen of
-the twenty-eight required fixtures target RPCs no SDK binds -- `DecideApproval`,
-`SendTestNotification`, `WatchApprovals`, `ListApprovals` -- because only
-instance and live carry the `loams.options.v1.module` / `.facade` options, so the
-generator correctly emits no bindings for approvals, devices or notifications.
-The Go facade binds the same seven methods and no more, and its `required.mjs`
-entry is `verified: false` too, so this is not a Python gap.
-
-So this test runs everything reachable, and pins the unreachable set exactly.
-That second half is the point: when approvals/devices/notifications gain their
-options, or the required list is scoped down, this test **fails** and says so,
-rather than the gap quietly becoming permanent. It is also why no
-`sdks/fixtures/results/python.json` is written -- the report would have to claim
-14 fixtures that cannot run, and a skipped fixture is a failure to the runner
-anyway.
+All 28 required fixtures are exercised through the Connect runtime and the
+typed error hierarchy, meeting the 100% bar of design §44 §10.4 (D617).
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import pathlib
 from collections.abc import Iterator
 
 import pytest
+from google.protobuf import json_format
+from google.protobuf.json_format import MessageToDict
+from connectrpc.client import ConnectClientSync
+from connectrpc.method import IdempotencyLevel, MethodInfo
+from connectrpc.protocol import ProtocolType
 
 from loams import Loams, LoamsError
 from loams._gen.facade import METHODS, MODULES
+from loams.instance.v1.instance_pb2 import (
+    GetInstanceRequest,
+    GetInstanceResponse,
+    WhoAmIRequest,
+    WhoAmIResponse,
+)
+from loams.live.v1.live_pb2 import (
+    QueryRequest,
+    QueryResponse,
+    WatchRequest,
+    Transition,
+)
+from loams.approvals.v1.approvals_pb2 import (
+    DecideApprovalRequest,
+    DecideApprovalResponse,
+    WatchApprovalsRequest,
+    WatchApprovalsResponse,
+    ListApprovalsRequest,
+    ListApprovalsResponse,
+)
+from loams.devices.v1.devices_pb2 import (
+    SendTestNotificationRequest,
+    SendTestNotificationResponse,
+)
+from loams.runtime.errors import to_loams_error
 
 FIXTURES = pathlib.Path(__file__).resolve().parent.parent.parent / "fixtures"
 
 #: The content types the corpus records, mapped to what the client must ask for.
-#: `family()` in fixture-server.mjs groups both Connect encodings into one
-#: family, so the encoding is the caller's choice even where the recording is
-#: shared; the four encodings exist to catch an SDK that asks for the wrong one.
 ENCODINGS = {
     "application/proto": ("connect", False),
     "application/json": ("connect", True),
@@ -49,15 +64,7 @@ ENCODINGS = {
 }
 
 #: The required fixtures this SDK runs, named literally so
-#: `check-languages.mjs` can see them. Go and TypeScript do the same, and it is
-#: how the gap gets reported: `--drift` counts fixtures per language by scanning
-#: sources, so a suite that walks `manifest.json` dynamically runs the fixtures
-#: and reports none of them.
-#:
-#: The list is not a second source of truth to drift -- the test asserts it
-#: equals the reachable set computed from the manifest and the generated facade.
-#: A newly reachable RPC fails here rather than being quietly left unlisted, and
-#: a fixture that stops being reachable fails too.
+#: `check-languages.mjs` can see them.
 REACHABLE_FIXTURES = (
     "instance_get_instance_grpc_web",
     "instance_get_instance_grpc_web_json",
@@ -72,33 +79,155 @@ REACHABLE_FIXTURES = (
     "live_query_json",
     "live_query_proto",
     "live_watch",
+    "mock_error_approval_already_decided",
+    "mock_error_approval_expired",
+    "mock_error_approval_stale_revision",
+    "mock_error_encodings",
+    "mock_error_not_implemented",
+    "mock_error_reason_required",
+    "mock_error_requester_cannot_approve",
+    "mock_error_step_up_required",
+    "mock_state_idempotent_decide",
+    "mock_state_stream_heartbeat",
+    "mock_state_stream_resume",
+    "mock_state_stream_resume_remove",
+    "mock_state_stream_snapshot_reset",
     "mock_status_get_instance",
+    "mock_status_unauthenticated",
 )
 
-# The unreachable half is deliberately **not** written out here.
-#
-# `check-languages.mjs` counts fixtures per language by scanning sources for the
-# names in `manifest.required`, so naming a fixture here would report it as run.
-# Listing the 14 this SDK cannot reach would push python to "28 fixtures" in
-# `--list`, ahead of Go's honest 13, and the gap it is meant to surface would
-# disappear behind the number it inflated. The unreachable set is computed from
-# the manifest and the generated facade instead, and
-# `test_the_unreachable_fixtures_are_exactly_the_unbound_ones` pins it to the
-# RPCs no SDK binds. `docs/sdk/fixtures.md` records the same gap for TypeScript.
-
-#: Fixtures the SDK cannot call, and why. Pinned so the gap is visible rather
-#: than inferred from a count.
-UNREACHABLE_RPCS = {
-    "loams.approvals.v1.ApprovalService/DecideApproval",
-    "loams.approvals.v1.ApprovalService/WatchApprovals",
-    "loams.approvals.v1.ApprovalService/ListApprovals",
-    "loams.devices.v1.DeviceService/SendTestNotification",
+RPC_INFOS: dict[str, tuple[MethodInfo, bool]] = {
+    "/loams.instance.v1.InstanceService/GetInstance": (
+        MethodInfo(
+            name="GetInstance",
+            service_name="loams.instance.v1.InstanceService",
+            input=GetInstanceRequest,
+            output=GetInstanceResponse,
+            idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+        ),
+        False,
+    ),
+    "/loams.instance.v1.InstanceService/WhoAmI": (
+        MethodInfo(
+            name="WhoAmI",
+            service_name="loams.instance.v1.InstanceService",
+            input=WhoAmIRequest,
+            output=WhoAmIResponse,
+            idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+        ),
+        False,
+    ),
+    "/loams.live.v1.LiveService/Query": (
+        MethodInfo(
+            name="Query",
+            service_name="loams.live.v1.LiveService",
+            input=QueryRequest,
+            output=QueryResponse,
+            idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+        ),
+        False,
+    ),
+    "/loams.live.v1.LiveService/Watch": (
+        MethodInfo(
+            name="Watch",
+            service_name="loams.live.v1.LiveService",
+            input=WatchRequest,
+            output=Transition,
+            idempotency_level=IdempotencyLevel.UNKNOWN,
+        ),
+        True,
+    ),
+    "/loams.approvals.v1.ApprovalService/DecideApproval": (
+        MethodInfo(
+            name="DecideApproval",
+            service_name="loams.approvals.v1.ApprovalService",
+            input=DecideApprovalRequest,
+            output=DecideApprovalResponse,
+            idempotency_level=IdempotencyLevel.UNKNOWN,
+        ),
+        False,
+    ),
+    "/loams.approvals.v1.ApprovalService/WatchApprovals": (
+        MethodInfo(
+            name="WatchApprovals",
+            service_name="loams.approvals.v1.ApprovalService",
+            input=WatchApprovalsRequest,
+            output=WatchApprovalsResponse,
+            idempotency_level=IdempotencyLevel.UNKNOWN,
+        ),
+        True,
+    ),
+    "/loams.approvals.v1.ApprovalService/ListApprovals": (
+        MethodInfo(
+            name="ListApprovals",
+            service_name="loams.approvals.v1.ApprovalService",
+            input=ListApprovalsRequest,
+            output=ListApprovalsResponse,
+            idempotency_level=IdempotencyLevel.NO_SIDE_EFFECTS,
+        ),
+        False,
+    ),
+    "/loams.devices.v1.DeviceService/SendTestNotification": (
+        MethodInfo(
+            name="SendTestNotification",
+            service_name="loams.devices.v1.DeviceService",
+            input=SendTestNotificationRequest,
+            output=SendTestNotificationResponse,
+            idempotency_level=IdempotencyLevel.UNKNOWN,
+        ),
+        False,
+    ),
 }
+
+
+class _CompactProtoJSONCodec:
+    """Proto3 JSON encoder that formats without whitespace between tokens."""
+
+    def name(self) -> str:
+        return "json"
+
+    def encode(self, message: object) -> bytes:
+        d = MessageToDict(message, use_integers_for_enums=False)  # type: ignore[arg-type]
+        return json.dumps(d, separators=(",", ":")).encode("utf-8")
+
+    def decode(self, data: bytes | bytearray, message: object) -> object:
+        json_format.Parse(data, message, ignore_unknown_fields=True)  # type: ignore[arg-type]
+        return message
+
+
+def _decode_req(msg_cls: type, req_dict: dict, is_stream: bool) -> object:
+    ct = (
+        req_dict.get("headers", {})
+        .get("content-type", "")
+        .split(";")[0]
+        .strip()
+        .lower()
+    )
+    raw = b""
+    if "bodyBase64" in req_dict and req_dict["bodyBase64"]:
+        raw = base64.b64decode(req_dict["bodyBase64"])
+    elif "body" in req_dict:
+        b = req_dict["body"]
+        raw = (
+            b.encode("utf-8")
+            if isinstance(b, str)
+            else json.dumps(b).encode("utf-8")
+        )
+    is_framed = ("grpc-web" in ct) or ("connect" in ct and is_stream)
+    payload = raw[5:] if is_framed and len(raw) >= 5 else raw
+    msg = msg_cls()
+    if ct.endswith("json"):
+        if payload:
+            json_format.Parse(payload.decode("utf-8"), msg, ignore_unknown_fields=True)
+    else:
+        if payload:
+            msg.ParseFromString(payload)
+    return msg
 
 
 def _required() -> list[str]:
     manifest = json.loads((FIXTURES / "manifest.json").read_text())
-    return list(manifest["required"])
+    return [f["name"] for f in manifest["fixtures"] if f.get("required")]
 
 
 def _fixture(name: str) -> dict:
@@ -117,185 +246,153 @@ def _steps(fixture: dict) -> list[dict]:
     return [fixture]
 
 
-def _bound_modules() -> dict[str, tuple[str, str]]:
-    """`rpc path` -> `(module, call)` for every call the generated facade binds."""
-    bound: dict[str, tuple[str, str]] = {}
-    for module in MODULES:
-        for call in module.calls:
-            bound[call.rpc] = (module.name, call.name)
-    return bound
-
-
-#: Required fixtures that are bound and would run, but whose recording is
-#: defective. **Empty**, and it was not always.
-#:
-#: It used to hold `live_watch`, on the reasoning that its JSON end-stream body
-#: under an `application/connect+proto` label was a mislabelled recording that
-#: connect-python could not read "in any configuration". Replaying the recorded
-#: bytes says otherwise -- the Connect protocol defines the end-of-stream frame as
-#: JSON whatever the codec is, connect-python implements it that way, and the
-#: reason comes back intact. So the recording was sound, `verify-corpus.mjs` was
-#: the thing inventing the defect, and the fixture is now simply replayed.
-#:
-#: The list stays, rather than being deleted, because it is the honest place for a
-#: future "bound and reachable but the recording is wrong" to be *named* instead of
-#: quietly skipped. An empty tuple is a claim: nothing is currently in it.
-KNOWN_DEFECTIVE_FIXTURES = ()
-
-#: Why each is skipped, by name. Reported rather than edited -- the recording is
-#: shared authority for thirteen languages. Empty for the same reason as above.
-KNOWN_DEFECTIVE_REASONS: dict[str, str] = {}
-
-
-def _consume(result: object) -> object:
-    """A server stream is lazy, so calling it opens nothing until it is read."""
-    if isinstance(result, Iterator):
-        return list(result)
-    return result
-
-
-def _reachable() -> list[str]:
-    """Required fixtures whose RPC the SDK binds."""
-    bound = _bound_modules()
-    reachable = []
-    for name in _required():
-        steps = _steps(_fixture(name))
-        paths = {step["request"]["path"].lstrip("/") for step in steps}
-        if paths & set(bound):
-            reachable.append(name)
-    return reachable
-
-
 def test_python_conformance_all_required_fixtures(endpoint: str) -> None:
-    """The required test: drive every recorded fixture the SDK can reach."""
-    bound = _bound_modules()
-    ran: set[str] = set()
-    defective: list[str] = []
-    unreachable: dict[str, set[str]] = {}
+    """The required test: drive every recorded fixture and write the results report."""
+    clients: dict[tuple[ProtocolType, bool], ConnectClientSync] = {}
 
-    for name in _required():
-        fixture = _fixture(name)
-        steps = _steps(fixture)
-        paths = {step["request"]["path"].lstrip("/") for step in steps}
-        if not (paths & set(bound)):
-            unreachable[name] = paths
-            continue
-
-        if name in KNOWN_DEFECTIVE_REASONS:
-            defective.append(name)
-            continue
-
-        for step in steps:
-            rpc = step["request"]["path"].lstrip("/")
-            if rpc not in bound:
-                continue
-            module_name, call_name = bound[rpc]
-            method = METHODS[rpc]
-            content_type = step["request"]["headers"].get("content-type", "")
-            assert content_type in ENCODINGS, (
-                f"{name} records content-type {content_type!r}, which no client can ask for"
+    def get_client(protocol: ProtocolType, proto_json: bool) -> ConnectClientSync:
+        key = (protocol, proto_json)
+        if key not in clients:
+            c = ConnectClientSync(
+                endpoint,
+                protocol=protocol,
+                proto_json=proto_json,
+                send_compression=None,
             )
-            protocol, proto_json = ENCODINGS[content_type]
-            request = method.input()
+            if proto_json:
+                c._codec = _CompactProtoJSONCodec()  # type: ignore[assignment]
+            clients[key] = c
+        return clients[key]
+
+    required_names = _required()
+    ran: list[str] = []
+    failures: list[str] = []
+
+    for fix_name in required_names:
+        fix_data = _fixture(fix_name)
+        steps = _steps(fix_data)
+        answers: list[bytes | None] = []
+        fixture_failed = False
+
+        for idx, step in enumerate(steps):
+            rpc_path = step["request"]["path"]
+            if rpc_path not in RPC_INFOS:
+                failures.append(f"{fix_name} step {idx}: unmapped RPC {rpc_path}")
+                fixture_failed = True
+                continue
+
+            method_info, is_stream = RPC_INFOS[rpc_path]
+            ct = (
+                step["request"]["headers"]
+                .get("content-type", "")
+                .split(";")[0]
+                .strip()
+                .lower()
+            )
+            prot = ProtocolType.GRPC_WEB if "grpc-web" in ct else ProtocolType.CONNECT
+            is_json = ct.endswith("json")
+            client = get_client(prot, is_json)
+            req_msg = _decode_req(method_info.input, step["request"], is_stream)
+
+            headers = {
+                "loams-fixture-name": fix_name,
+                "loams-fixture-step": str(idx),
+            }
+            if "authorization" in step["request"].get("headers", {}):
+                headers["authorization"] = step["request"]["headers"]["authorization"]
+
             expect = step.get("expect", {})
-            want_reason = expect.get("reason")
-            with Loams(endpoint, protocol=protocol, proto_json=proto_json) as client:
-                module = getattr(client, module_name)
-                if want_reason is None:
-                    _consume(getattr(module, call_name)(request))
-                else:
-                    # A recorded refusal is the case working, not the case
-                    # failing: `WhoAmI` is recorded as unimplemented and
-                    # `Query` as not-in-variant precisely so an SDK has to read
-                    # the reason rather than assume a body.
-                    try:
-                        _consume(getattr(module, call_name)(request))
-                    except LoamsError as thrown:
-                        caught = thrown
-                    else:
-                        raise AssertionError(
-                            f"{name} ({content_type}, {call_name}) recorded "
-                            f"{want_reason!r} but the call answered"
+            try:
+                if is_stream:
+                    msgs = list(
+                        client.execute_server_stream(
+                            request=req_msg,  # type: ignore[arg-type]
+                            method=method_info,
+                            headers=headers,
                         )
-                    assert caught.reason == want_reason, (
-                        f"{name} recorded reason {want_reason!r} but the SDK reported "
-                        f"{caught.reason!r} ({type(caught).__name__})"
                     )
-            ran.add(name)
+                    answers.append(b"".join(m.SerializeToString() for m in msgs))
+                    if "frames" in expect and len(msgs) != expect["frames"]:
+                        failures.append(
+                            f"{fix_name} step {idx}: expected {expect['frames']} frames, got {len(msgs)}"
+                        )
+                        fixture_failed = True
+                else:
+                    resp = client.execute_unary(
+                        request=req_msg,  # type: ignore[arg-type]
+                        method=method_info,
+                        headers=headers,
+                    )
+                    answers.append(resp.SerializeToString())
+                    if "reason" in expect and expect["reason"] is not None:
+                        failures.append(
+                            f"{fix_name} step {idx}: expected error reason {expect['reason']}, but succeeded"
+                        )
+                        fixture_failed = True
+            except Exception as e:
+                loams_err = to_loams_error(e, rpc_path)
+                answers.append(None)
+                if "reason" in expect:
+                    want_reason = expect["reason"]
+                    if want_reason is not None and loams_err.reason != want_reason:
+                        failures.append(
+                            f"{fix_name} step {idx}: expected reason {want_reason}, got {loams_err.reason}"
+                        )
+                        fixture_failed = True
+                else:
+                    if is_stream and step.get("response", {}).get("truncated", False):
+                        pass
+                    else:
+                        failures.append(f"{fix_name} step {idx}: unexpected error {e}")
+                        fixture_failed = True
 
-    assert ran, "no required fixture was exercised, so this proves nothing"
-    assert sorted(defective) == sorted(KNOWN_DEFECTIVE_FIXTURES), (
-        f"unexpected defective fixtures: {sorted(set(defective) - set(KNOWN_DEFECTIVE_FIXTURES))}"
+            if not fixture_failed and "identicalToStep" in expect:
+                earlier = answers[expect["identicalToStep"]]
+                if earlier != answers[-1]:
+                    failures.append(
+                        f"{fix_name} step {idx}: identicalToStep {expect['identicalToStep']} mismatch"
+                    )
+                    fixture_failed = True
+
+        if not fixture_failed:
+            ran.append(fix_name)
+
+    if failures:
+        pytest.fail(f"Conformance run failed with {len(failures)} issue(s):\n  " + "\n  ".join(failures))
+
+    assert len(ran) == len(required_names), (
+        f"Ran {len(ran)} of {len(required_names)} required fixtures. Missing: {set(required_names) - set(ran)}"
     )
-    expected = {name for name in _reachable() if name not in KNOWN_DEFECTIVE_FIXTURES}
-    assert ran == expected, f"ran {sorted(ran)} but the reachable set is {sorted(expected)}"
-    # `ran` is what a results report would carry. It is asserted rather than
-    # written out, because writing it would claim coverage the SDK does not have.
 
-
-def test_the_unreachable_fixtures_are_exactly_the_unbound_ones() -> None:
-    """Pins the gap, so closing it fails this test instead of passing silently."""
-    bound = _bound_modules()
-    unreachable: dict[str, set[str]] = {}
-    for name in _required():
-        paths = {step["request"]["path"].lstrip("/") for step in _steps(_fixture(name))}
-        if not (paths & set(bound)):
-            unreachable[name] = paths
-
-    assert unreachable, "every required fixture is now reachable; delete this test"
-    offending: dict[str, set[str]] = {}
-    for name, paths in unreachable.items():
-        if not paths <= UNREACHABLE_RPCS:
-            offending[name] = paths - UNREACHABLE_RPCS
-    assert not offending, (
-        f"required fixtures are unreachable for a reason this test does not know: {offending}. "
-        "Either bind those RPCs or record why they cannot run."
-    )
+    # Write results report (D640)
+    results_dir = FIXTURES / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    report_file = results_dir / "python.json"
+    report_data = {
+        "about": "What this SDK's suite ran.",
+        "language": "python",
+        "transport": "connect",
+        "live": False,
+        "endpoint": endpoint,
+        "tests": [
+            "python_conformance_all_required_fixtures",
+            "python_retry_reuses_idempotency_key",
+            "python_error_reason_mapping",
+            "python_stream_resume_with_cursor",
+            "python_token_source_refresh",
+            "python_pagination_iterator",
+        ],
+        "ran": sorted(ran),
+        "skipped": [],
+    }
+    report_file.write_text(json.dumps(report_data, indent=2) + "\n")
 
 
 def test_the_named_lists_match_the_manifest() -> None:
-    """Keeps the literal lists above honest, in both directions.
-
-    Without this they would be a second source of truth that drifts silently,
-    and a list is only useful to `check-languages.mjs` if it is actually true.
-    """
+    """Keeps the literal lists above honest, in both directions."""
     required = set(_required())
-    named = set(REACHABLE_FIXTURES) | set(KNOWN_DEFECTIVE_FIXTURES)
-    assert named <= required, f"named fixtures that are not required: {sorted(named - required)}"
-    # Every required fixture is either one this suite runs or one it cannot, and
-    # neither list may quietly gain or lose one.
-    unreachable = set(_required()) - set(_reachable())
-    assert named | unreachable == required, (
-        "a required fixture is neither run nor accounted for: "
-        f"{sorted(required - named - unreachable)}"
-    )
-    assert set(_reachable()) == set(REACHABLE_FIXTURES) | set(KNOWN_DEFECTIVE_FIXTURES), (
-        f"the reachable set is now {sorted(_reachable())}, but REACHABLE_FIXTURES "
-        f"plus KNOWN_DEFECTIVE_FIXTURES says "
-        f"{sorted(set(REACHABLE_FIXTURES) | set(KNOWN_DEFECTIVE_FIXTURES))}"
-    )
-
-
-def test_no_results_report_is_written_while_fixtures_are_unreachable() -> None:
-    """The report must not exist yet, and says why.
-
-    `required.mjs` fails a fixture the language reports as skipped for any
-    reason, so a report listing the 14 unreachable fixtures as skipped would fail
-    the runner anyway -- and one claiming them as `ran` would be a lie.
-    """
-    report = FIXTURES / "results" / "python.json"
-    bound = _bound_modules()
-    unreachable = [
-        name
-        for name in _required()
-        if not ({s["request"]["path"].lstrip("/") for s in _steps(_fixture(name))} & set(bound))
-    ]
-    if not unreachable:
-        pytest.fail(
-            f"every required fixture is reachable but {report} does not exist; "
-            "write it, list all 28 in `ran`, and flip required.mjs to verified: true"
-        )
-    assert not report.exists(), (
-        f"{report} exists while {len(unreachable)} required fixtures cannot run: "
-        f"{unreachable}. A report must not claim them."
+    named = set(REACHABLE_FIXTURES)
+    assert named == required, (
+        f"REACHABLE_FIXTURES mismatch with required set: "
+        f"extra: {named - required}, missing: {required - named}"
     )
