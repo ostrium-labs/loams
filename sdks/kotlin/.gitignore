@@ -1,0 +1,5 @@
+# The build output: jars fetched by `build.sh`, compiled classes and the
+# `main-sources.txt` / `test-sources.txt` lists. Never committed — the only thing
+# under `.build` that matters is `lib/protobuf-java-4.35.1.jar`, and that is
+# fetched by version and checksummed in `build.sh`, not vendored.
+/.build/
