@@ -1,0 +1,135 @@
+{
+  "name": "plugins-dashboard-ui",
+  "projectType": "application",
+  "sourceRoot": "plugins/packages/dashboard-ui/src",
+  "tags": [
+    "scope:plugins"
+  ],
+  "implicitDependencies": [
+    "plugins-core"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/plugins/package.json",
+        "{workspaceRoot}/plugins/tsconfig*.json",
+        "{workspaceRoot}/plugins/vite.config.ts",
+        "{workspaceRoot}/plugins/vitest.config.ts",
+        "{workspaceRoot}/plugins/project.json",
+        "{workspaceRoot}/plugins/packages/**/*",
+        "{workspaceRoot}/plugins/apps/**/*",
+        "{workspaceRoot}/plugins/proto/**/*",
+        "{workspaceRoot}/plugins/scripts/**/*",
+        "{workspaceRoot}/plugins/buf*.yaml",
+        "!{workspaceRoot}/plugins/**/node_modules/**/*",
+        "!{workspaceRoot}/plugins/**/lib/**/*",
+        "!{workspaceRoot}/plugins/**/dist/**/*",
+        "!{workspaceRoot}/plugins/**/*.tsbuildinfo",
+        "{workspaceRoot}/pnpm-lock.yaml",
+        "{workspaceRoot}/pnpm-workspace.yaml",
+        "{workspaceRoot}/package.json",
+        "{workspaceRoot}/nx.json"
+      ],
+      "outputs": [
+        "{projectRoot}/dist"
+      ],
+      "options": {
+        "command": "pnpm run build",
+        "cwd": "plugins/packages/dashboard-ui"
+      },
+      "dependsOn": []
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/plugins/package.json",
+        "{workspaceRoot}/plugins/tsconfig*.json",
+        "{workspaceRoot}/plugins/vite.config.ts",
+        "{workspaceRoot}/plugins/vitest.config.ts",
+        "{workspaceRoot}/plugins/project.json",
+        "{workspaceRoot}/plugins/packages/**/*",
+        "{workspaceRoot}/plugins/apps/**/*",
+        "{workspaceRoot}/plugins/proto/**/*",
+        "{workspaceRoot}/plugins/scripts/**/*",
+        "{workspaceRoot}/plugins/buf*.yaml",
+        "!{workspaceRoot}/plugins/**/node_modules/**/*",
+        "!{workspaceRoot}/plugins/**/lib/**/*",
+        "!{workspaceRoot}/plugins/**/dist/**/*",
+        "!{workspaceRoot}/plugins/**/*.tsbuildinfo",
+        "{workspaceRoot}/pnpm-lock.yaml",
+        "{workspaceRoot}/pnpm-workspace.yaml",
+        "{workspaceRoot}/package.json",
+        "{workspaceRoot}/nx.json"
+      ],
+      "outputs": [],
+      "options": {
+        "command": "pnpm run typecheck",
+        "cwd": "plugins/packages/dashboard-ui"
+      },
+      "dependsOn": []
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "{workspaceRoot}/plugins/package.json",
+        "{workspaceRoot}/plugins/tsconfig*.json",
+        "{workspaceRoot}/plugins/vite.config.ts",
+        "{workspaceRoot}/plugins/vitest.config.ts",
+        "{workspaceRoot}/plugins/project.json",
+        "{workspaceRoot}/plugins/packages/**/*",
+        "{workspaceRoot}/plugins/apps/**/*",
+        "{workspaceRoot}/plugins/proto/**/*",
+        "{workspaceRoot}/plugins/scripts/**/*",
+        "{workspaceRoot}/plugins/buf*.yaml",
+        "!{workspaceRoot}/plugins/**/node_modules/**/*",
+        "!{workspaceRoot}/plugins/**/lib/**/*",
+        "!{workspaceRoot}/plugins/**/dist/**/*",
+        "!{workspaceRoot}/plugins/**/*.tsbuildinfo",
+        "{workspaceRoot}/pnpm-lock.yaml",
+        "{workspaceRoot}/pnpm-workspace.yaml",
+        "{workspaceRoot}/package.json",
+        "{workspaceRoot}/nx.json"
+      ],
+      "outputs": [],
+      "options": {
+        "command": "pnpm run dev",
+        "cwd": "plugins/packages/dashboard-ui"
+      },
+      "dependsOn": []
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "{workspaceRoot}/plugins/package.json",
+        "{workspaceRoot}/plugins/tsconfig*.json",
+        "{workspaceRoot}/plugins/vite.config.ts",
+        "{workspaceRoot}/plugins/vitest.config.ts",
+        "{workspaceRoot}/plugins/project.json",
+        "{workspaceRoot}/plugins/packages/**/*",
+        "{workspaceRoot}/plugins/apps/**/*",
+        "{workspaceRoot}/plugins/proto/**/*",
+        "{workspaceRoot}/plugins/scripts/**/*",
+        "{workspaceRoot}/plugins/buf*.yaml",
+        "!{workspaceRoot}/plugins/**/node_modules/**/*",
+        "!{workspaceRoot}/plugins/**/lib/**/*",
+        "!{workspaceRoot}/plugins/**/dist/**/*",
+        "!{workspaceRoot}/plugins/**/*.tsbuildinfo",
+        "{workspaceRoot}/pnpm-lock.yaml",
+        "{workspaceRoot}/pnpm-workspace.yaml",
+        "{workspaceRoot}/package.json",
+        "{workspaceRoot}/nx.json"
+      ],
+      "outputs": [],
+      "options": {
+        "command": "pnpm run test packages/dashboard-ui/tests",
+        "cwd": "plugins"
+      },
+      "dependsOn": []
+    }
+  }
+}

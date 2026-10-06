@@ -15,7 +15,7 @@
 #
 # `kind` is one of:
 #   npm     a package pinned in a package.json; `integrity` is the
-#           `resolution: {integrity: ...}` value from web/pnpm-lock.yaml
+#           `resolution: {integrity: ...}` value from the root pnpm-lock.yaml
 #   pypi    a distribution pinned with `==`; `integrity` is the sha256 of the
 #           file PyPI serves, from https://pypi.org/pypi/<id>/<version>/json
 #   go      a module pinned in go.mod; `integrity` is the module and go.mod h1:

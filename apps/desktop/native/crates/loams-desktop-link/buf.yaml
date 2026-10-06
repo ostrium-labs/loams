@@ -1,0 +1,6 @@
+# Vendored Loams protos for the desktop's Connect client. Source of truth is
+# ostrium-labs/loams `proto/loams/…`; see proto/PIN for the ref copied here and
+# scripts/sync-protos.sh to refresh it. Lint is the owner repo's job, not ours.
+version: v2
+modules:
+  - path: proto

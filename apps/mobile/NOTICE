@@ -1,0 +1,25 @@
+Loams mobile
+Copyright 2026 The Loams Authors
+
+This product includes software developed by The Loams Authors.
+
+Portions of this product may be derived from third-party open-source
+projects. Each such portion is identified in the source file header and
+listed below together with its license and attribution notice.
+
+Third-party attributions
+------------------------
+None. No third-party source code is copied into this repository.
+
+Acknowledgements
+----------------
+The module split (a pure core, the app, a scriptable mock and a
+conformance suite), the QR pairing payload with a strict version check,
+SPKI pinning and the reconnect back-off numbers follow patterns from
+DSH Mobile (https://github.com/sorsama/deepseek-harness-mobile),
+MIT License, Copyright (c) 2026 DSH Mobile contributors. The patterns
+were re-implemented; no files were copied, so its notice is not
+required. If a later change copies code from it, that change adds the
+MIT notice to THIRD_PARTY_NOTICES.md and names the files here.
+
+Dependencies and their licences are listed in THIRD_PARTY_NOTICES.md.

@@ -152,7 +152,13 @@ check_lock_shape() {
 # --- 4: the library pins -----------------------------------------------------
 check_npm() {
   local manifest="sdks/typescript/packages/client/package.json"
+  local workspace_lock="pnpm-lock.yaml"
   [ -f "$manifest" ] || return 0
+  # SDK tooling shares the root workspace lock; a missing lock must not skip integrity checks.
+  [ -f "$workspace_lock" ] || {
+    fail "$workspace_lock is missing; cannot verify npm pins and integrity"
+    return 0
+  }
   local id spec version integrity
   while read -r id; do
     spec="$(locked npm "$id")"
@@ -161,9 +167,8 @@ check_npm() {
     integrity="${spec#*	}"
     grep -qF "\"$id\": \"$version\"" "$manifest" \
       || fail "$manifest does not pin \"$id\" to exactly $version"
-    [ -f web/pnpm-lock.yaml ] || continue
-    grep -qF "$id@$version" web/pnpm-lock.yaml \
-      || fail "web/pnpm-lock.yaml has no entry for $id@$version"
+    grep -qF "$id@$version" "$workspace_lock" \
+      || fail "$workspace_lock has no entry for $id@$version"
     [ -n "$integrity" ] || continue
     # The integrity sits on the `resolution:` line of the entry that follows the
     # `@name@version` key line.
@@ -177,7 +182,7 @@ check_npm() {
       # `exit` runs END, so the verdict is carried in `ok` rather than in the
       # exit status: an `exit 1` here would override an `exit 0` above it.
       END { exit ok ? 0 : 1 }
-    ' web/pnpm-lock.yaml || fail "web/pnpm-lock.yaml's integrity for $id@$version is not $integrity"
+    ' "$workspace_lock" || fail "$workspace_lock's integrity for $id@$version is not $integrity"
   done < <(locked_rows npm | awk '{print $1}')
 }
 

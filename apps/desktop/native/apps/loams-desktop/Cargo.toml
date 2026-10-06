@@ -1,0 +1,44 @@
+[package]
+name = "loams-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "loams-desktop"
+path = "src/main.rs"
+
+[features]
+default = ["linux-browser"]
+linux-browser = ["loams-desktop-ui/linux-browser"]
+
+[dependencies]
+loams-desktop-brand.workspace = true
+loams-desktop-engine.workspace = true
+loams-desktop-rpc.workspace = true
+loams-desktop-ui = { workspace = true, default-features = false }
+loams-desktop-update.workspace = true
+loams-desktop-mcp.workspace = true
+loams-desktop-link.workspace = true
+tokio.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+libc.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# The custom allocator is macOS-only (see main.rs): glibc measured flat on the
+# same streaming/scroll workloads, so Linux keeps the system allocator.
+[target.'cfg(target_os = "macos")'.dependencies]
+mimalloc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[build-dependencies]
+embed-resource = "3.0.11"

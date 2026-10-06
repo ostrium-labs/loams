@@ -1,0 +1,19 @@
+{
+  "name": "@loams-plugins/bi-rpc",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./gen/*": "./src/gen/*"
+  },
+  "scripts": {
+    "build": "pnpm --filter @loams-plugins/root build",
+    "test": "pnpm --filter @loams-plugins/root test packages/bi-rpc/tests"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.16.0",
+    "@connectrpc/connect": "2.2.0"
+  }
+}

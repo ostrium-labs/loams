@@ -1,0 +1,26 @@
+{
+  "name": "mobile-contracts",
+  "projectType": "library",
+  "sourceRoot": "apps/mobile/proto",
+  "tags": ["scope:mobile", "type:contracts", "status:placeholder"],
+  "implicitDependencies": ["mobile-fixtures"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["{projectRoot}/proto/**/*", "{projectRoot}/buf.yaml", {"runtime": "buf --version"}],
+      "outputs": [],
+      "options": {"cwd": "apps/mobile", "command": "buf lint"}
+    },
+    "gen": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": "apps/mobile", "command": "bash scripts/generate.sh"}
+    },
+    "drift": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": "apps/mobile", "command": "bash scripts/check-drift.sh"}
+    }
+  }
+}

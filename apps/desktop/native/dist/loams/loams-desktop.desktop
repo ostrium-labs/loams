@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Loams Desktop
+GenericName=Loams Bot and Loams Software Factory
+Comment=Native desktop for Loams: one chat that drives your coding and platform agents
+Exec=loams-desktop %U
+TryExec=loams-desktop
+Icon=dev.loams.desktop
+Terminal=false
+Categories=Development;
+StartupWMClass=dev.loams.desktop
+MimeType=x-scheme-handler/loams;

@@ -1,0 +1,7 @@
+{
+  "name": "mobile-fixtures",
+  "projectType": "library",
+  "sourceRoot": "apps/mobile/conformance",
+  "tags": ["scope:mobile", "type:fixtures"],
+  "targets": {}
+}

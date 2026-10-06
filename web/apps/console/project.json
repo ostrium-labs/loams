@@ -1,0 +1,13 @@
+{
+  "name": "@loams/console",
+  "tags": ["scope:web", "type:application"],
+  "namedInputs": {
+    "console": ["default", "{workspaceRoot}/api/console/**/*"]
+  },
+  "targets": {
+    "build": {"inputs": ["console", "^default"]},
+    "typecheck": {"inputs": ["console", "^default"]},
+    "test": {"inputs": ["console", "^default"]},
+    "test:browser": {"cache": false}
+  }
+}

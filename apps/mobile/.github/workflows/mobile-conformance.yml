@@ -1,0 +1,64 @@
+# Historical source-CI template; inactive here. Root .github/workflows/monorepo.yml owns mobile CI.
+# Do not activate alongside monorepo.yml; current Nx projects use the mobile-* names.
+name: mobile-conformance
+
+# The Android network layer (connect-kotlin on the JVM) against the mock, end to end: pairing,
+# signed decisions reaching the open stream, drop and resume, sealed push, every RPC. The iOS
+# counterpart (LoamsConformance, AP3 Task 9) joins once macOS minutes are not metered.
+on:
+  pull_request:
+    paths:
+      - apps/mobile/android/core/**
+      - apps/mobile/android/proto/**
+      - apps/mobile/android/transport/**
+      - apps/mobile/android/conformance/**
+      - apps/mobile/mock/**
+      - apps/mobile/proto/**
+      - apps/mobile/conformance/**
+      - apps/mobile/**/project.json
+      - apps/mobile/scripts/**
+      - apps/mobile/.github/workflows/mobile-conformance.yml
+      - .github/workflows/mobile-conformance.yml
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+jobs:
+  android-jvm:
+    name: Android network layer against the mock
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/mobile/mock/go.mod
+          cache-dependency-path: apps/mobile/mock/go.sum
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Mock-backed conformance (no skipped tests)
+        working-directory: apps/mobile/android
+        run: python3 ../scripts/conformance.py
+      - name: Upload conformance diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-conformance-reports
+          path: |
+            apps/mobile/.cache/conformance.log
+            apps/mobile/android/conformance/build/test-results/
+          retention-days: 7

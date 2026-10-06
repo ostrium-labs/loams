@@ -1,0 +1,26 @@
+{
+  "name": "mobile-ios",
+  "projectType": "application",
+  "sourceRoot": "apps/mobile/ios",
+  "tags": ["scope:mobile", "platform:ios", "os:macos"],
+  "implicitDependencies": ["mobile-contracts", "mobile-fixtures"],
+  "targets": {
+    "generate": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": "apps/mobile/ios", "command": "python3 ../scripts/ios.py generate"}
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": [],
+      "outputs": [],
+      "options": {"cwd": "apps/mobile/ios", "command": "python3 ../scripts/ios.py build"}
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": "apps/mobile/ios", "command": "python3 ../scripts/ios.py test"}
+    }
+  }
+}

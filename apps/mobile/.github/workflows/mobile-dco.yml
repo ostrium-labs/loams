@@ -1,0 +1,49 @@
+# Historical source-CI template; inactive here. Root .github/workflows/monorepo.yml owns mobile CI.
+# Do not activate alongside monorepo.yml; current Nx projects use the mobile-* names.
+name: mobile-dco
+
+# Every commit in a pull request carries a Signed-off-by trailer matching its author
+# (CONTRIBUTING.md). No app or secret needed.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+jobs:
+  signoff:
+    name: Developer Certificate of Origin
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check sign-offs
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          for sha in $(git rev-list "$BASE..$HEAD"); do
+            email=$(git show -s --format=%ae "$sha")
+            # Compare the trailer emails as literal text (an address may hold + or .).
+            signoffs=$(git show -s --format=%B "$sha" | git interpret-trailers --parse | sed -n 's/^Signed-off-by: .*<\(.*\)>[[:space:]]*$/\1/Ip')
+            if ! printf '%s\n' "$signoffs" | grep -qixF -- "$email"; then
+              echo "::error::$(git show -s --format='%h %s' "$sha") has no Signed-off-by for $email"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Sign off with: git rebase --signoff $BASE"
+            exit 1
+          fi
+          echo "every commit is signed off"

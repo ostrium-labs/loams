@@ -1,0 +1,70 @@
+# Historical source-CI template; inactive here. Root .github/workflows/monorepo.yml owns mobile CI.
+# Do not activate alongside monorepo.yml; current Nx projects use the mobile-* names.
+name: mobile-android
+
+on:
+  pull_request:
+    paths:
+      - apps/mobile/android/**
+      - apps/mobile/conformance/**
+      - apps/mobile/proto/**
+      - apps/mobile/**/project.json
+      - apps/mobile/scripts/**
+      - apps/mobile/.github/workflows/mobile-android.yml
+      - .github/workflows/mobile-android.yml
+  push:
+    branches: [main, dev]
+    paths:
+      - apps/mobile/android/**
+      - apps/mobile/conformance/**
+      - apps/mobile/proto/**
+      - apps/mobile/**/project.json
+      - apps/mobile/scripts/**
+      - apps/mobile/.github/workflows/mobile-android.yml
+      - .github/workflows/mobile-android.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+jobs:
+  build:
+    name: build, unit tests, lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/mobile/android
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      # The runner image ships the Android SDK (ANDROID_HOME); AGP installs a missing platform.
+      - uses: gradle/actions/setup-gradle@v6
+      - name: assembleDebug, unit tests (JVM and Robolectric), lint
+        run: ./gradlew --no-daemon --stacktrace assembleDebug test lint -x :conformance:test
+      - name: upload the debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: loams-android-debug-apk
+          path: apps/mobile/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+      - name: upload reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-reports
+          path: |
+            apps/mobile/android/**/build/reports/
+            apps/mobile/android/**/build/test-results/
+          retention-days: 7
+  # TODO(Q420): a release job (signed AAB for Play internal testing) once the Google Play
+  # developer account and upload key exist; signing secrets go in a protected `release`
+  # environment, never in pull-request jobs.

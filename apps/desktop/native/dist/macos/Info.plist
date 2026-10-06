@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for Loams Desktop.app/Contents/Info.plist — see dist/README.md for the
+     bundling steps. Replace __VERSION__ before packaging. -->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Dictate into your draft using on-device Parakeet transcription.</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Loams Desktop</string>
+    <key>CFBundleExecutable</key>
+    <string>loams-desktop</string>
+    <key>CFBundleIconFile</key>
+    <string>loams-desktop.icns</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.loams.desktop</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Loams Desktop</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__VERSION__</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>dev.loams.desktop.conversation</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>loams</string>
+            </array>
+        </dict>
+    </array>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <!-- Browser tabs load user-selected HTTP dev servers. Keep the exception
+         scoped to WebKit; other app connections retain their ATS policy. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoadsInWebContent</key>
+        <true/>
+    </dict>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026</string>
+    <!-- gpui renders via Metal. -->
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+</dict>
+</plist>

@@ -1,0 +1,63 @@
+# Historical source-CI template; inactive here. Root .github/workflows/monorepo.yml owns mobile CI.
+# Do not activate alongside monorepo.yml; current Nx projects use the mobile-* names.
+name: mobile-protos
+
+on:
+  pull_request:
+    paths:
+      - apps/mobile/proto/**
+      - apps/mobile/buf.yaml
+      - apps/mobile/buf.gen.*.yaml
+      - apps/mobile/conformance/proto-ref.lock
+      - apps/mobile/scripts/*.sh
+      - apps/mobile/android/proto/src/generated/**
+      - apps/mobile/ios/Packages/LoamsProto/Sources/LoamsProto/Generated/**
+      - apps/mobile/mock/gen/**
+      - apps/mobile/**/project.json
+      - apps/mobile/scripts/**
+      - apps/mobile/.github/workflows/mobile-protos.yml
+      - .github/workflows/mobile-protos.yml
+  push:
+    branches: [main, dev]
+    paths:
+      - apps/mobile/proto/**
+      - apps/mobile/buf.yaml
+      - apps/mobile/buf.gen.*.yaml
+      - apps/mobile/conformance/proto-ref.lock
+      - apps/mobile/scripts/*.sh
+      - apps/mobile/android/proto/src/generated/**
+      - apps/mobile/ios/Packages/LoamsProto/Sources/LoamsProto/Generated/**
+      - apps/mobile/mock/gen/**
+      - apps/mobile/**/project.json
+      - apps/mobile/scripts/**
+      - apps/mobile/.github/workflows/mobile-protos.yml
+      - .github/workflows/mobile-protos.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+jobs:
+  drift:
+    name: lint, lock and generated-code drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: 1.73.0
+          setup_only: true
+      # Remote plugins run on buf.build without a token. That is rate-limited;
+      # generate.sh retries with back-off. No secret is used (an optional
+      # BUF_TOKEN would lift the limit).
+      - run: bash scripts/check-drift.sh
+        working-directory: apps/mobile

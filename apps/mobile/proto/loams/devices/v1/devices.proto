@@ -1,0 +1,182 @@
+// PLACEHOLDER (loams-mobile). Written from the AP0 plan
+// (docs/plans/2026-10-01-ap0-app-protos.md in ostrium-labs/loams) before
+// AP0's protos exist upstream. Replace this file with the upstream one
+// through scripts/sync-protos.sh as soon as AP0 merges, then fix the apps
+// against the real contract. Do not extend it here: change AP0 instead.
+//
+// Devices, pairing and push targets (§37 §7.2, §7.4; AP0 Task 2).
+//
+// The pairing exchange itself is not an RPC: the phone redeems a pairing at
+// the gateway's OAuth token endpoint (POST {issuer}/api/v1/oauth/token) with
+// grant_type=urn:loams:params:oauth:grant-type:pairing (RFC 6749 §4.5),
+// exactly one of `code` or `user_code`, client_id, device_name, platform,
+// decision_jwk and a DPoP header (RFC 9449). The unified auth plan
+// implements it.
+syntax = "proto3";
+
+package loams.devices.v1;
+
+import "google/protobuf/timestamp.proto";
+import "loams/notifications/v1/notifications.proto";
+
+service DeviceService {
+  // A signed-in user starts pairing a phone; returns the QR payload.
+  rpc CreatePairing(CreatePairingRequest) returns (CreatePairingResponse);
+  // Lists the caller's devices.
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc RenameDevice(RenameDeviceRequest) returns (RenameDeviceResponse);
+  // Revokes the device's refresh token, push targets and decision key at once.
+  rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+  // Registers where to push and the HPKE key to seal payloads to.
+  rpc RegisterPushTarget(RegisterPushTargetRequest) returns (RegisterPushTargetResponse);
+  rpc UnregisterPushTarget(UnregisterPushTargetRequest) returns (UnregisterPushTargetResponse);
+  rpc GetNotificationPreferences(GetNotificationPreferencesRequest) returns (GetNotificationPreferencesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc SetNotificationPreferences(SetNotificationPreferencesRequest) returns (SetNotificationPreferencesResponse);
+  rpc SendTestNotification(SendTestNotificationRequest) returns (SendTestNotificationResponse);
+}
+
+enum Platform {
+  PLATFORM_UNSPECIFIED = 0;
+  PLATFORM_IOS = 1;
+  PLATFORM_ANDROID = 2;
+  PLATFORM_DESKTOP = 3;
+}
+
+enum PushProvider {
+  PUSH_PROVIDER_UNSPECIFIED = 0;
+  PUSH_PROVIDER_APNS = 1;
+  PUSH_PROVIDER_FCM = 2;
+  PUSH_PROVIDER_UNIFIEDPUSH = 3;
+  PUSH_PROVIDER_WEBPUSH = 4;
+}
+
+enum ApnsEnvironment {
+  APNS_ENVIRONMENT_UNSPECIFIED = 0;
+  APNS_ENVIRONMENT_SANDBOX = 1;
+  APNS_ENVIRONMENT_PRODUCTION = 2;
+}
+
+message Device {
+  string id = 1;
+  string name = 2;
+  Platform platform = 3;
+  string model = 4;
+  string app_version = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_seen_at = 7;
+  // RFC 7638 JWK thumbprint of the decision key.
+  string decision_key_thumbprint = 8;
+  repeated PushTargetRef push_targets = 9;
+  google.protobuf.Timestamp revoked_at = 10;
+}
+
+message PushTargetRef {
+  string id = 1;
+  PushProvider provider = 2;
+}
+
+message CreatePairingRequest {
+  string device_name_hint = 1;
+  // Optional narrowing of the environments the device may reach.
+  repeated string environments = 2;
+  string idempotency_key = 3;
+}
+
+message CreatePairingResponse {
+  string pairing_id = 1;
+  // The JSON of §37 §7.2.1.
+  string qr_payload = 2;
+  // 8 digits, the typed alternative to the QR code.
+  string user_code = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message ListDevicesRequest {}
+
+message ListDevicesResponse {
+  repeated Device devices = 1;
+}
+
+message RenameDeviceRequest {
+  string device_id = 1;
+  string name = 2;
+  string idempotency_key = 3;
+}
+
+message RenameDeviceResponse {
+  Device device = 1;
+}
+
+message RevokeDeviceRequest {
+  string device_id = 1;
+  string idempotency_key = 2;
+}
+
+message RevokeDeviceResponse {}
+
+message RegisterPushTargetRequest {
+  PushProvider provider = 1;
+  string token_or_endpoint = 2;
+  // Bundle id or package name.
+  string app_id = 3;
+  ApnsEnvironment environment = 4;
+  // X25519 public key, 32 bytes, for RFC 9180 DHKEM(X25519, HKDF-SHA256),
+  // HKDF-SHA256, ChaCha20-Poly1305.
+  bytes hpke_public_key = 5;
+  string idempotency_key = 6;
+}
+
+message RegisterPushTargetResponse {
+  string push_target_id = 1;
+}
+
+message UnregisterPushTargetRequest {
+  string push_target_id = 1;
+  string idempotency_key = 2;
+}
+
+message UnregisterPushTargetResponse {}
+
+message NotificationPreferences {
+  // Categories that are switched off; everything else is on.
+  repeated loams.notifications.v1.Category muted_categories = 1;
+  // Empty means every environment.
+  repeated string environments = 2;
+  QuietHours quiet_hours = 3;
+  bool approvals_bypass_quiet_hours = 4;
+}
+
+message QuietHours {
+  // "22:00" and "07:00" in `time_zone`; both empty means none.
+  string start = 1;
+  string end = 2;
+  // IANA, e.g. "Europe/Berlin".
+  string time_zone = 3;
+}
+
+message GetNotificationPreferencesRequest {}
+
+message GetNotificationPreferencesResponse {
+  NotificationPreferences preferences = 1;
+}
+
+message SetNotificationPreferencesRequest {
+  NotificationPreferences preferences = 1;
+  string idempotency_key = 2;
+}
+
+message SetNotificationPreferencesResponse {
+  NotificationPreferences preferences = 1;
+}
+
+message SendTestNotificationRequest {
+  string idempotency_key = 1;
+}
+
+message SendTestNotificationResponse {
+  string notification_id = 1;
+}

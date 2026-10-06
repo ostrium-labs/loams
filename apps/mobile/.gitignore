@@ -1,0 +1,32 @@
+# OS and editors
+.DS_Store
+*.swp
+.idea/
+.vscode/
+*.iml
+
+# Gradle and Android
+.gradle/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.keystore
+*.jks
+google-services.json
+
+# Xcode and SwiftPM
+ios/Loams.xcodeproj/
+ios/build/
+DerivedData/
+.build/
+.swiftpm/
+xcuserdata/
+*.xcuserstate
+
+# Go
+mock/bin/
+.cache/

@@ -1,0 +1,4 @@
+/native/target/
+/*.log
+/cargo-metadata.json
+/__pycache__/

@@ -1,0 +1,18 @@
+{
+  "name": "@loams-plugins/plugin-store",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "cordis": "^4.0.0-rc.10",
+    "pg": "^8.16.0",
+    "@loams-plugins/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @loams-plugins/root build"
+  }
+}

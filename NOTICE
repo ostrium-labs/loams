@@ -7,6 +7,15 @@ Portions of this product may be derived from third-party open-source
 projects. Each such portion is identified in the source file header and
 listed below together with its license and attribution notice.
 
+Imported application license scope
+----------------------------------
+The desktop application under apps/desktop/native includes inherited MIT-licensed
+code, Copyright (c) 2026 Wing, and Apache-2.0 Loams additions. Its LICENSE,
+NOTICE, THIRD_PARTY_NOTICES.md, and component notices remain authoritative for
+that subtree and must accompany distributions as applicable. The root license
+does not relicense inherited desktop code. Mobile and plugin notices are retained
+under apps/mobile/ and plugins/ respectively.
+
 Third-party attributions
 ------------------------
 Quickwit (https://github.com/quickwit-oss/quickwit), Apache License 2.0.

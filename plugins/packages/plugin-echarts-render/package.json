@@ -1,0 +1,17 @@
+{
+  "name": "@loams-plugins/plugin-echarts-render",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@loams-plugins/plugin-data": "workspace:*",
+    "@loams-plugins/plugin-flint": "workspace:*",
+    "cordis": "^4.0.0-rc.10",
+    "flint-chart": "~0.5.1",
+    "@loams-plugins/types": "workspace:*"
+  },
+  "scripts": {
+    "build": "pnpm --filter @loams-plugins/root build"
+  }
+}

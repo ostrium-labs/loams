@@ -1,0 +1,25 @@
+{
+  "name": "loams-contracts",
+  "projectType": "library",
+  "sourceRoot": "proto",
+  "tags": ["scope:contracts", "type:contracts"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["{projectRoot}/**/*.proto", "{workspaceRoot}/buf.yaml", "sharedGlobals"],
+      "outputs": [],
+      "options": {"cwd": ".", "command": "web/packages/proto/node_modules/.bin/buf lint"}
+    },
+    "generate": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": ".", "command": "pnpm --filter @loams/proto generate"}
+    },
+    "drift": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": ".", "command": "python3 tools/monorepo/contracts.py"}
+    }
+  }
+}

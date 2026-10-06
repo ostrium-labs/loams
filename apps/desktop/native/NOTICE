@@ -1,0 +1,29 @@
+Loams Desktop
+Copyright 2026 The Loams Authors
+
+Loams Desktop is a fork of Zeron (https://github.com/zeronsh/zeron),
+Copyright (c) 2026 Wing, distributed under the MIT License. The full upstream
+license text is in LICENSE and applies to all code inherited from Zeron. It is
+kept unmodified; do not remove it.
+
+Files that Loams adds (crates/loams-brand, crates/loams-link, dist/loams,
+scripts/loams, .github/workflows/loams.yml, LOAMS.md) are licensed under the
+Apache License, Version 2.0 (see crates/loams-link/LICENSE). Changes to
+inherited files are marked `loams:` in the source and listed in LOAMS.md.
+
+Third-party components
+----------------------
+Zeron's own third-party notices (syntax-highlighting grammars, GPUI and the
+gpui-component fork, bundled icons and fonts) are in THIRD_PARTY_NOTICES.md and
+continue to apply.
+
+Added by Loams:
+- connect-rust (`connectrpc`, `connectrpc-codegen`), Apache-2.0,
+  https://github.com/connectrpc/connect-rust
+- buffa (`buffa`, `buffa-types`, `protoc-gen-buffa`), Apache-2.0,
+  https://github.com/anthropics/buffa
+- keyring, MIT OR Apache-2.0, https://github.com/open-source-cooperative/keyring-rs
+- webbrowser, MIT OR Apache-2.0, https://github.com/amodm/webbrowser-rs
+
+"Zeron" is the name of the upstream project and is used here only to describe
+where this code comes from. "Loams" and "Loams Desktop" name this fork.

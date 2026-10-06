@@ -1,0 +1,69 @@
+{
+  "//": "All composite libraries and the server are built once here. The noEmit dashboard is built separately with its explicit Vite config.",
+  "files": [],
+  "references": [
+    {
+      "path": "packages/bi-rpc"
+    },
+    {
+      "path": "packages/types"
+    },
+    {
+      "path": "packages/plugin-upstream-http"
+    },
+    {
+      "path": "packages/plugin-store"
+    },
+    {
+      "path": "packages/plugin-data"
+    },
+    {
+      "path": "packages/plugin-dashboard-spec"
+    },
+    {
+      "path": "packages/plugin-echarts-render"
+    },
+    {
+      "path": "packages/plugin-flow-render"
+    },
+    {
+      "path": "packages/plugin-flint"
+    },
+    {
+      "path": "packages/plugin-control-plane"
+    },
+    {
+      "path": "packages/plugin-agent-tools"
+    },
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/plugin-zulip-adapter"
+    },
+    {
+      "path": "packages/plugin-forgejo-adapter"
+    },
+    {
+      "path": "packages/plugin-langfuse-adapter"
+    },
+    {
+      "path": "packages/plugin-openpanel-adapter"
+    },
+    {
+      "path": "packages/plugin-glitchtip-adapter"
+    },
+    {
+      "path": "packages/plugin-matomo-adapter"
+    },
+    {
+      "path": "packages/plugin-itsaplan-adapter"
+    },
+    {
+      "path": "packages/plugin-loams-adapter"
+    },
+    {
+      "path": "apps/server"
+    }
+  ]
+}

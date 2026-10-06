@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "defaultBase": "dev",
+  "neverConnectToCloud": true,
+  "parallel": 2,
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*", "!{projectRoot}/node_modules/**/*", "!{projectRoot}/dist/**/*", "!{projectRoot}/lib/**/*", "!{projectRoot}/target/**/*", "!{projectRoot}/**/*.tsbuildinfo", "sharedGlobals"],
+    "sharedGlobals": ["{workspaceRoot}/package.json", "{workspaceRoot}/pnpm-lock.yaml", "{workspaceRoot}/pnpm-workspace.yaml", "{workspaceRoot}/nx.json", "{workspaceRoot}/web/tsconfig.base.json", "{workspaceRoot}/web/biome.json", {"runtime": "node --version"}, {"runtime": "pnpm --version"}],
+    "production": ["default", "!{projectRoot}/**/*.test.*", "!{projectRoot}/**/*.spec.*", "!{projectRoot}/tests/**/*"]
+  },
+  "targetDefaults": {
+    "build": {"cache": true, "dependsOn": ["^build"], "inputs": ["production", "^production"], "outputs": ["{projectRoot}/dist", "{projectRoot}/lib"]},
+    "test": {"cache": true, "inputs": ["default", "^default"], "outputs": []},
+    "typecheck": {"cache": true, "dependsOn": ["^build"], "inputs": ["default", "^default"], "outputs": []},
+    "lint": {"cache": true, "inputs": ["default", "^default"], "outputs": []},
+    "dev": {"cache": false},
+    "serve": {"cache": false},
+    "generate": {"cache": false},
+    "gen:api": {"cache": false}
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@loams-plugins/plugin-loams-adapter",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Read-only analytics over a Loams native-REST deployment (hybrid retrieval over object storage). Loams has no stable release yet and its APIs, formats and flags change without notice, so this adapter degrades gracefully rather than assuming a stable contract.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "pnpm --filter @loams-plugins/root build",
+    "test": "pnpm --filter @loams-plugins/root test packages/plugin-loams-adapter/tests"
+  },
+  "dependencies": {
+    "@loams-plugins/core": "workspace:*",
+    "@loams-plugins/plugin-upstream-http": "workspace:*",
+    "cordis": "^4.0.0-rc.10"
+  }
+}

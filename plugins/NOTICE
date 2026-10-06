@@ -1,0 +1,108 @@
+Loams Plugins
+Copyright 2026 Loams
+
+This product is licensed under the Apache License, Version 2.0. See the LICENSE
+file for the full text.
+
+This repository is the Cordis plugin host, console, agent bus, A2A endpoint and
+auth layer that sits *alongside* Loams (https://github.com/ostrium-labs/loams),
+the Rust AI-native data platform. Loams is a separate Apache-2.0, open-core
+project: its metering, billing and other commercial APIs are proprietary to it,
+and none of that code is present here. Nothing in this repository is compiled
+from Rust — this is a TypeScript/Cordis codebase, and it vendors no Rust source.
+
+---------------------------------------------------------------------------
+Vendored third-party source
+---------------------------------------------------------------------------
+
+This product includes software developed by T3 Tools Inc.
+Licensed under the MIT License.
+
+Portions — the nine UI primitives under `packages/core/src/ui/primitives/` — are
+adapted from T3 Code (https://github.com/pingdotgg/t3code, https://t3.codes),
+Copyright (c) 2026 T3 Tools Inc.
+
+Specifically, these nine files are adapted from T3 Code 0.0.45
+(`apps/web/src/components/ui/` upstream):
+
+    packages/core/src/ui/primitives/alert.tsx
+    packages/core/src/ui/primitives/badge.tsx
+    packages/core/src/ui/primitives/button.tsx
+    packages/core/src/ui/primitives/empty.tsx
+    packages/core/src/ui/primitives/kbd.tsx
+    packages/core/src/ui/primitives/label.tsx
+    packages/core/src/ui/primitives/separator.tsx
+    packages/core/src/ui/primitives/skeleton.tsx
+    packages/core/src/ui/primitives/switch.tsx
+
+The upstream files carry **no** per-file licence header — the project ships a
+single root MIT `LICENSE`. MIT §"The above copyright notice ... shall be included
+in all copies" is satisfied by the header block that *this repository* prepends
+to each of the nine files, which reproduces the upstream copyright line, the
+permission grant and the warranty disclaimer verbatim. That header was added by
+this project, not carried over from upstream, and the NOTICE records the
+attribution it creates.
+
+The attribution is enforced by a test
+(`packages/dashboard-ui/tests/ui/primitives.spec.ts`, "MIT attribution"), which
+asserts that each of the nine files still contains the copyright line, the
+permission grant, and the warranty disclaimer.
+
+The local modifications are recorded in each file's header: the `cn` helper is
+this repository's own reimplementation rather than t3code's `~/lib/utils`, which
+was coupled to `@t3tools/contracts` and `effect`, and the files live in
+`@loams-plugins/core` rather than in the host app so the plugin console can
+render them. Toast, sidebar and the `@pierre/diffs` viewer were deliberately not
+copied, because they are coupled to `react-router`/`effect` or because their
+licence could not be verified.
+
+---------------------------------------------------------------------------
+Third-party runtime dependencies
+---------------------------------------------------------------------------
+
+Unlike the section above, no source from the following is vendored, adapted or
+redistributed here; they are ordinary npm dependencies, installed from their
+registries under their own licences. They are recorded because this repository's
+licence policy admits only Apache-2.0, MIT and BSD, and each of these is inside
+it:
+
+    @xyflow/react   MIT   (packages/dashboard-ui; React Flow, https://reactflow.dev)
+
+`@xyflow/react` is the renderer behind the `graph` widget type. It is a runtime
+dependency of the browser bundle only: `@loams-plugins/plugin-flow-render`
+emits the `nodes`/`edges` pair it mounts and does not import it, which is what
+keeps that package testable with no DOM. See
+`packages/plugin-flow-render/README.md` for why `graph` is a sibling
+`Widget.type` rather than a new `ChartSchema.kind`.
+
+---------------------------------------------------------------------------
+Upstream services consumed over HTTP
+---------------------------------------------------------------------------
+
+The adapters in `packages/plugin-*-adapter/`, together with
+`packages/plugin-control-plane/`, talk to third-party services as
+clients. No source code from any of the following projects is vendored,
+redistributed, linked or embedded in this repository; only their HTTP APIs are
+called. Because no code from them is shipped, no copyleft obligation is
+inherited by this project. This is recorded here for clarity rather than because
+any obligation arises:
+
+    ItsAPlan   AGPL-3.0
+    Forgejo    GPL-3.0-or-later
+    Matomo     GPL-3.0
+    OpenPanel  AGPL-3.0
+    loams-dev  Apache-2.0
+
+The remaining upstreams (Apache Superset, Zulip, Langfuse, GlitchTip) are
+reached the same way, over HTTP only.
+
+Note on naming: `packages/plugin-control-plane/` is this repository's name for the
+client that speaks **Apache Superset's** REST API, so Superset is still the
+upstream product named above. The plugin id (`control-plane`) is this project's
+naming; the wire is Superset's. The `SUPERSET_*` environment variables and the
+`SUPERSET` `envPrefix` describe that same wire and are unchanged.
+
+Note on `loams-dev`: Loams is Apache-2.0, and this adapter calls it exactly as
+it calls any other upstream — over HTTP, with no code shared. The proprietary
+metering, billing and commercial API surfaces of the Loams platform are not
+reachable through, and not used by, this repository.

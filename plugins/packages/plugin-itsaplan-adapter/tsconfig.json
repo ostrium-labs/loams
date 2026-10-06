@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
+  },
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../plugin-upstream-http"
+    }
+  ],
+  "include": [
+    "src",
+    "tests"
+  ],
+  "exclude": [
+    "tests"
+  ]
+}

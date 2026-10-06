@@ -1,0 +1,26 @@
+{
+  "name": "loams-monorepo",
+  "private": true,
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@11.27.1",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "nx": "nx",
+    "projects": "nx show projects",
+    "build": "nx run-many --targets=build --projects=@loams/*,plugins,plugins-dashboard-ui --parallel=2",
+    "test": "nx run-many --targets=test --projects=@loams/*,plugins --parallel=2",
+    "typecheck": "nx run-many --targets=typecheck --projects=@loams/*,plugins-dashboard-ui --parallel=2",
+    "dev:console": "nx run @loams/console:dev",
+    "dev:plugins": "nx run plugins-server:start",
+    "build:desktop": "nx run loams-desktop:build",
+    "build:android": "nx run mobile-android:build",
+    "build:ios": "nx run mobile-ios:build",
+    "check:monorepo": "python3 tools/monorepo/check.py",
+    "affected": "nx affected --targets=build,test,typecheck --parallel=2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "nx": "23.2.1",
+    "typescript": "5.9.3"
+  }
+}

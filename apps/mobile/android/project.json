@@ -1,0 +1,36 @@
+{
+  "name": "mobile-android",
+  "projectType": "application",
+  "sourceRoot": "apps/mobile/android",
+  "tags": ["scope:mobile", "platform:android"],
+  "implicitDependencies": ["mobile-contracts", "mobile-fixtures", "mobile-mock"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": [],
+      "outputs": [],
+      "options": {"cwd": "apps/mobile/android", "command": "./gradlew --no-daemon --stacktrace assembleDebug"}
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": "apps/mobile/android", "command": "./gradlew --no-daemon --stacktrace test -x :conformance:test"}
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": "apps/mobile/android", "command": "./gradlew --no-daemon --stacktrace lint"}
+    },
+    "conformance": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": "apps/mobile/android", "command": "python3 ../scripts/conformance.py"}
+    },
+    "install": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {"cwd": "apps/mobile/android", "command": "./gradlew --no-daemon --stacktrace installDebug"}
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "about": "RFC 7638 JWK thumbprints (SHA-256, base64url). The OKP case is RFC 8037 Appendix A.3.",
+  "cases": [
+    {
+      "name": "rfc8037_ed25519",
+      "jwk": {"kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"},
+      "thumbprint": "kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k"
+    }
+  ]
+}

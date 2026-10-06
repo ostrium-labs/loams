@@ -1,0 +1,24 @@
+# Android: protobuf-javalite messages and connect-kotlin clients, written to
+# android/proto/src/generated and committed (docs/protos.md). Run
+# scripts/generate.sh, not this file directly.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: java_package_prefix
+      value: dev.loams.proto
+    - file_option: java_multiple_files
+      value: true
+inputs:
+  - directory: proto
+plugins:
+  - remote: buf.build/protocolbuffers/java:v36.2
+    out: android/proto/src/generated/java
+    opt: lite
+  - remote: buf.build/connectrpc/kotlin:v0.9.0
+    out: android/proto/src/generated/kotlin
+    opt:
+      - generateCallbackMethods=false
+      - generateCoroutineMethods=true
+      - generateBlockingUnaryMethods=false
+clean: true

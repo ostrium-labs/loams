@@ -1,0 +1,30 @@
+{
+  "about": "QR pairing payloads v1 (design §37 §7.2.1). `now` is the reader's clock in Unix seconds. `expect` is ok, unsupported_version, wrong_kind, expired, insecure_issuer or malformed. Loopback http issuers are accepted only by debug builds reading with allow_insecure_loopback.",
+  "now": 1790899200,
+  "cases": [
+    {"name": "valid", "expect": "ok",
+     "payload": "{\"v\":1,\"kind\":\"loams-pair\",\"issuer\":\"https://loams.acme.example\",\"instance_id\":\"01J9Z3ABCDEFGHJKMNPQRSTVWX\",\"spki\":[\"Rk9PQkFSLi4u\"],\"jkt\":\"NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs\",\"code\":\"7JQ2KX4M2ZB6V3NAQ6E5RW2HCA\",\"user_code\":\"48213977\",\"exp\":1790899500}",
+     "parsed": {"issuer": "https://loams.acme.example", "instance_id": "01J9Z3ABCDEFGHJKMNPQRSTVWX", "spki": ["Rk9PQkFSLi4u"], "jkt": "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs", "code": "7JQ2KX4M2ZB6V3NAQ6E5RW2HCA", "user_code": "48213977", "exp": 1790899500}},
+    {"name": "valid_public_ca", "expect": "ok",
+     "payload": "{\"v\":1,\"kind\":\"loams-pair\",\"issuer\":\"https://loams.acme.example\",\"instance_id\":\"01J9Z3ABCDEFGHJKMNPQRSTVWX\",\"spki\":null,\"jkt\":\"NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs\",\"code\":\"7JQ2KX4M2ZB6V3NAQ6E5RW2HCA\",\"user_code\":\"48213977\",\"exp\":1790899500,\"future_field\":true}",
+     "parsed": {"issuer": "https://loams.acme.example", "instance_id": "01J9Z3ABCDEFGHJKMNPQRSTVWX", "spki": null, "jkt": "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs", "code": "7JQ2KX4M2ZB6V3NAQ6E5RW2HCA", "user_code": "48213977", "exp": 1790899500}},
+    {"name": "v2", "expect": "unsupported_version",
+     "payload": "{\"v\":2,\"kind\":\"loams-pair\",\"issuer\":\"https://loams.acme.example\",\"instance_id\":\"01J9Z3\",\"spki\":null,\"jkt\":\"x\",\"code\":\"c\",\"user_code\":\"1\",\"exp\":1790899500}"},
+    {"name": "wrong_kind", "expect": "wrong_kind",
+     "payload": "{\"v\":1,\"kind\":\"dsh-relay-pair\",\"issuer\":\"https://loams.acme.example\",\"instance_id\":\"01J9Z3\",\"spki\":null,\"jkt\":\"x\",\"code\":\"c\",\"user_code\":\"1\",\"exp\":1790899500}"},
+    {"name": "expired", "expect": "expired",
+     "payload": "{\"v\":1,\"kind\":\"loams-pair\",\"issuer\":\"https://loams.acme.example\",\"instance_id\":\"01J9Z3\",\"spki\":null,\"jkt\":\"x\",\"code\":\"c\",\"user_code\":\"1\",\"exp\":1790899100}"},
+    {"name": "http_issuer", "expect": "insecure_issuer",
+     "payload": "{\"v\":1,\"kind\":\"loams-pair\",\"issuer\":\"http://loams.acme.example\",\"instance_id\":\"01J9Z3\",\"spki\":null,\"jkt\":\"x\",\"code\":\"c\",\"user_code\":\"1\",\"exp\":1790899500}"},
+    {"name": "http_loopback_release", "expect": "insecure_issuer",
+     "payload": "{\"v\":1,\"kind\":\"loams-pair\",\"issuer\":\"http://10.0.2.2:8084\",\"instance_id\":\"01J9Z3\",\"spki\":null,\"jkt\":\"x\",\"code\":\"c\",\"user_code\":\"1\",\"exp\":1790899500}"},
+    {"name": "http_loopback_debug", "expect": "ok", "allow_insecure_loopback": true,
+     "payload": "{\"v\":1,\"kind\":\"loams-pair\",\"issuer\":\"http://10.0.2.2:8084\",\"instance_id\":\"01J9Z3\",\"spki\":null,\"jkt\":\"x\",\"code\":\"c\",\"user_code\":\"12345678\",\"exp\":1790899500}",
+     "parsed": {"issuer": "http://10.0.2.2:8084", "instance_id": "01J9Z3", "spki": null, "jkt": "x", "code": "c", "user_code": "12345678", "exp": 1790899500}},
+    {"name": "http_lan_debug", "expect": "insecure_issuer", "allow_insecure_loopback": true,
+     "payload": "{\"v\":1,\"kind\":\"loams-pair\",\"issuer\":\"http://192.168.1.20:8084\",\"instance_id\":\"01J9Z3\",\"spki\":null,\"jkt\":\"x\",\"code\":\"c\",\"user_code\":\"1\",\"exp\":1790899500}"},
+    {"name": "missing_code", "expect": "malformed",
+     "payload": "{\"v\":1,\"kind\":\"loams-pair\",\"issuer\":\"https://loams.acme.example\",\"instance_id\":\"01J9Z3\",\"spki\":null,\"jkt\":\"x\",\"exp\":1790899500}"},
+    {"name": "not_json", "expect": "malformed", "payload": "https://example.com/not-a-pairing"}
+  ]
+}

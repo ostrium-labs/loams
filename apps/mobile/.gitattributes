@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.bat text eol=crlf
+*.jar binary
+# Generated code: collapse in diffs.
+android/proto/src/generated/** linguist-generated=true
+ios/Packages/LoamsProto/Sources/LoamsProto/Generated/** linguist-generated=true
+mock/gen/** linguist-generated=true

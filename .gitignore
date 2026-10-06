@@ -32,8 +32,14 @@ __pycache__/
 .env
 .env.*
 
-# Node
+# Node / Nx
 node_modules/
+.nx/
+.pnpm-store/
+*.tsbuildinfo
+
+# Local linked worktrees are never part of the monorepo import
+/.worktrees/
 
 # What a conformance suite reports it ran (D640). Generated, never committed:
 # a committed report is a claim about the corpus that a later corpus or a

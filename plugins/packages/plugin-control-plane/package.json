@@ -1,0 +1,17 @@
+{
+  "name": "@loams-plugins/plugin-control-plane",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "cordis": "^4.0.0-rc.10",
+    "@loams-plugins/types": "workspace:*"
+  },
+  "devDependencies": {
+    "vite-plus": "1.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @loams-plugins/root build"
+  }
+}

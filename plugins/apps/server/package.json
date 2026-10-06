@@ -1,0 +1,36 @@
+{
+  "name": "@loams-plugins/server",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "mcp": "ENABLE_MCP=true tsx src/index.ts",
+    "build": "pnpm --filter @loams-plugins/root build"
+  },
+  "dependencies": {
+    "@connectrpc/connect": "2.2.0",
+    "@cordisjs/plugin-logger-console": "^1.0.0",
+    "@loams-plugins/bi-rpc": "workspace:*",
+    "@loams-plugins/core": "workspace:*",
+    "@loams-plugins/plugin-agent-tools": "workspace:*",
+    "@loams-plugins/plugin-control-plane": "workspace:*",
+    "@loams-plugins/plugin-dashboard-spec": "workspace:*",
+    "@loams-plugins/plugin-data": "workspace:*",
+    "@loams-plugins/plugin-echarts-render": "workspace:*",
+    "@loams-plugins/plugin-flint": "workspace:*",
+    "@loams-plugins/plugin-flow-render": "workspace:*",
+    "@loams-plugins/plugin-forgejo-adapter": "workspace:*",
+    "@loams-plugins/plugin-glitchtip-adapter": "workspace:*",
+    "@loams-plugins/plugin-itsaplan-adapter": "workspace:*",
+    "@loams-plugins/plugin-langfuse-adapter": "workspace:*",
+    "@loams-plugins/plugin-loams-adapter": "workspace:*",
+    "@loams-plugins/plugin-matomo-adapter": "workspace:*",
+    "@loams-plugins/plugin-openpanel-adapter": "workspace:*",
+    "@loams-plugins/plugin-store": "workspace:*",
+    "@loams-plugins/plugin-zulip-adapter": "workspace:*",
+    "@loams-plugins/types": "workspace:*",
+    "cordis": "^4.0.0-rc.10",
+    "msw": "^2.15.0"
+  }
+}

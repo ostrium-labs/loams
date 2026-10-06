@@ -1,0 +1,70 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "lib",
+    "rootDir": "src",
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "references": [
+    {
+      "path": "../../packages/bi-rpc"
+    },
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/plugin-agent-tools"
+    },
+    {
+      "path": "../../packages/plugin-control-plane"
+    },
+    {
+      "path": "../../packages/plugin-dashboard-spec"
+    },
+    {
+      "path": "../../packages/plugin-data"
+    },
+    {
+      "path": "../../packages/plugin-echarts-render"
+    },
+    {
+      "path": "../../packages/plugin-flint"
+    },
+    {
+      "path": "../../packages/plugin-flow-render"
+    },
+    {
+      "path": "../../packages/plugin-forgejo-adapter"
+    },
+    {
+      "path": "../../packages/plugin-glitchtip-adapter"
+    },
+    {
+      "path": "../../packages/plugin-itsaplan-adapter"
+    },
+    {
+      "path": "../../packages/plugin-langfuse-adapter"
+    },
+    {
+      "path": "../../packages/plugin-loams-adapter"
+    },
+    {
+      "path": "../../packages/plugin-matomo-adapter"
+    },
+    {
+      "path": "../../packages/plugin-openpanel-adapter"
+    },
+    {
+      "path": "../../packages/plugin-store"
+    },
+    {
+      "path": "../../packages/plugin-zulip-adapter"
+    },
+    {
+      "path": "../../packages/types"
+    }
+  ]
+}

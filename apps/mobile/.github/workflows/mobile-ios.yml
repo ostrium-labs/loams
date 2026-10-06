@@ -1,0 +1,103 @@
+# Historical source-CI template; inactive here. Root .github/workflows/monorepo.yml owns mobile CI.
+# Do not activate alongside monorepo.yml; current Nx projects use the mobile-* names.
+name: mobile-ios
+
+on:
+  pull_request:
+    paths:
+      - apps/mobile/ios/**
+      - apps/mobile/conformance/**
+      - apps/mobile/proto/**
+      - apps/mobile/**/project.json
+      - apps/mobile/scripts/**
+      - apps/mobile/.github/workflows/mobile-ios.yml
+      - .github/workflows/mobile-ios.yml
+  push:
+    branches: [main, dev]
+    paths:
+      - apps/mobile/ios/**
+      - apps/mobile/conformance/**
+      - apps/mobile/proto/**
+      - apps/mobile/**/project.json
+      - apps/mobile/scripts/**
+      - apps/mobile/.github/workflows/mobile-ios.yml
+      - .github/workflows/mobile-ios.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+jobs:
+  core-linux:
+    # LoamsCore builds on Linux with swift-crypto (AP3 Ruling 6): the shared golden fixtures run
+    # here cheaply, before the slower macOS job.
+    name: LoamsCore on Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: swift:6.3
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: swift test --package-path apps/mobile/ios/Packages/LoamsCore
+
+  app:
+    # macOS minutes are expensive on a private repository: only after the Linux job passes.
+    name: build and test on the iOS simulator
+    needs: core-linux
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Xcode
+        run: xcodebuild -version && swift --version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Swift package tests (macOS host)
+        run: |
+          swift test --package-path apps/mobile/ios/Packages/LoamsCore
+          swift test --package-path apps/mobile/ios/Packages/LoamsData
+      - name: Generate the Xcode project
+        working-directory: apps/mobile/ios
+        run: xcodegen generate
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          runtimes = sorted((k for k in devices if "iOS" in k), reverse=True)
+          print(next(d["udid"] for k in runtimes for d in devices[k] if d["name"].startswith("iPhone")))
+          ')
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: xcodebuild build test (unsigned, simulator)
+        run: |
+          if ! xcodebuild -project apps/mobile/ios/Loams.xcodeproj -scheme Loams \
+            -destination "id=${{ steps.sim.outputs.udid }}" -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO -skipPackagePluginValidation \
+            build test > xcodebuild.log 2>&1; then
+            grep -E 'error:|failed|FAILED' xcodebuild.log | head -80
+            tail -60 xcodebuild.log
+            exit 1
+          fi
+          grep -E 'Test Case .*(passed|failed)|Executed|\*\* (BUILD|TEST)' xcodebuild.log | tail -40
+      - name: upload the build log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          retention-days: 7
+  # TODO(Q420): signing (App Store distribution identity, provisioning profiles for the app and
+  # the extension) and TestFlight upload, once the Apple Developer Program membership exists.

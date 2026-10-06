@@ -1,0 +1,90 @@
+// PLACEHOLDER (loams-mobile). Written from the AP0 plan
+// (docs/plans/2026-10-01-ap0-app-protos.md in ostrium-labs/loams) before
+// AP0's protos exist upstream. Replace this file with the upstream one
+// through scripts/sync-protos.sh as soon as AP0 merges, then fix the apps
+// against the real contract. Do not extend it here: change AP0 instead.
+//
+// The in-app inbox (§37 §7.4, AP0 Task 4). Push is only a wake-up: the
+// sealed push payload's plaintext is one serialized Notification.
+syntax = "proto3";
+
+package loams.notifications.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service NotificationService {
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc WatchNotifications(WatchNotificationsRequest) returns (stream WatchNotificationsResponse);
+  rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
+}
+
+enum Category {
+  CATEGORY_UNSPECIFIED = 0;
+  CATEGORY_APPROVALS = 1;
+  CATEGORY_OPERATIONS = 2;
+  CATEGORY_JOBS = 3;
+  CATEGORY_RUNS = 4;
+  CATEGORY_SECURITY = 5;
+}
+
+message Notification {
+  // ULID.
+  string id = 1;
+  Category category = 2;
+  // "io.loams.dev.approval.requested.v1", ...
+  string cloudevent_type = 3;
+  string subject = 4;
+  // Server-rendered.
+  string title = 5;
+  string body = 6;
+  oneof ref {
+    string approval_id = 7;
+    string operation_id = 8;
+    string job_ref = 9;
+    string run_ref = 10;
+  }
+  string environment_id = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp read_at = 13;
+}
+
+message ListNotificationsRequest {
+  bool unread_only = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  string next_page_token = 2;
+}
+
+message WatchNotificationsRequest {
+  string resume_cursor = 1;
+}
+
+message NotificationSnapshot {
+  repeated Notification notifications = 1;
+}
+
+message Heartbeat {}
+
+message WatchNotificationsResponse {
+  oneof event {
+    NotificationSnapshot snapshot = 1;
+    Notification upsert = 2;
+    string remove = 3;
+    Heartbeat heartbeat = 4;
+  }
+  string cursor = 5;
+  bool snapshot_reset = 6;
+}
+
+message MarkReadRequest {
+  repeated string notification_ids = 1;
+  string idempotency_key = 2;
+}
+
+message MarkReadResponse {}

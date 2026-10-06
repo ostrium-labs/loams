@@ -66,6 +66,24 @@ Statuses reflect the `main` branch. **Available** means it is built and tested i
 | Loams Postgres | A fork of Neon whose WAL lives on TiKV and the bucket | Planned |
 | Self-hosting with GitOps | A Helm chart, a Kubernetes operator and Argo CD layouts | Planned |
 
+## Monorepo applications
+
+This repository also contains the [Loams Desktop](apps/desktop/native/README.md),
+[native Android/iOS apps](apps/mobile/README.md), and [plugin services and dashboard](plugins/README.md).
+Nx coordinates Cargo, Gradle, Xcode/SwiftPM, Go, and the root pnpm workspace; it does not replace those build tools.
+
+```sh
+pnpm install --frozen-lockfile
+pnpm projects
+pnpm build
+pnpm test
+```
+
+The default JavaScript checks do not require native toolchains. Build native apps separately with
+`pnpm build:desktop`, `pnpm build:android`, or `pnpm build:ios` on a supported host.
+See [the monorepo guide](docs/monorepo.md) for prerequisites, commands, migration provenance,
+contract ownership, and current validation limits. Scoped licenses remain beside imported components.
+
 ## Quick start
 
 ### Prerequisites

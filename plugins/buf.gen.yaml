@@ -1,0 +1,6 @@
+version: v2
+plugins:
+  - local: protoc-gen-es
+    out: packages/bi-rpc/src/gen
+    opt:
+      - target=ts

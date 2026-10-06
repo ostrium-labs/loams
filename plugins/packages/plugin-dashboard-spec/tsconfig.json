@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "lib",
+    "rootDir": "src",
+    "tsBuildInfoFile": "tsconfig.tsbuildinfo"
+  },
+  "include": [
+    "src",
+    "tests"
+  ],
+  "exclude": [
+    "tests"
+  ],
+  "references": [
+    {
+      "path": "../plugin-store"
+    },
+    {
+      "path": "../types"
+    }
+  ]
+}

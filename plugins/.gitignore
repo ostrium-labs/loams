@@ -1,0 +1,30 @@
+node_modules/
+dist/
+lib/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.local
+.vitest/
+
+# Emitted JS/declarations/source maps next to test sources. `tsc -b` used to emit
+# these into packages/*/tests/ before "exclude": ["tests"] was added to the
+# composite tsconfigs, so the sources no longer produce them but the stale files
+# lingered and were committable. Keep them out.
+packages/*/tests/**/*.spec.js
+packages/*/tests/**/*.spec.js.map
+packages/*/tests/**/*.spec.d.ts
+packages/*/tests/**/*.spec.d.ts.map
+
+# Tooling/skill directories that are environment artifacts, not project source.
+.agents/
+
+# Rust build output. Nothing in this repository is Rust -- Loams is a separate
+# project -- but a stray cargo invocation from a sibling checkout lands here.
+target/
+
+# Local editor/agent scratch.
+.vite/
+.idea/
+*.tsbuildinfo.bak
