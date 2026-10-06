@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://loams.dev/schema/plugin.schema.json",
+  "title": "Loams Unified Plugin Manifest",
+  "description": "JSON Schema for Loams plugins, unifying backend plugins and web console plugins.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Plugin metadata: The unique name or id of the plugin (e.g. '@loams/plugin-shell' or 'loams')."
+    },
+    "version": {
+      "type": "string",
+      "description": "Plugin metadata: The semantic version of the plugin."
+    },
+    "description": {
+      "type": "string",
+      "description": "Plugin metadata: Description of what the plugin does."
+    },
+    "author": {
+      "type": "string",
+      "description": "Plugin metadata: Author of the plugin."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["adapter", "surface", "platform", "agent", "console"],
+      "description": "Plugin kind."
+    },
+    "layer": {
+      "type": "string",
+      "enum": ["platform", "adapter", "surface", "agent"],
+      "description": "Layer declaration: Which architectural layer this plugin belongs to."
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["core", "first-party", "third-party"],
+      "description": "Trust tier for sandbox isolation."
+    },
+    "entry": {
+      "type": "string",
+      "description": "Entry points: ESM entry for the plugin package."
+    },
+    "services": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Entry points: Service declarations."
+    },
+    "inject": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Dependencies: Services this plugin requires to be injected."
+    },
+    "provides": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Dependencies: Services this plugin provides to others."
+    },
+    "requires": {
+      "type": "object",
+      "description": "Dependencies: External requirements like API packages or console version.",
+      "properties": {
+        "console": { 
+          "type": "string",
+          "description": "Semver requirement for the console host." 
+        },
+        "api": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "API version requirements (e.g. loams.instance.v1)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "permissions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Permissions and scopes: Permissions required by the plugin in the UI."
+    },
+    "requiredScopes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Permissions and scopes: Auth scopes a caller must hold before this plugin's routes or skills answer."
+    },
+    "slots": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Slot registrations: UI slots registered by this plugin."
+    },
+    "editions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["oss", "desktop", "cloud"]
+      },
+      "description": "Edition membership: The editions this plugin is a member of."
+    },
+    "upstream": {
+      "type": "object",
+      "description": "Environment variable requirements for auto-discovery.",
+      "properties": {
+        "product": { "type": "string" },
+        "envPrefix": { "type": "string" }
+      },
+      "required": ["product"]
+    },
+    "agent": {
+      "type": "object",
+      "description": "Agent block if this plugin contributes A2A agent skills.",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "version": { "type": "string" },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "tags": { "type": "array", "items": { "type": "string" } },
+              "examples": { "type": "array", "items": { "type": "string" } },
+              "inputModes": { "type": "array", "items": { "type": "string" } },
+              "outputModes": { "type": "array", "items": { "type": "string" } }
+            },
+            "required": ["id", "name", "description"]
+          }
+        }
+      },
+      "required": ["name", "description", "version", "skills"]
+    },
+    "actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The action names this plugin may register in the actions registry."
+    },
+    "uiPath": {
+      "type": "string",
+      "description": "Route the plugin's own UI is served at, e.g. '/plugins/loams'."
+    },
+    "icon": {
+      "type": "string",
+      "description": "Icon identifier for the plugin."
+    },
+    "alwaysOn": {
+      "type": "boolean",
+      "description": "If true, the console toggle is disabled and the plugin is never unloaded."
+    },
+    "order": {
+      "type": "number",
+      "description": "Console sort key. Lower sorts first. Defaults to 100."
+    },
+    "defaultEnabled": {
+      "type": "boolean",
+      "description": "Enabled state for a plugin that has never been toggled before."
+    },
+    "server": {
+      "type": "object",
+      "properties": {
+        "kind": { "type": "string", "enum": ["function", "connector"] },
+        "ref": { "type": "string" }
+      },
+      "required": ["kind", "ref"]
+    }
+  },
+  "required": ["name", "version", "kind", "layer", "tier", "editions"]
+}
