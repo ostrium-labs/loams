@@ -39,6 +39,20 @@ use crate::retry::{DEFAULT_MAX_RETRIES, backoff, should_retry};
 /// terminal failure if the stream ends badly.
 pub type Opened<M> = Pin<Box<dyn Stream<Item = Result<M, ConnectError>> + Send>>;
 
+/// A server stream the SDK hands back: the messages, and a [`LoamsError`] for
+/// each one that failed (R7, D641).
+///
+/// Named by the **generated** facade — `facade.rs` is emitted data and traits
+/// only, and the traits it emits return `Result<ResponseStream<T>, LoamsError>`
+/// — so the name lives here, beside the runtime, rather than in the generator.
+/// The type is the one [`watch`] already returns, spelled out: the API has
+/// server streams only (D420), so a stream is always this shape.
+///
+/// Boxed rather than an opaque `impl Stream`, for the reason given on
+/// [`watch`]: a stream built from an `async` block is `!Unpin`, so an unboxed
+/// one would force every caller into `Box::pin` and `pin!`.
+pub type ResponseStream<M> = Pin<Box<dyn Stream<Item = Result<M, LoamsError>> + Send>>;
+
 /// Reads the cursor off a message, when it carries one (R7).
 pub type CursorOf<M> = Arc<dyn Fn(&M) -> Option<String> + Send + Sync>;
 
@@ -376,23 +390,23 @@ mod tests {
 
     #[test]
     fn the_generated_binding_says_watch_is_a_server_stream_and_the_rest_are_unary() {
-        let watch = facade::binding_of("live", "watch").expect("generated");
-        assert_eq!(watch.streaming(), facade::Streaming::Server);
-        assert_eq!(watch.method(), "Watch");
+        let watch = crate::binding::binding_of("live", "watch").expect("generated");
+        assert_eq!(watch.streaming, facade::Streaming::Server);
+        assert_eq!(watch.method, "Watch");
         assert_eq!(watch.module, "live");
         // D420: the API has no client stream and no bidi, so every other
         // generated RPC today is unary — including `Watch`'s siblings.
         for module in facade::MODULES {
             for call in module.calls {
-                if call.method() != "Watch" {
-                    assert_eq!(call.streaming(), facade::Streaming::Unary, "{}", call.rpc());
+                if call.method != "Watch" {
+                    assert_eq!(call.streaming, facade::Streaming::Unary, "{}", call.rpc);
                 }
             }
         }
         // A live RPC's proto declares no idempotency level, so the class is
         // `Manual`: a stream is not retried by its binding, and the resume is
         // what makes it safe rather than the class.
-        assert_eq!(watch.retry(), RetryClass::Manual);
+        assert_eq!(watch.retry_class(), RetryClass::Manual);
     }
 
     #[tokio::test]

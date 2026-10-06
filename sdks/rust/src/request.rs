@@ -81,7 +81,7 @@ pub fn idempotency_key(existing: Option<&str>, supplied: Option<&str>) -> String
 /// A function keeps the policy in one place and leaves the generated type alone.
 ///
 /// A request whose schema declares **no** such field is never passed here at all —
-/// [`crate::facade::CallBinding::takes_idempotency_key`] says so, and the facade
+/// [`crate::binding::CallBinding::takes_idempotency_key`] says so, and the facade
 /// only calls this for the calls it says are keyed.
 pub fn with_idempotency_key<K, G, S>(
     mut request: K,
@@ -267,7 +267,6 @@ pub fn unknown_call(rpc: &str) -> LoamsError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::facade;
     use crate::live_v1::MutateRequest;
 
     /// A request shaped like `MutateRequest`: proto3 `optional`, so `None` means
@@ -353,28 +352,28 @@ mod tests {
         );
         assert!(keyed.keyed);
         assert_eq!(keyed.request.idempotency_key.as_deref(), Some("idem_fixed"));
-        assert_eq!(facade::IDEMPOTENCY_KEY_FIELD, "idempotency_key");
+        assert_eq!(IDEMPOTENCY_KEY_FIELD, "idempotency_key");
     }
 
     #[test]
     fn the_facade_says_which_calls_are_keyed() {
         assert!(
-            facade::binding_of("tables", "mutate")
+            crate::binding::binding_of("tables", "mutate")
                 .expect("generated")
                 .takes_idempotency_key()
         );
         assert!(
-            !facade::binding_of("tables", "deploy")
+            !crate::binding::binding_of("tables", "deploy")
                 .expect("generated")
                 .takes_idempotency_key()
         );
         assert!(
-            !facade::binding_of("tables", "query")
+            !crate::binding::binding_of("tables", "query")
                 .expect("generated")
                 .takes_idempotency_key()
         );
         assert!(
-            !facade::binding_of("instance", "get_instance")
+            !crate::binding::binding_of("instance", "get_instance")
                 .expect("generated")
                 .takes_idempotency_key()
         );

@@ -86,7 +86,7 @@ impl Runtime {
             // carries an idempotency key, and `keyed` is `true` exactly then.
             retry_safe: overrides
                 .retry_safe
-                .unwrap_or(binding.retry() == RetryClass::Safe || keyed),
+                .unwrap_or(binding.retry_class() == RetryClass::Safe || keyed),
             max_retries: overrides.max_retries.unwrap_or(self.max_retries),
             token_source: self.token_source.clone(),
             headers: overrides.headers.clone(),
@@ -251,7 +251,7 @@ impl<T: Clone> Loams<T> {
     /// Returns a [`LoamsError`] naming the module and call, which is what a
     /// by-name lookup reports when the generator has no such row.
     pub fn binding(&self, module: &str, call: &str) -> Result<&'static CallBinding, LoamsError> {
-        facade::binding_of(module, call).ok_or_else(|| {
+        crate::binding::binding_of(module, call).ok_or_else(|| {
             LoamsError::internal(format!("loams.{module} has no generated call {call}"))
         })
     }
@@ -312,8 +312,8 @@ where
                 Box::pin(async move {
                     let client = InstanceServiceClient::new(transport, config);
                     let binding =
-                        facade::binding_of("instance", "get_instance").expect("generated");
-                    let rpc = binding.rpc();
+                        crate::binding::binding_of("instance", "get_instance").expect("generated");
+                    let rpc = binding.rpc;
                     let plan = runtime.plan(&CallOptionsOverrides::new(), binding, false);
                     call_with_retry(
                         GetInstanceRequest::default(),
@@ -321,7 +321,7 @@ where
                             client.get_instance_with_options(request, attempt.options)
                         },
                         &plan,
-                        &rpc,
+                        rpc,
                     )
                     .await
                     .map(connectrpc::client::UnaryResponse::into_owned)
@@ -351,8 +351,8 @@ where
         request: WatchRequest,
         options: WatchOptions<WatchRequest, Transition>,
     ) -> Result<impl Stream<Item = Result<Transition, LoamsError>>, LoamsError> {
-        let binding = facade::binding_of("live", "watch").expect("generated");
-        let rpc = binding.rpc();
+        let binding = crate::binding::binding_of("live", "watch").expect("generated");
+        let rpc = binding.rpc;
         let runtime = self.inner.runtime.clone();
         let client = self.live().client.clone();
         let mut call_options = connectrpc::client::CallOptions::default();
@@ -373,7 +373,7 @@ where
                 }
             },
             &runtime.plan(&CallOptionsOverrides::new(), binding, false),
-            &rpc,
+            rpc,
         )
         .await?;
         // The first open has happened, and its handle is already the one this
@@ -442,7 +442,7 @@ where
         request: GetInstanceRequest,
         options: CallOptionsOverrides,
     ) -> Result<GetInstanceResponse, LoamsError> {
-        let binding = facade::binding_of("instance", "get_instance").expect("generated");
+        let binding = crate::binding::binding_of("instance", "get_instance").expect("generated");
         let client = &self.client;
         send(
             binding,
@@ -468,7 +468,7 @@ where
         request: WhoAmIRequest,
         options: CallOptionsOverrides,
     ) -> Result<WhoAmIResponse, LoamsError> {
-        let binding = facade::binding_of("instance", "who_am_i").expect("generated");
+        let binding = crate::binding::binding_of("instance", "who_am_i").expect("generated");
         let client = &self.client;
         send(
             binding,
@@ -520,8 +520,8 @@ where
         request: WatchRequest,
         options: CallOptionsOverrides,
     ) -> Result<Opened<Transition>, LoamsError> {
-        let binding = facade::binding_of("live", "watch").expect("generated");
-        let rpc = binding.rpc();
+        let binding = crate::binding::binding_of("live", "watch").expect("generated");
+        let rpc = binding.rpc;
         let plan = self.runtime.plan(&options, binding, false);
         let client = self.client.clone();
         call_with_retry(
@@ -536,7 +536,7 @@ where
                 }
             },
             &plan,
-            &rpc,
+            rpc,
         )
         .await
     }
@@ -552,7 +552,7 @@ where
         request: ModifyQuerySetRequest,
         options: CallOptionsOverrides,
     ) -> Result<ModifyQuerySetResponse, LoamsError> {
-        let binding = facade::binding_of("live", "modify_query_set").expect("generated");
+        let binding = crate::binding::binding_of("live", "modify_query_set").expect("generated");
         let client = &self.client;
         send(
             binding,
@@ -595,7 +595,7 @@ where
         request: QueryRequest,
         options: CallOptionsOverrides,
     ) -> Result<QueryResponse, LoamsError> {
-        let binding = facade::binding_of("tables", "query").expect("generated");
+        let binding = crate::binding::binding_of("tables", "query").expect("generated");
         let client = &self.client;
         send(
             binding,
@@ -624,7 +624,7 @@ where
         request: MutateRequest,
         options: CallOptionsOverrides,
     ) -> Result<MutateResponse, LoamsError> {
-        let binding = facade::binding_of("tables", "mutate").expect("generated");
+        let binding = crate::binding::binding_of("tables", "mutate").expect("generated");
         // R3: the key is decided **before** the first attempt, and the request
         // that goes out on every attempt is this one, key included.
         let keyed = crate::request::with_idempotency_key(
@@ -656,7 +656,7 @@ where
         request: DeployRequest,
         options: CallOptionsOverrides,
     ) -> Result<DeployResponse, LoamsError> {
-        let binding = facade::binding_of("tables", "deploy").expect("generated");
+        let binding = crate::binding::binding_of("tables", "deploy").expect("generated");
         let client = &self.client;
         send(
             binding,
@@ -696,13 +696,13 @@ where
     Fut:
         std::future::Future<Output = Result<UnaryResponse<OwnedView<V>>, connectrpc::ConnectError>>,
 {
-    let rpc = binding.rpc();
+    let rpc = binding.rpc;
     let plan = runtime.plan(&options, binding, keyed);
     let response = call_with_retry(
         request,
         |request, attempt| send_one(request, attempt.options),
         &plan,
-        &rpc,
+        rpc,
     )
     .await?;
     Ok(response.into_owned())
@@ -795,10 +795,7 @@ mod tests {
         let binding = loams
             .binding("instance", "get_instance")
             .expect("generated");
-        assert_eq!(
-            binding.rpc(),
-            "loams.instance.v1.InstanceService/GetInstance"
-        );
+        assert_eq!(binding.rpc, "loams.instance.v1.InstanceService/GetInstance");
         let missing = loams
             .binding("collections", "list_collections")
             .unwrap_err();
