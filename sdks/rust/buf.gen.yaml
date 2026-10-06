@@ -48,5 +48,5 @@ plugins:
       - package=loams.approvals.v1=loams_proto::loams::approvals::v1
       - package=loams.operations.v1=loams_proto::loams::operations::v1
       - package=loams.notifications.v1=loams_proto::loams::notifications::v1
-      - package=loams.live.v1=loams_proto::loams::live::v1
+      - package=loams.live.v1=loams_live_proto::loams::live::v1
 clean: false

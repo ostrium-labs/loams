@@ -28,7 +28,7 @@ pub mod rust;
 pub mod typescript;
 pub mod wire;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use wire::{
     Reader, Value, WireError, repeated_bytes, repeated_messages, string_field, varint_field,
@@ -124,6 +124,10 @@ pub struct Call {
     pub name: String,
     /// The method that backs the call, for example `GetInstance`.
     pub method: String,
+    /// Whether the call's request message declares an `idempotency_key` field,
+    /// read out of the descriptor. A keyed call is one the SDK may retry, because
+    /// repeating it returns the first call's recorded result (R3, D610).
+    pub keyed: bool,
     /// The request message, fully qualified.
     pub input: String,
     /// The response message, fully qualified. For a server stream this is the
@@ -299,6 +303,10 @@ pub fn model_from_request(
     reasons: Vec<reasons::Reason>,
 ) -> Result<Model, WireError> {
     let fields = Reader::new(request).fields()?;
+    // Read once over every file, before the service walk: which request messages
+    // declare an `idempotency_key` field is a property of the message, not of
+    // the method that takes it.
+    let keyed_messages = keyed_messages(&fields)?;
     let mut modules: BTreeMap<String, Module> = BTreeMap::new();
     let mut packages: Vec<String> = Vec::new();
     for mut file in repeated_messages(&fields, 15)? {
@@ -338,6 +346,7 @@ pub fn model_from_request(
                         &method,
                         &method_options,
                         facade,
+                        &keyed_messages,
                     )?;
                     call.module = module_name.clone();
                     let derived = module_name != options.name;
@@ -458,6 +467,7 @@ fn call_from(
     method: &[(u32, Value<'_>)],
     options: &[(u32, Value<'_>)],
     facade: FacadeOption,
+    keyed_messages: &BTreeSet<String>,
 ) -> Result<Call, WireError> {
     let idempotency = match varint_field(options, IDEMPOTENCY_LEVEL) {
         Some(1) => Idempotency::NoSideEffects,
@@ -480,6 +490,7 @@ fn call_from(
         Some(raw) => Some(parse_pagination(package, service, &raw)?),
         None => None,
     };
+    let input = string_field(method, 2)?.unwrap_or_default();
     Ok(Call {
         module: facade.module,
         name: if facade.name.is_empty() {
@@ -488,7 +499,8 @@ fn call_from(
             facade.name
         },
         method: method_name.to_owned(),
-        input: string_field(method, 2)?.unwrap_or_default(),
+        keyed: keyed_messages.contains(input.trim_start_matches('.')),
+        input,
         output: string_field(method, 3)?.unwrap_or_default(),
         service: format!("{package}.{service}"),
         package: package.to_owned(),
@@ -502,6 +514,65 @@ fn call_from(
         pagination,
     })
 }
+
+/// The fully-qualified names of every message in the request that declares an
+/// `idempotency_key` field (D641).
+///
+/// Whether a call is **keyed** is a fact about its *request message*, so it is
+/// read out of the descriptor rather than written down per call. `dev`'s
+/// hand-written facade carried a `keyed: bool` literal on each row, which is a
+/// second place to forget when a proto adds the field; here the message says so
+/// itself.
+///
+/// Descriptor field numbers, which `prost` is no use for because it discards
+/// what it does not know: `FileDescriptorProto.package` is 2,
+/// `FileDescriptorProto.message_type` is 4, `DescriptorProto.name` is 1,
+/// `DescriptorProto.field` is 2, `DescriptorProto.nested_type` is 3 and
+/// `FieldDescriptorProto.name` is 1.
+fn keyed_messages(request: &[(u32, Value<'_>)]) -> Result<BTreeSet<String>, WireError> {
+    let mut keyed = BTreeSet::new();
+    for mut file in repeated_messages(request, 15)? {
+        let file = file.fields()?;
+        let Some(package) = string_field(&file, 2)? else {
+            continue;
+        };
+        for mut message in repeated_messages(&file, 4)? {
+            let message = message.fields()?;
+            let Some(name) = string_field(&message, 1)? else {
+                continue;
+            };
+            collect_keyed(&message, &format!("{package}.{name}"), &mut keyed)?;
+        }
+    }
+    Ok(keyed)
+}
+
+/// One message and its nested messages, into `keyed`.
+fn collect_keyed(
+    message: &[(u32, Value<'_>)],
+    full_name: &str,
+    keyed: &mut BTreeSet<String>,
+) -> Result<(), WireError> {
+    for mut field in repeated_messages(message, 2)? {
+        let field = field.fields()?;
+        if string_field(&field, 1)?.as_deref() == Some(IDEMPOTENCY_KEY_FIELD) {
+            keyed.insert(full_name.to_owned());
+            break;
+        }
+    }
+    for mut nested in repeated_messages(message, 3)? {
+        let nested = nested.fields()?;
+        let Some(name) = string_field(&nested, 1)? else {
+            continue;
+        };
+        collect_keyed(&nested, &format!("{full_name}.{name}"), keyed)?;
+    }
+    Ok(())
+}
+
+/// The request-message field a mutation is keyed by (R3, D610). The same string
+/// `sdks/rust/src/request.rs` publishes as `IDEMPOTENCY_KEY_FIELD`.
+const IDEMPOTENCY_KEY_FIELD: &str = "idempotency_key";
 
 /// `"collections:next_page_token"`, with the fields named relative to the
 /// response message. A malformed value fails the generation rather than

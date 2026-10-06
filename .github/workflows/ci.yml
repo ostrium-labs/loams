@@ -1095,14 +1095,19 @@ jobs:
       - name: install
         working-directory: web
         run: pnpm install --frozen-lockfile
-      # The generated stubs are protoc's output verbatim and are committed, so a
-      # proto edit that moved the SDK surface cannot pass with a stale file.
+      # The generated facade is protoc-gen-loams-facade's output verbatim and is
+      # committed, so a proto edit that moved the SDK surface cannot pass with a
+      # stale file.
+      #
+      # `scripts/sdk/drift.sh` rather than a hand-written `git diff` on a path:
+      # the path is read out of `sdks/templates/rust/template.env` (FACADE_OUT),
+      # so this step cannot go stale the way the one it replaces did. That step
+      # checked `sdks/rust/gen`, a directory that does not exist, and
+      # `git diff --exit-code` against a path matching no tracked file exits 0 —
+      # so the gate passed unconditionally and the facade was in fact stale
+      # (issue #374).
       - name: the Rust SDK's generated code is not stale
-        run: |
-          ./scripts/sdk/gen.sh rust
-          git diff --exit-code -- sdks/rust/gen || {
-            echo "sdks/rust/gen is stale: run 'scripts/sdk/gen.sh rust' and commit"; exit 1;
-          }
+        run: ./scripts/sdk/drift.sh rust
 
   # SDK2 Task 1: the Python SDK. CI's existing Python jobs are the qdrant
   # smoke and static analysis, neither of which imports this package.

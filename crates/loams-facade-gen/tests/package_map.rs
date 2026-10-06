@@ -271,16 +271,19 @@ fn every_mapped_crate_is_a_dependency_of_its_sdk() {
 #[test]
 fn every_mapped_package_is_generated_by_the_crate_it_names() {
     let owners = owners();
-    let mut checked = 0;
+    let mut checked: Vec<String> = Vec::new();
     for mapping in mappings() {
         let Some((crate_name, module_path)) = mapping.value.split_once("::") else {
             continue;
         };
         let crate_name = crate_name.replace('-', "_");
         let Some(claiming) = owners.get(&mapping.package) else {
-            // No crate compiles this package's protos yet. A map entry for a
-            // package nothing generates is not this check's business — the
-            // package simply is not on the wire.
+            // No crate compiles this package's protos yet, so there is nothing
+            // to contradict: `loams.devices.v1`, `loams.approvals.v1`,
+            // `loams.operations.v1` and `loams.notifications.v1` are in
+            // `proto/` and in every map, but no `build.rs` lists them yet — they
+            // arrive with their API1 tasks. The moment one does, this loop
+            // starts checking it, and the mapping has to name that crate.
             continue;
         };
         assert!(
@@ -307,12 +310,21 @@ fn every_mapped_package_is_generated_by_the_crate_it_names() {
             mapping.package,
             mapping.value
         );
-        checked += 1;
+        checked.push(mapping.package.clone());
     }
-    assert!(
-        checked >= 6,
-        "only {checked} Rust mappings were checked against crate ownership; \
-         the read is broken, not the maps"
+    checked.sort();
+    // Pinned rather than counted loosely: these are the packages a crate
+    // actually generates today, and they are the ones this check is about. A
+    // package arriving in a `build.rs` moves a name into this list, and whoever
+    // adds it has to update the list — which is the point.
+    assert_eq!(
+        checked,
+        vec![
+            "loams.instance.v1".to_owned(),
+            "loams.live.v1".to_owned(),
+        ],
+        "the set of generated packages changed, so this check's coverage changed: \
+         update this list and confirm each new package's map names its own crate"
     );
 }
 

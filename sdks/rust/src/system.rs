@@ -250,8 +250,8 @@ fn package_of(module_or_package: &str) -> Result<String, LoamsError> {
     if module_or_package.starts_with("loams.") {
         return Ok(module_or_package.to_owned());
     }
-    match facade::module_of(module_or_package) {
-        Some(module) => Ok(module.package()),
+    match crate::binding::module_of(module_or_package) {
+        Some(module) => Ok(module.package.to_owned()),
         None => Err(LoamsError::internal(format!(
             "no generated module named {module_or_package}; this SDK speaks {}",
             MODULES
