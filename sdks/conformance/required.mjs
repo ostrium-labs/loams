@@ -135,7 +135,7 @@ export const LANGUAGES = {
   },
   ruby: {
     dir: 'sdks/ruby',
-    verified: false,
+    verified: true,
     runOne: ['bundle', ['exec', 'rake', 'test:run', 'TESTOPTS=--name']],
     runAll: ['bundle', ['exec', 'rake', 'test']],
   },
