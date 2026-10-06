@@ -1,29 +1,36 @@
 // SDK2 Task 0's `typescript_conformance_all_required_fixtures`.
 //
-// The corpus in `sdks/fixtures` is recorded from a real `loams dev`, and this
-// runs every case in it through the SDK's *public* surface — `loams.instance`
-// and `loams.tables`, the same objects an application uses — rather than
-// through the stubs. That is the point of the suite: it proves the facade
-// dispatches to the right RPC, sends the right encoding, and turns what comes
-// back into the right typed value.
+// The corpus in `sdks/fixtures` is recorded from a real `loams dev` and from
+// `loams-apps-mock`, and this runs every **required** fixture in it through the
+// SDK and writes the report the 100% bar is read from (design §44 §10.4, D617).
+//
+// The rest of the file pins what a client is *for* — a successful call, a
+// structured reason, and the unavailable-service path in all three of its shapes
+// — through the public facade, which is the surface an application uses. The
+// fixture driver beside it answers a different question: not "does the SDK work"
+// but "did the suite run every fixture the corpus marks required", and it
+// answers it by driving them, so the answer cannot be written down anywhere.
 //
 // Three things are covered, which between them are what the design asks of a
-// conforming SDK (design §44 §10.4):
+// conforming SDK:
 //
 // - a successful call, in every encoding an SDK might pick;
 // - a structured-reason error, with `reason` and not the message;
 // - the unavailable-service path, in all three of its shapes: the guard that
 //   costs no RPC, the refusal a call gets, and the refusal on a stream.
 
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { REQUIRED_TESTS, testName } from '../../../../conformance/required.mjs';
 import { Loams } from '../src/loams.js';
 import { FeatureNotInVariantError, isLoamsError } from '../src/runtime/errors.js';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { FixtureServer } from './helpers/server.js';
-import { FIXTURES, startFixtureServer } from './helpers/server.js';
+import { FIXTURES, type FixtureServer, startFixtureServer } from './helpers/server.js';
+import { requiredFixtures } from './helpers/corpus.js';
+import { TRANSPORT, driveRequiredFixtures } from './helpers/required.js';
+import { REPORT, clearReport, testsThisSuiteHas, writeConformanceReport } from './helpers/report.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +40,10 @@ let loams: Loams;
 beforeAll(async () => {
   server = await startFixtureServer();
   loams = new Loams({ endpoint: server.endpoint });
+  // Any report from an earlier run goes first, so this run leaves either a
+  // report that describes **this** run or none at all. A gate reading the
+  // previous run's file is the failure this suite is here to stop.
+  await clearReport();
 });
 
 afterAll(async () => {
@@ -47,6 +58,31 @@ async function corpus(): Promise<{ cases: { name: string; reason: string | null 
 
 describe('@loams/client conformance', () => {
   it('typescript_conformance_all_required_fixtures', async () => {
+    if (server.live) {
+      // A live `loams dev` does not serve the app packages at all, so the
+      // `loams-apps-mock` half of the corpus cannot exist in this run and there
+      // is nothing honest to report. Writing a partial one would put a file in
+      // front of `check-languages.mjs` that describes fewer fixtures than the
+      // suite really runs, which is the thing the report must never be.
+      expect(existsSync(REPORT)).toBe(false);
+      return;
+    }
+
+    // The gate's whole input, derived by driving the corpus rather than by
+    // listing it: `ran` below is what came back, and it has to be the manifest's
+    // required set exactly — no more (a name that is not in the corpus is a
+    // failure) and no less (a missing one is the bar the runner enforces).
+    const ran = await driveRequiredFixtures(server.endpoint);
+    const required = (await requiredFixtures()).map((fixture) => fixture.name);
+    expect([...ran].sort()).toEqual([...required].sort());
+
+    // The report this run leaves behind, and the 100% bar is read from it
+    // (`check-languages.mjs --check typescript`, which is what CI runs).
+    expect(await writeConformanceReport(ran, TRANSPORT)).toEqual([...ran].sort());
+
+    // From here the suite checks what a client is for, through the public
+    // facade. The fixture list above is the same corpus driven the same way; what
+    // follows is what each of those answers has to *mean*.
     const { cases } = await corpus();
     const expected = [
       // A successful call, in each encoding a client might pick.
@@ -126,6 +162,14 @@ describe('@loams/client conformance', () => {
     expect(catalogue.served).toContain('loams.instance.v1');
     expect(catalogue.unavailable).toContain('loams.live.v1');
     expect(catalogue.services.find((s) => s.package === 'loams.live.v1')?.unstable).toBe(true);
+  });
+
+  it('has all six canonical tests, which the report claims by name', async () => {
+    // The six names are the contract two languages are compared by, and the
+    // report lists them. A renamed test would otherwise be reported as present,
+    // so the report discovers them here: one out of the suite's own sources, one
+    // out of the module that owns them.
+    expect(await testsThisSuiteHas()).toEqual(REQUIRED_TESTS.map((short) => testName('typescript', short)));
   });
 
   it('reports the proto revision and the server packages (R9)', async () => {
