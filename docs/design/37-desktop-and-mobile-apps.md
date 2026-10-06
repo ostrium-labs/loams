@@ -1038,7 +1038,8 @@ Studied on 2026-10-02: **`ChromeDevTools/chrome-devtools-mcp`** (Apache-2.0 **(v
 | Downloads | `list_downloads` (name, size, path) | Playwright MCP's download handling | Files stay on disk; the tool returns paths and hashes (D508 gate) |
 | Script | `evaluate_script` | both | **Off by default**, dangerous class, org policy to enable (Q511) |
 | Sessions | `list_profiles`, `profile_status` (signed in or not, never cookie values), **`request_human`** (shows the window and waits until the person finishes a login, a captcha or a second factor) | Loams | Replaces cookie and storage tools |
-| Left out of v1 | performance traces, heap snapshots, Lighthouse, CSS inspection, extensions, PWA, WebMCP, emulation, video and recording, **cookie and storage get and set**, request routing | the rest of both lists | Not needed for operating apps; cookie and storage access would hand credentials to the model |
+| **v2: WebMCP** | **`list_webmcp_tools`** (the page's `document.modelContext` tools, with `filter`) and **`call_webmcp_tool`** (one tool, by name, with an object input) | WebMCP, a W3C Community Group draft (`document.modelContext`) | **Preferred over snapshot-driven clicks where the page offers them** (D570, D637); feature-detected per call and never the only path (D568, D635) |
+| Left out of v1 | performance traces, heap snapshots, Lighthouse, CSS inspection, extensions, PWA, emulation, video and recording, **cookie and storage get and set**, request routing | the rest of both lists | Not needed for operating apps; cookie and storage access would hand credentials to the model |
 
 Capabilities group the tools as Playwright's `--caps` does: `core` (default, no script, no network detail), `network`, `script`, and a **slim** set (`navigate_page`, `take_snapshot`, `click`, `fill`) for small models, as chrome-devtools-mcp's `--slim` does with three tools.
 
@@ -1055,6 +1056,24 @@ Capabilities group the tools as Playwright's `--caps` does: `core` (default, no 
 9. **Errors say what to do next** (design principle "self-healing errors").
 
 None of this is measured yet. AP1b Task 11 benchmarks snapshot size and steps per task against both projects on the pages of the apps in §39.
+
+**WebMCP, and what v2 means by it (D570, D637).** A page can register tools with `document.modelContext`, so an agent calls a function instead of clicking. It is a **Community Group draft**, so it is an enhancement and never the only path (**D568**), and **D635** makes that load-bearing rather than prudent: Chrome is trialling with no ship milestone, Firefox is implementing behind a pref, and **WebKit's position is closed and `oppose`**, so Safari is not a browser that will grow the API later.
+
+Two tools, in the v1 contract's own terms:
+
+| Tool | Takes | Answers |
+|---|---|---|
+| `list_webmcp_tools` | `filter` (a case-insensitive substring of the name), the budget | one line per tool: `name "title" — description [readOnly] requires=a,b`, inside the budget with a marker naming the continuation; or **one sentence saying why there are none** |
+| `call_webmcp_tool` | `name`, `input` (an object), the budget | one line plus a **change summary** and the tool's return value, or one line saying the tool did not run |
+
+Four rules the implementation turns on, each because the absent case is the normal one:
+
+1. **Detection is per call and never a capability claim.** The API is `[SecureContext]`, so it is absent in a non-secure context, and a page can register, unregister and re-register between two calls. Nothing is cached between calls and nothing is inferred from the engine.
+2. **Absence is an answer, not an error, and it is a *typed* answer.** The reasons are distinguishable and each one names the way on: the browser has no API (every WebKit engine), the page is not a secure context, the `tools` Permissions Policy does not allow this origin (default `['self']`, so only the page can fix it), the driver cannot evaluate a script, or the page refused. An empty list with no explanation would be indistinguishable from a page that registered nothing, which is the one case where an agent should stop trying WebMCP and drive the UI.
+3. **A name is 1–128 characters of `[A-Za-z0-9_.-]` and an input is an object**, the draft's own rules, checked before anything is sent; and `call_webmcp_tool` requires a name the page itself registered, asking for the page's own list first, so an invented or stale name answers "not registered; list again" rather than nothing.
+4. **The rest of D504 applies.** A listing is one line per tool with descriptions truncated and the whole inside the token budget; a call that ran answers in one line plus a change summary **measured by re-reading the page**, because a tool is arbitrary page code and the one thing its return value cannot tell the agent is what it did to the page. A call that did **not** run answers in one line only.
+
+Implemented in `crates/loams-web-bridge/src/webmcp/`, with the same contract asserted against **both** providers and against a page with no API at all. Nothing here has been run against a browser that ships WebMCP; the injected script is written against the 2026-10-02 draft's IDL and is exercised against deterministic fixtures.
 
 #### 18.14.3 Mechanism per platform (D505)
 
@@ -1112,7 +1131,7 @@ Licences **(verified 2026-10-02)**: Tauri 2 and `wry`: Apache-2.0 or MIT; chrome
 - **Open in Loams Web.** The "Open in browser" action of §18.5's panels gains a second choice: open the app in a bridge window of its profile, with a persistent Authentik session on Windows and Linux too. The system browser stays the default where passkeys matter.
 - **Relation to SF1 (collab panels).** Panels are API-driven and remain the primary view of Zulip, Plane, Forgejo and GlitchTip objects (§39 §3.2). The bridge is the fallback for what an app's API does not offer.
 - **Relation to SF2 (agents).** The platform agents are **server-side** services and cannot reach a person's desktop. Two ways to give them web reach when an API lacks a feature are open (Q507): a **client-tool relay**, where Loams Bot on the server asks the person's Loams Desktop to run a bridge tool through `loams.bot.v1` and returns the result (the desktop executes, the server orchestrates), or a **headless bridge** on the factory host (a Playwright MCP container is the buy option, Apache-2.0). The first keeps credentials on the user's machine; the second suits unattended runs. Desktop-local agents use the bridge directly either way.
-- **Q507 recommended default, 2026-10-02 ([§42](42-cloudflare-2026-betas.md) §4, D565 to D567).** Credentialed work uses the client-tool relay; unattended work (the public web, or an app reached with a service account) uses a `remote` provider with the same tool contract, implemented over Browser Run's CDP and Playwright endpoints (Kitesurf is optional: free beta, closed source, no licence yet). A remote browser is a third party, so it takes no user-credential `secret_ref` fills and keeps no persistent profile by default. WebMCP (a W3C Community Group draft, `document.modelContext`) joins the toolbox in v2 as `list_webmcp_tools` and `call_webmcp_tool` (D570); §18.14.2's "left out of v1: WebMCP" stands for v1.
+- **Q507 recommended default, 2026-10-02 ([§42](42-cloudflare-2026-betas.md) §4, D565 to D567).** Credentialed work uses the client-tool relay; unattended work (the public web, or an app reached with a service account) uses a `remote` provider with the same tool contract, implemented over Browser Run's CDP and Playwright endpoints (Kitesurf is optional: free beta, closed source, no licence yet). A remote browser is a third party, so it takes no user-credential `secret_ref` fills and keeps no persistent profile by default. WebMCP (a W3C Community Group draft, `document.modelContext`) joins the toolbox in v2 as `list_webmcp_tools` and `call_webmcp_tool` (D570, D637), feature-detected per call, preferred over snapshot-driven clicks where a page offers them, and degrading to one sentence naming the reason when the API is absent — which, per D635, is every WebKit browser permanently and any non-secure context; §18.14.2's "left out of v1: WebMCP" stands for v1.
 - **D512, buy over build.** The toolbox is a small contract, so Loams builds it; the browser is the platform's. No Node runtime ships. Playwright MCP stays the choice for headless, server-side and CI automation.
 
 #### 18.14.7 Risks

@@ -49,6 +49,7 @@ pub mod provider;
 pub mod redact;
 pub mod secret;
 pub mod tool;
+pub mod webmcp;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod testing;
@@ -64,6 +65,10 @@ pub use secret::{MapSecretResolver, SecretRef, SecretResolver, SecretValue};
 pub use tool::{
     ActionOutcome, AxNode, Extracted, FillValue, FindQuery, Navigation, Screenshot, Snapshot,
     SnapshotMode, SnapshotNode, SnapshotRequest, Uid, WaitCondition, WaitOutcome, WaitRequest,
+};
+pub use webmcp::{
+    Availability, CallWebmcpToolRequest, ListWebmcpToolsRequest, WebmcpAbsent, WebmcpCallOutcome,
+    WebmcpListing, WebmcpRequest, WebmcpTool, WebmcpToolName,
 };
 
 use std::sync::Arc;

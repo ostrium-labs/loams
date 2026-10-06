@@ -509,7 +509,7 @@ fn push_node(
     }
 }
 
-fn truncate(text: &str, max: usize) -> String {
+pub(crate) fn truncate(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         return text.to_string();
     }
@@ -518,7 +518,11 @@ fn truncate(text: &str, max: usize) -> String {
 }
 
 /// Escape the characters that would let page text close a field or a marker.
-fn escape(text: &str) -> String {
+///
+/// `pub(crate)` because the WebMCP tool lines render page-supplied descriptions
+/// through the same rules: one escape, so a description cannot do what an
+/// accessible name could not.
+pub(crate) fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for character in text.chars() {
         match character {

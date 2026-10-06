@@ -17,6 +17,9 @@ use crate::tool::{
     ActionOutcome, Extracted, FillValue, FindQuery, Navigation, Screenshot, Snapshot,
     SnapshotRequest, Uid, WaitOutcome, WaitRequest,
 };
+use crate::webmcp::{
+    CallWebmcpToolRequest, ListWebmcpToolsRequest, WebmcpAbsent, WebmcpCallOutcome, WebmcpListing,
+};
 
 /// A handle to one open page.
 ///
@@ -157,6 +160,46 @@ pub trait BrowserProvider: Send + Sync + fmt::Debug {
 
     /// Extract the page's visible text.
     async fn extract(&self, page: &PageRef) -> Result<Extracted, BridgeError>;
+
+    /// The WebMCP tools the page has registered (`list_webmcp_tools`, D570).
+    ///
+    /// The default answers **unavailable** rather than failing, because WebMCP
+    /// is an enhancement behind feature detection and never the only path
+    /// (D568, D635): a provider that cannot reach `document.modelContext`
+    /// still serves the rest of the toolbox, and a Safari page costs one
+    /// sentence rather than a failed session. A provider that can reach it
+    /// overrides this; one that cannot need not know WebMCP exists.
+    async fn list_webmcp_tools(
+        &self,
+        page: &PageRef,
+        request: &ListWebmcpToolsRequest,
+    ) -> Result<WebmcpListing, BridgeError> {
+        let _ = (page, request);
+        Ok(WebmcpListing::absent(
+            WebmcpAbsent::ProviderCannotReach,
+            request,
+        ))
+    }
+
+    /// Run one WebMCP tool (`call_webmcp_tool`, D570).
+    ///
+    /// `name` has already been validated against the draft's rule by
+    /// [`CallWebmcpToolRequest`], so a provider that reaches the page must
+    /// require the name to be one the page itself registered rather than
+    /// passing anything straight through. The default degrades the same way
+    /// [`BrowserProvider::list_webmcp_tools`] does, and never claims a tool
+    /// ran.
+    async fn call_webmcp_tool(
+        &self,
+        page: &PageRef,
+        request: &CallWebmcpToolRequest,
+    ) -> Result<WebmcpCallOutcome, BridgeError> {
+        let _ = page;
+        Ok(WebmcpCallOutcome::absent(
+            request,
+            WebmcpAbsent::ProviderCannotReach,
+        ))
+    }
 
     /// Close the page. Closing an unknown or already closed handle is not an
     /// error, so a caller can always clean up.

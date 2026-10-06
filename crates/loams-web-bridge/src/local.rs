@@ -25,8 +25,13 @@ use crate::page::{PageState, SnapshotCache, outcome};
 use crate::provider::{BrowserProvider, Capabilities, OpenRequest, PageRef};
 use crate::secret::{SecretResolver, SecretValue};
 use crate::tool::{
-    ActionOutcome, Extracted, FillValue, FindQuery, Navigation, Screenshot, Snapshot, SnapshotMode,
-    SnapshotNode, SnapshotRequest, Uid, WaitCondition, WaitOutcome, WaitRequest,
+    ActionOutcome, ChangeSummary, Extracted, FillValue, FindQuery, Navigation, Screenshot,
+    Snapshot, SnapshotMode, SnapshotNode, SnapshotRequest, Uid, WaitCondition, WaitOutcome,
+    WaitRequest,
+};
+use crate::webmcp::{
+    CallWebmcpToolRequest, ListWebmcpToolsRequest, WebmcpCallOutcome, WebmcpListing, WebmcpRequest,
+    call_from_evaluation, listing_from_evaluation,
 };
 
 /// What a driver is asked to do. Values that came from a secret are wrapped in
@@ -90,6 +95,28 @@ pub trait PageDriver: Send + Sync + std::fmt::Debug {
         page: &DriverPage,
         action: DriverAction,
     ) -> Result<Option<PageState>, BridgeError>;
+
+    /// Evaluate a [`WebmcpRequest`]'s expression in the page and answer with the
+    /// JSON it returned.
+    ///
+    /// **The default refuses**, which is the whole design: a driver that cannot
+    /// evaluate a script has no way to reach `document.modelContext`, and
+    /// `list_webmcp_tools` turns that refusal into an honest "not available"
+    /// answer rather than a failure (D568, D635). A host that *can* evaluate a
+    /// script implements this; a host that cannot needs no knowledge of WebMCP.
+    async fn webmcp(
+        &self,
+        page: &DriverPage,
+        request: &WebmcpRequest,
+    ) -> Result<serde_json::Value, BridgeError> {
+        let _ = (page, request);
+        Err(BridgeError::Unsupported {
+            engine: "local",
+            what: "this driver cannot evaluate a script in the page, so document.modelContext \
+                   is out of reach; drive the page with take_snapshot and click"
+                .to_string(),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -401,6 +428,52 @@ impl BrowserProvider for LocalProvider {
             .remove(page.id());
         self.driver.act(&local.page, DriverAction::Close).await?;
         Ok(())
+    }
+
+    async fn list_webmcp_tools(
+        &self,
+        page: &PageRef,
+        request: &ListWebmcpToolsRequest,
+    ) -> Result<WebmcpListing, BridgeError> {
+        let local = self.page(page)?;
+        let driver_request = WebmcpRequest::listing(request);
+        tracing::debug!(
+            tool = %driver_request.summary(),
+            page = %local.page.id(),
+            "webmcp"
+        );
+        let raw = self.driver.webmcp(&local.page, &driver_request).await;
+        listing_from_evaluation(raw, request)
+    }
+
+    async fn call_webmcp_tool(
+        &self,
+        page: &PageRef,
+        request: &CallWebmcpToolRequest,
+    ) -> Result<WebmcpCallOutcome, BridgeError> {
+        let mut local = self.page(page)?;
+        let driver_request = WebmcpRequest::call(request);
+        tracing::debug!(
+            tool = %driver_request.summary(),
+            page = %local.page.id(),
+            "webmcp"
+        );
+        let raw = self.driver.webmcp(&local.page, &driver_request).await;
+        let outcome = call_from_evaluation(raw, request, ChangeSummary::default())?;
+        // A tool ran page code and may have changed the page, so the change
+        // summary is measured, not assumed (D504 rule 3). A read failure here
+        // costs the summary and nothing else: the tool already ran, and
+        // failing the call would report the opposite of what happened.
+        if outcome.executed
+            && let Ok(state) = self.driver.state(&local.page).await
+        {
+            local.cache.build(&state, false);
+            local.state = state;
+            let change = local.cache.change();
+            self.store(local)?;
+            return Ok(WebmcpCallOutcome { change, ..outcome });
+        }
+        Ok(outcome)
     }
 }
 

@@ -49,8 +49,13 @@ use crate::page::{PageState, SnapshotCache, outcome};
 use crate::provider::{BrowserProvider, Capabilities, OpenRequest, PageRef};
 use crate::secret::{SecretResolver, SecretValue};
 use crate::tool::{
-    ActionOutcome, Extracted, FillValue, FindQuery, Navigation, Screenshot, Snapshot, SnapshotMode,
-    SnapshotNode, SnapshotRequest, Uid, WaitCondition, WaitOutcome, WaitRequest,
+    ActionOutcome, ChangeSummary, Extracted, FillValue, FindQuery, Navigation, Screenshot,
+    Snapshot, SnapshotMode, SnapshotNode, SnapshotRequest, Uid, WaitCondition, WaitOutcome,
+    WaitRequest,
+};
+use crate::webmcp::{
+    CallWebmcpToolRequest, ListWebmcpToolsRequest, WebmcpCallOutcome, WebmcpListing, WebmcpRequest,
+    call_from_evaluation, listing_from_evaluation,
 };
 
 /// The script that reads the page's URL, title and visible text in one call.
@@ -709,6 +714,93 @@ impl BrowserProvider for BrowserRunProvider {
         // ours either way.
         let _ = slot.client.call("Browser.close", json!({})).await;
         slot.client.close().await
+    }
+
+    async fn list_webmcp_tools(
+        &self,
+        page: &PageRef,
+        request: &ListWebmcpToolsRequest,
+    ) -> Result<WebmcpListing, BridgeError> {
+        let slot = self.slot(page)?;
+        let raw = Self::evaluate_webmcp(&slot, &WebmcpRequest::listing(request)).await;
+        listing_from_evaluation(raw, request)
+    }
+
+    async fn call_webmcp_tool(
+        &self,
+        page: &PageRef,
+        request: &CallWebmcpToolRequest,
+    ) -> Result<WebmcpCallOutcome, BridgeError> {
+        let slot = self.slot(page)?;
+        let raw = Self::evaluate_webmcp(&slot, &WebmcpRequest::call(request)).await;
+        let outcome = call_from_evaluation(raw, request, ChangeSummary::default())?;
+        // The tool ran page code, so the change summary is measured, not
+        // assumed (D504 rule 3). A read failure here costs the summary and
+        // nothing else: the tool already ran, and failing the call would
+        // report the opposite of what happened. The local provider does the
+        // same, and the two answering differently is the drift this contract
+        // exists to prevent.
+        if outcome.executed && Self::resnapshot(&slot, false).await.is_ok() {
+            let change = slot
+                .cache
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .change();
+            return Ok(WebmcpCallOutcome { change, ..outcome });
+        }
+        Ok(outcome)
+    }
+}
+
+impl BrowserRunProvider {
+    /// Evaluate a WebMCP script in the page and return the JSON it answered.
+    ///
+    /// `awaitPromise` is what makes `getTools()`'s promise a value here. The
+    /// answer is parsed rather than passed on as a string because the page is
+    /// untrusted and the parser checks the shape (D509), and the client
+    /// timeout bounds a browser that never answers at all.
+    async fn evaluate_webmcp(
+        slot: &PageSlot,
+        request: &WebmcpRequest,
+    ) -> Result<Value, BridgeError> {
+        tracing::debug!(tool = %request.summary(), "webmcp");
+        let result = slot
+            .client
+            .call_page(
+                &slot.session_id,
+                "Runtime.evaluate",
+                json!({
+                    "expression": request.script(),
+                    "returnByValue": true,
+                    "awaitPromise": true,
+                    "timeout": request.timeout_ms(),
+                }),
+            )
+            .await?;
+        // A thrown script is reported from the protocol's own `exceptionDetails`,
+        // which sits *beside* `result` rather than inside it. It has to be
+        // read before `result.value`: a thrown script answers with an error
+        // object that has no string value, so extracting first would report
+        // "the browser returned no WebMCP answer" and lose the one fact that
+        // matters. The local provider reaches the same check through the
+        // parser, so both name a thrown script identically.
+        crate::webmcp::thrown_in_page(&result)?;
+        let value = result
+            .get("result")
+            .and_then(|inner| inner.get("value"))
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                BridgeError::unavailable(
+                    "the browser returned no WebMCP answer; the page may have replaced the \
+                     bridge's script",
+                )
+            })?;
+        serde_json::from_str(value).map_err(|error| {
+            BridgeError::unavailable(format!(
+                "the page's WebMCP answer was not JSON ({error}); this page may have replaced \
+                 the bridge's script"
+            ))
+        })
     }
 }
 
