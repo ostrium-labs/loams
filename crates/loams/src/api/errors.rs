@@ -57,6 +57,18 @@ impl ApiError {
     pub fn message(&self) -> &str {
         &self.message
     }
+
+    /// The structured fields the body carries beside `error` and `message`:
+    /// `kind` and `name` for a `NotFound`, `field` for a `SchemaViolation`,
+    /// `retry_after_ms` for a `ResourceExhausted`.
+    ///
+    /// `loams.collection.v1` carries these as `ErrorInfo.metadata` on the
+    /// Connect error (design §44 §7.4, D611), so a caller tells a missing
+    /// collection from a missing namespace without parsing prose. Nothing else
+    /// reads them: the REST body puts them in the JSON.
+    pub(crate) fn extra(&self) -> &serde_json::Map<String, Value> {
+        &self.extra
+    }
 }
 
 impl IntoResponse for ApiError {

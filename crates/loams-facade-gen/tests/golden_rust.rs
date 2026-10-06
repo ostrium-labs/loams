@@ -32,7 +32,11 @@ const PACKAGE_PARAMETERS: &[&str] = &[
     "loams.approvals.v1=loams_proto::loams::approvals::v1",
     "loams.operations.v1=loams_proto::loams::operations::v1",
     "loams.notifications.v1=loams_proto::loams::notifications::v1",
-    "loams.live.v1=loams_proto::loams::live::v1",
+    // `loams.live.v1` is not in `loams_proto`: R1's `loams-live-proto`
+    // generates it, and a proto package's Rust types are generated exactly
+    // once per workspace (API1 plan ruling 1.2). The map has to say so, which
+    // is what `the_package_map_matches_the_buf_template` below checks.
+    "loams.live.v1=loams_live_proto::loams::live::v1",
 ];
 
 /// SDK1 Task 3's `golden_rust`.

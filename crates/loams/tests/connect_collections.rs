@@ -380,6 +380,35 @@ fn absent_or(value: &Value, key: &str, expected: Value) -> bool {
     }
 }
 
+/// A proto3 JSON 64-bit integer.
+///
+/// proto3 JSON spells `int64`/`uint64` as a **decimal string**, not a number:
+/// that is what keeps a 64-bit value lossless in JavaScript, and this
+/// repository says so itself in `proto/loams/live/v1/value.proto` ("In the
+/// Connect JSON encoding an int64 is a string"). So `collectionId`,
+/// `manifestVersion`, `liveDocCount`, `liveRows`, `lance.version`,
+/// `owner.nodeId`, `CollectionInfo.id` and `namespaceId` all answer `"6"`, and
+/// every read of one goes through here. An unquoted number is taken too,
+/// because proto3 JSON requires a parser to accept it.
+fn int64(value: &Value) -> Option<u64> {
+    match value {
+        Value::Number(number) => number.as_u64(),
+        Value::String(text) => text.parse().ok(),
+        _ => None,
+    }
+}
+
+/// A JSON number inside a document carried as a `google.protobuf.Struct`.
+///
+/// `Struct` holds every JSON number in `Value.number_value`, which is a
+/// `double`, so proto3 JSON writes a whole number as `3.0`. The value the
+/// caller sent is the value it reads; only the spelling differs, and this is
+/// the one place it can (`loams.collection.v1`'s header says why a collection's
+/// schema is a `Struct`).
+fn struct_number(value: &Value) -> Option<f64> {
+    value.as_f64()
+}
+
 /// A proto3 JSON enum answers its **proto name** in `UPPER_SNAKE`
 /// (`BACKPRESSURE_STATE_OPEN`), where the REST route answered `snake_case`
 /// (`open`), and a value that is the enum's zero variant is omitted like any
@@ -530,14 +559,18 @@ async fn collection_routes_speak_the_documented_json_rpc() {
     assert_eq!(first["name"], "kb", "{first}");
     assert_eq!(first["namespace"], "w", "{first}");
     assert_eq!(first["partitions"], 2, "{first}");
-    assert_eq!(first["schema"]["version"], 1, "{first}");
+    assert_eq!(struct_number(&first["schema"]["version"]), Some(1.0), "{first}");
     // 0 before the first commit, which proto3 omits.
     assert!(
         absent_or(&first, "manifestVersion", json!(0)),
         "{first}"
     );
     assert!(absent_or(&first, "aliases", json!([])), "{first}");
-    assert_eq!(first["schema"]["vectors"][0]["dim"], 3, "{first}");
+    assert_eq!(
+        struct_number(&first["schema"]["vectors"][0]["dim"]),
+        Some(3.0),
+        "{first}"
+    );
 
     // A retry-safe repeat succeeds with the same id, and a different schema
     // under the name is `already_exists`.
@@ -632,7 +665,7 @@ async fn collection_routes_speak_the_documented_json_rpc() {
         .await
         .expect_ok();
     assert_documented_keys(&body, &["schema"], "AddFieldsResponse");
-    assert_eq!(body["schema"]["version"], 2, "{body}");
+    assert_eq!(struct_number(&body["schema"]["version"]), Some(2.0), "{body}");
     assert_eq!(body["schema"]["fields"][3]["name"], "color", "{body}");
     assert_eq!(body["schema"]["annotations"]["loams.team"], "x", "{body}");
 
@@ -702,7 +735,7 @@ async fn write_get_scroll_count_round_trip_over_http_rpc() {
         .to_string();
     let body = written.expect_ok();
     assert_eq!(body["token"], header.as_str(), "{body}");
-    assert_eq!(body["results"], json!(vec!(["accepted"; 6])), "{body}");
+    assert_eq!(body["results"], json!(vec!["accepted"; 6]), "{body}");
 
     // The collection the RPC created is the collection REST wrote to: it is
     // in the list, under the id the create returned.
@@ -717,14 +750,14 @@ async fn write_get_scroll_count_round_trip_over_http_rpc() {
     // And `GetCollection` reports what the link applied: six live rows at a
     // manifest version above 0, with no lag left.
     let applied = until(&running, "w", "kb", "the six documents are applied", |info| {
-        info["liveDocCount"] == 6
+        int64(&info["liveDocCount"]) == Some(6)
             && absent_or(info, "linkLagRecords", json!(0))
-            && info["manifestVersion"].as_u64().is_some_and(|version| version > 0)
+            && int64(&info["manifestVersion"]).is_some_and(|version| version > 0)
     })
     .await;
     assert_eq!(applied["id"], info["id"], "{applied}");
     assert_eq!(applied["namespace"], "w", "{applied}");
-    assert_eq!(applied["liveDocCount"], 6, "{applied}");
+    assert_eq!(int64(&applied["liveDocCount"]), Some(6), "{applied}");
 
     running.shutdown().await;
 }
@@ -746,7 +779,7 @@ async fn scan_route_speaks_the_documented_json_rpc() {
     // Wait until the link applied every write.
     until(&running, "w", "kb", "the link caught up", |info| {
         absent_or(info, "linkLagRecords", json!(0))
-            && info["manifestVersion"].as_u64().is_some_and(|version| version > 0)
+            && int64(&info["manifestVersion"]).is_some_and(|version| version > 0)
     })
     .await;
 
@@ -761,13 +794,13 @@ async fn scan_route_speaks_the_documented_json_rpc() {
     assert_eq!(plan["collection"], "kb", "{plan}");
     assert_eq!(plan["pkEncoding"], "loams_canonical_v1", "{plan}");
     assert!(absent_or(&plan, "tail", json!(false)), "{plan}");
-    assert_eq!(plan["liveRows"], 6, "{plan}");
+    assert_eq!(int64(&plan["liveRows"]), Some(6), "{plan}");
     assert_eq!(plan["durableToken"], plan["pin"]["token"], "{plan}");
     assert_eq!(header.as_deref(), plan["pin"]["token"].as_str(), "{plan}");
     assert_eq!(plan["offsets"].as_array().map(Vec::len), Some(2), "{plan}");
     let lance = &plan["lance"];
     assert_documented_keys(lance, &LANCE_KEYS, "ScanPlan.lance");
-    assert!(lance["version"].is_u64(), "{lance}");
+    assert!(int64(&lance["version"]).is_some(), "{lance}");
     let bucket = url::Url::from_directory_path(
         running
             .data_dir()
@@ -780,7 +813,10 @@ async fn scan_route_speaks_the_documented_json_rpc() {
     let uri = lance["uri"].as_str().expect("a uri");
     assert!(uri.starts_with(&bucket), "{uri} under {bucket}");
     assert!(
-        uri.ends_with(&format!("/collections/{}/lance", plan["collectionId"])),
+        uri.ends_with(&format!(
+            "/collections/{}/lance",
+            int64(&plan["collectionId"]).expect("the plan's collection id")
+        )),
         "{uri}"
     );
     let fragment = &plan["fragments"][0];
@@ -858,7 +894,7 @@ async fn put_hot_sets_the_catalog_and_returns_status_rpc() {
     let status = hot_status(&body);
     assert_eq!(status["config"]["vectors"], true, "{status}");
     assert_eq!(status["enabled"], true, "{status}");
-    assert_eq!(status["owner"]["nodeId"], 1, "{status}");
+    assert_eq!(int64(&status["owner"]["nodeId"]), Some(1), "{status}");
     assert_eq!(status["owner"]["local"], true, "{status}");
     assert!(
         enum_is(&status["vectors"]["state"], "off", "building"),
@@ -942,7 +978,7 @@ async fn create_collection_repeat_is_safe() {
         "partitions": 2
     });
     let first = running.connect(CREATE_COLLECTION, &request).await.expect_ok();
-    assert!(first["id"].as_u64().is_some(), "{first}");
+    assert!(int64(&first["id"]).is_some(), "{first}");
 
     // The retry: the same request, three times over.
     for attempt in 0..3 {
@@ -988,7 +1024,7 @@ async fn scan_returns_pin_token() {
     seed(&running, "w", "kb", 6).await;
     until(&running, "w", "kb", "the link caught up", |info| {
         absent_or(info, "linkLagRecords", json!(0))
-            && info["manifestVersion"].as_u64().is_some_and(|version| version > 0)
+            && int64(&info["manifestVersion"]).is_some_and(|version| version > 0)
     })
     .await;
 
@@ -1038,7 +1074,7 @@ async fn collection_names_are_fields_not_paths() {
         .await
         .expect_ok();
     assert_eq!(created["namespace"], "w", "{created}");
-    assert!(created["namespaceId"].as_u64().is_some(), "{created}");
+    assert!(int64(&created["namespaceId"]).is_some(), "{created}");
 
     // Two collections in it, then every read by field under the *same* path.
     let kb = running

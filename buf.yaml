@@ -1,7 +1,9 @@
-# The loams.live.v1 protos (R1 plan Task 7) and the app protos (design §37
-# §8, AP0). `buf lint` runs the STANDARD rules. `buf breaking` is enforced
-# for the app packages (CI job `app-protos`); loams.live.v1 is ignored, as
-# breaking changes are not enforced in R1 (the API is unstable).
+# The loams.live.v1 protos (R1 plan Task 7), the app protos (design §37 §8,
+# AP0) and the application packages of the unified Connect API (design §44
+# §7, API1 Task 1 and Task 2). `buf lint` runs the STANDARD rules. `buf
+# breaking` is enforced for the app packages (CI job `app-protos`);
+# loams.live.v1 is ignored, as breaking changes are not enforced in R1 (the
+# API is unstable).
 version: v2
 modules:
   - path: proto
@@ -11,8 +13,21 @@ lint:
   ignore_only:
     # Watch streams `Transition`, the protocol's unit (design §20 §7.1),
     # rather than a `WatchResponse` wrapper (plan row T7-4).
+    #
+    # `loams.collection.v1` is here for the same reason: `CreateCollection`
+    # and `GetCollection` answer `CollectionInfo` and `Scan` answers
+    # `ScanPlan` (design §44 §5.1), because a collection's own document is
+    # the answer and `ListCollections` embeds the same `CollectionInfo`, so a
+    # `…Response` wrapper would exist only to be unwrapped (API1 Task 2).
     RPC_RESPONSE_STANDARD_NAME:
       - proto/loams/live/v1/live.proto
+      - proto/loams/collection/v1/collection.proto
+    # For the same reason: `CreateCollection` and `GetCollection` both answer
+    # `CollectionInfo`, the collection's own document, and `ListCollections`
+    # embeds it. A per-RPC response message would make every caller unwrap
+    # (API1 Task 2).
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - proto/loams/collection/v1/collection.proto
 breaking:
   use:
     - FILE

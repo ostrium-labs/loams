@@ -11,6 +11,8 @@
 
 mod collections;
 pub mod connect;
+mod connect_collections;
+mod connect_messages;
 mod errors;
 pub mod events;
 pub mod hot;

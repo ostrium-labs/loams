@@ -1,0 +1,620 @@
+// Collections: namespaces, collections, their schema, aliases, versions,
+// scan plans and the hot tier (design §44 §5.1, D602; API1 Task 2).
+//
+// This is the first *application* package of the unified Connect API. It
+// replaces the M1.2 native REST routes under `/v1/namespaces` with RPCs on
+// the one port (design §44 §4), and the plan's rulings are visible on the
+// wire:
+//
+// - **Names are fields, not path segments.** A Connect path is
+//   `/<package>.<Service>/<Method>`, so `namespace` and `collection` travel
+//   in the request message and one path serves every collection (plan
+//   ruling 4). A collection is named by its name or by an alias wherever a
+//   collection is named, and the answer always reports the collection's own
+//   name.
+// - **proto3 JSON is the wire form**: field names are `lowerCamelCase`
+//   (`collection_id` is `collectionId`), an enum answers its proto name in
+//   `UPPER_SNAKE`, a 64-bit integer answers a decimal string (so it stays
+//   lossless in JavaScript), and a field at its default is *absent* rather
+//   than `0`, `false`, `""` or `[]`.
+// - **Create is idempotent by name.** `CreateCollection` answers the
+//   collection it already made rather than a conflict, so a client that
+//   retries after a lost answer gets its collection back; a *different*
+//   schema under a taken name is `already_exists`.
+// - **Every failure carries a reason.** A failed RPC carries one
+//   `loams.errors.v1.ErrorInfo` in its details whose `reason` is registered
+//   in `docs/api/reasons.md`; a caller branches on the reason, never on the
+//   message (D611). A missing collection names its `kind` and `name` in
+//   `metadata`, so a caller can tell a missing collection from a missing
+//   namespace without parsing prose.
+//
+// ## No `idempotency_key` here
+//
+// AP0's rule is that every mutation takes an `idempotency_key`. Nothing in
+// this package needs one: `CreateCollection` is keyed by name, and the rest
+// set state (a schema version, an alias, a hot configuration, a drop) so a
+// repeat is the same call. The first operation that is *not* naturally
+// idempotent is Task 3's `WriteDocuments`, and it carries the key.
+//
+// ## The schema is JSON, deliberately
+//
+// `CollectionInfo.schema`, `AddFieldsRequest.fields` and
+// `AddFieldsResponse.schema` are `google.protobuf.Struct`, not typed
+// messages. A collection's schema is an open document: it carries user
+// `annotations` with arbitrary keys, and it gains a key per encoder, per
+// index and per mapping rule without a wire change. A `Struct` keeps the
+// native REST route's schema JSON exactly — `source_path`, `kind`,
+// `max_fields`, `dynamic` — so moving a caller onto these RPCs changes the
+// envelope it posts in, not the schema it posts, and a new schema key never
+// needs a new proto field.
+//
+// ## What is not here
+//
+// Documents (`DocumentService`), query and SQL are Tasks 3–5, and every
+// route they replace stays until Task 9 (the plan's "behaviour first,
+// deletion last"). A caller that needs documents today seeds them over the
+// native REST route, which is what `crates/loams/tests/connect_collections.rs`
+// does.
+//
+// ## The SDK module, and why no method is in the SDK facade yet
+//
+// Both services carry `loams.options.v1.ModuleOptions` (`loams.collections`),
+// which is what §44 §7.3 asks of every public package and what the SDK facade
+// generator reads to name the module.
+//
+// No method carries `FacadeOptions` yet, and that is the same state
+// `loams.live.v1` was in until R1 Task 12 (plan ruling 1.7): a `facade` option
+// makes `protoc-gen-loams-facade` emit a call, and the call imports the
+// package's message types from the generated stubs — which means every SDK
+// mirror has to generate `loams.collection.v1` first (`@loams/proto` for
+// TypeScript, `loams.collection.v1.collection_pb2` for Python,
+// `loams.dev/go/gen/loams/collection/v1` for Go, `loams_proto` for Rust). That
+// is SDK1's stub task, and each `sdks/<lang>/buf.gen.yaml`'s package map
+// refuses to generate without an entry for the package, so the option would go
+// out ahead of the stubs. The follow-up adds the four `package=` entries, the
+// stubs and these options in one change.
+//
+// ## The handlers are thin
+//
+// Each one calls the same `CollectionService`, `MetaStore` and hot-tier
+// entry point the REST route it replaces calls
+// (`crates/loams/src/api/collections.rs`, `hot.rs`), so the behaviour is
+// the behaviour `crates/loams/tests/it/` already pins.
+syntax = "proto3";
+
+package loams.collection.v1;
+
+import "google/protobuf/struct.proto";
+import "loams/options/v1/options.proto";
+
+service NamespaceService {
+  option (loams.options.v1.module) = {
+    name: "collections"
+    summary: "Namespaces: the container every collection and stream lives in."
+  };
+
+  // Creates the namespace, or answers `already_exists` when it is already
+  // there. Creating a collection creates its namespace, so this RPC is for
+  // a caller that wants the namespace to exist before it writes to it.
+  rpc CreateNamespace(CreateNamespaceRequest) returns (CreateNamespaceResponse) {
+  }
+}
+
+service CollectionService {
+  option (loams.options.v1.module) = {
+    name: "collections"
+    summary: "Collections: schema, aliases, versions, scan plans and the hot tier."
+  };
+
+  // Creates the collection, or answers the one already under that name when
+  // the request is the same one. `idempotency_level` is left unset: this is
+  // not a free read, and `FacadeOptions.retry_safe` is what tells an SDK it
+  // may repeat the call after a lost answer.
+  rpc CreateCollection(CreateCollectionRequest) returns (CollectionInfo) {
+  }
+  // Every collection of the namespace, by name.
+  //
+  // buf lint: RPC_RESPONSE_STANDARD_NAME is excepted for this file in
+  // buf.yaml. The collection's own document is the answer, and
+  // `ListCollections` embeds the same `CollectionInfo`, so a
+  // `CreateCollectionResponse` wrapper would exist only to be unwrapped.
+  rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // One collection, by name or by alias.
+  //
+  // The `hot` value is the *owner's* full status, not the catalog
+  // configuration this node holds (M1.3 rule 4), so a caller that reads it
+  // from any node reads the node that serves the queries.
+  rpc GetCollection(GetCollectionRequest) returns (CollectionInfo) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Drops the collection, by name (never by alias), and stops its tail.
+  // Dropping what is not there is a success that dropped nothing, so a
+  // retried drop is not an error.
+  rpc DropCollection(DropCollectionRequest) returns (DropCollectionResponse) {
+  }
+  // Adds fields and vectors to the schema and publishes a new schema
+  // version. Additive only: a field is never removed or retyped, so a repeat
+  // that names the same fields is a no-op the caller can retry.
+  rpc AddFields(AddFieldsRequest) returns (AddFieldsResponse) {
+  }
+  // Every retained manifest version of the collection, oldest first.
+  rpc ListVersions(ListVersionsRequest) returns (ListVersionsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Plans an external read of one state of the collection (plan M1.2 Task 14,
+  // D53) and pins that state.
+  //
+  // The answer is `ScanPlan`, and the pin's token is *also* returned in the
+  // `loams-consistency-token` response header, which is what a non-Connect
+  // reader (a Lance or Flight SQL client) has. Planning reads the metastore,
+  // the manifest chain and one Lance manifest, never the tail, so any node
+  // serves it; this is a read that pins, not a free one, so it is not
+  // `NO_SIDE_EFFECTS` and stays a `POST`.
+  rpc Scan(ScanRequest) returns (ScanPlan) {
+  }
+  // Applies alias actions to the namespace atomically. A repeated identical
+  // request is a no-op, so the call is retry-safe.
+  rpc UpdateAliases(UpdateAliasesRequest) returns (UpdateAliasesResponse) {
+  }
+  // Writes the catalog's hot configuration for the collection and answers the
+  // status the local hot tier then builds towards. It is the configuration,
+  // not the work: nothing is awaited here.
+  rpc SetHot(SetHotRequest) returns (SetHotResponse) {
+  }
+  // Starts warming the collection on its owner and answers as soon as the
+  // warm has been started. The collection is named by its name or an alias.
+  rpc WarmCollection(WarmCollectionRequest) returns (WarmCollectionResponse) {
+  }
+}
+
+message CreateNamespaceRequest {
+  // The namespace's name, unique in the instance. Names are the REST route's
+  // names verbatim, so a caller migrating only changes its envelope.
+  string namespace = 1;
+}
+
+message CreateNamespaceResponse {
+  // The namespace that now exists, by name.
+  string namespace = 1;
+  // Its id, stable for the life of the namespace. A decimal string in JSON.
+  uint64 namespace_id = 2;
+}
+
+message CreateCollectionRequest {
+  string namespace = 1;
+  // The collection's name, unique in the namespace and never an alias.
+  string name = 2;
+  // The schema, as the native REST route's schema JSON (see the header).
+  google.protobuf.Struct schema = 3;
+  // The collection's partition count. Absent takes the server's default; a
+  // repeat of a create must send the same count or it is `already_exists`.
+  optional uint32 partitions = 4;
+}
+
+message ListCollectionsRequest {
+  string namespace = 1;
+  // AIP-158 page size; 0 or absent is every collection that fits.
+  int32 page_size = 2;
+  // The `next_page_token` of the previous page; absent starts at the first.
+  string page_token = 3;
+}
+
+message ListCollectionsResponse {
+  // By name.
+  repeated CollectionInfo collections = 1;
+  // Absent on the last page.
+  string next_page_token = 2;
+}
+
+message GetCollectionRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+}
+
+message DropCollectionRequest {
+  string namespace = 1;
+  // A collection name, never an alias: dropping an alias is not a thing.
+  string collection = 2;
+}
+
+message DropCollectionResponse {
+  // Whether this call dropped a collection. `false` when there was nothing
+  // to drop, and absent in JSON because `false` is a proto3 default.
+  bool dropped = 1;
+}
+
+message AddFieldsRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+  // The fields to add, as the native REST route's field JSON
+  // (`{"name", "source_path"?, "kind", "indexed"?, "fast"?,
+  // "ignore_malformed"?}`).
+  repeated google.protobuf.Struct fields = 3;
+  // The vectors to add, in the same form (`{"name", "dim", "distance", …}`).
+  repeated google.protobuf.Struct vectors = 4;
+  // Schema annotations to set, by key; existing keys are replaced.
+  map<string, string> annotations = 5;
+}
+
+message AddFieldsResponse {
+  // The published schema, at its new version.
+  google.protobuf.Struct schema = 1;
+}
+
+message ListVersionsRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListVersionsResponse {
+  // Oldest first, so a caller walks the chain forwards.
+  repeated ManifestVersion versions = 1;
+  // Absent on the last page.
+  string next_page_token = 2;
+}
+
+// One retained manifest of a collection.
+message ManifestVersion {
+  // The manifest version, as `ScanRequest.at.manifest_version` names it.
+  uint64 version = 1;
+  // When it was committed, on the metastore clock.
+  uint64 created_at_ms = 2;
+  // The size of the collection at this manifest.
+  uint64 size_bytes = 3;
+  // The live document count at this manifest.
+  uint64 live_doc_count = 4;
+  // The Lance version this manifest names; 0 while it names none.
+  uint64 lance_version = 5;
+}
+
+message ScanRequest {
+  string namespace = 1;
+  // A collection name or an alias. The plan reports the collection's own
+  // name, never the alias it was asked by.
+  string collection = 2;
+  // The state to plan; absent plans the live manifest. A `ScanPoint` is a
+  // oneof, so the state is always named: the REST route's bare `"current"`
+  // string has no proto3 JSON spelling, and the absent field is how a caller
+  // asks for the live manifest.
+  ScanPoint at = 3;
+}
+
+// The state a scan plans: absent is the live manifest.
+message ScanPoint {
+  oneof point {
+    // A retained manifest version, as it is.
+    uint64 manifest_version = 1;
+    // A consistency token an earlier `Scan` answered (its
+    // `loams-consistency-token` header, or `pin.token`): the first live
+    // manifest whose applied offsets cover it.
+    string token = 2;
+  }
+}
+
+message UpdateAliasesRequest {
+  string namespace = 1;
+  // Applied atomically, in order.
+  repeated AliasAction actions = 2;
+}
+
+// One alias change. A proto oneof, so the JSON is the REST route's
+// `{"create": {…}}` / `{"delete": {…}}` unchanged.
+message AliasAction {
+  oneof action {
+    // Points `alias` at a collection, creating or re-pointing it.
+    CreateAlias create = 1;
+    // Removes an alias; a missing alias is a no-op.
+    DeleteAlias delete = 2;
+  }
+}
+
+message CreateAlias {
+  string alias = 1;
+  // A collection name, never an alias.
+  string collection = 2;
+}
+
+message DeleteAlias {
+  string alias = 1;
+}
+
+message UpdateAliasesResponse {}
+
+message SetHotRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+  // The configuration to write. Every key absent is `false`, so the call
+  // states the whole configuration rather than a patch of it.
+  HotConfig hot = 3;
+}
+
+message SetHotResponse {
+  // The status the local hot tier now builds towards.
+  HotStatus hot = 1;
+}
+
+message WarmCollectionRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+}
+
+message WarmCollectionResponse {}
+
+// What to keep hot for a collection (M1.3 Task 8 rule 1).
+message HotConfig {
+  bool vectors = 1;
+  bool text = 2;
+  bool fragments = 3;
+}
+
+// One collection, as `GetCollection` and the collection-carrying list RPCs
+// answer it.
+message CollectionInfo {
+  // The collection's id, stable for its life. A decimal string in JSON.
+  uint64 id = 1;
+  // The collection's own name. An answer to a get-by-alias reports the
+  // collection, not the alias.
+  string name = 2;
+  // The namespace's name.
+  string namespace = 3;
+  // The live schema, at its current version, in the request's form.
+  google.protobuf.Struct schema = 4;
+  uint32 partitions = 5;
+  // The collection's aliases, sorted.
+  repeated string aliases = 6;
+  // The implicit stream the collection's writes are appended to; reading it
+  // is how a caller follows the tail (M1.2 rule 4).
+  uint64 stream = 7;
+  // The live manifest's version; 0 before the first commit.
+  uint64 manifest_version = 8;
+  // The live manifest's `live_doc_count`.
+  uint64 live_doc_count = 9;
+  // The size of the live Lance version.
+  uint64 size_bytes = 10;
+  // When the collection was created, from the `loams.created_at_ms`
+  // annotation; 0 without it.
+  uint64 created_at_ms = 11;
+  // Σ over partitions of (high watermark − applied): the writes the link has
+  // not put into the live manifest yet.
+  uint64 link_lag_records = 12;
+  // The hot tier's status for this collection. `GetCollection` answers the
+  // *owning* node's full status here (M1.3 rule 4); the other RPCs answer
+  // the catalog configuration this node holds, which is why `enabled`,
+  // `config` and `owner` can be absent.
+  HotStatus hot = 13;
+  // The bytes of the offset index entries past `applied`.
+  uint64 unapplied_bytes = 14;
+  // The write budget and whether a plain write is refused now (M1.3 Task 15,
+  // D86).
+  BackpressureStatus backpressure = 15;
+}
+
+// The unapplied-data budget and admission's answer under it (D86).
+message BackpressureStatus {
+  BackpressureState state = 1;
+  uint64 unapplied_records = 2;
+  uint64 unapplied_bytes = 3;
+  uint64 max_unapplied_records = 4;
+  uint64 max_unapplied_bytes = 5;
+}
+
+enum BackpressureState {
+  BACKPRESSURE_STATE_UNSPECIFIED = 0;
+  // A plain write is admitted now.
+  BACKPRESSURE_STATE_OPEN = 1;
+  // A plain write is refused now; `retry_after_ms` says when to come back.
+  BACKPRESSURE_STATE_THROTTLING = 2;
+  // Backpressure is off: nothing is refused.
+  BACKPRESSURE_STATE_DISABLED = 3;
+}
+
+// The hot tier's status for one collection, as the node that owns it
+// reports it.
+message HotStatus {
+  // Whether the reporting node runs a hot tier at all.
+  bool enabled = 1;
+  // The catalog configuration `SetHot` wrote.
+  HotConfig config = 2;
+  // `--hot-pin-all` on the reporting node.
+  bool pin_all = 3;
+  // A promotion lease is held for this collection.
+  bool promoted = 4;
+  // The node that answered.
+  HotOwner owner = 5;
+  // The three structures a promotion or a warm makes hot. Each carries the
+  // keys that apply to it and omits the rest.
+  HotStructureStatus vectors = 6;
+  HotStructureStatus text = 7;
+  HotStructureStatus fragments = 8;
+}
+
+message HotOwner {
+  // The reporting node's id.
+  uint64 node_id = 1;
+  // Whether it also owns the collection, so this answer is the hot tier's
+  // own and not a forwarded one.
+  bool local = 2;
+}
+
+// One hot structure's state. A single message serves `vectors`, `text` and
+// `fragments` because the catalog's `HotConfig` treats them alike and a
+// caller asks one question of each: is it ready.
+message HotStructureStatus {
+  HotStateKind state = 1;
+  // The manifest version the structure reflects; absent when it reflects
+  // none.
+  optional uint64 source_version = 2;
+  // Over its budget (`vectors`, `text`).
+  bool over_budget = 3;
+  // By vector name (`vectors` only).
+  map<string, HotColumnStatus> columns = 4;
+  // The live manifest's splits pinned on this node (`text` only).
+  uint64 pinned_splits = 5;
+  // The live manifest's splits (`text` only).
+  uint64 splits = 6;
+  // Bytes read into the range cache (`fragments` only).
+  uint64 prefetched_bytes = 7;
+  // The bytes of the live Lance version's files (`fragments` only).
+  uint64 bytes = 8;
+}
+
+// One vector column's hot state, the minimum of which is the structure's.
+message HotColumnStatus {
+  HotStateKind state = 1;
+  optional uint64 source_version = 2;
+  // The loaded artifact's own source version, which lags `source_version`
+  // while a rebuild is in flight.
+  optional uint64 artifact_source_version = 3;
+  // Rows in the delta index above the artifact.
+  uint64 delta_rows = 4;
+  // The last load error, until the artifact loads.
+  string error = 5;
+}
+
+enum HotStateKind {
+  HOT_STATE_KIND_UNSPECIFIED = 0;
+  // Nothing pinned here.
+  HOT_STATE_KIND_OFF = 1;
+  // Being pinned.
+  HOT_STATE_KIND_BUILDING = 2;
+  // Pinned and serving.
+  HOT_STATE_KIND_READY = 3;
+}
+
+// One state of a collection, resolved into what an external reader needs to
+// read it (plan M1.2 rule 2 is its JSON form).
+message ScanPlan {
+  string namespace = 1;
+  // The collection's own name, never the alias it was asked by.
+  string collection = 2;
+  uint64 collection_id = 3;
+  // The manifest this plan describes.
+  uint64 manifest_version = 4;
+  uint64 schema_version = 5;
+  // The Lance version the manifest names; absent while it names none.
+  LanceVersionRef lance = 6;
+  // In the Lance manifest's order.
+  repeated ScanFragment fragments = 7;
+  // Σ fragment `live_rows`, which equals the manifest's `live_doc_count`.
+  uint64 live_rows = 8;
+  // The Lance version's columns, in its order.
+  repeated ScanColumn columns = 9;
+  // How `_pk` encodes keys: `loams_canonical_v1`.
+  string pk_encoding = 10;
+  // Whether the requested state holds records the Lance version does not.
+  // A reader that answers `true` must read the tail through the native API
+  // or Flight SQL as well as the Lance files.
+  bool tail = 11;
+  // Σ over partitions of (target − applied).
+  uint64 tail_records = 12;
+  // One per partition, ascending.
+  repeated ScanOffsets offsets = 13;
+  // Exactly what the Lance version holds: the applied offsets. The same
+  // token is the `loams-consistency-token` response header.
+  string durable_token = 14;
+  // Reads the requested state, tail included (M1.2 rule 6).
+  ScanPin pin = 15;
+  // The metastore clock of the planning read. It advances only with
+  // time-stamped metastore writes, so it is not a wall clock.
+  uint64 planned_at_ms = 16;
+  // The earliest moment GC may stop retaining this manifest, on the
+  // metastore clock; absent for manifest version 0.
+  optional uint64 expires_at_ms = 17;
+}
+
+// The Lance version a manifest names.
+message LanceVersionRef {
+  // `<lance base url>/<lance prefix>` without a trailing `/`; absent when
+  // the service has no base URL and the dataset is not reachable over HTTP.
+  optional string uri = 1;
+  // The (detached) Lance version id; bit 63 is set for a detached version.
+  uint64 version = 2;
+  // The Lance manifest, relative to the dataset root
+  // (`_versions/d<id>.manifest`).
+  string manifest_path = 3;
+  // The Lance storage format, for example `2.1`.
+  string storage_format = 4;
+  // Whether row ids are stable across the version.
+  bool stable_row_ids = 5;
+}
+
+// One Lance fragment of the planned version.
+message ScanFragment {
+  uint64 id = 1;
+  uint64 physical_rows = 2;
+  uint64 deleted_rows = 3;
+  uint64 live_rows = 4;
+  // The fragment's data files, relative to the dataset root.
+  repeated ScanFile files = 5;
+  // Its deletion file; absent when the fragment deletes nothing.
+  ScanDeletionFile deletion_file = 6;
+  // Lance's own `Fragment` JSON, which is what pylance's
+  // `FragmentMetadata.from_json` reads. Carried verbatim so a reader needs
+  // no second copy of Lance's fragment model.
+  google.protobuf.Struct lance = 7;
+}
+
+message ScanFile {
+  // Relative to the dataset root: `data/…`.
+  string path = 1;
+  optional uint64 size_bytes = 2;
+}
+
+message ScanDeletionFile {
+  // Relative to the dataset root: `_deletions/…`.
+  string path = 1;
+  DeletionKind kind = 2;
+  uint64 deleted_rows = 3;
+}
+
+// How a deletion file stores its row offsets.
+enum DeletionKind {
+  DELETION_KIND_UNSPECIFIED = 0;
+  // A sorted list of row offsets.
+  DELETION_KIND_ARRAY = 1;
+  // A roaring bitmap of row offsets.
+  DELETION_KIND_BITMAP = 2;
+}
+
+// One readable column of the planned Lance version.
+message ScanColumn {
+  string name = 1;
+  // Arrow's `DataType` display form.
+  string data_type = 2;
+  // What the column holds, in `lower_snake_case`: `pk`, `source`,
+  // `ingest_partition`, `ingest_offset`, `vector`, `sparse_vector`. A string
+  // rather than an enum, because it is the REST route's spelling and a
+  // reader switches on it verbatim.
+  string role = 3;
+  // The vector's name, for a vector column.
+  optional string vector = 4;
+  optional uint32 dim = 5;
+  // `cosine`, `dot`, `euclid` or `manhattan`, for a vector column.
+  optional string distance = 6;
+  // `none` or `idf`, for a sparse vector column.
+  optional string modifier = 7;
+}
+
+// One partition's applied offset against the requested one.
+message ScanOffsets {
+  uint32 partition = 1;
+  uint64 applied = 2;
+  uint64 target = 3;
+}
+
+// What reads exactly the planned state.
+message ScanPin {
+  uint64 manifest_version = 1;
+  // The pin's consistency token, the `loams-consistency-token` the `Scan`
+  // answered, and a `ScanPoint.token` that plans the same state again.
+  string token = 2;
+}

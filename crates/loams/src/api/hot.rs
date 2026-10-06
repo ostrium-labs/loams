@@ -3,6 +3,7 @@
 //! (`POST …/warm`), and the `"hot"` value of `GET …/collections/{c}`, which
 //! the owning node answers.
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::Router;
@@ -127,30 +128,84 @@ async fn warm(
             Ok((StatusCode::ACCEPTED, axum::Json(json!({ "hot": status }))).into_response())
         }
         Owner::Remote { node_id, addr } => {
-            let target = HotTarget {
-                ns: ns_id.0,
-                cid: cid.0,
-            };
-            let url = format!("http://{addr}{HOT_WARM_PATH}");
-            let response = state
-                .internal
-                .post(url)
-                .json(&target)
-                .send()
-                .await
-                .map_err(|err| {
-                    unavailable(format!("the owner node {node_id} is unreachable: {err}"))
-                })?;
-            let status =
-                StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-            let body: Value = response.json().await.map_err(|err| {
-                unavailable(format!("the owner node {node_id} answered badly: {err}"))
-            })?;
+            let (status, body) = ask_owner_to_warm(&state, node_id, addr, ns_id, cid).await?;
             let body = match status.is_success() {
                 true => json!({ "hot": body }),
                 false => body,
             };
             Ok((status, axum::Json(body)).into_response())
+        }
+    }
+}
+
+/// Asks `(ns, cid)`'s owning node to warm it, over the internal route, and
+/// answers the owner's `(status, body)` as it was.
+///
+/// Both surfaces reach the owner this way and neither re-implements the call:
+/// the REST route puts the owner's status and body on the wire unchanged, and
+/// [`warm_owner`] turns a refusal into an `ApiError` that keeps it.
+pub(crate) async fn ask_owner_to_warm(
+    state: &AppState,
+    node_id: u64,
+    addr: SocketAddr,
+    ns: NamespaceId,
+    cid: CollectionId,
+) -> Result<(StatusCode, Value), ApiError> {
+    let target = HotTarget {
+        ns: ns.0,
+        cid: cid.0,
+    };
+    let url = format!("http://{addr}{HOT_WARM_PATH}");
+    let response = state
+        .internal
+        .post(url)
+        .json(&target)
+        .send()
+        .await
+        .map_err(|err| unavailable(format!("the owner node {node_id} is unreachable: {err}")))?;
+    let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let body: Value = response
+        .json()
+        .await
+        .map_err(|err| unavailable(format!("the owner node {node_id} answered badly: {err}")))?;
+    Ok((status, body))
+}
+
+/// The `ApiError` code an HTTP status a remote owner answered with maps to.
+/// Only the statuses the owner's warm can answer with are listed; anything
+/// else is a proxy or gateway answer and is reported as `internal`.
+fn code_of(status: StatusCode) -> &'static str {
+    match status.as_u16() {
+        400 => "invalid_argument",
+        404 => "not_found",
+        409 => "already_exists",
+        429 => "resource_exhausted",
+        503 => "unavailable",
+        504 => "timeout",
+        _ => "internal",
+    }
+}
+
+/// Warms `(ns, cid)` on its owner and answers the owner's hot status (rule 4).
+///
+/// `loams.collection.v1`'s `WarmCollection` calls this. A refusal from a
+/// remote owner becomes an `ApiError` carrying the *owner's* status, so the
+/// Connect error answers the status the REST route would have answered — the
+/// REST route passes that `(status, body)` through untouched, which is why the
+/// two do not share one function.
+pub(crate) async fn warm_owner(
+    state: &AppState,
+    ns: NamespaceId,
+    cid: CollectionId,
+) -> Result<Value, ApiError> {
+    match state.placement.owner(ns, cid) {
+        Owner::Local => warm_local(state, ns, cid).await,
+        Owner::Remote { node_id, addr } => {
+            let (status, body) = ask_owner_to_warm(state, node_id, addr, ns, cid).await?;
+            if !status.is_success() {
+                return Err(ApiError::new(status, code_of(status), body.to_string()));
+            }
+            Ok(body)
         }
     }
 }

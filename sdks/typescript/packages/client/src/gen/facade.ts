@@ -200,6 +200,7 @@ export const SERVICE_DESCRIPTORS: Readonly<Record<string, DescService>> = {
 export const PROTO_PACKAGES = [
   'google.protobuf',
   'loams.approvals.v1',
+  'loams.collection.v1',
   'loams.devices.v1',
   'loams.errors.v1',
   'loams.instance.v1',

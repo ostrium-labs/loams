@@ -24,6 +24,16 @@ mod generated {
 
 pub use generated::*;
 
+/// The well-known types the generated messages name by path, so a crate that
+/// implements a service over them reaches for the *same* types the generated
+/// code does instead of taking a second, possibly different, dependency on
+/// `buffa-types`.
+///
+/// `loams.collection.v1` needs `google::protobuf::Struct`: a collection's
+/// schema is carried as JSON (the proto header says why), which is what a
+/// `Struct` is.
+pub use buffa_types::google;
+
 /// The wire-format `FileDescriptorSet` of every generated file and its
 /// transitive imports, for `grpc.reflection.v1` (design §44 §4).
 pub const FILE_DESCRIPTOR_SET: &[u8] =

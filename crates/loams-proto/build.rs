@@ -6,9 +6,10 @@
 //! API1 Task 1 starts the list with the three packages the server needs
 //! before any application service exists: the facade options the SDK
 //! generator reads (`loams.options.v1`), the shared error detail and the
-//! instance discovery service. Tasks 2–8 append
-//! `loams.collection.v1`, `loams.sql.v1`, `loams.link.v1`,
-//! `loams.admin.v1`, `loams.auth.v1` and `loams.internal.v1`.
+//! instance discovery service. Task 2 adds `loams.collection.v1` (the
+//! namespaces, collections, aliases, versions, scan plans and hot tier), and
+//! Tasks 3–8 append `loams.sql.v1`, `loams.link.v1`, `loams.admin.v1`,
+//! `loams.auth.v1` and `loams.internal.v1`.
 //!
 //! `loams.live.v1` is **not** here: R1's `loams-live-proto` already
 //! generates it, and a proto package's Rust types are generated exactly
@@ -21,6 +22,7 @@ const FILES: &[&str] = &[
     "loams/options/v1/options.proto",
     "loams/errors/v1/errors.proto",
     "loams/instance/v1/instance.proto",
+    "loams/collection/v1/collection.proto",
 ];
 
 fn main() {

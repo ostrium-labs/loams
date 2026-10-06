@@ -2,6 +2,16 @@
 
 Status: **API1 Task 2** (2026-10-03): Task 1's registry plus `not_found`'s metadata, which `loams.collection.v1` fills from `ServiceError::NotFound`'s `kind` and `name` (`crates/loams/src/api/errors.rs` rule 3). Design [§44](../design/44-unified-api-and-sdks.md) §7.4, decision **D611**; plan [API1](../plans/2026-10-02-api1-unified-connect.md).
 
+`loams.collection.v1` adds **no** row: every RPC it serves reuses the `error`
+code the REST surface already raises as its `reason` (API1 plan ruling 1.6),
+through the one helper in `crates/loams/src/api/connect_collections.rs`.
+Three of `api::errors`'s codes are not registry rows and fold into the row
+they mean — `schema_violation` → `invalid_argument` (the offending field
+rides in `metadata`), `conflict` → `aborted` (a fenced lease or a version
+mismatch is a concurrent write that won), `timeout` → `deadline_exceeded` —
+and a code with no mapping at all is a bug in a layer that grew one, so it
+answers `internal` and is logged rather than inventing a reason.
+
 Every failed RPC carries a Connect code (`unimplemented`, `not_found`, ...) and one `loams.errors.v1.ErrorInfo` in its details. Callers branch on **`reason`**, a stable `snake_case` string, never on `code` alone and never on `message` (which may change). This page is the registry of every `reason` the server can return, so a caller can look one up instead of guessing a string.
 
 The rules, in the order they bite:

@@ -99,6 +99,18 @@ const CATALOGUE: &[Package] = &[
         unstable: false,
     },
     Package {
+        // Namespaces, collections, their schema, aliases, versions, scan plans
+        // and the hot tier (design §44 §5.1; API1 Task 2). The REST routes it
+        // replaces stay until Task 9, so both surfaces answer today.
+        package: "loams.collection.v1",
+        services: &[
+            "loams.collection.v1.NamespaceService",
+            "loams.collection.v1.CollectionService",
+        ],
+        available: true,
+        unstable: false,
+    },
+    Package {
         // The live sync engine is a `full`-variant engine (§30 §8.2) and R1's
         // `live` cargo feature has not merged, so no variant serves it yet.
         // R1 Task 12 adds the engine and flips this row on under that
@@ -259,7 +271,7 @@ impl LiveService for LiveAbsent {
 /// `metadata` that goes with it (design §44 §7.4, D611). `metadata` never
 /// holds a secret. Every reason this module raises is registered in
 /// `docs/api/reasons.md`.
-fn refuse(
+pub(crate) fn refuse(
     code: ErrorCode,
     reason: &str,
     message: impl Into<String>,
@@ -334,6 +346,7 @@ pub(crate) fn routes(state: &AppState) -> AxumRouter {
     let mut rpc = Router::new();
     rpc = Arc::new(Instance).register(rpc);
     rpc = Arc::new(LiveAbsent).register(rpc);
+    rpc = super::connect_collections::register(rpc, state);
     let (rpc, _health) = connectrpc_health::install_static(rpc, served_services());
     let rpc = match reflector(state) {
         Some(reflector) => connectrpc_reflection::install(rpc, reflector),

@@ -170,6 +170,7 @@ pub const FEATURE_NOT_IN_VARIANT: Reason = "feature_not_in_variant";
 pub const PROTO_PACKAGES: &[&str] = &[
     "google.protobuf",
     "loams.approvals.v1",
+    "loams.collection.v1",
     "loams.devices.v1",
     "loams.errors.v1",
     "loams.instance.v1",
