@@ -47,6 +47,7 @@ pub mod local;
 pub mod page;
 pub mod provider;
 pub mod redact;
+pub mod registry;
 pub mod secret;
 pub mod tool;
 pub mod webmcp;
@@ -61,6 +62,7 @@ pub use error::{BridgeError, ConfigError};
 pub use local::{DriverAction, DriverPage, LocalProvider, PageDriver};
 pub use page::PageState;
 pub use provider::{BrowserProvider, Capabilities, OpenRequest, PageRef};
+pub use registry::ProviderRegistry;
 pub use secret::{MapSecretResolver, SecretRef, SecretResolver, SecretValue};
 pub use tool::{
     ActionOutcome, AxNode, Extracted, FillValue, FindQuery, Navigation, Screenshot, Snapshot,
