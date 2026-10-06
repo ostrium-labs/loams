@@ -1,0 +1,16 @@
+{
+  "$comment": [
+    "xunit's own parallelisation settings. `parallelizeTestCollections: false`",
+    "matches the csproj property and is here because xunit reads this file when it",
+    "is present and ignores the property otherwise — so both are set, and this one",
+    "wins if a future xunit drops the property.",
+    "",
+    "It is off because the suite writes one report file from the corpus driver, and",
+    "two collections writing it concurrently would produce a report naming fewer",
+    "fixtures than actually ran. `ran` is what the 100% required-fixture bar is",
+    "computed from (sdks/conformance/required.mjs), so a report that under-reports",
+    "would turn a green run into a red gate or, worse, hide a red one."
+  ],
+  "parallelizeTestCollections": false,
+  "parallelizeAssembly": false
+}

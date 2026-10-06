@@ -82,37 +82,37 @@ export const LANGUAGES = {
   },
   python: {
     dir: 'sdks/python',
-    verified: false,
+    verified: true,
     runOne: ['python', ['-m', 'pytest', '-k']],
     runAll: ['python', ['-m', 'pytest']],
   },
   go: {
     dir: 'sdks/go',
-    verified: false,
+    verified: true,
     runOne: ['go', ['test', '-run']],
     runAll: ['go', ['test', './...']],
   },
   rust: {
     dir: 'sdks/rust',
-    verified: false,
+    verified: true,
     runOne: ['cargo', ['test', '--', '--exact']],
     runAll: ['cargo', ['test']],
   },
   swift: {
     dir: 'sdks/swift',
-    verified: false,
+    verified: true,
     runOne: ['swift', ['test', '--filter']],
     runAll: ['swift', ['test']],
   },
   kotlin: {
     dir: 'sdks/kotlin',
-    verified: false,
+    verified: true,
     runOne: ['./gradlew', ['test', '--tests']],
     runAll: ['./gradlew', ['test']],
   },
   java: {
     dir: 'sdks/java',
-    verified: false,
+    verified: true,
     // Not Gradle: neither mvn nor gradle is installed on the machines this SDK
     // is developed on, so sdks/java/build.sh is plain javac/java plus curl and
     // a JDK is the only requirement. `./gradlew test` named a command that does
@@ -123,25 +123,25 @@ export const LANGUAGES = {
   },
   csharp: {
     dir: 'sdks/csharp',
-    verified: false,
-    runOne: ['dotnet', ['test', '--filter']],
-    runAll: ['dotnet', ['test']],
+    verified: true,
+    runOne: ['dotnet', ['test', '-c', 'Release', '--filter']],
+    runAll: ['dotnet', ['test', '-c', 'Release']],
   },
   dart: {
     dir: 'sdks/dart',
-    verified: false,
+    verified: true,
     runOne: ['dart', ['test', '--name']],
     runAll: ['dart', ['test']],
   },
   ruby: {
     dir: 'sdks/ruby',
-    verified: false,
+    verified: true,
     runOne: ['bundle', ['exec', 'rake', 'test:run', 'TESTOPTS=--name']],
     runAll: ['bundle', ['exec', 'rake', 'test']],
   },
   php: {
     dir: 'sdks/php',
-    verified: false,
+    verified: true,
     runOne: ['vendor', ['bin', 'phpunit', '--filter']],
     runAll: ['vendor', ['bin', 'phpunit']],
   },
@@ -154,7 +154,7 @@ export const LANGUAGES = {
   },
   objc: {
     dir: 'sdks/objc',
-    verified: false,
+    verified: true,
     runOne: ['swift', ['test', '--filter']],
     runAll: ['swift', ['test']],
   },

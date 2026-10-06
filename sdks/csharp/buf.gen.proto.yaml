@@ -1,0 +1,42 @@
+# The C# SDK's generated stubs (design §44 §10.1 points 2 and 3; SDK2 Task 7).
+#
+# One remote plugin, `protoc-gen-csharp`, over `proto/`, and only that: the
+# module surface is a **hand-written** facade (design §44 §7.3's Q604 fallback,
+# which `sdks/go` and `sdks/java` also take), so there is no
+# `protoc-gen-loams-facade` template for this language and
+# `scripts/sdk/drift.sh` has no C# case to consult (D650).
+#
+# The output **is committed**, like Go's and unlike Python's: a NuGet package
+# ships with its generated code, and a consumer who restores from nuget.org has
+# no `buf` to run. `scripts/sdk/check-pins.sh` checks the plugin below against
+# `scripts/sdk/pins.lock`.
+#
+# `out` is relative to the **repository root**, not to this file, which is why it
+# is written out in full — the same convention `sdks/go/buf.gen.proto.yaml` uses.
+#
+# NOT `clean: true`: protoc-gen-csharp writes one `.cs` per `.proto` at the top
+# level of `out`, so cleaning would be survivable, but the directory also holds
+# nothing hand-written today and cleaning it on every run would make a failed
+# generation look like a successful one with an empty tree. `clean: false` is
+# what `sdks/python/buf.gen.proto.yaml` says for the same reason.
+version: v2
+inputs:
+  - directory: proto
+    paths:
+      # loams/options/v1 because every annotated service references it, and
+      # protoc-gen-csharp emits a using for whatever a descriptor references.
+      - proto/loams/options/v1
+      - proto/loams/errors/v1
+      - proto/loams/instance/v1
+      - proto/loams/devices/v1
+      - proto/loams/approvals/v1
+      - proto/loams/operations/v1
+      - proto/loams/notifications/v1
+      - proto/loams/live/v1
+plugins:
+  # v35.0 is protoc 35.0; the `integrity` a `bsr` row carries is the upstream
+  # `protoc-gen-*` release the BSR build wraps, because buf publishes no digest
+  # for a plugin (see the header of scripts/sdk/pins.lock).
+  - remote: buf.build/protocolbuffers/csharp:v35.0
+    out: sdks/csharp/src/Loams/Gen
+clean: false

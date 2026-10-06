@@ -48,6 +48,7 @@ jobs:
       sdk-python: ${{ steps.filter.outputs.sdk-python }}
       sdk-go: ${{ steps.filter.outputs.sdk-go }}
       sdk-cpp: ${{ steps.filter.outputs.sdk-cpp }}
+      sdk-csharp: ${{ steps.filter.outputs.sdk-csharp }}
       sdk-swift: ${{ steps.filter.outputs.sdk-swift }}
       web: ${{ steps.filter.outputs.web }}
       dapr-edge: ${{ steps.filter.outputs.dapr-edge }}
@@ -218,6 +219,16 @@ jobs:
               - "docs/sdk/**"
               - "proto/**"
               - "sdks/cpp/**"
+              - "sdks/conformance/**"
+            # The C# SDK (#297). Its stubs are generated and committed, so a
+            # proto edit has to re-run the job even when no C# file moved: the
+            # committed stubs are the surface the suite tests.
+            sdk-csharp:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/csharp/**"
               - "sdks/conformance/**"
             # The Swift SDK (#288). It has no local toolchain on the machines
             # that develop this repo, so macOS is the only thing that can
@@ -1275,6 +1286,58 @@ jobs:
             echo "sdks/cpp/gen is stale: regenerate with sdks/cpp/buf.gen.yaml and commit"; exit 1;
           }
 
+  # SDK2 Task 7 (#297): the C# SDK. `setup-dotnet` installs the channel, not the
+  # patch, so `global.json` pins the exact SDK: `TreatWarningsAsErrors` is on, and
+  # a runner that rolled the 8.0.4xx band forward would change the compiler every
+  # warning is judged by. `rollForward: latestPatch` keeps that from becoming a
+  # hard pin, so a retired patch does not fail the job outright.
+  #
+  # No `cache:` on setup-dotnet: NuGet's cache keys on a `packages.lock.json` and
+  # this SDK does not set `RestorePackagesWithLockFile`, so a cache declaration
+  # would reference a path that does not exist. Closing that is its own commit
+  # rather than something to fake here.
+  sdk-csharp:
+    name: the C# SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-csharp == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: sdks/csharp/global.json
+      - name: the C# SDK's build
+        working-directory: sdks/csharp
+        # Warnings are errors here (`TreatWarningsAsErrors` in Directory.Build.props),
+        # so a nullable-annotation warning fails the job rather than scrolling past.
+        run: dotnet build Loams.sln -c Release
+      - name: the C# SDK's conformance suite
+        working-directory: sdks/csharp
+        run: dotnet test Loams.sln -c Release
+      # A proto edit that moved the SDK surface must not pass with stale stubs.
+      # `scripts/sdk/drift.sh` has no C# case -- there is no `protoc-gen-loams-facade`
+      # template for C#, since the facade is hand-written (D650) -- so the check is
+      # buf here, resolving the same pinned devDependency the sdk-rust job installs.
+      # The runner ships no buf, so without this the step fails on a missing binary
+      # rather than on drift.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: the C# SDK's generated code is not stale
+        run: |
+          sdks/typescript/packages/client/node_modules/.bin/buf generate --template sdks/csharp/buf.gen.proto.yaml
+          git diff --exit-code -- sdks/csharp/src/Loams/Gen || {
+            echo "the committed stubs are stale: regenerate with sdks/csharp/buf.gen.proto.yaml"; exit 1;
+          }
+
   deny:
     name: licenses, advisories, sources
     needs: changes
@@ -1516,6 +1579,7 @@ jobs:
       - sdk-python
       - sdk-go
       - sdk-cpp
+      - sdk-csharp
       - sdk-swift
       - deny
       - web

@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Loams SDK for C# / .NET.
+
+    Package `Loams` (NuGet), namespace `Loams` for the runtime and
+    `Loams.<proto package>` for the generated stubs, which is why
+    `RootNamespace` is left at its default: `protoc-gen-csharp` writes its own
+    namespaces from the proto packages and the two line up.
+
+    `net8.0` and nothing else. See `DEPENDENCIES.md` for why there is no
+    `netstandard2.1` target, and D650 in `docs/design/13-decision-log.md`.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <!--
+      `ImplicitUsings` on, so `System`, `System.Threading`, `System.Threading.Tasks`
+      and the `Collections.Generic` names are in scope. This SDK is two thirds
+      async plumbing, and a `using System.Threading.Tasks;` at the top of every
+      file is noise that hides the one using a reader needs to check.
+    -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Loams</AssemblyName>
+    <RootNamespace>Loams</RootNamespace>
+    <PackageId>Loams</PackageId>
+    <Version>0.1.0</Version>
+    <Description>The Loams SDK for C#: one Loams object with namespaced modules over the unified Connect API, generated from proto/.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <Authors>Ostrium Labs</Authors>
+    <PackageTags>loams;connect;grpc;sdk;database</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!--
+      `EnableDefaultCompileItems` stays on and the generated stubs are ordinary
+      `.cs` files under `Gen/`, so nothing in the build has to know they are
+      generated. `buf generate` writes them and `scripts/sdk/drift.sh` diffs
+      them; see `buf.gen.proto.yaml`.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The only runtime dependency. Apache-2.0; see DEPENDENCIES.md for why the
+      Connect and gRPC runtimes are not among them.
+    -->
+    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Loams.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../LICENSE" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+</Project>
