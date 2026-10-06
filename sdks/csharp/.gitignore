@@ -1,0 +1,13 @@
+# .NET build output: `dotnet build` writes the compiled assembly, the generated
+# XML doc file and the whole NuGet restore graph here.
+bin/
+obj/
+
+# Nothing here is committed. The generated stubs under `src/Loams/Gen/` **are**,
+# and they are the only generated output in the tree (D604): `buf generate` writes
+# them and `scripts/sdk/drift.sh` diffs them, so they are source, not output.
+#
+# Same shape as `sdks/java/.gitignore` and `sdks/swift/.gitignore`. A per-SDK file
+# rather than a rule in the root `.gitignore` because a root `bin/` would also
+# swallow any directory that happens to be called `bin`, and these are the only
+# two that are build output.

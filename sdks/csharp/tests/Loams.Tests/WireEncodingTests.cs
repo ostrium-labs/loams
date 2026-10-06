@@ -163,4 +163,99 @@ public sealed class WireEncodingTests
         Assert.Null(WireReader.ErrorInfoFrom(parsed.Details));
     }
 
+    /// <summary>
+    /// A <c>grpc-status-details-bin</c> that is not base64 costs the reason, never
+    /// the refusal — and never an exception.
+    /// </summary>
+    /// <remarks>
+    /// This one used to throw. The Connect detail path catches its
+    /// <see cref="FormatException"/> and reports "no <c>ErrorInfo</c>", which is the
+    /// documented answer; the gRPC-Web path did not catch anything, so a server that
+    /// wrote that header as anything other than padded base64 would have thrown a
+    /// <see cref="FormatException"/> out of the response reader — out of a refusal,
+    /// which is the one thing a caller has to be able to catch.
+    ///
+    /// No recorded fixture covers it (every <c>grpc-status-details-bin</c> in
+    /// <c>sdks/fixtures</c> happens to be padded), which is exactly why it needs a
+    /// unit test rather than a fixture: a corpus is what the servers happened to
+    /// send, and this is about what an SDK does with what they did not.
+    /// </remarks>
+    [Fact]
+    public void csharp_error_trailer_survives_a_value_that_is_not_base64()
+    {
+        var trailers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["grpc-status"] = "12",
+            ["grpc-message"] = "not implemented yet",
+            ["grpc-status-details-bin"] = "not base64 at all",
+        };
+
+        var failure = WireReader.GrpcWebFailure(trailers, 200, "loams.instance.v1.InstanceService/WhoAmI");
+
+        Assert.NotNull(failure);
+        Assert.Equal(Code.Unimplemented, failure!.Code);
+        Assert.Null(failure.Detail);
+    }
+
+    /// <summary>
+    /// A padded <c>grpc-status-details-bin</c> still decodes, so the Connect and
+    /// gRPC-Web paths agree on one base64 reader.
+    /// </summary>
+    [Fact]
+    public void csharp_error_trailer_reads_padded_base64()
+    {
+        // A `google.rpc.Status` with code 12, no message, and one `Any` holding a
+        // serialized `ErrorInfo` whose reason is `not_implemented`. Base64 of the
+        // exact bytes, so this is the gRPC-Web spelling of the value the Connect
+        // fixtures carry unpadded.
+        const string statusBytes =
+            "CAwaQgotdHlwZS5nb29nbGVhcGlzLmNvbS9sb2Ftcy5lcnJvcnMudjEuRXJyb3JJbmZvEhEKD25vdF9pbXBsZW1lbnRlZA==";
+        var trailers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["grpc-status"] = "12",
+            ["grpc-status-details-bin"] = statusBytes,
+        };
+
+        var failure = WireReader.GrpcWebFailure(trailers, 200, "loams.instance.v1.InstanceService/WhoAmI");
+
+        Assert.NotNull(failure);
+        Assert.Equal(Code.Unimplemented, failure!.Code);
+        Assert.Equal("not_implemented", failure.Detail?.Reason);
+    }
+
+    /// <summary>
+    /// A detail value that is base64 except for one leftover character is refused,
+    /// because one sextet has no byte to stand for.
+    /// </summary>
+    /// <remarks>
+    /// This is the boundary the padding fix must not slide past: "pad it and let
+    /// <see cref="Convert"/> try" would decode this to a <i>shorter</i> but still
+    /// plausible detail, which is how a reason goes missing without an error. The
+    /// recorded corpus contains no such value, so the rule is pinned here.
+    /// </remarks>
+    [Fact]
+    public void csharp_error_detail_rejects_base64_with_one_character_left_over()
+    {
+        const string padded = "Cg9ub3RfaW1wbGVtZW50ZWQ=";
+        // One character short of the 20 the padding needs: a valid prefix, and not a
+        // value any server writes.
+        var body =
+            $$"""{"code":"unimplemented","message":"m","details":[{"type":"loams.errors.v1.ErrorInfo","value":"{{padded[..1]}}"}]}""";
+
+        Assert.True(WireReader.TryParseConnectErrorBody(body, out var parsed));
+
+        Assert.Null(WireReader.ErrorInfoFrom(parsed.Details));
+    }
+
+    /// <summary>Base64 with whitespace inside it decodes, because a folded header carries it.</summary>
+    [Fact]
+    public void csharp_error_detail_reads_base64_with_whitespace()
+    {
+        var body =
+            """{"code":"unimplemented","message":"m","details":[{"type":"loams.errors.v1.ErrorInfo","value":"Cg9u\nb3R faW1w\nbGVtZW50ZWQ"}]}""";
+
+        Assert.True(WireReader.TryParseConnectErrorBody(body, out var parsed));
+
+        Assert.Equal("not_implemented", WireReader.ErrorInfoFrom(parsed.Details)?.Reason);
+    }
 }

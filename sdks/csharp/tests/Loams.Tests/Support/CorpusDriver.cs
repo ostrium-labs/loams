@@ -12,6 +12,12 @@
 // the recording's own `expect` block have both been checked. A fixture the driver
 // could not reach is therefore absent from `ran` and the gate says so by name.
 //
+// The same rule governs every other decision in here. Which call a step is driven
+// through, whether its idempotency key is minted, and where a named response field
+// lives are all asked of the **schema** — the RPC path, the request and response
+// descriptors — and never of a fixture's name. A rule written as a list of names
+// stops tracking what the driver did the moment the corpus grows.
+//
 // # What a fixture run asserts
 //
 // Everything the recording states about itself, and nothing it does not:
@@ -21,11 +27,11 @@
 //     encoded what the corpus recorded rather than something equivalent;
 //   - the **outcome** matches `expect`: the HTTP status as the SDK saw it, the
 //     `reason`, the `grpcStatus`, and the response fields the recording names
-//     (`apiVersions`, `state`, `revision`, `frames`, `frameKinds`, `cursor`,
-//     `snapshotReset`);
-//   - `identicalToStep` means the second response's bytes are the first's.
+//     (`apiVersions`, `state`, `revision`, `cursor`, `snapshotReset`);
+//   - `identicalToStep` means the **SDK's own** two answers are the same bytes. It
+//     is not a comparison of the recording against itself, which would hold for a
+//     driver that never looked at either answer.
 
-using System.Text;
 using System.Text.Json;
 using Google.Protobuf;
 using Google.Protobuf.Reflection;
@@ -150,7 +156,7 @@ public sealed class CorpusDriver
     {
         var name = fixture.Name;
         var failures = new List<string>();
-        var steps = ReadSteps(Path.Combine(_fixturesDir, fixture.File));
+        var steps = CorpusRecording.ReadSteps(Path.Combine(_fixturesDir, fixture.File));
 
         // The binding is resolved from the RPC path, not looked up in a table: a
         // fixture whose RPC the SDK does not bind is a fixture this suite cannot run,
@@ -162,28 +168,38 @@ public sealed class CorpusDriver
                 [$"{name}: no generated binding for {rpc}, so this suite cannot run it"]);
         }
 
-        byte[]? firstStepResponse = null;
+        // The SDK's **own** answer per step, in step order, for `identicalToStep`.
+        // The recording's bytes are deliberately not collected: comparing them to
+        // each other is a check that holds for a driver that never looked at what
+        // the SDK made of them.
+        var answers = new List<byte[]?>();
         foreach (var step in steps)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var problems = await RunStepAsync(endpoint, name, step, cancellationToken).ConfigureAwait(false);
-            failures.AddRange(problems);
+            var outcome = await RunStepAsync(endpoint, name, step, cancellationToken).ConfigureAwait(false);
+            failures.AddRange(outcome.Problems);
+            answers.Add(outcome.Answer);
 
-            if (step.Expect.ValueKind == JsonValueKind.Object &&
-                step.Expect.TryGetProperty("identicalToStep", out var identical))
+            if (step.Expect.ValueKind != JsonValueKind.Object ||
+                !step.Expect.TryGetProperty("identicalToStep", out var identical))
             {
-                var against = firstStepResponse;
-                var thisStep = StepResponseBytes(steps, step);
-                if (against is null || !thisStep.AsSpan().SequenceEqual(against))
-                {
-                    failures.Add(
-                        $"{name} step {step.Step}: expect.identicalToStep says its response bytes are " +
-                        $"step {identical.GetInt32()}'s, and they are not");
-                }
+                continue;
             }
-            if (step.Step == 0)
+            var against = identical.GetInt32();
+            if (against < 0 || against >= answers.Count - 1)
             {
-                firstStepResponse = StepResponseBytes(steps, step);
+                failures.Add(
+                    $"{name} step {step.Step}: expect.identicalToStep names step {against}, and this is " +
+                    $"step {answers.Count - 1}, so there is no earlier step for it to be identical to");
+                continue;
+            }
+            var mine = outcome.Answer;
+            var theirs = answers[against];
+            if (theirs is null || mine is null || !mine.AsSpan().SequenceEqual(theirs))
+            {
+                failures.Add(
+                    $"{name} step {step.Step}: expect.identicalToStep says its response bytes are " +
+                    $"step {against}'s, and the SDK's two answers are not the same");
             }
         }
 
@@ -195,25 +211,18 @@ public sealed class CorpusDriver
     }
 
     /// <summary>
-    /// The response bytes a step recorded, reassembled from its frames when it is a
-    /// stream.
+    /// One step's problems, and the answer the SDK made of it.
     /// </summary>
-    private static byte[] StepResponseBytes(IReadOnlyList<RecordedStep> steps, RecordedStep step)
-    {
-        if (step.Frames is not { Count: > 0 })
-        {
-            return step.ResponseBody;
-        }
-        // A stream's response is its frames; the comparison is over the message
-        // frames, so the end-of-stream and trailers frames are left out.
-        return Encoding.UTF8.GetBytes(string.Concat(
-            step.Frames
-                .Where((frame) => !frame.Flags.HasFlag(Loams.EnvelopeFlags.EndOfStream) &&
-                                 !frame.Flags.HasFlag(Loams.EnvelopeFlags.Trailers))
-                .Select((frame) => Encoding.UTF8.GetString(frame.Payload))));
-    }
+    /// <param name="Problems">
+    /// Every disagreement with the recording, so one run learns about all of them.
+    /// </param>
+    /// <param name="Answer">
+    /// The SDK's answer, re-encoded in this step's codec — null when the call was
+    /// refused, because a refusal has no response to compare.
+    /// </param>
+    private sealed record StepOutcome(IReadOnlyList<string> Problems, byte[]? Answer);
 
-    private async Task<IReadOnlyList<string>> RunStepAsync(
+    private async Task<StepOutcome> RunStepAsync(
         string endpoint,
         string fixtureName,
         RecordedStep step,
@@ -224,7 +233,7 @@ public sealed class CorpusDriver
         var binding = Facade.BindingForRpc(rpc);
         if (binding is null)
         {
-            return [$"{fixtureName} step {step.Step}: no generated binding for {rpc}"];
+            return new StepOutcome([$"{fixtureName} step {step.Step}: no generated binding for {rpc}"], null);
         }
 
         var (protocol, codec) = TransportOf(step.ContentType);
@@ -234,7 +243,7 @@ public sealed class CorpusDriver
         var request = DecodeRequest(step, requestType, codec, fixtureName);
         if (request is null)
         {
-            return problems;
+            return new StepOutcome(problems, null);
         }
 
         var options = new Loams.CallOptions
@@ -248,16 +257,20 @@ public sealed class CorpusDriver
                 ["loams-fixture-name"] = fixtureName,
                 ["loams-fixture-step"] = step.Step.ToString(System.Globalization.CultureInfo.InvariantCulture),
             },
+            // R3 deliberately **not** applied to a recorded keyless mutation. See
+            // `KeylessMutation` for why that is decided from the schema and not
+            // from a list of fixture names.
+            MintIdempotencyKey = !KeylessMutation(request),
         };
 
         if (binding.Streaming == Loams.Streaming.Server)
         {
-            problems.AddRange(await RunStreamStepAsync(client, binding, request, options, step, fixtureName,
-                cancellationToken).ConfigureAwait(false));
-            return problems;
+            var streamed = await RunStreamStepAsync(client, binding, request, options, step, fixtureName,
+                cancellationToken).ConfigureAwait(false);
+            return new StepOutcome(streamed.Problems, streamed.Answer);
         }
 
-        Google.Protobuf.IMessage response;
+        IMessage response;
         try
         {
             response = await client.Invoker.UnaryDynamicAsync(binding, request, options, cancellationToken)
@@ -265,15 +278,73 @@ public sealed class CorpusDriver
         }
         catch (LoamsError error)
         {
-            problems.AddRange(CheckError(fixtureName, step, error).ToList());
-            return problems;
+            return new StepOutcome(
+                Expectations.CheckError(fixtureName, step.Step, step.Expect, error).ToList(), null);
         }
 
-        problems.AddRange(CheckSuccess(fixtureName, step, response, expected: step.Status == 200).ToList());
-        return problems;
+        problems.AddRange(Expectations
+            .CheckSuccess(fixtureName, step.Step, step.Status, step.Expect, response, expected: step.Status == 200)
+            .ToList());
+        return new StepOutcome(problems, AnswerBytes(response));
     }
 
-    private async Task<IReadOnlyList<string>> RunStreamStepAsync(
+    /// <summary>
+    /// The SDK's own answer, re-encoded so two answers can be compared byte for
+    /// byte.
+    /// </summary>
+    /// <remarks>
+    /// Always in <see cref="Codec.Proto"/>, whatever the step's own encoding is, and
+    /// for a reason: <c>CompactJson</c> deliberately refuses a message holding a
+    /// well-known type — a <c>Timestamp</c>, a <c>Duration</c> — because no Loams
+    /// facade call *sends* one and a body the server cannot parse is worse than a
+    /// refusal at the boundary. <c>DecideApprovalResponse.approval.created_at</c> is
+    /// exactly such a message, so asking the JSON writer to re-encode an answer
+    /// throws, and the comparison would be unavailable on precisely the fixture that
+    /// needs it. Binary protobuf has no such gap and is the stricter comparison
+    /// anyway: it covers every field of both messages, including the ones proto3
+    /// JSON omits at their defaults.
+    ///
+    /// The one caveat is a map field, whose iteration order protobuf does not
+    /// specify, so two messages that differ only in map order would compare unequal.
+    /// <c>DecideApprovalResponse</c> has none, and the alternative — comparing two
+    /// JSON encodings this writer cannot produce — is not a comparison at all.
+    /// </remarks>
+    private static byte[] AnswerBytes(IMessage message) => MessageCodec.Serialize(message, Codec.Proto);
+
+    /// <summary>
+    /// Whether this step is one the SDK's own keyed path cannot reproduce.
+    /// </summary>
+    /// <remarks>
+    /// **D610 gives every mutation an idempotency key**, and six app-mock
+    /// mutations were recorded <i>without</i> one — the client that recorded them
+    /// did not send a key, so there was none to record. Putting one on the wire
+    /// changes the request, and `fixture-server.mjs` — correctly — refuses a
+    /// request that is not the recorded one, answering 400 with its own JSON error
+    /// body. That answer is not a Connect error envelope, so the SDK reported
+    /// `code=unknown` with no reason against a server that had said exactly which
+    /// reason it meant: 18 approvals and 10 devices calls, every one of them a
+    /// harness disagreement dressed up as an error-mapping bug.
+    ///
+    /// Decided from the **request schema** and the decoded message — the same two
+    /// questions <see cref="Idempotency.Apply"/> asks — so a corpus that grows a
+    /// keyed mutation is handled by the rule rather than by somebody remembering to
+    /// move a name. A request whose schema declares no key field is never keyless
+    /// here, because there was nothing to mint; and a request that already carries
+    /// one keeps it, so `mock_state_idempotent_decide` and the two
+    /// `mock_state_stream_resume*` mutations are still driven through R3's keyed
+    /// path, which is the only place that clause is exercised end to end.
+    /// </remarks>
+    private static bool KeylessMutation(IMessage request)
+    {
+        var field = request.Descriptor.FindFieldByName("idempotency_key");
+        if (field is null || field.FieldType != FieldType.String)
+        {
+            return false;
+        }
+        return (field.Accessor.GetValue(request) as string ?? string.Empty).Length == 0;
+    }
+
+    private async Task<StepOutcome> RunStreamStepAsync(
         LoamsClient client,
         Loams.CallBinding binding,
         Google.Protobuf.IMessage request,
@@ -285,23 +356,28 @@ public sealed class CorpusDriver
         var problems = new List<string>();
         var handle = client.Invoker.OpenServerStream(binding, request, options, cancellationToken);
         var messages = new List<Google.Protobuf.IMessage>();
+        var answer = new MemoryStream();
 
         try
         {
             await foreach (var message in handle.Messages.WithCancellation(cancellationToken).ConfigureAwait(false))
             {
                 messages.Add(message);
+                // The answer is the SDK's own re-encoding of the messages it
+                // yielded, which is what `identicalToStep` compares. A stream
+                // recording never uses `identicalToStep`, so this costs one
+                // re-encode per message and keeps the one comparison honest.
+                answer.Write(AnswerBytes(message));
             }
         }
         catch (LoamsError error)
         {
-            problems.AddRange(CheckError(fixtureName, step, error).ToList());
-            return problems;
+            return new StepOutcome(Expectations.CheckError(fixtureName, step.Step, step.Expect, error).ToList(), null);
         }
 
-        if (!step.Expect.ValueKind.Equals(JsonValueKind.Object))
+        if (step.Expect.ValueKind != JsonValueKind.Object)
         {
-            return problems;
+            return new StepOutcome(problems, answer.ToArray());
         }
 
         // `frames` counts every frame on the wire and `frameKinds` names them in
@@ -331,215 +407,13 @@ public sealed class CorpusDriver
 
         foreach (var message in messages)
         {
-            problems.AddRange(CheckMessage(fixtureName, step, message).ToList());
+            problems.AddRange(Expectations.CheckMessage(fixtureName, step.Step, step.Expect, message).ToList());
         }
         if (messages.Count == 0 && step.Expect.TryGetProperty("frameKinds", out _))
         {
             problems.Add($"{fixtureName} step {step.Step}: expect.frameKinds is set and no message arrived");
         }
-        return problems;
-    }
-
-    /// <summary>The two refusals R8 distinguishes, checked from the recording's own words.</summary>
-    private static IEnumerable<string> CheckError(string fixtureName, RecordedStep step, LoamsError error)
-    {
-        var problems = new List<string>();
-        var expect = step.Expect;
-
-        if (expect.ValueKind != JsonValueKind.Object)
-        {
-            return problems;
-        }
-
-        if (expect.TryGetProperty("reason", out var reason))
-        {
-            if (reason.ValueKind != JsonValueKind.String)
-            {
-                // `reason: null` is a recorded fact: the server sent no `ErrorInfo`
-                // and the SDK must not invent one (R8, and `mock_status_unauthenticated`).
-                if (error.Reason != Loams.Reason.None)
-                {
-                    problems.Add(
-                        $"{fixtureName} step {step.Step}: expect.reason is null, and the SDK reported " +
-                        $"{Loams.ReasonRegistry.Name(error.Reason)}");
-                }
-            }
-            else
-            {
-                var want = reason.GetString()!;
-                var got = error.Reason == Loams.Reason.None ? error.UnknownReason : Loams.ReasonRegistry.Name(error.Reason);
-                if (got != want)
-                {
-                    problems.Add($"{fixtureName} step {step.Step}: expect.reason is {want}, and the SDK reported {got ?? "none"}");
-                }
-            }
-        }
-
-        if (expect.TryGetProperty("grpcStatus", out var grpcStatus))
-        {
-            var want = (Loams.Code)grpcStatus.GetInt32();
-            if (error.Code != want)
-            {
-                problems.Add(
-                    $"{fixtureName} step {step.Step}: expect.grpcStatus is {grpcStatus.GetInt32()}, and the " +
-                    $"SDK reported {error.Code}");
-            }
-        }
-        return problems;
-    }
-
-    private static IEnumerable<string> CheckSuccess(
-        string fixtureName,
-        RecordedStep step,
-        Google.Protobuf.IMessage response,
-        bool expected)
-    {
-        var problems = new List<string>();
-        if (!expected)
-        {
-            problems.Add(
-                $"{fixtureName} step {step.Step}: the recording answers HTTP {step.Status} and the SDK " +
-                "returned a message, so a refusal was read as a success");
-        }
-        return problems.Concat(CheckMessage(fixtureName, step, response));
-    }
-
-    /// <summary>
-    /// The response fields the recording's <c>expect</c> names.
-    /// </summary>
-    /// <remarks>
-    /// Only the fields the recording actually states are checked, and each is read
-    /// out of the descriptor rather than off a generated property: the corpus names
-    /// them in proto3 JSON (<c>apiVersions</c>, <c>snapshotReset</c>, <c>frameKinds</c>)
-    /// and the generated C# names are PascalCase, so the JSON name is the one the
-    /// corpus and the fixture-server agree on.
-    /// </remarks>
-    private static IEnumerable<string> CheckMessage(
-        string fixtureName,
-        RecordedStep step,
-        Google.Protobuf.IMessage message)
-    {
-        var problems = new List<string>();
-        var expect = step.Expect;
-        if (expect.ValueKind != JsonValueKind.Object)
-        {
-            return problems;
-        }
-
-        foreach (var name in new[] { "apiVersions", "state", "revision", "cursor", "snapshotReset" })
-        {
-            if (!expect.TryGetProperty(name, out var want))
-            {
-                continue;
-            }
-            if (!TryReadField(message, name, out var got))
-            {
-                problems.Add($"{fixtureName} step {step.Step}: expect.{name} is set and the response has no {name}");
-                continue;
-            }
-            if (want.ValueKind == JsonValueKind.Array)
-            {
-                // `apiVersions` is a repeated field, and the recording states which
-                // packages must be **present**: the mock serves five and names one,
-                // so containment is the check and equality would be wrong.
-                var wanted = want.EnumerateArray().Select((item) => item.GetString()!).ToList();
-                var actual = ReadRepeated(message, name);
-                foreach (var entry in wanted)
-                {
-                    if (!actual.Contains(entry))
-                    {
-                        problems.Add(
-                            $"{fixtureName} step {step.Step}: expect.{name} contains {entry}, and the " +
-                            $"response has [{string.Join(", ", actual)}]");
-                    }
-                }
-                continue;
-            }
-            if (got != want.ToString())
-            {
-                problems.Add($"{fixtureName} step {step.Step}: expect.{name} is {want}, and the response says {got}");
-            }
-        }
-
-        return problems;
-    }
-
-    /// <summary>
-    /// Reads one proto3-JSON-named field out of a message, rendered the way the
-    /// recording renders it: an enum by name, a 64-bit integer as a string, a bool
-    /// as <c>true</c>/<c>false</c>.
-    /// </summary>
-    private static bool TryReadField(Google.Protobuf.IMessage message, string jsonName, out string? value)
-    {
-        value = null;
-        var field = message.Descriptor.FindFieldByName(ToSnakeCase(jsonName)) ??
-                    message.Descriptor.FindFieldByName(jsonName);
-        if (field is null)
-        {
-            return false;
-        }
-        if (field.IsRepeated || field.IsMap)
-        {
-            // `IFieldAccessor.HasValue` throws for a repeated field: a repeated field
-            // has no presence, it has a count. A repeated field named in `expect`
-            // with nothing in it is a field that is **set** (to the empty list), so
-            // the answer is "present" and the caller checks its contents.
-            return true;
-        }
-        if (!field.Accessor.HasValue(message))
-        {
-            return false;
-        }
-
-        var raw = field.Accessor.GetValue(message);
-        value = field.FieldType switch
-        {
-            FieldType.String => raw as string,
-            FieldType.Bool => raw is true ? "true" : "false",
-            FieldType.Enum => ((EnumValueDescriptor)raw!).Name,
-            FieldType.UInt64 or FieldType.Fixed64 =>
-                Convert.ToUInt64(raw, System.Globalization.CultureInfo.InvariantCulture)
-                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
-            FieldType.Int64 or FieldType.SFixed64 or FieldType.SInt64 =>
-                Convert.ToInt64(raw, System.Globalization.CultureInfo.InvariantCulture)
-                    .ToString(System.Globalization.CultureInfo.InvariantCulture),
-            _ => raw?.ToString(),
-        };
-        return true;
-    }
-
-    /// <summary>A repeated string field's values, rendered as the recording renders them.</summary>
-    private static IReadOnlyList<string> ReadRepeated(Google.Protobuf.IMessage message, string jsonName)
-    {
-        var field = message.Descriptor.FindFieldByName(ToSnakeCase(jsonName)) ??
-                    message.Descriptor.FindFieldByName(jsonName);
-        if (field is null)
-        {
-            return [];
-        }
-        var values = new List<string>();
-        foreach (var item in (System.Collections.IEnumerable)field.Accessor.GetValue(message)!)
-        {
-            values.Add(field.FieldType == FieldType.Enum
-                ? ((EnumValueDescriptor)item!).Name
-                : item?.ToString() ?? string.Empty);
-        }
-        return values;
-    }
-
-    private static string ToSnakeCase(string jsonName)
-    {
-        var builder = new StringBuilder(jsonName.Length + 4);
-        for (var index = 0; index < jsonName.Length; index++)
-        {
-            var character = jsonName[index];
-            if (char.IsUpper(character) && index > 0)
-            {
-                builder.Append('_');
-            }
-            builder.Append(char.ToLowerInvariant(character));
-        }
-        return builder.ToString();
+        return new StepOutcome(problems, answer.ToArray());
     }
 
     /// <summary>
@@ -636,77 +510,5 @@ public sealed class CorpusDriver
         });
         _clients.Add((protocol, codec, client));
         return client;
-    }
-
-    private IReadOnlyList<RecordedStep> ReadSteps(string file)
-    {
-        using var document = JsonDocument.Parse(File.ReadAllText(file));
-        var root = document.RootElement;
-        var name = root.GetProperty("name").GetString()!;
-        var recorded = root.TryGetProperty("steps", out var list)
-            ? list.EnumerateArray().ToArray()
-            : [root];
-
-        var steps = new List<RecordedStep>();
-        for (var index = 0; index < recorded.Length; index++)
-        {
-            var step = recorded[index];
-            steps.Add(new RecordedStep(name, index,
-                step.GetProperty("request").GetProperty("method").GetString()!,
-                step.GetProperty("request").GetProperty("path").GetString()!,
-                HeaderOf(step.GetProperty("request"), "content-type"),
-                BodyOf(step.GetProperty("request")),
-                step.GetProperty("response").GetProperty("status").GetInt32(),
-                HeaderOf(step.GetProperty("response"), "content-type"),
-                BodyOf(step.GetProperty("response")),
-                FramesOf(step.GetProperty("response")),
-                step.TryGetProperty("expect", out var expect) ? expect.Clone() : default));
-        }
-        return steps;
-    }
-
-    private static string? HeaderOf(JsonElement holder, string name)
-    {
-        if (!holder.TryGetProperty("headers", out var headers) || headers.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-        foreach (var header in headers.EnumerateObject())
-        {
-            if (string.Equals(header.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return header.Value.GetString();
-            }
-        }
-        return null;
-    }
-
-    private static byte[] BodyOf(JsonElement holder)
-    {
-        if (holder.TryGetProperty("bodyBase64", out var base64))
-        {
-            return Convert.FromBase64String(base64.GetString() ?? string.Empty);
-        }
-        if (holder.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.String)
-        {
-            return Encoding.UTF8.GetBytes(body.GetString()!);
-        }
-        return [];
-    }
-
-    private static IReadOnlyList<RecordedFrame>? FramesOf(JsonElement response)
-    {
-        if (!response.TryGetProperty("frames", out var frames) || frames.ValueKind != JsonValueKind.Array)
-        {
-            return null;
-        }
-        var parsed = new List<RecordedFrame>();
-        foreach (var frame in frames.EnumerateArray())
-        {
-            var flags = frame.TryGetProperty("flags", out var flag) ? flag.GetInt32() : 0;
-            parsed.Add(new RecordedFrame((Loams.EnvelopeFlags)flags,
-                Convert.FromBase64String(frame.GetProperty("payload").GetString()!)));
-        }
-        return parsed;
     }
 }

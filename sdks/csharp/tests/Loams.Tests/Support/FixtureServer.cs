@@ -310,87 +310,20 @@ public sealed class FixtureServer : IDisposable
             return steps;
         }
 
-        private static IEnumerable<RecordedStep> ReadFixture(string file)
-        {
-            using var document = JsonDocument.Parse(File.ReadAllText(file));
-            var root = document.RootElement;
-            var name = root.GetProperty("name").GetString()!;
-
-            var recorded = root.TryGetProperty("steps", out var list)
-                ? list.EnumerateArray().ToArray()
-                : [root];
-
-            for (var index = 0; index < recorded.Length; index++)
-            {
-                var step = recorded[index];
-                var request = step.GetProperty("request");
-                var response = step.GetProperty("response");
-                var requestHeaders = request.GetProperty("headers");
-                var responseHeaders = response.TryGetProperty("headers", out var rh) ? rh : default;
-
-                yield return new RecordedStep(
-                    name,
-                    index,
-                    request.GetProperty("method").GetString()!,
-                    request.GetProperty("path").GetString()!,
-                    Header(requestHeaders, "content-type"),
-                    BodyOf(request),
-                    response.GetProperty("status").GetInt32(),
-                    responseHeaders.ValueKind == JsonValueKind.Object ? Header(responseHeaders, "content-type") : null,
-                    BodyOf(response),
-                    FramesOf(response),
-                    step.TryGetProperty("expect", out var expect) ? expect.Clone() : default);
-            }
-        }
-
-        private static string? Header(JsonElement headers, string name)
-        {
-            if (headers.ValueKind != JsonValueKind.Object)
-            {
-                return null;
-            }
-            foreach (var header in headers.EnumerateObject())
-            {
-                if (string.Equals(header.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    return header.Value.GetString();
-                }
-            }
-            return null;
-        }
-
         /// <summary>
-        /// A recorded body's bytes: <c>body</c> as UTF-8, or <c>bodyBase64</c> decoded.
-        /// Exactly one of the two is present in every recorded case.
+        /// Every step of one recording, read through <see cref="CorpusRecording"/>.
         /// </summary>
-        private static byte[] BodyOf(JsonElement holder)
-        {
-            if (holder.TryGetProperty("bodyBase64", out var base64))
-            {
-                return Convert.FromBase64String(base64.GetString() ?? string.Empty);
-            }
-            if (holder.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.String)
-            {
-                return Encoding.UTF8.GetBytes(body.GetString()!);
-            }
-            return [];
-        }
-
-        private static IReadOnlyList<RecordedFrame>? FramesOf(JsonElement response)
-        {
-            if (!response.TryGetProperty("frames", out var frames) || frames.ValueKind != JsonValueKind.Array)
-            {
-                return null;
-            }
-            var parsed = new List<RecordedFrame>();
-            foreach (var frame in frames.EnumerateArray())
-            {
-                var flags = frame.TryGetProperty("flags", out var f) ? f.GetInt32() : 0;
-                parsed.Add(new RecordedFrame((Loams.EnvelopeFlags)flags,
-                    Convert.FromBase64String(frame.GetProperty("payload").GetString()!)));
-            }
-            return parsed;
-        }
+        /// <remarks>
+        /// The in-process replay and the corpus driver read the corpus through the
+        /// **same** reader. They had two copies of it, and the copies disagreed about
+        /// a recorded body that is a JSON object rather than a string: this one read
+        /// only the string form and served an **empty** body for every recorded Connect
+        /// refusal, so a suite running without Node on PATH would have seen a recorded
+        /// `failed_precondition` as an empty 400. A disagreement between what a suite
+        /// thinks the corpus says and what it was served is the most expensive kind of
+        /// bug in a harness, so there is one reader.
+        /// </remarks>
+        private static IReadOnlyList<RecordedStep> ReadFixture(string file) => CorpusRecording.ReadSteps(file);
 
         private async Task ServeAsync()
         {
