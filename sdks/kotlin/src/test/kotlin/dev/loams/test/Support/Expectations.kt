@@ -296,9 +296,9 @@ object Expectations {
      */
     private fun render(message: DynamicMessage, jsonName: String): String? {
         val field = find(message.descriptorForType, jsonName) ?: return null
-        if (field.isMap) return ""
+        if (field.isMapField) return ""
         if (field.isRepeated) return readRepeated(message, jsonName).joinToString(", ")
-        if (field.hasPresence && !message.hasField(field)) return null
+        if (field.hasPresence() && !message.hasField(field)) return null
 
         val raw = message.getField(field)
         return when (field.type) {
@@ -319,7 +319,12 @@ object Expectations {
             -> (raw as Number).toString()
             FieldDescriptor.Type.DOUBLE -> CompactJson.number(raw as Double)
             FieldDescriptor.Type.FLOAT -> CompactJson.number((raw as Float).toDouble())
-            FieldDescriptor.Type.BYTES -> String(Base64.encode((raw as ByteString).toByteArray()), Charsets.UTF_8)
+            FieldDescriptor.Type.BYTES -> when (raw) {
+                is com.google.protobuf.ByteString -> Base64.encode(raw.toByteArray())
+                is ByteArray -> Base64.encode(raw)
+                is String -> Base64.encode(raw.toByteArray(Charsets.UTF_8))
+                else -> raw?.toString()
+            }
             FieldDescriptor.Type.MESSAGE,
             FieldDescriptor.Type.GROUP,
             -> (raw as Message).descriptorForType.name
@@ -353,7 +358,7 @@ object Expectations {
             is EnumValueDescriptor -> value.number
             else -> (value as Number).toInt()
         }
-        return field.containingType?.findValueByNumber(number)?.name ?: number.toString()
+        return field.enumType?.findValueByNumber(number)?.name ?: number.toString()
     }
 
     /** Whether every key an `expect` block names is reachable from [message]. */

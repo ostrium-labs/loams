@@ -102,7 +102,7 @@ class CorpusDriver(private val corpusDir: File) {
     private val manifest: Json.JsonObject by lazy {
         val file = File(corpusDir, "manifest.json")
         require(file.isFile) { "there is no ${file.path}; this is not a Loams fixture corpus" }
-        Json.parse(file.readText()).asObject()
+        Json.parse(file.readText())?.asObject()
             ?: throw IllegalArgumentException("${file.path} is not a JSON object")
     }
 
@@ -123,11 +123,11 @@ class CorpusDriver(private val corpusDir: File) {
     fun run(): CorpusRun {
         val fixtures = corpusDir.absoluteFile
         val outcomes = mutableListOf<FixtureOutcome>()
-        FixtureServer.start(fixtures).use { server ->
+        return FixtureServer.start(fixtures).use { server ->
             for (fixture in requiredFixtures) {
                 outcomes.add(runFixture(server.endpoint, fixture))
             }
-            return@use CorpusRun(outcomes, server.endpoint, server.live)
+            CorpusRun(outcomes, server.endpoint, server.live)
         }
     }
 
@@ -139,7 +139,7 @@ class CorpusDriver(private val corpusDir: File) {
             // pointing at a path nobody wrote.
             return FixtureOutcome(fixture.name, ran = false, listOf("${fixture.name}: ${file.path} does not exist"))
         }
-        val steps = CorpusRecording.readSteps(fixture.name, Json.parse(file.readText()))
+        val steps = CorpusRecording.readSteps(fixture.name, requireNotNull(Json.parse(file.readText())))
         if (steps.isEmpty()) {
             return FixtureOutcome(fixture.name, ran = false, listOf("${fixture.name}: the recording has no steps"))
         }
@@ -153,7 +153,7 @@ class CorpusDriver(private val corpusDir: File) {
             ?: return FixtureOutcome(
                 fixture.name,
                 ran = false,
-                listOf("$rpc: the committed descriptor set declares no service with that RPC, so this suite cannot run it"),
+                listOf("${fixture.name}: $rpc: the committed descriptor set declares no service with that RPC, so this suite cannot run it"),
             )
 
         val failures = mutableListOf<String>()
@@ -407,8 +407,8 @@ class CorpusDriver(private val corpusDir: File) {
         }
 
     /** The recorded step's own frame kinds, for a test that wants them. */
-    fun recordedFrameKinds(step: RecordedStep): List<EnvelopeFlags> =
-        step.frames.orEmpty().map { EnvelopeFlags.of(it.flags) }
+    fun recordedFrameKinds(step: RecordedStep): List<Int> =
+        step.frames.orEmpty().map { it.flags }
 
     /** Re-exported so the report can name the codec family without a second import. */
     fun familyOf(contentType: String): String = when (transportOf(contentType).second) {

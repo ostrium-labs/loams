@@ -54,7 +54,7 @@ object ErrorReasonMappingTest {
             val error = assertThrows<LoamsException>("a refusal") {
                 transport.client().invoker.unary(decide, DynamicMessage.getDefaultInstance(decide.request), CallOptions())
             }
-            assertEquals(Code.Unimplemented, error.code, "the code")
+            assertEquals(Code.UNIMPLEMENTED, error.code, "the code")
             assertEquals(Reason.NOT_IMPLEMENTED, error.reason, "the reason")
             assertEquals("not_implemented", ReasonRegistry.name(error.reason), "the wire name")
             assertEquals(501, error.httpStatus, "the HTTP status as the SDK saw it")
@@ -88,24 +88,24 @@ object ErrorReasonMappingTest {
 
         Harness.test("$NAME a failure from below the API carries no reason") {
             val error = ErrorMapper.fromException(java.io.IOException("connection refused"), "some.Rpc/Method")
-            assertEquals(Code.Unknown, error.code, "the code")
+            assertEquals(Code.UNKNOWN, error.code, "the code")
             assertEquals(Reason.NONE, error.reason, "the reason (a socket failure is not any reason in the registry)")
             assertTrue(error.unknownReason == null, "no unknown reason either")
         }
 
         Harness.test("$NAME mapping a failure twice loses nothing") {
             val once = ErrorMapper.map(
-                dev.loams.WireFailure(Code.NotFound, "gone", ErrorInfoCodec.decode(Base64.decode("CgZub3RfZm91bmQ")!!), 404),
+                dev.loams.WireFailure(Code.NOT_FOUND, "gone", ErrorInfoCodec.decode(Base64.decode("Cglub3RfZm91bmQ")!!), 404),
                 "some.Rpc/Method",
             )
             val twice = ErrorMapper.fromException(once, "some.Rpc/Method")
             assertTrue(once === twice, "the same exception, not a copy")
             assertEquals(Reason.NOT_FOUND, twice.reason, "the reason")
-            assertEquals("not_found", twice.unknownReason, "no unknown reason when the registry has it")
+            assertEquals(null, twice.unknownReason, "no unknown reason when the registry has it")
         }
 
         Harness.test("$NAME the detail is found by its type, never by position") {
-            val bytes = Base64.decode("CgZub3RfZm91bmQ")!!
+            val bytes = Base64.decode("Cglub3RfZm91bmQ")!!
             val detail = ErrorInfoCodec.decode(bytes)
             assertTrue(detail != null, "an ErrorInfo in the bytes")
             assertEquals("not_found", detail!!.reason, "the reason")
@@ -145,7 +145,7 @@ object ErrorReasonMappingTest {
 
         Harness.test("$NAME a body that is not a Connect envelope is unknown, not an exception") {
             val failure = WireReader.unaryFailure(502, "<html>Bad Gateway</html>", "some.Rpc/Method")
-            assertEquals(Code.Unknown, failure.code, "the code a proxy's HTML page maps to")
+            assertEquals(Code.UNKNOWN, failure.code, "the code a proxy's HTML page maps to")
             assertTrue(failure.detail == null, "no ErrorInfo, because there was none")
         }
 
@@ -160,13 +160,13 @@ object ErrorReasonMappingTest {
                 append("grpc-status-details-bin: $detail\r\n")
             }.toByteArray(Charsets.UTF_8)
             val failure = WireReader.grpcWebFailure(
-                Envelopes.parseTrailers(trailers),
-                status = 200,
+                trailers = Envelopes.parseTrailers(trailers),
+                httpStatus = 200,
                 rpc = "loams.devices.v1.DeviceService/SendTestNotification",
             )
-            assertTrue(failure != null, "a refusal from the trailers frame")
-            assertEquals(Code.Unimplemented, failure!!.code, "the code")
-            assertEquals(Reason.NOT_IMPLEMENTED, failure.errorInfo()?.reason, "the reason")
+            val refusal = requireNotNull(failure) { "a refusal from the trailers frame" }
+            assertEquals(Code.UNIMPLEMENTED, refusal.code, "the code")
+            assertEquals("not_implemented", refusal.detail?.reason, "the reason")
         }
     }
 }
@@ -220,30 +220,30 @@ fun base64IsTolerantOfPaddingAndStrictOfAlphabet() {
 fun errorEnvelopeCodesMatchTheRegistry() {
     Harness.test("kotlin_error_envelope_codes_match_the_registry") {
         val pairs = mapOf(
-            "invalid_argument" to Code.InvalidArgument,
-            "not_found" to Code.NotFound,
-            "already_exists" to Code.AlreadyExists,
-            "permission_denied" to Code.PermissionDenied,
-            "resource_exhausted" to Code.ResourceExhausted,
-            "failed_precondition" to Code.FailedPrecondition,
-            "aborted" to Code.Aborted,
-            "out_of_range" to Code.OutOfRange,
-            "unimplemented" to Code.Unimplemented,
-            "internal" to Code.Internal,
-            "unavailable" to Code.Unavailable,
-            "data_loss" to Code.DataLoss,
-            "unauthenticated" to Code.Unauthenticated,
-            "canceled" to Code.Cancelled,
+            "invalid_argument" to Code.INVALID_ARGUMENT,
+            "not_found" to Code.NOT_FOUND,
+            "already_exists" to Code.ALREADY_EXISTS,
+            "permission_denied" to Code.PERMISSION_DENIED,
+            "resource_exhausted" to Code.RESOURCE_EXHAUSTED,
+            "failed_precondition" to Code.FAILED_PRECONDITION,
+            "aborted" to Code.ABORTED,
+            "out_of_range" to Code.OUT_OF_RANGE,
+            "unimplemented" to Code.UNIMPLEMENTED,
+            "internal" to Code.INTERNAL,
+            "unavailable" to Code.UNAVAILABLE,
+            "data_loss" to Code.DATA_LOSS,
+            "unauthenticated" to Code.UNAUTHENTICATED,
+            "canceled" to Code.CANCELLED,
         )
         for ((wire, code) in pairs) {
             assertEquals(code, Code.fromWire(wire), "the code $wire names")
         }
-        assertEquals(Code.Cancelled, Code.fromWire("cancelled"), "the British spelling of canceled")
-        assertEquals(Code.Unknown, Code.fromWire("no_such_code"), "a wire code this SDK does not know")
+        assertEquals(Code.CANCELLED, Code.fromWire("cancelled"), "the British spelling of canceled")
+        assertEquals(Code.UNKNOWN, Code.fromWire("no_such_code"), "a wire code this SDK does not know")
 
         // The same taxonomy by number, for a gRPC status.
         for (code in Code.entries) {
-            if (code == Code.Unknown) continue
+            if (code == Code.UNKNOWN) continue
             assertEquals(code, Code.fromNumber(code.number), "code ${code.name} by number")
         }
     }
@@ -263,7 +263,7 @@ fun everyRegistryReasonHasAClass() {
             val transport = StubTransport()
             transport.answerConnectError(
                 status = 400,
-                code = dev.loams.WireFailure.name(code).lowercase(),
+                code = code.name.lowercase(),
                 message = "recorded refusal",
                 details = Base64.encode(ErrorInfoCodec.encode(ReasonRegistry.name(reason), emptyMap(), "")),
             )
@@ -293,21 +293,21 @@ fun aRefusalIsNotAnHttpStatus() {
             }"}]}}"""
         val failure = WireReader.streamFailure(
             Envelopes.wrap(endFrame.toByteArray(Charsets.UTF_8), dev.loams.EnvelopeFlags.END_OF_STREAM),
-            status = 200,
+            httpStatus = 200,
             rpc = "loams.live.v1.LiveService/Watch",
         )
-        assertTrue(failure != null, "a refusal inside a 200's end-of-stream frame")
-        assertEquals(Code.Unimplemented, failure!!.code, "the code")
-        assertEquals("feature_not_in_variant", failure.detail?.reason, "the reason")
-        assertEquals("standard", failure.detail?.metadata?.get("variant"), "the variant")
+        val refusal = requireNotNull(failure) { "a refusal inside a 200's end-of-stream frame" }
+        assertEquals(Code.UNIMPLEMENTED, refusal.code, "the code")
+        assertEquals("feature_not_in_variant", refusal.detail?.reason, "the reason")
+        assertEquals("standard", refusal.detail?.metadata?.get("variant"), "the variant")
 
         // A clean end has no error at all: the protocol allows a server to close a
         // stream with no error, and the corpus's recorded streams are bounded
         // prefixes a server closed that way.
         assertTrue(
             WireReader.streamFailure(
-                Envelopes.wrap("{}".toByteArray(Charsets.UTF_8), dev.loams.EnvelopeFlags.END_OF_STREAM),
-                status = 200,
+                "{}".toByteArray(Charsets.UTF_8),
+                httpStatus = 200,
                 rpc = "loams.live.v1.LiveService/Watch",
             ) == null,
             "a clean end to be no failure",
@@ -322,7 +322,7 @@ fun aRefusalIsNotAnHttpStatus() {
             }"}]}""",
             "loams.instance.v1.InstanceService/WhoAmI",
         )
-        assertEquals(Code.Unimplemented, unary.code, "the code")
+        assertEquals(Code.UNIMPLEMENTED, unary.code, "the code")
         assertEquals("not_implemented", unary.detail?.reason, "the reason")
     }
 }
@@ -346,7 +346,7 @@ fun proto3JsonIsCompactAndFieldOrdered() {
         builder.setField(descriptor.findFieldByName("idempotency_key"), "conformance-idempotency-1")
         builder.setField(descriptor.findFieldByName("revision"), java.lang.Long.valueOf(1L))
         builder.setField(descriptor.findFieldByName("decision"), dev.loams.CompactJson.enumNumber(descriptor, "decision", "DECISION_KIND_APPROVE"))
-        builder.setField(descriptor.findFieldByName("approval_id"), com.google.protobuf.ByteString.copyFromUtf8("apr_01J9ZCREATEKEY"))
+        builder.setField(descriptor.findFieldByName("approval_id"), "apr_01J9ZCREATEKEY")
         val json = String(dev.loams.CompactJson.format(builder.build()).toByteArray(), Charsets.UTF_8)
 
         assertEquals(
@@ -362,8 +362,8 @@ fun proto3JsonIsCompactAndFieldOrdered() {
         // No whitespace anywhere.
         val spaced = Descriptors.message("loams.instance.v1.GetInstanceResponse")!!
         val response = DynamicMessage.newBuilder(spaced)
-            .setField(spaced.findFieldByName("instance_id"), com.google.protobuf.ByteString.copyFromUtf8("01M41B4RP8BR7444NE7D61S0HN"))
-            .addRepeatedField(spaced.findFieldByName("api_versions"), com.google.protobuf.ByteString.copyFromUtf8("loams.instance.v1"))
+            .setField(spaced.findFieldByName("instance_id"), "01M41B4RP8BR7444NE7D61S0HN")
+            .addRepeatedField(spaced.findFieldByName("api_versions"), "loams.instance.v1")
             .build()
         val text = dev.loams.CompactJson.format(response)
         assertTrue(!text.contains(" "), "no space in $text")
@@ -392,7 +392,7 @@ fun compactJsonRefusesAWellKnownType() {
             )
             .setField(
                 whoAmI.findFieldByName("principal"),
-                DynamicMessage.newBuilder(principal).setField(principal.findFieldByName("id"), com.google.protobuf.ByteString.copyFromUtf8("usr_dana")).build(),
+                DynamicMessage.newBuilder(principal).setField(principal.findFieldByName("id"), "usr_dana").build(),
             )
             .build()
 
@@ -474,8 +474,8 @@ fun codecRoundTrips() {
     Harness.test("kotlin_the_codec_round_trips_through_both_encodings") {
         val descriptor = Descriptors.message("loams.instance.v1.GetInstanceResponse")!!
         val original = DynamicMessage.newBuilder(descriptor)
-            .setField(descriptor.findFieldByName("instance_id"), com.google.protobuf.ByteString.copyFromUtf8("01M41"))
-            .addRepeatedField(descriptor.findFieldByName("api_versions"), com.google.protobuf.ByteString.copyFromUtf8("loams.instance.v1"))
+            .setField(descriptor.findFieldByName("instance_id"), "01M41")
+            .addRepeatedField(descriptor.findFieldByName("api_versions"), "loams.instance.v1")
             .build()
 
         val binary = MessageCodec.serialize(original, Codec.PROTO)

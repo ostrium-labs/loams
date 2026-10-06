@@ -61,7 +61,7 @@ object Harness {
      */
     fun run(filters: List<String>): Int {
         val selected = if (filters.isEmpty()) {
-            cases
+            cases.toList()
         } else {
             cases.filter { case -> filters.any { case.name.contains(it) } }
         }

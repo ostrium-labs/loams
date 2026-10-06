@@ -57,40 +57,38 @@ object StreamResumeTest {
     private fun response(case: String, cursor: String = "", snapshotReset: Boolean = false): ByteArray {
         val descriptor = watch.response
         val builder = DynamicMessage.newBuilder(descriptor)
-        builder.setField(descriptor.findFieldByName("cursor"), ByteString.copyFromUtf8(cursor))
-        builder.setField(descriptor.findFieldByName("snapshot_reset"), snapshotReset)
+        if (cursor.isNotEmpty()) {
+            builder.setField(descriptor.findFieldByName("cursor")!!, cursor)
+        }
+        if (snapshotReset) {
+            builder.setField(descriptor.findFieldByName("snapshot_reset")!!, snapshotReset)
+        }
 
-        val caseField = descriptor.fields.firstOrNull { field ->
-            !field.isRepeated && field.containingOneof != null && field.type ==
-                com.google.protobuf.Descriptors.FieldDescriptor.Type.MESSAGE
+        val field = requireNotNull(descriptor.findFieldByName(case)) {
+            "WatchApprovalsResponse has no '$case' case"
         }
-        requireNotNull(caseField) { "WatchApprovalsResponse declares no message case in a oneof" }
-        val caseDescriptor = caseField.messageType
-        val payload = when (case) {
-            "snapshot" -> {
-                val approval = caseDescriptor.findFieldByName("snapshot")
-                if (approval != null) DynamicMessage.newBuilder(approval.messageType).build() else null
-            }
-            "upsert" -> {
-                val approval = caseDescriptor.findFieldByName("upsert")
-                if (approval != null) {
-                    val one = approval.messageType
-                    DynamicMessage.newBuilder(one)
-                        .setField(one.findFieldByName("approval_id"), ByteString.copyFromUtf8("apr_new"))
-                        .build()
-                } else null
-            }
-            else -> DynamicMessage.newBuilder(caseDescriptor.findFieldByName(case).messageType).build()
+        val value: Any = when (case) {
+            "snapshot" -> DynamicMessage.newBuilder(field.messageType).build()
+            "upsert" -> DynamicMessage.newBuilder(field.messageType)
+                .setField(field.messageType.findFieldByName("id")!!, "apr_new")
+                .build()
+            "remove" -> "apr_old"
+            "heartbeat" -> DynamicMessage.newBuilder(field.messageType).build()
+            else -> DynamicMessage.newBuilder(field.messageType).build()
         }
-        requireNotNull(payload) { "WatchApprovalsResponse has no '$case' case" }
-        builder.setField(caseField, payload)
+        builder.setField(field, value)
         return MessageCodec.serialize(builder.build(), Codec.PROTO)
     }
 
     /** The `resume_cursor` on a recorded request, or null when it carries none. */
     private fun resumeCursorOn(transport: StubTransport, at: Int): String? =
         transport.requests.getOrNull(at)?.let { request ->
-            val message = MessageCodec.deserialize(watch.request, request.body, Codec.PROTO)
+            val payload = if (request.body.size >= 5) {
+                dev.loams.Envelopes.split(request.body).firstOrNull()?.payload ?: request.body
+            } else {
+                request.body
+            }
+            val message = MessageCodec.deserialize(watch.request, payload, Codec.PROTO)
             (message.getField(watch.request.findFieldByName("resume_cursor")) as? String)?.takeIf { it.isNotEmpty() }
         }
 
@@ -138,8 +136,12 @@ object StreamResumeTest {
 
         Harness.test("$NAME a retryable failure after a message resumes from that message's cursor") {
             val transport = StubTransport()
-            transport.answerStream(response("snapshot", cursor = "c0"), response("upsert", cursor = "c1"))
-            transport.answerConnectError(503, "unavailable", "the stream broke")
+            transport.answerStream(
+                response("snapshot", cursor = "c0"),
+                response("upsert", cursor = "c1"),
+                endError = """{"error":{"code":"unavailable","message":"the stream broke"}}""",
+            )
+            transport.answerStream()
 
             val handle = transport.client().invoker.serverStream(
                 watch, DynamicMessage.getDefaultInstance(watch.request), CallOptions(), policy(),
@@ -178,7 +180,7 @@ object StreamResumeTest {
                     watch, DynamicMessage.getDefaultInstance(watch.request), CallOptions(), policy(),
                 ).messages.toList()
             }
-            assertEquals(Code.Unimplemented, error.code, "the code")
+            assertEquals(Code.UNIMPLEMENTED, error.code, "the code")
             assertEquals(1, transport.requests.size, "requests (an unimplemented stream is not re-opened)")
         }
 
@@ -193,13 +195,13 @@ object StreamResumeTest {
             val body = Envelopes.wrap(end.toByteArray(Charsets.UTF_8), EnvelopeFlags.END_OF_STREAM)
 
             val frames = dev.loams.WireReader.readStream(
-                body, 200, dev.loams.Protocol.CONNECT, "loams.live.v1.LiveService/Watch",
+                body, 200, dev.loams.Protocol.CONNECT, "loams.live.v1.LiveService/Watch", Codec.PROTO,
             )
             assertEquals(0, frames.messages.size, "messages before the refusal")
-            assertTrue(frames.failure != null, "a refusal in the end-of-stream frame")
-            assertEquals(Code.Unimplemented, frames.failure!!.code, "the code")
-            assertEquals("feature_not_in_variant", frames.failure.detail?.reason, "the reason")
-            assertEquals("standard", frames.failure.detail?.metadata?.get("variant"), "the variant")
+            val refusal = requireNotNull(frames.failure) { "a refusal in the end-of-stream frame" }
+            assertEquals(Code.UNIMPLEMENTED, refusal.code, "the code")
+            assertEquals("feature_not_in_variant", refusal.detail?.reason, "the reason")
+            assertEquals("standard", refusal.detail?.metadata?.get("variant"), "the variant")
         }
 
         Harness.test("$NAME a gRPC-Web refusal arrives in a trailers frame, after the messages") {
@@ -211,16 +213,17 @@ object StreamResumeTest {
                 append("grpc-message: not implemented\r\n")
                 append("grpc-status-details-bin: $detail\r\n")
             }.toByteArray(Charsets.UTF_8)
-            val body = Envelopes.wrap("hello".toByteArray()) +
+            val body = Envelopes.wrap(ByteArray(0)) +
                 Envelopes.wrap(trailers, EnvelopeFlags.TRAILERS)
 
             val read = dev.loams.WireReader.readStream(
-                body, 200, dev.loams.Protocol.GRPC_WEB, "loams.devices.v1.DeviceService/SendTestNotification",
+                body, 200, dev.loams.Protocol.GRPC_WEB,
+                "loams.devices.v1.DeviceService/SendTestNotification", Codec.PROTO,
             )
             assertEquals(1, read.messages.size, "messages before the trailers frame")
-            assertTrue(read.failure != null, "a refusal in the trailers frame")
-            assertEquals(Code.Unimplemented, read.failure!!.code, "the code")
-            assertEquals("not_implemented", read.failure.detail?.reason, "the reason")
+            val refusal = requireNotNull(read.failure) { "a refusal in the trailers frame" }
+            assertEquals(Code.UNIMPLEMENTED, refusal.code, "the code")
+            assertEquals("not_implemented", refusal.detail?.reason, "the reason")
         }
 
         Harness.test("$NAME a compressed frame is reported rather than mis-parsed") {
@@ -229,9 +232,9 @@ object StreamResumeTest {
             // the request. Passing it on as data would be worse than saying so.
             val body = Envelopes.wrap("payload".toByteArray(), EnvelopeFlags.COMPRESSED)
             val error = assertThrows<dev.loams.LoamsException>("a compressed frame") {
-                dev.loams.WireReader.readStream(body, 200, dev.loams.Protocol.CONNECT, "some.Rpc/Method").messages
+                dev.loams.WireReader.readStream(body, 200, dev.loams.Protocol.CONNECT, "some.Rpc/Method", Codec.PROTO).messages
             }
-            assertEquals(Code.Internal, error.code, "the code a compressed frame reports")
+            assertEquals(Code.INTERNAL, error.code, "the code a compressed frame reports")
         }
 
         Harness.test("$NAME a server stream over gRPC-Web is framed on the request") {
@@ -243,7 +246,7 @@ object StreamResumeTest {
             val body = transport.requests.single().body
             // 5-byte envelope, flags 0, then the message.
             assertEquals(0, body[0].toInt(), "the envelope's flag byte")
-            assertEquals(response("snapshot", cursor = "c0").size, body.size - 5, "the framed payload's length")
+            assertEquals(0, body.size - 5, "the framed payload's length")
         }
     }
 }

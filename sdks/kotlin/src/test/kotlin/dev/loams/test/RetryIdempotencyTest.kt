@@ -39,7 +39,7 @@ object RetryIdempotencyTest {
         val builder = DynamicMessage.newBuilder(decide.request)
         builder.setField(
             decide.request.findFieldByName("approval_id"),
-            com.google.protobuf.ByteString.copyFromUtf8("apr_01J9ZCREATEKEY"),
+            "apr_01J9ZCREATEKEY",
         )
         return builder.build()
     }
@@ -62,10 +62,10 @@ object RetryIdempotencyTest {
             transport.answerMessage(decide.response, okResponse())
 
             val error = assertThrows<dev.loams.LoamsException>("a retryable refusal") {
-                transport.client(maxRetries = 3).invoker.unary(decide, decideRequest(), CallOptions())
+                transport.client(maxRetries = 3).invoker.unary(decide, decideRequest(), CallOptions(mintIdempotencyKey = false))
             }
             assertEquals(1, transport.requests.size, "attempts made (a mutation with no key is not retried)")
-            assertEquals(Code.Unavailable, error.code, "the code the server sent")
+            assertEquals(Code.UNAVAILABLE, error.code, "the code the server sent")
         }
 
         Harness.test("$NAME a keyed mutation is retried, with the same key every time") {
@@ -124,7 +124,7 @@ object RetryIdempotencyTest {
             val request = DynamicMessage.newBuilder(decide.request)
                 .setField(
                     decide.request.findFieldByName("approval_id"),
-                    com.google.protobuf.ByteString.copyFromUtf8("apr_x"),
+                    "apr_x",
                 )
                 .setField(decide.request.findFieldByName("idempotency_key"), "already-mine")
                 .build()
@@ -147,10 +147,12 @@ object RetryIdempotencyTest {
  */
 fun idempotencyIsDecidedFromTheSchema() {
     Harness.test("kotlin_idempotency_is_decided_from_the_schema") {
-        val decideRequest = Descriptors.message("loams.approvals.v1.DecideApprovalRequest")
-        val getRequest = Descriptors.message("loams.approvals.v1.GetApprovalRequest")
-        assertTrue(decideRequest != null, "loams.approvals.v1.DecideApprovalRequest in the descriptor set")
-        assertTrue(getRequest != null, "loams.approvals.v1.GetApprovalRequest in the descriptor set")
+        val decideRequest = requireNotNull(Descriptors.message("loams.approvals.v1.DecideApprovalRequest")) {
+            "loams.approvals.v1.DecideApprovalRequest in the descriptor set"
+        }
+        val getRequest = requireNotNull(Descriptors.message("loams.approvals.v1.GetApprovalRequest")) {
+            "loams.approvals.v1.GetApprovalRequest in the descriptor set"
+        }
 
         assertTrue(
             Idempotency.schemaHasKey(decideRequest),
@@ -163,7 +165,7 @@ fun idempotencyIsDecidedFromTheSchema() {
 
         // A message with no key field is left exactly as the caller wrote it.
         val bare = DynamicMessage.newBuilder(getRequest)
-            .setField(getRequest.findFieldByName("approval_id"), com.google.protobuf.ByteString.copyFromUtf8("apr_x"))
+            .setField(getRequest.findFieldByName("approval_id"), "apr_x")
             .build()
         val keyed = Idempotency.apply(bare, "")
         assertTrue(!keyed.keyed, "a request with no key field to be reported unkeyed")
@@ -196,19 +198,25 @@ fun uuidV7SortsByTime() {
         }
         assertEquals(keys.size, keys.distinct().size, "distinct keys")
 
-        // The first twelve hex digits are 48 bits of Unix milliseconds. Read as a
-        // sortable prefix, which is the property the layout exists for.
+        // Read back through the SDK's own reader rather than by slicing the string here,
+        // because "the timestamp is the first twelve hex digits" is a claim about
+        // [UuidV7.readMillis] and a test that re-derived it would agree with a
+        // regression in it.
         val times = keys.map { key ->
-            val digits = key.filterIndexed { index, _ -> index < 8 || index in 9..10 || index in 14..15 }
-            digits.toLong(16)
+            UuidV7.readMillis(key) ?: throw AssertionFailure("$key is not a UUIDv7")
         }
-        val sorted = times.sorted()
-        assertEquals(times, sorted, "keys minted in order to sort by their embedded time")
+        assertEquals(times.sorted(), times, "keys minted in order to sort by their embedded time")
         val now = System.currentTimeMillis()
         assertTrue(
             times.all { it in (now - 3_600_000)..(now + 60_000) },
             "every embedded time to be about now (now=$now, saw ${times.first()}..${times.last()})",
         )
+
+        // And the reader refuses what is not a v7, rather than reading the wrong twelve
+        // digits out of something else.
+        for (notAV7 in listOf("00000000-0000-0000-0000-000000000000", "not-a-uuid", "", "x".repeat(36))) {
+            assertTrue(UuidV7.readMillis(notAV7) == null, "$notAV7 to be refused")
+        }
     }
 }
 
@@ -265,27 +273,27 @@ fun retryBackoffIsCappedAndJittered() {
  */
 fun retryClassesAreTheOnesD610Names() {
     Harness.test("kotlin_retry_classes_are_the_ones_d610_names") {
-        for (code in listOf(Code.Unavailable, Code.DeadlineExceeded, Code.ResourceExhausted)) {
+        for (code in listOf(Code.UNAVAILABLE, Code.DEADLINE_EXCEEDED, Code.RESOURCE_EXHAUSTED)) {
             assertTrue(RetryPolicy.isRetryableCode(code), "$code to be retryable")
         }
         for (code in listOf(
-            Code.Internal, Code.InvalidArgument, Code.NotFound, Code.AlreadyExists,
-            Code.PermissionDenied, Code.FailedPrecondition, Code.Aborted, Code.OutOfRange,
-            Code.Unimplemented, Code.DataLoss, Code.Unauthenticated, Code.Cancelled, Code.Unknown,
+            Code.INTERNAL, Code.INVALID_ARGUMENT, Code.NOT_FOUND, Code.ALREADY_EXISTS,
+            Code.PERMISSION_DENIED, Code.FAILED_PRECONDITION, Code.ABORTED, Code.OUT_OF_RANGE,
+            Code.UNIMPLEMENTED, Code.DATA_LOSS, Code.UNAUTHENTICATED, Code.CANCELLED, Code.UNKNOWN,
         )) {
             assertTrue(!RetryPolicy.isRetryableCode(code), "$code to be retryable")
         }
 
         assertTrue(
-            !RetryPolicy.shouldRetry(0, 3, retrySafe = false, code = Code.Unavailable, cancelled = false),
+            !RetryPolicy.shouldRetry(0, 3, retrySafe = false, code = Code.UNAVAILABLE, cancelled = false),
             "an unkeyed mutation to be retried",
         )
         assertTrue(
-            !RetryPolicy.shouldRetry(0, 3, retrySafe = true, code = Code.Unavailable, cancelled = true),
+            !RetryPolicy.shouldRetry(0, 3, retrySafe = true, code = Code.UNAVAILABLE, cancelled = true),
             "a cancelled call to be retried",
         )
         assertTrue(
-            !RetryPolicy.shouldRetry(0, 0, retrySafe = true, code = Code.Unavailable, cancelled = false),
+            !RetryPolicy.shouldRetry(0, 0, retrySafe = true, code = Code.UNAVAILABLE, cancelled = false),
             "a call with no budget to be retried",
         )
     }
@@ -302,8 +310,7 @@ fun retryClassComesFromTheProto() {
             "loams.devices.v1.DeviceService/ListDevices",
         )
         for (rpc in safe) {
-            val binding = Descriptors.bindingForRpc(rpc)
-            assertTrue(binding != null, "a binding for $rpc")
+            val binding = requireNotNull(Descriptors.bindingForRpc(rpc)) { "a binding for $rpc" }
             assertEquals(dev.loams.RetryClass.SAFE, binding.retry, "$rpc's retry class")
         }
 
@@ -315,8 +322,7 @@ fun retryClassComesFromTheProto() {
             "loams.live.v1.LiveService/Mutate",
         )
         for (rpc in manual) {
-            val binding = Descriptors.bindingForRpc(rpc)
-            assertTrue(binding != null, "a binding for $rpc")
+            val binding = requireNotNull(Descriptors.bindingForRpc(rpc)) { "a binding for $rpc" }
             assertEquals(dev.loams.RetryClass.MANUAL, binding.retry, "$rpc's retry class")
         }
     }
@@ -332,11 +338,10 @@ fun cancelledCallSpendsNoAttempt() {
                 DynamicMessage.getDefaultInstance(
                     Descriptors.message("loams.instance.v1.GetInstanceRequest")!!
                 ),
-                CallOptions(),
-                cancelled = true,
+                CallOptions(cancelled = true),
             )
         }
-        assertEquals(Code.Cancelled, error.code, "the code a cancellation reports")
+        assertEquals(Code.CANCELLED, error.code, "the code a cancellation reports")
         assertEquals(0, transport.requests.size, "attempts spent after a cancellation")
     }
 }
@@ -357,7 +362,7 @@ fun reasonRegistryMatchesTheRegistryPage() {
         }
         for (reason in ReasonRegistry.all) {
             if (reason == Reason.NONE) continue
-            assertTrue(ReasonRegistry.codeOf(reason) != Code.Unknown, "${ReasonRegistry.name(reason)}'s code")
+            assertTrue(ReasonRegistry.codeOf(reason) != Code.UNKNOWN, "${ReasonRegistry.name(reason)}'s code")
         }
     }
 }

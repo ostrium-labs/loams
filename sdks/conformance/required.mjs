@@ -106,9 +106,9 @@ export const LANGUAGES = {
   },
   kotlin: {
     dir: 'sdks/kotlin',
-    verified: false,
-    runOne: ['./gradlew', ['test', '--tests']],
-    runAll: ['./gradlew', ['test']],
+    verified: true,
+    runOne: ['bash', ['./build.sh', 'test', '-t']],
+    runAll: ['bash', ['./build.sh', 'test']],
   },
   java: {
     dir: 'sdks/java',

@@ -2,6 +2,8 @@ package dev.loams.test
 
 import com.google.protobuf.ByteString
 import dev.loams.CallOptions
+import dev.loams.Codec
+import dev.loams.ContentTypes
 import dev.loams.Descriptors
 import dev.loams.RefreshingTokenSource
 import dev.loams.TokenSource
@@ -142,7 +144,7 @@ object TokenSourceTest {
                 }
 
                 override fun refresh() {
-                    throw IllegalStateException("the refresh endpoint is down")
+                    throw IllegalStateException("the refresh endpoint refused")
                 }
             }
             val error = assertThrows<dev.loams.LoamsException>("a failed refresh") {
@@ -203,7 +205,7 @@ object TokenSourceTest {
 fun refreshingTokenSourceMintsOnce() {
     Harness.test("kotlin_a_refreshing_token_source_mints_once") {
         var minted = 0
-        val source = RefreshingTokenSource { minted++ }
+        val source = RefreshingTokenSource { minted++; "Bearer token_$minted" }
 
         assertTrue(source.canRefresh, "a refreshing source to say it can refresh")
         val first = source.token()
@@ -235,16 +237,14 @@ fun staticTokenSourceCannotRefresh() {
 
 /** `kotlin_a_token_source_that_returns_nothing_sends_no_Authorization`. */
 fun emptyTokenSourceSendsNoAuthorization() {
-    Harness.test("kotlin_a_token_source_that_returns_nothing_sends_no_Authorization") {
-        val transport = StubTransport()
-        val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
-        transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
+    val transport = StubTransport()
+    val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
+    transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
 
-        dev.loams.LoamsClient("stub://x", transport = transport, tokenSource = dev.loams.StaticTokenSource(""))
-            .invoker.unary(getInstance, DynamicMessage.getDefaultInstance(getInstance.request), CallOptions())
+    dev.loams.LoamsClient("stub://x", transport = transport, tokenSource = dev.loams.StaticTokenSource(""))
+        .invoker.unary(getInstance, DynamicMessage.getDefaultInstance(getInstance.request), CallOptions())
 
-        assertTrue(bearerOn0(transport) == null, "no Authorization header for an empty token")
-    }
+    assertTrue(bearerOn0(transport) == null, "no Authorization header for an empty token")
 }
 
 private fun bearerOn0(transport: StubTransport): String? =
@@ -253,121 +253,110 @@ private fun bearerOn0(transport: StubTransport): String? =
 
 /** `kotlin_the_bearer_is_not_attached_when_there_is_no_source`. */
 fun noSourceSendsNoAuthorization() {
-    Harness.test("kotlin_the_bearer_is_not_attached_when_there_is_no_source") {
-        val transport = StubTransport()
-        val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
-        transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
+    val transport = StubTransport()
+    val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
+    transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
 
-        // `GetInstance` needs no credentials, which is what keeps a bearer out of
-        // the corpus driver entirely.
-        dev.loams.LoamsClient("stub://x", transport = transport)
-            .invoker.unary(getInstance, DynamicMessage.getDefaultInstance(getInstance.request), CallOptions())
-        assertTrue(bearerOn0(transport) == null, "no Authorization header with no token source")
-    }
+    // `GetInstance` needs no credentials, which is what keeps a bearer out of
+    // the corpus driver entirely.
+    dev.loams.LoamsClient("stub://x", transport = transport)
+        .invoker.unary(getInstance, DynamicMessage.getDefaultInstance(getInstance.request), CallOptions())
+    assertTrue(bearerOn0(transport) == null, "no Authorization header with no token source")
 }
 
 /** `kotlin_the_token_source_is_read_once_per_call_when_there_is_one_attempt`. */
 fun tokenSourceReadCounts() {
-    Harness.test("kotlin_the_token_source_is_read_once_per_attempt") {
-        val transport = StubTransport()
-        val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
-        transport.answerConnectError(503, "unavailable", "down")
-        transport.answerConnectError(503, "unavailable", "still down")
-        transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
+    val transport = StubTransport()
+    val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
+    transport.answerConnectError(503, "unavailable", "down")
+    transport.answerConnectError(503, "unavailable", "still down")
+    transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
 
-        var reads = 0
-        val source = object : TokenSource {
-            override val canRefresh = false
-            override fun token(): String {
-                reads++
-                return "Bearer t$reads"
-            }
+    var reads = 0
+    val source = object : TokenSource {
+        override val canRefresh = false
+        override fun token(): String {
+            reads++
+            return "Bearer t$reads"
         }
-        dev.loams.LoamsClient("stub://x", transport = transport, tokenSource = source, maxRetries = 2)
-            .invoker.unary(getInstance, DynamicMessage.getDefaultInstance(getInstance.request), CallOptions())
-
-        assertEquals(3, transport.requests.size, "attempts")
-        assertEquals(3, reads, "token reads (one per attempt, never one per call)")
-        assertEquals("Bearer t1", bearerOn0(transport), "the first attempt's token")
+        override fun refresh() {}
     }
+    dev.loams.LoamsClient("stub://x", transport = transport, tokenSource = source, maxRetries = 2)
+        .invoker.unary(getInstance, DynamicMessage.getDefaultInstance(getInstance.request), CallOptions())
+
+    assertEquals(3, transport.requests.size, "attempts")
+    assertEquals(3, reads, "token reads (one per attempt, never one per call)")
+    assertEquals("Bearer t1", bearerOn0(transport), "the first attempt's token")
 }
 
 /** `kotlin_the_bearer_survives_a_caller_header_with_a_different_case`. */
 fun bearerHeaderIsCaseInsensitive() {
-    Harness.test("kotlin_the_bearer_survives_a_caller_header_with_a_different_case") {
-        val transport = StubTransport()
-        val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
-        transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
+    val transport = StubTransport()
+    val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
+    transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
 
-        dev.loams.LoamsClient("stub://x", transport = transport, tokenSource = dev.loams.StaticTokenSource("Bearer s"))
-            .invoker.unary(
-                getInstance,
-                DynamicMessage.getDefaultInstance(getInstance.request),
-                CallOptions(headers = mapOf("authorization" to "Bearer caller")),
-            )
-        assertEquals(
-            "Bearer s",
-            bearerOn0(transport),
-            "the source's token (a lower-case caller header must not shadow it either)",
+    dev.loams.LoamsClient("stub://x", transport = transport, tokenSource = dev.loams.StaticTokenSource("Bearer s"))
+        .invoker.unary(
+            getInstance,
+            DynamicMessage.getDefaultInstance(getInstance.request),
+            CallOptions(headers = mapOf("authorization" to "Bearer caller")),
         )
-    }
+    assertEquals(
+        "Bearer s",
+        bearerOn0(transport),
+        "the source's token (a lower-case caller header must not shadow it either)",
+    )
 }
 
 /** `kotlin_a_client_without_a_token_source_still_sends_the_callers_headers`. */
 fun callersHeadersSurvive() {
-    Harness.test("kotlin_a_client_without_a_token_source_still_sends_the_callers_headers") {
-        val transport = StubTransport()
-        val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
-        transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
+    val transport = StubTransport()
+    val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
+    transport.answerMessage(getInstance.response, DynamicMessage.getDefaultInstance(getInstance.response))
 
-        dev.loams.LoamsClient("stub://x", transport = transport)
-            .invoker.unary(
-                getInstance,
-                DynamicMessage.getDefaultInstance(getInstance.request),
-                CallOptions(headers = mapOf("loams-fixture-name" to "x", "loams-fixture-step" to "0")),
-            )
-        val headers = transport.requests.single().headers
-        assertEquals("x", headers["loams-fixture-name"], "the caller's header")
-        assertEquals("0", headers["loams-fixture-step"], "the caller's header")
-    }
+    dev.loams.LoamsClient("stub://x", transport = transport)
+        .invoker.unary(
+            getInstance,
+            DynamicMessage.getDefaultInstance(getInstance.request),
+            CallOptions(headers = mapOf("loams-fixture-name" to "x", "loams-fixture-step" to "0")),
+        )
+    val headers = transport.requests.single().headers
+    assertEquals("x", headers["loams-fixture-name"], "the caller's header")
+    assertEquals("0", headers["loams-fixture-step"], "the caller's header")
 }
 
 /** A guard that a refused call is still typed after a transport throws. */
 fun transportFailureIsTyped() {
-    Harness.test("kotlin_a_transport_failure_is_typed") {
-        val failing = object : dev.loams.Transport {
-            override fun send(request: dev.loams.TransportRequest): dev.loams.TransportResponse =
-                throw java.net.SocketTimeoutException("the read timed out")
-        }
-        val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
-        val error = assertThrows<dev.loams.LoamsException>("a socket timeout") {
-            dev.loams.LoamsClient("stub://x", transport = failing)
-                .invoker.unary(getInstance, DynamicMessage.getDefaultInstance(getInstance.request), CallOptions())
-        }
-        assertEquals(dev.loams.Code.DeadlineExceeded, error.code, "a timeout keeps its own code")
-        assertEquals(dev.loams.Reason.NONE, error.reason, "a failure from below the API carries no reason")
+    val failing = object : dev.loams.Transport {
+        override fun send(request: dev.loams.TransportRequest): dev.loams.TransportResponse =
+            throw java.net.SocketTimeoutException("the read timed out")
     }
+    val getInstance = StubTransport.binding("loams.instance.v1.InstanceService/GetInstance")
+    val error = assertThrows<dev.loams.LoamsException>("a socket timeout") {
+        dev.loams.LoamsClient("stub://x", transport = failing)
+            .invoker.unary(getInstance, DynamicMessage.getDefaultInstance(getInstance.request), CallOptions())
+    }
+    assertEquals(dev.loams.Code.DEADLINE_EXCEEDED, error.code, "a timeout keeps its own code")
+    assertEquals(dev.loams.Reason.NONE, error.reason, "a failure from below the API carries no reason")
 }
 
 /** A guard that the request body is exactly what the codec produced, unframed. */
 fun unaryBodyIsUnframed() {
-    Harness.test("kotlin_a_unary_request_body_is_not_framed") {
-        val transport = StubTransport()
-        val decide = StubTransport.binding("loams.approvals.v1.ApprovalService/DecideApproval")
-        val request = DynamicMessage.newBuilder(decide.request)
-            .setField(
-                decide.request.findFieldByName("approval_id"),
-                ByteString.copyFromUtf8("apr_01J9ZCREATEKEY"),
-            )
-            .build()
-        transport.answerMessage(decide.response, DynamicMessage.getDefaultInstance(decide.response))
-        transport.client(codec = Codec.PROTO).invoker.unary(decide, request, CallOptions())
+    val transport = StubTransport()
+    val decide = StubTransport.binding("loams.approvals.v1.ApprovalService/DecideApproval")
+    val request = DynamicMessage.newBuilder(decide.request)
+        .setField(
+            decide.request.findFieldByName("approval_id"),
+            "apr_01J9ZCREATEKEY",
+        )
+        .build()
+    transport.answerMessage(decide.response, DynamicMessage.getDefaultInstance(decide.response))
+    transport.client(codec = Codec.PROTO).invoker.unary(decide, request, CallOptions())
 
-        val sent = transport.requests.single()
-        assertEquals("/loams.approvals.v1.ApprovalService/DecideApproval", sent.path, "the RPC path")
-        assertEquals("POST", sent.method, "the HTTP method")
-        assertEquals(ContentTypes.CONNECT_UNARY_PROTO, sent.contentType, "the content type")
-        // No 5-byte envelope on a Connect unary: the message *is* the body.
-        assertTrue(!sent.body.contentEquals(dev.loams.Envelopes.wrap(sent.body)), "an unframed body")
-    }
+    val sent = transport.requests.single()
+    assertEquals("/loams.approvals.v1.ApprovalService/DecideApproval", sent.path, "the RPC path")
+    assertEquals("POST", sent.method, "the HTTP method")
+    assertEquals(ContentTypes.CONNECT_UNARY_PROTO, sent.contentType, "the content type")
+    // No 5-byte envelope on a Connect unary: the message *is* the body.
+    assertTrue(!sent.body.contentEquals(dev.loams.Envelopes.wrap(sent.body)), "an unframed body")
 }

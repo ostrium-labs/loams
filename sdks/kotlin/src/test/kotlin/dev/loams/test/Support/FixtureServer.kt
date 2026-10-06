@@ -110,6 +110,13 @@ object RepositoryRoot {
             }
             directory = directory.parentFile
         }
+        directory = java.io.File(".").absoluteFile
+        while (directory != null) {
+            if (java.io.File(directory, "sdks/fixtures/manifest.json").isFile) {
+                return directory
+            }
+            directory = directory.parentFile
+        }
         throw IllegalStateException(
             "no sdks/fixtures/manifest.json above ${start.absolutePath}, so this is not a checkout of the " +
                 "repository and the conformance corpus cannot be found"

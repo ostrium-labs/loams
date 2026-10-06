@@ -87,7 +87,7 @@ object CorpusRecording {
     /** A recorded body's bytes, honouring both the `bodyBase64` and `body` forms. */
     fun bodyOf(holder: JsonValue?): ByteArray {
         val node = holder?.asObject() ?: return ByteArray(0)
-        node.string("bodyBase64")?.let { return Base64Lenient.decode(it) ?: ByteArray(0) }
+        node.member("bodyBase64")?.let { return Base64Lenient.decode(it) ?: ByteArray(0) }
         return when (val body = node["body"]) {
             null, is Json.JsonNull -> ByteArray(0)
             is Json.JsonString -> body.value.toByteArray(Charsets.UTF_8)
@@ -106,7 +106,7 @@ object CorpusRecording {
      * case-insensitive, so the lookup cannot be.
      */
     fun headerOf(holder: JsonValue?, name: String): String? =
-        holder?.asObject()?.get("headers")?.asObject()?.entries
+        holder?.asObject()?.get("headers")?.asObject()?.entries?.entries
             ?.firstOrNull { it.key.equals(name, ignoreCase = true) }
             ?.value?.asString()
 
@@ -126,8 +126,8 @@ object CorpusRecording {
                 fixtureName = fixtureName,
                 step = index,
                 request = RecordedRequest(
-                    method = request.string("method") ?: "POST",
-                    path = request.string("path") ?: "",
+                    method = request.member("method") ?: "POST",
+                    path = request.member("path") ?: "",
                     contentType = headerOf(request, "content-type") ?: "",
                     body = bodyOf(request),
                 ),
@@ -138,7 +138,7 @@ object CorpusRecording {
                     val f = frame.asObject()!!
                     RecordedFrame(
                         flags = f["flags"]?.asLong()?.toInt() ?: 0,
-                        payload = Base64Lenient.decode(f.string("payload") ?: "") ?: ByteArray(0),
+                        payload = Base64Lenient.decode(f.member("payload") ?: "") ?: ByteArray(0),
                     )
                 },
                 expect = node["expect"],
@@ -155,9 +155,9 @@ object CorpusRecording {
                 return@mapNotNull null
             }
             RequiredFixture(
-                name = node.string("name") ?: return@mapNotNull null,
-                file = node.string("file") ?: return@mapNotNull null,
-                reason = node.string("reason") ?: "",
+                name = node.member("name") ?: return@mapNotNull null,
+                file = node.member("file") ?: return@mapNotNull null,
+                reason = node.member("reason") ?: "",
                 clauses = node["pinnedBy"]?.asArray()?.mapNotNull { it.asString() } ?: emptyList(),
             )
         }

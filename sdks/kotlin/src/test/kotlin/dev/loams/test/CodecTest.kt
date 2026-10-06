@@ -45,20 +45,20 @@ object CodecTest {
             // The calls on them, with the names the annotations gave.
             assertEquals(
                 listOf("getInstance", "whoAmI"),
-                dev.loams.Facade.module("instance").calls.map { it.name }.sorted(),
+                dev.loams.Facade.module("instance").calls.map { it.facadeName }.sorted(),
                 "the instance module's calls",
             )
             assertEquals(
                 listOf("modifyQuerySet", "watch"),
-                dev.loams.Facade.module("live").calls.map { it.name }.sorted(),
+                dev.loams.Facade.module("live").calls.map { it.facadeName }.sorted(),
                 "the live module's calls",
             )
             // `FacadeOptions.module = "tables"` puts query/mutate/deploy on a
             // *different* module than the service's own — §44 §7.2 splits
             // `loams.live.v1` into the session half and the table half.
             assertEquals(
-                listOf("query", "mutate", "deploy"),
-                dev.loams.Facade.module("tables").calls.map { it.name }.sorted(),
+                listOf("deploy", "mutate", "query"),
+                dev.loams.Facade.module("tables").calls.map { it.facadeName }.sorted(),
                 "the tables module's calls, from FacadeOptions.module",
             )
         }
@@ -290,38 +290,36 @@ object CodecTest {
  * failure** rather than dropped from a hand-written list.
  */
 fun theDriverDerivesItsCoverage() {
-    Harness.test("kotlin_the_driver_derives_its_coverage_from_the_manifest") {
-        val root = RepositoryRoot.find(java.io.File(".").absoluteFile)
-        val driver = CorpusDriver(java.io.File(root, "sdks/fixtures"))
+    val root = RepositoryRoot.find(java.io.File(".").absoluteFile)
+    val driver = CorpusDriver(java.io.File(root, "sdks/fixtures"))
 
-        val required = driver.requiredFixtures
-        val manifest = dev.loams.Json.parse(
-            java.io.File(root, "sdks/fixtures/manifest.json").readText()
-        ).asObject()!!
-        val manifestRequired = manifest["fixtures"]!!.asArray()!!
-            .mapNotNull { it.asObject() }
-            .filter { it["required"]?.asBoolean() == true }
-            .mapNotNull { it.string("name") }
+    val required = driver.requiredFixtures
+    val manifest = dev.loams.Json.parse(
+        java.io.File(root, "sdks/fixtures/manifest.json").readText()
+    )?.asObject()!!
+    val manifestRequired = manifest["fixtures"]!!.asArray()!!
+        .mapNotNull { it.asObject() }
+        .filter { it["required"]?.asBoolean() == true }
+        .mapNotNull { it.member("name") }
 
-        // Exactly the manifest's required set: not a subset, not a superset.
-        assertEquals(manifestRequired.size, required.size, "required fixtures counted")
-        assertEquals(manifestRequired.sorted(), required.map { it.name }.sorted(), "required fixtures")
+    // Exactly the manifest's required set: not a subset, not a superset.
+    assertEquals(manifestRequired.size, required.size, "required fixtures counted")
+    assertEquals(manifestRequired.sorted(), required.map { it.name }.sorted(), "required fixtures")
 
-        // Every one names a file that exists. A manifest entry with no file behind it
-        // is a corpus bug, and this says so by name rather than as a missing-file
-        // error pointing at a path nobody wrote.
-        for (fixture in required) {
-            val file = java.io.File(root, "sdks/fixtures").resolve(fixture.file)
-            assertTrue(file.isFile, "${fixture.name}'s recording at ${fixture.file}")
-        }
-
-        // And the clauses are read from `pinnedBy`, so the report can name them.
-        val withClauses = required.filter { it.clauses.isNotEmpty() }
-        assertTrue(
-            withClauses.size == required.size,
-            "every required fixture to pin at least one clause (${required.filter { it.clauses.isEmpty() }.map { it.name }})",
-        )
+    // Every one names a file that exists. A manifest entry with no file behind it
+    // is a corpus bug, and this says so by name rather than as a missing-file
+    // error pointing at a path nobody wrote.
+    for (fixture in required) {
+        val file = java.io.File(root, "sdks/fixtures").resolve(fixture.file)
+        assertTrue(file.isFile, "${fixture.name}'s recording at ${fixture.file}")
     }
+
+    // And the clauses are read from `pinnedBy`, so the report can name them.
+    val withClauses = required.filter { it.clauses.isNotEmpty() }
+    assertTrue(
+        withClauses.size == required.size,
+        "every required fixture to pin at least one clause (${required.filter { it.clauses.isEmpty() }.map { it.name }})",
+    )
 }
 
 /**
@@ -334,31 +332,29 @@ fun theDriverDerivesItsCoverage() {
  * demonstrated rather than asserted.
  */
 fun anUnreachableFixtureIsNamed() {
-    Harness.test("kotlin_a_fixture_the_driver_cannot_reach_is_named") {
-        val root = RepositoryRoot.find(java.io.File(".").absoluteFile)
-        val source = java.io.File(root, "sdks/fixtures")
-        val scratch = java.io.File.createTempFile("loams-corpus", "")
-        scratch.delete()
-        scratch.mkdirs()
+    val root = RepositoryRoot.find(java.io.File(".").absoluteFile)
+    val source = java.io.File(root, "sdks/fixtures")
+    val scratch = java.io.File.createTempFile("loams-corpus", "")
+    scratch.delete()
+    scratch.mkdirs()
 
-        // Copy the corpus, then break exactly one recording's path so its RPC
-        // resolves to nothing.
-        copyTree(source, scratch)
-        val broken = java.io.File(scratch, "recorded/instance_who_am_i_json.json")
-        val original = broken.readText()
-        broken.writeText(original.replace("InstanceService/WhoAmI", "InstanceService/WhoAmINotThere"))
+    // Copy the corpus, then break exactly one recording's path so its RPC
+    // resolves to nothing.
+    copyTree(source, scratch)
+    val broken = java.io.File(scratch, "recorded/instance_who_am_i_json.json")
+    val original = broken.readText()
+    broken.writeText(original.replace("InstanceService/WhoAmI", "InstanceService/WhoAmINotThere"))
 
-        val driver = CorpusDriver(scratch)
-        val outcomes = driver.run().outcomes
-        val brokenOutcome = outcomes.firstOrNull { it.name == "instance_who_am_i_json" }
-        assertTrue(brokenOutcome != null, "an outcome for the broken fixture")
-        assertTrue(!brokenOutcome!!.ran, "the broken fixture to be reported as not run")
-        assertTrue(
-            brokenOutcome.failures.any { it.contains("instance_who_am_i_json") },
-            "the failure to name the fixture (said: ${brokenOutcome.failures})",
-        )
-        scratch.deleteRecursively()
-    }
+    val driver = CorpusDriver(scratch)
+    val outcomes = driver.run().outcomes
+    val brokenOutcome = outcomes.firstOrNull { it.name == "instance_who_am_i_json" }
+    assertTrue(brokenOutcome != null, "an outcome for the broken fixture")
+    assertTrue(!brokenOutcome!!.ran, "the broken fixture to be reported as not run")
+    assertTrue(
+        brokenOutcome.failures.any { it.contains("instance_who_am_i_json") },
+        "the failure to name the fixture (said: ${brokenOutcome.failures})",
+    )
+    scratch.deleteRecursively()
 }
 
 /** Recursively copies a directory, for the negative case above. */
@@ -376,27 +372,25 @@ private fun copyTree(from: java.io.File, to: java.io.File) {
 
 /** `kotlin_the_report_is_written_from_what_the_driver_executed`. */
 fun theReportIsWrittenFromWhatTheDriverExecuted() {
-    Harness.test("kotlin_the_report_is_written_from_what_the_driver_executed") {
-        val root = RepositoryRoot.find(java.io.File(".").absoluteFile)
-        val report = java.io.File(root, ConformanceReport.REPORT_PATH)
-        assertTrue(report.isFile, "a report at ${ConformanceReport.REPORT_PATH}")
+    val root = RepositoryRoot.find(java.io.File(".").absoluteFile)
+    val report = java.io.File(root, ConformanceReport.REPORT_PATH)
+    assertTrue(report.isFile, "a report at ${ConformanceReport.REPORT_PATH}")
 
-        val written = dev.loams.Json.parse(report.readText()).asObject()!!
-        assertEquals("kotlin", written.string("language"), "the report's language")
-        assertEquals("connect", written.string("transport"), "the report's transport")
-        assertTrue(
-            !written.boolean("live"),
-            "the report to say it was a replay (this SDK never exercises a real loams dev)",
-        )
-        assertEquals(
-            ConformanceReport.REQUIRED_TEST_NAMES,
-            written["tests"]!!.asArray()!!.map { it.asString() },
-            "the report's six test names",
-        )
-        // `skipped` is empty by construction: `required.mjs` permits exactly one
-        // skip, and this SDK is not the Connect-unary fallback D613 names.
-        assertEquals(emptyList<String>(), written["skipped"]!!.asArray()!!.map { it.asString() }, "the report's skipped list")
-    }
+    val written = dev.loams.Json.parse(report.readText())?.asObject()!!
+    assertEquals("kotlin", written.member("language"), "the report's language")
+    assertEquals("connect", written.member("transport"), "the report's transport")
+    assertTrue(
+        written.flag("live") != true,
+        "the report to say it was a replay (this SDK never exercises a real loams dev)",
+    )
+    assertEquals(
+        ConformanceReport.REQUIRED_TEST_NAMES,
+        written["tests"]!!.asArray()!!.map { it.asString() },
+        "the report's six test names",
+    )
+    // `skipped` is empty by construction: `required.mjs` permits exactly one
+    // skip, and this SDK is not the Connect-unary fallback D613 names.
+    assertEquals(emptyList<String>(), written["skipped"]!!.asArray()!!.map { it.asString() }, "the report's skipped list")
 }
 
 /** A binding the driver would use, for a caller of this file. */
@@ -409,32 +403,28 @@ fun moduleFor(name: String): ModuleBinding = dev.loams.Facade.module(name)
 
 /** A guard that a module that does not exist says so with the ones that do. */
 fun aMissingModuleNamesTheOnesThatExist() {
-    Harness.test("kotlin_a_missing_module_names_the_ones_that_exist") {
-        val error = assertThrows<NoSuchElementException>("a module that does not exist") {
-            dev.loams.Facade.module("collections")
-        }
-        assertTrue(
-            error.message!!.contains("instance"),
-            "the failure to name the modules that exist (said: ${error.message})",
-        )
+    val error = assertThrows<NoSuchElementException>("a module that does not exist") {
+        dev.loams.Facade.module("collections")
     }
+    assertTrue(
+        error.message!!.contains("instance"),
+        "the failure to name the modules that exist (said: ${error.message})",
+    )
 }
 
 /** A guard that the fixture server's report endpoint carries the manifest. */
 fun theFixtureServerServesTheManifest() {
-    Harness.test("kotlin_the_fixture_server_serves_the_manifest") {
-        val root = RepositoryRoot.find(java.io.File(".").absoluteFile)
-        FixtureServer.start(java.io.File(root, "sdks/fixtures")).use { server ->
-            val connection = java.net.URI("${server.endpoint}/__fixtures/manifest").toURL().openConnection()
-            connection.connectTimeout = 5_000
-            connection.readTimeout = 5_000
-            val text = connection.getInputStream().bufferedReader().readText()
-            val manifest = dev.loams.Json.parse(text).asObject()
-            assertTrue(manifest != null, "the manifest over HTTP")
-            assertTrue(
-                manifest!!["fixtures"]!!.asArray()!!.isNotEmpty(),
-                "the fixtures the server would answer for",
-            )
-        }
+    val root = RepositoryRoot.find(java.io.File(".").absoluteFile)
+    FixtureServer.start(java.io.File(root, "sdks/fixtures")).use { server ->
+        val connection = java.net.URI("${server.endpoint}/__fixtures/manifest").toURL().openConnection()
+        connection.connectTimeout = 5_000
+        connection.readTimeout = 5_000
+        val text = connection.getInputStream().bufferedReader().readText()
+        val manifest = dev.loams.Json.parse(text)?.asObject()
+        assertTrue(manifest != null, "the manifest over HTTP")
+        assertTrue(
+            manifest!!["fixtures"]!!.asArray()!!.isNotEmpty(),
+            "the fixtures the server would answer for",
+        )
     }
 }

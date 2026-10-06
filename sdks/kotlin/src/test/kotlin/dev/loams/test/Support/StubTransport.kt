@@ -32,6 +32,7 @@ class StubTransport : dev.loams.Transport {
     /** One recorded request, as it went out. */
     data class Seen(
         val rpc: String,
+        val method: String,
         val path: String,
         val contentType: String,
         val headers: Map<String, String>,
@@ -102,17 +103,23 @@ class StubTransport : dev.loams.Transport {
     }
 
     override fun send(request: dev.loams.TransportRequest): dev.loams.TransportResponse {
-        seen.add(Seen(request.rpc, request.path, request.contentType, request.headers, request.body))
+        seen.add(Seen(request.rpc, request.method, request.path, request.contentType, request.headers, request.body))
         val answer = take()
         return dev.loams.TransportResponse(answer.status, answer.headers, answer.contentType, answer.body)
     }
 
     /** A client bound to this transport, with no retries unless asked for. */
-    fun client(maxRetries: Int = 0): LoamsClient = LoamsClient(
+    fun client(
+        maxRetries: Int = 0,
+        protocol: Protocol = Protocol.CONNECT,
+        codec: Codec = Codec.PROTO,
+        tokenSource: dev.loams.TokenSource? = null,
+    ): LoamsClient = LoamsClient(
         endpoint = "stub://in-process",
-        protocol = Protocol.CONNECT,
-        codec = Codec.PROTO,
+        protocol = protocol,
+        codec = codec,
         maxRetries = maxRetries,
+        tokenSource = tokenSource,
         transport = this,
     )
 

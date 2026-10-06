@@ -123,12 +123,20 @@ classpath() {
   local entries=()
   local jar
   for jar in "$lib"/*.jar; do
-    entries+=("$jar")
+    [ -f "$jar" ] && entries+=("$jar")
   done
+  local kotlinc_path
+  kotlinc_path="$(find_kotlinc 2>/dev/null || true)"
+  if [ -n "$kotlinc_path" ]; then
+    local klib="$(dirname "$kotlinc_path")/../lib"
+    for jar in "$klib"/kotlin-stdlib*.jar; do
+      [ -f "$jar" ] && entries+=("$jar")
+    done
+  fi
   entries+=("$classes" "$test_classes")
   local joined="${entries[0]}"
   local index
-  for ((index = 1; index < ${#${entries[@]}}; index++)); do
+  for ((index = 1; index < ${#entries[@]}; index++)); do
     joined="$joined:${entries[$index]}"
   done
   printf '%s' "$joined"
