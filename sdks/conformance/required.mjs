@@ -142,8 +142,8 @@ export const LANGUAGES = {
   php: {
     dir: 'sdks/php',
     verified: true,
-    runOne: ['vendor', ['bin', 'phpunit', '--filter']],
-    runAll: ['vendor', ['bin', 'phpunit']],
+    runOne: ['php', ['vendor/bin/phpunit', '--filter']],
+    runAll: ['php', ['vendor/bin/phpunit']],
   },
   cpp: {
     dir: 'sdks/cpp',
@@ -155,8 +155,8 @@ export const LANGUAGES = {
   objc: {
     dir: 'sdks/objc',
     verified: true,
-    runOne: ['swift', ['test', '--filter']],
-    runAll: ['swift', ['test']],
+    runOne: ['swift', ['test', '--disable-swift-testing', '--filter']],
+    runAll: ['swift', ['test', '--disable-swift-testing']],
   },
 };
 

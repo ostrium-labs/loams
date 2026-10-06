@@ -63,3 +63,9 @@ node_modules/
 # writes one when it runs and CI generate-then-checks.
 sdks/fixtures/results/
 
+# Language SDK build outputs
+.dart_tool/
+.build/
+vendor/
+.phpunit.result.cache
+
