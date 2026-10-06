@@ -1,0 +1,22 @@
+# The Loams C++ SDK
+
+Copyright the Loams contributors
+
+This product includes software developed at Loams (https://loams.dev).
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy is in LICENSE, or at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+This SDK depends on the third-party software listed in DEPENDENCIES.md. None of it
+is redistributed in this repository: protobuf and libcurl are found on the system
+through CMake's `find_package` and `pkg-config`, and the generated stubs under
+`gen/` are this repository's own protoc output.
+
+## Generated code
+
+`gen/loams/**` is the output of `protoc` (driven by `buf generate --template
+buf.gen.yaml`) over this repository's own `proto/` tree, and it is committed so a
+consumer needs no `protoc`, no `buf` and no network. Those files are covered by
+this notice as part of the SDK.
