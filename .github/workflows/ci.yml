@@ -47,6 +47,7 @@ jobs:
       sdk-rust: ${{ steps.filter.outputs.sdk-rust }}
       sdk-python: ${{ steps.filter.outputs.sdk-python }}
       sdk-go: ${{ steps.filter.outputs.sdk-go }}
+      sdk-cpp: ${{ steps.filter.outputs.sdk-cpp }}
       sdk-swift: ${{ steps.filter.outputs.sdk-swift }}
       web: ${{ steps.filter.outputs.web }}
       dapr-edge: ${{ steps.filter.outputs.dapr-edge }}
@@ -208,6 +209,15 @@ jobs:
               - "docs/sdk/**"
               - "proto/**"
               - "sdks/go/**"
+              - "sdks/conformance/**"
+            # The C++ SDK (#295). Its buf.gen.yaml pins the protoc release, so a
+            # proto edit has to re-run the job even when no C++ file moved.
+            sdk-cpp:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/cpp/**"
               - "sdks/conformance/**"
             # The Swift SDK (#288). It has no local toolchain on the machines
             # that develop this repo, so macOS is the only thing that can
@@ -1186,6 +1196,65 @@ jobs:
         working-directory: sdks/go
         run: go vet ./...
 
+  # SDK2 Task 11 (#295): the C++ SDK. protobuf 36.1.0 and libcurl 8.x are
+  # preinstalled on the runner, and the pinned `buf.build/protocolbuffers/cpp`
+  # release **must** match the installed protobuf: the committed gencode carries
+  # `#if PROTOBUF_VERSION != <gencode>`, which is protobuf's own cross-version
+  # guarantee rather than a choice. A protobuf bump and a buf.gen.yaml bump are
+  # therefore one commit (D643).
+  sdk-cpp:
+    name: the C++ SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-cpp == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      # `pkg-config` is what protobuf's link line comes from: the SDK parses
+      # Connect error bodies with protobuf's JSON helpers, which return an
+      # absl::Status, so Abseil's libraries are only on the link line via
+      # protobuf's own .pc (D643).
+      - name: the C++ SDK's toolchain and dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang protobuf-compiler libprotobuf-dev libcurl4-openssl-dev pkg-config
+      - name: the protobuf release the stubs were generated from
+        run: |
+          installed=$(pkg-config --modversion protobuf)
+          echo "libprotobuf $installed"
+          grep -q "PROTOBUF_VERSION != 7036001" sdks/cpp/gen/loams/errors/v1/errors.pb.h || {
+            echo "sdks/cpp/gen was generated for a different protobuf release than the"; \
+            echo "one installed here. Regenerate with buf.gen.yaml's pin, or bump the"; \
+            echo "pin and the stubs together."; exit 1;
+          }
+      - name: the C++ SDK's conformance suite
+        working-directory: sdks/cpp
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+          cmake --build build -j 4
+          ctest --test-dir build --output-on-failure
+      # A proto edit that moved the SDK surface must not pass with stale stubs.
+      # `scripts/sdk/drift.sh` has no C++ case yet -- it would ask the Rust
+      # `protoc-gen-loams-facade` for a facade it cannot render (D644) -- so the
+      # equivalent is buf here, resolved from the same pinned devDependency the
+      # sdk-rust job uses rather than from whatever the runner happens to have.
+      # `ubuntu-latest` ships no buf at all, so without this the step would fail
+      # on a missing binary rather than on drift.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: the C++ SDK's generated code is not stale
+        run: |
+          sdks/typescript/packages/client/node_modules/.bin/buf generate --template sdks/cpp/buf.gen.yaml
+          git diff --exit-code -- sdks/cpp/gen || {
+            echo "sdks/cpp/gen is stale: regenerate with sdks/cpp/buf.gen.yaml and commit"; exit 1;
+          }
+
   deny:
     name: licenses, advisories, sources
     needs: changes
@@ -1426,6 +1495,7 @@ jobs:
       - sdk-rust
       - sdk-python
       - sdk-go
+      - sdk-cpp
       - sdk-swift
       - deny
       - web
