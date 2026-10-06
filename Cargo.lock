@@ -6304,6 +6304,7 @@ dependencies = [
  "loams-hnsw",
  "loams-hot",
  "loams-link",
+ "loams-live",
  "loams-live-proto",
  "loams-log",
  "loams-meta",

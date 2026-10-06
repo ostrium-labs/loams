@@ -47,6 +47,8 @@ loams-es = { workspace = true, optional = true }
 loams-hnsw.workspace = true
 loams-hot.workspace = true
 loams-link.workspace = true
+# The Loams Live sync service (R1 Task 12).
+loams-live = { workspace = true, optional = true }
 # `loams.live.v1`, for the `LiveService` stub that answers
 # `feature_not_in_variant` while the live engine is out of the build variant
 # (design §44 §4). R1's crate owns those protos; `loams-proto` does not
@@ -86,6 +88,10 @@ es = ["dep:loams-es"]
 # ruling T7-3): it pulls in the git-pinned tikv-client (row R4), which the
 # default build must not. CI's TiKV jobs build with `--features tikv`.
 tikv = ["dep:loams-meta-tikv", "dep:loams-tikv"]
+# Loam Live (R1 plan Task 12): the `loam.live.v1` sync API on its own
+# loopback listener (`--live-*` on `dev` and `standalone`). Off by default
+# and enables `tikv` (owner ruling T8-2).
+live = ["tikv", "dep:loams-live"]
 # Serve Arrow Flight SQL (Task 12; `--flight-sql-listen`).
 flight = []
 # Serve the Qdrant REST and gRPC APIs (plan M1.4; `--qdrant-listen`).
