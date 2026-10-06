@@ -1,0 +1,35 @@
+# frozen_string_literal: true
+
+require "rake"
+
+rule "" do |task|
+  # Swallows arguments like ruby_conformance_all_required_fixtures
+end
+
+def run_minitest(filter = nil)
+  ruby_bin = RbConfig.ruby
+  test_file = File.expand_path("test/conformance_test.rb", __dir__)
+  args = ["-Ilib", "-Itest", "-Itest/support", test_file]
+  if filter && !filter.empty?
+    args += ["--", "--name", "/#{filter}/"]
+  end
+  system(ruby_bin, *args)
+  exit $?.exitstatus unless $?.success?
+end
+
+namespace :test do
+  desc "Run specific test"
+  task :run do
+    target = Rake.application.top_level_tasks.find { |t| t.start_with?("ruby_") }
+    target ||= ARGV.find { |a| a.start_with?("ruby_") }
+    target ||= ENV["TESTOPTS"].to_s.sub(/^--name\s*/, "") unless ENV["TESTOPTS"].to_s.empty?
+    run_minitest(target)
+  end
+end
+
+desc "Run all tests"
+task :test do
+  run_minitest(nil)
+end
+
+task default: :test
