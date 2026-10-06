@@ -96,7 +96,7 @@ cleanup() {
   fi
   rm -f "${pid_file:-/dev/null}" 2>/dev/null || true
 }
-trap cleanup EXIT
+trap 'cleanup; [ -n "$output" ] && rm -f "$output"' EXIT
 
 if [ "$live" -eq 0 ]; then
   pid_file="$(mktemp)"
@@ -153,12 +153,53 @@ if ! command -v "$program" > /dev/null 2>&1; then
   exit 2
 fi
 
+# Declared before the EXIT trap can fire without it: `cleanup` runs on every
+# exit path, including the ones taken before `output` is assigned.
+output=""
+
 dir="$(node -e "import('./sdks/conformance/required.mjs').then(m=>process.stdout.write(m.LANGUAGES['$lang'].dir))")"
 echo "running $full in $dir"
 echo ""
 
-( cd "$dir" && "$program" $rest "$full" )
-status=$?
+# The report is **deleted before the test runs**, not merely read after it.
+#
+# A stale report is a claim about a corpus made by an earlier run, and it is
+# exactly as convincing as a fresh one: `check-languages.mjs` reads the file and
+# finds 28 of 28, because an earlier full run wrote it. So when a runner treats
+# "matched no test" as success -- `dotnet test --filter` prints "No test matches
+# the given testcase filter" and exits 0, and a test renamed by one character
+# produces exactly that -- this script reported success having run no test at
+# all, and the leftover report is what made the failure look green.
+#
+# Deleting first turns that silence into a failure, and it does so for every
+# language rather than depending on each runner's own no-match behaviour: the
+# name is validated above against the six, so a report written by *this*
+# invocation is the only thing that can satisfy the check below.
+report="sdks/fixtures/results/${lang}.json"
+rm -f "$report"
+
+# The runner's own output is captured so that "it matched no test" can be told
+# from "it ran and passed". Exit status alone cannot: `dotnet test --filter`
+# exits 0 having matched nothing, and prints a sentence saying so.
+output="$(mktemp)"
+( cd "$dir" && "$program" $rest "$full" 2>&1 | tee "$output" )
+status="${PIPESTATUS[0]}"
+
+# A runner that found nothing says so, in words that differ per tool. These are
+# the phrasings `dotnet test`, `ctest`, `pytest`, `go test` and `vitest` use when
+# a `-t`/`--filter`/`-R`/`-k` selector matches no test, gathered by running each
+# against a name that does not exist. A match is treated as fatal because the
+# alternative is a green run of zero tests, and a green run of zero tests is
+# indistinguishable from a pass in every report that counts exits.
+if grep -qiE 'no test matches|no tests were found|no tests to run|no tests found|0 tests? (passed|run)|no tests ran' "$output"; then
+  rm -f "$output"
+  echo "" >&2
+  echo "$full matched no test: $lang's runner reported zero tests, which it may do" >&2
+  echo "with exit status 0. The name is validated above, so this means the test was" >&2
+  echo "renamed or is missing -- not that the name was wrong." >&2
+  exit 1
+fi
+
 
 if [ "$status" -ne 0 ]; then
   echo "" >&2
@@ -169,7 +210,6 @@ fi
 # A green test is not the whole bar. If the suite wrote a report, it is checked
 # against the manifest here so "passed but skipped three required fixtures" is
 # caught in the same run rather than at release.
-report="sdks/fixtures/results/${lang}.json"
 if [ -f "$report" ]; then
   echo ""
   if ! node sdks/conformance/check-languages.mjs --check "$lang"; then
