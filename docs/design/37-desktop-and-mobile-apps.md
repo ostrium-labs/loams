@@ -204,6 +204,7 @@ Shared platform modules (React, React DOM, React Router, cordis, `@loams/ui`, `@
 | `tier` | `core`, `first-party` or `third-party` (§5.6). A package is `core` or `first-party` only if it is bundled or published with npm provenance by one of the build's trusted publishers (§5.6); the host decides this, not the manifest |
 | `inject`, `provides` | cordis services it needs and offers. `provides` must be in its namespace (`<plugin-id>.*`) unless it is a `core` plugin |
 | `slots` | The slots it registers into; registering into any other slot fails |
+| `actions` | The action names it may register in the console's action registry (§42 §5, D569), which the WebMCP tools are generated from; registering an undeclared action fails, exactly as an undeclared slot does |
 | `permissions` | §19 §5.1 actions (`collections:read`, `collections:write`, `query`, `documents:delete`, `streams:produce`, `mcp:tools`, `durable:invoke`, `durable:resolve`) plus `jobs:read`, `jobs:admin`, `approvals:decide`, `devices:manage`, `connectors:read`, `connectors:write`, and console-only `ui:notifications`, `ui:clipboard-write`. For `third-party`, they become the plugin's token scopes (§5.6) |
 | `requires.api` | Proto packages that must be listed in `GetInstance.api_versions`; the matching `rpc.*` services gate activation anyway, so this is for the install-time check and the store listing |
 | `editions` | Which plugin sets may include it (§5.8) |

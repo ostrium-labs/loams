@@ -7,9 +7,18 @@
 // WebMCP is closed and `oppose`, so there is no version of this plan in which
 // Safari is assumed to arrive.
 //
-// Task 1 is detection and the registration seam. Task 2 generates the tools
-// themselves from the plugin action registry; nothing here knows about a tool's
-// meaning.
+// Task 1 was detection and the registration seam. Task 2 adds the generation:
+// one tool per row of the plugin action registry (`@loams/console-host`,
+// D569), so this module knows a tool's *shape* and the registry knows its
+// meaning. The stdio MCP server (§30, D289) reads the same rows, which is why
+// nothing here re-describes an action.
+//
+// The enforcement below is the reason this file is small. Every generated
+// `execute` is `registry.invoke`, so a generated tool cannot be more permissive
+// than the button behind it: the same `decideCall` / `PERMISSIONS` primitives
+// decide, and a destructive action is refused unless a gate returns a decision
+// from someone other than the requester (§39 §8 rules 1 and 2, D636). Nothing
+// here can approve, and nothing here calls the network.
 //
 // The constraints below are not defensive coding. Each is a rule read off the
 // spec's own IDL in Task 0 and recorded in the design, and each one is a way a
@@ -32,6 +41,8 @@
 // `requestUserInteraction()` is deliberately absent: Chrome's security
 // documentation mentions it, but it does not exist in the 2026-10-02 draft, and
 // writing against it would be writing against a proposal.
+
+import type { ActionInputSchema, ApprovalGate, Risk } from '@loams/console-host';
 
 /**
  * A tool as the console hands it to the browser. Mirrors `ModelContextTool`:
@@ -162,6 +173,95 @@ export function exposedOrigins(
     else rejected.push(agent);
   }
   return { exposedTo, rejected };
+}
+
+/**
+ * The subset of the action registry this module reads. Declared structurally so
+ * the console does not need the host's whole class to generate a tool, and so
+ * a test can pass a plain object.
+ */
+export interface ActionSource {
+  actions(): readonly {
+    name: string;
+    description: string;
+    title?: string;
+    risk?: Risk;
+    inputSchema?: ActionInputSchema;
+  }[];
+  invoke(
+    name: string,
+    input: unknown,
+    options: {
+      signal: AbortSignal;
+      approval?: ApprovalGate;
+      environment?: { id?: string; protected?: boolean };
+      requester?: string;
+    },
+  ): Promise<unknown>;
+}
+
+export type { ApprovalGate } from '@loams/console-host';
+
+/**
+ * Generates one tool per registered action (D569).
+ *
+ * Two deliberate choices, both about what an agent can read before it calls:
+ *
+ * - `untrustedContentHint` is **always true**. The input is an agent's, so it
+ *   is untrusted data (§39 §8 rule 5: text from apps is never a basis for a
+ *   tool choice on its own). It is the one hint that does not vary per action.
+ * - `readOnlyHint` follows the action's `risk` rather than its description, so
+ *   a harness can filter on the annotation rather than parse prose.
+ *
+ * `execute` resolves whatever `invoke` resolves and never rejects, because the
+ * draft turns a rejection into an opaque `UnknownError` (see the module header).
+ * The registry's job, not this function's: the tool does not inspect, retry,
+ * cache or re-interpret a refusal.
+ */
+export function webmcpToolsFrom(
+  registry: ActionSource,
+  options: {
+    approval?: ApprovalGate;
+    /**
+     * The environment these tools act in. Bound at *generation*, by the host,
+     * rather than read per call: an agent that could name its own environment
+     * would be naming its own `protected: false`, which is the requester
+     * approving its own request (§39 §8 rule 2). The registry gates a `write`
+     * whose environment was never resolved to be unprotected, so this is what
+     * lets a generated write run at all.
+     */
+    environment?: { id?: string; protected?: boolean };
+  } = {},
+): WebMcpTool[] {
+  return registry.actions().map((action) => ({
+    name: action.name,
+    description: action.description,
+    ...(action.title === undefined ? {} : { title: action.title }),
+    ...(action.inputSchema === undefined ? {} : { inputSchema: action.inputSchema }),
+    annotations: {
+      // An absent risk is never read-only. D636 says an absent risk must not
+      // become `read`, and `readOnlyHint: true` is the dangerous claim here:
+      // it is what lets an agent treat a destructive action as safe to run
+      // without asking. So absence answers "not read-only", which is the
+      // cautious reading, rather than defaulting into the permissive one.
+      readOnlyHint: action.risk === 'read',
+      consequentialHint: action.risk !== 'read',
+      untrustedContentHint: true,
+    },
+    // `input` is passed through as the browser gave it, including `undefined`
+    // (a legitimate "no arguments", which the registry reads as `{}`) and an
+    // explicit `null` (a wrong payload, which the registry refuses). Coercing
+    // either here would launder a bad call into a good-looking one.
+    execute: (input: Record<string, unknown>, options_: { signal: AbortSignal }) =>
+      registry.invoke(action.name, input, {
+        // Only the signal is read from the per-call options, and only ever the
+        // signal: everything else an agent could put here — an approval gate, an
+        // environment — would be the requester deciding its own case.
+        signal: options_.signal,
+        ...(options.approval ? { approval: options.approval } : {}),
+        ...(options.environment ? { environment: options.environment } : {}),
+      }),
+  }));
 }
 
 /**
