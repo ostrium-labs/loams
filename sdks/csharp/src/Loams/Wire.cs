@@ -357,6 +357,15 @@ public static class WireReader
     /// The <c>ErrorInfo</c> a Connect detail list carries, looked up <b>by
     /// type</b> and never by position.
     /// </summary>
+    /// <remarks>
+    /// The value is decoded by <see cref="Base64.Decode"/> and not by
+    /// <see cref="Convert.FromBase64String"/>, because the corpus records most of
+    /// its detail values as base64 with the <c>=</c> padding stripped and
+    /// <see cref="Convert"/> throws on those. See `Base64.cs`. A value that is not
+    /// base64 at all is reported as "no <c>ErrorInfo</c>" and the search moves on,
+    /// which is what R8 asks for: a refusal whose reason this runtime cannot read
+    /// is still a typed refusal, not an exception.
+    /// </remarks>
     public static ErrorInfoShape? ErrorInfoFrom(IReadOnlyList<ConnectDetail> details)
     {
         foreach (var detail in details)
@@ -365,12 +374,8 @@ public static class WireReader
             {
                 continue;
             }
-            Span<byte> bytes;
-            try
-            {
-                bytes = Convert.FromBase64String(detail.Value);
-            }
-            catch (FormatException)
+            var bytes = Base64.Decode(detail.Value);
+            if (bytes is null)
             {
                 // Base64 the server did not write. "No ErrorInfo" is the honest
                 // answer; the alternative is a Loams failure with no reason.
@@ -395,7 +400,9 @@ public static class WireReader
     /// zero. A frame whose status is non-zero and whose details do not decode
     /// still produces a typed failure with the code and the message — the class is
     /// the part a caller can always act on, and losing it would turn a refusal
-    /// into an unknown.
+    /// into an unknown. That is also why <c>grpc-status-details-bin</c> goes
+    /// through <see cref="Base64.Decode"/>: a value this decoder refuses costs the
+    /// reason, never the failure.
     /// </remarks>
     public static WireFailure? GrpcWebFailure(IReadOnlyDictionary<string, string> trailers, int httpStatus, string rpc)
     {
@@ -414,7 +421,7 @@ public static class WireReader
         var message = trailers.TryGetValue("grpc-message", out var m) ? Uri.UnescapeDataString(m) : string.Empty;
         var detail = trailers.TryGetValue("grpc-status-details-bin", out var bin) &&
                      !string.IsNullOrEmpty(bin)
-            ? ErrorInfoCodec.FromStatusBytes(Convert.FromBase64String(bin))
+            ? ErrorInfoCodec.FromStatusBytes(Base64.Decode(bin) ?? [])
             : null;
         return new WireFailure(CodeFromNumber(status), message, detail, httpStatus, rpc);
     }

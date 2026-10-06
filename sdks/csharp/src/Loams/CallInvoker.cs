@@ -49,6 +49,33 @@ public sealed record CallOptions
     /// </summary>
     public string? IdempotencyKey { get; init; }
 
+    /// <summary>
+    /// Whether the SDK may mint a key for this call at all. Null is the default,
+    /// which is to mint (D610, R3).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// False does **not** mean "this schema has no key field" — that is decided by
+    /// the request's descriptor and needs no flag. It means the caller has already
+    /// decided this particular call goes out unkeyed, which is R3 deliberately not
+    /// applied to it.
+    /// </para>
+    /// <para>
+    /// The caller that needs it is a **replay**: `sdks/fixtures` records several
+    /// mutations recorded <i>without</i> a key, and putting one on the wire changes
+    /// the request, so `sdks/conformance/fixture-server.mjs` — correctly — answers
+    /// 400 for a request that is not the recorded one. The conformance driver sets
+    /// it from the decoded request's schema and its <c>idempotency_key</c>, never
+    /// from a list of fixture names.
+    /// </para>
+    /// <para>
+    /// A key the caller already wrote on the message is honoured either way: they
+    /// set it deliberately, and stripping it would silently change the meaning of a
+    /// call somebody has already made idempotent.
+    /// </para>
+    /// </remarks>
+    public bool? MintIdempotencyKey { get; init; }
+
     /// <summary>Headers for this call. <c>Authorization</c> is set by the runtime and wins.</summary>
     public IReadOnlyDictionary<string, string> Headers { get; init; } =
         new Dictionary<string, string>();
@@ -321,8 +348,11 @@ public sealed class CallInvoker
 
         // R3: keyed **once**, before the first attempt, and the same message goes to
         // every attempt. A binding whose schema declares no `idempotency_key` is
-        // left exactly as the caller wrote it.
-        var keyed = Idempotency.Apply(request, settings.IdempotencyKey ?? string.Empty);
+        // left exactly as the caller wrote it, and a caller who set
+        // `MintIdempotencyKey = false` has already decided this call goes out
+        // unkeyed.
+        var keyed = Idempotency.Apply(request, settings.IdempotencyKey ?? string.Empty,
+            settings.MintIdempotencyKey ?? true);
 
         var plan = PlanFor(binding, settings, keyed.Keyed);
         var token = ConsistencySession.Resolve(settings.ConsistencyToken,
@@ -385,7 +415,10 @@ public sealed class CallInvoker
     /// type for, and the conformance suite, which replays a corpus whose responses are
     /// descriptors rather than C# types. It goes through the **same** retry loop,
     /// idempotency decision, bearer and error mapping — a second code path here would
-    /// be a second set of conformance claims to hold up.
+    /// be a second set of conformance claims to hold up. One decision is left to the
+    /// caller rather than made here: <see cref="CallOptions.MintIdempotencyKey"/> is
+    /// how a recorded keyless mutation is replayed through this path with R3
+    /// deliberately not applied.
     /// </remarks>
     public async Task<IMessage> UnaryDynamicAsync(
         CallBinding binding,
@@ -402,7 +435,8 @@ public sealed class CallInvoker
         }
 
         var settings = options ?? CallOptions.None;
-        var keyed = Idempotency.Apply(request, settings.IdempotencyKey ?? string.Empty);
+        var keyed = Idempotency.Apply(request, settings.IdempotencyKey ?? string.Empty,
+            settings.MintIdempotencyKey ?? true);
         var plan = PlanFor(binding, settings, keyed.Keyed);
         var token = ConsistencySession.Resolve(settings.ConsistencyToken,
             settings.UseSessionConsistency ? _session : null);

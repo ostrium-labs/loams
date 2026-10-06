@@ -120,7 +120,18 @@ public static class CompactJson
         }
         if (field.IsMap || field.IsRepeated)
         {
-            return field.Accessor.HasValue(message);
+            // A repeated field has no **presence** — it has a count — and
+            // `IFieldAccessor.HasValue` does not answer for one: it throws
+            // `HasValue is not implemented for repeated fields`. So the count is
+            // what is asked, and the mapping's default-omitted rule then says an
+            // empty repeated field is absent. That is what makes an empty
+            // `WatchApprovalsRequest` serialize to `{}` rather than to
+            // `{"environments":[],"states":[]}`.
+            //
+            // Asking `HasValue` here was not so much a wrong answer as no answer
+            // at all: any JSON call whose request or **response** carries a
+            // repeated field threw out of the writer.
+            return HasEntries(field.Accessor.GetValue(message));
         }
         if (field.HasPresence)
         {
@@ -134,6 +145,25 @@ public static class CompactJson
         }
         return !IsDefaultValue(field.FieldType, field.Accessor.GetValue(message));
     }
+
+    /// <summary>
+    /// Whether a repeated or map field holds anything, which is the question
+    /// proto3 JSON asks in place of presence.
+    /// </summary>
+    /// <remarks>
+    /// A <c>RepeatedField</c> is an <c>IList</c> and a <c>MapField</c> is an
+    /// <c>IDictionary</c>, so <c>Count</c> answers both without enumerating. The
+    /// <c>IEnumerable</c> arm is the fallback for a shape that is neither, and it
+    /// moves the enumerator once rather than counting, because a non-collection has
+    /// no count to ask for.
+    /// </remarks>
+    private static bool HasEntries(object? value) => value switch
+    {
+        null => false,
+        System.Collections.ICollection collection => collection.Count > 0,
+        System.Collections.IEnumerable enumerable => enumerable.GetEnumerator().MoveNext(),
+        _ => true,
+    };
 
     private static bool IsDefaultValue(FieldType type, object? value) => type switch
     {
