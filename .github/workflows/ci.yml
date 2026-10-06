@@ -1028,9 +1028,24 @@ jobs:
       - name: the SDK conformance suite
         working-directory: web
         run: pnpm --filter @loams/client test
+      # The 100% required-fixture bar (design §44 §10.4, D617), which
+      # `check-languages.mjs --check` is the only thing that enforces. It reads
+      # `sdks/fixtures/results/typescript.json`, which the suite above just
+      # wrote, and the report is generated rather than committed (D640) — so this
+      # runs immediately after the suite and fails the job if the coverage is
+      # short.
+      #
+      # It exited 2 with "nothing can be checked" on every language until the
+      # TypeScript suite started writing one, which is how a gate written to
+      # enforce a 100% bar enforced nothing at all. Exit codes: 0 covered, 1
+      # short of the bar, 2 no report — all non-zero fail this step.
+      - name: the suite meets the 100% required-fixture bar
+        run: node sdks/conformance/check-languages.mjs --check typescript
       # The same suite against a real server. This is the job that can afford
       # it, and it is what catches a recorded corpus that has drifted from the
-      # API (design §44 §10.4).
+      # API (design §44 §10.4). A live `loams dev` does not serve the app
+      # packages, so this run writes no report and the check above is the one
+      # that has to have passed.
       - name: the conformance suite against a live server
         run: ./sdks/conformance/run.sh typescript
       # A generation difference must be a dependency bump in a PR, not whatever

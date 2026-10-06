@@ -34,3 +34,10 @@ __pycache__/
 
 # Node
 node_modules/
+
+# What a conformance suite reports it ran (D640). Generated, never committed:
+# a committed report is a claim about the corpus that a later corpus or a
+# failing suite invalidates without touching the file, and `check-languages.mjs`
+# would then read the previous run's answer and call it coverage. The suite
+# writes one when it runs and CI generate-then-checks.
+sdks/fixtures/results/

@@ -35,10 +35,11 @@
 // - `transport` is what the run actually used, which is the field `maySkip`
 //   keys off.
 
-import { readFile, readdir, rm } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { REQUIRED_TESTS, saveReport, testName } from '../../../../../conformance/required.mjs';
+import { clearReports } from './corpus.js';
 import { FIXTURES } from './server.js';
 
 /** Where the report lands: `saveReport` puts it here, and the runner reads it. */
@@ -48,16 +49,13 @@ export const REPORT = join(FIXTURES, 'results', 'typescript.json');
 const SUITE_TESTS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Removes a report left by an earlier run.
+ * Removes the report an earlier run left, before this one drives anything.
  *
- * Called before the suite drives anything, so a run that then crashes or is cut
- * short leaves **no** report rather than the previous run's. A gate reading a
- * report from a run that did not finish is the failure mode this whole file is
- * about.
+ * The ordering is the point and it lives in `corpus.ts`: cleared **first**, so a
+ * run that crashes leaves no report rather than the previous run's. A gate
+ * reading the last run's answer is the failure this file exists to stop.
  */
-export async function clearReport(): Promise<void> {
-  await rm(REPORT, { force: true });
-}
+export const clearReport = clearReports;
 
 /** Every `.ts` under `test/`, read to find the canonical test names. */
 async function suiteSources(directory: string): Promise<string> {

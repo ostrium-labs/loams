@@ -19,7 +19,7 @@ import {
   type DescService,
   type MessageShape,
 } from '@bufbuild/protobuf';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FIXTURES } from './server.js';
 
@@ -115,6 +115,14 @@ export async function requiredFixtures(): Promise<ManifestFixture[]> {
   return (await manifest()).filter((fixture) => fixture.required);
 }
 
+async function unlinkQuietly(file: string): Promise<void> {
+  try {
+    await rm(file, { force: true });
+  } catch {
+    // A report we cannot remove is reported by the run that follows it.
+  }
+}
+
 /**
  * The recording behind a fixture.
  *
@@ -141,6 +149,19 @@ export async function readFixture(fixture: ManifestFixture): Promise<RecordedFix
     throw new Error(`${file} has no request to replay`);
   }
   return { ...recorded, steps };
+}
+
+/**
+ * Removes the reports under `results/`, so a run leaves either a report that
+ * describes it or none at all.
+ *
+ * Called before anything is driven rather than after, which is what makes it
+ * safe: a run that crashes, is killed, or exits early leaves **no** report, and
+ * a gate reading nothing fails. Writing at the end and clearing afterwards would
+ * leave the previous run's answer in place for exactly the runs that failed.
+ */
+export async function clearReports(): Promise<void> {
+  await unlinkQuietly(join(FIXTURES, 'results', 'typescript.json'));
 }
 
 /** The wire families the corpus is filed under, one transport each. */

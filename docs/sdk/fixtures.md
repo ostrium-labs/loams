@@ -30,7 +30,9 @@ sdks/fixtures/
   faults.json            the injected faults (the only thing here not recorded)
   recorded/*.json        the thirteen `loams dev` cases, byte for byte
   recorded/apps-mock/*.json  the twenty app-mock scenarios, one file each
-  results/<lang>.json    what a suite says it ran; the input to the 100% bar
+  results/<lang>.json    what a suite says it ran; the input to the 100% bar.
+                         **Generated, not committed** (D640) — gitignored, written
+                         by the suite on every run, and CI generate-then-checks
 ```
 
 ## Two servers, because neither does everything
@@ -161,6 +163,50 @@ A suite reports what it ran in `sdks/fixtures/results/<language>.json`:
 required fixture has not run it — and the runner rejects a name that is not in the
 corpus, so a typo cannot read as "that one is done".
 
+**The file is generated, never committed** (D640). A committed report is a claim
+about a corpus, made by a suite, and it stops being true the moment either moves
+without anything touching the file: a corpus that gains a required fixture, or a
+suite that stops driving one. `check-languages.mjs` would then read the previous
+run's answer and call it coverage, which is the one thing a gate must not do.
+So a suite writes it on every run, clears any earlier one first so a crashed run
+leaves none rather than a stale one, and CI generates then checks:
+
+```yaml
+- run: pnpm --filter @loams/client test
+- run: node sdks/conformance/check-languages.mjs --check typescript
+```
+
+`run-test.sh` on a **single** test therefore finds no report and prints its
+existing note instead of checking coverage — which is the honest outcome, since
+one test does not cover 28 fixtures. Only a whole-suite run can answer the
+question.
+
+The TypeScript suite is the reference implementation, because it is the only
+language marked `verified: true` and so the only one whose command a runner
+actually executes. Three things in it are worth copying and two are worth
+knowing about:
+
+- **`ran` is derived, never listed.** The required set is read from
+  `manifest.json`; a suite that carried its own copy of the bar would absorb a
+  corpus that grows instead of turning red on it.
+- **The SDK re-serialises the recorded request**, so `fixture-server.mjs`'s
+  byte-for-byte comparison is a real check on the encoder. Replaying recorded
+  bytes with `fetch` would pass no matter what the SDK wrote.
+- **A recorded code is read from the recording's own bytes** — Connect error
+  body, `grpc-status`, or the end-of-stream frame — because an HTTP status cannot
+  tell these refusals apart: `400` covers both `invalid_argument` and
+  `failed_precondition`, and a gRPC-Web refusal is a `200`.
+- **A recorded stream is a prefix** and has no end frame, so a correct client
+  reports the missing one. Accepted only when the recording says it was
+  truncated, and only for that error.
+- **D610's idempotency key means seven app-mock mutations cannot be replayed
+  through the SDK's own call path**: they were recorded without a key, and the
+  fixture server correctly refuses a request that is not the recorded one. Those
+  steps go through the generated client and are still read back through the
+  SDK's error mapping.
+- **A live `loams dev` writes no report.** It does not serve the app packages,
+  so a partial report must not sit in front of the gate.
+
 ## What this cannot pin today
 
 Stated here so it is not discovered later:
@@ -185,6 +231,19 @@ Stated here so it is not discovered later:
 - **No CORS preflight.** R10's gRPC-Web half is recorded and its static half (no
   Node built-in at a default entry point) is a property of the SDK, but a preflight
   needs an origin and a server that answers one, and this repository has neither.
-- **The TS SDK suite does not yet run the app-mock half.** It names 13 of the 28
-  required fixtures; `check-languages.mjs --drift` prints the gap, which is what it
-  is for.
+- **The TS SDK drives all 28 required fixtures but reaches 15 of them through the
+  generated stubs, not the facade.** `ApprovalService` and `DeviceService` carry no
+  `loams.options.v1.module` annotation yet (API1 Tasks 2–4), so there is no
+  `loams.approvals` to call and the driver uses the `CallInvoker` those methods
+  would delegate to anyway. When the annotations land, the same fixtures run
+  through `loams.approvals` with no change to the corpus.
+- **The other eleven languages still write no report.** TypeScript is the first
+  because it is the only language marked `verified: true`; the rest are the
+  reference implementation to copy, and until they do,
+  `check-languages.mjs --check` has nothing to check for them.
+- **`--drift` under-reports TypeScript, and it is the static check being static.**
+  It counts the fixture names a suite's *sources* contain, so it sees the 15 the
+  suite names literally and not the 13 the driver reads out of
+  `manifest.json`. Both numbers are true and they answer different questions:
+  `--drift` is what a suite pins in text, `--check` is what a run exercised.
+  Only the second one is the bar.
