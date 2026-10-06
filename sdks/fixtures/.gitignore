@@ -1,0 +1,13 @@
+# The conformance reports a suite writes after a run (`results/<language>.json`).
+#
+# **Generated, never committed.** A committed report is a claim about a corpus
+# made by a suite, and it starts being wrong the moment either moves:
+# `manifest.json` gains a required fixture, or a suite stops driving one. Both
+# are real regressions, and a committed file turns both into a green diff — CI
+# reads a report that describes the last run that happened to write it.
+# `check-languages.mjs` is only a gate if what it reads came out of the run in
+# the same breath.
+#
+# Byte-for-byte the same file as the one on the C++ branch, so the two merge
+# without a conflict and neither branch can end up ignoring the other's report.
+results/

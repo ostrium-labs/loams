@@ -1,0 +1,15 @@
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/Loams.csproj.AssemblyReference.cache
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/Loams.GeneratedMSBuildEditorConfig.editorconfig
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/Loams.AssemblyInfoInputs.cache
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/Loams.AssemblyInfo.cs
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/Loams.csproj.CoreCompileInputs.cache
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/Loams.sourcelink.json
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/Loams.xml
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/bin/Debug/net8.0/Loams.deps.json
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/bin/Debug/net8.0/Loams.dll
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/bin/Debug/net8.0/Loams.pdb
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/bin/Debug/net8.0/Loams.xml
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/Loams.dll
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/refint/Loams.dll
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/Loams.pdb
+/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/Debug/net8.0/ref/Loams.dll

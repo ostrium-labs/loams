@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "GjtqFMYQL00=",
+  "success": true,
+  "projectFilePath": "/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/Loams.csproj",
+  "expectedPackageFiles": [
+    "/home/dinakaran/.nuget/packages/google.protobuf/3.28.3/google.protobuf.3.28.3.nupkg.sha512"
+  ],
+  "logs": []
+}

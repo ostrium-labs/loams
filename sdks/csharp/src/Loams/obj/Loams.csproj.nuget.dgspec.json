@@ -1,0 +1,73 @@
+{
+  "format": 1,
+  "restore": {
+    "/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/Loams.csproj": {}
+  },
+  "projects": {
+    "/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/Loams.csproj": {
+      "version": "0.1.0",
+      "restore": {
+        "projectUniqueName": "/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/Loams.csproj",
+        "projectName": "Loams",
+        "projectPath": "/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/Loams.csproj",
+        "packagesPath": "/home/dinakaran/.nuget/packages/",
+        "outputPath": "/home/dinakaran/Documents/Ostriumlabs/loams-wt/sdk-csharp/sdks/csharp/src/Loams/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/dinakaran/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Google.Protobuf": {
+              "target": "Package",
+              "version": "[3.28.3, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/home/dinakaran/.local/toolchains/dotnet/sdk/8.0.425/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}
