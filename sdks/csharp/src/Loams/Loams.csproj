@@ -8,9 +8,8 @@
     `RootNamespace` is left at its default: `protoc-gen-csharp` writes its own
     namespaces from the proto packages and the two line up.
 
-    `net8.0` and nothing else. See `sdks/templates/csharp/template.env` for why
-    there is no `netstandard2.1` target, and D645 in
-    `docs/design/13-decision-log.md`.
+    `net8.0` and nothing else. See `DEPENDENCIES.md` for why there is no
+    `netstandard2.1` target, and D650 in `docs/design/13-decision-log.md`.
   -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>

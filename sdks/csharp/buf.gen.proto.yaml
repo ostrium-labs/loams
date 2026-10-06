@@ -4,7 +4,7 @@
 # module surface is a **hand-written** facade (design §44 §7.3's Q604 fallback,
 # which `sdks/go` and `sdks/java` also take), so there is no
 # `protoc-gen-loams-facade` template for this language and
-# `sdks/templates/csharp/template.env` names only this file.
+# `scripts/sdk/drift.sh` has no C# case to consult (D650).
 #
 # The output **is committed**, like Go's and unlike Python's: a NuGet package
 # ships with its generated code, and a consumer who restores from nuget.org has

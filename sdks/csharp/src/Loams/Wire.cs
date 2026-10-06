@@ -7,7 +7,7 @@
 // <see cref="Protocol"/> and a <see cref="Codec"/>. There is no separate gRPC
 // transport type and no HTTP/2-only path, because C# has no official Connect
 // library (D612) and `Grpc.Net.Client` speaks neither Connect nor gRPC-Web over
-// HTTP/1.1 — see DEPENDENCIES.md and D641.
+// HTTP/1.1 — see DEPENDENCIES.md and D650.
 //
 // # What is shared and what is not
 //

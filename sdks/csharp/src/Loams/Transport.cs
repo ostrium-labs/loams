@@ -16,7 +16,7 @@
 // envelope rather than as an HTTP status. `Grpc.Net.Client.Web` is the browser
 // transport and lives in a WASM-only package. So the wire is here, over
 // `System.Net.Http`, with `Google.Protobuf` for the messages. See
-// `DEPENDENCIES.md` and D641.
+// `DEPENDENCIES.md`, and D650 for the ruling itself.
 //
 // # What the transport does *not* decide
 //
