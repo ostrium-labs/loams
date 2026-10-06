@@ -1,0 +1,2 @@
+# The CMake build directory. Generated, and a consumer builds their own.
+build/

@@ -147,9 +147,10 @@ export const LANGUAGES = {
   },
   cpp: {
     dir: 'sdks/cpp',
-    verified: false,
-    runOne: ['ctest', ['-R']],
-    runAll: ['ctest', ['--output-on-failure']],
+    sources: 'sdks/cpp',
+    verified: true,
+    runOne: ['ctest', ['--test-dir', 'build', '-R']],
+    runAll: ['ctest', ['--test-dir', 'build', '--output-on-failure']],
   },
   objc: {
     dir: 'sdks/objc',

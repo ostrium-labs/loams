@@ -1,0 +1,80 @@
+# The C++ SDK's generated stubs (design §44 §10.1 points 2 and 3).
+#
+# **Committed.** `sdks/cpp/gen/loams/**` is protoc's output verbatim, and it is
+# compiled from there by `sdks/cpp/CMakeLists.txt`, so a consumer needs no
+# `protoc`, no `buf`, no network and no BSR account — a C++ SDK whose build
+# downloads its own dependencies is a heavier install than the one this paragraph
+# justifies. The committed output is also what the mirror tarball ships
+# (design §44 §9 row 12, registry "source tarball always", Q610).
+#
+# `scripts/sdk/drift.sh` regenerates and fails on a diff. Until this SDK's case is
+# added to that script, the equivalent is:
+#
+#   buf generate --template sdks/cpp/buf.gen.yaml
+#   git diff --exit-code -- sdks/cpp/gen
+#
+# ## One plugin, and why
+#
+# `buf.build/protocolbuffers/cpp`, pinned. There is **no** `buf.build/grpc/cpp`
+# plugin here, and that is deliberate rather than an omission: the wire is the
+# **Connect protocol over HTTP**, not gRPC (design §44 §4, D600). One port serves
+# Connect, gRPC and gRPC-Web, and the C++ SDK speaks the two HTTP-shaped ones —
+# `application/json`, `application/proto`, `application/grpc-web+proto` and
+# `application/grpc-web+json`. A C++ client that needs a full gRPC stack to make
+# an HTTP POST is a heavier install for the same bytes, and grpc++ is not
+# installed on the machines or the CI runners that develop this repository.
+#
+# So the generated surface is **messages and service descriptors only**, and the
+# call path is hand-written in `src/`. Design §44 §7.3 allows exactly that shape
+# for the *runtime* ("only the runtime ... and the typed builders are hand-written,
+# once per language"), and §7.3's Q604 fallback allows the facade to be hand-written
+# too, which is what `src/bindings.cpp` and `src/facade.cpp` are — see
+# `include/loams/facade.hpp`'s header comment.
+#
+# `out: sdks/cpp/gen` is relative to the **repository root**, not to this file,
+# because buf resolves an `out` against the input's root. `paths=source_relative`
+# lands each file at `gen/loams/<package path>/v1/*.pb.{h,cc}`, which is where the
+# CMake target looks and what the include path `sdks/cpp/gen` makes
+# `#include "loams/instance/v1/instance.pb.h"` resolve.
+#
+# The C++ namespace of each generated message comes from the proto package, so
+# `loams.instance.v1` generates into `namespace loams::instance::v1`. The SDK's own
+# types live in `namespace loams` beside them, and none of them collides: a
+# generated `loams::live::v1::QueryRequest` and a hand-written `loams::Client` are
+# in the same namespace and share no name.
+#
+# ## ## The version pin is load-bearing
+#
+# The generated headers carry `#if PROTOBUF_VERSION != <gencode version>`, so the
+# plugin version and the installed `libprotobuf` runtime must be the **same
+# protobuf release**. That is protobuf's cross-version runtime guarantee, not a
+# choice: a gencode file from 29.3 will not compile against a 36.x runtime. The pin
+# is therefore bumped in the same commit as a protobuf bump, and `DEPENDENCIES.md`
+# records which release this tree was pinned against.
+#
+# ## No `paths=` option
+#
+# `protoc-gen-cpp` has no `paths=source_relative`. It writes each file relative to
+# its proto path, and that is already the layout wanted here:
+# `loams/<package path>/v1/*.pb.{h,cc}`. buf's `out` prefixes it, so the result is
+# `sdks/cpp/gen/loams/<package path>/v1/*.pb.{h,cc}`, which is what the CMake
+# target compiles and what the include path `sdks/cpp/gen` makes
+# `#include "loams/instance/v1/instance.pb.h"` resolve. Passing the option anyway
+# fails with "Unknown generator option: paths", which is worth writing down: it
+# reads like a missing step and is not one.
+version: v2
+inputs:
+  # The whole proto module, as one image. Every file matters: the error package and
+  # the annotations are imported by the ones a client calls.
+  - directory: proto
+plugins:
+  # Remote plugin, pinned to an exact version as D615 requires, so a regeneration
+  # does not silently change the output because an upstream release did.
+  #
+  # `v36.1` matches the `libprotobuf` 36.1.0 this tree's CI and its developers
+  # have installed. A different pin with the same protobuf release works too; a
+  # pin from a **different** release will not compile, and the header's `#error`
+  # says so by name.
+  - remote: buf.build/protocolbuffers/cpp:v36.1
+    out: sdks/cpp/gen
+clean: true
