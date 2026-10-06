@@ -6304,6 +6304,7 @@ dependencies = [
  "loams-hnsw",
  "loams-hot",
  "loams-link",
+ "loams-live",
  "loams-live-proto",
  "loams-log",
  "loams-meta",
@@ -6632,7 +6633,9 @@ dependencies = [
 name = "loams-live"
 version = "0.0.1"
 dependencies = [
+ "axum 0.8.9",
  "buffa",
+ "connectrpc",
  "crc",
  "data-encoding",
  "futures",
