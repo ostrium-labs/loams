@@ -1,6 +1,6 @@
 # The `ErrorInfo.reason` registry
 
-Status: **API1 Task 1** (2026-10-03). Design [§44](../design/44-unified-api-and-sdks.md) §7.4, decision **D611**; plan [API1](../plans/2026-10-02-api1-unified-connect.md).
+Status: **API1 Task 2** (2026-10-03): Task 1's registry plus `not_found`'s metadata, which `loams.collection.v1` fills from `ServiceError::NotFound`'s `kind` and `name` (`crates/loams/src/api/errors.rs` rule 3). Design [§44](../design/44-unified-api-and-sdks.md) §7.4, decision **D611**; plan [API1](../plans/2026-10-02-api1-unified-connect.md).
 
 Every failed RPC carries a Connect code (`unimplemented`, `not_found`, ...) and one `loams.errors.v1.ErrorInfo` in its details. Callers branch on **`reason`**, a stable `snake_case` string, never on `code` alone and never on `message` (which may change). This page is the registry of every `reason` the server can return, so a caller can look one up instead of guessing a string.
 
@@ -32,7 +32,7 @@ The rules, in the order they bite:
 | `not_implemented` | unimplemented | a stub handler whose service has not landed yet | |
 | `feature_not_in_variant` | unimplemented | any RPC of a catalogue package whose engine is not in this build variant (§44 §4, §30 §9) | `variant` |
 | `invalid_argument` | invalid_argument | any RPC: a malformed field, an unparseable value | `field` |
-| `not_found` | not_found | any RPC: the named resource does not exist | |
+| `not_found` | not_found | any RPC: the named resource does not exist | `kind`, `name` |
 | `already_exists` | already_exists | any RPC that creates a named resource | |
 | `permission_denied` | permission_denied | any RPC the caller's role may not make | |
 | `token_expired` | unauthenticated | a rejected access token | `hint` says whether to refresh or sign in again |
