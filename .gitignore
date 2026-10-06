@@ -13,20 +13,35 @@
 # Local run artifacts (dev/CLI scratch output, never committed)
 /run.history
 /run.ndjson
-/tidb-slow.log
-/tidb*.log
+*.log
+/cargo-metadata.json
 
 # Product/marketing docs live in the private dina-kar/loam-cloud repo
 /docs/product/
 
 # Python
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
 
-# Editors / OS
+# Editors / OS / Backups
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
+*.bak
+*.orig
+*.rej
 .DS_Store
+Thumbs.db
+*.swiftdeps~
+
+# AI tooling and local assistant state
+.claude/
+.superpowers/
 
 # Env
 .env
@@ -47,3 +62,4 @@ node_modules/
 # would then read the previous run's answer and call it coverage. The suite
 # writes one when it runs and CI generate-then-checks.
 sdks/fixtures/results/
+

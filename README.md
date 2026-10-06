@@ -68,7 +68,7 @@ Statuses reflect the `main` branch. **Available** means it is built and tested i
 
 ## Monorepo applications
 
-This repository also contains the [Loams Desktop](apps/desktop/native/README.md),
+This repository also contains the [Loams Desktop](apps/desktop/README.md),
 [native Android/iOS apps](apps/mobile/README.md), and [plugin services and dashboard](plugins/README.md).
 Nx coordinates Cargo, Gradle, Xcode/SwiftPM, Go, and the root pnpm workspace; it does not replace those build tools.
 
