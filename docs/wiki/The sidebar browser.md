@@ -79,7 +79,7 @@ are checked by Loams, not by the panel's rendering engine.
 ## Privacy and what is stored
 
 Each app profile stores that app's own session cookie on your machine, in
-Loams's application data directory, readable only by your user account. It never
+Loams’ application data directory, readable only by your user account. It never
 stores your Loams credentials — that is a design rule with a test attached to
 it, not an intention.
 

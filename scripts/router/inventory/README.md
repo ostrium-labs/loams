@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../docs/assets/loams-banner.svg)
+
 # Compatibility inventory: capture scripts
 
 The scripts that build the inputs of `crates/loams-compat` (`compat-replay`) for the router inventory
@@ -17,12 +19,12 @@ of MySQL 8.0.46 and WeSQL), the latter from `vitess-*`, `vt-*` and `compose.vite
     replicated schema contribute (see "What the merge keeps").
   - `scripts/spec/provenance.sh` (run by CI) scans `conformance/`.
 - **Vitess is Apache-2.0**, so `vitess-static.sh` records statement text with its source path.
-- **Pinned checkouts live outside the repository**: `$HOME/.cache/loam/pgdog-v0.1.60` (`PGDOG_SRC`) and
-  `$HOME/.cache/loam/vitess-v24.0.4` (`VITESS_SRC`), clones at the tags.
+- **Pinned checkouts live outside the repository**: `$HOME/.cache/loams/pgdog-v0.1.60` (`PGDOG_SRC`) and
+  `$HOME/.cache/loams/vitess-v24.0.4` (`VITESS_SRC`), clones at the tags.
 - **Containers use podman or docker.** With podman the scripts use `docker-compose` over podman's socket
   (`DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock`, set by the scripts).
 - **Machine limits** (15 GB of RAM, a small tmpfs `/tmp`): stop every container before a cargo build, never run the
-  Postgres stack next to the Vitess stack, keep all output under `$HOME/.cache/loam/inventory/`. The
+  Postgres stack next to the Vitess stack, keep all output under `$HOME/.cache/loams/inventory/`. The
   scripts stop when `$HOME` has under 8 GB free.
 
 ## Image pins
@@ -112,8 +114,8 @@ or the error's SQLSTATE. Notes on the method:
 ## Run it
 
 ```sh
-export PGDOG_SRC=$HOME/.cache/loam/pgdog-v0.1.60
-OUT=$HOME/.cache/loam/inventory/pg/$(date +%F)
+export PGDOG_SRC=$HOME/.cache/loams/pgdog-v0.1.60
+OUT=$HOME/.cache/loams/inventory/pg/$(date +%F)
 scripts/router/inventory/pg-capture.sh "$OUT"        # about 45 minutes, most of it the resharding timeout
 scripts/router/inventory/pg-replay.sh "$OUT"         # builds compat-replay, merges, replays on a fresh reference
 cp "$OUT/statements.tsv" conformance/router/pgdog-loampg-statements.tsv
@@ -154,7 +156,7 @@ Replay notes: statements that change the engine for good (DDL, globals, replicat
 verbs or bind variables cannot run as written; they compare by error code (usually 1064), which the row's note shows.
 
 ```sh
-OUT=$HOME/.cache/loam/inventory/mysql/$(date +%F)
+OUT=$HOME/.cache/loams/inventory/mysql/$(date +%F)
 scripts/router/inventory/vitess-capture.sh ref   $OUT/ref
 scripts/router/inventory/vitess-capture.sh wesql $OUT/wesql
 scripts/router/inventory/vitess-replay.sh $OUT

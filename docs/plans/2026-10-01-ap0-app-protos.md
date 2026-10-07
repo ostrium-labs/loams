@@ -33,7 +33,7 @@ Same as the M1 overview §8, plus:
 
 | # | Ruling | Why | Cost if wrong |
 |---|---|---|---|
-| 1 | **Package names `loams.<area>.v1`**, file layout `proto/loams/<area>/v1/<area>.proto` | Matches `loams.live.v1` and `loams.stream.v1` on `main`; Connect URL paths contain the package, so the rename PR moved them from `loam.*` before the first release (Q422, D407) | A rename after release breaks every installed app |
+| 1 | **Package names `loams.<area>.v1`**, file layout `proto/loams/<area>/v1/<area>.proto` | Matches `loams.live.v1` and `loams.stream.v1` on `main`; Connect URL paths contain the package, so the rename PR moved them from `loams.*` before the first release (Q422, D407) | A rename after release breaks every installed app |
 | 2 | **Every RPC has its own `<Rpc>Request` and `<Rpc>Response`**, including `Watch*` (`WatchApprovalsResponse` with a `oneof event`) | STANDARD lint without exceptions; room to add fields | None |
 | 3 | **Watch streams: snapshot, changes, heartbeat, cursor.** The first response carries `snapshot` (every matching object) and a `cursor`; later ones carry `upsert` or `remove` with a new cursor; an empty `heartbeat` every 15 s. A request with `resume_cursor` skips the snapshot when the cursor is still valid, and otherwise the server answers with a fresh snapshot and `snapshot_reset = true` | Mobile networks and proxies drop idle streams (§37 §8.3); the harness's "new generation, full baseline" reconnect is kept as the fallback | A cursor store per stream on the server; retention is the stream's (7 days for `_jobs/*`, §26 §6.6) |
 | 4 | **Idempotent reads are marked `option idempotency_level = NO_SIDE_EFFECTS`**, so Connect clients may send them as HTTP GET | Cacheable, and CDN- and proxy-friendly | None |

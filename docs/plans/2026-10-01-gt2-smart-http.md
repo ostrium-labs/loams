@@ -13,7 +13,7 @@
 
 **Architecture:**
 - **Routes** in `crates/loams/src/api/git.rs` under the off-by-default feature `git`, mounted in the `gateway` role, **loopback only** until the unified auth plan (D111; Q389): `--git-listen` refuses any non-loopback address with `git listen on <addr>: only loopback addresses are served until the unified auth plan (D111)`.
-- **Protocol** in `crates/loams-git/src/protocol/` (`pktline.rs`, `advertise.rs`, `lsrefs.rs`, `fetch.rs`, `negotiate.rs`, `assemble.rs`, `receive.rs`, `report.rs`): transport-free, over `AsyncRead`/`AsyncWrite` of pkt-lines, so the gateway, the helper's in-process server (Task 8) and the Worker of a commercial Cloudflare target (`loam-platform`) can share it.
+- **Protocol** in `crates/loams-git/src/protocol/` (`pktline.rs`, `advertise.rs`, `lsrefs.rs`, `fetch.rs`, `negotiate.rs`, `assemble.rs`, `receive.rs`, `report.rs`): transport-free, over `AsyncRead`/`AsyncWrite` of pkt-lines, so the gateway, the helper's in-process server (Task 8) and the Worker of a commercial Cloudflare target (`loams-platform`) can share it.
 - **Reads** through `RangeOdb` (Task 3): pack idx sections and objects by range GET through the H1 cache (`loams-cache`), never whole-pack downloads on the serving path.
 - **Writes** through GT1's `BlobStore` and `BucketRefLog`. The gateway node runs a `BucketRefLog` per active repository it owns (rendezvous owner of `(ns, repo, repo_id)`, D75) and forwards pushes for other repositories to their owner (§36 §4.4).
 - **Stock `git`** runs only in the compaction worker and in tests (D394, D396).
@@ -83,7 +83,7 @@ docs/design/36-loams-git.md  docs/guides/limits.md (via the limits table)  CHANG
 3. The git release that made v2 the default over HTTP (for Ruling 1's message).
 4. `gix-pack`'s output pipeline: the counting and entry-iteration options that reuse stored deltas ("pack copy" of entries), whether it emits `ofs-delta`, and whether it can write a thin pack; `gix-commitgraph` read API for generation numbers.
 5. How `loams-worker` registers a new task kind with a lease key (`task/git-compact/<ns>/<repo_id>`), and how the gateway learns the rendezvous owner of a placement key (M1.3's routing as built).
-6. The owner's answer to Q389 (recorded only; a Cloudflare Worker belongs to a commercial Cloudflare target (`loam-platform`)).
+6. The owner's answer to Q389 (recorded only; a Cloudflare Worker belongs to a commercial Cloudflare target (`loams-platform`)).
 
 **Commit:** `docs: reconcile GT2 with main and record the client checks`.
 

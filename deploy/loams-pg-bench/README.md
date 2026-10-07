@@ -1,8 +1,10 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # Loams WAL vs safekeepers: the P4b benchmark
 
 The harness behind the merge gate in [§28 §7](../../docs/design/28-loams-postgres.md). It runs
 pgbench through a Neon compute whose WAL goes either to **stock safekeepers** (the baseline)
-or to **Loams's WAL service on TiKV** (the candidate), on the same host and topology. The Loams
+or to **Loams’ WAL service on TiKV** (the candidate), on the same host and topology. The Loams
 WAL replaces the safekeepers only if, for every workload:
 
 - its p99 commit latency is at or below the safekeepers' (within the baseline's run-to-run

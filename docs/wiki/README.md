@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../assets/loams-banner.svg)
+
 # Wiki source
 
 These files are the source of the [Loams wiki](https://github.com/ostrium-labs/loams/wiki). GitHub only creates the wiki repository after its first page is saved in the UI. Once that is done, publish these pages:

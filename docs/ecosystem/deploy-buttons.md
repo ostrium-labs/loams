@@ -23,7 +23,7 @@ deploy/<provider>/
 3. **Least privilege.** It lists every permission it requests in `README.md` and asks for no more.
 4. **No secrets in the repo.** Inputs that are secrets are prompted for or generated; none is committed.
 5. **No phone-home.** It adds no telemetry or billing hooks. Usage hooks stay opt-in ([§27](../design/27-usage-hooks.md)).
-6. **Open formats.** Data stays in the user's bucket in Loams's open formats.
+6. **Open formats.** Data stays in the user's bucket in Loams’ open formats.
 7. **Tested.** CI (or the provider's own check, linked from the README) deploys it on every release candidate.
 8. **Owned.** `deploy/<provider>/` names at least one maintainer of the template in `CODEOWNERS`. Orphaned templates are marked deprecated.
 
@@ -32,7 +32,7 @@ deploy/<provider>/
 Use the provider's own button image and URL scheme, wrapped like this in the template README:
 
 ```markdown
-[![Deploy to <Provider>](https://<provider-button-image-url>)](https://<provider-deploy-url>?<repo-or-template-param>=https://github.com/ostrium-labs/loams/tree/main/deploy/<provider>)
+[![Deploy to <Provider>](https://<provider-button-image-url>)](https://<provider-deploy-url>?<repo-or-template-param>=https://github.com/ostrium-labs/loams/tree/dev/deploy/<provider>)
 ```
 
 Rules:

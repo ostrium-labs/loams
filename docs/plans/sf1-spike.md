@@ -408,9 +408,9 @@ are what Task 2 was already going to implement (E5).
 
 ## Also noted, out of scope for this PR
 
-- **Stale crate names elsewhere in the track.** `operon-*` paths remain in the SF2, SF3, SF4 and SF5
+- **Stale crate names elsewhere in the track.** `loams-*` paths remain in the SF2, SF3, SF4 and SF5
   plans and in parts of this plan's siblings (`docs/design/39-…` is already correct). Same
-  `operon` → `loams` defect class this PR fixes in SF1; each is a one-line-per-path fix in the
+  `loams` → `loams` defect class this PR fixes in SF1; each is a one-line-per-path fix in the
   owning plan. Not edited here — those plans are not mine.
 - **SF2's status line says "PRs target `main`** too. Same defect as SF1's. Not edited here (SF2's
   file), recorded so it is not lost.

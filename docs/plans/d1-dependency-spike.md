@@ -9,7 +9,7 @@ Method:
   - None of it is in this commit: `Cargo.toml`, `Cargo.lock` and `deny.toml` are unchanged.
 - The source is the fork `https://github.com/ostrium-labs/resonate` at **`c3f25b94301737f4bcfff503e25f2b0e36d57fb9`**. That is the branch `deps/advisories-rustls`: upstream `28dfd01` plus PR 0c (upstream #1164) only.
   - The TiDB fixes (PR 0a #1162, PR 1 #1163) change only `resonate-server-mysql`'s source, not its dependencies, so they do not move any number here.
-  - The branch `loam/0.10.1` does not exist yet. Task 1 creates it and pins its own revision.
+  - The branch `loams/0.10.1` does not exist yet. Task 1 creates it and pins its own revision.
 - Builds used `CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0` and a dedicated target directory, `~/.cache/cargo-target/loams-d1`. That directory was wiped before each cold build.
 - Other agents' builds and tests ran during every build (below), so the times are contended. Each build started only when no other cargo build was running, but builds that started later overlapped it.
 - The TiDB playground ran as `--tag loams-d1-t0 --port-offset 27000` (TiDB `127.0.0.1:31000`), only while no D1 build ran. It was stopped with `kill -INT` and `~/.tiup/data/loams-d1-t0` was deleted.
@@ -219,11 +219,11 @@ The embedded server was started with `LOAMS_D1_SERVE=1 LOAMS_D1_PROBE=sqlite:…
 | (0d, not yet opened) | `gcp-idtoken` feature on `resonate-transport-http-push` (fork branch `feat/push-gcp-idtoken-feature`, `849813f`) | Body ready for the owner (Task 1) |
 | (0e, not yet opened) | SDK: reqwest defaults as the `reqwest-default` feature (`feat/sdk-rs-reqwest-default-feature`, `e5ddb8a`) | Body ready for the owner (Task 1) |
 
-The fork's CI run for the pinned `loam/0.10.1` revision is Task 1's to record: see (j).
+The fork's CI run for the pinned `loams/0.10.1` revision is Task 1's to record: see (j).
 
-## (j) Task 1: the fork branch `loam/0.10.1`
+## (j) Task 1: the fork branch `loams/0.10.1`
 
-`ostrium-labs/resonate` `loam/0.10.1` = **`e3606698e6e3f2502bb018bba1e618deb63f907a`**. It was built in the worktree `~/Documents/research-clones/resonate-loam`.
+`ostrium-labs/resonate` `loams/0.10.1` = **`e3606698e6e3f2502bb018bba1e618deb63f907a`**. It was built in the worktree `~/Documents/research-clones/resonate-loams`.
 
 | Commit | What | Upstream |
 |---|---|---|
@@ -233,7 +233,7 @@ The fork's CI run for the pinned `loam/0.10.1` revision is Task 1's to record: s
 | `3ff482b` | `server-mysql: run on TiDB; xtask and CI legs for it` | #1163 (1); cherry-pick of `f8d7ef2` |
 | `e360669` | `sdk-rs: reqwest without default TLS` (default-on SDK feature `reqwest-default`) | 0e (branch `feat/sdk-rs-reqwest-default-feature`, `e5ddb8a`, on `28dfd01`) |
 
-**Fork CI.** Not run. GitHub keeps a fork's workflows disabled until they are enabled in its Actions tab. `gh api repos/ostrium-labs/resonate/actions/workflows` lists none, and `gh workflow run server-core-ci.yml --ref loam/0.10.1` answers 404. The workflows also trigger only on pushes to `main`, on PRs and on `workflow_dispatch`.
+**Fork CI.** Not run. GitHub keeps a fork's workflows disabled until they are enabled in its Actions tab. `gh api repos/ostrium-labs/resonate/actions/workflows` lists none, and `gh workflow run server-core-ci.yml --ref loams/0.10.1` answers 404. The workflows also trigger only on pushes to `main`, on PRs and on `workflow_dispatch`.
 
 **Local verification.** It is scoped, because `cargo xtask check` covers the whole workspace, and that includes `resonate-server-scylladb`. The commands used `CARGO_BUILD_JOBS=4 CARGO_INCREMENTAL=0 CARGO_TARGET_DIR=~/.cache/cargo-target/resonate`.
 

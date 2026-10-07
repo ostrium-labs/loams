@@ -12,7 +12,7 @@
 - Loams Bot as an **A2A server** too, so external A2A clients can drive it: the server, its route and its card are **disabled by default** and exist only with `--bot-a2a` (Q469).
 
 **Architecture:**
-- **`crates/operon-bot`**: the Connect service (`BotService`), the thread store (Live table `bot_threads`, stream `bot_events`), the **harness host manager** (spawns and supervises the harness SDK server process, speaks its JSON-RPC over stdio or a Unix socket), the A2A client wiring (SF2's `A2aClient`, token exchange per call), the push mapping, and the optional A2A server card for `loams-bot`.
+- **`crates/loams-bot`**: the Connect service (`BotService`), the thread store (Live table `bot_threads`, stream `bot_events`), the **harness host manager** (spawns and supervises the harness SDK server process, speaks its JSON-RPC over stdio or a Unix socket), the A2A client wiring (SF2's `A2aClient`, token exchange per call), the push mapping, and the optional A2A server card for `loams-bot`.
 - **`packages/subagent-a2a`** (TypeScript, in the harness-host bundle `web/host-bot/`): a provider on `ctx.subagents` patterned on `subagent-acp`: `start`, `continue`, `cancel`, `list`, over a small `A2aTransport` that calls back to `loams-bot` (the Rust side owns tokens, signing and tracing; the TS side never sees a bearer).
 - **`web/plugins/bot`** (`@loams/plugin-bot`): the **browser console's** cordis page and overlay: `bot.message.renderer`, `bot.card`, composer, slash commands, mentions, trajectory.
 - **Desktop (the zeron fork; the directory is named by §37's amendment, written `desktop/`):** `loams-harness-bot` (implements zeron's `Harness` trait over `loams-apps-client`'s `BotService` client), `loams-ui-bot` (artifact cards, `@agent` mentions, slash commands, the Loams Bot sidebar section, the approvals handoff) and, from SF4, `loams-ui-factory`.
@@ -66,8 +66,8 @@
 
 ```
 proto/loams/bot/v1/bot.proto                            # BotService, Thread, Event, Part, Card, TaskRef
-crates/operon-bot/src/{lib.rs,service.rs,threads.rs,host.rs,channel.rs,a2a.rs,approvals.rs,push.rs,card.rs}
-crates/operon-bot/tests/{main.rs,service.rs,threads.rs,host.rs,approvals.rs,push.rs,canary.rs,a2a_server.rs}
+crates/loams-bot/src/{lib.rs,service.rs,threads.rs,host.rs,channel.rs,a2a.rs,approvals.rs,push.rs,card.rs}
+crates/loams-bot/tests/{main.rs,service.rs,threads.rs,host.rs,approvals.rs,push.rs,canary.rs,a2a_server.rs}
 web/host-bot/{package.json,src/{main.ts,channel.ts,provider.ts,transport.ts},test/*}   # harness host bundle + subagent-a2a
 web/plugins/bot/{package.json,src/{index.ts,page.tsx,overlay.tsx,composer.tsx,renderers/*,cards/*,commands.ts},test/*}
 conformance/fixtures/bot/{threads.json,events.json,deeplinks.json,push.json}          # golden files shared by all clients
@@ -77,7 +77,7 @@ docs/design/39-…  docs/plans/README.md  THIRD_PARTY_NOTICES.md  CHANGELOG.md
 
 ### Task 0: Reconcile and study the harness
 
-**Files:** read the harness repositories' packages named under Spec at the pinned commit; `crates/operon-a2a` (SF2 as merged); AP0's mock. Record results in `docs/plans/sf3-spike.md`.
+**Files:** read the harness repositories' packages named under Spec at the pinned commit; `crates/loams-a2a` (SF2 as merged); AP0's mock. Record results in `docs/plans/sf3-spike.md`.
 
 **Checks:**
 - **The harness SDK server half** (`packages/sdk`): its JSON-RPC methods for creating a session, sending a turn, streaming events, answering a user question and approval, cancelling, and resuming; whether it runs headless on Node 22 and on Bun; its memory per session (estimate); its licence list (`THIRD_PARTY_NOTICES.md`).
@@ -120,7 +120,7 @@ service BotService {
 
 ### Task 2: `loams-bot`: threads as durable executions
 
-**Files:** `crates/operon-bot/src/{lib.rs,service.rs,threads.rs}`, `tests/{main.rs,service.rs,threads.rs}`.
+**Files:** `crates/loams-bot/src/{lib.rs,service.rs,threads.rs}`, `tests/{main.rs,service.rs,threads.rs}`.
 
 **Produces:**
 
@@ -142,7 +142,7 @@ pub trait ThreadStore: Send + Sync {
 
 ### Task 3: The harness host and `subagent-a2a`
 
-**Files:** `crates/operon-bot/src/{host.rs,channel.rs,a2a.rs}`, `web/host-bot/**`, tests `host.rs`, `canary.rs`, `web/host-bot/test/*`.
+**Files:** `crates/loams-bot/src/{host.rs,channel.rs,a2a.rs}`, `web/host-bot/**`, tests `host.rs`, `canary.rs`, `web/host-bot/test/*`.
 
 **Produces:**
 
@@ -170,7 +170,7 @@ export const a2aSubagentProvider: SubagentProvider = {
 
 ### Task 4: Questions, approvals and the hand-off
 
-**Files:** `crates/operon-bot/src/approvals.rs`, `tests/approvals.rs`.
+**Files:** `crates/loams-bot/src/approvals.rs`, `tests/approvals.rs`.
 
 **Semantics (design §5.3, §8):** an agent task entering `TASK_STATE_INPUT_REQUIRED` with a question `data` part becomes a `QuestionAsked` event (a card with options if given); the user's `AnswerQuestion` becomes the A2A follow-up message. One rule (design §5.3 and §8): Loams Bot relays every `INPUT_REQUIRED` question to the person, and the model may answer one **only** if the agent marked it `answerable_by_orchestrator`; otherwise the model is told it cannot, and the thread waits. Approvals are never answered by the model. An approval (`data: { approval_id, revision }`) becomes `ApprovalRequested`; the client opens `loams.approvals.v1`'s review screen. Loams Bot **does not call `DecideApproval`**; the service has no code path to it, and `loams-bot`'s service account has no `approvals:decide` scope. When the approval is settled the agent's own durable function resumes; the A2A push or the stream then reports the state change, which becomes a `TaskUpdated` event and a push (Task 8). `AUTH_REQUIRED` is an administrator matter and must not expose a transcript: the thread owner sees only a card saying that an administrator must reconnect the app; admins (`factory:admin`) get a separate **admin notice**, a `loams.factory.v1.ListAgents` health state `AUTH_REQUIRED` and a push category `admin.agent_auth` carrying only the agent and app names and a link to the connect-app page, never thread content.
 
@@ -224,7 +224,7 @@ export const a2aSubagentProvider: SubagentProvider = {
 
 ### Task 9: Loams Bot as an A2A server (off by default)
 
-**Files:** `crates/operon-bot/src/card.rs`, `tests/a2a_server.rs`.
+**Files:** `crates/loams-bot/src/card.rs`, `tests/a2a_server.rs`.
 
 **Semantics (Q469):** with `--bot-a2a`, the bot listener also serves SF2's `A2aServer` for an agent `loams-bot`: skills `ask` (read, write by delegation), `status` (read), `start_run` (write); the card is signed and requires a token whose subject is a user or a service account with `bot:invoke`; each external call becomes a thread owned by the token's principal: a user for a user token, and for a service-account token the **service account itself** (there is no user mapping; its threads are readable only by it and by holders of `bot:admin`, who see metadata, not content; user-scoped delegation is unavailable to it and its agent tokens carry the service account as `sub`), with the same policy and gates as a chat (a delegated destructive action still needs a human's approval, and the external caller cannot decide it). Rate limits per principal.
 

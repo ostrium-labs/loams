@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # Router compatibility inventory
 
 What a router asks of the engine behind it, recorded as data (design

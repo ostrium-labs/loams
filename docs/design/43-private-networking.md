@@ -4,7 +4,7 @@ Status: **Proposed** · 2026-10-02 (revised the same day). Sources: the owner's 
 
 It adds decisions **D580–D599** and open questions **Q580–Q599** (Q580–Q597 are used). They are **proposals** until the owner rules on them, except D580, which records the owner's two rulings. (The first draft of this document was Headscale-only; D582 and D585 to D599 were rewritten, not renumbered, for the provider seam.) Plan: [NET1](../plans/2026-10-02-net1-private-networking.md). The canonical log is the [decision log](13-decision-log.md).
 
-**Amends** §41 §7 (the optional connectivity mode for BYOC in §41 §7.4), [§30](30-loams-cli.md) §15 (reaching a self-hosted instance), [§37](37-desktop-and-mobile-apps.md) §7.2.4 (private instances and pairing) and [§10](10-operations.md) (private networking). **Builds on** [§38](38-knative-authentik-gitops.md) (Authentik is the identity provider) and [§19](19-console-identity-and-agents.md). The hosted service's side (the Tailscale account's policy workflow and runbook, and the Headscale alternative at `headscale.loams.dev` with its own runbook) lives in the private `loam-platform` repository under `deploy/tailnet/`; this repository depends on none of it.
+**Amends** §41 §7 (the optional connectivity mode for BYOC in §41 §7.4), [§30](30-loams-cli.md) §15 (reaching a self-hosted instance), [§37](37-desktop-and-mobile-apps.md) §7.2.4 (private instances and pairing) and [§10](10-operations.md) (private networking). **Builds on** [§38](38-knative-authentik-gitops.md) (Authentik is the identity provider) and [§19](19-console-identity-and-agents.md). The hosted service's side (the Tailscale account's policy workflow and runbook, and the Headscale alternative at `headscale.loams.dev` with its own runbook) lives in the private `loams-platform` repository under `deploy/tailnet/`; this repository depends on none of it.
 
 Markers: **(verify)** means not checked against a primary source; the task that depends on it checks it first. Every version, licence, plan-limit and status claim with a date was read on 2026-10-02 from the source named in §15. Nothing here was run against a live Tailscale account (none exists yet); what was run is stated in §3.1.
 
@@ -15,7 +15,7 @@ Markers: **(verify)** means not checked against a primary source; the task that 
 Loams runs two networks with two jobs:
 
 - **Cloudflare** (Tunnel, Workers, DNS) is the **public front door**: `loams.dev`, `auth.loams.dev`, `console.loams.dev`. People and browsers.
-- **A tailnet** (a WireGuard mesh coordinated by a control server) is the **private network**: operator SSH and `kubectl` with no public ports, k3s, TiKV and WeSQL traffic between sites, backups to the object store over private paths, the `loam-bench` CI runner, the Authentik admin interface, and an optional way for a customer's BYOC cluster to reach the control plane without opening an inbound port.
+- **A tailnet** (a WireGuard mesh coordinated by a control server) is the **private network**: operator SSH and `kubectl` with no public ports, k3s, TiKV and WeSQL traffic between sites, backups to the object store over private paths, the `loams-bench` CI runner, the Authentik admin interface, and an optional way for a customer's BYOC cluster to reach the control plane without opening an inbound port.
 
 The control server is **pluggable** (D582). The official Tailscale clients, unmodified, connect to either:
 
@@ -50,7 +50,7 @@ Facts that shaped the design, several of which correct assumptions the questions
                   │   Authentik    │  groups loams-net-users / -ops (B)    │
                   │ (admin routes  │                                       │
                   │ tailnet-only)  │            WireGuard mesh (tailnet, 100.64.0.0/10; MagicDNS names)
-                  └────────────────┘   ops laptops ── k3s ── TiKV ── WeSQL ── RustFS ── loam-bench ── tag:byoc-<tenant> agents
+                  └────────────────┘   ops laptops ── k3s ── TiKV ── WeSQL ── RustFS ── loams-bench ── tag:byoc-<tenant> agents
 ```
 
 ## 2. Goals and non-goals
@@ -68,7 +68,7 @@ Facts that shaped the design, several of which correct assumptions the questions
 ### 2.2 Non-goals
 
 - Replacing Cloudflare for public traffic, or putting end-user (browser) traffic on a tailnet.
-- Carrying Loams's data plane between customers or between a customer and the hosted service. The tailnet is a management and east-west network; data-plane paths keep their TLS and token authentication (§19, §41 §7.3).
+- Carrying Loams’ data plane between customers or between a customer and the hosted service. The tailnet is a management and east-west network; data-plane paths keep their TLS and token authentication (§19, §41 §7.3).
 - Building a Loams tailnet client, or a Headscale fork (D592).
 - Tailscale Funnel or Serve in anything Loams depends on (Headscale does not implement them, and the provider must stay swappable; D599).
 - Making hosted Tailscale a hidden dependency: it is the owner's chosen **default** provider, a documented and replaceable one (D582, D590).
@@ -137,7 +137,7 @@ The shared file therefore uses only the common subset, and the lint (`policy_lin
 | Authentik admin UI and management API | Denied on the public name | Yes (`tag:authentik` tcp 9000, operators only) |
 | k3s, TiKV, WeSQL, Loams cluster traffic between sites | No | Yes (§5.4 of the policy) |
 | Backups, snapshots, S3 to the private object store | R2 for the hosted beta | Yes for RustFS/private paths |
-| CI self-hosted runner (`loam-bench`) | Outbound to GitHub as before | Operator SSH and private object store |
+| CI self-hosted runner (`loams-bench`) | Outbound to GitHub as before | Operator SSH and private object store |
 | BYOC agent to the control plane | Default: outbound mTLS over HTTPS (§41 D543) | Optional mode (D587) |
 | Tailnet coordination and DERP | **Cannot** for Headscale (D583): its host is DNS-only. Not applicable to hosted Tailscale | Is the tailnet's control plane |
 
@@ -325,8 +325,8 @@ The control server is the coordinator: whoever controls it can add nodes and rew
 
 | What | Where |
 |---|---|
-| The hosted service's tailnet configuration: the shared `policy.hujson`, the policy workflow (`tailscale/gitops-acl-action`, `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`, skipped when absent), the Tailscale node for Authentik (compose profile `tailnet`, k3s manifests), the runbook | `loam-platform` (private): `deploy/tailnet/` and `docs/deploy/tailnet.md` |
-| The Headscale alternative: compose, k3s, config, DERP, backups, checker, runbook | `loam-platform`: `deploy/tailnet/headscale/`, beside `deploy/authentik/`, on a small host (preferably not the Authentik VM: a separate failure domain, Q580), DNS-only record, Authentik OIDC client from `loams-05-headscale.yaml` |
+| The hosted service's tailnet configuration: the shared `policy.hujson`, the policy workflow (`tailscale/gitops-acl-action`, `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`, skipped when absent), the Tailscale node for Authentik (compose profile `tailnet`, k3s manifests), the runbook | `loams-platform` (private): `deploy/tailnet/` and `docs/deploy/tailnet.md` |
+| The Headscale alternative: compose, k3s, config, DERP, backups, checker, runbook | `loams-platform`: `deploy/tailnet/headscale/`, beside `deploy/authentik/`, on a small host (preferably not the Authentik VM: a separate failure domain, Q580), DNS-only record, Authentik OIDC client from `loams-05-headscale.yaml` |
 | Authentik admin UI on the tailnet only | The same repository; path rules deny `/if/admin`, `/if/user` and the management API on the public name once the tailnet is up (a verification checklist in the runbook, because the regular expression depends on Authentik's route layout). The Authentik host joins as `tag:authentik` with either provider |
 | Self-hosted template, policy renderer, the `NetProvider` trait and both clients, the BYOC chart values | This repository (Apache-2.0): `deploy/tailnet/` (a `headscale/` compose and Kustomize template, a `tailscale/` node template, policy example and tests), `crates/loams-net`, `scripts/net/` |
 | A tenant's own tailnet or Headscale | The tenant. The template is the same |

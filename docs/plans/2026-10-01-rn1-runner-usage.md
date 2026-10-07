@@ -2,12 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact values (names, paths, headers, field numbers, metric names, defaults), use them verbatim. The code is not pre-written in this plan (M0.3 Ruling 1).
 
-> **Status: Planned** (2026-10-01; amended 2026-10-02 by [§38](../design/38-knative-authentik-gitops.md) D440: the protocol gateway, the Cloudflare runner and the usage-event form moved to `loam-platform`, and this plan builds hooks only). **Track RN** (D375, D376; design [§24](../design/24-cpu-time-runtime.md) §16 and [§27](../design/27-usage-hooks.md) §3.6; [§34](../design/34-protocol-gateway-and-standards.md) is now a stub). Build-order item 7, and the open half of item 6. **Not covered by track F:** §24's F1 builds the node supervisor and its tiers but no runner abstraction, no external runner and no host-report emitter crate; RN1 builds those, and F1's supervisor then calls RN1's `InvocationObserver` (D549) at the end of each invocation. RN1 does **not** build the metering ledger: rating, aggregation and reconciliation are `loam-platform`'s (D190, D202; §34 §15 row 5). Tasks 1–5 depend on nothing new. The former Task 6 (usage as CloudEvents and Arrow) moved to `loam-platform` (private) with GW1 (D440). Branches `rn1-t<N>`, stacked; PRs target `main`. RN1 adds crates only; nothing is linked into `loams`'s default build. **Amended 2026-10-02 by [§41](../design/41-multitenant-byoc-control-plane.md) (D548, D549, D556, owner open-core ruling):** the usage reporter, the `loams.meter.v1` record and the Lambda usage header moved to `loam-platform` (doc 06, private, authoritative) because **integrity is the security principle**: billing-grade producers and validators are not published. This plan now builds the `Runner` trait, `RunnerHost` with the open `InvocationObserver`, `ProcessRunner` and a usage-free `LambdaRunner`. **Tasks 1 and 2 are moved**; Task 5 no longer waits for Q366.
+> **Status: Planned** (2026-10-01; amended 2026-10-02 by [§38](../design/38-knative-authentik-gitops.md) D440: the protocol gateway, the Cloudflare runner and the usage-event form moved to `loams-platform`, and this plan builds hooks only). **Track RN** (D375, D376; design [§24](../design/24-cpu-time-runtime.md) §16 and [§27](../design/27-usage-hooks.md) §3.6; [§34](../design/34-protocol-gateway-and-standards.md) is now a stub). Build-order item 7, and the open half of item 6. **Not covered by track F:** §24's F1 builds the node supervisor and its tiers but no runner abstraction, no external runner and no host-report emitter crate; RN1 builds those, and F1's supervisor then calls RN1's `InvocationObserver` (D549) at the end of each invocation. RN1 does **not** build the metering ledger: rating, aggregation and reconciliation are `loams-platform`'s (D190, D202; §34 §15 row 5). Tasks 1–5 depend on nothing new. The former Task 6 (usage as CloudEvents and Arrow) moved to `loams-platform` (private) with GW1 (D440). Branches `rn1-t<N>`, stacked; PRs target `main`. RN1 adds crates only; nothing is linked into `loams`'s default build. **Amended 2026-10-02 by [§41](../design/41-multitenant-byoc-control-plane.md) (D548, D549, D556, owner open-core ruling):** the usage reporter, the `loams.meter.v1` record and the Lambda usage header moved to `loams-platform` (doc 06, private, authoritative) because **integrity is the security principle**: billing-grade producers and validators are not published. This plan now builds the `Runner` trait, `RunnerHost` with the open `InvocationObserver`, `ProcessRunner` and a usage-free `LambdaRunner`. **Tasks 1 and 2 are moved**; Task 5 no longer waits for Q366.
 
 **Goal:**
 - `loams-runner`: the `Runner` trait (D375), `RunnerHost` that calls the `InvocationObserver` (D549) for every invocation, and a runner conformance kit.
-- `ProcessRunner` (development and tests) and `LambdaRunner` with Loams's Lambda bootstrap (`loams-lambda-bootstrap`), both **without any usage header or billing figure**, tested locally against the AWS Lambda Runtime Interface Emulator.
-- **Not here any more:** `loams.meter.v1` and `loams-meter` (the former Tasks 1 and 2), the usage header, the billed-duration cap and the `REPORT` parser. They are built in `loam-platform` (doc 06).
+- `ProcessRunner` (development and tests) and `LambdaRunner` with Loams’ Lambda bootstrap (`loams-lambda-bootstrap`), both **without any usage header or billing figure**, tested locally against the AWS Lambda Runtime Interface Emulator.
+- **Not here any more:** `loams.meter.v1` and `loams-meter` (the former Tasks 1 and 2), the usage header, the billed-duration cap and the `REPORT` parser. They are built in `loams-platform` (doc 06).
 
 **Architecture:**
 - **One observation point.** `RunnerHost` and the supervisor's runner adapter call `InvocationObserver::observed(&Observation)` at the end of every invocation. `Observation` is a plain struct (org, namespace, function, version, runner kind, wall time, CPU time as measured and whether it is estimated, outcome). The trait has no wire format, no buffer and no persistence. The open implementation feeds the `loams_runner_*` metrics; the private platform plugs in its own at link time (§27 §3.7).
@@ -35,11 +35,11 @@ Same as the M1 overview §8, plus:
 
 | # | Ruling | Why | Cost if wrong |
 |---|---|---|---|
-| 1–5 | **Moved to `loam-platform` (doc 06, 2026-10-02, D548):** the socket envelope, `host_id` and `seq`, reporter batching and the buffer, the usage response header, and the Lambda billed-duration cap. They were billing-grade; their text is no longer published here | Integrity (D541) | — |
+| 1–5 | **Moved to `loams-platform` (doc 06, 2026-10-02, D548):** the socket envelope, `host_id` and `seq`, reporter batching and the buffer, the usage response header, and the Lambda billed-duration cap. They were billing-grade; their text is no longer published here | Integrity (D541) | — |
 | 6 | **`LambdaRunner` splits control from invocation**: `LambdaControl` (deploy, undeploy) with `AwsLambdaControl` (CreateFunction / UpdateFunctionCode / PublishVersion / alias `loams-<version>`) and `StaticLambdaControl` (a pre-deployed function name; used with the emulator); invocation always goes through `aws-sdk-lambda`'s `Invoke`, with `endpoint_url` overridden for the emulator | The emulator only implements invoke | Deploy paths are tested only by the optional real-AWS job |
-| 7 | **Lambda invocations carry the HTTP request as an API Gateway v2 (HTTP API) event**, so the tenant's handler is an ordinary `lambda_http` handler, and the response is the matching v2 response | `lambda_http` already maps v2 events to `http::Request`; Loams's `fetch` contract is an HTTP request (§24 D181) | Binary bodies are base64 in the event, which costs ~33% on large payloads; documented |
+| 7 | **Lambda invocations carry the HTTP request as an API Gateway v2 (HTTP API) event**, so the tenant's handler is an ordinary `lambda_http` handler, and the response is the matching v2 response | `lambda_http` already maps v2 events to `http::Request`; Loams’ `fetch` contract is an HTTP request (§24 D181) | Binary bodies are base64 in the event, which costs ~33% on large payloads; documented |
 | 8 | **`ProcessRunner` measures CPU per process** (cgroup v2 `cpu.stat` when the runner has a delegated subtree, else `/proc/<pid>/stat` `utime + stime`), and apportions it across invocations that overlapped, setting `cpu_estimated = true` whenever more than one was in flight | Development parity with T0's apportioning (estimated, never exact) | Development only; never used for billing |
-| 9 | **`SupervisorRunner` is not built here**; it comes with F1 (it implements the trait in F1's plan). `KnativeRunner` is MT2's. A Cloudflare Workers runner is part of the commercial Cloudflare target in `loam-platform` and plugs in as `RunnerKind::External` (D440), observed through the same trait | Scope | None |
+| 9 | **`SupervisorRunner` is not built here**; it comes with F1 (it implements the trait in F1's plan). `KnativeRunner` is MT2's. A Cloudflare Workers runner is part of the commercial Cloudflare target in `loams-platform` and plugs in as `RunnerKind::External` (D440), observed through the same trait | Scope | None |
 
 ## Carried in
 
@@ -78,21 +78,21 @@ docs/design/27-usage-hooks.md  docs/design/24-cpu-time-runtime.md  CHANGELOG.md
 **Files:** read §24 and §27 as merged, the status of F1 (is a supervisor on `main`?), `Cargo.toml`. Fill "Rulings made during execution".
 
 **Checks:**
-- Whether any code on `main` already defines a metering record or writes to a meter socket; if so, it is removed or moved to `loam-platform` (D548) and the difference is listed.
+- Whether any code on `main` already defines a metering record or writes to a meter socket; if so, it is removed or moved to `loams-platform` (D548) and the difference is listed.
 - `aws-sdk-lambda`, `aws-config`, `lambda_runtime`, `lambda_http` latest versions and licences; `cargo deny check` with them; **one measured cold build of `loams-runner-lambda`** (time and target-dir growth), recorded and the artifacts deleted.
 - The Runtime Interface Emulator's latest release, its arm64 and x86 binaries, and that `Invoke` works against it.
 - AWS Lambda's current payload and timeout limits, for the runner's capabilities.
-- Q367's status. Q366 moved to `loam-platform` (doc 06 PD66) and does not gate anything here.
+- Q367's status. Q366 moved to `loams-platform` (doc 06 PD66) and does not gate anything here.
 
 **Commit:** `docs: reconcile RN1 with main`.
 
-### Task 1: moved to `loam-platform`
+### Task 1: moved to `loams-platform`
 
-**Moved 2026-10-02 (D548).** The billing-grade usage record and its codec are built in `loam-platform` (doc 06). This repository has no `proto/loams/meter/`. The task number is kept so that references to Tasks 3 to 7 stay valid.
+**Moved 2026-10-02 (D548).** The billing-grade usage record and its codec are built in `loams-platform` (doc 06). This repository has no `proto/loams/meter/`. The task number is kept so that references to Tasks 3 to 7 stay valid.
 
-### Task 2: moved to `loam-platform`
+### Task 2: moved to `loams-platform`
 
-**Moved 2026-10-02 (D548).** The host-side usage reporter and its test consumer are built in `loam-platform` (doc 06). In their place Task 3 defines the open `InvocationObserver`.
+**Moved 2026-10-02 (D548).** The host-side usage reporter and its test consumer are built in `loams-platform` (doc 06). In their place Task 3 defines the open `InvocationObserver`.
 
 
 ### Task 3: `loams-runner`: the trait, `RunnerHost` and the conformance kit
@@ -139,7 +139,7 @@ impl RunnerHost { pub async fn invoke(&self, cx: &InvocationCx, dep: &Deployment
 
 ### Task 5: The Lambda bootstrap and `LambdaRunner` (without usage)
 
-**Moved out (2026-10-02, D548):** the usage response header, the `getrusage` read around the handler, the billed-duration cap, the `REPORT` line parser and `provider_billed_ms`. They are a tenant-reachable value that sets a charge, and are built in `loam-platform` (doc 06 PD66) as a wrapper around this runner. **Q366 no longer gates this task.**
+**Moved out (2026-10-02, D548):** the usage response header, the `getrusage` read around the handler, the billed-duration cap, the `REPORT` line parser and `provider_billed_ms`. They are a tenant-reachable value that sets a charge, and are built in `loams-platform` (doc 06 PD66) as a wrapper around this runner. **Q366 no longer gates this task.**
 
 **Files:** `crates/loams-lambda-bootstrap/{Cargo.toml,src/lib.rs,examples/echo.rs,tests/passthrough.rs}`, `crates/loams-runner-lambda/{Cargo.toml,src/lib.rs,src/control.rs,src/invoke.rs,src/event.rs,tests/rie.rs}`, `scripts/runner/{rie.sh,build-lambda-example.sh}`, `.github/workflows/ci.yml` (job `runner-lambda`).
 
@@ -156,11 +156,11 @@ pub struct AwsLambdaControl { /* role ARN, arch arm64, runtime provided.al2023 *
 pub struct StaticLambdaControl { pub function: String }
 ```
 
-**Semantics:** Rulings 6 and 7. The bootstrap wraps the tenant's handler and adds nothing to the response; the private wrapper in `loam-platform` (doc 06) is what strips tenant-set headers that could pose as platform values and adds its measurements. `LambdaRunner::invoke` builds the API Gateway v2 event from the request, calls `Invoke` (`InvocationType::RequestResponse`), maps the v2 response back, and returns `Usage { wall_usec, cpu_usec: None, cpu_estimated: false, region: Some(region), .. }` (plain measurements for the open metrics). Function errors (`FunctionError` set) answer 502 to the caller. `AwsLambdaControl::deploy` zips the artifact as `bootstrap`, creates or updates the function, publishes a version and points alias `loams-<version>` at it; idempotent by the artifact digest stored in the function's tags (`loams.dev/digest`).
+**Semantics:** Rulings 6 and 7. The bootstrap wraps the tenant's handler and adds nothing to the response; the private wrapper in `loams-platform` (doc 06) is what strips tenant-set headers that could pose as platform values and adds its measurements. `LambdaRunner::invoke` builds the API Gateway v2 event from the request, calls `Invoke` (`InvocationType::RequestResponse`), maps the v2 response back, and returns `Usage { wall_usec, cpu_usec: None, cpu_estimated: false, region: Some(region), .. }` (plain measurements for the open metrics). Function errors (`FunctionError` set) answer 502 to the caller. `AwsLambdaControl::deploy` zips the artifact as `bootstrap`, creates or updates the function, publishes a version and points alias `loams-<version>` at it; idempotent by the artifact digest stored in the function's tags (`loams.dev/digest`).
 
 **Tests:** `bootstrap_adds_no_headers` (the response equals the handler's); `runner_returns_no_billing_figure` (`Usage.cpu_usec` is `None` for Lambda); `rie_invoke_returns_response` and `rie_function_error_is_502` (the job starts the emulator with the `echo` example built for the runner's architecture, `StaticLambdaControl`, `endpoint_url` → the emulator); `runner_conformance!` against the emulator for the cases that do not need deploy. **Optional, manual:** a `workflow_dispatch` job `runner-lambda-aws` that deploys and invokes the example in a real account, only if the owner provides credentials and a budget (record the decision in Task 0).
 
-**Commit:** `runner: add the Lambda runner and Loams's Lambda bootstrap`.
+**Commit:** `runner: add the Lambda runner and Loams’ Lambda bootstrap`.
 
 
 ### Task 7: Docs and close
@@ -177,10 +177,10 @@ pub struct StaticLambdaControl { pub function: String }
 |---|---|
 | `SupervisorRunner` (the node supervisor implementing `Runner`, calling the observer) | F1 plan (§24 §11) |
 | `KnativeRunner` | MT2 |
-| `loams.meter.v1`, the usage reporter, the Lambda usage header and cap, usage as CloudEvents and Arrow (the former Tasks 1, 2, 5-usage and 6) | `loam-platform` (doc 06; D440, D548) |
-| A Cloudflare Workers runner | `loam-platform` (D440) |
+| `loams.meter.v1`, the usage reporter, the Lambda usage header and cap, usage as CloudEvents and Arrow (the former Tasks 1, 2, 5-usage and 6) | `loams-platform` (doc 06; D440, D548) |
+| A Cloudflare Workers runner | `loams-platform` (D440) |
 | Cloud Run and Container Apps runners | on demand (Q367) |
-| The consumer that aggregates, rates, bills and reconciles | `loam-platform` (D190, D202) |
+| The consumer that aggregates, rates, bills and reconciles | `loams-platform` (D190, D202) |
 | Showback in money or metering of any kind | not in this repository (D444, D541); operational dashboards over open metrics only (Q546) |
 
 

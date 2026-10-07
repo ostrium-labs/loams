@@ -1,4 +1,4 @@
-# 29 — WeSQL as Loams's MySQL-on-the-Bucket OLTP Engine
+# 29 — WeSQL as Loams’ MySQL-on-the-Bucket OLTP Engine
 
 Status: **Approved** (owner defaults, 2026-10-02: "do suggested for all") · 2026-10-01. This document comes from the owner's question, "will wesql become usable with proper transaction support, refer tidb (go) or starrocks (java), implement all starrocks features on wesql, both use rocksdb+iceberg on s3", and from the direction the owner approved in answer: verify the transaction model, then close WeSQL's gaps in four milestones (WS1–WS4), keep analytics on Iceberg beside it, and do not port StarRocks. Everything here was a **proposal**, approved by the owner on 2026-10-02 ("do suggested for all"; Q271 stays an owner action): decisions **D273–D280** and open questions **Q271–Q279**. It extends [§23](23-neon-and-wesql.md) (D148, D154, D156, Q50, Q51) and builds on [§28](28-loams-postgres.md) §7.2 (Arm A). It changes no code in Loams; the code work is in the fork `ostrium-labs/wesql` and, for WS2, in `loams-safekeeper`.
 
@@ -16,14 +16,14 @@ Markers, as in §23 and §28:
 
 | # | Decision | Status |
 |---|---|---|
-| D273 | **WeSQL (the fork `ostrium-labs/wesql`) is Loams's candidate MySQL OLTP engine whose storage lives entirely on the bucket, built as milestones WS1–WS4** (§11). It stays a separate, unmodified-by-Loams process (D148) and the choice against TiDB is made by the rule in D280. **Proposes to amend D156**: WeSQL stops being "dev compose only" only once WS1 and WS2 pass their acceptance tests; until then D156 and the Q50 gate stand | Approved (owner defaults, 2026-10-02) |
+| D273 | **WeSQL (the fork `ostrium-labs/wesql`) is Loams’ candidate MySQL OLTP engine whose storage lives entirely on the bucket, built as milestones WS1–WS4** (§11). It stays a separate, unmodified-by-Loams process (D148) and the choice against TiDB is made by the rule in D280. **Proposes to amend D156**: WeSQL stops being "dev compose only" only once WS1 and WS2 pass their acceptance tests; until then D156 and the Q50 gate stand | Approved (owner defaults, 2026-10-02) |
 | D274 | **Transactions: claim only what the source verifies** (§4). Loams documents WeSQL as single-node ACID with READ COMMITTED and REPEATABLE READ (snapshot isolation with first-committer-wins on locked keys), point locks and no gap or next-key locks, no SERIALIZABLE, no `ROLLBACK TO SAVEPOINT` after a write, and user-level XA untested. Closing those gaps is backlog (T1–T4, §4.3), not a milestone, except where WS1 needs one | Approved (owner defaults, 2026-10-02) |
 | D275 | **WS1: foreign keys are enforced in the SQL layer of the fork, not inside SmartEngine** (§5), in the handler wrappers (`ha_write_row`, `ha_update_row`, `ha_delete_row`), behind `wesql_enforce_foreign_keys` (default `OFF`, so today's strip-with-warning stays the default). Checks are current reads with a **shared lock on the parent's primary-key row**. Referential actions run as nested row operations that **are written to the row binlog**, and applier threads do not re-cascade. TiDB's implementation is the reference design | Approved (owner defaults, 2026-10-02) |
 | D276 | **WS2: the binlog, not SmartEngine's redo, is the log that is made durable in the Loams WAL quorum before a commit is acknowledged** (§6). The shipping point is the sync stage of MySQL's ordered commit. SmartEngine's own WAL stays local and may be flushed lazily in this mode | Approved (owner defaults, 2026-10-02) |
 | D277 | **The protocol boundary is a wire protocol, and the client in WeSQL is GPL-2.0-only code** (§6.4, §10). The acceptors are `loams-wal` (Apache-2.0, separate process, Arm A). The client lives in the fork, is written there, and copies no Apache-2.0 Loams source. The protocol is the safekeeper v3 message set (§28 §6.9) carrying a timeline kind `mysql-binlog` over TLS | Approved (owner defaults, 2026-10-02) |
 | D278 | **WS3: failover is rebuilt on the same quorum** (§7): terms in the acceptors (metadata in TiKV, as in D268), a primary record in `x/<ns>/<db>` changed by compare-and-set, a lease that makes a deposed primary stop, and a replica that catches up from the snapshot, the archived binlog in the bucket and the WAL tail. Single writer; no multi-primary | Approved (owner defaults, 2026-10-02) |
-| D279 | **WS4: analytics through Iceberg, not through a port of StarRocks** (§8). The binlog bridge (D154) writes a changelog stream per table, and links (§09) maintain a keyed Iceberg table in Lakekeeper on RustFS. StarRocks or Loams's own engine read that table as a sidecar. Porting StarRocks' features into the MySQL row executor is **rejected** | Approved (owner defaults, 2026-10-02) |
-| D280 | **TiDB is the alternative, and the rule for choosing it is stated** (§9): WeSQL only if the requirement is that the OLTP engine's storage lives entirely on the bucket. TiDB on Loams's TiKV already has distributed transactions, foreign keys and HA, but D260 (no TiDB anywhere) is the owner's, and choosing TiDB reverses it. This document does not | Approved (owner defaults, 2026-10-02) |
+| D279 | **WS4: analytics through Iceberg, not through a port of StarRocks** (§8). The binlog bridge (D154) writes a changelog stream per table, and links (§09) maintain a keyed Iceberg table in Lakekeeper on RustFS. StarRocks or Loams’ own engine read that table as a sidecar. Porting StarRocks' features into the MySQL row executor is **rejected** | Approved (owner defaults, 2026-10-02) |
+| D280 | **TiDB is the alternative, and the rule for choosing it is stated** (§9): WeSQL only if the requirement is that the OLTP engine's storage lives entirely on the bucket. TiDB on Loams’ TiKV already has distributed transactions, foreign keys and HA, but D260 (no TiDB anywhere) is the owner's, and choosing TiDB reverses it. This document does not | Approved (owner defaults, 2026-10-02) |
 
 ## 2. Goals and non-goals
 
@@ -31,7 +31,7 @@ Markers, as in §23 and §28:
 
 1. **A MySQL engine for apps that need one,** with real transactions, foreign keys, and a durability and failover story that holds when the local volume is lost.
 2. **Storage entirely on the bucket.** Snapshots, SmartEngine's extents and the log live in RustFS, and no committed transaction depends on a local disk surviving (§6).
-3. **Reuse Loams's pieces, build only the join.** Arm A's acceptors (§28 §7.2), the TiKV metadata and `x/` records (§23 §6.2), the binlog bridge (D154), Iceberg and Lakekeeper (§08).
+3. **Reuse Loams’ pieces, build only the join.** Arm A's acceptors (§28 §7.2), the TiKV metadata and `x/` records (§23 §6.2), the binlog bridge (D154), Iceberg and Lakekeeper (§08).
 4. **An honest record** of what SmartEngine, TiDB and StarRocks are (§3), because the owner's question rested on a mixed-up picture of the three.
 
 ### 2.2 Non-goals
@@ -39,7 +39,7 @@ Markers, as in §23 and §28:
 - **Porting StarRocks or TiDB code into WeSQL** (§8.3).
 - **Multi-primary or distributed transactions** in WeSQL. It is one writer at a time (D278).
 - **Making WeSQL the default MySQL answer.** TiDB is better on every axis except the bucket-only storage (§9).
-- **Linking WeSQL into Loams,** or patching it in a way that makes Loams's code GPL (D11, D148, §10).
+- **Linking WeSQL into Loams,** or patching it in a way that makes Loams’ code GPL (D11, D148, §10).
 - **Upstream contributions** without the owner's go-ahead.
 
 ## 3. Correcting the record
@@ -226,7 +226,7 @@ Rules that keep D11 and D148 intact:
 
 - **The client copies no Loams source.** It is written from the protocol specification. Apache-2.0 code cannot be combined into a GPL-2.0-only work (the FSF treats Apache-2.0 as compatible with GPL-3.0 and not with GPL-2.0), so nothing from `loams-safekeeper` is pasted or translated line by line into the fork. Where Neon's walproposer C code (PostgreSQL License, permissive and GPL-compatible) would help, it is read as a specification, not copied, to keep provenance simple (**verify** with the owner's counsel, Q271).
 - **The acceptors do not link anything GPL.** They speak the protocol over a socket. A separate program communicating over a socket is not a combined work under the usual reading of the GPL (**verify**, Q271).
-- **WeSQL is still never linked into Loams**, so Loams's code stays Apache-2.0 (D11). The fork's source is published as GPL-2.0 requires, from `ostrium-labs/wesql`.
+- **WeSQL is still never linked into Loams**, so Loams’ code stays Apache-2.0 (D11). The fork's source is published as GPL-2.0 requires, from `ostrium-labs/wesql`.
 - **Dependencies of the client** are limited to what the MySQL tree already carries (OpenSSL, zstd, protobuf if used), all GPL-2.0-compatible.
 
 **Transport and authorization (required, not optional).** Term fencing orders writers; it does not say who may write. So:
@@ -309,7 +309,7 @@ D154 already specifies that the row binlog becomes `DocOp`s on a collection's im
 ### 8.2 The readers
 
 - **Loams analytics** (§08) reads the table in place, with the hot tier of §04.
-- **StarRocks**, if a deployment wants it, runs as a **sidecar**: `CREATE EXTERNAL CATALOG … iceberg` against Lakekeeper's REST catalog on RustFS, and queries the table in place (§3). Loams never links or embeds it. StarRocks is Apache-2.0 (GitHub license API), so the sidecar carries no license concern; whether the Iceberg catalog's deletion-vector reads match Loams's writes is a conformance test (**verify**, §11 WS4).
+- **StarRocks**, if a deployment wants it, runs as a **sidecar**: `CREATE EXTERNAL CATALOG … iceberg` against Lakekeeper's REST catalog on RustFS, and queries the table in place (§3). Loams never links or embeds it. StarRocks is Apache-2.0 (GitHub license API), so the sidecar carries no license concern; whether the Iceberg catalog's deletion-vector reads match Loams’ writes is a conformance test (**verify**, §11 WS4).
 - Any other Iceberg engine reads the same table (§08 §8).
 
 ### 8.3 Why "implement all StarRocks features on WeSQL" is rejected
@@ -322,7 +322,7 @@ D154 already specifies that the row binlog becomes `DocOp`s on a collection's im
 
 ## 9. The alternative: TiDB on our TiKV (D280)
 
-TiDB on Loams's TiKV already has what WS1–WS3 would add: **distributed transactions** (Percolator over TiKV), **foreign keys** (§5.2), and **HA** (TiKV's Raft and PD, TiDB servers are stateless). It speaks the MySQL protocol, and a TiCDC changefeed is the standard binlog-like bridge. Honestly stated:
+TiDB on Loams’ TiKV already has what WS1–WS3 would add: **distributed transactions** (Percolator over TiKV), **foreign keys** (§5.2), and **HA** (TiKV's Raft and PD, TiDB servers are stateless). It speaks the MySQL protocol, and a TiCDC changefeed is the standard binlog-like bridge. Honestly stated:
 
 | Question | WeSQL fork | TiDB on TiKV |
 |---|---|---|
@@ -332,7 +332,7 @@ TiDB on Loams's TiKV already has what WS1–WS3 would add: **distributed transac
 | Scale-out writes | No (one writer) | Yes |
 | **Where the data lives** | **Entirely on the bucket** (SmartEngine extents, snapshots, binlog), local disks are caches | **Local NVMe on TiKV nodes** in the self-hosted or classic form, replicated three ways; object storage only for backups. TiDB X is the object-storage form, in TiDB Cloud (§3), not verified as self-hostable |
 | Cost shape | Storage at S3 price; compute for one primary and replicas | Three TiKV replicas on local disks (3× the data on NVMe) |
-| Maturity | Beta, one vendor, long gaps in commits (§23 §4.2), plus a fork we own | A mature system under the Apache-2.0 license; Loams's TiKV is unmodified (D126) |
+| Maturity | Beta, one vendor, long gaps in commits (§23 §4.2), plus a fork we own | A mature system under the Apache-2.0 license; Loams’ TiKV is unmodified (D126) |
 | Work for Loams | Four milestones (§11) | TiDB servers and operator pieces, and **a reversal of D260** |
 
 **The rule (D280).** Choose WeSQL only if the requirement is *OLTP storage that lives entirely on the bucket*: the same property that D1 gives the retrieval engine, a stateless engine over S3 with disks as caches, for apps whose data is modest and whose operators want one durable place. Choose TiDB for anything that needs scale-out writes, more than one write node, distributed transactions across data, or mature HA, and accept that its data sits on TiKV disks.
@@ -385,7 +385,7 @@ Each milestone is a small stack of PRs, in the fork (F) and in this repository (
 
 | # | Question | Needed by |
 |---|---|---|
-| Q271 | **Legal review of the licensing boundary** (§6.4): is a GPL-2.0-only client in `mysqld` that speaks a documented protocol to an Apache-2.0 server a combined work under the GPL (we say no), and is writing the client from the specification, without copying Loams's Apache-2.0 code, enough? **Owner action pending (2026-10-02):** counsel reviews the GPL-2.0-only client / Apache-2.0 acceptor boundary (§29 §6.4, §10) | Owner action; owner and counsel, before the WS2 plan |
+| Q271 | **Legal review of the licensing boundary** (§6.4): is a GPL-2.0-only client in `mysqld` that speaks a documented protocol to an Apache-2.0 server a combined work under the GPL (we say no), and is writing the client from the specification, without copying Loams’ Apache-2.0 code, enough? **Owner action pending (2026-10-02):** counsel reviews the GPL-2.0-only client / Apache-2.0 acceptor boundary (§29 §6.4, §10) | Owner action; owner and counsel, before the WS2 plan |
 | Q272 | ~~One archive or two (§6.5): keep the fork's `binlog_archive` slices beside the acceptors' offload, or let the offload replace it and have recovery read only the acceptors' objects~~ Answered 2026-10-02 by the owner: the recommended default — two archives: the fork keeps its `binlog_archive` slices for recovery and replicas, the acceptors' offload is the tail, and one position map ties them (§29 §6.5) | Resolved |
 | Q273 | ~~Given §9, do WS1–WS4 beat reversing D260 for the bucket-only requirement? (A decision, not a question for engineering.)~~ Answered 2026-10-02 by the owner: the chosen default (the doc gives no recommendation) — WS1–WS4 go ahead and D260 stands, no TiDB (D409); why: it is the direction the owner approved for §29, §31 builds on WeSQL (D301, D320), and bucket-only storage is D1's property | Resolved |
 | Q274 | ~~Forgejo's minimum MySQL version versus WeSQL's 8.0.x base (§11 WS1): rebase to 8.4, or accept the documented deviation~~ Answered 2026-10-02 by the owner: the chosen default (the doc gives no recommendation) — accept the documented deviation for WS1 and rebase WeSQL to MySQL 8.4 once, before Vitess v24's support ends (about 2027-04), which also answers Q302 (D410); why: one rebase serves Forgejo and Vitess v25+ | Resolved |

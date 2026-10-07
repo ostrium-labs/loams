@@ -4,16 +4,16 @@
 
 > **Amended 2026-09-28 (design §22 §13b):** PostHog is replaced by **OpenPanel** (FOSS, AGPL-3.0; upstream ClickHouse in SC1, behind forward-auth until OIDC lands) and **Matomo** (GPL-3.0; MariaDB; the LoginOIDC plugin). **Task 7 (TiDB) is dropped**, and every PostHog step below applies to OpenPanel and Matomo instead. The OpenPanel-on-Iceberg fork (D-SC-15) is a later SC plan.
 
-> **Status: Not started** (written 2026-09-28, ahead of time). SC1 runs **after the Loams release (v1.0 = M1 + M2)**. It depends on the unified auth plan (Q30) being implemented, and it starts with a Task 0 that reconciles this plan with what then exists. The work lives in a new repository, **`dina-kar/loam-commons`** (D-SC-1); this plan stays in the engine repository beside the design it implements. Branches `sc1-t<N>`, stacked; PRs target `main` of `loams-commons`. SC1 changes no engine code: every engine gap it finds is filed as an engine issue and worked in the engine's own milestones (D-SC-10).
+> **Status: Not started** (written 2026-09-28, ahead of time). SC1 runs **after the Loams release (v1.0 = M1 + M2)**. It depends on the unified auth plan (Q30) being implemented, and it starts with a Task 0 that reconciles this plan with what then exists. The work lives in a new repository, **`dina-kar/loams-commons`** (D-SC-1); this plan stays in the engine repository beside the design it implements. Branches `sc1-t<N>`, stacked; PRs target `main` of `loams-commons`. SC1 changes no engine code: every engine gap it finds is filed as an engine issue and worked in the engine's own milestones (D-SC-10).
 
 **Goal:** Ship design §22 (D-SC-1 … D-SC-10):
 - a license-clean suite repository (Apache-2.0 glue, `NOTICE`, `LICENSES.md`, a license-check CI job);
 - Keycloak as the one OIDC provider for Loams, Forgejo, Zulip, GlitchTip and (through Forgejo) Plane; PostHog behind forward-auth;
 - one OpenFGA model across Loams and every app, projected into each app by durable provisioning sagas on Loams Durable, with a scheduled reconcile;
-- every app's object storage on RustFS; Forgejo's issue indexer on Loams's Elasticsearch API; every service's logs in Loams over OTLP;
+- every app's object storage on RustFS; Forgejo's issue indexer on Loams’ Elasticsearch API; every service's logs in Loams over OTLP;
 - the showcase features: unified hybrid search with OpenFGA filtering, a live activity feed on Loams Live, and an MCP assistant with delegated user tokens;
 - Compose for development and an umbrella Helm chart;
-- the dogfooding cutover: Loams's own team works in the suite, and the SC1 exit report.
+- the dogfooding cutover: Loams’ own team works in the suite, and the SC1 exit report.
 
 **Architecture:** design §22 §3. `commons-control` (the suite's service) holds the outbox consumer, the app connectors, the sagas and the group sync, and runs as Resonate SDK workers against Loams Durable. The Commons portal is a small web app on `@loams/ui` and the Loams SDKs.
 
@@ -38,8 +38,8 @@
 |---|---|---|
 | **Loams v1.0** (M1 + M2) | The released binary, the stream API (D72), OTLP logs ingest (D73), RustFS as the default store (D61), audit events (D100) | SC1 does not start |
 | **The unified auth plan (Q30), implemented** | Loams must accept Keycloak-issued OIDC tokens (or exchange them, §19 §5.2) on the native API, the ES API, MCP and the durable listener, and must listen beyond loopback with auth (D111) | SC1 does not start |
-| **§19 OIDC login and teams** (M2) | Loams's console signs in with Keycloak; groups map to teams | Task 2 waits |
-| **The `OpenFga` authorizer** (D66, D67, M2.x) | Loams checks the shared store natively | Tasks 3 and 9 use Loams's built-in RBAC for Loams resources and OpenFGA only in the portal until it lands |
+| **§19 OIDC login and teams** (M2) | Loams’ console signs in with Keycloak; groups map to teams | Task 2 waits |
+| **The `OpenFga` authorizer** (D66, D67, M2.x) | Loams checks the shared store natively | Tasks 3 and 9 use Loams’ built-in RBAC for Loams resources and OpenFGA only in the portal until it lands |
 | **D2** (durable tenancy, D142) | Sagas in a `commons` namespace, not `default` | Task 5 runs in `default` on a dedicated Loams instance |
 | **R1/R2** (Loams Live sync API) | The activity feed | Task 10 moves to the end |
 | **ES Phase B** | Forgejo's code indexer | The code indexer stays on bleve; not a gate |
@@ -64,7 +64,7 @@
 | 3 | **Plane signs in through Forgejo's OAuth2 provider** with Plane's Gitea provider | Generic OIDC is a paid Plane feature; Forgejo serves the Gitea endpoints Plane calls | If a Plane release drops or changes the Gitea provider, Plane falls back to forward-auth plus provisioned accounts |
 | 4 | **PostHog is an optional profile**, behind forward-auth, FOSS build | SSO and RBAC are `ee/`; the hobby deploy is heavy and unsupported | The showcase without product analytics; documented |
 | 5 | **OpenFGA is the source of truth; app ACLs are projections** (D-SC-4) | Most apps cannot call OpenFGA | Drift between reconcile runs; bounded by the schedule interval and reported |
-| 6 | **Forgejo's issue indexer on Loams's ES API; the code indexer stays on bleve** | The issue indexer's queries are in ES Phase A; the code indexer needs highlighting and aggregations (Phase B) | None |
+| 6 | **Forgejo's issue indexer on Loams’ ES API; the code indexer stays on bleve** | The issue indexer's queries are in ES Phase A; the code indexer needs highlighting and aggregations (Phase B) | None |
 
 ## Review Focus
 
@@ -73,7 +73,7 @@
 3. **License compliance.** Tests: Task 1 (`license-check`).
 4. **Offboarding.** A disabled Keycloak user loses access to every app and to Loams. Tests: Task 5 (`offboarding_removes_access_everywhere`).
 
-## File structure (in `dina-kar/loam-commons`)
+## File structure (in `dina-kar/loams-commons`)
 
 ```
 LICENSE  NOTICE  LICENSES.md  README.md
@@ -119,13 +119,13 @@ docs/{architecture.md,licenses.md,operations.md,dogfooding.md}
 
 **Commit:** `ci: add the suite skeleton and the license check`.
 
-### Task 2: Keycloak, the realm and Loams's OIDC login
+### Task 2: Keycloak, the realm and Loams’ OIDC login
 
 **Files:** `init/keycloak/realm-commons.json`, the `commons-init` container, compose services `keycloak` and `commons-init`.
 
-**Semantics:** realm `commons` with one OIDC client per app and one for Loams, a `groups` claim (Group Membership mapper, full path off), TOTP required for admins, and a seeded group per suite project (`proj-<slug>-{admin,maintainer,developer,viewer}`). Loams's console and API accept the realm's tokens as the auth plan specifies.
+**Semantics:** realm `commons` with one OIDC client per app and one for Loams, a `groups` claim (Group Membership mapper, full path off), TOTP required for admins, and a seeded group per suite project (`proj-<slug>-{admin,maintainer,developer,viewer}`). Loams’ console and API accept the realm's tokens as the auth plan specifies.
 
-**Tests:** `e2e/sso_loams.spec.ts`: sign in to Loams's console through Keycloak; a user in `proj-loams-engine-developer` sees that project's environments and not others.
+**Tests:** `e2e/sso_loams.spec.ts`: sign in to Loams’ console through Keycloak; a user in `proj-loams-engine-developer` sees that project's environments and not others.
 
 **Commit:** `idp: add the Keycloak realm and Loams sign-in`.
 
@@ -133,7 +133,7 @@ docs/{architecture.md,licenses.md,operations.md,dogfooding.md}
 
 **Files:** `init/fga/model.fga` (§22 §7.2), `init/fga/model.fga.yaml` (tests), `control/src/groupsync/`.
 
-**Semantics:** the model is written into the store Loams uses (D67), beside Loams's and Lakekeeper's types; Keycloak admin events for group membership become `group#member` tuples, and a full resync runs at start.
+**Semantics:** the model is written into the store Loams uses (D67), beside Loams’ and Lakekeeper's types; Keycloak admin events for group membership become `group#member` tuples, and a full resync runs at start.
 
 **Tests:** `fga model test` with fixtures: every relation of §22 §7.2, the tenant fence (`other_org_member_never_reads`), public repositories, org-visible channels. `groupsync_adds_and_removes_members`, `groupsync_full_resync_is_idempotent`.
 
@@ -169,9 +169,9 @@ docs/{architecture.md,licenses.md,operations.md,dogfooding.md}
 
 **Commit:** `control: add the connectors, provisioning sagas and reconcile`.
 
-### Task 6: Forgejo's issue indexer on Loams's Elasticsearch API
+### Task 6: Forgejo's issue indexer on Loams’ Elasticsearch API
 
-**Files:** Forgejo `[indexer] ISSUE_INDEXER_TYPE = elasticsearch`, `ISSUE_INDEXER_CONN_STR` pointing at Loams's ES listener with a Loams credential; `e2e/forgejo_search.spec.ts`.
+**Files:** Forgejo `[indexer] ISSUE_INDEXER_TYPE = elasticsearch`, `ISSUE_INDEXER_CONN_STR` pointing at Loams’ ES listener with a Loams credential; `e2e/forgejo_search.spec.ts`.
 
 **Semantics:** Forgejo writes and searches issues through Loams; the code indexer stays on bleve (Ruling 6).
 
@@ -193,7 +193,7 @@ docs/{architecture.md,licenses.md,operations.md,dogfooding.md}
 
 **Files:** `otel/collector.yaml`, compose and chart wiring.
 
-**Semantics:** the collector reads container logs (filelog receiver) and receives each app's OTLP where it exists, and exports logs to Loams's OTLP endpoint (D73) with `loams-namespace: commons-obs` and `loams-stream: <service>`; a link materializes them into the collection `commons.logs`. Traces wait for Q43.
+**Semantics:** the collector reads container logs (filelog receiver) and receives each app's OTLP where it exists, and exports logs to Loams’ OTLP endpoint (D73) with `loams-namespace: commons-obs` and `loams-stream: <service>`; a link materializes them into the collection `commons.logs`. Traces wait for Q43.
 
 **Tests:** `logs_from_every_service_arrive` (one known log line per service is searchable in `commons.logs` within 30 s).
 
@@ -223,7 +223,7 @@ docs/{architecture.md,licenses.md,operations.md,dogfooding.md}
 
 **Files:** `docs/assistant.md`, portal page for connecting an MCP client.
 
-**Semantics:** a user connects an MCP client to Loams's MCP server with §19's user-delegation flow; the tools search the commons collections with the user's rights. Actions that change apps (open an issue, post a message) are exposed only through `commons-control` operations with an approval gate.
+**Semantics:** a user connects an MCP client to Loams’ MCP server with §19's user-delegation flow; the tools search the commons collections with the user's rights. Actions that change apps (open an issue, post a message) are exposed only through `commons-control` operations with an approval gate.
 
 **Tests:** `assistant_sees_only_callers_objects`; `assistant_action_needs_approval`.
 
@@ -233,7 +233,7 @@ docs/{architecture.md,licenses.md,operations.md,dogfooding.md}
 
 **Files:** `charts/loams-commons/` (umbrella), values for dev and production.
 
-**Semantics:** upstream charts where they exist (Forgejo, OpenFGA, Keycloak or its operator, Zulip, Plane, GlitchTip; Task 0 lists them), Loams's chart and RustFS's chart; `commons-init` as a Helm hook job; PostHog optional; Postgres external in production values.
+**Semantics:** upstream charts where they exist (Forgejo, OpenFGA, Keycloak or its operator, Zulip, Plane, GlitchTip; Task 0 lists them), Loams’ chart and RustFS's chart; `commons-init` as a Helm hook job; PostHog optional; Postgres external in production values.
 
 **Tests:** `helm lint`, `helm template` against kubeconform; the e2e suite (Tasks 2, 4, 5, 9) on a kind cluster, nightly.
 
@@ -243,7 +243,7 @@ docs/{architecture.md,licenses.md,operations.md,dogfooding.md}
 
 **Files:** `docs/dogfooding.md`; `docs/plans/sc1-exit-report.md` in the engine repo.
 
-**Semantics:** staged adoption by the Loams team: GlitchTip (loam-cloud's Sentry SDKs re-pointed by DSN), then Forgejo as a mirror of the GitHub repositories with CI on Forgejo Runner, then Zulip, then Plane for one milestone, then PostHog (if kept). Each stage has a rollback. GitHub stays the source of truth for code until the owner decides otherwise.
+**Semantics:** staged adoption by the Loams team: GlitchTip (loams-cloud's Sentry SDKs re-pointed by DSN), then Forgejo as a mirror of the GitHub repositories with CI on Forgejo Runner, then Zulip, then Plane for one milestone, then PostHog (if kept). Each stage has a rollback. GitHub stays the source of truth for code until the owner decides otherwise.
 
 **Exit gates:** one sign-in reaches every app except PostHog's documented gap; a grant and a revoke converge in every app within one reconcile interval; project creation survives a crash at every step; unified search never leaks; the license check passes; every service's logs are in Loams; the team used the suite for one full milestone, with every incident recorded.
 

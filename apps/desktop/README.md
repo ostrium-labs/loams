@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # Loams Desktop
 
 Loams Desktop is the native desktop application for the Loams platform, built with [GPUI](https://github.com/zed-industries/zed) in Rust.

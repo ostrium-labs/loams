@@ -8,10 +8,10 @@ This document **amends §14** (approved 2026-09-24, D19). §14's protocol analys
 
 | §14 said | §21 says | Why |
 |---|---|---|
-| Resonate's gateway runs in the `gateway` role (§14 §3) | The server is linked into every `loams` binary behind the cargo feature `durable`, on its own listener (D138) | Owner direction. One binary to ship, no extra role or process, and in-process calls from Loams's own code |
+| Resonate's gateway runs in the `gateway` role (§14 §3) | The server is linked into every `loams` binary behind the cargo feature `durable`, on its own listener (D138) | Owner direction. One binary to ship, no extra role or process, and in-process calls from Loams’ own code |
 | Storage is `resonate-server-blob` over `loams-store`, under `ns/<ns>/durable/` (§14 §3, §4) | SQLite in dev and standalone; the native TiKV backend (a TiKV `Store` for the blob server) for clusters, Loams cloud and self-hosted deployments (D139 as amended by D261). ~~TiDB (Resonate's MySQL plugin) for Loams cloud now~~: legacy, dev and tests only (D261) | Owner direction. Loams runs TiKV anyway (§20), and no TiDB (D260) |
 | Phase A in M3, Phase B in M4 (D19, D46) | A parallel track, **D**, like track R: D1 now, D2–D4 later (D145) | Durable operations are needed by M2 features (erasure, restore, reindex), so they cannot wait for M3 |
-| Resonate's own auth is replaced by Loams's (§14 §4) | Unchanged in intent, but deferred to the unified auth plan (D111). Until then the listener is loopback-only and refuses other addresses (D138) | D111 |
+| Resonate's own auth is replaced by Loams’ (§14 §4) | Unchanged in intent, but deferred to the unified auth plan (D111). Until then the listener is loopback-only and refuses other addresses (D138) | D111 |
 
 Markers: **(spike)** means measured in the linking spike of 2026-09-27 (§13). **(research)** means measured in the Resonate/TiDB research of 2026-09-27 (`.superpowers/research/resonate-tidb.md` in the m1.2a worktree, not committed). **(estimate)** means computed, not measured. **(verify)** means the plan that builds it checks it first. Paths of the form `core/…` point into `resonatehq/resonate` at `28dfd01` (server 0.10.1, protocol `2026-04-01`), under `impl/server/core/`. Paths of the form `sdk-rs/…` point into the same repository under `impl/sdk/rs/`.
 
@@ -22,18 +22,18 @@ Markers: **(spike)** means measured in the linking spike of 2026-09-27 (§13). *
 Loams links the Resonate server into its own binary and uses it in two ways:
 
 1. **As a product surface.** Loams speaks the standard Resonate protocol on `127.0.0.1:8001`, so the official Resonate SDKs (TypeScript, Python, Go, Java, Rust) run durable functions against Loams unchanged. Agents and applications get durable promises, tasks, retries, sleeps, schedules and human-in-the-loop gates from the same system that holds their memory and retrieval.
-2. **As Loams's own engine for long work.** Loams's own long-running operations become durable functions. These are bulk import, and later restore, reindex, copy, erasure, tenant provisioning and re-embedding. They run on the same embedded server, through the Resonate Rust SDK over an in-process network, and survive node crashes and restarts.
+2. **As Loams’ own engine for long work.** Loams’ own long-running operations become durable functions. These are bulk import, and later restore, reindex, copy, erasure, tenant provisioning and re-embedding. They run on the same embedded server, through the Resonate Rust SDK over an in-process network, and survive node crashes and restarts.
 
 The spike (§13) linked and ran the embedded server. It uses Resonate's public composition API (`resonate_base::build` → `Running::start`/`stop`) beside an axum 0.8 app in one Tokio runtime, with the SQLite backend. The Python fan-out example passed against it, including its crash mode. A human-in-the-loop workflow survived `kill -9` of the whole binary and completed after the restart. **No upstream change is needed to embed a single-tenant server.** Two small upstream changes are recommended:
 
-- **a dependency-hygiene PR.** It clears 7 of the 8 RustSec advisories that `cargo deny` reports against Loams's policy, removes the OpenSSL link and halves the semver-major duplicates. The spike built it with no source change, and the examples still pass.
+- **a dependency-hygiene PR.** It clears 7 of the 8 RustSec advisories that `cargo deny` reports against Loams’ policy, removes the OpenSSL link and halves the semver-major duplicates. The spike built it with no source change, and the examples still pass.
 - **a library-entry PR.** Multi-tenant dispatch needs it later (§12).
 
 ## 2. Goals and non-goals
 
 ### 2.1 Goals
 
-1. **Standard protocol, unchanged SDKs.** Any Resonate SDK at the server's protocol version (`2026-04-01`) works against Loams with only a URL change. Loams's conformance is Resonate's own linearizability check, run against the Loams binary (§10).
+1. **Standard protocol, unchanged SDKs.** Any Resonate SDK at the server's protocol version (`2026-04-01`) works against Loams with only a URL change. Loams’ conformance is Resonate's own linearizability check, run against the Loams binary (§10).
 2. **One binary.** Durable execution needs no extra process, container or role. The cargo feature `durable` is opt-in (D262); in a binary built with it (release builds, CI's durable jobs, the Loams cloud build), `loams dev` and `loams standalone` start the durable server by default on SQLite, and `--no-durable` turns it off.
 3. **Durable Loams operations.** Every Loams operation that can outlive a request becomes a durable function with an operation id, progress and cancellation. It resumes after a crash, and after a failure it re-runs only the failed branches.
 4. **Tenant isolation.** Each tenant's durable state lives in its own store: its own SQLite file or its own TiKV key prefix or keyspace (a TiDB database under the legacy `mysql://` backend). Tenants never share Resonate groups, schedules or searches (§5).
@@ -41,7 +41,7 @@ The spike (§13) linked and ran the embedded server. It uses Resonate's public c
 
 ### 2.2 Non-goals
 
-- **No Loams durable-execution SDK.** Users use Resonate's SDKs. Loams's own Rust code uses Resonate's Rust SDK.
+- **No Loams durable-execution SDK.** Users use Resonate's SDKs. Loams’ own Rust code uses Resonate's Rust SDK.
 - **No protocol fork.** Loams never changes wire formats, status codes or semantics. Everything Loams-specific lives in plugins, config and the dispatcher in front of the server.
 - **No rewrite of working M1 code.** M1.3's maintenance loops (split merges, Lance compaction, hot builds, GC) stay lease-fenced worker tasks (§6.1).
 - **No workflow DSL or designer.** Resonate's own console (`resonate-gateway-web`) is not linked in D1. The Loams console shows operations (D2).
@@ -75,10 +75,10 @@ The spike (§13) linked and ran the embedded server. It uses Resonate's public c
 - **Crate.** A new crate, `loams-durable`, owns the embedding. `loams` depends on it behind the feature `durable`, which is **opt-in** (D262; owner ruling O1: toggling it rebuilds about 480 crates). The default features on `main` are `es`, `flight`, `hnsw` and `qdrant`. Release builds, CI's durable jobs and the Loams cloud build turn `durable` on. A build without the feature has no Resonate code in it, and a `--durable-*` flag only logs a warning.
 - **Composition.** `loams-durable` builds a `resonate_plugin::Registry` that names only the plugins Loams carries, then calls `resonate_base::build(&registry, &config, &options)` and `Running::start(debug)`. At shutdown it calls `Running::stop(timeout)`. It never calls `resonate_base::run` or `resonate_base::main`, for two reasons. `run` installs a global `tracing_subscriber` with `.init()`, which panics when Loams already installed one. It also waits on SIGINT/SIGTERM itself (`core/crates/resonate-base/src/lib.rs:171-208`). Both calls it does use are public API **(spike)**.
 - **Configuration.** Loams builds the `resonate_plugin::Configuration` with `Loader::new().set(key, value)` from its own flags. It reads no `resonate.toml` and no `RESONATE_*` environment, so an operator's standalone Resonate settings cannot leak into Loams. The key space is Resonate's (`servers.server_sqlite.path`, `gateways.gateway_http.bind`, and so on), so every plugin setting stays reachable through `--durable-set key=value`.
-- **Order.** The durable server starts after the metastore and before the native API, because Loams's operations API calls it. It stops after the native API and before the metastore. Resonate's own order (workers, then server, then gateways at start; server, then workers, then gateways at stop) stays inside `Running`.
+- **Order.** The durable server starts after the metastore and before the native API, because Loams’ operations API calls it. It stops after the native API and before the metastore. Resonate's own order (workers, then server, then gateways at start; server, then workers, then gateways at stop) stays inside `Running`.
 - **Process-global side effects.** The spike checked the embedded plugins for signal handlers, global subscribers and `process::exit`. The only one is `resonate-gateway-http`'s `abort_on_panic`, which calls `std::process::abort()` on a handler panic (`core/crates/resonate-gateway-http/src/lib.rs:194`). In an embedded server that would take all of Loams down, so Loams pins it to `false`. A panic in a handler answers 500. SQLite's reason for aborting (in-memory state after a panic mid-transaction) is handled by restarting the durable subsystem, not the process (§9).
-- **Metrics.** Resonate plugins register with the `prometheus` default registry, re-exported by `resonate-plugin`. Loams's admin listener (`:8090/metrics`, §10 §5) gathers that registry beside its own. `resonate-gateway-metrics` is not linked.
-- **In-process calls.** `Running::server()` returns the `Arc<dyn ResonateServer>`. Loams's code calls `process(&RequestEnvelope)` directly, with no HTTP. The spike created a promise this way from an axum 0.8 handler **(spike)**.
+- **Metrics.** Resonate plugins register with the `prometheus` default registry, re-exported by `resonate-plugin`. Loams’ admin listener (`:8090/metrics`, §10 §5) gathers that registry beside its own. `resonate-gateway-metrics` is not linked.
+- **In-process calls.** `Running::server()` returns the `Arc<dyn ResonateServer>`. Loams’ code calls `process(&RequestEnvelope)` directly, with no HTTP. The spike created a promise this way from an axum 0.8 handler **(spike)**.
 
 ### 3.2 The listener (D138)
 
@@ -91,13 +91,13 @@ The spike (§13) linked and ran the embedded server. It uses Resonate's public c
 | Backend | Where | Resonate plugin | Verification | Milestone |
 |---|---|---|---|---|
 | **SQLite** | `loams dev`, `loams standalone`; one file per tenant under the data directory (`<data>/durable/<tenant>.db`) | `resonate-server-sqlite` (rusqlite, bundled SQLite) | Upstream CI differential + porcupine; Loams conformance run (§10) | D1 |
-| **TiKV** (native) | `loams cluster`, Loams cloud and self-hosted clusters; `--durable-store tikv://<pd-hosts>/<keyspace>` (for example `tikv://127.0.0.1:2379/loams_durable`) on the TiKV cluster, tenant = key prefix; large tenants get their own keyspace | `resonate-server-tikv`: Loams's server plugin running `resonate-server-blob` over a TiKV `Store` in `loams-durable` (one key per object with a random revision; compare-and-set under a pessimistic lock), cargo feature `durable-tikv` | Blob differential + port differential + porcupine with the TiKV store | **D1** (added by D261, moved from D2); on `main`. The durable handle sweeps only its own expired commit tokens (the metastore keeps the cluster GC loop), and `loams durable migrate` has nothing to do on it. CI runs its TiKV integration test (two servers and a restart); the blob differential and porcupine runs are still to do |
+| **TiKV** (native) | `loams cluster`, Loams cloud and self-hosted clusters; `--durable-store tikv://<pd-hosts>/<keyspace>` (for example `tikv://127.0.0.1:2379/loams_durable`) on the TiKV cluster, tenant = key prefix; large tenants get their own keyspace | `resonate-server-tikv`: Loams’ server plugin running `resonate-server-blob` over a TiKV `Store` in `loams-durable` (one key per object with a random revision; compare-and-set under a pessimistic lock), cargo feature `durable-tikv` | Blob differential + port differential + porcupine with the TiKV store | **D1** (added by D261, moved from D2); on `main`. The durable handle sweeps only its own expired commit tokens (the metastore keeps the cluster GC loop), and `loams durable migrate` has nothing to do on it. CI runs its TiKV integration test (two servers and a restart); the blob differential and porcupine runs are still to do |
 | ~~**TiDB**~~ (legacy `mysql://`) | ~~Loams cloud now~~. On `main` today; **deprecated** (D261): dev and tests only until the TiKV backend merges, then removed. One database per tenant (`loams_durable_<tenant>`) | `resonate-server-mysql` (sqlx 0.8) with the TiDB fixes of upstream PR 0a/1 (pessimistic pin, retryable errnos), cargo feature `durable-mysql` | Engine + port differential and porcupine all pass on TiDB v8.5.8 **(research)** | D1 (legacy) |
 | ~~Postgres or blob-on-bucket~~ | ~~Self-hosted clusters without TiDB~~ | — | — | Q39 resolved by D261: self-hosted clusters use TiKV |
 
 - **SQLite is single-node.** `loams cluster` refuses the SQLite backend. The message is `the sqlite durable store is single-node; use --durable-store mysql://… or tikv://…`. A cluster node without `--durable-store` serves no durable execution. A second process opening the same file is refused by the lock file Loams holds on the durable directory.
 - **History: why TiDB first (superseded by D261).** TiDB runs Resonate's existing MySQL engine with no new engine code, and it passed the whole upstream bar: engine differential (59,400 steps), port differential and porcupine at 8 × 600 and 16 × 400 **(research)**. It costs about 15 differential steps/s on a one-node playground, against about 1,200/s for in-memory SQLite **(research)**. That is enough for D1's operations. The TiKV `Store` is 600–900 lines **(estimate)**. It inherits the blob server's TLA+-checked design: one CAS'd document per origin (`spec/tlap` `Concrete`). It saves the TiDB SQL layer and pool per tenant. It was D2 because it depends on R1's `loams-tikv` and on the upstream placement discussion; D261 moves it into D1, and it lives in `loams-durable` rather than upstream.
-- **(Legacy.) The TiDB pool for durable state was Loams's own system data, not tenant SQL.** D123's rule "one TiDB per tenant keyspace" is about tenant SQL, where the tenant connects. Here only Loams connects, so tenants are separated by database, with one sqlx pool per active tenant (`max_connections = 4`, idle-evicted with the tenant's instance, §5.1).
+- **(Legacy.) The TiDB pool for durable state was Loams’ own system data, not tenant SQL.** D123's rule "one TiDB per tenant keyspace" is about tenant SQL, where the tenant connects. Here only Loams connects, so tenants are separated by database, with one sqlx pool per active tenant (`max_connections = 4`, idle-evicted with the tenant's instance, §5.1).
 - **Migrations.** Resonate's SQL plugins refuse to start on a schema behind the binary unless `migrate = true`. Loams sets `migrate = true` for SQLite. For the legacy MySQL backend it runs migrations as an explicit upgrade step (`loams durable migrate`), matching Resonate's intent that DDL is a deployment decision.
 
 ### 3.4 Transports (D141)
@@ -105,27 +105,27 @@ The spike (§13) linked and ran the embedded server. It uses Resonate's public c
 | Transport | Scheme | Use | State |
 |---|---|---|---|
 | `resonate-transport-http-poll` | `poll://uni@group/id`, `poll://any@group[/id]` | SDK workers hold an SSE connection to `/poll/…` on the durable listener. It is the SDKs' default | On (D1) |
-| `worker_inproc` (Loams) | `inproc://any@loams/<node>` | Loams's own durable functions: messages go straight to the Rust SDK's `recv` callback in the same process (§3.5) | On (D1) |
+| `worker_inproc` (Loams) | `inproc://any@loams/<node>` | Loams’ own durable functions: messages go straight to the Rust SDK's `recv` callback in the same process (§3.5) | On (D1) |
 | `resonate-transport-http-push` | `http(s)://…` | Serverless workers (Lambda, Cloud Run) that Resonate calls | **Off by default**. `--durable-push` enables it. On an unauthenticated server it is a server-side request forgery primitive, because any caller can name any URL as a promise's target. An outbound allowlist and the auth plan are required before it is on in cloud (D2) |
 | Loams transport over connect-rust | `loams://…` | Server-streamed delivery over the Live sync stack (§20 §7) | Later (D4). It needs upstream's axum 0.8 bump (PR 3a) or a tower adapter, and a client in at least one SDK (research §5) |
 | `resonate-transport-gcps` | `gcps://` | Google Pub/Sub | Not linked |
 
 Delivery is best effort in every transport. A dropped message is recovered by the task retry timeout (`retry_timeout`, 30 s by default), as the protocol intends.
 
-### 3.5 Loams's own durable functions (D141)
+### 3.5 Loams’ own durable functions (D141)
 
-Loams's Rust code is a Resonate worker like any other, written with the **Resonate Rust SDK** (`sdk-rs/resonate`, 0.6.0, Apache-2.0). The SDK takes a custom network: `ResonateConfig { network: Option<Arc<dyn Network>>, .. }` (`sdk-rs/resonate/src/resonate.rs:45-46`). Its `Network` trait is `send(String) -> String`, `recv(callback)` and addressing (`sdk-rs/resonate/src/network.rs:12-22`). Loams implements it in-process:
+Loams’ Rust code is a Resonate worker like any other, written with the **Resonate Rust SDK** (`sdk-rs/resonate`, 0.6.0, Apache-2.0). The SDK takes a custom network: `ResonateConfig { network: Option<Arc<dyn Network>>, .. }` (`sdk-rs/resonate/src/resonate.rs:45-46`). Its `Network` trait is `send(String) -> String`, `recv(callback)` and addressing (`sdk-rs/resonate/src/network.rs:12-22`). Loams implements it in-process:
 
 - `InProcNetwork::send` deserializes the request envelope and calls `server.process()`. It never touches the listener.
 - `InProcNetwork::recv` registers the SDK's callback with `worker_inproc`. That is a Loams `WorkerPlugin` for the scheme `inproc`, and it turns each routed `Message` (`execute` or `unblock`) into the JSON frame the poll transport would have sent.
 - The group is `loams`. Each node's address is `inproc://any@loams/<node_id>`. With a shared backend (TiKV, or legacy MySQL), a task whose retry timeout fires on another node is delivered to that node's in-process worker, so any node can resume any Loams operation.
 
-So Loams's workflows run with the SDK's replay semantics (`ctx.run` checkpoints, deterministic ids, fan-out with `ctx.begin_run`/spawn, `ctx.sleep`, `ctx.promise`) and are not reimplemented. The spike did not build this adapter. D1 Task 6 builds it, with a loopback-HTTP fallback (the SDK's `HttpNetwork` against `127.0.0.1:8001`) if the in-process adapter hits a blocker.
+So Loams’ workflows run with the SDK's replay semantics (`ctx.run` checkpoints, deterministic ids, fan-out with `ctx.begin_run`/spawn, `ctx.sleep`, `ctx.promise`) and are not reimplemented. The spike did not build this adapter. D1 Task 6 builds it, with a loopback-HTTP fallback (the SDK's `HttpNetwork` against `127.0.0.1:8001`) if the in-process adapter hits a blocker.
 
 ## 4. Protocol, SDKs and versions
 
-- **Server protocol `2026-04-01`** (server 0.10.1). SDK versions must match. The research found that PyPI `resonate-sdk` 0.7.x is refused by server 0.10.1 (`400 Promise ID must be prefixed by resonate:origin`), while the monorepo SDK (`impl/sdk/py`, 0.8.1) works. The spike used 0.8.1 **(spike)**. Loams's docs name the SDK versions that pass its conformance run (§10.3), and a release note announces each server bump.
-- **SDK story.** A user points an official SDK at `http://127.0.0.1:8001` (or at the cloud endpoint, once auth exists). Nothing Loams-specific is installed. A durable function that also reads and writes Loams data uses Loams's own SDKs (`loams`, `@loams/client`) inside its steps. The step's promise id is the idempotency key of the write (§6.7).
+- **Server protocol `2026-04-01`** (server 0.10.1). SDK versions must match. The research found that PyPI `resonate-sdk` 0.7.x is refused by server 0.10.1 (`400 Promise ID must be prefixed by resonate:origin`), while the monorepo SDK (`impl/sdk/py`, 0.8.1) works. The spike used 0.8.1 **(spike)**. Loams’ docs name the SDK versions that pass its conformance run (§10.3), and a release note announces each server bump.
+- **SDK story.** A user points an official SDK at `http://127.0.0.1:8001` (or at the cloud endpoint, once auth exists). Nothing Loams-specific is installed. A durable function that also reads and writes Loams data uses Loams’ own SDKs (`loams`, `@loams/client`) inside its steps. The step's promise id is the idempotency key of the write (§6.7).
 - **Loams SDK helpers (D2).** The Python and TypeScript Loams SDKs gain `operations.wait(id)` and `operations.get(id)` for the operations API (§6.4). They do not wrap Resonate.
 
 ## 5. Tenancy and isolation (D142)
@@ -155,7 +155,7 @@ Multi-tenancy needs authenticated principals. The unified auth plan must cover t
 3. Actions: `durable:invoke`, `durable:resolve` (settling promises, which the human-in-the-loop pattern needs) and `durable:schedule`. Agents get only what their policy grants (§19 §5.1).
 4. The non-loopback refusal is lifted only when auth is on, and push delivery only with an outbound allowlist per org.
 
-Until then Loams cloud does not expose the durable listener to tenants. D1's cloud use is internal: Loams's own operations for the `default` namespace of dedicated deployments.
+Until then Loams cloud does not expose the durable listener to tenants. D1's cloud use is internal: Loams’ own operations for the `default` namespace of dedicated deployments.
 
 ## 6. Patterns (D143)
 
@@ -193,7 +193,7 @@ Nothing in M1 is rewritten before M1 exits. After M2, the decision is revisited 
 
 ### 6.2 (b) Fan-out / fan-in
 
-A workflow starts N branches with `ctx.begin_run`, or spawns them in the Rust SDK, and awaits them all. Each branch is a child promise in the root's origin, so it commits atomically with the parent's state (§14 §1: single-origin). A failed branch is retried alone, with the SDK's retry policy. Finished branches return their memoized results on replay, as the fan-out example showed: in crash mode only the push branch re-ran **(spike)**. Loams's rules:
+A workflow starts N branches with `ctx.begin_run`, or spawns them in the Rust SDK, and awaits them all. Each branch is a child promise in the root's origin, so it commits atomically with the parent's state (§14 §1: single-origin). A failed branch is retried alone, with the SDK's retry policy. Finished branches return their memoized results on replay, as the fan-out example showed: in crash mode only the push branch re-ran **(spike)**. Loams’ rules:
 
 - **Branch granularity is bounded.** One branch per file, and inside a file one step per slice (§7.2). A 1 TB import at 64 MiB slices is about 16,000 promises **(estimate)**. That fits SQLite, but it is one origin. The blob and TiKV backends keep an origin as one document, so D2 caps a single origin's promise count (Q42) and splits very large imports into child operations with their own origins.
 - **Concurrency is bounded per operation** (`max_parallel_files`, default 4) and per namespace (`max_concurrent_operations`, default 2). The collection write path's backpressure (D86) still applies: a 429 is a retryable step failure.
@@ -250,7 +250,7 @@ A destructive request becomes an operation whose first step is `ctx.promise()` (
 
 - **Live actions are durable functions.** §20 §6.1 defines actions as non-transactional functions with side effects, never retried automatically (R2). D3 adds `durable: true` actions. Their body runs as a Resonate function, and each `runQuery`, `runMutation`, `fetch` and AI-gateway call becomes a checkpointed step. A crash resumes the action instead of losing it, and a model call is never paid for twice. This replaces §20 §6.1's "R4+ option". The QuickJS runtime needs a JS binding of the Resonate context. It is a host API over the Rust SDK, not the TypeScript SDK (Q35 decides the long-term engine).
 - **The agent runtime.** Multi-agent handoffs (researcher → writer → reviewer with a review gate, like the multi-agent example) and deep research (recursive sub-agents fanned out as durable calls) run as durable functions. They run in users' own workers through the SDKs, and later in Loams-hosted workers (D4). Loams supplies the memory (collections), retrieval (`ctx.search`, D129), the durable engine, and the agent identities (§19 §5).
-- **MCP long-running tools.** MCP tools that take minutes (imports, research) return an operation id and support polling (the MCP example). Loams's MCP server (§15) exposes `operations.get` as a tool in D3.
+- **MCP long-running tools.** MCP tools that take minutes (imports, research) return an operation id and support polling (the MCP example). Loams’ MCP server (§15) exposes `operations.get` as a tool in D3.
 - **Agent traces go into Loams.** LLM calls go through an AI gateway (aisix, Apache-2.0, exports OTLP GenAI spans). Durable steps emit OTel spans with `resonate.promise_id` and `resonate.origin` attributes, so an LLM span joins the step that made it. Spans land in Loams through OTLP ingest. D73 covers logs only; traces need an OTLP traces receiver (Q43). A link then maps promises to an execution graph (§14 Phase B §2), so "show me every tool call and model call in this agent run" is a `graph_expand` from the run's root promise.
 
 ### 6.7 (g) Idempotency keys everywhere (D146)
@@ -258,7 +258,7 @@ A destructive request becomes an operation whose first step is `ctx.promise()` (
 - **Operation submit.** An `Idempotency-Key` header on any operation request maps to the operation id: `op-` followed by the first 26 hex characters of SHA-256(namespace ‖ key). A repeated request returns the existing operation (`200`, same `Location`), because `promise.create` with an existing id and the same parameters is idempotent in Resonate. A repeated key with different parameters answers `409 idempotency_key_reused`, with Loams comparing a hash of the canonical request stored in the root promise's `param`.
 - **Step writes.** A durable step that writes Loams data uses its own promise id as the write's idempotency key. For collection writes that is natural: imports are upserts by primary key, so a re-run slice converges to the same state. For stream appends (M2, D72) the producer id is `(operation id, branch)` and the sequence number is the slice index. For Live mutations (R2) the step's promise id is the `Mutate` idempotency key, recorded in the same TiKV transaction as the mutation (D118). So a step that crashed after writing and before settling never writes twice.
 - **External effects.** Webhooks and external calls made from steps get the step's promise id as their `Idempotency-Key` header, as in Resonate's webhook and money-transfer examples.
-- **Promise ids carry no personal data.** Loams's own ids are opaque (`op-…`, hashes). User ids and payloads stay out of ids and tags, because ids and tags are indexed and appear in logs and traces (§8).
+- **Promise ids carry no personal data.** Loams’ own ids are opaque (`op-…`, hashes). User ids and payloads stay out of ids and tags, because ids and tags are indexed and appear in logs and traces (§8).
 
 ## 7. D1's operation and schedule
 
@@ -310,9 +310,9 @@ DELETE /v1/namespaces/{ns}/collections/{c}/import-schedules/{name}
 
 ## 8. Observability, retention and erasure of durable state (D147)
 
-- **Logs and traces.** Resonate emits `tracing` events into Loams's subscriber. Every Loams durable function opens a span with `loams.op`, `resonate.promise_id` and `loams.namespace`. OTLP export follows Loams's M2 observability work.
-- **Metrics.** Resonate's Prometheus metrics (request counts and latency by kind, timer and sweep counters) appear under Loams's `/metrics` (§3.1). Loams adds `loams_durable_instances`, `loams_operations{kind,state}`, `loams_import_rows_total` and `loams_import_bytes_total`.
-- **Retention (Q40).** The protocol has no delete for settled promises (`promise.*`: `create`, `get`, `settle`, `register_callback`, `register_listener`, `search`), and no backend prunes them. Durable state therefore grows without bound. Pruning is not free either. If a pruned promise's id is created again by a late retry, the work runs again, so retention must exceed the longest retry and deduplication horizon of every client. D1 prunes only Loams's own finished operations after 7 days, with a backend-level delete of the root's origin in SQLite and TiDB. A general retention setting is proposed upstream (PR 5).
+- **Logs and traces.** Resonate emits `tracing` events into Loams’ subscriber. Every Loams durable function opens a span with `loams.op`, `resonate.promise_id` and `loams.namespace`. OTLP export follows Loams’ M2 observability work.
+- **Metrics.** Resonate's Prometheus metrics (request counts and latency by kind, timer and sweep counters) appear under Loams’ `/metrics` (§3.1). Loams adds `loams_durable_instances`, `loams_operations{kind,state}`, `loams_import_rows_total` and `loams_import_bytes_total`.
+- **Retention (Q40).** The protocol has no delete for settled promises (`promise.*`: `create`, `get`, `settle`, `register_callback`, `register_listener`, `search`), and no backend prunes them. Durable state therefore grows without bound. Pruning is not free either. If a pruned promise's id is created again by a late retry, the work runs again, so retention must exceed the longest retry and deduplication horizon of every client. D1 prunes only Loams’ own finished operations after 7 days, with a backend-level delete of the root's origin in SQLite and TiDB. A general retention setting is proposed upstream (PR 5).
 - **Erasure.** Deleting a tenant drops its durable store (§5.1). Per-subject erasure (D68) cannot reach inside users' promise payloads, which Loams cannot interpret. So the docs tell users to pass references, not personal data, in `param` and `value`, and to use the SDKs' encryptor hook. Erasure then covers durable state by pruning the tenant's settled promises older than the request, plus the key destruction of D96 where payloads are encrypted with the namespace key (D2).
 
 ## 9. Failure modes
@@ -333,7 +333,7 @@ DELETE /v1/namespaces/{ns}/collections/{c}/import-schedules/{name}
 
 ### 10.1 What upstream already tests, and what Loams adds
 
-Resonate holds each storage engine to an executable oracle (the engine differential and the port differential) and holds a live server to a Go port of the Lean abstract machine (porcupine) (research §2). Embedding changes none of the engine code, so Loams **does not re-run the engine and port differentials in its own CI**. They run in the fork's CI at the pinned revision, for SQLite and for TiDB via the MySQL plugin (legacy under D261); the TiKV `Store` is Loams's, so Loams's CI runs its blob and port differentials. Loams tests what embedding adds: the configuration mapping, the listener, the dispatcher (D2), the in-process network, and Loams's own workflows.
+Resonate holds each storage engine to an executable oracle (the engine differential and the port differential) and holds a live server to a Go port of the Lean abstract machine (porcupine) (research §2). Embedding changes none of the engine code, so Loams **does not re-run the engine and port differentials in its own CI**. They run in the fork's CI at the pinned revision, for SQLite and for TiDB via the MySQL plugin (legacy under D261); the TiKV `Store` is Loams’, so Loams’ CI runs its blob and port differentials. Loams tests what embedding adds: the configuration mapping, the listener, the dispatcher (D2), the in-process network, and Loams’ own workflows.
 
 ### 10.2 The conformance run against embedded Loams (D144)
 
@@ -341,7 +341,7 @@ Resonate holds each storage engine to an executable oracle (the engine different
 - **The SDK example suite.** Nightly, against `loams dev`, with the Python examples hello-world, fan-out/fan-in (normal and `--crash`), human-in-the-loop (with `kill -9` of `loams` between suspend and resolve), schedule and money-transfer (saga), and the TypeScript hello-world and fan-out examples. Each asserts its expected output.
 - **Checker gap.** Porcupine refutes any history that contains a 503 (research F3). Until upstream PR 0b lands, the nightly leg treats 503s as not applied, using the research's `porc.sh` rule, and reports how many there were.
 
-### 10.3 Loams's own tests
+### 10.3 Loams’ own tests
 
 - **Workflow crash tests.** Run an import, kill the durable runtime at a random step (a fault hook between steps), and restart. The final document count is exact, finished files are not re-read (counted by a read hook on the source), and the consistency token covers every write.
 - **Schedule dedup.** Drive a schedule through several ticks with debug time. New files are imported once, a changed etag is imported again, and a duplicate registration answers 409.
@@ -352,12 +352,12 @@ Resonate holds each storage engine to an executable oracle (the engine different
 
 ### 11.1 Licenses
 
-Every crate Loams links is Apache-2.0: `resonate-base`, `-core`, `-plugin`, `-auth`, `-sql`, `-timer-wheel`, `-server-sqlite`, `-server-mysql`, `-gateway-http`, `-transport-http-poll`, `-transport-http-push`, and later `-server-blob`. So is the Rust SDK. `cargo deny check licenses` against Loams's `deny.toml` passes for the whole embedded graph **(spike)**. That includes the Verus crates that `resonate-timer-wheel` pins (`vstd`, `verus_builtin*`, exact pre-release versions), which are MIT. **Loams never reads, copies or links** `resonate-server-scylladb` or the NATS pieces, because of their BUSL-1.1 lineage (research). The fork's `NOTICE` carries Resonate's attribution.
+Every crate Loams links is Apache-2.0: `resonate-base`, `-core`, `-plugin`, `-auth`, `-sql`, `-timer-wheel`, `-server-sqlite`, `-server-mysql`, `-gateway-http`, `-transport-http-poll`, `-transport-http-push`, and later `-server-blob`. So is the Rust SDK. `cargo deny check licenses` against Loams’ `deny.toml` passes for the whole embedded graph **(spike)**. That includes the Verus crates that `resonate-timer-wheel` pins (`vstd`, `verus_builtin*`, exact pre-release versions), which are MIT. **Loams never reads, copies or links** `resonate-server-scylladb` or the NATS pieces, because of their BUSL-1.1 lineage (research). The fork's `NOTICE` carries Resonate's attribution.
 
 ### 11.2 Source: the fork (D140)
 
 - The dependencies are git dependencies on **`ostrium-labs/resonate`** at a pinned revision, until upstream publishes the server crates. They are not on crates.io.
-- The fork branch `loam/0.10.1` is upstream `28dfd01` plus exactly three kinds of commits, each also proposed upstream:
+- The fork branch `loams/0.10.1` is upstream `28dfd01` plus exactly three kinds of commits, each also proposed upstream:
   - the dependency-hygiene commit (PR 0c);
   - the TiDB fixes (PR 0a, PR 1);
   - once needed, the library-entry change (PR 4).
@@ -366,14 +366,14 @@ Every crate Loams links is Apache-2.0: `resonate-base`, `-core`, `-plugin`, `-au
 
 ### 11.3 Duplicates against the Loams workspace **(spike)**
 
-Compared with Loams's `Cargo.lock` on `main`, the embedded graph with the MySQL plugin looks like this:
+Compared with Loams’ `Cargo.lock` on `main`, the embedded graph with the MySQL plugin looks like this:
 
 | | Upstream `28dfd01` | With the hygiene commit |
 |---|---|---|
 | Crates shared at the same semver with Loams | 209 | 217 |
 | New crates | 66 | 55 |
 | Semver-incompatible duplicates | 21: `axum` 0.7 (+`axum-core` 0.4, `matchit` 0.7), `rustls` 0.21 (+`rustls-webpki` 0.101, `untrusted` 0.7), `base64` 0.21, `validator` 0.18 (+`idna` 0.5, `darling` 0.20, `syn` 1), `sha2`/`md-5`/`const-oid` (RustCrypto 0.10 line), `spin`, `convert_case`, `synstructure`, `cpufeatures` | 11: `axum` 0.7 (+`axum-core`, `matchit`), `sha2`, `md-5`, `const-oid`, `cpufeatures`, `spin`, `convert_case`, `synstructure`, `untrusted` |
-| OpenSSL linked | **Yes**: `reqwest` default features in `resonate-auth` and `-transport-http-push` pull `native-tls`, and feature unification would turn it on for Loams's own `reqwest` | No |
+| OpenSSL linked | **Yes**: `reqwest` default features in `resonate-auth` and `-transport-http-push` pull `native-tls`, and feature unification would turn it on for Loams’ own `reqwest` | No |
 | `cargo deny` advisories | 8: sqlx 0.8.0 (RUSTSEC-2024-0363), `idna` 0.5, `protobuf` 2.28 (via `prometheus` 0.13), three in `rustls-webpki` 0.101, `rsa` | 1 (`rsa`, §11.2) |
 
 - **Why sqlx is stuck at 0.8.0 upstream.** `rusqlite` 0.31 links `libsqlite3-sys` 0.28. Newer sqlx 0.8.x resolves `sqlx-sqlite`'s `libsqlite3-sys` 0.30 into the lockfile even with the sqlite feature off, and two crates cannot share `links = "sqlite3"`. So Cargo can only pick sqlx 0.8.0 **(spike)**. This matters to Loams beyond Resonate: all sqlx 0.8.x versions unify, so once Resonate is in the graph, M2's `loams-meta-postgres` (D58, sqlx) would also be held at the vulnerable 0.8.0. The hygiene commit (rusqlite 0.32, sqlx 0.8.6) fixes both.
@@ -399,15 +399,15 @@ In Loams the added cost is smaller than the stand-alone numbers, because `aws-lc
 | PR | What | Size | Needed by | State |
 |---|---|---|---|---|
 | **0a** | MySQL commit-time retry classification (sqlx `code()` is the SQLSTATE; errnos 1213/1205 never matched) | ~40 lines | D1 TiDB backend (robustness on optimistic clusters) | Prepared (research); carried in the fork |
-| **0b** | porcupine checker: 503 = not applied | ~20 lines Go | D1 TiDB conformance under load | Needs an issue; Loams's run works around it |
+| **0b** | porcupine checker: 503 = not applied | ~20 lines Go | D1 TiDB conformance under load | Needs an issue; Loams’ run works around it |
 | **0c** | **Dependency hygiene** (new): `rusqlite` 0.32, `sqlx` 0.8.6, `validator` 0.20, `prometheus` 0.14, `reqwest` with `default-features = false, features = ["json", "rustls-tls"]` in `resonate-auth` and `-transport-http-push`, versions on internal path dependencies (so `cargo deny`'s wildcard ban and a future crates.io publish pass); optionally a feature for `google-cloud-auth` in http-push | 19 manifests, 52 lines; **no source change** | D1 (advisories, OpenSSL, the sqlx pin that would also hold `loams-meta-postgres` back) | **Proven in the spike**: builds unchanged, examples pass, `cargo deny` down to one advisory; patch saved in the spike directory |
 | **1** | TiDB dialect in the MySQL plugin (pessimistic pin, TiDB errnos), xtask backend, CI legs, docs | ~120 lines + YAML | D1 TiDB backend | Prepared (research); carried in the fork |
 | **2** | TiKV `Store` for the blob server | 600–900 lines | D2 TiKV backend | Needs an issue on placement; in-tree fallback |
 | **3a** | axum 0.8 in `resonate-plugin` | small–medium | D4 connect transport; removes the axum duplicate | Not started |
 | **3** | Connect-rust streaming transport | 600–900 lines + RFC | D4 | Out of tree first |
 | **4** | **Library entry point** (new): `resonate_base::run_until(registry, options, shutdown)` using `try_init` for tracing, a public `load(&Options)`, and a public router constructor on `resonate-gateway-http` (today `build_app` is private) so an embedder can serve per-tenant routes behind its own dispatcher | ~60 lines | D2 dispatcher (D1 needs none: `build`/`start`/`stop` are public) | Not started |
-| **5** | **Settled-promise retention** (new): a server setting that prunes settled promises older than N days, with the replay caveat documented | RFC + per-engine delete | Q40; D1 prunes Loams's own operations by itself | Not started |
-| SDK-rs | `reqwest` 0.13 with `default-features = false` in the Rust SDK, so Loams's in-process runtime does not pull OpenSSL back | 1 line | D1 Task 6 | Not started; carried in the fork |
+| **5** | **Settled-promise retention** (new): a server setting that prunes settled promises older than N days, with the replay caveat documented | RFC + per-engine delete | Q40; D1 prunes Loams’ own operations by itself | Not started |
+| SDK-rs | `reqwest` 0.13 with `default-features = false` in the Rust SDK, so Loams’ in-process runtime does not pull OpenSSL back | 1 line | D1 Task 6 | Not started; carried in the fork |
 
 Order: 0c and 0a first (small, bug and security fixes, and how Loams introduces itself), then 1, then 4 and 2 (issues first), then 3a. Per Resonate's CONTRIBUTING, open an issue first for anything non-trivial, one concern per PR.
 
@@ -425,11 +425,11 @@ Order: 0c and 0a first (small, bug and security fixes, and how Loams introduces 
 | Same, `--crash` | PASS: only the push branch re-ran (attempt 2); email, SMS and Slack not re-sent |
 | Python human-in-the-loop example, **`kill -9` of the whole binary** while the workflow was suspended, then restart and resolve | PASS: the root promise went to `resolved` with "workflow loams-hitl-1 completed", from SQLite state |
 | MySQL plugin (TiDB backend) links | Yes (+5.3 MB unstripped, +75 s). Not run against TiDB in the spike: embedding does not change the storage layer, and the research ran the same plugin through the full bar on TiDB v8.5.8 |
-| `cargo deny` with Loams's `deny.toml` | Upstream: licenses ok, sources ok; bans fail (path dependencies without versions); advisories fail (8). With PR 0c: bans ok, one advisory (`rsa`, no fix) |
+| `cargo deny` with Loams’ `deny.toml` | Upstream: licenses ok, sources ok; bans fail (path dependencies without versions); advisories fail (8). With PR 0c: bans ok, one advisory (`rsa`, no fix) |
 | Hygiene commit (PR 0c) | Builds with **no source change**; fan-out `--crash` passes again on the patched binary |
 | Duplicates, size, time | §11.3, §11.4 |
 
-**Conclusion.** Embedding works today with public API. The fork needs PR 0c for Loams's `cargo deny` policy and to keep OpenSSL and the old sqlx out of Loams's graph, plus PR 0a/1 for TiDB robustness. Multi-tenancy needs PR 4 later.
+**Conclusion.** Embedding works today with public API. The fork needs PR 0c for Loams’ `cargo deny` policy and to keep OpenSSL and the old sqlx out of Loams’ graph, plus PR 0a/1 for TiDB robustness. Multi-tenancy needs PR 4 later.
 
 ## 14. Roadmap: track D (D145)
 

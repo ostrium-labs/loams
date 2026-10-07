@@ -2,7 +2,7 @@
 
 Status: **Proposed** · 2026-10-02. Source: the owner's open-core ruling of 2026-10-02: "in open-core, multi-tenant Knative and GitOps using Argo CD is fully open source, so name it as Multitenant BYOC Control Plane with GitOps, and move the commercial API and metering to private, because they may be used to abuse by agents — integrity is the security principle of Loams." The boundary is in [open-core.md](../open-core.md); this document is the architecture of the open half. Decisions **D540–D559** and questions **Q540–Q559** are recorded in the [decision log](13-decision-log.md). Plan: [MT4](../plans/2026-10-02-mt4-byoc-control-plane.md).
 
-**Amends** D220 and D221 (the multi-tenant control plane, BYOC management, SCIM, enforced SSO and cross-org admin are open), D403 and D440 (the parts that kept the multi-tenant control plane private), [§18](18-metastore-backends-and-router.md) §8 (D64: BYOC is open), [§24](24-cpu-time-runtime.md) §7 and §16, [§27](27-usage-hooks.md) (billing-grade metering moved to `loam-platform`), [§38](38-knative-authentik-gitops.md) §2.2 (its non-goals) and RN1. **Reaffirms** D190, D202 and D444 (no metering in this repository), with a new reason.
+**Amends** D220 and D221 (the multi-tenant control plane, BYOC management, SCIM, enforced SSO and cross-org admin are open), D403 and D440 (the parts that kept the multi-tenant control plane private), [§18](18-metastore-backends-and-router.md) §8 (D64: BYOC is open), [§24](24-cpu-time-runtime.md) §7 and §16, [§27](27-usage-hooks.md) (billing-grade metering moved to `loams-platform`), [§38](38-knative-authentik-gitops.md) §2.2 (its non-goals) and RN1. **Reaffirms** D190, D202 and D444 (no metering in this repository), with a new reason.
 
 Markers: **(verify)** means not checked against a primary source; the task that depends on it checks it first.
 
@@ -14,10 +14,10 @@ Markers: **(verify)** means not checked against a primary source; the task that 
 |---|---|---|
 | D540 | **The Loams Multitenant BYOC Control Plane with GitOps is open source.** Multi-tenancy, Knative, Argo CD GitOps with Clever Cloud's operator fork and tooling, Authentik identity, BYOC install and management, and quota enforcement. Everything needed to run a multi-tenant BYOC deployment is Apache-2.0 here | Proposed · owner ruling |
 | D541 | **Integrity is the security principle** for what stays private: figures that set what a tenant pays, and APIs that spend money, must not have their producers or validators open to manipulation by agents or tenants | Proposed · owner ruling |
-| D548 | **Billing-grade metering moves to `loam-platform`**: the meter record, host reports and their delivery rules, the usage reporter, the final-read guarantee. Generic observability stays (§10) | Proposed · owner ruling |
+| D548 | **Billing-grade metering moves to `loams-platform`**: the meter record, host reports and their delivery rules, the usage reporter, the final-read guarantee. Generic observability stays (§10) | Proposed · owner ruling |
 | D550 | **Commercial APIs are private**; the open operations API has no endpoint that spends money (§12) | Proposed · owner ruling |
 
-The full list, D540 to D559, is in the canonical decision log. This document designs the open half; the private half is in `loam-platform` docs 06 and 07.
+The full list, D540 to D559, is in the canonical decision log. This document designs the open half; the private half is in `loams-platform` docs 06 and 07.
 
 ### 1.1 The picture
 
@@ -60,10 +60,10 @@ Argo CD runs in the cluster it deploys to (hub-and-spoke is optional, §8.3); a 
 
 ### 2.2 Non-goals
 
-- **Metering, billing, invoices, credits, plans and entitlements.** `loam-platform` (D548, D550).
+- **Metering, billing, invoices, credits, plans and entitlements.** `loams-platform` (D548, D550).
 - **Commercial APIs**: the hosted Loams Cloud's paid APIs, the marketplace install and billing APIs, partner and commercial integrations (§12).
 - **A replacement for Argo CD or Flux.** Clever Cloud publishes no GitOps engine (§38 §6.1); Argo CD stays (D186).
-- **Authentik multi-tenancy.** It is Enterprise and alpha (§38 §4.2). A deployment has one Authentik tenant; Loams orgs are Loams's concept, mapped from Authentik groups (§38 D449).
+- **Authentik multi-tenancy.** It is Enterprise and alpha (§38 §4.2). A deployment has one Authentik tenant; Loams orgs are Loams’ concept, mapped from Authentik groups (§38 D449).
 - **Hosted-fleet operations** (predictive pre-warming, capacity management, hosted Neon/WeSQL fleet automation, abuse handling for the paid cloud): private.
 
 ## 3. Components, and where each is designed
@@ -277,7 +277,7 @@ The platform may not need the observer at all: cgroups are authoritative for T0 
 
 | Attack | Where it would land | Why the open design is safe |
 |---|---|---|
-| Forged usage for another tenant | A published meter wire format with a node-local socket | No such format or socket in the open repository; the private reporter authenticates the peer and signs the epoch (`loam-platform` doc 06 PD63 and PD64) |
+| Forged usage for another tenant | A published meter wire format with a node-local socket | No such format or socket in the open repository; the private reporter authenticates the peer and signs the epoch (`loams-platform` doc 06 PD63 and PD64) |
 | Replayed or duplicated reports to inflate a rival's bill | Published dedupe rules | Private (doc 06) |
 | Under-reported CPU to avoid a charge | A tenant-reachable usage header or an in-sandbox rusage | Private; billed from cgroup totals and provider figures (doc 06 PD63, PD66, PD67) |
 | Scripted loops on a paid endpoint | A public validator for plan changes, entitlements or credits | Those endpoints are commercial and private; the open operations API spends nothing (§12) |
@@ -295,10 +295,10 @@ The platform may not need the observer at all: cgroups are authoritative for T0 
 
 ## 12. Console, hosted cloud and the dependency direction
 
-- **Console.** The open console gains an *operator view* (D555): orgs, namespaces, clusters, BYOC enrolments, rollouts, rings and enforcement state. It has no billing pages. The hosted console with billing pages is `loam-cloud` (private).
-- **The hosted Loams Cloud** is this control plane plus a private commercial layer (`loam-platform` doc 07, PD69). A tenant's request reaches a commercial API, which checks identity, plan and entitlement and then calls the operations API with a service credential. The operations API is not exposed to tenants on the hosted cloud.
+- **Console.** The open console gains an *operator view* (D555): orgs, namespaces, clusters, BYOC enrolments, rollouts, rings and enforcement state. It has no billing pages. The hosted console with billing pages is `loams-cloud` (private).
+- **The hosted Loams Cloud** is this control plane plus a private commercial layer (`loams-platform` doc 07, PD69). A tenant's request reaches a commercial API, which checks identity, plan and entitlement and then calls the operations API with a service credential. The operations API is not exposed to tenants on the hosted cloud.
 - **Extension points the platform uses**, all open: the operations API, the limits API, the tenants Git repository, `InvocationObserver`, OTel, the cgroup layout and pod labels. None carries a billing-grade format.
-- **The dependency runs one way** (D202, D551): no crate, test, chart value or default requires `loam-platform`. CI guards it (D552, MT4 Task 8).
+- **The dependency runs one way** (D202, D551): no crate, test, chart value or default requires `loams-platform`. CI guards it (D552, MT4 Task 8).
 
 ## 13. Supersessions
 
@@ -309,14 +309,14 @@ The platform may not need the observer at all: cgroups are authoritative for T0 
 | D403, D440: "keep loams cloud private; Knative in OSS but no metering" | **Kept** except that the multi-tenant control plane is now open (D540) |
 | §18 §8 (D64): the hosted `loams-control` | Now the open `loams-control` (this document §4) |
 | §24 §7 (metering hooks table) and §16 (D376: usage from every runner reaches §27's contract) | **Superseded** by D548: observability hooks stay; the contract moved. Notes added |
-| §27 §3.3 (host reports), §3.6 (external runner usage, additive fields, CloudEvents form), the `SandboxFinished` acknowledgement in §3.2, §4 | **Moved** to `loam-platform` doc 06; one-paragraph stubs remain |
+| §27 §3.3 (host reports), §3.6 (external runner usage, additive fields, CloudEvents form), the `SandboxFinished` acknowledgement in §3.2, §4 | **Moved** to `loams-platform` doc 06; one-paragraph stubs remain |
 | RN1 Tasks 1 and 2 (`loams.meter.v1`, `loams-meter`), the one-reporter rule in Task 3, Task 5's usage header and cap | **Moved or dropped** (D556); RN1 keeps the trait, `RunnerHost` with the observer, `ProcessRunner` and a usage-free `LambdaRunner` |
-| §38 §2.2 non-goals: "Metering, billing, multi-org control planes and BYOC management … stay in `loam-platform`" | **Amended**: only metering and billing do. Multi-org control plane and BYOC management are goals of this document |
+| §38 §2.2 non-goals: "Metering, billing, multi-org control planes and BYOC management … stay in `loams-platform`" | **Amended**: only metering and billing do. Multi-org control plane and BYOC management are goals of this document |
 | §38 D444 (no meter on Knative) | **Kept**; the reason is now integrity |
-| §38 §3.3: "who sets [quota] per plan is `loam-platform`'s concern" | **Kept**; the limits API is the seam (D546) |
+| §38 §3.3: "who sets [quota] per plan is `loams-platform`'s concern" | **Kept**; the limits API is the seam (D546) |
 | MT2 Task 4 (hooks without a meter) | **Amended**: the test now asserts no billing-grade names and that `KnativeRunner` calls the observer with no usage payload |
 | MT3 "What MT3 leaves to others": hub-and-spoke for the hosted cloud, BYOC fleet automation | **Moved into MT4** (the open parts) |
-| `loam-platform` README: "Tenant control plane", "BYOC management agent" as private | **Superseded** in `loam-platform` PR (README boundary) |
+| `loams-platform` README: "Tenant control plane", "BYOC management agent" as private | **Superseded** in `loams-platform` PR (README boundary) |
 
 ## 14. Plan and exit
 
@@ -337,4 +337,4 @@ The platform may not need the observer at all: cgroups are authoritative for T0 
 
 ## 16. Sources
 
-Read on 2026-10-02: [open-core.md](../open-core.md) (previous revision); §18 §5 to §9; §24 §4, §5, §7, §16; §25 §5 to §6; §27 in full; §34's stub; §38 in full; the plans RN1, MT1, MT2, MT3; decisions D63, D64, D65, D86, D98, D103, D185 to D188, D190, D200 to D202, D220, D221, D403, D404, D440 to D459; `loam-platform` docs 01 to 05 and README. External claims marked **(verify)** (Argo CD ApplicationSet progressive sync status in 3.5, commit signature verification options) are checked by MT4 Task 0.
+Read on 2026-10-02: [open-core.md](../open-core.md) (previous revision); §18 §5 to §9; §24 §4, §5, §7, §16; §25 §5 to §6; §27 in full; §34's stub; §38 in full; the plans RN1, MT1, MT2, MT3; decisions D63, D64, D65, D86, D98, D103, D185 to D188, D190, D200 to D202, D220, D221, D403, D404, D440 to D459; `loams-platform` docs 01 to 05 and README. External claims marked **(verify)** (Argo CD ApplicationSet progressive sync status in 3.5, commit signature verification options) are checked by MT4 Task 0.

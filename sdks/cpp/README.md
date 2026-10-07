@@ -1,9 +1,11 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # The Loams C++ SDK
 
 The C++ client for [Loams](https://loams.dev), from the unified Connect API of
-design [§44](../../../docs/design/44-unified-api-and-sdks.md). One client object
+design [§44](../../docs/design/44-unified-api-and-sdks.md). One client object
 with namespaced modules, the runtime contract of
-[docs/sdk/runtime-contract.md](../../../docs/sdk/runtime-contract.md), and the
+[docs/sdk/runtime-contract.md](../../docs/sdk/runtime-contract.md), and the
 shared conformance corpus of design §44 §10.4.
 
 **Connect over HTTP, not gRPC.** One port serves the Connect protocol, gRPC and

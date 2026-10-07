@@ -1,6 +1,8 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # Loams — the Swift SDK
 
-Part of [design §44](../docs/design/44-unified-api-and-sdks.md). One `Loams`
+Part of [design §44](../../docs/design/44-unified-api-and-sdks.md). One `Loams`
 client with namespaced modules, speaking the Connect and gRPC-Web protocols on the
 one port an instance serves.
 

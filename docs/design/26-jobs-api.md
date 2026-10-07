@@ -14,7 +14,7 @@ Loams runs four families of jobs that teams already have, with as little change 
 
 | Workload | How it runs on Loams | Change to user code | Where Resonate fits |
 |---|---|---|---|
-| **Celery** | A **kombu transport** (`loams://`), a **result backend** and a **beat scheduler**, in the Python package `loams-celery`, over Loams's queue (TiKV state, Loams streams as the queue's event log, Resonate for schedules and flows) | The broker URL becomes `loams://…` and the result backend `loams://…`; optionally `@app.task` becomes a Resonate function | Very good: durable retries, beat → Resonate schedules, chain/group/chord → durable steps and fan-out |
+| **Celery** | A **kombu transport** (`loams://`), a **result backend** and a **beat scheduler**, in the Python package `loams-celery`, over Loams’ queue (TiKV state, Loams streams as the queue's event log, Resonate for schedules and flows) | The broker URL becomes `loams://…` and the result backend `loams://…`; optionally `@app.task` becomes a Resonate function | Very good: durable retries, beat → Resonate schedules, chain/group/chord → durable steps and fan-out |
 | **BullMQ** | A drop-in TypeScript package **`@loams/bullmq`**: BullMQ's own `Queue`, `Worker`, `FlowProducer`, `QueueEvents` and `Job` classes, bound to a Loams implementation of BullMQ v6's pluggable `IQueueBackend` (§7.2). **Redis is not emulated** (BullMQ's Redis backend is 49 Lua scripts, §7.2.4) | The import changes from `bullmq` to `@loams/bullmq` | Very good: jobs → durable functions, flows → parent/child promises, repeatable jobs and job schedulers → Resonate schedules |
 | **PySpark** | **Sail** (lakehq/sail), run by Loams as a managed Spark Connect server, with Iceberg tables on RustFS through Lakekeeper. Sail is a separate process, never linked (D51) | `SparkSession.builder.remote("sc://…")` | Job level only: step checkpoints, retries and schedules around Spark actions, never inside Spark tasks. RDD jobs and unsupported UDFs fall back to Apache Spark on Kubernetes |
 | **Flink** | **Flink SQL** on RisingWave (default) or Arroyo. **DataStream** jobs run unmodified on Apache Flink (the Kubernetes operator, state on RustFS), reading Loams streams through the Kafka gateway (M5, D74) | SQL: small dialect edits; DataStream: none (it stays on the JVM) | Only the job lifecycle (deploy, savepoint, upgrade, rollback). Flink's checkpoints stay the only durability of a running job |
@@ -30,7 +30,7 @@ Decorators come from **Resonate's own SDKs** (Python `@resonate.register`, TypeS
 1. **Existing jobs run with a configuration change.** A Celery app runs with a new broker URL and result backend. A BullMQ app runs with a new import. A PySpark job runs with a new `remote(...)` URL, as long as it uses the Spark Connect surface. A Flink SQL job runs after dialect edits.
 2. **Durability is opt-in, per task, with the standard decorators.** Replacing `@app.task` with `@resonate.register` (or registering a BullMQ processor as a Resonate function) makes a task durable: its steps are checkpointed and a crash resumes it. Nothing forces users to rewrite tasks that work.
 3. **One Rust core, one protobuf surface.** Every adapter, every SDK and the console use `loams.jobs.v1`. Semantics are defined once, in §6, and every adapter documents where the framework it imitates differs.
-4. **State on Loams's own primitives.** Job state and leases on TiKV (or the local store in `loams dev`), payloads on the object store, the queue's event log on Loams streams, schedules and flows on the embedded Resonate server. No Redis, RabbitMQ, ZooKeeper or Postgres is needed.
+4. **State on Loams’ own primitives.** Job state and leases on TiKV (or the local store in `loams dev`), payloads on the object store, the queue's event log on Loams streams, schedules and flows on the embedded Resonate server. No Redis, RabbitMQ, ZooKeeper or Postgres is needed.
 5. **Buy, not build.** Loams writes the queue core, the adapters and the engine lifecycle glue. It hosts Sail, RisingWave, Arroyo and Flink; it does not rewrite them (user memory: prefer buy over build).
 
 ### 2.2 Non-goals
@@ -401,7 +401,7 @@ The record layout follows Live's `IdempotencyRecord`: a hash of the key, the res
 ### 6.11 Observability
 
 - **Metrics** on the admin listener (`/metrics`): `loams_jobs_enqueued_total{ns,queue}`, `loams_jobs_leased_total`, `loams_jobs_completed_total{outcome}`, `loams_jobs_stalled_total`, `loams_jobs_fenced_total`, `loams_jobs_waiting{band}`, `loams_jobs_delayed`, `loams_jobs_active`, `loams_jobs_oldest_waiting_seconds`, `loams_jobs_lease_latency_seconds`, `loams_jobs_run_seconds{task}`, `loams_jobs_dlq_depth`, `loams_engine_runs{engine,state}`. BullMQ's `getMetrics` and `exportPrometheusMetrics` read the same counters.
-- **Traces.** Each job gets a trace context at enqueue (W3C `traceparent` in the headers, as Celery and BullMQ's telemetry propagate it). The lease and the completion are spans; durable steps add Resonate's spans (§21 §6.6). OTLP export follows Loams's M2 observability work; traces ingest into Loams is Q43.
+- **Traces.** Each job gets a trace context at enqueue (W3C `traceparent` in the headers, as Celery and BullMQ's telemetry propagate it). The lease and the completion are spans; durable steps add Resonate's spans (§21 §6.6). OTLP export follows Loams’ M2 observability work; traces ingest into Loams is Q43.
 - **Logs.** Job log lines (`report(Log)`, BullMQ's `job.log`) are capped per job (default 1,000 lines) and stored with the job.
 - **The console** lists queues, counts, jobs, DLQs, schedules, flows and engine runs from `query` and `watch` (after §19's console work).
 
@@ -436,7 +436,7 @@ result_backend_transport_options = {"token_env": "LOAMS_TOKEN"}
 
 #### 7.1.2 The transport
 
-kombu's virtual transport (`kombu/transport/virtual/base.py`) keeps unacked messages in an in-process `OrderedDict` (`QoS._delivered`) and restores them only at shutdown or channel close. After a crash, **nothing is recovered unless the backend has its own visibility timeout** (`restore_unacked_once`, lines 192-195, 743-751, 803) **(source)**. Redis emulates one with an `unacked` hash and a restore sweep (`redis.py:408-490`); SQS and the new `pgmq` transport have a server-side one. Loams's lease is that server-side visibility timeout, so the transport follows the `pgmq`/SQS model, not the in-process one:
+kombu's virtual transport (`kombu/transport/virtual/base.py`) keeps unacked messages in an in-process `OrderedDict` (`QoS._delivered`) and restores them only at shutdown or channel close. After a crash, **nothing is recovered unless the backend has its own visibility timeout** (`restore_unacked_once`, lines 192-195, 743-751, 803) **(source)**. Redis emulates one with an `unacked` hash and a restore sweep (`redis.py:408-490`); SQS and the new `pgmq` transport have a server-side one. Loams’ lease is that server-side visibility timeout, so the transport follows the `pgmq`/SQS model, not the in-process one:
 
 | kombu call | Loams call | Notes |
 |---|---|---|
@@ -446,7 +446,7 @@ kombu's virtual transport (`kombu/transport/virtual/base.py`) keeps unacked mess
 | `basic_reject(tag, requeue=True)` | `complete(Release)` | Used by `task_reject_on_worker_lost` and timeouts under `acks_late` (`request.py:705-724`) |
 | `basic_reject(tag, requeue=False)` | `complete(Fail { dead_letter })` | To the queue's DLQ if it has one |
 | `basic_recover(requeue=True)` | `complete(Release)` for every unacked tag | |
-| unacked while running | `extend` every `visibility_timeout / 3` from a transport thread | Like the `gcpubsub` transport's `modify_ack_deadline` loop. A long `acks_late` task on a live worker is **never** redelivered by timeout, which removes Redis's "task longer than visibility_timeout runs twice" problem. A dead worker's leases expire and the jobs are redelivered (Loams's stalled path, with `max_stalled` unlimited for Celery queues) |
+| unacked while running | `extend` every `visibility_timeout / 3` from a transport thread | Like the `gcpubsub` transport's `modify_ack_deadline` loop. A long `acks_late` task on a live worker is **never** redelivered by timeout, which removes Redis's "task longer than visibility_timeout runs twice" problem. A dead worker's leases expire and the jobs are redelivered (Loams’ stalled path, with `max_stalled` unlimited for Celery queues) |
 | `_size`, `_purge`, `_delete`, `_new_queue`, `_has_queue` | `queue_admin(Counts / Drain / Obliterate / Create)`, `query` | Queues are created on first declare, as with Redis |
 | `get_table`, `queue_bind`, exchange declare | Bindings stored in Loams (a small table per namespace) | kombu's default `get_table` reads process-local state (`base.py:702`), so topic routing across processes needs shared bindings, as Redis keeps them in `_kombu.binding.*` |
 | `_put_fanout`, `supports_fanout = True` | A broadcast stream per fanout exchange (`_celery/<exchange>`); each consumer subscribes from `latest` | Needed for remote control (§7.1.5) |
@@ -455,10 +455,10 @@ kombu's virtual transport (`kombu/transport/virtual/base.py`) keeps unacked mess
 
 #### 7.1.3 Priorities, ETA and retries
 
-- **Priorities.** kombu's virtual transports clamp priority to 0–9 (`base.py:472-473, 854-872`); Redis serves lower numbers first by polling priority lists in ascending order (`redis.py:1266-1272, 1451-1480`), and a message with no priority counts as 0. `loams-celery` maps 0 or unset → Loams's FIFO band, and 1–9 → Loams priority 1–9, which reproduces the Redis order exactly. A transport option `priority_order = "amqp"` reverses it for apps written for RabbitMQ, where higher is higher. `task_queue_max_priority` only sets an AMQP queue argument (`app/amqp.py:97-100`) and is ignored.
-- **ETA and countdown.** Celery workers hold an ETA task **unacked in memory** until it is due (`worker/strategy.py:180-208`), which is why an ETA longer than the visibility timeout makes Redis and SQS redeliver it "again, and again in a loop" (Celery's Redis docs, `redis.rst:303-334`). `loams-celery` puts the job in Loams's delayed index instead (§6.3), so the worker receives it only when it is due and never holds it. This is a behaviour change for the better; the ETA semantics (not before) are unchanged.
+- **Priorities.** kombu's virtual transports clamp priority to 0–9 (`base.py:472-473, 854-872`); Redis serves lower numbers first by polling priority lists in ascending order (`redis.py:1266-1272, 1451-1480`), and a message with no priority counts as 0. `loams-celery` maps 0 or unset → Loams’ FIFO band, and 1–9 → Loams priority 1–9, which reproduces the Redis order exactly. A transport option `priority_order = "amqp"` reverses it for apps written for RabbitMQ, where higher is higher. `task_queue_max_priority` only sets an AMQP queue argument (`app/amqp.py:97-100`) and is ignored.
+- **ETA and countdown.** Celery workers hold an ETA task **unacked in memory** until it is due (`worker/strategy.py:180-208`), which is why an ETA longer than the visibility timeout makes Redis and SQS redeliver it "again, and again in a loop" (Celery's Redis docs, `redis.rst:303-334`). `loams-celery` puts the job in Loams’ delayed index instead (§6.3), so the worker receives it only when it is due and never holds it. This is a behaviour change for the better; the ETA semantics (not before) are unchanged.
 - **Retries.** `Task.retry` publishes a **new message with the same task id** (`app/task.py:767-873`). The transport therefore uses `(id, retries)` as the `job_key`, never the id alone, or a retry published while the original is still active (`acks_late`) would collide with it.
-- **Rate limits and time limits** are enforced by the Celery worker (`rate_limit` with a kombu `TokenBucket`, `worker/consumer/consumer.py`; time limits by the pool, `request.py:362-373`) and need nothing from the broker. Loams's queue rate limit (§6.9) is an optional global limit on top.
+- **Rate limits and time limits** are enforced by the Celery worker (`rate_limit` with a kombu `TokenBucket`, `worker/consumer/consumer.py`; time limits by the pool, `request.py:362-373`) and need nothing from the broker. Loams’ queue rate limit (§6.9) is an optional global limit on top.
 
 #### 7.1.4 The result backend
 
@@ -471,8 +471,8 @@ Some Celery features are switched on by a hard-coded list of broker `driver_type
 | Feature | Condition in Celery | On Loams |
 |---|---|---|
 | Remote control (`inspect`, `control`, `revoke` broadcast), through the pidbox fanout mailbox (`app/control.py:439-441`) | `conninfo.supports_exchange_type("fanout")` (`worker/consumer/control.py:31-33`) | **Works**: the transport declares `fanout` and implements `_put_fanout` |
-| Events (`celery events`, Flower) on the `celeryev` topic exchange (`events/event.py:15`) | Switched to fanout only for `driver_type` `redis` or `gcpubsub` (`:58-60`); topic needs shared bindings | **Works** with shared bindings (§7.1.2). Loams's own job events (§6.6) are the better monitor; Flower compatibility is best-effort |
-| Mingle (sync revoked tasks at worker start) | `driver_type` in `{amqp, redis, gcpubsub}` (`worker/consumer/mingle.py:25,34`) | **Off.** Revokes still reach running workers through the broadcast; a worker that starts later does not learn earlier revokes (use `--statedb`, or cancel waiting jobs through Loams's `JobOp::Cancel`, which removes them from the queue for good) |
+| Events (`celery events`, Flower) on the `celeryev` topic exchange (`events/event.py:15`) | Switched to fanout only for `driver_type` `redis` or `gcpubsub` (`:58-60`); topic needs shared bindings | **Works** with shared bindings (§7.1.2). Loams’ own job events (§6.6) are the better monitor; Flower compatibility is best-effort |
+| Mingle (sync revoked tasks at worker start) | `driver_type` in `{amqp, redis, gcpubsub}` (`worker/consumer/mingle.py:25,34`) | **Off.** Revokes still reach running workers through the broadcast; a worker that starts later does not learn earlier revokes (use `--statedb`, or cancel waiting jobs through Loams’ `JobOp::Cancel`, which removes them from the queue for good) |
 | Gossip | `driver_type` in `{amqp, redis}` (`gossip.py:34,79`) | **Off** |
 | `worker_disable_prefetch` | Redis only (`consumer/tasks.py:60-67`) | Not needed: `lease` takes exactly the free slots |
 
@@ -480,7 +480,7 @@ An upstream Celery issue proposing capability checks instead of `driver_type` li
 
 #### 7.1.6 Beat
 
-Beat has **no leader election**: Celery's docs say to run exactly one scheduler, "otherwise you'd end up with duplicate tasks" (`docs/userguide/periodic-tasks.rst:19-20`). `LoamsScheduler` removes that constraint. On start it upserts every `beat_schedule` entry as a Loams schedule (`Jobs::schedule`, id = the entry name), whose target enqueues the entry's task message into its queue. Loams's server fires the schedule, not the beat process, so running beat twice, or not at all after the first sync, cannot duplicate or miss a tick. `crontab` entries map to cron; `timedelta` entries map to `every` (§8.1). `solar` entries are refused with a message to keep the standard scheduler for them (Q101). `loams-celery sync-schedules app` does the same upsert from CI without a beat process.
+Beat has **no leader election**: Celery's docs say to run exactly one scheduler, "otherwise you'd end up with duplicate tasks" (`docs/userguide/periodic-tasks.rst:19-20`). `LoamsScheduler` removes that constraint. On start it upserts every `beat_schedule` entry as a Loams schedule (`Jobs::schedule`, id = the entry name), whose target enqueues the entry's task message into its queue. Loams’ server fires the schedule, not the beat process, so running beat twice, or not at all after the first sync, cannot duplicate or miss a tick. `crontab` entries map to cron; `timedelta` entries map to `every` (§8.1). `solar` entries are refused with a message to keep the standard scheduler for them (Q101). `loams-celery sync-schedules app` does the same upsert from CI without a beat process.
 
 #### 7.1.7 Canvas
 
@@ -543,7 +543,7 @@ The `Queue`, `Worker`, `Job`, `FlowProducer` and `QueueEvents` code users run is
 | `moveToActive` | `lease`. BullMQ's worker token (a string it generates) maps to the `LeaseToken` in the backend's memory |
 | `extendLock`, `extendLocks` | `extend` |
 | `moveToFinished` (completed / failed), `moveToDelayed`, `moveToWaitingChildren`, `retryJob` | `complete` with `Ok`, `Retry`/`Fail`, `Delay`, `WaitChildren` |
-| `moveStalledJobsToWait` | A no-op returning nothing: Loams's stalled sweep runs on the server (§6.3) and emits the same `stalled` events |
+| `moveStalledJobsToWait` | A no-op returning nothing: Loams’ stalled sweep runs on the server (§6.3) and emits the same `stalled` events |
 | `setRateLimit`, global rate limit and concurrency | `complete(RateLimited)`, `queue_admin(SetRateLimit / SetConcurrency)` |
 | `getCounts`, `getRanges`, job getters, logs, metrics, workers | `query`, `job_admin`, `queue_admin` |
 | Job scheduler operations | `schedule`, `unschedule` and their listing (§8.1) |
@@ -578,7 +578,7 @@ The owner's direction already rejected Redis emulation; the source confirms it, 
 |---|---|---|
 | What must match | 49 Lua scripts plus 67 includes, 5,243 lines, using 49 distinct Redis commands (most often `EXISTS`, `XADD` 36 times, `ZSCORE`, `ZREM`, `HGET/HSET`, `RPOPLPUSH`, `LPOS`, `RENAME`), `cmsgpack` in 11 scripts and `cjson`, key names built at runtime inside scripts (which breaks cluster slot rules without `{}` hash tags), `BZPOPMIN` on a marker zset for blocking, streams with `XADD`/`XREAD BLOCK`; a minimum of Redis 5.0 and `maxmemory-policy noeviction` **(source)** | About 81 high-level methods with documented semantics |
 | Moving target | Every BullMQ release may change scripts; the emulator must track Lua-level behaviour, not an API | The interface is BullMQ's public contract, with a Redis and a Postgres implementation holding it steady |
-| Tenancy, fencing, quotas | Redis has none of Loams's concepts; they would be bolted on under a key-prefix scheme | Native: every call carries the namespace, and locks are Loams's fenced leases |
+| Tenancy, fencing, quotas | Redis has none of Loams’ concepts; they would be bolted on under a key-prefix scheme | Native: every call carries the namespace, and locks are Loams’ fenced leases |
 | Other users | A Redis-compatible server invites every Redis workload, which Loams does not want to support | Only BullMQ |
 | Build cost **(estimate)** | A RESP server, a Lua VM with Redis semantics, the keyspace, streams and blocking commands: months, forever | A TypeScript backend of about 2,000–3,000 lines (the Redis one is 3,097) and the Rust core it needs anyway |
 
@@ -616,7 +616,7 @@ The same rule as Celery: BullMQ keeps admission (priorities, limiter, delays, sc
 ### 8.1 Schedules
 
 - `Jobs::schedule` creates a Resonate schedule (`schedule.create`) with a cron expression and a promise template. When it fires, the server expands `{{.id}}` and `{{.timestamp}}` in the promise id and inserts the promise with `INSERT OR IGNORE`, so a tick fires once even if the schedule is processed twice (`process_schedule_timeout`, `resonate-server-sqlite` `lib.rs:3725-3790`) **(source)**.
-- **Target.** A schedule that enqueues a job targets Loams's own group (`inproc://any@loams`, §21 §3.5): the tick runs a small Loams durable function that calls `enqueue` with the tick's promise id as the idempotency key, so a tick enqueues exactly one job. A schedule that runs a durable function targets the user's group directly (`poll://any@<group>`).
+- **Target.** A schedule that enqueues a job targets Loams’ own group (`inproc://any@loams`, §21 §3.5): the tick runs a small Loams durable function that calls `enqueue` with the tick's promise id as the idempotency key, so a tick enqueues exactly one job. A schedule that runs a durable function targets the user's group directly (`poll://any@<group>`).
 - **`every` intervals** (BullMQ's `every`, Celery's `timedelta` entries) that a cron expression cannot express become a Loams durable function that loops `ctx.sleep(interval)` → `enqueue` with the tick number in the idempotency key. `limit`, `startDate/endDate`, `offset` and `immediately` are fields of the schedule record that the firing function checks. Time zones (`tz`) are applied by Loams when it converts the rule to the server's UTC cron (verify that Resonate's cron parser has no time-zone field).
 - **Upsert.** `schedule` with an existing id and a different rule replaces it (BullMQ's `upsertJobScheduler`; Celery beat on restart): delete and create in one Loams operation, idempotent by id.
 
@@ -652,7 +652,7 @@ BullMQ's `getChildrenValues` reads the children's results from the job store; th
 
 Queue-mode jobs never create Resonate promises. That keeps the per-job cost at a few TiKV writes and keeps millions of short jobs out of the durable store, whose settled promises are never pruned today (§21 §8). Durable mode is chosen per task by the user, by writing the task as a Resonate function; Loams does not decide it.
 
-**Why the queue is not built on Resonate tasks.** Resonate's tasks have a fenced lease (the task `version`, compare-and-set on acquire, `resonate-server-sqlite` `lib.rs:2983-2999`) and a retry timeout, which is most of a queue. They lack priorities, rate limits, global concurrency, dedup modes, queue listing and counts by state, and they deliver through best-effort transports whose recovery is the 30 s retry timeout (§21 §3.4). Building those on promise tags and searches (scans on SQLite and blob backends, §21 §6.4) would be slower and harder than a purpose-built index in TiKV. So the queue is Loams's, and Resonate does what it is good at: schedules, flows and step durability.
+**Why the queue is not built on Resonate tasks.** Resonate's tasks have a fenced lease (the task `version`, compare-and-set on acquire, `resonate-server-sqlite` `lib.rs:2983-2999`) and a retry timeout, which is most of a queue. They lack priorities, rate limits, global concurrency, dedup modes, queue listing and counts by state, and they deliver through best-effort transports whose recovery is the 30 s retry timeout (§21 §3.4). Building those on promise tags and searches (scans on SQLite and blob backends, §21 §6.4) would be slower and harder than a purpose-built index in TiKV. So the queue is Loams’, and Resonate does what it is good at: schedules, flows and step durability.
 
 ### 8.4 The `loams` helpers
 
@@ -681,9 +681,9 @@ Sail 0.7.1 (2026-08-24, Apache-2.0) is a Spark Connect server in Rust on DataFus
 
 ### 9.2 How Loams runs Sail
 
-- **Never linked.** Sail's crates are not on crates.io, are on DataFusion 55.1 / arrow 59.2 against Loams's 54 / 58 (§11), and `sail-spark-connect` pulls an embedded CPython through pyo3. D51 holds: Sail is a separate process.
+- **Never linked.** Sail's crates are not on crates.io, are on DataFusion 55.1 / arrow 59.2 against Loams’ 54 / 58 (§11), and `sail-spark-connect` pulls an embedded CPython through pyo3. D51 holds: Sail is a separate process.
 - **One Sail per namespace.** Sail runs tenants' Python UDFs inside its own process, so a shared server would run one tenant's Python beside another's data. Each namespace that uses Spark gets its own Sail server (a Deployment in `kubernetes-cluster` mode in cloud; a child process in `loams dev`), scaled to zero after an idle period and started on the first connection (Q96).
-- **The endpoint.** Clients connect to `sc://<ns>.spark.<cloud-domain>:443/;use_ssl=true`; the URI carries connection settings only, never the token, so it cannot leak through diagnostics or proxy logs. The token travels as `authorization: Bearer <loams token>` gRPC metadata: `loams.spark_session()` builds the session with a PySpark `ChannelBuilder` subclass that adds that header from `LOAMS_TOKEN` (PySpark's own `token=` URI parameter produces the same header, but the docs do not show it; verify the metadata path for each PySpark version). A Spark Connect proxy in Loams's gateway role authenticates the token, finds the namespace's Sail Service, starts it if needed, and forwards the gRPC stream, keeping a session on one Sail server (sticky by Spark Connect's `session_id`). Loams does not implement Spark Connect; it routes to Sail.
+- **The endpoint.** Clients connect to `sc://<ns>.spark.<cloud-domain>:443/;use_ssl=true`; the URI carries connection settings only, never the token, so it cannot leak through diagnostics or proxy logs. The token travels as `authorization: Bearer <loams token>` gRPC metadata: `loams.spark_session()` builds the session with a PySpark `ChannelBuilder` subclass that adds that header from `LOAMS_TOKEN` (PySpark's own `token=` URI parameter produces the same header, but the docs do not show it; verify the metadata path for each PySpark version). A Spark Connect proxy in Loams’ gateway role authenticates the token, finds the namespace's Sail Service, starts it if needed, and forwards the gRPC stream, keeping a session on one Sail server (sticky by Spark Connect's `session_id`). Loams does not implement Spark Connect; it routes to Sail.
 - **Data.** Sail's Iceberg REST catalog points at Lakekeeper with credential vending (§10 §4), so tables live on RustFS as standard Iceberg (M4). Loams collections are read and written with the `format("loams")` Python data source (D54, M2), which runs on Sail unchanged (§17 §5.6).
 - **Batch jobs.** `submit_engine_job(EngineJob::SparkBatch { entrypoint, args, conf, python_deps })` runs a PySpark script (uploaded to the object store) in a short-lived driver container against the namespace's Sail endpoint. The run is a Loams durable workflow: start the container, stream its logs into the run's events, record the exit status, retry by policy. `schedule` can target it, so "run this Spark job nightly" needs no Airflow.
 
@@ -710,7 +710,7 @@ Jobs that use RDDs, `SparkContext`, JVM UDFs, MLlib, pandas-on-Spark or Structur
 | Spark Connect-compatible, but uses a feature Sail lacks | Apache Spark's own Spark Connect server (port 15002) for the namespace; the client only changes the URL |
 | RDD, `SparkContext`, Scala or Java | `spark-submit` through the Kubeflow Spark Operator (Apache-2.0) as `submit_engine_job(EngineJob::SparkSubmit { … })` |
 
-Both read the same Iceberg tables through Lakekeeper. This is the only place Loams runs a JVM, and only when a user asks for it; Loams's default deployment has no JVM (research §6). The migration advice is the research's: **run on both**. `loams spark check` runs a job on Sail and reports the unsupported calls it hit (from Sail's errors), so a team learns which jobs need the fallback before moving them.
+Both read the same Iceberg tables through Lakekeeper. This is the only place Loams runs a JVM, and only when a user asks for it; Loams’ default deployment has no JVM (research §6). The migration advice is the research's: **run on both**. `loams spark check` runs a job on Sail and reports the unsupported calls it hit (from Sail's errors), so a team learns which jobs need the fallback before moving them.
 
 ## 10. Flink (D212)
 
@@ -723,7 +723,7 @@ Both read the same Iceberg tables through Lakekeeper. This is the only place Loa
 | SQL | Postgres dialect, not Flink SQL | Its own dialect on a DataFusion 48 fork, not Flink SQL |
 | Kafka, Iceberg | Kafka, Pulsar, Kinesis sources; Iceberg source, sink and table engine with Lakekeeper | Kafka source and sink; Iceberg sink only (REST catalog, two-phase commit) |
 | State | Hummock on S3 (RustFS) | Checkpoints to any object store |
-| Already in Loams's plan | Yes: the companion stream processor (D22), returning with the Kafka gateway in M5 (D74) | Named as a CI smoke client for the Kafka gateway (research §5) |
+| Already in Loams’ plan | Yes: the companion stream processor (D22), returning with the Kafka gateway in M5 (D74) | Named as a CI smoke client for the Kafka gateway (research §5) |
 
 **Decision:** Flink SQL jobs move to **RisingWave**, which Loams already plans as its companion. Arroyo is documented as an alternative client, not a managed engine, because of its release cadence and its forked DataFusion (Q95). Neither speaks Flink SQL, so "little change" means a dialect port: sources and sinks become `CREATE SOURCE`/`CREATE SINK` with `connector='kafka'`, time windows use RisingWave's `TUMBLE`/`HOP` table functions, and Flink-specific hints and connectors are dropped. The docs carry a porting table with a worked example for each Flink SQL construct in Flink's own examples; an automatic translator is not planned.
 
@@ -734,7 +734,7 @@ Both read the same Iceberg tables through Lakekeeper. This is the only place Loa
 There is no Rust replacement for Flink's DataStream API (research §2.1, §6). DataStream jobs therefore run on **Apache Flink** with the **Flink Kubernetes Operator** (1.16.1, 2026-09-17, Apache-2.0; Flink up to 2.4) **(source)**:
 
 - **Deployment.** One `FlinkDeployment` (application mode) per job, in the namespace's Kubernetes namespace. Checkpoints and savepoints go to RustFS: `state.checkpoints.dir: s3://…`, `s3.endpoint`, `s3.path-style-access: true`, with `flink-s3-fs-presto` for checkpoints and `flink-s3-fs-hadoop` where a job's file sink needs a `RecoverableWriter` (Flink's S3 filesystem docs).
-- **Reading Loams.** Through Flink's Kafka connector against Loams's Kafka gateway (M5, D74), or Flink's Iceberg connector against Lakekeeper (M4). Flink needs nothing Loams-specific. Before M5, a DataStream job can write to Loams over HTTP or the ES subset but cannot read Loams streams.
+- **Reading Loams.** Through Flink's Kafka connector against Loams’ Kafka gateway (M5, D74), or Flink's Iceberg connector against Lakekeeper (M4). Flink needs nothing Loams-specific. Before M5, a DataStream job can write to Loams over HTTP or the ES subset but cannot read Loams streams.
 - **Lifecycle through `control_engine_job`:**
 
 | Action | Operator mechanism |
@@ -749,7 +749,7 @@ There is no Rust replacement for Flink's DataStream API (research §2.1, §6). D
 Each action is a Loams durable workflow: apply the resource, wait for the operator's status, record the outcome. The steps are declarative applies, so a replay after a crash re-applies the same spec and converges. **Loams does not checkpoint anything inside Flink**: Flink's checkpoints and savepoints are the job's only durable state, and the workflow only records their paths.
 
 - **Flink SQL on real Flink.** A team that must keep Flink SQL unported can run it as a `FlinkDeployment` with the operator's SQL-runner pattern (a small jar that executes a SQL script; verify against the operator's examples at J4). Jobs submitted through the Flink SQL Gateway are not managed by the operator (operator docs), so Loams does not use the Gateway.
-- **Later.** A Flink `VECTOR_SEARCH` connector (FLIP-540, Flink 2.2) that calls Loams's hybrid search is a natural adapter for streaming enrichment (research §5, item 6). It is a small Java module outside the Rust workspace and not part of track J.
+- **Later.** A Flink `VECTOR_SEARCH` connector (FLIP-540, Flink 2.2) that calls Loams’ hybrid search is a natural adapter for streaming enrichment (research §5, item 6). It is a small Java module outside the Rust workspace and not part of track J.
 
 ## 11. Tenancy and security (D213)
 
@@ -773,7 +773,7 @@ The rule: nothing linked into Loams, and nothing in a Loams-published package's 
 | buffa 0.9.2 | Apache-2.0 | Protobuf messages | Yes (already) |
 | redb 4 | MIT OR Apache-2.0 | `LocalJobStore` | Yes (already a workspace dependency) |
 | `tikv-client` (fork), `loams-tikv` | Apache-2.0 | `TikvJobStore` | Yes (already, R1) |
-| Resonate server crates and Rust SDK (fork `ostrium-labs/resonate`, `loam/0.10.1`) | Apache-2.0 | Schedules, flows, lifecycle workflows | Yes (already, D1) |
+| Resonate server crates and Rust SDK (fork `ostrium-labs/resonate`, `loams/0.10.1`) | Apache-2.0 | Schedules, flows, lifecycle workflows | Yes (already, D1) |
 | kube-rs | Apache-2.0 (verify at J3) | Engine runners on Kubernetes | Yes, behind a feature, from J3 |
 | Resonate Python SDK 0.8.1, TypeScript SDK 0.11.5 | Apache-2.0 (the monorepo `LICENSE`; the Python package declares no licence field) | Durable mode, the `loams` helpers | No: user processes |
 | celery 5.6.3, kombu 5.6.2 | BSD-3-Clause | Required by `loams-celery` | No |
@@ -826,7 +826,7 @@ Package names follow D400 (`loams` everywhere): the Python SDK is `loams`, the h
 
 - **Queue core.** Property tests over random interleavings of enqueue, lease, extend, complete, crash and clock advance against both stores: no acknowledged enqueue is lost; no job has two outcomes; a fenced write is always refused; priorities and delays are respected per shard. The TiKV store runs under `loams-tikv`'s `FaultPlan` (region errors, unknown commit outcomes, TSO restarts).
 - **Jepsen-style gate** (with the M2/M5 stream gates): kill nodes during a busy queue; check the history for lost jobs, double completions and stuck leases.
-- **Celery.** Celery's own integration suite (`t/integration`) with `broker_url = loams://…` and `result_backend = loams://…`, the canvas tests included; plus Loams's tests for ETA without redelivery, `acks_late` with a killed worker, chord counters under concurrent completion, and beat twice without duplicate ticks.
+- **Celery.** Celery's own integration suite (`t/integration`) with `broker_url = loams://…` and `result_backend = loams://…`, the canvas tests included; plus Loams’ tests for ETA without redelivery, `acks_late` with a killed worker, chord counters under concurrent completion, and beat twice without duplicate ticks.
 - **BullMQ.** The backend-neutral suite (§7.2.3).
 - **Resonate paths.** A schedule driven through several ticks with the durable debug clock enqueues exactly one job per tick; a flow survives `kill -9` of the node running it; durable-mode Celery and BullMQ examples resume after a worker is killed mid-step, without repeating finished steps.
 - **Engines.** Sail: the PySpark examples of §17 and a Sail-vs-Spark comparison on a sample job. Flink: a `kind` cluster with the operator, a stateful job, savepoint → upgrade → rollback, checking state is kept. RisingWave: a ported Flink SQL example producing the same output as on Flink.
@@ -876,7 +876,7 @@ The first PRs of J1, in order, each small: (1) the protos and generated crate; (
 
 - **Celery** `f0b1320` (main, 2026-09-28; release 5.6.3) and **kombu** `b1ba4ba` (main, 2026-09-28; release 5.6.2): `kombu/transport/__init__.py`, `kombu/connection.py`, `kombu/transport/virtual/{base,exchange}.py`, `kombu/transport/{redis,pgmq,gcpubsub}.py`, `kombu/transport/SQS/__init__.py`, `kombu/transport/native_delayed_delivery.py`; `celery/app/{base,backends,amqp,control,task,builtins,defaults,trace}.py`, `celery/backends/{base,redis}.py`, `celery/canvas.py`, `celery/beat.py`, `celery/result.py`, `celery/events/event.py`, `celery/worker/{request,strategy}.py`, `celery/worker/consumer/{consumer,control,mingle,gossip,tasks}.py`, `docs/getting-started/backends-and-brokers/{redis,sqs}.rst`, `docs/userguide/periodic-tasks.rst`.
 - **BullMQ** `d1a43ab` (master, 2026-09-28; package 6.3.9): `src/interfaces/queue-backend.ts`, `src/utils/{create-backend,with-backend}.ts`, `src/classes/{queue,queue-base,queue-getters,worker,job,flow-producer,queue-events,queue-keys,redis-connection,redis-queue-backend}.ts`, `src/commands/*.lua`, `src/postgres/`, `src/interfaces/{worker-options,base-job-options,repeat-options,backoff-options}.ts`, `src/types/{job-options,job-type,deduplication-options,processor}.ts`, `docs/gitbook/guide/{connections,postgresql}.md`, `docs/gitbook/changelog.md`, `docs/gitbook/bullmq-pro/`, `python/pyproject.toml`.
-- **Resonate**: the fork `ostrium-labs/resonate` at `e360669` (branch `loam/0.10.1` = upstream `28dfd01` plus five commits: RustSec/OpenSSL hygiene, the GCP ID-token feature gate, MySQL errno classification, TiDB support, SDK-rs without default TLS); `impl/sdk/py/src/resonate/{resonate,context,retry,schedules,promises,codec}.py` (0.8.1), `impl/sdk/ts/src/{resonate,context,options,retries}.ts` (0.11.5), `impl/server/core/crates/resonate-core/src/types.rs`, `resonate-server-sqlite/src/lib.rs`, `core/src/serve.rs`. Loams: `crates/loams-durable` on `main` (the registry, the in-process network and runtime); the TiKV server plugin (`crates/loams-durable/src/tikv.rs`) is in progress in the working tree, not on `main`.
+- **Resonate**: the fork `ostrium-labs/resonate` at `e360669` (branch `loams/0.10.1` = upstream `28dfd01` plus five commits: RustSec/OpenSSL hygiene, the GCP ID-token feature gate, MySQL errno classification, TiDB support, SDK-rs without default TLS); `impl/sdk/py/src/resonate/{resonate,context,retry,schedules,promises,codec}.py` (0.8.1), `impl/sdk/ts/src/{resonate,context,options,retries}.ts` (0.11.5), `impl/server/core/crates/resonate-core/src/types.rs`, `resonate-server-sqlite/src/lib.rs`, `core/src/serve.rs`. Loams: `crates/loams-durable` on `main` (the registry, the in-process network and runtime); the TiKV server plugin (`crates/loams-durable/src/tikv.rs`) is in progress in the working tree, not on `main`.
 - **connect-rust** `fb5f5aa` (github.com/connectrpc/connect-rust; tag v0.9.1); `connectrpc` 0.12.1 on PyPI; `@connectrpc/connect` 2.2.0 and `@bufbuild/protobuf` 2.15.0 on npm.
 - **Sail** `1f6bcde` (0.7.1): `docs/introduction/migrating-from-spark`, `docs/guide/{dataframe/features,sources/iceberg/features,catalog/index,storage,deployment/kubernetes,cli}.md`, `k8s/sail.yaml`, `Cargo.toml`. Apache Spark 4.2 Spark Connect overview; Spark 4.1.0 release notes.
 - **Flink Kubernetes Operator** `de630f6` (1.16.1): `helm/*/crds`, `docs/content/docs/managing/snapshot-management.md`, `docs/deployment/overview.md`, `ResourceLifecycleState.java`. Flink 2.3 S3 filesystem and SQL Gateway docs.

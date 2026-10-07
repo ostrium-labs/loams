@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # loams-apps-mock
 
 A stateful mock of the Loams app protos (design [§37](../../docs/design/37-desktop-and-mobile-apps.md) §12, plan [AP0](../../docs/plans/2026-10-01-ap0-app-protos.md) Task 5): `loams.instance.v1`, `loams.devices.v1`, `loams.approvals.v1`, `loams.operations.v1` and `loams.notifications.v1`, over Connect (binary and JSON), gRPC and gRPC-Web on one loopback listener. The console, Loams Desktop and the phone apps (`ostrium-labs/loams-mobile`) develop and test against it until the server side (AP4) exists.

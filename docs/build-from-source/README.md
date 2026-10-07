@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../assets/loams-banner.svg)
+
 # Building Loams from source
 
 Loams ships **no binaries yet**. The release pipeline that would produce them

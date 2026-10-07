@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # Documentation
 
 Guides for running, extending and trusting this plugin host. Everything here is

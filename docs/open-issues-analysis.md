@@ -1,10 +1,10 @@
 # Open Issues Analysis: `ostrium-labs/loams`
 
-> **Document Status**: Complete Reference  
-> **Repository**: `ostrium-labs/loams`  
-> **Branch**: `dev` (`f274ad91`)  
-> **Generated**: 2026-10-06  
-> **Total Open Issues**: 51  
+> **Document Status**: Complete Reference
+> **Repository**: `ostrium-labs/loams`
+> **Branch**: `dev` (`f274ad91`)
+> **Generated**: 2026-10-06
+> **Total Open Issues**: 51
 > **Closed in Recent Wave**: 7 issues (#284, #289, #290, #291, #293, #295, #374)
 
 ---
@@ -117,8 +117,8 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 #### Issue #237: `Tracking: implementation backlog (Codex implements, Opus reviews)`
 - **Goal**: Master operational tracking issue that coordinates all plan tasks, rulesets, and code review criteria.
 
-#### Issue #148: `loam-wal: TLS on the Postgres and HTTP listeners`
-- **Goal**: Add TLS configuration to `loam-wal` (operon-safekeeper) so authentication tokens are not passed in cleartext.
+#### Issue #148: `loams-wal: TLS on the Postgres and HTTP listeners`
+- **Goal**: Add TLS configuration to `loams-wal` (loams-safekeeper) so authentication tokens are not passed in cleartext.
 
 #### Issue #118: `Track WeSQL upstream fixes (fork: ostrium-labs/wesql)`
 - **Goal**: Upstream monitoring issue tracking sync status between `ostrium-labs/wesql` fork and upstream WeSQL.
@@ -129,7 +129,7 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 
 #### Issue #201: `[R] R1 — TiKV Metastore and the Reactive Core Implementation Plan`
 - **Plan**: `docs/plans/2026-09-27-r1-reactive-core.md`
-- **Goal**: Implement TiKV client layer (`operon-tikv` / `loams-tikv`) and reactive metastore core.
+- **Goal**: Implement TiKV client layer (`loams-tikv`) and reactive metastore core.
 - **Current State**:
   - Tasks 0–17 merged into `dev`, except Task 14 (the TypeScript reactive client) and Task 16 (the gates and the exit report), which are branch-only.
   - Verified 2026-10-07 by content, not by commit hash — see [`tracks-1-3-audit.md`](tracks-1-3-audit.md). Task 12's commits are on `dev` renamed `operon:`→`loams:`, so `git cherry` wrongly reports them missing.
@@ -160,7 +160,7 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 - **Goal**: Stand up the Event Fabric using Iggy / Fluss message broker engines with standardized CloudEvents envelopes.
 - **Status**: Not started.
 
-#### Issue #210: `[FL] FL2 — Loam House SQL Phase 1 (chDB, ClickHouse HTTP, Tier 1 Engines)`
+#### Issue #210: `[FL] FL2 — Loams House SQL Phase 1 (chDB, ClickHouse HTTP, Tier 1 Engines)`
 - **Plan**: `docs/plans/2026-10-01-fl2-house-sql.md`
 - **Goal**: Embed chDB ClickHouse SQL engine and expose ClickHouse HTTP interface.
 - **Status**: **Complete** (verified 2026-10-07). Both `origin/fl2-t0-chdb-spike` and `origin/fl2-t3-errors` are ancestors of `dev`; `deploy/tikv/tidb.toml` is present. There is nothing left to integrate.
@@ -250,9 +250,9 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 - **Plan**: `docs/plans/2026-10-01-rn1-runner-usage.md`
 - **Goal**: Execution runner abstractions for sandboxed serverless processes and AWS Lambda functions.
 
-#### Issue #213: `[GT] GT1 — The WAL Git Core and git-remote-loam`
+#### Issue #213: `[GT] GT1 — The WAL Git Core and git-remote-loams`
 - **Plan**: `docs/plans/2026-10-01-gt1-wal-git-core.md`
-- **Goal**: Bucket-native Git storage engine using write-ahead logs and custom Git remote helper (`git-remote-loam`).
+- **Goal**: Bucket-native Git storage engine using write-ahead logs and custom Git remote helper (`git-remote-loams`).
 
 #### Issue #214: `[GT] GT2 — Smart HTTP for Stock Git, Compaction and Partial Clone`
 - **Plan**: `docs/plans/2026-10-01-gt2-smart-http.md`
@@ -267,7 +267,7 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 - **Goal**: Open artifact adapter (`loams-git-artifacts`) for storing large binary assets.
 - **Status**: **Explicitly deferred** (`deferred` label).
 
-#### Issue #203: `[SC] SC1 — Loam Commons: the Open-Source Showcase Suite`
+#### Issue #203: `[SC] SC1 — Loams Commons: the Open-Source Showcase Suite`
 - **Plan**: `docs/plans/2026-09-28-sc1-showcase-suite.md`
 - **Goal**: End-to-end reference application showcases demonstrating multi-language SDK integrations.
 
@@ -279,7 +279,7 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 - **Plan**: `docs/plans/2026-10-02-mt1-authentik-identity.md`
 - **Goal**: Automated blueprint provisioning for self-hosted Authentik 2026.8 OIDC provider.
 
-#### Issue #222: `[MT] MT2 — Knative Serving and Eventing for Self-Hosted Loam`
+#### Issue #222: `[MT] MT2 — Knative Serving and Eventing for Self-Hosted Loams`
 - **Plan**: `docs/plans/2026-10-02-mt2-knative.md`
 - **Goal**: Knative operator and serving layer for auto-scaling Loams compute workloads.
 

@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../docs/assets/loams-banner.svg)
+
 # @loams-plugins/plugin-loams-adapter
 
 Read-only analytics over a **Loams** deployment, over Loams' native HTTP/JSON

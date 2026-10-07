@@ -9,7 +9,7 @@ Status: **Approved** · 2026-09-22 (including amendments: Tantivy for text, Lanc
 1. **Object storage is the only durable source of truth.** The sole exception is the seconds-long WAL tail of `quorum`-class streams, which is 3-way replicated across AZs before acknowledgment (§02).
 2. **All compute is stateless.** Any node can be killed at any time. Local RAM/NVMe hold only caches and derived structures that can be rebuilt from object storage.
 3. **The log is the spine.** Every mutation enters through a stream. Tables, collections and graphs are materializations of streams, maintained by links.
-4. **Open formats at rest.** Iceberg (tables), Lance (collection documents + vectors), Tantivy splits (text), Parquet-style sidecars (graph adjacency). External engines can read Loams's data without Loams.
+4. **Open formats at rest.** Iceberg (tables), Lance (collection documents + vectors), Tantivy splits (text), Parquet-style sidecars (graph adjacency). External engines can read Loams’ data without Loams.
 5. **Namespace is the unit of everything.** Tenancy, quotas, encryption keys, cache affinity, routing and billing are all per namespace. A cold namespace costs only its S3 bytes.
 6. **Compatibility is a gateway concern.** Protocol frontends (§3.3) translate into a small set of internal logical operations. No protocol leaks into the storage or query core. The footprint is deliberately narrow (D42): the native REST/gRPC API, Arrow Flight SQL, the Qdrant API and a targeted Elasticsearch subset, plus the Resonate server (§14) and the MCP server (§15).
 7. **Every object has a durable tier and a hot tier** (§04). Correctness never depends on the hot tier.

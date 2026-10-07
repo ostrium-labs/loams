@@ -6,7 +6,7 @@ Status: **Proposed** · 2026-10-02. The direction is the owner's, from 2026-10-0
 
 **Owner rulings later the same day, applied here:** (1) the names are **Loams Bot** and **Loams Software Factory** in prose, titles and decisions (the quotation above keeps the owner's original words); (2) **the desktop app is native, not Tauri**: a fork of zeron (`github.com/zeronsh/zeron`, MIT; Rust on GPUI; "a native control plane for Claude Code, Codex, Cursor, Devin and other coding agents", with a local engine daemon and optional multi-device sync), and Loams Bot on the desktop builds on zeron's agent and session engine. The browser console stays cordis; the phones stay native SwiftUI and Compose. This document cites **§37 (amended for a native desktop, D480–D499)** and does not design the desktop shell; it designs what the factory adds to it (§3.4, §13).
 
-This document turns that direction into decisions **D-SF-1–D-SF-20** and open questions **Q460–Q479** (recorded in the canonical decision log). Everything beyond the quoted direction (the embed rules, the A2A mapping, the loop's gates, the open/commercial split) is a **proposal** until the owner confirms it. **No code is written by this document.** The hosted factory and the marketplace are commercial and are designed in the private `loam-platform` repository (its doc 05); this document only states the interface between the two.
+This document turns that direction into decisions **D-SF-1–D-SF-20** and open questions **Q460–Q479** (recorded in the canonical decision log). Everything beyond the quoted direction (the embed rules, the A2A mapping, the loop's gates, the open/commercial split) is a **proposal** until the owner confirms it. **No code is written by this document.** The hosted factory and the marketplace are commercial and are designed in the private `loams-platform` repository (its doc 05); this document only states the interface between the two.
 
 **Numbering.** D-SF-1–D-SF-20 and Q460–Q479 are this document's blocks; both are in the [decision log](13-decision-log.md) since #319 (2026-10-03), so "renumber at merge if another branch took them" is settled and no longer applies. They collide with nothing: §38 holds D440–D459 and Q440–Q459, and the Elasticsearch gateway holds D460–D466, which leaves D467–D479 free for a future numeric block. When this document needs more numbers, take them above the log's current top rather than from §38's or the gateway's blocks: `dev`, the default branch, runs to D619 and Q614 as of 2026-10-03, while `main` still stops at D459 and Q454. The private repository has its own numbers (PD47 onward).
 
@@ -33,11 +33,11 @@ Markers: **(verified)** means read on the web on 2026-10-02 at the source in §1
 | D-SF-13 | **The factory loop is a Resonate workflow, `factory.run`**, one per signal: intake, triage, plan, fix, review, deploy, observe, close. Each stage is a durable step with an idempotency key, a budget check and a gate (§10) | Proposed |
 | D-SF-14 | **Safety rails are in the engine, not the prompt**: per-run and per-org budgets (tokens, money, wall time, attempts, open PRs), a **kill switch** by scope (a run kill cancels that run's tasks and workflows and suspends nothing; an agent kill also suspends that agent's principal; an org kill suspends all of the org's agent principals), loop-depth and cooldown limits against feedback storms, and **no auto-merge and no auto-deploy by default**: every merge and every deploy needs an approval unless the policy lists the repository, path or service and the environment is unprotected (§10.1, §11) | Proposed |
 | D-SF-15 | **A factory run is a record**: a Live table `factory_runs`, a stream `factory_events`, audit events as OTel logs (D100), and console pages (runs, run detail, approvals, agents, budgets). The record links every artifact: the Zulip thread, the Plane issue, the Forgejo PR, the deploy, the traces (§12) | Proposed |
-| D-SF-16 | **Open-core split (D220 stands).** Open, in this repository: the A2A host and adapters, the five agents, the cordis plugins, the native desktop panels and harness, the Loams Bot service and clients, `loams.collab.v1`, and a **single-organisation factory you can self-host**. Commercial, in `loam-platform`: the hosted multi-tenant factory, managed agents and model costs, the marketplace and its listing, billing and metering (§14) | Proposed |
+| D-SF-16 | **Open-core split (D220 stands).** Open, in this repository: the A2A host and adapters, the five agents, the cordis plugins, the native desktop panels and harness, the Loams Bot service and clients, `loams.collab.v1`, and a **single-organisation factory you can self-host**. Commercial, in `loams-platform`: the hosted multi-tenant factory, managed agents and model costs, the marketplace and its listing, billing and metering (§14) | Proposed |
 | D-SF-17 | **The apps run unmodified, from official images pinned by digest**, as separate services: Zulip (Apache-2.0), Plane Community Edition (AGPL-3.0), Forgejo (GPL-3.0-or-later), GlitchTip (MIT), OpenPanel (AGPL-3.0), Langfuse's MIT tree with `ee/` never enabled, OpenObserve's open-source edition (AGPL-3.0). Licences and what each demands are in §4 | Proposed |
 | D-SF-18 | **Coding is a skill of the Forgejo agent**, not a sixth public agent: `propose_patch` starts a sandboxed coding session on a workspace branch (§15 D24, §36 Loams Git) and returns a patch the Forgejo agent turns into a branch and a PR. The model is configurable; the default routes DeepSeek through the AI gateway (§13) | Proposed |
 | D-SF-19 | **Where it appears in the apps.** Desktop (a zeron fork): Loams Bot is a **new `Harness` in zeron's harness crate** over `loams.bot.v1`, so zeron's conversation, composer, sidebar and trajectory UI show Loams Bot threads, plus native panels for the collab objects, runs and approvals. Browser console: `@loams/plugin-bot` (the DeepSeek harness's conversation UI patterns ported to cordis) and one plugin per app. Phones: native chat, run, approval and issue views over `loams.bot.v1`, `loams.collab.v1` and `loams.factory.v1`. Deep links are `loams://app/…`, `loams://bot/…`, `loams://factory/…` and navigate only (§3.5, §13) | Proposed |
-| D-SF-20 | **The marketplace is commercial and private** (`loam-platform` doc 05): Loams Software Factory is listing #1; the open repository ships only the installable **package** (a Helm chart, a catalog patch and a manifest) that the listing installs, so a self-hoster installs the same thing by hand (§14) | Proposed |
+| D-SF-20 | **The marketplace is commercial and private** (`loams-platform` doc 05): Loams Software Factory is listing #1; the open repository ships only the installable **package** (a Helm chart, a catalog patch and a manifest) that the listing installs, so a self-hoster installs the same thing by hand (§14) | Proposed |
 
 ## 2. Goals and non-goals
 
@@ -163,7 +163,7 @@ Verified 2026-10-02 unless marked; §22 §4 has the earlier matrix and the reaso
 | Plane | **AGPL-3.0**, Community Edition; paid editions are a separate commercial build with OIDC and SAML SSO, among other features (§22) | Official CE image | **AGPL §13 binds whoever modifies Plane.** Unmodified, we owe only the source link Plane's own UI shows. Embedding through a frame and driving it through its API do not make Loams a derivative work (separate processes over HTTP). We never enable, copy or bypass paid-edition code or licence keys. Plane's marks are not ours: listings say "works with Plane" |
 | Forgejo | **GPL-3.0-or-later** | Official image | Running and framing it triggers nothing. Redistributing an image (an air-gapped bundle) needs its licence text and source offer. Forgejo Runner is also GPL-3.0-or-later |
 | GlitchTip | MIT | Official image | Notices only |
-| OpenPanel | **AGPL-3.0** (§22 §13b) | Official image | As Plane. Forward-auth means no patch for SSO. The fork onto Loams's Iceberg store (D-SC-15) is a separate decision and would carry AGPL obligations |
+| OpenPanel | **AGPL-3.0** (§22 §13b) | Official image | As Plane. Forward-auth means no patch for SSO. The fork onto Loams’ Iceberg store (D-SC-15) is a separate decision and would carry AGPL obligations |
 | Langfuse | MIT, **except `ee/`** (commercial) (verified) | Official image; `ee/` features are never switched on | Nothing is owed under MIT beyond the notice. We neither use nor rely on any `ee/` feature (SCIM, audit logs, retention policies, project RBAC, protected prompt labels, server-side masking, UI customisation, organisation creators, the management APIs); audit comes from Loams and Authentik |
 | OpenObserve | **AGPL-3.0** open-source edition; an Enterprise Edition under a commercial agreement adds SSO, RBAC, audit trail, extended retention and federated search (verified) | Official image, open-source edition | As Plane. Because the open edition has no SSO, we put it behind forward-auth (§3.4) and do not pretend it has per-user access control |
 | A2A (spec and SDKs) | Apache-2.0; Linux Foundation project (verified) | Libraries linked into Loams (`a2a-lf` crates for Rust) | Compatible with D11 (no AGPL, BSL, SSPL or ELv2 in linked code). Pinned; the Rust SDK's maturity is a risk (§15) |
@@ -171,7 +171,7 @@ Verified 2026-10-02 unless marked; §22 §4 has the earlier matrix and the reaso
 | DeepSeek harness (desktop, mobile) | MIT | Patterns, not copied by default (D421): the server-side agent loop (SF3) and the browser console's chat UI | Any copied file keeps its notice in `THIRD_PARTY_NOTICES.md` |
 | zeron | MIT (verified) | The base of the desktop app: a fork (§37, amended) | Notices kept; its GPUI fork is Apache-2.0 and Loro MIT (SF3 Task 0 checks the whole tree with `cargo deny`) |
 
-**Offering the apps hosted (commercial).** AGPL and GPL allow running unmodified copies for paying customers when the source remains available; the hosted marketplace listing therefore links each app's source and licence. Whether any app's trademark or commercial terms restrict *reselling hosted instances* is a legal question we do not answer here (owner action in `loam-platform` doc 05).
+**Offering the apps hosted (commercial).** AGPL and GPL allow running unmodified copies for paying customers when the source remains available; the hosted marketplace listing therefore links each app's source and licence. Whether any app's trademark or commercial terms restrict *reselling hosted instances* is a legal question we do not answer here (owner action in `loams-platform` doc 05).
 
 ## 5. Loams Bot and A2A
 
@@ -326,7 +326,7 @@ Agent cards declare `oauth2` with the gateway as authorization server (§5.4). A
 | Native desktop: `loams-harness-bot`, `loams-ui-collab`, `loams-ui-bot`, `loams-ui-factory` in the zeron fork (the repository and directory are named by §37's amendment) | This repository or the desktop repository, as §37's amendment says |
 | Mobile screens | `ostrium-labs/loams-mobile` (§37 D439) |
 | The factory package (Helm chart `loams-factory`, catalog patch, manifest) | This repository, `deploy/factory/` |
-| Crate names follow the current `operon-*` convention and the rename PR renames them (D33) | — |
+| Crate names follow the current `loams-*` convention and the rename PR renames them (D33) | — |
 
 ## 8. Approvals and human-in-the-loop (D-SF-9)
 
@@ -354,7 +354,7 @@ One OpenTelemetry Collector (per cluster; `loams dev` runs without) receives OTL
 - `traces/llm` : a filter processor keeps every span that carries a `gen_ai.*` attribute **or** an agent-step attribute (`a2a.task_id` or `resonate.promise_id`), and their parents, so each agent step reaches Langfuse even when it made no model call; a **masking step** removes secret-canary matches and `untrusted` bodies over 2 KB before export, and the pipeline **fails closed** if masking cannot run (Langfuse's own server-side masking is an `ee/` feature we do not use); exporter `otlphttp/langfuse` receives only masked spans, at the Langfuse OTLP endpoint with the project's key pair as basic auth over TLS **(verify the path and headers, SF5 Task 3)**.
 - `traces/all`, `logs`, `metrics`: a transform processor deletes `gen_ai.prompt`, `gen_ai.completion` and `gen_ai.*.content` attributes; exporter `otlphttp/openobserve` to `/api/<org>/v1/{traces,logs,metrics}` with basic auth (verified shape).
 
-A third exporter sends the same stream to Loams's own OTLP ingest (D73, Q43) so the console's run view needs neither tool.
+A third exporter sends the same stream to Loams’ own OTLP ingest (D73, Q43) so the console's run view needs neither tool.
 
 ### 9.2 What content is captured (Q476)
 
@@ -455,11 +455,11 @@ What is taken from zeron, and what is not (verified 2026-10-02 from its `ARCHITE
 
 **Mobile.** Native chat in SwiftUI and Compose, modelled on the mobile harness's chat screen (streamed turns, a glyph per tool, expandable tool cards, goal and question docks), over `loams.bot.v1` with the binary Connect codec; artifact cards are native views; push opens `loams://bot/threads/<id>`; transcripts are cached read-only offline; sending needs a connection (no queued sends, D437).
 
-**Model and cost.** Loams Bot's default model is DeepSeek, through Loams's AI gateway, which meters tokens per principal and exports GenAI spans. A different model is a gateway route (Q468). **Managed model costs and managed agents are the commercial part** (§14); self-hosters bring their own key.
+**Model and cost.** Loams Bot's default model is DeepSeek, through Loams’ AI gateway, which meters tokens per principal and exports GenAI spans. A different model is a gateway route (Q468). **Managed model costs and managed agents are the commercial part** (§14); self-hosters bring their own key.
 
 ## 14. Open source and commercial (D-SF-16, D-SF-20)
 
-| Piece | Open (this repository, Apache-2.0) | Commercial (`loam-platform`, private) |
+| Piece | Open (this repository, Apache-2.0) | Commercial (`loams-platform`, private) |
 |---|---|---|
 | A2A | `loams-a2a`, the five agents, signed cards, push receiver | Hosted agent fleet operations, scaling and pre-warming |
 | Chat | Loams Bot service, `loams.bot.v1`, desktop plugin, mobile screens | Managed model routes, the model price table and margins |
@@ -469,7 +469,7 @@ What is taken from zeron, and what is not (verified 2026-10-02 from its `ARCHITE
 | Self-hosting | `deploy/factory/` chart, catalog patch, manifest: **a single-org factory a person installs with Helm** | The marketplace listing, install flow, entitlements, billing and metering (no metering in OSS, D403, D444) |
 | Push | The sealed push path (D436) | Operating `push.loams.dev` |
 
-OSS emits business events (`io.loams.dev.factory.run.completed.v1` with counts) as any consumer can read; the platform's metering consumes them. This repository never depends on `loam-platform`.
+OSS emits business events (`io.loams.dev.factory.run.completed.v1` with counts) as any consumer can read; the platform's metering consumes them. This repository never depends on `loams-platform`.
 
 ## 15. Risks
 
@@ -482,7 +482,7 @@ OSS emits business events (`io.loams.dev.factory.run.completed.v1` with counts) 
 | 4 | **Plane Community Edition has no OIDC and a thinner API than the paid edition** | Chained SSO through Forgejo (§22 §5); SF2 Task 0 inventories the API; Q463 |
 | 5 | **Prompt injection through issue, chat or error text** that steers an agent | §8 item 5: untrusted parts, server-side gates in the broker, no write without policy; red-team fixtures |
 | 6 | **A runaway loop** (a fix that creates errors that start runs) | §11 limits; budgets enforced twice |
-| 7 | **Langfuse v4 and OpenObserve are heavy or limited**: ClickHouse, Redis, Postgres and S3 for Langfuse; no SSO or RBAC in OpenObserve | Optional profiles; forward-auth; Loams's own OTLP store is the console's source (§9.1) |
+| 7 | **Langfuse v4 and OpenObserve are heavy or limited**: ClickHouse, Redis, Postgres and S3 for Langfuse; no SSO or RBAC in OpenObserve | Optional profiles; forward-auth; Loams’ own OTLP store is the console's source (§9.1) |
 | 8 | **AGPL and GPL obligations** on hosted offering | §4; legal review before the marketplace (platform doc 05) |
 | 9 | **Cost**: a loop run is several model calls plus a coding session | Budgets, cost in the run record, a cheap triage model option |
 | 10 | **Credentials in the model context** | Broker design (§6.2); the secret canary extended to agents and traces |

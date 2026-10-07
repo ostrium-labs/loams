@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../docs/assets/loams-banner.svg)
+
 # loams-plugins
 
 The Cordis-based **plugin host, console, agent bus, A2A endpoint and auth layer

@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../docs/assets/loams-banner.svg)
+
 # Loams Scripts
 
 This directory contains development, verification, benchmarking, and CI scripts for the Loams platform.

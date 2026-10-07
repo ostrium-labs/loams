@@ -23,7 +23,7 @@ The stopped retrieve default of 100,000 conflicts with native max_get_keys
 D133 requires both protocols to reach the same core. gRPC conversion also
 allocates lists, so reject excessive counts before conversion there.
 Qdrant has optional strict-mode search_max_batchsize (not an unconditional
-count ceiling); its default REST request cap is 32 MiB. Loams's limits
+count ceiling); its default REST request cap is 32 MiB. Loams’ limits
 are a documented divergence and remain independent of its no-op strict
 mode config. Do not claim Qdrant has no count controls.
 The current alert set is #1, #2, #4, #5, #19 and #20. Older test alerts

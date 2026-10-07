@@ -2,7 +2,7 @@
 
 Status: **Proposed**, 2026-10-02. Decisions **D520–D539**, open questions **Q520–Q539** (recorded in the [decision log](13-decision-log.md)). Plans: [SO1](../plans/2026-10-02-so1-systemone.md) (engine, API, backends, CLI) and [SO2](../plans/2026-10-02-so2-systemone-desktop.md) (desktop, browser, Apple sidecar, Loams Bot).
 
-The owner's request of 2026-10-02: "add this to our desktop app", with a pasted note that proposes one `POST /v1/systemone` whose backend is chosen from the host, with Jev (TypeSafe's closed cloud API) as a configurable cloud option. **The note is a third party's reading of third-party pages.** This document re-checked its important claims on 2026-10-02 (§2) and corrects the ones that were wrong. Nothing named `loam-systemone.ts` exists in any of our repositories, so this is a fresh design. **No code is written by this document.**
+The owner's request of 2026-10-02: "add this to our desktop app", with a pasted note that proposes one `POST /v1/systemone` whose backend is chosen from the host, with Jev (TypeSafe's closed cloud API) as a configurable cloud option. **The note is a third party's reading of third-party pages.** This document re-checked its important claims on 2026-10-02 (§2) and corrects the ones that were wrong. Nothing named `loams-systemone.ts` exists in any of our repositories, so this is a fresh design. **No code is written by this document.**
 
 ## 1. Summary
 
@@ -89,7 +89,7 @@ The note asked whether "cordis engine" meant Core ML. **It does not.** **cordis 
 
 **Goals.** One decision API for the engine, CLI, desktop, browser and agents; the best local backend per host chosen automatically and overridable; no data leaves the machine unless the owner of the data said so; calibrated, comparable confidences across backends; verified, pinned, resumable model downloads; a clean seam for fine-tuned checkpoints; the desktop integration the owner asked for.
 
-**Non-goals.** Text generation; distilling or imitating Jev (forbidden by its agreement); training inside the engine (fine-tuning stays upstream's notebooks, §9.4); a Loams-hosted multi-tenant inference API (that is `loam-platform`, §11); GPU kernels of our own; replacing LLMs (SystemOne decides, it does not write); a decision that approves anything (D537).
+**Non-goals.** Text generation; distilling or imitating Jev (forbidden by its agreement); training inside the engine (fine-tuning stays upstream's notebooks, §9.4); a Loams-hosted multi-tenant inference API (that is `loams-platform`, §11); GPU kernels of our own; replacing LLMs (SystemOne decides, it does not write); a decision that approves anything (D537).
 
 ## 4. The API (D520, D521, D522)
 
@@ -240,7 +240,7 @@ Rules:
 - Unknown request fields are ignored (as Laya does). The five hook arguments Laya refuses are not part of our surface.
 - `routing` and `action` are **not** returned (Laya's extensions, not Jev's); `act_probability` is never exposed (D536).
 - `noul` answers have no native `confidence` (Jev) or one equal to `answer_confidence` (Laya); `calibrated_confidence` is `max(p, 1-p)` after calibration.
-- **Limits, two layers.** Validation (before any backend) uses the **largest limit any registered backend accepts**: body 2 MiB, state 50 000 characters, 64 questions, **255 options per `choice`** (Jev's cap), **32 levels per `score`** (Laya's cap; Jev's is 10), 512 options per request. The router then applies each backend's own capability: Core ML 32 options; `laya-serve` 100 options and 32 levels; Jev 255 options and **2 to 10 levels**. A request over a backend's cap simply excludes that backend; if none remains the error is `NO_BACKEND` with the reason per backend (and a hint to split into a two-step choice). So 32 levels is Loams's and Laya's limit, not a universal Jev-compatible one.
+- **Limits, two layers.** Validation (before any backend) uses the **largest limit any registered backend accepts**: body 2 MiB, state 50 000 characters, 64 questions, **255 options per `choice`** (Jev's cap), **32 levels per `score`** (Laya's cap; Jev's is 10), 512 options per request. The router then applies each backend's own capability: Core ML 32 options; `laya-serve` 100 options and 32 levels; Jev 255 options and **2 to 10 levels**. A request over a backend's cap simply excludes that backend; if none remains the error is `NO_BACKEND` with the reason per backend (and a hint to split into a two-step choice). So 32 levels is Loams’ and Laya's limit, not a universal Jev-compatible one.
 - HTTP status mapping: 400 malformed; 401/403 auth; 413 limits; 422 invalid question; 429 quota; 503 `BACKEND_UNAVAILABLE`; 500 never carries internals.
 - **Listener.** On the desktop and in `loams dev` the route is on the loopback listener (D111). On a server it is on the gateway role behind the normal auth (§19) with a per-org quota (the engine enforces whatever limit it is given; the plan decides the number, D220).
 
@@ -480,14 +480,14 @@ Zero-shot quality is modest and the base checkpoints sit below the majority-clas
 
 ## 11. Open source versus commercial (D539, D220)
 
-| Open (this repository, Apache-2.0) | Commercial (`loam-platform`, private) |
+| Open (this repository, Apache-2.0) | Commercial (`loams-platform`, private) |
 |---|---|
 | `loams.systemone.v1`, the HTTP route, `loams-systemone`, every adapter including the Jev client (bring your own key) | A **Loams-hosted** SystemOne inference API for tenants (GPU fleet, scaling, pre-warming), if it is ever sold |
 | The sidecar manager, model manager, lock file and mirrors config | Metering and billing of decision calls (OSS emits usage events only: `io.loams.dev.systemone.decided.v1` with counts, backend and latency, never content) |
 | Calibration tool, self-test, decision log and export, custom checkpoints | Managed fine-tuning as a service and curated per-industry checkpoints sold as a product |
 | The desktop integration, Loams Bot's use of it, the cordis plugin | Per-plan quotas on decisions; abuse and safety tooling on a hosted endpoint |
 
-Self-hosting a single organisation with local backends is fully open; nothing in this repository depends on `loam-platform`.
+Self-hosting a single organisation with local backends is fully open; nothing in this repository depends on `loams-platform`.
 
 ## 12. Security model (D537)
 
@@ -536,7 +536,7 @@ The track is **SO** (new label `track:so`, "SystemOne").
 ## 16. Contradictions with earlier decisions, and how they are resolved
 
 - **§37 §18.3 "do not embed the engine in the app".** The desktop links the small client crate `loams-systemone`, not the engine; unchanged in spirit (D538).
-- **D220 (hosted or commercial inference goes in `loam-platform`).** A Jev client adapter is a client of someone else's API with the user's own key and is open; a Loams-hosted inference service is commercial (§11).
+- **D220 (hosted or commercial inference goes in `loams-platform`).** A Jev client adapter is a client of someone else's API with the user's own key and is open; a Loams-hosted inference service is commercial (§11).
 - **D111 (loopback only until auth).** The sidecars and the desktop route are loopback; the server route sits behind normal auth.
 - **§39 D-SF-11 (no content in spans).** Kept (D537.4).
 - **§37 §5.6 trust tiers.** The browser plugin is a first-party plugin; its worker document is a separate origin by design (§7.5).

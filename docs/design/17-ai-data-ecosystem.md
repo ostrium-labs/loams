@@ -8,7 +8,7 @@ This document uses the product name **Loams** and the package name `loams` (D33,
 
 ## 1. Goal and principle
 
-Frontier AI labs run their data pipelines on a small set of tools: Ray Data for curation, deduplication and batch inference; PySpark (on Apache Spark, and increasingly on Sail) for large filters and joins; PyTorch and JAX loaders for training; Polars and DuckDB for local inspection. A lab adopts a new store when those tools read and write it without a copy step. Loams's retrieval data (documents, vectors, the eval sets built from them) must therefore be a **source and a sink for those tools**, alongside the Qdrant, Elasticsearch and Flight SQL surfaces that agent frameworks use (D42).
+Frontier AI labs run their data pipelines on a small set of tools: Ray Data for curation, deduplication and batch inference; PySpark (on Apache Spark, and increasingly on Sail) for large filters and joins; PyTorch and JAX loaders for training; Polars and DuckDB for local inspection. A lab adopts a new store when those tools read and write it without a copy step. Loams’ retrieval data (documents, vectors, the eval sets built from them) must therefore be a **source and a sink for those tools**, alongside the Qdrant, Elasticsearch and Flight SQL surfaces that agent frameworks use (D42).
 
 **Principle (D51): integrate over protocols and open formats, never by embedding other engines.** The integration surfaces are:
 
@@ -18,9 +18,9 @@ Frontier AI labs run their data pipelines on a small set of tools: Ray Data for 
 | Lance files of a pinned version, handed out by **scan pinning** (§3, D53) | Lance file format 2.1 is pinned (§03 §6) | Ray Data, Polars, PySpark, `loams.torch`, Daft |
 | Iceberg REST (Lakekeeper) | Open catalog protocol and table spec | DuckDB, Trino, Spark, Sail, ClickHouse, PyIceberg (M4) |
 | Arrow C data interface (PyCapsule `__arrow_c_stream__`) | ABI-stable C structs | Polars, pandas, DuckDB, pyarrow in the same process |
-| Native REST/gRPC API | Loams's own versioned API | Scan plans, dataset tags, search |
+| Native REST/gRPC API | Loams’ own versioned API | Scan plans, dataset tags, search |
 
-**Lockstep rationale.** A Rust binary links one version of DataFusion and one of arrow-rs, and engines built on them upgrade together. Lance 12 pins DataFusion 54 / arrow 58, which fixes Loams's versions (§11 §1). Sail's main branch moved to DataFusion 55.1 / arrow 59.2 on 2026-09-17; Spice patches crates.io with its own forks of DataFusion 54 and arrow-rs; Polars carries a second Arrow implementation (`polars-arrow`, forked from arrow2). Linking any of them would tie Loams's upgrade cadence to the slowest of Lance, Sail and Spice, or force a fork (risk 21). Sail's maintainers declined a Rust-level Lance integration for the same reason. Protocols and file formats do not move in lockstep, so every integration in this document crosses a process or format boundary, is pinned, and is tested in CI against the released tool.
+**Lockstep rationale.** A Rust binary links one version of DataFusion and one of arrow-rs, and engines built on them upgrade together. Lance 12 pins DataFusion 54 / arrow 58, which fixes Loams’ versions (§11 §1). Sail's main branch moved to DataFusion 55.1 / arrow 59.2 on 2026-09-17; Spice patches crates.io with its own forks of DataFusion 54 and arrow-rs; Polars carries a second Arrow implementation (`polars-arrow`, forked from arrow2). Linking any of them would tie Loams’ upgrade cadence to the slowest of Lance, Sail and Spice, or force a fork (risk 21). Sail's maintainers declined a Rust-level Lance integration for the same reason. Protocols and file formats do not move in lockstep, so every integration in this document crosses a process or format boundary, is pinned, and is tested in CI against the released tool.
 
 ## 2. Integration map
 
@@ -28,7 +28,7 @@ Frontier AI labs run their data pipelines on a small set of tools: Ray Data for 
 |---|---|---|---|---|
 | Python SDK `to_arrow()` / `to_polars()` | Arrow PyCapsule, zero-copy (§5.2) | Local inspection of search results and SQL output in notebooks; eval analysis | M1.6 | M1.6 plan tests |
 | ADBC Flight SQL drivers (Python, Go) | Flight SQL queries and `DoPut` ingest | SQL and bulk loads from any language | M1.2 | **M1** (D49) |
-| Spice | Spice's Flight SQL connector against Loams's Flight SQL frontend (§6.2) | Federated and accelerated SQL + search for agent apps | M1.2 | **M1** (D56) |
+| Spice | Spice's Flight SQL connector against Loams’ Flight SQL frontend (§6.2) | Federated and accelerated SQL + search for agent apps | M1.2 | **M1** (D56) |
 | Ray Data | `loams[ray]` datasource (scan plan + direct Lance fragment reads, built on `lance-ray`) and datasink (Flight `DoPut`) (§5.3) | Curation, deduplication, filtering; embedding backfills with `ray.data.llm`; batch inference | M2 | **M2** |
 | Polars | `to_polars()` (M1.6); `loams[polars]` `scan_loams()`, an experimental IO plugin over the scan plan (§5.4) | Local and single-node inspection of collections and eval sets | M1.6 / M2 | **M2** |
 | PySpark on Apache Spark 4 and on Sail | `loams[spark]` Python data source `format("loams")`: reads the scan plan (direct or Flight), writes through `DoPut` (§5.6) | Large curation and dedup jobs; joins of retrieval data with other lab data | M2 | **M2** |
@@ -200,7 +200,7 @@ token = sink.consistency_token
 
 - **Read.** `read_loams` requests a scan plan (§3) and builds a `ray.data.Datasource` whose `get_read_tasks(parallelism)` returns one read task per fragment (small fragments packed together up to `parallelism`), each with its live row count and size estimate as block metadata. Tasks read fragments directly with `lance-ray`'s fragment reader (Flight tickets when `mode="flight"`), apply their `row_filter` slice and the superseded-row set, and project typed fields from `_source`. Ray's projection and predicate pushdown hooks map onto `columns` and `filter`; the tail, when merged, is one extra read task.
 - **Write.** `LoamsDatasink` implements `on_write_start` (checks or creates the collection), `write` (each task streams its blocks through Flight `DoPut` with a path descriptor, `["collections", c]`, and returns the merged `PutAck` token of its puts; M1.2 Task 13) and `on_write_complete` (merges every task's token into one consistency token, exposed as `sink.consistency_token`, which a following `read_loams(…, at=token)` or tag creation uses). `on_write_failed` has nothing to roll back: acknowledged batches are visible, and writes are upserts keyed by `_id`, so a retried Ray task or a rerun job converges to the same documents.
-- **Embedding backfills** write only the new vector column: the sink's `write="patch"` sends a `DoPut` write mode that maps each row to a `Patch` of the listed vectors instead of an `Upsert` (a `DoPut` option added in M2; verify against M1.2 Task 13's mapping). Large backfills run on the lab's own Ray cluster with `ray.data.llm`; Loams's `embed()` links (§09) serve continuous, smaller streams. Both are documented with an example.
+- **Embedding backfills** write only the new vector column: the sink's `write="patch"` sends a `DoPut` write mode that maps each row to a `Patch` of the listed vectors instead of an `Upsert` (a `DoPut` option added in M2; verify against M1.2 Task 13's mapping). Large backfills run on the lab's own Ray cluster with `ray.data.llm`; Loams’ `embed()` links (§09) serve continuous, smaller streams. Both are documented with an example.
 - Streams become a Ray source in M5, over the native streaming subscribe (which ships in M2, D72).
 
 ### 5.4 Polars `scan_loams()` (M2, experimental)
@@ -259,8 +259,8 @@ Tables (M4) are read by Spark and Sail through Iceberg REST (§6.1), not through
 | Python data source `format("loams")` | Collections | §5.6; the same code on Spark 4 and Sail | M2 |
 | Iceberg REST | Tables (append-only and keyed) | Spark's Iceberg runtime or Sail's Iceberg support with a REST catalog pointed at Lakekeeper; credential vending by Lakekeeper (§10 §4) | M4 |
 
-- **Sail is a named Iceberg reader in the M4 gate (D55).** Sail 0.7.1 writes Iceberg copy-on-write only and lists position deletes, equality deletes and deletion vectors as under construction. Loams's keyed tables carry deletion vectors (§03 §2.3), so M4 budgets an upstream contribution of DV and delete-file reads to Sail; the reader mirrors the DV writer M4 builds for iceberg-rust anyway.
-- A table has one writer class (§03 §2.3): Spark and Sail may write tables that are not Loams link targets, never the keyed tables Loams's links maintain.
+- **Sail is a named Iceberg reader in the M4 gate (D55).** Sail 0.7.1 writes Iceberg copy-on-write only and lists position deletes, equality deletes and deletion vectors as under construction. Loams’ keyed tables carry deletion vectors (§03 §2.3), so M4 budgets an upstream contribution of DV and delete-file reads to Sail; the reader mirrors the DV writer M4 builds for iceberg-rust anyway.
+- A table has one writer class (§03 §2.3): Spark and Sail may write tables that are not Loams link targets, never the keyed tables Loams’ links maintain.
 - Loams serves no Spark Connect endpoint (D42): Sail is the Spark Connect server; Loams is its source and sink.
 - Sail's stateless workers with blocking shuffle to object storage and checkpointing (0.7) are the reference design for M6's distributed shuffle (§11 §3).
 
@@ -268,8 +268,8 @@ Tables (M4) are read by Spark and Sail through Iceberg REST (§6.1), not through
 
 Spice (Apache-2.0 runtime; Spice.ai Enterprise proprietary) federates and accelerates data for agent apps on its own DataFusion fork. It is both a distribution channel and a competitor (risk 11).
 
-- **Flight SQL source (M1 gate).** Spice's Flight SQL connector (beta) is a client in the M1.7 Flight SQL gate: a spicepod declares Loams collections as Flight SQL datasets, and the gate compares Spice's results with Loams's own, federated (no acceleration) and accelerated (Spice's Arrow accelerator). Spice's accelerators copy the data, so accelerated reads have Spice's refresh staleness, not Loams's consistency tokens. The namespace travels in the `loams-namespace` gRPC metadata (M1.6 W14); if Spice's connector cannot set custom metadata, the Flight SQL frontend also accepts namespace-qualified table names (verify in M1.7).
-- **Function names (D56).** Loams's SQL search functions use Spice's names where they overlap:
+- **Flight SQL source (M1 gate).** Spice's Flight SQL connector (beta) is a client in the M1.7 Flight SQL gate: a spicepod declares Loams collections as Flight SQL datasets, and the gate compares Spice's results with Loams’ own, federated (no acceleration) and accelerated (Spice's Arrow accelerator). Spice's accelerators copy the data, so accelerated reads have Spice's refresh staleness, not Loams’ consistency tokens. The namespace travels in the `loams-namespace` gRPC metadata (M1.6 W14); if Spice's connector cannot set custom metadata, the Flight SQL frontend also accepts namespace-qualified table names (verify in M1.7).
+- **Function names (D56).** Loams’ SQL search functions use Spice's names where they overlap:
 
   | Function | Loams | Spice |
   |---|---|---|
@@ -277,10 +277,10 @@ Spice (Apache-2.0 runtime; Spice.ai Enterprise proprietary) federates and accele
   | `text_search` | Table function: BM25 over Tantivy (M1.2) | BM25 over Tantivy |
   | `rrf` | Reciprocal-rank fusion of two or more ranked table-function results (M1.2) | Reciprocal-rank fusion |
   | `rerank` | Reserved for M3's rerank stage | Model reranking |
-  | `hybrid_search` | Loams's shorthand for filter + retrievers + fusion in one call (§05 §4); no Spice equivalent | — |
+  | `hybrid_search` | Loams’ shorthand for filter + retrievers + fusion in one call (§05 §4); no Spice equivalent | — |
 
   Argument lists follow Spice's where the semantics match and extend them with named arguments (a vector literal, `k`, a filter); signatures are fixed in the M1.2 plan (verify against Spice's documentation).
-- Whether Spice's federation pushes table-function calls down to a Flight SQL source is unverified; if it does not, Loams's search reaches Spice users through Loams views or direct Flight SQL queries.
+- Whether Spice's federation pushes table-function calls down to a Flight SQL source is unverified; if it does not, Loams’ search reaches Spice users through Loams views or direct Flight SQL queries.
 - `datafusion-federation` (Apache-2.0, from Spice) is a candidate for M4, pinned at 0.5.5, the last release on DataFusion 54 (§11 §1.2). The Spice runtime itself is never embedded (§7).
 
 ## 7. What Loams does not build

@@ -6,7 +6,7 @@ The crates are `loams-*` and the binary is `loams`. Packages will publish as `lo
 
 ## Ways to contribute
 
-- **Pick up an issue.** Issues labelled [`good first issue`](../../issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are small and come with pointers and acceptance criteria. [`help wanted`](../../issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) issues are larger. Comment on an issue before you start, so that two people don't do the same work.
+- **Pick up an issue.** Issues labelled [`good first issue`](https://github.com/ostrium-labs/loams/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are small and come with pointers and acceptance criteria. [`help wanted`](https://github.com/ostrium-labs/loams/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) issues are larger. Comment on an issue before you start, so that two people don't do the same work.
 - **Report compatibility gaps.** Point your Qdrant or Elasticsearch client, or your LangChain or LlamaIndex app, at `loams dev` and tell us what breaks.
 - **Review the design.** The architecture is written down in [`docs/design`](docs/design/README.md). Open an issue for anything that is unclear, wrong or missing.
 - **Improve the docs.** Fixes to the README, crate docs and design docs are always welcome.
@@ -23,7 +23,7 @@ The crates are `loams-*` and the binary is `loams`. Packages will publish as `lo
 
 The Multitenant BYOC Control Plane with GitOps, generic observability and quota
 enforcement are open source. Billing-grade metering, billing and commercial APIs
-belong in the private `loam-platform` repository. **Integrity** is the rule:
+belong in the private `loams-platform` repository. **Integrity** is the rule:
 "could a charge depend on this value, and could a tenant or an agent profit from
 forging it?" If so, its producer and validator belong in the private platform.
 

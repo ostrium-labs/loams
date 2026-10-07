@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../docs/assets/loams-banner.svg)
+
 # Formal specifications
 
 Formal models of the Loams protocols where a design bug would be expensive (design §31 §11–§12, D310, D312).

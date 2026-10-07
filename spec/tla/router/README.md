@@ -1,8 +1,10 @@
+![Loams — Your data. Your bucket.](../../../docs/assets/loams-banner.svg)
+
 # Router specs (TLA+)
 
 The formal specifications of the Loams router's sharding control plane (design [§31](../../../docs/design/31-loams-router-and-verification.md) §11, D310). Plan: [RT0](../../../docs/plans/2026-10-01-rt0-foundations-and-specs.md) Tasks 1–4.
 
-Run them with `scripts/spec/check.sh` (needs Java 21+ and Python 3.11+; it downloads the pinned tools into `~/.cache/loam/spec-tools/` and checks their SHA-256):
+Run them with `scripts/spec/check.sh` (needs Java 21+ and Python 3.11+; it downloads the pinned tools into `~/.cache/loams/spec-tools/` and checks their SHA-256):
 
 ```sh
 scripts/spec/check.sh --all              # every PR variant
@@ -12,7 +14,7 @@ scripts/spec/check.sh RouterSession --parse-only
 scripts/spec/check.sh --self-test        # the job notices failures and bad tool hashes
 ```
 
-`TLC_WORKERS` sets TLC's worker count (default 2). TLC's state queue spills to its metadir, which `check.sh` keeps under `~/.cache/loam/spec-work/` (override with `LOAMS_SPEC_WORK`), never in `/tmp`.
+`TLC_WORKERS` sets TLC's worker count (default 2). TLC's state queue spills to its metadir, which `check.sh` keeps under `~/.cache/loams/spec-work/` (override with `LOAMS_SPEC_WORK`), never in `/tmp`.
 
 ## Specs and variants
 

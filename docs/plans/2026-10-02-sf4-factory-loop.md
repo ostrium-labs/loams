@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact values (names, event types, states, defaults, limits), use them verbatim. The code is not pre-written in this plan; the tests are the specification.
 
-> **Status: Planned** (2026-10-02). **Slot: track SF, fourth plan** (proposed; D-SF-13–D-SF-15, D-SF-18). Branches `sf4-t<N>`, stacked; PRs target `main`. Depends on SF2 (agents, A2A client, risk policy evaluation, token exchange), SF3 Task 4 (approvals relay) and §21's embedded Resonate (D1). Stages 1–2 need the Zulip agent; the observation stage's GlitchTip and analytics parts use SF5's agents and, until SF5 lands, **recorded fakes** (the fake agents of Task 0). The **hosted multi-tenant factory is not here**: it is `loam-platform` doc 05. Loopback only until the unified auth plan (D111).
+> **Status: Planned** (2026-10-02). **Slot: track SF, fourth plan** (proposed; D-SF-13–D-SF-15, D-SF-18). Branches `sf4-t<N>`, stacked; PRs target `main`. Depends on SF2 (agents, A2A client, risk policy evaluation, token exchange), SF3 Task 4 (approvals relay) and §21's embedded Resonate (D1). Stages 1–2 need the Zulip agent; the observation stage's GlitchTip and analytics parts use SF5's agents and, until SF5 lands, **recorded fakes** (the fake agents of Task 0). The **hosted multi-tenant factory is not here**: it is `loams-platform` doc 05. Loopback only until the unified auth plan (D111).
 
 **Goal:** Loams Software Factory's loop, for **one organisation that self-hosts it**:
 - the `factory.run` **Resonate workflow** of design §10: intake, triage, plan, fix, review, deploy, observe, close, with `generation` for regressions;
@@ -12,7 +12,7 @@
 - the **`deploy/factory/` package** (chart, catalog patch, manifest) that a single organisation installs with Helm.
 
 **Architecture:**
-- **`crates/operon-factory`**: `FactoryService` (Connect, `loams.factory.v1`), the workflow (`factory_run`, one function per stage, a shared `StageCtx`), `Guard` (budgets, kill flag, cooldowns, concurrency), the intake receivers (`/hooks/glitchtip`, `/hooks/forgejo`, `/hooks/zulip`, `/hooks/plane`), `PolicyStore` (versioned Live document), `RunStore`, and the CloudEvent publisher.
+- **`crates/loams-factory`**: `FactoryService` (Connect, `loams.factory.v1`), the workflow (`factory_run`, one function per stage, a shared `StageCtx`), `Guard` (budgets, kill flag, cooldowns, concurrency), the intake receivers (`/hooks/glitchtip`, `/hooks/forgejo`, `/hooks/zulip`, `/hooks/plane`), `PolicyStore` (versioned Live document), `RunStore`, and the CloudEvent publisher.
 - **Durable shape:** one Resonate function per run, keyed by `fingerprint ‖ generation`; every stage a `ctx.run` step with the step's promise id as idempotency key; waits (a human decision, CI, an approval, a rollout, the observation window) are promises or durable sleeps. A2A calls go through `loams-a2a`'s client with a deterministic `messageId`.
 - **State:** runs and policy on Live (TiKV in cloud, the local store in `loams dev`); events on a Loams stream; artifacts live in the apps.
 - **`web/plugins/factory`**: pages, cards, the kill switch for the browser console; **`desktop/crates/loams-ui-factory`**: the same views as native GPUI panels in the zeron fork; **`loams-mobile`**: run list and timeline, kill button.
@@ -65,8 +65,8 @@
 
 ```
 proto/loams/factory/v1/factory.proto                   # FactoryService, Run, Stage, Policy, Budget, KillRequest
-crates/operon-factory/src/{lib.rs,service.rs,run.rs,stages/{intake,triage,plan,fix,review,deploy,observe,close}.rs,guard.rs,policy.rs,store.rs,hooks.rs,events.rs,fakes.rs}
-crates/operon-factory/tests/{main.rs,service.rs,guard.rs,intake.rs,stages.rs,e2e.rs,kill.rs,canary.rs,crash.rs}
+crates/loams-factory/src/{lib.rs,service.rs,run.rs,stages/{intake,triage,plan,fix,review,deploy,observe,close}.rs,guard.rs,policy.rs,store.rs,hooks.rs,events.rs,fakes.rs}
+crates/loams-factory/tests/{main.rs,service.rs,guard.rs,intake.rs,stages.rs,e2e.rs,kill.rs,canary.rs,crash.rs}
 web/plugins/factory/{package.json,src/{index.ts,pages/{Runs,RunDetail,Approvals,Agents,Policy,Kill}.tsx,cards/*},test/*}
 ios/Sources/Factory/*  android/app/src/main/java/.../factory/*      # loams-mobile
 deploy/factory/{chart/Chart.yaml,chart/values.yaml,chart/templates/*,loams-factory.yaml,README.md}
@@ -75,7 +75,7 @@ docs/design/39-…  docs/plans/README.md  CHANGELOG.md
 
 ### Task 0: Reconcile, and build the fakes
 
-**Files:** read SF1–SF3 as merged; `crates/operon-durable` (workflow, promise and sleep APIs); `crates/operon-factory/src/fakes.rs` (new).
+**Files:** read SF1–SF3 as merged; `crates/loams-durable` (workflow, promise and sleep APIs); `crates/loams-factory/src/fakes.rs` (new).
 
 **Produces:** **fake agents** for all five roles that speak the real A2A bindings through `A2aServer` with scripted behaviour (state transitions, artifacts, delays on the paused clock, injected failures and `INPUT_REQUIRED`), and a fake Forgejo webhook sender, so every later task runs the real client and the real tasks against scripted agents. Confirm: how a Resonate Rust function declares a promise, a durable sleep and a timeout; the promise id conventions (D146); the Live table and stream APIs; Argo CD's notification events (the rollout event payload) **(verify against §38 as built)**.
 
@@ -85,7 +85,7 @@ docs/design/39-…  docs/plans/README.md  CHANGELOG.md
 
 ### Task 1: `loams.factory.v1` and the run record
 
-**Files:** `proto/loams/factory/v1/factory.proto`, `crates/operon-factory/src/{service.rs,run.rs,store.rs,events.rs}`, `tests/{main.rs,service.rs}`.
+**Files:** `proto/loams/factory/v1/factory.proto`, `crates/loams-factory/src/{service.rs,run.rs,store.rs,events.rs}`, `tests/{main.rs,service.rs}`.
 
 **Produces:**
 
@@ -114,7 +114,7 @@ service FactoryService {
 
 ### Task 2: Policy and the guard
 
-**Files:** `crates/operon-factory/src/{policy.rs,guard.rs}`, `tests/guard.rs`.
+**Files:** `crates/loams-factory/src/{policy.rs,guard.rs}`, `tests/guard.rs`.
 
 **Produces:**
 
@@ -140,7 +140,7 @@ pub enum GuardStop { BudgetExceeded(BudgetKind), Killed, Paused, LoopLimit(Limit
 
 ### Task 3: Intake: signals, receivers and dedupe
 
-**Files:** `crates/operon-factory/src/{hooks.rs,stages/intake.rs}`, `tests/intake.rs`.
+**Files:** `crates/loams-factory/src/{hooks.rs,stages/intake.rs}`, `tests/intake.rs`.
 
 **Semantics:** receivers on the factory's **webhook listener**, which every receiver authenticates itself (HMAC or token, below), so it may bind a cluster-internal address and is **never routed through the public gateway until D111**; on a laptop it is loopback and the apps must be on the same host. Webhook provisioning (SF4 Task 10, SF5 Task 4) therefore runs only when the receiver is routable from the app: in the same cluster, or on one host. Otherwise the saga reports `webhook_unreachable` and the factory runs on manual signals only. The receivers: `/hooks/glitchtip` (alert webhook; verifies a shared secret header), `/hooks/forgejo` (HMAC-signed, `X-Forgejo-Signature`), `/hooks/zulip` (outgoing webhook token), `/hooks/plane` (HMAC); each normalises to a `Signal { source, fingerprint, severity, title, link, evidence_refs }`. GlitchTip: the fingerprint is the issue id; severity from level and event count against the policy's thresholds. Analytics anomalies arrive as `Signal`s published by the analytics agent's scheduled `anomaly.check` (SF5; here, the fake). Dedupe: a signal whose fingerprint has an open run attaches to it (an event, no new run); a fingerprint inside its cooldown is recorded and linked to the closed run; a signal caused by a factory deploy (the issue's first-seen release equals a factory-deployed ref, `caused_by_run`) is linked to the cause's run and starts `generation + 1` only through the observe stage (Task 7), not here. Webhook secrets come from the broker's secret store.
 
@@ -150,7 +150,7 @@ pub enum GuardStop { BudgetExceeded(BudgetKind), Killed, Paused, LoopLimit(Limit
 
 ### Task 4: The workflow skeleton, triage and plan
 
-**Files:** `crates/operon-factory/src/{run.rs,stages/{triage,plan}.rs}`, `tests/stages.rs`, `tests/crash.rs`.
+**Files:** `crates/loams-factory/src/{run.rs,stages/{triage,plan}.rs}`, `tests/stages.rs`, `tests/crash.rs`.
 
 **Produces:**
 
@@ -168,7 +168,7 @@ pub struct StageCtx<'a> { pub run: &'a RunRecord, pub guard: &'a Guard<'a>, pub 
 
 ### Task 5: Fix: patch, PR, CI and the attempt loop
 
-**Files:** `crates/operon-factory/src/stages/fix.rs`, `tests/stages.rs`.
+**Files:** `crates/loams-factory/src/stages/fix.rs`, `tests/stages.rs`.
 
 **Semantics:** for `attempt` in `1..=max_attempts`: `forgejo.propose_patch` (the evidence, the issue, the previous CI log tail if any; the budget passed along), then `branches.create`/commit/`prs.open` (create-if-absent: **one stable branch `factory/<run>` for the whole run**; each attempt is a new commit on it, so there is one PR per run, updated by later attempts, and branch-keyed idempotency holds), then wait on the promise `ci:<run>:<head sha>` settled by `/hooks/forgejo` (commit status or Actions run completion). A failing CI feeds the log tail (`untrusted`, capped) into the next attempt; after the last attempt the run **fails safe**: the PR is converted to draft and labelled `factory:needs-human`, the thread and issue say so, and the run is `failed` (not killed). A durable timer polls `ci.status` after 10 minutes without a webhook. Open PR count is charged to the budget. **The stage never merges.**
 
@@ -178,7 +178,7 @@ pub struct StageCtx<'a> { pub run: &'a RunRecord, pub guard: &'a Guard<'a>, pub 
 
 ### Task 6: Review and deploy
 
-**Files:** `crates/operon-factory/src/stages/{review,deploy}.rs`, `tests/stages.rs`, `tests/e2e.rs`.
+**Files:** `crates/loams-factory/src/stages/{review,deploy}.rs`, `tests/stages.rs`, `tests/e2e.rs`.
 
 **Semantics:** **Review:** post the PR link and a summary in the thread; request the merge approval (`loams.approvals.v1`, kind `forgejo.merge`, a hash over repo, PR number, head SHA, base branch); wait on the approval promise (72 h timeout then `abandoned` with the PR left open); a push to the PR head after the request **voids** the approval and re-requests it. **Deploy:** on a settled approval, `prs.merge` (the broker releases the permit only for the matching approval); then the deploy mechanism: **policy auto-merge**, when the org policy lists the repository and path and the required checks pass, replaces the human wait with a recorded **policy authorization** (a record of kind `policy`, which is an authorization under the org's policy and not an approval by a person, hash-bound to the same repo, PR, head SHA and base, created by the factory under the policy version in force and audited); the broker accepts it only for listed repositories and paths and **never in a protected environment**, where the human approval is required. For the §38 layout the merge lands on the environment branch and the run waits on the rollout promise `rollout:<run>:<sha>` settled by the Argo CD notification receiver; for the callback mechanism the promise is settled by the configured webhook. **Every deploy needs an approval by default**: when the policy lists the service with `deploy.auto` in an unprotected environment, the merge approval is the only one; in protected environments, for the first deploy of a service, and whenever `deploy.requires_approval` is set, **two approvals (the merge approval and a deploy approval covering the environment and the sha) both settle before `prs.merge` is called**. Rollout failure marks the run `failed` and opens the revert flow of Task 7. The merge approval is also visible in chat and on phones (SF3).
 
@@ -188,7 +188,7 @@ pub struct StageCtx<'a> { pub run: &'a RunRecord, pub guard: &'a Guard<'a>, pub 
 
 ### Task 7: Observe and close
 
-**Files:** `crates/operon-factory/src/stages/{observe,close}.rs`, `tests/stages.rs`.
+**Files:** `crates/loams-factory/src/stages/{observe,close}.rs`, `tests/stages.rs`.
 
 **Semantics:** observation runs as a durable loop: every minute until the window ends, the stage asks the `glitchtip` agent for the fingerprint's events since the deploy ref, the `analytics` agent for the watched metric against its baseline, and the factory's own readers for the Langfuse score and OpenObserve error rate and latency of the touched service (SF5 Task 6 gives the readers; here, behind a `Observer` trait with fakes). Verdict: **regressed** the moment the recurrence threshold of Task 2's policy is crossed (early exit); **resolved** when the window ends clean; **inconclusive** if a required source is unavailable (extended once, then the thread asks a person). Close: *resolved* closes the Plane issue, posts a summary (what changed, the evidence, the cost) and ends; *regressed* opens a **revert PR** (the same merge approval, a `revert` fast-path button in the console that opens the approval immediately) and publishes a new signal with `parent_run` and `generation + 1`, unless `generation` is at the cap, in which case it escalates to a human and ends `failed`. `inconclusive` after the extension asks a person and waits.
 
@@ -210,7 +210,7 @@ pub struct StageCtx<'a> { pub run: &'a RunRecord, pub guard: &'a Guard<'a>, pub 
 
 ### Task 9: Kill switch end to end, audit, injection and canary
 
-**Files:** `crates/operon-factory/tests/{kill.rs,canary.rs}`, audit event definitions.
+**Files:** `crates/loams-factory/tests/{kill.rs,canary.rs}`, audit event definitions.
 
 **Semantics:** `Kill(scope)`: (1) set the Live flag (run, agent or org); (2) suspend the affected agent principals through §19's suspend (tokens die with the change-feed latency); (3) `CancelTask` on every in-flight A2A task of the scope; (4) cancel the workflows; (5) post a notice to each run's thread; (6) emit `kill.executed`. A killed run's compensation (close its PR, delete its branch, comment) runs with the **factory service's own** principal, which is not suspended. Every command, policy change, gate and kill emits an audit event (OTel logs to a Loams stream, D100) with the actor chain and **no model content**.
 

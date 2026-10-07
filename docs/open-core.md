@@ -7,8 +7,8 @@ Status: **Revised by the owner, 2026-10-02** ([D540 to D559](design/13-decision-
 > "In open-core, multi-tenant Knative and GitOps using Argo CD is fully open source, so name it as **Multitenant BYOC Control Plane with GitOps**, and move the commercial API and metering to private, because they may be used to abuse by agents. Integrity is the security principle of Loams." (owner, 2026-10-02)
 
 1. **Open source, in this repository, Apache-2.0:** everything needed to run Loams as a multi-tenant, bring-your-own-cloud deployment. That is the **Loams Multitenant BYOC Control Plane with GitOps**: multi-tenancy (orgs, namespaces, isolation, quota enforcement), Knative Serving and Eventing for tenant compute, Argo CD GitOps with Clever Cloud's operator fork and tooling, Authentik identity, and BYOC install and management into a customer's own cluster or cloud. It is designed in [§41](design/41-multitenant-byoc-control-plane.md).
-2. **Private, in `loam-platform`:** **metering** (the meter record, the collector and usage reporter whose output feeds billing, the ledger), **billing**, and the **commercial APIs** (the hosted Loams Cloud's paid APIs, the marketplace install and billing APIs, partner and commercial integrations).
-3. **This repository never depends on `loam-platform`:** no crate, package, build step, test or default configuration may require it. The platform consumes this repository's open extension points (the control plane's operations and limits APIs, the tenants Git repository, the `InvocationObserver` trait, OpenTelemetry, the cgroup layout and pod labels), the same ones any self-hoster can use.
+2. **Private, in `loams-platform`:** **metering** (the meter record, the collector and usage reporter whose output feeds billing, the ledger), **billing**, and the **commercial APIs** (the hosted Loams Cloud's paid APIs, the marketplace install and billing APIs, partner and commercial integrations).
+3. **This repository never depends on `loams-platform`:** no crate, package, build step, test or default configuration may require it. The platform consumes this repository's open extension points (the control plane's operations and limits APIs, the tenants Git repository, the `InvocationObserver` trait, OpenTelemetry, the cgroup layout and pod labels), the same ones any self-hoster can use.
 
 ## The security principle: integrity
 
@@ -22,7 +22,7 @@ When the wire format, the trust rules and the acknowledgement protocol of a mete
 
 ## The boundary
 
-| Area | Open source (this repository) | Private (`loam-platform`) | Why |
+| Area | Open source (this repository) | Private (`loams-platform`) | Why |
 |---|---|---|---|
 | Engine | Retrieval (vector, full-text, graph), streams, Iceberg analytics, every wire API (Qdrant, the Elasticsearch subset, Flight SQL, Postgres read, MySQL) | — | Self-hosting |
 | Live, metastore, durable, jobs | Reactive database on TiKV, TiKV metastore, change-feed bridges, Resonate, `loams-jobs`, `@loams/bullmq` | — | Self-hosting |
@@ -40,7 +40,7 @@ When the wire format, the trust rules and the acknowledgement protocol of a mete
 | **Commercial APIs** | — | The hosted Loams Cloud's paid APIs (signup with a plan, plan changes, entitlements, billing-grade usage API), the marketplace install and billing APIs, partner and commercial integrations (the protocol gateway, the Cloudflare target) | Integrity; abuse by agents |
 | Audit | Event emission as OTel logs to a Loams stream, query API and CLI, short default retention (D221) | Hosted audit UI, long tamper-evident retention and legal hold, SIEM export, compliance packs | Operational, hosted |
 | Hosted operations | — | Predictive pre-warming and capacity for the hosted fleet, hosted Neon/WeSQL fleet automation, abuse and trust and safety, the internal admin console, support tooling, runbooks | Only exist to sell and operate the hosted cloud |
-| Console | A single-cluster admin UI and an **operator view** of tenants, clusters and BYOC (D555) | The hosted console with billing pages (`loam-cloud`) | |
+| Console | A single-cluster admin UI and an **operator view** of tenants, clusters and BYOC (D555) | The hosted console with billing pages (`loams-cloud`) | |
 | Clients and docs | SDKs, the CLI, generated clients, engine and control-plane design docs | Platform design docs | |
 
 Quotas show the split: the engine and operator enforce whatever limits they are given; the open control plane stores and distributes them; the platform decides what they are for each paid plan. Audit and SSO follow the same idea: **no SSO tax** on SAML, OIDC or SCIM.
@@ -53,11 +53,11 @@ Quotas show the split: the engine and operator enforce whatever limits they are 
 | **D221**: SCIM, enforced org-wide SSO and cross-org admin are private | **Amended** (D553): open, through Authentik. Hosted audit UI, long retention, SIEM and compliance packs stay private |
 | **D403 and D440** (2026-10-02, earlier): Knative open with no metering; platform private | **Kept** for Knative and for "no metering in OSS"; the multi-tenant control plane is now open too |
 | **D190, D202, D444**: billing and metering private; no meter on Knative | **Kept and strengthened**: the reason is now stated as integrity (D541) |
-| **D200 to D201** ([§27](design/27-usage-hooks.md)): a billing-grade usage contract with host reports | **Superseded in part** (D548): the record, socket and reporter moved to `loam-platform`; generic metrics, cgroup labels and access logs stay |
+| **D200 to D201** ([§27](design/27-usage-hooks.md)): a billing-grade usage contract with host reports | **Superseded in part** (D548): the record, socket and reporter moved to `loams-platform`; generic metrics, cgroup labels and access logs stay |
 
 ## Applying it
 
-- A feature goes here if a person running Loams for **many tenants on their own clusters or clouds** needs it. It goes to `loam-platform` only if it **produces or validates a figure that sets a charge, or is an API that spends money**, or exists solely to sell or operate the hosted cloud.
+- A feature goes here if a person running Loams for **many tenants on their own clusters or clouds** needs it. It goes to `loams-platform` only if it **produces or validates a figure that sets a charge, or is an API that spends money**, or exists solely to sell or operate the hosted cloud.
 - When the platform needs something from the engine or the control plane, add an open extension point here (an API, a trait, a label), not platform-specific code. A new open extension point must not carry a billing-grade wire format.
 - CI keeps the boundary: `scripts/ci/no-metering.sh` (planned: MT4 Task 8, issue #258; not present until it lands) will fail the build if a billing-grade metering name (`loams.meter`, `meter.sock`, `HostReport`, `x-loams-usage`) appears outside the allowlist of historical documents.
 - Before adding a metric, ask: could a tenant or an agent profit from forging it? If a charge could depend on it, it does not belong here.

@@ -56,7 +56,7 @@ The headline is the **Bolt protocol problem**. `bolt-client` — the crate a Rus
 It is a graph database **written in Rust**, and that is the part that matters for Loams:
 
 - **No C dependency in the core.** "Core database engine written in Rust with no required C dependencies" — optional jemalloc/mimalloc and TLS only. Compare Neo4j, where every Rust path goes through Bolt and `neo4rs`.
-- **Embedded or standalone.** Embeds directly, or runs as a server with a REST API. Loams's Fabric already has both modes in mind.
+- **Embedded or standalone.** Embeds directly, or runs as a server with a REST API. Loams’ Fabric already has both modes in mind.
 - **Six query languages, one engine:** **GQL** (the ISO standard, and its default), **Cypher** (Neo4j-compatible), Gremlin, GraphQL, SPARQL, and **SQL/PGQ**.
 - **Both data models:** LPG *and* RDF/triples.
 - MVCC with snapshot isolation, full ACID; cost-based optimizer; columnar storage with type-specific compression; zone maps; HNSW vector search with Scalar/Binary/Product quantization.
@@ -68,11 +68,11 @@ It is a graph database **written in Rust**, and that is the part that matters fo
 
 The same argument applies to the *sink* side, and it is the stronger half: writing **into** a graph is where dialects differ least, because a sink usually writes nodes and edges rather than running traversals. So a GQL-based sink is portable in a way a Cypher-based one is not.
 
-**SQL/PGQ (SQL:2023 `GRAPH_TABLE`) is the interesting outlier.** It is the SQL standard's graph construct, which makes it the one query language here that could in principle be spoken by Loam House's ClickHouse surface. I am **not** claiming that works — ClickHouse does not implement `GRAPH_TABLE`, and FL2's `chsurface-1` is a declared subset of ClickHouse, not of SQL:2023. It is worth recording as a direction, not a plan.
+**SQL/PGQ (SQL:2023 `GRAPH_TABLE`) is the interesting outlier.** It is the SQL standard's graph construct, which makes it the one query language here that could in principle be spoken by Loams House's ClickHouse surface. I am **not** claiming that works — ClickHouse does not implement `GRAPH_TABLE`, and FL2's `chsurface-1` is a declared subset of ClickHouse, not of SQL:2023. It is worth recording as a direction, not a plan.
 
 ## Options, ranked
 
-1. **Target GQL; add Grafeo as the reference implementation; leave Neo4j to `neo4rs`.** One native Rust connector against the ISO standard, Grafeo as the engine Loams can actually embed and test, and `neo4rs` (MIT, maintained) for the Neo4j row that §33 already claims. This is the only option that makes Loams's graph story portable rather than vendor-shaped.
+1. **Target GQL; add Grafeo as the reference implementation; leave Neo4j to `neo4rs`.** One native Rust connector against the ISO standard, Grafeo as the engine Loams can actually embed and test, and `neo4rs` (MIT, maintained) for the Neo4j row that §33 already claims. This is the only option that makes Loams’ graph story portable rather than vendor-shaped.
 2. **Fix the row, defer the engine.** Change §33 A.3's Neo4j row to `Source ·` with a note that Camel cannot read and a native source is deferred, and add Grafeo as a second graph row at P3. Honest today, no new code, and it leaves the portable surface unclaimed.
 3. **Write a portable Bolt client in Rust.** Maximum reach (Neo4j, Memgraph, and others), maximum cost: `bolt-client` has been frozen since 2022, so this is owning a wire protocol and its version matrix. Not justified by one P2 row.
 4. **Do nothing.** Not viable — §33 claims a `Source Y` that cannot be served, so the catalog is currently wrong regardless.

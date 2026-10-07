@@ -147,7 +147,7 @@
 <rect class="box e plan" x="759.0" y="419.0" width="241.0" height="97.0" rx="10"/>
 <text class="t ttl" x="773.0" y="443.0">Loams Postgres</text>
 <text class="t badge" x="891" y="443.0">planned</text>
-<text class="t body" x="773.0" y="465.0">Neon fork on Loams's WAL</text>
+<text class="t body" x="773.0" y="465.0">Neon fork on Loams’ WAL</text>
 <text class="t body" x="773.0" y="484.0">branching, scale to zero</text>
 <text class="t body" x="773.0" y="503.0">on the same bucket</text>
 <line class="arrow" x1="260" y1="534" x2="260" y2="553" marker-end="url(#ah)"/>

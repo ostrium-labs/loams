@@ -5,7 +5,7 @@
 
 ## 1. Question and answer
 
-**Can Loams serve its read-only SQL surface (collections as tables, the search table functions) over the Postgres wire protocol, using `datafusion-postgres` 0.18 on Loams's DataFusion 54, well enough for `psql`, `psycopg` 3 and the `pg` npm package?**
+**Can Loams serve its read-only SQL surface (collections as tables, the search table functions) over the Postgres wire protocol, using `datafusion-postgres` 0.18 on Loams’ DataFusion 54, well enough for `psql`, `psycopg` 3 and the `pg` npm package?**
 
 **Yes.** With one `SessionContext` per namespace (the one Flight SQL and REST already plan in), `datafusion-pg-catalog`'s `pg_catalog`, and a read-only hook in front of the library's handler, these all work:
 
@@ -88,7 +88,7 @@ npm install pg@8                                                   # pg 8.23.0 o
 | `vector_search('kb', [1.0,0.0,0.0], 'embedding', 2)`, also with `ARRAY[…]` | ✅ `1 → 1.0`, `2 → 0.99388` |
 | `text_search('kb', 'refund', 'body', 10)` | ✅ 2 rows |
 | `rrf(vector_search(…), text_search(…))` | ✅ 3 fused rows |
-| `hybrid_search('kb', …)` with 3 arguments | ❌ as designed: `hybrid_search takes 6 to 9 arguments` (Loams's own signature) |
+| `hybrid_search('kb', …)` with 3 arguments | ❌ as designed: `hybrid_search takes 6 to 9 arguments` (Loams’ own signature) |
 | `EXPLAIN`, `EXPLAIN ANALYZE` | ✅ with `CollectionScanExec` |
 | `BEGIN; SELECT count(*) FROM kb; COMMIT;` | ✅ |
 | `SET statement_timeout = 1000; SHOW statement_timeout` | ✅ `1000ms` |
@@ -169,11 +169,11 @@ Simple queries, `$1` parameters, `count(*)::int` aggregates and `vector_search` 
 - **45 packages are added and none removed.** They include `datafusion-postgres` 0.18.0, `datafusion-pg-catalog` 0.18.3, `arrow-pg` 0.15.0, `pgwire` 0.40.7, `postgres-types` 0.2.14, `postgres-protocol` 0.6.12, `pg_interval`, `rust_decimal` features, `x509-certificate`/`bcder`, `lazy-regex`, `smol_str`, `derive-new` 0.7, `getset` and `md5`. DataFusion's default features add `parquet` 58.4, `datafusion-datasource-parquet`, `thrift`, `brotli`, `bzip2`/`libbz2-rs-sys`, `liblzma`, `zstd` 0.14, `snap`, and `recursive`/`stacker`/`psm`.
 - **arrow 58.4 and DataFusion 54.1 unify.** No second arrow, DataFusion or sqlparser version appears.
 - **Seven new duplicate versions**, all small: `zstd` 0.13 and 0.14 (0.14 through `async-compression`, from DataFusion's `compression` feature), `zstd-safe` 7 and 8, `hmac` 0.12 and 0.13 (`postgres-protocol`), `derive-new` 0.5 and 0.7 (`pgwire`), `fallible-iterator` 0.2 and 0.3 (`postgres-protocol`), `integer-encoding` 3 and 4 (`thrift`, from `parquet`), and `object` 0.37 and 0.39 (a build-time dependency of `psm`).
-- **The main cost is DataFusion's default features.** `datafusion-postgres`, `arrow-pg`, `datafusion-pg-catalog` and `datafusion-pg-functions` all depend on `datafusion = "^54"` with default features. Loams's workspace deliberately builds DataFusion with Lance's feature set, without parquet or compression (root `Cargo.toml`). Cargo unifies features, so turning `pgwire` on recompiles DataFusion, Lance, the arrow crates, qdrant-edge and everything above them. The fix is upstream: `default-features = false` plus the `sql` feature in the three crates (PG1 Task 1).
-- **pgwire's features.** `datafusion-postgres` asks for `server-api-ring` and `arrow-pg` for `server-api` and `pg-ext-types`. `ring` and both of rustls's providers were already in Loams's graph, so there is no new crypto library and no new provider ambiguity. `rsa`, `jsonwebtoken`, `aws-lc-rs` from pgwire and `reqwest` 0.13 are not enabled.
+- **The main cost is DataFusion's default features.** `datafusion-postgres`, `arrow-pg`, `datafusion-pg-catalog` and `datafusion-pg-functions` all depend on `datafusion = "^54"` with default features. Loams’ workspace deliberately builds DataFusion with Lance's feature set, without parquet or compression (root `Cargo.toml`). Cargo unifies features, so turning `pgwire` on recompiles DataFusion, Lance, the arrow crates, qdrant-edge and everything above them. The fix is upstream: `default-features = false` plus the `sql` feature in the three crates (PG1 Task 1).
+- **pgwire's features.** `datafusion-postgres` asks for `server-api-ring` and `arrow-pg` for `server-api` and `pg-ext-types`. `ring` and both of rustls's providers were already in Loams’ graph, so there is no new crypto library and no new provider ambiguity. `rsa`, `jsonwebtoken`, `aws-lc-rs` from pgwire and `reqwest` 0.13 are not enabled.
 - `datafusion-pg-functions` 0.1.0 was **evaluated and not added**. It is 688 lines, only its `math` category has functions, and the other categories register nothing yet. It does not supply `set_config`, `to_char`, JSON or `pg_*_is_visible`. Revisit it when it grows.
 
-### 5.2 `cargo deny check` (Loams's `deny.toml`, `all-features = true`, so `pgwire` is included)
+### 5.2 `cargo deny check` (Loams’ `deny.toml`, `all-features = true`, so `pgwire` is included)
 
 `advisories ok, bans ok, licenses ok, sources ok`, exit 0. The new crates are Apache-2.0, MIT or Apache-2.0, and BSD. There is no AGPL, BSL, SSPL or ELv2 code, no new git source and no new advisory ignore.
 
@@ -193,7 +193,7 @@ Simple queries, `$1` parameters, `count(*)::int` aggregates and `vector_search` 
 
 | # | Gap | Severity | Fix | Plan task |
 |---|---|---|---|---|
-| G1 | `arrow-pg` 0.15 panics encoding `FixedSizeList` (`encoder.rs:488`); `LargeList` is probably also wrong. Every vector column is affected, and the connection drops | **Blocker** for any `SELECT *` | Upstream PR to arrow-pg handling `FixedSizeList` and `LargeList`. Until it merges, Loams's hook casts `FixedSizeList` to `List` before encoding, in both the simple and extended paths | PG1 T1, T2 |
+| G1 | `arrow-pg` 0.15 panics encoding `FixedSizeList` (`encoder.rs:488`); `LargeList` is probably also wrong. Every vector column is affected, and the connection drops | **Blocker** for any `SELECT *` | Upstream PR to arrow-pg handling `FixedSizeList` and `LargeList`. Until it merges, Loams’ hook casts `FixedSizeList` to `List` before encoding, in both the simple and extended paths | PG1 T1, T2 |
 | G2 | DataFusion default features through all three crates: parquet, compression, and the 261-crate rebuild | High (build cost, binary size) | Upstream PRs (`default-features = false`, `features = ["sql"]`, and `nested_expressions` where needed). Pin the fixed versions | PG1 T1 |
 | G3 | One namespace per listener, fixed at start. Strong consistency only, the hot scope captured once, no `loams.consistency_token` | Medium | A per-connection session keyed by the startup `database` (= namespace), with `SET loams.consistency_token` and `SET loams.hot`. Needs handlers that choose the context per client; `DfSessionService` holds one context | PG1 T3 |
 | G4 | `search_path`/`current_schema()` is `public`, but the tables are in `collections`. Unqualified `'kb'::regclass` returns nothing | Medium (tools) | Report `search_path = collections` in ParameterStatus and `current_schema()`, or register `public` as an alias of `collections` | PG1 T3 |
@@ -210,7 +210,7 @@ Simple queries, `$1` parameters, `count(*)::int` aggregates and `vector_search` 
 **Adopt it.** Keep the feature opt-in until G1 and G2 are fixed upstream, then consider turning it on by default. `datafusion-postgres` saves writing a protocol layer, a type encoder and a pg catalog. What Loams adds is small, about 300 lines: the listener, the session and the read-only hook over `plan_read_only`. This follows the owner's preference to buy rather than build. Ownership: datafusion-contrib, Apache-2.0, releases every 6–8 weeks, pgwire by the same maintainer (sunng87).
 
 - **Read-only first** (PG1 Tasks 1–5): upstream fixes, the listener inside `Server`, per-connection sessions, catalog polish, `COPY TO`, and client tests in CI.
-- **Writes after that** (PG1 Tasks 6–10, behind `--pg-allow-writes`, off by default). They map onto Loams's collection write paths (D-PG-1): `INSERT` is create-if-absent (`ON CONFLICT (_id) DO UPDATE` is upsert, `DO NOTHING` skips existing keys); `UPDATE … WHERE` is `patch_by_filter`; `DELETE … WHERE` is `delete_by_filter`; `COPY … FROM STDIN` is the Flight `DoPut` bulk path. Every statement is autocommit, and a transaction block may hold at most one write. `CREATE TABLE` is not mapped in PG1.
+- **Writes after that** (PG1 Tasks 6–10, behind `--pg-allow-writes`, off by default). They map onto Loams’ collection write paths (D-PG-1): `INSERT` is create-if-absent (`ON CONFLICT (_id) DO UPDATE` is upsert, `DO NOTHING` skips existing keys); `UPDATE … WHERE` is `patch_by_filter`; `DELETE … WHERE` is `delete_by_filter`; `COPY … FROM STDIN` is the Flight `DoPut` bulk path. Every statement is autocommit, and a transaction block may hold at most one write. `CREATE TABLE` is not mapped in PG1.
 - **Boundary:** the Postgres wire is for analytics and ingest over collections. It is not an OLTP database. Clients that need multi-statement ACID transactions go to Loams Live and TiDB (D123), which stays the MySQL-protocol OLTP store.
 - **Placement:** PG1 is the first milestone after M1 exits (after M1.7), before M2. Its read-only half (Tasks 0–5) has no dependency on M1.5–M1.7 and could start earlier between builds if the owner wants. The write half needs M1.5 Task 9a (`patch_by_filter` and `delete_by_filter`) merged.
 

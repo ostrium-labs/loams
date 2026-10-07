@@ -1,8 +1,10 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # The Loams Java SDK
 
-Design [§44](../design/44-unified-api-and-sdks.md) §7 (D604, D605, D606, D610,
+Design [§44](../../docs/design/44-unified-api-and-sdks.md) §7 (D604, D605, D606, D610,
 D612), §9 row 2, §10.1 and §10.3; runtime contract R1–R10 in
-[`docs/sdk/runtime-contract.md`](../sdk/runtime-contract.md); SDK2 Task 6.
+[`docs/sdk/runtime-contract.md`](../../docs/sdk/runtime-contract.md); SDK2 Task 6.
 
 ```java
 Client client = Client.builder()

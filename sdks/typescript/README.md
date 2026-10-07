@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # The TypeScript SDK (`@loams/client`)
 
 Design §44 §7 and §10.2: the SDK is a `Loams` object with namespaced modules,

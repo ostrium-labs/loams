@@ -6,7 +6,7 @@
 
 > **As built (2026-09-29):** the spike's read-only listener is on `main` behind `pgwire` (off by default): `crates/loams/src/pg/`, `--pg-listen` (loopback only) and `--pg-namespace` (default `default`), `ReadOnlyHook` over `plan_read_only` with SQLSTATE 25006 for anything but a query or a session statement, 0A000 for list columns the encoder cannot yet return, and `NamespaceCatalog::register_schema` for `pg_catalog`. Task 1's upstream fixes, the socket-level tests of Task 2, the exact startup line and the feature-off warning are still to do.
 
-**Goal:** Serve Loams's collections over the Postgres wire protocol through `datafusion-postgres` (datafusion-contrib, Apache-2.0), in two halves:
+**Goal:** Serve Loams’ collections over the Postgres wire protocol through `datafusion-postgres` (datafusion-contrib, Apache-2.0), in two halves:
 - **Read-only (Tasks 0–5).** The same SQL surface as Flight SQL: collections as tables, `vector_search`, `text_search`, `hybrid_search` and `rrf`. `psql`, `psycopg` 3, node-postgres and DBeaver-style catalog queries work, per namespace, with consistency tokens.
 - **Writes (Tasks 6–10), behind `--pg-allow-writes` (off by default).** `INSERT` (with `ON CONFLICT`), `UPDATE … WHERE`, `DELETE … WHERE` and `COPY … FROM STDIN` map onto `CollectionService`'s write paths. Every statement is autocommit, and a transaction block may hold at most one write.
 
@@ -15,7 +15,7 @@ The Postgres wire is analytical and ingest access to collections. **It is not an
 **Architecture:**
 - **Feature `pgwire`** on `loams`, off by default until Task 1's upstream fixes land; the owner then decides the default. Dependencies: `datafusion-postgres` 0.18+, which brings `arrow-pg`, `datafusion-pg-catalog` and `pgwire` 0.40. `datafusion-pg-functions` is not used (spike §5.1).
 - **`crates/loams/src/pg/`**: the listener (loopback only), the per-connection session (database = namespace), `ReadOnlyHook` over `loams_query::sql::plan_read_only`, and in Tasks 6–10 `WriteHook` and the COPY handler. It holds an `Arc<CollectionService>` and never touches storage or meta (overview §8).
-- **Wire library use.** `pgwire::tokio::process_socket` runs with Loams's own `PgWireServerHandlers`. The library's `DfSessionService` executes plans; its cursor, `SET`/`SHOW` and transaction hooks come first; Loams's hooks come last. Loams never uses `datafusion_postgres::serve`, `AuthManager` or `PermissionsHook`.
+- **Wire library use.** `pgwire::tokio::process_socket` runs with Loams’ own `PgWireServerHandlers`. The library's `DfSessionService` executes plans; its cursor, `SET`/`SHOW` and transaction hooks come first; Loams’ hooks come last. Loams never uses `datafusion_postgres::serve`, `AuthManager` or `PermissionsHook`.
 
 **Tech Stack:** Rust 1.97.1, edition 2024, workspace lints. `datafusion-postgres` 0.18 (or the release carrying Task 1's fixes). Dev-dependency `tokio-postgres` 0.7 (MIT OR Apache-2.0) for socket-level tests; Task 0 checks it against `deny.toml`. psql ≥ 16, Python 3.13 with `uv` and `psycopg[binary]` 3.3, Node ≥ 22 with `pg` 8, used in the CI job of Task 5.
 
@@ -80,7 +80,7 @@ docs/design/05-query-engine.md  docs/design/13-decision-log.md  docs/plans/READM
 **Files:** read `crates/loams/src/{server.rs,main.rs}`, `crates/loams-query/src/{sql/,flight.rs,flight_ingest.rs,service.rs}` and, if merged, `filter_write.rs`, all as on `main`. Fill this plan's "Rulings made during execution" table.
 
 **Checks** (record each result, with the command, in the spike doc as §8):
-- The latest `datafusion-postgres`, `arrow-pg`, `datafusion-pg-catalog` and `pgwire` versions, and whether they still match Loams's DataFusion and arrow. If Loams has moved past DataFusion 54, the versions to use.
+- The latest `datafusion-postgres`, `arrow-pg`, `datafusion-pg-catalog` and `pgwire` versions, and whether they still match Loams’ DataFusion and arrow. If Loams has moved past DataFusion 54, the versions to use.
 - Whether G1 and G2 are fixed upstream (Task 1 may already be done).
 - `cargo deny check` with the feature, and the new duplicates (`cargo tree -d`) against the spike's list.
 - **A stripped release size delta and cold release build delta, one measured build each way**, deleted afterwards. Do this after Task 1 if Task 1 lands first.

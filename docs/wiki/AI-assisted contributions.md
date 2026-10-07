@@ -8,4 +8,4 @@ Codex and Claude agents work on Loams through issues labelled `codex-ready`. The
 - Hard or risky changes get the `needs-opus-review` label for a deeper review before merge.
 - A human maintainer owns the outcome; agents don't approve their own work.
 
-See [CONTRIBUTING.md](https://github.com/ostrium-labs/loams/blob/main/CONTRIBUTING.md) and the open `codex-ready` issues.
+See [CONTRIBUTING.md](https://github.com/ostrium-labs/loams/blob/dev/CONTRIBUTING.md) and the open `codex-ready` issues.

@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../../../docs/assets/loams-banner.svg)
+
 # Loams Desktop Windows package
 
 From the native workspace, run `pwsh -NoProfile -File scripts/package-windows.ps1` on Windows with MSVC, the Windows SDK, and Inno Setup 6.

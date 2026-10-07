@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../../docs/assets/loams-banner.svg)
+
 # The console's browser harness
 
 The first browser harness in this repository, and deliberately the smallest one

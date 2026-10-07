@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../docs/assets/loams-banner.svg)
+
 # loams-mock
 
 A small, stateful Connect server for the app protos (`loams.instance.v1`, `devices`, `approvals`, `operations`, `notifications`), so both apps can be built and tried without a Loams server. It also serves the HTTP endpoints the apps need around the RPCs: the OAuth token endpoint (pairing grant, token exchange, refresh), the instance JWKS, and a fake Authentik for browser sign-in.
