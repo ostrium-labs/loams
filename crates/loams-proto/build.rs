@@ -8,8 +8,9 @@
 //! generator reads (`loams.options.v1`), the shared error detail and the
 //! instance discovery service. Task 2 adds `loams.collection.v1` (the
 //! namespaces, collections, aliases, versions, scan plans and hot tier), and
-//! Task 3 adds `loams.document.v1` (the write, the three reads and the two
-//! filter writes). Tasks 4–8 append `loams.sql.v1`, `loams.link.v1`,
+//! Task 3 adds the document half of the *same* package — the write, the three
+//! reads and the two filter writes — as a second file, which is where §44 §7.2
+//! and §8 put it. Tasks 4–8 append `loams.sql.v1`, `loams.link.v1`,
 //! `loams.admin.v1`, `loams.auth.v1` and `loams.internal.v1`.
 //!
 //! `loams.live.v1` is **not** here: R1's `loams-live-proto` already
@@ -24,7 +25,7 @@ const FILES: &[&str] = &[
     "loams/errors/v1/errors.proto",
     "loams/instance/v1/instance.proto",
     "loams/collection/v1/collection.proto",
-    "loams/document/v1/document.proto",
+    "loams/collection/v1/document.proto",
 ];
 
 fn main() {

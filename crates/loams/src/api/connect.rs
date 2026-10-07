@@ -85,12 +85,14 @@ struct Package {
 ///
 /// API1 Task 1 starts the list with the two packages whose protos exist and
 /// whose availability is decided: the one this binary serves and the one it
-/// does not. Tasks 2–8 append `loams.collection.v1`, `loams.document.v1`,
-/// `loams.sql.v1`, `loams.link.v1`, `loams.stream.v1`, `loams.admin.v1`,
-/// `loams.auth.v1`, and the cluster-listener-only `loams.internal.v1`, flipping
-/// each row's `available` as its handler lands. A package with no proto yet has
-/// no row, so `GetInstance.services[]` never advertises a contract that does not
-/// exist.
+/// does not. Tasks 2–8 append `loams.collection.v1`, `loams.sql.v1`,
+/// `loams.link.v1`, `loams.stream.v1`, `loams.admin.v1`, `loams.auth.v1`, and
+/// the cluster-listener-only `loams.internal.v1`, flipping each row's
+/// `available` as its handler lands. A package with no proto yet has no row, so
+/// `GetInstance.services[]` never advertises a contract that does not exist.
+///
+/// Every package here must be one §44 enumerates; `route_map.rs` reads §44 and
+/// the protos and fails on a row that is not.
 const CATALOGUE: &[Package] = &[
     Package {
         package: "loams.instance.v1",
@@ -100,24 +102,24 @@ const CATALOGUE: &[Package] = &[
     },
     Package {
         // Namespaces, collections, their schema, aliases, versions, scan plans
-        // and the hot tier (design §44 §5.1; API1 Task 2). The REST routes it
-        // replaces stay until Task 9, so both surfaces answer today.
+        // and the hot tier (design §44 §5.1; API1 Task 2), plus documents — the
+        // atomic write, the get, the scroll, the count and the two filter
+        // writes (API1 Task 3). One package for all of it is what §44 §7.2's
+        // module catalogue says (`loams.collections`, `loams.documents` ⇢
+        // `loams.collection.v1` `CollectionService`, `DocumentService`) and
+        // what §8's `New protos:` sentence enumerates as Namespace, Collection,
+        // Document and Query; `DocumentService` was briefly a package of its
+        // own, which no design section mentions.
+        //
+        // The REST routes this replaces stay until Task 9, so both surfaces
+        // answer today, and `WriteDocuments` is the first RPC here that needs an
+        // `idempotency_key` (plan ruling 2.4).
         package: "loams.collection.v1",
         services: &[
             "loams.collection.v1.NamespaceService",
             "loams.collection.v1.CollectionService",
+            "loams.collection.v1.DocumentService",
         ],
-        available: true,
-        unstable: false,
-    },
-    Package {
-        // Documents: the atomic write, the get, the scroll, the count and the
-        // two filter writes (design §44 §5.1; API1 Task 3). The REST routes it
-        // replaces stay until Task 9, so both surfaces answer today, and this
-        // is the first package whose service needs an `idempotency_key`
-        // (`WriteDocuments`, plan ruling 2.4).
-        package: "loams.document.v1",
-        services: &["loams.document.v1.DocumentService"],
         available: true,
         unstable: false,
     },

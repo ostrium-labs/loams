@@ -22,22 +22,23 @@ lint:
     RPC_RESPONSE_STANDARD_NAME:
       - proto/loams/live/v1/live.proto
       - proto/loams/collection/v1/collection.proto
-      - proto/loams/document/v1/document.proto
+      - proto/loams/collection/v1/document.proto
     # For the same reason: `CreateCollection` and `GetCollection` both answer
     # `CollectionInfo`, the collection's own document, and `ListCollections`
     # embeds it. A per-RPC response message would make every caller unwrap
     # (API1 Task 2).
     #
-    # `loams.document.v1` is here for the same reason one file over:
-    # `DeleteByFilter` and `PatchByFilter` both answer `FilterWriteResponse`,
-    # because every number in it is the same question either way — how much the
-    # filter matched, how much this call wrote, and the state it wrote at. Two
-    # per-RPC response messages would hold identical fields and differ only in
-    # their names, and a caller branching on a partial write would have to know
-    # which of the two it is reading (API1 Task 3).
+    # `document.proto` is here for the same reason one file over: it is the
+    # other file of `loams.collection.v1`, so the ignore is per file rather
+    # than per package. `DeleteByFilter` and `PatchByFilter` both answer
+    # `FilterWriteResponse`, because every number in it is the same question
+    # either way — how much the filter matched, how much this call wrote, and
+    # the state it wrote at. Two per-RPC response messages would hold identical
+    # fields and differ only in their names, and a caller branching on a partial
+    # write would have to know which of the two it is reading (API1 Task 3).
     RPC_REQUEST_RESPONSE_UNIQUE:
       - proto/loams/collection/v1/collection.proto
-      - proto/loams/document/v1/document.proto
+      - proto/loams/collection/v1/document.proto
 breaking:
   use:
     - FILE

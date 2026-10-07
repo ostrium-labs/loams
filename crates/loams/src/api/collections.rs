@@ -197,7 +197,7 @@ struct Write {
 
 /// The error of op `i`, with `"index": i` (rule 1).
 ///
-/// `pub(super)` because `loams.document.v1`'s write reads the same index out
+/// `pub(super)` because `loams.collection.v1`'s write reads the same index out
 /// of the same validation: the Connect handler turns its request message back
 /// into the JSON [`op_from_json`] parses, so a rejected op is refused by *this*
 /// code and carries *this* index on both surfaces (design §44 §4, API1 Task 3).
@@ -441,11 +441,11 @@ struct PatchByFilter {
 /// `consistency` is the caller's own asked-for consistency, and there is only
 /// one reason it is a parameter rather than being read from the request here:
 /// the native REST body has no such field, so the route passes `None`, while
-/// `loams.document.v1` carries it in the request message and passes it through
+/// `loams.collection.v1` carries it in the request message and passes it through
 /// (API1 Task 3). Everything else — the header's merge rule, the override, the
 /// deadline — is one implementation for both surfaces.
 ///
-/// `pub(super)` because `loams.document.v1`'s `DeleteByFilter` and
+/// `pub(super)` because `loams.collection.v1`'s `DeleteByFilter` and
 /// `PatchByFilter` build their options here too, so a `consistency` message and
 /// a `loams-consistency-token` header are read by one function (API1 Task 3).
 pub(super) fn filter_write_options(
@@ -593,7 +593,7 @@ fn object_of<'a>(
 
 /// `{"upsert": Doc}`, `{"delete": {"id"}}` or `{"patch": {…}}`.
 ///
-/// `pub(super)` because `loams.document.v1`'s `WriteDocuments` reuses it: its
+/// `pub(super)` because `loams.collection.v1`'s `WriteDocuments` reuses it: its
 /// `WriteOp` oneof spells the same three shapes, so the handler rebuilds the
 /// JSON and lets this parse it. The validation, and therefore every refusal
 /// and its `op i:` prefix, is then this function's rather than a second copy
@@ -702,7 +702,7 @@ fn doc_from_json(
 /// `upsert`, with the same defaults (M1.6 W-table).
 ///
 /// `pub(super)` for the same reason as [`op_from_json`]:
-/// `loams.document.v1`'s `PatchByFilter` reuses it, so the `id`/`upsert`
+/// `loams.collection.v1`'s `PatchByFilter` reuses it, so the `id`/`upsert`
 /// refusal and the three `mode` spellings are one implementation.
 pub(super) fn patch_spec_from_json(value: &Value) -> Result<PatchSpec, ServiceError> {
     let object = value

@@ -3,7 +3,7 @@
 // does the same for `loams.instance.v1`).
 #![allow(refining_impl_trait)]
 
-//! `loams.document.v1.DocumentService` on the main port (design §44 §4 and
+//! `loams.collection.v1.DocumentService` on the main port (design §44 §4 and
 //! §5.1, ruling 4; API1 Task 3).
 //!
 //! Every RPC here is the Connect shape of a route in
@@ -70,8 +70,8 @@ use buffa::enumeration::EnumValue;
 use connectrpc::{ConnectError, RequestContext, Response, ServiceRequest, ServiceResult};
 use loams_collection::PrimaryKey;
 use loams_proto::google::protobuf::__buffa::view::{StructView, ValueView};
-use loams_proto::loams::document::v1 as pb;
-use loams_proto::loams::document::v1::{
+use loams_proto::loams::collection::v1 as pb;
+use loams_proto::loams::collection::v1::{
     ConsistencyView, CountDocumentsRequest, CountDocumentsResponse, DeleteByFilterRequest,
     DocumentIdView, DocumentService, DocumentServiceExt, FilterWriteCursorView,
     FilterWriteResponse, GetDocumentsRequest, GetDocumentsResponse, PatchByFilterRequest,
@@ -98,7 +98,7 @@ use super::{
     read_consistency,
 };
 
-/// `loams.document.v1.DocumentService` over the server's state.
+/// `loams.collection.v1.DocumentService` over the server's state.
 #[derive(Debug)]
 pub(super) struct Documents {
     state: AppState,
@@ -467,7 +467,7 @@ impl DocumentService for Documents {
 /// arm set is JSON `null`, which `op_from_json` refuses with its own "an op
 /// must be {"upsert": …}, …" message.
 fn op_json(op: &WriteOpView<'_>) -> Value {
-    use loams_proto::loams::document::v1::__buffa::view::oneof::write_op::Op;
+    use loams_proto::loams::collection::v1::__buffa::view::oneof::write_op::Op;
     match op.op.as_ref() {
         None => Value::Null,
         Some(Op::Upsert(document)) => json!({ "upsert": document_json(document) }),
@@ -743,7 +743,7 @@ fn canonical(value: &Value) -> Value {
     }
 }
 
-/// `loams.document.v1.DocumentService`, registered on the router.
+/// `loams.collection.v1.DocumentService`, registered on the router.
 pub(super) fn register(router: connectrpc::Router, state: &AppState) -> connectrpc::Router {
     DocumentServiceExt::register(Documents::new(state.clone()), router)
 }

@@ -99,21 +99,41 @@
 // surfaces cannot drift. The behaviour is the behaviour
 // `crates/loams/tests/it/` already pins; the REST routes stay until Task 9.
 //
+// ## Why this is a second file in `loams.collection.v1`, not its own package
+//
+// §44 §7.2's module catalogue puts both services in one package —
+// `loams.collections`, `loams.documents` ⇢ `loams.collection.v1`
+// `CollectionService`, `DocumentService` — and §8's `New protos:` sentence
+// enumerates `loams.collection.v1` as covering Namespace, Collection,
+// **Document** and Query. One package, four concerns, several files: the same
+// shape `proto/loams/live/v1/` already uses with its five files. An earlier
+// draft gave documents a `loams.document.v1` of their own, which no design
+// section mentions; `crates/loams/tests/route_map.rs` now fails if any proto or
+// `CATALOGUE` row declares a package §44 does not enumerate.
+//
+// Splitting the files still matters — `collection.proto` is the schema and scan
+// plan, this file is the document data path, and they are read separately — but
+// the package is the unit on the wire, in the SDK stubs and in `CATALOGUE`, and
+// §44 fixes it.
+//
 // ## The SDK module, and why no method is in the SDK facade yet
 //
 // The service carries `loams.options.v1.ModuleOptions` (`loams.documents`),
-// which is what §44 §7.3 asks of every public package.
+// which is what §44 §7.3 asks of every public package. Note this file is in
+// `loams.collection.v1`, so the module a caller reaches is named by the
+// `module` option here, not by the package name.
 //
 // No method carries `FacadeOptions`, which is plan ruling 2.5's shape again:
 // a `facade` option makes `protoc-gen-loams-facade` emit a call, and the call
 // imports the package's message types from the generated stubs, which means
-// every SDK mirror has to generate `loams.document.v1` first. That is SDK1's
-// stub task. The new package does change `PROTO_PACKAGES` in every committed
-// facade, so `facade.ts`, `facade.py`, `facade.rs` and the three goldens are
-// regenerated with it.
+// every SDK mirror has to generate `loams.collection.v1` first. That is SDK1's
+// stub task. Sharing the package also means the generated facades barely move:
+// `PROTO_PACKAGES` already listed `loams.collection.v1`, so what changed is that
+// a `loams.document.v1` line went away. `facade.ts`, `facade.py`, `facade.rs`
+// and the three goldens are regenerated with it.
 syntax = "proto3";
 
-package loams.document.v1;
+package loams.collection.v1;
 
 import "google/protobuf/struct.proto";
 import "loams/options/v1/options.proto";

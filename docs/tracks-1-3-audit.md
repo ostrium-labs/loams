@@ -38,7 +38,7 @@ git cherry dev origin/<branch>                  # commit-level check (unreliable
 | Issue | State | Evidence |
 |---|---|---|
 | #283, #285, #286, #292, #294, #296 | **Complete** | 13/13 SDK languages pass their conformance gates |
-| #281 API1 | **4 of 11 tasks** | Tasks 0–3 done. Task 2 (`a5efc8d1`, `loams.collection.v1`, 11 RPCs); Task 3 (`d21261d8`, `loams.document.v1`, 6 RPCs). Tasks 4–10 remain |
+| #281 API1 | **4 of 11 tasks** | Tasks 0–3 done. Task 2 (`a5efc8d1`, `loams.collection.v1`, 11 RPCs); Task 3 (`d21261d8` + `d2…` package fix, `DocumentService`, 6 RPCs, in `loams.collection.v1`). Tasks 4–10 remain |
 | #282 SDK1 | **0 of 9 tasks** | `docs/plans/2026-10-02-sdk1-generation-pipeline.md`: all 9 tasks unchecked |
 
 ### API1 Tasks 2–3 as built
@@ -54,6 +54,37 @@ Neither package carries `loams.options.v1` `FacadeOptions` (ruling 2.5): a
 generates. Confirmed empirically — adding `loams.collection.v1` to the Go SDK's
 hand-written `ProtoPackages` produced 9 conformance failures, because
 `sdks/go/gen/loams/` has no stubs for either package.
+
+### Two defects this audit's own process produced
+
+Recorded because both were invisible until something checked, and both are the
+kind that a status line will happily keep asserting.
+
+**Task 3 invented a proto package.** `d21261d8` gave `DocumentService` a package
+of its own, `loams.document.v1`. No design section mentions it: §44 §7.2:174 puts
+`CollectionService` *and* `DocumentService` in `loams.collection.v1`, and §8:233
+enumerates that one package as covering Namespace, Collection, Document and Query.
+The string occurs **0 times** in the design doc and **0 times** in `route-map.md`.
+It slipped through because `route_map.rs` checked REST routes against the map but
+never checked that the RPC **package names** in the map's third column exist at
+all. `9ff84972` adds that guard; it is what caught the mistake.
+
+Three independent sources had it right and the code was the odd one out:
+
+| Source | Says |
+|---|---|
+| §44 §7.2:174 | `loams.collection.v1` ⇢ `CollectionService`, `DocumentService` |
+| §44 §8:233 | `loams.collection.v1` (Namespace, Collection, Document, Query) |
+| `route-map.md` rows 49–54 | `loams.collection.v1.DocumentService/…` |
+
+That a single proto package serves four concerns across three files is not a
+wart — it is the shape `proto/loams/live/v1/` already uses with its five files,
+and §44 fixes it.
+
+**Task 3's RED commit never compiled.** Four assertions formatted `{got}` where
+`got` was a `serde_json::Map` or `Vec`, neither of which implements `Display`, so
+the 18 tests failed to *build* rather than fail. They were not valid RED evidence.
+Fixed as a side effect of the GREEN work.
 
 **Unratified decision.** `WriteDocuments`' `idempotency_key` has no specification
 behind it: there is no dedupe ledger anywhere in `loams-query`, and the REST

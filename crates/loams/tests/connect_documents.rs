@@ -1,5 +1,6 @@
-//! `loams.document.v1` on the main port (design §44 §4 and §5.1, ruling 4;
-//! API1 Task 3), against the real `loams` server over its `--listen` address.
+//! `loams.collection.v1` `DocumentService` on the main port (design §44 §4 and
+//! §7.2, ruling 4; API1 Task 3), against the real `loams` server over its
+//! `--listen` address.
 //!
 //! Every test here is a port of a REST test in `crates/loams/tests/it/`, by
 //! its name with an `_rpc` suffix, or a test the API1 plan names outright
@@ -11,13 +12,15 @@
 //!
 //! ## How these tests reach the RPCs
 //!
-//! `loams.document.v1` does not exist yet, so nothing here may name a
-//! generated Rust type: a compile error is not a red test. Every RPC is a
-//! Connect unary `POST` of JSON to `/<package>.<Service>/<Method>` over
-//! `reqwest`, the shape `curl` sends (design §44 §4), and every answer is read
-//! as `serde_json::Value`. When the package lands the tests keep working: the
-//! wire format does not change. Until then every RPC path here is unrouted,
-//! so every test fails at its first `DocumentService` call.
+//! Nothing here names a generated Rust type: a compile error is not a red test,
+//! and it is how the first draft of this file failed to build at all (it
+//! formatted a `serde_json::Map` with `{got}`, which has no `Display`, so the
+//! file never ran). Every RPC is a Connect unary `POST` of JSON to
+//! `/<package>.<Service>/<Method>` over `reqwest`, the shape `curl` sends
+//! (design §44 §4), and every answer is read as `serde_json::Value`. The paths
+//! are spelled out as constants at the top of this file, so moving the service
+//! between packages is a change in one place — which is how it moved out of the
+//! `loams.document.v1` §44 never mentions and back into `loams.collection.v1`.
 //!
 //! ## Seeding data
 //!
@@ -130,12 +133,12 @@ use tempfile::TempDir;
 const TOKEN: &str = "loams-consistency-token";
 
 // The RPC paths of design §44 §5.1, row for row of `docs/api/route-map.md`.
-const WRITE_DOCUMENTS: &str = "/loams.document.v1.DocumentService/WriteDocuments";
-const GET_DOCUMENTS: &str = "/loams.document.v1.DocumentService/GetDocuments";
-const SCROLL_DOCUMENTS: &str = "/loams.document.v1.DocumentService/ScrollDocuments";
-const COUNT_DOCUMENTS: &str = "/loams.document.v1.DocumentService/CountDocuments";
-const DELETE_BY_FILTER: &str = "/loams.document.v1.DocumentService/DeleteByFilter";
-const PATCH_BY_FILTER: &str = "/loams.document.v1.DocumentService/PatchByFilter";
+const WRITE_DOCUMENTS: &str = "/loams.collection.v1.DocumentService/WriteDocuments";
+const GET_DOCUMENTS: &str = "/loams.collection.v1.DocumentService/GetDocuments";
+const SCROLL_DOCUMENTS: &str = "/loams.collection.v1.DocumentService/ScrollDocuments";
+const COUNT_DOCUMENTS: &str = "/loams.collection.v1.DocumentService/CountDocuments";
+const DELETE_BY_FILTER: &str = "/loams.collection.v1.DocumentService/DeleteByFilter";
+const PATCH_BY_FILTER: &str = "/loams.collection.v1.DocumentService/PatchByFilter";
 
 /// The two Task 2 RPCs these tests lean on.
 const CREATE_COLLECTION: &str = "/loams.collection.v1.CollectionService/CreateCollection";
@@ -775,7 +778,7 @@ async fn until(
 ///
 /// The REST test is one long write/get/scroll/count round trip over a
 /// collection `CreateCollection` made. Here every one of those four routes is
-/// a `loams.document.v1.DocumentService` call, and the namespace and the
+/// a `loams.collection.v1.DocumentService` call, and the namespace and the
 /// collection are **fields**: one path serves every collection.
 #[tokio::test]
 async fn write_get_scroll_count_round_trip_over_http_rpc() {
@@ -2009,9 +2012,9 @@ async fn document_names_are_fields_not_paths() {
     // package, and the Connect shape under `/v1`, are both unrouted, and the
     // native `404` fallback answers them.
     for path in [
-        "/loams.document.v1.DocumentService/WriteDocuments/w/collections/kb",
-        "/v1/loams.document.v1.DocumentService/WriteDocuments",
-        "/loams.document.v1/namespaces/w/collections/kb/documents",
+        "/loams.collection.v1.DocumentService/WriteDocuments/w/collections/kb",
+        "/v1/loams.collection.v1.DocumentService/WriteDocuments",
+        "/loams.collection.v1/namespaces/w/collections/kb/documents",
     ] {
         let reply = running
             .rest(

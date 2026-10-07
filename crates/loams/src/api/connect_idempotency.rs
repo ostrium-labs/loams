@@ -42,7 +42,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use loams_proto::loams::document::v1::WriteDocumentsResponse;
+use loams_proto::loams::collection::v1::WriteDocumentsResponse;
 use loams_query::Backlog;
 
 /// How long a keyed write's answer can be replayed. Long enough for the retry

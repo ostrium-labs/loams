@@ -1,5 +1,6 @@
-//! The `loams.collection.v1` and `loams.document.v1` messages built from the
-//! server's own types.
+//! The `loams.collection.v1` messages built from the server's own types — both
+//! halves of the package, `collection.proto`'s schema and scan plan and
+//! `document.proto`'s data path.
 //!
 //! Design §44 §4 and the API1 plan's "handlers are thin" rule: the RPCs in
 //! [`super::connect_collections`] and [`super::connect_documents`] call the
@@ -9,7 +10,7 @@
 //! messages back into what those entry points take. That is what makes the
 //! REST route and the RPC provably the same behaviour: there is one mapping
 //! from `loams_query::CollectionInfo` to `loams.collection.v1.CollectionInfo`
-//! and one from `loams_query::StoredDoc` to `loams.document.v1.Document`, not
+//! and one from `loams_query::StoredDoc` to `loams.collection.v1.Document`, not
 //! one per surface.
 //!
 //! ## What is carried as JSON, and why
@@ -42,8 +43,7 @@ use loams_proto::google::protobuf::ListValue;
 use loams_proto::google::protobuf::Struct;
 use loams_proto::google::protobuf::Value as ProtoValue;
 use loams_proto::loams::collection::v1 as pb;
-use loams_proto::loams::document::v1 as doc;
-use loams_proto::loams::document::v1::__buffa::view::{DocumentIdView, FilterWriteCursorView};
+use loams_proto::loams::collection::v1::__buffa::view::{DocumentIdView, FilterWriteCursorView};
 use loams_query::backlog::{BackpressureState, BackpressureStatus as NativeBackpressure};
 use loams_query::filter_write::FilterWriteResult as NativeFilterWrite;
 use loams_query::hot::{HotState, HotStateKind, HotStatus as CatalogHotStatus};
@@ -497,7 +497,7 @@ fn scan_column(column: &NativeScanColumn) -> pb::ScanColumn {
         ..Default::default()
     }
 }
-// ----- `loams.document.v1`: requests -----
+// ----- `loams.collection.v1`: the documents of `document.proto`
 //
 // A request message goes **back** to the JSON the REST route's own parser
 // takes (`api::collections::{op_from_json, patch_spec_from_json}`,
@@ -572,7 +572,7 @@ pub(super) fn json_of_structs_view(sparse: &MapView<'_, &str, StructView<'_>>) -
 /// integer, a string or {"uuid": …}" message. The codec cannot refuse it: an
 /// empty message is a message.
 pub(super) fn json_of_document_id_view(id: &DocumentIdView<'_>) -> Value {
-    use loams_proto::loams::document::v1::__buffa::view::oneof::document_id::Id;
+    use loams_proto::loams::collection::v1::__buffa::view::oneof::document_id::Id;
     match id.id.as_ref() {
         None => Value::Null,
         Some(Id::Uint(number)) => json!(number),
@@ -581,7 +581,7 @@ pub(super) fn json_of_document_id_view(id: &DocumentIdView<'_>) -> Value {
     }
 }
 
-// ----- `loams.document.v1`: answers -----
+// ----- `loams.collection.v1`: the answers, still `document.proto`
 
 /// A document as a get or a scroll answers it, which is exactly the REST
 /// route's `stored_doc_json`: the same source, the same vectors, the same
@@ -590,8 +590,8 @@ pub(super) fn json_of_document_id_view(id: &DocumentIdView<'_>) -> Value {
 /// An absent source is an absent field rather than an empty object, because
 /// "no source" and "an empty source" are different answers: `source: "none"`
 /// is a projection, not a document.
-pub(super) fn document(stored: &StoredDoc) -> doc::Document {
-    doc::Document {
+pub(super) fn document(stored: &StoredDoc) -> pb::Document {
+    pb::Document {
         id: MessageField::some(document_id(&stored.pk)),
         source: stored
             .source
@@ -615,8 +615,8 @@ pub(super) fn document(stored: &StoredDoc) -> doc::Document {
 /// A `DocumentId` from a native key, spelled by the REST route's own
 /// `json_pk::to_json` and read back arm by arm, so a `u64::MAX` id stays
 /// `18446744073709551615` rather than the `double` a `Value` would round it to.
-pub(super) fn document_id(pk: &PrimaryKey) -> doc::DocumentId {
-    doc::DocumentId {
+pub(super) fn document_id(pk: &PrimaryKey) -> pb::DocumentId {
+    pb::DocumentId {
         id: Some(document_id_of(&json_pk::to_json(pk))),
         ..Default::default()
     }
@@ -625,20 +625,20 @@ pub(super) fn document_id(pk: &PrimaryKey) -> doc::DocumentId {
 /// The `DocumentId` arm a REST id JSON names. Total over the three
 /// `PrimaryKey` variants' spellings; anything else is a zero id, which a key
 /// this server produced never is.
-fn document_id_of(json: &Value) -> doc::__buffa::oneof::document_id::Id {
+fn document_id_of(json: &Value) -> pb::__buffa::oneof::document_id::Id {
     match json {
         Value::Number(number) => {
-            doc::__buffa::oneof::document_id::Id::Uint(number.as_u64().unwrap_or_default())
+            pb::__buffa::oneof::document_id::Id::Uint(number.as_u64().unwrap_or_default())
         }
-        Value::String(text) => doc::__buffa::oneof::document_id::Id::String(text.clone()),
-        Value::Object(object) => doc::__buffa::oneof::document_id::Id::Uuid(
+        Value::String(text) => pb::__buffa::oneof::document_id::Id::String(text.clone()),
+        Value::Object(object) => pb::__buffa::oneof::document_id::Id::Uuid(
             object
                 .get("uuid")
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_owned(),
         ),
-        _ => doc::__buffa::oneof::document_id::Id::Uint(0),
+        _ => pb::__buffa::oneof::document_id::Id::Uint(0),
     }
 }
 
@@ -649,14 +649,14 @@ fn document_id_of(json: &Value) -> doc::__buffa::oneof::document_id::Id {
 /// (API1 Task 3), so the handler never reaches here with one. It reads as
 /// `accepted` rather than panicking, because a result set this server did not
 /// produce must not take a process down.
-pub(super) fn op_result(result: &NativeOpResult) -> EnumValue<doc::OpResult> {
+pub(super) fn op_result(result: &NativeOpResult) -> EnumValue<pb::OpResult> {
     let value = match result {
-        NativeOpResult::Created => doc::OpResult::OP_RESULT_CREATED,
-        NativeOpResult::Updated => doc::OpResult::OP_RESULT_UPDATED,
-        NativeOpResult::Deleted => doc::OpResult::OP_RESULT_DELETED,
-        NativeOpResult::NotFound => doc::OpResult::OP_RESULT_NOT_FOUND,
-        NativeOpResult::Noop => doc::OpResult::OP_RESULT_NOOP,
-        NativeOpResult::Accepted | NativeOpResult::Rejected(_) => doc::OpResult::OP_RESULT_ACCEPTED,
+        NativeOpResult::Created => pb::OpResult::OP_RESULT_CREATED,
+        NativeOpResult::Updated => pb::OpResult::OP_RESULT_UPDATED,
+        NativeOpResult::Deleted => pb::OpResult::OP_RESULT_DELETED,
+        NativeOpResult::NotFound => pb::OpResult::OP_RESULT_NOT_FOUND,
+        NativeOpResult::Noop => pb::OpResult::OP_RESULT_NOOP,
+        NativeOpResult::Accepted | NativeOpResult::Rejected(_) => pb::OpResult::OP_RESULT_ACCEPTED,
     };
     EnumValue::Known(value)
 }
@@ -664,11 +664,11 @@ pub(super) fn op_result(result: &NativeOpResult) -> EnumValue<doc::OpResult> {
 /// Where one op was appended. An op that was not placed answers an entry with
 /// no fields, which is how a `noop` reports itself: proto3 JSON has no `null`
 /// for an element of a `repeated` field of messages.
-pub(super) fn op_position(position: Option<&NativeOpPosition>) -> doc::OpPosition {
+pub(super) fn op_position(position: Option<&NativeOpPosition>) -> pb::OpPosition {
     let Some(position) = position else {
-        return doc::OpPosition::default();
+        return pb::OpPosition::default();
     };
-    doc::OpPosition {
+    pb::OpPosition {
         partition: position.partition,
         seq_no: Some(position.seq_no),
         ..Default::default()
@@ -677,8 +677,8 @@ pub(super) fn op_position(position: Option<&NativeOpPosition>) -> doc::OpPositio
 
 /// The answer to a filter write, which is the same nine numbers whichever of
 /// the two filter writes produced it.
-pub(super) fn filter_write(result: &NativeFilterWrite) -> doc::FilterWriteResponse {
-    doc::FilterWriteResponse {
+pub(super) fn filter_write(result: &NativeFilterWrite) -> pb::FilterWriteResponse {
+    pb::FilterWriteResponse {
         // Always set, including at zero: these are counts the server measured,
         // and an absent count would read as "not answered".
         matched: Some(result.matched),
@@ -693,7 +693,7 @@ pub(super) fn filter_write(result: &NativeFilterWrite) -> doc::FilterWriteRespon
                 MessageField::some(filter_write_cursor(cursor))
             }),
         token: result.token.to_string(),
-        pin: MessageField::some(doc::Pin {
+        pin: MessageField::some(pb::Pin {
             manifest_version: result.pin.manifest_version,
             token: result.pin.token.to_string(),
             ..Default::default()
@@ -707,8 +707,8 @@ pub(super) fn filter_write(result: &NativeFilterWrite) -> doc::FilterWriteRespon
 /// message rather than an opaque string so a caller can read what it resumes
 /// at, and it round trips: it is built from exactly the fields
 /// `FilterWriteResult.cursor` holds.
-fn filter_write_cursor(cursor: &FilterWriteCursor) -> doc::FilterWriteCursor {
-    doc::FilterWriteCursor {
+fn filter_write_cursor(cursor: &FilterWriteCursor) -> pb::FilterWriteCursor {
+    pb::FilterWriteCursor {
         after: MessageField::some(document_id(&cursor.after)),
         manifest_version: cursor.manifest_version,
         token: cursor.token.to_string(),
