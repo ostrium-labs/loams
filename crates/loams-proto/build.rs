@@ -10,8 +10,10 @@
 //! namespaces, collections, aliases, versions, scan plans and hot tier), and
 //! Task 3 adds the document half of the *same* package — the write, the three
 //! reads and the two filter writes — as a second file, which is where §44 §7.2
-//! and §8 put it. Tasks 4–8 append `loams.sql.v1`, `loams.link.v1`,
-//! `loams.admin.v1`, `loams.auth.v1` and `loams.internal.v1`.
+//! and §8 put it. Task 4 adds the third — the search IR and its answer, i.e.
+//! §8's `Query` — and `page_token` on `ScrollDocumentsRequest`. Tasks 5–8
+//! append `loams.sql.v1`, `loams.link.v1`, `loams.admin.v1`, `loams.auth.v1`
+//! and `loams.internal.v1`.
 //!
 //! `loams.live.v1` is **not** here: R1's `loams-live-proto` already
 //! generates it, and a proto package's Rust types are generated exactly
@@ -26,6 +28,7 @@ const FILES: &[&str] = &[
     "loams/instance/v1/instance.proto",
     "loams/collection/v1/collection.proto",
     "loams/collection/v1/document.proto",
+    "loams/collection/v1/query.proto",
 ];
 
 fn main() {

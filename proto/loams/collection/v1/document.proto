@@ -344,7 +344,10 @@ message ScrollDocumentsRequest {
   // A collection name or an alias.
   string collection = 2;
   // The native query JSON, as the REST route takes it. Absent is every
-  // document. The typed filter IR is API1 Task 4.
+  // document. This stays a `Value` while `query.proto` types the filter IR for
+  // `QueryService/Search`: the tests that shipped this RPC send the bare string
+  // `"match_all"`, which a typed oneof cannot spell, and `SearchRequest.filter`
+  // is where a typed filter lands (API1 Task 4).
   google.protobuf.Value filter = 3;
   // The last document of the previous page; absent starts at the first.
   DocumentId after = 4;
@@ -352,6 +355,18 @@ message ScrollDocumentsRequest {
   optional uint32 limit = 5;
   google.protobuf.Struct select = 6;
   Consistency consistency = 7;
+  // The AIP-158 spelling of `after`, and the **same cursor**: a `DocumentId`,
+  // encoded exactly as `after` and `ScrollDocumentsResponse.next` encode it, so
+  // there is one cursor on the wire and the two fields are interchangeable —
+  // a `next` handed straight back as a `page_token` reads the same page. A
+  // request that sets both names different cursors is `invalid_argument`.
+  //
+  // It is an addition rather than a change of shape: plan ruling 2 offers
+  // `page_token` as an alternative to server-streaming `ScrollDocuments`, and
+  // Q614 — which of the two the method is — is unanswered, so the shipped
+  // unary RPC keeps its shape rather than breaking for an open question. True
+  // server-streaming, if Q614 says so, is a separate additive RPC.
+  DocumentId page_token = 8;
 }
 
 message ScrollDocumentsResponse {

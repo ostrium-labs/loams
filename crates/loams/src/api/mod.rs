@@ -14,8 +14,11 @@ pub mod connect;
 mod connect_collections;
 mod connect_documents;
 mod connect_errors;
+mod connect_hot;
 mod connect_idempotency;
 mod connect_messages;
+mod connect_query;
+mod connect_query_ir;
 mod errors;
 pub mod events;
 pub mod hot;
@@ -128,14 +131,50 @@ pub struct ForwardedReads {
 
 /// The API's routes, inside `HotLayer` (the `Loams-Hot` switch, with the
 /// service's `hot_default` for requests without it), and the internal hot
-/// routes outside it. The Connect RPCs of [`connect`] share the port and are
-/// merged last, after `HotLayer`: a Connect call carries its own consistency
-/// and pinning in the request message (design §44 §7.4), not in the headers
-/// the layer reads.
+/// routes outside it. The Connect RPCs of [`connect`] share the port.
+///
+/// ## Both surfaces are inside the hot layer, and how
+///
+/// The connect router gets its **own** `HotLayer`, applied in
+/// [`connect::routes`] rather than by merging it here, together with
+/// [`connect_hot`]'s Connect-shaped refusal in front of it. That is not the
+/// ordering this function used to document, so the reason is worth stating:
+///
+/// - It used to say the connect routes are merged **after** `HotLayer` because
+///   "a Connect call carries its own consistency and pinning in the request
+///   message (design §44 §7.4), not in the headers the layer reads". The
+///   concern was real; it is now resolved rather than preserved by accident.
+///   `HotLayer` reads exactly one header — `loams-hot` — and writes exactly one
+///   response header, `loams-hot-used`. It never reads
+///   `loams-consistency-token` and never rewrites a request message.
+///   Consistency is resolved inside each handler by [`read_consistency`], from
+///   the message's own `consistency` field **and** that header, with the same
+///   precedence the REST route uses — so a Connect call's consistency is still
+///   the one its body states, and layering the RPC path does not change that.
+///   The hot switch is a transport-level "may this read use a hot structure",
+///   which has no message-level meaning, the same reason
+///   `loams-backpressure` stays a header on the document RPCs.
+/// - The refusal could not simply be merged: `HotLayer` answers an unusable
+///   header with the bare `invalid_argument` JSON body the REST routes use, and
+///   that is not a Connect error. Its `grpc_content_type` recognises gRPC and
+///   gRPC-Web but neither of the Connect protocol's content types
+///   (`application/json`, `application/proto`), and `application/json` is also
+///   the REST content type, so one layer over both routers cannot tell an RPC
+///   from a REST call. [`connect_hot`] is applied to the connect router alone,
+///   where every request is an RPC: it answers Connect's two content types with a
+///   Connect error carrying the registry reason, and lets gRPC, gRPC-Web and
+///   everything else fall through to `HotLayer` unchanged.
+///
+/// The REST router below keeps its own `HotLayer` and its own bare-JSON refusal.
+/// Both layers are built with the same `hot_default`, so a request that names no
+/// `Loams-Hot` behaves the same whichever surface it arrives on.
 pub fn router(state: AppState) -> Router {
     let internal = internal::routes().with_state(state.clone());
-    let connect = connect::routes(&state);
-    let hot_layer = HotLayer::new(state.collections.config().hot_default);
+    // The connect router brings its own hot layer (see the note above), so it is
+    // merged outside the one below rather than inside it.
+    let hot_default = state.collections.config().hot_default;
+    let connect = connect::routes(&state, hot_default);
+    let hot_layer = HotLayer::new(hot_default);
     let collection = "/v1/namespaces/{ns}/collections/{c}";
     Router::new()
         .route("/health", get(health))

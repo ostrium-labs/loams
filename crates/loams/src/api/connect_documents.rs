@@ -299,7 +299,7 @@ impl DocumentService for Documents {
     ) -> ServiceResult<GetDocumentsResponse> {
         let (namespace, collection) = collection_ref(request.namespace, request.collection)?;
         let consistency = Documents::consistency(&ctx, &request.consistency)?;
-        let select = projection(&request.select)?;
+        let select = projection_of(&request.select)?;
         let ids = pks(&request.ids)?;
         let (documents, token) = self
             .state
@@ -334,9 +334,9 @@ impl DocumentService for Documents {
     ) -> ServiceResult<ScrollDocumentsResponse> {
         let (namespace, collection) = collection_ref(request.namespace, request.collection)?;
         let consistency = Documents::consistency(&ctx, &request.consistency)?;
-        let select = projection(&request.select)?;
+        let select = projection_of(&request.select)?;
         let filter = query(&request.filter, "filter")?;
-        let after = pk_of(&request.after)?;
+        let after = scroll_cursor(&request.after, &request.page_token)?;
         // `limit` is `optional`, so an explicit `0` is a page of nothing rather
         // than the default — proto3 JSON can spell the difference and the REST
         // route's `Option<usize>` could.
@@ -548,12 +548,25 @@ fn patch_json(patch: &PatchView<'_>) -> Value {
 
 /// The projection a read's `select` asks for, or the REST route's default
 /// (`everything`) when there is none.
-fn projection(select: &MessageFieldView<StructView<'_>>) -> Result<Projection, ConnectError> {
-    let Some(select) = select.as_option() else {
-        return Ok(Projection::default());
-    };
-    serde_json::from_value(msg::json_of_view(select))
+///
+/// Takes the **JSON**, not the message, so `QueryService`'s `select` — the same
+/// `Struct` — is one parse of one projection form for the whole package rather
+/// than two that could disagree about what a projection is.
+///
+/// `pub(super)` for that reason.
+pub(super) fn projection(select: Value) -> Result<Projection, ConnectError> {
+    serde_json::from_value(select)
         .map_err(|err| invalid("select", format!("select is not a projection: {err}")))
+}
+
+/// [`projection`] for a request's `select` field: absent is the default, and a
+/// present `Struct` is read through [`msg::json_of_view`] exactly as a
+/// document's `source` is.
+fn projection_of(select: &MessageFieldView<StructView<'_>>) -> Result<Projection, ConnectError> {
+    match select.as_option() {
+        None => Ok(Projection::default()),
+        Some(select) => projection(msg::json_of_view(select)),
+    }
 }
 
 /// The filter a read or a filter write asks for, through the REST route's own
@@ -579,11 +592,38 @@ fn pks(ids: &buffa::RepeatedView<'_, DocumentIdView<'_>>) -> Result<Vec<PrimaryK
 }
 
 /// The key a scroll continues after, or `None` for the first page.
-fn pk_of(after: &MessageFieldView<DocumentIdView<'_>>) -> Result<Option<PrimaryKey>, ConnectError> {
-    after
-        .as_option()
-        .map(|id| json_pk::from_json(&msg::json_of_document_id_view(id)).map_err(refused_service))
-        .transpose()
+///
+/// `pk_of` alone is the shipped `after`; [`scroll_cursor`] additionally accepts
+/// `page_token` (API1 Task 4), which is the AIP-158 spelling of the *same*
+/// cursor: a `DocumentId`, encoded the same way, so a `next` handed straight
+/// back reads the same page.
+///
+/// Setting both is not ambiguous, and neither is it accepted: two fields naming
+/// two different cursors is a request that cannot be answered, so it is
+/// `invalid_argument` rather than a silent preference for one of them. Setting
+/// both to the same cursor is one request written twice and is accepted, because
+/// a caller migrating from `after` to `page_token` may well send both for a
+/// while.
+fn scroll_cursor(
+    after: &MessageFieldView<DocumentIdView<'_>>,
+    page_token: &MessageFieldView<DocumentIdView<'_>>,
+) -> Result<Option<PrimaryKey>, ConnectError> {
+    let key = |message: &MessageFieldView<DocumentIdView<'_>>| {
+        message
+            .as_option()
+            .map(|id| {
+                json_pk::from_json(&msg::json_of_document_id_view(id)).map_err(refused_service)
+            })
+            .transpose()
+    };
+    match (key(after)?, key(page_token)?) {
+        (None, other) | (other, None) => Ok(other),
+        (Some(after), Some(token)) if after == token => Ok(Some(after)),
+        (Some(_), Some(_)) => Err(invalid(
+            "page_token",
+            "after and page_token name different cursors; they are the same cursor, so set one",
+        )),
+    }
 }
 
 /// The cursor that resumes a partial filter write, or `None` to start one.
@@ -619,7 +659,12 @@ fn filter_write(
 /// The consistency a request asks for, as the native enum. A `pin` wins over
 /// `at_least`, and `at_least` over `freshness`, because that is the order of
 /// specificity a caller states them in.
-fn asked_of(consistency: &ConsistencyView<'_>) -> Result<ReadConsistency, ConnectError> {
+///
+/// `pub(super)` because `QueryService` takes the same `Consistency` message
+/// (Task 3 defined it in this package, in `document.proto`, and §05 §4's
+/// `"consistency": "strong"` lands on it), and two implementations of one
+/// message's meaning is exactly the drift this package's rules forbid.
+pub(super) fn asked_of(consistency: &ConsistencyView<'_>) -> Result<ReadConsistency, ConnectError> {
     if let Some(pin) = consistency.pin.as_option() {
         let token = pin.token.parse().map_err(|err| {
             invalid(

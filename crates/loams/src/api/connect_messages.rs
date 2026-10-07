@@ -767,10 +767,46 @@ fn proto_values(values: &Map<String, Value>) -> ProtoMap<ProtoValue> {
         .collect()
 }
 
-/// A `map<string, google.protobuf.Struct>` from a JSON object. A value that is
-/// not an object carries nothing rather than an empty object: a sparse vector
-/// this server holds always has `indices` and `values`, so anything else means
-/// the document was written by something that did not.
+/// A `map<string, google.protobuf.Value>` from a `BTreeMap` of anything the IR
+/// serializes, which is what `Hit.vectors`, `Hit.fields` and `Hit.highlight`
+/// are. `serde_json::to_value` failing (a NaN in a field value, say) becomes
+/// `null` rather than failing the whole hit: the REST route's `stored_doc_json`
+/// degrades the same way.
+pub(super) fn proto_named<T: serde::Serialize>(
+    values: &BTreeMap<String, T>,
+) -> ProtoMap<ProtoValue> {
+    values
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.clone(),
+                proto_value(&serde_json::to_value(value).unwrap_or(Value::Null)),
+            )
+        })
+        .collect()
+}
+
+/// A `map<string, google.protobuf.Struct>` from a map of sparse vectors. A
+/// value that is not an object carries nothing rather than an empty object: a
+/// sparse vector this server holds always has `indices` and `values`, so
+/// anything else means the document was written by something that did not.
+///
+/// `pub(super)` because `QueryService`'s `Hit.sparse_vectors` is the same map
+/// of the same type as `Document`'s, and one mapping of it is what keeps the
+/// two answers identical.
+pub(super) fn proto_sparse(
+    values: &BTreeMap<String, loams_collection::SparseVector>,
+) -> ProtoMap<Struct> {
+    values
+        .iter()
+        .filter_map(|(name, value)| {
+            let json = serde_json::to_value(value).unwrap_or(Value::Null);
+            struct_of(&json).map(|struct_| (name.clone(), struct_))
+        })
+        .collect()
+}
+
+/// A `map<string, google.protobuf.Struct>` from a JSON object.
 fn proto_structs(values: &Map<String, Value>) -> ProtoMap<Struct> {
     values
         .iter()

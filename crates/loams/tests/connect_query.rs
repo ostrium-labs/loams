@@ -1575,11 +1575,23 @@ async fn routing_and_ranking_match_rest_for_every_fixture() {
         // Both spellings read the collection the fixture is about, by name:
         // the REST body in the path's body, the RPC body in a field or in the
         // §05 §4 alias.
-        assert_eq!(
-            fixture.rest["collection"].as_str(),
-            Some(fixture.collection),
-            "{}: the REST fixture reads the collection it says",
-            fixture.name
+        // The collection a fixture reads, on whichever surface names it. Every
+        // fixture except §05 §4's names it as `collection`; §05 §4's body names
+        // it `from`, with the optional `collections.` prefix, which is the whole
+        // point of that fixture — so the REST spelling of "which collection does
+        // this fixture read" accepts both, exactly as the RPC spelling below
+        // does.
+        assert!(
+            match fixture.rest.get("collection").and_then(Value::as_str) {
+                Some(name) => name == fixture.collection,
+                None => fixture.rest["from"].as_str().is_some_and(|from| {
+                    from == format!("collections.{}", fixture.collection)
+                        || from == fixture.collection
+                }),
+            },
+            "{}: the REST fixture reads the collection it says: {}",
+            fixture.name,
+            fixture.rest
         );
         assert!(
             match fixture.rpc.get("collection").and_then(Value::as_str) {
@@ -1669,6 +1681,16 @@ async fn routing_and_ranking_match_rest_for_every_fixture() {
 /// `ids`, `bool`, `match_all`, `match_none`) and the §05 §4 filter shorthands
 /// (`and`, `or`, `not`, and a `term` keyed by its field), which is the whole
 /// set `parse_query_body` accepts under `filter`.
+///
+/// The four shorthands are marked `hybrid`, and the reason is a fact about the
+/// REST route rather than about either spelling: `parse_query_body` reads the
+/// shorthands only on its **hybrid** path, the one a body takes when it has a
+/// `from` or a `retrieve` key (`loams_query::json::hybrid::filter_from` is
+/// reached from there and nowhere else). In the plain IR form they are `unknown
+/// variant`, because the IR's own `Query` has no `and`/`or`/`not` — the IR spells
+/// those as `bool`. So the REST leg of a shorthand is sent as the §05 §4 body
+/// that §05 §4 actually writes, and the RPC leg as the typed `bool` — the same
+/// `Query` both paths build, which is what makes the id comparison meaningful.
 #[tokio::test]
 async fn filter_ir_is_accepted_in_every_form_the_rest_route_takes() {
     let running = Running::start().await;
@@ -1683,73 +1705,79 @@ async fn filter_ir_is_accepted_in_every_form_the_rest_route_takes() {
         json!({"uuid": UUID}),
     ];
 
-    // (name, the REST filter, the RPC filter, the ids it must match).
-    let forms: Vec<(&str, Value, Value, Vec<Value>)> = vec![
+    // (name, the REST filter, the RPC filter, the ids it must match, whether
+    // the REST route takes this filter only in its §05 §4 body form).
+    let forms: Vec<(&str, Value, Value, Vec<Value>, bool)> = vec![
         (
             "match_all",
             json!("match_all"),
             json!({"matchAll": {}}),
             every.clone(),
+            false,
         ),
         (
             "match_none",
             json!("match_none"),
             json!({"matchNone": {}}),
             Vec::new(),
+            false,
         ),
-        (
-            "term",
-            tenant("b"),
-            tenant("b"),
-            vec![json!(3u64)],
-        ),
+        ("term", tenant("b"), tenant("b"), vec![json!(3u64)], false),
         (
             "terms",
             json!({"terms": {"field": "tenant", "values": ["b"]}}),
             json!({"terms": {"field": "tenant", "values": ["b"]}}),
             vec![json!(3u64)],
+            false,
         ),
         (
             "range",
             json!({"range": {"field": "n", "gte": 2}}),
             json!({"range": {"field": "n", "gte": 2}}),
             vec![json!(2u64), json!(3u64)],
+            false,
         ),
         (
             "exists",
             json!({"exists": {"field": "body"}}),
             json!({"exists": {"field": "body"}}),
             vec![json!(1u64), json!(2u64), json!(3u64)],
+            false,
         ),
         (
             "match",
             json!({"match": {"field": "body", "text": "refund"}}),
             json!({"match": {"field": "body", "text": "refund"}}),
             vec![json!(1u64), json!(3u64)],
+            false,
         ),
         (
             "ids",
             json!({"ids": [1, {"uuid": UUID}]}),
             json!({"ids": [id_uint(1), id_uuid(UUID)]}),
             vec![json!(1u64), json!({"uuid": UUID})],
+            false,
         ),
         (
             "bool must_not",
             json!({"bool": {"must_not": [tenant("c")]}}),
             json!({"bool": {"mustNot": [tenant("c")]}}),
             vec![json!(1u64), json!(2u64), json!(3u64)],
+            false,
         ),
         (
             "§05 §4 and",
             json!({"and": [{"term": {"tenant": "b"}}]}),
             json!({"bool": {"must": [tenant("b")]}}),
             vec![json!(3u64)],
+            true,
         ),
         (
             "§05 §4 not",
             json!({"not": {"term": {"tenant": "c"}}}),
             json!({"bool": {"mustNot": [tenant("c")]}}),
             vec![json!(1u64), json!(2u64), json!(3u64)],
+            true,
         ),
         (
             "§05 §4 or",
@@ -1761,18 +1789,21 @@ async fn filter_ir_is_accepted_in_every_form_the_rest_route_takes() {
                 json!("k-str"),
                 json!({"uuid": UUID}),
             ],
+            true,
         ),
     ];
 
-    for (name, rest_filter, rpc_filter, expected) in &forms {
+    for (name, rest_filter, rpc_filter, expected, hybrid_only) in &forms {
         let limit = every.len() + 1;
-        let rest = running
-            .rest_query(
-                "w",
-                &json!({"collection": "kb", "retrievers": [], "filter": rest_filter, "limit": limit}),
-            )
-            .await
-            .expect_ok();
+        // A §05 §4 shorthand is only read by the REST route's hybrid path, so
+        // the body has to be the §05 §4 body (which names the collection `from`
+        // and carries no `retrievers`). Every other form is the plain IR body.
+        let rest_body = if *hybrid_only {
+            json!({"from": "collections.kb", "filter": rest_filter, "limit": limit})
+        } else {
+            json!({"collection": "kb", "retrievers": [], "filter": rest_filter, "limit": limit})
+        };
+        let rest = running.rest_query("w", &rest_body).await.expect_ok();
         let rpc = running
             .connect(
                 SEARCH,

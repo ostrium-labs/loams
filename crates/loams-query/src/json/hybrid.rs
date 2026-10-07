@@ -13,6 +13,18 @@ use crate::ir::{
 use crate::json::pk;
 use crate::types::{Projection, SourceFilter};
 
+/// The refusal a body carrying `expand` gets, on every surface.
+///
+/// API1 Task 4's `QueryService/Search` types the IR and so reads the two M3
+/// stages off its own request message rather than off a body key the hybrid
+/// parser would see; the words it refuses with are these, so a caller moving
+/// from `POST /v1/namespaces/{ns}/query` to the RPC reads the same sentence
+/// from both. Exported rather than duplicated for exactly that reason.
+pub const EXPAND_UNAVAILABLE: &str = "expand needs graphs, which arrive in M3";
+
+/// The refusal a body carrying `rerank` gets. See [`EXPAND_UNAVAILABLE`].
+pub const RERANK_UNAVAILABLE: &str = "rerank arrives in M3";
+
 const MS_PER: [(char, u64); 4] = [
     ('s', 1_000),
     ('m', 60_000),
@@ -38,10 +50,10 @@ pub fn parse_query_body(body: Value, now_ms: u64) -> Result<SearchRequest, Servi
         unreachable!("checked above");
     };
     if body.contains_key("expand") {
-        return Err(invalid("expand needs graphs, which arrive in M3"));
+        return Err(invalid(EXPAND_UNAVAILABLE));
     }
     if body.contains_key("rerank") {
-        return Err(invalid("rerank arrives in M3"));
+        return Err(invalid(RERANK_UNAVAILABLE));
     }
     const KEYS: [&str; 8] = [
         "from",
@@ -416,6 +428,21 @@ fn fusion_from(v: &Value) -> Result<Fusion, ServiceError> {
                 .collect::<Result<_, _>>()?,
         },
     })
+}
+
+/// §05 §4's `fuse`, as the IR's `Fusion`.
+///
+/// The §05 §4 body is a spelling of a `SearchRequest`, not another request, so
+/// API1 Task 4's `QueryService/Search` reads a caller's `fuse` through here
+/// rather than parsing `{"method": …}` a second time: `rrf`, `dbsf` and
+/// `weighted` are one implementation on both surfaces, and an unknown method or
+/// an unknown key inside `fuse` is refused with this function's own message.
+///
+/// `pub` rather than private because `crates/loams/src/api/connect_query_ir.rs`
+/// needs it; the alternative was a second `fuse` parser there, which is the
+/// drift the plan's ruling 1 exists to prevent.
+pub fn fuse_from(v: &Value) -> Result<Fusion, ServiceError> {
+    fusion_from(v)
 }
 
 fn select_from(v: &Value) -> Result<Projection, ServiceError> {

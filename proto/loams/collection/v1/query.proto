@@ -1,0 +1,744 @@
+// Queries: the search IR as typed messages, and its answer (design §44 §5.1,
+// D602; API1 Task 4).
+//
+// This is the third file of `loams.collection.v1`. It replaces the M1.2
+// native REST route `POST /v1/namespaces/{ns}/query` — the `SearchRequest` of
+// `crates/loams-query/src/ir.rs`, which is the IR the REST route parses
+// verbatim — with `QueryService/Search` on the one port (design §44 §4).
+//
+// - **Names are fields, not path segments.** `namespace` and `collection`
+//   travel in the request message and one path serves every collection (plan
+//   ruling 4), exactly as `collection.proto` and `document.proto` do.
+// - **proto3 JSON is the wire form**: field names are `lowerCamelCase`, an
+//   enum answers its proto name in `UPPER_SNAKE`, a 64-bit integer answers a
+//   decimal string, and a field at its default is *absent* rather than `0`,
+//   `false`, `""` or `[]`.
+//
+// ## The one divergence that is unavoidable: `snake_case` → `lowerCamelCase`
+//
+// The REST IR is serde `snake_case` and proto3 JSON is `lowerCamelCase`, so
+// `score_threshold` is `scoreThreshold`, `minimum_should_match` is
+// `minimumShouldMatch`, `track_total_hits` is `trackTotalHits` and
+// `must_not` is `mustNot`. Nothing here *renames* anything else: the IR's field
+// names are the proto field names, so the two surfaces are one vocabulary with
+// two spellings and no translation table to keep.
+//
+// Three rules follow from proto3 JSON rather than from the IR, and
+// `crates/loams/tests/connect_query.rs` pins all three:
+//
+// - **A `null` is an absent field.** proto3 JSON has no `null` for a scalar or
+//   a message field, and a field at its default is *absent*. The REST fixture
+//   spells its defaults out (`"nprobes": null`, `"fusion": null`), and on this
+//   surface the same value is the field being absent. That is why every
+//   optional IR field is `optional` or a message rather than a sentinel: a
+//   caller that must distinguish "not asked" from "asked for zero" needs the
+//   presence, and proto3 gives it for `optional`.
+// - **A oneof arm is `{"arm": {…}}`, and a unit arm is `{"arm": {}}`.** The IR
+//   spells `Query::MatchAll` as the bare string `"match_all"`, which a proto
+//   oneof has no spelling for, so `match_all` is an empty message. `WriteOp`
+//   set this precedent in this package, and `Query`, `Retriever`, `Fusion`,
+//   `SortKey` and `TrackTotalHits` follow it.
+// - **A bare id is a `DocumentId`.** `Query::Ids` is a `repeated DocumentId`
+//   and `Hit.pk` is one, for Task 3's reason: `google.protobuf.Value` holds
+//   every number in a `double`, so a `u64::MAX` id would come back as
+//   `18446744073709552000` — a different document.
+//
+// ## The §05 §4 body is a spelling of this request, not another request
+//
+// Design §05 §4's example body is accepted by the same RPC, and this file
+// declares the four keys that reach it verbatim rather than through the typed
+// messages:
+//
+// | §05 §4 | here |
+// |---|---|
+// | `"from": "collections.kb"` | `SearchRequest.from`, an alias of `collection` |
+// | `"retrieve": [...]` | `SearchRequest.retrieve`, an alias of `retrievers` |
+// | `"fuse": {"method": "rrf", "k": 60}` | `SearchRequest.fuse`, a `Struct`, verbatim |
+// | `"select": ["id", "_score", "body"]` | `SearchRequest.select`, the projection `Struct` of Task 2/3 |
+//
+// `fuse` is a `Struct` rather than a `Fusion` on purpose. §05 §4 names its
+// method with the string `"rrf"`, and ruling 2.1's shape for this package is
+// the IR spelling rather than a new `FUSION_METHOD_*` enumeration, so the
+// `Struct` keeps `method` as the string a reader already switches on
+// verbatim — the same reason `Patch.mode` and `ScanColumn.role` are strings.
+// A field-for-field verbatim decode of the whole §05 §4 body is impossible
+// (a message field has no bare-string form), so these four keys are the
+// minimal reading that keeps the plan's sentence true: `from` and `retrieve`
+// are the field aliases, `fuse` and `select` are the two payloads the IR
+// spells differently. Everything else of §05 §4 — `consistency`, the
+// retrievers, `limit`, `offset` — is this message's own spelling.
+//
+// `from` and `retrieve` are *aliases*, not a second request: they are read
+// into the same fields `collection` and `retrievers` hold, and a request that
+// sets both is not two requests. `collection` wins over `from` and
+// `retrievers` over `retrieve`, because the typed field is the one a generated
+// SDK fills in and the alias exists for a caller migrating a §05 §4 body.
+//
+// ## `rerank` and `expand` are declared so they can be refused
+//
+// proto3 JSON says to skip a field the message does not declare. If `rerank`
+// and `expand` were simply absent, a body carrying either would be accepted
+// with the stage silently dropped — the one failure a caller cannot detect.
+// They are therefore declared as `Struct`s that **every implementation
+// refuses**: both stages need graph expansion (design §07) and arrive in M3,
+// and a caller that sends one gets `invalid_argument` saying so, on both
+// surfaces, from the same code that refuses it over REST. This is the only
+// reason they are here, and the two `Struct`s exist to be rejected rather than
+// to carry a payload.
+//
+// ## `track_total_hits` is a `Value`, and the reason is the REST spelling
+//
+// Every other field of this message is typed, and this one is not: the IR's
+// `TrackTotalHits` has two spellings a caller may send — the serde
+// externally-tagged bare string `"exact"` and the proto3 JSON message form
+// `{"exact": {}}` — and a proto3 message field has only the second of them.
+// Carrying the union as a `google.protobuf.Value` is what lets a body written
+// against the REST IR and one written against this proto both mean "count
+// exactly", instead of forcing every such caller to learn a second spelling.
+// The handler maps the `Value` to the IR by its own rules
+// (`crates/loams/src/api/connect_query_ir.rs`) and refuses anything else.
+//
+// ## `filter` here is the typed IR; on the document RPCs it is still a `Value`
+//
+// `ScrollDocumentsRequest.filter` and its three siblings stay
+// `google.protobuf.Value`, and `document.proto` says why: Task 3 shipped them
+// that way and eighteen green tests send the bare string `"match_all"`, which a
+// typed oneof cannot spell. `SearchRequest.filter` is the typed [`Query`], so
+// this is the one filter on the package a caller cannot degrade by sending a
+// string the handler did not read.
+//
+// ## What stays a `Struct` or a `Value` here, and why
+//
+// The IR's open parts stay open, for `document.proto`'s reasons:
+// `SearchRequest.select` (a projection's `source` has a JSON object form),
+// `SearchRequest.fuse` (above), `SparseQuery.query` (a sparse vector is
+// `{"indices": […], "values": […]}`) and `SearchRequest.aggregations` (an
+// ES aggregation request, which Tantivy's own `Aggregations` owns). A field
+// value, a sort value and a hit's `highlight`/`fields` entry are `Value`s
+// because the IR's own JSON for one is a scalar or `{"date": "…"}` /
+// `{"uuid": "…"}` (Ruling 9), and all three spellings fit a `Value`.
+//
+// ## Why `ScrollDocuments` stays unary
+//
+// Plan ruling 2 offers `page_token` as an *addition* to the shipped unary
+// `DocumentService/ScrollDocuments`, and Q614 (server-streaming versus unary
+// pagination) is unanswered. This file therefore does not change that RPC's
+// streaming-ness — eighteen shipped tests would break for an open question —
+// and `document.proto` gains `ScrollDocumentsRequest.page_token`, the
+// AIP-158 spelling of the **same** `DocumentId` cursor `after` already is.
+// True server-streaming, if Q614 says so, is a separate additive RPC.
+//
+// ## The handlers are thin
+//
+// `Search` calls the same `CollectionService::search` the REST route calls and
+// nothing else: the request message is turned back into the native REST JSON
+// and `loams_query::json::hybrid::parse_query_body` — the REST route's own
+// parser — reads it, so a filter, a retriever, a fusion or a sort key cannot
+// behave differently on the two surfaces. That is what
+// `crates/loams/tests/connect_query.rs::routing_and_ranking_match_rest_for_every_fixture`
+// checks, fifteen fixtures compared against each other rather than against a
+// golden number.
+//
+// ## The SDK module, and why no method is in the SDK facade yet
+//
+// The service carries `loams.options.v1.ModuleOptions` (`loams.search`), which
+// is what §44 §7.3 asks of every public package; §7.2 puts `loams.search` and
+// `loams.vector` on this one RPC.
+//
+// No method carries `FacadeOptions`, which is plan ruling 2.5's shape again: a
+// `facade` option makes `protoc-gen-loams-facade` emit a call, and the call
+// imports the package's message types from the generated stubs, which means
+// every SDK mirror has to generate `loams.collection.v1` first. That is SDK1's
+// stub task, and Task 2 measured what going ahead of it costs.
+syntax = "proto3";
+
+package loams.collection.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "loams/collection/v1/document.proto";
+import "loams/options/v1/options.proto";
+
+service QueryService {
+  option (loams.options.v1.module) = {
+    name: "search"
+    summary: "Queries: one search over one collection, dense, sparse, text or hybrid."
+  };
+
+  // One search over one collection. The whole IR is this request: the
+  // retrievers to run, how to fuse them, the filter, the sort and the window.
+  //
+  // It is `NO_SIDE_EFFECTS` — it reads and counts — so an SDK may retry it
+  // after a lost answer. It is still a `POST`, because a search is not free and
+  // the request is a body.
+  rpc Search(SearchRequest) returns (SearchResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message SearchRequest {
+  string namespace = 1;
+  // A collection name or an alias. The alias of `from` is this field's other
+  // name; a request that sets both names one collection, and `collection`
+  // wins.
+  string collection = 2;
+  // How fresh the read must be. Absent is `FRESHNESS_STRONG`, the same default
+  // the REST route reads, and the `loams-consistency-token` request header
+  // still merges into it by the same rule.
+  Consistency consistency = 3;
+  // The sources of ranked candidates. Empty with a `filter` is a filter-only
+  // query; empty with neither matches nothing.
+  repeated Retriever retrievers = 4;
+  // How the ranked lists are combined. Absent is the engine's own combination,
+  // which is RRF.
+  Fusion fusion = 5;
+  // The filter every retriever's candidates must match.
+  Query filter = 6;
+  // The effective sort; the primary key ascending always breaks ties (Ruling
+  // 10).
+  repeated SortKey sort = 7;
+  // How many hits to skip before the window. `offset` is the IR's, and it is
+  // capped by the engine's own limits.
+  uint32 offset = 8;
+  // The window size; absent is 10, the IR's default. `optional`, so an
+  // explicit `0` is a window of nothing rather than the default.
+  optional uint32 limit = 9;
+  // The sort values of the last hit of the previous page, for a deep page
+  // jump. Each is the IR's own JSON: `null`, a bool, a number, a string or
+  // `{"uuid": "…"}`.
+  repeated google.protobuf.Value search_after = 10;
+  // Hits scoring below this are dropped. `optional`, so `0` is a threshold and
+  // not an absent one.
+  optional float score_threshold = 11;
+  // What to return of each hit, as the REST route's projection JSON
+  // (`{"source": "all" | "none" | {"include": [], "exclude": []},
+  // "vectors": [], "fields": []}`). Absent is everything, and `id` and
+  // `_score` are answered whatever it says.
+  google.protobuf.Struct select = 12;
+  // An ES aggregation request, carried verbatim as Tantivy's own
+  // `Aggregations` JSON owns it.
+  google.protobuf.Value aggregations = 13;
+  // Text fields to highlight, and how.
+  Highlight highlight = 14;
+  // Groups the hits by a field value instead of answering a flat page.
+  GroupBy group_by = 15;
+  // Whether and how far to count the matches. A `Value` and not a message,
+  // for the reason the header gives.
+  google.protobuf.Value track_total_hits = 16;
+  // **Always `invalid_argument`.** Re-scoring arrives in M3; the field exists
+  // so a body carrying it is refused rather than silently dropped.
+  google.protobuf.Struct rerank = 17;
+  // **Always `invalid_argument`.** Graph expansion arrives in M3; see `rerank`.
+  google.protobuf.Struct expand = 18;
+  // Design §05 §4's `from`, verbatim: `"collections.<name>"` or `"<name>"`.
+  // An alias of `collection` (see the header).
+  string from = 19;
+  // Design §05 §4's `retrieve`, verbatim, same element shape. An alias of
+  // `retrievers`.
+  repeated Retriever retrieve = 20;
+  // Design §05 §4's `fuse`, verbatim: `{"method": "rrf", "k": 60}`. A `Struct`
+  // for the reason the header gives, and an alias of `fusion`.
+  google.protobuf.Struct fuse = 21;
+}
+
+// One source of ranked candidates. A proto oneof, so the JSON is the REST
+// route's `{"vector": {…}}` / `{"text": {…}}` / `{"fused": {…}}` /
+// `{"rescore": {…}}` / `{"sparse": {…}}` unchanged, and a retriever that is
+// none of the five is `invalid_argument`.
+message Retriever {
+  oneof retriever {
+    VectorQuery vector = 1;
+    TextQuery text = 2;
+    // Runs its own inputs and fuses them, which makes it a subtree of
+    // retrievers rather than one stage.
+    FusedQuery fused = 3;
+    // Re-ranks an input's candidates against a second vector.
+    RescoreQuery rescore = 4;
+    // Exact sparse-vector search (overview A29).
+    SparseQuery sparse = 5;
+  }
+}
+
+message VectorQuery {
+  // The dense vector column to search.
+  string field = 1;
+  // The query vector, as `[1.0, 0.0, 0.0]`.
+  repeated float query = 2;
+  // How many candidates this retriever contributes before fusion.
+  uint32 k = 3;
+  AnnParams params = 4;
+  // Narrows this retriever's candidates, over and above the request's
+  // `filter`.
+  Query filter = 5;
+}
+
+message TextQuery {
+  // The query over the collection's text fields.
+  Query query = 1;
+  uint32 k = 2;
+}
+
+message FusedQuery {
+  repeated Retriever inputs = 1;
+  Fusion fusion = 2;
+  uint32 k = 3;
+}
+
+message RescoreQuery {
+  // The retriever whose candidates are re-ranked.
+  Retriever input = 1;
+  // The vector column to re-score against.
+  string field = 2;
+  repeated float query = 3;
+  uint32 k = 4;
+}
+
+message SparseQuery {
+  // The sparse vector column to search.
+  string field = 1;
+  // The query vector, as the sparse vector's own JSON:
+  // `{"indices": [5], "values": [1.0]}`.
+  google.protobuf.Struct query = 2;
+  uint32 k = 3;
+  Query filter = 4;
+  SparseParams params = 5;
+}
+
+// The parameters of a dense-vector retriever. Every field absent is the
+// engine's default, which is why they are `optional` rather than sent as
+// zeroes.
+message AnnParams {
+  // Search the whole index exactly instead of approximately. This is not a
+  // free read.
+  bool exact = 1;
+  // HNSW layers probed.
+  optional uint32 nprobes = 2;
+  // Candidates the approximate pass re-ranks exactly.
+  optional uint32 refine_factor = 3;
+  // The approximate search's beam width.
+  optional uint32 ef = 4;
+  // Fractions of each candidate's cells to visit (multi-vector).
+  optional float oversampling = 5;
+  // A metric override — `cosine`, `dot`, `euclid` or `manhattan` — as the REST
+  // route spells it; only with `exact`. A string rather than an enum so the
+  // REST spelling survives verbatim (the same call `ScanColumn.distance`
+  // makes).
+  string distance = 6;
+}
+
+// The parameters of a sparse retriever.
+message SparseParams {
+  // The rows the IDF statistics count. Absent is every live row.
+  Query idf_corpus = 1;
+}
+
+// How ranked lists are combined (overview §6.6, Rulings 4 and 5). A proto
+// oneof, so the JSON is the IR's `{"rrf": {"k": 60}}` / `{"dbsf": {}}` /
+// `{"weightedSum": {"weights": [0.5, 0.5]}}` — `dbsf` is a unit arm and so is an
+// empty message, because the REST spelling `"dbsf"` has no oneof form.
+message Fusion {
+  oneof fusion {
+    Rrf rrf = 1;
+    // Distance-based score fusion, with the engine's own parameters.
+    google.protobuf.Empty dbsf = 2;
+    WeightedSum weighted_sum = 3;
+  }
+}
+
+message Rrf {
+  // The RRF constant; absent is 60, the IR's default, so `optional` rather
+  // than a `0` the engine would have to read as "no smoothing at all".
+  optional uint32 k = 1;
+}
+
+message WeightedSum {
+  // One weight per input retriever, in the order the retrievers are given.
+  repeated float weights = 1;
+}
+
+// A query over the collection's fields: a filter, a text retriever's query, or
+// a sparse retriever's IDF corpus. A proto oneof, so the JSON is the IR's own
+// externally-tagged spelling with the one difference proto3 JSON forces: a unit
+// arm is `{"matchAll": {}}` rather than `"match_all"`, and the arms with an
+// underscore in them are `lowerCamelCase` (`matchPhrase`, `multiMatch`,
+// `valuesCount`, `isNull`, `isEmpty`, `queryString`, `constantScore`,
+// `weightedSum` — see the header).
+message Query {
+  oneof query {
+    // Every document.
+    google.protobuf.Empty match_all = 1;
+    // No document.
+    google.protobuf.Empty match_none = 2;
+    MatchQuery match = 3;
+    MatchPhraseQuery match_phrase = 4;
+    MultiMatchQuery multi_match = 5;
+    // The field equals one value.
+    TermQuery term = 6;
+    // The field equals any of these values.
+    TermsQuery terms = 7;
+    RangeQuery range = 8;
+    // The field is present, whatever its value.
+    FieldQuery exists = 9;
+    FieldQuery is_null = 10;
+    FieldQuery is_empty = 11;
+    ValuesCountQuery values_count = 12;
+    PrefixQuery prefix = 13;
+    WildcardQuery wildcard = 14;
+    FuzzyQuery fuzzy = 15;
+    QueryStringQuery query_string = 17;
+    BoolQuery bool = 18;
+    BoostQuery boost = 19;
+    ConstantScoreQuery constant_score = 20;
+  }
+
+  // The documents with these ids, and no others.
+  //
+  // **Not a oneof arm**, and the reason is a wire spelling rather than a
+  // modelling preference: a proto3 JSON oneof arm is always `{"arm": {…}}`, and
+  // the value here is a **list**, so an arm could only be spelled
+  // `{"ids": {"ids": [1, 2]}}` — a wrapper around one field that no IR has and a
+  // caller would have to learn separately. As a plain field the list sits exactly
+  // where the REST IR puts it: `{"ids": [1, {"uuid": "…"}]}`, which is
+  // `{"ids": [{"uint": "1"}, {"uuid": "…"}]}` in proto3 JSON.
+  //
+  // So `Query` is a oneof **plus** this field, and a request that sets both is
+  // `invalid_argument` rather than letting one silently win: two keys naming two
+  // different filters is a request that cannot be answered. That refusal is the
+  // handler's, not the codec's, and it names the field.
+  //
+  // Each element is a `google.protobuf.Value`, not a `DocumentId`, because a
+  // `repeated` field cannot be a oneof arm in protobuf at all, and because the
+  // `DocumentId` shape `{"uint": "1"}` **is** a `Value` — a one-key struct whose
+  // values are strings, so a `u64::MAX` id stays exact and `{"uuid": "…"}` keeps
+  // the REST spelling verbatim. The handler reads each back through the same
+  // `loams_query::json::pk::from_json` `GetDocumentsRequest.ids` goes through, so
+  // the three arms and their refusals are the document RPCs'.
+  repeated google.protobuf.Value ids = 16;
+}
+
+message MatchQuery {
+  string field = 1;
+  string text = 2;
+  // Whether every term must match: `or` or `and`, absent being `or`.
+  //
+  // A **string**, not the `BoolOperator` enum, and this is the one enum-shaped
+  // field in the file that is not one: the IR's spelling is `"or"` / `"and"`
+  // and that is what §05 §4's example body and the native REST route both
+  // write, so an enum here would have the codec refuse `"operator": "or"` as an
+  // unknown variant *before a handler runs* — a refusal with no reason and no
+  // field. A string keeps the REST spelling verbatim, which is the same call
+  // `Patch.mode` and `ScanColumn.role` make for the same reason; `or` and `and`
+  // are the accepted values and anything else is `invalid_argument`.
+  string operator = 3;
+  // How many of the terms must match, as the IR's own string form (`"2"`,
+  // `"75%"`).
+  optional string minimum_should_match = 4;
+  Fuzziness fuzziness = 5;
+  // The analyzer to run, over the field's own.
+  string analyzer = 6;
+}
+
+message MatchPhraseQuery {
+  string field = 1;
+  string text = 2;
+  // How far apart the terms may be and still match, in positions.
+  uint32 slop = 3;
+}
+
+message MultiMatchQuery {
+  // The fields to search, each with its boost.
+  repeated MultiMatchField fields = 1;
+  string text = 2;
+  // How the fields are combined; absent is `MULTI_MATCH_KIND_BEST_FIELDS`.
+  MultiMatchKind kind = 3;
+  BoolOperator operator = 4;
+  // How much a best-fields match counts against a most-fields one; absent is
+  // the engine's own.
+  optional float tie_breaker = 5;
+}
+
+message MultiMatchField {
+  string field = 1;
+  float boost = 2;
+}
+
+message TermQuery {
+  string field = 1;
+  // The value, as the IR's own JSON: a string, a bool, a number or
+  // `{"date": "<RFC 3339>"}` (Ruling 9).
+  google.protobuf.Value value = 2;
+}
+
+message TermsQuery {
+  string field = 1;
+  repeated google.protobuf.Value values = 2;
+}
+
+message RangeQuery {
+  string field = 1;
+  // The bounds, each a value of the field's own kind and each optional: an
+  // absent bound is unbounded on that side. `gt`/`gte` and `lt`/`lte` both set
+  // is `invalid_argument`.
+  google.protobuf.Value gt = 2;
+  google.protobuf.Value gte = 3;
+  google.protobuf.Value lt = 4;
+  google.protobuf.Value lte = 5;
+}
+
+// `exists`, `is_null` and `is_empty`: one message, because a caller asks the
+// same question of a field in each case.
+message FieldQuery {
+  string field = 1;
+}
+
+// How many values a field's array (or token) column holds.
+message ValuesCountQuery {
+  string field = 1;
+  optional uint64 gt = 2;
+  optional uint64 gte = 3;
+  optional uint64 lt = 4;
+  optional uint64 lte = 5;
+}
+
+message PrefixQuery {
+  string field = 1;
+  string value = 2;
+}
+
+message WildcardQuery {
+  string field = 1;
+  // With `*` and `?`, as the REST route spells it.
+  string pattern = 2;
+}
+
+message FuzzyQuery {
+  string field = 1;
+  string value = 2;
+  Fuzziness fuzziness = 3;
+}
+
+message QueryStringQuery {
+  // The Lucene query language, as the REST route's `query_string` takes it.
+  string query = 1;
+  // The fields to search when the query names none.
+  repeated string default_fields = 2;
+  BoolOperator default_operator = 3;
+}
+
+message BoolQuery {
+  // Every one of these must match.
+  repeated Query must = 1;
+  // At least `minimum_should_match` of these must match, and scoring is their
+  // sum.
+  repeated Query should = 2;
+  // None of these may match.
+  repeated Query must_not = 3;
+  // These must match and do not score.
+  repeated Query filter = 4;
+  optional string minimum_should_match = 5;
+}
+
+message BoostQuery {
+  // The query whose score is multiplied.
+  Query query = 1;
+  float boost = 2;
+}
+
+message ConstantScoreQuery {
+  // The query that decides membership; its own score is discarded.
+  Query query = 1;
+  // The score every match is given.
+  float score = 2;
+}
+
+// How far a fuzzy match may edit. A oneof, so the REST spellings `"auto"` and
+// an integer 0–2 become `{"auto": {}}` and `{"edits": 1}` — a bare string has
+// no oneof form, the same reason `match_all` is an empty message.
+message Fuzziness {
+  oneof fuzziness {
+    // The engine picks from the term's length.
+    google.protobuf.Empty auto = 1;
+    // An exact number of edits, 0 to 2.
+    uint32 edits = 2;
+  }
+}
+
+// `or` / `and`, as the IR spells them.
+//
+// Declared for the two fields whose operator the IR spells differently from the
+// fields above: `MultiMatchQuery.operator` and
+// `QueryStringQuery.default_operator`, which keep this enum and therefore
+// answer (and are sent) `BOOL_OPERATOR_OR` / `BOOL_OPERATOR_AND`.
+enum BoolOperator {
+  // `or`, which is the IR's default for every operator that defaults.
+  BOOL_OPERATOR_UNSPECIFIED = 0;
+  BOOL_OPERATOR_OR = 1;
+  BOOL_OPERATOR_AND = 2;
+}
+
+enum MultiMatchKind {
+  // `best_fields`, the IR's default.
+  MULTI_MATCH_KIND_UNSPECIFIED = 0;
+  MULTI_MATCH_KIND_BEST_FIELDS = 1;
+  MULTI_MATCH_KIND_MOST_FIELDS = 2;
+  MULTI_MATCH_KIND_CROSS_FIELDS = 3;
+  MULTI_MATCH_KIND_PHRASE = 4;
+  MULTI_MATCH_KIND_PHRASE_PREFIX = 5;
+}
+
+// One key of the effective sort; the primary key ascending always breaks ties
+// (Ruling 10). A proto oneof, so the JSON is `{"score": {"order": …}}` /
+// `{"pk": {"order": …}}` / `{"field": {"field": …, "order": …,
+// "missing": …}}` — the same shape the IR's serde produces, and
+// `{"pk": {}}` remains a valid way to say "primary key, ascending".
+message SortKey {
+  oneof key {
+    ScoreSort score = 1;
+    PrimaryKeySort pk = 2;
+    FieldSort field = 3;
+  }
+}
+
+message ScoreSort {
+  // Absent is descending, which is what sorting by score means.
+  SortOrder order = 1;
+}
+
+message PrimaryKeySort {
+  // Absent is ascending.
+  SortOrder order = 1;
+}
+
+message FieldSort {
+  string field = 1;
+  // Absent is ascending.
+  SortOrder order = 2;
+  // Where a document without the field sorts. Absent is last.
+  MissingOrder missing = 3;
+}
+
+enum SortOrder {
+  // Ascending for a key and a field, descending for a score; each is the IR's
+  // default for that key.
+  SORT_ORDER_UNSPECIFIED = 0;
+  SORT_ORDER_ASC = 1;
+  SORT_ORDER_DESC = 2;
+}
+
+enum MissingOrder {
+  // Last, which is the IR's default.
+  MISSING_ORDER_UNSPECIFIED = 0;
+  MISSING_ORDER_FIRST = 1;
+  MISSING_ORDER_LAST = 2;
+}
+
+// Highlighting of text fields (ES `highlight`).
+message Highlight {
+  repeated HighlightField fields = 1;
+}
+
+message HighlightField {
+  string field = 1;
+  // What wraps a matched term. Absent is the IR's `<em>` / `</em>`, which is
+  // why both are `optional`: proto3 cannot tell an absent string from `""`,
+  // and `""` is a legitimate tag.
+  optional string pre_tag = 2;
+  optional string post_tag = 3;
+  // The size of one fragment in characters; absent is the IR's 100.
+  optional uint32 fragment_size = 4;
+  // How many fragments of the field to answer; absent is the IR's 5.
+  optional uint32 number_of_fragments = 5;
+}
+
+// Groups hits by a field value (Qdrant's `group_by`).
+message GroupBy {
+  string field = 1;
+  // How many hits of a group to answer; absent is the IR's 3.
+  optional uint32 group_size = 2;
+  // How many groups to answer; absent is the IR's 10.
+  optional uint32 limit = 3;
+}
+
+message SearchResponse {
+  // The hits, in the effective order. Absent when there are none, which is
+  // proto3 JSON's spelling of an empty list.
+  repeated Hit hits = 1;
+  // How many documents matched. Absent unless `track_total_hits` asked for a
+  // count, because counting is not free.
+  TotalHits total = 2;
+  // The aggregations, as Tantivy's own JSON answers them.
+  google.protobuf.Value aggregations = 3;
+  // The groups, when the request asked to group.
+  repeated HitGroup groups = 4;
+  // The state the read saw (overview §6.5), and a `consistency.at_least` that
+  // reads this state again. The same value is the `loams-consistency-token`
+  // response header.
+  string read_token = 5;
+  // The hot structures the read used — `hnsw`, `splits` — in the REST route's
+  // spelling and in declaration order, and **absent when it used none**. The
+  // same list is the `loams-hot-used` response header, which answers `none`
+  // where this answers nothing at all: the header is always there, this field
+  // is only there when there is something in it.
+  repeated string hot_used = 6;
+  // The design's per-answer `performance` block (§05 §4). Nothing computes it
+  // yet, on either surface, so it is declared here and never answered: the
+  // field names the contract this answer will meet rather than reporting one
+  // this build does not measure. A REST answer has no such key today, and
+  // adding it to one surface only is exactly what this package's equality test
+  // exists to prevent.
+  google.protobuf.Struct performance = 7;
+}
+
+// One hit.
+message Hit {
+  // The document's id, as the `DocumentId` oneof `Document.id` already uses,
+  // for Task 3's reason: a `u64::MAX` id must not come back through a
+  // `double`.
+  DocumentId pk = 1;
+  // Absent at zero, which proto3 JSON spells the same way the REST route
+  // writes `0.0`: a filter-only answer scores nothing.
+  float score = 2;
+  // The values this hit sorts by, in `sort`'s order, so a caller can resume
+  // from it with `search_after`.
+  repeated google.protobuf.Value sort_values = 3;
+  // Absent when the projection leaves the source out, rather than an empty
+  // object: "no source" and "an empty source" are different answers.
+  google.protobuf.Struct source = 4;
+  // Dense vectors by name, as the REST route's JSON (`[1.0, 0.0, 0.0]`).
+  map<string, google.protobuf.Value> vectors = 5;
+  // Sparse vectors by name, as the REST route's JSON
+  // (`{"indices": [1], "values": [1.0]}`), with `indices` ascending.
+  map<string, google.protobuf.Struct> sparse_vectors = 6;
+  // The fragments per field, when `highlight` asked for them. A `Value`
+  // because it is a list of strings, which proto3 JSON spells as a `Value`'s
+  // list.
+  map<string, google.protobuf.Value> highlight = 7;
+  // The typed field values per name, as the REST route's JSON (Ruling 9).
+  map<string, google.protobuf.Value> fields = 8;
+}
+
+// One group of a grouped search.
+message HitGroup {
+  // The field value the group is, in the IR's own JSON.
+  google.protobuf.Value key = 1;
+  repeated Hit hits = 2;
+}
+
+// How many documents matched, and whether the count is exact.
+message TotalHits {
+  // The count. `optional` and always set: a count of zero is a count, and
+  // proto3 JSON omitting it would read as "unanswered".
+  optional uint64 value = 1;
+  // `TOTAL_RELATION_EQ` when `value` is the whole count and
+  // `TOTAL_RELATION_GTE` when it is a floor (`track_total_hits` capped at
+  // `up_to`).
+  TotalRelation relation = 2;
+}
+
+enum TotalRelation {
+  TOTAL_RELATION_UNSPECIFIED = 0;
+  // `eq`: the count is exact.
+  TOTAL_RELATION_EQ = 1;
+  // `gte`: at least this many matched.
+  TOTAL_RELATION_GTE = 2;
+}

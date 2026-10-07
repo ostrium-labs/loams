@@ -104,7 +104,9 @@ const CATALOGUE: &[Package] = &[
         // Namespaces, collections, their schema, aliases, versions, scan plans
         // and the hot tier (design §44 §5.1; API1 Task 2), plus documents — the
         // atomic write, the get, the scroll, the count and the two filter
-        // writes (API1 Task 3). One package for all of it is what §44 §7.2's
+        // writes (API1 Task 3), plus the search IR — `QueryService/Search`,
+        // §8's `Query` in the same `New protos:` sentence (API1 Task 4). One
+        // package for all of it is what §44 §7.2's
         // module catalogue says (`loams.collections`, `loams.documents` ⇢
         // `loams.collection.v1` `CollectionService`, `DocumentService`) and
         // what §8's `New protos:` sentence enumerates as Namespace, Collection,
@@ -119,6 +121,7 @@ const CATALOGUE: &[Package] = &[
             "loams.collection.v1.NamespaceService",
             "loams.collection.v1.CollectionService",
             "loams.collection.v1.DocumentService",
+            "loams.collection.v1.QueryService",
         ],
         available: true,
         unstable: false,
@@ -359,12 +362,13 @@ fn reflector(state: &AppState) -> Option<connectrpc_reflection::Reflector> {
 /// remains` still expects from the paths that survive it. A Connect path is
 /// `/<package>.<Service>/<Method>` and every native path is under `/v1`,
 /// `/internal`, `/health` or `/ready`, so the two sets cannot collide.
-pub(crate) fn routes(state: &AppState) -> AxumRouter {
+pub(crate) fn routes(state: &AppState, hot_default: bool) -> AxumRouter {
     let mut rpc = Router::new();
     rpc = Arc::new(Instance).register(rpc);
     rpc = Arc::new(LiveAbsent).register(rpc);
     rpc = super::connect_collections::register(rpc, state);
     rpc = super::connect_documents::register(rpc, state);
+    rpc = super::connect_query::register(rpc, state);
     let (rpc, _health) = connectrpc_health::install_static(rpc, served_services());
     let rpc = match reflector(state) {
         Some(reflector) => connectrpc_reflection::install(rpc, reflector),
@@ -377,5 +381,11 @@ pub(crate) fn routes(state: &AppState) -> AxumRouter {
     for path in paths {
         axum = axum.route_service(&path, service.clone());
     }
-    axum
+    // Inside `HotLayer`, and with this router's own Connect-shaped refusal of an
+    // unusable `Loams-Hot` in front of it (`super::connect_hot`). Applied here
+    // rather than by merging these routes into the router the REST routes live
+    // in, because the layer decides a refusal's shape from the content type and
+    // `application/json` is both the Connect protocol's and the REST one: inside
+    // this router there is no ambiguity, outside it there is.
+    super::connect_hot::layer(axum, hot_default)
 }
