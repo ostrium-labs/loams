@@ -131,27 +131,29 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 - **Plan**: `docs/plans/2026-09-27-r1-reactive-core.md`
 - **Goal**: Implement TiKV client layer (`operon-tikv` / `loams-tikv`) and reactive metastore core.
 - **Current State**:
-  - Tasks 0–10 merged into `dev`.
-  - Tasks 11–17 already implemented on feature branches: `origin/r1-t11`, `origin/r1-t12`, `origin/r1-t13`, `origin/r1-t14`, `origin/r1-t16`, `origin/r1-t17`.
-- **Action**: Review, rebase onto `dev`, and merge the remaining branch stack.
+  - Tasks 0–17 merged into `dev`, except Task 14 (the TypeScript reactive client) and Task 16 (the gates and the exit report), which are branch-only.
+  - Verified 2026-10-07 by content, not by commit hash — see [`tracks-1-3-audit.md`](tracks-1-3-audit.md). Task 12's commits are on `dev` renamed `operon:`→`loams:`, so `git cherry` wrongly reports them missing.
+  - The branch inventory below was wrong: `r1-t16` and `r1-t17` are byte-identical to `r1-t14` (stale pointers from GitHub PR merges, not separate work), and `r1-t15` never existed because Task 15 is already merged. The real remainder is **one** branch, `origin/r1-t14`.
+- **Action**: Merge `origin/r1-t14` — but **after** API1, because `crates/loams/src/server.rs` is both the worst conflict (16 regions) and API1's server wiring.
 
 #### Issue #202: `[D] D1 — Embedded Durable Execution, the Operations API and Bulk Import`
 - **Plan**: `docs/plans/2026-09-27-d1-durable-execution.md`
 - **Goal**: Embedded Resonate engine inside `loams-durable`, operations API, and bulk import workers.
 - **Current State**:
   - Tasks 0–5 merged into `dev`.
-  - Tasks 6–9 already implemented on feature branches: `origin/d1-t6`, `origin/d1-t7`, `origin/d1-t8`, `origin/d1-t9`.
-- **Action**: Review, rebase onto `dev`, and merge tasks 6–9.
+  - Tasks 6–9 on feature branches: `origin/d1-t6`, `origin/d1-t7`, `origin/d1-t8`, `origin/d1-t9`. Note `d1-t8` is byte-identical to `d1-t7`.
+  - **`origin/d1-t9`'s tip commit is `wip: D1 Task 9, in progress`** (verified 2026-10-07). This is unfinished work; merging it as-is would land a WIP commit as Task 9.
+- **Action**: Finish Task 9 on the branch, then merge the stack (stacked after R1: `ci.yml`, `Cargo.toml` and `Cargo.lock` conflict in both).
 
 #### Issue #207: `[RT] RT1 — Postgres Single-Shard Slice and the Deterministic Simulator`
 - **Plan**: `docs/plans/2026-10-01-rt1-postgres-slice-and-sim.md`
 - **Goal**: Single-shard routing contract for sharded Postgres and deterministic simulator in `crates/loams-sim`.
-- **Status**: Starter branch `origin/rt1-t0` exists; RT0 foundations landed in #311.
+- **Status**: **Complete** (verified 2026-10-07). `origin/rt1-t0` is an ancestor of `dev`; `crates/loams-sim` and `crates/loams-sqlrouter` are present. RT0 foundations landed in #311.
 
 #### Issue #208: `[RT] RT2 — Scatter, Merge and Aggregate with the Lean Oracle, Postgres 2PC and the Change Stream`
 - **Plan**: `docs/plans/2026-10-01-rt2-scatter-oracle-2pc.md`
 - **Goal**: Lean formal verification kernels for k-way merge, Postgres 2-Phase Commit (2PC), and change data streaming.
-- **Status**: Blocked on RT1.
+- **Status**: Was blocked on RT1, which is now **merged** (see #207), so this blocker is stale and RT2 can proceed.
 
 #### Issue #209: `[FL] FL1 — Event Fabric Foundation (Iggy, Fluss, the Envelope and the Bridges)`
 - **Plan**: `docs/plans/2026-10-01-fl1-fabric-foundation.md`
@@ -161,7 +163,7 @@ The unified API transition replaces legacy REST routes and OpenAPI schemas with 
 #### Issue #210: `[FL] FL2 — Loam House SQL Phase 1 (chDB, ClickHouse HTTP, Tier 1 Engines)`
 - **Plan**: `docs/plans/2026-10-01-fl2-house-sql.md`
 - **Goal**: Embed chDB ClickHouse SQL engine and expose ClickHouse HTTP interface.
-- **Status**: Branches `origin/fl2-t0-chdb-spike` and `origin/fl2-t3-errors` exist.
+- **Status**: **Complete** (verified 2026-10-07). Both `origin/fl2-t0-chdb-spike` and `origin/fl2-t3-errors` are ancestors of `dev`; `deploy/tikv/tidb.toml` is present. There is nothing left to integrate.
 
 #### Issue #274: `[FL] FL3 — External Iceberg REST Catalog (R2 Data Catalog)`
 - **Goal**: Read/write external Apache Iceberg tables backed by Cloudflare R2 Data Catalog inside `loams-iceberg`.
