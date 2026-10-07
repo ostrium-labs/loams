@@ -18,6 +18,7 @@ mod connect_hot;
 mod connect_idempotency;
 mod connect_messages;
 mod connect_query;
+mod connect_query_filters;
 mod connect_query_ir;
 mod errors;
 pub mod events;

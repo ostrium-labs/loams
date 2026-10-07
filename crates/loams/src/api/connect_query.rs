@@ -14,7 +14,9 @@
 //! its own. [`super::connect_query_ir`] turns the request message into the
 //! **native REST JSON** and `loams_query::json::hybrid::parse_query_body`, the
 //! REST route's own parser, reads it, and turns the answer back into the
-//! generated message. One parse, one validate, one `search`.
+//! generated message; [`super::connect_query_filters`] holds the `Query` and
+//! `SortKey` arms of that mapping, which the retrievers need. One parse, one
+//! validate, one `search`.
 //!
 //! ## What this module does do, and why each thing is here
 //!
@@ -78,10 +80,13 @@ struct Query {
 ///
 /// Identical to `connect_documents::collection_ref` and for the same reason: an
 /// empty name is a malformed request rather than a missing resource, because
-/// `not_found` would put a name in `metadata` that no caller sent. It is written
-/// out rather than shared because `connect_documents` is a module whose
-/// `collection_ref` is already its own; this is three lines and the reason it
-/// exists is a sentence, not a mechanism.
+/// `not_found` would put a name in `metadata` that no caller sent.
+///
+/// It differs from it in one way, and the difference is `from`: §05 §4's body
+/// names the collection `from` and sends no `collection` at all, so refusing
+/// here without looking at `from` would refuse the design's own example.
+/// `ir::request_json` reads `from` (stripping its optional `collections.`
+/// prefix) into the body; this only answers "is a collection named at all".
 fn collection_ref<'a>(
     namespace: &'a str,
     collection: &'a str,
@@ -137,7 +142,7 @@ impl QueryService for Query {
         // Date math (`now-30d`) is relative to the proposer's clock, on both
         // surfaces: the same call `api::query::search` makes.
         let mut search =
-            parse_query_body(body, self.state.meta.now_ms()).map_err(|err| refused_service(err))?;
+            parse_query_body(body, self.state.meta.now_ms()).map_err(refused_service)?;
         // The same rule the REST route applies after its own parse (rule 1).
         search.consistency =
             read_consistency(ctx.headers(), Some(search.consistency)).map_err(refused)?;

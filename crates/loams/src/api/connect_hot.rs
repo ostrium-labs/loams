@@ -155,27 +155,13 @@ async fn reject_connect_header(request: Request, next: Next) -> Response {
 /// routes' layer is built with, so a request that names no `Loams-Hot` behaves
 /// the same whichever surface it arrives on.
 ///
-/// The ordering is the point: `axum::Router::layer` wraps outward, so the
-/// rejection runs **first** and a refused header never reaches `HotLayer` — which
-/// is what stops the bare REST body from being the answer to an RPC. A valid
-/// header, and every gRPC request, passes straight through to `HotLayer`.
-/// The connect routes with `HotLayer` on them, and in front of it the refusal
-/// that layer owes an RPC in the Connect protocol's own shape.
-///
-/// `default_enabled` is the service's `hot_default`, the same value the REST
-/// routes' layer is built with, so a request that names no `Loams-Hot` behaves
-/// the same whichever surface it arrives on.
-///
 /// The order is the point: [`Router::layer`] wraps outward, so the rejection is
 /// the outer layer and `HotLayer` the inner one — a refused header never reaches
-/// `HotLayer`, which is what stops the bare REST body from being the answer to
-/// an RPC.
+/// `HotLayer`, which is what stops the bare REST JSON body from being the answer
+/// to an RPC. A valid header, and every gRPC or gRPC-Web request, passes
+/// straight through to `HotLayer` unchanged.
 pub(crate) fn layer(routes: Router, default_enabled: bool) -> Router {
     let hot = HotLayer::new(default_enabled);
-    // `Router::layer` wraps **outward**, so the last one applied is the
-    // outermost and therefore runs first. The rejection is applied last, on
-    // purpose: it must see a bad header before `HotLayer` does, or `HotLayer`'s
-    // own refusal — the bare REST JSON body — is what an RPC receives.
     routes
         .layer(hot)
         .layer(axum::middleware::from_fn(reject_connect_header))
