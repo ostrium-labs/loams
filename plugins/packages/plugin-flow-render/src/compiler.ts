@@ -265,6 +265,148 @@ function readLabel(node: GraphNode, row: Dict | undefined): string {
 }
 
 /**
+ * The node/edge list a `derive` block describes, as literal spec arrays.
+ *
+ * Returning this shape rather than `CompiledGraph` is what keeps the rest of the
+ * compiler shared: the derived path builds the arrays and hands them back to the
+ * ordinary compile path, so ranking, positioning and the palette logic each exist
+ * once.
+ */
+function deriveFromRows(
+  derive: Dict,
+  rows: Dict[],
+): { nodes: GraphNode[]; edges: Array<{ source: string; target: string; label?: string }> } {
+  const idField = asString(derive.idField);
+  if (idField === undefined) {
+    throw new Error("A derived graph needs `derive.idField` naming the column holding the node id.");
+  }
+  const labelField = asString(derive.labelField);
+  const sourceField = asString(derive.sourceField);
+  const targetField = asString(derive.targetField);
+  const edgeLabelField = asString(derive.edgeLabelField);
+  const colorField = asString(derive.colorField);
+
+  const nodes: GraphNode[] = [];
+  const edges: Array<{ source: string; target: string; label?: string }> = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    const id = asString(row[idField]);
+    // A row without a usable id cannot be a node React Flow can key on, and
+    // inventing one from the index would make the id change between renders.
+    if (id === undefined || seen.has(id)) continue;
+    seen.add(id);
+
+    const label = labelField === undefined ? undefined : asString(row[labelField]);
+    const color = colorField === undefined ? undefined : asString(row[colorField]);
+    nodes.push({
+      id,
+      ...(label === undefined ? {} : { label }),
+      ...(color === undefined ? {} : { color }),
+    } as GraphNode);
+
+    // Both ends or neither: a half-specified edge has no target to point at.
+    if (sourceField !== undefined && targetField !== undefined) {
+      const source = asString(row[sourceField]);
+      const target = asString(row[targetField]);
+      if (source !== undefined && target !== undefined) {
+        const edgeLabel = edgeLabelField === undefined ? undefined : asString(row[edgeLabelField]);
+        edges.push({
+          source,
+          target,
+          ...(edgeLabel === undefined ? {} : { label: edgeLabel }),
+        });
+      }
+    }
+  }
+
+  return { nodes, edges };
+}
+
+/**
+ * Compile a graph whose nodes and edges come from the rows.
+ *
+ * The dangling-endpoint rule is the same one a literal graph gets, for the same
+ * reason: React Flow mounts an edge naming a node that is not there and renders
+ * nothing for it, so the graph would come up quietly missing a connection. The
+ * ids are reported in `diagnostics` instead.
+ */
+function compileDerived(
+  spec: Dict,
+  rows: unknown[],
+  options: CompileGraphOptions,
+  layout: ReturnType<typeof readLayout>,
+): CompiledGraph {
+  const safeRows = rows.filter(isPlainObject);
+  const { nodes, edges } = deriveFromRows(spec.derive as Dict, safeRows);
+
+  if (nodes.length === 0) {
+    // An empty result here is a data condition, not an authoring error: a stream
+    // with nothing in it yet. The literal path throws because it cannot know.
+    return { nodes: [], edges: [], diagnostics: { droppedNodes: [], droppedEdges: [] } };
+  }
+
+  const pairs = edges.map((edge) => ({ source: edge.source, target: edge.target }));
+  const positioned = positionNodes(nodes, pairs, layout);
+  const ids = new Set(nodes.map((node) => node.id));
+  const diagnostics: GraphDiagnostics = { droppedNodes: [], droppedEdges: [] };
+
+  const palette = Array.isArray(options.palette)
+    ? options.palette.filter((c): c is string => asString(c) !== undefined)
+    : [];
+  // Colour by value rather than by index, so the same state keeps the same fill
+  // as the stream churns instead of shifting colour as nodes come and go.
+  // Keyed on the node's own colour, which is what the derive block already read
+  // off `colorField` -- so a literal `color` on the node still wins, and this
+  // only assigns to the ones the data coloured.
+  const colorsByValue = new Map<string, string>();
+  for (const node of nodes) {
+    if (node.color !== undefined && !colorsByValue.has(node.color)) {
+      colorsByValue.set(node.color, "");
+    }
+  }
+  if (palette.length > 0) {
+    [...colorsByValue.keys()].forEach((value, index) => {
+      colorsByValue.set(value, palette[index % palette.length]);
+    });
+  }
+
+  const compiledNodes: FlowNode[] = nodes.map((node, index) => {
+    const position = positioned.get(node.id) ?? { x: 0, y: 0 };
+    // No `colorField` means the data named no state, so fall back to cycling the
+    // palette by index -- a derived graph still has to be readable.
+    const fill = node.color ?? palette[index % palette.length];
+    return {
+      id: node.id,
+      type: "default",
+      position,
+      data: { label: asString(node.label) ?? node.id },
+      ...(fill === undefined ? {} : { style: { background: fill } }),
+    };
+  });
+
+  const compiledEdges: FlowEdge[] = [];
+  edges.forEach((edge, index) => {
+    if (!ids.has(edge.source) || !ids.has(edge.target)) {
+      diagnostics.droppedEdges.push(`${edge.source}->${edge.target}#${index}`);
+      return;
+    }
+    compiledEdges.push({
+      id: `e:${edge.source}->${edge.target}#${index}`,
+      source: edge.source,
+      target: edge.target,
+      type:
+        layout.direction === "TB" || layout.direction === "BT" ? "smoothstep" : "default",
+      ...(asString(edge.label) === undefined ? {} : { label: asString(edge.label) as string }),
+      animated: false,
+      markerEnd: { type: "arrowclosed" },
+    });
+  });
+
+  return { nodes: compiledNodes, edges: compiledEdges, diagnostics };
+}
+
+/**
  * Compile a graph spec plus its rows into React Flow's node and edge arrays.
  *
  * @throws when there is no node to draw at all. That is the one input a graph
@@ -280,13 +422,22 @@ export function compileGraph(
   if (!isPlainObject(spec)) {
     throw new Error("GraphSpec must be an object; a graph needs at least one node.");
   }
+
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const layout = readLayout(spec.layout);
+
+  // A derived graph turns the rows into the node and edge list first, then takes
+  // the same path as a hand-authored one. That is deliberate: everything
+  // downstream -- ranking, positioning, diagnostics -- is about the arrays, and
+  // deriving must not get a second, subtly different copy of it.
+  if (isPlainObject(spec.derive)) {
+    return compileDerived(spec, safeRows, options, layout);
+  }
+
   const rawNodes = Array.isArray(spec.nodes) ? spec.nodes : undefined;
   if (rawNodes === undefined || rawNodes.length === 0) {
     throw new Error("GraphSpec needs at least one node; there is nothing to draw.");
   }
-
-  const safeRows = Array.isArray(rows) ? rows : [];
-  const layout = readLayout(spec.layout);
 
   // ── nodes ────────────────────────────────────────────────────────────────
   const diagnostics: GraphDiagnostics = { droppedNodes: [], droppedEdges: [] };

@@ -341,3 +341,98 @@ describe("layoutGraph", () => {
     expect(layoutGraph({ nodes: [{ id: "a" }, { id: "b" }], edges: [] }).get("a")).toBe(0);
   });
 });
+
+describe("a graph derived from the rows", () => {
+  // The live-stream case: the ids are not known when the spec is written, so the
+  // spec names columns and the compiler reads them off each row.
+  const SPEC = {
+    derive: {
+      idField: "id",
+      labelField: "kind",
+      sourceField: "parent_id",
+      targetField: "id",
+      colorField: "state",
+    },
+    layout: { direction: "LR" },
+  };
+
+  const ROWS = [
+    { id: "op-1", kind: "collection.import", parent_id: "", state: "RUNNING" },
+    { id: "op-2", kind: "connector.sync", parent_id: "op-1", state: "DONE" },
+    { id: "op-3", kind: "webhook.fire", parent_id: "op-1", state: "RUNNING" },
+  ];
+
+  it("makes one node per row, keyed on the named id column", () => {
+    const { nodes } = compileGraph(SPEC, ROWS);
+    expect(nodes.map((n) => n.id).sort()).toEqual(["op-1", "op-2", "op-3"]);
+  });
+
+  it("labels each node from the label column", () => {
+    const { nodes } = compileGraph(SPEC, ROWS);
+    const byId = new Map(nodes.map((n) => [n.id, n.data.label]));
+    expect(byId.get("op-1")).toBe("collection.import");
+    expect(byId.get("op-2")).toBe("connector.sync");
+  });
+
+  it("derives an edge per row that names both ends", () => {
+    const { edges } = compileGraph(SPEC, ROWS);
+    // op-1 has no parent, so it contributes no edge; the other two do.
+    expect(edges.map((e) => `${e.source}->${e.target}`).sort()).toEqual([
+      "op-1->op-2",
+      "op-1->op-3",
+    ]);
+  });
+
+  it("drops an edge whose source names no node in the graph", () => {
+    // The row claims a parent the rows never delivered. React Flow would mount
+    // that edge and render nothing for it, so it is dropped and reported.
+    const { edges, diagnostics } = compileGraph(SPEC, [
+      ...ROWS,
+      { id: "op-4", kind: "orphan", parent_id: "op-999", state: "RUNNING" },
+    ]);
+    expect(edges.map((e) => e.target)).not.toContain("op-4");
+    expect(diagnostics.droppedEdges.length).toBe(1);
+  });
+
+  it("keeps one colour per distinct state as the stream churns", () => {
+    // Same states, different arrival order: the fill must not shift with index,
+    // or every new operation would repaint the whole graph.
+    const forwards = compileGraph(SPEC, ROWS).nodes;
+    const backwards = compileGraph(SPEC, [...ROWS].reverse()).nodes;
+    const fill = (nodes: typeof forwards, id: string) =>
+      nodes.find((n) => n.id === id)?.style?.background;
+    expect(fill(forwards, "op-1")).toBe(fill(backwards, "op-1"));
+    expect(fill(forwards, "op-2")).toBe(fill(backwards, "op-2"));
+  });
+
+  it("ignores a row with no id rather than inventing one", () => {
+    const { nodes } = compileGraph(SPEC, [{ kind: "nameless" }, ...ROWS]);
+    expect(nodes).toHaveLength(3);
+  });
+
+  it("ignores a duplicate id, keeping the first", () => {
+    const { nodes } = compileGraph(SPEC, [...ROWS, { id: "op-1", kind: "again" }]);
+    expect(nodes.filter((n) => n.id === "op-1")).toHaveLength(1);
+  });
+
+  it("gives a stream with nothing in it yet an empty graph, not a throw", () => {
+    // Unlike a hand-authored spec, an empty row set here is a data condition:
+    // nothing has arrived yet.
+    const graph = compileGraph(SPEC, []);
+    expect(graph.nodes).toEqual([]);
+    expect(graph.edges).toEqual([]);
+  });
+
+  it("refuses a derive with no idField", () => {
+    expect(() => compileGraph({ derive: { labelField: "kind" } }, ROWS)).toThrow(/idField/);
+  });
+
+  it("draws nodes but no edges when only one end is named", () => {
+    const { nodes, edges } = compileGraph(
+      { derive: { idField: "id", sourceField: "parent_id" } },
+      ROWS,
+    );
+    expect(nodes).toHaveLength(3);
+    expect(edges).toEqual([]);
+  });
+});

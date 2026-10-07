@@ -63,6 +63,9 @@
       "path": "packages/plugin-loams-adapter"
     },
     {
+      "path": "packages/plugin-loams-live"
+    },
+    {
       "path": "apps/server"
     }
   ]

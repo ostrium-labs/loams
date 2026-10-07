@@ -653,7 +653,12 @@ pub const ENGINE_TEMPLATES: [&str; 4] = [
     "/v1/namespaces/{ns}/collections/{c}",
 ];
 
-/// Installs `routes` on `server`.
+/// Installs `routes` on an `httpmock` server.
+///
+/// Only this crate's contract tests use it now. The routes are served over
+/// axum by `loams-apps-mock::console`, which is what the console's dev server
+/// points at; this stays so the tests can still prove that every operation in
+/// the contract has an answer and that each answer matches its schema.
 pub async fn register(server: &MockServer, routes: &[Route]) -> Result<()> {
     for route in routes {
         let method: Method = route

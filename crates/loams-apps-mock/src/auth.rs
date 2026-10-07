@@ -3,6 +3,11 @@
 //! `Bearer mock-access-<principal>` is a session authenticated now;
 //! `Bearer mock-stale-<principal>` one authenticated [`STALE_AGE`] ago.
 //! The principal must exist in the seed.
+//!
+//! A token this mock issued at [`crate::oauth`]'s token endpoint resolves to
+//! the device it was issued for as well, which is what `WhoAmI` reports. A
+//! hand-written token names a principal only, and then any of that principal's
+//! devices will do.
 
 use std::time::{Duration, SystemTime};
 
@@ -11,6 +16,7 @@ use connectrpc::{ConnectError, ErrorCode, RequestContext};
 use crate::proto::loams::instance::v1::Principal;
 use crate::refuse;
 use crate::seed::Seed;
+use crate::store::Store;
 
 /// How old a `mock-stale-*` session is: past the 5-minute step-up window.
 pub(crate) const STALE_AGE: Duration = Duration::from_secs(10 * 60);
@@ -20,15 +26,21 @@ pub(crate) const STALE_AGE: Duration = Duration::from_secs(10 * 60);
 pub(crate) struct Caller {
     pub(crate) principal: Principal,
     pub(crate) authenticated_at: SystemTime,
+    /// The device a token this mock issued was issued for.
+    pub(crate) device_id: Option<String>,
 }
 
 /// Resolves the caller from the request's bearer token.
-pub(crate) fn caller(seed: &Seed, ctx: &RequestContext) -> Result<Caller, ConnectError> {
+pub(crate) fn caller(store: &Store, ctx: &RequestContext) -> Result<Caller, ConnectError> {
     let header = ctx
         .header(http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .ok_or_else(|| ConnectError::unauthenticated("a bearer token is required"))?;
-    caller_from_header(seed, header, SystemTime::now())
+    let mut caller = caller_from_header(&store.seed, header, SystemTime::now())?;
+    if let Some(token) = header.strip_prefix("Bearer ") {
+        caller.device_id = store.lock().issued.get(token).cloned();
+    }
+    Ok(caller)
 }
 
 pub(crate) fn caller_from_header(
@@ -48,10 +60,24 @@ pub(crate) fn caller_from_header(
             "unknown token: the mock accepts mock-access-<principal> and mock-stale-<principal>",
         ));
     };
+    let principal_id = match (id, seed.principal(id).is_some()) {
+        // A hand-written token names the principal directly.
+        (id, true) => id.to_owned(),
+        // An issued token is `mock-access-<principal>-<discriminator>`, so that two
+        // devices of one principal hold distinct tokens and each resolves to its
+        // own device in `Store::issued`. Principal ids use `_`, never `-`, so the
+        // last `-` is unambiguously the discriminator.
+        (id, false) => id
+            .rsplit_once('-')
+            .map(|(head, _)| head.to_owned())
+            .unwrap_or_else(|| id.to_owned()),
+    };
     let principal = seed
-        .principal(id)
-        .ok_or_else(|| ConnectError::unauthenticated(format!("no seed principal `{id}`")))?;
-    if seed.revoked_principals.iter().any(|p| p == id) {
+        .principal(&principal_id)
+        .ok_or_else(|| {
+            ConnectError::unauthenticated(format!("no seed principal `{principal_id}`"))
+        })?;
+    if seed.revoked_principals.iter().any(|p| p == &principal_id) {
         return Err(refuse(
             ErrorCode::Unauthenticated,
             "device_revoked",
@@ -61,6 +87,7 @@ pub(crate) fn caller_from_header(
     Ok(Caller {
         principal,
         authenticated_at,
+        device_id: None,
     })
 }
 
@@ -80,6 +107,19 @@ mod tests {
             now.duration_since(stale.authenticated_at).unwrap(),
             STALE_AGE
         );
+    }
+
+    #[test]
+    fn an_issued_token_suffix_still_resolves_its_principal() {
+        // `mock-access-<principal>-<discriminator>` is what the token endpoint
+        // hands out; the hand-written `mock-access-<principal>` still works.
+        let seed = Seed::demo();
+        let now = SystemTime::now();
+        let issued = caller_from_header(&seed, "Bearer mock-access-usr_omar-01HQZX9K7T", now).unwrap();
+        assert_eq!(issued.principal.id, "usr_omar");
+        assert_eq!(issued.authenticated_at, now);
+        // And an unknown principal with a suffix is still refused.
+        assert!(caller_from_header(&seed, "Bearer mock-access-nobody-01HQZX9K7T", now).is_err());
     }
 
     #[test]

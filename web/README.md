@@ -33,14 +33,14 @@ pnpm test                                    # Vitest, every package
 
 Third-party plugins are off unless the instance sets the `console.third_party_plugins` feature (the demo mock does): until the unified auth plan can vend attenuated tokens there is no server-side boundary for them. `window.loamsConsole` in the browser console shows the plugin table and `pending()`.
 
-The console speaks the contract in [`api/console/openapi.json`](../api/console/openapi.json). Until the gateway implements it (M2), [`loams-console-mock`](../crates/loams-console-mock) serves it with seed data.
+The console speaks the contract in [`api/console/openapi.json`](../api/console/openapi.json). Until the gateway implements it (M2), [`loams-apps-mock`](../crates/loams-apps-mock) serves it with seed data on `:8084`, beside the app protos. The contract and seed themselves live in [`loams-console-mock`](../crates/loams-console-mock), which is a library now: `loams-apps-mock` mounts its routes over axum, so one listener answers both surfaces.
 
 ## Develop
 
 The pnpm workspace is rooted at the repository root: its `package.json` pins pnpm `11.27.1`, and `pnpm-workspace.yaml` and `pnpm-lock.yaml` are shared by all workspace packages. Prefer running `pnpm install --frozen-lockfile` from the repository root; `pnpm install` from `web/` also discovers the root workspace and uses that same lockfile. The `web/` package scripts and directory layout are unchanged; run the web commands below from `web/`.
 
 ```bash
-cargo run -p loams-console-mock        # the API mock on :8081 (add --signed-out for the sign-in screens)
+cargo run -p loams-apps-mock          # the console API mock on :8084 (add --signed-out for the sign-in screens)
 cd web && pnpm install && pnpm dev       # the console on http://localhost:5173/ui/
 ```
 

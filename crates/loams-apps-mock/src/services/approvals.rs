@@ -60,7 +60,7 @@ impl ApprovalService for Approvals {
         ctx: RequestContext,
         request: ServiceRequest<'_, ListApprovalsRequest>,
     ) -> ServiceResult<ListApprovalsResponse> {
-        caller(&self.0.seed, &ctx)?;
+        caller(&self.0, &ctx)?;
         let request = request.to_owned_message();
         let filter = Filter::new(request.environments, request.states);
         let approvals = self
@@ -82,7 +82,7 @@ impl ApprovalService for Approvals {
         ctx: RequestContext,
         request: ServiceRequest<'_, GetApprovalRequest>,
     ) -> ServiceResult<GetApprovalResponse> {
-        caller(&self.0.seed, &ctx)?;
+        caller(&self.0, &ctx)?;
         let id = request.approval_id.to_owned();
         let approval = self.0.lock().approvals.get(&id).cloned();
         let approval =
@@ -98,7 +98,7 @@ impl ApprovalService for Approvals {
         ctx: RequestContext,
         request: ServiceRequest<'_, WatchApprovalsRequest>,
     ) -> ServiceResult<ServiceStream<WatchApprovalsResponse>> {
-        caller(&self.0.seed, &ctx)?;
+        caller(&self.0, &ctx)?;
         let request = request.to_owned_message();
         let filter = Filter::new(request.environments, request.states);
         let resume =
@@ -139,14 +139,21 @@ impl ApprovalService for Approvals {
         };
 
         let timer = heartbeat_timer(self.0.heartbeat);
+        // `POST /mock/drop-streams` ends this stream so the client reconnects
+        // and resumes from its cursor.
+        let drops = self.0.dropped();
         let stream = futures::stream::unfold(
-            (queue, rx, timer, last_seq, filter, self.0.clone()),
-            |(mut queue, mut rx, mut timer, mut last_seq, filter, store)| async move {
+            (queue, rx, timer, last_seq, filter, self.0.clone(), drops),
+            |(mut queue, mut rx, mut timer, mut last_seq, filter, store, mut drops)| async move {
                 loop {
                     if let Some(item) = queue.pop_front() {
-                        return Some((Ok(item), (queue, rx, timer, last_seq, filter, store)));
+                        return Some((
+                            Ok(item),
+                            (queue, rx, timer, last_seq, filter, store, drops),
+                        ));
                     }
                     tokio::select! {
+                        _ = drops.changed() => return None,
                         change = rx.recv() => match change {
                             Ok(change) if change.seq > last_seq => {
                                 last_seq = change.seq;
@@ -194,7 +201,7 @@ impl ApprovalService for Approvals {
         ctx: RequestContext,
         request: ServiceRequest<'_, DecideApprovalRequest>,
     ) -> ServiceResult<DecideApprovalResponse> {
-        let me = caller(&self.0.seed, &ctx)?;
+        let me = caller(&self.0, &ctx)?;
         let request = request.to_owned_message();
         let now = SystemTime::now();
         let (response, change) = {

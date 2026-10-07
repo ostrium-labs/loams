@@ -1,30 +1,12 @@
 {
-  "name": "plugins-server",
-  "projectType": "application",
-  "sourceRoot": "plugins/apps/server/src",
+  "name": "plugins-plugin-loams-live",
+  "projectType": "library",
+  "sourceRoot": "plugins/packages/plugin-loams-live/src",
   "tags": [
     "scope:plugins"
   ],
   "implicitDependencies": [
-    "plugins-bi-rpc",
-    "plugins-core",
-    "plugins-plugin-agent-tools",
-    "plugins-plugin-control-plane",
-    "plugins-plugin-dashboard-spec",
     "plugins-plugin-data",
-    "plugins-plugin-echarts-render",
-    "plugins-plugin-flint",
-    "plugins-plugin-flow-render",
-    "plugins-plugin-loams-live",
-    "plugins-plugin-forgejo-adapter",
-    "plugins-plugin-glitchtip-adapter",
-    "plugins-plugin-itsaplan-adapter",
-    "plugins-plugin-langfuse-adapter",
-    "plugins-plugin-loams-adapter",
-    "plugins-plugin-matomo-adapter",
-    "plugins-plugin-openpanel-adapter",
-    "plugins-plugin-store",
-    "plugins-plugin-zulip-adapter",
     "plugins-types"
   ],
   "targets": {
@@ -54,7 +36,7 @@
       "outputs": [],
       "options": {
         "command": "node -e \"process.exit(0)\"",
-        "cwd": "plugins/apps/server"
+        "cwd": "plugins/packages/plugin-loams-live"
       },
       "dependsOn": [
         {
@@ -91,7 +73,7 @@
       "outputs": [],
       "options": {
         "command": "node -e \"process.exit(0)\"",
-        "cwd": "plugins/apps/server"
+        "cwd": "plugins/packages/plugin-loams-live"
       },
       "dependsOn": [
         {
@@ -127,7 +109,7 @@
       ],
       "outputs": [],
       "options": {
-        "command": "pnpm run test apps/server/tests",
+        "command": "pnpm run test packages/plugin-loams-live/tests",
         "cwd": "plugins"
       },
       "dependsOn": []

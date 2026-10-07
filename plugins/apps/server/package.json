@@ -18,6 +18,7 @@
     "@loams-plugins/plugin-dashboard-spec": "workspace:*",
     "@loams-plugins/plugin-data": "workspace:*",
     "@loams-plugins/plugin-echarts-render": "workspace:*",
+    "@loams-plugins/plugin-loams-live": "workspace:*",
     "@loams-plugins/plugin-flint": "workspace:*",
     "@loams-plugins/plugin-flow-render": "workspace:*",
     "@loams-plugins/plugin-forgejo-adapter": "workspace:*",

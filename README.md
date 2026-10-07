@@ -262,7 +262,7 @@ Each gateway documents where it differs from the original in its crate's module 
 | [`loams-live`](crates/loams-live) | Loams Live: the reactive document database on TiKV |
 | [`loams-live-proto`](crates/loams-live-proto) | Loams Live's `loams.live.v1` protos and generated service code |
 | [`loams-sim`](crates/loams-sim) | Seeded cluster simulation and a linearizability checker (test only) |
-| [`loams-console-mock`](crates/loams-console-mock) | A mock of the console API with seed data |
+| [`loams-console-mock`](crates/loams-console-mock) | The console API's contract and seed data, served over REST by `loams-apps-mock` |
 
 Other directories:
 

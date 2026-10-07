@@ -94,9 +94,9 @@ Served on the cluster listener before the API router (`meta_rpc::router`). See r
 | POST | `/internal/v1/meta/leave` | raft | `loams.internal.v1.MetaService/Leave` | `MetaNode::leave` | `cluster.rs` |
 | POST | `/internal/v1/meta/status` | raft | `loams.internal.v1.MetaService/Status` | `MetaNode` metrics | `cluster.rs` |
 
-## Console contract (`api/console/openapi.json`, served by `loams-console-mock`)
+## Console contract (`api/console/openapi.json`, served by `loams-apps-mock` from `loams-console-mock`'s routes)
 
-The real server does not serve `/api/v1` yet (the gateway work is AP4/MT1); only `loams-console-mock` does, from the contract. Tests: `crates/loams-console-mock/tests/contract.rs` (`every_operation_has_a_mock_and_every_mock_an_operation`, `every_mocked_body_matches_its_response_schema`, `the_server_answers_from_the_seed`) and the console's `web/apps/console` tests over `openapi-fetch`. Services are in `loams.admin.v1` unless noted.
+The real server does not serve `/api/v1` yet (the gateway work is AP4/MT1); only `loams-apps-mock` does, from the contract. `loams-console-mock` keeps the contract and the seed and its `routes()` list, and `loams-apps-mock::console` mounts that list over axum on the same listener as the app protos, so the console, the desktop, the phone apps and the SDKs all point at one address. Tests: `crates/loams-console-mock/tests/contract.rs` (`every_operation_has_a_mock_and_every_mock_an_operation`, `every_mocked_body_matches_its_response_schema`, `the_server_answers_from_the_seed`) and the console's `web/apps/console` tests over `openapi-fetch`. Services are in `loams.admin.v1` unless noted.
 
 | Method | Route | Kind | Target RPC | Internal call | Existing tests |
 |---|---|---|---|---|---|
@@ -157,6 +157,6 @@ Not mapped and not changed: the Qdrant REST and gRPC gateway (`loams-qdrant`), t
 | # | Ruling | Why |
 |---|---|---|
 | 0.1 | §44 §3 counts 22 native routes; the as-built router has 27 `/v1` method/path pairs: the 25 `api::router` registers itself, plus `hot` and `warm`, which `hot::routes()` registers separately and `api::router` merges (so they are counted here too, not added on top). `/health`, `/ready` and the `/internal/*` routes are not app routes and are not in the 27. The table above is authoritative, and `route_map_covers_every_route` asserts the count so it cannot drift. | Counted from `api::router` and `hot::routes` |
-| 0.2 | The console contract is served only by `loams-console-mock`; there is no `/api/v1` handler in the server to port. Task 7 builds `loams.admin.v1`/`loams.auth.v1` against the mock's seed (as the plan says: "tests are the console mock's") and the console moves to Connect in Task 9. | `grep -r /api/v1 crates` finds only the mock |
+| 0.2 | The console contract is served only by the mocks (`loams-apps-mock` mounting `loams-console-mock`'s routes); there is no `/api/v1` handler in the server to port. Task 7 builds `loams.admin.v1`/`loams.auth.v1` against the mock's seed (as the plan says: "tests are the console mock's") and the console moves to Connect in Task 9. | `grep -r /api/v1 crates` finds only the mock |
 | 0.3 | The metastore Raft transport (`/internal/v1/raft/*`, `/internal/v1/meta/*`) is node-to-node HTTP like the other `/internal` routes, so it is mapped to `loams.internal.v1`. Task 8 moves the four `api/internal.rs` routes first; the Raft transport moves in the same task only if `loams-meta`'s `HttpTransport` can switch without changing openraft's wire types, else it is a follow-up issue (it is never on the public port and never in an SDK, D607). | §44 §5.1 row `/internal/*`; keep Task 8 one PR |
 | 0.4 | Hot and warm become `CollectionService/SetHot` and `WarmCollection`, as §44 §5.1; the native `/v1/namespaces/{ns}/collections/{c}/hot` GET does not exist (the hot status is part of `GetCollection`). | As built |
