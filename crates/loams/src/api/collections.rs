@@ -25,7 +25,7 @@ use super::{
 };
 
 /// The default page of a scroll.
-const DEFAULT_SCROLL_LIMIT: usize = 100;
+pub(super) const DEFAULT_SCROLL_LIMIT: usize = 100;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -196,13 +196,21 @@ struct Write {
 }
 
 /// The error of op `i`, with `"index": i` (rule 1).
-fn op_error(i: usize, err: ServiceError) -> ApiError {
+///
+/// `pub(super)` because `loams.document.v1`'s write reads the same index out
+/// of the same validation: the Connect handler turns its request message back
+/// into the JSON [`op_from_json`] parses, so a rejected op is refused by *this*
+/// code and carries *this* index on both surfaces (design §44 §4, API1 Task 3).
+pub(super) fn op_error(i: usize, err: ServiceError) -> ApiError {
     ApiError::from(err).with("index", i)
 }
 
 /// The write's override from [`BACKPRESSURE_HEADER`]: `off` is `Bulk`,
 /// absent is `None`, anything else is 400 (Task 15 rule 5).
-fn backpressure_of(headers: &HeaderMap) -> Result<Override, ApiError> {
+///
+/// `pub(super)` for the same reason as [`op_error`]: the override stays a
+/// request header on the Connect path too, and this is the only reader of it.
+pub(super) fn backpressure_of(headers: &HeaderMap) -> Result<Override, ApiError> {
     match headers.get(BACKPRESSURE_HEADER) {
         None => Ok(Override::None),
         Some(value) if value.as_bytes() == b"off" => Ok(Override::Bulk),
@@ -429,14 +437,26 @@ struct PatchByFilter {
 /// A filter write's options from its request and headers (M1.5 Task 9a
 /// rule 6): `Loams-Consistency-Token` makes the pin at least as new as the
 /// token, and `Loams-Backpressure: off` overrides each batch's budget.
-fn filter_write_options(
+///
+/// `consistency` is the caller's own asked-for consistency, and there is only
+/// one reason it is a parameter rather than being read from the request here:
+/// the native REST body has no such field, so the route passes `None`, while
+/// `loams.document.v1` carries it in the request message and passes it through
+/// (API1 Task 3). Everything else — the header's merge rule, the override, the
+/// deadline — is one implementation for both surfaces.
+///
+/// `pub(super)` because `loams.document.v1`'s `DeleteByFilter` and
+/// `PatchByFilter` build their options here too, so a `consistency` message and
+/// a `loams-consistency-token` header are read by one function (API1 Task 3).
+pub(super) fn filter_write_options(
     headers: &HeaderMap,
+    consistency: Option<ReadConsistency>,
     max_rows: Option<u64>,
     allow_partial: bool,
     cursor: Option<FilterWriteCursor>,
 ) -> Result<FilterWriteOptions, ApiError> {
     Ok(FilterWriteOptions {
-        consistency: read_consistency(headers, None)?,
+        consistency: read_consistency(headers, consistency)?,
         max_rows,
         allow_partial,
         cursor,
@@ -488,6 +508,9 @@ pub(super) async fn delete_by_filter(
     let request: DeleteByFilter = parse_json(&body)?;
     let opts = filter_write_options(
         &headers,
+        // The native body has no consistency field: the pin comes from the
+        // header alone (M1.5 Task 9a rule 6).
+        None,
         request.max_rows,
         request.allow_partial,
         request.cursor,
@@ -512,6 +535,9 @@ pub(super) async fn patch_by_filter(
     let patch = patch_spec_from_json(&request.patch)?;
     let opts = filter_write_options(
         &headers,
+        // The native body has no consistency field: the pin comes from the
+        // header alone (M1.5 Task 9a rule 6).
+        None,
         request.max_rows,
         request.allow_partial,
         request.cursor,
@@ -566,7 +592,13 @@ fn object_of<'a>(
 }
 
 /// `{"upsert": Doc}`, `{"delete": {"id"}}` or `{"patch": {…}}`.
-fn op_from_json(i: usize, value: &Value) -> Result<DocOp, ServiceError> {
+///
+/// `pub(super)` because `loams.document.v1`'s `WriteDocuments` reuses it: its
+/// `WriteOp` oneof spells the same three shapes, so the handler rebuilds the
+/// JSON and lets this parse it. The validation, and therefore every refusal
+/// and its `op i:` prefix, is then this function's rather than a second copy
+/// of it (API1 Task 3).
+pub(super) fn op_from_json(i: usize, value: &Value) -> Result<DocOp, ServiceError> {
     let (kind, body) = value
         .as_object()
         .filter(|object| object.len() == 1)
@@ -668,7 +700,11 @@ fn doc_from_json(
 
 /// A filter write's `patch`: an op's `patch` object without `id` and
 /// `upsert`, with the same defaults (M1.6 W-table).
-fn patch_spec_from_json(value: &Value) -> Result<PatchSpec, ServiceError> {
+///
+/// `pub(super)` for the same reason as [`op_from_json`]:
+/// `loams.document.v1`'s `PatchByFilter` reuses it, so the `id`/`upsert`
+/// refusal and the three `mode` spellings are one implementation.
+pub(super) fn patch_spec_from_json(value: &Value) -> Result<PatchSpec, ServiceError> {
     let object = value
         .as_object()
         .ok_or_else(|| ServiceError::InvalidArgument("patch must be an object".to_string()))?;

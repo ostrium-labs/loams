@@ -12,6 +12,9 @@
 mod collections;
 pub mod connect;
 mod connect_collections;
+mod connect_documents;
+mod connect_errors;
+mod connect_idempotency;
 mod connect_messages;
 mod errors;
 pub mod events;
@@ -251,7 +254,13 @@ fn with_token(mut response: Response, token: &ConsistencyToken) -> Response {
 /// request header turns a `strong`, `eventual` or absent body consistency
 /// into `AtLeast(header)`, merges into an `at_least` one, and loses to a
 /// `pinned` one.
-fn read_consistency(
+///
+/// `pub(super)` because the Connect handlers read the same header of the same
+/// request (design §44 §7.4): `loams-backpressure` and
+/// `loams-consistency-token` are the two request headers that survive the move
+/// to RPCs, and both are read by this one function so the two surfaces cannot
+/// disagree about what a header means.
+pub(super) fn read_consistency(
     headers: &HeaderMap,
     body: Option<ReadConsistency>,
 ) -> Result<ReadConsistency, ApiError> {

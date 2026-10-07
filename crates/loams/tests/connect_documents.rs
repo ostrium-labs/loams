@@ -386,6 +386,11 @@ fn assert_documented_keys(value: &Value, documented: &[&str], what: &str) {
 /// A proto3 JSON field read the way the wire carries it: a field at its
 /// default is **absent**, not `0`/`false`/`""`. So a documented default is
 /// accepted as either.
+///
+/// A number is compared through [`int64`], because this file's own rule is
+/// that every 64-bit integer on the wire answers a decimal string (`count` is
+/// `uint64`), and a helper that compared `Value`s raw would call the same
+/// answer "wrong" depending only on which field was being checked.
 fn absent_or(value: &Value, key: &str, expected: Value) -> bool {
     match value.get(key) {
         None => {
@@ -399,6 +404,7 @@ fn absent_or(value: &Value, key: &str, expected: Value) -> bool {
             ) || expected.as_u64() == Some(0)
                 || expected.as_i64() == Some(0)
         }
+        Some(got) if expected.is_number() => int64(got) == int64(&expected),
         Some(got) => *got == expected,
     }
 }
@@ -435,16 +441,16 @@ fn struct_number(value: &Value) -> Option<f64> {
 fn assert_struct_eq(got: &Value, want: &Value, what: &str) {
     match (got, want) {
         (Value::Object(got), Value::Object(want)) => {
-            assert_eq!(got.len(), want.len(), "{what}: the keys of {got}");
+            assert_eq!(got.len(), want.len(), "{what}: the keys of {got:?}");
             for (key, expected) in want {
                 let value = got
                     .get(key)
-                    .unwrap_or_else(|| panic!("{what}: no key `{key}` in {got}"));
+                    .unwrap_or_else(|| panic!("{what}: no key `{key}` in {got:?}"));
                 assert_struct_eq(value, expected, &format!("{what}.{key}"));
             }
         }
         (Value::Array(got), Value::Array(want)) => {
-            assert_eq!(got.len(), want.len(), "{what}: the length of {got}");
+            assert_eq!(got.len(), want.len(), "{what}: the length of {got:?}");
             for (i, expected) in want.iter().enumerate() {
                 assert_struct_eq(&got[i], expected, &format!("{what}[{i}]"));
             }
@@ -1788,12 +1794,23 @@ async fn write_idempotency_key_replays_same_token() {
 /// The plan's own test: `at_least` **waits** for the token it was given rather
 /// than answering from whatever state it finds.
 ///
-/// An `at_least(T)` read syncs the tail to `T`'s offsets and reads exactly the
-/// range up to them, so a read at an older token cannot see a write
-/// acknowledged after it, while a read at a newer token must. That is the whole
-/// difference between `at_least` and `eventual`, and it is what makes the field
-/// a wait and not a hint. Every wait here is the server's own; no test sleeps
-/// to paper over one.
+/// An `at_least(T)` read syncs the tail until it covers `T`'s offsets, and so
+/// sees every write `T` acknowledges. That is the whole difference between
+/// `at_least` and `eventual` — `eventual` takes whatever the tail already
+/// holds and does not wait — and it is what makes the field a wait and not a
+/// hint. Every wait here is the server's own; no test sleeps to paper over
+/// one.
+///
+/// **`at_least` is a minimum, not a snapshot, and this test asserts it that
+/// way.** A read at `T` may also see writes acknowledged *after* `T`: the
+/// contract the design states is "`AtLeast` merges up to the token's offsets"
+/// (`docs/plans/m1-overview.md` §read snapshots; M1.2 Task 4 rule 3), and the
+/// gate M1.2 pins for it is `at_least_waits_for_the_token_offsets` — a paused
+/// follower must not let the read complete early. A snapshot bounded at `T` is
+/// `pinned`, which reads exactly one manifest plus the tail up to a token
+/// (`consistency.pin` here). So what each read below asserts is what the
+/// contract *guarantees* — the writes up to its token are visible — and never
+/// what it merely permits.
 #[tokio::test]
 async fn consistency_at_least_waits() {
     let running = Running::start().await;
@@ -1805,7 +1822,7 @@ async fn consistency_at_least_waits() {
         .await
         .expect_ok();
 
-    // The first state: `n` is 1, and its token is `T1`.
+    // The first state: document 1 (`n` is 1), and its token is `T1`.
     let first = running
         .connect(
             WRITE_DOCUMENTS,
@@ -1818,14 +1835,16 @@ async fn consistency_at_least_waits() {
     let t1 = first.token();
     first.expect_ok();
 
-    // A second state, acknowledged after `T1`: `n` is 7, and its token `T2` is
-    // strictly ahead of `T1`.
+    // A second state, acknowledged after `T1`: a second document, and its
+    // token `T2` is strictly ahead of `T1`. A *new* document rather than a
+    // second write of the same one, so that "did this read wait for its token"
+    // is a question about visibility and not about which write of one key won.
     let second = running
         .connect(
             WRITE_DOCUMENTS,
             &kb_request(&[(
                 "ops",
-                json!([{"upsert": {"id": id_uint(1), "source": {"body": "refund policy", "tenant": "a", "n": 7}}}]),
+                json!([{"upsert": {"id": id_uint(2), "source": {"body": "shipping times", "tenant": "a", "n": 7}}}]),
             )]),
         )
         .await;
@@ -1836,8 +1855,7 @@ async fn consistency_at_least_waits() {
         "T2 is strictly ahead of T1: {t2} and {t1}"
     );
 
-    // A read at `T1` waits for `T1` and answers exactly that state: it does
-    // not see the write acknowledged after it.
+    // A read at `T1` waits for `T1`, so it sees the write `T1` acknowledges.
     let reply = running
         .connect(
             GET_DOCUMENTS,
@@ -1846,6 +1864,10 @@ async fn consistency_at_least_waits() {
         .await;
     let read1 = reply.token();
     let body = reply.expect_ok();
+    assert!(
+        !is_missing(&body["documents"][0]),
+        "the read at T1 waits for T1's write: {body}"
+    );
     assert_eq!(
         struct_number(&body["documents"][0]["source"]["n"]),
         Some(1.0),
@@ -1857,19 +1879,31 @@ async fn consistency_at_least_waits() {
         "the answer is at least T1: {read1} vs {t1}"
     );
 
-    // A read at `T2` waits for `T2` and sees the newer write. Same request,
-    // one token different: the answer changed because the read waited, not
-    // because the caller retried a write.
+    // A read at `T2` waits for `T2` and sees **both** writes: same request, one
+    // token different, and the answer gained the document only `T2`
+    // acknowledges. That is the assertion that fails without the wait, because
+    // the second write is in the tail and not yet in the live manifest — an
+    // `eventual` read would be free to miss it.
     let reply = running
         .connect(
             GET_DOCUMENTS,
-            &kb_request(&[("ids", json!([id_uint(1)])), ("consistency", at_least(&t2))]),
+            &kb_request(&[
+                ("ids", json!([id_uint(1), id_uint(2)])),
+                ("consistency", at_least(&t2)),
+            ]),
         )
         .await;
     let read2 = reply.token();
     let body = reply.expect_ok();
+    for (index, id) in [json!(1u64), json!(2u64)].iter().enumerate() {
+        assert!(
+            !is_missing(&body["documents"][index]),
+            "the read at T2 waits for T2's write: {body}"
+        );
+        assert_eq!(pk(&body["documents"][index]["id"]), *id, "{body}");
+    }
     assert_eq!(
-        struct_number(&body["documents"][0]["source"]["n"]),
+        struct_number(&body["documents"][1]["source"]["n"]),
         Some(7.0),
         "{body}"
     );
@@ -1878,25 +1912,26 @@ async fn consistency_at_least_waits() {
         "the answer is at least T2: {read2} vs {t2}"
     );
 
-    // The scroll and the count carry a token the same way.
+    // The scroll and the count carry a token the same way: a scroll at `T2`
+    // holds both documents, and a count at `T2` is two.
     let reply = running
         .connect(
             SCROLL_DOCUMENTS,
-            &kb_request(&[("limit", json!(10)), ("consistency", at_least(&t1))]),
+            &kb_request(&[("limit", json!(10)), ("consistency", at_least(&t2))]),
         )
         .await;
     let scroll_token = reply.token();
     let page = reply.expect_ok();
     assert_eq!(
-        struct_number(&page["documents"][0]["source"]["n"]),
-        Some(1.0),
-        "{page}"
+        page["documents"].as_array().expect("documents[]").len(),
+        2,
+        "the scroll at T2 holds both documents: {page}"
     );
-    assert!(token_covers(&scroll_token, &t1), "{scroll_token} vs {t1}");
+    assert!(token_covers(&scroll_token, &t2), "{scroll_token} vs {t2}");
     assert_eq!(
         count(&running, "w", "kb", json!("match_all"), &t2).await,
-        1,
-        "one document at either token"
+        2,
+        "both documents at T2"
     );
 
     // A filter write honours a token the same way: the count at the token the

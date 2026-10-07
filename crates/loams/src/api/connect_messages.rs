@@ -1,46 +1,64 @@
-//! The `loams.collection.v1` messages built from the server's own types.
+//! The `loams.collection.v1` and `loams.document.v1` messages built from the
+//! server's own types.
 //!
 //! Design §44 §4 and the API1 plan's "handlers are thin" rule: the RPCs in
-//! [`super::connect_collections`] call the same `CollectionService`,
-//! `MetaStore` and hot-tier entry points the REST routes call, and *this*
-//! module is the only place that turns what those return into the generated
-//! messages. That is what makes the REST route and the RPC provably the same
-//! behaviour: there is one mapping from `loams_query::CollectionInfo` to
-//! `loams.collection.v1.CollectionInfo`, not one per surface.
+//! [`super::connect_collections`] and [`super::connect_documents`] call the
+//! same `CollectionService`, `MetaStore` and hot-tier entry points the REST
+//! routes call, and *this* module is the only place that turns what those
+//! return into the generated messages, and what the two surfaces' request
+//! messages back into what those entry points take. That is what makes the
+//! REST route and the RPC provably the same behaviour: there is one mapping
+//! from `loams_query::CollectionInfo` to `loams.collection.v1.CollectionInfo`
+//! and one from `loams_query::StoredDoc` to `loams.document.v1.Document`, not
+//! one per surface.
 //!
 //! ## What is carried as JSON, and why
 //!
-//! Three things are `google.protobuf.Struct` rather than typed messages,
-//! because they are open documents today (the proto header gives the full
-//! reason): a collection's **schema**, the **fields and vectors** `AddFields`
-//! adds, and a **fragment's** Lance metadata. [`struct_of`] and [`json_of`]
-//! are the two ends of that, and between them a schema is the REST route's
-//! schema JSON unchanged, so moving a caller onto the RPC changes its
-//! envelope and not its schema.
+//! Six things are `google.protobuf.Struct` or `google.protobuf.Value` rather
+//! than typed messages, because they are open documents today (the proto
+//! headers give the full reason): a collection's **schema**, the **fields and
+//! vectors** `AddFields` adds, a **fragment's** Lance metadata, a **document's
+//! `source`**, its **vectors** (and a patch's, whose `null` removes one), and
+//! its **`fields`**. [`struct_of`] and [`json_of`] are two ends of the object
+//! case and [`proto_value`] and [`json_of_proto`] of the value case, and
+//! between them a schema or a document is the REST route's JSON unchanged, so
+//! moving a caller onto the RPC changes its envelope and not its payload.
 //!
-//! One normalisation happens in [`json_of`]: `google.protobuf.Value` holds
-//! every JSON number as a `double`, so an integral one is written back as an
-//! integer rather than `3.0`. Without it a schema would gain a decimal point
-//! on every `dim` and `max_fields` on the way out and back.
+//! One normalisation happens in [`json_of_proto`]: `google.protobuf.Value`
+//! holds every JSON number as a `double`, so an integral one is written back
+//! as an integer rather than `3.0`. Without it a schema would gain a decimal
+//! point on every `dim` and `max_fields` on the way out and back.
+
+use std::collections::BTreeMap;
 
 use buffa::Inline;
+use buffa::MapView;
 use buffa::MessageField;
 use buffa::MessageView as _;
 use buffa::enumeration::EnumValue;
-use loams_collection::{CollectionSchema, ConsistencyToken};
+use loams_collection::{CollectionSchema, ConsistencyToken, PrimaryKey};
+use loams_proto::google::protobuf::__buffa::view::{ListValueView, StructView, ValueView};
 use loams_proto::google::protobuf::ListValue;
 use loams_proto::google::protobuf::Struct;
 use loams_proto::google::protobuf::Value as ProtoValue;
-use loams_proto::google::protobuf::__buffa::view::StructView;
 use loams_proto::loams::collection::v1 as pb;
+use loams_proto::loams::document::v1 as doc;
+use loams_proto::loams::document::v1::__buffa::view::{DocumentIdView, FilterWriteCursorView};
 use loams_query::backlog::{BackpressureState, BackpressureStatus as NativeBackpressure};
+use loams_query::filter_write::FilterWriteResult as NativeFilterWrite;
 use loams_query::hot::{HotState, HotStateKind, HotStatus as CatalogHotStatus};
+use loams_query::json::pk as json_pk;
 use loams_query::json::schema;
 use loams_query::{
-    CollectionInfo as NativeCollectionInfo, ColumnRole, DeletionKind, ManifestInfo,
-    ScanColumn as NativeScanColumn, ScanFragment, ScanPlan as NativeScanPlan,
+    CollectionInfo as NativeCollectionInfo, ColumnRole, DeletionKind, FilterWriteCursor,
+    ManifestInfo, OpPosition as NativeOpPosition, OpResult as NativeOpResult,
+    ScanColumn as NativeScanColumn, ScanFragment, ScanPlan as NativeScanPlan, ServiceError,
+    StoredDoc,
 };
 use serde_json::{Map, Number, Value, json};
+
+/// The map type a generated `map<…>` field uses.
+type ProtoMap<V> = buffa::__private::HashMap<String, V>;
 
 /// A `Struct` from a JSON object, or `None` for anything else (a missing
 /// field, `null`, an array, a string): the caller asked for a document and
@@ -92,7 +110,7 @@ fn optional(value: Option<Struct>) -> MessageField<Struct, Inline<Struct>> {
 }
 
 /// A JSON value from a `google.protobuf.Value`.
-fn json_of_proto(value: &ProtoValue) -> Value {
+pub(super) fn json_of_proto(value: &ProtoValue) -> Value {
     if value.is_null() {
         return Value::Null;
     }
@@ -126,7 +144,7 @@ fn json_of_proto(value: &ProtoValue) -> Value {
 /// A `google.protobuf.Value` from a JSON value. A number a `double` cannot
 /// hold exactly (`u64::MAX` as written by a caller, say) becomes its nearest
 /// `double`: the alternative is dropping the schema field.
-fn proto_value(value: &Value) -> ProtoValue {
+pub(super) fn proto_value(value: &Value) -> ProtoValue {
     match value {
         Value::Null => ProtoValue::null(),
         Value::Bool(flag) => ProtoValue::from(*flag),
@@ -293,9 +311,7 @@ fn vectors(value: &Value) -> pb::HotStructureStatus {
                     (
                         name.clone(),
                         pb::HotColumnStatus {
-                            state: EnumValue::Known(hot_state(json_hot_state(
-                                column.get("state"),
-                            ))),
+                            state: EnumValue::Known(hot_state(json_hot_state(column.get("state")))),
                             source_version: column.get("source_version").and_then(Value::as_u64),
                             artifact_source_version: column
                                 .get("artifact_source_version")
@@ -374,16 +390,19 @@ pub(super) fn scan_plan(plan: &NativeScanPlan) -> pb::ScanPlan {
         collection_id: plan.collection_id.0,
         manifest_version: plan.manifest_version,
         schema_version: plan.schema_version,
-        lance: plan.lance.as_ref().map_or_else(MessageField::none, |lance| {
-            MessageField::some(pb::LanceVersionRef {
-                uri: lance.uri.clone(),
-                version: lance.version,
-                manifest_path: lance.manifest_path.clone(),
-                storage_format: lance.storage_format.clone(),
-                stable_row_ids: lance.stable_row_ids,
-                ..Default::default()
-            })
-        }),
+        lance: plan
+            .lance
+            .as_ref()
+            .map_or_else(MessageField::none, |lance| {
+                MessageField::some(pb::LanceVersionRef {
+                    uri: lance.uri.clone(),
+                    version: lance.version,
+                    manifest_path: lance.manifest_path.clone(),
+                    storage_format: lance.storage_format.clone(),
+                    stable_row_ids: lance.stable_row_ids,
+                    ..Default::default()
+                })
+            }),
         fragments: plan.fragments.iter().map(fragment).collect(),
         live_rows: plan.live_rows,
         columns: plan.columns.iter().map(scan_column).collect(),
@@ -477,4 +496,284 @@ fn scan_column(column: &NativeScanColumn) -> pb::ScanColumn {
         modifier: column.modifier.clone(),
         ..Default::default()
     }
+}
+// ----- `loams.document.v1`: requests -----
+//
+// A request message goes **back** to the JSON the REST route's own parser
+// takes (`api::collections::{op_from_json, patch_spec_from_json}`,
+// `loams_query::json::pk::from_json`), and a response message is built from
+// what the service returns. Both directions are here so that `WriteDocuments`
+// and its REST route run the *same* validation and produce the *same* refusals:
+// the only thing that changed between the two surfaces is the envelope the
+// caller posts in.
+
+/// A JSON value from a request's `google.protobuf.Value`, which is what
+/// `filter` and a document's vector are carried as.
+///
+/// A `Value` with no kind set — which is what proto3 JSON's `null` decodes to,
+/// and what a patch's `{"embedding": null}` arrives as — is JSON `null`. That
+/// is the load-bearing case: a `ListValue` could not carry it, so a vector
+/// could not be removed by a patch.
+pub(super) fn json_of_value_view(value: &ValueView<'_>) -> Value {
+    use loams_proto::google::protobuf::__buffa::view::oneof::value::Kind;
+    match value.kind.as_ref() {
+        None | Some(Kind::NullValue(_)) => Value::Null,
+        Some(Kind::NumberValue(number)) => {
+            Number::from_f64(*number).map_or(Value::Null, Value::Number)
+        }
+        Some(Kind::StringValue(text)) => Value::String((*text).to_owned()),
+        Some(Kind::BoolValue(flag)) => Value::Bool(*flag),
+        Some(Kind::StructValue(object)) => json_of_view(object),
+        Some(Kind::ListValue(list)) => json_of_list_view(list),
+    }
+}
+
+/// A JSON array from a request's `google.protobuf.ListValue`.
+fn json_of_list_view(list: &ListValueView<'_>) -> Value {
+    Value::Array(list.values.iter().map(json_of_value_view).collect())
+}
+
+/// The JSON object of a request's `map<string, google.protobuf.Value>`, which
+/// is a document's dense vectors (or a patch's, where a `null` value removes
+/// the vector).
+pub(super) fn json_of_values_view(vectors: &MapView<'_, &str, ValueView<'_>>) -> Value {
+    Value::Object(
+        vectors
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), json_of_value_view(value)))
+            .collect(),
+    )
+}
+
+/// The JSON object of a request's `map<string, google.protobuf.Struct>`, which
+/// is a document's sparse vectors.
+pub(super) fn json_of_structs_view(sparse: &MapView<'_, &str, StructView<'_>>) -> Value {
+    Value::Object(
+        sparse
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), json_of_view(value)))
+            .collect(),
+    )
+}
+
+/// A request's `DocumentId` as the REST route's id JSON, which is what
+/// `loams_query::json::pk::from_json` reads — including its refusal of an id
+/// that is not a `PrimaryKey`, which is why a `uuid` arm that is not a UUID is
+/// answered by the handler and not by the codec.
+///
+/// The *wire* spelling of the oneof names its arm (`{"uint": "1"}`), because a
+/// bare JSON `1` has no oneof spelling; the REST spelling of the same id is a
+/// bare `1`. This is where the two are reconciled, so that everything
+/// downstream — `op_from_json`, `pk::from_json`, the refusal messages — is
+/// reading exactly what the REST route reads.
+///
+/// An absent oneof (`{"id": {}}`, or no `id` at all) is JSON `null`, which
+/// `from_json` refuses with the REST route's own "expected an unsigned
+/// integer, a string or {"uuid": …}" message. The codec cannot refuse it: an
+/// empty message is a message.
+pub(super) fn json_of_document_id_view(id: &DocumentIdView<'_>) -> Value {
+    use loams_proto::loams::document::v1::__buffa::view::oneof::document_id::Id;
+    match id.id.as_ref() {
+        None => Value::Null,
+        Some(Id::Uint(number)) => json!(number),
+        Some(Id::String(text)) => json!(text),
+        Some(Id::Uuid(text)) => json!({ "uuid": text }),
+    }
+}
+
+// ----- `loams.document.v1`: answers -----
+
+/// A document as a get or a scroll answers it, which is exactly the REST
+/// route's `stored_doc_json`: the same source, the same vectors, the same
+/// `fields`, the same `seq_no` and `partition`, under the same keys.
+///
+/// An absent source is an absent field rather than an empty object, because
+/// "no source" and "an empty source" are different answers: `source: "none"`
+/// is a projection, not a document.
+pub(super) fn document(stored: &StoredDoc) -> doc::Document {
+    doc::Document {
+        id: MessageField::some(document_id(&stored.pk)),
+        source: stored
+            .source
+            .as_ref()
+            .map_or_else(MessageField::none, |source| {
+                MessageField::some(
+                    struct_of(&Value::Object(source.clone())).expect("an object is a Struct"),
+                )
+            }),
+        vectors: proto_values(&to_json_map(&stored.vectors)),
+        sparse_vectors: proto_structs(&to_json_map(&stored.sparse_vectors)),
+        fields: proto_values(&to_json_map(&stored.fields)),
+        // `optional` on the wire, always set here: a document that exists was
+        // written at *some* offset, and offset 0 is a real offset.
+        seq_no: Some(stored.seq_no),
+        partition: stored.partition,
+        ..Default::default()
+    }
+}
+
+/// A `DocumentId` from a native key, spelled by the REST route's own
+/// `json_pk::to_json` and read back arm by arm, so a `u64::MAX` id stays
+/// `18446744073709551615` rather than the `double` a `Value` would round it to.
+pub(super) fn document_id(pk: &PrimaryKey) -> doc::DocumentId {
+    doc::DocumentId {
+        id: Some(document_id_of(&json_pk::to_json(pk))),
+        ..Default::default()
+    }
+}
+
+/// The `DocumentId` arm a REST id JSON names. Total over the three
+/// `PrimaryKey` variants' spellings; anything else is a zero id, which a key
+/// this server produced never is.
+fn document_id_of(json: &Value) -> doc::__buffa::oneof::document_id::Id {
+    match json {
+        Value::Number(number) => {
+            doc::__buffa::oneof::document_id::Id::Uint(number.as_u64().unwrap_or_default())
+        }
+        Value::String(text) => doc::__buffa::oneof::document_id::Id::String(text.clone()),
+        Value::Object(object) => doc::__buffa::oneof::document_id::Id::Uuid(
+            object
+                .get("uuid")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        ),
+        _ => doc::__buffa::oneof::document_id::Id::Uint(0),
+    }
+}
+
+/// The outcome of one op, as the enum the wire spells in `UPPER_SNAKE`.
+///
+/// `Rejected` is not an outcome this message can carry: the REST route refuses
+/// the whole request with that op's error and its index, and so does the RPC
+/// (API1 Task 3), so the handler never reaches here with one. It reads as
+/// `accepted` rather than panicking, because a result set this server did not
+/// produce must not take a process down.
+pub(super) fn op_result(result: &NativeOpResult) -> EnumValue<doc::OpResult> {
+    let value = match result {
+        NativeOpResult::Created => doc::OpResult::OP_RESULT_CREATED,
+        NativeOpResult::Updated => doc::OpResult::OP_RESULT_UPDATED,
+        NativeOpResult::Deleted => doc::OpResult::OP_RESULT_DELETED,
+        NativeOpResult::NotFound => doc::OpResult::OP_RESULT_NOT_FOUND,
+        NativeOpResult::Noop => doc::OpResult::OP_RESULT_NOOP,
+        NativeOpResult::Accepted | NativeOpResult::Rejected(_) => doc::OpResult::OP_RESULT_ACCEPTED,
+    };
+    EnumValue::Known(value)
+}
+
+/// Where one op was appended. An op that was not placed answers an entry with
+/// no fields, which is how a `noop` reports itself: proto3 JSON has no `null`
+/// for an element of a `repeated` field of messages.
+pub(super) fn op_position(position: Option<&NativeOpPosition>) -> doc::OpPosition {
+    let Some(position) = position else {
+        return doc::OpPosition::default();
+    };
+    doc::OpPosition {
+        partition: position.partition,
+        seq_no: Some(position.seq_no),
+        ..Default::default()
+    }
+}
+
+/// The answer to a filter write, which is the same nine numbers whichever of
+/// the two filter writes produced it.
+pub(super) fn filter_write(result: &NativeFilterWrite) -> doc::FilterWriteResponse {
+    doc::FilterWriteResponse {
+        // Always set, including at zero: these are counts the server measured,
+        // and an absent count would read as "not answered".
+        matched: Some(result.matched),
+        affected: Some(result.affected),
+        written: Some(result.written),
+        batches: Some(result.batches),
+        rows_remaining: result.rows_remaining,
+        cursor: result
+            .cursor
+            .as_ref()
+            .map_or_else(MessageField::none, |cursor| {
+                MessageField::some(filter_write_cursor(cursor))
+            }),
+        token: result.token.to_string(),
+        pin: MessageField::some(doc::Pin {
+            manifest_version: result.pin.manifest_version,
+            token: result.pin.token.to_string(),
+            ..Default::default()
+        }),
+        retry_after_ms: result.retry_after_ms,
+        ..Default::default()
+    }
+}
+
+/// The cursor that finishes a partial filter write at the same pin. It is a
+/// message rather than an opaque string so a caller can read what it resumes
+/// at, and it round trips: it is built from exactly the fields
+/// `FilterWriteResult.cursor` holds.
+fn filter_write_cursor(cursor: &FilterWriteCursor) -> doc::FilterWriteCursor {
+    doc::FilterWriteCursor {
+        after: MessageField::some(document_id(&cursor.after)),
+        manifest_version: cursor.manifest_version,
+        token: cursor.token.to_string(),
+        ..Default::default()
+    }
+}
+
+/// A `FilterWriteCursor` a request carries, back to the native one.
+///
+/// Absent is `None` (a call that starts a filter write rather than resuming
+/// one), and an unreadable `after` or `token` is refused by the caller with the
+/// REST route's own error rather than silently starting a new filter write.
+pub(super) fn filter_write_cursor_of(
+    cursor: &FilterWriteCursorView<'_>,
+) -> Result<FilterWriteCursor, ServiceError> {
+    let after = match cursor.after.as_option() {
+        None => {
+            return Err(ServiceError::InvalidArgument(
+                "cursor.after is required".to_string(),
+            ));
+        }
+        Some(after) => json_pk::from_json(&json_of_document_id_view(after))
+            .map_err(|err| ServiceError::InvalidArgument(format!("cursor.after: {err}")))?,
+    };
+    let token = cursor
+        .token
+        .parse()
+        .map_err(|err| ServiceError::InvalidArgument(format!("cursor.token: {err}")))?;
+    Ok(FilterWriteCursor {
+        manifest_version: cursor.manifest_version,
+        token,
+        after,
+    })
+}
+
+/// A map of native values as the JSON object the REST route would have written
+/// for it. A value that cannot serialize (a NaN in a field value, say) becomes
+/// `null` rather than failing a read the rest of the document is fine for: the
+/// REST route's `stored_doc_json` degrades the same way.
+fn to_json_map<T: serde::Serialize>(values: &BTreeMap<String, T>) -> Map<String, Value> {
+    let mut object = Map::new();
+    for (name, value) in values {
+        object.insert(
+            name.clone(),
+            serde_json::to_value(value).unwrap_or(Value::Null),
+        );
+    }
+    object
+}
+
+/// A `map<string, google.protobuf.Value>` from a JSON object.
+fn proto_values(values: &Map<String, Value>) -> ProtoMap<ProtoValue> {
+    values
+        .iter()
+        .map(|(name, value)| (name.clone(), proto_value(value)))
+        .collect()
+}
+
+/// A `map<string, google.protobuf.Struct>` from a JSON object. A value that is
+/// not an object carries nothing rather than an empty object: a sparse vector
+/// this server holds always has `indices` and `values`, so anything else means
+/// the document was written by something that did not.
+fn proto_structs(values: &Map<String, Value>) -> ProtoMap<Struct> {
+    values
+        .iter()
+        .filter_map(|(name, value)| struct_of(value).map(|struct_| (name.clone(), struct_)))
+        .collect()
 }

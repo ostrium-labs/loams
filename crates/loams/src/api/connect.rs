@@ -85,11 +85,11 @@ struct Package {
 ///
 /// API1 Task 1 starts the list with the two packages whose protos exist and
 /// whose availability is decided: the one this binary serves and the one it
-/// does not. Tasks 2–8 append `loams.collection.v1`, `loams.sql.v1`,
-/// `loams.link.v1`, `loams.stream.v1`, `loams.admin.v1`, `loams.auth.v1`,
-/// and the cluster-listener-only `loams.internal.v1`, flipping each row's
-/// `available` as its handler lands. A package with no proto yet has no row,
-/// so `GetInstance.services[]` never advertises a contract that does not
+/// does not. Tasks 2–8 append `loams.collection.v1`, `loams.document.v1`,
+/// `loams.sql.v1`, `loams.link.v1`, `loams.stream.v1`, `loams.admin.v1`,
+/// `loams.auth.v1`, and the cluster-listener-only `loams.internal.v1`, flipping
+/// each row's `available` as its handler lands. A package with no proto yet has
+/// no row, so `GetInstance.services[]` never advertises a contract that does not
 /// exist.
 const CATALOGUE: &[Package] = &[
     Package {
@@ -107,6 +107,17 @@ const CATALOGUE: &[Package] = &[
             "loams.collection.v1.NamespaceService",
             "loams.collection.v1.CollectionService",
         ],
+        available: true,
+        unstable: false,
+    },
+    Package {
+        // Documents: the atomic write, the get, the scroll, the count and the
+        // two filter writes (design §44 §5.1; API1 Task 3). The REST routes it
+        // replaces stay until Task 9, so both surfaces answer today, and this
+        // is the first package whose service needs an `idempotency_key`
+        // (`WriteDocuments`, plan ruling 2.4).
+        package: "loams.document.v1",
+        services: &["loams.document.v1.DocumentService"],
         available: true,
         unstable: false,
     },
@@ -271,17 +282,21 @@ impl LiveService for LiveAbsent {
 /// `metadata` that goes with it (design §44 §7.4, D611). `metadata` never
 /// holds a secret. Every reason this module raises is registered in
 /// `docs/api/reasons.md`.
+///
+/// The metadata values are **owned** because they are not always literals: an
+/// `ApiError`'s structured fields are stringified on the way in (they are
+/// numbers in the REST body), so a caller building one has to own the text.
 pub(crate) fn refuse(
     code: ErrorCode,
     reason: &str,
     message: impl Into<String>,
-    metadata: &[(&str, &str)],
+    metadata: &[(&str, String)],
 ) -> ConnectError {
     let info = ErrorInfo {
         reason: reason.to_owned(),
         metadata: metadata
             .iter()
-            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
             .collect(),
         ..Default::default()
     };
@@ -300,7 +315,7 @@ fn not_in_variant(rpc: &str) -> ConnectError {
         ErrorCode::Unimplemented,
         "feature_not_in_variant",
         format!("{rpc} is not in the {VARIANT} variant"),
-        &[("variant", VARIANT)],
+        &[("variant", VARIANT.to_owned())],
     )
 }
 
@@ -347,6 +362,7 @@ pub(crate) fn routes(state: &AppState) -> AxumRouter {
     rpc = Arc::new(Instance).register(rpc);
     rpc = Arc::new(LiveAbsent).register(rpc);
     rpc = super::connect_collections::register(rpc, state);
+    rpc = super::connect_documents::register(rpc, state);
     let (rpc, _health) = connectrpc_health::install_static(rpc, served_services());
     let rpc = match reflector(state) {
         Some(reflector) => connectrpc_reflection::install(rpc, reflector),

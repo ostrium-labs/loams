@@ -2,7 +2,7 @@
 //! Task 7; plan M1.2 Task 11 rule 3 and Ruling 17).
 
 use axum::extract::rejection::{BytesRejection, PathRejection, QueryRejection};
-use axum::http::{HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use loams_common::meta::{ApplyError, MetaError};
 use loams_link::LinkError;
@@ -73,27 +73,38 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        // A 429's `Retry-After`: its `retry_after_ms`, rounded up to seconds.
-        let retry_after = (self.status == StatusCode::TOO_MANY_REQUESTS)
-            .then(|| self.extra.get("retry_after_ms").and_then(Value::as_u64))
-            .flatten()
-            .map(|ms| ms.div_ceil(1000).max(1));
+        let headers = self.headers();
         let mut body = serde_json::Map::new();
         body.insert("error".to_string(), Value::from(self.code));
         body.insert("message".to_string(), Value::from(self.message));
         body.extend(self.extra);
         let mut response = (self.status, axum::Json(Value::Object(body))).into_response();
-        // Every 503 succeeds on retry (Ruling 17).
-        if self.status == StatusCode::SERVICE_UNAVAILABLE {
-            response
-                .headers_mut()
-                .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
-        } else if let Some(seconds) = retry_after {
-            response
-                .headers_mut()
-                .insert(header::RETRY_AFTER, HeaderValue::from(seconds));
-        }
+        *response.headers_mut() = headers;
         response
+    }
+}
+
+impl ApiError {
+    /// The response headers this error carries: `Retry-After` on a 503 (every
+    /// 503 succeeds on retry, Ruling 17) and on a 429 (its `retry_after_ms`
+    /// rounded up to seconds), and nothing else.
+    ///
+    /// The Connect error carries the same headers (design §44 §7.4), which is
+    /// why the rule is a method on the error rather than a line inside
+    /// `into_response`: `api::connect_errors::refused` sets them on the
+    /// `ConnectError` instead of on a response, and the two must not drift.
+    pub(crate) fn headers(&self) -> HeaderMap {
+        let retry_after = (self.status == StatusCode::TOO_MANY_REQUESTS)
+            .then(|| self.extra.get("retry_after_ms").and_then(Value::as_u64))
+            .flatten()
+            .map(|ms| ms.div_ceil(1000).max(1));
+        let mut headers = HeaderMap::new();
+        if self.status == StatusCode::SERVICE_UNAVAILABLE {
+            headers.insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+        } else if let Some(seconds) = retry_after {
+            headers.insert(header::RETRY_AFTER, HeaderValue::from(seconds));
+        }
+        headers
     }
 }
 

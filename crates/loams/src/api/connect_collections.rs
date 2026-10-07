@@ -28,7 +28,7 @@
 //!
 //! ## Failures
 //!
-//! Every failure goes through [`refused`], which carries one
+//! Every failure goes through [`super::connect_errors`], which carries one
 //! `loams.errors.v1.ErrorInfo` in the Connect error's details whose `reason`
 //! is registered in `docs/api/reasons.md` (D611). `ApiError`'s own codes
 //! become the reasons unchanged (plan ruling 1.6), so there is no second error
@@ -41,24 +41,24 @@ use std::sync::Arc;
 
 use buffa::MessageField;
 use buffa::RepeatedView;
-use connectrpc::{ConnectError, ErrorCode, RequestContext, Response, ServiceRequest, ServiceResult};
-use loams_common::meta::{HotConfig, MetaError};
+use connectrpc::{ConnectError, RequestContext, Response, ServiceRequest, ServiceResult};
+use loams_common::meta::HotConfig;
 use loams_proto::loams::collection::v1 as pb;
 use loams_proto::loams::collection::v1::{
     AddFieldsRequest, AddFieldsResponse, CollectionService, CollectionServiceExt,
-    CreateCollectionRequest, CreateNamespaceRequest, CreateNamespaceResponse, DropCollectionRequest,
-    DropCollectionResponse, GetCollectionRequest, ListCollectionsRequest, ListCollectionsResponse,
-    ListVersionsRequest, ListVersionsResponse, NamespaceService, NamespaceServiceExt, ScanRequest,
-    SetHotRequest, SetHotResponse, UpdateAliasesRequest, UpdateAliasesResponse,
-    WarmCollectionRequest, WarmCollectionResponse,
+    CreateCollectionRequest, CreateNamespaceRequest, CreateNamespaceResponse,
+    DropCollectionRequest, DropCollectionResponse, GetCollectionRequest, ListCollectionsRequest,
+    ListCollectionsResponse, ListVersionsRequest, ListVersionsResponse, NamespaceService,
+    NamespaceServiceExt, ScanRequest, SetHotRequest, SetHotResponse, UpdateAliasesRequest,
+    UpdateAliasesResponse, WarmCollectionRequest, WarmCollectionResponse,
 };
 use loams_query::json::schema;
 use loams_query::{ScanAt, ServiceError, alias_actions_from_json};
 use serde_json::{Map, Value, json};
 
-use super::connect::refuse;
+use super::connect_errors::{invalid, refused, refused_meta, refused_service};
 use super::connect_messages as msg;
-use super::{ApiError, AppState, CONSISTENCY_TOKEN, hot};
+use super::{AppState, CONSISTENCY_TOKEN, hot};
 
 /// Both services of `loams.collection.v1`, over the server's state.
 #[derive(Debug)]
@@ -94,72 +94,6 @@ impl Collections {
             ));
         }
         Ok((namespace, collection))
-    }
-}
-
-// ----- Failures -----
-
-/// A malformed request: `invalid_argument` naming the field that is missing.
-fn invalid(field: &str, message: &str) -> ConnectError {
-    refuse(
-        ErrorCode::InvalidArgument,
-        "invalid_argument",
-        message.to_owned(),
-        &[("field", field)],
-    )
-}
-
-/// An `ApiError` as a Connect error. Its code becomes the registry `reason`
-/// unchanged (plan ruling 1.6) and its structured fields — `kind` and `name`
-/// for a `NotFound`, `field`, `retry_after_ms` — become `metadata`, so a
-/// caller branches on the reason and reads the specifics without parsing the
-/// message.
-fn refused(err: ApiError) -> ConnectError {
-    let (code, reason) = classify(err.code());
-    let metadata: Vec<(&str, &str)> = err
-        .extra()
-        .iter()
-        .filter_map(|(key, value)| value.as_str().map(|value| (key.as_str(), value)))
-        .collect();
-    refuse(code, reason, err.message(), &metadata)
-}
-
-/// A service failure as a Connect error, through the same `ApiError` the REST
-/// route builds, so the two surfaces classify a failure identically.
-fn refused_service(err: ServiceError) -> ConnectError {
-    refused(ApiError::from(err))
-}
-
-/// A metastore failure, the same way.
-fn refused_meta(err: MetaError) -> ConnectError {
-    refused(ApiError::from(err))
-}
-
-/// The Connect code and registry reason an `ApiError` code maps to.
-///
-/// Every code `api::errors` raises is a registry row except three, which fold
-/// into the row they mean: a `schema_violation` is an `invalid_argument` (the
-/// offending field rides in `metadata`), a REST `conflict` is an `aborted` (a
-/// fenced lease or a version mismatch is a concurrent write that won), and a
-/// REST `timeout` is a `deadline_exceeded`. A code with no mapping is a layer
-/// that grew one behind the registry, so it answers `internal` and is logged
-/// rather than inventing a reason.
-fn classify(code: &str) -> (ErrorCode, &'static str) {
-    match code {
-        "invalid_argument" | "schema_violation" => (ErrorCode::InvalidArgument, "invalid_argument"),
-        "not_found" => (ErrorCode::NotFound, "not_found"),
-        "already_exists" => (ErrorCode::AlreadyExists, "already_exists"),
-        "conflict" => (ErrorCode::Aborted, "aborted"),
-        "resource_exhausted" => (ErrorCode::ResourceExhausted, "resource_exhausted"),
-        "unavailable" => (ErrorCode::Unavailable, "unavailable"),
-        "timeout" => (ErrorCode::DeadlineExceeded, "deadline_exceeded"),
-        "permission_denied" => (ErrorCode::PermissionDenied, "permission_denied"),
-        "unauthenticated" => (ErrorCode::Unauthenticated, "unauthenticated"),
-        "internal" => (ErrorCode::Internal, "internal"),
-        other => {
-            tracing::error!(code = other, "an API error code has no Connect mapping");
-            (ErrorCode::Internal, "internal")
-        }
     }
 }
 
@@ -409,10 +343,8 @@ impl CollectionService for Collections {
         // the same `loams-consistency-token` header the REST route sets and in
         // `ScanPlan.pin.token`, and it is a `ScanPoint.token` that plans the
         // same state again (M1.2 rule 6).
-        Ok(Response::new(msg::scan_plan(&plan)).with_header(
-            CONSISTENCY_TOKEN.as_str(),
-            msg::token_of(&plan.pin.token),
-        ))
+        Ok(Response::new(msg::scan_plan(&plan))
+            .with_header(CONSISTENCY_TOKEN.as_str(), msg::token_of(&plan.pin.token)))
     }
 
     async fn update_aliases(
