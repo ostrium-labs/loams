@@ -30,7 +30,7 @@
 Same as the M1 overview §8, plus:
 - **No billing, no plan, no price, no invoice, no usage record** in any type, table, proto field, metric or endpoint added here. Review rejects a field named `plan`, `price`, `invoice`, `credit`, `meter`, `billable` or `usage` (the limits API's `used` is *enforcement state* and is documented as such). `scripts/ci/no-metering.sh` (Task 8) enforces the names.
 - **No endpoint that spends money, changes a plan or reads billing-grade usage** (D550).
-- **The dependency runs one way** (D551). No crate may depend on anything named `loam-platform*`; a `cargo deny` ban and the guard check it.
+- **The dependency runs one way** (D551). No crate may depend on anything named `loams-platform*`; a `cargo deny` ban and the guard check it.
 - **Idempotent mutations.** Every mutating RPC takes a `client_token` and replays return the first result.
 - **Deterministic rendering.** The Git writer produces byte-identical files from the same records (a golden test per resource).
 - **Agents cannot hold operator roles.** The cross-org operator relation cannot be granted to an `agent` principal; a test in Task 2 enforces it.
@@ -172,7 +172,7 @@ docs/design/41-multitenant-byoc-control-plane.md  docs/design/13-decision-log.md
 
 **Files:** `scripts/ci/no-metering.sh`, `.github/workflows/ci.yml`, `deny.toml`, `CONTRIBUTING.md` (a short section).
 
-**Produces:** the guard of D552: it fails if `loams.meter`, `meter.sock`, `HostReport`, `x-loams-usage` or `loams_meter_` appears in tracked files outside the allowlist (Q554: `docs/design/13-decision-log.md`, `docs/design/_pending/`, `docs/design/27-usage-hooks.md`, `docs/design/41-*.md`, `docs/open-core.md`, `docs/plans/2026-10-0*-rn1-*.md`, `docs/plans/2026-10-02-mt4-*.md`, `CHANGELOG.md`); it fails if any `Cargo.toml` or lockfile names a package starting with `loam-platform`; a `cargo deny` ban on the same; a conformance test in `loams-runner` (if RN1 Task 3 has merged) that `InvocationObserver`'s data type has no buffer, socket or serialization derive (`Observation` is not `Serialize`).
+**Produces:** the guard of D552: it fails if `loams.meter`, `meter.sock`, `HostReport`, `x-loams-usage` or `loams_meter_` appears in tracked files outside the allowlist (Q554: `docs/design/13-decision-log.md`, `docs/design/_pending/`, `docs/design/27-usage-hooks.md`, `docs/design/41-*.md`, `docs/open-core.md`, `docs/plans/2026-10-0*-rn1-*.md`, `docs/plans/2026-10-02-mt4-*.md`, `CHANGELOG.md`); it fails if any `Cargo.toml` or lockfile names a package starting with `loams-platform`; a `cargo deny` ban on the same; a conformance test in `loams-runner` (if RN1 Task 3 has merged) that `InvocationObserver`'s data type has no buffer, socket or serialization derive (`Observation` is not `Serialize`).
 
 **Tests:** `guard_rejects_meter_names` (a fixture tree with a forbidden name); `guard_allows_allowlisted_docs`; `guard_rejects_platform_dependency`; `observation_is_not_serializable` (a compile-fail test with `trybuild`).
 
@@ -192,9 +192,9 @@ docs/design/41-multitenant-byoc-control-plane.md  docs/design/13-decision-log.md
 
 | Item | Where |
 |---|---|
-| Metering, billing, plans, entitlements, the plan-to-limits mapping, invoices, credits | `loam-platform` (docs 01, 06, 07) |
-| The hosted cloud's commercial APIs and the marketplace install and billing APIs | `loam-platform` (docs 05, 07); the install saga calls Task 4's Git writer (Q552) |
-| Hosted-fleet operations: pre-warming, capacity, hosted Neon/WeSQL automation, abuse handling | `loam-platform` (D554) |
+| Metering, billing, plans, entitlements, the plan-to-limits mapping, invoices, credits | `loams-platform` (docs 01, 06, 07) |
+| The hosted cloud's commercial APIs and the marketplace install and billing APIs | `loams-platform` (docs 05, 07); the install saga calls Task 4's Git writer (Q552) |
+| Hosted-fleet operations: pre-warming, capacity, hosted Neon/WeSQL automation, abuse handling | `loams-platform` (D554) |
 | `loams-meta-remote` (BYOC-managed-meta) | the M2.x plan (D64, Q551) |
 | A real CKE apply, a real BYOC customer | manual, after the owner's account decisions |
 | An external security review | the owner's action (Q557) |

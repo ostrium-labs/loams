@@ -1,6 +1,8 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # loams-specview
 
-A dev tool that shows the Loams router's distributed-system checks in a browser while they run: the TLA+ specs under TLC, with step-through counterexample traces, and the router's Rust tests. Design: [§31](../../docs/design/31-loam-router-and-verification.md) §11.4. It is not published and nothing else depends on it.
+A dev tool that shows the Loams router's distributed-system checks in a browser while they run: the TLA+ specs under TLC, with step-through counterexample traces, and the router's Rust tests. Design: [§31](../../docs/design/31-loams-router-and-verification.md) §11.4. It is not published and nothing else depends on it.
 
 ## Run it
 

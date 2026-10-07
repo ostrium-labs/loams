@@ -30,7 +30,7 @@ Workers receive tasks through transports: HTTP push (Resonate calls the worker),
 1. **It already runs on a bucket.** Resonate's `resonate-server-blob` crate stores each origin as one canonical document at `wf/<origin>` and commits every transition with one conditional PUT (`If-None-Match: *` / `If-Match: <etag>`). Deadlines are zero-byte timer objects `t/<NN>/<deadline>_<target>@<token>`. It needs no log, lock or consensus, and it is built on **`object_store` 0.14** — the same crate as `loams-store`.
 2. **It is a plugin architecture.** A Resonate server is assembled from *server* (storage), *worker* (transport) and *gateway* (edge) plugins behind the `ResonateServer` trait (`resonate-core`). Loams registers its own plugins; it does not fork the protocol.
 3. **It is formally specified and differentially tested.** Every storage engine is compared step by step against an executable oracle on randomized traffic, with a linearizability checker and a trace checker against the Lean/TLA+ models. A Loams backend inherits that harness as its conformance gate.
-4. **Its task leases match Loams's model.** Task `version` is a fencing token, exactly like the metastore's lease epochs (§09 §3), so zombie workers are rejected the same way.
+4. **Its task leases match Loams’ model.** Task `version` is a fencing token, exactly like the metastore's lease epochs (§09 §3), so zombie workers are rejected the same way.
 
 ## 3. Architecture
 
@@ -59,7 +59,7 @@ Workers receive tasks through transports: HTTP push (Resonate calls the worker),
 
 - Fork, pinned to a git revision (the crates are not on crates.io): `resonate-core`, `resonate-plugin`, `resonate-gateway-http`, `resonate-server-blob`, `resonate-transport-http-push`, `resonate-transport-http-poll`. Workspace version at research time: 0.10.1.
 - Hand the blob server an `object_store` built by `loams-store` (so fault injection, provider conformance and credentials are shared) with the namespace prefix.
-- Replace `resonate-auth` with Loams's authN/Z (§10 §4); keep the protocol and error codes byte-compatible.
+- Replace `resonate-auth` with Loams’ authN/Z (§10 §4); keep the protocol and error codes byte-compatible.
 - Promise and task search keep the blob backend's semantics: a scan of the namespace's documents, correct but not atomic and not fast. Off by default for large namespaces.
 
 **Exit gates:** Resonate's TypeScript and Python SDK test suites pass unmodified against Loams; Resonate's differential and linearizability harness passes against a 3-gateway Loams deployment over one bucket, including object-store fault injection (412/409/5xx, lost responses).

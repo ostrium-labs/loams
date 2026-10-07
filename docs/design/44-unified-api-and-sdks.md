@@ -25,7 +25,7 @@ This document turns that into decisions **D600–D619** and open questions **Q60
 - No new compatibility surface and no removal of one (D603).
 - No client- or bidi-streaming in the application API (D420's rule stands: browsers and URLSession cannot do it; half-duplex works through every proxy). Bulk upload that needs it goes through Flight `DoPut` (gRPC only) or chunked unary writes (§7.5).
 - No hand-written REST SDKs. M1.6's Python and TypeScript REST SDKs are retired by this work (D604, pre-release, no users to migrate).
-- No billing/metering RPCs here: the meter protocol belongs to the private `loam-platform` (D220, D552) and is **not** in the open protos or SDKs.
+- No billing/metering RPCs here: the meter protocol belongs to the private `loams-platform` (D220, D552) and is **not** in the open protos or SDKs.
 
 ## 3. What exists today (checked 2026-10-02 on `dev`)
 
@@ -296,7 +296,7 @@ sdks/
 
 ### 10.5 Reference docs (D618)
 
-`buf generate` with `buf.build/community/pseudomuto-doc` (or `protoc-gen-doc`) emits a Markdown API reference from comments; the `loams.dev` docs site (`loam-cloud`) renders it with per-RPC curl/Python/TS/Go snippets taken from the **fixture corpus** (so every example is tested). Each SDK has its own README with the same quickstart. Reasons are listed in `reasons.md`. The docs pipeline is a task in SDK1 (generation) and a follow-up issue in `loam-cloud` (rendering; owner decision on site layout).
+`buf generate` with `buf.build/community/pseudomuto-doc` (or `protoc-gen-doc`) emits a Markdown API reference from comments; the `loams.dev` docs site (`loams-cloud`) renders it with per-RPC curl/Python/TS/Go snippets taken from the **fixture corpus** (so every example is tested). Each SDK has its own README with the same quickstart. Reasons are listed in `reasons.md`. The docs pipeline is a task in SDK1 (generation) and a follow-up issue in `loams-cloud` (rendering; owner decision on site layout).
 
 ## 11. Publishing (D615, issue #254)
 
@@ -307,7 +307,7 @@ All publishing is from GitHub Actions on a signed tag `sdk-<lang>-v<semver>`; th
 | crates.io | Trusted Publishing (OIDC) | crate `loams`; `loams-proto` split if the generated types are large |
 | PyPI | Trusted Publishers (OIDC) | wheel is pure Python; extras `flight`, `arrow`, `polars` |
 | npm | Trusted Publishing (OIDC) with provenance | scope `@loams` must be owned by the org |
-| Go | git tag on the mirror repo; `proxy.golang.org` and `pkg.go.dev` pick it up | vanity path `loams.dev/go` needs `go-import` meta on `loams.dev` (`loam-cloud` task) |
+| Go | git tag on the mirror repo; `proxy.golang.org` and `pkg.go.dev` pick it up | vanity path `loams.dev/go` needs `go-import` meta on `loams.dev` (`loams-cloud` task) |
 | Maven Central | Central Portal user token + GPG signing key in Actions secrets (no OIDC) | namespace `dev.loams` requires DNS TXT verification of `loams.dev` |
 | RubyGems | Trusted Publishing (OIDC) | gem `loams` |
 | Packagist | webhook from the mirror repo (`ostrium-labs/loams-php`) on tag; no push | package `loams/loams` |

@@ -1,8 +1,10 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # Loams mobile
 
 Native phone apps for [Loams](https://github.com/ostrium-labs/loams): **Loams for Android** (Kotlin, Jetpack Compose, connect-kotlin) and **Loams for iOS** (SwiftUI, connect-swift). Both talk Connect-RPC to a Loams instance, generated from the same protos the server uses. There is no web view, no bridge and no Kotlin Multiplatform.
 
-The design is §37 of the main repository ([`docs/design/37-desktop-and-mobile-apps.md`](https://github.com/ostrium-labs/loams/blob/main/docs/design/37-desktop-and-mobile-apps.md)); the plans are AP2 (Android) and AP3 (iOS).
+The design is §37 of the main repository ([`docs/design/37-desktop-and-mobile-apps.md`](https://github.com/ostrium-labs/loams/blob/dev/docs/design/37-desktop-and-mobile-apps.md)); the plans are AP2 (Android) and AP3 (iOS).
 
 > **Status: scaffold, mock-first.** Everything runs against the local mock server in [`mock/`](mock/). A real Loams server needs the unified auth plan (pairing grant, DPoP, the Authentik token exchange) and AP4 (the server side of the app protos). Nothing is published to a store yet.
 

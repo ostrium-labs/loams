@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../../../docs/assets/loams-banner.svg)
+
 # Loams Desktop identity assets
 
 The existing Loams placeholder L-and-dot mark is the canonical desktop icon. `dev.loams.desktop.svg` is used to generate the shared PNG and Windows icon; the monochrome UI logo and pixel loader use the same identity.

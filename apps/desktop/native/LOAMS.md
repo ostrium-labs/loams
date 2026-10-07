@@ -29,7 +29,7 @@ In that build the browser reports that it is unavailable; it is not replaced wit
 - Runtime overrides use `LOAMS_DESKTOP_*`, for example `LOAMS_DESKTOP_DATA_DIR`, `LOAMS_DESKTOP_IPC_PORT`, `LOAMS_DESKTOP_EDGE_URL`. No `ZERON_*` desktop env aliases. The pinned upstream GPUI dependency retains its own `ZERON_GPU_STATS` diagnostic flag; it is not a desktop configuration alias.
 - Unix data: `~/.loams-desktop`; Windows data: `%LOCALAPPDATA%\Loams Desktop`. No automatic adoption, rename, or deletion of upstream data. An explicit data-dir override is the user's choice.
 - User services: `loams-desktop.service` (Linux) and `dev.loams.desktop` (launchd). Loams Bot self-discovery accepts only the `loams-desktop` executable stem, not test/example binaries.
-- Loams server configuration keeps `LOAMS_URL`, the existing explicit `LOAM_URL` fallback, `LOAMS_MOCK`, `LOAMS_BOT_URL`, `LOAMS_OIDC_ISSUER`, and `LOAMS_BOT_EXECUTABLE`.
+- Loams server configuration keeps `LOAMS_URL`, the existing explicit `LOAMS_URL` fallback, `LOAMS_MOCK`, `LOAMS_BOT_URL`, `LOAMS_OIDC_ISSUER`, and `LOAMS_BOT_EXECUTABLE`.
 
 ## Disabled defaults and compatibility
 

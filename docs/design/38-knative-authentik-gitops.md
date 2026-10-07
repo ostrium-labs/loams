@@ -4,9 +4,9 @@ Status: **Approved** (owner defaults, 2026-10-02: "do suggested for all") · 202
 
 It turns the ruling into decisions **D440–D459** and open questions **Q440–Q453** (Q454–Q459 are reserved and unused). The owner approved them on 2026-10-02 ("do suggested for all"). Plans: [MT1](../plans/2026-10-02-mt1-authentik-identity.md) (Authentik identity), [MT2](../plans/2026-10-02-mt2-knative.md) (Knative Serving and Eventing) and [MT3](../plans/2026-10-02-mt3-gitops-clever.md) (GitOps).
 
-**Amends** [§19](19-console-identity-and-agents.md) (the IdP in front of Loams), [§22](22-showcase-suite.md) (D-SC-3: the suite's IdP), [§24](24-cpu-time-runtime.md) (a Knative runner for the `http-port` contract), [§25](25-clever-cloud-stack.md) (what "GitOps from Clever Cloud" means; new sync waves) and [§27](27-usage-hooks.md) (Knative pods under the hooks contract, with no meter). **Narrows** D111 (the unified auth plan) and D221 (SAML is brokered through Authentik, not Keycloak). The private side of the same ruling (the hosted Loams Cloud on Cloudflare, the protocol gateway, the Cloudflare target, the metering ledger) is designed in `loam-platform`. This repository does not depend on it.
+**Amends** [§19](19-console-identity-and-agents.md) (the IdP in front of Loams), [§22](22-showcase-suite.md) (D-SC-3: the suite's IdP), [§24](24-cpu-time-runtime.md) (a Knative runner for the `http-port` contract), [§25](25-clever-cloud-stack.md) (what "GitOps from Clever Cloud" means; new sync waves) and [§27](27-usage-hooks.md) (Knative pods under the hooks contract, with no meter). **Narrows** D111 (the unified auth plan) and D221 (SAML is brokered through Authentik, not Keycloak). The private side of the same ruling (the hosted Loams Cloud on Cloudflare, the protocol gateway, the Cloudflare target, the metering ledger) is designed in `loams-platform`. This repository does not depend on it.
 
-> **Amended 2026-10-02 (later the same day) by [§41](41-multitenant-byoc-control-plane.md) (D540, D541, D548, owner open-core ruling).** The owner ruled that the **Loams Multitenant BYOC Control Plane with GitOps** (multi-tenancy, Knative, Argo CD GitOps with Clever Cloud's operator fork, Authentik, BYOC) is **open source**, and that metering and the commercial APIs are private because **integrity** is the security principle. This document's non-goals that left "multi-org control planes and BYOC management" to `loam-platform` (§2.2, D440's first sentence, §3.3's last clause, MT3's last table, §7) are **superseded**: those are goals of §41. "No metering in this repository" (D444) **stands**, with integrity as the reason. §27's references to a CloudEvents form and a usage reporter are superseded by D548.
+> **Amended 2026-10-02 (later the same day) by [§41](41-multitenant-byoc-control-plane.md) (D540, D541, D548, owner open-core ruling).** The owner ruled that the **Loams Multitenant BYOC Control Plane with GitOps** (multi-tenancy, Knative, Argo CD GitOps with Clever Cloud's operator fork, Authentik, BYOC) is **open source**, and that metering and the commercial APIs are private because **integrity** is the security principle. This document's non-goals that left "multi-org control planes and BYOC management" to `loams-platform` (§2.2, D440's first sentence, §3.3's last clause, MT3's last table, §7) are **superseded**: those are goals of §41. "No metering in this repository" (D444) **stands**, with integrity as the reason. §27's references to a CloudEvents form and a usage reporter are superseded by D548.
 
 Markers: **(verify)** means not checked against a primary source; the task that depends on it checks it first. **(estimate)** means computed, not measured. Every version, licence and status claim with a date was read on 2026-10-02 from the source named in §13.
 
@@ -18,19 +18,19 @@ Markers: **(verify)** means not checked against a primary source; the task that 
 
 | # | Decision | Status |
 |---|---|---|
-| D440 | **The open-core boundary** (D220, reconfirmed 2026-10-02; **revised later that day by D540, §41**). Open source: self-hosting, and the Multitenant BYOC Control Plane with GitOps (multi-tenancy, BYOC management, Knative, Authentik, the GitOps layout). Private (`loam-platform`): metering, billing, commercial APIs and hosted-only operations (D548, D550). **No metering in this repository**: only §27's generic hooks stay. The protocol gateway (§34) and the Cloudflare target (the former §35) move to `loam-platform` (private), and §34 becomes a stub | Approved (owner defaults, 2026-10-02) · owner ruling 2026-10-02 |
+| D440 | **The open-core boundary** (D220, reconfirmed 2026-10-02; **revised later that day by D540, §41**). Open source: self-hosting, and the Multitenant BYOC Control Plane with GitOps (multi-tenancy, BYOC management, Knative, Authentik, the GitOps layout). Private (`loams-platform`): metering, billing, commercial APIs and hosted-only operations (D548, D550). **No metering in this repository**: only §27's generic hooks stay. The protocol gateway (§34) and the Cloudflare target (the former §35) move to `loams-platform` (private), and §34 becomes a stub | Approved (owner defaults, 2026-10-02) · owner ruling 2026-10-02 |
 | D441 | **Knative Serving is an optional compute layer** for the `http-port` contract (§24 D181, tier T2) in self-hosted clusters. `KnativeRunner` implements the `Runner` trait (D375): one Knative `Service` per function, one `Revision` per version, scale to zero, gVisor through `runtimeClassName`. The node supervisor stays the only runner for `fetch` (T0 workerd) and Wasm (T1), whose many-tenants-per-process model Knative cannot express | Approved (owner defaults, 2026-10-02) |
-| D442 | **Knative's ingress is Kourier, inside the cluster, behind Loams's edge.** Envoy stays the edge (D184); the gateway routes a function's traffic to Kourier's internal service with the tenant already checked. Knative's own domains are cluster-local (`svc.cluster.local`), so no function is reachable except through the gateway | Approved (owner defaults, 2026-10-02) |
-| D443 | **Tenancy on Knative: one Kubernetes namespace per Loams namespace** (`loams-ns-<namespace>`), with a default-deny `NetworkPolicy`, a `ResourceQuota` and a `LimitRange` set by `loams-operator` from the namespace's limits. The quota is **enforced** here (§41 §9); who **sets** it per plan is `loam-platform`'s concern, through the open limits API (D220, D546). Every pod carries §27 §3.2's labels | Approved (owner defaults, 2026-10-02) |
-| D444 | **No meter on Knative.** `KnativeRunner` returns `usage: None` and writes no host reports, like the supervisor. Usage is visible only through the open hooks: §27 §3.2's pod labels on the pod cgroup, Knative's queue-proxy and activator Prometheus metrics, and the edge's access logs. Aggregating, rating and billing them is `loam-platform` (D190, D202) | Approved (owner defaults, 2026-10-02) · owner ruling 2026-10-02 |
-| D445 | **Knative Eventing is an adapter, not Loams's event log.** Loams streams (D270) and the Event Fabric (§32 D331) stay the logs. Loams ships `loams-knative-source`, which reads a stream consumer group and delivers binary-mode CloudEvents to any Knative sink, and documents `POST /v1/namespaces/{ns}/streams/{stream}/events` as a Knative sink URI. The broker is the in-memory channel for development; the production broker is an open question (Q443) | Approved (owner defaults, 2026-10-02) |
+| D442 | **Knative's ingress is Kourier, inside the cluster, behind Loams’ edge.** Envoy stays the edge (D184); the gateway routes a function's traffic to Kourier's internal service with the tenant already checked. Knative's own domains are cluster-local (`svc.cluster.local`), so no function is reachable except through the gateway | Approved (owner defaults, 2026-10-02) |
+| D443 | **Tenancy on Knative: one Kubernetes namespace per Loams namespace** (`loams-ns-<namespace>`), with a default-deny `NetworkPolicy`, a `ResourceQuota` and a `LimitRange` set by `loams-operator` from the namespace's limits. The quota is **enforced** here (§41 §9); who **sets** it per plan is `loams-platform`'s concern, through the open limits API (D220, D546). Every pod carries §27 §3.2's labels | Approved (owner defaults, 2026-10-02) |
+| D444 | **No meter on Knative.** `KnativeRunner` returns `usage: None` and writes no host reports, like the supervisor. Usage is visible only through the open hooks: §27 §3.2's pod labels on the pod cgroup, Knative's queue-proxy and activator Prometheus metrics, and the edge's access logs. Aggregating, rating and billing them is `loams-platform` (D190, D202) | Approved (owner defaults, 2026-10-02) · owner ruling 2026-10-02 |
+| D445 | **Knative Eventing is an adapter, not Loams’ event log.** Loams streams (D270) and the Event Fabric (§32 D331) stay the logs. Loams ships `loams-knative-source`, which reads a stream consumer group and delivers binary-mode CloudEvents to any Knative sink, and documents `POST /v1/namespaces/{ns}/streams/{stream}/events` as a Knative sink URI. The broker is the in-memory channel for development; the production broker is an open question (Q443) | Approved (owner defaults, 2026-10-02) |
 | D446 | **Knative is installed by the Knative Operator** (Apache-2.0), as `KnativeServing` and `KnativeEventing` resources pinned to 1.23 with the features Loams needs turned on (`kubernetes.podspec-runtimeclassname`, `kubernetes.podspec-securitycontext`). It is off by default in the umbrella chart (`knative.enabled: false`) | Approved (owner defaults, 2026-10-02) |
 | D447 | **Authentik, open-source edition, is the default identity provider** of the Kubernetes distribution and the showcase suite. It replaces Keycloak in D-SC-3 (§22) and in D221's "SAML brokered through Keycloak". It runs as an **unmodified, separate service** (Python, Postgres only since 2025.10), version 2026.8.3, and **only code outside `authentik/enterprise/` is used**: no licence key is ever installed | Approved (owner defaults, 2026-10-02) |
 | D448 | **The usable feature list is fixed** (§4.2): OAuth2/OIDC provider (authorization code with PKCE, client credentials with JWT federation, device code, refresh, **token exchange (RFC 8693)**, dynamic client registration (RFC 7591)); SAML, SCIM (static token), LDAP, RADIUS (PAP), Proxy and RAC providers; OAuth, SAML, LDAP, Kerberos and SCIM sources; flows and stages with TOTP, WebAuthn and passkeys; RBAC; brands; blueprints; outposts. Everything listed as Enterprise on 2026-10-02 is excluded, multi-tenancy (`tenants`) included | Approved (owner defaults, 2026-10-02) |
-| D449 | **Loams's gateway stays the resource server and the authority for Loams tokens** (§19 §5). Authentik authenticates **people**: the console and the CLI sign in through it (OIDC authorization code with PKCE; device code for the CLI), and the gateway exchanges the Authentik token for a Loams access token. **Agents stay Loams principals** (§19 P5), with federation, delegation and vending on Loams's token endpoint; Authentik's "agent accounts" are Enterprise and are not used. Biscuit stays inside the runtime (D188), OpenFGA stays the authority (D66, D67), and Authentik groups reach OpenFGA as `team` tuples at sign-in | Approved (owner defaults, 2026-10-02) |
+| D449 | **Loams’ gateway stays the resource server and the authority for Loams tokens** (§19 §5). Authentik authenticates **people**: the console and the CLI sign in through it (OIDC authorization code with PKCE; device code for the CLI), and the gateway exchanges the Authentik token for a Loams access token. **Agents stay Loams principals** (§19 P5), with federation, delegation and vending on Loams’ token endpoint; Authentik's "agent accounts" are Enterprise and are not used. Biscuit stays inside the runtime (D188), OpenFGA stays the authority (D66, D67), and Authentik groups reach OpenFGA as `team` tuples at sign-in | Approved (owner defaults, 2026-10-02) |
 | D450 | **The single binary keeps its built-in sign-in** (§19 P7: setup token, password with argon2id, TOTP, generic OIDC). Authentik is the default only where Kubernetes is (the Helm chart, the operator, the showcase). A self-hoster may point Loams at any OIDC provider; Authentik is the documented and tested one | Approved (owner defaults, 2026-10-02) |
-| D451 | **D111 is narrowed, not dropped.** User identity, MFA, SSO and SAML brokering are Authentik's. What remains of the unified auth plan is Loams's side: token verification on every listener, API keys, agent tokens, TLS and leaving loopback. MT1 is that plan for the native API, the console and MCP; the other listeners follow it in their own plans | Approved (owner defaults, 2026-10-02) |
-| D452 | **Authentik is configured by blueprints in Git and installed from its upstream chart.** Loams's blueprints (the Loams application and providers, the `loams-*` groups, the enrolment and MFA flows) are Apache-2.0 YAML under `deploy/authentik/blueprints/`. The upstream Helm chart (`goauthentik/helm`) is **GPL-3.0**, so it is referenced by an Argo CD `Application`, never copied or vendored into this repository | Approved (owner defaults, 2026-10-02) |
+| D451 | **D111 is narrowed, not dropped.** User identity, MFA, SSO and SAML brokering are Authentik's. What remains of the unified auth plan is Loams’ side: token verification on every listener, API keys, agent tokens, TLS and leaving loopback. MT1 is that plan for the native API, the console and MCP; the other listeners follow it in their own plans | Approved (owner defaults, 2026-10-02) |
+| D452 | **Authentik is configured by blueprints in Git and installed from its upstream chart.** Loams’ blueprints (the Loams application and providers, the `loams-*` groups, the enrolment and MFA flows) are Apache-2.0 YAML under `deploy/authentik/blueprints/`. The upstream Helm chart (`goauthentik/helm`) is **GPL-3.0**, so it is referenced by an Argo CD `Application`, never copied or vendored into this repository | Approved (owner defaults, 2026-10-02) |
 | D453 | **"GitOps from Clever Cloud" means Clever's open-source operator and infrastructure tooling, not a Clever deployer.** Clever Cloud publishes no GitOps reconciler or deployer (checked 2026-10-02; its git-push deployer is closed). So: `loams-operator` is the fork of `clever-kubernetes-operator` (MIT, D185); `terraform-provider-clevercloud` and `karpenter-provider-clever-cloud` (Apache-2.0) are used unmodified on Clever Kubernetes Engine; `clever-tools` is the CLI reference. **Argo CD is not replaced** (D186 stands) | Approved (owner defaults, 2026-10-02) |
 | D454 | **The GitOps layout stays consumable by Flux.** Argo CD is the default and the tested path; a Flux layout (`deploy/gitops/flux/`) with the same order through `dependsOn` is documented for the single-node k3s profile, where Argo CD's footprint matters (Q-RT-11) | Approved (owner defaults, 2026-10-02) |
 | D455 | **New sync waves** (§6.3): CloudNativePG and the Knative Operator join wave −1; Authentik's Postgres joins wave 1; Authentik and its blueprints join wave 2; `KnativeServing` and `KnativeEventing` join wave 3; `loams-knative-source` joins wave 5. Lua health checks are added for `authentik` blueprint instances, `KnativeServing` and `KnativeEventing` | Approved (owner defaults, 2026-10-02) |
@@ -50,8 +50,8 @@ Markers: **(verify)** means not checked against a primary source; the task that 
 
 ### 2.2 Non-goals
 
-- **Metering and billing.** These stay in `loam-platform` (D190, D440, D548). *Superseded 2026-10-02 (D540): multi-org control planes and BYOC management, listed here as non-goals, are now goals of [§41](41-multitenant-byoc-control-plane.md) and open source.*
-- **Running Loams on Cloudflare.** The Cloudflare target is a commercial component in `loam-platform` (D440). The `Fs` trait's portable part stays here, in §36.
+- **Metering and billing.** These stay in `loams-platform` (D190, D440, D548). *Superseded 2026-10-02 (D540): multi-org control planes and BYOC management, listed here as non-goals, are now goals of [§41](41-multitenant-byoc-control-plane.md) and open source.*
+- **Running Loams on Cloudflare.** The Cloudflare target is a commercial component in `loams-platform` (D440). The `Fs` trait's portable part stays here, in §36.
 - **Replacing the node supervisor** with Knative for T0 and T1 (D441).
 - **Replacing Loams streams with Knative Eventing** (D445).
 - **Authentik multi-tenancy.** It is Enterprise and alpha (§4.2). A self-hosted Loams has one org (§19 P3), so one Authentik tenant is enough.
@@ -101,7 +101,7 @@ Knative pods are T2 sandboxes in §27's terms, so §27 §3.2 already covers them
 - **queue-proxy and activator metrics** (Prometheus): request counts, latencies and concurrency per revision, which carry the revision's labels;
 - **the edge's access logs**, with `x-loams-tenant` set by the gateway (§27 §3.4).
 
-`KnativeRunner` writes no billing-grade host report; Q-UH-3 (the final cgroup reading for pods) applies unchanged. Whoever wants usage per tenant, a self-hoster's dashboard or `loam-platform`, reads these hooks.
+`KnativeRunner` writes no billing-grade host report; Q-UH-3 (the final cgroup reading for pods) applies unchanged. Whoever wants usage per tenant, a self-hoster's dashboard or `loams-platform`, reads these hooks.
 
 ### 3.5 Knative Eventing (D445)
 
@@ -113,7 +113,7 @@ Knative Eventing delivers CloudEvents from sources to sinks through `Broker`s an
 | Loams → Knative | `loams-knative-source`, a small Rust service (one `Deployment` per `LoamsSource` resource, a `SinkBinding`-style `sink` reference): it reads a stream through a consumer group and POSTs each record as a binary-mode CloudEvent to the sink, committing the offset after a 2xx | At least once; the sink dedupes on `id` |
 | Fabric → Knative | `loams-knative-source` with an Iggy topic instead of a stream (after FL1) | Same |
 
-The broker for development is `InMemoryChannel` (not durable). The production broker is open (Q443): Knative's Kafka broker over Loams's Kafka gateway (M5, D74), a Loams broker class over streams, or no broker (sources deliver to Services directly, which covers most uses). Loams's own triggers (functions subscribed to streams, §24) do not need Eventing at all.
+The broker for development is `InMemoryChannel` (not durable). The production broker is open (Q443): Knative's Kafka broker over Loams’ Kafka gateway (M5, D74), a Loams broker class over streams, or no broker (sources deliver to Services directly, which covers most uses). Loams’ own triggers (functions subscribed to streams, §24) do not need Eventing at all.
 
 Event types Loams defines use the owner's prefix `io.loams.dev.<domain>.<name>.v1` (ruling of 2026-10-01).
 
@@ -145,10 +145,10 @@ Checked against the source tree at 2026.8.3 (`authentik/providers`, `authentik/s
 |---|---|---|
 | OAuth2/OIDC provider: authorization code + PKCE, refresh, device code, client credentials | `providers/oauth2` (MIT) | **Use**: console, CLI and showcase apps |
 | Client credentials with **JWT federation** (a JWT from a configured provider authenticates a service account) | `providers/oauth2` (MIT) | Use for CI and automation that signs in to Authentik |
-| **Token exchange (RFC 8693)**, impersonation and delegation with an `act` claim; since 2026.8.0 | `providers/oauth2/views/token.py`, `common/oauth/constants.py` (`GRANT_TYPE_TOKEN_EXCHANGE`) (MIT) | Available; Loams's own token endpoint still does agent exchange (D449) |
-| Dynamic client registration (RFC 7591) | `providers/oauth2/views/dcr.py` (MIT) | Not needed: MCP clients register with Loams's authorization server (§19 §5.2) |
+| **Token exchange (RFC 8693)**, impersonation and delegation with an `act` claim; since 2026.8.0 | `providers/oauth2/views/token.py`, `common/oauth/constants.py` (`GRANT_TYPE_TOKEN_EXCHANGE`) (MIT) | Available; Loams’ own token endpoint still does agent exchange (D449) |
+| Dynamic client registration (RFC 7591) | `providers/oauth2/views/dcr.py` (MIT) | Not needed: MCP clients register with Loams’ authorization server (§19 §5.2) |
 | SAML provider | `providers/saml` (MIT) | Use: SAML apps in the showcase |
-| SCIM provider (outbound), static token auth | `providers/scim` (MIT) | Showcase apps only (§22 §7.3). Loams's own SCIM endpoint is `loam-platform` (D221, Q440) |
+| SCIM provider (outbound), static token auth | `providers/scim` (MIT) | Showcase apps only (§22 §7.3). Loams’ own SCIM endpoint is `loams-platform` (D221, Q440) |
 | SCIM provider with **OAuth authentication** | `enterprise/providers/scim/auth_oauth2.py` | **Excluded** |
 | LDAP, Proxy and RAC providers, with outposts | `providers/ldap`, `providers/proxy`, `providers/rac` (MIT) | LDAP and Proxy for apps without OIDC; RAC not used |
 | RADIUS provider (PAP) | `providers/radius` (MIT) | Not used |
@@ -160,9 +160,9 @@ Checked against the source tree at 2026.8.3 (`authentik/providers`, `authentik/s
 | RBAC (roles, object permissions) | `rbac` (MIT) | Use for Authentik's own admin |
 | Brands (per-domain branding; called tenants before 2024.2) | `brands` (MIT) | Use: one brand per install |
 | **Multi-tenancy** (`tenants`, a Postgres schema per tenant) | the `tenants` app, gated: "an Enterprise feature … in alpha", one licence per additional tenant (docs.goauthentik.io/sys-mgmt/tenancy) | **Excluded**; not needed (one org per install, §19 P3) |
-| Blueprints (declarative YAML) | `blueprints` (MIT) | **Use**: all of Loams's Authentik configuration (D452) |
+| Blueprints (declarative YAML) | `blueprints` (MIT) | **Use**: all of Loams’ Authentik configuration (D452) |
 | Google Workspace and Microsoft Entra ID sync, Shared Signals Framework, WS-Federation, agent accounts | `enterprise/providers/*`, `enterprise/agents` | **Excluded** |
-| Enhanced audit (before and after values), event maps, CSV exports, reports, object lifecycle management, privileged access management, endpoint and device connectors | `enterprise/audit`, `enterprise/reports`, `enterprise/lifecycle`, `enterprise/endpoints` | **Excluded**. Loams's own audit events (D221) cover Loams's actions |
+| Enhanced audit (before and after values), event maps, CSV exports, reports, object lifecycle management, privileged access management, endpoint and device connectors | `enterprise/audit`, `enterprise/reports`, `enterprise/lifecycle`, `enterprise/endpoints` | **Excluded**. Loams’ own audit events (D221) cover Loams’ actions |
 
 The "Enterprise features" page also lists "External OAuth and SAML sources embed an external identity provider in a flow". That is the source stage only: plain OAuth and SAML sources (federated login) are in `sources/` under MIT.
 
@@ -179,19 +179,19 @@ The "Enterprise features" page also lists "External OAuth and SAML sources embed
                                      │ Loams access token (JWT, Ed25519, §19 §5.3)
                                      ▼
                   native API · console API · MCP · gateways  ──►  Authorizer (OpenFGA, D66)
- agent ── federation / delegation / vending on Loams's token endpoint (§19 §5.2, unchanged)
+ agent ── federation / delegation / vending on Loams’ token endpoint (§19 §5.2, unchanged)
  sandbox ── Biscuit minted and attenuated by the supervisor (D188, unchanged)
 ```
 
-- **People sign in through Authentik.** The console uses the authorization-code flow with PKCE; `loams login` uses the device-code flow (`providers/oauth2/views/device_*`). Loams's gateway is an OIDC relying party (`openidconnect` 4, §19 §6) and keeps the session.
+- **People sign in through Authentik.** The console uses the authorization-code flow with PKCE; `loams login` uses the device-code flow (`providers/oauth2/views/device_*`). Loams’ gateway is an OIDC relying party (`openidconnect` 4, §19 §6) and keeps the session.
 - **Loams issues Loams tokens.** The gateway exchanges the Authentik token for a Loams access token on its own token endpoint (RFC 8693, §19 §5.2 flow 1, with Authentik registered as a trusted issuer). Every listener verifies only Loams tokens, so the verification code does not change with the IdP.
 - **Agents are not Authentik users.** An agent is a Loams principal with a trust policy (§19 §5.1). Authentik's agent accounts are Enterprise and are not used.
-- **Groups reach OpenFGA at sign-in.** The `groups` claim maps to Loams teams (§19 P4, "OIDC groups can map to teams"); the gateway writes `team#member` tuples through the outbox (D66) when a person signs in or refreshes. Removal takes effect at the next refresh (1 hour) or on session revocation. Continuous provisioning through SCIM stays a `loam-platform` feature (D221) unless the owner moves it (Q440).
+- **Groups reach OpenFGA at sign-in.** The `groups` claim maps to Loams teams (§19 P4, "OIDC groups can map to teams"); the gateway writes `team#member` tuples through the outbox (D66) when a person signs in or refreshes. Removal takes effect at the next refresh (1 hour) or on session revocation. Continuous provisioning through SCIM stays a `loams-platform` feature (D221) unless the owner moves it (Q440).
 - **SAML, LDAP and social logins** are Authentik sources. Loams itself only ever speaks OIDC (D221 as amended).
 
 ### 4.4 Deployment (D452)
 
-- **Chart.** The upstream chart `goauthentik/helm` (`authentik-2026.8.3`) is GPL-3.0. Loams's umbrella chart does not include it; Loams's GitOps layout points an Argo CD `Application` at `https://charts.goauthentik.io` with Loams's values file. Nothing from the chart is copied into this repository.
+- **Chart.** The upstream chart `goauthentik/helm` (`authentik-2026.8.3`) is GPL-3.0. Loams’ umbrella chart does not include it; Loams’ GitOps layout points an Argo CD `Application` at `https://charts.goauthentik.io` with Loams’ values file. Nothing from the chart is copied into this repository.
 - **Configuration as code.** `deploy/authentik/blueprints/loams.yaml` creates the `loams` application, its OAuth2 provider (the console's and the CLI's clients, redirect URIs, the `groups` scope mapping), the `loams-admins` and `loams-developers` groups, and the enrolment and MFA flows. It is mounted into the worker through the chart's `blueprints.configMaps`, so Argo CD owns it.
 - **Secrets.** The bootstrap token, the secret key and the client secrets come through the same secret path as everything else (D189); none is committed.
 
@@ -203,7 +203,7 @@ The "Enterprise features" page also lists "External OAuth and SAML sources embed
 | §19 P7 and §19 §6: "SAML … brokered by an IdP (Keycloak, Dex, Authentik)"; "Keycloak brokers SAML to OIDC" | Authentik is the documented and tested broker; any OIDC IdP still works (D450) |
 | D221: "plain OIDC SSO, with SAML brokered through Keycloak by self-hosters" | "… brokered through Authentik" (D447). The rest of D221 is unchanged |
 | D111: one unified auth plan after M1 | Narrowed (D451): MT1 is the identity half; listeners leave loopback as their plans adopt MT1's verifier |
-| `loam-cloud`'s Clerk (hosted console) | **Not changed here.** Hosted identity is `loam-platform`'s and `loam-cloud`'s decision (D440) |
+| `loams-cloud`'s Clerk (hosted console) | **Not changed here.** Hosted identity is `loams-platform`'s and `loams-cloud`'s decision (D440) |
 
 ## 5. Reconciling with §19, D67 and D188
 
@@ -221,7 +221,7 @@ The "Enterprise features" page also lists "External OAuth and SAML sources embed
 
 Checked on 2026-10-02 (GitHub organisation `CleverCloud`, and §25 §2's inventory of 2026-09-29):
 
-| Project | Licence · release | Role in Loams's GitOps |
+| Project | Licence · release | Role in Loams’ GitOps |
 |---|---|---|
 | `clever-kubernetes-operator` | MIT · v0.8.0 (2026-06-09), pushed 2026-09-04 | **Forked** as `loams-operator` (D185): reconciles `Loams`, `Function`, `RuntimePool`, `ObjectStore`, and now the per-namespace Knative tenancy (D443) |
 | `terraform-provider-clevercloud` | Apache-2.0 · v2.3.0 (2026-09-28) | Infra under GitOps on Clever Kubernetes Engine (CKE) |
@@ -258,9 +258,9 @@ k3s v1.37.1+k3s1 (2026-09-30) or k3d, started with `--disable traefik`. On it: A
 
 | What | Was | Now |
 |---|---|---|
-| The protocol gateway, OpenRTB and Google adapters, the canonical `loams.rtb.v1`, partner negotiation, the ad-tech conformance suite (D366–D371, D373, D377, D379) and plans GW1–GW4 | §34, merged in #177 | `loam-platform` (private). §34 is a stub that keeps the vendor-neutral decisions (the standards charter, the narrow waist, the CloudEvents profile, the high-rate path, state rules, the `Runner` trait, usage hooks from runners) |
-| The Cloudflare target (`CloudflareRunner`, Workers, Durable Objects, R2, Containers placement, the startup credits plan) and plan CF1 | the former §35 (PR #179) | `loam-platform` (private). §36 (Loams Git) and GT1–GT3 stay; the `Fs` trait and `NativeFs` move into §36 |
-| The usage CloudEvents form and its Arrow mapping (RN1 Task 6), and any ledger | RN1, §34 §12 | `loam-platform`. RN1 keeps the `Runner` trait, `RunnerHost`, the process and Lambda runners. *Amended 2026-10-02 (D548): §27's host-report emitter (RN1 Tasks 1 and 2) moved to `loam-platform` too; RN1 gains the open `InvocationObserver`.* |
+| The protocol gateway, OpenRTB and Google adapters, the canonical `loams.rtb.v1`, partner negotiation, the ad-tech conformance suite (D366–D371, D373, D377, D379) and plans GW1–GW4 | §34, merged in #177 | `loams-platform` (private). §34 is a stub that keeps the vendor-neutral decisions (the standards charter, the narrow waist, the CloudEvents profile, the high-rate path, state rules, the `Runner` trait, usage hooks from runners) |
+| The Cloudflare target (`CloudflareRunner`, Workers, Durable Objects, R2, Containers placement, the startup credits plan) and plan CF1 | the former §35 (PR #179) | `loams-platform` (private). §36 (Loams Git) and GT1–GT3 stay; the `Fs` trait and `NativeFs` move into §36 |
+| The usage CloudEvents form and its Arrow mapping (RN1 Task 6), and any ledger | RN1, §34 §12 | `loams-platform`. RN1 keeps the `Runner` trait, `RunnerHost`, the process and Lambda runners. *Amended 2026-10-02 (D548): §27's host-report emitter (RN1 Tasks 1 and 2) moved to `loams-platform` too; RN1 gains the open `InvocationObserver`.* |
 
 ## 8. Contradictions with earlier decisions, and how they are resolved
 
@@ -270,10 +270,10 @@ k3s v1.37.1+k3s1 (2026-09-30) or k3d, started with `--disable traefik`. On it: A
 | 2 | **D221**: SAML brokered through Keycloak | Through Authentik | Amended by D447; the rest of D221 stands |
 | 3 | **D111**: one unified auth plan after M1 | MT1 plus each listener's plan | Narrowed by D451 |
 | 4 | **§19 P7, §6** name Keycloak as the SAML broker | Authentik | Amended (D447, D450); built-in sign-in kept |
-| 5 | **§19 §3**: Cloud identity "Clerk or Keycloak" | — | Not changed here (hosted is `loam-platform`, D440) |
-| 6 | **D379** (§34): the adapters, negotiation and ad-tech conformance are Apache-2.0 here | `loam-platform` | Superseded by D440 (owner ruling 2026-10-02) |
-| 7 | **The former §35 §2** (PR #179): `CloudflareRunner` and the Worker crates are Apache-2.0 here | `loam-platform` (private) | Superseded by D440 before merge |
-| 8 | **D376 item 4, RN1 Task 6**: usage as CloudEvents, built here | Moved | The record spec (§27 §3.6) stays; the event form is `loam-platform`'s (D444) |
+| 5 | **§19 §3**: Cloud identity "Clerk or Keycloak" | — | Not changed here (hosted is `loams-platform`, D440) |
+| 6 | **D379** (§34): the adapters, negotiation and ad-tech conformance are Apache-2.0 here | `loams-platform` | Superseded by D440 (owner ruling 2026-10-02) |
+| 7 | **The former §35 §2** (PR #179): `CloudflareRunner` and the Worker crates are Apache-2.0 here | `loams-platform` (private) | Superseded by D440 before merge |
+| 8 | **D376 item 4, RN1 Task 6**: usage as CloudEvents, built here | Moved | The record spec (§27 §3.6) stays; the event form is `loams-platform`'s (D444) |
 | 9 | **D186**: Argo CD | "GitOps from Clever Cloud" | No conflict: Clever has no GitOps engine (D453) |
 | 10 | **§24 §11 F2**: Loams schedules T2 sandboxes | Knative schedules them when enabled | Refined by D441; F2's gVisor setup stays |
 | 11 | **§22 §4.4** rejected Authentik's split as a risk | A CI guard (D458) | Risk accepted with a guard |
@@ -315,17 +315,17 @@ MT, like tracks R, D, J and GT, interleaves on the one-build machine: one cargo 
 | Knative's cold start (image pull plus pod start) is far from T0's milliseconds | Knative is for `http-port` only (D441); `min-scale` per function for latency-sensitive services, charged by nothing in OSS |
 | Two schedulers (supervisor and Knative) for one runtime | They own different contracts (§3.1); the `Runner` trait hides which one runs a function |
 | Kourier and Envoy both in the path | Kourier is internal and small; Q446 asks whether `net-gateway-api` on Envoy Gateway removes Kourier |
-| Usage under Knative is coarser than the supervisor's (pod cgroup, not per invocation) | Accepted: no metering in OSS (D444); per-invocation precision for billing is `loam-platform`'s problem |
+| Usage under Knative is coarser than the supervisor's (pod cgroup, not per invocation) | Accepted: no metering in OSS (D444); per-invocation precision for billing is `loams-platform`'s problem |
 | Removing §34 and §35 leaves references dangling in other branches | §34 stays as a stub at the same path; §36 was edited to match; the decision log records what moved (one row per moved range) |
 
 ## 12. Open questions
 
 | # | Question | Owner | Needed by |
 |---|---|---|---|
-| Q440 | ~~Authentik's SCIM provider is free, and Loams could accept SCIM in OSS. Keep SCIM provisioning in `loam-platform` (D221), or move it to OSS for adoption~~ Answered 2026-10-02 by the owner: the recommended default — keep SCIM provisioning into Loams in `loam-platform` (D221); Authentik's own SCIM provider is used only for the showcase apps (§38 §4.3) | Founder | Resolved |
+| Q440 | ~~Authentik's SCIM provider is free, and Loams could accept SCIM in OSS. Keep SCIM provisioning in `loams-platform` (D221), or move it to OSS for adoption~~ Answered 2026-10-02 by the owner: the recommended default — keep SCIM provisioning into Loams in `loams-platform` (D221); Authentik's own SCIM provider is used only for the showcase apps (§38 §4.3) | Founder | Resolved |
 | Q441 | ~~Keep the single binary's built-in password and TOTP (§19 P7), or make an external OIDC IdP mandatory once MT1 lands~~ Answered 2026-10-02 by the owner: the recommended default — keep built-in password and TOTP: on by default when no `trusted_issuers` are configured, off otherwise (D450, MT1 Ruling 6) | Founder | Resolved |
-| Q442 | Hosted Loams Cloud identity: Clerk (in `loam-cloud` today) or Authentik, given the 2026-10-01 "no paid plan" ruling. Decided in `loam-platform`, recorded here only for the cross-reference | Founder | Before the hosted beta |
-| Q443 | ~~Knative Eventing's production broker: the Kafka broker over Loams's Kafka gateway (M5), a Loams broker class over streams, or none~~ Answered 2026-10-02 by the owner: the chosen default (the doc gives no recommendation) — no broker in MT2: sources deliver to Services directly, and the in-memory channel stays for development; a Kafka broker over Iggy's Kafka gateway is revisited after Q331's work; why: §38 §3.5 says direct delivery covers most uses | Eng | Resolved |
+| Q442 | Hosted Loams Cloud identity: Clerk (in `loams-cloud` today) or Authentik, given the 2026-10-01 "no paid plan" ruling. Decided in `loams-platform`, recorded here only for the cross-reference | Founder | Before the hosted beta |
+| Q443 | ~~Knative Eventing's production broker: the Kafka broker over Loams’ Kafka gateway (M5), a Loams broker class over streams, or none~~ Answered 2026-10-02 by the owner: the chosen default (the doc gives no recommendation) — no broker in MT2: sources deliver to Services directly, and the in-memory channel stays for development; a Kafka broker over Iggy's Kafka gateway is revisited after Q331's work; why: §38 §3.5 says direct delivery covers most uses | Eng | Resolved |
 | Q444 | ~~gVisor mandatory for every `KnativeRunner` function, or optional for trusted single-org code~~ Answered 2026-10-02 by the owner: the recommended default — gVisor is mandatory for every `KnativeRunner` function (D441, MT2 Ruling 3) | Founder | Resolved |
 | Q445 | ~~Should `KnativeRunner` emit per-invocation request and wall-time reports (no CPU) for showback dashboards, or stay at `usage: None` (D444)~~ Answered 2026-10-02 by the owner: the recommended default — stay at `usage: None`; no metering or showback in OSS (D444) | Founder | Resolved |
 | Q446 | ~~Kourier, or `net-gateway-api` on Envoy Gateway so Envoy is the only proxy~~ Answered 2026-10-02 by the owner: the recommended default — Kourier, internal behind Envoy (D442); `net-gateway-api` is not adopted | Eng | Resolved |
@@ -333,9 +333,9 @@ MT, like tracks R, D, J and GT, interleaves on the one-build machine: one cargo 
 | Q448 | ~~Does Authentik's OIDC provider send back-channel logout, so a removed user's Loams session ends before its refresh **(verify)**~~ Answered 2026-10-02 by the owner: the plan's default — not an owner decision: MT1 Task 4 checks it; without back-channel logout the guide records the one-hour bound | Eng | Resolved |
 | Q449 | ~~Flux as the default for the single-node profile, if MT3 measures Argo CD as too heavy (merges Q-RT-11)~~ Answered 2026-10-02 by the owner: the recommended default — Argo CD stays the default (D186, D454); Flux becomes the single-node default only if MT3 Task 6 measures Argo CD too heavy (this also answers Q-RT-11) | Eng | Resolved |
 | Q450 | ~~Give §34's retained vendor-neutral decisions (D360–D365, D372, D374, D378) their own OSS document, and split GW1's vendor-neutral tasks (`buf breaking`, the CloudEvents profile) into an OSS plan~~ Answered 2026-10-02 by the owner: the chosen default (the doc gives no recommendation) — §34 itself is that document (it now holds only the retained vendor-neutral decisions), and GW1's vendor-neutral tasks (`buf breaking`, the CloudEvents profile, the event Arrow mapping) become an open plan here, written when GW1 starts; why: D220 keeps standards open, with no new file | Founder | Resolved |
-| Q451 | ~~The `loam.dev/*` pod labels of §27 §3.2 under the `loams` rename: keep, or move to `loams.dev/*` with the rename PR~~ Answered 2026-10-02 by the owner: `loams.dev/*`, in the rename PR (D407) | Eng | Resolved |
+| Q451 | ~~The `loams.dev/*` pod labels of §27 §3.2 under the `loams` rename: keep, or move to `loams.dev/*` with the rename PR~~ Answered 2026-10-02 by the owner: `loams.dev/*`, in the rename PR (D407) | Eng | Resolved |
 | Q452 | ~~`loams-knative-source` for Iggy topics (§32): in MT2 or with FL1~~ Answered 2026-10-02 by the owner: the recommended default — with FL1 (MT2's deferred list) | Eng | Resolved |
-| Q453 | ~~Authentik upgrade cadence and who takes security patches for self-hosters (chart values pinned in Loams's layout)~~ Answered 2026-10-02 by the owner: the recommended default — pin a minor (`2026.8.x`), take patch releases promptly, and record each bump in the layout; self-hosters follow Loams's pinned chart values (§38 §11) | Eng | Resolved |
+| Q453 | ~~Authentik upgrade cadence and who takes security patches for self-hosters (chart values pinned in Loams’ layout)~~ Answered 2026-10-02 by the owner: the recommended default — pin a minor (`2026.8.x`), take patch releases promptly, and record each bump in the layout; self-hosters follow Loams’ pinned chart values (§38 §11) | Eng | Resolved |
 
 ## 13. Sources
 

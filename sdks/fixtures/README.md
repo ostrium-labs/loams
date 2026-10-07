@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # The conformance corpus
 
 Design §44 §10.4, SDK1 Task 4: the fixtures every SDK's suite replays, so

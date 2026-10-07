@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../docs/assets/loams-banner.svg)
+
 # `@loams-plugins/plugin-flow-render`
 
 Renders `graph` dashboard widgets into the `{ nodes, edges }` pair

@@ -10,7 +10,7 @@ Method:
 
 **Result:**
 - Everything builds together with the workspace's pins.
-- `cargo deny check` passes **only with `tikv-client` pinned to `tikv/client-rust` master** (`ab4be1c`). The crates.io 0.4.0 release fails the advisories check (section (b)). (Since row F1 the pin is Loams's fork of that revision; section (i).)
+- `cargo deny check` passes **only with `tikv-client` pinned to `tikv/client-rust` master** (`ab4be1c`). The crates.io 0.4.0 release fails the advisories check (section (b)). (Since row F1 the pin is Loams’ fork of that revision; section (i).)
 - **Q32 is answered no.** PD v8.5.8 has no keyspace GC-state RPCs, and TiKV v8.5.8 ignores keyspace-level safe points. GC is cluster-wide, and Loams has to act as the cluster's GC worker (section (g) check 3).
 - Q33 holds on the pinned release.
 - `memory-usage-limit` lowers TiKV's steady-state RSS but not its startup peak of about 2.6 GB.
@@ -127,7 +127,7 @@ It was ready (all six pre-allocated keyspaces listed, and `select 1` answered th
   3. `UpdateServiceGCSafePoint("gc_worker", ttl = i64::MAX, after)` returned `min_safe_point = after`, and then `TransactionClient::gc(after)` returned `Ok(true)` (it resolves locks in its keyspace, then calls `UpdateGCSafePoint`). Within **10 s**, `tikv_gcworker_autogc_safe_point` reached `after`, and reads at `mid` returned **`None` for 10 of 10 keys, not an error**.
   4. With `gc.enable-compaction-filter` back at its default (`true`), the same cluster-level GC left `v1` readable at `mid` for the whole 90 s. Versions below the safe point are dropped only when RocksDB compacts.
 - **Answer:** on the pinned release, TiKV does not honour keyspace-level safe points. MVCC GC is cluster-wide, so something must act as the cluster's GC worker.
-- **Fallback:** Loams's GC loop does that job itself, in the same way TiDB's GC worker does (service safe point `gc_worker`, resolve locks, then `UpdateGCSafePoint`), across every keyspace. There is no unified-GC TiDB. The plan's rows R6 and R7 rewrite Task 3.
+- **Fallback:** Loams’ GC loop does that job itself, in the same way TiDB's GC worker does (service safe point `gc_worker`, resolve locks, then `UpdateGCSafePoint`), across every keyspace. There is no unified-GC TiDB. The plan's rows R6 and R7 rewrite Task 3.
 - A read below the safe point returns missing or old data **without an error**, and `tikv-client` does not check it either. `loams-tikv` must refuse such reads itself.
 - Whether `client-rust` accepts a patch that exposes GC safe points is still open (upstream PR status goes in the exit report).
 
@@ -153,7 +153,7 @@ It was ready (all six pre-allocated keyspaces listed, and `select 1` answered th
 - `KeyError.already_exist` → the caller's typed "exists" error (not retried).
 - Any other error from `commit()` means the transaction did not commit → `NotApplied`, or `Fatal` for invalid arguments or unknown kinds. The commit point is the 1PC or async-commit prewrite, or the primary commit, and every unknown outcome there is `UndeterminedError`.
 - `TimestampRequest channel is closed` (an `internal_err!` string) → `NotApplied` plus a client rebuild (Task 2 semantics 5).
-- One more case is Loams's own: a commit future the runner drops at its deadline must count as `Undetermined`, because the client never sees it.
+- One more case is Loams’ own: a commit future the runner drops at its deadline must count as `Undetermined`, because the client never sees it.
 
 **7. The interval index (Task 11).** `rust-lapper` 1.3 needs primitive unsigned integer coordinates (`I: PrimInt + Unsigned`), so it cannot index byte-string key ranges. Its `insert` is an `O(n)` vector insert into three sorted vectors, and it has no remove. **Task 11 hand-writes the interval index:** an augmented interval tree (max-end per subtree) keyed by byte strings, one per (table, index), with incremental insert and remove.
 
@@ -167,7 +167,7 @@ It was ready (all six pre-allocated keyspaces listed, and `select 1` answered th
 
 Added 2026-09-27 (R1 plan rows F1–F5), on the owner's direction "for both tikv and resonate ... change and merge".
 
-**Where it lives.** The fork is `https://github.com/ostrium-labs/client-rust`. Its branch `loam` starts at upstream `ab4be1c` (upstream master on 2026-09-27) and merges one topic branch per fix, each with a merge commit. Loams pins `loam` by rev (`1f8962b00b33ebc6f34b72d6c52d08b8a8e1906e`). Every topic commit is signed off, because upstream's README asks for a DCO sign-off. Each fix is drafted as an upstream PR; none is posted yet.
+**Where it lives.** The fork is `https://github.com/ostrium-labs/client-rust`. Its branch `loams` starts at upstream `ab4be1c` (upstream master on 2026-09-27) and merges one topic branch per fix, each with a merge commit. Loams pins `loams` by rev (`1f8962b00b33ebc6f34b72d6c52d08b8a8e1906e`). Every topic commit is signed off, because upstream's README asks for a DCO sign-off. Each fix is drafted as an upstream PR; none is posted yet.
 
 | Branch | Commit | Fix | Tests |
 |---|---|---|---|

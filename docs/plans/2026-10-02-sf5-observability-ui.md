@@ -11,10 +11,10 @@
 
 **Architecture:**
 - **`web/plugins/{glitchtip,openpanel,langfuse,openobserve}`**: each `first-party`, with panels (GlitchTip, OpenPanel), embed panes (all four), and cards.
-- **`crates/operon-collab`**: GlitchTip and OpenPanel adapters (`GlitchTipApi`, `OpenPanelApi`) and the read-only `LangfuseReader` and `OpenObserveReader`, all behind the broker (SF1).
-- **`crates/operon-agent-glitchtip`**, **`crates/operon-agent-analytics`**: A2A agents like SF2's.
-- **`deploy/factory/otel/`**: the collector config (two pipelines plus Loams's own OTLP exporter), the Langfuse and OpenObserve profiles (images pinned, S3 on RustFS, Postgres, ClickHouse and Redis for Langfuse), and the Authentik outpost config for forward-auth apps.
-- **`crates/operon-factory`** gains the real `Observer` implementation (SF4 Task 7).
+- **`crates/loams-collab`**: GlitchTip and OpenPanel adapters (`GlitchTipApi`, `OpenPanelApi`) and the read-only `LangfuseReader` and `OpenObserveReader`, all behind the broker (SF1).
+- **`crates/loams-agent-glitchtip`**, **`crates/loams-agent-analytics`**: A2A agents like SF2's.
+- **`deploy/factory/otel/`**: the collector config (two pipelines plus Loams’ own OTLP exporter), the Langfuse and OpenObserve profiles (images pinned, S3 on RustFS, Postgres, ClickHouse and Redis for Langfuse), and the Authentik outpost config for forward-auth apps.
+- **`crates/loams-factory`** gains the real `Observer` implementation (SF4 Task 7).
 - **Desktop (the zeron fork; path per §37's amendment):** `loams-ui-collab` gains GlitchTip error panels and OpenPanel tiles (GPUI), and the trace and log buttons open Langfuse and OpenObserve through SF1's `AppOpener` (system browser, or the sidebar browser where it ships); no embedding of either app is attempted natively.
 - **`loams-mobile`**: error list and detail, analytics tiles, the run view's trace timeline.
 
@@ -42,7 +42,7 @@ Same as SF1 and SF2, plus:
 
 | # | Ruling | Why | Cost if wrong |
 |---|---|---|---|
-| 1 | **Langfuse is an optional profile**, off in `loams dev`; the console run view works from Loams's own OTLP store and the factory's events without it | Langfuse 4 needs ClickHouse, Redis, Postgres and S3 | Without Langfuse there is no LLM trace viewer; the run view still shows step summaries |
+| 1 | **Langfuse is an optional profile**, off in `loams dev`; the console run view works from Loams’ own OTLP store and the factory's events without it | Langfuse 4 needs ClickHouse, Redis, Postgres and S3 | Without Langfuse there is no LLM trace viewer; the run view still shows step summaries |
 | 2 | **OpenObserve is an optional profile**, behind forward-auth | AGPL, no SSO or RBAC in the open edition | Users reach all signals or none; per-person audit is Authentik's |
 | 3 | **Traces open in Langfuse by trace id through its UI path; sessions by `contextId`** | One stable link per run and per chat thread | Langfuse's UI paths may change; `embed_url` templates are in the app registry, not code |
 | 4 | **OTLP to Langfuse over HTTP with its project key pair as basic auth; to OpenObserve over HTTP with basic auth** | Both document it | gRPC is not used; HTTP is enough at this volume |
@@ -60,9 +60,9 @@ Same as SF1 and SF2, plus:
 ## File structure
 
 ```
-crates/operon-collab/src/apps/{glitchtip.rs,openpanel.rs,langfuse.rs,openobserve.rs}   # the last two are readers
-crates/operon-agent-glitchtip/src/*   crates/operon-agent-analytics/src/*
-crates/operon-factory/src/observer.rs
+crates/loams-collab/src/apps/{glitchtip.rs,openpanel.rs,langfuse.rs,openobserve.rs}   # the last two are readers
+crates/loams-agent-glitchtip/src/*   crates/loams-agent-analytics/src/*
+crates/loams-factory/src/observer.rs
 deploy/factory/otel/{collector.yaml,collector.golden/*.yaml,README.md}
 deploy/factory/profiles/{langfuse.compose.yml,openobserve.compose.yml,openpanel.compose.yml,glitchtip.compose.yml}  deploy/factory/chart/templates/{langfuse,openobserve,openpanel,glitchtip}.yaml
 deploy/factory/edge/{authentik-outpost.yaml,routes.phase2.*}   deploy/factory/images.lock   LICENSES.md
@@ -88,7 +88,7 @@ docs/design/39-…  docs/plans/README.md  CHANGELOG.md
 
 ### Task 1: GlitchTip adapter, plugin and the `glitchtip` agent
 
-**Files:** `crates/operon-collab/src/apps/glitchtip.rs`, `crates/operon-agent-glitchtip/**`, `web/plugins/glitchtip/**`, tests in each.
+**Files:** `crates/loams-collab/src/apps/glitchtip.rs`, `crates/loams-agent-glitchtip/**`, `web/plugins/glitchtip/**`, tests in each.
 
 **Produces:** `GlitchTipApi` (`projects`, `issues`, `issue`, `events`, `releases`, `resolve`, `ignore`); `loams.collab.v1` additions `ListErrorIssues`, `GetErrorIssue`, `ResolveErrorIssue` (write, idempotent), `ErrorIssue` messages (id, title, level, count, first and last seen, release, culprit, `top_frames` capped at 20, all free text `untrusted`); `@loams/plugin-glitchtip` (`console.page` `/errors`: list, filters, detail with stack trace and breadcrumbs, resolve and ignore; `embed.pane#glitchtip`; `bot.card#glitchtip.issue`; overview card with new and regressed counts); the **`glitchtip` agent**: `issues.search`, `issues.get`, `events.get`, `releases.list` (read), `issues.resolve`, `issues.ignore` (write).
 
@@ -100,7 +100,7 @@ docs/design/39-…  docs/plans/README.md  CHANGELOG.md
 
 ### Task 2: OpenPanel adapter, plugin and the `analytics` agent; the forward-auth edge
 
-**Files:** `crates/operon-collab/src/apps/openpanel.rs`, `crates/operon-agent-analytics/**`, `web/plugins/openpanel/**`, `deploy/factory/edge/{authentik-outpost.yaml,routes.phase2.*}`.
+**Files:** `crates/loams-collab/src/apps/openpanel.rs`, `crates/loams-agent-analytics/**`, `web/plugins/openpanel/**`, `deploy/factory/edge/{authentik-outpost.yaml,routes.phase2.*}`.
 
 **Produces:** `OpenPanelApi` (`events`, `metrics`, `funnel`); `MetricSeries` messages; `@loams/plugin-openpanel` (tiles on the console overview and in a page: events, active users, a configured funnel; `embed.pane#openpanel` behind forward-auth; `bot.card#analytics.metric`); the **`analytics` agent**: `metrics.query`, `funnel.get` (read) and `anomaly.check` (read; compares a series to a baseline: the median and the median absolute deviation of the same weekday-hour over the previous 4 weeks (estimate), flagging above `3 × MAD`; thresholds are policy). A scheduled durable function (every 10 min, per watched metric in the policy) calls `anomaly.check` and publishes a `Signal` to the factory (SF4 Task 3). The Authentik outpost routes `analytics.` and `obs.`: authenticate against Authentik, require group `factory-viewers`, inject basic auth for the app's service user.
 
@@ -114,15 +114,15 @@ docs/design/39-…  docs/plans/README.md  CHANGELOG.md
 
 **Files:** `deploy/factory/otel/**`, `deploy/factory/profiles/{langfuse,openobserve}.compose.yml`, chart templates, tests under `deploy/factory/otel/test/`.
 
-**Semantics (design §9.1):** receivers: OTLP gRPC and HTTP on loopback in `loams dev`, cluster-internal otherwise. Pipelines: `traces/llm` (the Filter Processor cannot keep a parent because a child matches, so selection is **trace-aware**: a `tail_sampling` stage (or a `groupbytrace` plus a policy) keeps every whole trace that contains a span with a `gen_ai.*` attribute or an agent-step attribute (`a2a.task_id`, `resonate.promise_id`), with a decision wait of 30 s (estimate) and a span cap, then a masking step that removes secret-canary matches and `untrusted` bodies over 2 KB and fails closed; `batch`; exporter `otlphttp/langfuse`); `traces/all` (a `transform` processor deleting `gen_ai.prompt`, `gen_ai.completion` and keys matching `gen_ai.*.content`, and truncating attribute values over 1 KiB; `batch`; exporters `otlphttp/openobserve` and `otlphttp/loam`); `logs` and `metrics` (the same deletion; OpenObserve and Loams). `file_storage` for the sending queue. Credentials come from the broker's secret store as environment variables of the collector pod, never in the config.
+**Semantics (design §9.1):** receivers: OTLP gRPC and HTTP on loopback in `loams dev`, cluster-internal otherwise. Pipelines: `traces/llm` (the Filter Processor cannot keep a parent because a child matches, so selection is **trace-aware**: a `tail_sampling` stage (or a `groupbytrace` plus a policy) keeps every whole trace that contains a span with a `gen_ai.*` attribute or an agent-step attribute (`a2a.task_id`, `resonate.promise_id`), with a decision wait of 30 s (estimate) and a span cap, then a masking step that removes secret-canary matches and `untrusted` bodies over 2 KB and fails closed; `batch`; exporter `otlphttp/langfuse`); `traces/all` (a `transform` processor deleting `gen_ai.prompt`, `gen_ai.completion` and keys matching `gen_ai.*.content`, and truncating attribute values over 1 KiB; `batch`; exporters `otlphttp/openobserve` and `otlphttp/loams`); `logs` and `metrics` (the same deletion; OpenObserve and Loams). `file_storage` for the sending queue. Credentials come from the broker's secret store as environment variables of the collector pod, never in the config.
 
-**Tests:** `otelcol validate` on every config; golden pipelines (`collector.golden/*.yaml`); with the compose harness and a synthetic span set: `llm_spans_reach_langfuse_with_content`; `selected_trace_includes_parent_spans` (a step span with no model call arrives with all its ancestors and siblings); `content_never_reaches_openobserve_or_loam` (a content canary in `gen_ai.prompt` and in an attribute named `gen_ai.tool.content`; scan OpenObserve's stored data and Loams's stream); `non_llm_spans_do_not_reach_langfuse`; `collector_restart_drains_queue`; `bad_credentials_drop_with_a_metric_not_a_crash`; `credentials_not_in_config_or_logs`; `langfuse_ee_not_enabled` (the container env has no licence key and the instance reports no EE features).
+**Tests:** `otelcol validate` on every config; golden pipelines (`collector.golden/*.yaml`); with the compose harness and a synthetic span set: `llm_spans_reach_langfuse_with_content`; `selected_trace_includes_parent_spans` (a step span with no model call arrives with all its ancestors and siblings); `content_never_reaches_openobserve_or_loam` (a content canary in `gen_ai.prompt` and in an attribute named `gen_ai.tool.content`; scan OpenObserve's stored data and Loams’ stream); `non_llm_spans_do_not_reach_langfuse`; `collector_restart_drains_queue`; `bad_credentials_drop_with_a_metric_not_a_crash`; `credentials_not_in_config_or_logs`; `langfuse_ee_not_enabled` (the container env has no licence key and the instance reports no EE features).
 
 **Commit:** `otel: the collector, two pipelines and the Langfuse and OpenObserve profiles`.
 
 ### Task 4: Signals, and the GlitchTip webhook into the factory
 
-**Files:** `crates/operon-factory/src/hooks.rs` additions, `crates/operon-factory/tests/intake.rs`, provisioning saga additions (`deploy/factory/chart`).
+**Files:** `crates/loams-factory/src/hooks.rs` additions, `crates/loams-factory/tests/intake.rs`, provisioning saga additions (`deploy/factory/chart`).
 
 **Semantics:** a provisioning saga (§22 §7.3 style) creates, in GlitchTip, a project alert rule with the factory webhook for each project in the policy; in OpenPanel, the watched-metric list in the policy; both idempotent and reconciled on a schedule. The GlitchTip receiver (SF4 Task 3) maps level and count to severity; the fingerprint is the GlitchTip issue id; the signal's evidence references are issue and event ids, which the triage stage reads through the agents. Fixtures use recorded real payloads from the pinned image.
 
@@ -132,7 +132,7 @@ docs/design/39-…  docs/plans/README.md  CHANGELOG.md
 
 ### Task 5: Tracing wired through every layer
 
-**Files:** `crates/operon-a2a/src/trace.rs` (SF2) extended, `crates/operon-bot`, `crates/operon-factory`, `crates/operon-collab`, tests.
+**Files:** `crates/loams-a2a/src/trace.rs` (SF2) extended, `crates/loams-bot`, `crates/loams-factory`, `crates/loams-collab`, tests.
 
 **Semantics:** every service uses the OTel SDK with the collector as the exporter; resource attributes `service.name`, `loams.instance`, `loams.env`; span attributes as design §9: `a2a.task_id`, `a2a.context_id`, `a2a.agent`, `factory.run_id`, `factory.stage`, `resonate.promise_id`, `resonate.origin`, `enduser.id` (a hash); for Langfuse, the attributes it maps to session and user (`session.id` = `contextId`, `user.id` = the hash; exact names per Task 0) so a chat thread is a Langfuse session and a factory run is a trace group. The AI gateway's `gen_ai.*` spans nest under the step span. The run record stores the root trace id of each stage, and `embed_url` templates build the Langfuse trace and OpenObserve search URLs from it.
 
@@ -142,7 +142,7 @@ docs/design/39-…  docs/plans/README.md  CHANGELOG.md
 
 ### Task 6: Langfuse and OpenObserve panes, readers and the factory `Observer`
 
-**Files:** `web/plugins/{langfuse,openobserve}/**`, `crates/operon-collab/src/apps/{langfuse.rs,openobserve.rs}`, `crates/operon-factory/src/observer.rs`.
+**Files:** `web/plugins/{langfuse,openobserve}/**`, `crates/loams-collab/src/apps/{langfuse.rs,openobserve.rs}`, `crates/loams-factory/src/observer.rs`.
 
 **Produces:** `@loams/plugin-langfuse` (`embed.pane#langfuse` at a trace, session or score page by id; `bot.card#langfuse.trace` with model, latency, cost and score from the run record, not from a Langfuse query; a "Traces for this run" button in run detail) and `@loams/plugin-openobserve` (`embed.pane#openobserve` at a search pre-filtered by `factory.run_id`, behind forward-auth; a "Logs and traces for this run" button); `LangfuseReader` (`scores(trace_ids)`, read-only key) and `OpenObserveReader` (`error_rate(service, window)`, `p95_latency(service, window)`, read-only credentials); the real **`Observer`** for SF4's observe stage combining the GlitchTip and analytics agents with the two readers.
 

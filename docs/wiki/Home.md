@@ -9,4 +9,4 @@ Loams is an open-source (Apache-2.0), AI-native data platform in Rust: hybrid re
 - [[Ecosystem and partners]]
 - [[Marketplace developer guide]]
 
-Source of truth: the [repository](https://github.com/ostrium-labs/loams/blob/main/README.md). Ask questions in [Discussions](https://github.com/ostrium-labs/loams/discussions).
+Source of truth: the [repository](https://github.com/ostrium-labs/loams/blob/dev/README.md). Ask questions in [Discussions](https://github.com/ostrium-labs/loams/discussions).

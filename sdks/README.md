@@ -1,8 +1,10 @@
+![Loams — Your data. Your bucket.](../docs/assets/loams-banner.svg)
+
 # Loams SDKs
 
-This directory contains official language SDKs, code generation templates, and conformance test suites for Loams.
+This directory contains Loams language implementations, code generation templates, and conformance fixtures. Packages are pre-release and not a stable published SDK family. Check each language’s README and the conformance runner before relying on a runtime or transport.
 
-## Supported Languages
+## Language implementations
 
 | Language | Path | Key Packages / Modules |
 | --- | --- | --- |
@@ -16,6 +18,9 @@ This directory contains official language SDKs, code generation templates, and c
 | **Swift** | [`swift/`](swift/) | `Loams` |
 | **Ruby** | [`ruby/`](ruby/) | `loams` |
 | **C++** | [`cpp/`](cpp/) | `loams` |
+| **Dart** | [`dart/`](dart/) | Implementation and runtime fixtures |
+| **Objective-C** | [`objc/`](objc/) | Implementation and runtime fixtures |
+| **PHP** | [`php/`](php/) | Implementation and runtime fixtures |
 
 ## Conformance & Testing
 

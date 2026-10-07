@@ -5,7 +5,7 @@
 > **Status: Planned** (2026-10-02). **Track MT** (design [§38](../design/38-knative-authentik-gitops.md) §6, D453–D456; amends [§25](../design/25-clever-cloud-stack.md) §6). Builds on §25's layout (`deploy/gitops/`, the umbrella chart `deploy/helm/loams-stack`, D186) and on MT1 Task 1 (Authentik's values and blueprints) and MT2 Task 1 (the Knative chart). If §25's layout has not been built yet, Task 1 creates the minimum of it that the waves need and records that in "Rulings made during execution". Branches `mt3-t<N>`, stacked; PRs target `main`. MT3 is YAML, Lua and shell; it adds no Rust crate.
 
 **Goal:**
-- §25's Argo CD app-of-apps gains D455's waves: CloudNativePG and the Knative Operator, Authentik's Postgres, Authentik with Loams's blueprints, `KnativeServing` and `KnativeEventing`, and `loams-knative-source`.
+- §25's Argo CD app-of-apps gains D455's waves: CloudNativePG and the Knative Operator, Authentik's Postgres, Authentik with Loams’ blueprints, `KnativeServing` and `KnativeEventing`, and `loams-knative-source`.
 - Lua health checks for the new resources.
 - A Flux layout with the same order (D454).
 - The k3s small profile (D456) and the Clever Kubernetes Engine profile with Clever's Terraform and Karpenter providers (D453), both tested.
@@ -131,7 +131,7 @@ From §25: the umbrella chart, the root `Application`, the existing health custo
 
 | Item | Where |
 |---|---|
-| Tenant onboarding through Git, upgrade rings, hub-and-spoke or per-cluster Argo CD, the BYOC agent | [MT4](2026-10-02-mt4-byoc-control-plane.md) (open source since 2026-10-02, D540; this row said `loam-platform`) |
+| Tenant onboarding through Git, upgrade rings, hub-and-spoke or per-cluster Argo CD, the BYOC agent | [MT4](2026-10-02-mt4-byoc-control-plane.md) (open source since 2026-10-02, D540; this row said `loams-platform`) |
 | A real CKE apply | Manual, after the owner's account decision |
 
 ## PR sizes

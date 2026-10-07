@@ -57,7 +57,7 @@ They would say "built on Loams" (see [TRADEMARKS.md](TRADEMARKS.md), a provision
 
 Suppose a cloud provider, say Cloudflare, wants users to run Loams on the provider's own infrastructure with one click. That is a **deploy-target adapter** plus a **button**:
 
-1. The provider (or a community member) contributes a template under `deploy/<provider>/` that maps Loams's components onto the provider's services (compute, object storage, key-value or SQL metadata, queues).
+1. The provider (or a community member) contributes a template under `deploy/<provider>/` that maps Loams’ components onto the provider's services (compute, object storage, key-value or SQL metadata, queues).
 2. The deployment is **BYOC**: it runs in the user's account on the provider, and the user owns the bucket and the data.
 3. Any provider-specific compute substrate is added as a `Runner` adapter upstream when it is generic.
 4. The README of `deploy/<provider>/` carries the button, built to the [button specification](docs/ecosystem/deploy-buttons.md).

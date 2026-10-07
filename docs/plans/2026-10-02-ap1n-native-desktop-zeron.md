@@ -18,7 +18,7 @@
 
 **Spec:**
 - [§37 §18](../design/37-desktop-and-mobile-apps.md) (all of it) and the [decision log](../design/13-decision-log.md); the superseded §37 sections are historical.
-- §39 (`docs/design/39-software-factory-and-loam-bot.md`, PR #192, branch `software-factory-design`, not yet on `main`): §3 (embedding), §5 (A2A), §6 (tokens), §8 (approvals), §13 (Loams Bot in the apps), and its plans SF1, SF2, SF3.
+- §39 (`docs/design/39-software-factory-and-loams-bot.md`, PR #192, branch `software-factory-design`, not yet on `main`): §3 (embedding), §5 (A2A), §6 (tokens), §8 (approvals), §13 (Loams Bot in the apps), and its plans SF1, SF2, SF3.
 - [§30](../design/30-loams-cli.md) D283, D285 (the CLI JSON contract); [§38](../design/38-knative-authentik-gitops.md) (Authentik); [§19](../design/19-console-identity-and-agents.md) §5 (principals and tokens); D111 (loopback); D128 (one protobuf toolchain); D284 (no telemetry); D435 (approvals); D220.
 - In the fork: `LOAMS.md`, `crates/loams-link/**`, `crates/harness/src/acp/loams_bot.rs`, zeron's `ARCHITECTURE.md`, `docs/mcp.md`, `docs/reference/linux-browser.md`, `docs/reference/windows-development.md`.
 

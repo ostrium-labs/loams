@@ -49,7 +49,7 @@ FoundationDB was considered and dropped: TiDB (since replaced by TiKV, D124, D26
 
 ### 2.2 Postgres: Lakekeeper's patterns
 
-Lakekeeper (Apache-2.0, `lakekeeper-storage-postgres` at `b771dbf`) runs the same shape of commit as Loams's manifests: write the object, then compare-and-swap the pointer. The Postgres backend follows it:
+Lakekeeper (Apache-2.0, `lakekeeper-storage-postgres` at `b771dbf`) runs the same shape of commit as Loams’ manifests: write the object, then compare-and-swap the pointer. The Postgres backend follows it:
 
 - **Isolation.** READ COMMITTED, the Postgres default. No SERIALIZABLE. Explicit row locks only where needed, taken in a fixed order: `SELECT … FOR UPDATE` on partition heads in key order for `commit_wal`, `FOR UPDATE` on a namespace row when it is dropped.
 - **Compare-and-swap.** One conditional `UPDATE … WHERE version = $expected` per pointer. The code checks the returned row count: no row is a `VersionMismatch`, a missing entity is `NotFound`. Batched pointer updates use `UPDATE … FROM (VALUES …)` as Lakekeeper's multi-table commit does.
@@ -61,7 +61,7 @@ Lakekeeper (Apache-2.0, `lakekeeper-storage-postgres` at `b771dbf`) runs the sam
 - **Clock.** No single clock row. Commands carry bounded-skew stamps (§3.2), so no row is locked by every write.
 - **Singletons.** Maintenance that must run once per cluster takes `pg_advisory_lock`, as Lakekeeper's `advisory_lock.rs` does, where a metastore lease does not already cover it.
 
-What is copied from Lakekeeper, with its NOTICE, is listed in §11 §2. Lakekeeper's `CatalogStore` trait is not copied: it threads one transaction through many calls, while Loams's trait is one call, one transaction (D47). That is what makes Loams's trait servable from DynamoDB and over RPC.
+What is copied from Lakekeeper, with its NOTICE, is listed in §11 §2. Lakekeeper's `CatalogStore` trait is not copied: it threads one transaction through many calls, while Loams’ trait is one call, one transaction (D47). That is what makes Loams’ trait servable from DynamoDB and over RPC.
 
 ### 2.3 DynamoDB
 
@@ -358,9 +358,9 @@ Stages 1–3 are what breaks first and are cheap, so they ship in v1.0. The trai
 
 ### 5.8 What Loams takes from the reference systems
 
-- **Neki** (PlanetScale; proprietary, public docs only): a versioned topology document replaced whole and pushed; routers that buffer during cutover; lookup tables for secondary keys (Loams's name → id items already are); shipping without atomic cross-shard commits.
+- **Neki** (PlanetScale; proprietary, public docs only): a versioned topology document replaced whole and pushed; routers that buffer during cutover; lookup tables for secondary keys (Loams’ name → id items already are); shipping without atomic cross-shard commits.
 - **PgDog** (AGPL-3.0; **reference only, no code is copied**): shard routing with a direct/multi/all route; two-phase commit needing a coordinator WAL, which is why Loams avoids cross-shard atomicity (for the retrieval engine's metadata; sharded SQL databases behind PgDog may opt in under D306, [§31](31-loams-router-and-verification.md) §10, which also keeps this router separate from the SQL routers, D321); centroid-based vector sharding (`pgdog-vector`), relevant if very large collections are later sharded by IVF centroid.
-- **turbopuffer**: routing as a soft cache-affinity hint by consistent hash of (org, namespace), about 100k namespaces per node, "unlimited (seen: 250M+)" namespaces, and at most 3 serial object-store round trips on a cold query. Loams does **not** adopt its per-namespace WAL (one entry per second per namespace, one PUT each): Loams's WAL objects span namespaces (D25) and are committed per shard (§3.1).
+- **turbopuffer**: routing as a soft cache-affinity hint by consistent hash of (org, namespace), about 100k namespaces per node, "unlimited (seen: 250M+)" namespaces, and at most 3 serial object-store round trips on a cold query. Loams does **not** adopt its per-namespace WAL (one entry per second per namespace, one PUT each): Loams’ WAL objects span namespaces (D25) and are committed per shard (§3.1).
 - **WarpStream**: a strongly consistent metadata database sequences writes and assigns offsets (DynamoDB on AWS, Spanner on GCP, Cosmos DB on Azure). Loams is already this model (D10: Kafka-rate metadata cannot run on S3 compare-and-swap).
 
 **Cold start target.** A query on a cold namespace needs the directory entry (usually cached), `collection_head` (one metastore round trip), a manifest GET, and the Lance and Tantivy footers: at most 3 serial object-store round trips, p50 300–900 ms **(target)**. The prewarm API and pinned namespaces cover planned traffic.
@@ -386,7 +386,7 @@ Stages 1–3 are what breaks first and are cheap, so they ship in v1.0. The trai
 
 ## 7. Authorization (D66, D67)
 
-**An `Authorizer` trait** in `loams-common`, after Lakekeeper's, in Loams's terms:
+**An `Authorizer` trait** in `loams-common`, after Lakekeeper's, in Loams’ terms:
 
 - `check(principal, action, resource)`, `batch_check`, and `filter_visible(list)`;
 - lifecycle hooks `on_created` and `on_deleted` for orgs, namespaces, collections and API keys;
@@ -409,7 +409,7 @@ Every surface maps each request to `(action, resource)` and calls it.
 - **Copied with attribution:** the `.fga` components and the patterns of Lakekeeper's `migration.rs` (model versions through `TupleModelManager`) and `reconcile.rs`, keeping Lakekeeper's `NOTICE` ("Copyright 2024-2026 Vakamo Inc.") under Apache-2.0 §4(d) and marking changes. Lakekeeper's `Authorizer` trait and `authorizer.rs` are reference only.
 - **Tuple writes through a transactional outbox.** The tuple change is a row written in the same `ControlStore` or metastore transaction as the resource change. A worker drains the outbox with idempotent writes (ignoring duplicates on write and missing tuples on delete), and a `reconcile` job repairs drift. Lakekeeper writes tuples before its database commit and deletes them after it, which orphans tuples when the commit fails; the outbox cannot.
 - **Reads:** a decision cache in the gateway with a TTL of at most 5 s, keyed by (principal, action, object). `MinimizeLatency` reads, and `HigherConsistency` right after the principal's own writes.
-- *(default, D67)* **OpenFGA moves from M6 to M2.x**, with the control plane, and Loams and Lakekeeper (M4) **share one OpenFGA store**: Lakekeeper's types stay unchanged, and Loams's are added beside them as modules of a schema 1.2 model. Whether both products' migration managers can share one store is Q21.
+- *(default, D67)* **OpenFGA moves from M6 to M2.x**, with the control plane, and Loams and Lakekeeper (M4) **share one OpenFGA store**: Lakekeeper's types stay unchanged, and Loams’ are added beside them as modules of a schema 1.2 model. Whether both products' migration managers can share one store is Q21.
 
 ## 8. BYOC (D64)
 

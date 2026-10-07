@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](docs/assets/loams-banner.svg)
+
 # Loams
 
 **One bucket, every index: hybrid retrieval on object storage, with reactive data and durable agent runs beside it.**
@@ -5,6 +7,18 @@
 Loams is an open-source, AI-native data platform built in Rust. It stores retrieval data in *your* object-storage bucket (RustFS, S3, GCS, Azure Blob or a local directory) in open formats: Lance and Tantivy today, Apache Iceberg next. Metadata lives in an embedded Raft metastore or in TiKV, and durable-execution state in SQLite (TiKV support is in progress). Retrieval compute is stateless and holds only caches, so it scales independently and can be replaced at any time.
 
 > **Early and moving fast.** Loams has no stable release yet, and APIs, formats and flags change without notice. The crates are `loams-*` and the binary is `loams`; nothing is published yet. The design is public in [`docs/design`](docs/design/README.md).
+
+[Documentation](docs/README.md) · [Website](https://loams.dev) · [API reference](https://loams.dev/api-docs) · [Contributing](CONTRIBUTING.md)
+
+## Start here
+
+| Your goal | Entry point |
+|---|---|
+| Build and run the engine | [Quick start](#quick-start) and [platform build guides](docs/build-from-source/README.md) |
+| Understand the system | [Architecture](#architecture) and [design documents](docs/design/README.md) |
+| Use a client | [API surfaces](#api-surfaces) and [SDKs](sdks/README.md) |
+| Work on desktop, mobile, web, or plugins | [Monorepo guide](docs/monorepo.md) |
+| Help ship Loams | [Contributing](CONTRIBUTING.md) and [implementation plans](docs/plans/README.md) |
 
 ## Why Loams
 
@@ -35,7 +49,7 @@ Read the [pitch](docs/design/00-pitch.md) and the [architecture](docs/design/01-
 
 ## Features
 
-Statuses reflect the `main` branch. **Available** means it is built and tested in CI, not that it is production ready.
+Statuses describe the engine implementation; consult the selected source ref and CI evidence. **Available** means it is built and tested in CI, not that it is production ready.
 
 | Feature | What you get | Status |
 |---|---|---|
@@ -60,7 +74,8 @@ Statuses reflect the `main` branch. **Available** means it is built and tested i
 | Iceberg analytics | Iceberg tables through a REST catalog, readable by DuckDB, Spark, Trino and ClickHouse | Planned |
 | Kafka wire and OTLP | Kafka clients and OpenTelemetry logs ingest into streams | Planned |
 | Auth and tenancy | API keys, authorization, tenant quotas and a namespace router | Planned |
-| Python SDK and MCP | A native Python client, `to_arrow()` and `to_polars()`, and an MCP server | Planned |
+| Native SDKs | Multi-language clients, generated API bindings, and shared runtime conformance fixtures; packages are not a stable published release | In progress |
+| MCP and analytics helpers | Agent tools and convenience integrations such as `to_arrow()` and `to_polars()` | Planned |
 | Loams Functions | A CPU-time serverless runtime on workerd, wasmtime and gVisor, with a Rust Dapr-style API | Planned |
 | Loams Jobs | Celery, BullMQ v6, PySpark (through Sail) and Flink SQL (through RisingWave) jobs run durably on Loams | Planned |
 | Loams Postgres | A fork of Neon whose WAL lives on TiKV and the bucket | Planned |
@@ -273,12 +288,12 @@ In order: hybrid retrieval hardened for production (auth, quotas, telemetry, mul
 Contributions of every size are welcome: bug reports, compatibility reports from your Qdrant or Elasticsearch client, docs fixes, tests and code.
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) for the dev setup, tests and the PR flow.
-- Look for issues labelled [`good first issue`](../../issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) or [`help wanted`](../../issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22).
+- Look for issues labelled [`good first issue`](https://github.com/ostrium-labs/loams/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) or [`help wanted`](https://github.com/ostrium-labs/loams/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22).
 - For anything that changes a format, a protocol or a design decision, open an issue first.
 
 ## Community
 
-- **Questions and ideas:** [GitHub Discussions](https://github.com/ostrium-labs/loams/discussions). **Bugs and RFCs:** [GitHub issues](../../issues).
+- **Questions and ideas:** [GitHub Discussions](https://github.com/ostrium-labs/loams/discussions). **Bugs and RFCs:** [GitHub issues](https://github.com/ostrium-labs/loams/issues).
 - **Security issues:** please report them privately, as described in [SECURITY.md](SECURITY.md).
 - **Conduct:** everyone who takes part agrees to the [Code of Conduct](CODE_OF_CONDUCT.md).
 - **Governance and maintainers:** [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md).

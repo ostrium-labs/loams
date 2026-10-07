@@ -132,7 +132,7 @@ A single abstraction (`PkIndex`) backed by **SlateDB** (object-storage-native LS
 
 - Every Loams-defined format (WAL object, segment, split footer extensions, manifests, sidecars) carries `magic + format_version`; readers support N and N−1.
 - WAL chunks and segments also carry an `encoding` field from their first version, so adding `arrow` (§02 §5) is not a format break.
-- Durable-execution documents use the Resonate blob format (header `v`, currently 1) unchanged; Loams does not extend it, so upstream tools can read Loams's `durable/` prefix.
+- Durable-execution documents use the Resonate blob format (header `v`, currently 1) unchanged; Loams does not extend it, so upstream tools can read Loams’ `durable/` prefix.
 - Third-party formats are pinned: Lance file format 2.1, Iceberg spec v2 with v3 features enabled per table, Tantivy index version as shipped by the pinned fork.
 - Upgrades that change formats are opt-in per object and rolled forward by compaction.
 

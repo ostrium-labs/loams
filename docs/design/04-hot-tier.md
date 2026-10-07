@@ -43,7 +43,7 @@ Goal: interactive analytical latency (§7) and sub-second freshness on hot data,
 ### 3.1 T0 — metadata hot tier
 - Lakekeeper `LoadTable` response, `metadata.json`, manifest lists and manifests are fetched **once per snapshot** and decoded into an in-memory **file index**: per data file → partition values, column min/max/null counts, record count, DV reference, sort-order id.
 - Pruning runs against this index with zero object-store I/O. New snapshots are applied **incrementally** (only added/removed manifests are read).
-- Loams's own commits notify query nodes directly via meta; for external writers, subscribe to Lakekeeper CloudEvents or poll with ETag (default 5 s).
+- Loams’ own commits notify query nodes directly via meta; for external writers, subscribe to Lakekeeper CloudEvents or poll with ETag (default 5 s).
 - ⇒ Lakekeeper is contacted only on cold start or snapshot change, never per query.
 
 ### 3.2 T1 — Parquet data cache
@@ -107,7 +107,7 @@ For each table scan: `hot projection @ S'` if present and `S'` ≥ required snap
 2. Hot structures carry the source version they reflect; stale structures are used only with an explicit, correct delta patch or not at all.
 3. Loss of a node's tail is safe: the tail is re-derivable from the log (offsets after the applied offset).
 4. Cache corruption is detected by per-block checksums; a failed checksum evicts and refetches from S3.
-5. Exact paths (text, filters, aggregations, fetch, scroll, counts, exact vectors) are identical with the hot tier on and off; approximate ANN returns exact scores (R12). M1.2 gates this with a fake hot tier (`hot_hooks`, `determinism`), and every returned vector score comes from Loams's own kernel, never from a hot artifact (M1.2 Ruling 3).
+5. Exact paths (text, filters, aggregations, fetch, scroll, counts, exact vectors) are identical with the hot tier on and off; approximate ANN returns exact scores (R12). M1.2 gates this with a fake hot tier (`hot_hooks`, `determinism`), and every returned vector score comes from Loams’ own kernel, never from a hot artifact (M1.2 Ruling 3).
 
 ## 7. Latency targets (design goals, from reference systems)
 

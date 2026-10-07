@@ -2,7 +2,7 @@
 
 Status: **Approved** (user) · 2026-09-24. Items marked (verify) are unconfirmed and are resolved in the W-phase plans. Amendments proposed 2026-10-01 by [§36 Loams Git](36-loams-git.md) (D388–D390, D394, D398, D399) are marked inline; they await the owner because this document is approved.
 
-Coding agents such as Claude Code and Codex run inside **sandboxes**: an isolated process or microVM, a checkout of a repository, installed dependencies and a network policy. The runtime (the VM or namespace jail) is compute. Everything else — code, branches, checkpoints, dependencies, caches, transcripts, memory — is state that must be fast to materialize, cheap to fork and must survive the sandbox. That is Loams's model: stateless compute over a bucket.
+Coding agents such as Claude Code and Codex run inside **sandboxes**: an isolated process or microVM, a checkout of a repository, installed dependencies and a network policy. The runtime (the VM or namespace jail) is compute. Everything else — code, branches, checkpoints, dependencies, caches, transcripts, memory — is state that must be fast to materialize, cheap to fork and must survive the sandbox. That is Loams’ model: stateless compute over a bucket.
 
 **Loams is the state plane for sandboxes, not the sandbox runtime.** It never executes agent code in its own processes.
 
@@ -95,7 +95,7 @@ A Git host stores code; Loams also makes it searchable the moment it is pushed.
 
 - **Key:** `env_key = hash(lockfiles, toolchain versions, platform, setup script)`. Identical projects on identical lockfiles share one image.
 - **Format:** content-defined chunks (FastCDC, BLAKE3 digests) packed into 16–64 MiB pack objects with an index, plus a filesystem manifest. Small files are never one PUT each. This is the **nydus RAFS** model.
-- **Buy: nydus** (Apache-2.0, Rust, CNCF Dragonfly): RAFS v6 images (EROFS-compatible), cross-layer chunk dedup, lazy fetch through FUSE, virtiofs or in-kernel EROFS + fscache. Loams stores the chunk packs and serves them through its cache; nydus builds and mounts images (verify that nydus's storage backend can point at Loams's bucket or cache endpoint).
+- **Buy: nydus** (Apache-2.0, Rust, CNCF Dragonfly): RAFS v6 images (EROFS-compatible), cross-layer chunk dedup, lazy fetch through FUSE, virtiofs or in-kernel EROFS + fscache. Loams stores the chunk packs and serves them through its cache; nydus builds and mounts images (verify that nydus's storage backend can point at Loams’ bucket or cache endpoint).
 - **Build once:** a sandbox that misses its `env_key` triggers an **env build** worker task that installs into a builder sandbox, converts the result to an image and publishes it. Concurrent misses on one key share one build through a metastore lease on the key.
 - **Why lazy:** a sandbox touches a small fraction of its environment at start. The SOCI paper (arXiv 2607.06868) reports 7.4–9.3× lower cold-start pull time for lazy loading versus full pulls, and Mintlify reports session creation dropping from about 46 s to about 100 ms with a virtual filesystem.
 
@@ -113,7 +113,7 @@ Mount the namespace's caches for `uv` (`UV_CACHE_DIR`), pnpm (`store-dir`), Carg
 ## 7. Build and test caches
 
 - **sccache** (Apache-2.0) has an S3 backend: point it at `ns/<ns>/cache/sccache/` with vended credentials. No Loams code. *(D398, §36 §8: keys become per repository and trust class, `ns/<ns>/cache/sccache/<repo>/<class>/`, and an optional gateway path over sccache's WebDAV backend adds metering, approximate LRU and server-enforced trust; plan GT3.)*
-- **Bazel / Buck2 / Pants:** `bazel-remote` (Apache-2.0) with its S3 backend now; Loams's own REAPI CAS + ActionCache on the namespace CAS is Phase C.
+- **Bazel / Buck2 / Pants:** `bazel-remote` (Apache-2.0) with its S3 backend now; Loams’ own REAPI CAS + ActionCache on the namespace CAS is Phase C.
 - **Turborepo / Nx** remote-cache HTTP APIs: small, Phase B.
 
 ## 8. Sandbox runtimes: integrate, do not build
@@ -201,10 +201,10 @@ session(id, task):                                   # a Resonate durable functi
 
 - The `sessions` stream receives one record per message, tool call and turn result (from OTLP spans and events, and from the harness's session files parsed with `tokscale-core`, §16 §6).
 - A link keeps `agent_sessions` (one row per turn: harness, model, tokens, cost, tools used, duration, outcome; a collection until M4 adds tables, then an Iceberg table) and `session_history`, a collection over transcripts, so agents can search past sessions as memory (hybrid search, §05 §4).
-- Session files in `/agent-home` are the harness's own resume state; the stream is Loams's queryable copy. Both survive the sandbox.
+- Session files in `/agent-home` are the harness's own resume state; the stream is Loams’ queryable copy. Both survive the sandbox.
 - **Result:** merge within the Loams repo, or push the branch to the GitHub mirror.
 
-## 10. MCP: Loams's server and the MCP gateway
+## 10. MCP: Loams’ server and the MCP gateway
 
 Target spec: **MCP 2026-07-28**, which makes the protocol stateless: no `initialize` handshake and no `Mcp-Session-Id`; every request carries its protocol version and client capabilities in `_meta`; `server/discover` advertises versions; `Mcp-Method` / `Mcp-Name` headers let gateways route without parsing JSON; list results carry `ttlMs` and `cacheScope`; server-initiated requests are replaced by multi-round-trip `input_required` results; long-running work uses the Tasks extension; OpenTelemetry context travels in `_meta` (`traceparent`).
 
@@ -279,7 +279,7 @@ GC: reachability from `refs` documents (from D388: checkpoints within retention,
 ## 16. Open questions
 
 1. Scope of the Git server Loams must build on gitoxide (protocol v2 only? v0/v1 for old clients?). *Proposed answer (D394, §36 §6.1): v2 upload-pack, v0/v1 receive-pack, v0 upload-pack only if a W1 matrix client lacks v2 (Q387).*
-2. Whether nydus can read chunks through `object_store` or needs an S3-compatible endpoint on Loams's cache.
+2. Whether nydus can read chunks through `object_store` or needs an S3-compatible endpoint on Loams’ cache.
 3. FUSE vs virtiofs vs EROFS + fscache per runtime, and privileges in Kubernetes pods.
 4. A cross-ecosystem definition of `env_key` (lockfile sets, native build steps, CPU architecture).
 5. Cross-namespace dedup policy for public packages.

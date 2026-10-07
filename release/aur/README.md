@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # AUR packaging for Loams
 
 [`PKGBUILD`](PKGBUILD) is the AUR recipe. It lives **here, in the Loams

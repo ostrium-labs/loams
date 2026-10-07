@@ -1,21 +1,21 @@
-# 28 — Loams Postgres: a Neon Fork with Loams's Control Plane and Loams's WAL
+# 28 — Loams Postgres: a Neon Fork with Loams’ Control Plane and Loams’ WAL
 
 Status: **Approved direction** · 2026-09-29. On 2026-09-29 the owner amended §23 (PR #111) with these decisions:
 
 - The showcase apps run on CloudNativePG.
-- Neon is forked, with Loams's control plane as the primary control plane.
+- Neon is forked, with Loams’ control plane as the primary control plane.
 - PgDog does the routing, and only as an unmodified separate service.
-- Loams's own WAL replaces Neon's safekeepers.
+- Loams’ own WAL replaces Neon's safekeepers.
 
 The owner then chose the WAL design:
 
-- **Option A.** TiKV is the quorum hot tier, and Loams's log group-commits to the bucket behind it.
+- **Option A.** TiKV is the quorum hot tier, and Loams’ log group-commits to the bucket behind it.
 - **A Loams crate speaks Neon's safekeeper protocol**, so walproposer and the pageserver stay unmodified.
 - **A pgbench merge gate** gates the switch-over.
 
-These are decisions **D230–D236**, all owner-approved on 2026-09-29. The WAL replacement (D233) is approved *direction*: it becomes the default only if the benchmark gate passes. The concrete WAL design is **D237–D241**. They are Loams's proposals within the owner's decisions and are marked as such. Open questions are **Q110–Q119**. Arm A of the WAL (§7.2, 2026-09-30) adds D263–D269 and D271 (D270 is the CloudEvents decision; D263, compio for the data path, is the owner's) and Q261–Q264.
+These are decisions **D230–D236**, all owner-approved on 2026-09-29. The WAL replacement (D233) is approved *direction*: it becomes the default only if the benchmark gate passes. The concrete WAL design is **D237–D241**. They are Loams’ proposals within the owner's decisions and are marked as such. Open questions are **Q110–Q119**. Arm A of the WAL (§7.2, 2026-09-30) adds D263–D269 and D271 (D270 is the CloudEvents decision; D263, compio for the data path, is the owner's) and Q261–Q264.
 
-This document **supersedes §23's D149** (Neon for the showcase apps) and **D151** (fork only when needed). It **amends D150** (the control plane grows from a client into the primary control plane) and **D153** (PgDog, not Loams's pg listener, splices Postgres connections to computes). D148, D152, D154 and D155 stand. D156 and D157's WeSQL row are not affected.
+This document **supersedes §23's D149** (Neon for the showcase apps) and **D151** (fork only when needed). It **amends D150** (the control plane grows from a client into the primary control plane) and **D153** (PgDog, not Loams’ pg listener, splices Postgres connections to computes). D148, D152, D154 and D155 stand. D156 and D157's WeSQL row are not affected.
 
 Markers:
 
@@ -32,12 +32,12 @@ Markers:
 |---|---|---|
 | D230 | **The showcase apps run on CloudNativePG** (Apache-2.0, v1.30.1) with plain **Postgres 17** (17.11). Backups and PITR go to RustFS through the **Barman Cloud CNPG-I plugin** (v0.15.0), not the in-tree `barmanObjectStore`, which is deprecated and removed in 1.31. **Replaces D149** | Approved (owner, 2026-09-29) |
 | D231 | **Loams Postgres is a fork of Neon**, `dina-kar/neon` (created 2026-09-29 as a GitHub fork of `neondatabase/neon`, Apache-2.0). Loams owns its releases, its Postgres patch rebases and its images. Nothing is posted upstream. **Replaces D151** | Approved (owner, 2026-09-29) |
-| D232 | **Loams's control plane is Loams Postgres' primary control plane.** It replaces Neon's closed one: tenant, timeline and branch lifecycle; compute specs and compute start; the storage controller's hooks; the proxy's auth API when the proxy is used (§5). **Amends D150** | Approved (owner, 2026-09-29) |
-| D233 | **Loams's WAL replaces Neon's safekeepers**, behind a feature, and becomes the default only when the pgbench gate passes: p99 commit latency no worse than the safekeeper baseline, and throughput no worse (§6, §7) | Approved direction (owner, 2026-09-29), gated on benchmarks |
-| D234 | **Option A with TiKV as the quorum hot tier.** A Postgres WAL record is acknowledged once it is durable in TiKV (Raft quorum). Loams's log then group-commits it to the bucket. TiKV's copy is trimmed after the bucket upload *and* the pageserver's `remote_consistent_lsn` pass it. The target is single-digit-ms commit acks | Approved (owner, 2026-09-29) |
+| D232 | **Loams’ control plane is Loams Postgres' primary control plane.** It replaces Neon's closed one: tenant, timeline and branch lifecycle; compute specs and compute start; the storage controller's hooks; the proxy's auth API when the proxy is used (§5). **Amends D150** | Approved (owner, 2026-09-29) |
+| D233 | **Loams’ WAL replaces Neon's safekeepers**, behind a feature, and becomes the default only when the pgbench gate passes: p99 commit latency no worse than the safekeeper baseline, and throughput no worse (§6, §7) | Approved direction (owner, 2026-09-29), gated on benchmarks |
+| D234 | **Option A with TiKV as the quorum hot tier.** A Postgres WAL record is acknowledged once it is durable in TiKV (Raft quorum). Loams’ log then group-commits it to the bucket. TiKV's copy is trimmed after the bucket upload *and* the pageserver's `remote_consistent_lsn` pass it. The target is single-digit-ms commit acks | Approved (owner, 2026-09-29) |
 | D235 | **Loams speaks Neon's safekeeper protocol through a clean Rust API.** A Loams crate, `loams-safekeeper`, implements the proposer–acceptor protocol (v3), the replication protocol the pageserver and computes read from, and the storage-broker publication. Walproposer and the pageserver run unmodified. P4 splits into P4a (the protocol crate and its TiKV backend), P4b (the benchmark harness) and P4c (the switch-over behind a feature, merged only when the gate passes) | Approved (owner, 2026-09-29) |
 | D236 | **PgDog routes, as an unmodified separate service only** (AGPL-3.0, v0.1.60). It is never linked, vendored or patched. Loams generates its config. The fallbacks are Neon's proxy (Apache-2.0) and PgBouncer (ISC). **Amends D153** for Postgres OLTP | Approved (owner, 2026-09-29) |
-| D237 | **TxnKV with 1PC and async commit, not RawKV**, for the WAL hot tier. Only a transaction can check the term fence and write the WAL in one atomic step. RawKV needs a separate CAS round trip, and it was not faster in the spike (§6.4) | Proposed (Loams's design within D234) |
+| D237 | **TxnKV with 1PC and async commit, not RawKV**, for the WAL hot tier. Only a transaction can check the term fence and write the WAL in one atomic step. RawKV needs a separate CAS round trip, and it was not faster in the spike (§6.4) | Proposed (Loams’ design within D234) |
 | D238 | **Key layout:** a dedicated keyspace `loams_pgwal`; per timeline, a head key followed by chunk keys by LSN; one split boundary per timeline; batches of 128 KiB chunks up to 1 MiB per transaction (§6.5) | Proposed |
 | D239 | **One logical acceptor per timeline, served by a stateless, shared WAL service** (the `wal` role, one pool per AZ). It is not a compute sidecar. The compute's `neon.safekeepers` names one endpoint (quorum of one). Durability comes from TiKV's Raft quorum, not from three acceptors (§6.3) | Proposed |
 | D240 | **The pageserver reads WAL from the WAL service** over the unchanged `START_REPLICATION` interpreted protocol. The service serves from its tail cache, then TiKV, then the Loams log in the bucket. Trimming waits for both the bucket commit and the pageserver's `remote_consistent_lsn` (§6.7) | Proposed |
@@ -48,7 +48,7 @@ Markers:
 ### 2.1 Goals
 
 1. **Real Postgres for the showcase apps now.** Plain Postgres on CloudNativePG, with PITR to the same RustFS store. It takes no fork work (D230).
-2. **Serverless, branchable Postgres on the bucket as a Loams product.** Neon's storage (pageserver, layers in the bucket, copy-on-write branches) runs under Loams's control plane, with no dependency on a vendor's closed services (D231, D232).
+2. **Serverless, branchable Postgres on the bucket as a Loams product.** Neon's storage (pageserver, layers in the bucket, copy-on-write branches) runs under Loams’ control plane, with no dependency on a vendor's closed services (D231, D232).
 3. **A WAL service that beats safekeepers where it counts.**
    - **Operations:** no stateful safekeeper fleet, and no membership migrations.
    - **Durability:** the bucket copy is seconds old, not segments old.
@@ -62,7 +62,7 @@ Markers:
 - **Merging branches.** As in §23: Postgres cannot merge timelines (D155).
 - **Neon's hosted extras.** The console, the Data API, Neon Auth and autoscaling VMs are out of scope. Scale-to-zero is Q113.
 - **Upstream contributions.** Nothing is posted to `neondatabase`, `pgdogdev` or `cloudnative-pg` without the owner's approval.
-- **Modifying TiKV or PD.** D126 holds: official releases, configured, never patched. Client-side work goes into Loams's `client-rust` fork.
+- **Modifying TiKV or PD.** D126 holds: official releases, configured, never patched. Client-side work goes into Loams’ `client-rust` fork.
 
 ## 3. Architecture
 
@@ -76,7 +76,7 @@ Markers:
  │ by database name, balances   │                     │ Barman Cloud plugin ──► RustFS (PITR) │
  │ reads across replicas        │                     └───────────────────────────────────────┘
  └──────┬───────────────────────┘
-        │ config + RELOAD from Loams's control plane
+        │ config + RELOAD from Loams’ control plane
         ▼
  ┌──────────────────────────────┐   spec (GET …/computes/{id}/spec)   ┌─────────────────────────────┐
  │ Loams Postgres compute       │◄────────────────────────────────────┤ Loams control plane (D232)  │
@@ -158,7 +158,7 @@ Markers:
 
 ### 5.2 What Loams serves
 
-| Caller | Endpoint | Request → response | Loams's handler |
+| Caller | Endpoint | Request → response | Loams’ handler |
 |---|---|---|---|
 | `compute_ctl` at start | `GET {cp}/compute/api/v2/computes/{compute_id}/spec`, `Authorization: Bearer $NEON_CONTROL_PLANE_TOKEN`. It retries up to 3 times on 502/503 | → `ControlPlaneConfigResponse{spec?: ComputeSpec, status: "empty" \| "attached", compute_ctl_config}` (`neon/libs/compute_api/src/responses.rs`) | Builds `ComputeSpec` from the `x/` and `X/` records: `tenant_id`, `timeline_id`, `mode`, `pageserver_connection_info`, `safekeeper_connstrings` (+ `safekeepers_generation`), `storage_auth_token`, roles, databases, settings (`wal_level = logical`, `synchronous_standby_names = 'walproposer'`) |
 | Storage controller | `PUT {cp}/notify-attach` with `{tenant_id, preferred_az?, stripe_size?, shards: [{node_id, shard_number}]}` | 2xx; 423 Busy; 429 SlowDown | Records the pageserver per shard and pushes `/configure` to the tenant's computes |
@@ -228,9 +228,9 @@ So the safekeeper ack costs about **3.5 ms at p50** on this hardware, almost all
 
 | Option | What changes | For | Against |
 |---|---|---|---|
-| **A.** Loams's hot tier acks at quorum, and Loams's log group-commits to the bucket | A WAL store under the safekeeper role | Keeps a low-latency ack; reuses TiKV and the Loams log | Needs a protocol front end: B or C |
+| **A.** Loams’ hot tier acks at quorum, and Loams’ log group-commits to the bucket | A WAL store under the safekeeper role | Keeps a low-latency ack; reuses TiKV and the Loams log | Needs a protocol front end: B or C |
 | **B.** The safekeeper wire protocol, implemented by Loams | New Loams service; walproposer, pageserver and broker unchanged | No change to the patched compute; upgrades are drop-in; the benchmark compares like with like | Loams must match a subtle protocol (terms, truncation, interpreted sending) |
-| **C.** walproposer speaks Loams's protocol | The C extension in `pgxn/neon`; the pageserver's receiver | Could drop the Paxos layer completely | Forks the most delicate C code in Neon; every Postgres rebase carries it; the pageserver changes too |
+| **C.** walproposer speaks Loams’ protocol | The C extension in `pgxn/neon`; the pageserver's receiver | Could drop the Paxos layer completely | Forks the most delicate C code in Neon; every Postgres rebase carries it; the pageserver changes too |
 | Pure bucket WAL (`standard` or `express` class) | Ack after a bucket PUT and a metastore commit | Cheapest; no hot tier | Measured 22 ms p50 and 148 ms p99 at a 1 ms flush interval (§6.4). S3 Standard is tens of ms per PUT (AWS: "median latencies are often in the tens of milliseconds"). `express` targets 20–50 ms (§02 §2). All of these are an order of magnitude over safekeepers for OLTP |
 
 **Chosen: A behind B** (D234, D235, owner-approved). TiKV provides the quorum, and a Loams crate speaking the safekeeper protocol sits in front. C is rejected: it moves the risk into C code that every rebase must carry.
@@ -327,9 +327,9 @@ On this machine RawKV was **not faster** than a 1PC transaction. The fenced raw 
 | `raft-base-tick-interval`, `raft-heartbeat-ticks`, `raft-election-timeout-ticks` | 1 s, 2, 10: **an election after about 10 s** | Shorter ticks for WAL stores, for example 200 ms (about 2 s to elect), with `hibernate-regions` (default on) to bound the CPU (Q117) | A crashed leader **stalls every timeline it leads until the election**. Safekeepers do not stall when one of three fails. This is the WAL's weakest point (§12 row 10) |
 | `causal-ts.*` (API v2) | `renew-interval` 100 ms, `alloc-ahead-buffer` 3 s | Raise `alloc-ahead-buffer` and the renew batch sizes as the docs advise, so a PD leader failover does not show as a write-latency spike ("about 15%" QPS drop otherwise) | API v2 keyspaces need the causal-timestamp cache |
 | Storage | — | NVMe with power-loss protection | fdatasync of 16 KB takes **0.7–10 µs** on PLP drives (Intel D7-P5520, Samsung PM9A3) and **0.45–2.8 ms** on consumer drives (Crucial T500, Samsung 990 Pro) (Small Datum, 2026-01). The spike ran on a consumer drive, which is why both paths measured in milliseconds |
-| Placement | Placement rules on (`enable-placement-rules`) | Per timeline range (or per AZ group, Q117): one rule `role: leader, count: 1, label_constraints: zone in [<compute's AZ>]`, and one `role: follower, count: 2` in the other AZs. Keys are the memcomparable-encoded `'x' + keyspace id` bounds, in hex. Loams's control plane writes the rule when it places the compute | The client→leader hop stays in the AZ. Quorum needs one cross-AZ follower |
+| Placement | Placement rules on (`enable-placement-rules`) | Per timeline range (or per AZ group, Q117): one rule `role: leader, count: 1, label_constraints: zone in [<compute's AZ>]`, and one `role: follower, count: 2` in the other AZs. Keys are the memcomparable-encoded `'x' + keyspace id` bounds, in hex. Loams’ control plane writes the rule when it places the compute | The client→leader hop stays in the AZ. Quorum needs one cross-AZ follower |
 
-**Client side (Loams's `client-rust` fork).**
+**Client side (Loams’ `client-rust` fork).**
 
 - **No RPC batching.** `client-rust` sends every request as its own unary gRPC call (`src/store/request.rs`). It has no `BatchCommands` stream like client-go's (`max-batch-size` 128, `max-batch-wait-time`). One append per timeline in flight is unaffected. Many timelines per WAL instance may need it (Q118).
 - **No follower or stale reads**, and no zone-aware routing. Every request goes to the leader (upstream PR #562). The leader placement rule is what keeps the WAL in the AZ.
@@ -473,17 +473,17 @@ impl<S: WalStore> WalService<S> {
 | `START_REPLICATION … (term='N')` (compute `neon_walreader`) | term | Stream up to `flush_lsn` while the head's term equals N |
 | `'r'` StandbyReply, `'h'` HotStandbyFeedback, `'z'` NEON_STATUS_UPDATE (reader→A) | Write/flush/apply LSNs; xmin; `PageserverFeedback` (`remote_consistent_lsn`, …) | `record_feedback`, coalesced; relayed to the proposer |
 | `TIMELINE_STATUS`, `IDENTIFY_SYSTEM` | — | From the head |
-| Safekeeper HTTP API: `POST /v1/tenant/timeline` | `mconf`, `pg_version`, `start_lsn` | `WalStore::create`. It is called by Loams's control plane, not by the storage controller |
+| Safekeeper HTTP API: `POST /v1/tenant/timeline` | `mconf`, `pg_version`, `start_lsn` | `WalStore::create`. It is called by Loams’ control plane, not by the storage controller |
 | Storage broker `PublishSafekeeperInfo`, `SafekeeperDiscoveryRequest` | `commit_lsn`, `flush_lsn`, `remote_consistent_lsn`, `safekeeper_connstr`, `availability_zone` | Publish every second from the head; answer discovery for any timeline in `loams_pgwal` |
 | `term_bump`, `membership`, `pull_timeline`, `snapshot`, partial backup, eviction | — | **Not needed** with one logical acceptor (§6.3). `term_bump` is kept for operators as a head write |
 
 ### 6.10 The upgrade path
 
-1. **P2:** the fork runs with **stock safekeepers** under Loams's control plane (`x/….wal = safekeepers`).
+1. **P2:** the fork runs with **stock safekeepers** under Loams’ control plane (`x/….wal = safekeepers`).
 2. **P4a–P4b:** the WAL service runs beside them on the benchmark topology only.
 3. **P4c:** a database is switched by setting `wal = loams` in its `x/` record. The switch runs:
    - At a quiesced point: stop the compute and wait until the safekeepers' `commit_lsn = flush_lsn`.
-   - Loams's control plane creates the timeline in `loams_pgwal` at that LSN (`start_lsn`, with the term history copied from the safekeepers' `TIMELINE_STATUS`).
+   - Loams’ control plane creates the timeline in `loams_pgwal` at that LSN (`start_lsn`, with the term history copied from the safekeepers' `TIMELINE_STATUS`).
    - The compute spec's `safekeeper_connstrings` becomes the WAL pool's Service, and the compute starts: `sync-safekeepers` runs against one acceptor, then the basebackup.
    - The safekeeper timeline is deleted after the pageserver's `remote_consistent_lsn` passes the switch point.
 4. **Rollback is the same procedure in reverse.**
@@ -591,7 +591,7 @@ On 2026-09-30 the owner decided that the Loams WAL targets **native leaderless-W
 - **Arm A**, this section, takes TiKV off the commit path.
 - **Arm B** keeps TiKV and removes its per-append overheads.
 
-The owner also asked for Arm A's store to be a tiered, low-level I/O layer, with runtime detection and fallback (D266), and chose compio as its runtime (D263). The decisions below are Loams's proposals within that direction. They supersede D239 (one logical acceptor per timeline) for Arm A only, and leave D237–D238 in force for Arm B.
+The owner also asked for Arm A's store to be a tiered, low-level I/O layer, with runtime detection and fallback (D266), and chose compio as its runtime (D263). The decisions below are Loams’ proposals within that direction. They supersede D239 (one logical acceptor per timeline) for Arm A only, and leave D237–D238 in force for Arm B.
 
 **The causes in §7.1, and how Arm A removes each one:**
 
@@ -672,7 +672,7 @@ The owner also asked for Arm A's store to be a tiered, low-level I/O layer, with
   - **Trim.** A segment is recycled once every timeline in it has passed `min(backup_lsn, remote_consistent_lsn, commit_lsn)`.
   - **Pinning.** An idle timeline whose pageserver lags pins old segments. Rewriting its live records forward, as `raft-engine` purges, is left for later (Q262).
 - **D271. The pageserver feed stays the feeder for now (Q112).**
-  - **Why not in-process decoding yet:** it needs Neon's `wal_decoder`, `postgres_ffi` (bindgen against the fork's Postgres server headers), `utils` and `pageserver_api`, which bring Neon's workspace dependency pins into Loams's. That is not feasible within this arm.
+  - **Why not in-process decoding yet:** it needs Neon's `wal_decoder`, `postgres_ffi` (bindgen against the fork's Postgres server headers), `utils` and `pageserver_api`, which bring Neon's workspace dependency pins into Loams’. That is not feasible within this arm.
   - **Instead:**
     - exactly one designated acceptor runs the feeder;
     - it feeds up to `min(commit_lsn, its durable flush_lsn)`;
@@ -711,7 +711,7 @@ The results of the Arm A gate runs are in §7.3.
 
 ## 8. PgDog routing (D236)
 
-> **Proposed 2026-10-01** ([§31](31-loams-router-and-verification.md), D304–D307): sharded Loams Postgres databases use PgDog's own sharding, with the shard map in Loams's metastore rendered into `pgdog.toml`; cutover across several PgDog instances is orchestrated by Loams with a fence in Postgres (`ALTER ROLE … NOLOGIN`), because PgDog's open-source `RESHARD` cuts over one instance only; PgDog's 2PC is off by default and allowed only with a durable coordinator log (StatefulSet, `NODE_ID`, `DEPLOYMENT_ID`, the WAL directory on a volume); computes of 2PC databases get `max_prepared_transactions` in their spec. D236 is unchanged: PgDog stays unmodified.
+> **Proposed 2026-10-01** ([§31](31-loams-router-and-verification.md), D304–D307): sharded Loams Postgres databases use PgDog's own sharding, with the shard map in Loams’ metastore rendered into `pgdog.toml`; cutover across several PgDog instances is orchestrated by Loams with a fence in Postgres (`ALTER ROLE … NOLOGIN`), because PgDog's open-source `RESHARD` cuts over one instance only; PgDog's 2PC is off by default and allowed only with a durable coordinator log (StatefulSet, `NODE_ID`, `DEPLOYMENT_ID`, the WAL directory on a volume); computes of 2PC databases get `max_prepared_transactions` in their spec. D236 is unchanged: PgDog stays unmodified.
 
 **Verified 2026-09-29.**
 
@@ -731,7 +731,7 @@ The results of the Arm A gate runs are in §7.3.
 **Deployment.**
 
 - **Where it runs:** PgDog is a Deployment in the Loams Postgres namespace, with an image from `ghcr.io/pgdogdev/pgdog` pinned by digest.
-- **Config:** Loams's control plane renders `pgdog.toml` and `users.toml` from the `x/` and `X/` records into a ConfigMap and a Secret, and sends `RELOAD` to PgDog's admin database after each change.
+- **Config:** Loams’ control plane renders `pgdog.toml` and `users.toml` from the `x/` and `X/` records into a ConfigMap and a Secret, and sends `RELOAD` to PgDog's admin database after each change.
   - **Database names:** `<db>` for `main` and `<db>__<branch>` for branches (this answers Q49's syntax; the `options` form stays unsupported).
   - **Hosts:** the branch's compute, plus read replicas (Neon replica computes) with `role = replica`.
 - **Auth:**
@@ -744,12 +744,12 @@ The results of the Arm A gate runs are in §7.3.
 
 **AGPL risk, and the rules Loams follows.**
 
-- **Never linked or vendored.** No PgDog crate appears in any `Cargo.lock`. `deny.toml` already rejects AGPL, and the rule is extended to the Loams Commons and loam-platform repos. No PgDog source is copied into any Loams repo.
+- **Never linked or vendored.** No PgDog crate appears in any `Cargo.lock`. `deny.toml` already rejects AGPL, and the rule is extended to the Loams Commons and loams-platform repos. No PgDog source is copied into any Loams repo.
 - **Never modified.** Loams uses upstream images and configuration only. A needed fix is reported upstream (with the owner's approval) or worked around with configuration. If neither is possible, the fallback is used.
 - **Why:**
   - AGPL-3.0 §13 requires anyone who **modifies** PgDog and lets users interact with it over a network to offer those users the **modified source**. Running Loams cloud's routing through PgDog is exactly "interaction over a network".
   - An unmodified PgDog carries no source obligation beyond the upstream source and license already being public. Images that Loams **distributes** (BYOC, the showcase's compose) must still ship the license and point to the corresponding upstream source.
-  - Anyone who links or vendors PgDog into Loams's code would put that code under AGPL (D11).
+  - Anyone who links or vendors PgDog into Loams’ code would put that code under AGPL (D11).
 - **Recorded in:**
   - `LICENSES.md` in the Loams Commons and deploy repos;
   - the license-check CI job (D-SC-6), which checks deploy images;
@@ -764,7 +764,7 @@ The results of the Arm A gate runs are in §7.3.
 | Route by database name | Yes | By endpoint (SNI or `options=endpoint=`) through `wake_compute` | Yes (`[databases]`) |
 | Replica load balancing | Yes | No | No |
 | Sharding | Yes | No | No |
-| Scale-to-zero (wake) | No | **Yes**, through Loams's `wake_compute` (§5.2) | No |
+| Scale-to-zero (wake) | No | **Yes**, through Loams’ `wake_compute` (§5.2) | No |
 | Loams work | Config rendering | The control-plane auth API (§5.2) | Config rendering |
 | Latest | v0.1.60 (2026-09-24) | the fork (last upstream proxy fix 2026-05-25) | 1.26.0 (2026-09-23, fixes 3 CVEs) |
 
@@ -777,10 +777,10 @@ Each item below is proposed. P5 plans each one separately, after P4.
 | Idea | What | Expected gain | Cost and risk |
 |---|---|---|---|
 | **Shared object-store cache for pageservers** | Serve on-demand layer downloads (`remote_storage` reads) through an AZ-local cache tier built on `loams-cache` (RAM and NVMe, checksummed ranges over immutable objects) and `foyer`, shared by every pageserver in the AZ | Cold-tenant attach and on-demand layer download at NVMe latency after the first reader; fewer bucket GETs. Neon's layers are immutable, which is the case the cache is built for | A `remote_storage` backend in the fork (Neon's `GenericRemoteStorage` enum), with a small patch |
-| **Layer files on Loams's formats** | Store image and delta layers as Loams objects | Little: Neon's layer format is tuned for page versions and GetPage@LSN, and Loams's columnar formats are not | **Not recommended.** Kept here because the owner asked |
+| **Layer files on Loams’ formats** | Store image and delta layers as Loams objects | Little: Neon's layer format is tuned for page versions and GetPage@LSN, and Loams’ columnar formats are not | **Not recommended.** Kept here because the owner asked |
 | **The storage controller on TiKV** | Replace its Postgres (Diesel; tables for tenant shards, nodes, safekeepers, timelines and metadata health) with a persistence trait over TiKV | One fewer database to run; the control plane and the controller share TiKV | A large patch across `storage_controller/src/persistence.rs` that every fork rebase carries. Only after the fork is stable (Q48) |
 | **Branch per agent workspace** | D155 on Loams Postgres (§15 §9) | Already designed; P2 enables it | — |
-| **Scale-to-zero** | `wake_compute` in Loams's control plane, and Neon's proxy (Q113) | Idle databases cost only bucket bytes, which the WAL design (§6.7) makes true of the WAL tier as well | The proxy's control-plane API (§5.2) |
+| **Scale-to-zero** | `wake_compute` in Loams’ control plane, and Neon's proxy (Q113) | Idle databases cost only bucket bytes, which the WAL design (§6.7) makes true of the WAL tier as well | The proxy's control-plane API (§5.2) |
 
 ## 10. Maintaining the fork (D231, D241)
 
@@ -807,7 +807,7 @@ Each item below is proposed. P5 plans each one separately, after P4.
    - Merge upstream 16.15 and 17.11.
    - Build the compute images in the fork's CI.
    - Run Neon's `pg_regress` and the Python `test_runner` subset for compute and safekeepers, plus `deploy/neon`'s smoke.
-   - Drop v14 and v15, which are out of Loams's scope.
+   - Drop v14 and v15, which are out of Loams’ scope.
 2. **PG 18 enablement** (P2 or later, estimate: **3–6 engineer-weeks**). Neon `main` has no v18 wiring. It needs:
    - `vendor/postgres-v18` from `REL_18_STABLE_neon` (18.2) merged to 18.6;
    - v18 in `libs/postgres_ffi` (bindgen, `pg_constants`, WAL record layouts);
@@ -860,12 +860,12 @@ Each phase is small stacked PRs. The P4 phases are behind the feature `loams-wal
 | Q110 | Fork `neondatabase/postgres` as `dina-kar/postgres` (required by the fork's relative submodule URLs), and base the catch-up on the `REL_1x_STABLE_neon` heads (16.12/17.8, which may need unpublished extension changes) or on `main`'s pins (16.9/17.5)? | P2a |
 | Q111 | PGroonga for Zulip on CNPG: a custom image on `17.11-standard-trixie`, or a separate Cluster with an image that has it? | P1 |
 | Q112 | Where the interpreted sender builds: in Loams behind a feature, with the fork's Postgres headers in CI, or as a small binary crate inside the fork's workspace that links `loams-safekeeper`'s `WalStore`? *P4a:* interim answer is the feeder (§6.7); the published `neon` image ships Postgres 14–17 server headers under `/usr/local/v1x/include`, so CI can extract them for `postgres_ffi` | P4a plan |
-| Q113 | Scale-to-zero: run Neon's proxy (with Loams's `wake_compute`) in front of PgDog, or accept always-on computes for Loams Postgres in the first release? (Supersedes Q47) | P3 plan |
+| Q113 | Scale-to-zero: run Neon's proxy (with Loams’ `wake_compute`) in front of PgDog, or accept always-on computes for Loams Postgres in the first release? (Supersedes Q47) | P3 plan |
 | Q114 | Re-measure RawKV and TxnKV 1PC write latency on a three-node, three-AZ TiKV cluster with PLP NVMe, and collect published TiKV p99 figures for WAL-sized values | P4a |
 | Q115 | Pipelining: more than one in-flight append per timeline (for example a separate term key with `Lock` mutations and a flush marker per batch), if the single-flight group commit limits throughput | P4b results |
 | Q116 | The WAL on the metastore's TiKV cluster (own stores through placement rules) or on a dedicated TiKV cluster? | P4a plan |
 | Q117 | Leader placement granularity (per timeline or per AZ group) and whether to shorten TiKV's election timeout for WAL stores | P4b |
-| Q118 | Add `BatchCommands` RPC batching to Loams's `client-rust` fork (client-go's `max-batch-wait-time`), if P4b shows RPC overhead | P4b |
+| Q118 | Add `BatchCommands` RPC batching to Loams’ `client-rust` fork (client-go's `max-batch-wait-time`), if P4b shows RPC overhead | P4b |
 | Q119 | The Loams log layout for the bucket copy: one stream per tenant with a partition per timeline, or a stream per timeline (streams are cheap; partitions are fixed at creation) | P4a |
 
 ## 14. Contradictions with earlier decisions, and how they are resolved
@@ -875,7 +875,7 @@ Each phase is small stacked PRs. The P4 phases are behind the feature `loams-wal
 | D149 (§23): Neon for the showcase apps | D230: CNPG | **Superseded** (owner, 2026-09-29). Q45 is answered "no". D-SC-12's Postgres front end over TiKV stays long-term, as §23 §5 described for this case |
 | D151 (§23): fork only when needed | D231: fork now | **Superseded** |
 | D150 (§23): Loams as a client of Neon's APIs | D232: Loams serves the control-plane API | **Amended**: it extends D150 |
-| D153 (§23): Loams's pg listener splices to computes | D236: PgDog routes | **Amended** for Postgres OLTP. The pg listener keeps analytics (PG1). Q49's syntax becomes `<db>__<branch>` |
+| D153 (§23): Loams’ pg listener splices to computes | D236: PgDog routes | **Amended** for Postgres OLTP. The pg listener keeps analytics (PG1). Q49's syntax becomes `<db>__<branch>` |
 | D11: no AGPL dependencies | PgDog is AGPL-3.0 | Not a dependency: an unmodified separate process, as for WeSQL (D148) and Alternator (D60) |
 | D126: TiKV unmodified | The WAL tunes TiKV | Configuration only; no fork of TiKV or PD |
 | D2 / D130: OLTP out of scope | Loams Postgres is OLTP | As in §23 §14: a separate service. D130's TiKV-backed product-line exception covers the WAL's hot tier |

@@ -36,7 +36,7 @@ State inspected on 2026-10-03, before this change:
   safety` (24352959), `main: PR, CI and branch safety` (24352955) and `main: require DCO sign-off`
   (24272886) govern merges. **None of them is affected by adding a user to a team**, so this task
   changes no ruleset and carries no lock-out risk. A full copy of all five, taken before any work, is
-  held at `Operon/.claude/auto-promote-ruleset-backup.json`.
+  held at `Loams/.claude/auto-promote-ruleset-backup.json`.
 - The one real permission consequence is inherited from #230's governance model rather than added
   here: `committers` is a bypass actor on the `dev` `update` rule, so a committer may push to `dev`.
   `committers` is **not** a bypass actor on `main`, and `main` additionally requires a maintainers'

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact values (names, paths, flags, constants), use them verbatim. The code is not pre-written in this plan (M0.3 Ruling 1).
 
-> **Status: Planned** (2026-10-01). Track RT, phase RT2 (design [§31](../design/31-loams-router-and-verification.md) §17). Branches `rt2-t<N>`, stacked; PRs target `main`. Depends on [RT1](2026-10-01-rt1-postgres-slice-and-sim.md) (the stack, adapters, models, `loams-detsim`). Tasks 4 and the Loams Postgres rows of Tasks 8–9 need §28's P2b (Loams computes started by Loams's control plane, `deploy/neon`); without it they run on `postgres:17.11` and their Loams Postgres rows stay open, which the exit report says. RT2 changes no M-track code path.
+> **Status: Planned** (2026-10-01). Track RT, phase RT2 (design [§31](../design/31-loams-router-and-verification.md) §17). Branches `rt2-t<N>`, stacked; PRs target `main`. Depends on [RT1](2026-10-01-rt1-postgres-slice-and-sim.md) (the stack, adapters, models, `loams-detsim`). Tasks 4 and the Loams Postgres rows of Tasks 8–9 need §28's P2b (Loams computes started by Loams’ control plane, `deploy/neon`); without it they run on `postgres:17.11` and their Loams Postgres rows stay open, which the exit report says. RT2 changes no M-track code path.
 
 **Goal:** The chat dump's M2, as reconciled in §31:
 - **The Lean kernels for cross-shard results** (k-way merge, `LIMIT`/`OFFSET` pushdown, aggregate decomposition) proved, compiled into the oracle, and mirrored in Rust (D312, §31 §12);
@@ -11,7 +11,7 @@
 - **the change stream and a snapshot-consistent copy with an exact boundary**, and an offline split verified by checksums (§31 §8).
 
 **Architecture:**
-- **Kernels**: `spec/lean/LoamsRouter/{Merge,Limit,Aggregate}.lean`; Rust mirror `loams_sqlrouter::reference` (pure). Neither is on a routing path: PgDog routes and merges; Loams's code checks it.
+- **Kernels**: `spec/lean/LoamsRouter/{Merge,Limit,Aggregate}.lean`; Rust mirror `loams_sqlrouter::reference` (pure). Neither is on a routing path: PgDog routes and merges; Loams’ code checks it.
 - **Differential harness** in `loams-sqlrouter-io/tests/it/cross_shard.rs`, using a query generator over a fixed schema family, the stack of RT1 with a 4-shard variant, and the oracle binary.
 - **2PC**: PgDog's own (`two_phase_commit = true`) on a stack variant that satisfies D306; `CrossShardCommit.tla` models it; `InDoubtMonitor` (a machine) watches shards; `loams-detsim`'s PgDog model gains the 2PC protocol and its log.
 - **Change stream**: tests and a small decoder over Postgres's SQL interface to logical slots; no streaming client is built in RT2 (D154's bridge stays §23's N4).
@@ -79,7 +79,7 @@ docs/design/31-loams-router-and-verification.md  docs/plans/README.md  CHANGELOG
 **Files:** read RT1's "Rulings made during execution", the as-built `loams-sqlrouter`, `loams-sqlrouter-io` and `loams-detsim`, `spec/tla/router/CrossShardCommit.tla` (RT0's skeleton), §28 P2b status and `deploy/neon`. Fill this plan's "Rulings made during execution" table.
 
 **Checks:**
-- Whether P2b merged, and how Loams's compute spec sets Postgres settings (where `max_prepared_transactions` goes).
+- Whether P2b merged, and how Loams’ compute spec sets Postgres settings (where `max_prepared_transactions` goes).
 - PgDog v0.1.60's documented cross-shard behaviour for the Ruling 1 subset (docs.pgdog.dev "cross-shard queries", "aggregates"): which aggregates it merges, how it merges `AVG`, `DISTINCT`, `OFFSET`; record each as an expected row so the allowlist starts from documentation.
 - PgDog's 2PC settings and environment (`two_phase_commit`, `two_phase_commit_auto`, `PGDOG_TWO_PHASE_COMMIT_WAL_DIR`, `NODE_ID`, `DEPLOYMENT_ID`) in the v0.1.60 documentation, and whether a default WAL directory exists when the variable is unset (§31 §6.5 (verify)).
 - `tokio-postgres` 0.7's replication-mode support (Ruling 5).
@@ -140,7 +140,7 @@ docs/design/31-loams-router-and-verification.md  docs/plans/README.md  CHANGELOG
 
 ### Task 4: Prepared transactions on Loams Postgres
 
-**Files:** `crates/loams-sqlrouter-io/tests/it/loams_pg.rs`; the compute-spec setting in Loams's control plane (the file P2b added; Task 0 names it); `docs/design/28-loams-postgres.md` (one line under §5.2 noting the setting, marked D307).
+**Files:** `crates/loams-sqlrouter-io/tests/it/loams_pg.rs`; the compute-spec setting in Loams’ control plane (the file P2b added; Task 0 names it); `docs/design/28-loams-postgres.md` (one line under §5.2 noting the setting, marked D307).
 
 **Produces:** `max_prepared_transactions = 64` in every compute spec Loams renders for a database whose record allows 2PC (and `0` otherwise, Postgres's default, so a non-2PC database refuses `PREPARE TRANSACTION`).
 

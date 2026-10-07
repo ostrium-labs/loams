@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../../docs/assets/loams-banner.svg)
+
 # Local Loams Desktop packaging
 
 Use the native-OS scripts from the standalone workspace root:

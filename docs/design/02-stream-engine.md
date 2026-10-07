@@ -2,7 +2,7 @@
 
 Status: **Approved** · 2026-09-22 · revised 2026-09-25 (native streaming API, D43) · revised 2026-09-26 (the stream API core and OTLP logs ingest in M2, the Kafka gateway in M5, D72–D74) · amended 2026-09-26 (envelope encryption of WAL chunks, D96; collection write backpressure, D86) · amended 2026-09-30 (CloudEvents 1.0 ingest and consume, §7.4, D270)
 
-Goal: a partitioned log with **AutoMQ-grade reliability** (RPO 0 on node and AZ loss, seconds-level failover, no data on broker disks) and a choice of latency/cost per stream, reached through Loams's native streaming API and, from M5, the Kafka wire protocol — and it is the internal spine for every other object in Loams.
+Goal: a partitioned log with **AutoMQ-grade reliability** (RPO 0 on node and AZ loss, seconds-level failover, no data on broker disks) and a choice of latency/cost per stream, reached through Loams’ native streaming API and, from M5, the Kafka wire protocol — and it is the internal spine for every other object in Loams.
 
 ---
 
@@ -28,7 +28,7 @@ Goal: a partitioned log with **AutoMQ-grade reliability** (RPO 0 on node and AZ 
 | `quorum` | **Journal**: openraft group of 3 `log` nodes (1 per AZ), WAL on local NVMe, offloaded to S3 | Majority fsync | 3–10 ms | Yes | Yes (2 replica copies per byte) | Lowest latency; on-prem (RustFS); clouds without zonal object storage |
 
 Notes:
-- `express` is Loams's answer to AutoMQ's commercial EBS/Regional-EBS WAL: low latency and multi-AZ durability **without stateful broker disks**. A similar multi-zonal-bucket approach has been described by WarpStream (verify). Express storage is expensive ($0.11/GB-month) but WAL objects live only seconds before offload; Express PUTs are cheaper per request than Standard.
+- `express` is Loams’ answer to AutoMQ's commercial EBS/Regional-EBS WAL: low latency and multi-AZ durability **without stateful broker disks**. A similar multi-zonal-bucket approach has been described by WarpStream (verify). Express storage is expensive ($0.11/GB-month) but WAL objects live only seconds before offload; Express PUTs are cheaper per request than Standard.
 - On Azure, `express` may map to a single zone-redundant Premium block-blob account (verify). If no zonal/low-latency object store exists, `express` is unavailable and `quorum` is the low-latency option.
 - A future `blockvol` class (AutoMQ-style EBS WAL with multi-attach failover) can be added behind the same trait; not planned for v1.
 
@@ -106,7 +106,7 @@ Read amplification control: reads of recent data are coalesced per WAL object (o
 
 ## 7. Stream APIs
 
-Streams are reached through Loams's own API. The HTTP produce and long-poll fetch routes exist from M0.3. **M2 completes the core for v1.0** (D72): gRPC, idempotent producers, streaming subscribe, named consumers and stream admin. OTLP logs arrive through their own endpoint in M2 (§7.1). M5 adds Flight `DoGet` replay, changelog streams (§8.1) and the Kafka wire-protocol gateway (§7.2). Streams and namespaces are addressed by name. Collection writes go through a collection's implicit stream and are refused with 429 and `Retry-After` while the collection's unapplied backlog is at or above its budget (D86), unless a write sends `Loams-Backpressure: off`, which admits bulk loads up to 4× the budget; explicit streams have no apply backlog, and M2's ingest-bytes quota bounds them (D65).
+Streams are reached through Loams’ own API. The HTTP produce and long-poll fetch routes exist from M0.3. **M2 completes the core for v1.0** (D72): gRPC, idempotent producers, streaming subscribe, named consumers and stream admin. OTLP logs arrive through their own endpoint in M2 (§7.1). M5 adds Flight `DoGet` replay, changelog streams (§8.1) and the Kafka wire-protocol gateway (§7.2). Streams and namespaces are addressed by name. Collection writes go through a collection's implicit stream and are refused with 429 and `Retry-After` while the collection's unapplied backlog is at or above its budget (D86), unless a write sends `Loams-Backpressure: off`, which admits bulk loads up to 4× the budget; explicit streams have no apply backlog, and M2's ingest-bytes quota bounds them (D65).
 
 | Feature | Design | Phase |
 |---|---|---|
@@ -137,11 +137,11 @@ An OTLP endpoint for **logs only**, so log shippers write to Loams with no custo
 
 ### 7.2 Kafka wire-protocol gateway (M5, D74)
 
-> **Amendment (2026-10-01, §32 D331–D332; approved 2026-10-02, Q331, D408):** event ingestion moves to the Event Fabric (Apache Iggy and Apache Fluss, [§32](32-loams-flow-fabric-house.md) §5), and Kafka clients of the Fabric use Iggy's Kafka gateway with Loams's contributions; this gateway is deferred, not cancelled (D408). Streams keep their roles for Loams's own objects, OTLP logs and trigger-rate CloudEvents (§7.1, §7.4).
+> **Amendment (2026-10-01, §32 D331–D332; approved 2026-10-02, Q331, D408):** event ingestion moves to the Event Fabric (Apache Iggy and Apache Fluss, [§32](32-loams-flow-fabric-house.md) §5), and Kafka clients of the Fabric use Iggy's Kafka gateway with Loams’ contributions; this gateway is deferred, not cancelled (D408). Streams keep their roles for Loams’ own objects, OTLP logs and trigger-rate CloudEvents (§7.1, §7.4).
 
-The Kafka protocol is Loams's long-term source-compatibility protocol. With it, Loams streams are readable and writable by RisingWave, Flink, Spark, Kafka Connect, Debezium, Fluent Bit's `kafka` output and Vector. WarpStream, AutoMQ and Bufstream show the model: a Kafka-compatible log on object storage, with stateless brokers. Nisshi (formerly Tansu; Apache-2.0, Rust, a Kafka broker on S3 or Postgres) is a reference (§11 §1.2).
+The Kafka protocol is Loams’ long-term source-compatibility protocol. With it, Loams streams are readable and writable by RisingWave, Flink, Spark, Kafka Connect, Debezium, Fluent Bit's `kafka` output and Vector. WarpStream, AutoMQ and Bufstream show the model: a Kafka-compatible log on object storage, with stateless brokers. Nisshi (formerly Tansu; Apache-2.0, Rust, a Kafka broker on S3 or Postgres) is a reference (§11 §1.2).
 
-- **Mapping.** A Kafka topic is a Loams stream, a Kafka partition is a stream partition, and Kafka offsets are Loams's dense offsets. How topic names map to namespaces and how SASL carries the API key is Q26.
+- **Mapping.** A Kafka topic is a Loams stream, a Kafka partition is a stream partition, and Kafka offsets are Loams’ dense offsets. How topic names map to namespaces and how SASL carries the API key is Q26.
 - **Leaderless.** Any `log` node accepts produce and fetch for any partition (§3), so `Metadata` names a node in the client's zone as the leader of every partition, as WarpStream does. A Kafka `Metadata` request carries no rack: `client.rack` reaches a broker only in a consumer's `Fetch` (v11+, KIP-392), and producers never send it. The zone therefore comes from the client id, WarpStream's `ws_az=<zone>` convention (verify), or from a per-zone bootstrap address. A client with neither gets any live `log` node, so its traffic may cross zones.
 - **No re-encoding.** `kafka`-encoded WAL chunks and segments already hold `RecordBatch` v2 bytes (§3, §5). Produce validates the client's batches and the sequencer assigns their offsets; Fetch serves the stored bytes with the assigned `baseOffset`. The segmenter already patches it into segments, and a batch read from a WAL chunk, which still carries the producer's value, gets it from the offset index. `baseOffset` is outside the batch CRC, so nothing is re-encoded. `arrow` streams are served by building batches on the fly.
 - **Staged within M5:**

@@ -1,7 +1,9 @@
+![Loams — Your data. Your bucket.](../../../docs/assets/loams-banner.svg)
+
 # `connect/routes/templates/` — the import routes
 
 CN1 Task 12's home for route templates, and the route half of CN1 Task 15 (D628).
-These are the paths that carry data **into** Loams's own collaboration
+These are the paths that carry data **into** Loams’ own collaboration
 applications. Nothing here executes yet: Task 12's `loams-connect` Java service is
 deferred, and these templates are the declarative half of it, written so the mappings
 are reviewable and diffable before any Java exists.
@@ -23,7 +25,7 @@ second copy would be a near-duplicate of `itsplane-import.yaml.tmpl`.
 
 Without a sink there is nowhere for an import to land, so CN1 Task 15 adds Zulip,
 ItsPlane and Forgejo to the registry as **P1 but unstarred** native connectors. They
-are unstarred because D628 keeps D358's précis' 21 unchanged: these three are Loams's
+are unstarred because D628 keeps D358's précis' 21 unchanged: these three are Loams’
 own applications reached over HTTP, not part of the hot-path set. Camel 4.22.1 has no
 component for any of them (`camel-zulip`, `camel-plane` and `camel-gitea` are all
 absent at that tag), so D354's "buy first" has nothing to buy and all three are
@@ -43,7 +45,7 @@ hand-written Rust in `loams-flow`.
   asserting every request is a `GET`. Its Forgejo adapter's own header gives the
   reason: Forgejo derives a token's scope from the HTTP method, so a `GET`-only
   adapter can never hold a write scope. The write credentials therefore live in
-  Loams's `SecretStore` (D189) and these writes happen from the Rust side. CN1
+  Loams’ `SecretStore` (D189) and these writes happen from the Rust side. CN1
   "Rulings made during execution" row 13 records that decision.
 
 ## Three constraints every template here is shaped by

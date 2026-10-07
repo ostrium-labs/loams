@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # Neon on RustFS (development)
 
 The stack from the Neon + WeSQL spike ([§23](../../docs/design/23-neon-and-wesql.md)). It runs

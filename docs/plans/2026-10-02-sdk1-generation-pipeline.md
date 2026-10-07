@@ -29,7 +29,7 @@
 - **Generated code is never hand-edited.** CI regenerates and fails on a diff where output is committed (TS, Go, PHP, Swift mirrors).
 - **A language is not published until it passes 100% of the required fixtures** (D617).
 - **No long-lived registry secret where trusted publishing exists** (D615); Maven Central keeps a token and a GPG key.
-- Names: `loams`; no Operon/Loam strings in generated packages.
+- Names: `loams`; no Loams/Loams strings in generated packages.
 
 ## Tasks (one PR each)
 
@@ -40,5 +40,5 @@
 - [ ] **Task 4: Fixture corpus and conformance runner.** `sdks/fixtures/` (cases for auth, search, writes with idempotency, pagination, errors with reasons, streaming resume, consistency); a Rust test running every fixture against the real server; `sdks/conformance/run.sh`; mock fault-injection endpoints (retryable `UNAVAILABLE`, `RetryInfo`, mid-stream disconnect, `token_expired`). *Tests:* `fixtures_pass_against_real_server`, `mock_injects_retryable_errors`.
 - [ ] **Task 5: Bulk data helpers contract.** Chunking rule (10 000 rows or 4 MiB), Flight-backed `bulk` module contract for Python, Go, Java, C++, Rust, C#, and the `QueryArrow` fallback (Q608). Fixtures `bulk_*`. *Tests:* `chunking_whole_or_nothing`.
 - [ ] **Task 6: Release workflows and mirrors.** `sdk-release.yml` (matrix; per-registry jobs with OIDC; dry-run on PR using `--dry-run` equivalents), `sdk-mirror.yml` (subtree split for `loams-go`, `loams-swift`, `loams-php`), tag rules, changelog per SDK. Coordinate with #254; the owner-account checklist in `docs/sdk/publishing.md`. *Tests:* `workflow_lint` (actionlint), `dry_run_all_languages`.
-- [ ] **Task 7: Reference docs.** `buf generate` doc plugin to `docs/api/reference/`; snippet extraction from fixtures into `docs/api/snippets/`; the page list for `loam-cloud` (a follow-up issue there). *Tests:* `every_rpc_documented`, `snippets_match_fixtures`.
+- [ ] **Task 7: Reference docs.** `buf generate` doc plugin to `docs/api/reference/`; snippet extraction from fixtures into `docs/api/snippets/`; the page list for `loams-cloud` (a follow-up issue there). *Tests:* `every_rpc_documented`, `snippets_match_fixtures`.
 - [ ] **Task 8: Versioning gates.** `buf breaking` in CI for SDK-relevant packages, SDK `LOAMS_PROTO_REV` file, the `GetInstance` version check clause (R9) fixture, CONTRIBUTING section "adding a community SDK". *Tests:* `breaking_change_fails_ci` (on a fixture proto).

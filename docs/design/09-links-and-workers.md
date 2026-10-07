@@ -2,7 +2,7 @@
 
 Status: **Approved** · 2026-09-22 · amended 2026-09-26 (M1.2 as built) · amended 2026-09-26 (collection write backpressure, D86)
 
-**Links** are Loams's zero-ETL mechanism: declared, continuously maintained materializations from streams into tables, collections and graphs. **Workers** are the stateless pool that executes links and all other background work.
+**Links** are Loams’ zero-ETL mechanism: declared, continuously maintained materializations from streams into tables, collections and graphs. **Workers** are the stateless pool that executes links and all other background work.
 
 ---
 

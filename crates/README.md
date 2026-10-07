@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../docs/assets/loams-banner.svg)
+
 # Loams Core Crates
 
 This directory contains the root Cargo workspace members for the Loams core engine, retrieval subsystems, metastore, protocols, and reactive services.

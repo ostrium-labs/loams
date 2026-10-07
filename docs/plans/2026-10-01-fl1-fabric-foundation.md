@@ -17,7 +17,7 @@
 **Architecture:**
 - **`fabric/`** is a Cargo workspace of its own (own `Cargo.lock`, `deny.toml`, lints copied from the root), building into the shared target directory set by `~/Documents/.cargo/config.toml`. It depends on the engine workspace only through a path dependency on `crates/loams-cloudevents` with `default-features = false` (Task 2), so no engine crate, Lance, DataFusion or arrow 58 enters its graph.
 - **`loams-fabric`** is one binary with roles (`ingest` in FL1; `house` in FL2; `flow` in CN1/FL3), selected by subcommand, all loopback-only until the unified auth plan (D111).
-- **Iggy and Fluss run unmodified** from pinned images. Loams's code reaches Iggy through the `iggy` SDK 0.11.0 and Fluss through `fluss-rs` 1.0.0.
+- **Iggy and Fluss run unmodified** from pinned images. Loams’ code reaches Iggy through the `iggy` SDK 0.11.0 and Fluss through `fluss-rs` 1.0.0.
 - **Plugins** `fluss_sink` and `loams_sink` are written in Iggy's connectors workspace (`core/connectors/sinks/`), on the fork `dina-kar/iggy` (a PR source only, like `ostrium-labs/resonate`, D140), and posted upstream only with the owner's go-ahead (§23 §2.2). CI builds them from a pinned revision of that branch.
 
 **Tech Stack:**

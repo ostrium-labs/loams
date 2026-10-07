@@ -52,7 +52,7 @@ Same as the M1 overview §8, plus:
 | # | Ruling | Why | Cost if wrong |
 |---|---|---|---|
 | 1 | **Client groups are flattened at the top level** (`loams stack create`, not `loams cli stack create`), and the server commands keep their names. A client group name may never equal a server command (`dev`, `standalone`, `cluster`, `warm`, `durable`); `tests/tree.rs` asserts it | Design §5; CI, the crash gate and every plan run `loams dev` | None |
-| 2 | **Env vars use the `LOAMS_` prefix from CLI1** (`LOAMS_HOME`, `LOAMS_OUTPUT`, `LOAMS_PROFILE`, `LOAMS_NO_INPUT`, `LOAMS_NO_UPDATE_CHECK`, `LOAMS_VARIANT`), and `LOAMS_HOME` defaults to `~/.loams` (this plan first used `LOAM_*` and `~/.loam`; the rename PR moved them with no aliases, D407) | `.env.loams` variables are user-facing contracts (design §11.2), so they are fixed before anything is published | Nothing is published before the rename, so only developers' local state moves |
+| 2 | **Env vars use the `LOAMS_` prefix from CLI1** (`LOAMS_HOME`, `LOAMS_OUTPUT`, `LOAMS_PROFILE`, `LOAMS_NO_INPUT`, `LOAMS_NO_UPDATE_CHECK`, `LOAMS_VARIANT`), and `LOAMS_HOME` defaults to `~/.loams` (this plan first used `LOAMS_*` and `~/.loams`; the rename PR moved them with no aliases, D407) | `.env.loams` variables are user-facing contracts (design §11.2), so they are fixed before anything is published | Nothing is published before the rename, so only developers' local state moves |
 | 3 | **clap usage errors honour `--output json`.** `main` parses with `Cli::try_parse()`; on error it pre-scans argv for `--output json`/`-o json`/`--output=json` (or `LOAMS_OUTPUT=json`) and, if found, prints `{"error": {"code": "usage", "message": <clap's first line>, "hint": "run with --help", "exit_code": 2}}` on stderr and exits 2; otherwise clap's own rendering. `--help` and `--version` stay clap's | Agents must parse every failure (design §6.2) | None |
 | 4 | **`Render` is the only output path.** Every command returns `Result<T: Render, CliError>`; `output::emit` renders it in the chosen format. No command writes to stdout itself, except `completions`, `mcp serve` and `env export` in dotenv form, which return `RawOutput` (bytes for stdout) | One place enforces stdout purity and the error shape | None |
 | 5 | **`stack.toml` is versioned** with `schema = 1` at the top; an unknown `schema` is refused (`config_unparseable`, exit 5) and never rewritten | Later CLIs read stacks made by earlier ones | None |
@@ -480,7 +480,7 @@ pub fn snippet(engine: Engine, language: Language, task: Task) -> Result<&'stati
 ```rust
 #[derive(Clone)] pub struct LoamsBootstrap { ctx: Arc<Context>, project: Option<PathBuf>, tool_router: rmcp::handler::server::router::tool::ToolRouter<Self> }
 #[rmcp::tool_router] impl LoamsBootstrap {
-  #[tool(name = "search_docs", description = "Search Loams's documentation for this installed version.", annotations(read_only_hint = true, idempotent_hint = true, open_world_hint = false))]
+  #[tool(name = "search_docs", description = "Search Loams’ documentation for this installed version.", annotations(read_only_hint = true, idempotent_hint = true, open_world_hint = false))]
   async fn search_docs(&self, Parameters(SearchDocsArgs { query, limit }): Parameters<SearchDocsArgs>) -> Result<CallToolResult, rmcp::ErrorData>;
   #[tool(name = "get_sdk_snippet", …read-only…)] async fn get_sdk_snippet(&self, Parameters<SnippetArgs>) -> …;
   #[tool(name = "loams_info", …read-only…)] async fn loams_info(&self) -> …;

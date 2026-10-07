@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../docs/assets/loams-banner.svg)
+
 # web
 
 The Loams console and its design system (design [§19](../docs/design/19-console-identity-and-agents.md)).

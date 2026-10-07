@@ -1,6 +1,6 @@
 # 25 — Clever Cloud's Open-Source Stack and the GitOps Deployment
 
-Status: **Proposed** · 2026-09-29. This is the companion to [§24](24-cpu-time-runtime.md). The owner's direction (2026-09-29): "use rustfs and clever cloud opensource stack to gitops, evaluate all the tools that are we adopt from clever cloud". This document does four things: it inventories every relevant open-source project from Clever Cloud (§2), compares Sōzu with Loams's planned edge (§3), compares Biscuit with the planned auth (§4), and designs the GitOps layout (§5–§6). Its decisions are **D185–D188** in §24's table, and its questions are **Q-RT-8 … Q-RT-14**.
+Status: **Proposed** · 2026-09-29. This is the companion to [§24](24-cpu-time-runtime.md). The owner's direction (2026-09-29): "use rustfs and clever cloud opensource stack to gitops, evaluate all the tools that are we adopt from clever cloud". This document does four things: it inventories every relevant open-source project from Clever Cloud (§2), compares Sōzu with Loams’ planned edge (§3), compares Biscuit with the planned auth (§4), and designs the GitOps layout (§5–§6). Its decisions are **D185–D188** in §24's table, and its questions are **Q-RT-8 … Q-RT-14**.
 
 > **Amended 2026-10-02** by [§38](38-knative-authentik-gitops.md) (proposed): "GitOps from Clever Cloud" means Clever's open-source operator and infrastructure tooling (D185, the CKE Terraform and Karpenter providers); Clever publishes no GitOps engine, so **Argo CD stays** (D186, D453), with a Flux layout for the smallest profile (D454). §6.3 gains waves for CloudNativePG, the Knative Operator, Authentik and Knative (D455); the operator also reconciles Knative tenancy per namespace (D443). Plan MT3.
 
@@ -22,7 +22,7 @@ Markers are the same as in §24. Every license was read from the repository's `L
 
 ## 2. Inventory (D187)
 
-Searched on 2026-09-29: every public, non-archived, non-fork repository of `github.com/CleverCloud` (about 250), `github.com/sozu-proxy` and `github.com/eclipse-biscuit` (where Biscuit moved from Clever Cloud), and `biscuit-auth`. About 150 of Clever's repositories are `*-example` deployment samples, most with no license. They are grouped as one row. Everything with a plausible place in Loams's GitOps, runtime, edge or auth stack is listed individually.
+Searched on 2026-09-29: every public, non-archived, non-fork repository of `github.com/CleverCloud` (about 250), `github.com/sozu-proxy` and `github.com/eclipse-biscuit` (where Biscuit moved from Clever Cloud), and `biscuit-auth`. About 150 of Clever's repositories are `*-example` deployment samples, most with no license. They are grouped as one row. Everything with a plausible place in Loams’ GitOps, runtime, edge or auth stack is listed individually.
 
 ### 2.1 GitOps, operators and infrastructure
 
@@ -41,9 +41,9 @@ Searched on 2026-09-29: every public, non-archived, non-fork repository of `gith
 
 | Project | What it does | License | Last commit · release | Lang | Fit | Verdict | Rationale |
 |---|---|---|---|---|---|---|---|
-| **CleverCloud/clever-tools** | Official Clever CLI: `clever deploy`, logs, add-ons (Node 22+) | Apache-2.0 | 2026-09-28 · 5.0.2 (2026-09-16) | JavaScript | The `loams deploy` / `loams functions` UX | **Reference only** | Loams's CLI is the Rust `loams` binary; clever-tools talks only to Clever's API |
+| **CleverCloud/clever-tools** | Official Clever CLI: `clever deploy`, logs, add-ons (Node 22+) | Apache-2.0 | 2026-09-28 · 5.0.2 (2026-09-16) | JavaScript | The `loams deploy` / `loams functions` UX | **Reference only** | Loams’ CLI is the Rust `loams` binary; clever-tools talks only to Clever's API |
 | CleverCloud/clever-client.js | JS client for Clever's API | Apache-2.0 | 2026-09-28 · v12.6.5 | TS | — | Reject | Clever-API specific |
-| **CleverCloud/clever-components** | Web Components used in Clever's consoles, with Storybook | Apache-2.0 | 2026-09-23 · 26.5.0 | JavaScript | Loams console | **Reference only** | The console has its own stack (§19, `loam-cloud`). Useful for patterns (log viewer, metrics widgets) |
+| **CleverCloud/clever-components** | Web Components used in Clever's consoles, with Storybook | Apache-2.0 | 2026-09-23 · 26.5.0 | JavaScript | Loams console | **Reference only** | The console has its own stack (§19, `loams-cloud`). Useful for patterns (log viewer, metrics widgets) |
 | CleverCloud/clevercloud-sdk-go, -python, clevercloud-client-go | API SDKs | Apache-2.0 | 2026-09 | Go/Python | — | Reject | Clever-API specific |
 | CleverCloud/mcp-simple-server | MCP server over Clever's API | Apache-2.0 text (GitHub: NOASSERTION) | 2026-04-14 · none | TS | — | Reject | Clever-API specific |
 | CleverCloud/oauth10a-rust | OAuth 1.0a (Clever's API auth) | MIT | 2025-05-28 · v3.0.0 | Rust | — | Reject | Only pulled in by `clevercloud-sdk`, transitively |
@@ -74,11 +74,11 @@ Searched on 2026-09-29: every public, non-archived, non-fork repository of `gith
 
 | Project | What it does | License | Last commit · release | Lang | Fit | Verdict | Rationale |
 |---|---|---|---|---|---|---|---|
-| CleverCloud/magnetar | Sans-io Apache Pulsar client | Apache-2.0 | 2026-09-21 · v1.7.2 | Rust | — | Reject | Loams's streams are native and Kafka-compatible (D72, D74); no Pulsar |
+| CleverCloud/magnetar | Sans-io Apache Pulsar client | Apache-2.0 | 2026-09-21 · v1.7.2 | Rust | — | Reject | Loams’ streams are native and Kafka-compatible (D72, D74); no Pulsar |
 | CleverCloud/pulsar4s, logstash-output-pulsar, pulsar-addon-migration-tool, node-pulsar-rust-backed, warp10-ext-pulsarwriter | Pulsar clients and tools | Apache-2.0 / MIT | mixed, most stale | Scala/Ruby/JS/Java | — | Reject | No Pulsar |
 | CleverCloud/fdbexporter | FoundationDB → Prometheus exporter | Apache-2.0 | 2026-09-24 · v2.5.0 | Rust | — | Reject | FoundationDB was dropped (D71) |
-| CleverCloud/warp10.rs, telegraf-output-warp10, clevercloud-warp10-datasource, warp10-* | Warp 10 time-series clients and plugins | BSD-3-Clause / Apache-2.0 | mixed | Rust/Go/TS/Java | — | Reject | Loams's telemetry is OTLP (D73) and Iceberg |
-| CleverCloud/cellar-migration | Copies an S3-compatible store into Cellar | Apache-2.0 | 2025-09-23 · v2.1.0 (2023-12-13) | Rust | Migrating a tenant's bucket to Cellar | Reference only | One direction, no release since 2023; `rclone` or Loams's own bulk import (§21 §7) covers this |
+| CleverCloud/warp10.rs, telegraf-output-warp10, clevercloud-warp10-datasource, warp10-* | Warp 10 time-series clients and plugins | BSD-3-Clause / Apache-2.0 | mixed | Rust/Go/TS/Java | — | Reject | Loams’ telemetry is OTLP (D73) and Iceberg |
+| CleverCloud/cellar-migration | Copies an S3-compatible store into Cellar | Apache-2.0 | 2025-09-23 · v2.1.0 (2023-12-13) | Rust | Migrating a tenant's bucket to Cellar | Reference only | One direction, no release since 2023; `rclone` or Loams’ own bulk import (§21 §7) covers this |
 | CleverCloud/testcontainers-ceph | Ceph testcontainer (Cellar is Ceph-based **(verify)**) | MIT | 2026-05-10 | Java | Cellar-compatibility CI | Reject | CI uses RustFS (D61); a Rust Ceph harness would be written separately if Q-RT-9 needs it |
 | CleverCloud/stream-dns | DNS server updated from Kafka | MIT | 2020-01-22 | Go | — | Reject | Stale |
 | CleverCloud/nlrs | Minimal Netlink requests | MIT | 2026-08-20 · v0.2.0 | Rust | Supervisor network namespaces (veth, routes, egress allowlist) | Reference; candidate linked dependency in F1 against `rtnetlink` | Small and permissive; the choice is made on API fit |
@@ -104,7 +104,7 @@ Searched on 2026-09-29: every public, non-archived, non-fork repository of `gith
 | Rate limits, ext_authz | Built-in filters and ext_authz (useful for Biscuit/OIDC checks at the edge) | Per-IP connection caps | You build it | Basic |
 | Kubernetes | Envoy Gateway (Gateway API) **(verify version)** | sozu-gateway (Apache-2.0, v0.5.0) | — | — |
 
-**Verdict.** Envoy stays the edge (D184). Sōzu is well engineered and fast, and its hot reconfiguration is appealing. But D176 puts HTTP/3 and gRPC in phase 1, and Sōzu has neither HTTP/3 nor gRPC routes. It would also bring an AGPL-3.0 binary into Loams's default install. As an unmodified separate process that is allowed by the rule, but every distributor of the self-hosted bundle would then carry the AGPL source-offer duty for it. **Pingora** is the right tool if Loams ever needs a Rust L7 component of its own (for example, a gateway that terminates HTTP/3 next to the supervisor). **River** is not an option while it is stalled.
+**Verdict.** Envoy stays the edge (D184). Sōzu is well engineered and fast, and its hot reconfiguration is appealing. But D176 puts HTTP/3 and gRPC in phase 1, and Sōzu has neither HTTP/3 nor gRPC routes. It would also bring an AGPL-3.0 binary into Loams’ default install. As an unmodified separate process that is allowed by the rule, but every distributor of the self-hosted bundle would then carry the AGPL source-offer duty for it. **Pingora** is the right tool if Loams ever needs a Rust L7 component of its own (for example, a gateway that terminates HTTP/3 next to the supervisor). **River** is not an option while it is stalled.
 
 ## 4. Biscuit vs OpenFGA + OIDC vs the sandbox tokens (D182, D188)
 
@@ -135,7 +135,7 @@ These mechanisms answer different questions, so the comparison is about which jo
 
 ## 5. The forked operator and the `ObjectStoreProvider` trait (D178, D185)
 
-**Fork plan.** Fork `CleverCloud/clever-kubernetes-operator` to `dina-kar/loam-operator` and keep the MIT `LICENSE` with Clever Cloud's copyright plus a `NOTICE`. Rename the API group from `api.clever-cloud.com` to Loams's (placeholder `loams.<domain>/v1alpha1`, Q-RT-8). Keep `crates/core`, `svc/k8s`, `svc/http` and the Helm chart. Delete `svc/clevercloud` and the add-on CRDs. Add:
+**Fork plan.** Fork `CleverCloud/clever-kubernetes-operator` to `dina-kar/loams-operator` and keep the MIT `LICENSE` with Clever Cloud's copyright plus a `NOTICE`. Rename the API group from `api.clever-cloud.com` to Loams’ (placeholder `loams.<domain>/v1alpha1`, Q-RT-8). Keep `crates/core`, `svc/k8s`, `svc/http` and the Helm chart. Delete `svc/clevercloud` and the add-on CRDs. Add:
 
 | CRD | Reconciles | Notes |
 |---|---|---|
@@ -154,14 +154,14 @@ pub trait ObjectStoreProvider: Send + Sync {
     async fn ensure_bucket(&self, spec: &BucketSpec) -> Result<BucketRef, ProviderError>;
     async fn issue_credentials(&self, bucket: &BucketRef, scope: &CredentialScope) -> Result<S3Credentials, ProviderError>;
     async fn revoke_credentials(&self, bucket: &BucketRef, key_id: &str) -> Result<(), ProviderError>;
-    /// The `object_store` configuration Loams's roles receive (endpoint, region, path-style, TLS).
+    /// The `object_store` configuration Loams’ roles receive (endpoint, region, path-style, TLS).
     fn store_config(&self, bucket: &BucketRef) -> ObjectStoreConfig;
 }
 ```
 
 - **`rustfs`**: RustFS is deployed by its upstream Helm chart (`rustfs/rustfs`, `helm/rustfs`, Apache-2.0, 1.0.0 on 2026-09-16), and the provider creates buckets and access keys through RustFS's S3 and admin APIs **(verify admin API shape)**.
 - **`s3`**: static credentials or IRSA / workload identity; no bucket creation unless allowed.
-- **`cellar`**: buckets and keys through `clevercloud-sdk`; data over S3. Whether Cellar honours `If-None-Match` and `If-Match` on `PUT` is unverified, and it decides whether Cellar can hold Loams's WAL or only static assets (Q-RT-9).
+- **`cellar`**: buckets and keys through `clevercloud-sdk`; data over S3. Whether Cellar honours `If-None-Match` and `If-Match` on `PUT` is unverified, and it decides whether Cellar can hold Loams’ WAL or only static assets (Q-RT-9).
 
 ## 6. GitOps layout (D186)
 
@@ -228,7 +228,7 @@ deploy/
 
 | # | Question | Owner | Needed by |
 |---|---|---|---|
-| Q-RT-8 | The operator's API group and domain (`loams.<domain>`), and whether the fork lives at `dina-kar/loam-operator` or in the engine workspace | Founder | Operator fork |
+| Q-RT-8 | The operator's API group and domain (`loams.<domain>`), and whether the fork lives at `dina-kar/loams-operator` or in the engine workspace | Founder | Operator fork |
 | Q-RT-9 | Does Cellar honour `If-None-Match` / `If-Match` on `PUT`, so that it can hold the WAL, or is it only for static assets and bundles | Eng | Cellar provider |
 | Q-RT-10 | Biscuit for §19's vending flow too (one attenuation mechanism), or Biscuit only inside the runtime; `cargo deny` result for `biscuit-auth` 6.0 | Founder | F1 plan |
 | Q-RT-11 | Argo CD's RSS on k3d and in the smallest BYOC profile; whether BYOC-local-meta (§10 §1) needs a Flux option | Eng | F1 |

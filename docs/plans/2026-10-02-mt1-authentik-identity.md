@@ -5,7 +5,7 @@
 > **Status: Planned** (2026-10-02). **Track MT** (design [§38](../design/38-knative-authentik-gitops.md) §4–§5, D447–D452, D458; amends [§19](../design/19-console-identity-and-agents.md) §6 and [§22](../design/22-showcase-suite.md) D-SC-3). Narrows D111 (D451): MT1 is the identity half of the unified auth plan for the native API, the console API and MCP. Depends on §19's M2 identity work being merged up to the token endpoint and sessions (`POST /api/v1/oauth/token`, the session cookie, the `ControlStore` principal records) and on D66's tuple outbox. If they have not merged, Task 0 records which tasks wait. Branches `mt1-t<N>`, stacked; PRs target `main`. Authentik runs only in CI containers and in the k3d e2e job; nothing Authentik-specific is linked into `loams`.
 
 **Goal:**
-- Authentik 2026.8.x, open-source edition only, configured entirely by Loams's blueprints, with a CI guard that fails if any Enterprise feature or licence appears (D452, D458).
+- Authentik 2026.8.x, open-source edition only, configured entirely by Loams’ blueprints, with a CI guard that fails if any Enterprise feature or licence appears (D452, D458).
 - The gateway signs people in through Authentik (authorization code with PKCE for the console; device code for `loams login`) and issues Loams access tokens by RFC 8693 exchange of the Authentik token (D449).
 - The `groups` claim becomes Loams teams and OpenFGA `team#member` tuples at sign-in and refresh.
 - The showcase suite moves from Keycloak to Authentik (D-SC-3 superseded).
@@ -13,7 +13,7 @@
 **Architecture:**
 - **The IdP is a trusted issuer, not a library.** The gateway talks OIDC to Authentik through `openidconnect` 4 (already chosen in §19 §6). Nothing in the gateway names Authentik except the default discovery URL in the chart's values; any OIDC provider passes the same tests (D450).
 - **One verifier.** Every listener verifies Loams access tokens only (§19 §5.3). Authentik tokens are accepted at exactly one place: the token endpoint's RFC 8693 grant with `subject_token_type=urn:ietf:params:oauth:token-type:access_token` or `…:id_token`, from an issuer in the trusted-issuer list.
-- **Agents are unchanged.** Workload federation, user delegation and vending on Loams's token endpoint stay as §19 §5.2 specifies; Authentik is not in the agent path.
+- **Agents are unchanged.** Workload federation, user delegation and vending on Loams’ token endpoint stay as §19 §5.2 specifies; Authentik is not in the agent path.
 - **Configuration is data in Git.** `deploy/authentik/blueprints/loams.yaml` is the single source of Authentik's Loams objects; the e2e job loads it into a fresh Authentik and asserts the result.
 
 **Tech Stack:** Rust 1.97.1, edition 2024, workspace lints. Workspace crates: `openidconnect` 4, `jsonwebtoken` (or the crate §19 chose for Ed25519 JWTs), `axum`, `reqwest`, `serde`, `tokio`, `tracing`, `proptest`. Test tools: Authentik `ghcr.io/goauthentik/server:2026.8.3` with Postgres 17 in `docker compose` for integration tests, pinned by digest; `kind` or k3d for the e2e job; Python 3.13 with `uv` for the blueprint lint. Task 0 checks the image digest, the licence files and that the compose stack starts in under 2 GiB RSS on the CI runner.
@@ -28,7 +28,7 @@
 
 Same as the M1 overview §8, plus:
 - **Open-source edition only (D447, D458).** No task sets `AUTHENTIK_ENTERPRISE__*`, installs a licence, or uses a model from `authentik/enterprise/`. The guard of Task 1 runs on every PR that touches `deploy/authentik/` and on every Authentik bump.
-- **No Authentik code in this repository.** Images are pulled; the chart is referenced (D452); blueprints are Loams's own YAML.
+- **No Authentik code in this repository.** Images are pulled; the chart is referenced (D452); blueprints are Loams’ own YAML.
 - **Loams tokens only on listeners.** No listener other than the token endpoint accepts a token whose `iss` is not the instance's own.
 - **Loopback until this plan's Task 7.** Listeners keep D111's loopback defaults until the verifier is wired; Task 7 is the first that lets the native API, the console API and MCP bind beyond loopback, and only with TLS configured.
 - **The build machine.** One cargo build at a time, the shared target, `-j 6`, lld. Authentik containers run only in the `identity` CI job and the e2e job, never during a cargo build on the build machine.
@@ -62,7 +62,7 @@ From §19: the token endpoint, the session model and JIT user records as merged 
 ```
 deploy/authentik/
   blueprints/loams.yaml              # application, providers, scope mappings, groups, flows (Ruling 1–2)
-  values.yaml                       # Loams's values for the upstream chart (D452)
+  values.yaml                       # Loams’ values for the upstream chart (D452)
   compose.yaml                      # CI: authentik server + worker + postgres, pinned by digest
 scripts/authentik/
   guard.py, enterprise-apps.txt     # Ruling 7
@@ -126,7 +126,7 @@ docs/guides/identity-authentik.md
 
 **Files:** the console API's existing `GET /api/v1/auth/oidc/{provider}/start` (already in `api/console/openapi.json`) and a new `GET /api/v1/auth/oidc/{provider}/callback`, added to the OpenAPI contract, to `loams-console-mock` and to the contract tests (§19 P9, P10); `crates/loams-cli/src/login.rs`.
 
-**Produces:** authorization code with PKCE (S256) and `state` and `nonce` checks for the console; the device-code flow for the CLI (`loams login --issuer <url>`), which polls Authentik, then exchanges at Loams's token endpoint and stores the Loams refresh state the way §30 stores credentials.
+**Produces:** authorization code with PKCE (S256) and `state` and `nonce` checks for the console; the device-code flow for the CLI (`loams login --issuer <url>`), which polls Authentik, then exchanges at Loams’ token endpoint and stores the Loams refresh state the way §30 stores credentials.
 
 **Tests:** `callback_is_in_openapi_and_mock` (the contract test covers both operations); `pkce_s256_required`; `state_mismatch_rejected`; `nonce_replay_rejected`; `device_code_bound_to_loams_cli_client`; `cli_login_end_to_end` (compose stack, headless approval through Authentik's flow executor API).
 
@@ -164,9 +164,9 @@ docs/guides/identity-authentik.md
 
 | Item | Where |
 |---|---|
-| SCIM provisioning into Loams | `loam-platform` (D221), unless the owner moves it (Q440) |
+| SCIM provisioning into Loams | `loams-platform` (D221), unless the owner moves it (Q440) |
 | The other listeners (Qdrant, Elasticsearch, Postgres, Flight SQL) leaving loopback | Each listener's plan adopts MT1's verifier |
-| Hosted Loams Cloud identity (Clerk or Authentik) | `loam-platform` and `loam-cloud` (Q442) |
+| Hosted Loams Cloud identity (Clerk or Authentik) | `loams-platform` and `loams-cloud` (Q442) |
 | Authentik in the GitOps waves | MT3 |
 
 ## PR sizes

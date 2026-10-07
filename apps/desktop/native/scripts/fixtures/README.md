@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../../../docs/assets/loams-banner.svg)
+
 `resource-stream.jsonl` contains sanitized deltas from a successful Haiku
 profiling response: an 80-section Rust ownership tutorial with code fences.
 Only text/reasoning deltas and the successful completion marker are retained;
@@ -9,13 +11,13 @@ Reasoning contributes another 853 bytes. The production transcript's part
 separators bring the combined short reply to 52,624 bytes.
 
 Use `LOAMS_DESKTOP_REPLAY_REPEAT=10 LOAMS_DESKTOP_REPLAY_DELAY_MS=8` for the synthetic long
-workload. See [the profiling report](../../docs/performance-resource-usage.md)
+workload. See the profiling report (upstream report; not included in this checkout)
 for build settings, commands and measured results.
 
 `runway-short-stream.jsonl` is a synthetic short reply in 24-character chunks.
 It keeps the own-send runway active through completion. Use a 400 ms replay
-delay for the [runway performance comparison](../../docs/performance-runway-scroll.md).
+delay for the runway performance comparison (upstream report; not included in this checkout).
 
 `transcript-selection-stream.jsonl` is a synthetic short reply in six-character
 chunks. A 1200 ms replay delay leaves time to expand/collapse a long prompt and
-select live text. See the [native regression recordings](../../docs/transcript-selection-regressions.md).
+select live text. See the native regression recordings (upstream report; not included in this checkout).

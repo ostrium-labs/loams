@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../../../docs/assets/loams-banner.svg)
+
 # Explicit agent installation
 
 Settings → Providers → **Install** runs on the selected device, as its user. Merely

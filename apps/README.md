@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../docs/assets/loams-banner.svg)
+
 # Loams Applications
 
 This directory contains client applications for the Loams platform.

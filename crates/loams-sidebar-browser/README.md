@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # loams-sidebar-browser
 
 The docked sidebar browser for Loams Desktop (design

@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # Dapr trigger edge
 
 Build `loams-trigger-edge:dev` from the repository root with

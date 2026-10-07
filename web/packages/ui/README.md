@@ -1,6 +1,8 @@
+![Loams — Your data. Your bucket.](../../../docs/assets/loams-banner.svg)
+
 # `@loams/ui`
 
-Loams's design system: the tokens, the mark, the grain textures and the React
+Loams’ design system: the tokens, the mark, the grain textures and the React
 primitives the console and the plugins are built from.
 
 ## Use it
@@ -36,7 +38,7 @@ observer.
 Set `--loams-font-sans` and `--loams-font-mono` to your loaded faces; the
 defaults are Archivo and Martian Mono with system fallbacks. The console
 bundles both from Fontsource under the SIL Open Font License 1.1 (see
-[`NOTICE`](../../../../NOTICE)).
+[`NOTICE`](../../../NOTICE)).
 
 ## Exports
 

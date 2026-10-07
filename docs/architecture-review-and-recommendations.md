@@ -1,9 +1,9 @@
 # Loams — Architecture Review, Readiness Assessment & Strategic Recommendations
 
-**Document Status:** Final · **Adopted 2026-09-25** as decisions D42–D50 ([decision log](./design/13-decision-log.md)); the resulting roadmap is [§12](./design/12-roadmap-testing-risks.md)  
-**Date:** September 2026  
-**Target Codebase:** [`Loams (v0.0.1)`](..)  
-**Evaluated Milestone:** M1.1 (Collection Storage)  
+**Document Status:** Final · **Adopted 2026-09-25** as decisions D42–D50 ([decision log](./design/13-decision-log.md)); the resulting roadmap is [§12](./design/12-roadmap-testing-risks.md)
+**Date:** September 2026
+**Target Codebase:** [`Loams (v0.0.1)`](..)
+**Evaluated Milestone:** M1.1 (Collection Storage)
 
 ---
 
@@ -54,16 +54,16 @@ The foundation code built in M0 and M1.1 demonstrates world-class systems progra
 | **Elasticsearch REST (Subset)** | M1.5 | **KEEP (Targeted Subset Only)** | Restrict scope to standard BM25 search and vector-store fixtures. Do not attempt full ES DSL parity. | M1, Phase A trimmed to what the framework suites send (D48) |
 | **Kafka Wire Protocol** | M3 | **DROP / DEFER** | Rebuilding a Kafka broker (KIP-848, consumer group rebalancing, heartbeat loops, transactions) is a venture-scale project in itself. Expose native streaming HTTP/gRPC ingest endpoints instead. | Deferred past v1.0 (Phase C); native streaming API in M5 (D43) |
 | **Neo4j Bolt / Cypher** | M2 | **DROP / DEFER** | Cypher parsing and recursive graph execution have a fraction of the market demand of vector/search. Handle graph relations via SQL joins or simple graph expansions in DataFusion. | Dropped; native graph in M3 (D44) |
-| **ClickHouse HTTP** | M4 | **DROP** | Loams's data is already open Apache Iceberg. Users can query Iceberg tables directly via DuckDB, Trino, or ClickHouse itself. Building a custom ClickHouse server inside Loams is redundant. | Dropped; Iceberg analytics in M4 (D45) |
+| **ClickHouse HTTP** | M4 | **DROP** | Loams’ data is already open Apache Iceberg. Users can query Iceberg tables directly via DuckDB, Trino, or ClickHouse itself. Building a custom ClickHouse server inside Loams is redundant. | Dropped; Iceberg analytics in M4 (D45) |
 
 ---
 
 ## 4. Lakehouse Caching & Graph Architecture: Lessons from StarRocks & Nebula Graph
 
-### 4.1 StarRocks Data Cache: Validation of Loams's Hot Tier
+### 4.1 StarRocks Data Cache: Validation of Loams’ Hot Tier
 StarRocks proved to the data industry that analytical queries do not require stateful, dedicated storage clusters. By placing **stateless compute over Apache Iceberg on S3** and using a **two-tier (RAM + local NVMe) Data Cache**, StarRocks delivers memory-speed queries at object-storage economics.
 
-Loams's hot-tier design ([docs/design/04-hot-tier.md](./design/04-hot-tier.md)) adopts this exact pattern via [`loams-cache`](../crates/loams-cache) (using RisingWave's `foyer` hybrid cache):
+Loams’ hot-tier design ([docs/design/04-hot-tier.md](./design/04-hot-tier.md)) adopts this exact pattern via [`loams-cache`](../crates/loams-cache) (using RisingWave's `foyer` hybrid cache):
 * **H0 Metadata (RAM):** Manifests, split footers, Parquet page indices.
 * **H1 Block Cache (RAM → NVMe):** Transparent block-level caching of remote S3 ranges.
 * **T1 / T2 Hot Projections (NVMe):** Derived local columnar projections for sub-second analytical latencies.
@@ -77,7 +77,7 @@ Nebula Graph is an impressive distributed graph database, but running it in prod
 AI applications (GraphRAG, Cognee, LightRAG) do not need arbitrary 10-hop recursive graph queries. They need:
 $$\text{Vector / BM25 Search (Seed Entities)} \longrightarrow \text{1–2 Hop Neighbor Traversal} \longrightarrow \text{Reranking}$$
 
-**Loams's Winning Approach:**
+**Loams’ Winning Approach:**
 1. Store graph entities as rows in Lance/Iceberg tables with vector embeddings.
 2. Store edges in chunked CSR/CSC (Compressed Sparse Row/Column) sidecars on S3.
 3. Cache hot adjacency chunks in RAM/NVMe (`foyer`).
@@ -106,23 +106,23 @@ pub trait MetaStore: Send + Sync + 'static {
     async fn swap_segment(&self, swap: SegmentSwap) -> Result<(), MetaError>;
 
     // --- 2. Catalog & Schema Evolution ---
-    async fn create_collection(&self, ns: NamespaceId, name: &str, schema: CollectionSchema) 
+    async fn create_collection(&self, ns: NamespaceId, name: &str, schema: CollectionSchema)
         -> Result<CollectionCreated, MetaError>;
-    async fn get_collection(&self, id: CollectionId) 
+    async fn get_collection(&self, id: CollectionId)
         -> Result<Option<Collection>, MetaError>;
-    async fn update_schema(&self, id: CollectionId, expected_v: u64, new_schema: CollectionSchema) 
+    async fn update_schema(&self, id: CollectionId, expected_v: u64, new_schema: CollectionSchema)
         -> Result<u64, MetaError>;
 
     // --- 3. Manifest Pointers (Atomic Linearization Points) ---
-    async fn get_manifest_pointer(&self, id: CollectionId) 
+    async fn get_manifest_pointer(&self, id: CollectionId)
         -> Result<Option<ManifestPointer>, MetaError>;
-    async fn cas_manifest_pointer(&self, id: CollectionId, expected: u64, next: ManifestPointer) 
+    async fn cas_manifest_pointer(&self, id: CollectionId, expected: u64, next: ManifestPointer)
         -> Result<(), MetaError>;
 
     // --- 4. Distributed Worker Leases & Fencing ---
-    async fn acquire_lease(&self, key: &str, holder: &str, ttl: Duration) 
+    async fn acquire_lease(&self, key: &str, holder: &str, ttl: Duration)
         -> Result<LeaseGrant, MetaError>;
-    async fn renew_lease(&self, key: &str, epoch: u64, ttl: Duration) 
+    async fn renew_lease(&self, key: &str, epoch: u64, ttl: Duration)
         -> Result<LeaseGrant, MetaError>;
 }
 ```

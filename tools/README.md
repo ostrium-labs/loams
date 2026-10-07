@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../docs/assets/loams-banner.svg)
+
 # Loams Monorepo Tools
 
 This directory contains repository-level validation, structural invariant checkers, and migration tracking utilities.

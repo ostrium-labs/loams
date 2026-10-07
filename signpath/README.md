@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../docs/assets/loams-banner.svg)
+
 # `signpath/`
 
 The two files SignPath needs from this repository, and where each one goes.

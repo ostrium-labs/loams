@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../../../../../docs/assets/loams-banner.svg)
+
 # Symbols assets
 
 These icons are copied from

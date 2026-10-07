@@ -4,7 +4,7 @@
 
 > **Status: In progress** (2026-10-03: Task 0 reconciliation; Tasks 1–11 remain). Track RT, phase RT1 (design [§31](../design/31-loams-router-and-verification.md) §17). Branches `rt1-t<N>`, stacked; PRs target `dev`. Depends on [RT0](2026-10-01-rt0-foundations-and-specs.md) (the kernel crate, `ShardMap.tla`, the spec tooling). The real-engine half runs on `postgres:17.11` shards in CI; Loams Postgres computes join the contract suite when §28's P2b and P3 are merged (Task 0 checks). RT1 adds the crates `loams-detsim` and `loams-sqlrouter-io`, extends `loams-sqlrouter`, and adds a compose stack and two CI jobs. It changes no M-track code path.
 
-**Goal:** The chat dump's M1, as reconciled in §31: **single-shard routing for a sharded Loams Postgres database through PgDog**, driven by Loams's shard map, with **the deterministic simulator running** and **`ShardMap` checked against the implementation's traces**:
+**Goal:** The chat dump's M1, as reconciled in §31: **single-shard routing for a sharded Loams Postgres database through PgDog**, driven by Loams’ shard map, with **the deterministic simulator running** and **`ShardMap` checked against the implementation's traces**:
 - `loams-detsim`: a bit-exact, seeded, single-threaded scheduler with simulated time, a network model, fault points, swarm runs, trace hashes and shrinking (D313);
 - the shard map record in TiKV with compare-and-set (`ShardMapStore`), PgDog config rendering, the `ConfigPush` machine, the PgDog admin adapter and the Postgres backend adapter (§31 §6.1–§6.3, §7);
 - models of PgDog instances, Postgres shards and the record store, held to the same contract suites as the real ones (D316);

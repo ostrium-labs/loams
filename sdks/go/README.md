@@ -1,8 +1,10 @@
+![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
+
 # The Go SDK
 
-Module path **`loams.dev/go`**. Design [§44](../../../docs/design/44-unified-api-and-sdks.md)
+Module path **`loams.dev/go`**. Design [§44](../../docs/design/44-unified-api-and-sdks.md)
 §7 and §9 row 3, decisions **D604, D606, D612**, the language plan's Task 2, and
-the clauses **R1–R10** of the [runtime contract](../../../docs/sdk/runtime-contract.md).
+the clauses **R1–R10** of the [runtime contract](../../docs/sdk/runtime-contract.md).
 
 ```go
 client := loams.New(loams.Options{
@@ -78,7 +80,7 @@ if loams.ReasonOf(err) == loams.ReasonFeatureNotInVariant { … }
 ```
 
 `reason` is a stable `snake_case` string registered in
-[`docs/api/reasons.md`](../../../docs/api/reasons.md) and generated into
+[`docs/api/reasons.md`](../../docs/api/reasons.md) and generated into
 `loams.dev/go/gen/facade`, so it is a `Reason` constant rather than a string.
 `FeatureNotInVariantError` and `TokenExpiredError` are subclasses of
 `UnimplementedError` and `UnauthenticatedError` respectively, so `errors.As`
@@ -197,7 +199,7 @@ do, in order:
    with a `main` branch. Either empty, or with an initial commit that copies
    `sdks/go/**` (D619 says an `sdk-mirror` workflow writes it; until that workflow
    exists, a copy is the interim).
-2. **Serve the meta tag.** Add a route in the `loam-cloud` app that answers
+2. **Serve the meta tag.** Add a route in the `loams-cloud` app that answers
    `GET /go?go-get=1` with a minimal HTML page:
 
    ```html

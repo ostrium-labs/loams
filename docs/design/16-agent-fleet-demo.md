@@ -2,7 +2,7 @@
 
 Status: **Approved** (user) · 2026-09-24; the launch demo for the agent track. Builds on §14 (durable execution) and §15 (agent workspaces). Every number below is a design target to be measured, not a result.
 
-**The claim:** one host and one bucket run 100 concurrent coding-agent sessions (Claude Code, Codex and opencode), each in its own microVM. Every session is a Resonate durable execution stored in Loams. Every MCP server speaks the stateless 2026-07-28 spec through Loams's gateway, which sends each model only the tool definitions it needs. Every trace, token and dollar lands in Loams's analytics, cross-checked against tokscale.
+**The claim:** one host and one bucket run 100 concurrent coding-agent sessions (Claude Code, Codex and opencode), each in its own microVM. Every session is a Resonate durable execution stored in Loams. Every MCP server speaks the stateless 2026-07-28 spec through Loams’ gateway, which sends each model only the tool definitions it needs. Every trace, token and dollar lands in Loams’ analytics, cross-checked against tokscale.
 
 ---
 
@@ -12,9 +12,9 @@ Status: **Approved** (user) · 2026-09-24; the launch demo for the agent track. 
 |---|---|
 | **Density** | 100 microVM sandboxes on one KVM host, forked from warm templates, sharing all read-only layers |
 | **Durability** | Kill sandboxes, a worker and a gateway mid-run; every session still completes, and no settled step (no paid model call) is repeated |
-| **Context efficiency** | Tool-definition tokens per request with all tools loaded, with client-side deferral, and with Loams's graph-based tool retrieval |
+| **Context efficiency** | Tool-definition tokens per request with all tools loaded, with client-side deferral, and with Loams’ graph-based tool retrieval |
 | **One system for the whole loop** | Code, environments, sessions, memory, traces and analytics all live in one bucket, queried with SQL, search and graph expansion |
-| **Honest accounting** | Loams's token and cost tables match tokscale's totals per session |
+| **Honest accounting** | Loams’ token and cost tables match tokscale's totals per session |
 
 ## 2. Setup
 
@@ -51,7 +51,7 @@ Each session is the durable workflow in §15 §9.2: fork a branch, resolve the e
 
 ## 5. MCP servers and tool retrieval
 
-- **All MCP traffic** goes through Loams's MCP gateway on the 2026-07-28 spec (§15 §10): stateless requests, `Mcp-Method` / `Mcp-Name` routing headers, cacheable `tools/list` (`ttlMs`, `cacheScope`), `traceparent` in `_meta`.
+- **All MCP traffic** goes through Loams’ MCP gateway on the 2026-07-28 spec (§15 §10): stateless requests, `Mcp-Method` / `Mcp-Name` routing headers, cacheable `tools/list` (`ttlMs`, `cacheScope`), `traceparent` in `_meta`.
 - **Catalog:** about 20 servers and 300 tools: Loams (search, SQL, graph expansion, memory, repo, sessions), a Git hosting mock (issues, pull requests, reviews), documentation search, a database, a browser, a ticketing mock, a chat mock and a set of distractor servers with overlapping tool names.
 - **Three arms**, each run over the same 100 tasks:
 

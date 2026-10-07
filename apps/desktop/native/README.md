@@ -1,3 +1,5 @@
+![Loams — Your data. Your bucket.](../../../docs/assets/loams-banner.svg)
+
 # Loams Desktop Native Workspace
 
 This directory contains the standalone Cargo workspace for the Loams Desktop application.
