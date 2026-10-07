@@ -38,8 +38,29 @@ git cherry dev origin/<branch>                  # commit-level check (unreliable
 | Issue | State | Evidence |
 |---|---|---|
 | #283, #285, #286, #292, #294, #296 | **Complete** | 13/13 SDK languages pass their conformance gates |
-| #281 API1 | **2 of 11 tasks** | `docs/plans/2026-10-02-api1-unified-connect.md`: Tasks 0–1 `[x]`, Tasks 2–10 `[ ]`. Task 2's code landed in `a5efc8d1` but its checkbox was never ticked |
+| #281 API1 | **4 of 11 tasks** | Tasks 0–3 done. Task 2 (`a5efc8d1`, `loams.collection.v1`, 11 RPCs); Task 3 (`d21261d8`, `loams.document.v1`, 6 RPCs). Tasks 4–10 remain |
 | #282 SDK1 | **0 of 9 tasks** | `docs/plans/2026-10-02-sdk1-generation-pipeline.md`: all 9 tasks unchecked |
+
+### API1 Tasks 2–3 as built
+
+Both new proto packages generate through `loams-proto` and register in
+`connect::routes()`. Handlers are thin: Task 3's convert each request back into
+native REST JSON and call the REST route's own functions (`op_from_json`,
+`read_consistency`, `backpressure_of`), so a rejected op is refused by one code
+path with one message on both surfaces and the two cannot drift.
+
+Neither package carries `loams.options.v1` `FacadeOptions` (ruling 2.5): a
+`facade` option makes the generator emit calls that import stubs no SDK mirror
+generates. Confirmed empirically — adding `loams.collection.v1` to the Go SDK's
+hand-written `ProtoPackages` produced 9 conformance failures, because
+`sdks/go/gen/loams/` has no stubs for either package.
+
+**Unratified decision.** `WriteDocuments`' `idempotency_key` has no specification
+behind it: there is no dedupe ledger anywhere in `loams-query`, and the REST
+write carries no key, so "dedupe window equals the REST one" had nothing to
+compare against. Task 3 shipped a per-process ledger (5-minute window, 1024
+entries, canonical request fingerprint, per-key lock) and flagged it as invented.
+It needs a ruling before Task 9 depends on it.
 
 API1 and SDK1 are **strictly serial**: each task layers its proto package onto
 `crates/loams-proto/build.rs`'s `FILES` and registers a service in
