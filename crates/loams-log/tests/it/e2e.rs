@@ -510,6 +510,18 @@ async fn intermittent_store_faults_never_corrupt_reads() {
     let mut known: BTreeMap<(u32, u64), String> = BTreeMap::new();
     let mut handles = appenders;
     while !handles.iter().all(|h| h.is_finished()) {
+        // Yield to the injector.
+        //
+        // This loop asks only whether the appenders have finished, and `fetch`
+        // on a partition with nothing new in it returns at once, so the body
+        // can run again immediately with nothing having awaited. That made this
+        // a busy-wait which, on a loaded machine (the whole workspace running
+        // its test binaries at once), starved the injector's 2ms poll: it never
+        // got scheduled, no fault was ever queued, and the assertion below
+        // failed with "no append saw an injected fault" — a scheduling race,
+        // not a storage defect. Yielding hands the runtime a scheduling point
+        // so the injector runs whether or not `fetch` blocked.
+        tokio::task::yield_now().await;
         for partition in 0..PARTITIONS {
             match reader
                 .fetch(FetchRequest {

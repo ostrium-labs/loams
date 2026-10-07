@@ -638,7 +638,7 @@ async fn no_update_is_missed_under_concurrent_writes() {
 /// 50 ms back, and every result still equals a fresh evaluation at its tick.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn no_update_is_missed_with_the_tick_read_lag() {
-    no_update_is_missed(operon_live::subs::DEFAULT_TICK_READ_LAG).await;
+    no_update_is_missed(loams_live::subs::DEFAULT_TICK_READ_LAG).await;
 }
 
 async fn no_update_is_missed(tick_read_lag: Duration) {
@@ -854,7 +854,7 @@ async fn a_commit_reaches_subscribers_one_tick_read_lag_later() {
     let subs = spawn(
         &r,
         SubsConfig {
-            tick_read_lag: operon_live::subs::DEFAULT_TICK_READ_LAG,
+            tick_read_lag: loams_live::subs::DEFAULT_TICK_READ_LAG,
             ..subs_config()
         },
     );

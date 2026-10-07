@@ -1221,10 +1221,10 @@ async fn mutations_under_contention_complete_within_the_default_budget() {
         .ok()
         .and_then(|v| v.parse().ok())
         .map_or(
-            operon_live::subs::DEFAULT_TICK_READ_LAG,
+            loams_live::subs::DEFAULT_TICK_READ_LAG,
             std::time::Duration::from_millis,
         );
-    let at = operon_live::subs::lagged(&r.tikv().now().await.expect("now"), lag);
+    let at = loams_live::subs::lagged(&r.tikv().now().await.expect("now"), lag);
     let mut tailer = Tailer::start(r.tikv().clone(), journal, at)
         .await
         .expect("a tailer");
@@ -1237,7 +1237,7 @@ async fn mutations_under_contention_complete_within_the_default_budget() {
             let mut moved = 0usize;
             while !stop.load(Ordering::Relaxed) {
                 let started = std::time::Instant::now();
-                let at = operon_live::subs::lagged(&r.tikv().now().await.expect("now"), lag);
+                let at = loams_live::subs::lagged(&r.tikv().now().await.expect("now"), lag);
                 let batch = tailer.tick(at).await.expect("a tick");
                 tailer.ack(&batch).expect("ack");
                 latencies.push(started.elapsed());

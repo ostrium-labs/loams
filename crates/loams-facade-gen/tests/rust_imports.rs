@@ -196,10 +196,14 @@ fn no_signature_names_an_unresolved_type() {
     }
 }
 
-/// `Option` and `Result` are in the prelude, so a bare use of either resolves
-/// without an import. Everything else bare in a trait body must come from a
-/// `use` or from this file.
-const PRELUDE: &[&str] = &["Option", "Result"];
+/// Names a trait body may use bare because they resolve without an import.
+///
+/// `Option` and `Result` are in the prelude. `Send` is an auto trait the
+/// renderer writes into every return type (`-> impl Future<…> + Send`); it is
+/// prelude too, and needs no `use` any more than `Option` does. `Self` is the
+/// implementing type. Everything else bare must come from a `use` or from this
+/// file.
+const PRELUDE: &[&str] = &["Option", "Result", "Send", "Sync", "Self"];
 
 /// The capitalised names a trait body uses **without** a `::` qualifier.
 ///
@@ -225,25 +229,159 @@ fn bare_names_in_traits(rendered: &str) -> BTreeSet<String> {
         if !in_trait || trimmed.starts_with("///") || trimmed.starts_with("//") {
             continue;
         }
-        // Split on `::` so a qualified name is attributed to its last segment,
-        // and every segment except the first is known to have been qualified.
-        let segments: Vec<&str> = trimmed.split("::").collect();
-        for (index, segment) in segments.iter().enumerate() {
-            let qualified = index + 1 < segments.len();
-            for word in identifier_words(segment) {
-                if qualified {
-                    continue;
-                }
-                if word.starts_with(|c: char| c.is_ascii_uppercase()) {
-                    names.insert(word);
-                }
+        // An associated const is a value, not a type: `const MODULE: &str`
+        // names nothing this file has to import. Skip this line and stay in the
+        // trait, because the `fn`s the test is actually about follow it.
+        if trimmed.starts_with("const ") {
+            continue;
+        }
+        // A name is bare only when nothing qualifies it. `::` is what
+        // qualifies, so a word counts as bare unless the two characters before
+        // it are `::`.
+        //
+        // The earlier scan split the line on `::` and treated every segment but
+        // the last as qualified, which flagged the **final** segment of every
+        // qualified path: `a::b::Name` reported `Name` as bare even though it
+        // resolves through its own path. That made this test fail on the very
+        // shape the doc comment above says is fine.
+        //
+        // Text inside a string literal is not a type either: the renderer
+        // writes `const SERVICE: &str = "loams.instance.v1.InstanceService"`,
+        // and that names the service in a value, not a path this file resolves.
+        // Strip the literals before scanning, or every fully-qualified rpc name
+        // the facade carries is reported as a bare type.
+        let code = strip_string_literals(trimmed);
+        for (start, word) in identifier_spans(&code) {
+            if code[..start].ends_with("::") {
+                continue;
+            }
+            // An associated-type binding is a name on the left of `=`, not a
+            // type: `Future<Output = Result<T>>` names no type `Output`, and
+            // the facade neither defines nor imports one.
+            if code[start + word.len()..].trim_start().starts_with('=') {
+                continue;
+            }
+            if word.starts_with(|c: char| c.is_ascii_uppercase()) {
+                names.insert(word);
             }
         }
     }
     names
 }
 
+/// The scan finds exactly the names it is meant to: the ones a trait body
+/// spells bare that neither resolve nor are defined here.
+///
+/// Each rule below was added because the scan reported a false positive without
+/// it, and each of those names is one the renderer legitimately emits — so a
+/// scan that ignored them could not tell a broken facade from a good one. They
+/// are listed here so the reasoning survives the next edit:
+///
+/// - `a::b::Name` is **qualified**, including the last segment. Only the
+///   characters immediately before a word decide, not its position in a split.
+/// - `"..."` is a **value**. The renderer writes fully-qualified rpc and
+///   service names as strings; they are not paths this file resolves.
+/// - `const NAME: T` is a **binding**, not a type. The facade declares
+///   `MODULE` and `SERVICE` per module and imports neither.
+/// - `Future<Output = …>` is an **associated-type binding**. `Output` is a name
+///   on the left of `=`, not a type, and no facade defines or imports one.
+/// - `Send` is an **auto trait** in the prelude, written into every return
+///   type. It resolves without an import, exactly as `Option` and `Result` do.
+///
+/// The negative case is what matters: a trait body that really does name an
+/// unimported, undefined type is still reported, and `CallOptions`,
+/// `LoamsError` and `ResponseStream` — the three the renderer once emitted
+/// without a `use` — are still caught. `the_scan_still_finds_a_genuine_bare_type`
+/// below asserts that directly, because a scan that finds nothing passes
+/// vacuously and that is how the original defect reached a release.
+#[test]
+fn the_scan_still_finds_a_genuine_bare_type() {
+    let facade = "\
+pub trait DemoModule {
+    const MODULE: &'static str = \"demo\";
+    fn call(
+        &self,
+        request: DemoRequest,
+    ) -> impl std::future::Future<Output = Result<DemoResponse, LoamsError>> + Send;
+}
+";
+    let bare = bare_names_in_traits(facade);
+    // The genuine defect: `DemoRequest` and `DemoResponse` are bare, undefined
+    // and unimported. Everything else on the line is one of the exclusions.
+    assert!(bare.contains("DemoRequest"), "{bare:?}");
+    assert!(bare.contains("DemoResponse"), "{bare:?}");
+    // `MODULE`, `Output` and `Future` are excluded by the scan itself: the first
+    // is an associated const, the second an associated-type binding, the third
+    // qualified. `Send`, `Result` and `LoamsError` are still *found* — they are
+    // filtered by `PRELUDE` at the call site, which is what this next line
+    // reproduces for the three that resolve without an import.
+    for excluded in ["Output", "Future", "MODULE"] {
+        assert!(!bare.contains(excluded), "{excluded} should not be bare: {bare:?}");
+    }
+    for present in ["Result", "Send", "LoamsError"] {
+        assert!(
+            bare.contains(present),
+            "{present} appears bare in the fixture, so the scan must find it \
+             for the call site to filter: {bare:?}"
+        );
+    }
+}
+
+/// The line with every `"..."` literal blanked out, so a word inside one is
+/// never read as code. Escaped quotes do not end the literal, and an unclosed
+/// quote runs to the end of the line rather than panicking on a hand-written
+/// fixture that is not valid Rust.
+fn strip_string_literals(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    let mut in_string = false;
+    let mut escaped = false;
+    while let Some(c) = chars.next() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if c == '"' {
+            in_string = true;
+            out.push('"');
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// The identifier-shaped words in a string, each with the byte offset it starts
+/// at, so the caller can look at the characters before it. `identifier_words`
+/// alone cannot tell `Name` from the `Name` of `a::b::Name`.
+fn identifier_spans(text: &str) -> Vec<(usize, String)> {
+    let mut spans = Vec::new();
+    let mut word = String::new();
+    let mut start = 0;
+    for (offset, c) in text.char_indices() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            if word.is_empty() {
+                start = offset;
+            }
+            word.push(c);
+        } else if !word.is_empty() {
+            spans.push((start, std::mem::take(&mut word)));
+        }
+    }
+    if !word.is_empty() {
+        spans.push((start, word));
+    }
+    spans
+}
+
 /// The identifier-shaped words in a string.
+#[allow(dead_code)]
 fn identifier_words(text: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut word = String::new();

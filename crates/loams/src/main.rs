@@ -1532,7 +1532,7 @@ mod tests {
         let live = dev_config(&[]).live.expect("on by default");
         assert_eq!(live.listen, SocketAddr::from(([127, 0, 0, 1], 7710)));
         assert_eq!(live.tikv.pd, ["127.0.0.1:19379"]);
-        assert_eq!(live.tikv.keyspace, "loam_live_dev");
+        assert_eq!(live.tikv.keyspace, "loams_live_dev");
         assert_eq!(live.app, "dev");
         assert_eq!(live.subs.tick_read_lag, Duration::from_millis(50));
         let live = dev_config(&[
@@ -1549,13 +1549,13 @@ mod tests {
         .expect("configured");
         assert_eq!(live.listen, SocketAddr::from(([127, 0, 0, 1], 7711)));
         assert_eq!(live.tikv.pd, ["10.0.0.1:2379", "10.0.0.2:2379"]);
-        assert_eq!(live.tikv.keyspace, "loam_live_chat");
+        assert_eq!(live.tikv.keyspace, "loams_live_chat");
         assert_eq!(live.subs.tick_read_lag, Duration::ZERO);
         let live = dev_config(&["--live-keyspace", "other"]).live.expect("on");
         assert_eq!(live.tikv.keyspace, "other");
         assert!(dev_config(&["--no-live"]).live.is_none());
         let standalone = Cli::try_parse_from([
-            "operon",
+            "loams",
             "standalone",
             "--bucket",
             "file:///tmp/b",
@@ -1564,13 +1564,16 @@ mod tests {
         .map(config_of)
         .expect("parse");
         assert!(standalone.live.is_none());
-        assert!(Cli::try_parse_from(["operon", "dev", "--live-app", "no spaces"]).is_err());
-        assert!(Cli::try_parse_from(["operon", "dev", "--no-live", "--live-app", "x"]).is_err());
+        assert!(Cli::try_parse_from(["loams", "dev", "--live-app", "no spaces"]).is_err());
+        assert!(Cli::try_parse_from(["loams", "dev", "--no-live", "--live-app", "x"]).is_err());
     }
 
     /// R1 plan Task 12 semantics 7 and the loopback rule (D111): a
     /// non-loopback `--live-listen` fails startup with the error of design
     /// §20 §7.1; loopback addresses pass.
+    #[cfg(feature = "live")]
+    use loams::ServerError;
+
     #[cfg(feature = "live")]
     #[test]
     fn a_non_loopback_live_listen_fails_startup() {
@@ -1579,13 +1582,13 @@ mod tests {
                 .validate()
                 .expect_err(bad);
             assert!(
-                matches!(err, operon::ServerError::LiveListenNotLoopback { .. }),
+                matches!(err, ServerError::LiveListenNotLoopback { .. }),
                 "{bad}: {err}"
             );
             assert_eq!(
-                format!("operon: {err}"),
+                err.to_string(),
                 format!(
-                    "operon: --live-listen {} is not a loopback address; the Live API has no \
+                    "--live-listen {} is not a loopback address; the Live API has no \
                      authentication until the unified auth plan (D111)",
                     bad.parse::<SocketAddr>().expect("an address")
                 )
@@ -1601,7 +1604,7 @@ mod tests {
                 .validate()
                 .unwrap_or_else(|e| panic!("{ok}: {e}"));
         }
-        assert!(Cli::try_parse_from(["operon", "dev", "--live-listen", "nohost:1"]).is_err());
+        assert!(Cli::try_parse_from(["loams", "dev", "--live-listen", "nohost:1"]).is_err());
     }
 
     /// Owner ruling T7-3: a build without the `tikv` feature refuses

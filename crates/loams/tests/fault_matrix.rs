@@ -1447,9 +1447,25 @@ fn every_component_survives_every_store_fault() {
     }
     let rows = table.clone();
     table.push_str(&format!("\nCells: {} ({counts:?}).\n", 2 * results.len()));
-    let target = std::env::var("CARGO_TARGET_DIR")
-        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../target").to_string());
-    let path = std::path::Path::new(&target).join("fault-matrix.md");
+    // Where cargo actually put this build.
+//
+// `CARGO_TARGET_DIR` is the wrong source: cargo does not export it to the
+    // processes it runs, so `std::env::var` sees it as unset even when it is
+    // what directed the build. `build.target-dir` in a parent
+    // `.cargo/config.toml` — which is how this workspace shares one target dir
+    // across its worktrees — redirects the build with no environment variable
+    // at all, and the old fallback then pointed at a `<manifest>/../../target`
+    // that does not exist, so the write below failed with `NotFound` before the
+    // comparison it exists to feed ever ran.
+//
+// `CARGO_TARGET_TMPDIR` is the one cargo does bake into an integration test at
+    // compile time, and it points at `<target>/tmp`, so its parent is the
+    // target dir whatever configured it.
+    let target = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .parent()
+        .expect("CARGO_TARGET_TMPDIR has a parent directory")
+        .to_path_buf();
+    let path = target.join("fault-matrix.md");
     std::fs::write(&path, &table).expect("write the fault matrix");
     eprintln!("fault matrix written to {}", path.display());
 
