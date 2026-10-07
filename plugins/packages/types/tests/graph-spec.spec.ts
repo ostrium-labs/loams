@@ -165,10 +165,44 @@ describe("GraphSpecSchema structural rules", () => {
     expect(parsed.edges).toEqual([]);
   });
 
-  it("rejects a spec with no nodes key", () => {
+  it("rejects a spec with neither nodes nor derive", () => {
     const result = GraphSpecSchema.safeParse({ edges: [] });
     expect(result.success).toBe(false);
-    expect(issuesOf(result).join(" ")).toContain("nodes");
+    expect(issuesOf(result).join(" ")).toContain("at least one node");
+  });
+
+  it("accepts a spec that derives its nodes from the data", () => {
+    // The live-stream case: the ids are not known when the spec is written.
+    const result = GraphSpecSchema.safeParse({ derive: { idField: "id" } });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects derive alongside a literal node list", () => {
+    // Two ways of saying what the nodes are; the compiler cannot honour both.
+    const result = GraphSpecSchema.safeParse({
+      nodes: [{ id: "a" }],
+      derive: { idField: "id" },
+    });
+    expect(result.success).toBe(false);
+    expect(issuesOf(result).join(" ")).toContain("derive");
+  });
+
+  it("rejects a derive naming only one end of an edge", () => {
+    const result = GraphSpecSchema.safeParse({
+      derive: { idField: "id", sourceField: "parent_id" },
+    });
+    expect(result.success).toBe(false);
+    expect(issuesOf(result).join(" ")).toContain("come as a pair");
+  });
+
+  it("cannot check edge endpoints when the node set is derived", () => {
+    // The ids are unknown until the rows arrive, so the endpoint rule is the
+    // compiler's to enforce at render time, not zod's to enforce here.
+    const result = GraphSpecSchema.safeParse({
+      derive: { idField: "id", sourceField: "parent_id", targetField: "id" },
+      edges: [{ source: "ghost", target: "also-ghost" }],
+    });
+    expect(result.success).toBe(true);
   });
 
   it("rejects an empty node list", () => {

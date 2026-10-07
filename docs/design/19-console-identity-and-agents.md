@@ -21,7 +21,7 @@ Markers: **(verify)** is not checked against a primary source; the plan that bui
 | P7 | **Human sign-in in OSS:** first-run setup token, email and password (argon2id) with TOTP, and generic OIDC SSO. Passkeys follow. SAML and SCIM are brokered by an IdP (Authentik by default since §38 D447; Keycloak, Dex, Authentik), not built in | M2; passkeys M2.x |
 | P8 | **Auth is Rust, in the gateway**, on the `ControlStore`: no Node service beside the binary. Built from primitives, not a framework | M2 |
 | P9 | **The console API contract** is OpenAPI 3.1 at `api/console/openapi.json`, the single source for the console's types, the mock server and the gateway's implementation | Now |
-| P10 | **`loams-console-mock`**, an httpmock server with seed data, serves the contract before the gateway does | Now |
+| P10 | **`loams-console-mock`**, the contract and seed data with `routes()`, served before the gateway does by `loams-apps-mock` on one listener | Now |
 
 ## 2. Why
 
@@ -161,7 +161,7 @@ better-auth's plugin boundaries and its organization, team and invitation shapes
 
 - **`api/console/openapi.json`** (OpenAPI 3.1) defines every `/api/v1` operation the console uses, plus the OAuth endpoints (token exchange, authorize, the consent decision) and the well-known documents (RFC 9728 protected-resource metadata, RFC 8414 server metadata, JWKS). The console generates its TypeScript types from it (`openapi-typescript`); the gateway's handlers are tested against it in M2.
 - **The data API is not in it.** The console reads collections through the existing native API (`/v1/namespaces/{ns}/collections`, the M1.6 wire contract W6–W9), using the environment's namespace.
-- **`crates/loams-console-mock`** runs an `httpmock` server (MIT; used as a library, the `remote` feature) on a fixed port with **seed data**: one org (Acme), three teams, projects with development, staging and production environments, agents with trust policies and live tokens, API keys, audit events, usage series, and collections in the seeded namespaces. `cargo run -p loams-console-mock` serves it; `pnpm dev` in `web/` proxies `/api` and `/v1` to it.
+- **`crates/loams-console-mock`** holds the contract and **seed data**: one org (Acme), three teams, projects with development, staging and production environments, agents with trust policies and live tokens, API keys, audit events, usage series, and collections in the seeded namespaces. `routes()` turns the seed into one response per contract path, and **`loams-apps-mock`** serves those routes over axum on `127.0.0.1:8084` beside the app protos, so `cargo run -p loams-apps-mock` backs the console, the desktop, the phone apps and the SDKs from one listener; `pnpm dev` in `web/` proxies `/api` and `/v1` to it. It was a standalone `httpmock` server on `:8081` until the two surfaces were unified; `httpmock` now only backs this crate's contract tests.
 - **Two tests keep the three in step:** every contract operation has a mock, and every seed record carries its schema's required properties.
 - The mock is static: a `POST` returns a plausible created object, but the next `GET` does not show it. That is enough to build and review the console; state belongs to the real gateway.
 

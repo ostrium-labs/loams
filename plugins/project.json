@@ -61,6 +61,8 @@
         "{workspaceRoot}/plugins/packages/plugin-langfuse-adapter/tsconfig.tsbuildinfo",
         "{workspaceRoot}/plugins/packages/plugin-loams-adapter/dist",
         "{workspaceRoot}/plugins/packages/plugin-loams-adapter/tsconfig.tsbuildinfo",
+        "{workspaceRoot}/plugins/packages/plugin-loams-live/lib",
+        "{workspaceRoot}/plugins/packages/plugin-loams-live/tsconfig.tsbuildinfo",
         "{workspaceRoot}/plugins/packages/plugin-matomo-adapter/dist",
         "{workspaceRoot}/plugins/packages/plugin-matomo-adapter/tsconfig.tsbuildinfo",
         "{workspaceRoot}/plugins/packages/plugin-openpanel-adapter/dist",
@@ -289,7 +291,7 @@
       ],
       "outputs": [],
       "options": {
-        "command": "python3 scripts/check-workspace.py",
+        "command": "node scripts/run-python.mjs scripts/check-workspace.py",
         "cwd": "plugins"
       },
       "dependsOn": [

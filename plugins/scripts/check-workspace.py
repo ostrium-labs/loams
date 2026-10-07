@@ -1,6 +1,7 @@
 
 """Check migration/build invariants without installing JavaScript dependencies."""
 import json
+import os
 import re
 from pathlib import Path
 
@@ -8,7 +9,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load(path):
-    return json.loads(path.read_text())
+    return json.loads(read(path))
+
+
+def read(path):
+    # Explicit UTF-8: the default is the locale codec, which is cp1252 on
+    # Windows and fails on any source file holding a non-ASCII character.
+    return path.read_text(encoding="utf-8")
 
 
 def check(condition, message):
@@ -44,7 +51,7 @@ for name, path in packages.items():
             check(version == "workspace:*", f"{name}: non-workspace dependency {dependency}")
             check(projects[dependency] in project["implicitDependencies"], f"{name}: missing Nx edge to {dependency}")
     for source in (path.parent / "src").rglob("*.ts*"):
-        for imported in import_pattern.findall(source.read_text()):
+        for imported in import_pattern.findall(read(source)):
             dependency = "/".join(imported.split("/")[:2])
             if dependency in packages:
                 check(dependency in dependencies, f"{source}: undeclared {dependency}")
@@ -54,7 +61,9 @@ for name, path in packages.items():
     check(path.parent.resolve() in references, f"{name}: absent from aggregate build")
     config = load(path.parent / "tsconfig.json")
     check(config["compilerOptions"]["tsBuildInfoFile"] == "tsconfig.tsbuildinfo", f"{name}: implicit build-info output")
-    prefix = "{workspaceRoot}/plugins/" + str(path.parent.relative_to(ROOT)) + "/"
+    # as_posix(), not str(): str() yields `apps\server` on Windows, which never
+    # matches the forward-slash entries in the aggregate outputs.
+    prefix = "{workspaceRoot}/plugins/" + path.parent.relative_to(ROOT).as_posix() + "/"
     check(prefix + "tsconfig.tsbuildinfo" in outputs, f"{name}: Nx does not cache build info")
     check(prefix + config["compilerOptions"]["outDir"] in outputs, f"{name}: Nx does not cache emissions")
     check(project["targets"]["build"]["dependsOn"] == [{"projects": ["plugins"], "target": "build"}],
@@ -63,6 +72,21 @@ for name, path in packages.items():
         dependency = load((path.parent / ref["path"]).resolve() / "package.json")["name"]
         check(dependency in dependencies, f"{name}: undeclared TypeScript reference to {dependency}")
 for source in (ROOT / "proto").rglob("*.proto"):
-    check(re.search(r"package\s+bi\.v1\s*;", source.read_text()), f"{source}: RPC namespace changed")
-check(not any(path.name == ".git" for path in ROOT.rglob("*")), "Nested .git artifact")
+    check(re.search(r"package\s+bi\.v1\s*;", read(source)), f"{source}: RPC namespace changed")
+def find_nested_git(directory):
+    """`.git` markers under `directory`, without following node_modules.
+
+    A plain rglob walks pnpm's junction tree, which on Windows hits long paths
+    and dangling links and raises. Installed dependencies are not part of this
+    workspace's source, so skipping them is also the cheaper answer.
+    """
+    for current, dirs, files in os.walk(directory):
+        dirs[:] = [d for d in dirs if d != "node_modules"]
+        if ".git" in dirs or ".git" in files:
+            return True
+    return False
+
+
+workspace_dirs = [*ROOT.glob("packages/*"), *ROOT.glob("apps/*")]
+check(not any(find_nested_git(directory) for directory in workspace_dirs), "Nested .git artifact")
 print(f"Plugin workspace invariants pass: {len(paths)} packages/apps, {len(outputs)} aggregate build outputs")

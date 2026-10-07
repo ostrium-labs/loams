@@ -56,48 +56,65 @@ export const WidgetCard: React.FC<WidgetCardProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load preview data & compile option
+  /**
+   * A `loams` tile shows current state, so it re-reads; a Superset tile is a
+   * warehouse scan over a period and would only get more expensive.
+   */
+  const live = widget.data.source === "loams";
+  const LIVE_REFRESH_MS = 5_000;
+
+  // Load preview data & compile option. Re-runs on an interval for live sources,
+  // so a dropped watch stream that recovers shows up without a reload.
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
 
-    previewWidget(widget, params, dashboardTheme)
-      .then((res) => {
-        if (!active) return;
-        setLoading(false);
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const load = () =>
+      previewWidget(widget, params, dashboardTheme)
+        .then((res) => {
+          if (!active) return;
+          setLoading(false);
+          // A successful re-read clears a previous failure, so a stream that
+          // recovers does not leave a stale error on screen.
+          setError(null);
+          applyPreview(res);
+        })
+        .catch((err) => {
+          if (!active) return;
+          setLoading(false);
+          setError(err.message || "Failed to render chart");
+        });
 
-        if (chartRef.current) {
-          if (!instanceRef.current) {
-            instanceRef.current = echarts.init(chartRef.current);
-          }
-
-          const option = composeChartOption(res.option as Record<string, unknown>, hasTheme);
-
-          instanceRef.current.setOption(option, true);
-
-          // Attach interaction listener for cross-widget filtering
-          instanceRef.current.off("click");
-          instanceRef.current.on("click", (params: echarts.ECElementEvent) => {
-            if (onParamChange) {
-              const filter = paramFilterFor(widget, params);
-              for (const [paramName, value] of Object.entries(filter)) {
-                onParamChange(paramName, value);
-              }
-            }
-          });
-        }
-      })
-      .catch((err) => {
-        if (!active) return;
-        setLoading(false);
-        setError(err.message || "Failed to render chart");
-      });
+    load();
+    if (live) timer = setInterval(load, LIVE_REFRESH_MS);
 
     return () => {
       active = false;
+      if (timer) clearInterval(timer);
     };
-  }, [widget, JSON.stringify(params), hasTheme]);
+  }, [widget, JSON.stringify(params), hasTheme, live]);
+
+  const applyPreview = (res: { option: Record<string, unknown> }) => {
+    if (!chartRef.current) return;
+    if (!instanceRef.current) {
+      instanceRef.current = echarts.init(chartRef.current);
+    }
+
+    const option = composeChartOption(res.option as Record<string, unknown>, hasTheme);
+    instanceRef.current.setOption(option, true);
+
+    // Attach interaction listener for cross-widget filtering
+    instanceRef.current.off("click");
+    instanceRef.current.on("click", (clicked: echarts.ECElementEvent) => {
+      if (!onParamChange) return;
+      const filter = paramFilterFor(widget, params);
+      for (const [paramName, value] of Object.entries(filter)) {
+        onParamChange(paramName, value);
+      }
+    });
+  };
 
   // Handle Resize
   useEffect(() => {

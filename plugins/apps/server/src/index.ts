@@ -12,6 +12,10 @@ import { FlintService } from "@loams-plugins/plugin-flint";
 import { RenderService } from "@loams-plugins/plugin-echarts-render";
 import { FlowRenderService } from "@loams-plugins/plugin-flow-render";
 import { DashboardSpecService } from "@loams-plugins/plugin-dashboard-spec";
+import {
+  LoamsLiveService,
+  type LoamsStreamName,
+} from "@loams-plugins/plugin-loams-live";
 import { AgentToolsService, startMCPServer } from "@loams-plugins/plugin-agent-tools";
 import {
   AgentBus,
@@ -89,6 +93,27 @@ async function bootstrap() {
   await ctx.plugin(FlowRenderService);
   await ctx.plugin(DashboardSpecService);
   await ctx.plugin(AgentToolsService);
+
+  // 3a-bis. Loams' own live state, as a dashboard data source.
+  //
+  // After DataService, which it injects, and started explicitly rather than in
+  // the constructor: it opens watch streams, so booting it unconditionally
+  // would make a dashboard-only deployment (no Loams server configured) log a
+  // connection error on startup for a feature nobody asked for.
+  if (process.env.LOAMS_URL) {
+    await ctx.plugin(LoamsLiveService, {
+      baseUrl: process.env.LOAMS_URL,
+      token: process.env.LOAMS_TOKEN || undefined,
+      streams: (process.env.LOAMS_LIVE_STREAMS?.split(",").filter(Boolean) as
+        | LoamsStreamName[]
+        | undefined) ?? undefined,
+    });
+    ctx.loamsLive.start();
+  } else {
+    console.warn(
+      "[loams-live] LOAMS_URL is unset: widgets with `data.source: \"loams\"` will fall back to Superset",
+    );
+  }
 
   // 3b. Core plugin platform.
   //
@@ -180,12 +205,14 @@ async function bootstrap() {
   startHttpApiServer(ctx, API_PORT);
 }
 
-/** Seed realistic 6-widget dashboard */
-async function seedDefaultDashboard(ctx: Context) {
+/** Seed a realistic dashboard: warehouse tiles plus Loams' own live state. */
+  async function seedDefaultDashboard(ctx: Context) {
   try {
     const defaultSpec = {
       id: DEFAULT_DASHBOARD_ID,
-      version: 2,
+      // Bump when the seed's shape changes, so an already-seeded store picks the
+      // new tiles up. See the guard below.
+      version: 3,
       title: "Executive Analytics & Performance",
       params: [
         { name: "time_range", type: "select", default: "30d", datasetId: 1 },
@@ -197,6 +224,9 @@ async function seedDefaultDashboard(ctx: Context) {
         { id: "widget-category-sales", x: 0, y: 4, w: 6, h: 4 },
         { id: "widget-market-share", x: 6, y: 4, w: 6, h: 4 },
         { id: "widget-server-health", x: 0, y: 8, w: 12, h: 4 },
+        { id: "widget-live-operations", x: 0, y: 12, w: 6, h: 4 },
+        { id: "widget-live-approvals", x: 6, y: 12, w: 6, h: 4 },
+        { id: "widget-live-topology", x: 0, y: 16, w: 12, h: 6 },
       ],
       widgets: {
         "widget-revenue-trend": {
@@ -273,14 +303,78 @@ async function seedDefaultDashboard(ctx: Context) {
             },
           },
         },
+        // Loams' own state, from the Watch* streams rather than the warehouse.
+        // These three tiles are the reason the live plugin exists: the tiles
+        // above describe a period, these describe right now, and they re-read on
+        // an interval instead of on a filter change.
+        "widget-live-operations": {
+          id: "widget-live-operations",
+          type: "chart",
+          data: { source: "loams", stream: "operations" },
+          chart: {
+            kind: "bar",
+            encode: { x: "kind", y: "count" },
+            optionOverrides: {
+              title: {
+                text: "Operations in flight",
+                subtext: "Live from loams.operations.v1/WatchOperations",
+              },
+            },
+          },
+        },
+        "widget-live-approvals": {
+          id: "widget-live-approvals",
+          type: "chart",
+          data: { source: "loams", stream: "approvals" },
+          chart: {
+            kind: "pie",
+            encode: { x: "state", value: "count" },
+            optionOverrides: {
+              title: {
+                text: "Approvals awaiting a decision",
+                subtext: "Live from loams.approvals.v1/WatchApprovals",
+              },
+            },
+          },
+        },
+        // Derived from the approvals stream rather than operations: `Operation` has no
+        // parent pointer at all, so a graph over operations would draw unrelated
+        // nodes, while `Approval.operation_id` is the one real relationship
+        // between the two.
+        //
+        // One node per gated operation, and no edges: the node id has to come
+        // from a row, and the two entities here arrive on different streams, so
+        // there is no row that carries both ends of an operation/approval edge.
+        // Naming `sourceField`/`targetField` here would produce edges the
+        // compiler then drops for having an endpoint it never saw -- a tile that
+        // looks like a topology and is not one.
+        "widget-live-topology": {
+          id: "widget-live-topology",
+          type: "graph",
+          data: { source: "loams", stream: "approvals" },
+          graph: {
+            title: "Operations waiting on an approval",
+            derive: {
+              idField: "operationId",
+              labelField: "kind",
+              colorField: "state",
+            },
+            layout: { direction: "LR" },
+          },
+        },
       },
     };
 
     const existing = await ctx.store.getDashboard(DEFAULT_DASHBOARD_ID).catch(() => null);
+    // The version guard is what lets a change to the seed reach a store that was
+    // already seeded. Without it, tiles added here would never appear for anyone
+    // who started the server before this revision, and the seed would only ever
+    // apply to a fresh database.
     if (
       !existing ||
       existing.title === "Purchase Last 30 Days" ||
-      !existing.widgets["widget-revenue-trend"]
+      !existing.widgets["widget-revenue-trend"] ||
+      (existing.version ?? 0) < defaultSpec.version
     ) {
       await ctx.store.saveDashboard(defaultSpec, "system-seed");
       ctx.logger.info(

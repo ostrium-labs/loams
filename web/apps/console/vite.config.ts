@@ -5,9 +5,10 @@ import { defineConfig, type Plugin } from 'vite';
 import { configDefaults } from 'vitest/config';
 
 // The engine serves the build at /ui (design §19 §3). In development the
-// console API comes from loams-console-mock (`cargo run -p
-// loams-console-mock`, port 8081) unless LOAMS_API points at an engine.
-const api = process.env.LOAMS_API ?? 'http://127.0.0.1:8081';
+// console API comes from loams-apps-mock (`cargo run -p loams-apps-mock`,
+// port 8084), which serves the console's REST contract and the app protos on
+// one listener, unless LOAMS_API points at an engine.
+const api = process.env.LOAMS_API ?? 'http://127.0.0.1:8084';
 
 const require = createRequire(import.meta.url);
 

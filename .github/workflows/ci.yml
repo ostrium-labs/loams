@@ -69,7 +69,8 @@ jobs:
               - ".cargo/**"
               - ".github/workflows/**"
             # Any Rust change: fmt, clippy, the workspace tests.
-            # loams-console-mock embeds api/console/openapi.json.
+            # loams-apps-mock embeds api/console/openapi.json through
+            # loams-console-mock.
             rust:
               - *toolchain
               - "crates/**"

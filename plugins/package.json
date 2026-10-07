@@ -14,9 +14,10 @@
     "dev:server": "tsx apps/server/src/index.ts",
     "dev:ui": "pnpm --filter @loams-plugins/dashboard-ui dev",
     "dev": "tsx apps/server/src/index.ts",
-    "proto:lint": "python3 scripts/proto.py lint",
-    "proto:gen": "python3 scripts/proto.py generate",
-    "proto:drift": "python3 scripts/proto.py drift"
+    "check:workspace": "node scripts/run-python.mjs scripts/check-workspace.py",
+    "proto:lint": "node scripts/run-python.mjs scripts/proto.py lint",
+    "proto:gen": "node scripts/run-python.mjs scripts/proto.py generate",
+    "proto:drift": "node scripts/run-python.mjs scripts/proto.py drift"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.16.0",

@@ -29,15 +29,34 @@ export interface DashboardSpec {
   widgets: Record<string, Widget>;
 }
 
+/**
+ * A widget's data source: either the Superset warehouse, or one of Loams' own
+ * cursor-resumable watch streams.
+ *
+ * Mirrors `SupersetDataSourceSchema | LoamsDataSourceSchema` in
+ * `@loams-plugins/types`, restated rather than imported because this package is
+ * a noEmit browser bundle and the zod schemas would pull in server-side code.
+ * A `loams` widget is a projection of "what is happening now" rather than a
+ * historical scan, and wants `refetchInterval` below.
+ */
+export type WidgetDataSource =
+  | {
+      source: "superset";
+      datasetId?: number;
+      sql?: string;
+      params?: string[];
+    }
+  | {
+      source: "loams";
+      stream: "operations" | "approvals" | "notifications";
+      token?: string;
+      filter?: Record<string, unknown>;
+    };
+
 export interface Widget {
   id: string;
   type: "chart" | "kpi" | "table" | "text" | "filter" | "graph";
-  data: {
-    source: "superset";
-    datasetId?: number;
-    sql?: string;
-    params?: string[];
-  };
+  data: WidgetDataSource;
   flint?: {
     chartType: string;
     title?: string;
@@ -58,7 +77,11 @@ export interface Widget {
    */
   graph?: {
     title?: string;
-    nodes: Array<{
+    /**
+     * Either name the nodes here, or set `derive` to read them from the rows.
+     * Never both -- see `GraphDeriveSchema` for why.
+     */
+    nodes?: Array<{
       id: string;
       label?: string;
       labelField?: string;
@@ -66,6 +89,15 @@ export interface Widget {
       color?: string;
       className?: string;
     }>;
+    /** Draw the graph from the data, for a source whose rows are not known ahead. */
+    derive?: {
+      idField: string;
+      labelField?: string;
+      sourceField?: string;
+      targetField?: string;
+      edgeLabelField?: string;
+      colorField?: string;
+    };
     edges?: Array<{
       id?: string;
       source: string;

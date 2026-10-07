@@ -117,6 +117,9 @@ importers:
       '@loams-plugins/plugin-loams-adapter':
         specifier: workspace:*
         version: link:../../packages/plugin-loams-adapter
+      '@loams-plugins/plugin-loams-live':
+        specifier: workspace:*
+        version: link:../../packages/plugin-loams-live
       '@loams-plugins/plugin-matomo-adapter':
         specifier: workspace:*
         version: link:../../packages/plugin-matomo-adapter
@@ -485,6 +488,18 @@ importers:
       '@loams-plugins/plugin-upstream-http':
         specifier: workspace:*
         version: link:../plugin-upstream-http
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+
+  plugins/packages/plugin-loams-live:
+    dependencies:
+      '@loams-plugins/plugin-data':
+        specifier: workspace:*
+        version: link:../plugin-data
+      '@loams-plugins/types':
+        specifier: workspace:*
+        version: link:../types
       cordis:
         specifier: ^4.0.0-rc.10
         version: 4.0.0-rc.10

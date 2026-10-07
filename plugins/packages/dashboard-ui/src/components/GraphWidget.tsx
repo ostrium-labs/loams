@@ -93,38 +93,54 @@ export const GraphWidget: React.FC<GraphWidgetProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * A `loams` graph shows current state and re-reads; a Superset graph is a
+   * warehouse scan over a period and would only get more expensive.
+   */
+  const live = widget.data.source === "loams";
+  const LIVE_REFRESH_MS = 5_000;
+
   // Load the compiled graph.
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
 
-    previewGraph(widget, params, dashboardTheme)
-      .then((res: PreviewResponse) => {
-        // Every branch below is guarded by `active`: this effect re-runs on
-        // every params change, and a slow response for params that are no
-        // longer current must not overwrite the graph now on screen.
-        if (!active) return;
-        setView(toFlowView(res));
-        setFitView(res?.fitView !== false);
-        setPannable(res?.pannable !== false);
-        setZoomable(res?.zoomable !== false);
-        setLoading(false);
-      })
-      .catch((err: Error) => {
-        if (!active) return;
-        // An error clears the view rather than leaving the previous graph up:
-        // a stale graph next to an error message reads as "this is what the
-        // current filter produced", which is the opposite of what happened.
-        setView(EMPTY_VIEW);
-        setError(err?.message || "Failed to load the graph");
-        setLoading(false);
-      });
+    const load = () =>
+      previewGraph(widget, params, dashboardTheme)
+        .then((res: PreviewResponse) => {
+          // Every branch below is guarded by `active`: this effect re-runs on
+          // every params change, and a slow response for params that are no
+          // longer current must not overwrite the graph now on screen.
+          if (!active) return;
+          setView(toFlowView(res));
+          setFitView(res?.fitView !== false);
+          setPannable(res?.pannable !== false);
+          setZoomable(res?.zoomable !== false);
+          // Cleared on success, so a recovered stream stops showing an error.
+          setError(null);
+          setLoading(false);
+        })
+        .catch((err: Error) => {
+          if (!active) return;
+          // An error clears the view rather than leaving the previous graph up:
+          // a stale graph next to an error message reads as "this is what the
+          // current filter produced", which is the opposite of what happened.
+          setView(EMPTY_VIEW);
+          setError(err?.message || "Failed to load the graph");
+          setLoading(false);
+        });
+
+    load();
+
+    let timer: ReturnType<typeof setInterval> | undefined;
+    if (live) timer = setInterval(load, LIVE_REFRESH_MS);
 
     return () => {
       active = false;
+      if (timer) clearInterval(timer);
     };
-  }, [widget, JSON.stringify(params), dashboardTheme]);
+  }, [widget, JSON.stringify(params), dashboardTheme, live]);
 
   // Handle resize.
   useEffect(() => {

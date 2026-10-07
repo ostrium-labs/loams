@@ -12,7 +12,7 @@ This directory contains the root Cargo workspace members for the Loams core engi
 | **Protocols & Gateways** | [`loams-es`](loams-es/), [`loams-qdrant`](loams-qdrant/), [`loams-sqlrouter`](loams-sqlrouter/), [`loams-stream-grpc`](loams-stream-grpc/), [`loams-proto`](loams-proto/), [`loams-live-proto`](loams-live-proto/) | Drop-in Elasticsearch, Qdrant, SQL wire protocols, and gRPC streaming APIs |
 | **Reactive & Execution** | [`loams-live`](loams-live/), [`loams-durable`](loams-durable/), [`loams-worker`](loams-worker/), [`loams-safekeeper`](loams-safekeeper/), [`loams-link`](loams-link/) | Reactive document database on TiKV, embedded Resonate durable workflow server, and link consumers |
 | **Common & Helpers** | [`loams-common`](loams-common/), [`loams-compat`](loams-compat/), [`loams-pk`](loams-pk/), [`loams-log`](loams-log/), [`loams-sim`](loams-sim/), [`loams-web-bridge`](loams-web-bridge/), [`loams-facade-gen`](loams-facade-gen/) | Error types, identifiers, simulation harness, web toolbox bridge, and SDK generator |
-| **Mock Servers** | [`loams-apps-mock`](loams-apps-mock/), [`loams-console-mock`](loams-console-mock/) | Mock servers providing test backends for mobile and web console development |
+| **Mock Servers** | [`loams-apps-mock`](loams-apps-mock/), [`loams-console-mock`](loams-console-mock/) | `loams-apps-mock` serves the app protos (Connect, gRPC, gRPC-Web) and the console's REST contract on one listener; `loams-console-mock` is the console contract and seed it reuses |
 
 ## Building and Testing
 
