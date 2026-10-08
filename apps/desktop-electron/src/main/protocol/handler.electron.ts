@@ -55,6 +55,14 @@ export function installAppProtocol(ses: Session, deps: AppProtocolDeps): void {
 
 		if (isProxied(url.pathname)) {
 			const server = deps.activeServer();
+			if (server.kind === "local" && server.url === "")
+				return new Response(
+					JSON.stringify({
+						code: "engine_not_ready",
+						message: "the local engine is not ready yet",
+					}),
+					{ status: 503, headers: { "content-type": "application/json" } },
+				);
 			if (server.kind === "local") {
 				const shimmed = deps.localShim(url.pathname, req.method);
 				if (shimmed) return shimmed;

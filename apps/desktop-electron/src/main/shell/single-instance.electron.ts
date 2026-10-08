@@ -14,10 +14,17 @@ function linkFromArgv(argv: string[]): string | undefined {
 	return argv.find((a) => /^loams:\/\//i.test(a));
 }
 
-export function initSingleInstance(deps: SingleInstanceDeps): void {
+export interface SingleInstanceHandle {
+	/** Call for the main window only: resets the pull handshake on each new page load. */
+	watchMainWindow(win: BrowserWindow): void;
+}
+
+export function initSingleInstance(
+	deps: SingleInstanceDeps,
+): SingleInstanceHandle {
 	if (!app.requestSingleInstanceLock()) {
 		app.quit();
-		return;
+		return { watchMainWindow: () => undefined };
 	}
 	const queue = new NavQueue();
 
@@ -45,16 +52,9 @@ export function initSingleInstance(deps: SingleInstanceDeps): void {
 
 	ipcMain.handle(CH.shellPendingNav, (event) => {
 		assertTrustedSender(event);
+		const win = deps.getWindow();
+		if (!win || event.sender !== win.webContents) return null;
 		return queue.take();
-	});
-	// A new page load has not subscribed yet; hash-only changes keep the page.
-	app.on("browser-window-created", (_e, w) => {
-		w.webContents.on(
-			"did-start-navigation",
-			(details: { isMainFrame: boolean; isSameDocument: boolean }) => {
-				if (details.isMainFrame && !details.isSameDocument) queue.reset();
-			},
-		);
 	});
 	app.setAsDefaultProtocolClient("loams");
 	app.on("second-instance", (_e, argv) => {
@@ -69,4 +69,15 @@ export function initSingleInstance(deps: SingleInstanceDeps): void {
 	const initial = linkFromArgv(process.argv);
 	if (initial) deliver(initial);
 	deps.onPrimary();
+	return {
+		watchMainWindow(win) {
+			// A new page load has not subscribed yet; hash-only changes keep the page.
+			win.webContents.on(
+				"did-start-navigation",
+				(details: { isMainFrame: boolean; isSameDocument: boolean }) => {
+					if (details.isMainFrame && !details.isSameDocument) queue.reset();
+				},
+			);
+		},
+	};
 }
