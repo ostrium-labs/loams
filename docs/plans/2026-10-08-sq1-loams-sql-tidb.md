@@ -764,4 +764,19 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - **Why not ON or MARKER.** TiDB redacts error messages when they are created (pingcap/errors), not only when it logs them. So clients would see `Duplicate entry '?'` instead of MySQL's text, which breaks the compatibility contract (D735, §47 §13.2).
   - **What renders.** `tidb_redact_log = 'OFF'` is in `tidb_globals` and `init.sql` (`redaction_is_off_for_mysql_compatibility`).
   - **How logs are protected instead.** The log pipeline does it: the slow and general logs, which carry statement literals, are not shipped off the pod by default. **Note for Task 25 (observability):** the log shipper's default excludes `tidb-slow.log` and the general log, and turning them on for a database is an explicit, audited choice.
+- **R2.9 Security Enhanced Mode is on (controller ruling, fix round 1).** `[security] enable-sem = true` (`sem_and_secure_bootstrap_are_on`). Under SEM, SUPER does not imply the `RESTRICTED_*` privileges, so restricted variables (including `tidb_redact_log`) and tables are hidden even from root. The IT checks that root cannot read `@@global.tidb_redact_log`.
+  - **Note for Task 11 (`ri_control`'s grants).** `ri_control` needs:
+    - `RESTRICTED_VARIABLES_ADMIN`, to re-apply `tidb_redact_log` (R2.2);
+    - `RESTRICTED_TABLES_ADMIN`, because `mysql.tidb`, which holds the `bootstrapped` row Task 9 reads, and `mysql.global_variables` are hidden under SEM;
+    - `RESTRICTED_USER_ADMIN`, so tenant ADMIN roles cannot alter the `ri_*` users;
+    - `SYSTEM_VARIABLES_ADMIN`, `CREATE USER` and `GRANT OPTION` for the `ri_*` roles.
+
+    The tenant roles get none of the `RESTRICTED_*` privileges.
+- **R2.10 Root lockdown (controller ruling, fix round 1).** `[security] secure-bootstrap = true`, so the first bootstrap creates `root@localhost` with `auth_socket` (OS user `root`) instead of an open `root@%`. `socket = "/var/run/tidb/tidb-{Port}.sock"`. The IT checks that root over TCP is refused.
+  - **Who creates `ri_control` (Tasks 9 and 11).** The create saga does, right after bootstrap, as root over that socket:
+    - **desktop:** `LocalRuntime` mounts `state_dir/<branch>/run` there and exposes `socket_path(branch, member)`. Under rootless Podman the host user is the container's root, so `auth_socket` accepts it. Under rootful Docker it would not, so the desktop needs Podman or an `exec`.
+    - **Kubernetes (Task 14):** an `exec` into the pod, or a sidecar sharing the socket `emptyDir`.
+
+    Task 11 may instead create `ri_control` in `init.sql` as `IDENTIFIED WITH tidb_auth_token`, with the JWKS public key mounted (`[security] auth-token-jwks`), which keeps every secret out of rendered config.
+  - **Tests owed.** Task 9 owes `root_is_unreachable_over_tcp`, and Task 11 owes `ri_control_created_over_socket_only`.
 - **R2.7 Deviation.** `docs/sqldb/licensing.md` and the crate's `build.rs` were added. `build.rs` turns `LOAMS_IT_SQLDB=1` into the cfg `loams_it_sqldb`, so container tests are `#[ignore]` unless it is set.

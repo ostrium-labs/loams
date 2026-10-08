@@ -134,16 +134,57 @@ fn memory_limits_follow_the_class() {
     for class in Class::ALL {
         let sql = render::tidb_init_sql(class);
         let mib = class.memory_mib();
-        assert!(sql.contains("SET GLOBAL tidb_server_memory_limit = '80%';"), "{class}: {sql}");
+        assert!(
+            sql.contains("SET GLOBAL tidb_server_memory_limit = '80%';"),
+            "{class}: {sql}"
+        );
         assert!(!sql.contains("MB'"), "no fixed size: {sql}");
-        assert!(sql.contains(&format!("tidb_mem_quota_query = {};", (mib * 2 / 5) << 20)), "{class}");
+        assert!(
+            sql.contains(&format!("tidb_mem_quota_query = {};", (mib * 2 / 5) << 20)),
+            "{class}"
+        );
         let globals = render::tidb_globals(class);
         let names: Vec<&str> = globals.iter().map(|(n, _)| *n).collect();
-        assert_eq!(names, ["tidb_server_memory_limit", "tidb_mem_quota_query", "tidb_redact_log"]);
+        assert_eq!(
+            names,
+            [
+                "tidb_server_memory_limit",
+                "tidb_mem_quota_query",
+                "tidb_redact_log"
+            ]
+        );
         // TiDB clamps a limit under 512 MiB up to 512 MiB (varsutil.go).
         assert!(class.server_memory_limit_mib() >= 512, "{class}");
     }
     assert_eq!(Class::Xs.memory_mib(), 768, "R2.1: xs is 0.75 GiB");
+}
+
+/// R2.9, R2.10: Security Enhanced Mode is on, and the first bootstrap
+/// creates root as `auth_socket` on the pod-local socket only.
+#[test]
+fn sem_and_secure_bootstrap_are_on() {
+    for endpoints in [desktop(), kubernetes()] {
+        for class in Class::ALL {
+            let t: toml::Table = render::tidb(&branch(), class, &endpoints)
+                .parse()
+                .expect("toml");
+            let sec = t["security"].as_table().expect("[security]");
+            assert_eq!(
+                sec.get("enable-sem").and_then(toml::Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                sec.get("secure-bootstrap").and_then(toml::Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(sec.get("skip-grant-table"), None);
+            // root@localhost (auth_socket) is reachable only through this socket.
+            assert_eq!(
+                t["socket"].as_str(),
+                Some(format!("{}/tidb-{{Port}}.sock", render::SOCKET_DIR).as_str())
+            );
+        }
+    }
 }
 
 /// R2.8: redaction is OFF. TiDB redacts error messages when they are
@@ -156,7 +197,10 @@ fn redaction_is_off_for_mysql_compatibility() {
         let sql = render::tidb_init_sql(class);
         assert!(sql.contains("SET GLOBAL tidb_redact_log = 'OFF';"), "{sql}");
         let globals = render::tidb_globals(class);
-        assert!(globals.contains(&("tidb_redact_log", "'OFF'".to_owned())), "{globals:?}");
+        assert!(
+            globals.contains(&("tidb_redact_log", "'OFF'".to_owned())),
+            "{globals:?}"
+        );
         for text in [sql, render::tidb(&branch(), class, &kubernetes())] {
             assert!(!text.contains("MARKER"), "{text}");
             assert!(!text.contains("tidb_redact_log = 'ON'"), "{text}");

@@ -151,15 +151,39 @@ async fn wait_ready(rt: &LocalRuntime, b: &BranchId, want: usize, within: Durati
     }
 }
 
-async fn query_one(addr: std::net::SocketAddr, sql: &str) -> String {
+/// root@localhost over the member's Unix socket (auth_socket, R2.10). Under
+/// rootless Podman the host user is the container's root.
+async fn root(rt: &LocalRuntime, b: &BranchId, index: u32) -> mysql_async::Conn {
+    let socket = rt
+        .socket_path(b, index)
+        .expect("state")
+        .expect("member has a port");
     let opts = mysql_async::OptsBuilder::default()
-        .ip_or_hostname(addr.ip().to_string())
-        .tcp_port(addr.port())
+        .socket(Some(socket.to_string_lossy().into_owned()))
         .user(Some("root"));
-    let mut conn = mysql_async::Conn::new(opts).await.expect("connect");
-    let v: Option<String> = conn.query_first(sql).await.expect("query");
-    conn.disconnect().await.expect("disconnect");
+    mysql_async::Conn::new(opts)
+        .await
+        .expect("root over the socket")
+}
+
+async fn q(conn: &mut mysql_async::Conn, sql: &str) -> String {
+    let v: Option<String> = conn
+        .query_first(sql)
+        .await
+        .unwrap_or_else(|e| panic!("{sql}: {e}"));
     v.expect("one row")
+}
+
+fn engine_out(rt: &LocalRuntime, args: &[&str]) -> String {
+    let out = Command::new(rt.config().engine.program())
+        .args(args)
+        .output()
+        .expect("engine");
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    )
 }
 
 #[cfg_attr(
@@ -202,53 +226,69 @@ async fn local_runtime_starts_and_stops_a_pool() {
         .expect("ensure_pool");
     assert_eq!((st.class, st.replicas, st.members.len()), (Class::Xs, 1, 1));
     let st = wait_ready(&rt, &branch, 1, Duration::from_secs(240)).await;
-    let m0 = st.members[0].mysql_addr;
-    assert_eq!(m0.port(), MYSQL_PORT_BASE);
-    assert_eq!(query_one(m0, "SELECT CAST(1 AS CHAR)").await, "1");
-    assert_eq!(
-        query_one(m0, "SELECT @@version").await,
-        "8.0.11-TiDB-v8.5.8-Loams"
+    let m0 = st.members[0].clone();
+    assert_eq!(m0.mysql_addr.port(), MYSQL_PORT_BASE);
+    let logs = engine_out(&rt, &["logs", &m0.name]);
+    assert!(
+        logs.contains("bootstrap successful"),
+        "first start bootstraps:\n{logs}"
     );
     // Gate → TiDB TLS is loaded from the mounted [security] paths.
-    let logs = Command::new(rt.config().engine.program())
-        .args(["logs", &st.members[0].name])
-        .output()
-        .expect("logs");
-    let logs = format!(
-        "{}{}",
-        String::from_utf8_lossy(&logs.stdout),
-        String::from_utf8_lossy(&logs.stderr)
-    );
     assert!(
         logs.contains("secure connection is enabled"),
         "TLS not enabled:\n{logs}"
     );
-    // init.sql ran at bootstrap: R2.1's class memory and log redaction.
+    // init.sql ran, and no statement in it failed (failures are warnings only).
+    assert!(logs.contains("executing -initialize-sql-file"), "{logs}");
+    assert!(
+        !logs.contains("InitializeSQLFile error"),
+        "init.sql failed:\n{logs}"
+    );
+
+    let mut c = root(&rt, &branch, 0).await;
+    assert_eq!(q(&mut c, "SELECT CAST(1 AS CHAR)").await, "1");
     assert_eq!(
-        query_one(m0, "SELECT @@global.tidb_server_memory_limit").await,
+        q(&mut c, "SELECT @@version").await,
+        "8.0.11-TiDB-v8.5.8-Loams"
+    );
+    assert_eq!(
+        q(&mut c, "SELECT @@global.tidb_server_memory_limit").await,
         "80%"
     );
     assert_eq!(
-        query_one(m0, "SELECT @@global.tidb_redact_log").await,
-        "OFF"
-    );
-    assert_eq!(
-        query_one(m0, "SELECT CAST(@@global.tidb_mem_quota_query AS CHAR)").await,
+        q(&mut c, "SELECT CAST(@@global.tidb_mem_quota_query AS CHAR)").await,
         ((768u64 * 2 / 5) << 20).to_string()
+    );
+    // SEM (R2.9): even root cannot see restricted variables.
+    let hidden: Result<Option<String>, _> = c.query_first("SELECT @@global.tidb_redact_log").await;
+    assert!(
+        hidden.is_err(),
+        "SEM off: tidb_redact_log visible to root: {hidden:?}"
+    );
+    // A marker that a second bootstrap or a lost keyspace would not keep.
+    c.query_drop("SET GLOBAL tidb_mem_quota_query = 123456789")
+        .await
+        .expect("set marker");
+    c.disconnect().await.expect("disconnect");
+
+    // Root lockdown (R2.10): no root over TCP.
+    let tcp = mysql_async::OptsBuilder::default()
+        .ip_or_hostname(m0.mysql_addr.ip().to_string())
+        .tcp_port(m0.mysql_addr.port())
+        .user(Some("root"));
+    assert!(
+        mysql_async::Conn::new(tcp).await.is_err(),
+        "root logged in over TCP"
     );
 
     // A second member: a warm start on the bootstrapped keyspace.
     rt.scale(&branch, 2).await.expect("scale 2");
-    let st = wait_ready(&rt, &branch, 2, Duration::from_secs(120)).await;
-    let m1 = st
-        .members
-        .iter()
-        .find(|m| m.index == 1)
-        .expect("member 1")
-        .mysql_addr;
-    assert_eq!(query_one(m1, "SELECT CAST(1 AS CHAR)").await, "1");
+    wait_ready(&rt, &branch, 2, Duration::from_secs(120)).await;
+    let mut c1 = root(&rt, &branch, 1).await;
+    assert_eq!(q(&mut c1, "SELECT CAST(1 AS CHAR)").await, "1");
+    c1.disconnect().await.expect("disconnect");
 
-    // Scale to zero keeps the pool; delete removes it.
+    // Suspend: scale to zero keeps the pool.
     let st = rt.scale(&branch, 0).await.expect("scale 0");
     assert!(st.members.is_empty(), "{st:?}");
     let st = rt
@@ -257,20 +297,77 @@ async fn local_runtime_starts_and_stops_a_pool() {
         .expect("status")
         .expect("suspended pool exists");
     assert_eq!((st.class, st.replicas, st.members.len()), (Class::Xs, 0, 0));
+
+    // Resume 0 → 1: the same ports, no second bootstrap, the keyspace's state kept.
+    let t = Instant::now();
+    rt.scale(&branch, 1).await.expect("resume");
+    let st = wait_ready(&rt, &branch, 1, Duration::from_secs(60)).await;
+    let resume = t.elapsed();
+    let r0 = st.members[0].clone();
+    assert_eq!(
+        (r0.mysql_addr, r0.status_addr),
+        (m0.mysql_addr, m0.status_addr)
+    );
+    let logs = engine_out(&rt, &["logs", &r0.name]);
+    assert!(
+        !logs.contains("bootstrap successful"),
+        "resume bootstrapped again:\n{logs}"
+    );
+    assert!(!logs.contains("executing -initialize-sql-file"), "{logs}");
+    let mut c = root(&rt, &branch, 0).await;
+    assert_eq!(
+        q(&mut c, "SELECT CAST(@@global.tidb_mem_quota_query AS CHAR)").await,
+        "123456789"
+    );
+    c.disconnect().await.expect("disconnect");
+    println!("resume 0 -> 1 to port open: {resume:?}");
+
+    // Class change: the member is replaced at the new memory limit, same port.
+    let old_id = engine_out(&rt, &["inspect", "--format", "{{.Id}}", &r0.name]);
+    rt.ensure_pool(&branch, Class::S, 1)
+        .await
+        .expect("class change");
+    let st = wait_ready(&rt, &branch, 1, Duration::from_secs(60)).await;
+    assert_eq!(st.class, Class::S);
+    let s0 = st.members[0].clone();
+    assert_eq!(s0.mysql_addr, m0.mysql_addr);
+    assert_ne!(
+        engine_out(&rt, &["inspect", "--format", "{{.Id}}", &s0.name]),
+        old_id,
+        "not replaced"
+    );
+    let mem = engine_out(
+        &rt,
+        &[
+            "inspect",
+            "--format",
+            "{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}}",
+            &s0.name,
+        ],
+    );
+    assert_eq!(
+        mem.trim(),
+        format!("{0} {0}", Class::S.memory_bytes()),
+        "memory and swap limits"
+    );
+    let mut c = root(&rt, &branch, 0).await;
+    assert_eq!(q(&mut c, "SELECT CAST(1 AS CHAR)").await, "1");
+    c.disconnect().await.expect("disconnect");
+
+    // Delete removes everything.
     rt.delete_pool(&branch).await.expect("delete");
     assert!(rt.pool_status(&branch).await.expect("status").is_none());
     assert!(!state_dir.join("pools").join(branch.as_str()).exists());
-
-    let left = Command::new(rt.config().engine.program())
-        .args([
+    let left = engine_out(
+        &rt,
+        &[
             "ps",
             "-aq",
             "--filter",
             &format!("label=io.loams.sqldb.instance={instance}"),
-        ])
-        .output()
-        .expect("ps");
-    assert!(left.stdout.is_empty(), "containers left behind");
+        ],
+    );
+    assert!(left.trim().is_empty(), "containers left behind: {left}");
     let _ = std::fs::remove_dir_all(&state_dir);
 }
 

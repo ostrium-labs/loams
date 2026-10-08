@@ -9,6 +9,8 @@ keyspace-name = "br_0123456789abcdef"
 split-table = false
 server-version = "8.0.11-TiDB-v8.5.8-Loams"
 enable-global-kill = true
+# root@localhost is auth_socket (secure-bootstrap): only this socket reaches it.
+socket = "/var/run/tidb/tidb-{Port}.sock"
 # Runs once, at the keyspace's first bootstrap: memory limits and log
 # redaction (global variables in v8.5.8, not config items).
 initialize-sql-file = "/etc/tidb/init.sql"
@@ -32,6 +34,12 @@ ssl-ca = "/etc/tidb/tls/ca.crt"
 ssl-cert = "/etc/tidb/tls/tls.crt"
 ssl-key = "/etc/tidb/tls/tls.key"
 tls-version = "TLSv1.2"
+# Security Enhanced Mode: SUPER does not imply the RESTRICTED_* privileges,
+# so tenant ADMIN roles cannot reach system internals (R2.9).
+enable-sem = true
+# The first bootstrap creates root@localhost as auth_socket, never an open
+# root@% (R2.10).
+secure-bootstrap = true
 
 [log]
 level = "info"

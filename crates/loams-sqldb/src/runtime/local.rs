@@ -3,8 +3,9 @@
 //! `LOAMS_IT_SQLDB` tests).
 //!
 //! State lives in `state_dir/<branch>/`: `pool.json` (class, replicas, the
-//! ports given to each member index) and the rendered `tidb.toml` and
-//! `init.sql`, mounted read-only into every member. Containers carry
+//! ports given to each member index), the rendered `tidb.toml` and
+//! `init.sql`, mounted read-only into every member, and `run/`, TiDB's
+//! socket directory. Containers carry
 //! `io.loams.sqldb.*` labels; a member whose rendered config, image or class
 //! changed (its fingerprint label) is replaced.
 
@@ -193,6 +194,24 @@ impl LocalRuntime {
         })
     }
 
+    /// The host path of a member's Unix socket, once the member has a port.
+    /// Under rootless Podman the host user is the container's root, so this
+    /// socket authenticates as TiDB's `root@localhost` (`auth_socket`).
+    pub fn socket_path(
+        &self,
+        branch: &BranchId,
+        index: u32,
+    ) -> Result<Option<PathBuf>, RuntimeError> {
+        Ok(self
+            .load(branch)?
+            .and_then(|r| r.ports.get(&index).copied())
+            .map(|(port, _)| {
+                self.pool_dir(branch)
+                    .join("run")
+                    .join(format!("tidb-{port}.sock"))
+            }))
+    }
+
     /// The settings.
     pub fn config(&self) -> &LocalRuntimeConfig {
         &self.config
@@ -222,7 +241,8 @@ impl LocalRuntime {
     /// Writes `tidb.toml` and `init.sql`; returns the members' fingerprint.
     fn render(&self, branch: &BranchId, class: Class) -> Result<String, RuntimeError> {
         let dir = self.pool_dir(branch);
-        std::fs::create_dir_all(&dir).map_err(|e| io_state(&dir, &e))?;
+        let run = dir.join("run");
+        std::fs::create_dir_all(&run).map_err(|e| io_state(&run, &e))?;
         let toml = render::tidb(branch, class, &self.config.endpoints);
         let sql = render::tidb_init_sql(class);
         write_atomic(&dir.join("tidb.toml"), toml.as_bytes())?;
