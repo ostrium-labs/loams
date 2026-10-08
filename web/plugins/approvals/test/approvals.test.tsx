@@ -3,7 +3,7 @@ import { createMockControl } from '@loams/console-host/testing';
 import { approvals } from '@loams/proto';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { InboxPage } from '../src/index.js';
+import { InboxPage, pendingCount } from '../src/index.js';
 import { Inbox, reasonOf } from '../src/store.js';
 
 afterEach(cleanup);
@@ -133,5 +133,21 @@ describe('Inbox stream health', () => {
     inbox.apply({ event: { case: 'snapshot', value: { approvals: [] } }, cursor: 'c3' } as never);
     expect(inbox.getSnapshot().connected).toBe(true);
     expect(inbox.getSnapshot().error).toBeUndefined();
+  });
+});
+
+describe('pendingCount', () => {
+  it('badge_counts_only_pending_approvals', () => {
+    const mk = (state: number) => ({ state }) as never;
+    expect(pendingCount({ approvals: [] })).toBe(0);
+    expect(
+      pendingCount({
+        approvals: [
+          mk(approvals.ApprovalState.PENDING),
+          mk(approvals.ApprovalState.PENDING),
+          mk(approvals.ApprovalState.APPROVED),
+        ],
+      }),
+    ).toBe(2);
   });
 });

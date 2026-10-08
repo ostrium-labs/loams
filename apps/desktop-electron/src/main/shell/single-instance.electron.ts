@@ -17,6 +17,8 @@ function linkFromArgv(argv: string[]): string | undefined {
 export interface SingleInstanceHandle {
 	/** Call for the main window only: resets the pull handshake on each new page load. */
 	watchMainWindow(win: BrowserWindow): void;
+	/** In-app navigation (tray, menu): focus the window and route like a deep link. */
+	navigate(path: string): void;
 }
 
 export function initSingleInstance(
@@ -24,7 +26,7 @@ export function initSingleInstance(
 ): SingleInstanceHandle {
 	if (!app.requestSingleInstanceLock()) {
 		app.quit();
-		return { watchMainWindow: () => undefined };
+		return { watchMainWindow: () => undefined, navigate: () => undefined };
 	}
 	const queue = new NavQueue();
 
@@ -70,6 +72,11 @@ export function initSingleInstance(
 	if (initial) deliver(initial);
 	deps.onPrimary();
 	return {
+		navigate(path) {
+			const win = focus();
+			if (queue.submit(path) === "push" && win)
+				win.webContents.send(CH.shellNavigate, path);
+		},
 		watchMainWindow(win) {
 			// A new page load has not subscribed yet; hash-only changes keep the page.
 			win.webContents.on(

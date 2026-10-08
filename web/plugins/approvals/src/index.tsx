@@ -178,6 +178,15 @@ function PendingChip({ inbox }: { inbox: Inbox }) {
   );
 }
 
+interface BadgeBridge {
+  shell: { setBadge(count: number): Promise<void> };
+}
+
+/** Approvals still waiting for a decision (the inbox keeps only pending ones). */
+export function pendingCount(state: { approvals: approvals.Approval[] }): number {
+  return state.approvals.filter((a) => a.state === approvals.ApprovalState.PENDING).length;
+}
+
 export interface ApprovalsConfig {
   /** Raise a platform notification for each new pending approval. */
   notify?: boolean;
@@ -206,6 +215,25 @@ const plugin: PluginModule<ApprovalsConfig> = {
       (message) => inbox.apply(message),
       (error) => inbox.failed(error),
     );
+    // Desktop shell only: mirror the pending count to the tray/dock badge. A web
+    // build has no `loamsDesktop`, so this is a no-op there.
+    ctx.effect(() => {
+      const shell = (globalThis as { loamsDesktop?: BadgeBridge }).loamsDesktop?.shell;
+      if (!shell) return () => {};
+      let last = -1;
+      const sync = () => {
+        const n = pendingCount(inbox.getSnapshot());
+        if (n === last) return;
+        last = n;
+        shell.setBadge(n).catch(() => {});
+      };
+      sync();
+      const off = inbox.subscribe(sync);
+      return () => {
+        off();
+        shell.setBadge(0).catch(() => {});
+      };
+    });
     ctx.effect(() =>
       router.page(
         {

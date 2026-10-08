@@ -1,8 +1,16 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, safeStorage, screen, session } from "electron";
+import {
+	app,
+	BrowserWindow,
+	crashReporter,
+	safeStorage,
+	screen,
+	session,
+	shell,
+} from "electron";
 import type { EngineState } from "../shared/contracts";
 import { appPaths } from "./app-paths";
 import { findEngineBinary, probeLiveSupport } from "./engine/binary";
@@ -20,8 +28,14 @@ import { createLocalShim } from "./protocol/local-shim";
 import { secureWindow } from "./security/install.electron";
 import { registerServerIpc } from "./servers/ipc.electron";
 import { ServerRegistry } from "./servers/registry";
+import { readSetting } from "./settings";
 import { getMainWindow, setMainWindow } from "./shell/main-window";
+import { installAppMenu } from "./shell/menu.electron";
+import { DOCS_URL } from "./shell/menu-model";
+import { registerShellIpc } from "./shell/shell-ipc.electron";
 import { initSingleInstance } from "./shell/single-instance.electron";
+import { createTray, type TrayHandle } from "./shell/tray.electron";
+import { closeAction } from "./shell/tray-model";
 import {
 	loadWindowState,
 	MIN_HEIGHT,
@@ -31,22 +45,37 @@ import {
 } from "./shell/window-state";
 
 registerAppScheme();
+// D663: crash dumps stay on this machine (userData/Crashpad); nothing is uploaded.
+crashReporter.start({ uploadToServer: false });
 
 let registry: ServerRegistry;
 let engine: EngineSupervisor | undefined;
 let factory: FactoryHost | undefined;
 let factoryViews: FactoryViews | undefined;
+let tray: TrayHandle | undefined;
+let isQuitting = false;
+const settingsFile = (): string =>
+	join(app.getPath("userData"), "settings.json");
 
 /** `engine.autoStart` in userData/settings.json; default true. */
 function engineAutoStart(): boolean {
-	try {
-		const raw = JSON.parse(
-			readFileSync(join(app.getPath("userData"), "settings.json"), "utf8"),
-		) as Record<string, unknown>;
-		return raw["engine.autoStart"] !== false;
-	} catch {
-		return true;
-	}
+	return (
+		readSetting<unknown>(settingsFile(), "engine.autoStart", true) !== false
+	);
+}
+
+/** `shell.closeToTray` in settings.json; default true. */
+function closeToTray(): boolean {
+	return (
+		readSetting<unknown>(settingsFile(), "shell.closeToTray", true) !== false
+	);
+}
+
+function showMainWindow(create: () => BrowserWindow): void {
+	const win = getMainWindow() ?? create();
+	if (win.isMinimized()) win.restore();
+	win.show();
+	win.focus();
 }
 
 function createWindow(): BrowserWindow {
@@ -95,9 +124,19 @@ function createWindow(): BrowserWindow {
 	win.on("move", schedule);
 	win.on("maximize", schedule);
 	win.on("unmaximize", schedule);
-	win.on("close", () => {
+	win.on("close", (e) => {
 		clearTimeout(timer);
 		persist();
+		const action = closeAction({
+			platform: process.platform,
+			hasTray: tray !== undefined,
+			closeToTray: closeToTray(),
+			quitting: isQuitting,
+		});
+		if (action === "hide") {
+			e.preventDefault();
+			win.hide();
+		}
 	});
 	win.once("ready-to-show", () => win.show());
 	void win.loadURL("loams-app://console/ui/cordis.html");
@@ -139,9 +178,10 @@ const singleInstance = initSingleInstance({
 				sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 				liveSupported: probeLiveSupport,
 			});
-			engine.on("state", (st: EngineState) =>
-				registry.setLocalUrl(st.phase === "ready" ? st.url : ""),
-			);
+			engine.on("state", (st: EngineState) => {
+				registry.setLocalUrl(st.phase === "ready" ? st.url : "");
+				tray?.refresh();
+			});
 			registerEngineIpc(engine, logFile);
 			if (engineAutoStart()) engine.start();
 			installAppProtocol(session.defaultSession, {
@@ -152,13 +192,54 @@ const singleInstance = initSingleInstance({
 					() => registry.active().kind,
 				),
 			});
-			singleInstance.watchMainWindow(createWindow());
-			app.on("activate", () => {
-				if (!getMainWindow()) singleInstance.watchMainWindow(createWindow());
+			const open = (): BrowserWindow => {
+				const w = createWindow();
+				singleInstance.watchMainWindow(w);
+				return w;
+			};
+			registerShellIpc({
+				onBadge: (n) => tray?.setBadge(n),
+				onNotifyClick: () => showMainWindow(open),
 			});
+			app.setAboutPanelOptions({
+				applicationName: "Loams Desktop",
+				applicationVersion: app.getVersion(),
+				website: "https://loams.dev",
+			});
+			const openLogs = (): void => void shell.openPath(paths.logs);
+			installAppMenu({
+				dev: !app.isPackaged,
+				onAction: (id) => {
+					if (id === "quit") app.quit();
+					else if (id === "docs") void shell.openExternal(DOCS_URL);
+					else if (id === "logs") openLogs();
+					else if (id === "about") app.showAboutPanel();
+				},
+			});
+			const eng = engine;
+			tray = createTray({
+				getEngine: () => eng.state(),
+				getServer: () => registry.active(),
+				onAction: (id) => {
+					if (id === "open") showMainWindow(open);
+					else if (id === "engine")
+						void (eng.state().phase === "ready" ? eng.stop() : eng.start());
+					else if (id === "approvals") {
+						showMainWindow(open);
+						singleInstance.navigate("/approvals");
+					} else if (id === "servers") {
+						showMainWindow(open);
+						singleInstance.navigate("/servers");
+					} else if (id === "quit") app.quit();
+				},
+			});
+			open();
+			app.on("activate", () => showMainWindow(open));
 		});
 		let quitting = false;
 		app.on("before-quit", (e) => {
+			isQuitting = true;
+			tray?.destroy();
 			factoryViews?.closeAll();
 			if (quitting || !engine) return;
 			e.preventDefault();
