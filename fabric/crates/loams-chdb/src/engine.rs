@@ -66,6 +66,16 @@ pub struct EngineConfig {
     pub cache_bytes: u64,
     /// The engine's memory ceiling in bytes (`--max_server_memory_usage`).
     pub max_server_memory: u64,
+    /// Whether chDB gets a filesystem cache at all (`--filesystem_caches_path` and
+    /// `--filesystem_cache_size_limit`). True by default, which is FL2 Ruling 2's
+    /// engine. The House worker turns it off: HS1 R1.4 measured that with no
+    /// `filesystem_caches_path` chDB caches nothing on disk, and the House's cache
+    /// is `house-cache` in the front (HS1 Task 9), not one per worker.
+    pub filesystem_cache: bool,
+    /// Server-level arguments appended after the ones this configuration builds,
+    /// such as the House worker's `--config-file` (HS1 R1.8). They are part of
+    /// the engine's identity: every connection is opened with them.
+    pub server_args: Vec<String>,
     /// Whether chDB installs its signal handlers.
     ///
     /// False by default, and the header says why: "for safe integration into
@@ -83,6 +93,8 @@ impl Default for EngineConfig {
             tmp_dir,
             cache_bytes: DEFAULT_CACHE_BYTES,
             max_server_memory: DEFAULT_MAX_SERVER_MEMORY,
+            filesystem_cache: true,
+            server_args: Vec::new(),
             install_signal_handlers: false,
         }
     }
@@ -95,12 +107,23 @@ impl EngineConfig {
     /// which is what [`Engine`] does; a session adds query-level settings on top
     /// of these.
     pub fn to_args(&self) -> Vec<String> {
-        vec![
-            format!("--path={}", self.tmp_dir.display()),
-            format!("--filesystem_caches_path={}", self.cache_dir.display()),
-            format!("--filesystem_cache_size_limit={}", self.cache_bytes),
-            format!("--max_server_memory_usage={}", self.max_server_memory),
-        ]
+        let mut args = vec![format!("--path={}", self.tmp_dir.display())];
+        if self.filesystem_cache {
+            args.push(format!(
+                "--filesystem_caches_path={}",
+                self.cache_dir.display()
+            ));
+            args.push(format!(
+                "--filesystem_cache_size_limit={}",
+                self.cache_bytes
+            ));
+        }
+        args.push(format!(
+            "--max_server_memory_usage={}",
+            self.max_server_memory
+        ));
+        args.extend(self.server_args.iter().cloned());
+        args
     }
 }
 
@@ -196,7 +219,11 @@ impl Engine {
 
     /// Builds the engine and its keepalive connection.
     fn boot(config: EngineConfig) -> Result<Self, ChdbError> {
-        for dir in [&config.tmp_dir, &config.cache_dir] {
+        let mut dirs = vec![&config.tmp_dir];
+        if config.filesystem_cache {
+            dirs.push(&config.cache_dir);
+        }
+        for dir in dirs {
             std::fs::create_dir_all(dir).map_err(|err| {
                 ChdbError::loams(
                     "CANNOT_CREATE_DIRECTORY",
@@ -250,7 +277,27 @@ impl Engine {
         id: crate::SessionId,
         settings: &crate::Settings,
     ) -> Result<Session, ChdbError> {
-        Session::open(id, &self.config, settings)
+        Session::open(id, self.config.to_args(), settings)
+    }
+
+    /// Opens a session whose connection adds `extra_args` to the engine's own:
+    /// query-level settings fixed for the life of the connection.
+    ///
+    /// HS1 R1.9 measured what FL2's Task 1 did not: a second `chdb_connect` with
+    /// the same **server-level** arguments and different **query-level** ones is
+    /// accepted (in about a millisecond) and keeps its own settings. FL2's refusal
+    /// was about differing server-level arguments, which still holds. The House
+    /// worker opens its user connection this way with `--readonly=2`, which is then
+    /// sticky: `SET readonly` answers `164`.
+    pub fn session_with_args(
+        &self,
+        id: crate::SessionId,
+        settings: &crate::Settings,
+        extra_args: &[String],
+    ) -> Result<Session, ChdbError> {
+        let mut args = self.config.to_args();
+        args.extend(extra_args.iter().cloned());
+        Session::open(id, args, settings)
     }
 
     /// [`Engine::version`] on a blocking thread.
@@ -372,6 +419,25 @@ mod tests {
         assert!(
             args.iter()
                 .any(|arg| arg == "--max_server_memory_usage=6442450944")
+        );
+    }
+
+    #[test]
+    fn no_filesystem_cache_means_no_cache_arguments() {
+        let config = EngineConfig {
+            filesystem_cache: false,
+            server_args: vec!["--config-file=/w/config.xml".to_string()],
+            ..EngineConfig::default()
+        };
+        let args = config.to_args();
+        assert!(
+            !args.iter().any(|arg| arg.starts_with("--filesystem_cache")),
+            "HS1 R1.4: no filesystem_caches_path, no disk cache: {args:?}"
+        );
+        assert_eq!(
+            args.last().map(String::as_str),
+            Some("--config-file=/w/config.xml"),
+            "server arguments come last"
         );
     }
 

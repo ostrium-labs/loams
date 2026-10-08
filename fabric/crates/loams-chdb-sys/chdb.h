@@ -2,9 +2,9 @@
  * (programs/local/chdb.h, 1176 lines) so bindgen has the exact header the pinned
  * libchdb.so was built from (FL2 plan Ruling 2, Task 0).
  *
- * The v26.9.0 release tarball ships libchdb.so and nothing else -- no header -- so
- * the header has to come from the repository at the same tag or the two drift apart.
- * The binary is digest-pinned in build.rs; this file is covered by review instead.
+ * HS1 R1.13: the release tarball does ship this header beside libchdb.so, and
+ * build.rs checks that this file, minus this comment, equals the one in the
+ * digest-verified archive, so the header is pinned by the same digest.
  *
  * FL2 Task 0 measured 52 exported chdb_ symbols and 75 declarations here, with no
  * gaps: Arrow input, Arrow output, cancellation, signal-handler control and

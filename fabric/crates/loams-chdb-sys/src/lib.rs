@@ -483,6 +483,145 @@ pub mod ffi {
         }
     }
 
+    /// A streaming `INSERT`: `chdb_stream_insert_n`, `chdb_stream_append`,
+    /// `chdb_stream_done` (HS1 Task 2, Ruling R1.7).
+    ///
+    /// HS1 Task 1 measured that the pinned library takes `Native` and `Parquet`
+    /// bodies appended in arbitrary, non-block-aligned chunks with no temporary
+    /// file, and refuses `INSERT … SELECT … FROM input()` as the stream's statement.
+    /// The header says the connection accepts no other statement while the stream
+    /// is open, so the stream borrows the connection and the caller keeps it busy.
+    ///
+    /// The handle is destroyed exactly once, on drop, as the header requires "for
+    /// every handle, even on error paths"; `chdb_destroy_insert_stream` cancels a
+    /// stream that was never finished, so dropping one without `finish` inserts
+    /// nothing (ClickHouse's semantics: blocks already flushed stay).
+    #[derive(Debug)]
+    pub struct InsertStream {
+        _conn: Arc<Connection>,
+        handle: NonNull<chdb_insert_stream_>,
+    }
+
+    // SAFETY: the handle is used from one thread at a time (`&mut self`), and the
+    // library does not tie it to the thread that made it.
+    unsafe impl Send for InsertStream {}
+
+    /// What a finished `INSERT` reports.
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
+    pub struct InsertSummary {
+        /// Rows written, per `chdb_result_rows_written`.
+        pub rows: u64,
+        /// Bytes written, per `chdb_result_bytes_written`.
+        pub bytes: u64,
+        /// Seconds, per `chdb_result_elapsed`.
+        pub elapsed: f64,
+    }
+
+    impl InsertStream {
+        /// The stream's error text, if the library recorded one.
+        fn error(&self) -> Option<String> {
+            // SAFETY: the handle is live until drop; the string is copied at once.
+            unsafe { c_str_to_string(chdb_stream_insert_error(self.handle.as_ptr())) }
+        }
+
+        /// Appends one chunk of the body. The bytes are copied by the library.
+        pub fn append(&mut self, data: &[u8]) -> Result<(), Error> {
+            if data.is_empty() {
+                return Ok(());
+            }
+            // SAFETY: the handle is live; `data` is valid for `data.len()` bytes
+            // for the call, and the header says the library copies it.
+            let state = unsafe {
+                chdb_stream_append(
+                    self.handle.as_ptr(),
+                    data.as_ptr() as *const c_void,
+                    data.len(),
+                )
+            };
+            if state == CHDBSuccess {
+                return Ok(());
+            }
+            Err(Error::new(self.error().unwrap_or_else(|| {
+                "chdb_stream_append failed and recorded no error".to_string()
+            })))
+        }
+
+        /// Ends the body and commits it.
+        pub fn finish(self) -> Result<InsertSummary, Error> {
+            // SAFETY: the handle is live; the result is owned here and destroyed
+            // below, and the handle itself is destroyed on drop.
+            let result = unsafe { chdb_stream_done(self.handle.as_ptr()) };
+            if result.is_null() {
+                return Err(Error::new(self.error().unwrap_or_else(|| {
+                    "chdb_stream_done returned no result".to_string()
+                })));
+            }
+            // SAFETY: a live result, read and then destroyed once.
+            let (error, summary) = unsafe {
+                (
+                    Connection::result_error(result),
+                    InsertSummary {
+                        rows: chdb_result_rows_written(result),
+                        bytes: chdb_result_bytes_written(result),
+                        elapsed: chdb_result_elapsed(result),
+                    },
+                )
+            };
+            // SAFETY: as above; not touched again.
+            unsafe { chdb_destroy_query_result(result) };
+            match error.or_else(|| self.error()) {
+                Some(message) => Err(Error::new(message)),
+                None => Ok(summary),
+            }
+        }
+    }
+
+    impl Drop for InsertStream {
+        fn drop(&mut self) {
+            // SAFETY: the handle came from `chdb_stream_insert_n` and is destroyed
+            // only here. The header: "Required for every handle, even on error
+            // paths; cancels first if not finalized".
+            unsafe { chdb_destroy_insert_stream(self.handle.as_ptr()) };
+        }
+    }
+
+    impl Connection {
+        /// Begins a streaming `INSERT`: `insert` is the statement without `FORMAT`
+        /// or data (`INSERT INTO t`), `format` the body's format.
+        pub fn insert_stream(
+            self: &Arc<Self>,
+            insert: &str,
+            format: &str,
+        ) -> Result<InsertStream, Error> {
+            let query = c_string("the statement", insert)?;
+            let format = c_string("the format", format)?;
+            // SAFETY: both strings are live and NUL-terminated for the call, and
+            // the lengths are theirs. The header says the result is never null;
+            // it is checked anyway, because a null here would be destroyed below.
+            let raw = unsafe {
+                chdb_stream_insert_n(
+                    self.handle(),
+                    query.as_ptr(),
+                    query.as_bytes().len(),
+                    format.as_ptr(),
+                    format.as_bytes().len(),
+                )
+            };
+            let handle = NonNull::new(raw)
+                .ok_or_else(|| Error::new(format!("{insert}: chdb_stream_insert returned null")))?;
+            let stream = InsertStream {
+                _conn: Arc::clone(self),
+                handle,
+            };
+            match stream.error() {
+                // Dropping the stream destroys the handle, as the header asks for
+                // a failed init too.
+                Some(message) => Err(Error::new(message)),
+                None => Ok(stream),
+            }
+        }
+    }
+
     /// One block of a streamed result, with the counters the block carries.
     #[derive(Clone, Debug, Default, PartialEq)]
     pub struct Block {
@@ -927,6 +1066,58 @@ pub mod ffi {
     pub fn set_signal_handlers_enabled(enabled: bool) {
         // SAFETY: the call takes an int and sets a process-wide flag.
         unsafe { chdb_set_signal_handlers_enabled(i32::from(enabled)) };
+    }
+}
+
+/// Taking ownership of a file descriptor the process inherited (HS1 Task 2).
+///
+/// The House worker finds its `hsw1` socket on fd 3, put there by the front's
+/// `posix_spawn`. Turning a raw fd into an `OwnedFd` is `unsafe` in Rust (the
+/// caller asserts that nothing else owns it), and the workspace forbids `unsafe`
+/// outside this crate (FL2 Ruling 8), so the one call lives here, guarded so that
+/// it can hand out each fd at most once per process.
+pub mod inherited {
+    use std::io;
+    use std::os::fd::{FromRawFd, OwnedFd, RawFd};
+    use std::sync::Mutex;
+
+    /// The fds already taken, so a second call cannot create a second owner.
+    static TAKEN: Mutex<Vec<RawFd>> = Mutex::new(Vec::new());
+
+    /// Takes ownership of inherited fd `fd`, which must be open and a socket.
+    ///
+    /// Fails if `fd` is one of the standard streams, is not open, is not a socket,
+    /// or was already taken.
+    pub fn take_socket(fd: RawFd) -> io::Result<OwnedFd> {
+        if fd <= 2 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("fd {fd} is a standard stream, which std already owns"),
+            ));
+        }
+        let mut taken = TAKEN
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if taken.contains(&fd) {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("fd {fd} was already taken"),
+            ));
+        }
+        // Linux: the link names what the fd is, and does not exist when it is closed.
+        let target = std::fs::read_link(format!("/proc/self/fd/{fd}"))
+            .map_err(|err| io::Error::new(err.kind(), format!("fd {fd} is not open: {err}")))?;
+        if !target.to_string_lossy().starts_with("socket:") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("fd {fd} is {}, not a socket", target.display()),
+            ));
+        }
+        taken.push(fd);
+        // SAFETY: `fd` is open (checked above), above the standard streams, and was
+        // inherited across `exec`, so no Rust object in this process owns it; the
+        // `TAKEN` list makes this the only `OwnedFd` ever made from it here.
+        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
     }
 }
 

@@ -52,6 +52,8 @@ const SHA256_AARCH64: &str = "070116864cde6fdb3276fb1b28702b3b002da42038bb59c99e
 
 /// The library file inside the archive, and the name it links under.
 const LIBRARY: &str = "libchdb.so";
+/// The header inside the archive, which HS1 R1.13 found the archive does ship.
+const HEADER: &str = "chdb.h";
 
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
@@ -161,7 +163,57 @@ fn fetch(out_dir: &Path) -> PathBuf {
             lib_dir.display()
         );
     }
+    check_vendored_header(&lib_dir);
     lib_dir
+}
+
+/// HS1 Ruling R1.13: the release tarball **does** ship `chdb.h`, so the vendored
+/// header is checked against the one inside the digest-verified archive. That puts
+/// the header under the digest as well: a vendored header that drifted from the
+/// library it binds fails the build instead of producing bindings for a different
+/// ABI.
+///
+/// The vendored copy carries a leading `/* … */` vendoring comment that the
+/// shipped one does not, so the comparison starts after it. An archive without a
+/// header (an older layout) is not a failure, only a warning: the header is then
+/// covered by review, as FL2 Ruling 1 had it.
+fn check_vendored_header(lib_dir: &Path) {
+    let manifest_dir =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"));
+    let shipped = match fs::read(lib_dir.join(HEADER)) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            println!(
+                "cargo:warning=the verified libchdb archive ships no {HEADER}; the vendored \
+                 header is covered by review only (HS1 R1.13)"
+            );
+            return;
+        }
+    };
+    let vendored = fs::read(manifest_dir.join(HEADER)).expect("reading the vendored chdb.h");
+    let vendored = strip_vendoring_comment(&vendored);
+    if vendored != shipped.as_slice() {
+        panic!(
+            "the vendored {HEADER} differs from the one in the digest-verified v{CHDB_VERSION} \
+             archive ({}); re-vendor it from the archive (HS1 R1.13)",
+            lib_dir.join(HEADER).display()
+        );
+    }
+}
+
+/// The vendored header without its leading `/* … */` comment and the newline
+/// after it.
+fn strip_vendoring_comment(header: &[u8]) -> &[u8] {
+    if !header.starts_with(b"/*") {
+        return header;
+    }
+    match header.windows(2).position(|pair| pair == b"*/") {
+        Some(end) => {
+            let rest = &header[end + 2..];
+            rest.strip_prefix(b"\n").unwrap_or(rest)
+        }
+        None => header,
+    }
 }
 
 /// Hashes a file without holding it in memory: the archive is 180 MB and the
@@ -198,7 +250,16 @@ fn unpack_library(archive: &Path, lib_dir: &Path) {
             .into_owned();
         // The archive is one file at the root; anything else is a surprise
         // worth failing on rather than writing outside OUT_DIR.
-        if path.file_name().map(|n| n == LIBRARY) != Some(true) || path.components().count() != 1 {
+        if path.components().count() != 1 {
+            continue;
+        }
+        // The header comes out too, for `check_vendored_header` (HS1 R1.13).
+        if path.file_name().map(|n| n == HEADER) == Some(true) {
+            let mut out = File::create(lib_dir.join(HEADER)).expect("creating chdb.h");
+            std::io::copy(&mut entry, &mut out).expect("unpacking chdb.h");
+            continue;
+        }
+        if path.file_name().map(|n| n == LIBRARY) != Some(true) {
             continue;
         }
         let mut out = File::create(lib_dir.join(LIBRARY)).expect("creating libchdb.so");

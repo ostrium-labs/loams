@@ -43,9 +43,11 @@
 //!
 //! * `chdb_connect` returns a *cell* and every query takes the connection inside
 //!   it, so both halves are kept ([`engine::Connection`]).
-//! * **One connection per process.** A second `chdb_connect` whose arguments
-//!   differ from the first one's returns null, so a session takes the engine's
-//!   arguments unchanged and applies its settings per statement.
+//! * **One connection shape per process.** A second `chdb_connect` whose
+//!   *server-level* arguments differ from the first one's returns null, so a
+//!   session takes the engine's arguments and applies its settings per statement.
+//!   HS1 R1.9 later measured that differing *query-level* arguments are accepted,
+//!   which is what [`Engine::session_with_args`] is for.
 //! * A result carrying an error has a **null buffer**, which `slice::from_raw_parts`
 //!   rejects outright rather than reading as an empty slice.
 //! * `chdb_stream_query` returns in about a millisecond — the embedded engine runs
@@ -82,4 +84,4 @@ pub use arrow::{ArrowHandle, ArrowStream, RecordBatchReader};
 pub use engine::{Engine, EngineConfig, SessionId, Settings};
 pub use error::ChdbError;
 pub use query::{QueryStats, QueryStream};
-pub use session::Session;
+pub use session::{InsertStream, InsertSummary, Session};
