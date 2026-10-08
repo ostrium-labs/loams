@@ -32,11 +32,13 @@ fn load(name: &str) -> Vec<Packet> {
         .collect()
 }
 
-const CLIENTS: [(&str, &str, &str); 4] = [
-    ("mysql84", "libmysql", "8.4.10"),
-    ("connector-j", "MySQL Connector/J", "9.7.0"),
-    ("mysql2", "Node-MySQL-2", "3.15.3"),
-    ("mariadb", "libmariadb", "3.4.10"),
+/// (fixture, `_client_name`, `_client_version`; go-sql-driver sends none).
+const CLIENTS: [(&str, &str, Option<&str>); 5] = [
+    ("mysql84", "libmysql", Some("8.4.10")),
+    ("connector-j", "MySQL Connector/J", Some("9.7.0")),
+    ("mysql2", "Node-MySQL-2", Some("3.15.3")),
+    ("go-sql-driver", "Go-MySQL-Driver", None),
+    ("mariadb", "libmariadb", Some("3.4.10")),
 ];
 
 #[test]
@@ -75,7 +77,7 @@ fn handshake_response_decodes_captured_clients() {
                 .map(|(_, v)| v.as_str())
         };
         assert_eq!(attr("_client_name"), Some(client_name), "{name}");
-        assert_eq!(attr("_client_version"), Some(version), "{name}");
+        assert_eq!(attr("_client_version"), version, "{name}");
         // Re-encoding gives the client's bytes back.
         assert_eq!(
             r.encode(),
@@ -129,9 +131,10 @@ fn ssl_requests_decode_from_captured_clients() {
             other => panic!("{name}: expected an SSLRequest, got {other:?}"),
         }
     }
-    // mysql2 (no ssl option) and mariadb (--skip-ssl) answer the same
+    // mysql2 and go-sql-driver (no TLS option) and mariadb (--skip-ssl)
+    // answer the same
     // greeting in plaintext.
-    for name in ["mysql2", "mariadb"] {
+    for name in ["mysql2", "go-sql-driver", "mariadb"] {
         let p = load(&format!("{name}-ssl"));
         assert!(matches!(
             decode_client_hello(&p[1].payload, &Limits::default()),

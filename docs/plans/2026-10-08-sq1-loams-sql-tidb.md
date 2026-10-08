@@ -819,9 +819,9 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - **The gate's upstream login** (`client_auth_response`) speaks `caching_sha2_password` and `mysql_clear_password`, the latter for `tidb_auth_token` (R2.12).
 - **R3.4 Captured fixtures.** `scripts/sqlgate/capture/` (a recording proxy plus client drivers) captured mysql 8.4.10, Connector/J 9.7.0, mysql2 3.15.3 and, as an extra, libmariadb 3.4.10 against TiDB v8.5.8.
   - **What the tests check.** Greetings and responses re-encode byte for byte. The SHA-2 scramble of each client matches `scramble_caching_sha2` for the test password.
-  - **go-sql-driver is missing.** It was not on the host, and fetching Go modules is outside the allowed downloads. **Open:** capture it when a client is available (`capture.sh` takes any client).
+  - **go-sql-driver** (controller approval, 2026-10-09). go-sql-driver/mysql v1.9.3 (2025-06-13) was captured with `go run` inside `golang@sha256:ebd54034…` (Go 1.25.0, 2025-08-21). The module was downloaded only in the container, and `scripts/sqlgate/capture/go/{go.mod,go.sum}` pin it.
 - **R3.5 Fuzzing.**
   - **Targets.** `crates/loams-sqlgate/fuzz` is a cargo-fuzz crate outside the workspace, with targets `handshake_response` and `packet_framing`. Its seed corpus comes from the captures. The invariants live in `loams_sqlgate::fuzz` (a doc-hidden module, an addition to the task's file list).
   - **Named tests.** `fuzz_handshake_response` and `fuzz_packet_framing` run the same invariants under proptest in `cargo test`.
-  - **CI.** A new `sqlgate-fuzz` job in `ci.yml` (nightly toolchain, `cargo-fuzz`) runs each target for 60 s, and the `CI required` job depends on it.
+  - **CI.** A new `sqlgate-fuzz` job in `ci.yml` (toolchain pinned to `nightly-2026-09-24`, `cargo-fuzz`) runs each target for 60 s, and the `CI required` job depends on it.
   - **Local run.** Each target ran 60 s on the pinned stable toolchain (`RUSTC_BOOTSTRAP=1 cargo fuzz run -s none`): 25.0 M and 40.0 M executions, with no crash.

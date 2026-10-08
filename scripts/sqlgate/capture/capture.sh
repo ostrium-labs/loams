@@ -6,6 +6,9 @@
 #   MYSQL84_IMAGE   mysql 8.4 client image (by digest)
 #   CONNECTOR_J     path to mysql-connector-j-*.jar
 #   MYSQL2_MODULES  a node_modules directory that holds mysql2
+#   GOLANG_IMAGE    golang image (by digest) for go-sql-driver; the module
+#                   (go/go.mod, go.sum) is downloaded inside the container
+#   CLIENTS         optional: capture only these (e.g. "go-sql-driver")
 # Usage: capture.sh [out dir] (default crates/loams-sqlgate/tests/fixtures/clients)
 # shellcheck shell=bash
 set -euo pipefail
@@ -34,7 +37,7 @@ run_capture() {
   python3 "$HERE/proxy.py" "${args[@]}" > "$SPIKE_OUT/proxy.log" 2>&1 &
   local pid=$!
   for _ in $(seq 50); do grep -q ready "$SPIKE_OUT/proxy.log" 2>/dev/null && break; sleep 0.1; done
-  timeout 30 "$@" || true
+  timeout 180 "$@" || true
   wait "$pid" || true
   log "$name (ssl-probe=$probe): $(wc -l < "$file") packets"
 }
@@ -46,6 +49,12 @@ fi
 if [[ -n "${MYSQL2_MODULES:-}" ]] && command -v node >/dev/null; then clients+=(mysql2); fi
 if [[ -n "${CONNECTOR_J:-}" ]] && command -v java >/dev/null; then clients+=(connector-j); fi
 if command -v mariadb >/dev/null; then clients+=(mariadb); fi
+if [[ -n "${GOLANG_IMAGE:-}" ]]; then clients+=(go-sql-driver); fi
+if [[ -n "${CLIENTS:-}" ]]; then
+  wanted=()
+  for c in "${clients[@]}"; do [[ " $CLIENTS " == *" $c "* ]] && wanted+=("$c"); done
+  clients=("${wanted[@]}")
+fi
 
 for c in "${clients[@]}"; do
   for probe in 0 1; do
@@ -54,6 +63,9 @@ for c in "${clients[@]}"; do
                  mysql -h127.0.0.1 -P"$PROXY_PORT" -uloams_cap -pcapture --get-server-public-key -e 'SELECT 1' ;;
       mysql2) run_capture mysql2 "$probe" env NODE_PATH="$MYSQL2_MODULES" node "$HERE/capture.js" "$PROXY_PORT" ;;
       connector-j) run_capture connector-j "$probe" java -cp "$CONNECTOR_J" "$HERE/Capture.java" "$PROXY_PORT" ;;
+      go-sql-driver) run_capture go-sql-driver "$probe" podman run --rm --network host \
+                 -v "$HERE/go:/src:ro,z" "$GOLANG_IMAGE" \
+                 sh -c "cp -r /src /work && cd /work && go run -mod=readonly . $PROXY_PORT" ;;
       mariadb) run_capture mariadb "$probe" mariadb --skip-ssl -h127.0.0.1 -P"$PROXY_PORT" -uloams_cap -pcapture -e 'SELECT 1' ;;
     esac
   done
