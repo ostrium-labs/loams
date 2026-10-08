@@ -14,7 +14,7 @@
 //! once), `lock_keys` adds a lock-only mutation, and an insert or a delete
 //! of an inserted key leaves a not-exists check for the commit.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::time::Instant;
 
@@ -23,7 +23,7 @@ use redb::{ReadableDatabase, ReadableTable, StorageError};
 use super::commit::{Mutation, Op};
 use super::gc::OpenGuard;
 use super::{Handle, VERSIONS};
-use crate::{MAX_VALUE_BYTES, Mode, Pair, Ts, TxnError};
+use crate::{MAX_VALUE_BYTES, Pair, Ts, TxnError};
 
 /// The refusal of a read below the GC safe window (the TiKV backend's text).
 pub(crate) const BELOW_SAFE_POINT: &str = "read below the GC safe point";
@@ -306,21 +306,9 @@ impl Entry {
 pub struct Txn {
     reader: Reader,
     attempt: u32,
-    mode: Mode,
     buffer: BTreeMap<Vec<u8>, Entry>,
-    /// Pessimistic locks held: key → the timestamp they were taken at.
-    for_update: HashMap<Vec<u8>, Ts>,
-    owner: u64,
     refuse_reads_after: Instant,
     _open: OpenGuard,
-}
-
-impl Drop for Txn {
-    fn drop(&mut self) {
-        if !self.for_update.is_empty() {
-            self.reader.handle.shared.core.locks.release(self.owner);
-        }
-    }
 }
 
 impl Txn {
@@ -328,18 +316,13 @@ impl Txn {
         handle: Handle,
         start: Ts,
         attempt: u32,
-        mode: Mode,
         refuse_reads_after: Instant,
         open: OpenGuard,
     ) -> Self {
-        let owner = handle.shared.core.next_owner();
         Txn {
             reader: Reader { handle, at: start },
             attempt,
-            mode,
             buffer: BTreeMap::new(),
-            for_update: HashMap::new(),
-            owner,
             refuse_reads_after,
             _open: open,
         }
@@ -480,46 +463,6 @@ impl Txn {
         self.scan_inner(start, end, limit, true).await
     }
 
-    /// Takes the pessimistic locks of `keys` (in a pessimistic transaction),
-    /// waiting for another holder; with `not_exists`, then fails with
-    /// `AlreadyExists` when a key is present.
-    async fn lock_now(&mut self, keys: &[Vec<u8>], not_exists: bool) -> Result<(), TxnError> {
-        if self.mode != Mode::Pessimistic {
-            return Ok(());
-        }
-        let handle = self.reader.handle.clone();
-        let core = &handle.shared.core;
-        let wanted: Vec<Vec<u8>> = keys
-            .iter()
-            .filter(|k| !self.for_update.contains_key(*k))
-            .cloned()
-            .collect();
-        if wanted.is_empty() && !not_exists {
-            return Ok(());
-        }
-        let prefixes: Vec<Vec<u8>> = wanted.iter().map(|k| handle.prefix(k)).collect();
-        core.locks.acquire(&prefixes, self.owner).await?;
-        let at = handle
-            .now()
-            .await
-            .map_err(|e| TxnError::NotApplied(e.to_string()))?;
-        core.oracle.wait_visible(at).await;
-        for k in wanted {
-            self.for_update.insert(k, at);
-        }
-        if not_exists {
-            let latest = Reader {
-                handle: handle.clone(),
-                at,
-            }
-            .get_many(keys)?;
-            if let Some((k, _)) = keys.iter().zip(latest).find(|(_, v)| v.is_some()) {
-                return Err(TxnError::AlreadyExists(already_exists(k)));
-            }
-        }
-        Ok(())
-    }
-
     /// Writes `value` at `key`. Refuses a value over 2 MiB
     /// ([`MAX_VALUE_BYTES`]) with `TxnError::Fatal("value over 2 MiB")`.
     pub async fn put(&mut self, key: &[u8], value: impl Into<Vec<u8>>) -> Result<(), TxnError> {
@@ -527,7 +470,6 @@ impl Txn {
         if value.len() > MAX_VALUE_BYTES {
             return Err(TxnError::Fatal("value over 2 MiB".to_string()));
         }
-        self.lock_now(&[key.to_vec()], false).await?;
         let entry = match self.buffer.get(key) {
             Some(Entry::Insert(_) | Entry::CheckNotExist) => Entry::Insert(value),
             _ => Entry::Put(value),
@@ -552,7 +494,6 @@ impl Txn {
         {
             return Err(TxnError::AlreadyExists(already_exists(key)));
         }
-        self.lock_now(&[key.to_vec()], true).await?;
         let entry = match self.buffer.get(key) {
             Some(Entry::Del) => Entry::Put(value),
             _ => Entry::Insert(value),
@@ -563,11 +504,8 @@ impl Txn {
 
     /// Deletes `key`.
     pub async fn delete(&mut self, key: &[u8]) -> Result<(), TxnError> {
-        self.lock_now(&[key.to_vec()], false).await?;
         let entry = match self.buffer.get(key) {
-            Some(Entry::Insert(_) | Entry::CheckNotExist) if self.mode == Mode::Optimistic => {
-                Entry::CheckNotExist
-            }
+            Some(Entry::Insert(_) | Entry::CheckNotExist) => Entry::CheckNotExist,
             _ => Entry::Del,
         };
         self.buffer.insert(key.to_vec(), entry);
@@ -575,14 +513,12 @@ impl Txn {
     }
 
     /// Locks `keys` without writing them: a concurrent write to one of them
-    /// is a write-write conflict. In a pessimistic transaction the locks are
-    /// taken at once, so a second holder waits.
+    /// is a write-write conflict.
     pub async fn lock_keys<K: AsRef<[u8]>>(
         &mut self,
         keys: impl IntoIterator<Item = K>,
     ) -> Result<(), TxnError> {
         let keys: Vec<Vec<u8>> = keys.into_iter().map(|k| k.as_ref().to_vec()).collect();
-        self.lock_now(&keys, false).await?;
         for key in keys {
             match self.buffer.get_mut(&key) {
                 None => {
@@ -618,7 +554,7 @@ impl Txn {
                     prefix: h.prefix(key),
                     key: key.clone(),
                     op,
-                    check_ts: self.for_update.get(key).copied().unwrap_or(self.reader.at),
+                    check_ts: self.reader.at,
                 })
             })
             .collect()
@@ -626,8 +562,7 @@ impl Txn {
 
     /// Commits the transaction: its timestamp, or the start timestamp when
     /// it wrote and locked nothing. Fails with `Conflict` when a key it
-    /// wrote or locked has a newer version than its start (or than its
-    /// pessimistic lock), with `AlreadyExists` when an inserted key is
+    /// wrote or locked has a newer version than its start, with `AlreadyExists` when an inserted key is
     /// present, and with `Undetermined` when the store failed to write.
     /// This is the backend's raw commit: [`Store::run`](crate::Store::run)
     /// adds the retries, faults and commit tokens.
@@ -637,7 +572,7 @@ impl Txn {
             return Ok(self.reader.at);
         }
         let handle = self.reader.handle.clone();
-        let ts = handle.commit(self.owner, mutations).await;
+        let ts = handle.commit(mutations).await;
         drop(self);
         ts
     }

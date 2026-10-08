@@ -1,6 +1,6 @@
 //! The embedded backend's own tests (LV1 plan Task 21): the oracle across
 //! restarts, GC under barriers and open snapshots, group commit, the
-//! per-process handle registry, pessimistic locks, and a model check of
+//! per-process handle registry, injected I/O failures, and a model check of
 //! snapshot isolation against an in-memory reference.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use loams_kv::embedded::{self, Handle};
 use loams_kv::testing::TempDir;
-use loams_kv::{EmbeddedConfig, KvError, Mode, Store, StoreConfig, Ts, TxnError, TxnOptions};
+use loams_kv::{EmbeddedConfig, KvError, Store, StoreConfig, Ts, TxnError, TxnOptions};
 use proptest::prelude::*;
 
 fn tmp() -> TempDir {
@@ -140,7 +140,7 @@ async fn a_failed_group_write_persists_no_mark() {
     let dir = tmp();
     let store = open(&dir.path().join("store.redb"), "io").await;
     let h = handle(&store);
-    let mut txn = h.begin(Mode::Optimistic).await.expect("begin");
+    let mut txn = h.begin().await.expect("begin");
     txn.put(b"k", b"v".to_vec()).await.expect("put");
     let (_, durable) = h.oracle_marks();
     // Past the mark, the commit's timestamp needs a new one, written in the
@@ -331,51 +331,6 @@ async fn bad_configs_are_refused() {
     assert!(err.to_string().contains("keyspace"), "{err}");
 }
 
-/// Pessimistic writers of one key queue instead of conflicting: their locks
-/// are taken at once, so every run commits on its first attempt, where
-/// optimistic writers started together conflict. (Reads stay at the start
-/// timestamp, as on TiKV: the seam has no `get_for_update`.)
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn pessimistic_writers_queue() {
-    let dir = tmp();
-    let store = open(&dir.path().join("store.redb"), "pess").await;
-    let both = std::sync::Arc::new(tokio::sync::Barrier::new(8));
-    let tasks: Vec<_> = (0..8u8)
-        .map(|i| {
-            let store = store.clone();
-            let both = both.clone();
-            tokio::spawn(async move {
-                let mut attempts = Vec::new();
-                for round in 0..5u8 {
-                    let both = both.clone();
-                    let c = store
-                        .run(TxnOptions::pessimistic("kv.embedded.pess"), move |txn| {
-                            let both = both.clone();
-                            Box::pin(async move {
-                                if round == 0 && txn.attempt() == 1 {
-                                    both.wait().await;
-                                }
-                                txn.lock_keys([b"n".as_slice()]).await?;
-                                txn.put(b"n", vec![i, round]).await
-                            })
-                        })
-                        .await
-                        .expect("committed");
-                    attempts.push(c.attempts);
-                }
-                attempts
-            })
-        })
-        .collect();
-    for task in tasks {
-        let attempts = task.await.expect("joined");
-        assert!(attempts.iter().all(|&a| a == 1), "{attempts:?}");
-    }
-    let stats = handle(&store).stats();
-    assert_eq!(stats.conflicts, 0);
-    assert!(stats.commits >= 40);
-}
-
 // ---- the model check ----
 
 /// One step of a schedule of interleaved transactions over the keys 0..4.
@@ -562,7 +517,7 @@ async fn run_schedule(txns: &[Vec<Step>], order: &[usize]) -> (Vec<Seen>, Vec<Se
         let i = open[picks.next().copied().unwrap_or(0) % open.len()];
         let pos = at[i];
         if pos == 0 {
-            real[i] = Some(h.begin(Mode::Optimistic).await.expect("begin"));
+            real[i] = Some(h.begin().await.expect("begin"));
             reference[i] = Some(model.begin());
         } else if pos <= txns[i].len() {
             let step = &txns[i][pos - 1];

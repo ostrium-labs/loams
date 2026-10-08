@@ -1,14 +1,13 @@
-//! Commits on the embedded store (LV1 plan Task 21): the group committer,
-//! pessimistic locks and the transaction runner.
+//! Commits on the embedded store (LV1 plan Task 21): the group committer
+//! and the transaction runner.
 //!
 //! **The committer.** One thread per store file applies commits in order.
 //! It takes every commit waiting, checks each against the versions table
 //! (including the versions of the commits before it in the group), gives
 //! each that passes a commit timestamp and writes its versions, all in one
 //! redb write transaction: one fsync for the group. A commit conflicts when
-//! a key it writes or locks has a version newer than its start timestamp
-//! (or than its pessimistic lock), or is locked pessimistically by another
-//! transaction; an insert fails when its key is present.
+//! a key it writes or locks has a version newer than its start timestamp;
+//! an insert fails when its key is present.
 //!
 //! **The runner** is `loams_tikv`'s, on the embedded transaction: retries
 //! with a jittered backoff, the deadline, the fault points of
@@ -17,14 +16,13 @@
 //! that finds a token absent fences it, so the lost commit can no longer
 //! apply).
 
-use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use futures::future::BoxFuture;
 use redb::ReadableTable;
-use tokio::sync::{Notify, oneshot};
+use tokio::sync::oneshot;
 
 use super::mvcc::{already_exists, encode, newest, version_key};
 use super::oracle::Oracle;
@@ -52,8 +50,7 @@ pub(crate) struct Mutation {
     /// The key relative to the root (for error texts).
     pub(crate) key: Vec<u8>,
     pub(crate) op: Op,
-    /// A version newer than this conflicts: the start timestamp, or the
-    /// timestamp of the transaction's pessimistic lock on the key.
+    /// A version newer than this conflicts: the start timestamp.
     pub(crate) check_ts: Ts,
 }
 
@@ -82,7 +79,6 @@ impl From<Refused> for TxnError {
 /// A commit waiting for the committer.
 #[derive(Debug)]
 pub(crate) struct Request {
-    pub(crate) owner: u64,
     pub(crate) mutations: Vec<Mutation>,
     pub(crate) reply: oneshot::Sender<Result<Ts, Refused>>,
 }
@@ -189,9 +185,6 @@ impl Core {
     {
         let mut present = Vec::with_capacity(req.mutations.len());
         for m in &req.mutations {
-            if self.locks.held_by_other(&m.prefix, req.owner) {
-                return Ok(Err(Refused::Conflict));
-            }
             let latest = newest(table, &m.prefix, Ts(u64::MAX))?;
             if latest.as_ref().is_some_and(|(ts, _)| *ts > m.check_ts) {
                 return Ok(Err(Refused::Conflict));
@@ -204,63 +197,6 @@ impl Core {
             }
         }
         Ok(Ok(()))
-    }
-}
-
-/// How long a pessimistic lock request waits for another holder before it
-/// gives up with a conflict.
-const LOCK_WAIT: Duration = Duration::from_secs(1);
-
-/// The pessimistic locks of a store file: version prefix → owner.
-#[derive(Debug, Default)]
-pub(crate) struct LockTable {
-    held: Mutex<HashMap<Vec<u8>, u64>>,
-    released: Notify,
-}
-
-impl LockTable {
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<Vec<u8>, u64>> {
-        self.held.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    /// Takes the locks of `prefixes` for `owner`, waiting up to
-    /// [`LOCK_WAIT`] for each other holder.
-    pub(crate) async fn acquire(&self, prefixes: &[Vec<u8>], owner: u64) -> Result<(), TxnError> {
-        for prefix in prefixes {
-            let give_up = Instant::now() + LOCK_WAIT;
-            loop {
-                let released = self.released.notified();
-                tokio::pin!(released);
-                released.as_mut().enable();
-                {
-                    let mut held = self.lock();
-                    match held.get(prefix) {
-                        None => {
-                            held.insert(prefix.clone(), owner);
-                            break;
-                        }
-                        Some(&o) if o == owner => break,
-                        Some(_) => {}
-                    }
-                }
-                let left = give_up.saturating_duration_since(Instant::now());
-                if left.is_zero() || tokio::time::timeout(left, released).await.is_err() {
-                    return Err(TxnError::Conflict);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Whether another transaction than `owner` holds the lock of `prefix`.
-    pub(crate) fn held_by_other(&self, prefix: &[u8], owner: u64) -> bool {
-        self.lock().get(prefix).is_some_and(|&o| o != owner)
-    }
-
-    /// Releases every lock of `owner`.
-    pub(crate) fn release(&self, owner: u64) {
-        self.lock().retain(|_, o| *o != owner);
-        self.released.notify_waiters();
     }
 }
 
@@ -439,7 +375,7 @@ where
         None => {}
     }
 
-    let mut wrapped = match handle.begin_attempt(opts.mode, attempt).await {
+    let mut wrapped = match handle.begin_attempt(attempt).await {
         Ok(txn) => Txn::Embedded(txn),
         Err(e) => return Attempt::from_error(e),
     };
@@ -557,10 +493,7 @@ enum Resolved {
 }
 
 async fn resolve_token(handle: &Handle, token: &Token) -> Option<Resolved> {
-    let mut txn = handle
-        .begin_attempt(crate::Mode::Optimistic, 1)
-        .await
-        .ok()?;
+    let mut txn = handle.begin_attempt(1).await.ok()?;
     let start = txn.start_ts();
     let key = token_key(token);
     match txn.get(&key).await.ok()? {
@@ -607,11 +540,7 @@ pub(crate) fn sweep_tokens_blocking(
         .collect();
     let n = mutations.len() as u64;
     let (reply, outcome) = oneshot::channel();
-    if !handle.send(Request {
-        owner: core.next_owner(),
-        mutations,
-        reply,
-    }) {
+    if !handle.send(Request { mutations, reply }) {
         return 0;
     }
     match outcome.blocking_recv() {

@@ -10,7 +10,11 @@ use futures::future::BoxFuture;
 
 #[cfg(feature = "faults")]
 use crate::FaultPlan;
-use crate::{Committed, GcBarrier, Snap, Ts, Txn, TxnError, TxnOptions, embedded};
+use crate::{Committed, GcBarrier, Mode, Snap, Ts, Txn, TxnError, TxnOptions, embedded};
+
+/// The refusal of a pessimistic [`Store::run`] (row T21-15).
+pub const PESSIMISTIC_REFUSED: &str = "pessimistic transactions are refused: a read-modify-write \
+     needs get_for_update, which the store seam does not have yet";
 
 /// Errors of opening a store, reading its clock, taking a snapshot or
 /// setting a GC barrier. A failed transaction is a [`TxnError`].
@@ -190,6 +194,9 @@ impl Store {
     /// `commit_token`, an undetermined commit is resolved through a token
     /// written in the transaction.
     ///
+    /// [`Mode::Pessimistic`] is refused with `Fatal(PESSIMISTIC_REFUSED)` on
+    /// both backends until the seam has `get_for_update` (row T21-15).
+    ///
     /// A body is rerun, so it must be free of side effects outside `txn`. It
     /// returns `Err(TxnError::Conflict)` to ask for a restart; to reject
     /// without a retry, return `Ok` with the caller's own error inside `T`
@@ -198,6 +205,9 @@ impl Store {
     where
         F: for<'t> FnMut(&'t mut Txn) -> BoxFuture<'t, Result<T, TxnError>>,
     {
+        if opts.mode == Mode::Pessimistic {
+            return Err(TxnError::Fatal(PESSIMISTIC_REFUSED.to_string()));
+        }
         match self {
             Store::Embedded(h) => h.run(opts, body).await,
             #[cfg(feature = "tikv")]

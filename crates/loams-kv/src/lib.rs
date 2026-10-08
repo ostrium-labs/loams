@@ -31,7 +31,7 @@ pub use codec::{CodecError, tuple};
 pub use faults::{Fault, FaultPlan, FaultPoint};
 pub use gc::GcBarrier;
 pub use runner::{CommitMode, Committed, Mode, TxnError, TxnOptions};
-pub use store::{Backend, EmbeddedConfig, KvError, Store, StoreConfig};
+pub use store::{Backend, EmbeddedConfig, KvError, PESSIMISTIC_REFUSED, Store, StoreConfig};
 pub use ts::Ts;
 pub use txn::{MAX_VALUE_BYTES, Pair, Snap, Txn};
 

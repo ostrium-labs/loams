@@ -16,6 +16,9 @@ pub enum Mode {
     #[default]
     Optimistic,
     /// Locks taken at once, so a second holder queues (R1 Ruling 2).
+    /// Refused by [`Store::run`](crate::Store::run) until the seam has
+    /// `get_for_update`: reads stay at the start timestamp, so a
+    /// read-modify-write could lose an update (row T21-15).
     Pessimistic,
 }
 
@@ -60,7 +63,8 @@ impl TxnOptions {
         }
     }
 
-    /// Like [`new`](Self::new), pessimistic.
+    /// Like [`new`](Self::new), pessimistic. [`Store::run`](crate::Store::run)
+    /// refuses it until the seam has `get_for_update` (row T21-15).
     pub fn pessimistic(op: &'static str) -> Self {
         TxnOptions {
             mode: Mode::Pessimistic,

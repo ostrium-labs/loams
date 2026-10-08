@@ -47,8 +47,8 @@ use self::oracle::Oracle;
 use crate::gc::Inner;
 use crate::testing::TempDir;
 use crate::{
-    Committed, EmbeddedConfig, Fault, FaultPlan, FaultPoint, GcBarrier, KvError, Mode, Ts,
-    TxnError, TxnOptions,
+    Committed, EmbeddedConfig, Fault, FaultPlan, FaultPoint, GcBarrier, KvError, Ts, TxnError,
+    TxnOptions,
 };
 
 /// The GC life time of [`EmbeddedConfig::new`] (TiKV's default).
@@ -133,10 +133,8 @@ pub struct EmbeddedStats {
 pub(crate) struct Core {
     db: Database,
     oracle: Oracle,
-    locks: commit::LockTable,
     gc: Mutex<GcState>,
     counters: Counters,
-    owners: AtomicU64,
     #[cfg(feature = "faults")]
     io_faults: Arc<faulty::Switch>,
 }
@@ -156,10 +154,6 @@ impl Core {
 
     fn covered(&self, at: Ts) -> bool {
         self.gc_state().covers(at)
-    }
-
-    fn next_owner(&self) -> u64 {
-        self.owners.fetch_add(1, Ordering::Relaxed)
     }
 
     /// Persists the oracle's mark at `mark` or above (blocking).
@@ -352,10 +346,8 @@ impl Shared {
         let core = Arc::new(Core {
             db,
             oracle: Oracle::new(Ts(high_water)),
-            locks: commit::LockTable::default(),
             gc: Mutex::new(GcState::new(Ts(safe_point))),
             counters: Counters::default(),
-            owners: AtomicU64::new(1),
             #[cfg(feature = "faults")]
             io_faults,
         });
@@ -626,11 +618,11 @@ impl Handle {
 
     /// A new transaction at a fresh start timestamp, without the runner:
     /// the caller commits it with [`Txn::commit`] (or drops it).
-    pub async fn begin(&self, mode: Mode) -> Result<Txn, TxnError> {
-        self.begin_attempt(mode, 1).await
+    pub async fn begin(&self) -> Result<Txn, TxnError> {
+        self.begin_attempt(1).await
     }
 
-    async fn begin_attempt(&self, mode: Mode, attempt: u32) -> Result<Txn, TxnError> {
+    async fn begin_attempt(&self, attempt: u32) -> Result<Txn, TxnError> {
         let core = self.shared.core.clone();
         let start = self
             .now()
@@ -643,7 +635,6 @@ impl Handle {
             self.clone(),
             start,
             attempt,
-            mode,
             Instant::now() + self.safe_window(),
             open,
         ))
@@ -657,14 +648,10 @@ impl Handle {
             .is_some_and(|s| s.send(request).is_ok())
     }
 
-    /// Commits `mutations` of the transaction `owner`.
-    async fn commit(&self, owner: u64, mutations: Vec<Mutation>) -> Result<Ts, TxnError> {
+    /// Commits `mutations`.
+    async fn commit(&self, mutations: Vec<Mutation>) -> Result<Ts, TxnError> {
         let (reply, outcome) = tokio::sync::oneshot::channel();
-        if !self.send(Request {
-            owner,
-            mutations,
-            reply,
-        }) {
+        if !self.send(Request { mutations, reply }) {
             return Err(TxnError::NotApplied("the embedded store is closed".into()));
         }
         match outcome.await {

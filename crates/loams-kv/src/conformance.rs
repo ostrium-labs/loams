@@ -47,6 +47,7 @@ macro_rules! kv_conformance {
                 runner_stops_at_max_attempts,
                 runner_does_not_retry_fatal,
                 runner_deadline_passes,
+                pessimistic_mode_is_refused,
                 fault_points_and_commit_tokens,
                 barrier_holds_old_snapshots_and_refuses_below_safe_point
             );
@@ -572,6 +573,28 @@ pub async fn runner_deadline_passes(factory: Factory) {
         .await
         .expect_err("conflicts until the deadline");
     assert_eq!(err, TxnError::Deadline);
+}
+
+/// A pessimistic run is refused before its body runs, on every backend,
+/// until the seam has `get_for_update` (row T21-15).
+pub async fn pessimistic_mode_is_refused(factory: Factory) {
+    let Some(store) = factory.store(Spec::fresh()).await else {
+        return;
+    };
+    let runs = Arc::new(AtomicU32::new(0));
+    let counted = runs.clone();
+    let err = store
+        .run(TxnOptions::pessimistic("kv.conformance.pess"), move |txn| {
+            let counted = counted.clone();
+            Box::pin(async move {
+                counted.fetch_add(1, Ordering::SeqCst);
+                txn.put(b"k", b"v".to_vec()).await
+            })
+        })
+        .await
+        .expect_err("refused");
+    assert_eq!(err, TxnError::Fatal(crate::PESSIMISTIC_REFUSED.to_string()));
+    assert_eq!(runs.load(Ordering::SeqCst), 0, "the body never ran");
 }
 
 /// One fault at one point of the first attempt of `op`, then nothing.
