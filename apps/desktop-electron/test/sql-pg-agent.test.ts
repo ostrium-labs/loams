@@ -4,11 +4,34 @@ import { createPgBackend, type PgLogin } from "../src/main/sql/pg";
 
 const neon = new NeonClient({ branchesFile: "/nonexistent/b.json" });
 
-function fakePg(opts: { failLoginOnce?: boolean } = {}) {
+const grantRow = (schema: string) => [
+	schema,
+	`GRANT USAGE ON SCHEMA "${schema}" TO loams_ro`,
+];
+
+function fakePg(
+	opts: {
+		failLoginOnce?: boolean;
+		/** Agent reads fail with 42501 this many times. */
+		denyReads?: number;
+		schemas?: string[];
+		/** Holds every admin connect until released. */
+		gate?: Promise<void>;
+	} = {},
+) {
 	const log: string[] = [];
 	let failLogin = opts.failLoginOnce === true;
+	const state = {
+		schemas: opts.schemas ?? ["shop"],
+		adminConnects: 0,
+		deny: opts.denyReads ?? 0,
+	};
 	const connect = async (as?: PgLogin) => {
 		const who = as?.user ?? "admin";
+		if (!as) {
+			state.adminConnects++;
+			await opts.gate;
+		}
 		if (as && failLogin) {
 			failLogin = false;
 			throw Object.assign(new Error("password authentication failed"), {
@@ -19,6 +42,12 @@ function fakePg(opts: { failLoginOnce?: boolean } = {}) {
 			dialect: "pg" as const,
 			query: async (sql: string) => {
 				log.push(`${who}: ${sql}`);
+				if (as && /^SELECT \d/.test(sql) && state.deny > 0) {
+					state.deny--;
+					throw Object.assign(new Error("permission denied for table t"), {
+						code: "42501",
+					});
+				}
 				if (sql.startsWith("SELECT 1 FROM pg_roles"))
 					return { columns: ["?column?"], rows: [] };
 				if (sql.includes("FROM pg_auth_members"))
@@ -27,42 +56,39 @@ function fakePg(opts: { failLoginOnce?: boolean } = {}) {
 						rows: [["REVOKE pg_read_all_data FROM loams_ro"]],
 					};
 				if (sql.includes("FROM pg_namespace"))
-					return {
-						columns: ["f"],
-						rows: [['GRANT USAGE ON SCHEMA "shop" TO loams_ro']],
-					};
+					return { columns: ["n", "f"], rows: state.schemas.map(grantRow) };
 				return { columns: ["n"], rows: [[1]] };
 			},
 			close: async () => {},
 		};
 	};
-	return { connect, log };
+	return { connect, log, state };
 }
+
+const adminLines = (log: string[]) =>
+	log.filter((l) => l.startsWith("admin:")).map((l) => l.slice(7));
+const grants = (log: string[]) =>
+	adminLines(log).filter((l) => l.startsWith("GRANT USAGE ON SCHEMA"));
 
 describe("postgres agent reads", () => {
 	it("agent_reads_connect_as_a_non_superuser_login", async () => {
 		const { connect, log } = fakePg();
 		const pg = createPgBackend({ neon, connect });
 		await pg.query("SELECT 1", { agent: true });
-		await pg.query("SELECT 2", { agent: true });
-		const admin = log
-			.filter((l) => l.startsWith("admin:"))
-			.map((l) => l.slice(7));
-		expect(admin[1]).toMatch(
+		const admin = adminLines(log);
+		expect(admin[0]).toBe("SET statement_timeout = 5000");
+		expect(admin.find((l) => l.startsWith("CREATE ROLE"))).toMatch(
 			/^CREATE ROLE loams_ro LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '[\w-]{32}'$/,
 		);
-		// No membership is ever granted; existing ones are revoked, and grants are refreshed per read.
+		// No membership is ever granted; existing ones are revoked.
 		expect(admin.some((l) => /GRANT pg_read_all_data/.test(l))).toBe(false);
-		expect(admin.filter((l) => l.startsWith("CREATE ROLE"))).toHaveLength(1);
 		expect(
 			admin.filter((l) => l.startsWith("REVOKE pg_read_all_data")),
-		).toHaveLength(2);
-		expect(
-			admin.filter((l) => l.startsWith("GRANT USAGE ON SCHEMA")),
-		).toHaveLength(2);
-		expect(admin.find((l) => l.includes("FROM pg_namespace"))).toContain(
-			"NOT LIKE 'pg\\_%'",
-		);
+		).toHaveLength(1);
+		expect(grants(log)).toEqual(['GRANT USAGE ON SCHEMA "shop" TO loams_ro']);
+		const ns = admin.find((l) => l.includes("FROM pg_namespace")) ?? "";
+		expect(ns).toContain("NOT LIKE 'pg\\_%'");
+		expect(ns).toContain("ALTER DEFAULT PRIVILEGES");
 		expect(
 			log
 				.filter((l) => l.startsWith("loams_ro:"))
@@ -76,6 +102,69 @@ describe("postgres agent reads", () => {
 		expect(log.join("\n")).not.toMatch(/SET LOCAL ROLE/);
 	});
 
+	it("does_not_regrant_per_read_when_nothing_changed", async () => {
+		const { connect, log, state } = fakePg();
+		const pg = createPgBackend({ neon, connect });
+		await pg.query("SELECT 1", { agent: true });
+		const after = log.length;
+		const connects = state.adminConnects;
+		await pg.query("SELECT 2", { agent: true });
+		await pg.query("SELECT 3", { agent: true });
+		expect(state.adminConnects).toBe(connects);
+		expect(adminLines(log.slice(after))).toEqual([]);
+	});
+
+	it("permission_miss_regrants_once_and_retries", async () => {
+		const { connect, log, state } = fakePg();
+		const pg = createPgBackend({ neon, connect });
+		await pg.query("SELECT 1", { agent: true });
+		expect(grants(log)).toEqual(['GRANT USAGE ON SCHEMA "shop" TO loams_ro']);
+		// A schema created since: the next read is denied once, then the grants refresh.
+		state.schemas.push("sales");
+		state.deny = 1;
+		await expect(pg.query("SELECT 2", { agent: true })).resolves.toMatchObject({
+			rowCount: 1,
+		});
+		expect(grants(log).slice(1)).toEqual([
+			'GRANT USAGE ON SCHEMA "shop" TO loams_ro',
+			'GRANT USAGE ON SCHEMA "sales" TO loams_ro',
+		]);
+		// And it is quiet again afterwards.
+		const n = log.length;
+		await pg.query("SELECT 3", { agent: true });
+		expect(adminLines(log.slice(n))).toEqual([]);
+	});
+
+	it("a_second_miss_is_returned_not_looped", async () => {
+		const { connect } = fakePg({ denyReads: 5 });
+		const pg = createPgBackend({ neon, connect });
+		await expect(pg.query("SELECT 1", { agent: true })).rejects.toMatchObject({
+			code: "42501",
+		});
+	});
+
+	it("concurrent_first_reads_share_one_grant_run", async () => {
+		let release: () => void = () => {};
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		const { connect, log, state } = fakePg({ gate });
+		const pg = createPgBackend({ neon, connect });
+		const reads = Promise.all([
+			pg.query("SELECT 1", { agent: true }),
+			pg.query("SELECT 2", { agent: true }),
+			pg.query("SELECT 3", { agent: true }),
+		]);
+		await new Promise((r) => setTimeout(r, 10));
+		release();
+		await reads;
+		expect(state.adminConnects).toBe(1);
+		expect(
+			adminLines(log).filter((l) => l.startsWith("CREATE ROLE")),
+		).toHaveLength(1);
+		expect(grants(log)).toHaveLength(1);
+	});
+
 	it("reprovisions_once_when_the_login_is_refused", async () => {
 		const { connect, log } = fakePg({ failLoginOnce: true });
 		const pg = createPgBackend({ neon, connect });
@@ -83,5 +172,29 @@ describe("postgres agent reads", () => {
 			rowCount: 1,
 		});
 		expect(log.filter((l) => l.includes("ROLE loams_ro"))).toHaveLength(2);
+	});
+
+	it("provisioning_failure_is_a_redacted_sql_error", async () => {
+		const pg = createPgBackend({
+			neon,
+			connect: async (as) => {
+				if (as)
+					throw Object.assign(new Error("password authentication failed"), {
+						code: "28P01",
+					});
+				return {
+					dialect: "pg" as const,
+					query: async (sql: string) => {
+						if (sql.startsWith("CREATE") || sql.startsWith("ALTER"))
+							throw new Error(`boom ${sql}`);
+						return { columns: [], rows: [] };
+					},
+					close: async () => {},
+				};
+			},
+		});
+		const err = await pg.query("SELECT 1", { agent: true }).catch((e) => e);
+		expect(err?.name).toBe("SqlError");
+		expect(String(err?.message)).not.toMatch(/PASSWORD '[\w-]{32}'/);
 	});
 });

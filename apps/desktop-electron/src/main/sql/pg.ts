@@ -37,14 +37,19 @@ export const PG_DEV = {
 	user: "cloud_admin",
 } as const;
 const PG_PASSWORD = new Secret("cloud_admin");
-/** The dedicated login the agent's reads connect as: NOSUPERUSER, member of pg_read_all_data (pg >= 14). */
+/**
+ * The dedicated login the agent's reads connect as: NOSUPERUSER, no role membership (so no
+ * pg_read_all_data and no path to pg_authid), SELECT only on the non-system schemas.
+ */
 export const PG_RO_USER = "loams_ro";
+/** Bounds each grant statement so a lock held elsewhere cannot stall an agent read. */
+export const GRANT_STATEMENT_TIMEOUT_MS = 5000;
 
 export interface SqlBackend {
 	connection(): SqlConnection;
 	/** The secret, for revealPassword only. Never logged, never in `connection()`. */
 	password(): Secret;
-	/** `agent` implies `readOnly` and also drops privileges (pg: SET LOCAL ROLE; mysql: a SELECT-only user). */
+	/** `agent` implies `readOnly` and runs as a SELECT-only login (pg: loams_ro; mysql: a SELECT-only user). */
 	query(
 		sql: string,
 		opts?: { readOnly?: boolean; agent?: boolean },
@@ -155,6 +160,11 @@ export function isLoginFailure(e: unknown): boolean {
 	return c === "28P01" || c === "28000";
 }
 
+/** 42501 insufficient_privilege: a schema or table created after the last grant. */
+export function isPermissionMiss(e: unknown): boolean {
+	return (e as { code?: unknown })?.code === "42501";
+}
+
 export function createPgBackend(deps: {
 	neon: NeonClient;
 	connect?: PgConnect;
@@ -163,49 +173,68 @@ export function createPgBackend(deps: {
 	const ref = newPasswordRef();
 	// Per app run, in memory only; reset on every run via ALTER ROLE.
 	const roPassword = new Secret(randomBytes(24).toString("base64url"));
-	let roReady: Promise<void> | undefined;
+	const secrets = [PG_PASSWORD, roPassword];
+	/** True once the login exists with this run's password and holds no memberships. */
+	let provisioned = false;
+	/** Schemas already granted to the login; cleared when a read is denied. */
+	const granted = new Set<string>();
+	/** Single flight: concurrent reads share one admin session and one grant run. */
+	let inflight: Promise<void> | undefined;
 
 	/**
-	 * Creates (or refreshes) the agent's login on first use, then on every agent read refreshes its
-	 * grants. The session user of an agent read is this role, never the admin: a superuser session
-	 * could `set_config('role', ...)` its way back. It holds no role membership (so no
-	 * pg_read_all_data and no path to pg_authid) and SELECT only on non-system schemas, re-granted
-	 * each read so new schemas and tables become readable.
+	 * Creates (or refreshes) the agent's login once per run and grants SELECT on every
+	 * non-system schema not granted yet. The session user of an agent read is this role,
+	 * never the admin: a superuser session could `set_config('role', ...)` its way back.
+	 * Nothing runs while the cache is warm; a read denied with 42501 clears it (see query).
 	 */
-	async function ensureReadOnlyRole(): Promise<void> {
+	async function grantRun(): Promise<void> {
 		let s: OpenSession;
 		try {
 			s = await connect();
 		} catch (e) {
-			throw toSqlError(e, [PG_PASSWORD]);
+			throw toSqlError(e, secrets);
 		}
 		try {
-			roReady ??= (async () => {
-				const pw = roPassword.reveal();
+			await s.query(`SET statement_timeout = ${GRANT_STATEMENT_TIMEOUT_MS}`);
+			if (!provisioned) {
 				const exists = await s.query(
 					`SELECT 1 FROM pg_roles WHERE rolname = '${PG_RO_USER}'`,
 				);
 				const attrs =
 					"LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT";
 				await s.query(
-					`${exists.rows.length ? "ALTER" : "CREATE"} ROLE ${PG_RO_USER} ${attrs} PASSWORD '${pw}'`,
+					`${exists.rows.length ? "ALTER" : "CREATE"} ROLE ${PG_RO_USER} ${attrs} PASSWORD '${roPassword.reveal()}'`,
 				);
-			})().catch((e) => {
-				roReady = undefined;
-				throw e;
-			});
-			await roReady;
-			// Statements are built server-side with %I / regrole so identifiers are always quoted.
-			const stmts = [
-				`SELECT format('REVOKE %s FROM ${PG_RO_USER}', roleid::regrole) FROM pg_auth_members WHERE member = '${PG_RO_USER}'::regrole`,
-				`SELECT format('GRANT USAGE ON SCHEMA %1$I TO ${PG_RO_USER}; GRANT SELECT ON ALL TABLES IN SCHEMA %1$I TO ${PG_RO_USER}; GRANT SELECT ON ALL SEQUENCES IN SCHEMA %1$I TO ${PG_RO_USER}', nspname) FROM pg_namespace WHERE nspname <> 'information_schema' AND nspname NOT LIKE 'pg\\_%'`,
-			];
-			for (const q of stmts)
-				for (const row of (await s.query(q)).rows)
-					await s.query(String(row[0]));
+				const revokes = await s.query(
+					`SELECT format('REVOKE %s FROM ${PG_RO_USER}', roleid::regrole) FROM pg_auth_members WHERE member = '${PG_RO_USER}'::regrole`,
+				);
+				for (const row of revokes.rows) await s.query(String(row[0]));
+				provisioned = true;
+			}
+			// Built server-side with %I so identifiers are always quoted. Default privileges make
+			// tables the admin creates later readable without another grant run.
+			const schemas = await s.query(
+				`SELECT nspname, format('GRANT USAGE ON SCHEMA %1$I TO ${PG_RO_USER}; GRANT SELECT ON ALL TABLES IN SCHEMA %1$I TO ${PG_RO_USER}; GRANT SELECT ON ALL SEQUENCES IN SCHEMA %1$I TO ${PG_RO_USER}; ALTER DEFAULT PRIVILEGES FOR ROLE ${PG_DEV.user} IN SCHEMA %1$I GRANT SELECT ON TABLES TO ${PG_RO_USER}', nspname) FROM pg_namespace WHERE nspname <> 'information_schema' AND nspname NOT LIKE 'pg\\_%'`,
+			);
+			for (const [name, stmt] of schemas.rows) {
+				if (granted.has(String(name))) continue;
+				await s.query(String(stmt));
+				granted.add(String(name));
+			}
+		} catch (e) {
+			throw toSqlError(e, secrets);
 		} finally {
 			await s.close();
 		}
+	}
+
+	/** Runs a grant pass unless the cache is warm; concurrent callers share it. */
+	function ensureReadOnlyRole(): Promise<void> {
+		if (provisioned && granted.size > 0 && !inflight) return Promise.resolve();
+		inflight ??= grantRun().finally(() => {
+			inflight = undefined;
+		});
+		return inflight;
 	}
 
 	return {
@@ -218,7 +247,6 @@ export function createPgBackend(deps: {
 		}),
 		password: () => PG_PASSWORD,
 		async query(sql, opts) {
-			const secrets = [PG_PASSWORD, roPassword];
 			const run = async (as?: PgLogin): Promise<SqlResult> => {
 				let s: OpenSession;
 				try {
@@ -242,9 +270,11 @@ export function createPgBackend(deps: {
 				await ensureReadOnlyRole();
 				return await run(login);
 			} catch (e) {
-				// Login refused: the stack was recreated since the role was made. Provision again, once.
-				if (!isLoginFailure(e)) throw toSqlError(e, secrets);
-				roReady = undefined;
+				// Login refused: the stack was recreated since the role was made. Denied: a schema
+				// or table appeared since the last grant. Either way refresh, then retry once.
+				if (isLoginFailure(e)) provisioned = false;
+				else if (!isPermissionMiss(e)) throw toSqlError(e, secrets);
+				granted.clear();
 				await ensureReadOnlyRole();
 				return run(login);
 			}
