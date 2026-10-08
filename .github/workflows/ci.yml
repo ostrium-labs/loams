@@ -39,6 +39,7 @@ jobs:
       es: ${{ steps.filter.outputs.es }}
       sim: ${{ steps.filter.outputs.sim }}
       tikv: ${{ steps.filter.outputs.tikv }}
+      live-embedded: ${{ steps.filter.outputs.live-embedded }}
       durable: ${{ steps.filter.outputs.durable }}
       deny: ${{ steps.filter.outputs.deny }}
       graph: ${{ steps.filter.outputs.graph }}
@@ -142,6 +143,14 @@ jobs:
               - "deploy/tikv/**"
               - "scripts/tikv/**"
               - "proto/loams/**"
+            # LV1 plan Task 22: the store seam and the Live suites, which run
+            # on the embedded store with no cluster.
+            live-embedded:
+              - *toolchain
+              - "crates/loams-kv/**"
+              - "crates/loams-tuple/**"
+              - "crates/loams-live*/**"
+              - "proto/loams/live/**"
             durable:
               - *toolchain
               - "crates/loams-durable/**"
@@ -741,6 +750,26 @@ jobs:
       - name: stop the playground
         if: always()
         run: scripts/tikv/playground.sh stop --tag loams-ci
+
+  # LV1 plan Task 22: the store seam's and Live's suites with no cluster, so
+  # every `live_test!` runs its `::embedded` case (the `::tikv` cases skip;
+  # the TiKV job runs them). `parity::every_live_suite_runs_on_embedded`
+  # fails a suite that opens a store outside `live_test!`.
+  live-embedded:
+    name: Live suites on the embedded store
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.live-embedded == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: the suites, embedded only
+        env:
+          LOAMS_TEST_PD: ""
+          LOAMS_TEST_TMPDIR: ${{ runner.temp }}
+        run: cargo test -p loams-kv -p loams-live --locked
 
   # The same suites every night, plus the nightly-only TiKV suites later R1
   # tasks add.
@@ -1633,6 +1662,7 @@ jobs:
       - sim
       - tikv
       - tikv-nightly
+      - live-embedded
       - durable
       - durable-tidb
       - live-protos

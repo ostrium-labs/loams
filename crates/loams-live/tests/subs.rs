@@ -1,7 +1,7 @@
 //! R1 plan Task 11: the read-set index, journal invalidation, query reruns,
 //! shared subscriptions and the safety rerun (design §20 §8.2–§8.3). The
-//! interval-index tests run without a cluster; the rest need TiKV and skip
-//! without `LOAMS_TEST_PD`.
+//! interval-index tests need no store; the rest are `live_test!`s, on the
+//! embedded store and on TiKV with `LOAMS_TEST_PD` (LV1 plan Task 22).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -9,14 +9,14 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
-use loams_kv::testing::{self, TEST_LIVE};
-use loams_kv::{CommitMode, Store, Ts, TxnOptions};
+use loams_kv::{CommitMode, Ts, TxnOptions};
 use loams_live::catalog::{self, IndexSpec};
 use loams_live::system::{self, GET, INSERT, PATCH, QUERY};
+use loams_live::testing::TestStore;
 use loams_live::{
     AppKeys, DocId, FnKind, Function, Janitor, KeyRange, Limits, LiveConfig, LiveError, LiveTxn,
     LiveValue, ReadSet, ReadSetIndex, Runner, SubId, SubKey, SubResult, SubsConfig, Subscriptions,
-    TableId, Tick, pb,
+    TableId, Tick, live_test, pb,
 };
 use proptest::prelude::*;
 use tokio::sync::broadcast;
@@ -157,18 +157,14 @@ fn sys(name: &str) -> Arc<dyn Function> {
     system::lookup(name).expect("a system function")
 }
 
-fn config(cluster: &testing::TestCluster) -> LiveConfig {
-    LiveConfig::with_tikv("t11", cluster.config(TEST_LIVE))
+fn config(store: &TestStore) -> LiveConfig {
+    store.live_config("t11")
 }
 
-async fn open() -> Option<Runner> {
-    let cluster = testing::cluster().await?;
-    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
-    Some(
-        Runner::open(tikv, &config(&cluster))
-            .await
-            .expect("the runner opens"),
-    )
+async fn open(store: &TestStore) -> Runner {
+    Runner::open(store.store(), &config(store))
+        .await
+        .expect("the runner opens")
 }
 
 /// The test settings: the plan's, with no safety rerun unless asked, and
@@ -354,9 +350,8 @@ fn n_range(table: &str, lo: i64, hi: i64) -> LiveValue {
 // ---- the plan's tests ----
 
 /// An insert whose index key falls in a subscribed range invalidates it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn insert_into_range_invalidates() {
-    let Some(r) = open().await else { return };
+async fn insert_into_range_invalidates(store: TestStore) {
+    let r = open(&store).await;
     define(&r, "items", &[("by_n", &["n"])]).await;
     let subs = spawn(&r, subs_config());
     let (id, first) = subscribe(&subs, sys(QUERY), n_range("items", 0, 10)).await;
@@ -368,12 +363,12 @@ async fn insert_into_range_invalidates() {
     assert_eq!(docs(&now).len(), 1);
     assert_eq!(field(&docs(&now)[0], "n"), int(5));
 }
+live_test!(insert_into_range_invalidates);
 
 /// A patch that moves a document's index key out of a subscribed range
 /// invalidates it through the removed key.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn update_moving_out_of_range_invalidates() {
-    let Some(r) = open().await else { return };
+async fn update_moving_out_of_range_invalidates(store: TestStore) {
+    let r = open(&store).await;
     define(&r, "items", &[("by_n", &["n"])]).await;
     let (doc, _) = insert(&r, "items", &[("n", int(5))]).await;
     let subs = spawn(&r, subs_config());
@@ -385,11 +380,11 @@ async fn update_moving_out_of_range_invalidates() {
     let now = latest(&ticks, id).expect("the subscription changed");
     assert!(docs(&now).is_empty(), "{now:?}");
 }
+live_test!(update_moving_out_of_range_invalidates);
 
 /// A write outside every read set reruns nothing.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn unrelated_write_does_not_rerun() {
-    let Some(r) = open().await else { return };
+async fn unrelated_write_does_not_rerun(store: TestStore) {
+    let r = open(&store).await;
     insert(&r, "a", &[("v", int(1))]).await;
     insert(&r, "b", &[("v", int(1))]).await;
     let subs = spawn(&r, subs_config());
@@ -403,6 +398,7 @@ async fn unrelated_write_does_not_rerun() {
     assert_eq!(calls.load(Ordering::SeqCst), 1, "no rerun");
     assert_eq!(subs.stats().reruns, 0);
 }
+live_test!(unrelated_write_does_not_rerun);
 
 /// A range that stopped at its limit depends only on the keys up to the
 /// last one returned: an insert past it reruns nothing, a write inside the
@@ -410,9 +406,8 @@ async fn unrelated_write_does_not_rerun() {
 /// created within one window share `_creationTime` and sort by id; the
 /// test patches the documents the page actually holds and waits out the
 /// window before the insert that must sort past it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn limit_bounded_range_ignores_inserts_past_last_key() {
-    let Some(r) = open().await else { return };
+async fn limit_bounded_range_ignores_inserts_past_last_key(store: TestStore) {
+    let r = open(&store).await;
     for i in 0..3 {
         insert(&r, "page", &[("i", int(i))]).await;
     }
@@ -441,12 +436,12 @@ async fn limit_bounded_range_ignores_inserts_past_last_key() {
     assert_eq!(field(&docs(&now)[1], "i"), int(10));
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
+live_test!(limit_bounded_range_ignores_inserts_past_last_key);
 
 /// Subscriptions with one key share one entry and one rerun; the last
 /// unsubscribe removes it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn identical_subscriptions_share_one_rerun() {
-    let Some(r) = open().await else { return };
+async fn identical_subscriptions_share_one_rerun(store: TestStore) {
+    let r = open(&store).await;
     insert(&r, "room", &[("m", s("hi"))]).await;
     let subs = spawn(&r, subs_config());
     let (f, calls) = Counting::wrap(sys(QUERY));
@@ -482,12 +477,12 @@ async fn identical_subscriptions_share_one_rerun() {
     assert_eq!(calls.load(Ordering::SeqCst), 3);
     assert_eq!(subs.stats().subscriptions, 1);
 }
+live_test!(identical_subscriptions_share_one_rerun);
 
 /// A burst of writes reruns a subscription far fewer times than it has
 /// writes, and the last tick holds every write.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn burst_of_writes_coalesces_to_newest_tick() {
-    let Some(r) = open().await else { return };
+async fn burst_of_writes_coalesces_to_newest_tick(store: TestStore) {
+    let r = open(&store).await;
     insert(&r, "burst", &[("i", int(-1))]).await;
     let subs = spawn(&r, subs_config());
     let (f, calls) = Counting::wrap(sys(QUERY));
@@ -529,12 +524,12 @@ async fn burst_of_writes_coalesces_to_newest_tick() {
     eprintln!("{WRITES} writes by 16 writers: {reruns} reruns");
     assert!((1..WRITES / 2).contains(&reruns), "{reruns} reruns");
 }
+live_test!(burst_of_writes_coalesces_to_newest_tick);
 
 /// A dropped journal batch (the test hook) leaves a stale result; the
 /// safety rerun finds it, counts it and publishes the repair.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn safety_rerun_detects_injected_miss() {
-    let Some(r) = open().await else { return };
+async fn safety_rerun_detects_injected_miss(store: TestStore) {
+    let r = open(&store).await;
     insert(&r, "safe", &[("i", int(0))]).await;
     let subs = spawn(
         &r,
@@ -562,21 +557,18 @@ async fn safety_rerun_detects_injected_miss() {
     let now = latest(&ticks, id).expect("the repair is published");
     assert_eq!(docs(&now).len(), 2);
 }
+live_test!(safety_rerun_detects_injected_miss);
 
 // ---- beyond the plan's list ----
 
 /// Carry T9 (row T9-6): when the janitor trimmed past the tailer, the
 /// manager restarts at a fresh timestamp and reruns every subscription.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn trimmed_journal_resyncs_every_subscription() {
-    let Some(cluster) = testing::cluster().await else {
-        return;
-    };
-    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
-    let cfg = config(&cluster);
-    let r = Runner::open(tikv.clone(), &cfg).await.expect("the runner");
+async fn trimmed_journal_resyncs_every_subscription(store: TestStore) {
+    let kv = store.store();
+    let cfg = config(&store);
+    let r = Runner::open(kv.clone(), &cfg).await.expect("the runner");
     // A second runner on the same app: its commits do not wake the manager.
-    let other = Runner::open(tikv.clone(), &cfg).await.expect("a runner");
+    let other = Runner::open(kv.clone(), &cfg).await.expect("a runner");
     insert(&r, "trim", &[("i", int(0))]).await;
     let subs = spawn(
         &r,
@@ -592,7 +584,7 @@ async fn trimmed_journal_resyncs_every_subscription() {
     insert(&other, "trim", &[("i", int(1))]).await;
     tokio::time::sleep(Duration::from_millis(5)).await;
     let journal = r.journal().await.expect("the journal");
-    let report = Janitor::new(tikv.clone(), journal)
+    let report = Janitor::new(kv.clone(), journal)
         .with_retention(Duration::ZERO)
         .run_once()
         .await
@@ -610,12 +602,12 @@ async fn trimmed_journal_resyncs_every_subscription() {
     let ticks = until(&mut rx, &ts).await;
     assert_eq!(docs(&latest(&ticks, id).expect("changed")).len(), 3);
 }
+live_test!(trimmed_journal_resyncs_every_subscription);
 
 /// A query of a table that does not exist yet depends on the tables not
 /// created yet (row T10-8), so the insert that creates it invalidates it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn subscription_to_a_missing_table_sees_its_first_insert() {
-    let Some(r) = open().await else { return };
+async fn subscription_to_a_missing_table_sees_its_first_insert(store: TestStore) {
+    let r = open(&store).await;
     insert(&r, "other", &[]).await;
     let subs = spawn(&r, subs_config());
     let (id, first) = subscribe(&subs, sys(QUERY), table_query("later")).await;
@@ -625,24 +617,25 @@ async fn subscription_to_a_missing_table_sees_its_first_insert() {
     let ticks = until(&mut rx, &ts).await;
     assert_eq!(docs(&latest(&ticks, id).expect("changed")).len(), 1);
 }
+live_test!(subscription_to_a_missing_table_sees_its_first_insert);
 
 /// Review Focus 1, no missed update: under concurrent inserts, patches and
 /// point reads by several writers, after every tick every subscription's
 /// held result equals a fresh evaluation at the tick's timestamp.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn no_update_is_missed_under_concurrent_writes() {
-    no_update_is_missed(Duration::ZERO).await;
+async fn no_update_is_missed_under_concurrent_writes(store: TestStore) {
+    no_update_is_missed(&store, Duration::ZERO).await;
 }
+live_test!(no_update_is_missed_under_concurrent_writes);
 
 /// The same check with the default tick read lag (row T12-1): ticks read
 /// 50 ms back, and every result still equals a fresh evaluation at its tick.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn no_update_is_missed_with_the_tick_read_lag() {
-    no_update_is_missed(loams_live::subs::DEFAULT_TICK_READ_LAG).await;
+async fn no_update_is_missed_with_the_tick_read_lag(store: TestStore) {
+    no_update_is_missed(&store, loams_live::subs::DEFAULT_TICK_READ_LAG).await;
 }
+live_test!(no_update_is_missed_with_the_tick_read_lag);
 
-async fn no_update_is_missed(tick_read_lag: Duration) {
-    let Some(r) = open().await else { return };
+async fn no_update_is_missed(store: &TestStore, tick_read_lag: Duration) {
+    let r = open(store).await;
     define(&r, "items", &[("by_n", &["n"])]).await;
     let mut seeded = Vec::new();
     for i in 0..12 {
@@ -767,9 +760,8 @@ async fn no_update_is_missed(tick_read_lag: Duration) {
 }
 
 /// With a consumer id, the tailer checkpoints with a time to live.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tailer_checkpoints_under_its_consumer() {
-    let Some(r) = open().await else { return };
+async fn tailer_checkpoints_under_its_consumer(store: TestStore) {
+    let r = open(&store).await;
     insert(&r, "cp", &[]).await;
     let subs = spawn(
         &r,
@@ -800,11 +792,11 @@ async fn tailer_checkpoints_under_its_consumer() {
     assert!(checkpoint.expires_ms.is_some());
     assert_eq!(checkpoint.positions.iter().sum::<u64>(), 1);
 }
+live_test!(tailer_checkpoints_under_its_consumer);
 
 /// Only queries can be subscribed to.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_mutation_cannot_be_subscribed() {
-    let Some(r) = open().await else { return };
+async fn a_mutation_cannot_be_subscribed(store: TestStore) {
+    let r = open(&store).await;
     let subs = spawn(&r, subs_config());
     let args = obj(&[("table", s("x")), ("fields", obj(&[]))]);
     let e = subs
@@ -812,15 +804,15 @@ async fn a_mutation_cannot_be_subscribed() {
         .await;
     assert!(matches!(e, Err(LiveError::InvalidArgument(_))), "{e:?}");
 }
+live_test!(a_mutation_cannot_be_subscribed);
 
 /// Review of #81: a key subscribed again while its first request still
 /// waits for the manager's first tick joins the waiting entry, so both
 /// callers share one subscription and one evaluation. The second request
 /// lands in a later command batch only sometimes (the manager's select is
 /// unbiased), so the scenario repeats.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_key_subscribed_again_while_waiting_shares_one_entry() {
-    let Some(r) = open().await else { return };
+async fn a_key_subscribed_again_while_waiting_shares_one_entry(store: TestStore) {
+    let r = open(&store).await;
     insert(&r, "wait", &[("m", s("hi"))]).await;
     for round in 0..30 {
         let subs = Arc::new(spawn(&r, subs_config()));
@@ -843,13 +835,13 @@ async fn a_key_subscribed_again_while_waiting_shares_one_entry() {
         assert_eq!(calls.load(Ordering::SeqCst), 1, "round {round}");
     }
 }
+live_test!(a_key_subscribed_again_while_waiting_shares_one_entry);
 
 /// Row T12-1: with the default tick read lag, a commit reaches its
 /// subscribers by a tick at or after its commit timestamp, about one lag
 /// after it (the manager ticks one lag after a local commit).
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_commit_reaches_subscribers_one_tick_read_lag_later() {
-    let Some(r) = open().await else { return };
+async fn a_commit_reaches_subscribers_one_tick_read_lag_later(store: TestStore) {
+    let r = open(&store).await;
     insert(&r, "lagged", &[("n", int(1))]).await;
     let subs = spawn(
         &r,
@@ -874,3 +866,4 @@ async fn a_commit_reaches_subscribers_one_tick_read_lag_later() {
     eprintln!("a commit reached its subscriber within {worst:?} at most");
     assert!(worst < Duration::from_secs(2), "{worst:?}");
 }
+live_test!(a_commit_reaches_subscribers_one_tick_read_lag_later);

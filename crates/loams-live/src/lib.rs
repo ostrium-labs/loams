@@ -34,6 +34,7 @@ pub mod service;
 pub mod session;
 pub mod subs;
 pub mod system;
+pub mod testing;
 pub mod txn;
 mod value;
 

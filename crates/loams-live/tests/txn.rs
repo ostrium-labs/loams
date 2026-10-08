@@ -1,8 +1,8 @@
 //! R1 plan Task 10: `LiveTxn` with read sets and point-read promotion, the
 //! mutation runner with retries and idempotency keys, and the built-in
 //! `_system:*` functions (design §20 §5.1–§5.2, §8.1). The key-layout and
-//! shard-draw tests run without a cluster; the rest need TiKV and skip
-//! without `LOAMS_TEST_PD`.
+//! shard-draw tests need no store; the rest are `live_test!`s, on the
+//! embedded store and on TiKV with `LOAMS_TEST_PD` (LV1 plan Task 22).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -10,15 +10,15 @@ use std::sync::{Arc, Mutex};
 
 use buffa::Message;
 use futures::future::BoxFuture;
-use loams_kv::testing::{self, TEST_LIVE};
-use loams_kv::{Fault, FaultPlan, FaultPoint, Store, TxnOptions};
+use loams_kv::{Fault, FaultPlan, FaultPoint, TxnOptions};
 use loams_live::keys::{IDEMPOTENCY, KIND_APP};
 use loams_live::system::{self, DELETE, GET, INSERT, PATCH, QUERY, REPLACE};
+use loams_live::testing::TestStore;
 use loams_live::txn::{MUTATION_OP, idempotency_hash};
 use loams_live::{
     AppKeys, DEFAULT_JOURNAL_SHARDS, DocId, FnKind, Function, IndexId, IndexRange, Janitor,
     Journal, Limits, LiveConfig, LiveError, LiveTxn, LiveValue, Mutated, Runner, RunnerOptions,
-    TableId, Tailer, pb,
+    TableId, Tailer, live_test, pb,
 };
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -50,26 +50,28 @@ fn sys(name: &str) -> Arc<dyn Function> {
     system::lookup(name).expect("a system function")
 }
 
-fn config(cluster: &testing::TestCluster, shards: u16, limits: Limits) -> LiveConfig {
+fn config(store: &TestStore, shards: u16, limits: Limits) -> LiveConfig {
     LiveConfig {
         limits,
         journal_shards: shards,
-        ..LiveConfig::with_tikv("t10", cluster.config(TEST_LIVE))
+        ..store.live_config("t10")
     }
 }
 
-async fn open_with(shards: u16, limits: Limits, options: RunnerOptions) -> Option<Runner> {
-    let cluster = testing::cluster().await?;
-    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
-    Some(
-        Runner::open_with(tikv, &config(&cluster, shards, limits), options)
-            .await
-            .expect("the runner opens"),
-    )
+async fn open_with(
+    store: &TestStore,
+    shards: u16,
+    limits: Limits,
+    options: RunnerOptions,
+) -> Runner {
+    Runner::open_with(store.store(), &config(store, shards, limits), options)
+        .await
+        .expect("the runner opens")
 }
 
-async fn open() -> Option<Runner> {
+async fn open(store: &TestStore) -> Runner {
     open_with(
+        store,
         DEFAULT_JOURNAL_SHARDS,
         Limits::default(),
         RunnerOptions::default(),
@@ -405,7 +407,7 @@ impl FaultPlan for LoseOnce {
     }
 }
 
-// ---- without a cluster ----
+// ---- without a store ----
 
 #[test]
 fn idempotency_and_app_keys_follow_the_layout() {
@@ -454,13 +456,12 @@ fn a_rerun_draws_a_journal_shard_other_than_the_last() {
     assert_eq!(one.pick_other(&mut rng, Some(0)), 0, "one shard: no choice");
 }
 
-// ---- on TiKV ----
+// ---- on every backend ----
 
 /// Semantics 1: a conflict reruns the function from scratch at a new
 /// snapshot, which sees the write it conflicted with.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn rerun_on_conflict_sees_new_snapshot() {
-    let Some(r) = open().await else { return };
+async fn rerun_on_conflict_sees_new_snapshot(store: TestStore) {
+    let r = open(&store).await;
     let id = insert(&r, "counters", &[("n", LiveValue::I64(0))]).await;
     let f = Arc::new(Increment {
         read: Notify::new(),
@@ -493,13 +494,13 @@ async fn rerun_on_conflict_sees_new_snapshot() {
     assert_eq!(m.result, LiveValue::I64(11));
     assert_eq!(field(&get(&r, id).await, "n"), LiveValue::I64(11));
 }
+live_test!(rerun_on_conflict_sees_new_snapshot);
 
 /// Semantics 2 (§20 §5.2): two mutations that read each other's document by
 /// id and write their own cannot both commit; one reruns, and the invariant
 /// (at least one on call) holds.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn point_read_promotion_prevents_write_skew() {
-    let Some(r) = open().await else { return };
+async fn point_read_promotion_prevents_write_skew(store: TestStore) {
+    let r = open(&store).await;
     let on = [("on", LiveValue::Bool(true))];
     let (x, y) = (
         insert(&r, "oncall", &on).await,
@@ -538,6 +539,7 @@ async fn point_read_promotion_prevents_write_skew() {
         .count();
     assert_eq!(still_on, 1, "the invariant holds");
 }
+live_test!(point_read_promotion_prevents_write_skew);
 
 /// Two mutations that each read the table by range and turn their own
 /// document off, on a journal of 1 024 shards (so their heads rarely meet).
@@ -574,11 +576,8 @@ async fn range_skew_round(r: &Runner) -> (usize, u32) {
 /// §20 §5.2 and Q31: index-range reads are snapshot reads, so two mutations
 /// that each read a range the other writes into can both commit (write
 /// skew). This pins the documented R1 behaviour until Q31 is decided.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn range_write_skew_is_possible_and_documented() {
-    let Some(r) = open_with(1024, Limits::default(), RunnerOptions::default()).await else {
-        return;
-    };
+async fn range_write_skew_is_possible_and_documented(store: TestStore) {
+    let r = open_with(&store, 1024, Limits::default(), RunnerOptions::default()).await;
     let mut anomalies = 0;
     for _ in 0..3 {
         let (still_on, _) = range_skew_round(&r).await;
@@ -591,35 +590,30 @@ async fn range_write_skew_is_possible_and_documented() {
         "range write skew occurred in at least one of 3 rounds under snapshot isolation"
     );
 }
+live_test!(range_write_skew_is_possible_and_documented);
 
 /// Row T10-4: with `serializable_ranges`, a range-reading mutation that
 /// writes locks every journal head, so of two write-skewing mutations one
 /// must abort and rerun, and the invariant holds.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn range_write_skew_is_prevented_with_serializable_ranges() {
+async fn range_write_skew_is_prevented_with_serializable_ranges(store: TestStore) {
     let options = RunnerOptions {
         serializable_ranges: true,
         ..RunnerOptions::default()
     };
-    let Some(r) = open_with(1024, Limits::default(), options).await else {
-        return;
-    };
+    let r = open_with(&store, 1024, Limits::default(), options).await;
     for _ in 0..3 {
         let (still_on, attempts) = range_skew_round(&r).await;
         assert_eq!(still_on, 1, "the invariant holds");
         assert!(attempts >= 3, "one of the two reran ({attempts} attempts)");
     }
 }
+live_test!(range_write_skew_is_prevented_with_serializable_ranges);
 
 /// Review Focus 2: an idempotent mutation applies once across a lost
 /// acknowledgement (resolved through the commit token), across an unknown
 /// outcome that the token fences (rerun, applied once), and across the
 /// client's retry of the call.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn idempotent_mutate_applies_once_across_lost_ack() {
-    let Some(cluster) = testing::cluster().await else {
-        return;
-    };
+async fn idempotent_mutate_applies_once_across_lost_ack(store: TestStore) {
     for (point, key) in [
         (FaultPoint::AfterCommit, "after-commit"),
         (FaultPoint::BeforeCommit, "before-commit"),
@@ -628,8 +622,10 @@ async fn idempotent_mutate_applies_once_across_lost_ack() {
             point,
             armed: AtomicBool::new(true),
         });
-        let tikv = Store::from(cluster.connect(TEST_LIVE).await).with_faults(plan.clone());
-        let r = Runner::open(tikv, &config(&cluster, 16, Limits::default()))
+        // A fresh root per case.
+        let fresh = store.fresh_root().await;
+        let kv = fresh.store().with_faults(plan.clone());
+        let r = Runner::open(kv, &config(&fresh, 16, Limits::default()))
             .await
             .expect("opens");
         let args = obj(&[
@@ -675,12 +671,12 @@ async fn idempotent_mutate_applies_once_across_lost_ack() {
         );
     }
 }
+live_test!(idempotent_mutate_applies_once_across_lost_ack);
 
 /// Idempotent retries of one key, sequential and concurrent, apply the
 /// mutation exactly once and all return its result.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn idempotent_retry_of_the_same_key_applies_once() {
-    let Some(r) = open().await else { return };
+async fn idempotent_retry_of_the_same_key_applies_once(store: TestStore) {
+    let r = open(&store).await;
     let args = obj(&[
         ("table", s("payments")),
         ("fields", obj(&[("cents", LiveValue::I64(500))])),
@@ -720,13 +716,13 @@ async fn idempotent_retry_of_the_same_key_applies_once() {
     assert!(!other.replayed);
     assert_eq!(all(&r, "payments").await.len(), 2);
 }
+live_test!(idempotent_retry_of_the_same_key_applies_once);
 
 /// Semantics 4 and §20 §8.1: a query's read set holds the document keys it
 /// read by id (found or not) and its index ranges, and covers the keys a
 /// later write to them touches.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_set_covers_points_and_ranges() {
-    let Some(r) = open().await else { return };
+async fn read_set_covers_points_and_ranges(store: TestStore) {
+    let r = open(&store).await;
     let found = insert(&r, "items", &[("k", LiveValue::I64(1))]).await;
     let missing = DocId {
         table: found.table,
@@ -781,12 +777,12 @@ async fn read_set_covers_points_and_ranges() {
         "the insert creating the table invalidates the empty result"
     );
 }
+live_test!(read_set_covers_points_and_ranges);
 
 /// Row T9-10: a read-only mutation writes no journal entry (and no
 /// idempotency record).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn read_only_mutation_writes_no_journal_entry() {
-    let Some(r) = open().await else { return };
+async fn read_only_mutation_writes_no_journal_entry(store: TestStore) {
+    let r = open(&store).await;
     let id = insert(&r, "notes", &[]).await;
     let before = heads(&r).await;
     let m = r
@@ -815,20 +811,18 @@ async fn read_only_mutation_writes_no_journal_entry() {
         "a writing mutation moves one head by one"
     );
 }
+live_test!(read_only_mutation_writes_no_journal_entry);
 
 /// Semantics 5: the scanned-document limit is counted over every read of
 /// one attempt; the written-document limit likewise, and an exceeded limit
 /// rolls the attempt back.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn scan_limit_is_enforced() {
+async fn scan_limit_is_enforced(store: TestStore) {
     let limits = Limits {
         max_scanned_docs: 5,
         max_written_docs: 10,
         ..Limits::default()
     };
-    let Some(r) = open_with(16, limits, RunnerOptions::default()).await else {
-        return;
-    };
+    let r = open_with(&store, 16, limits, RunnerOptions::default()).await;
     let many = |n: i64| obj(&[("table", s("rows")), ("n", LiveValue::I64(n))]);
     mutate(&r, Arc::new(InsertMany), many(8)).await;
     let scans = |limits: &[i64]| {
@@ -904,11 +898,11 @@ async fn scan_limit_is_enforced() {
         "only the first insert committed"
     );
 }
+live_test!(scan_limit_is_enforced);
 
 /// A function error rolls its writes back and reaches the caller as is.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_function_error_rolls_back_its_writes() {
-    let Some(r) = open().await else { return };
+async fn a_function_error_rolls_back_its_writes(store: TestStore) {
+    let r = open(&store).await;
     let e = r
         .mutate(
             Arc::new(InsertMany),
@@ -925,11 +919,11 @@ async fn a_function_error_rolls_back_its_writes() {
     assert!(all(&r, "drafts").await.is_empty());
     assert_eq!(heads(&r).await.iter().sum::<u64>(), 0);
 }
+live_test!(a_function_error_rolls_back_its_writes);
 
 /// The built-in functions end to end.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn system_functions_round_trip() {
-    let Some(r) = open().await else { return };
+async fn system_functions_round_trip(store: TestStore) {
+    let r = open(&store).await;
     let id = insert(&r, "people", &[("a", LiveValue::I64(1))]).await;
     let doc = get(&r, id).await;
     assert_eq!(field(&doc, "a"), LiveValue::I64(1));
@@ -1027,13 +1021,11 @@ async fn system_functions_round_trip() {
     assert!(matches!(e, Err(LiveError::InvalidArgument(_))), "{e:?}");
     assert!(system::lookup("_system:nope").is_none());
 }
+live_test!(system_functions_round_trip);
 
 /// `_system:tables` lists created tables with their implicit indexes.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn system_tables_lists_created_tables() {
-    let Some(r) = open().await else {
-        return;
-    };
+async fn system_tables_lists_created_tables(store: TestStore) {
+    let r = open(&store).await;
     assert_eq!(
         query_now(&r, &*sys(system::TABLES), obj(&[])).await,
         LiveValue::Array(Vec::new())
@@ -1068,30 +1060,25 @@ async fn system_tables_lists_created_tables() {
     names.sort();
     assert_eq!(names, ["notes", "people"]);
 }
+live_test!(system_tables_lists_created_tables);
 
 /// `_system:tables` is read-only: `Mutate` refuses it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn system_tables_via_mutate_refused() {
-    let Some(r) = open().await else {
-        return;
-    };
+async fn system_tables_via_mutate_refused(store: TestStore) {
+    let r = open(&store).await;
     let e = r.mutate(sys(system::TABLES), obj(&[]), None).await;
     assert!(matches!(e, Err(LiveError::InvalidArgument(_))), "{e:?}");
 }
+live_test!(system_tables_via_mutate_refused);
 
 /// Row T10-1 (owner ruling on T9-7): the shard count is per app, stored in
 /// its catalog, and changes only while the journal is empty.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn journal_shard_count_is_stored_per_app_and_changes_only_while_empty() {
-    let Some(cluster) = testing::cluster().await else {
-        return;
-    };
-    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
-    let r = Runner::open(tikv.clone(), &config(&cluster, 4, Limits::default()))
+async fn journal_shard_count_is_stored_per_app_and_changes_only_while_empty(store: TestStore) {
+    let kv = store.store();
+    let r = Runner::open(kv.clone(), &config(&store, 4, Limits::default()))
         .await
         .expect("opens");
     assert_eq!(r.journal().await.expect("journal").shards(), 4);
-    let again = Runner::open(tikv.clone(), &config(&cluster, 16, Limits::default()))
+    let again = Runner::open(kv.clone(), &config(&store, 16, Limits::default()))
         .await
         .expect("reopens");
     assert_eq!(
@@ -1122,12 +1109,12 @@ async fn journal_shard_count_is_stored_per_app_and_changes_only_while_empty() {
         .expect("the same count is a no-op");
     assert_eq!(heads(&r).await.len(), 8);
 }
+live_test!(journal_shard_count_is_stored_per_app_and_changes_only_while_empty);
 
 /// Semantics 3: an expired idempotency record no longer replays, and the
 /// janitor deletes expired records and keeps live ones.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn janitor_sweeps_expired_idempotency_records() {
-    let Some(r) = open().await else { return };
+async fn janitor_sweeps_expired_idempotency_records(store: TestStore) {
+    let r = open(&store).await;
     let app = r.app().clone();
     let put_expired = |key: &str| {
         let k = app.idempotency(&idempotency_hash(key).expect("a key"));
@@ -1139,10 +1126,10 @@ async fn janitor_sweeps_expired_idempotency_records() {
             ..Default::default()
         }
         .encode_to_vec();
-        let tikv = r.store().clone();
+        let kv = r.store().clone();
         async move {
             let key = k.clone();
-            tikv.run(TxnOptions::new("test.put"), move |txn| {
+            kv.run(TxnOptions::new("test.put"), move |txn| {
                 let (k, v) = (k.clone(), v.clone());
                 Box::pin(async move { txn.put(&k, v).await })
             })
@@ -1181,13 +1168,13 @@ async fn janitor_sweeps_expired_idempotency_records() {
     }
     assert_eq!(all(&r, "t").await.len(), 2);
 }
+live_test!(janitor_sweeps_expired_idempotency_records);
 
 /// Review of #76: a record the sweep cannot decode (corrupt, or a newer
 /// format) is kept, since deleting it would free its key for a second run,
 /// and the sweep goes on to the records after it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn janitor_keeps_an_undecodable_idempotency_record_and_sweeps_on() {
-    let Some(r) = open().await else { return };
+async fn janitor_keeps_an_undecodable_idempotency_record_and_sweeps_on(store: TestStore) {
+    let r = open(&store).await;
     let app = r.app().clone();
     // The first possible record key, so the sweep meets it first.
     let garbage = app.idempotency(&[0; loams_live::keys::IDEMPOTENCY_HASH_BYTES]);
@@ -1222,12 +1209,12 @@ async fn janitor_keeps_an_undecodable_idempotency_record_and_sweeps_on() {
     assert_eq!(snap.get(&expired).await.expect("read"), None);
     assert!(snap.get(&garbage).await.expect("read").is_some(), "kept");
 }
+live_test!(janitor_keeps_an_undecodable_idempotency_record_and_sweeps_on);
 
 /// Review of #76: a live idempotency key reused with other arguments is
 /// refused, not replayed; the same call still replays.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn idempotency_key_reused_with_other_arguments_is_refused() {
-    let Some(r) = open().await else { return };
+async fn idempotency_key_reused_with_other_arguments_is_refused(store: TestStore) {
+    let r = open(&store).await;
     let call = |cents: i64| {
         obj(&[
             ("table", s("payments")),
@@ -1252,15 +1239,15 @@ async fn idempotency_key_reused_with_other_arguments_is_refused() {
     assert_eq!(again.result, first.result);
     assert_eq!(all(&r, "payments").await.len(), 1);
 }
+live_test!(idempotency_key_reused_with_other_arguments_is_refused);
 
 /// Owner rulings on T9-7 and T10-3 (rows T10-2, T10-3, T11-1): 32 writers
 /// and 2 000 mutations on the default 64 shards all commit within the
 /// default budget of 16 attempts, with no `Conflict` failure, while a
 /// tailer ticks continuously beside them (the tailer's cost at 64 shards).
 /// Prints the rerun rate and the tick counts and latencies.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn mutations_under_contention_complete_within_the_default_budget() {
-    let Some(r) = open().await else { return };
+async fn mutations_under_contention_complete_within_the_default_budget(store: TestStore) {
+    let r = open(&store).await;
     insert(&r, "load", &[]).await;
     const WRITERS: usize = 32;
     const MUTATIONS: usize = 2000;
@@ -1367,12 +1354,12 @@ async fn mutations_under_contention_complete_within_the_default_budget() {
     assert!(max <= 16);
     assert_eq!(heads(&r).await.iter().sum::<u64>(), MUTATIONS as u64 + 1);
 }
+live_test!(mutations_under_contention_complete_within_the_default_budget);
 
 /// A patch through `LiveTxn` of a document id whose table does not exist is
 /// `NotFound`, and `patch(id)` finds the table by the id's table part.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn patch_by_id_finds_the_table_of_the_id() {
-    let Some(r) = open().await else { return };
+async fn patch_by_id_finds_the_table_of_the_id(store: TestStore) {
+    let r = open(&store).await;
     let a = insert(&r, "alpha", &[("v", LiveValue::I64(1))]).await;
     let b = insert(&r, "beta", &[("v", LiveValue::I64(1))]).await;
     assert_ne!(a.table, b.table);
@@ -1400,13 +1387,13 @@ async fn patch_by_id_finds_the_table_of_the_id() {
         .await;
     assert!(matches!(e, Err(LiveError::NotFound(_))), "{e:?}");
 }
+live_test!(patch_by_id_finds_the_table_of_the_id);
 
 /// Review of #73 (Task 13's deploy gate): `try_quiesce` is refused while a
 /// mutation is in flight, and while it is held a new mutation waits at
 /// admission until it drops.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn quiesce_refuses_in_flight_mutations_and_holds_new_ones() {
-    let Some(r) = open().await else { return };
+async fn quiesce_refuses_in_flight_mutations_and_holds_new_ones(store: TestStore) {
+    let r = open(&store).await;
     let id = insert(&r, "counters", &[("n", LiveValue::I64(0))]).await;
     let f = Arc::new(Increment {
         read: Notify::new(),
@@ -1449,3 +1436,4 @@ async fn quiesce_refuses_in_flight_mutations_and_holds_new_ones() {
     waiting.await.expect("the task");
     assert_eq!(field(&get(&r, id).await, "n"), LiveValue::I64(5));
 }
+live_test!(quiesce_refuses_in_flight_mutations_and_holds_new_ones);

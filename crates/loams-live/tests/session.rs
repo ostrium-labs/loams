@@ -1,22 +1,21 @@
 //! R1 plan Task 12: session versions, merged Transitions, blocked sessions,
 //! chunks and resume (design §20 §7.1, §8.2). The version, merge, block and
-//! chunk tests run without a cluster; the resume test needs TiKV and skips
-//! without `LOAMS_TEST_PD`.
+//! chunk tests need no store; the resume test is a `live_test!`, on the
+//! embedded store and on TiKV with `LOAMS_TEST_PD` (LV1 plan Task 22).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use buffa::{Message, MessageField};
-use loams_kv::Store;
-use loams_kv::testing::{self, TEST_LIVE};
 use loams_live::pb::__buffa::oneof::query_update::Update;
 use loams_live::session::{
     ClientState, Outbox, QueryResult, SessionConfig, Sessions, Start, Version, chunks, merge,
 };
 use loams_live::subs::{SubsConfig, Subscriptions};
 use loams_live::system::{INSERT, QUERY};
-use loams_live::{LiveConfig, LiveError, LiveValue, Runner, deploy, pb};
+use loams_live::testing::TestStore;
+use loams_live::{LiveError, LiveValue, Runner, deploy, live_test, pb};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use tokio_util::sync::CancellationToken;
@@ -220,7 +219,7 @@ fn a_transition_over_the_limit_is_chunked_with_more() {
     assert_eq!(c.results, BTreeMap::from([(2, int(2)), (3, int(3))]));
 }
 
-// ---- on TiKV ----
+// ---- on every backend ----
 
 fn obj(pairs: &[(&str, LiveValue)]) -> LiveValue {
     LiveValue::Object(
@@ -242,14 +241,10 @@ fn spec(query_id: u32, table: &str) -> pb::QuerySpec {
 
 /// Semantics 5: a resumed session starts at the client's last version, at a
 /// tick at or after its timestamp, with every query's full result.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn resume_sends_full_results_at_or_after_last_ts() {
-    let Some(cluster) = testing::cluster().await else {
-        return;
-    };
-    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
-    let config = LiveConfig::with_tikv("t12", cluster.config(TEST_LIVE));
-    let runner = Runner::open(tikv.clone(), &config).await.expect("a runner");
+async fn resume_sends_full_results_at_or_after_last_ts(store: TestStore) {
+    let kv = store.store();
+    let config = store.live_config("t12");
+    let runner = Runner::open(kv.clone(), &config).await.expect("a runner");
     let stop = CancellationToken::new();
     let subs = Arc::new(Subscriptions::spawn(
         runner.clone(),
@@ -279,7 +274,7 @@ async fn resume_sends_full_results_at_or_after_last_ts() {
     let last = Version {
         query_set: 3,
         identity: 0,
-        ts: tikv.now().await.expect("now").0,
+        ts: kv.now().await.expect("now").0,
     };
     let set = pb::QuerySet {
         version: 3,
@@ -316,3 +311,4 @@ async fn resume_sends_full_results_at_or_after_last_ts() {
         client.apply(&next.expect("no error")).expect("in order");
     }
 }
+live_test!(resume_sends_full_results_at_or_after_last_ts);

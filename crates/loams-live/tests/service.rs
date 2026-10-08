@@ -1,7 +1,8 @@
 //! R1 plan Task 12: the connect-rust sync service, through the generated
 //! `LiveServiceClient` over HTTP/1.1 and HTTP/2 (design §20 §7). The
-//! loopback refusal and the embedded-store server run without a cluster;
-//! the rest need TiKV and skip without `LOAMS_TEST_PD`.
+//! loopback check needs no store; the rest are `live_test!`s, each starting
+//! a `LiveServer` on the embedded store and on TiKV with `LOAMS_TEST_PD`
+//! (LV1 plan Task 22).
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -9,14 +10,15 @@ use std::time::Duration;
 use buffa::MessageField;
 use connectrpc::client::{CallOptions, ClientConfig, HttpClient};
 use connectrpc::{ConnectError, ErrorCode};
-use loams_kv::testing::{self, TEST_LIVE};
+use loams_kv::testing::TEST_LIVE;
 use loams_live::pb::__buffa::oneof::query_set_change::Change;
 use loams_live::pb::__buffa::oneof::query_update::Update;
 use loams_live::pb::__buffa::oneof::watch_request::Start;
 use loams_live::session::{ClientState, QueryResult, SESSION_HEADER, SessionConfig, Version};
 use loams_live::system::{INSERT, QUERY};
+use loams_live::testing::TestStore;
 use loams_live::{
-    LiveConfig, LiveError, LiveHandle, LiveServer, LiveValue, StoreConfig, check_listen, pb,
+    LiveConfig, LiveError, LiveHandle, LiveServer, LiveValue, check_listen, live_test, pb,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -26,7 +28,7 @@ type Watch = connectrpc::client::ServerStream<
     pb::__buffa::view::TransitionView<'static>,
 >;
 
-// ---- without a cluster ----
+// ---- without a store ----
 
 /// Semantics 7 and the loopback rule (D111): only loopback addresses pass.
 #[test]
@@ -62,9 +64,8 @@ fn only_loopback_addresses_pass_the_listen_check() {
 }
 
 /// Semantics 7: `0.0.0.0:0` and a LAN address fail startup before anything
-/// connects; `127.0.0.1:0` and `[::1]:0` start (on a cluster).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn non_loopback_bind_is_refused() {
+/// connects; `127.0.0.1:0` and `[::1]:0` start (on the test's store).
+async fn non_loopback_bind_is_refused(store: TestStore) {
     for bad in ["0.0.0.0:0", "192.168.1.10:0"] {
         let mut config = LiveConfig::with_tikv(
             "t12",
@@ -76,11 +77,8 @@ async fn non_loopback_bind_is_refused() {
             .expect_err(bad);
         assert!(matches!(err, LiveError::NotLoopback(_)), "{bad}: {err}");
     }
-    let Some(cluster) = testing::cluster().await else {
-        return;
-    };
     for ok in ["127.0.0.1:0", "[::1]:0"] {
-        let mut config = LiveConfig::with_tikv("t12", cluster.config(TEST_LIVE));
+        let mut config = store.live_config("t12");
         config.listen = ok.parse().expect("an address");
         let handle = LiveServer::start(config, CancellationToken::new())
             .await
@@ -90,60 +88,31 @@ async fn non_loopback_bind_is_refused() {
         handle.stop().await;
     }
 }
+live_test!(non_loopback_bind_is_refused);
 
-/// LV1 row T20-9: a `LiveServer` starts on any store. On an embedded store,
-/// with no cluster, a Mutate reaches a watching session and a Query agrees.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn server_runs_on_an_embedded_store() {
-    let dir = loams_kv::testing::TempDir::new_in(std::path::Path::new(env!("CARGO_TARGET_TMPDIR")))
-        .expect("a directory");
-    let store = loams_kv::EmbeddedConfig::new(
-        dir.path().join("live").join("store.redb"),
-        loams_live::keyspace_of("t21"),
+/// LV1 row T20-9: a `LiveServer` starts on whatever store its config
+/// names; only a TiKV store has a TiKV handle for the cluster GC loop.
+async fn server_runs_on_the_configured_store(store: TestStore) {
+    let handle = server(&store, SessionConfig::default()).await;
+    assert_eq!(handle.store().backend(), store.backend());
+    assert_eq!(
+        handle.store().as_tikv().is_some(),
+        store.backend() == loams_kv::Backend::Tikv
     );
-    let mut config = LiveConfig::with_store("t21", StoreConfig::Embedded(store));
-    config.listen = "127.0.0.1:0".parse().expect("an address");
-    let handle = LiveServer::start(config, CancellationToken::new())
-        .await
-        .expect("the server starts");
-    assert_eq!(handle.store().backend(), loams_kv::Backend::Embedded);
-    assert!(handle.store().as_tikv().is_none());
-    let c = client(&handle, true);
-    let mut w = watch(&c, Start::Initial(Box::new(set(1, vec![spec(7, "msgs")])))).await;
-    let mut state = ClientState::new();
-    state
-        .apply(&next(&mut w).await)
-        .expect("from the zero version");
-    assert_eq!(docs(&state, 7), 0);
-    let commit_ts = insert(&c, "msgs", 1, None).await;
-    let t = until(&mut w, &mut state, |s, _| docs(s, 7) == 1).await;
-    assert!(end(&t).ts >= commit_ts);
-    let q = c
-        .query(pb::QueryRequest {
-            function: QUERY.into(),
-            args: spec(0, "msgs").args,
-            ..Default::default()
-        })
-        .await
-        .expect("Query")
-        .into_owned();
-    let result = LiveValue::from_proto(q.result.into_option().expect("a result")).expect("ok");
-    assert!(matches!(result, LiveValue::Array(d) if d.len() == 1));
     handle.stop().await;
 }
+live_test!(server_runs_on_the_configured_store);
 
-// ---- on TiKV ----
+// ---- on every backend ----
 
-async fn server(session: SessionConfig) -> Option<LiveHandle> {
-    let cluster = testing::cluster().await?;
-    let mut config = LiveConfig::with_tikv("t12", cluster.config(TEST_LIVE));
+/// A server for app `t12` on the test's store, on an ephemeral loopback port.
+async fn server(store: &TestStore, session: SessionConfig) -> LiveHandle {
+    let mut config = store.live_config("t12");
     config.listen = "127.0.0.1:0".parse().expect("an address");
     config.session = session;
-    Some(
-        LiveServer::start(config, CancellationToken::new())
-            .await
-            .expect("the server starts"),
-    )
+    LiveServer::start(config, CancellationToken::new())
+        .await
+        .expect("the server starts")
 }
 
 fn client(handle: &LiveHandle, http2: bool) -> Client {
@@ -254,11 +223,8 @@ fn end(t: &pb::Transition) -> Version {
 /// Semantics 1 and 6, over HTTP/1.1 and HTTP/2: the first Transition starts
 /// at the zero version with every result; a Mutate's write reaches the
 /// session in a Transition at or after its commit timestamp.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn watch_receives_update_after_mutate() {
-    let Some(handle) = server(SessionConfig::default()).await else {
-        return;
-    };
+async fn watch_receives_update_after_mutate(store: TestStore) {
+    let handle = server(&store, SessionConfig::default()).await;
     for http2 in [false, true] {
         let c = client(&handle, http2);
         let table = if http2 { "msgs2" } else { "msgs1" };
@@ -290,14 +256,12 @@ async fn watch_receives_update_after_mutate() {
     }
     handle.stop().await;
 }
+live_test!(watch_receives_update_after_mutate);
 
 /// Semantics 1 and §20 §8.2 step 3: two sessions watching one query share
 /// one subscription, and one write reaches both at the same tick.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn two_sessions_share_one_tick() {
-    let Some(handle) = server(SessionConfig::default()).await else {
-        return;
-    };
+async fn two_sessions_share_one_tick(store: TestStore) {
+    let handle = server(&store, SessionConfig::default()).await;
     let c = client(&handle, true);
     let mut a = watch(
         &c,
@@ -330,15 +294,13 @@ async fn two_sessions_share_one_tick() {
     }
     handle.stop().await;
 }
+live_test!(two_sessions_share_one_tick);
 
 /// Semantics 2: `ModifyQuerySet` adds and removes queries from the
 /// session's current query-set version (else FAILED_PRECONDITION), and the
 /// next Transition reflects it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn modify_query_set_adds_and_removes() {
-    let Some(handle) = server(SessionConfig::default()).await else {
-        return;
-    };
+async fn modify_query_set_adds_and_removes(store: TestStore) {
+    let handle = server(&store, SessionConfig::default()).await;
     let c = client(&handle, false);
     let second_ts = insert(&c, "second", 1, None).await;
     let mut w = watch(&c, Start::Initial(Box::new(set(1, vec![spec(1, "first")])))).await;
@@ -408,20 +370,20 @@ async fn modify_query_set_adds_and_removes() {
     assert_eq!(unknown.code, ErrorCode::NotFound);
     handle.stop().await;
 }
+live_test!(modify_query_set_adds_and_removes);
 
 /// Semantics 4: empty Transitions arrive every `heartbeat`, and a session
 /// with a pending mutation gets ts-only Transitions up to its commit.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn heartbeats_arrive() {
-    let Some(handle) = server(SessionConfig {
-        heartbeat: Duration::from_millis(300),
-        ts_only_interval: Duration::from_millis(200),
-        ..SessionConfig::default()
-    })
-    .await
-    else {
-        return;
-    };
+async fn heartbeats_arrive(store: TestStore) {
+    let handle = server(
+        &store,
+        SessionConfig {
+            heartbeat: Duration::from_millis(300),
+            ts_only_interval: Duration::from_millis(200),
+            ..SessionConfig::default()
+        },
+    )
+    .await;
     let c = client(&handle, true);
     let mut w = watch(&c, Start::Initial(Box::new(set(1, vec![spec(1, "quiet")])))).await;
     let mut state = ClientState::new();
@@ -440,14 +402,12 @@ async fn heartbeats_arrive() {
     assert!(t.updates.is_empty(), "{t:?}");
     handle.stop().await;
 }
+live_test!(heartbeats_arrive);
 
 /// Semantics 5 (reconnect): a client that lost its stream resumes from its
 /// last version and converges to the writes made while it was away.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn watch_resumes_after_reconnect() {
-    let Some(handle) = server(SessionConfig::default()).await else {
-        return;
-    };
+async fn watch_resumes_after_reconnect(store: TestStore) {
+    let handle = server(&store, SessionConfig::default()).await;
     let c = client(&handle, false);
     let queries = vec![spec(1, "resumed"), spec(2, "resumed_other")];
     let mut w = watch(&c, Start::Initial(Box::new(set(4, queries.clone())))).await;
@@ -475,14 +435,12 @@ async fn watch_resumes_after_reconnect() {
     assert_eq!(docs(&state, 2), 0);
     handle.stop().await;
 }
+live_test!(watch_resumes_after_reconnect);
 
 /// Per-query errors stay inside the stream; call errors use Connect codes;
 /// `Deploy` is Task 13's.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn errors_map_to_connect_codes() {
-    let Some(handle) = server(SessionConfig::default()).await else {
-        return;
-    };
+async fn errors_map_to_connect_codes(store: TestStore) {
+    let handle = server(&store, SessionConfig::default()).await;
     let c = client(&handle, false);
     let unknown = pb::QuerySpec {
         query_id: 3,
@@ -525,3 +483,4 @@ async fn errors_map_to_connect_codes() {
     assert_eq!(err.code, ErrorCode::InvalidArgument);
     handle.stop().await;
 }
+live_test!(errors_map_to_connect_codes);
