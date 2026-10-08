@@ -237,9 +237,11 @@ impl Worker {
         Ok(match result {
             Ok(stats) => vec![Frame::Stats(stats), Frame::Done],
             Err(Failure::Engine(err)) => {
-                // Code 0 is a failure with no ClickHouse code (the FFI itself), and
-                // 236 is chDB's fatal-signal path: neither leaves a worker to trust.
-                let poisoned = err.code == 0 || err.code == 236;
+                // Only chDB's fatal-signal path leaves no worker to trust. Code 0
+                // is a Loams-side refusal — SQL holding a NUL byte, an unknown
+                // setting name — which a user can cause at will, so it must not
+                // retire the worker (HS1 Task 2 review M2).
+                let poisoned = err.is_fatal();
                 vec![error_frame(err, poisoned)]
             }
             Err(Failure::Wire(end)) => return Err(end),

@@ -364,10 +364,6 @@ impl PoolInner {
     }
 }
 
-/// ClickHouse's `ABORTED`: what chDB's fatal-signal handler fails a running
-/// statement with before the process goes down.
-const ABORTED: i32 = 236;
-
 /// Kills a booting worker unless disarmed.
 struct KillOnDrop(Option<Arc<WorkerShared>>);
 
@@ -848,7 +844,7 @@ impl WorkerLease {
             Ok(Some(Frame::Error { error, poisoned })) => {
                 worker.in_flight = false;
                 worker.poisoned |= poisoned;
-                if error.code == ABORTED {
+                if error.is_fatal() {
                     // chDB's own fatal-signal handler (which the worker keeps, §49
                     // §4.1) fails the running statement with `236 ABORTED` "The
                     // server is shutting down due to a fatal error" and then the

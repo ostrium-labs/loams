@@ -835,3 +835,54 @@ async fn dropped_acquire_during_boot_keeps_capacity() {
     pool.release(b, Outcome::Completed);
     pool.release(held, Outcome::Completed);
 }
+
+/// HS1 Task 2 review M2: errors a user can cause at will do not retire the worker,
+/// and a user cannot fake chDB's fatal-signal error to make the front report a
+/// crash.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn user_caused_errors_do_not_poison_the_worker() {
+    let pool = pool("no-poison", small(1)).await;
+    let mut lease = pool.acquire("ns").await.expect("worker");
+    let pid = lease.pid();
+
+    let nul = lease
+        .run(statement("SELECT 1\0", "TSV"))
+        .await
+        .expect_err("a NUL byte in the SQL is refused");
+    assert_eq!(nul.code(), 0, "a Loams-side refusal: {nul}");
+
+    let mut custom = statement("SELECT 1", "TSV");
+    custom.settings = vec![(
+        "allow_custom_error_code_in_throwif".to_string(),
+        "1".to_string(),
+    )];
+    assert_eq!(lease.run(custom).await.expect_err("pinned").code(), 452);
+    let faked = lease
+        .run(statement(
+            "SELECT throwIf(1, 'The server is shutting down due to a fatal error', 236)",
+            "TSV",
+        ))
+        .await
+        .expect_err("throwIf");
+    assert_ne!(faked.code(), 236, "a custom code is refused: {faked}");
+    assert_ne!(faked.code(), 210, "not reported as a crash: {faked}");
+
+    assert_eq!(
+        lease
+            .run(statement("SELECT 1", "TSV"))
+            .await
+            .expect("still serves")
+            .bytes,
+        b"1\n"
+    );
+    pool.release(lease, Outcome::Completed);
+    let mut again = pool.acquire("ns").await.expect("worker");
+    assert_eq!(again.pid(), pid, "the same worker, not retired as poisoned");
+    pool.release(again, Outcome::Completed);
+    assert_eq!(
+        pool.stats().kills.values().sum::<u64>(),
+        0,
+        "{:?}",
+        pool.stats()
+    );
+}

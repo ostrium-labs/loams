@@ -308,3 +308,24 @@ fn engine_error_renders_like_clickhouse() {
         "Code: 60. DB::Exception: Unknown table expression identifier 'nope'. (UNKNOWN_TABLE)"
     );
 }
+
+#[test]
+fn fatal_needs_both_the_code_and_the_text() {
+    let fatal = EngineError {
+        code: 236,
+        name: "ABORTED".into(),
+        message: "The server is shutting down due to a fatal error".into(),
+    };
+    assert!(fatal.is_fatal());
+    let other_abort = EngineError {
+        message: "Query was aborted".into(),
+        ..fatal.clone()
+    };
+    assert!(!other_abort.is_fatal(), "236 alone is not a crash");
+    let faked = EngineError {
+        code: 395,
+        name: "FUNCTION_THROW_IF_VALUE_IS_NON_ZERO".into(),
+        ..fatal
+    };
+    assert!(!faked.is_fatal(), "the text alone is not a crash");
+}

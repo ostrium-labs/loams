@@ -323,6 +323,20 @@ pub struct EngineError {
 }
 
 impl EngineError {
+    /// ClickHouse's `ABORTED`.
+    pub const ABORTED: i32 = 236;
+
+    /// The text chDB's fatal-signal handler fails a running statement with,
+    /// measured at 26.9.2.1: `The server is shutting down due to a fatal error`.
+    pub const FATAL_TEXT: &'static str = "shutting down due to a fatal error";
+
+    /// Whether this is chDB's fatal-signal path — code 236 **and** its text — so
+    /// the process is going down (HS1 R2.4). Code alone is not enough: `ABORTED`
+    /// has other uses, and a user must not be able to fake a crash.
+    pub fn is_fatal(&self) -> bool {
+        self.code == Self::ABORTED && self.message.contains(Self::FATAL_TEXT)
+    }
+
     /// ClickHouse's own shape, `Code: 60. DB::Exception: … (UNKNOWN_TABLE)`.
     pub fn to_clickhouse_text(&self) -> String {
         format!(

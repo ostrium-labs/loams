@@ -33,6 +33,9 @@ pub const PINNED_OFF: &[&str] = &[
     "allow_insert_into_iceberg",
     "allow_experimental_iceberg_compaction",
     "allow_iceberg_remove_orphan_files",
+    // A user-chosen code in `throwIf` could impersonate a Loams or chDB error
+    // (`236 ABORTED`, a crash) to the front (HS1 Task 2 review M2).
+    "allow_custom_error_code_in_throwif",
 ];
 
 /// The worker's command line.
