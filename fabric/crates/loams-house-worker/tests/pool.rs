@@ -895,3 +895,40 @@ async fn user_caused_errors_do_not_poison_the_worker() {
         pool.stats()
     );
 }
+
+/// HS1 Task 2 review M4: `READ ON S3` is scoped to the worker's endpoint, and the
+/// regex's escaping survives the SQL literal it is written in: `127a0a0a1` would
+/// match `127.0.0.1` if `\.` had turned into `.`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn s3_grant_is_scoped_to_the_endpoint() {
+    let launcher = ProcessLauncher::new(common::WORKER, tmp_root("s3-grant"))
+        .with_s3_endpoint("http://127.0.0.1:9/");
+    let pool = loams_house::WorkerPool::start(small(1), std::sync::Arc::new(launcher))
+        .await
+        .expect("pool");
+    let mut lease = pool.acquire("ns").await.expect("worker");
+    for url in [
+        "http://127.0.0.1:10/bkt/x.csv",
+        "http://127a0a0a1:9/bkt/x.csv",
+        "http://10.0.0.1:9/bkt/x.csv",
+    ] {
+        let sql = format!("SELECT * FROM s3('{url}', 'CSV', 'a String')");
+        let err = lease.run(statement(&sql, "TSV")).await.expect_err(&sql);
+        assert_eq!(err.code(), 497, "{url} is outside the grant: {err}");
+    }
+    // Inside the grant the access check passes; nothing listens on port 9, so it
+    // fails later, and differently.
+    let mut inside = statement(
+        "SELECT * FROM s3('http://127.0.0.1:9/bkt/x.csv', 'CSV', 'a String')",
+        "TSV",
+    );
+    // chDB's S3 client retries a refused connection for minutes by default.
+    inside.settings = vec![("s3_retry_attempts".to_string(), "0".to_string())];
+    inside.limits.max_execution_time_ms = Some(10_000);
+    let inside = tokio::time::timeout(Duration::from_secs(30), lease.run(inside))
+        .await
+        .expect("bounded")
+        .expect_err("nothing listens");
+    assert_ne!(inside.code(), 497, "inside the grant: {inside}");
+    pool.release(lease, Outcome::Completed);
+}

@@ -175,8 +175,8 @@ pub fn users_xml(args: &WorkerArgs) -> String {
     if let Some(endpoint) = &args.s3_endpoint {
         let _ = writeln!(
             grants,
-            "        <query>GRANT READ ON S3('{}')</query>",
-            xml_text(&s3_grant_regex(endpoint))
+            "        <query>GRANT READ ON S3({})</query>",
+            xml_text(&sql_string(&s3_grant_regex(endpoint)))
         );
     }
     let mut pinned = String::new();
@@ -190,7 +190,7 @@ pub fn users_xml(args: &WorkerArgs) -> String {
            <users>\n    \
              <default>\n      \
                <password></password>\n      \
-               <networks><ip>::/0</ip></networks>\n      \
+               <networks><ip>127.0.0.1</ip></networks>\n      \
                <profile>worker</profile>\n      \
                <quota>default</quota>\n      \
                <grants>\n{grants}      </grants>\n    \
@@ -218,6 +218,13 @@ pub fn s3_grant_regex(endpoint: &str) -> String {
     }
     out.push_str("/.*");
     out
+}
+
+/// A ClickHouse string literal: quoted, with `\\` and `'` escaped. The regex's own
+/// backslashes must survive the literal (`\\.` in the SQL is `\.` in the regex),
+/// and a quote in an endpoint must not end it (HS1 Task 2 review M4).
+pub fn sql_string(text: &str) -> String {
+    format!("'{}'", text.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
 /// Escapes text for an XML element body.
@@ -262,6 +269,39 @@ mod tests {
     }
 
     #[test]
+    fn sql_string_escapes_backslashes_and_quotes() {
+        assert_eq!(sql_string(r"a\.b"), r"'a\\.b'");
+        assert_eq!(sql_string("it's"), r"'it\'s'");
+        let users = users_xml(&WorkerArgs {
+            s3_endpoint: Some("http://127.0.0.1:1/x'); GRANT ALL ON *.* TO default; --".into()),
+            ..args()
+        });
+        let line = users
+            .lines()
+            .find(|l| l.contains("ON S3("))
+            .expect("the S3 grant");
+        let inner = line
+            .trim()
+            .strip_prefix("<query>GRANT READ ON S3('")
+            .and_then(|l| l.strip_suffix("')</query>"))
+            .expect("one literal");
+        let bytes = inner.as_bytes();
+        for (at, byte) in bytes.iter().enumerate() {
+            if *byte == b'\'' {
+                let backslashes = bytes[..at]
+                    .iter()
+                    .rev()
+                    .take_while(|b| **b == b'\\')
+                    .count();
+                assert!(
+                    backslashes % 2 == 1,
+                    "an unescaped quote ends the literal early: {line}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn caches_are_an_eighth_of_memory() {
         let sizes = CacheSizes::for_memory(8 * 1024 * 1024 * 1024);
         assert_eq!(
@@ -275,7 +315,14 @@ mod tests {
     fn users_file_grants_only_r1_8() {
         let users = users_xml(&args());
         assert!(users.contains(GRANTS));
-        assert!(users.contains("GRANT READ ON S3('http://127\\.0\\.0\\.1:41887/.*')"));
+        assert!(
+            users.contains(r"GRANT READ ON S3('http://127\\.0\\.0\\.1:41887/.*')"),
+            "the regex's backslashes are doubled inside the SQL literal:\n{users}"
+        );
+        assert!(
+            users.contains("<networks><ip>127.0.0.1</ip></networks>"),
+            "R1.11"
+        );
         for absent in [
             "FILE",
             "URL",
