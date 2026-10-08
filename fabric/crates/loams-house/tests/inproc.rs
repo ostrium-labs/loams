@@ -56,13 +56,14 @@ async fn inproc_worker_serves_and_cancels() {
         .expect_err("the worker's grants apply in-process too");
     assert_eq!(err.code(), 497, "{err}");
 
-    let handle = lease.kill_handle().expect("handle");
     lease
         .start(statement(
             "SELECT sleepEachRow(0.5) FROM numbers(4) SETTINGS max_block_size = 1",
         ))
         .await
         .expect("started");
+    // The handle is for this statement: taken after `start` (review I1).
+    let handle = lease.kill_handle().expect("handle");
     tokio::time::sleep(Duration::from_millis(200)).await;
     let at = Instant::now();
     handle.kill(ExitReason::Cancel);

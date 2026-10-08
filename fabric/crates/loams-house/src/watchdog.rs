@@ -169,7 +169,16 @@ pub struct Launched {
 pub struct WorkerShared {
     id: String,
     control: Arc<dyn WorkerControl>,
-    reason: Mutex<Option<ExitReason>>,
+    state: Mutex<KillState>,
+}
+
+/// The lease/statement epoch and the recorded reason, behind one lock, so a
+/// [`KillHandle`]'s epoch check and its signal cannot straddle a new lease or
+/// statement (HS1 Task 2 review I1).
+#[derive(Debug, Default)]
+struct KillState {
+    epoch: u64,
+    reason: Option<ExitReason>,
 }
 
 impl WorkerShared {
@@ -178,14 +187,27 @@ impl WorkerShared {
         Arc::new(Self {
             id,
             control,
-            reason: Mutex::new(None),
+            state: Mutex::new(KillState::default()),
         })
     }
 
-    fn reason_slot(&self) -> MutexGuard<'_, Option<ExitReason>> {
-        self.reason
+    fn state(&self) -> MutexGuard<'_, KillState> {
+        self.state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Starts a new epoch: a new lease or a new statement. Handles taken before it
+    /// no longer reach this worker.
+    pub fn bump_epoch(&self) -> u64 {
+        let mut state = self.state();
+        state.epoch += 1;
+        state.epoch
+    }
+
+    /// The current epoch.
+    pub fn epoch(&self) -> u64 {
+        self.state().epoch
     }
 
     /// The worker's id.
@@ -200,20 +222,35 @@ impl WorkerShared {
 
     /// The reason recorded for its death, if anyone recorded one.
     pub fn reason(&self) -> Option<ExitReason> {
-        *self.reason_slot()
+        self.state().reason
     }
 
     /// Records `reason` unless one is already recorded, and returns the one that
     /// stands. The first reason wins: a cancel that raced a timeout stays a cancel.
     pub fn record(&self, reason: ExitReason) -> ExitReason {
-        *self.reason_slot().get_or_insert(reason)
+        *self.state().reason.get_or_insert(reason)
     }
 
-    /// Records `reason` and ends the worker.
+    /// Records `reason` and ends the worker, whatever the epoch: the pool's own
+    /// retirement.
     pub fn kill(&self, reason: ExitReason) -> ExitReason {
-        let reason = self.record(reason);
+        let mut state = self.state();
+        let reason = *state.reason.get_or_insert(reason);
         self.control.terminate();
         reason
+    }
+
+    /// [`WorkerShared::kill`], but only while the epoch is still `epoch`; the check
+    /// and the signal happen under the lock [`WorkerShared::bump_epoch`] takes.
+    /// `None` when the handle is stale.
+    pub fn kill_in_epoch(&self, epoch: u64, reason: ExitReason) -> Option<ExitReason> {
+        let mut state = self.state();
+        if state.epoch != epoch {
+            return None;
+        }
+        let reason = *state.reason.get_or_insert(reason);
+        self.control.terminate();
+        Some(reason)
     }
 
     /// The exit, if it has happened.
@@ -249,17 +286,23 @@ impl WorkerShared {
 #[derive(Clone, Debug)]
 pub struct KillHandle {
     shared: Arc<WorkerShared>,
+    epoch: u64,
 }
 
 impl KillHandle {
+    /// A handle for the worker's current epoch.
     pub(crate) fn new(shared: Arc<WorkerShared>) -> Self {
-        Self { shared }
+        let epoch = shared.epoch();
+        Self { shared, epoch }
     }
 
-    /// Records `reason` and `SIGKILL`s the worker. The statement it was running
-    /// answers the client with [`ExitReason::client_error`].
-    pub fn kill(&self, reason: ExitReason) -> ExitReason {
-        self.shared.kill(reason)
+    /// Records `reason` and `SIGKILL`s the worker, **if it is still in the lease
+    /// and statement this handle was taken for**; the statement it was running
+    /// answers the client with [`ExitReason::client_error`]. A handle that outlived
+    /// its statement (a late `KILL QUERY`, a deadline that fired after `Done`) is a
+    /// no-op and answers `None`, so it can never kill a later query (review I1).
+    pub fn kill(&self, reason: ExitReason) -> Option<ExitReason> {
+        self.shared.kill_in_epoch(self.epoch, reason)
     }
 
     /// The worker's pid.
@@ -282,7 +325,7 @@ impl KillHandle {
         Deadline {
             task: tokio::spawn(async move {
                 tokio::time::sleep_until(deadline).await;
-                handle.kill(reason);
+                let _ = handle.kill(reason);
             }),
         }
     }

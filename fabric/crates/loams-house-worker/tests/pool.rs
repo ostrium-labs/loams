@@ -92,12 +92,13 @@ async fn kill_is_the_cancel() {
     let pool = pool("cancel", small(2)).await;
     let mut lease = pool.acquire("ns-cancel").await.expect("a worker");
     let pid = lease.pid();
-    let handle = lease.kill_handle().expect("handle");
 
     lease
         .start(statement("SELECT count() FROM numbers(1e12)", "TSV"))
         .await
         .expect("started");
+    // The handle is for this statement: taken after `start` (review I1).
+    let handle = lease.kill_handle().expect("handle");
     let killer = tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(300)).await;
         let at = Instant::now();
@@ -354,11 +355,12 @@ async fn idle_bound_worker_is_retired() {
 async fn deadline_kill_answers_159() {
     let pool = pool("deadline", small(2)).await;
     let mut lease = pool.acquire("ns-deadline").await.expect("worker");
-    let handle = lease.kill_handle().expect("handle");
     lease
         .start(statement("SELECT count() FROM numbers(1e12)", "TSV"))
         .await
         .expect("started");
+    // The handle is for this statement: taken after `start` (review I1).
+    let handle = lease.kill_handle().expect("handle");
     let _deadline = handle.kill_at(
         tokio::time::Instant::now() + Duration::from_millis(300),
         ExitReason::Timeout,
@@ -676,4 +678,65 @@ fn busy_worker_exits_when_its_socket_closes() {
     });
     assert_eq!(status, "exited with 0");
     assert!(closed.elapsed() < Duration::from_secs(1));
+}
+
+/// HS1 Task 2 review I1: a `KillHandle` is for one statement of one lease. A kill
+/// that arrives after `Done` and `release` — a late `KILL QUERY`, a deadline that
+/// fired late — must not kill the next lease's statement on the same worker.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stale_kill_handle_cannot_kill_a_later_query() {
+    let pool = pool("stale-handle", small(1)).await;
+    let mut lease = pool.acquire("ns").await.expect("worker");
+    let pid = lease.pid();
+    lease
+        .run(statement("SELECT 1", "TSV"))
+        .await
+        .expect("first");
+    let stale = lease.kill_handle().expect("handle");
+
+    // A later statement on the same lease.
+    lease
+        .start(statement("SELECT 2", "TSV"))
+        .await
+        .expect("started");
+    assert_eq!(
+        stale.kill(ExitReason::Cancel),
+        None,
+        "stale within the lease"
+    );
+    let mut out = Vec::new();
+    loop {
+        match lease.next_event().await.expect("second statement survives") {
+            loams_house::Event::Chunk(chunk) => out.extend_from_slice(&chunk.bytes),
+            loams_house::Event::Progress(_) => {}
+            loams_house::Event::Done(_) => break,
+        }
+    }
+    assert_eq!(out, b"2\n");
+    let after_done = lease.kill_handle().expect("handle");
+    pool.release(lease, Outcome::Completed);
+
+    // Kill right after Done and release, then the next lease's statement.
+    assert_eq!(
+        after_done.kill(ExitReason::Cancel),
+        None,
+        "stale after release"
+    );
+    let mut next = pool.acquire("ns").await.expect("same worker");
+    assert_eq!(next.pid(), pid, "the worker was not killed");
+    assert_eq!(stale.kill(ExitReason::Timeout), None);
+    assert_eq!(
+        next.run(statement("SELECT 3", "TSV"))
+            .await
+            .expect("completes")
+            .bytes,
+        b"3\n"
+    );
+    pool.release(next, Outcome::Completed);
+    assert_eq!(
+        pool.stats().kills.values().sum::<u64>(),
+        0,
+        "{:?}",
+        pool.stats()
+    );
 }

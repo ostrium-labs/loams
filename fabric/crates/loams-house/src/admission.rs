@@ -506,6 +506,8 @@ impl WorkerPool {
             };
 
             let id = worker.shared.id().to_string();
+            // A new lease: handles from earlier leases of this worker go stale.
+            worker.shared.bump_epoch();
             inner.state().leased.insert(id, namespace.to_string());
             inner.top_up();
             return Ok(WorkerLease {
@@ -557,6 +559,9 @@ impl WorkerPool {
         let Some(mut worker) = lease.worker.take() else {
             return;
         };
+        // The lease is over: its handles go stale before the worker can idle or be
+        // lent again (review I1).
+        worker.shared.bump_epoch();
         let inner = &self.inner;
         inner.state().leased.remove(worker.shared.id());
         let retire = if worker.dead || worker.shared.has_exited() {
@@ -687,7 +692,9 @@ impl WorkerLease {
     }
 
     /// A handle that kills this worker from elsewhere (`KILL QUERY`, a client that
-    /// went away, a deadline).
+    /// went away, a deadline), for the **current statement**: take it after
+    /// [`WorkerLease::start`]. It is a no-op once a later statement starts or the
+    /// worker is lent again (review I1).
     pub fn kill_handle(&self) -> Option<KillHandle> {
         self.worker
             .as_ref()
@@ -706,6 +713,8 @@ impl WorkerLease {
         }
         worker.in_flight = true;
         worker.queries += 1;
+        // A new statement: a handle taken for the previous one goes stale.
+        worker.shared.bump_epoch();
         let sent = FrameCodec::write_async(&mut worker.writer, &Frame::Execute(execute)).await;
         match sent {
             Ok(()) => Ok(()),
