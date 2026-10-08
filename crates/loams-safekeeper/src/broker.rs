@@ -19,6 +19,7 @@
 //! broker.proto` (Apache-2.0, Neon; see the repository's `NOTICE`).
 
 use std::collections::HashSet;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -61,7 +62,84 @@ pub struct BrokerConfig {
     pub retry: Duration,
 }
 
+/// Check `--broker-endpoint`: `http://host:port`. TLS to the broker
+/// (`https://` with a CA, as the fork's `make_tls_config`) is PG2 Task 38's.
+pub fn parse_endpoint(s: &str) -> Result<String, Error> {
+    let bad = |why: &str| Error::Protocol(format!("--broker-endpoint {s:?}: {why}"));
+    let uri: tonic::transport::Uri = s.parse().map_err(|e| bad(&format!("{e}")))?;
+    match uri.scheme_str() {
+        Some("http") => {}
+        Some("https") => {
+            return Err(bad(
+                "TLS to the storage broker is not supported yet (PG2 Task 38); \
+                 use http:// on a trusted network",
+            ));
+        }
+        Some(other) => return Err(bad(&format!("unsupported scheme {other:?}; use http://"))),
+        None => return Err(bad("no scheme; use http://host:port")),
+    }
+    if uri.host().is_none_or(str::is_empty) {
+        return Err(bad("no host"));
+    }
+    Ok(s.to_string())
+}
+
+/// Check an advertised address (`flag` names it in errors): `host:port`,
+/// and, when the listener is not on loopback, an address other hosts can
+/// reach (not unspecified, not loopback).
+pub fn parse_advertise(flag: &str, s: &str, listener: SocketAddr) -> Result<String, Error> {
+    let bad = |why: &str| Error::Protocol(format!("{flag} {s:?}: {why}"));
+    let (host, port) = s.rsplit_once(':').ok_or_else(|| bad("not host:port"))?;
+    let bracketed = host.strip_prefix('[').and_then(|h| h.strip_suffix(']'));
+    if bracketed.is_none() && host.contains(':') {
+        return Err(bad("an IPv6 address must be in brackets: [addr]:port"));
+    }
+    let host = bracketed.unwrap_or(host);
+    if host.is_empty() {
+        return Err(bad("no host"));
+    }
+    match port.parse::<u16>() {
+        Ok(p) if p > 0 => {}
+        _ => return Err(bad("not host:port (bad port)")),
+    }
+    let ip = host.parse::<IpAddr>().ok();
+    if !listener.ip().is_loopback() {
+        let unreachable = match ip {
+            Some(ip) => ip.is_unspecified() || ip.is_loopback(),
+            None => host.eq_ignore_ascii_case("localhost"),
+        };
+        if unreachable {
+            return Err(bad(
+                "not an address the pageserver can reach (unspecified or loopback) while \
+                 the listener is not on loopback; advertise this host's address or the \
+                 pool's Service",
+            ));
+        }
+    }
+    Ok(s.to_string())
+}
+
 impl BrokerConfig {
+    /// The configuration from `loams-wal`'s options, checked: the endpoint
+    /// and both advertised addresses (which default to the listeners).
+    pub fn from_options(
+        endpoint: &str,
+        node_id: NodeId,
+        advertise_pg: Option<&str>,
+        advertise_http: Option<&str>,
+        listen_pg: SocketAddr,
+        listen_http: SocketAddr,
+    ) -> Result<Self, Error> {
+        let pg = advertise_pg.map_or_else(|| listen_pg.to_string(), str::to_string);
+        let http = advertise_http.map_or_else(|| listen_http.to_string(), str::to_string);
+        Ok(Self::new(
+            parse_endpoint(endpoint)?,
+            node_id,
+            parse_advertise("--advertise-pg", &pg, listen_pg)?,
+            parse_advertise("--advertise-http", &http, listen_http)?,
+        ))
+    }
+
     pub fn new(
         endpoint: String,
         node_id: NodeId,
@@ -314,6 +392,87 @@ pub fn timelines_of(infos: &[SafekeeperTimelineInfo]) -> HashSet<TimelineId> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sa(s: &str) -> SocketAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn broker_endpoint_must_be_plain_http_with_a_host() {
+        assert!(parse_endpoint("http://127.0.0.1:50051").is_ok());
+        assert!(parse_endpoint("http://broker.ns.svc:50051").is_ok());
+        let no_scheme = parse_endpoint("127.0.0.1:50051").unwrap_err().to_string();
+        assert!(no_scheme.contains("no scheme"), "{no_scheme}");
+        let tls = parse_endpoint("https://broker:50051")
+            .unwrap_err()
+            .to_string();
+        assert!(tls.contains("TLS") && tls.contains("Task 38"), "{tls}");
+        assert!(parse_endpoint("grpc://broker:50051").is_err());
+        assert!(parse_endpoint("http://").is_err());
+        assert!(parse_endpoint("").is_err());
+    }
+
+    #[test]
+    fn advertised_addresses_are_host_port() {
+        let lo = sa("127.0.0.1:5454");
+        for ok in [
+            "127.0.0.1:5454",
+            "wal.ns.svc:5454",
+            "[::1]:5454",
+            "10.0.0.5:1",
+        ] {
+            assert!(parse_advertise("--advertise-pg", ok, lo).is_ok(), "{ok}");
+        }
+        for bad in [
+            "wal",
+            "wal:",
+            ":5454",
+            "wal:0",
+            "wal:70000",
+            "::1:5454",
+            "wal:x",
+        ] {
+            assert!(parse_advertise("--advertise-pg", bad, lo).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn beyond_loopback_the_advertised_address_must_be_reachable() {
+        let any = sa("0.0.0.0:5454");
+        for bad in [
+            "0.0.0.0:5454",
+            "[::]:5454",
+            "127.0.0.1:5454",
+            "[::1]:5454",
+            "localhost:5454",
+        ] {
+            let e = parse_advertise("--advertise-pg", bad, any)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                e.contains("--advertise-pg") && e.contains("reach"),
+                "{bad}: {e}"
+            );
+        }
+        assert!(parse_advertise("--advertise-pg", "10.0.0.5:5454", any).is_ok());
+        assert!(parse_advertise("--advertise-pg", "wal.ns.svc:5454", any).is_ok());
+        // The default, the listener itself, is refused when it is 0.0.0.0.
+        assert!(
+            BrokerConfig::from_options("http://b:50051", 1, None, Some("10.0.0.5:7676"), any, any)
+                .is_err()
+        );
+        assert!(
+            BrokerConfig::from_options(
+                "http://b:50051",
+                1,
+                Some("10.0.0.5:5454"),
+                Some("10.0.0.5:7676"),
+                any,
+                any
+            )
+            .is_ok()
+        );
+    }
 
     #[test]
     fn ttids_round_trip_and_bad_lengths_are_refused() {

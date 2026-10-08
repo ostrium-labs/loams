@@ -179,6 +179,18 @@ async fn run_with<S: WalStore>(
             );
         }
     }
+    // The broker options are checked before anything starts.
+    let broker = match &args.broker_endpoint {
+        Some(endpoint) => Some(crate::broker::BrokerConfig::from_options(
+            endpoint,
+            args.id,
+            args.advertise_pg.as_deref(),
+            args.advertise_http.as_deref(),
+            args.listen_pg,
+            args.listen_http,
+        )?),
+        None => None,
+    };
     let svc = WalService::new(
         store,
         WalServiceConfig {
@@ -190,17 +202,7 @@ async fn run_with<S: WalStore>(
             ..WalServiceConfig::default()
         },
     );
-    if let Some(endpoint) = &args.broker_endpoint {
-        let mut cfg = crate::broker::BrokerConfig::new(
-            endpoint.clone(),
-            args.id,
-            args.advertise_pg
-                .clone()
-                .unwrap_or_else(|| args.listen_pg.to_string()),
-            args.advertise_http
-                .clone()
-                .unwrap_or_else(|| args.listen_http.to_string()),
-        );
+    if let Some(mut cfg) = broker {
         cfg.availability_zone = args.availability_zone.clone();
         drop(crate::broker::spawn(svc.clone(), cfg));
     }
