@@ -3,8 +3,13 @@ import { resolve } from "node:path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 // Main and preload only: the renderer is the console build (web/apps/console).
+const def = (k: string) => ({
+	[`process.env.${k}`]: JSON.stringify(process.env[k] ?? ""),
+});
+
 export default defineConfig({
 	main: {
+		define: { ...def("LOAMS_UPDATE_PUBKEY"), ...def("LOAMS_UPDATE_FEED") },
 		// The workspace adapters are raw TypeScript: bundle them (and cordis, zod)
 		// so the packaged app does not need the workspace.
 		plugins: [

@@ -46,6 +46,7 @@ import {
 	saveWindowState,
 	type WindowState,
 } from "./shell/window-state";
+import { startUpdater } from "./update/updater.electron";
 
 registerAppScheme();
 // D663: crash dumps stay on this machine (userData/Crashpad); nothing is uploaded.
@@ -210,6 +211,11 @@ const singleInstance = initSingleInstance({
 				onNotifyClick: (route) => {
 					showMainWindow(open);
 					if (route) singleInstance.navigate(route);
+				},
+			});
+			startUpdater({
+				prepareToInstall: async () => {
+					await engine?.stop();
 				},
 			});
 			app.setAboutPanelOptions({

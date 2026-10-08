@@ -130,8 +130,16 @@ export interface LoamsDesktopApi {
 				| "error";
 			version?: string;
 			message?: string;
+			/**
+			 * D677: "self" downloads and installs in place; "manual" (macOS, Linux
+			 * package installs) means download() opens the release page instead.
+			 */
+			mode?: "self" | "manual";
+			/** 0-100 while phase is "downloading". */
+			percent?: number;
 		}>;
 		check(): Promise<void>;
+		/** "self" mode: fetch the update. "manual" mode: open the release page. */
 		download(): Promise<void>;
 		installAndRestart(): Promise<void>;
 	};
