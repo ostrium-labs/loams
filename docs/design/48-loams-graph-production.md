@@ -242,7 +242,7 @@ service GraphAdminService {
 service GraphService {
   rpc Execute(ExecuteRequest) returns (ExecuteResponse);
   rpc ExecuteBatch(ExecuteBatchRequest) returns (ExecuteBatchResponse);
-  rpc ExecuteStream(ExecuteRequest) returns (stream ResultChunk);         // server streaming only (D420)
+  rpc ExecuteStream(ExecuteStreamRequest) returns (stream ResultChunk);   // server streaming only (D420); { ExecuteRequest request; uint32 chunk_rows } (GR1 R2.1)
   rpc Explain(ExplainRequest) returns (Plan);                             // EXPLAIN, or PROFILE with profile = true
 }
 
@@ -294,7 +294,7 @@ message Path { repeated Node nodes = 1; repeated Relationship relationships = 2;
 
 ### 8.3 Errors
 
-- `ErrorInfo.reason` values: `gql_syntax_error`, `gql_feature_unsupported`, `graph_not_found`, `graph_is_linked`, `graph_read_only`, `graph_write_conflict`, `graph_version_mismatch`, `graph_statement_timeout`, `graph_memory_limit`, `graph_result_too_large`, `graph_transaction_statement`, `graph_language_disabled`, `graph_reloading`, `graph_engine_panic`, `consistency_wait_timeout`, `feature_not_in_variant`.
+- `ErrorInfo.reason` values: `gql_syntax_error`, `gql_feature_unsupported`, `graph_not_found`, `graph_is_linked`, `graph_read_only`, `graph_write_conflict`, `graph_version_mismatch`, `graph_statement_timeout`, `graph_memory_limit`, `graph_result_too_large`, `graph_transaction_statement`, `graph_language_disabled`, `graph_reloading`, `graph_engine_panic`, `consistency_wait_timeout`, `feature_not_in_variant`; and, from GR1 execution, `graph_statement_not_allowed` (R0.10, R0.11), `graph_unbounded_path` (R0.8) and `graph_catalog_version_mismatch` (`UpdateGraph`'s `expected_version`, R2.9).
 - `ErrorInfo.metadata` carries `gqlstatus` (the five-character GQLSTATUS code of ISO/IEC 39075, when the engine reports one; verify Grafeo's mapping in `docs/user-guide/error-codes.md`), and `line`, `column` and `length` for a syntax error, so an editor can underline it.
 
 ### 8.4 REST

@@ -243,7 +243,7 @@ Tests:
 - `graph_rpcs_answer_not_in_variant_without_feature`: every RPC of both services.
 - `connect_json_grpc_and_grpc_web_reach_execute`: one statement over each protocol on the main port.
 - `non_loopback_listen_without_authorizer_refused`: `loams serve` with `graph` on a non-loopback address and the `AllowAll` authorizer exits with a clear message (D750; until MT1).
-- `reflection_lists_only_served_or_stubbed_services`: every service `grpc.reflection.v1` lists (from `loams_proto::FILE_DESCRIPTOR_SET`) is either served or answered by a `not_in_variant` stub, with and without `graph` (Task 1 R1.1 made reflection list `GraphService` before it is mounted).
+- `reflection_lists_only_served_or_stubbed_services`: every service `grpc.reflection.v1` lists (from `loams_proto::FILE_DESCRIPTOR_SET`) is either served or answered by a `not_in_variant` stub, with and without `graph` (Task 1 R1.1 made reflection list `GraphService` before it is mounted). A package that `loams-proto` compiles only because a served package imports it is exempt, and the test names it: `loams.operations.v1` (imported by `loams.graph.v1`, R2.3) until API1 serves `OperationsService`.
 
 Commit `feat(api): serve loams.graph.v1 behind the graph feature (D741)`.
 
@@ -886,7 +886,8 @@ Rulings:
 **R0.19 Search IR (changes Tasks 20 and 21).**
 - `crates/loams-query/src/ir.rs`'s `SearchRequest` has **no `expand` or `rerank`**.
 - `proto/loams/collection/v1/query.proto:230-232` declares `google.protobuf.Struct rerank = 17; google.protobuf.Struct expand = 18;` as "always `invalid_argument`", in `loams.collection.v1`, which is `unstable: false`.
-- Changing those fields' type to typed messages is a `buf breaking` FIELD_SAME_TYPE violation in a stable package. Task 20 therefore keeps 17/18 as they are, deprecated, and adds typed `Rerank rerank_spec`/`Expand expand_spec` fields with new numbers, unless the owner allows the type change (Q-T0-4).
+- Changing those fields' type to typed messages is a `buf breaking` FIELD_SAME_TYPE violation in a stable package. Task 20 therefore keeps 17/18 as they are, deprecated, and adds typed `Rerank rerank_spec`/`Expand expand_spec` fields with new numbers.
+- **Answered (owner, 2026-10-08, Q-T0-4):** `loams.collection.v1` stays stable. Fields 17 and 18 keep their `Struct` type and are deprecated, and the typed `rerank_spec`/`expand_spec` fields under new numbers are deferred to Task 20.
 - DataFusion is 54.1. `TableFunctionImpl::call(&self, &[Expr])` takes its arguments at plan time (`datafusion-catalog-54.1.0/src/table.rs:557`), so a UDTF cannot see a `LATERAL` outer column. This was read from the signature, not executed. Task 21 implements the `seeds => 'SELECT …'` form and makes `lateral_join_with_collection` a documented refusal test.
 
 **R0.20 Desktop (changes Task 8).**
@@ -912,7 +913,7 @@ Rulings:
 - **Q-T0-1 (Task 1):** keep 0.5.43 and merge Task 1 on or after 2026-10-11, or drop to 0.5.42 now? (R0.3)
 - **Q-T0-2 (Task 26, §48 Review Focus 5):** Grafeo neither stops a runaway statement (R0.8) nor fails it on memory (R0.9). In process, Loams can only answer, detach and reload. Is that acceptable for GA, with upstream fixes asked for (Q679)? Or should each graph's engine run in a child process, which would change D741?
 - **Q-T0-3 (Task 1):** the crates ship no NOTICE. Supply Grafeo's upstream `NOTICE`/`LICENSE` at the 0.5.43 tag, or approve fetching it.
-- **Q-T0-4 (Task 20):** may `expand`/`rerank` (fields 17/18 of the stable `loams.collection.v1`) change type from `Struct` to typed messages, or must they be new fields? (R0.19)
+- ~~Q-T0-4 (Task 20)~~ **Answered 2026-10-08:** keep `loams.collection.v1` stable; deprecate 17/18 and add the typed `rerank_spec`/`expand_spec` under new numbers in Task 20 (R0.19).
 
 ### Task 1 (2026-10-08, on `backend/gr1`)
 
@@ -939,7 +940,8 @@ Rulings:
 - `ExecuteBatchRequest` has `isolation`, `optional if_version`, `timeout_ms` and `idempotency_key`. `ExecuteBatchResponse` has `committed_through` and `consistency_token` (§48 §7.3).
 - `Consistency` is a oneof: `strong`, `eventual`, or `at_least` holding a token string.
 - `GraphMapping` is `VertexMapping`/`EdgeMapping` per §07 §2.1. Task 17 may refine it while the package is unstable.
-- `go_package = "loams.dev/go/gen/loams/graph/v1;graphv1"`. This is §44's module and the path the Go templates map every other package to.
+- No `go_package` option, as for every other file in `proto/`. The Go stubs template maps it with managed mode (`go_package_prefix loams.dev/go/gen`), and `sdks/go/buf.gen.go.yaml` has an `Mloams/graph/v1/graph.proto=loams.dev/go/gen/loams/graph/v1;graphv1` line in both plugins (fix round 1).
+- `ExecuteStream` takes `ExecuteStreamRequest`. §48 §8.2 is amended to match, and §8.3 gains `graph_statement_not_allowed` (R0.10), `graph_unbounded_path` (R0.8) and `graph_catalog_version_mismatch` (`UpdateGraphRequest.expected_version`, now `optional`).
 - Both services carry `ModuleOptions { name: "graph", unstable: true }` and no `FacadeOptions` yet (SDK tasks 36–37), so the SDK facades are unchanged.
 
 **R2.2 buf.** R1.2's temporary lint ignore is gone. `graph.proto` joins `collection.proto`'s per-file `RPC_RESPONSE_STANDARD_NAME` and `RPC_REQUEST_RESPONSE_UNIQUE` exceptions. These are forced by §48 §8.2: `Graph` and `Operation` each answer several RPCs, and `EngineInfo`, `GraphSchema`, `Plan` and `ResultChunk` are answers without a Response suffix. `buf breaking` ignores `proto/loams/graph` while the package is `unstable` (§48 §8.1); Task 39 removes that line. `buf lint` is clean, and `buf format -d --path proto/loams/graph/v1/graph.proto` is clean. Other files have formatting diffs that were already there before this task.
@@ -953,7 +955,11 @@ Rulings:
 - `Time` without an offset is `local_time`, and with an offset is `zoned_time`.
 - Two Grafeo values that are not in §8.2's list get fields of their own: `Vector` (20) and `Counter` (21, GCounter/OnCounter).
 - Nodes and relationships are recognised by the engine's projected-map shape: `_id` + `_labels` for a node, and `_id` + `_type` + `_source` + `_target` for a relationship.
-- **Measured: Grafeo 0.5.43 builds a `Value::Path` of element ids (`Int64`), not maps.** A path's `Node`/`Relationship` therefore carry only `id`, and an id-only element decodes back to the id. Task 20/21 or the page reads labels by returning the elements too.
+- **Measured: Grafeo 0.5.43 builds a `Value::Path` of element ids (`Int64`), not maps.** Controller decision (fix round 1): the server resolves them, so the proto promises full elements.
+  - `Graph::resolved` (`engine.rs`) runs on every result Execute and ExecuteBatch build. It looks each id up (`GrafeoDB::get_node`/`get_edge`) and replaces it with the engine's own projected-map shape, so `value.rs` answers full `Node`s and `Relationship`s. Path order and each relationship's stored `src`/`dst` are kept (`path_elements_are_full_and_keep_direction`).
+  - **Gap (Task 11):** the lookup reads the current state, not the read's epoch. Grafeo 0.5.43 without its `temporal` feature does not version labels or properties per epoch, so `get_node_at_epoch` would not help. A write committed between the statement and the lookup is visible, and an element deleted in that window stays an id. Task 11's lane (reads pinned, commits serialised) closes it.
+- **Shape ambiguities.** A user map whose keys are exactly a projected node's (`_id` INT64 plus `_labels` list of strings) or relationship's is answered as a `Node`/`Relationship`; it still decodes to the same map (`a_map_shaped_like_a_node_is_answered_as_one`). In a path, a node with no labels and no properties decodes to its id, not a map.
+- UTC offsets are bounded to ±64800 s on decode, and the zoned subtraction is checked (`offsets_round_trip_and_are_bounded`). `local_datetime` is Grafeo's TIMESTAMP as its UTC wall clock.
 
 **R2.5 The engine answers `grafeo::Value` rows.** `GraphRow.values` is `Vec<grafeo::Value>`. The JSON conversion, `node_ids`, `relationship_ids` and the `rows_read`/`bytes_read`/`rows_affected` wire fields are gone. `Graph::execute_with_params` is new, and `Execute` binds `parameters` through it.
 
@@ -962,8 +968,16 @@ Rulings:
 - Non-atomic batch parameters are still Task 3's (`non_atomic_batch_binds_parameters`).
 - The service takes no storage path, so `tests/graph.rs` exercises persistence and open-conflicts through the engine API.
 
-**R2.7 `proto_has_no_path_fields` matches words, not substrings.** It splits a field name on `_` and flags `path`, `url`, `uri`, `dir`, `directory`, `file`, `filename`, `folder` or `location`. Matching substrings would flag `ExplainRequest.profile` and `EngineInfo.gql_profile` (they contain "file"). Two graph-semantic fields are allowed beside `object_key`/`object_prefix`: `Value.path` (GQL PATH) and `GraphLimits.max_path_hops`.
+**R2.7 (superseded by R2.9) `proto_has_no_path_fields` matched words, not substrings.** It splits a field name on `_` and flags `path`, `url`, `uri`, `dir`, `directory`, `file`, `filename`, `folder` or `location`. Matching substrings would flag `ExplainRequest.profile` and `EngineInfo.gql_profile` (they contain "file"). Two graph-semantic fields are allowed beside `object_key`/`object_prefix`: `Value.path` (GQL PATH) and `GraphLimits.max_path_hops`.
 
 **R2.8 Q-T0-4 (fields 17/18 of `loams.collection.v1`) stays with Task 20.** That task adds the typed `rerank_spec`/`expand_spec` fields and deprecates 17 and 18.
 
-**Shared-target hazard.** Worktrees share `loams-proto`'s build-script output, so a build can run another worktree's generated code. Run `touch crates/loams-proto/build.rs proto/loams/graph/v1/graph.proto` after switching.
+**Shared-target hazard.** Worktrees share build-script output in the shared target, so a build can run another worktree's generated code. Run `touch crates/*/build.rs proto/loams/graph/v1/graph.proto` after switching branches or worktrees.
+
+**R2.9 Fix round 1 (review).**
+- `ResultChunk`'s last chunk carries `truncated`, `commit_epoch` and `notifications`.
+- `ExecuteBatchResponse` documents the atomic and non-atomic contracts, and gains `StatementError error` and `commit_epoch`. A non-atomic batch stops at its first failure and answers the committed results, `committed_through` and the error (`non_atomic_batch_reports_the_failed_statement`).
+- Each `Statement.language` is checked (`batch_checks_each_statements_language`).
+- `ExplainRequest` gains `timeout_ms` and `consistency`. `service::explain` refuses a writing PROFILE with `graph_read_only`; the plan itself is still Task 6's (`profile_refuses_a_write`).
+- Every refusal from `service.rs` now carries an `ErrorInfo` reason.
+- `proto_has_no_path_fields` uses substring matching over every file of the package, with the six-field allowlist named in the proto header. This replaces R2.7.
