@@ -28,7 +28,9 @@ These components are Go (TiDB, PD, BR, TiCDC) or Rust built by PingCAP (TiKV). L
   cargo deny --manifest-path crates/loams-sqldb/Cargo.toml --config deny.toml check licenses
   ```
 
-- **Where cargo-deny is missing.** The test skips with a message. CI sets `LOAMS_REQUIRE_CARGO_DENY=1`, which turns the skip into a failure.
+- **Where cargo-deny is missing.** The test skips with a message. Setting `LOAMS_REQUIRE_CARGO_DENY=1` turns the skip into a failure.
+  - **CI today.** No CI job sets `LOAMS_REQUIRE_CARGO_DENY` yet. The workspace-wide `cargo-deny-action` step in `.github/workflows/ci.yml` covers this crate's licences anyway.
+  - **CI later.** The `sqldb` job (plan SQ1, Global Constraints) should install cargo-deny and set the variable.
 - **New crates.** Each new SQ1 crate adds the same test.
 - **Test-only crates.** `mysql_async`, which the tests use, is MIT OR Apache-2.0. It is built with `minimal-rust`, so it pulls in no native TLS or C library.
 

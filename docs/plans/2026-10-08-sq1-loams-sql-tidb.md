@@ -728,7 +728,7 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - **Why.** TiDB peaked at 493 MiB under load (R1.5). TiDB v8.5.8 also clamps any `tidb_server_memory_limit` below 512 MiB up to 512 MiB (`parseMemoryLimit`, `pkg/sessionctx/variable/varsutil.go`), so the 0.5 GiB `xs` of §47 §15 could not have had its 400 MiB limit.
   - **Cost.** Lower `xs` density. The owner may revise this.
   - **Limits.** `tidb_mem_quota_query` is 40 % of the pod memory limit (an estimate; Task 24 tunes both). Values are whole MiB, rounded down.
-  - **Class table** (this plan's source of truth for `model::Class`; §47 §15 is updated to match; Task 23's `class_table_matches_docs` checks `docs/sqldb/classes.md` against it):
+  - **Class table** (this plan's source of truth for `model::Class`; §47 §15 is updated to match; Task 24's `class_table_matches_docs` checks `docs/sqldb/classes.md` against it):
 
     | Class | vCPU | Memory | `tidb_server_memory_limit` | `tidb_mem_quota_query` | Gate connections | Pods (min–max) |
     |---|---|---|---|---|---|---|
@@ -754,12 +754,21 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - **Cluster TLS.** `cluster-ssl-*` is rendered only when `Endpoints::with_cluster_tls(true)`.
   - **Fixed container paths** (Kubernetes TLS Secret layout): `/etc/tidb/{tidb.toml,init.sql}`, `/etc/tidb/tls/{ca.crt,tls.crt,tls.key}` and `/etc/tidb/cluster-tls/…`.
   - **Gate networks.** They are `Cidr` values with host bits cleared. `*`, `0.0.0.0/0` and `::/0` are refused.
-- **R2.5 Branch ids in Task 2.** `model::BranchId` accepts `br_` + 16 of `[0-9a-z]`. That covers every lower-case base32 alphabet and fits PD's keyspace-name rule. Task 7's `ids.rs` may narrow it to the chosen alphabet.
+- **R2.5 Branch ids in Task 2.** `model::BranchId` accepts `br_` + 16 of `[0-9a-z]`. That covers every lower-case base32 alphabet and fits PD's keyspace-name rule. Task 8's `ids.rs` may narrow it to the chosen alphabet.
 - **R2.6 Runtime contract details.**
   - **Class pod limits.** `SqlRuntime` does not enforce them (§47 §15). That is control-plane policy, and the IT scales an `xs` pool to 2 to exercise a warm second member.
   - **`LocalRuntime` state.** It keeps `state_dir/<branch>/{pool.json,tidb.toml,init.sql}`, with stable per-member port pairs from 24000+N and 25000+N. It labels containers `io.loams.sqldb.*` and replaces a member whose fingerprint changed (rendered config, image, class).
+  - **Fix round 1 changes to `LocalRuntime`.**
+    - **Locks.** Each branch has its own lock. Port allocation and saving the pool record take a separate short lock, so a wake on one branch never waits for a stop on another.
+    - **Dead members.** A failed `run` removes the container it may have left. Reconcile keeps only `running` members; `created`, `configured`, `initialized` and `exited` members are replaced.
+    - **Memory.** `--memory-swap` equals `--memory`.
+    - **TLS mounts.** The operator's TLS directories are mounted `ro` without SELinux relabelling, so on SELinux hosts they must already carry a container label. The runtime's own rendered files keep `:z`.
+    - **Status.** `pool_status` tolerates a member that is removed between `ps` and `inspect`.
+    - **Jobs.** `run_job` replaces a stale container that has the same name. The trait no longer claims `run_job` is idempotent: a replay runs the job again, and Task 15 owns job replay safety (BR checkpoints).
+  - **Notes for Tasks 6 and 14.** The trait has no surge or drain operation (start the new member, migrate idle sessions, then stop the old one). It also has no per-branch TLS: every pool mounts the runtime's one TLS directory. Task 6 (session migration) and Task 14 (the Kubernetes driver) add both, for example `replace_member(branch, index)` and a per-branch Secret.
+  - **Notes for Tasks 9 and 12.** On the desktop the gate runs on loopback. So either `Endpoints::gate_networks` holds `127.0.0.1/32`, and then **every** loopback connection to TiDB must carry a PROXY header (`fallbackable = false`), including the control plane's `ri_control` connections; or the gate connects from another address. Task 9's `ri_control` client and Task 12's `loams dev` wiring must pick one. The IT uses `10.89.0.0/16`, so its loopback connections carry no header.
   - **CPU limits.** `LocalRuntime` passes `--cpus` by class unless `cpu_limits = false`. The IT turns it off, because a first bootstrap at 0.25 vCPU takes minutes. Memory is always limited.
-  - **Bootstrap time.** The first bootstrap took about 8–45 s here, and it stays in `CreateDatabase` (R1.2). Task 7 should bootstrap at a larger class, or without a CPU limit.
+  - **Bootstrap time.** The first bootstrap took about 8–45 s here, and it stays in `CreateDatabase` (R1.2). Task 9 should bootstrap at a larger class, or without a CPU limit.
 - **R2.8 Redaction is OFF (controller ruling, fix round 1; reverses the earlier ON ruling and Task 2's MARKER).**
   - **Why not ON or MARKER.** TiDB redacts error messages when they are created (pingcap/errors), not only when it logs them. So clients would see `Duplicate entry '?'` instead of MySQL's text, which breaks the compatibility contract (D735, §47 §13.2).
   - **What renders.** `tidb_redact_log = 'OFF'` is in `tidb_globals` and `init.sql` (`redaction_is_off_for_mysql_compatibility`).
