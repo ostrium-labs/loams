@@ -137,3 +137,25 @@ fn in_memory_graph_fails_rather_than_reopening_empty() {
     execute(&engine, "mem", "RETURN 1 AS one").expect("and created again");
     scenario.teardown();
 }
+
+/// Security review M5: a panic in Loams's own code around the engine (the gate, and the path
+/// resolution that builds rows) is contained like one inside the engine.
+#[test]
+fn panics_in_the_gate_and_row_building_are_contained() {
+    let scenario = fail::FailScenario::setup();
+    let data_dir = std::env::temp_dir().join(format!("loams-graph-m5-{}", std::process::id()));
+    let engine = Engine::with_data_dir(&data_dir);
+    create(&engine, "g");
+    execute(&engine, "g", "INSERT (:A)-[:R]->(:B)").expect("seed");
+    for failpoint in ["loams_graph::gate", "loams_graph::resolve"] {
+        fail::cfg(failpoint, "1*panic(injected)").expect("cfg");
+        let err = execute(&engine, "g", "MATCH p = (:A)-[:R]->(:B) RETURN p")
+            .expect_err("the panic is answered, not propagated");
+        assert_eq!(err.code, ErrorCode::Internal, "{failpoint}: {err:?}");
+        assert_eq!(reason(&err), "graph_engine_panic", "{failpoint}");
+        // The graph reopens from storage and answers.
+        execute(&engine, "g", "MATCH p = (:A)-[:R]->(:B) RETURN p").expect("answers again");
+    }
+    scenario.teardown();
+    std::fs::remove_dir_all(&data_dir).ok();
+}

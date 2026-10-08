@@ -436,6 +436,8 @@ impl Graph {
 
     /// The access a statement needs, refusing it on a read-only request or graph.
     fn admit(&self, statement: &str, read_only: bool) -> Result<Access, GraphError> {
+        #[cfg(feature = "failpoints")]
+        fail::fail_point!("loams_graph::gate");
         let access = gate(statement, QueryLanguage::Gql)?;
         if (read_only || self.read_only) && access != Access::Read {
             return Err(GraphError::ReadOnly);
@@ -488,23 +490,26 @@ impl Graph {
         parameters: HashMap<String, Value>,
         read_only: bool,
     ) -> Result<GraphResult, GraphError> {
-        let access = self.admit(statement, read_only)?;
-        self.run_as(access, statement, parameters)
+        // The gate and the row building run inside the same panic containment as the engine
+        // call (security review M5).
+        self.call(|| {
+            let access = self.admit(statement, read_only)?;
+            self.run_engine(access, statement, parameters)
+        })
     }
 
     /// Runs one admitted statement on the session for `access`: the one path every single
-    /// statement takes into the engine.
-    fn run_as(
+    /// statement takes into the engine. Always called inside [`Graph::call`].
+    fn run_engine(
         &self,
         access: Access,
         statement: &str,
         parameters: HashMap<String, Value>,
     ) -> Result<GraphResult, GraphError> {
-        let result = self.call(|| {
-            self.session_for(access)
-                .execute_with_params(statement, parameters)
-                .map_err(as_engine_error)
-        })?;
+        let result = self
+            .session_for(access)
+            .execute_with_params(statement, parameters)
+            .map_err(as_engine_error)?;
         self.statements_executed.fetch_add(1, Ordering::Relaxed);
         Ok(self.resolved(GraphResult::from(result)))
     }
@@ -520,7 +525,7 @@ impl Graph {
         statement: &str,
         parameters: HashMap<String, Value>,
     ) -> Result<GraphResult, GraphError> {
-        self.run_as(access, statement, parameters)
+        self.call(|| self.run_engine(access, statement, parameters))
     }
 
     /// Runs statements as one engine transaction, so a write batch lands whole or not at all.
@@ -538,12 +543,14 @@ impl Graph {
         &self,
         statements: &[BatchStatement],
     ) -> Result<Vec<GraphResult>, GraphError> {
-        // Every statement is gated before any runs, so a refused one leaves nothing half-applied.
-        let mut access = Access::Read;
-        for statement in statements {
-            access = access.max(self.admit(&statement.text, false)?);
-        }
-        let out = self.call(|| {
+        // Gate, engine and row building all inside the panic containment (M5).
+        self.call(|| {
+            // Every statement is gated before any runs, so a refused one leaves nothing
+            // half-applied.
+            let mut access = Access::Read;
+            for statement in statements {
+                access = access.max(self.admit(&statement.text, false)?);
+            }
             let mut session = self.session_for(access);
             session.begin_transaction().map_err(as_engine_error)?;
             let mut out = Vec::with_capacity(statements.len());
@@ -567,12 +574,11 @@ impl Graph {
                 let _ = self.rollback(&mut session);
                 return Err(as_engine_error(err));
             }
-            Ok(out)
-        })?;
-        Ok(out
-            .into_iter()
-            .map(|result| self.resolved(result))
-            .collect())
+            Ok(out
+                .into_iter()
+                .map(|result| self.resolved(result))
+                .collect())
+        })
     }
 
     /// Rolls a failed batch back, saying so if the rollback itself fails.
@@ -601,6 +607,8 @@ impl Graph {
     /// read's epoch, a write committed between the statement and this lookup is visible here, and
     /// an element deleted in that window stays an id.
     fn resolved(&self, mut result: GraphResult) -> GraphResult {
+        #[cfg(feature = "failpoints")]
+        fail::fail_point!("loams_graph::resolve");
         for row in &mut result.rows {
             for value in &mut row.values {
                 self.resolve(value);
