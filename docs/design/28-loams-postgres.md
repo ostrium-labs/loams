@@ -15,6 +15,8 @@ The owner then chose the WAL design:
 
 These are decisions **D230–D236**, all owner-approved on 2026-09-29. The WAL replacement (D233) is approved *direction*: it becomes the default only if the benchmark gate passes. The concrete WAL design is **D237–D241**. They are Loams’ proposals within the owner's decisions and are marked as such. Open questions are **Q110–Q119**. Arm A of the WAL (§7.2, 2026-09-30) adds D263–D269 and D271 (D270 is the CloudEvents decision; D263, compio for the data path, is the owner's) and Q261–Q264.
 
+> **Production addendum, 2026-10-08:** [§46](46-loams-postgres-production.md) (D700–D719, Q640–Q654) defines what "production ready" means for Loams Postgres and plans it as track PG2. It makes PgDog the front door with one Deployment per namespace (D708, amending this document's single-Deployment layout in §8) and adds wake-on-connect through a Loams waker (D709, answering Q113). Under the owner's directive of the same day ("remove safekeepers"), **`loams-wal` is the only WAL at launch**: D714 reverses D233's gating, so §7's relative gate becomes absolute launch targets (§46 §9.3), and stock safekeepers remain only in dev until the data there is migrated.
+
 This document **supersedes §23's D149** (Neon for the showcase apps) and **D151** (fork only when needed). It **amends D150** (the control plane grows from a client into the primary control plane) and **D153** (PgDog, not Loams’ pg listener, splices Postgres connections to computes). D148, D152, D154 and D155 stand. D156 and D157's WeSQL row are not affected.
 
 Markers:
@@ -708,6 +710,28 @@ The commit path is the only place where latency is gated. TiKV's modes are measu
 | Q264 | Multishot `recv` with provided buffer rings on the shards' sockets, and `SO_BUSY_POLL` by default? | After Q263, if network or scheduling shows in the p99 |
 
 The results of the Arm A gate runs are in §7.3.
+
+
+### 7.3 Arm A gate runs: laptop, 2026-09-30 (not gate data)
+
+These are the results that §7.2 refers to. They come from `bench/results/gate-rf3-20260930T174137Z.md` and `gate-rf3-20260930T185121Z.md`: three acceptors against three safekeepers on the §7.1 laptop, 3 interleaved runs, p99 in ms and TPS. **The comparison script reports FAIL for every tier in both runs.**
+
+| Run | Tier | `commit-1` p99 (SK / Loams) | `commit-16` p99 | `tpcb-16` p99 | `bulk` MB/s (SK / Loams) |
+|---|---|---|---|---|---|
+| 17:41 | `pwritev2` | 34.02 / 39.05 (fail) | 89.82 / 57.68 | 304.22 / 231.68 | 117.6 / 10.8 (fail) |
+| 17:41 | `uring` (compio) | 34.02 / 27.83 | 89.82 / 68.45 | 304.22 / 205.74 | 117.6 / 12.3 (fail) |
+| 17:41 | `sqpoll` | 34.02 / 26.83 | 89.82 / 57.84 | 304.22 / 118.14 | 117.6 / 14.3 (fail) |
+| 18:51 | `pwritev2` | 32.62 / 38.98 (fail) | 52.06 / 49.26 | 207.22 / 113.23 | 74.1 / 17.0 (fail) |
+| 18:51 | `uring` (compio) | 32.62 / 40.97 (fail) | 52.06 / 29.55 | 207.22 / 98.46 | 74.1 / 21.7 (fail) |
+| 18:51 | `sqpoll` | 32.62 / 29.93 | 52.06 / 28.17 | 207.22 / 112.41 | 74.1 / 14.9 (fail) |
+
+**What the runs show:**
+- Arm A meets the latency and TPS criteria for `commit-16` and `tpcb-16` in every tier.
+- It meets `commit-1` for SQPOLL in both runs, and for `uring` in one.
+- **`bulk` fails in every tier by 3.4 to 10.9 times.** The cause lies above the I/O tier and is still open (D272).
+- SQPOLL costs about 18 times the CPU per commit.
+
+Run-to-run p99 noise on the laptop was 39 to 97 % (D272), so these are direction, not the gate. The launch gate run on server hardware is [PG2](../plans/2026-10-08-pg2-postgres-production.md) Task 42, against the absolute targets of §46 §9.3. Tasks 30–41 attack the bottlenecks first.
 
 ## 8. PgDog routing (D236)
 

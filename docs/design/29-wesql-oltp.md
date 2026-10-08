@@ -1,5 +1,7 @@
 # 29 — WeSQL as Loams’ MySQL-on-the-Bucket OLTP Engine
 
+> **Amended for Loams SQL 2026-10-08** by [§47](47-loams-sql-production.md) (proposed, D720–D739; owner directive "use latest 8.4 and use TiKV for innodb like transaction, i want mywal"): Loams SQL's shards are **stock MySQL 8.4 LTS with InnoDB**, made durable by **mywal** on TiKV, not WeSQL (D721). WeSQL stays a development option (D156); whether WS1–WS3 are still wanted is Q657, and WS4's bridge would read the binlog from mywal. The text below is otherwise unchanged.
+
 Status: **Approved** (owner defaults, 2026-10-02: "do suggested for all") · 2026-10-01. This document comes from the owner's question, "will wesql become usable with proper transaction support, refer tidb (go) or starrocks (java), implement all starrocks features on wesql, both use rocksdb+iceberg on s3", and from the direction the owner approved in answer: verify the transaction model, then close WeSQL's gaps in four milestones (WS1–WS4), keep analytics on Iceberg beside it, and do not port StarRocks. Everything here was a **proposal**, approved by the owner on 2026-10-02 ("do suggested for all"; Q271 stays an owner action): decisions **D273–D280** and open questions **Q271–Q279**. It extends [§23](23-neon-and-wesql.md) (D148, D154, D156, Q50, Q51) and builds on [§28](28-loams-postgres.md) §7.2 (Arm A). It changes no code in Loams; the code work is in the fork `ostrium-labs/wesql` and, for WS2, in `loams-safekeeper`.
 
 Markers, as in §23 and §28:
