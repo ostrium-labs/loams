@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 
 use futures::StreamExt;
 use futures::future::{BoxFuture, FutureExt};
-use loams_tikv::{Timestamp, TimestampExt, TxnError};
+use loams_kv::{Ts, TxnError};
 use tokio::sync::{Notify, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -129,14 +129,14 @@ impl SubKey {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubResult {
     pub result: Result<LiveValue, LiveError>,
-    pub ts: Timestamp,
+    pub ts: Ts,
 }
 
 /// One completed tick: every subscription is valid at `at`, and `changed`
 /// holds the ones whose result changed since the previous tick.
 #[derive(Debug, Clone)]
 pub struct Tick {
-    pub at: Timestamp,
+    pub at: Ts,
     pub changed: Vec<(SubId, Arc<SubResult>)>,
     /// The journal was trimmed past the tailer, and every subscription was
     /// rerun at `at`.
@@ -202,7 +202,7 @@ enum Cmd {
 pub struct Subscriptions {
     cmds: mpsc::UnboundedSender<Cmd>,
     updates: broadcast::Sender<Tick>,
-    current: watch::Receiver<Option<Timestamp>>,
+    current: watch::Receiver<Option<Ts>>,
     shared: Arc<Shared>,
 }
 
@@ -293,8 +293,8 @@ impl Subscriptions {
     }
 
     /// The latest completed tick, or `None` before the first.
-    pub fn current(&self) -> Option<Timestamp> {
-        self.current.borrow().clone()
+    pub fn current(&self) -> Option<Ts> {
+        *self.current.borrow()
     }
 
     /// Ticks now, as a local commit does (Task 12's sessions, and a commit
@@ -329,16 +329,12 @@ impl Subscriptions {
 
 /// The timestamp `lag` before `ts` (its physical part moved back, the
 /// logical part zero); `ts` itself when `lag` is zero.
-pub fn lagged(ts: &Timestamp, lag: Duration) -> Timestamp {
+pub fn lagged(ts: &Ts, lag: Duration) -> Ts {
     if lag.is_zero() {
-        return ts.clone();
+        return *ts;
     }
-    let back = i64::try_from(lag.as_millis()).unwrap_or(i64::MAX);
-    Timestamp {
-        physical: ts.physical.saturating_sub(back).max(0),
-        logical: 0,
-        suffix_bits: ts.suffix_bits,
-    }
+    let back = u64::try_from(lag.as_millis()).unwrap_or(u64::MAX);
+    Ts::from_parts(ts.physical_ms().saturating_sub(back), 0)
 }
 
 fn stopped() -> LiveError {
@@ -370,12 +366,12 @@ struct Manager {
     shutdown: CancellationToken,
     cmds: mpsc::UnboundedReceiver<Cmd>,
     updates: broadcast::Sender<Tick>,
-    current: watch::Sender<Option<Timestamp>>,
+    current: watch::Sender<Option<Ts>>,
     shared: Arc<Shared>,
     commits: watch::Receiver<u64>,
     tailer: Option<Tailer>,
     /// The tick every subscription is valid at.
-    at: Option<Timestamp>,
+    at: Option<Ts>,
     /// Whether the tailer's positions are those of `at` (false while a tick
     /// that acknowledged batches has not finished its reruns): a new
     /// subscription is evaluated at `at` only when true.
@@ -504,7 +500,7 @@ impl Manager {
         }
         match (&self.at, self.valid) {
             (Some(at), true) => {
-                let at = at.clone();
+                let at = *at;
                 self.evaluate_new(fresh, &at).await;
             }
             _ => self.waiting.extend(fresh),
@@ -536,7 +532,7 @@ impl Manager {
     }
 
     /// Evaluates new keys at `at` and subscribes them.
-    async fn evaluate_new(&mut self, fresh: Vec<NewSub>, at: &Timestamp) {
+    async fn evaluate_new(&mut self, fresh: Vec<NewSub>, at: &Ts) {
         let jobs = fresh
             .iter()
             .map(|n| (n.f.clone(), n.args.clone()))
@@ -547,10 +543,7 @@ impl Manager {
             let id = SubId(self.next_id);
             self.next_id += 1;
             let (result, read_set, errored) = split(result);
-            let result = Arc::new(SubResult {
-                result,
-                ts: at.clone(),
-            });
+            let result = Arc::new(SubResult { result, ts: *at });
             if !errored {
                 self.index.insert(id, &read_set);
             }
@@ -582,14 +575,14 @@ impl Manager {
     fn evaluate<'a>(
         &'a self,
         jobs: Vec<(Arc<dyn Function>, LiveValue)>,
-        at: &'a Timestamp,
+        at: &'a Ts,
     ) -> BoxFuture<'a, Vec<Result<Queried, LiveError>>> {
         let runner = self.runner.clone();
         let concurrency = self.config.rerun_concurrency.max(1);
         futures::stream::iter(jobs)
             .map(move |(f, args)| {
                 let runner = runner.clone();
-                let at = at.clone();
+                let at = *at;
                 async move { evaluate_one(&runner, &*f, args, &at).await }.boxed()
             })
             .buffered(concurrency)
@@ -599,16 +592,16 @@ impl Manager {
 
     /// The next tick's timestamp: a fresh TSO timestamp `tick_read_lag`
     /// back, and never before the current tick.
-    async fn now(&self) -> Result<Timestamp, LiveError> {
+    async fn now(&self) -> Result<Ts, LiveError> {
         let now = self
             .runner
-            .tikv()
+            .store()
             .now()
             .await
             .map_err(|e| LiveError::Internal(format!("a tick timestamp: {e}")))?;
         let at = lagged(&now, self.config.tick_read_lag);
         Ok(match &self.at {
-            Some(current) if current.version() > at.version() => current.clone(),
+            Some(current) if current.0 > at.0 => *current,
             _ => at,
         })
     }
@@ -638,7 +631,7 @@ impl Manager {
             let Some(tailer) = self.tailer.as_mut() else {
                 return Err(LiveError::Internal("the tailer is gone".into()));
             };
-            let batch = match tailer.tick(at.clone()).await {
+            let batch = match tailer.tick(at).await {
                 Ok(batch) => batch,
                 Err(LiveError::JournalTrimmed {
                     shard,
@@ -707,7 +700,7 @@ impl Manager {
     async fn restart(&mut self, resync: bool) -> Result<(), LiveError> {
         let at = self.now().await?;
         let journal = self.runner.journal().await?;
-        let tailer = Tailer::start(self.runner.tikv().clone(), journal, at.clone()).await?;
+        let tailer = Tailer::start(self.runner.store().clone(), journal, at).await?;
         self.tailer = Some(tailer);
         self.pending.clear();
         let mut ids: Vec<SubId> = self.subs.keys().copied().collect();
@@ -722,13 +715,8 @@ impl Manager {
 
     /// Every subscription is valid at `at`: publish, evaluate waiting keys,
     /// checkpoint when due.
-    async fn finish(
-        &mut self,
-        at: Timestamp,
-        changed: Vec<(SubId, Arc<SubResult>)>,
-        resynced: bool,
-    ) {
-        self.at = Some(at.clone());
+    async fn finish(&mut self, at: Ts, changed: Vec<(SubId, Arc<SubResult>)>, resynced: bool) {
+        self.at = Some(at);
         self.valid = true;
         self.shared.counters.ticks.fetch_add(1, Ordering::Relaxed);
         // The tick is published before `current` moves and before anyone
@@ -736,11 +724,11 @@ impl Manager {
         // at `t`, finds every tick up to `t` in a receiver it held before
         // (sessions rely on this, row T12-3).
         let _ = self.updates.send(Tick {
-            at: at.clone(),
+            at,
             changed,
             resynced,
         });
-        self.current.send_replace(Some(at.clone()));
+        self.current.send_replace(Some(at));
         if !self.waiting.is_empty() {
             let waiting = std::mem::take(&mut self.waiting);
             self.evaluate_new(waiting, &at).await;
@@ -768,7 +756,7 @@ impl Manager {
 
     /// Reruns `ids` at `at`, replaces their read sets, and returns those
     /// whose result changed.
-    async fn rerun(&mut self, ids: &[SubId], at: &Timestamp) -> Vec<(SubId, Arc<SubResult>)> {
+    async fn rerun(&mut self, ids: &[SubId], at: &Ts) -> Vec<(SubId, Arc<SubResult>)> {
         let jobs: Vec<(SubId, Arc<dyn Function>, LiveValue)> = ids
             .iter()
             .filter_map(|id| {
@@ -798,7 +786,7 @@ impl Manager {
         &mut self,
         id: SubId,
         evaluated: Result<Queried, LiveError>,
-        at: &Timestamp,
+        at: &Ts,
     ) -> Option<Arc<SubResult>> {
         let sub = self.subs.get_mut(&id)?;
         let (result, read_set, errored) = split(evaluated);
@@ -812,16 +800,13 @@ impl Manager {
         if sub.result.result == result {
             return None;
         }
-        sub.result = Arc::new(SubResult {
-            result,
-            ts: at.clone(),
-        });
+        sub.result = Arc::new(SubResult { result, ts: *at });
         Some(sub.result.clone())
     }
 
     /// Reruns every subscription at `at` and compares (§20 §8.2, the safety
     /// net); returns the repaired ones.
-    async fn safety(&mut self, at: &Timestamp) -> Vec<(SubId, Arc<SubResult>)> {
+    async fn safety(&mut self, at: &Ts) -> Vec<(SubId, Arc<SubResult>)> {
         self.shared
             .counters
             .safety_passes
@@ -856,8 +841,8 @@ impl Manager {
                 tracing::error!(
                     subscription = %id,
                     function = %sub.f.name(),
-                    at = at.version(),
-                    held_since = sub.result.ts.version(),
+                    at = at.0,
+                    held_since = sub.result.ts.0,
                     held_read_set = ?sub.read_set,
                     fresh_read_set = ?fresh.read_set,
                     "live_missed_invalidation_total: a safety rerun found a different result"
@@ -876,11 +861,11 @@ async fn evaluate_one(
     runner: &Runner,
     f: &dyn Function,
     args: LiveValue,
-    at: &Timestamp,
+    at: &Ts,
 ) -> Result<Queried, LiveError> {
     let mut attempt = 1;
     loop {
-        match runner.query(f, args.clone(), at.clone()).await {
+        match runner.query(f, args.clone(), *at).await {
             Err(LiveError::Txn(e)) if attempt < EVAL_ATTEMPTS && transient(&e) => {
                 attempt += 1;
                 tokio::time::sleep(Duration::from_millis(10 * u64::from(attempt))).await;
@@ -951,14 +936,10 @@ mod tests {
 
     #[test]
     fn lagged_moves_the_physical_part_back() {
-        let ts = Timestamp {
-            physical: 10_000,
-            logical: 7,
-            suffix_bits: 0,
-        };
+        let ts = Ts::from_parts(10_000, 7);
         let back = lagged(&ts, Duration::from_millis(50));
-        assert_eq!((back.physical, back.logical), (9_950, 0));
+        assert_eq!((back.physical_ms(), back.logical()), (9_950, 0));
         assert_eq!(lagged(&ts, Duration::ZERO), ts);
-        assert!(back.version() < ts.version());
+        assert!(back.0 < ts.0);
     }
 }

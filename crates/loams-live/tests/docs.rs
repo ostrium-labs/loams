@@ -5,14 +5,14 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound;
 
+use loams_kv::testing::{self, TEST_LIVE};
+use loams_kv::{CommitMode, Store, TxnError, TxnOptions};
 use loams_live::catalog::{self, IndexSpec};
 use loams_live::docs::{self, index_key_range};
 use loams_live::{
     AppKeys, Doc, DocId, IndexId, IndexRange, KeyRange, Limits, LiveError, LiveValue, Order,
     TableDef, WriteRecord, pb,
 };
-use loams_tikv::testing::{self, TEST_LIVE};
-use loams_tikv::{CommitMode, Tikv, TxnError, TxnOptions};
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
 
@@ -62,12 +62,12 @@ fn text(v: &str) -> LiveValue {
 }
 
 /// A handle on the test Live keyspace under a fresh root, or `None`.
-async fn live() -> Option<Tikv> {
+async fn live() -> Option<Store> {
     let cluster = testing::cluster().await?;
-    Some(cluster.connect(TEST_LIVE).await)
+    Some(Store::from(cluster.connect(TEST_LIVE).await))
 }
 
-async fn define(tikv: &Tikv, name: &str, indexes: &[(&str, &[&str])]) -> TableDef {
+async fn define(tikv: &Store, name: &str, indexes: &[(&str, &[&str])]) -> TableDef {
     let name = name.to_string();
     let specs: Vec<IndexSpec> = indexes
         .iter()
@@ -90,7 +90,7 @@ async fn define(tikv: &Tikv, name: &str, indexes: &[(&str, &[&str])]) -> TableDe
 }
 
 async fn insert(
-    tikv: &Tikv,
+    tikv: &Store,
     table: &TableDef,
     f: BTreeMap<String, LiveValue>,
 ) -> (DocId, WriteRecord) {
@@ -98,7 +98,7 @@ async fn insert(
 }
 
 async fn try_insert(
-    tikv: &Tikv,
+    tikv: &Store,
     table: &TableDef,
     f: BTreeMap<String, LiveValue>,
 ) -> Result<(DocId, WriteRecord), LiveError> {
@@ -109,7 +109,7 @@ async fn try_insert(
 }
 
 async fn patch(
-    tikv: &Tikv,
+    tikv: &Store,
     table: &TableDef,
     id: DocId,
     f: BTreeMap<String, LiveValue>,
@@ -129,13 +129,13 @@ async fn patch(
     .expect("patched")
 }
 
-async fn snapshot(tikv: &Tikv) -> loams_tikv::Snap {
+async fn snapshot(tikv: &Store) -> loams_kv::Snap {
     tikv.snapshot(tikv.now().await.expect("a timestamp"))
         .await
         .expect("a snapshot")
 }
 
-async fn scan(tikv: &Tikv, table: &TableDef, range: &IndexRange) -> (Vec<Doc>, KeyRange) {
+async fn scan(tikv: &Store, table: &TableDef, range: &IndexRange) -> (Vec<Doc>, KeyRange) {
     let mut snap = snapshot(tikv).await;
     docs::scan(
         &mut snap,
@@ -149,7 +149,7 @@ async fn scan(tikv: &Tikv, table: &TableDef, range: &IndexRange) -> (Vec<Doc>, K
 }
 
 /// Every key of `range` at a fresh snapshot.
-async fn keys_in(tikv: &Tikv, range: &KeyRange) -> BTreeSet<Vec<u8>> {
+async fn keys_in(tikv: &Store, range: &KeyRange) -> BTreeSet<Vec<u8>> {
     let mut snap = snapshot(tikv).await;
     let (lo, hi) = range.bounds();
     snap.scan(lo, hi, usize::MAX)
@@ -588,8 +588,8 @@ fn tables_are_created_on_first_insert_and_ids_name_their_table() {
             .expect("a read")
             .expect("present");
         // _creationTime is the start timestamp's physical time.
-        let lo = Tikv::physical_ms(&before);
-        let hi = Tikv::physical_ms(&tikv.now().await.expect("ts"));
+        let lo = before.physical_ms();
+        let hi = tikv.now().await.expect("ts").physical_ms();
         assert!(
             (lo..=hi).contains(&doc.creation_ms),
             "{lo} <= {} <= {hi}",

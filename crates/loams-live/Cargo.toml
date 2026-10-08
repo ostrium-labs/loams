@@ -6,8 +6,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-# loams-tikv depends on tikv-client by git (R1 plan row R4), which crates.io
-# refuses.
+# loams-kv's tikv backend depends on tikv-client by git (R1 plan row R4),
+# which crates.io refuses.
 publish = false
 
 [dependencies]
@@ -21,7 +21,9 @@ crc.workspace = true
 data-encoding.workspace = true
 futures.workspace = true
 loams-live-proto.workspace = true
-loams-tikv.workspace = true
+# The store seam (LV1 Task 20). `tikv` until Task 23 makes the backend a
+# feature of the binary.
+loams-kv = { workspace = true, features = ["tikv"] }
 # The OS random source for document ids (rand's OsRng).
 rand.workspace = true
 # The idempotency key hash (design §20 §4.3).
@@ -37,8 +39,8 @@ tracing.workspace = true
 # service tests).
 connectrpc = { workspace = true, features = ["axum", "client"] }
 loams-live-proto = { workspace = true, features = ["client"] }
-# The lost-acknowledgement tests put a FaultPlan on the handle.
-loams-tikv = { workspace = true, features = ["faults"] }
+# The lost-acknowledgement tests put a FaultPlan on the store.
+loams-kv = { workspace = true, features = ["tikv", "faults"] }
 proptest.workspace = true
 
 [lints]

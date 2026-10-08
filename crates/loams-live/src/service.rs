@@ -18,7 +18,7 @@ use connectrpc::{
     ServiceStream,
 };
 use futures::StreamExt;
-use loams_tikv::{Tikv, TimestampExt};
+use loams_kv::{Store, StoreConfig};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -39,7 +39,7 @@ pub struct LiveServer;
 pub struct LiveHandle {
     /// The address the sync API listens on.
     pub addr: SocketAddr,
-    tikv: Tikv,
+    store: Store,
     subs: Arc<Subscriptions>,
     sessions: Sessions,
     stop: CancellationToken,
@@ -58,13 +58,15 @@ impl LiveServer {
         shutdown: CancellationToken,
     ) -> Result<LiveHandle, LiveError> {
         check_listen(config.listen)?;
-        let tikv = Tikv::connect(config.tikv.clone()).await.map_err(|e| {
-            LiveError::Internal(format!(
-                "connecting to the Live keyspace {}: {e}",
-                config.tikv.keyspace
-            ))
-        })?;
-        let runner = Runner::open(tikv.clone(), &config).await?;
+        let store = Store::open(StoreConfig::Tikv(config.tikv.clone()))
+            .await
+            .map_err(|e| {
+                LiveError::Internal(format!(
+                    "connecting to the Live keyspace {}: {e}",
+                    config.tikv.keyspace
+                ))
+            })?;
+        let runner = Runner::open(store.clone(), &config).await?;
         let listener = tokio::net::TcpListener::bind(config.listen)
             .await
             .map_err(|e| LiveError::Internal(format!("live listen on {}: {e}", config.listen)))?;
@@ -122,7 +124,7 @@ impl LiveServer {
         );
         Ok(LiveHandle {
             addr,
-            tikv,
+            store,
             subs,
             sessions,
             stop,
@@ -133,9 +135,10 @@ impl LiveServer {
 }
 
 impl LiveHandle {
-    /// The app's TiKV handle (the cluster GC loop sweeps its commit tokens).
-    pub fn tikv(&self) -> &Tikv {
-        &self.tikv
+    /// The app's store (on TiKV, the cluster GC loop sweeps its commit
+    /// tokens through [`Store::as_tikv`]).
+    pub fn store(&self) -> &Store {
+        &self.store
     }
 
     /// The subscription manager's counters. `missed_invalidations` is the
@@ -174,7 +177,7 @@ async fn janitor_loop(runner: Runner, interval: Duration, stop: CancellationToke
         }
         let run = async {
             let journal = runner.journal().await?;
-            Janitor::new(runner.tikv().clone(), journal)
+            Janitor::new(runner.store().clone(), journal)
                 .run_once()
                 .await
         };
@@ -288,7 +291,7 @@ impl LiveService for Live {
                     Some(at) => at,
                     None => self
                         .runner
-                        .tikv()
+                        .store()
                         .now()
                         .await
                         .map_err(|e| LiveError::Internal(format!("a timestamp: {e}")))?,
@@ -298,7 +301,7 @@ impl LiveService for Live {
         };
         let queried = run.await.map_err(|e| connect_error(&e))?;
         Ok(Response::new(pb::QueryResponse {
-            ts: queried.ts.version(),
+            ts: queried.ts.0,
             result: buffa::MessageField::some(queried.result.to_proto()),
             ..Default::default()
         }))
@@ -316,7 +319,7 @@ impl LiveService for Live {
             self.runner.mutate(f, args, req.idempotency_key).await
         };
         let mutated = run.await.map_err(|e| connect_error(&e))?;
-        let commit_ts = mutated.commit_ts.version();
+        let commit_ts = mutated.commit_ts.0;
         if let Some(session) = ctx.header(SESSION_HEADER).and_then(|v| v.to_str().ok()) {
             self.sessions.mutation_committed(session, commit_ts);
         }

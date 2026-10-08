@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
+use loams_kv::testing::{self, TEST_LIVE};
+use loams_kv::{CommitMode, Store, Ts, TxnOptions};
 use loams_live::catalog::{self, IndexSpec};
 use loams_live::system::{self, GET, INSERT, PATCH, QUERY};
 use loams_live::{
@@ -16,8 +18,6 @@ use loams_live::{
     LiveValue, ReadSet, ReadSetIndex, Runner, SubId, SubKey, SubResult, SubsConfig, Subscriptions,
     TableId, Tick, pb,
 };
-use loams_tikv::testing::{self, TEST_LIVE};
-use loams_tikv::{CommitMode, Timestamp, TimestampExt, TxnOptions};
 use proptest::prelude::*;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
@@ -163,7 +163,7 @@ fn config(cluster: &testing::TestCluster) -> LiveConfig {
 
 async fn open() -> Option<Runner> {
     let cluster = testing::cluster().await?;
-    let tikv = cluster.connect(TEST_LIVE).await;
+    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
     Some(
         Runner::open(tikv, &config(&cluster))
             .await
@@ -190,7 +190,7 @@ async fn mutate(r: &Runner, f: Arc<dyn Function>, args: LiveValue) -> loams_live
     r.mutate(f, args, None).await.expect("the mutation commits")
 }
 
-async fn insert(r: &Runner, table: &str, doc: &[(&str, LiveValue)]) -> (DocId, Timestamp) {
+async fn insert(r: &Runner, table: &str, doc: &[(&str, LiveValue)]) -> (DocId, Ts) {
     let m = mutate(
         r,
         sys(INSERT),
@@ -203,7 +203,7 @@ async fn insert(r: &Runner, table: &str, doc: &[(&str, LiveValue)]) -> (DocId, T
     (id.parse().expect("a document id"), m.commit_ts)
 }
 
-async fn patch(r: &Runner, id: DocId, doc: &[(&str, LiveValue)]) -> Timestamp {
+async fn patch(r: &Runner, id: DocId, doc: &[(&str, LiveValue)]) -> Ts {
     mutate(
         r,
         sys(PATCH),
@@ -224,7 +224,7 @@ async fn define(r: &Runner, table: &str, indexes: &[(&str, &[&str])]) {
         .collect();
     let mut opts = TxnOptions::new("test.define");
     opts.commit_mode = Some(CommitMode::TwoPc);
-    r.tikv()
+    r.store()
         .run(opts, move |txn| {
             let (table, specs) = (table.clone(), specs.clone());
             Box::pin(async move {
@@ -236,7 +236,7 @@ async fn define(r: &Runner, table: &str, indexes: &[(&str, &[&str])]) {
                     &Limits::default(),
                 )
                 .await
-                .map_err(|e| loams_tikv::TxnError::Fatal(e.to_string()))
+                .map_err(|e| loams_kv::TxnError::Fatal(e.to_string()))
             })
         })
         .await
@@ -258,14 +258,14 @@ fn field(doc: &LiveValue, name: &str) -> LiveValue {
 }
 
 /// Receives ticks until one at or after `ts`; returns them all.
-async fn until(rx: &mut broadcast::Receiver<Tick>, ts: &Timestamp) -> Vec<Tick> {
+async fn until(rx: &mut broadcast::Receiver<Tick>, ts: &Ts) -> Vec<Tick> {
     let mut ticks = Vec::new();
     loop {
         let tick = tokio::time::timeout(Duration::from_secs(20), rx.recv())
             .await
             .expect("a tick within 20 s")
             .expect("the tick channel");
-        let done = tick.at.version() >= ts.version();
+        let done = tick.at.0 >= ts.0;
         ticks.push(tick);
         if done {
             return ticks;
@@ -499,23 +499,23 @@ async fn burst_of_writes_coalesces_to_newest_tick() {
     for _ in 0..16 {
         let (r, next) = (r.clone(), next.clone());
         tasks.push(tokio::spawn(async move {
-            let mut last: Option<Timestamp> = None;
+            let mut last: Option<Ts> = None;
             loop {
                 let i = next.fetch_add(1, Ordering::SeqCst);
                 if i >= WRITES {
                     return last;
                 }
                 let (_, ts) = insert(&r, "burst", &[("i", int(i as i64))]).await;
-                if last.as_ref().is_none_or(|l| ts.version() > l.version()) {
+                if last.as_ref().is_none_or(|l| ts.0 > l.0) {
                     last = Some(ts);
                 }
             }
         }));
     }
-    let mut newest: Option<Timestamp> = None;
+    let mut newest: Option<Ts> = None;
     for t in tasks {
         if let Some(ts) = t.await.expect("a writer")
-            && newest.as_ref().is_none_or(|n| ts.version() > n.version())
+            && newest.as_ref().is_none_or(|n| ts.0 > n.0)
         {
             newest = Some(ts);
         }
@@ -555,7 +555,7 @@ async fn safety_rerun_detects_injected_miss() {
             tokio::time::Instant::now() < deadline,
             "no safety pass found the miss"
         );
-        let at = r.tikv().now().await.expect("now");
+        let at = r.store().now().await.expect("now");
         ticks.extend(until(&mut rx, &at).await);
     }
     assert_eq!(subs.stats().missed_invalidations, 1);
@@ -572,7 +572,7 @@ async fn trimmed_journal_resyncs_every_subscription() {
     let Some(cluster) = testing::cluster().await else {
         return;
     };
-    let tikv = cluster.connect(TEST_LIVE).await;
+    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
     let cfg = config(&cluster);
     let r = Runner::open(tikv.clone(), &cfg).await.expect("the runner");
     // A second runner on the same app: its commits do not wake the manager.
@@ -599,7 +599,7 @@ async fn trimmed_journal_resyncs_every_subscription() {
         .expect("the janitor runs");
     assert!(report.deleted >= 2, "{report:?}");
     subs.wake();
-    let at = r.tikv().now().await.expect("now");
+    let at = r.store().now().await.expect("now");
     let ticks = until(&mut rx, &at).await;
     assert!(ticks.iter().any(|t| t.resynced), "a resync tick");
     assert_eq!(subs.stats().resyncs, 1);
@@ -692,7 +692,7 @@ async fn no_update_is_missed(tick_read_lag: Duration) {
     while let Ok(tick) = rx.try_recv() {
         for (id, result) in &tick.changed {
             if let Some(h) = held.get_mut(id)
-                && result.ts.version() >= h.2.ts.version()
+                && result.ts.0 >= h.2.ts.0
             {
                 h.2 = result.clone();
             }
@@ -714,7 +714,7 @@ async fn no_update_is_missed(tick_read_lag: Duration) {
                     _ if w == 0 && i == 14 => insert(&r, "ghost", &[("n", int(1))]).await.1,
                     _ => insert(&r, "noise", &[("n", int(x as i64))]).await.1,
                 };
-                newest.fetch_max(ts.version(), Ordering::SeqCst);
+                newest.fetch_max(ts.0, Ordering::SeqCst);
             }
         }));
     }
@@ -737,20 +737,20 @@ async fn no_update_is_missed(tick_read_lag: Duration) {
                 }
                 for (id, (f, args, result)) in &held {
                     let fresh = r
-                        .query(&**f, args.clone(), tick.at.clone())
+                        .query(&**f, args.clone(), tick.at)
                         .await
                         .expect("a fresh evaluation");
                     assert_eq!(
                         result.result.as_ref(),
                         Ok(&fresh.result),
                         "{id} at tick {} (held since {})",
-                        tick.at.version(),
-                        result.ts.version()
+                        tick.at.0,
+                        result.ts.0
                     );
                 }
                 checked += 1;
                 let t = target.load(Ordering::SeqCst);
-                if t != 0 && tick.at.version() >= t {
+                if t != 0 && tick.at.0 >= t {
                     return checked;
                 }
             }
@@ -779,14 +779,14 @@ async fn tailer_checkpoints_under_its_consumer() {
         },
     );
     let mut rx = subs.updates();
-    let at = r.tikv().now().await.expect("now");
+    let at = r.store().now().await.expect("now");
     until(&mut rx, &at).await;
     // The checkpoint is written right after a tick is published.
     let journal = r.journal().await.expect("the journal");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     let checkpoint = loop {
-        let at = r.tikv().now().await.expect("now");
-        let mut snap = r.tikv().snapshot(at).await.expect("a snapshot");
+        let at = r.store().now().await.expect("now");
+        let mut snap = r.store().snapshot(at).await.expect("a snapshot");
         if let Some(c) = journal
             .load_checkpoint(&mut snap, "node-a")
             .await
@@ -866,8 +866,8 @@ async fn a_commit_reaches_subscribers_one_tick_read_lag_later() {
         let (_, ts) = insert(&r, "lagged", &[("n", int(n))]).await;
         let ticks = until(&mut rx, &ts).await;
         worst = worst.max(started.elapsed());
-        let at = ticks.last().expect("a tick").at.version();
-        assert!(at >= ts.version());
+        let at = ticks.last().expect("a tick").at.0;
+        assert!(at >= ts.0);
         let result = latest(&ticks, id).expect("the subscription changed");
         assert_eq!(docs(&result).len(), usize::try_from(n).expect("small"));
     }

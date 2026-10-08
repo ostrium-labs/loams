@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use loams_tikv::tuple::Elem;
+use loams_kv::tuple::Elem;
 use sha2::{Digest, Sha256};
 
 use crate::LiveError;

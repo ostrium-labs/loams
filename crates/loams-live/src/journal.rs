@@ -29,7 +29,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use buffa::Message;
-use loams_tikv::{CommitMode, Tikv, Timestamp, Txn, TxnError, TxnOptions};
+use loams_kv::{CommitMode, Store, Ts, Txn, TxnError, TxnOptions};
 use rand::Rng;
 
 use crate::docs::Reads;
@@ -157,7 +157,7 @@ impl Journal {
                 "a journal entry needs at least one write (read-only mutations write none)",
             ));
         }
-        entry.commit_hint_ms = Tikv::physical_ms(&txn.start_ts());
+        entry.commit_hint_ms = txn.start_ts().physical_ms();
         let head_key = self.app.journal_head(shard);
         let mut seq = decode_head(txn.get(&head_key).await?.as_deref())?;
         for chunk in split(entry)? {
@@ -313,7 +313,9 @@ impl Journal {
         self.check_positions(positions)?;
         let expires_ms = match ttl {
             None => 0,
-            Some(ttl) => Tikv::physical_ms(&txn.start_ts())
+            Some(ttl) => txn
+                .start_ts()
+                .physical_ms()
                 .saturating_add(u64::try_from(ttl.as_millis()).unwrap_or(u64::MAX))
                 .max(1),
         };
@@ -385,7 +387,7 @@ impl Journal {
         shard: u16,
         retention_ms: u64,
     ) -> Result<TrimPass, LiveError> {
-        let now_ms = Tikv::physical_ms(&txn.start_ts());
+        let now_ms = txn.start_ts().physical_ms();
         let mut pass = TrimPass::default();
         let range = self.app.journal_checkpoints(shard);
         let (lo, hi) = range.bounds();
@@ -469,7 +471,7 @@ impl Journal {
 /// `complete` is false and the next tick continues from `heads`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Batch {
-    pub at: Timestamp,
+    pub at: Ts,
     pub from: Vec<u64>,
     pub heads: Vec<u64>,
     pub entries: Vec<Read>,
@@ -488,7 +490,7 @@ impl Batch {
 /// Follows an app's journal from one position per shard (§20 §8.2 step 1).
 #[derive(Debug, Clone)]
 pub struct Tailer {
-    tikv: Tikv,
+    store: Store,
     journal: Journal,
     positions: Vec<u64>,
     max_batch_bytes: usize,
@@ -496,10 +498,10 @@ pub struct Tailer {
 
 impl Tailer {
     /// A tailer at `positions`.
-    pub fn new(tikv: Tikv, journal: Journal, positions: Vec<u64>) -> Result<Self, LiveError> {
+    pub fn new(store: Store, journal: Journal, positions: Vec<u64>) -> Result<Self, LiveError> {
         journal.check_positions(&positions)?;
         Ok(Tailer {
-            tikv,
+            store,
             journal,
             positions,
             max_batch_bytes: DEFAULT_MAX_BATCH_BYTES,
@@ -516,26 +518,26 @@ impl Tailer {
 
     /// A tailer at the heads visible at `at`: it sees exactly the entries
     /// committed after `at`.
-    pub async fn start(tikv: Tikv, journal: Journal, at: Timestamp) -> Result<Self, LiveError> {
-        let mut snap = snapshot(&tikv, at).await?;
+    pub async fn start(store: Store, journal: Journal, at: Ts) -> Result<Self, LiveError> {
+        let mut snap = snapshot(&store, at).await?;
         let positions = journal.heads(&mut snap).await?;
-        Tailer::new(tikv, journal, positions)
+        Tailer::new(store, journal, positions)
     }
 
     /// A tailer at `consumer`'s checkpoint, or `None` if it has none.
     pub async fn resume(
-        tikv: Tikv,
+        store: Store,
         journal: Journal,
         consumer: &str,
     ) -> Result<Option<Self>, LiveError> {
-        let at = tikv
+        let at = store
             .now()
             .await
             .map_err(|e| LiveError::Internal(e.to_string()))?;
-        let mut snap = snapshot(&tikv, at).await?;
+        let mut snap = snapshot(&store, at).await?;
         match journal.load_checkpoint(&mut snap, consumer).await? {
             None => Ok(None),
-            Some(checkpoint) => Tailer::new(tikv, journal, checkpoint.positions).map(Some),
+            Some(checkpoint) => Tailer::new(store, journal, checkpoint.positions).map(Some),
         }
     }
 
@@ -554,8 +556,8 @@ impl Tailer {
     /// larger than it takes several ticks, each `complete == false` but the
     /// last). The positions do not move until [`ack`](Self::ack): a tick
     /// that is not acknowledged is read again by the next one.
-    pub async fn tick(&self, at: Timestamp) -> Result<Batch, LiveError> {
-        let mut snap = snapshot(&self.tikv, at.clone()).await?;
+    pub async fn tick(&self, at: Ts) -> Result<Batch, LiveError> {
+        let mut snap = snapshot(&self.store, at).await?;
         let visible = self.journal.heads(&mut snap).await?;
         let (entries, heads) = self
             .journal
@@ -588,7 +590,7 @@ impl Tailer {
         let journal = self.journal.clone();
         let positions = self.positions.clone();
         let consumer = consumer.to_string();
-        self.tikv
+        self.store
             .run(journal_txn("live.journal.checkpoint"), move |txn| {
                 let journal = journal.clone();
                 let positions = positions.clone();
@@ -630,16 +632,16 @@ struct TrimPass {
 /// expired idempotency records (§20 §5.1).
 #[derive(Debug, Clone)]
 pub struct Janitor {
-    tikv: Tikv,
+    store: Store,
     journal: Journal,
     retention: Duration,
 }
 
 impl Janitor {
     /// A janitor with the default retention (10 min).
-    pub fn new(tikv: Tikv, journal: Journal) -> Self {
+    pub fn new(store: Store, journal: Journal) -> Self {
         Janitor {
-            tikv,
+            store,
             journal,
             retention: DEFAULT_RETENTION,
         }
@@ -664,7 +666,7 @@ impl Janitor {
             loop {
                 let journal = self.journal.clone();
                 let pass = self
-                    .tikv
+                    .store
                     .run(journal_txn("live.journal.trim"), move |txn| {
                         let journal = journal.clone();
                         Box::pin(async move { lift(journal.trim(txn, shard, retention_ms).await) })
@@ -684,7 +686,7 @@ impl Janitor {
             let app = self.journal.app.clone();
             let start = from.clone();
             let pass = self
-                .tikv
+                .store
                 .run(journal_txn("live.idempotency.sweep"), move |txn| {
                     let app = app.clone();
                     let start = start.clone();
@@ -710,7 +712,7 @@ async fn sweep_idempotency(
     app: &AppKeys,
     from: Vec<u8>,
 ) -> Result<(u64, Option<Vec<u8>>), LiveError> {
-    let now_ms = Tikv::physical_ms(&txn.start_ts());
+    let now_ms = txn.start_ts().physical_ms();
     let all = app.idempotency_records();
     let (_, hi) = all.bounds();
     let records = txn.scan(&from, hi, TRIM_BATCH).await?;
@@ -752,8 +754,9 @@ fn lift<T>(r: Result<T, LiveError>) -> Result<Result<T, LiveError>, TxnError> {
     }
 }
 
-async fn snapshot(tikv: &Tikv, at: Timestamp) -> Result<loams_tikv::Snap, LiveError> {
-    tikv.snapshot(at)
+async fn snapshot(store: &Store, at: Ts) -> Result<loams_kv::Snap, LiveError> {
+    store
+        .snapshot(at)
         .await
         .map_err(|e| LiveError::Internal(format!("a journal snapshot: {e}")))
 }

@@ -14,8 +14,8 @@ use std::future::Future;
 use std::ops::Bound;
 
 use buffa::Message;
-use loams_tikv::tuple::{self, Elem};
-use loams_tikv::{Pair, Snap, Tikv, Txn, TxnError};
+use loams_kv::tuple::{self, Elem};
+use loams_kv::{Pair, Snap, Txn, TxnError};
 
 use crate::catalog::TableDef;
 use crate::ids::{DocId, IndexId, TableId};
@@ -212,7 +212,7 @@ pub(crate) async fn insert_sized(
     limits.check_fields(&fields)?;
     let doc = Doc {
         id: DocId::random(table.id)?,
-        creation_ms: Tikv::physical_ms(&txn.start_ts()),
+        creation_ms: txn.start_ts().physical_ms(),
         fields,
     };
     let record = encode(&doc, limits)?;

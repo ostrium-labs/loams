@@ -30,7 +30,7 @@ use std::time::Duration;
 
 use buffa::Message;
 use futures::future::BoxFuture;
-use loams_tikv::{CommitMode, Snap, Tikv, Timestamp, TimestampExt, Txn, TxnError, TxnOptions};
+use loams_kv::{CommitMode, Snap, Store, Ts, Txn, TxnError, TxnOptions};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use sha2::{Digest, Sha256};
@@ -126,7 +126,7 @@ pub struct LiveTxn<'a> {
     access: Access<'a>,
     app: &'a AppKeys,
     limits: &'a Limits,
-    start_ts: Timestamp,
+    start_ts: Ts,
     tables: HashMap<TableId, Option<TableDef>>,
     names: HashMap<String, TableId>,
     read_set: ReadSet,
@@ -153,11 +153,11 @@ impl<'a> LiveTxn<'a> {
 
     /// A query's transaction, reading `snap`.
     pub fn for_query(snap: &'a mut Snap, app: &'a AppKeys, limits: &'a Limits) -> Self {
-        let start_ts = snap.ts().clone();
+        let start_ts = snap.ts();
         LiveTxn::new(Access::Query(snap), app, limits, start_ts)
     }
 
-    fn new(access: Access<'a>, app: &'a AppKeys, limits: &'a Limits, start_ts: Timestamp) -> Self {
+    fn new(access: Access<'a>, app: &'a AppKeys, limits: &'a Limits, start_ts: Ts) -> Self {
         LiveTxn {
             access,
             app,
@@ -173,8 +173,8 @@ impl<'a> LiveTxn<'a> {
 
     /// The timestamp every read sees: the transaction's start timestamp, or
     /// the query's snapshot timestamp.
-    pub fn start_ts(&self) -> Timestamp {
-        self.start_ts.clone()
+    pub fn start_ts(&self) -> Ts {
+        self.start_ts
     }
 
     /// Whether this is a mutation (it may write).
@@ -490,7 +490,7 @@ impl<'a> LiveTxn<'a> {
 pub struct RunnerOptions {
     /// Attempts per mutation ([`DEFAULT_MUTATION_ATTEMPTS`]).
     pub max_attempts: u32,
-    /// How mutations commit: two-phase commit until `tikv-client` resolves
+    /// How mutations commit: two-phase commit until `store-client` resolves
     /// async-commit locks on the read path (R1 plan row T7-1).
     pub commit_mode: CommitMode,
     /// Opt-in: a mutation that read an index range and writes also locks
@@ -517,7 +517,7 @@ pub struct Mutated {
     /// Its commit timestamp. For a replay (an idempotency hit) and for a
     /// commit resolved through its token, the timestamp of the read that
     /// found the record or token: at or after the commit.
-    pub commit_ts: Timestamp,
+    pub commit_ts: Ts,
     /// What the function returned.
     pub result: LiveValue,
     /// Attempts, from 1.
@@ -541,7 +541,7 @@ pub struct Queried {
     pub result: LiveValue,
     pub read_set: ReadSet,
     /// The snapshot timestamp it read at.
-    pub ts: Timestamp,
+    pub ts: Ts,
     pub usage: Usage,
 }
 
@@ -552,7 +552,7 @@ pub struct Runner {
 }
 
 struct Inner {
-    tikv: Tikv,
+    store: Store,
     app: AppKeys,
     limits: Limits,
     options: RunnerOptions,
@@ -574,7 +574,7 @@ pub struct Quiesced {
 impl fmt::Debug for Runner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Runner")
-            .field("tikv", &self.inner.tikv)
+            .field("store", &self.inner.store)
             .field("options", &self.inner.options)
             .finish_non_exhaustive()
     }
@@ -601,24 +601,24 @@ struct Attempts {
 }
 
 impl Runner {
-    /// A runner for the app on `tikv` (whose root is the app's), with the
+    /// A runner for the app on `store` (whose root is the app's), with the
     /// config's limits and the default options. Writes the app's journal
     /// shard count (`config.journal_shards`) when the app has none yet; a
     /// stored count wins over the config (R1 plan row T10-1).
-    pub async fn open(tikv: Tikv, config: &LiveConfig) -> Result<Self, LiveError> {
-        Runner::open_with(tikv, config, RunnerOptions::default()).await
+    pub async fn open(store: Store, config: &LiveConfig) -> Result<Self, LiveError> {
+        Runner::open_with(store, config, RunnerOptions::default()).await
     }
 
     /// Like [`open`](Self::open), with `options`.
     pub async fn open_with(
-        tikv: Tikv,
+        store: Store,
         config: &LiveConfig,
         options: RunnerOptions,
     ) -> Result<Self, LiveError> {
         let app = AppKeys::dedicated();
         let shards = config.journal_shards;
         let keys = app.clone();
-        let stored = tikv
+        let stored = store
             .run(catalog_txn("live.app.open", &options), move |txn| {
                 let keys = keys.clone();
                 Box::pin(
@@ -637,7 +637,7 @@ impl Runner {
         }
         Ok(Runner {
             inner: Arc::new(Inner {
-                tikv,
+                store,
                 app,
                 limits: config.limits.clone(),
                 options,
@@ -647,9 +647,9 @@ impl Runner {
         })
     }
 
-    /// The TiKV handle.
-    pub fn tikv(&self) -> &Tikv {
-        &self.inner.tikv
+    /// The app's store.
+    pub fn store(&self) -> &Store {
+        &self.inner.store
     }
 
     /// The app's keys.
@@ -689,11 +689,11 @@ impl Runner {
     pub async fn journal(&self) -> Result<Journal, LiveError> {
         let at = self
             .inner
-            .tikv
+            .store
             .now()
             .await
             .map_err(|e| LiveError::Internal(e.to_string()))?;
-        let mut snap = snapshot(&self.inner.tikv, at).await?;
+        let mut snap = snapshot(&self.inner.store, at).await?;
         let shards = catalog::load_journal_shards(&mut snap, &self.inner.app)
             .await?
             .ok_or_else(no_app_record)?;
@@ -706,7 +706,7 @@ impl Runner {
     pub async fn set_journal_shards(&self, shards: u16) -> Result<(), LiveError> {
         let keys = self.inner.app.clone();
         self.inner
-            .tikv
+            .store
             .run(
                 catalog_txn("live.app.journal_shards", &self.inner.options),
                 move |txn| {
@@ -758,7 +758,7 @@ impl Runner {
         let body_state = state.clone();
         let run = self
             .inner
-            .tikv
+            .store
             .run(opts, move |txn| {
                 let inner = inner.clone();
                 let f = f.clone();
@@ -830,7 +830,7 @@ impl Runner {
         &self,
         f: &dyn Function,
         args: LiveValue,
-        at: Timestamp,
+        at: Ts,
     ) -> Result<Queried, LiveError> {
         if f.kind() != FnKind::Query {
             return Err(LiveError::invalid(format!(
@@ -838,7 +838,7 @@ impl Runner {
                 f.name()
             )));
         }
-        let mut snap = snapshot(&self.inner.tikv, at.clone()).await?;
+        let mut snap = snapshot(&self.inner.store, at).await?;
         let mut txn = LiveTxn::for_query(&mut snap, &self.inner.app, &self.inner.limits);
         let result =
             tokio::time::timeout(self.inner.limits.mutation_deadline, f.call(&mut txn, args))
@@ -871,7 +871,7 @@ async fn mutation_attempt(
     state: &Mutex<Attempts>,
 ) -> Result<Outcome, LiveError> {
     let app = &inner.app;
-    let now_ms = Tikv::physical_ms(&txn.start_ts());
+    let now_ms = txn.start_ts().physical_ms();
     let mut keys = vec![app.app_def()];
     if let Some(idem) = &idem {
         keys.push(app.idempotency(&idem.hash));
@@ -932,7 +932,7 @@ async fn mutation_attempt(
             expires_ms: now_ms
                 .saturating_add(u64::try_from(IDEMPOTENCY_TTL.as_millis()).unwrap_or(u64::MAX)),
             function: f.name().to_string(),
-            start_ts: txn.start_ts().version(),
+            start_ts: txn.start_ts().0,
             args_hash: idem.args.to_vec(),
             ..Default::default()
         };
@@ -982,7 +982,7 @@ impl Reads for Found<'_> {
         Ok(self.0.get(key).cloned())
     }
 
-    async fn batch_get(&mut self, keys: Vec<Vec<u8>>) -> Result<Vec<loams_tikv::Pair>, TxnError> {
+    async fn batch_get(&mut self, keys: Vec<Vec<u8>>) -> Result<Vec<loams_kv::Pair>, TxnError> {
         let mut out: Vec<_> = keys
             .into_iter()
             .filter_map(|k| self.0.get(&k).cloned().map(|v| (k, v)))
@@ -996,7 +996,7 @@ impl Reads for Found<'_> {
         _range: &KeyRange,
         _limit: usize,
         _reverse: bool,
-    ) -> Result<Vec<loams_tikv::Pair>, TxnError> {
+    ) -> Result<Vec<loams_kv::Pair>, TxnError> {
         Err(TxnError::Fatal("no scans over a batch get".into()))
     }
 }
@@ -1060,8 +1060,9 @@ fn lift<T>(r: Result<T, LiveError>) -> Result<Result<T, LiveError>, TxnError> {
     }
 }
 
-async fn snapshot(tikv: &Tikv, at: Timestamp) -> Result<Snap, LiveError> {
-    tikv.snapshot(at)
+async fn snapshot(store: &Store, at: Ts) -> Result<Snap, LiveError> {
+    store
+        .snapshot(at)
         .await
         .map_err(|e| LiveError::Internal(format!("a snapshot: {e}")))
 }

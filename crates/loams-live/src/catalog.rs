@@ -8,7 +8,7 @@
 //! the table's `next_index_id`, from 2, and are never reused.
 
 use buffa::Message;
-use loams_tikv::Txn;
+use loams_kv::Txn;
 
 use crate::docs::Reads;
 use crate::ids::{IndexId, TableId};

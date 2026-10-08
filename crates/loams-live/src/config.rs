@@ -3,7 +3,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
-use loams_tikv::TikvConfig;
+use loams_kv::TikvConfig;
 
 use crate::session::SessionConfig;
 use crate::subs::SubsConfig;

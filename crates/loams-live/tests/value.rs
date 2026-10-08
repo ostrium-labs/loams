@@ -468,7 +468,7 @@ fn keys_follow_the_design_layout() {
     let mut want = vec![0x02, 1, 2, 3, 4];
     want.extend_from_slice(&[0xAB; 16]);
     assert_eq!(app.document(&id), want);
-    let key = app.index_entry(IndexId(9), &[loams_tikv::tuple::Elem::Null], 0x0A0B, &id);
+    let key = app.index_entry(IndexId(9), &[loams_kv::tuple::Elem::Null], 0x0A0B, &id);
     let mut want = vec![0x03, 1, 2, 3, 4, 0, 0, 0, 9, 0x05];
     want.extend_from_slice(&0x0A0Bu64.to_be_bytes());
     want.extend_from_slice(&[0xAB; 16]);

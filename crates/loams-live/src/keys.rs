@@ -22,7 +22,7 @@
 //! deployed schema (both Task 13), `0x05` the app's own settings (empty
 //! name → `AppDef`: the journal shard count, Task 10).
 
-use loams_tikv::tuple;
+use loams_kv::tuple;
 
 use crate::ids::{DOC_ID_BYTES, DocId, IndexId, TableId};
 

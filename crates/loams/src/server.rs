@@ -746,16 +746,17 @@ impl LiveRuntime {
                 }
                 err => ServerError::Live(err),
             })?;
-        let gc = if own_gc {
-            match TikvGc::spawn(handle.tikv().clone(), Vec::new()) {
+        // Only a TiKV store needs the cluster GC loop.
+        let tikv = handle.store().as_tikv().cloned();
+        let gc = match tikv {
+            Some(tikv) if own_gc => match TikvGc::spawn(tikv, Vec::new()) {
                 Ok(gc) => Some(gc),
                 Err(err) => {
                     handle.stop().await;
                     return Err(err);
                 }
-            }
-        } else {
-            None
+            },
+            _ => None,
         };
         Ok(LiveRuntime { handle, gc })
     }
@@ -1054,7 +1055,7 @@ impl Server {
             let sweep: Sweep = live
                 .iter()
                 .filter(|l| l.gc.is_none())
-                .map(|l| l.handle.tikv().clone())
+                .filter_map(|l| l.handle.store().as_tikv().cloned())
                 .collect();
             match Self::start_single(config, sweep).await {
                 Ok(mut server) => {

@@ -8,10 +8,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use buffa::Message;
+use loams_kv::testing::{self, TEST_LIVE};
+use loams_kv::{CommitMode, Store, Ts, TxnError, TxnOptions};
 use loams_live::journal::{self, MAX_CHUNK_BYTES, MAX_SHARDS};
 use loams_live::{AppKeys, Janitor, Journal, LiveError, Tailer, pb};
-use loams_tikv::testing::{self, TEST_LIVE};
-use loams_tikv::{CommitMode, Tikv, Timestamp, TimestampExt, TxnError, TxnOptions};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
@@ -52,9 +52,9 @@ fn entry(request_id: &str, writes: usize) -> pb::JournalEntry {
     }
 }
 
-async fn live() -> Option<(Tikv, Journal)> {
+async fn live() -> Option<(Store, Journal)> {
     let cluster = testing::cluster().await?;
-    let tikv = cluster.connect(TEST_LIVE).await;
+    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
     let journal = Journal::new(AppKeys::dedicated(), 16).expect("16 shards");
     Some((tikv, journal))
 }
@@ -62,11 +62,11 @@ async fn live() -> Option<(Tikv, Journal)> {
 /// One committed append: the shard, the sequence, the commit timestamp and
 /// the attempts it took. `shard` `None` draws one per attempt.
 async fn append(
-    tikv: &Tikv,
+    tikv: &Store,
     journal: &Journal,
     e: pb::JournalEntry,
     shard: Option<u16>,
-) -> (u16, u64, Timestamp, u32) {
+) -> (u16, u64, Ts, u32) {
     let journal = journal.clone();
     let c = tikv
         .run(opts(), move |txn| {
@@ -89,17 +89,17 @@ async fn append(
     (shard, seq, c.commit_ts, c.attempts)
 }
 
-async fn snap_at(tikv: &Tikv, at: Timestamp) -> loams_tikv::Snap {
+async fn snap_at(tikv: &Store, at: Ts) -> loams_kv::Snap {
     tikv.snapshot(at).await.expect("a snapshot")
 }
 
-async fn heads(tikv: &Tikv, journal: &Journal) -> Vec<u64> {
+async fn heads(tikv: &Store, journal: &Journal) -> Vec<u64> {
     let mut snap = snap_at(tikv, tikv.now().await.expect("now")).await;
     journal.heads(&mut snap).await.expect("heads")
 }
 
 async fn read(
-    tikv: &Tikv,
+    tikv: &Store,
     journal: &Journal,
     from: &[u64],
     to: &[u64],
@@ -109,7 +109,7 @@ async fn read(
 }
 
 async fn checkpoint(
-    tikv: &Tikv,
+    tikv: &Store,
     journal: &Journal,
     consumer: &str,
     positions: Vec<u64>,
@@ -242,7 +242,7 @@ async fn journal_is_dense_under_concurrent_mutations() {
                 let id = format!("m{i}");
                 let (shard, seq, commit_ts, attempts) =
                     append(&tikv, &journal, entry(&id, 1), None).await;
-                done.push((shard, seq, commit_ts.version(), attempts, id));
+                done.push((shard, seq, commit_ts.0, attempts, id));
             }
         }));
     }
@@ -385,7 +385,7 @@ async fn entry_visible_iff_committed() {
     assert_eq!(seq, 2);
     let key = AppKeys::dedicated().journal_entry(0, seq);
 
-    let mut at_commit = snap_at(&tikv, commit_ts.clone()).await;
+    let mut at_commit = snap_at(&tikv, commit_ts).await;
     assert_eq!(journal.heads(&mut at_commit).await.expect("heads")[0], 2);
     let got = journal
         .read(&mut at_commit, &at(&[(0, 1)]), &at(&[(0, 2)]))
@@ -395,7 +395,7 @@ async fn entry_visible_iff_committed() {
     assert_eq!(got[0].2.request_id, "it");
     assert!(got[0].2.commit_hint_ms > 0, "append sets the hint");
 
-    let before = Timestamp::from_version(commit_ts.version() - 1);
+    let before = Ts(commit_ts.0 - 1);
     let mut just_before = snap_at(&tikv, before).await;
     assert_eq!(journal.heads(&mut just_before).await.expect("heads")[0], 1);
     assert_eq!(just_before.get(&key).await.expect("a read"), None);
@@ -547,7 +547,7 @@ async fn tailer_reads_a_backlog_in_bounded_ticks() {
     let at = tikv.now().await.expect("now");
     let mut seen = Vec::new();
     loop {
-        let batch = tailer.tick(at.clone()).await.expect("a tick");
+        let batch = tailer.tick(at).await.expect("a tick");
         assert_eq!(batch.entries.len(), 1, "one entry per 1-byte budget");
         seen.extend(batch.entries.iter().map(|e| (e.0, e.1)));
         tailer.ack(&batch).expect("ack");

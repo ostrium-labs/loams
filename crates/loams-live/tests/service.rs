@@ -9,13 +9,13 @@ use std::time::Duration;
 use buffa::MessageField;
 use connectrpc::client::{CallOptions, ClientConfig, HttpClient};
 use connectrpc::{ConnectError, ErrorCode};
+use loams_kv::testing::{self, TEST_LIVE};
 use loams_live::pb::__buffa::oneof::query_set_change::Change;
 use loams_live::pb::__buffa::oneof::query_update::Update;
 use loams_live::pb::__buffa::oneof::watch_request::Start;
 use loams_live::session::{ClientState, QueryResult, SESSION_HEADER, SessionConfig, Version};
 use loams_live::system::{INSERT, QUERY};
 use loams_live::{LiveConfig, LiveError, LiveHandle, LiveServer, LiveValue, check_listen, pb};
-use loams_tikv::testing::{self, TEST_LIVE};
 use tokio_util::sync::CancellationToken;
 
 type Client = pb::LiveServiceClient<HttpClient>;
@@ -66,7 +66,7 @@ async fn non_loopback_bind_is_refused() {
     for bad in ["0.0.0.0:0", "192.168.1.10:0"] {
         let mut config = LiveConfig::with_tikv(
             "t12",
-            loams_tikv::TikvConfig::new(vec!["127.0.0.1:1".into()], TEST_LIVE),
+            loams_kv::TikvConfig::new(vec!["127.0.0.1:1".into()], TEST_LIVE),
         );
         config.listen = bad.parse().expect("an address");
         let err = LiveServer::start(config, CancellationToken::new())

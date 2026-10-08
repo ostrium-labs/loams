@@ -8,6 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use buffa::{Message, MessageField};
+use loams_kv::Store;
+use loams_kv::testing::{self, TEST_LIVE};
 use loams_live::pb::__buffa::oneof::query_update::Update;
 use loams_live::session::{
     ClientState, Outbox, QueryResult, SessionConfig, Sessions, Start, Version, chunks, merge,
@@ -15,8 +17,6 @@ use loams_live::session::{
 use loams_live::subs::{SubsConfig, Subscriptions};
 use loams_live::system::{INSERT, QUERY};
 use loams_live::{LiveConfig, LiveError, LiveValue, Runner, deploy, pb};
-use loams_tikv::TimestampExt;
-use loams_tikv::testing::{self, TEST_LIVE};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use tokio_util::sync::CancellationToken;
@@ -247,7 +247,7 @@ async fn resume_sends_full_results_at_or_after_last_ts() {
     let Some(cluster) = testing::cluster().await else {
         return;
     };
-    let tikv = cluster.connect(TEST_LIVE).await;
+    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
     let config = LiveConfig::with_tikv("t12", cluster.config(TEST_LIVE));
     let runner = Runner::open(tikv.clone(), &config).await.expect("a runner");
     let stop = CancellationToken::new();
@@ -279,7 +279,7 @@ async fn resume_sends_full_results_at_or_after_last_ts() {
     let last = Version {
         query_set: 3,
         identity: 0,
-        ts: tikv.now().await.expect("now").version(),
+        ts: tikv.now().await.expect("now").0,
     };
     let set = pb::QuerySet {
         version: 3,

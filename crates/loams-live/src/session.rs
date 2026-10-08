@@ -33,7 +33,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use buffa::Message;
-use loams_tikv::{Timestamp, TimestampExt};
+use loams_kv::Ts;
 use tokio::sync::{Notify, broadcast, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -750,7 +750,7 @@ impl SessionTask {
             self.sessions.inner.subs.wake();
             let tick = tokio::select! {
                 () = self.sessions.inner.shutdown.cancelled() => {
-                    return Err(LiveError::Txn(loams_tikv::TxnError::NotApplied(
+                    return Err(LiveError::Txn(loams_kv::TxnError::NotApplied(
                         "the server is shutting down".into(),
                     )));
                 }
@@ -832,7 +832,7 @@ impl SessionTask {
 
     /// Takes a tick's changed results for this session's queries.
     fn apply_tick(&mut self, tick: &Tick) {
-        self.latest = self.latest.max(tick.at.version());
+        self.latest = self.latest.max(tick.at.0);
         for (id, result) in &tick.changed {
             let Some(qs) = self.by_sub.get(id) else {
                 continue;
@@ -849,7 +849,7 @@ impl SessionTask {
             return;
         };
         if let Held::Result(held) = &query.held
-            && (Arc::ptr_eq(held, result) || held.ts.version() > result.ts.version())
+            && (Arc::ptr_eq(held, result) || held.ts.0 > result.ts.0)
         {
             return;
         }
@@ -861,7 +861,7 @@ impl SessionTask {
     /// tick: every held result is then valid at `latest` (row T12-3).
     fn sync(&mut self) {
         if let Some(current) = self.subs().current() {
-            self.latest = self.latest.max(current.version());
+            self.latest = self.latest.max(current.0);
         }
         loop {
             match self.updates.try_recv() {
@@ -1111,6 +1111,6 @@ pub fn args_of(args: Option<pb::Value>) -> Result<LiveValue, LiveError> {
 }
 
 /// The timestamp of a TSO version.
-pub(crate) fn ts_of(version: u64) -> Timestamp {
-    Timestamp::from_version(version)
+pub(crate) fn ts_of(version: u64) -> Ts {
+    Ts(version)
 }

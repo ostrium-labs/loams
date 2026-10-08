@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex};
 
 use buffa::Message;
 use futures::future::BoxFuture;
+use loams_kv::testing::{self, TEST_LIVE};
+use loams_kv::{Fault, FaultPlan, FaultPoint, Store, TxnOptions};
 use loams_live::keys::{IDEMPOTENCY, KIND_APP};
 use loams_live::system::{self, DELETE, GET, INSERT, PATCH, QUERY, REPLACE};
 use loams_live::txn::{MUTATION_OP, idempotency_hash};
@@ -18,8 +20,6 @@ use loams_live::{
     Journal, Limits, LiveConfig, LiveError, LiveTxn, LiveValue, Mutated, Runner, RunnerOptions,
     TableId, Tailer, pb,
 };
-use loams_tikv::testing::{self, TEST_LIVE};
-use loams_tikv::{Fault, FaultPlan, FaultPoint, TimestampExt, TxnOptions};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use tokio::sync::{Barrier, Notify};
@@ -60,7 +60,7 @@ fn config(cluster: &testing::TestCluster, shards: u16, limits: Limits) -> LiveCo
 
 async fn open_with(shards: u16, limits: Limits, options: RunnerOptions) -> Option<Runner> {
     let cluster = testing::cluster().await?;
-    let tikv = cluster.connect(TEST_LIVE).await;
+    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
     Some(
         Runner::open_with(tikv, &config(&cluster, shards, limits), options)
             .await
@@ -95,7 +95,7 @@ async fn insert(r: &Runner, table: &str, doc: &[(&str, LiveValue)]) -> DocId {
 }
 
 async fn query_now(r: &Runner, f: &dyn Function, args: LiveValue) -> LiveValue {
-    let at = r.tikv().now().await.expect("now");
+    let at = r.store().now().await.expect("now");
     r.query(f, args, at).await.expect("the query runs").result
 }
 
@@ -119,8 +119,8 @@ fn field(doc: &LiveValue, name: &str) -> LiveValue {
 
 async fn heads(r: &Runner) -> Vec<u64> {
     let journal = r.journal().await.expect("the journal");
-    let at = r.tikv().now().await.expect("now");
-    let mut snap = r.tikv().snapshot(at).await.expect("a snapshot");
+    let at = r.store().now().await.expect("now");
+    let mut snap = r.store().snapshot(at).await.expect("a snapshot");
     journal.heads(&mut snap).await.expect("heads")
 }
 
@@ -628,7 +628,7 @@ async fn idempotent_mutate_applies_once_across_lost_ack() {
             point,
             armed: AtomicBool::new(true),
         });
-        let tikv = cluster.connect(TEST_LIVE).await.with_faults(plan.clone());
+        let tikv = Store::from(cluster.connect(TEST_LIVE).await).with_faults(plan.clone());
         let r = Runner::open(tikv, &config(&cluster, 16, Limits::default()))
             .await
             .expect("opens");
@@ -658,7 +658,7 @@ async fn idempotent_mutate_applies_once_across_lost_ack() {
         assert!(again.replayed, "{key}: the retry is a replay");
         assert_eq!(again.result, first.result, "{key}: the same result");
         assert!(again.journal.is_none());
-        assert!(again.commit_ts.version() >= first.commit_ts.version());
+        assert!(again.commit_ts.0 >= first.commit_ts.0);
         assert_eq!(all(&r, "orders").await.len(), 1, "{key}: still once");
 
         // Another function under the same key is refused.
@@ -732,7 +732,7 @@ async fn read_set_covers_points_and_ranges() {
         table: found.table,
         bytes: [7; 16],
     };
-    let at = r.tikv().now().await.expect("now");
+    let at = r.store().now().await.expect("now");
     let q = r
         .query(
             &Reader,
@@ -740,7 +740,7 @@ async fn read_set_covers_points_and_ranges() {
                 ("found", s(&found.to_string())),
                 ("missing", s(&missing.to_string())),
             ]),
-            at.clone(),
+            at,
         )
         .await
         .expect("the query");
@@ -764,7 +764,7 @@ async fn read_set_covers_points_and_ranges() {
     assert_eq!(q.usage.index_ranges, 1);
 
     // A query of a table that does not exist yet depends on its creation.
-    let at = r.tikv().now().await.expect("now");
+    let at = r.store().now().await.expect("now");
     let empty = r
         .query(&*sys(QUERY), obj(&[("table", s("later"))]), at)
         .await
@@ -801,8 +801,8 @@ async fn read_only_mutation_writes_no_journal_entry() {
     assert!(m.journal.is_none());
     assert_eq!(heads(&r).await, before, "no head moved");
     let hash = idempotency_hash("ro-1").expect("a key");
-    let at = r.tikv().now().await.expect("now");
-    let mut snap = r.tikv().snapshot(at).await.expect("a snapshot");
+    let at = r.store().now().await.expect("now");
+    let mut snap = r.store().snapshot(at).await.expect("a snapshot");
     assert_eq!(
         snap.get(&r.app().idempotency(&hash)).await.expect("read"),
         None
@@ -840,15 +840,15 @@ async fn scan_limit_is_enforced() {
             ),
         ])
     };
-    let at = r.tikv().now().await.expect("now");
+    let at = r.store().now().await.expect("now");
     let q = r
-        .query(&Scans(FnKind::Query), scans(&[3]), at.clone())
+        .query(&Scans(FnKind::Query), scans(&[3]), at)
         .await
         .expect("3 of 5");
     assert_eq!(q.result, LiveValue::Array(vec![LiveValue::I64(3)]));
     for over in [&[0][..], &[3, 3][..], &[5, 1][..]] {
         let e = r
-            .query(&Scans(FnKind::Query), scans(over), at.clone())
+            .query(&Scans(FnKind::Query), scans(over), at)
             .await
             .expect_err("over the limit");
         assert!(
@@ -891,7 +891,7 @@ async fn scan_limit_is_enforced() {
         ),
         "{e:?}"
     );
-    let at = r.tikv().now().await.expect("now");
+    let at = r.store().now().await.expect("now");
     let q = r
         .query(&Scans(FnKind::Query), scans(&[5]), at)
         .await
@@ -991,7 +991,7 @@ async fn system_functions_round_trip() {
         .query(
             &*sys(QUERY),
             obj(&[("table", s("people")), ("index", s("by_name"))]),
-            r.tikv().now().await.expect("now"),
+            r.store().now().await.expect("now"),
         )
         .await;
     assert!(
@@ -1014,7 +1014,7 @@ async fn system_functions_round_trip() {
     let e = r.mutate(sys(GET), obj(&[("id", idv.clone())]), None).await;
     assert!(matches!(e, Err(LiveError::InvalidArgument(_))), "{e:?}");
     let e = r
-        .query(&*sys(INSERT), obj(&[]), r.tikv().now().await.expect("now"))
+        .query(&*sys(INSERT), obj(&[]), r.store().now().await.expect("now"))
         .await;
     assert!(matches!(e, Err(LiveError::InvalidArgument(_))), "{e:?}");
     let e = r
@@ -1086,7 +1086,7 @@ async fn journal_shard_count_is_stored_per_app_and_changes_only_while_empty() {
     let Some(cluster) = testing::cluster().await else {
         return;
     };
-    let tikv = cluster.connect(TEST_LIVE).await;
+    let tikv = Store::from(cluster.connect(TEST_LIVE).await);
     let r = Runner::open(tikv.clone(), &config(&cluster, 4, Limits::default()))
         .await
         .expect("opens");
@@ -1139,7 +1139,7 @@ async fn janitor_sweeps_expired_idempotency_records() {
             ..Default::default()
         }
         .encode_to_vec();
-        let tikv = r.tikv().clone();
+        let tikv = r.store().clone();
         async move {
             let key = k.clone();
             tikv.run(TxnOptions::new("test.put"), move |txn| {
@@ -1164,13 +1164,13 @@ async fn janitor_sweeps_expired_idempotency_records() {
     let expired = put_expired("expired").await;
 
     let journal = r.journal().await.expect("journal");
-    let report = Janitor::new(r.tikv().clone(), journal)
+    let report = Janitor::new(r.store().clone(), journal)
         .run_once()
         .await
         .expect("a pass");
     assert_eq!(report.expired_idempotency, 1);
-    let at = r.tikv().now().await.expect("now");
-    let mut snap = r.tikv().snapshot(at).await.expect("snap");
+    let at = r.store().now().await.expect("now");
+    let mut snap = r.store().snapshot(at).await.expect("snap");
     assert_eq!(snap.get(&expired).await.expect("read"), None);
     for kept in ["live", "stale"] {
         let key = app.idempotency(&idempotency_hash(kept).expect("a key"));
@@ -1201,7 +1201,7 @@ async fn janitor_keeps_an_undecodable_idempotency_record_and_sweeps_on() {
     }
     .encode_to_vec();
     let (g, e) = (garbage.clone(), expired.clone());
-    r.tikv()
+    r.store()
         .run(TxnOptions::new("test.put"), move |txn| {
             let (g, e, record) = (g.clone(), e.clone(), record.clone());
             Box::pin(async move {
@@ -1212,13 +1212,13 @@ async fn janitor_keeps_an_undecodable_idempotency_record_and_sweeps_on() {
         .await
         .expect("written");
     let journal = r.journal().await.expect("journal");
-    let report = Janitor::new(r.tikv().clone(), journal)
+    let report = Janitor::new(r.store().clone(), journal)
         .run_once()
         .await
         .expect("the pass does not stop at the undecodable record");
     assert_eq!(report.expired_idempotency, 1);
-    let at = r.tikv().now().await.expect("now");
-    let mut snap = r.tikv().snapshot(at).await.expect("snap");
+    let at = r.store().now().await.expect("now");
+    let mut snap = r.store().snapshot(at).await.expect("snap");
     assert_eq!(snap.get(&expired).await.expect("read"), None);
     assert!(snap.get(&garbage).await.expect("read").is_some(), "kept");
 }
@@ -1275,8 +1275,8 @@ async fn mutations_under_contention_complete_within_the_default_budget() {
             loams_live::subs::DEFAULT_TICK_READ_LAG,
             std::time::Duration::from_millis,
         );
-    let at = loams_live::subs::lagged(&r.tikv().now().await.expect("now"), lag);
-    let mut tailer = Tailer::start(r.tikv().clone(), journal, at)
+    let at = loams_live::subs::lagged(&r.store().now().await.expect("now"), lag);
+    let mut tailer = Tailer::start(r.store().clone(), journal, at)
         .await
         .expect("a tailer");
     let stop = Arc::new(AtomicBool::new(false));
@@ -1288,7 +1288,7 @@ async fn mutations_under_contention_complete_within_the_default_budget() {
             let mut moved = 0usize;
             while !stop.load(Ordering::Relaxed) {
                 let started = std::time::Instant::now();
-                let at = loams_live::subs::lagged(&r.tikv().now().await.expect("now"), lag);
+                let at = loams_live::subs::lagged(&r.store().now().await.expect("now"), lag);
                 let batch = tailer.tick(at).await.expect("a tick");
                 tailer.ack(&batch).expect("ack");
                 latencies.push(started.elapsed());

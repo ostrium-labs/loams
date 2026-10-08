@@ -1,6 +1,6 @@
 //! [`LiveError`], the error of every Loams Live operation, and its wire code.
 
-use loams_tikv::TxnError;
+use loams_kv::TxnError;
 
 use crate::pb;
 
@@ -50,11 +50,11 @@ pub enum LiveError {
     /// A failure of the server itself (the OS random source, a bug).
     #[error("internal error: {0}")]
     Internal(String),
-    /// A TiKV transaction or read failed. Inside [`Tikv::run`] bodies this
+    /// A store transaction or read failed. Inside [`Store::run`] bodies this
     /// carries the runner's retry signals ([`TxnError::Conflict`],
     /// [`TxnError::NotApplied`]); [`LiveError::into_txn`] hands them back.
     ///
-    /// [`Tikv::run`]: loams_tikv::Tikv::run
+    /// [`Store::run`]: loams_kv::Store::run
     #[error("storage: {0}")]
     Txn(#[from] TxnError),
 }
@@ -94,7 +94,7 @@ impl LiveError {
     }
 
     /// Splits a storage error off: `Err(txn_error)` for [`LiveError::Txn`],
-    /// so a [`Tikv::run`](loams_tikv::Tikv::run) body can return it and let
+    /// so a [`Store::run`](loams_kv::Store::run) body can return it and let
     /// the runner retry, and `Ok(self)` for every other error, which the body
     /// returns inside its value so the runner does not retry it.
     pub fn into_txn(self) -> Result<LiveError, TxnError> {
