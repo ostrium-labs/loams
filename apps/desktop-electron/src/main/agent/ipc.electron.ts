@@ -9,6 +9,7 @@ import type { Vault } from "../factory/vault";
 import { assertTrustedSender } from "../security/policy";
 import { getMainWindow } from "../shell/main-window";
 import { builtinTools } from "./builtin-tools";
+import { liveToolDefs } from "./live-tools";
 import { ProviderConfigs } from "./providers/presets";
 import { ChatService } from "./service";
 import { ChatStore } from "./store";
@@ -45,6 +46,13 @@ export function registerChatIpc(deps: AgentDeps): ChatService {
 			now: Date.now,
 		}),
 	);
+	registerTools(
+		liveToolDefs({
+			fetch: (url, init) =>
+				deps.session.fetch(String(url), { ...init, credentials: "include" }),
+			liveUrl: "loams-app://console",
+		}),
+	);
 	const service = new ChatService({
 		store: new ChatStore(join(userData, "chats")),
 		configs: new ProviderConfigs(
@@ -67,6 +75,10 @@ export function registerChatIpc(deps: AgentDeps): ChatService {
 	ipcMain.handle(CH.chatConfigureProvider, (e, id: unknown, cfg: unknown) => {
 		assertTrustedSender(e);
 		return service.configureProvider(id, cfg);
+	});
+	ipcMain.handle(CH.chatTestProvider, (e, id: unknown) => {
+		assertTrustedSender(e);
+		return service.testProvider(id);
 	});
 	ipcMain.handle(CH.chatList, (e) => {
 		assertTrustedSender(e);

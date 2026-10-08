@@ -8,6 +8,7 @@ import {
   type LoamsDesktopApi,
   wireDeepLinks,
 } from '@loams/platform-electron';
+import agentPkg from '@loams/plugin-agent/package.json';
 import connectorsPkg from '@loams/plugin-connectors/package.json';
 import dataStudioPkg from '@loams/plugin-data-studio/package.json';
 import desktopServersPkg from '@loams/plugin-desktop-servers/package.json';
@@ -15,9 +16,9 @@ import desktopSettingsPkg from '@loams/plugin-desktop-settings/package.json';
 import durablePkg from '@loams/plugin-durable/package.json';
 import factoryPkg from '@loams/plugin-factory/package.json';
 import graphPkg from '@loams/plugin-graph/package.json';
+import livePkg from '@loams/plugin-live/package.json';
 import overviewPkg from '@loams/plugin-overview/package.json';
 import streamsPkg from '@loams/plugin-streams/package.json';
-import livePkg from '@loams/plugin-live/package.json';
 import desktopYml from '../../catalog/desktop.yml?raw';
 import type { modules } from './modules.js';
 import { startConsole } from './start.js';
@@ -34,6 +35,7 @@ export const desktopModules: typeof modules = {
   '@loams/plugin-overview': () => import('@loams/plugin-overview'),
   '@loams/plugin-desktop-settings': () => import('@loams/plugin-desktop-settings'),
   '@loams/plugin-live': () => import('@loams/plugin-live'),
+  '@loams/plugin-agent': () => import('@loams/plugin-agent'),
 };
 /** Their package.json manifests. */
 export const desktopManifests: unknown[] = [
@@ -47,6 +49,7 @@ export const desktopManifests: unknown[] = [
   overviewPkg,
   desktopSettingsPkg,
   livePkg,
+  agentPkg,
 ];
 
 export async function startDesktop(

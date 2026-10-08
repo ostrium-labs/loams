@@ -85,6 +85,7 @@ const api: LoamsDesktopApi = {
 	chat: {
 		providers: () => invoke(CH.chatProviders),
 		configureProvider: (id, cfg) => invoke(CH.chatConfigureProvider, id, cfg),
+		testProvider: (id) => invoke(CH.chatTestProvider, id),
 		list: () => invoke(CH.chatList),
 		get: (chatId) => invoke(CH.chatGet, chatId),
 		create: (opts) => invoke(CH.chatCreate, opts),

@@ -1,6 +1,7 @@
 import type { SessionService } from '@loams/console-host';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DOCK_DEFAULT, DOCK_KEY, DOCK_MAX, DOCK_MIN, Layout } from '../src/layout.js';
 import { HashRouter, type HashSource } from '../src/router.js';
@@ -144,6 +145,33 @@ describe('shell layout', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     fireEvent.keyDown(window, { key: 'j' });
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('dock_stays_mounted_when_closed_and_manages_focus', () => {
+    const { slots } = setup();
+    let mounts = 0;
+    function Chat() {
+      useEffect(() => {
+        mounts++;
+      }, []);
+      return <textarea data-dock-autofocus aria-label="Message" />;
+    }
+    act(() => {
+      slots.register({ name: 'shell.dock.right', plugin: 'agent' }, () => <Chat />);
+    });
+    const toggle = screen.getByRole('button', { name: /agent/i });
+    expect(mounts).toBe(0);
+    fireEvent.click(toggle);
+    expect(document.activeElement).toBe(screen.getByLabelText('Message'));
+    fireEvent.change(screen.getByLabelText('Message'), { target: { value: 'draft' } });
+    fireEvent.keyDown(window, { key: 'j', ctrlKey: true });
+    expect(screen.queryByRole('complementary')).toBeNull();
+    expect(document.getElementById('lc-dock')?.hidden).toBe(true);
+    expect(document.activeElement).toBe(toggle);
+    fireEvent.keyDown(window, { key: 'j', ctrlKey: true });
+    expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('draft');
+    expect(mounts).toBe(1);
+    expect(document.activeElement).toBe(screen.getByLabelText('Message'));
   });
 
   it('dock_width_clamped_and_persisted', () => {

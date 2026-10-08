@@ -84,6 +84,52 @@ export class ChatService {
 		return r.ok ? r : scrub(r, this.#secrets());
 	}
 
+	/**
+	 * A one-shot check of a provider: sends a tiny request and stops at the first
+	 * answer (so it costs about one token). Errors pass through the same redaction.
+	 */
+	async testProvider(
+		id: unknown,
+	): Promise<IpcResult<{ model: string; ms: number }>> {
+		if (!isProviderId(id)) return bad("Unknown provider", "unknown_provider");
+		const info = this.deps.configs.info(id);
+		const provider = this.deps.configs.create(id);
+		if ("error" in provider) return bad(provider.error, "unconfigured");
+		const ctl = new AbortController();
+		const timer = setTimeout(() => ctl.abort(), 20_000);
+		const started = this.deps.now();
+		try {
+			for await (const e of provider.streamTurn({
+				model: info.model,
+				system: "Answer with one word.",
+				messages: [
+					{ role: "user", content: [{ type: "text", text: "Say ok." }] },
+				],
+				tools: [],
+				signal: ctl.signal,
+			})) {
+				if (e.type === "text" || e.type === "stop") break;
+			}
+			return {
+				ok: true,
+				value: { model: info.model, ms: this.deps.now() - started },
+			};
+		} catch (e) {
+			const message = ctl.signal.aborted
+				? "The provider did not answer within 20 seconds."
+				: e instanceof Error
+					? e.message
+					: String(e);
+			return scrub(
+				{ ok: false as const, code: "test_failed", message },
+				this.#secrets(),
+			);
+		} finally {
+			clearTimeout(timer);
+			ctl.abort();
+		}
+	}
+
 	list(): Promise<ChatSummary[]> {
 		return this.deps.store.list();
 	}

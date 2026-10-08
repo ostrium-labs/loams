@@ -211,6 +211,10 @@ export interface LoamsDesktopApi {
 				fallback?: boolean;
 			},
 		): Promise<IpcResult<ChatProviderInfo>>;
+		/** A one-token request to the provider, to check the key and URL. */
+		testProvider(
+			id: ChatProviderId,
+		): Promise<IpcResult<{ model: string; ms: number }>>;
 		list(): Promise<ChatSummary[]>;
 		get(chatId: string): Promise<IpcResult<ChatView>>;
 		create(opts?: {
@@ -282,6 +286,7 @@ export const CH = {
 	chatApprove: "chat:approve",
 	chatRemove: "chat:remove",
 	chatEvent: "chat:event",
+	chatTestProvider: "chat:test-provider",
 } as const;
 
 // ---- D675: the agent panel ----

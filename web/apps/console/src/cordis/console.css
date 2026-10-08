@@ -200,6 +200,12 @@ body {
   border-left: 1px solid var(--op-rule);
   background: var(--op-surface);
 }
+.lc-dock[hidden] {
+  display: none;
+}
+.lc-dock:focus {
+  outline: none;
+}
 .lc-dock-body {
   height: 100%;
   overflow: auto;

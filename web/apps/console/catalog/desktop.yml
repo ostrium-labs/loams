@@ -25,3 +25,5 @@
       name: '@loams/plugin-desktop-settings'
     - id: live
       name: '@loams/plugin-live'
+    - id: agent
+      name: '@loams/plugin-agent'

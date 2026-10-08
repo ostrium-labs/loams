@@ -646,6 +646,14 @@ function createFakeChat(): LoamsDesktopApi['chat'] {
       p.configured = p.hasKey || !p.needsKey;
       return { ok: true, value: { ...p } };
     },
+    testProvider: async (id) => {
+      const p = FAKE_PROVIDERS.find((x) => x.id === id);
+      if (!p) return { ok: false, code: 'unknown_provider', message: 'Unknown provider' };
+      if (!p.configured) {
+        return { ok: false, code: 'unconfigured', message: `${p.label} has no API key yet.` };
+      }
+      return { ok: true, value: { model: p.model, ms: 240 } };
+    },
     list: async () => [...chats.values()].map(summary).sort((a, b) => b.updatedAt - a.updatedAt),
     get: async (chatId) => {
       const c = chats.get(chatId);

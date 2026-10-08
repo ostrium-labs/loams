@@ -11,6 +11,7 @@ import {
   type PointerEvent,
   useCallback,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -259,6 +260,27 @@ export function Layout({ router, session }: { router: HashRouter; session: Sessi
   const [dock, setDock] = useDock();
   const open = hasDock && dock.open;
   const toggle = useCallback(() => setDock({ open: !dock.open }), [dock.open, setDock]);
+  // The dock mounts on first open and then stays mounted (hidden, not removed) so the
+  // agent's chat state survives Ctrl/Cmd+J.
+  const [mounted, setMounted] = useState(open);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const dockRef = useRef<HTMLElement>(null);
+  const wasOpen = useRef(open);
+  if (open && !mounted) setMounted(true);
+
+  // Focus: into the element marked data-dock-autofocus (the composer) when the dock
+  // opens, back to the toggle when it closes.
+  useEffect(() => {
+    if (open === wasOpen.current) return;
+    wasOpen.current = open;
+    const dockEl = dockRef.current;
+    if (open) {
+      const target = dockEl?.querySelector<HTMLElement>('[data-dock-autofocus]');
+      (target ?? dockEl)?.focus();
+    } else {
+      toggleRef.current?.focus();
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!hasDock) return;
@@ -296,6 +318,7 @@ export function Layout({ router, session }: { router: HashRouter; session: Sessi
           {hasDock && (
             <button
               type="button"
+              ref={toggleRef}
               className="lc-icon-btn"
               aria-expanded={open}
               aria-controls="lc-dock"
@@ -314,8 +337,15 @@ export function Layout({ router, session }: { router: HashRouter; session: Sessi
           <main className="lc-main">
             <Outlet router={router} />
           </main>
-          {open && (
-            <aside className="lc-dock" id="lc-dock" aria-label="Agent panel">
+          {hasDock && mounted && (
+            <aside
+              className="lc-dock"
+              id="lc-dock"
+              aria-label="Agent panel"
+              ref={dockRef}
+              tabIndex={-1}
+              hidden={!open}
+            >
               <DockHandle width={dock.width} onWidth={(w) => setDock({ width: clampWidth(w) })} />
               <div className="lc-dock-body">
                 <Slot name="shell.dock.right" props={{}} />
