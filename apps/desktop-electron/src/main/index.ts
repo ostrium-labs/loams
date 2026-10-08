@@ -1,44 +1,22 @@
-import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { app, BrowserWindow } from "electron";
-import { resolvePaths } from "./paths";
+import { app, BrowserWindow, session } from "electron";
+import type { ServerEntry } from "../shared/contracts";
+import { appPaths } from "./app-paths";
+import {
+	installAppProtocol,
+	registerAppScheme,
+} from "./protocol/handler.electron";
 
-let cachedTargetDir: string | undefined | null = null;
+registerAppScheme();
 
-/** CARGO_TARGET_DIR if set, else (dev only) `cargo metadata`'s target_directory, cached. */
-function cargoTargetDir(): string | undefined {
-	if (process.env.CARGO_TARGET_DIR) return process.env.CARGO_TARGET_DIR;
-	if (app.isPackaged) return undefined;
-	if (cachedTargetDir !== null) return cachedTargetDir;
-	try {
-		const out = execFileSync(
-			"cargo",
-			["metadata", "--format-version", "1", "--no-deps"],
-			{
-				cwd: join(app.getAppPath(), "..", ".."),
-				encoding: "utf8",
-				timeout: 15_000,
-				maxBuffer: 64 * 1024 * 1024,
-			},
-		);
-		cachedTargetDir = (JSON.parse(out) as { target_directory?: string })
-			.target_directory;
-	} catch {
-		cachedTargetDir = undefined;
-	}
-	return cachedTargetDir;
-}
-
-export function appPaths() {
-	return resolvePaths({
-		userData: app.getPath("userData"),
-		logs: app.getPath("logs"),
-		resourcesPath: process.resourcesPath,
-		isPackaged: app.isPackaged,
-		appRoot: app.getAppPath(),
-		loamsBin: process.env.LOAMS_BIN,
-		cargoTargetDir: cargoTargetDir(),
-	});
+// Temporary until the server registry lands (Task 4).
+function activeServer(): ServerEntry {
+	return {
+		id: "demo",
+		name: "Demo",
+		kind: "demo",
+		url: process.env.LOAMS_DESKTOP_SERVER ?? "http://127.0.0.1:8084",
+	};
 }
 
 function createWindow(): BrowserWindow {
@@ -57,8 +35,7 @@ function createWindow(): BrowserWindow {
 		},
 	});
 	win.once("ready-to-show", () => win.show());
-	// Placeholder; Task 2 replaces this with loams-app://console/ui/cordis.html.
-	void win.loadURL("https://example.invalid");
+	void win.loadURL("loams-app://console/ui/cordis.html");
 	return win;
 }
 
@@ -72,8 +49,13 @@ if (!app.requestSingleInstanceLock()) {
 			win.focus();
 		}
 	});
-	void app.whenReady().then(() => {
+	void app.whenReady().then(async () => {
 		app.setAppUserModelId("dev.loams.desktop");
+		installAppProtocol(session.defaultSession, {
+			distRoot: (await appPaths()).consoleDist,
+			activeServer,
+			localShim: () => null, // Task 6
+		});
 		createWindow();
 		app.on("activate", () => {
 			if (BrowserWindow.getAllWindows().length === 0) createWindow();
