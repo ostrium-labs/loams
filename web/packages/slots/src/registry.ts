@@ -12,6 +12,9 @@ export const SLOT_KINDS: Record<string, SlotKind> = {
   'environment.overview.card': 'list',
   'approval.renderer': 'keyed',
   'shell.overlay': 'list',
+  'shell.nav.section': 'list',
+  'shell.dock.right': 'single',
+  'shell.header.server': 'list',
 };
 
 /**

@@ -19,7 +19,8 @@
       "entry": ".",
       "tier": "core",
       "inject": [
-        "slots"
+        "slots",
+        "session"
       ],
       "provides": [
         "router"
@@ -28,7 +29,10 @@
         "root",
         "console.nav",
         "console.page",
-        "shell.overlay"
+        "shell.overlay",
+        "shell.nav.section",
+        "shell.dock.right",
+        "shell.header.server"
       ],
       "permissions": [],
       "requires": {
@@ -53,7 +57,8 @@
     "@loams/cordis": "workspace:*",
     "@loams/proto": "workspace:*",
     "@loams/slots": "workspace:*",
-    "@loams/ui": "workspace:*"
+    "@loams/ui": "workspace:*",
+    "lucide-react": "1.48.0"
   },
   "peerDependencies": {
     "react": ">=19"

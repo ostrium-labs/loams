@@ -1151,6 +1151,9 @@ importers:
       '@loams/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      lucide-react:
+        specifier: 1.48.0
+        version: 1.48.0(react@19.3.0)
     devDependencies:
       '@testing-library/react':
         specifier: 16.3.3

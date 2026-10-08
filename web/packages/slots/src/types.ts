@@ -28,6 +28,12 @@ export interface SlotMap {
   'environment.overview.card': { kind: 'list'; props: { environment?: EnvironmentRef } };
   'approval.renderer': { kind: 'keyed'; props: { approvalId: string } };
   'shell.overlay': { kind: 'list'; props: Record<string, never> };
+  /** A product nav entry; the shell reads its `meta` and renders the link itself. */
+  'shell.nav.section': { kind: 'list'; props: Record<string, never> };
+  /** The right dock (the agent panel); one plugin owns it. Empty hides the dock and its toggle. */
+  'shell.dock.right': { kind: 'single'; props: Record<string, never> };
+  /** The server switcher, in the header. */
+  'shell.header.server': { kind: 'list'; props: Record<string, never> };
 }
 
 export type SlotName = keyof SlotMap;
@@ -43,8 +49,12 @@ export interface SlotMeta {
   label?: string;
   /** Where a nav entry links to (a router path). */
   href?: string;
-  /** The nav group, for example "Operate". */
+  /** The nav group, for example "Operate", or a `shell.nav.section` group ("Data"). */
   group?: string;
+  /** A stable id for a `shell.nav.section` entry. */
+  id?: string;
+  /** An icon name the shell knows ("postgres", "live"); unknown names get a plain dot. */
+  icon?: string;
 }
 
 export interface SlotSpec<N extends SlotName> {
