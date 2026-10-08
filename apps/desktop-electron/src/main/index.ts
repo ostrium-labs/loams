@@ -13,6 +13,8 @@ import {
 } from "electron";
 import type { EngineState } from "../shared/contracts";
 import { VERSION_ARG } from "../shared/version";
+import { registerChatIpc } from "./agent/ipc.electron";
+import type { ChatService } from "./agent/service";
 import { appPaths } from "./app-paths";
 import { ConnectorCatalog, catalogPath } from "./connectors/catalog";
 import { registerConnectorsIpc } from "./connectors/ipc.electron";
@@ -69,6 +71,7 @@ let installingOnQuit = false;
 let factory: FactoryHost | undefined;
 let factoryViews: FactoryViews | undefined;
 let factoryEmbed: FactoryEmbed | undefined;
+let chat: ChatService | undefined;
 let tray: TrayHandle | undefined;
 let isQuitting = false;
 const settingsFile = (): string =>
@@ -179,11 +182,13 @@ const singleInstance = initSingleInstance({
 				resourcesPath: process.resourcesPath,
 				appRoot: app.getAppPath(),
 			});
-			registerConnectorsIpc(
-				new ConnectorCatalog(() => readFileSync(connectorsFile, "utf8")),
+			const connectors = new ConnectorCatalog(() =>
+				readFileSync(connectorsFile, "utf8"),
 			);
-			factory = new FactoryHost(
-				new Vault(join(app.getPath("userData"), "factory", "credentials.bin"), {
+			registerConnectorsIpc(connectors);
+			const vault = new Vault(
+				join(app.getPath("userData"), "factory", "credentials.bin"),
+				{
 					// On Linux, basic_text means no keyring: the "encryption" is a fixed key.
 					available: () =>
 						safeStorage.isEncryptionAvailable() &&
@@ -191,8 +196,15 @@ const singleInstance = initSingleInstance({
 							safeStorage.getSelectedStorageBackend() !== "basic_text"),
 					encrypt: (v) => safeStorage.encryptString(v),
 					decrypt: (b) => safeStorage.decryptString(b),
-				}),
+				},
 			);
+			factory = new FactoryHost(vault);
+			chat = registerChatIpc({
+				session: session.defaultSession,
+				vault,
+				factory,
+				connectors,
+			});
 			const hardening = new FactoryHardening();
 			const views = new FactoryViews(factory, hardening);
 			factoryViews = views;
@@ -297,6 +309,7 @@ const singleInstance = initSingleInstance({
 		let quitting = false;
 		app.on("before-quit", (e) => {
 			isQuitting = true;
+			void chat?.dispose();
 			tray?.destroy();
 			factoryEmbed?.closeAll();
 			factoryViews?.closeAll();

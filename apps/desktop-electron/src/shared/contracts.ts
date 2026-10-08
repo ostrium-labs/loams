@@ -195,6 +195,35 @@ export interface LoamsDesktopApi {
 		/** Save an exported YAML through the main process's save dialog; `saved` is false when cancelled. */
 		saveYaml(name: string, text: string): Promise<IpcResult<{ saved: boolean }>>;
 	};
+	/** D675: the agent panel. The loop runs in main; keys never cross IPC. */
+	chat: {
+		providers(): Promise<ChatProviderInfo[]>;
+		/** An empty or missing `apiKey` keeps the stored key. */
+		configureProvider(
+			id: ChatProviderId,
+			cfg: { baseUrl?: string; model: string; apiKey?: string },
+		): Promise<IpcResult<ChatProviderInfo>>;
+		list(): Promise<ChatSummary[]>;
+		get(chatId: string): Promise<IpcResult<ChatView>>;
+		create(opts?: {
+			provider?: ChatProviderId;
+			model?: string;
+		}): Promise<IpcResult<ChatSummary>>;
+		/** Starts a turn; progress arrives through onEvent. */
+		send(
+			chatId: string,
+			text: string,
+			opts?: ChatSendOptions,
+		): Promise<IpcResult<void>>;
+		cancel(chatId: string): Promise<void>;
+		approve(
+			chatId: string,
+			callId: string,
+			decision: ChatApproval,
+		): Promise<IpcResult<void>>;
+		remove(chatId: string): Promise<IpcResult<void>>;
+		onEvent(cb: (e: ChatEvent) => void): () => void;
+	};
 }
 export const CH = {
 	serversList: "servers:list",
@@ -235,4 +264,112 @@ export const CH = {
 	connectorsGet: "connectors:get",
 	connectorsValidate: "connectors:validate",
 	connectorsSaveYaml: "connectors:save-yaml",
+	chatProviders: "chat:providers",
+	chatConfigureProvider: "chat:configure-provider",
+	chatList: "chat:list",
+	chatGet: "chat:get",
+	chatCreate: "chat:create",
+	chatSend: "chat:send",
+	chatCancel: "chat:cancel",
+	chatApprove: "chat:approve",
+	chatRemove: "chat:remove",
+	chatEvent: "chat:event",
 } as const;
+
+// ---- D675: the agent panel ----
+
+export type ChatStopReason =
+	| "end_turn"
+	| "iteration_cap"
+	| "wall_clock_budget"
+	| "token_budget"
+	| "llm_error"
+	| "cancelled";
+export type ChatEvent =
+	| { kind: "delta"; chatId: string; text: string }
+	| { kind: "thinking"; chatId: string; text: string }
+	| {
+			kind: "tool_call";
+			chatId: string;
+			callId: string;
+			tool: string;
+			args: unknown;
+			risk: "read" | "write";
+			needsApproval: boolean;
+	  }
+	| {
+			kind: "tool_result";
+			chatId: string;
+			callId: string;
+			ok: boolean;
+			text: string;
+	  }
+	| {
+			kind: "done";
+			chatId: string;
+			stop: ChatStopReason;
+			usage: { inputTokens: number; outputTokens: number };
+	  }
+	| { kind: "error"; chatId: string; message: string };
+export type ChatProviderId = "anthropic" | "deepseek" | "openai" | "ollama";
+export type ChatApproval = "once" | "always" | "deny";
+export interface ChatProviderInfo {
+	id: ChatProviderId;
+	label: string;
+	/** The wire protocol: Anthropic Messages or OpenAI-compatible chat completions. */
+	kind: "anthropic" | "openai";
+	baseUrl: string;
+	model: string;
+	defaultModel: string;
+	needsKey: boolean;
+	/** True when a key is stored (the key itself never leaves main). */
+	hasKey: boolean;
+	/** Ready to use: a key is stored, or none is needed. */
+	configured: boolean;
+	/** False when the vault has no encryption backend: the key lasts for this session only. */
+	persistent: boolean;
+}
+/** One block of a stored message. Tool results are plain text, never HTML. */
+export type ChatPart =
+	| { type: "text"; text: string }
+	| { type: "thinking"; text: string; signature?: string }
+	| { type: "redacted_thinking"; data: string }
+	| { type: "tool_use"; id: string; name: string; input: unknown }
+	| { type: "tool_result"; toolUseId: string; text: string; isError?: boolean };
+export interface ChatMessage {
+	role: "user" | "assistant";
+	content: ChatPart[];
+	at: number;
+	/** On the last assistant message of a turn. */
+	stop?: ChatStopReason;
+}
+export interface ChatSummary {
+	id: string;
+	title: string;
+	createdAt: number;
+	updatedAt: number;
+	provider: ChatProviderId;
+	model: string;
+}
+export interface ChatRecord extends ChatSummary {
+	/** Tools the user chose "Always for this chat" for. */
+	alwaysAllow: string[];
+	messages: ChatMessage[];
+}
+export interface ChatView extends ChatRecord {
+	running: boolean;
+	/** Write calls waiting for a decision (survives a renderer reload). */
+	pending: {
+		callId: string;
+		tool: string;
+		args: unknown;
+		risk: "read" | "write";
+	}[];
+}
+export interface ChatSendOptions {
+	/** Switch this chat's provider/model before the turn. */
+	provider?: ChatProviderId;
+	model?: string;
+	/** A short hint added to the system prompt, e.g. "The user is viewing Postgres › Branches." */
+	context?: string;
+}

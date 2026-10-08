@@ -82,6 +82,19 @@ const api: LoamsDesktopApi = {
 		validate: (id, config) => invoke(CH.connectorsValidate, id, config),
 		saveYaml: (name, text) => invoke(CH.connectorsSaveYaml, name, text),
 	},
+	chat: {
+		providers: () => invoke(CH.chatProviders),
+		configureProvider: (id, cfg) => invoke(CH.chatConfigureProvider, id, cfg),
+		list: () => invoke(CH.chatList),
+		get: (chatId) => invoke(CH.chatGet, chatId),
+		create: (opts) => invoke(CH.chatCreate, opts),
+		send: (chatId, text, opts) => invoke(CH.chatSend, chatId, text, opts),
+		cancel: (chatId) => invoke(CH.chatCancel, chatId),
+		approve: (chatId, callId, decision) =>
+			invoke(CH.chatApprove, chatId, callId, decision),
+		remove: (chatId) => invoke(CH.chatRemove, chatId),
+		onEvent: (cb) => subscribe(CH.chatEvent, cb),
+	},
 };
 
 contextBridge.exposeInMainWorld("loamsDesktop", api);

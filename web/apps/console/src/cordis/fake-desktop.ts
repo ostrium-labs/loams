@@ -9,6 +9,14 @@
 // return empty or "unconfigured" results.
 
 import type {
+  ChatApproval,
+  ChatEvent,
+  ChatPart,
+  ChatProviderId,
+  ChatProviderInfo,
+  ChatRecord,
+  ChatSummary,
+  ChatView,
   ConnectorDetail,
   ConnectorSummary,
   EngineState,
@@ -481,6 +489,246 @@ function previewStacks(): LoamsDesktopApi['stacks'] {
       return ok;
     },
     onState: (cb) => {
+      listeners.add(cb);
+      return () => void listeners.delete(cb);
+    },
+    chat: createFakeChat(),
+  };
+}
+
+// ---- chat (D675): a scripted fake provider so the agent panel can be previewed ----
+
+const FAKE_PROVIDERS: ChatProviderInfo[] = [
+  ['anthropic', 'Anthropic', 'anthropic', 'https://api.anthropic.com', 'claude-sonnet-5-5', true],
+  ['deepseek', 'DeepSeek', 'openai', 'https://api.deepseek.com/v1', 'deepseek-chat', true],
+  ['openai', 'OpenAI', 'openai', 'https://api.openai.com/v1', 'gpt-5', true],
+  ['ollama', 'Ollama', 'openai', 'http://127.0.0.1:11434/v1', 'llama3.1', false],
+].map(([id, label, kind, baseUrl, model, needsKey]) => ({
+  id: id as ChatProviderId,
+  label: label as string,
+  kind: kind as 'anthropic' | 'openai',
+  baseUrl: baseUrl as string,
+  model: model as string,
+  defaultModel: model as string,
+  needsKey: needsKey as boolean,
+  // The preview pretends Anthropic has a key; no key is ever stored.
+  hasKey: id === 'anthropic',
+  configured: id === 'anthropic' || !needsKey,
+  persistent: true,
+}));
+
+function createFakeChat(): LoamsDesktopApi['chat'] {
+  const chats = new Map<string, ChatRecord>();
+  const listeners = new Set<(e: ChatEvent) => void>();
+  const running = new Map<
+    string,
+    {
+      ctl: AbortController;
+      pending: Map<
+        string,
+        { call: ChatView['pending'][number]; resolve: (d: ChatApproval) => void }
+      >;
+    }
+  >();
+  const emit = (e: ChatEvent) => {
+    for (const l of listeners) l(e);
+  };
+  const summary = (c: ChatRecord): ChatSummary => ({
+    id: c.id,
+    title: c.title,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+    provider: c.provider,
+    model: c.model,
+  });
+  const sleep = (ms: number, signal: AbortSignal) =>
+    new Promise<void>((resolve, reject) => {
+      const t = globalThis.setTimeout(resolve, ms);
+      signal.addEventListener('abort', () => {
+        globalThis.clearTimeout(t);
+        reject(new Error('aborted'));
+      });
+    });
+  const notFound = { ok: false as const, code: 'not_found', message: 'Unknown chat' };
+
+  async function script(chat: ChatRecord, text: string, signal: AbortSignal): Promise<void> {
+    const run = running.get(chat.id);
+    const chatId = chat.id;
+    const usage = { inputTokens: 0, outputTokens: 0 };
+    const assistant: ChatPart[] = [];
+    const stream = async (words: string) => {
+      let acc = '';
+      for (const w of words.split(/(?<= )/)) {
+        await sleep(35, signal);
+        acc += w;
+        emit({ kind: 'delta', chatId, text: w });
+      }
+      assistant.push({ type: 'text', text: acc });
+    };
+    const tool = async (name: string, args: unknown, risk: 'read' | 'write', result: unknown) => {
+      const callId = `call_${Math.random().toString(36).slice(2, 10)}`;
+      const needsApproval = risk === 'write' && !chat.alwaysAllow.includes(name);
+      assistant.push({ type: 'tool_use', id: callId, name, input: args });
+      emit({ kind: 'tool_call', chatId, callId, tool: name, args, risk, needsApproval });
+      let ok = true;
+      let out = JSON.stringify(result, null, 2);
+      if (needsApproval && run) {
+        const decision = await new Promise<ChatApproval>((resolve, reject) => {
+          run.pending.set(callId, { call: { callId, tool: name, args, risk }, resolve });
+          signal.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+        run.pending.delete(callId);
+        if (decision === 'always') chat.alwaysAllow.push(name);
+        if (decision === 'deny') {
+          ok = false;
+          out = 'The user denied this action.';
+        }
+      }
+      await sleep(400, signal);
+      chat.messages.push({ role: 'assistant', content: assistant.splice(0), at: Date.now() });
+      chat.messages.push({
+        role: 'user',
+        content: [
+          { type: 'tool_result', toolUseId: callId, text: out, ...(ok ? {} : { isError: true }) },
+        ],
+        at: Date.now(),
+      });
+      emit({ kind: 'tool_result', chatId, callId, ok, text: out });
+      usage.inputTokens += 900;
+      usage.outputTokens += 60;
+    };
+
+    emit({
+      kind: 'thinking',
+      chatId,
+      text: 'The user asked about their data; list the collections first.',
+    });
+    await stream('Let me look at the collections in **default**. ');
+    await tool('collections_list', { namespace: 'default' }, 'read', [
+      { name: 'docs', documents: 1240 },
+      { name: 'tickets', documents: 318 },
+    ]);
+    if (/create|promise|write|approve/i.test(text)) {
+      await stream('I will create a durable promise for that. ');
+      await tool(
+        'durable_promise_create',
+        { id: 'preview-promise-1', timeoutMs: 3_600_000, param: { from: 'agent' } },
+        'write',
+        { id: 'preview-promise-1', state: 'pending' },
+      );
+    }
+    await stream(
+      'There are **2 collections**:\n\n| Collection | Documents |\n|---|---|\n| docs | 1240 |\n| tickets | 318 |\n\nTry:\n\n```sql\nSELECT count(*) FROM tickets\n```\n',
+    );
+    chat.messages.push({
+      role: 'assistant',
+      content: assistant.splice(0),
+      at: Date.now(),
+      stop: 'end_turn',
+    });
+    usage.inputTokens += 1200;
+    usage.outputTokens += 140;
+    emit({ kind: 'done', chatId, stop: 'end_turn', usage });
+  }
+
+  return {
+    providers: async () => FAKE_PROVIDERS.map((p) => ({ ...p })),
+    configureProvider: async (id, cfg) => {
+      const p = FAKE_PROVIDERS.find((x) => x.id === id);
+      if (!p) return { ok: false, code: 'unknown_provider', message: 'Unknown provider' };
+      if (!cfg.model.trim()) return { ok: false, code: 'bad_model', message: 'Enter a model name' };
+      p.model = cfg.model.trim();
+      if (cfg.baseUrl) p.baseUrl = cfg.baseUrl;
+      // The preview never keeps the key: it only records that one was given.
+      if (cfg.apiKey) p.hasKey = true;
+      p.configured = p.hasKey || !p.needsKey;
+      return { ok: true, value: { ...p } };
+    },
+    list: async () => [...chats.values()].map(summary).sort((a, b) => b.updatedAt - a.updatedAt),
+    get: async (chatId) => {
+      const c = chats.get(chatId);
+      if (!c) return notFound;
+      const run = running.get(chatId);
+      return {
+        ok: true,
+        value: {
+          ...structuredClone(c),
+          running: run !== undefined,
+          pending: run ? [...run.pending.values()].map((p) => p.call) : [],
+        },
+      };
+    },
+    create: async (opts) => {
+      const p =
+        FAKE_PROVIDERS.find((x) => x.id === opts?.provider) ??
+        FAKE_PROVIDERS.find((x) => x.configured) ??
+        (FAKE_PROVIDERS[0] as ChatProviderInfo);
+      const now = Date.now();
+      const c: ChatRecord = {
+        id: `c_${now.toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+        title: '',
+        createdAt: now,
+        updatedAt: now,
+        provider: p.id,
+        model: opts?.model ?? p.model,
+        alwaysAllow: [],
+        messages: [],
+      };
+      chats.set(c.id, c);
+      return { ok: true, value: summary(c) };
+    },
+    send: async (chatId, text, opts) => {
+      const c = chats.get(chatId);
+      if (!c) return notFound;
+      if (!text.trim()) return { ok: false, code: 'bad_request', message: 'Write a message first' };
+      if (running.has(chatId)) {
+        return { ok: false, code: 'busy', message: 'This chat is still answering. Stop it first.' };
+      }
+      if (opts?.provider) c.provider = opts.provider;
+      if (opts?.model) c.model = opts.model;
+      const p = FAKE_PROVIDERS.find((x) => x.id === c.provider);
+      if (!p?.configured) {
+        return {
+          ok: false,
+          code: 'unconfigured',
+          message: `${p?.label ?? 'This provider'} has no API key yet. Add one in Settings › Agent.`,
+        };
+      }
+      c.messages.push({ role: 'user', content: [{ type: 'text', text }], at: Date.now() });
+      if (!c.title) c.title = text.replace(/\s+/g, ' ').trim().slice(0, 60);
+      c.updatedAt = Date.now();
+      const ctl = new AbortController();
+      running.set(chatId, { ctl, pending: new Map() });
+      void script(c, text, ctl.signal)
+        .catch(() => {
+          emit({
+            kind: 'done',
+            chatId,
+            stop: 'cancelled',
+            usage: { inputTokens: 0, outputTokens: 0 },
+          });
+        })
+        .finally(() => {
+          running.delete(chatId);
+          c.updatedAt = Date.now();
+        });
+      return ok;
+    },
+    cancel: async (chatId) => {
+      running.get(chatId)?.ctl.abort();
+    },
+    approve: async (chatId, callId, decision) => {
+      const p = running.get(chatId)?.pending.get(callId);
+      if (!p) return { ok: false, code: 'not_found', message: 'Nothing is waiting for approval' };
+      p.resolve(decision);
+      return ok;
+    },
+    remove: async (chatId) => {
+      running.get(chatId)?.ctl.abort();
+      chats.delete(chatId);
+      return ok;
+    },
+    onEvent: (cb) => {
       listeners.add(cb);
       return () => void listeners.delete(cb);
     },

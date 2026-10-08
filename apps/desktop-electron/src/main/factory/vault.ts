@@ -29,6 +29,9 @@ export interface VaultCrypto {
 	decrypt(b: Buffer): string;
 }
 
+/** A factory app, or an agent provider's key (D675: `agent:<provider>`). */
+export type VaultKey = FactoryAppId | `agent:${string}`;
+
 export interface VaultEntry {
 	url: string;
 	fields: Record<string, Secret>;
@@ -50,18 +53,18 @@ export class Vault {
 		if (this.persistent) this.#load();
 	}
 
-	get(app: FactoryAppId): VaultEntry | undefined {
+	get(app: VaultKey): VaultEntry | undefined {
 		return this.#entries.get(app);
 	}
 
-	set(app: FactoryAppId, url: string, fields: Record<string, string>): void {
+	set(app: VaultKey, url: string, fields: Record<string, string>): void {
 		const wrapped: Record<string, Secret> = {};
 		for (const [k, v] of Object.entries(fields)) wrapped[k] = new Secret(v);
 		this.#entries.set(app, { url, fields: wrapped });
 		this.#save();
 	}
 
-	remove(app: FactoryAppId): void {
+	remove(app: VaultKey): void {
 		if (this.#entries.delete(app)) this.#save();
 	}
 
