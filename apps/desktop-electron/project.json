@@ -13,6 +13,15 @@
 			"executor": "nx:run-commands",
 			"options": { "cwd": "apps/desktop-electron", "command": "pnpm run test" }
 		},
+		"e2e": {
+			"executor": "nx:run-commands",
+			"cache": false,
+			"dependsOn": ["build", "@loams/console:build"],
+			"options": {
+				"cwd": "apps/desktop-electron",
+				"command": "pnpm run test:e2e"
+			}
+		},
 		"typecheck": {
 			"executor": "nx:run-commands",
 			"options": {

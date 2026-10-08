@@ -9,6 +9,7 @@
 		"dev": "electron-vite dev",
 		"build": "electron-vite build",
 		"test": "vitest run",
+		"test:e2e": "playwright test",
 		"typecheck": "tsc --noEmit -p tsconfig.node.json",
 		"fetch-engine": "node scripts/fetch-engine.mjs",
 		"package": "electron-builder --config electron-builder.config.cjs"
@@ -26,6 +27,7 @@
 		"@loams-plugins/plugin-matomo-adapter": "workspace:*",
 		"@loams-plugins/plugin-openpanel-adapter": "workspace:*",
 		"@loams-plugins/plugin-zulip-adapter": "workspace:*",
+		"@playwright/test": "1.63.0",
 		"@types/node": "24.13.6",
 		"cordis": "4.0.0-rc.10",
 		"electron": "44.4.5",

@@ -48,6 +48,11 @@ import {
 } from "./shell/window-state";
 import { startUpdater, type UpdaterHandle } from "./update/updater.electron";
 
+// Test hook (unpackaged builds only): the e2e smoke runs against a scratch profile, which
+// also gives it its own single-instance lock.
+if (!app.isPackaged && process.env.LOAMS_DESKTOP_USER_DATA)
+	app.setPath("userData", process.env.LOAMS_DESKTOP_USER_DATA);
+
 registerAppScheme();
 // D663: crash dumps stay on this machine (userData/Crashpad); nothing is uploaded.
 crashReporter.start({ uploadToServer: false });
@@ -61,6 +66,9 @@ let factoryViews: FactoryViews | undefined;
 let factoryEmbed: FactoryEmbed | undefined;
 let tray: TrayHandle | undefined;
 let isQuitting = false;
+// The console reads GetInstance once at boot. A page that booted while the local engine
+// was still starting has no data plane, so it is reloaded once the engine is ready.
+let bootedBeforeEngineReady = false;
 const settingsFile = (): string =>
 	join(app.getPath("userData"), "settings.json");
 
@@ -111,6 +119,8 @@ function createWindow(): BrowserWindow {
 		},
 	});
 	secureWindow(win);
+	// The console sets document.title per page; the native title stays the product name.
+	win.on("page-title-updated", (e) => e.preventDefault());
 	setMainWindow(win);
 	win.on("closed", () => setMainWindow(undefined));
 	if (state.isMaximized) win.maximize();
@@ -147,6 +157,7 @@ function createWindow(): BrowserWindow {
 		}
 	});
 	win.once("ready-to-show", () => win.show());
+	bootedBeforeEngineReady = engine?.state().phase !== "ready";
 	void win.loadURL("loams-app://console/ui/cordis.html");
 	return win;
 }
@@ -191,6 +202,11 @@ const singleInstance = initSingleInstance({
 			});
 			engine.on("state", (st: EngineState) => {
 				registry.setLocalUrl(st.phase === "ready" ? st.url : "");
+				if (st.phase === "ready" && bootedBeforeEngineReady) {
+					bootedBeforeEngineReady = false;
+					const w = getMainWindow();
+					if (w && !w.isDestroyed()) w.webContents.reload();
+				}
 				tray?.refresh();
 			});
 			registerEngineIpc(engine, logFile);
