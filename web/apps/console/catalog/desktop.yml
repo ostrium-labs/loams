@@ -19,3 +19,7 @@
       name: '@loams/plugin-graph'
     - id: streams
       name: '@loams/plugin-streams'
+    - id: overview
+      name: '@loams/plugin-overview'
+    - id: desktop-settings
+      name: '@loams/plugin-desktop-settings'

@@ -129,9 +129,14 @@ describe("tray routes", () => {
 			readFileSync(new URL(p, import.meta.url), "utf8");
 		const paths = (src: string) =>
 			[...src.matchAll(/path:\s*'([^']+)'/g)].map((m) => m[1]);
+		// /settings/servers is the `servers` section of the Settings area's `/settings/:section`.
+		expect(TRAY_ROUTES.servers).toBe("/settings/servers");
 		expect(
-			paths(read("../../../web/plugins/desktop-servers/src/index.tsx")),
-		).toContain(TRAY_ROUTES.servers);
+			paths(read("../../../web/plugins/desktop-settings/src/index.tsx")),
+		).toContain("/settings/:section");
+		expect(
+			read("../../../web/plugins/desktop-servers/src/index.tsx"),
+		).toContain("id: 'servers'");
 		expect(
 			paths(read("../../../web/plugins/approvals/src/index.tsx")),
 		).toContain(TRAY_ROUTES.approvals);

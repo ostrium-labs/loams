@@ -69,7 +69,14 @@ function AddServer({ desktop, onAdded }: { desktop: LoamsDesktopApi; onAdded(): 
 }
 
 /** `/settings/servers`: the registry, adding and removing, and the engine card. */
-export function ServersPage({ desktop }: { desktop: LoamsDesktopApi }) {
+export function ServersPage({
+  desktop,
+  embedded,
+}: {
+  desktop: LoamsDesktopApi;
+  /** Inside the Settings area, which supplies the page header. */
+  embedded?: boolean;
+}) {
   const { servers, activeId, loading, error, reload } = useServers(desktop);
   const [actionError, setActionError] = useState<string>();
 
@@ -85,11 +92,13 @@ export function ServersPage({ desktop }: { desktop: LoamsDesktopApi }) {
   };
 
   return (
-    <div className="lc-page">
-      <header className="lc-page-head">
-        <h1>Servers</h1>
-        <p>The Loams servers this app can connect to. Switching reloads the window.</p>
-      </header>
+    <div className={embedded ? 'flex flex-col gap-4' : 'lc-page'}>
+      {!embedded && (
+        <header className="lc-page-head">
+          <h1>Servers</h1>
+          <p>The Loams servers this app can connect to. Switching reloads the window.</p>
+        </header>
+      )}
       {error && (
         <Notice tone="danger" title="Could not read the server list">
           {error}

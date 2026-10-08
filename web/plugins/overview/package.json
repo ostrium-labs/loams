@@ -1,8 +1,8 @@
 {
-  "name": "@loams/plugin-desktop-servers",
+  "name": "@loams/plugin-overview",
   "version": "0.1.0",
   "private": true,
-  "description": "Loams Desktop: the server switcher in the header and the Servers page with the local engine card.",
+  "description": "Loams Desktop: the Overview home page, a grid of honest status cards.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -21,12 +21,15 @@
       "inject": [
         "desktop",
         "router",
-        "slots"
+        "slots",
+        "platform",
+        "transport"
       ],
       "provides": [],
       "slots": [
-        "console.settings.section",
-        "shell.header.server"
+        "console.page",
+        "shell.nav.section",
+        "environment.overview.card"
       ],
       "permissions": [],
       "requires": {
@@ -43,11 +46,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@connectrpc/connect": "2.2.0",
     "@loams/console-host": "workspace:*",
     "@loams/cordis": "workspace:*",
+    "@loams/plugin-durable": "workspace:*",
+    "@loams/proto": "workspace:*",
     "@loams/slots": "workspace:*",
-    "@loams/ui": "workspace:*",
-    "lucide-react": "1.48.0"
+    "@loams/ui": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=19"

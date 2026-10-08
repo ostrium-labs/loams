@@ -735,6 +735,9 @@ importers:
       '@loams/plugin-desktop-servers':
         specifier: workspace:*
         version: link:../../plugins/desktop-servers
+      '@loams/plugin-desktop-settings':
+        specifier: workspace:*
+        version: link:../../plugins/desktop-settings
       '@loams/plugin-durable':
         specifier: workspace:*
         version: link:../../plugins/durable
@@ -750,6 +753,9 @@ importers:
       '@loams/plugin-namespaces':
         specifier: workspace:*
         version: link:../../plugins/namespaces
+      '@loams/plugin-overview':
+        specifier: workspace:*
+        version: link:../../plugins/overview
       '@loams/plugin-rpc':
         specifier: workspace:*
         version: link:../../plugins/rpc
@@ -1210,6 +1216,52 @@ importers:
         specifier: 5.0.3
         version: 5.0.3(@types/node@24.13.6)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
+  web/plugins/desktop-settings:
+    dependencies:
+      '@loams/console-host':
+        specifier: workspace:*
+        version: link:../../packages/console-host
+      '@loams/cordis':
+        specifier: workspace:*
+        version: link:../../packages/cordis
+      '@loams/slots':
+        specifier: workspace:*
+        version: link:../../packages/slots
+      '@loams/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@loams/desktop':
+        specifier: workspace:*
+        version: link:../../../apps/desktop-electron
+      '@loams/platform-electron':
+        specifier: workspace:*
+        version: link:../../packages/platform-electron
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      jsdom:
+        specifier: 30.1.1
+        version: 30.1.1(@noble/hashes@1.8.0)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: 19.3.0
+        version: 19.3.0(react@19.3.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@24.13.6)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
   web/plugins/durable:
     dependencies:
       '@loams/console-host':
@@ -1454,6 +1506,61 @@ importers:
       vitest:
         specifier: 5.0.3
         version: 5.0.3(@types/node@24.10.1)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  web/plugins/overview:
+    dependencies:
+      '@connectrpc/connect':
+        specifier: 2.2.0
+        version: 2.2.0(@bufbuild/protobuf@2.16.0)
+      '@loams/console-host':
+        specifier: workspace:*
+        version: link:../../packages/console-host
+      '@loams/cordis':
+        specifier: workspace:*
+        version: link:../../packages/cordis
+      '@loams/plugin-durable':
+        specifier: workspace:*
+        version: link:../durable
+      '@loams/proto':
+        specifier: workspace:*
+        version: link:../../packages/proto
+      '@loams/slots':
+        specifier: workspace:*
+        version: link:../../packages/slots
+      '@loams/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+    devDependencies:
+      '@loams/desktop':
+        specifier: workspace:*
+        version: link:../../../apps/desktop-electron
+      '@loams/platform-electron':
+        specifier: workspace:*
+        version: link:../../packages/platform-electron
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      jsdom:
+        specifier: 30.1.1
+        version: 30.1.1(@noble/hashes@1.8.0)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: 19.3.0
+        version: 19.3.0(react@19.3.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@24.13.6)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   web/plugins/rpc:
     dependencies:

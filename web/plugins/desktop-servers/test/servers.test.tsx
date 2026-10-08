@@ -18,6 +18,13 @@ const ready: EngineState = {
 };
 
 describe('servers page', () => {
+  it('embedded_in_settings_has_no_page_header', async () => {
+    const { api } = fakeDesktop();
+    render(<ServersPage desktop={api} embedded />);
+    await screen.findByRole('button', { name: 'Activate Demo' });
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+  });
+
   it('lists_and_activates_servers', async () => {
     const { api, calls } = fakeDesktop();
     render(<ServersPage desktop={api} />);

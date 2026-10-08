@@ -21,7 +21,8 @@
       "inject": [
         "flags",
         "router",
-        "platform"
+        "platform",
+        "slots"
       ],
       "provides": [],
       "slots": [

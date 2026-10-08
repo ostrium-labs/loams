@@ -78,7 +78,7 @@ export function SummaryCard({ desktop }: { desktop: LoamsDesktopApi }) {
   if (!s || (s.prs === undefined && s.errors === undefined && s.issues === undefined)) return null;
   return (
     <div data-card="factory.summary">
-      <Card title="Software Factory">
+      <Card title="Factory activity">
         <Stats>
           {s.prs !== undefined && <Stat label="Open PRs" value={s.prs} />}
           {s.errors !== undefined && <Stat label="Unresolved errors" value={s.errors} />}

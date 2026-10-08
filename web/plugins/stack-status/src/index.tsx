@@ -13,6 +13,26 @@ import { APP_API_PACKAGES } from '@loams/proto';
 import { Slot } from '@loams/slots';
 import { Badge, Card, Notice, StatusTag } from '@loams/ui';
 
+/** Which app APIs this instance serves; also an `environment.overview.card` on the desktop. */
+export function AppApisCard({ flags }: { flags: FlagsService }) {
+  return (
+    <Card title="App APIs" flush>
+      <ul className="lc-api-list">
+        {APP_API_PACKAGES.map((api) => (
+          <li key={api}>
+            <code>{api}</code>{' '}
+            {flags.has(api) ? (
+              <StatusTag status="done">served</StatusTag>
+            ) : (
+              <StatusTag status="planned">not served</StatusTag>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 export function StatusPage({
   flags,
   platform,
@@ -40,20 +60,7 @@ export function StatusPage({
           with <code>cargo run -p loams-apps-mock</code>.
         </Notice>
       )}
-      <Card title="App APIs" flush>
-        <ul className="lc-api-list">
-          {APP_API_PACKAGES.map((api) => (
-            <li key={api}>
-              <code>{api}</code>{' '}
-              {flags.has(api) ? (
-                <StatusTag status="done">served</StatusTag>
-              ) : (
-                <StatusTag status="planned">not served</StatusTag>
-              )}
-            </li>
-          ))}
-        </ul>
-      </Card>
+      <AppApisCard flags={flags} />
       <div className="lc-cards">
         <Slot name="environment.overview.card" props={{}} />
       </div>
@@ -63,11 +70,23 @@ export function StatusPage({
 
 const plugin: PluginModule = {
   name: 'stack-status',
-  inject: ['flags', 'router', 'platform'],
+  inject: ['flags', 'router', 'platform', 'slots'],
   apply(ctx: Context) {
     const flags = service(ctx, 'flags');
     const platform = service(ctx, 'platform');
     const router = service(ctx, 'router');
+    // Loams Desktop's home is the Overview plugin (`/`). Here the page gives way
+    // and its App APIs card moves into the Overview's card grid.
+    if (platform.kind === 'desktop') {
+      const slots = service(ctx, 'slots');
+      ctx.effect(() =>
+        slots.register(
+          { name: 'environment.overview.card', plugin: 'stack-status', order: 90 },
+          () => <AppApisCard flags={flags} />,
+        ),
+      );
+      return;
+    }
     ctx.effect(() =>
       router.page(
         {

@@ -2,7 +2,7 @@ import type { FlagsService, PlatformService } from '@loams/console-host';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { StatusPage } from '../src/index.js';
+import plugin, { StatusPage } from '../src/index.js';
 
 afterEach(cleanup);
 
@@ -41,5 +41,33 @@ describe('StatusPage', () => {
       </SlotProvider>,
     );
     expect(screen.getByText('This instance did not answer')).toBeTruthy();
+  });
+});
+
+describe('stack-status plugin', () => {
+  const apply = (kind: 'web' | 'desktop') => {
+    const slots = new SlotRegistry();
+    const pages: string[] = [];
+    const ctx = {
+      effect: (fn: () => unknown) => void fn(),
+      flags: flags(['loams.instance.v1']),
+      platform: { kind, baseUrl: 'x' },
+      slots,
+      router: { page: (spec: { path: string }) => void pages.push(spec.path) },
+    };
+    plugin.apply(ctx as never, {});
+    return { slots, pages };
+  };
+
+  it('web_owns_the_home_route', () => {
+    const { slots, pages } = apply('web');
+    expect(pages).toEqual(['/']);
+    expect(slots.entries('environment.overview.card')).toHaveLength(0);
+  });
+
+  it('desktop_gives_the_home_route_to_overview_and_keeps_the_api_card', () => {
+    const { slots, pages } = apply('desktop');
+    expect(pages).toEqual([]);
+    expect(slots.entries('environment.overview.card')).toHaveLength(1);
   });
 });

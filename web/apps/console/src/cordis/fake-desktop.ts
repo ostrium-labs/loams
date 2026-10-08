@@ -18,6 +18,8 @@ import type {
   IpcResult,
   LoamsDesktopApi,
   ServerEntry,
+  StackId,
+  StackState,
 } from '@loams/desktop/contracts';
 import { validateConfig } from '@loams/desktop/validate';
 
@@ -299,7 +301,7 @@ export function createFakeDesktop(): LoamsDesktopApi {
   const later = (ms: number, fn: () => void) => globalThis.setTimeout(fn, ms);
 
   return {
-    version: '0.0.0-preview',
+    version: '0.1.0-preview',
     platform: 'linux',
     servers: {
       list: async () => ({ servers: [...data.servers], activeId: data.activeId }),
@@ -435,25 +437,67 @@ export function createFakeDesktop(): LoamsDesktopApi {
           : { ok: false, code: 'not_found', message: `No connector "${id}".` };
       },
     },
-    update: {
-      state: async () => ({ phase: 'disabled' }),
-      check: async () => undefined,
-      download: async () => undefined,
-      installAndRestart: async () => undefined,
+    update: previewUpdate(),
+    stacks: previewStacks(),
+  };
+}
+
+// ---- Overview and Settings preview (Task 30) ----
+
+/** The preview's stacks: Postgres running, WeSQL stopped, TiKV without a runtime. Start and stop work. */
+function previewStacks(): LoamsDesktopApi['stacks'] {
+  const states: Record<StackId, StackState> = {
+    postgres: {
+      phase: 'running',
+      services: [{ name: 'postgres', state: 'running', ports: ['127.0.0.1:5432'] }],
     },
-    stacks: {
-      state: async () => ({ phase: 'unavailable', reason: 'no_container_runtime' }),
-      start: async () => ({
-        ok: false,
-        code: 'unavailable',
-        message: 'no_container_runtime',
-      }),
-      stop: async () => ({
-        ok: false,
-        code: 'unavailable',
-        message: 'no_container_runtime',
-      }),
-      onState: () => () => undefined,
+    wesql: { phase: 'stopped' },
+    tikv: { phase: 'unavailable', reason: 'no_container_runtime' },
+  };
+  const listeners = new Set<(id: StackId, s: StackState) => void>();
+  const set = (id: StackId, s: StackState) => {
+    states[id] = s;
+    for (const l of listeners) l(id, s);
+  };
+  return {
+    state: async (id) => states[id],
+    start: async (id) => {
+      if (states[id].phase === 'unavailable') {
+        return { ok: false, code: 'unavailable', message: 'no_container_runtime' };
+      }
+      set(id, { phase: 'starting' });
+      globalThis.setTimeout(
+        () =>
+          set(id, {
+            phase: 'running',
+            services: [{ name: id, state: 'running', ports: ['127.0.0.1:0'] }],
+          }),
+        800,
+      );
+      return ok;
     },
+    stop: async (id) => {
+      set(id, { phase: 'stopped' });
+      return ok;
+    },
+    onState: (cb) => {
+      listeners.add(cb);
+      return () => void listeners.delete(cb);
+    },
+  };
+}
+
+/** The preview's updater: a manual-mode feed that finds v0.2.0 on "Check now". */
+function previewUpdate(): LoamsDesktopApi['update'] {
+  let state: Awaited<ReturnType<LoamsDesktopApi['update']['state']>> = { phase: 'idle' };
+  return {
+    state: async () => state,
+    check: async () => {
+      state = { phase: 'checking' };
+      await new Promise((r) => globalThis.setTimeout(r, 500));
+      state = { phase: 'available', version: '0.2.0', mode: 'manual' };
+    },
+    download: async () => undefined,
+    installAndRestart: async () => undefined,
   };
 }

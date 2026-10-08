@@ -12,6 +12,7 @@ import {
 	shell,
 } from "electron";
 import type { EngineState } from "../shared/contracts";
+import { VERSION_ARG } from "../shared/version";
 import { appPaths } from "./app-paths";
 import { ConnectorCatalog, catalogPath } from "./connectors/catalog";
 import { registerConnectorsIpc } from "./connectors/ipc.electron";
@@ -117,6 +118,7 @@ function createWindow(): BrowserWindow {
 			nodeIntegration: false,
 			webSecurity: true,
 			webviewTag: false,
+			additionalArguments: [`${VERSION_ARG}${app.getVersion()}`],
 		},
 	});
 	secureWindow(win);

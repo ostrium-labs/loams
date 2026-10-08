@@ -5,6 +5,7 @@ import {
 	type StackId,
 	type StackState,
 } from "../shared/contracts";
+import { versionFromArgv } from "../shared/version";
 
 const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
 	ipcRenderer.invoke(ch, ...args) as Promise<T>;
@@ -18,7 +19,9 @@ function subscribe<T>(ch: string, cb: (v: T) => void): () => void {
 }
 
 const api: LoamsDesktopApi = {
-	version: process.env.LOAMS_DESKTOP_VERSION ?? "0.0.0",
+	// The main process passes app.getVersion() as an additional argument; a sandboxed
+	// preload has no app.getVersion() and process.env does not carry it.
+	version: versionFromArgv(process.argv),
 	platform: process.platform,
 	servers: {
 		list: () => invoke(CH.serversList),
