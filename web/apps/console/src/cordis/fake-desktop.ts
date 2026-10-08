@@ -12,6 +12,7 @@ import type {
   EngineState,
   FactoryAppId,
   FactoryAppInfo,
+  FactoryQuery,
   IpcResult,
   LoamsDesktopApi,
   ServerEntry,
@@ -122,10 +123,108 @@ const PREVIEW_FACTORY_APPS: {
   { id: 'openobserve', fields: [], label: 'OpenObserve', hasPanels: false },
 ];
 
+/** Sample apps shown as configured in the preview. Every value is obviously fake. */
+const PREVIEW_URLS: Partial<Record<FactoryAppId, string>> = {
+  forgejo: 'https://git.demo.invalid',
+  glitchtip: 'https://errors.demo.invalid',
+  matomo: 'https://stats.demo.invalid',
+};
+
+const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+const dateOnly = (n: number) => day(n).slice(0, 10);
+
+/** Sample DTOs per `app.op`, in the shapes apps/desktop-electron/src/main/factory/ops.ts returns. */
+const PREVIEW_DATA: Record<string, unknown> = {
+  'forgejo.repos': [
+    {
+      fullName: 'demo/loams',
+      description: 'Demo repository (sample data)',
+      stars: 12,
+      forks: 3,
+      openIssues: 5,
+      updatedAt: day(0),
+    },
+    {
+      fullName: 'demo/console',
+      description: 'Demo console UI (sample data)',
+      stars: 4,
+      forks: 1,
+      openIssues: 2,
+      updatedAt: day(2),
+    },
+    {
+      fullName: 'demo/docs',
+      description: 'Demo documentation (sample data)',
+      stars: 1,
+      forks: 0,
+      openIssues: 0,
+      updatedAt: day(9),
+    },
+  ],
+  'forgejo.version': { version: '11.0.0-demo' },
+  'forgejo.issues:pulls': [
+    { id: '#14', title: 'Add demo factory panels', state: 'open', updatedAt: day(0) },
+    { id: '#12', title: 'Bump demo dependencies', state: 'open', updatedAt: day(1) },
+    { id: '#9', title: 'Fix demo flaky test', state: 'open', updatedAt: day(4) },
+  ],
+  'forgejo.issues': [
+    {
+      id: '#15',
+      title: 'Demo: table overflows on narrow windows',
+      state: 'open',
+      updatedAt: day(1),
+    },
+    { id: '#11', title: 'Demo: document the sample data', state: 'open', updatedAt: day(3) },
+  ],
+  'glitchtip.organizations': [{ slug: 'demo-org', name: 'Demo Org' }],
+  'glitchtip.issues': [
+    {
+      id: '101',
+      title: 'TypeError: demo is undefined',
+      level: 'error',
+      count: '38',
+      lastSeen: day(0),
+    },
+    { id: '102', title: 'Demo request timed out', level: 'warning', count: '12', lastSeen: day(1) },
+    {
+      id: '103',
+      title: 'Demo: unhandled promise rejection',
+      level: 'error',
+      count: '3',
+      lastSeen: day(3),
+    },
+  ],
+  'matomo.visits': [6, 5, 4, 3, 2, 1, 0].map((n, i) => ({
+    date: dateOnly(n),
+    nb_visits: 120 + i * 9,
+    nb_uniq_visitors: 90 + i * 7,
+    nb_actions: 410 + i * 21,
+    bounce_count: 40 + i,
+  })),
+  'matomo.pages': [
+    { label: '/demo', hits: 210, visits: 160 },
+    { label: '/demo/pricing', hits: 96, visits: 80 },
+    { label: '/demo/docs', hits: 41, visits: 33 },
+  ],
+};
+
+const fakeQuery = (q: FactoryQuery): IpcResult<unknown> => {
+  if (!PREVIEW_URLS[q.app]) {
+    return { ok: false, code: 'unconfigured', message: `${q.app} is not configured.` };
+  }
+  const key = `${q.app}.${q.op}`;
+  const data = PREVIEW_DATA[q.params['type'] === 'pulls' ? `${key}:pulls` : key];
+  return data === undefined
+    ? { ok: false, code: 'unknown_op', message: `Unknown op ${q.op}.` }
+    : { ok: true, value: data };
+};
+
 function previewInfo({ fields, ...a }: (typeof PREVIEW_FACTORY_APPS)[number]): FactoryAppInfo {
+  const url = PREVIEW_URLS[a.id];
   return {
     ...a,
-    health: 'unconfigured',
+    url,
+    health: url ? 'ok' : 'unconfigured',
     credentialFields: [
       ...fields.map(([key, label, secret]) => ({ key, label, secret })),
       SSO_FIELD,
@@ -195,22 +294,26 @@ export function createFakeDesktop(): LoamsDesktopApi {
     },
     factory: {
       list: async (): Promise<FactoryAppInfo[]> => PREVIEW_FACTORY_APPS.map(previewInfo),
-      configure: async () => ({
-        ok: false,
-        code: 'preview',
-        message: 'Not available in the preview.',
-      }),
+      configure: async (app, url) => {
+        const def = PREVIEW_FACTORY_APPS.find((x) => x.id === app);
+        if (!def) return { ok: false, code: 'unknown_app', message: 'Unknown app' };
+        // The preview keeps the URL in memory only; no secret is stored.
+        PREVIEW_URLS[app] = url;
+        return { ok: true, value: previewInfo(def) };
+      },
       test: async (app) =>
         previewInfo(
           PREVIEW_FACTORY_APPS.find((a) => a.id === app) as (typeof PREVIEW_FACTORY_APPS)[number],
         ),
-      remove: async () => undefined,
-      query: async () => ({
+      remove: async (app) => {
+        delete PREVIEW_URLS[app];
+      },
+      query: (async (q: FactoryQuery) => fakeQuery(q)) as LoamsDesktopApi['factory']['query'],
+      openApp: async () => ({
         ok: false,
-        code: 'unconfigured',
-        message: 'Apps are configured in the desktop app.',
+        code: 'preview',
+        message: 'Apps open in the desktop app, not in the preview.',
       }),
-      openApp: async () => ok,
       closeApp: async () => undefined,
     },
     shell: {

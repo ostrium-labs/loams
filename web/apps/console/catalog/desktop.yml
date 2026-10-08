@@ -9,3 +9,5 @@
       name: '@loams/plugin-desktop-servers'
     - id: data-studio
       name: '@loams/plugin-data-studio'
+    - id: factory
+      name: '@loams/plugin-factory'
