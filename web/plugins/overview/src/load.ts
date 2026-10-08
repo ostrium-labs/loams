@@ -3,7 +3,7 @@
 
 import { createClient, type Transport } from '@connectrpc/connect';
 import type { LoamsDesktopApi } from '@loams/desktop/contracts';
-import { createDurableApi, envelope } from '@loams/plugin-durable';
+import { createDurableApi, envelope } from '@loams/durable-client';
 import { collection } from '@loams/proto';
 import { useEffect, useState } from 'react';
 
@@ -28,7 +28,8 @@ export function useLoad<T>(fn: () => Promise<T>, key: unknown, enabled = true): 
   useEffect(() => {
     if (!enabled) return;
     let live = true;
-    setV({ state: 'loading' });
+    // Refreshing keeps the data on screen; only a first or failed load shows Loading.
+    setV((cur) => (cur.state === 'ok' ? cur : { state: 'loading' }));
     fn().then(
       (data) => live && setV({ state: 'ok', data }),
       (e) => live && setV({ state: 'error', message: message(e) }),

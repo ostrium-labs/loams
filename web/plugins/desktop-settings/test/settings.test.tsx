@@ -129,6 +129,31 @@ describe('settings area', () => {
 });
 
 describe('local stacks section', () => {
+  it('says_nothing_about_the_runtime_until_all_three_are_read', async () => {
+    const un: StackState = { phase: 'unavailable', reason: 'no_container_runtime' };
+    const { api } = fake({ stacks: { postgres: un, wesql: un, tikv: un } });
+    let release: (s: StackState) => void = () => undefined;
+    const slow = new Promise<StackState>((r) => {
+      release = r;
+    });
+    const state = api.stacks.state.bind(api.stacks);
+    api.stacks.state = (id) => (id === 'tikv' ? slow : state(id));
+    render(<StacksSection desktop={api} />);
+    await screen.findAllByText('Unavailable');
+    expect(screen.queryByText('No container runtime found')).toBeNull();
+    expect(screen.queryByText('Container runtime: found.')).toBeNull();
+    await act(async () => release(un));
+    await screen.findByText('No container runtime found');
+  });
+
+  it('other_unavailable_reasons_are_not_no_runtime', async () => {
+    const odd = { phase: 'unavailable', reason: 'something_else' } as unknown as StackState;
+    const { api } = fake({ stacks: { postgres: odd, wesql: odd, tikv: odd } });
+    render(<StacksSection desktop={api} />);
+    await screen.findByText('Container runtime: found.');
+    expect(screen.queryByText('No container runtime found')).toBeNull();
+  });
+
   it('no_runtime_says_so_and_offers_no_start', async () => {
     const un: StackState = { phase: 'unavailable', reason: 'no_container_runtime' };
     const { api } = fake({ stacks: { postgres: un, wesql: un, tikv: un } });

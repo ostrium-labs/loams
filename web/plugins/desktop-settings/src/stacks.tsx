@@ -50,9 +50,10 @@ export function StacksSection({ desktop }: { desktop: LoamsDesktopApi }) {
   const [actionError, setActionError] = useState<string>();
   const [busy, setBusy] = useState<StackId>();
   const read = Object.values(states);
+  // Say nothing about the runtime until every stack's state is read.
+  const allRead = read.length === STACKS.length;
   const noRuntime =
-    read.length > 0 &&
-    read.every((s) => s.phase === 'unavailable' && s.reason === 'no_container_runtime');
+    allRead && read.every((s) => s.phase === 'unavailable' && s.reason === 'no_container_runtime');
 
   const run = useCallback(async (id: StackId, op: () => Promise<IpcResult<void>>) => {
     setBusy(id);
@@ -86,7 +87,7 @@ export function StacksSection({ desktop }: { desktop: LoamsDesktopApi }) {
           page.
         </Notice>
       ) : (
-        read.length > 0 && <p className="text-sm text-muted m-0">Container runtime: found.</p>
+        allRead && <p className="text-sm text-muted m-0">Container runtime: found.</p>
       )}
       <Card title="Stacks" flush>
         <Table

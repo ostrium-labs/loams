@@ -296,17 +296,32 @@ const STACK_TAG: Record<StackState['phase'], { tone: Tone; label: string }> = {
   error: { tone: 'failed', label: 'Error' },
 };
 
+const LOCAL_ONLY = { tone: 'planned', label: 'Local only' } as const;
+const LocalOnly = () => (
+  <Muted>Local only: available when This computer is the active server.</Muted>
+);
+
 export function StackCard({
   id,
   title,
   href,
   state,
+  local = true,
 }: {
   id: string;
   title: string;
   href: string;
   state: StackState | undefined;
+  /** False when the active server is not this computer: the local stack is not what the page shows. */
+  local?: boolean;
 }) {
+  if (!local) {
+    return (
+      <OverviewCard id={id} title={title} href={href} tag={LOCAL_ONLY}>
+        <LocalOnly />
+      </OverviewCard>
+    );
+  }
   if (!state) {
     return (
       <OverviewCard id={id} title={title} href={href} tag={{ tone: 'progress', label: 'Loading' }}>
@@ -331,7 +346,20 @@ export function StackCard({
   );
 }
 
-export function LiveCard({ engine }: { engine: EngineState | undefined }) {
+export function LiveCard({
+  engine,
+  local = true,
+}: {
+  engine: EngineState | undefined;
+  local?: boolean;
+}) {
+  if (!local) {
+    return (
+      <OverviewCard id="live" title="Live" href="/live" tag={LOCAL_ONLY}>
+        <LocalOnly />
+      </OverviewCard>
+    );
+  }
   if (!engine) {
     return (
       <OverviewCard

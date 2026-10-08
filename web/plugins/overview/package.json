@@ -49,7 +49,7 @@
     "@connectrpc/connect": "2.2.0",
     "@loams/console-host": "workspace:*",
     "@loams/cordis": "workspace:*",
-    "@loams/plugin-durable": "workspace:*",
+    "@loams/durable-client": "workspace:*",
     "@loams/proto": "workspace:*",
     "@loams/slots": "workspace:*",
     "@loams/ui": "workspace:*"

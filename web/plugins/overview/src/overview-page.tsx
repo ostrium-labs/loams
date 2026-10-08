@@ -88,6 +88,8 @@ export function OverviewPage({
     known: serverKnown && (active?.kind !== 'local' || engine !== undefined),
     down: active?.kind === 'local' && engine?.phase !== 'ready',
   };
+  // Until the server list arrives, assume local so the cards read Loading, not "Local only".
+  const isLocal = !serverKnown || active?.kind === 'local';
   // Re-read when the engine changes phase, the user hits Refresh, or the server changes.
   const key = `${engine?.phase}:${active?.id}:${tick}`;
   const live = where.known && !where.down;
@@ -113,9 +115,15 @@ export function OverviewPage({
       <div className="lc-cards">
         <EngineCard engine={engine} active={active} />
         <DataCard where={where} load={data} />
-        <StackCard id="postgres" title="Postgres" href="/postgres" state={postgres} />
-        <StackCard id="wesql" title="WeSQL" href="/wesql" state={wesql} />
-        <LiveCard engine={engine} />
+        <StackCard
+          id="postgres"
+          title="Postgres"
+          href="/postgres"
+          state={postgres}
+          local={isLocal}
+        />
+        <StackCard id="wesql" title="WeSQL" href="/wesql" state={wesql} local={isLocal} />
+        <LiveCard engine={engine} local={isLocal} />
         <DurableCard where={where} load={durable} />
         <StreamsCard where={where} load={streams} />
         <ConnectorsCard load={connectors} />

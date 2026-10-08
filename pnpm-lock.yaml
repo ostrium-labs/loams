@@ -888,6 +888,15 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  web/packages/durable-client:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@24.13.6)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
   web/packages/platform-electron:
     dependencies:
       '@connectrpc/connect':
@@ -1270,6 +1279,9 @@ importers:
       '@loams/cordis':
         specifier: workspace:*
         version: link:../../packages/cordis
+      '@loams/durable-client':
+        specifier: workspace:*
+        version: link:../../packages/durable-client
       '@loams/slots':
         specifier: workspace:*
         version: link:../../packages/slots
@@ -1518,9 +1530,9 @@ importers:
       '@loams/cordis':
         specifier: workspace:*
         version: link:../../packages/cordis
-      '@loams/plugin-durable':
+      '@loams/durable-client':
         specifier: workspace:*
-        version: link:../durable
+        version: link:../../packages/durable-client
       '@loams/proto':
         specifier: workspace:*
         version: link:../../packages/proto

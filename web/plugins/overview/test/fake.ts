@@ -23,21 +23,30 @@ export function fakeDesktop(init: { engine?: EngineState; active?: 'local' | 'de
     },
     engine: { state: async () => engine, onState: () => () => undefined },
     stacks: {
-      state: async (id: string) => stacks[id],
+      state: async (id: string) => {
+        calls.push(`stacks.state:${id}`);
+        return stacks[id];
+      },
       onState: () => () => undefined,
     },
     connectors: {
-      catalog: async () => [
-        { id: 'a', status: 'preview' },
-        { id: 'b', status: 'planned' },
-        { id: 'c', status: 'planned' },
-      ],
+      catalog: async () => {
+        calls.push('connectors.catalog');
+        return [
+          { id: 'a', status: 'preview' },
+          { id: 'b', status: 'planned' },
+          { id: 'c', status: 'planned' },
+        ];
+      },
     },
     factory: {
-      list: async () => [
-        { id: 'forgejo', label: 'Forgejo', health: 'ok' },
-        { id: 'zulip', label: 'Zulip', health: 'unconfigured' },
-      ],
+      list: async () => {
+        calls.push('factory.list');
+        return [
+          { id: 'forgejo', label: 'Forgejo', health: 'ok' },
+          { id: 'zulip', label: 'Zulip', health: 'unconfigured' },
+        ];
+      },
     },
   } as unknown as LoamsDesktopApi;
   return { api, calls };

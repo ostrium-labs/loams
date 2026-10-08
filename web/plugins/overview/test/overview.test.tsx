@@ -254,6 +254,37 @@ describe('overview page', () => {
     expect(within(card('factory')).getByText('1 of 2 connected')).toBeTruthy();
     expect(within(card('postgres')).getByText('Running')).toBeTruthy();
     expect(within(card('wesql')).getByText('Not running')).toBeTruthy();
+  });
+
+  it('refresh_re_reads_everything_and_keeps_data_on_screen', async () => {
+    const { api, calls } = fakeDesktop({ engine: ready });
+    fetched.length = 0;
+    render(page(api));
+    await waitFor(() => expect(within(card('streams')).getByText('Max link lag')).toBeTruthy());
+    await waitFor(() => expect(within(card('durable')).getByText('1')).toBeTruthy());
+    const before = { fetched: fetched.length, calls: calls.length };
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    // No flash to Loading: the numbers stay while the reads run.
+    expect(within(card('data')).getByText('2')).toBeTruthy();
+    expect(screen.queryByText('Loading')).toBeNull();
+    await waitFor(() => expect(fetched.length).toBeGreaterThan(before.fetched));
+    await waitFor(() => expect(calls.length).toBeGreaterThan(before.calls));
+    expect(calls.filter((c) => c === 'factory.list')).toHaveLength(2);
+    expect(calls.filter((c) => c === 'connectors.catalog')).toHaveLength(2);
+    expect(calls.filter((c) => c === 'stacks.state:postgres')).toHaveLength(2);
+  });
+
+  it('remote_server_shows_local_only_for_live_postgres_and_wesql', async () => {
+    const { api } = fakeDesktop({ engine: ready, active: 'demo' });
+    render(page(api));
+    await waitFor(() => expect(within(card('engine')).getByText('Connected')).toBeTruthy());
+    for (const id of ['live', 'postgres', 'wesql']) {
+      expect(within(card(id)).getByText('Local only')).toBeTruthy();
+      expect(
+        within(card(id)).getByText(/available when This computer is the active server/),
+      ).toBeTruthy();
+    }
+    // The server-backed cards still read from the remote server.
+    await waitFor(() => expect(within(card('data')).getByText('2')).toBeTruthy());
   });
 });
