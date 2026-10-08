@@ -241,10 +241,22 @@ export function createWesqlBackend(
 				} catch (e) {
 					throw toSqlError(e, secrets);
 				}
-				return withSession((s) => runCapped(s, sql, { readOnly: true }), {
-					user: RO_USER,
-					password: roPassword,
-				});
+				const login = { user: RO_USER, password: roPassword };
+				const go = () =>
+					withSession((s) => runCapped(s, sql, { readOnly: true }), login);
+				try {
+					return await go();
+				} catch (e) {
+					// Login refused: the stack was recreated since the user was made. Provision again, once.
+					if ((e as { code?: unknown })?.code !== "ER_ACCESS_DENIED_ERROR")
+						throw e;
+					roReady = undefined;
+					granted.clear();
+					await ensureReadOnlyUser().catch((x) => {
+						throw toSqlError(x, secrets);
+					});
+					return go();
+				}
 			}
 			return withSession((s) =>
 				runCapped(s, sql, { readOnly: opts?.readOnly }),

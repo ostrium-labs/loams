@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { branchesFile, NeonClient } from "../src/main/sql/neon";
-import { createPgBackend } from "../src/main/sql/pg";
+import { createPgBackend, pgTools } from "../src/main/sql/pg";
 import { createWesqlBackend } from "../src/main/sql/wesql";
 
 describe.skipIf(!process.env.LOAMS_IT_PG)("postgres stack", () => {
@@ -21,13 +21,29 @@ describe.skipIf(!process.env.LOAMS_IT_PG)("postgres stack", () => {
 		const r = await pg.query("SELECT current_user, session_user", {
 			agent: true,
 		});
-		expect(r.rows[0]?.[0]).toBe("pg_read_all_data");
+		expect(r.rows[0]).toEqual(["loams_ro", "loams_ro"]); // session user too: no superuser to climb back to
+		const bypass =
+			"SELECT U&\"set\\005fconfig\"('ro'||'le','cloud_admin',true), query_to_xml('select pg_reload_conf(), pg_read_file(''/etc/hostname'')',true,true,'')";
 		for (const q of [
+			bypass,
+			"SELECT pg_read_file('/etc/hostname')",
 			"SELECT pg_reload_conf()",
-			"SELECT pg_terminate_backend(pg_backend_pid())",
 			"SELECT pg_rotate_logfile()",
 		])
-			await expect(pg.query(q, { agent: true }), q).rejects.toBeTruthy();
+			await expect(pg.query(q, { agent: true }), q).rejects.toMatchObject({
+				message: expect.stringMatching(
+					/permission denied|must be superuser|not allowed|cannot set parameter/i,
+				),
+			});
+		// Terminating its own session ends the read; it fails fast instead of hanging.
+		await expect(
+			pg.query("SELECT pg_terminate_backend(pg_backend_pid())", {
+				agent: true,
+			}),
+		).rejects.toBeTruthy();
+		// The same query through the agent tool never succeeds either (lexer or database).
+		const tool = pgTools.find((t) => t.name === "pg_sql");
+		await expect(tool?.run({ pg }, { sql: bypass })).rejects.toBeTruthy();
 		const big = await pg.query(
 			"SELECT g FROM generate_series(1, 200000000) g",
 			{ agent: true },

@@ -35,8 +35,6 @@ export interface CapOpts {
 	timeoutMs: number;
 	/** Run inside a READ ONLY transaction that is always rolled back. */
 	readOnly?: boolean;
-	/** pg only: `SET LOCAL ROLE` to this (e.g. pg_read_all_data) inside the read-only transaction. */
-	role?: string;
 }
 
 export const DEFAULT_CAPS = { maxRows: 1000, timeoutMs: 30_000 } as const;
@@ -108,11 +106,6 @@ export async function runCapped(
 			if (ro) {
 				await exec.query("BEGIN READ ONLY");
 				inTx = true;
-				if (opts.role) {
-					if (!/^[a-z_][a-z0-9_]*$/.test(opts.role))
-						throw new SqlError("invalid", "bad role name");
-					await exec.query(`SET LOCAL ROLE ${opts.role}`);
-				}
 				await exec.query(`SET LOCAL statement_timeout = ${timeoutMs | 0}`);
 			} else {
 				await exec.query(`SET statement_timeout = ${timeoutMs | 0}`);

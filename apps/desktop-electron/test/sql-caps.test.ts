@@ -226,7 +226,7 @@ describe("sql caps", () => {
 		expect(new SqlError("x", "y").code).toBe("x");
 	});
 
-	it("agent_role_sequence_and_early_stop", async () => {
+	it("read_only_sequence_and_early_stop", async () => {
 		const seen: { sql: string; limit?: number }[] = [];
 		const s: SqlSession = {
 			dialect: "pg",
@@ -241,24 +241,17 @@ describe("sql caps", () => {
 				};
 			},
 		};
-		const r = await runCapped(s, "SELECT n FROM big", {
-			readOnly: true,
-			role: "pg_read_all_data",
-		});
+		const r = await runCapped(s, "SELECT n FROM big", { readOnly: true });
 		expect(seen.map((x) => x.sql)).toEqual([
 			"BEGIN READ ONLY",
-			"SET LOCAL ROLE pg_read_all_data",
 			"SET LOCAL statement_timeout = 30000",
 			"SELECT n FROM big",
 			"ROLLBACK",
 		]);
 		// The row bound reaches the session as maxRows + 1, so it can stop reading there.
-		expect(seen[3]?.limit).toBe(1001);
+		expect(seen[2]?.limit).toBe(1001);
 		expect(r.rowCount).toBe(1000);
 		expect(r.truncated).toBe(true);
-		await expect(
-			runCapped(fake("pg").s, "SELECT 1", { readOnly: true, role: "x; DROP" }),
-		).rejects.toMatchObject({ code: "invalid" });
 	});
 
 	it("mysql_agent_reads_as_the_select_only_user_with_per_schema_grants", async () => {

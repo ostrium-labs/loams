@@ -5,7 +5,7 @@
 // (docs/design/46: Neon + loams-wal + PgDog, `loams.postgres.v1`) will be a second implementation
 // backed by the active server's control plane; `createPgBackend` is the one place that picks, so
 // when the server advertises that API a `ControlPlanePostgresBackend` slots in there.
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import Cursor from "pg-cursor";
 import type {
@@ -37,8 +37,8 @@ export const PG_DEV = {
 	user: "cloud_admin",
 } as const;
 const PG_PASSWORD = new Secret("cloud_admin");
-/** pg >= 14 predefined role; assumed by agent reads so admin functions fail in the database itself. */
-export const PG_AGENT_ROLE = "pg_read_all_data";
+/** The dedicated login the agent's reads connect as: NOSUPERUSER, member of pg_read_all_data (pg >= 14). */
+export const PG_RO_USER = "loams_ro";
 
 export interface SqlBackend {
 	connection(): SqlConnection;
@@ -60,7 +60,11 @@ export interface PostgresBackend extends SqlBackend {
 
 /** An opened connection plus its close. */
 export type OpenSession = SqlSession & { close(): Promise<void> };
-export type PgConnect = () => Promise<OpenSession>;
+export interface PgLogin {
+	user: string;
+	password: Secret;
+}
+export type PgConnect = (as?: PgLogin) => Promise<OpenSession>;
 
 /** An opaque, random-per-process id; the renderer hands it back, it is never derived from the password. */
 export function newPasswordRef(): string {
@@ -69,14 +73,22 @@ export function newPasswordRef(): string {
 
 const SIMPLE_AFTER_CURSOR = /multiple commands/i;
 
-export const connectPg: PgConnect = async () => {
+export const connectPg: PgConnect = async (as) => {
 	const c = new Client({
 		...PG_DEV,
-		password: PG_PASSWORD.reveal(),
+		user: as?.user ?? PG_DEV.user,
+		password: (as?.password ?? PG_PASSWORD).reveal(),
 		connectionTimeoutMillis: 5000,
 	});
-	// A dropped idle connection must not crash main with an unhandled 'error' event.
-	c.on("error", () => {});
+	// A dropped connection must not crash main with an unhandled 'error' event, and must fail the
+	// statement in flight (e.g. `pg_terminate_backend(pg_backend_pid())`) instead of leaving it hanging.
+	const gone = new Promise<never>((_, reject) => {
+		c.on("error", (e) => reject(e));
+		c.on("end", () =>
+			reject(new SqlError("connection_closed", "the connection was closed")),
+		);
+	});
+	gone.catch(() => {});
 	try {
 		await c.connect();
 	} catch (e) {
@@ -128,7 +140,7 @@ export const connectPg: PgConnect = async () => {
 				}
 			};
 			return withDeadline(
-				run(),
+				Promise.race([run(), gone]),
 				DEFAULT_CAPS.timeoutMs + CLIENT_GRACE_MS,
 				kill,
 			);
@@ -137,12 +149,55 @@ export const connectPg: PgConnect = async () => {
 	};
 };
 
+/** 28P01 invalid_password, 28000 invalid_authorization_specification (role missing). */
+export function isLoginFailure(e: unknown): boolean {
+	const c = (e as { code?: unknown })?.code;
+	return c === "28P01" || c === "28000";
+}
+
 export function createPgBackend(deps: {
 	neon: NeonClient;
 	connect?: PgConnect;
 }): PostgresBackend {
 	const connect = deps.connect ?? connectPg;
 	const ref = newPasswordRef();
+	// Per app run, in memory only; reset on every run via ALTER ROLE.
+	const roPassword = new Secret(randomBytes(24).toString("base64url"));
+	let roReady: Promise<void> | undefined;
+
+	/**
+	 * Creates (or refreshes) the agent's login on first use. The session user of an agent read is
+	 * this role, never the admin: a superuser session could `set_config('role', ...)` its way back.
+	 */
+	async function ensureReadOnlyRole(): Promise<void> {
+		roReady ??= (async () => {
+			let s: OpenSession;
+			try {
+				s = await connect();
+			} catch (e) {
+				throw toSqlError(e, [PG_PASSWORD]);
+			}
+			try {
+				const pw = roPassword.reveal();
+				const exists = await s.query(
+					`SELECT 1 FROM pg_roles WHERE rolname = '${PG_RO_USER}'`,
+				);
+				const attrs =
+					"LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT";
+				await s.query(
+					`${exists.rows.length ? "ALTER" : "CREATE"} ROLE ${PG_RO_USER} ${attrs} PASSWORD '${pw}'`,
+				);
+				await s.query(`GRANT pg_read_all_data TO ${PG_RO_USER}`);
+			} finally {
+				await s.close();
+			}
+		})().catch((e) => {
+			roReady = undefined;
+			throw e;
+		});
+		return roReady;
+	}
+
 	return {
 		connection: () => ({
 			host: PG_DEV.host,
@@ -153,21 +208,35 @@ export function createPgBackend(deps: {
 		}),
 		password: () => PG_PASSWORD,
 		async query(sql, opts) {
-			let s: OpenSession;
+			const secrets = [PG_PASSWORD, roPassword];
+			const run = async (as?: PgLogin): Promise<SqlResult> => {
+				let s: OpenSession;
+				try {
+					s = await connect(as);
+				} catch (e) {
+					throw toSqlError(e, secrets);
+				}
+				try {
+					return await runCapped(s, sql, {
+						readOnly: opts?.readOnly || opts?.agent,
+					});
+				} catch (e) {
+					throw toSqlError(e, secrets);
+				} finally {
+					await s.close();
+				}
+			};
+			if (!opts?.agent) return run();
+			const login = { user: PG_RO_USER, password: roPassword };
 			try {
-				s = await connect();
+				await ensureReadOnlyRole();
+				return await run(login);
 			} catch (e) {
-				throw toSqlError(e, [PG_PASSWORD]);
-			}
-			try {
-				return await runCapped(s, sql, {
-					readOnly: opts?.readOnly || opts?.agent,
-					role: opts?.agent ? PG_AGENT_ROLE : undefined,
-				});
-			} catch (e) {
-				throw toSqlError(e, [PG_PASSWORD]);
-			} finally {
-				await s.close();
+				// Login refused: the stack was recreated since the role was made. Provision again, once.
+				if (!isLoginFailure(e)) throw toSqlError(e, secrets);
+				roReady = undefined;
+				await ensureReadOnlyRole();
+				return run(login);
 			}
 		},
 		tenants: () => deps.neon.tenants(),
@@ -187,9 +256,6 @@ const str = (v: unknown, name: string): string => {
 	return v;
 };
 
-/** Role switching inside a read-only agent query; the lexer-level belt to the database-level braces. */
-const ROLE_ESCAPE = /\b(set_config|reset|role|authorization)\b/i;
-
 /** Pure tool definitions for the agent registry (Tasks 28/29). SQL runs read-only, always. */
 export const pgTools: ToolDef<PgToolCtx>[] = [
 	{
@@ -205,7 +271,7 @@ export const pgTools: ToolDef<PgToolCtx>[] = [
 		},
 		async run(ctx, args) {
 			const sql = str((args as { sql?: unknown })?.sql, "sql");
-			if (!isPlainRead(sql, "pg") || ROLE_ESCAPE.test(sql))
+			if (!isPlainRead(sql, "pg"))
 				throw new SqlError(
 					"read_only",
 					"pg_sql only runs a single SELECT, SHOW, EXPLAIN or WITH ... SELECT",
