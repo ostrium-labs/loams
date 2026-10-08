@@ -71,11 +71,13 @@ pub fn engine_classify(statement: &str) -> Result<Access, GraphError> {
         translate_full(statement).map_err(|err| GraphError::Engine(err.to_string()))?;
     match translated {
         GqlTranslationResult::Plan(plan) => {
-            check_plan(&plan.root)?;
+            // Rendered once, for both the plan check and the procedure-call test.
+            let text = format!("{:?}", plan.root);
+            check_plan(&plan.root, &text)?;
             // A procedure can read or write, and nothing in the plan says which, so a call
             // anywhere in it (subqueries included, through the plan's `Debug` rendering) is at
             // least a write (security review I1).
-            let calls = format!("{:?}", plan.root).contains("CallProcedure(");
+            let calls = text.contains("CallProcedure(");
             // An EXPLAIN plans without running; a PROFILE runs.
             if (plan.root.has_mutations() || calls) && (plan.profile || !plan.explain) {
                 Ok(Access::Write)
@@ -168,9 +170,12 @@ fn session_command(command: &SessionCommand) -> Result<Access, GraphError> {
 /// expression, nested plans included, and checks every occurrence it finds. It fails closed: a
 /// string literal that happens to contain an operator's name only adds a refusal, and cannot hide
 /// a real operator.
-fn check_plan(root: &LogicalOperator) -> Result<(), GraphError> {
+///
+/// `text` is `format!("{root:?}")`. The test `grafeo_debug_format_canary` pins that the rendering
+/// still names `ExistsSubquery(`, `CallProcedure(` and `max_hops: None`; a Grafeo bump (D759) that
+/// changes it fails that test before it can weaken this check.
+fn check_plan(root: &LogicalOperator, text: &str) -> Result<(), GraphError> {
     check_operator(root)?;
-    let text = format!("{root:?}");
     if text.contains("LoadData(") || text.contains("LoadGraph(") {
         return Err(GraphError::StatementNotAllowed {
             file_access: true,

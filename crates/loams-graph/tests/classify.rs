@@ -403,3 +403,43 @@ fn gql_quantifiers_are_bounded() {
         .execute("MATCH p = (a)-[:N]->{1,10}(b) RETURN count(p)", true)
         .expect("a bounded quantifier runs");
 }
+
+/// Re-review 2b: the plan check reads Grafeo's derived `Debug` rendering. This canary pins the
+/// names it relies on, so a Grafeo bump that changes them fails here, loudly, rather than quietly
+/// weakening the classifier.
+#[test]
+fn grafeo_debug_format_canary() {
+    use grafeo_engine::query::translators::gql::{GqlTranslationResult, translate_full};
+    const CHANGED: &str = "Grafeo Debug format changed; re-verify the classifier (D759)";
+    let render = |statement: &str| match translate_full(statement) {
+        Ok(GqlTranslationResult::Plan(plan)) => format!("{:?}", plan.root),
+        other => panic!(
+            "{CHANGED}: {statement} no longer translates to a plan: {}",
+            other.is_ok()
+        ),
+    };
+    let exists = render("MATCH (a) WHERE EXISTS { MATCH (a)-[*]->(b) } RETURN a");
+    assert!(
+        exists.contains("ExistsSubquery("),
+        "{CHANGED}: no `ExistsSubquery(` in {exists}"
+    );
+    assert!(
+        exists.contains("max_hops: None"),
+        "{CHANGED}: no `max_hops: None` in {exists}"
+    );
+    let bounded = render("MATCH (a)-[*1..3]->(b) RETURN b");
+    assert!(
+        bounded.contains("max_hops: Some(3)"),
+        "{CHANGED}: no `max_hops: Some(3)` in {bounded}"
+    );
+    let call = render("CALL grafeo.labels()");
+    assert!(
+        call.contains("CallProcedure("),
+        "{CHANGED}: no `CallProcedure(` in {call}"
+    );
+    let load = render("LOAD DATA FROM '/x' FORMAT CSV AS r RETURN r");
+    assert!(
+        load.contains("LoadData("),
+        "{CHANGED}: no `LoadData(` in {load}"
+    );
+}
