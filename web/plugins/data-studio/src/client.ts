@@ -65,15 +65,12 @@ export function idText(id: documents.DocumentId | undefined): string {
   }
 }
 
-/** A document id from a JSON value: a whole non-negative number is a uint, a UUID a uuid. */
+/** A document id from a JSON value: only a JSON integer is a uint; a string stays a string (a UUID string is a uuid). */
 export function toDocumentId(value: unknown): documents.DocumentId {
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
     return create(documents.DocumentIdSchema, { id: { case: 'uint', value: BigInt(value) } });
   }
   if (typeof value === 'string') {
-    if (/^\d+$/.test(value) && value.length < 16) {
-      return create(documents.DocumentIdSchema, { id: { case: 'uint', value: BigInt(value) } });
-    }
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
     return create(documents.DocumentIdSchema, {
       id: uuid ? { case: 'uuid', value } : { case: 'string', value },

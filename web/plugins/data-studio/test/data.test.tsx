@@ -5,7 +5,7 @@ import { collection, documents, query } from '@loams/proto';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import pkg from '../package.json';
-import { createDataClient } from '../src/client.js';
+import { createDataClient, toDocumentId } from '../src/client.js';
 import { DataRoute } from '../src/index.js';
 import { parseNdjson } from '../src/ingest-parse.js';
 import { DocumentsTab } from '../src/pages/collection.js';
@@ -213,6 +213,15 @@ describe('data studio', () => {
 
   it('manifest_is_valid', () => {
     expect(validateManifest(pkg).editions).toEqual(['desktop']);
+  });
+
+  it('leading_zero_string_id_stays_string', () => {
+    expect(toDocumentId('007').id).toEqual({ case: 'string', value: '007' });
+    expect(toDocumentId('42').id).toEqual({ case: 'string', value: '42' });
+  });
+
+  it('numeric_json_id_is_uint', () => {
+    expect(toDocumentId(7).id).toEqual({ case: 'uint', value: 7n });
   });
 
   it('no_data_plane_empty_state', () => {
