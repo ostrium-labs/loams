@@ -41,8 +41,6 @@ export async function proxyRequest(
 		duplex: "half",
 	});
 	const res = await fetchImpl(out);
-	if (res.status >= 300 && res.status < 400) return res;
-
 	const rh = new Headers(res.headers);
 	rh.delete("content-security-policy");
 	const cookies = res.headers.getSetCookie();

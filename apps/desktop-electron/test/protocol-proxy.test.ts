@@ -74,4 +74,25 @@ describe("proxyRequest", () => {
 		]);
 		expect(res.headers.get("content-security-policy")).toBeNull();
 	});
+
+	it("strips_cookie_domain_on_redirect", async () => {
+		const h = new Headers({
+			location: "https://idp.example/cb",
+			"content-security-policy": "default-src 'none'",
+		});
+		h.append("set-cookie", "s=1; Domain=.x; Path=/");
+		const fetchImpl = vi.fn(
+			async () => new Response(null, { status: 302, headers: h }),
+		);
+		const res = await proxyRequest(
+			new Request("loams-app://console/api/v1/login"),
+			"http://h",
+			fetchImpl as never,
+		);
+		expect(res.status).toBe(302);
+		expect(res.headers.get("location")).toBe("https://idp.example/cb");
+		expect(res.headers.getSetCookie()).toEqual(["s=1; Path=/"]);
+		expect(res.headers.get("content-security-policy")).toBeNull();
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+	});
 });
