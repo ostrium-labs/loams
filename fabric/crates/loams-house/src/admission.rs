@@ -835,6 +835,9 @@ impl WorkerLease {
                 match FrameCodec::read_async(&mut worker.reader).await {
                     Ok(Some(Frame::Done)) => {
                         worker.in_flight = false;
+                        // The statement is over: its handles go stale now, not when
+                        // the next one starts (Task 2 re-review N1).
+                        worker.shared.bump_epoch();
                         Ok(Event::Done(stats))
                     }
                     Ok(Some(other)) => Err(self.broke(other.kind())),
@@ -844,6 +847,9 @@ impl WorkerLease {
             Ok(Some(Frame::Error { error, poisoned })) => {
                 worker.in_flight = false;
                 worker.poisoned |= poisoned;
+                // As for `Done`: the statement is over (N1). A fatal error kills
+                // below through the pool's own, epoch-free path.
+                worker.shared.bump_epoch();
                 if error.is_fatal() {
                     // chDB's own fatal-signal handler (which the worker keeps, §49
                     // §4.1) fails the running statement with `236 ABORTED` "The

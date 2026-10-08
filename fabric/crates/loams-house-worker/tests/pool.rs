@@ -981,3 +981,38 @@ async fn s3_grant_is_scoped_to_the_endpoint() {
     assert_ne!(inside.code(), 497, "inside the grant: {inside}");
     pool.release(lease, Outcome::Completed);
 }
+
+/// Task 2 re-review N1: a statement's handle goes stale when its terminal frame
+/// (`Done` or `Error`) arrives, so a `KILL QUERY` for statement N that lands after
+/// N finished — even before N+1 starts on the same lease — kills nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn kill_handle_goes_stale_at_the_terminal_frame() {
+    let pool = pool("stale-at-done", small(1)).await;
+    let mut lease = pool.acquire("ns").await.expect("worker");
+    let pid = lease.pid();
+
+    for (sql, fails) in [("SELECT 1", false), ("SELECT * FROM nope_loams", true)] {
+        lease.start(statement(sql, "TSV")).await.expect("started");
+        let during = lease.kill_handle().expect("handle for this statement");
+        let ended = loop {
+            match lease.next_event().await {
+                Ok(loams_house::Event::Done(_)) => break Ok(()),
+                Ok(_) => continue,
+                Err(err) => break Err(err),
+            }
+        };
+        assert_eq!(ended.is_err(), fails, "{sql}: {ended:?}");
+        assert_eq!(
+            during.kill(ExitReason::Cancel),
+            None,
+            "{sql}: the statement is over, so its handle is stale"
+        );
+    }
+    assert_eq!(
+        lease.run(statement("SELECT 3", "TSV")).await.expect("N+1 runs").bytes,
+        b"3\n"
+    );
+    assert_eq!(lease.pid(), pid);
+    pool.release(lease, Outcome::Completed);
+    assert_eq!(pool.stats().kills.values().sum::<u64>(), 0, "{:?}", pool.stats());
+}
