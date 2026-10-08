@@ -829,6 +829,111 @@ mod admin {
         );
     }
 
+    /// A hook that, once, lets `intrude` commit on top of the write that just committed, and
+    /// then reports that write's acknowledgement as lost (review I2).
+    fn ack_lost_once<F, Fut>(intrude: F) -> loams_graph::catalog::AckHook
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = ()> + Send + 'static,
+    {
+        let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let intrude = Arc::new(intrude);
+        Arc::new(move || {
+            let fired = fired.clone();
+            let intrude = intrude.clone();
+            Box::pin(async move {
+                if fired.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    return false;
+                }
+                intrude().await;
+                true
+            })
+        })
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn lost_ack_with_a_writer_on_top_is_idempotent() {
+        use loams_graph::catalog::{CatalogState, GraphCatalog, NewGraph};
+        let fixture = Fixture::start().await;
+        let catalog = GraphCatalog::new(fixture.meta.clone(), fixture.store.clone());
+        let intruder = GraphCatalog::new(fixture.meta.clone(), fixture.store.clone());
+
+        // create: the retry finds its own graph id, not an "already exists".
+        let other = intruder.clone();
+        catalog.set_ack_hook(Some(ack_lost_once(move || {
+            let other = other.clone();
+            async move {
+                other
+                    .create("acme", "intruder", NewGraph::default())
+                    .await
+                    .expect("the other writer");
+            }
+        })));
+        let created = catalog
+            .create("acme", "kg", NewGraph::default())
+            .await
+            .expect("a lost ack is not an error");
+        let page = catalog.list("acme", 0, "").await.expect("list");
+        let names: Vec<_> = page.graphs.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["intruder", "kg"]);
+        assert_eq!(
+            page.graphs[1].id, created.id,
+            "exactly one kg, the one this call made"
+        );
+
+        // update with expected_version: applied once, under the other writer's later change.
+        let other = intruder.clone();
+        catalog.set_ack_hook(Some(ack_lost_once(move || {
+            let other = other.clone();
+            async move {
+                other
+                    .update("acme", "kg", None, |g| {
+                        g.replicas = 5;
+                        Ok(())
+                    })
+                    .await
+                    .expect("the other writer");
+            }
+        })));
+        let updated = catalog
+            .update("acme", "kg", Some(created.version), |g| {
+                g.replicas = 2;
+                Ok(())
+            })
+            .await
+            .expect("a lost ack is not a version mismatch");
+        // The answer is the record as it now stands (this write applied, the later one on top).
+        assert_eq!(updated.version, created.version + 2);
+        let now = catalog.get_by_name("acme", "kg").await.expect("get");
+        assert_eq!(now.version, created.version + 2, "two writes, not three");
+        assert_eq!(
+            now.replicas, 5,
+            "the later writer's value stands; the retry did not reapply"
+        );
+
+        // mark_deleting without a key: deleted once; the retry does not answer "not found".
+        let other = intruder.clone();
+        catalog.set_ack_hook(Some(ack_lost_once(move || {
+            let other = other.clone();
+            async move {
+                other
+                    .create("acme", "late", NewGraph::default())
+                    .await
+                    .expect("the other writer");
+            }
+        })));
+        let deleted = catalog
+            .mark_deleting("acme", "kg", None)
+            .await
+            .expect("a lost ack is not a not-found");
+        assert!(matches!(deleted.state, CatalogState::Deleting { .. }));
+        let gone = catalog.deleting("acme", u64::MAX).await.expect("deleting");
+        assert_eq!(gone.len(), 1, "one deleting record: {gone:?}");
+        let page = catalog.list("acme", 0, "").await.expect("list");
+        let names: Vec<_> = page.graphs.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["intruder", "late"]);
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn invalid_names_refused() {
         let fixture = Fixture::start().await;

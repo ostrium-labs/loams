@@ -110,6 +110,25 @@ pub struct GraphMeta {
     /// The idempotency key of the `DeleteGraph` that deleted it, if it had one.
     #[serde(default)]
     pub delete_key: Option<String>,
+    /// The tokens of the last few writes applied to this record (review I2): a write whose
+    /// acknowledgement was lost, and that retries on a document another writer has since moved
+    /// on, finds its own token here and does not apply itself twice.
+    #[serde(default)]
+    pub recent_writes: Vec<String>,
+}
+
+/// How many write tokens a record remembers.
+const RECENT_WRITES: usize = 16;
+
+fn remember(graph: &mut GraphMeta, token: &str) {
+    graph.recent_writes.push(token.to_string());
+    let excess = graph.recent_writes.len().saturating_sub(RECENT_WRITES);
+    graph.recent_writes.drain(..excess);
+}
+
+/// A per-call write token.
+fn write_token() -> String {
+    ulid::Ulid::generate().to_string()
 }
 
 impl GraphMeta {
@@ -214,7 +233,16 @@ pub struct GraphCatalog {
     meta: Arc<dyn MetaStore>,
     store: Store,
     counters: Arc<Counters>,
+    #[cfg(feature = "test-hooks")]
+    ack_hook: Arc<std::sync::Mutex<Option<AckHook>>>,
 }
+
+/// **Tests only** (feature `test-hooks`): run after a committed catalog CAS; answering `true`
+/// makes the write behave as if its acknowledgement were lost (review I2).
+#[cfg(feature = "test-hooks")]
+pub type AckHook = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>> + Send + Sync,
+>;
 
 /// What the catalog counts, for tests and (Task 27) metrics.
 #[derive(Debug, Default)]
@@ -252,6 +280,26 @@ impl GraphCatalog {
             meta,
             store,
             counters: Arc::default(),
+            #[cfg(feature = "test-hooks")]
+            ack_hook: Arc::default(),
+        }
+    }
+
+    /// **Tests only** (feature `test-hooks`): sets the hook run after each committed CAS.
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn set_ack_hook(&self, hook: Option<AckHook>) {
+        if let Ok(mut slot) = self.ack_hook.lock() {
+            *slot = hook;
+        }
+    }
+
+    #[cfg(feature = "test-hooks")]
+    async fn ack_lost(&self) -> bool {
+        let hook = self.ack_hook.lock().ok().and_then(|slot| slot.clone());
+        match hook {
+            Some(hook) => hook().await,
+            None => false,
         }
     }
 
@@ -287,6 +335,10 @@ impl GraphCatalog {
             if let Some(existing) = doc.graphs.get(name)
                 && !existing.is_deleting()
             {
+                // This call's own graph, from an attempt whose acknowledgement was lost (I2).
+                if existing.id == id {
+                    return Ok((None, existing.clone()));
+                }
                 if new.idempotency_key.is_some() && existing.idempotency_key == new.idempotency_key
                 {
                     return Ok((None, existing.clone()));
@@ -313,6 +365,7 @@ impl GraphCatalog {
                 version: 1,
                 idempotency_key: new.idempotency_key.clone(),
                 delete_key: None,
+                recent_writes: Vec::new(),
             };
             // A graph being deleted under this name keeps its record (under its id) until it
             // is purged, so the name is free for the new one.
@@ -440,12 +493,17 @@ impl GraphCatalog {
             .namespace_id(namespace)
             .await?
             .ok_or_else(|| not_found(namespace, name))?;
+        let token = write_token();
         self.write(ns, |doc| {
             let graph = doc
                 .graphs
                 .get_mut(name)
                 .filter(|g| !g.is_deleting())
                 .ok_or_else(|| not_found(namespace, name))?;
+            // Already applied by an attempt whose acknowledgement was lost (I2).
+            if graph.recent_writes.contains(&token) {
+                return Ok((None, graph.clone()));
+            }
             if let Some(expected) = expected_version
                 && graph.version != expected
             {
@@ -457,6 +515,7 @@ impl GraphCatalog {
             }
             change(graph)?;
             graph.version += 1;
+            remember(graph, &token);
             Ok((Some(()), graph.clone()))
         })
         .await
@@ -481,13 +540,24 @@ impl GraphCatalog {
             .await?
             .ok_or_else(|| not_found(namespace, name))?;
         let now = self.now_ms();
+        let token = write_token();
         self.write(ns, |doc| {
+            // Already applied by an attempt whose acknowledgement was lost (I2): its record is
+            // under its id, deleting since this call's `now`, carrying this call's token.
+            if let Some(graph) = doc.graphs.values().find(|g| {
+                g.name == name
+                    && g.state == CatalogState::Deleting { since_ms: now }
+                    && g.recent_writes.contains(&token)
+            }) {
+                return Ok((None, graph.clone()));
+            }
             if let Some(graph) = doc.graphs.get(name).filter(|g| !g.is_deleting()) {
                 let mut graph = graph.clone();
                 doc.graphs.remove(name);
                 graph.state = CatalogState::Deleting { since_ms: now };
                 graph.delete_key = delete_key.clone();
                 graph.version += 1;
+                remember(&mut graph, &token);
                 doc.graphs.insert(deleting_key(&graph.id), graph.clone());
                 return Ok((Some(()), graph));
             }
@@ -693,7 +763,14 @@ impl GraphCatalog {
                 })
                 .await;
             match cas.result {
-                Ok(_) => return Ok(out),
+                Ok(_) => {
+                    #[cfg(feature = "test-hooks")]
+                    if self.ack_lost().await {
+                        // Behave as if the acknowledgement were lost: try again (I2).
+                        continue;
+                    }
+                    return Ok(out);
+                }
                 // A lost acknowledgement of this very write: the pointer names its object.
                 Err(MetaError::Rejected(ApplyError::VersionMismatch {
                     current: Some(current),
@@ -702,6 +779,11 @@ impl GraphCatalog {
                 // object is left for the sweep: nothing is ever deleted at once, because a CAS
                 // reported as lost may have committed and been read (review I1).
                 Err(MetaError::Rejected(ApplyError::VersionMismatch { .. })) => {}
+                // The outcome is unknown: the CAS may have committed. Retry; every change
+                // recognises its own effect (I2).
+                Err(
+                    MetaError::NotLeader { .. } | MetaError::Timeout | MetaError::Unavailable(_),
+                ) => {}
                 Err(err) => return Err(unavailable(err)),
             }
         }
