@@ -35,6 +35,10 @@ export function errorText(e: unknown): string {
  * what tells it from any other Unavailable (an engine or network fault).
  */
 export const LIVE_NOT_RUNNING = 'Loams Live is not running in the local engine.';
+/** The proxy's 503 while the local engine restarts (protocol/route.ts): transient, so poll. */
+export const ENGINE_NOT_READY = 'the local engine is not ready yet';
+const isStarting = (e: unknown) =>
+  e instanceof ConnectError && e.code === Code.Unavailable && e.rawMessage === ENGINE_NOT_READY;
 const isNotRunning = (e: unknown) =>
   e instanceof ConnectError && e.code === Code.Unavailable && e.rawMessage === LIVE_NOT_RUNNING;
 const isUnserved = (e: unknown) => e instanceof ConnectError && e.code === Code.Unimplemented;
@@ -642,6 +646,7 @@ export function LivePage({
   // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is the reload trigger
   useEffect(() => {
     const ctl = new AbortController();
+    let retry: ReturnType<typeof setTimeout> | undefined;
     api
       .tables(ctl.signal)
       .then((tables) => {
@@ -655,11 +660,17 @@ export function LivePage({
       .catch((e) => {
         if (ctl.signal.aborted) return;
         if (isNotRunning(e)) setLoaded({ state: 'needs-tikv' });
-        else if (isUnserved(e)) setLoaded({ state: 'unserved' });
+        else if (isStarting(e)) {
+          setLoaded({ state: 'loading' });
+          retry = setTimeout(() => setTick((n) => n + 1), retryMs);
+        } else if (isUnserved(e)) setLoaded({ state: 'unserved' });
         else setLoaded({ state: 'error', message: errorText(e) });
       });
-    return () => ctl.abort();
-  }, [api, tick]);
+    return () => {
+      ctl.abort();
+      clearTimeout(retry);
+    };
+  }, [api, tick, retryMs]);
 
   // While Live is off, look again: the stack takes a while to start and the
   // engine restarts with Live once it is up.

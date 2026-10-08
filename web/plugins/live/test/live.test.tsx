@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import pkg from '../package.json';
 import { createLiveApi } from '../src/client.js';
-import { LIVE_NOT_RUNNING, LivePage } from '../src/pages.js';
+import { ENGINE_NOT_READY, LIVE_NOT_RUNNING, LivePage } from '../src/pages.js';
 import { liveTransport } from '../src/transport.js';
 import { fromJs, type Json, parseJson, toJs } from '../src/value.js';
 
@@ -280,6 +280,15 @@ describe('live page behaviour', () => {
       table: 'messages',
       fields: { n: { $int64: '9223372036854775807' } },
     });
+  });
+
+  it('engine_restarting_is_polled_not_an_error', async () => {
+    const s: Server = { tablesError: new ConnectError(ENGINE_NOT_READY, Code.Unavailable) };
+    render(<LivePage api={apiWith(s)} desktop={stacksFake().desktop} retryMs={30} />);
+    await screen.findByText(/Loading tables/);
+    expect(screen.queryByText('Could not load tables')).toBeNull();
+    s.tablesError = undefined;
+    expect(await screen.findByRole('table', { name: 'Tables' })).toBeTruthy();
   });
 
   it('other_unavailable_is_a_generic_error_with_retry', async () => {
