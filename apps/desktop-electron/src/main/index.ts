@@ -217,6 +217,9 @@ const singleInstance = initSingleInstance({
 				prepareToInstall: async () => {
 					await engine?.stop();
 				},
+				restartEngine: async () => {
+					engine?.start();
+				},
 			});
 			app.setAboutPanelOptions({
 				applicationName: "Loams Desktop",

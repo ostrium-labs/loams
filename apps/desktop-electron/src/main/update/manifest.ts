@@ -18,7 +18,7 @@ export async function verifyManifest(
 		const sig = Uint8Array.from(Buffer.from(sigText, "base64"));
 		if (sig.length !== 64) return false;
 		const pub = Uint8Array.from(Buffer.from(pubkeyHex, "hex"));
-		return await ed.verifyAsync(sig, yml, pub);
+		return await ed.verifyAsync(sig, yml, pub, { zip215: false });
 	} catch {
 		return false;
 	}
