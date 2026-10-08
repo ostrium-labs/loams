@@ -18,7 +18,7 @@ use connectrpc::{
     ServiceStream,
 };
 use futures::StreamExt;
-use loams_kv::{Store, StoreConfig};
+use loams_kv::Store;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -48,8 +48,8 @@ pub struct LiveHandle {
 }
 
 impl LiveServer {
-    /// Checks that `config.listen` is loopback, connects to the app's
-    /// keyspace, opens its runner, starts the subscription manager (its
+    /// Checks that `config.listen` is loopback, opens the app's store
+    /// (whichever backend `config.store` names), opens its runner, starts the subscription manager (its
     /// consumer is `config.node` unless set) and the janitor, binds the
     /// listener and serves until `shutdown` is cancelled or
     /// [`LiveHandle::stop`]. Logs once that the API is unauthenticated.
@@ -58,14 +58,12 @@ impl LiveServer {
         shutdown: CancellationToken,
     ) -> Result<LiveHandle, LiveError> {
         check_listen(config.listen)?;
-        let store = Store::open(StoreConfig::Tikv(config.tikv.clone()))
-            .await
-            .map_err(|e| {
-                LiveError::Internal(format!(
-                    "connecting to the Live keyspace {}: {e}",
-                    config.tikv.keyspace
-                ))
-            })?;
+        let store = Store::open(config.store.clone()).await.map_err(|e| {
+            LiveError::Internal(format!(
+                "opening the Live store (keyspace {}): {e}",
+                config.store.keyspace()
+            ))
+        })?;
         let runner = Runner::open(store.clone(), &config).await?;
         let listener = tokio::net::TcpListener::bind(config.listen)
             .await
@@ -136,7 +134,8 @@ impl LiveServer {
 
 impl LiveHandle {
     /// The app's store (on TiKV, the cluster GC loop sweeps its commit
-    /// tokens through [`Store::as_tikv`]).
+    /// tokens through [`Store::as_tikv`]; the embedded store runs its own
+    /// GC).
     pub fn store(&self) -> &Store {
         &self.store
     }

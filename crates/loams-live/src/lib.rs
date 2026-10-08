@@ -51,6 +51,8 @@ pub use ids::{DocId, IndexId, TableId};
 pub use journal::{Batch, Checkpoint, Janitor, JanitorReport, Journal, Tailer};
 pub use keys::{AppKeys, KeyRange};
 pub use limits::Limits;
+/// The store a [`LiveConfig`] names (LV1 row T20-9).
+pub use loams_kv::{EmbeddedConfig, StoreConfig};
 pub use readset::{ReadSetIndex, SubId};
 pub use service::{LiveHandle, LiveServer};
 pub use session::{ClientState, SessionConfig, Sessions, Version};

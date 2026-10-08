@@ -1526,13 +1526,23 @@ mod tests {
     /// R1 plan Task 12: `--live-*` on `dev` and `standalone` configure Loam
     /// Live (on by default with the `live` feature; `--no-live` turns it
     /// off); the tick read lag is a Live config key (row T12-1).
+    /// The TiKV handle of a Live config (the flags configure TiKV until
+    /// LV1 Task 23).
+    #[cfg(feature = "live")]
+    fn live_tikv(live: &loams_live::LiveConfig) -> &loams_tikv::TikvConfig {
+        match &live.store {
+            loams_live::StoreConfig::Tikv(tikv) => tikv,
+            other => panic!("expected a TiKV store, got {other:?}"),
+        }
+    }
+
     #[cfg(feature = "live")]
     #[test]
     fn live_flags_set_the_live_config() {
         let live = dev_config(&[]).live.expect("on by default");
         assert_eq!(live.listen, SocketAddr::from(([127, 0, 0, 1], 7710)));
-        assert_eq!(live.tikv.pd, ["127.0.0.1:19379"]);
-        assert_eq!(live.tikv.keyspace, "loams_live_dev");
+        assert_eq!(live_tikv(&live).pd, ["127.0.0.1:19379"]);
+        assert_eq!(live_tikv(&live).keyspace, "loams_live_dev");
         assert_eq!(live.app, "dev");
         assert_eq!(live.subs.tick_read_lag, Duration::from_millis(50));
         let live = dev_config(&[
@@ -1548,11 +1558,11 @@ mod tests {
         .live
         .expect("configured");
         assert_eq!(live.listen, SocketAddr::from(([127, 0, 0, 1], 7711)));
-        assert_eq!(live.tikv.pd, ["10.0.0.1:2379", "10.0.0.2:2379"]);
-        assert_eq!(live.tikv.keyspace, "loams_live_chat");
+        assert_eq!(live_tikv(&live).pd, ["10.0.0.1:2379", "10.0.0.2:2379"]);
+        assert_eq!(live_tikv(&live).keyspace, "loams_live_chat");
         assert_eq!(live.subs.tick_read_lag, Duration::ZERO);
         let live = dev_config(&["--live-keyspace", "other"]).live.expect("on");
-        assert_eq!(live.tikv.keyspace, "other");
+        assert_eq!(live_tikv(&live).keyspace, "other");
         assert!(dev_config(&["--no-live"]).live.is_none());
         let standalone = Cli::try_parse_from([
             "loams",

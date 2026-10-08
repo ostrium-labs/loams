@@ -1,9 +1,9 @@
-//! [`LiveConfig`]: one Loams Live app on TiKV.
+//! [`LiveConfig`]: one Loams Live app on a store (embedded or TiKV).
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
-use loams_kv::TikvConfig;
+use loams_kv::{StoreConfig, TikvConfig};
 
 use crate::session::SessionConfig;
 use crate::subs::SubsConfig;
@@ -26,15 +26,17 @@ pub const DEFAULT_LISTEN: SocketAddr =
 /// records).
 pub const DEFAULT_JANITOR_INTERVAL: Duration = Duration::from_secs(60);
 
-/// One Live app: its TiKV handle configuration (keyspace and root prefix,
-/// R1 plan Ruling 1), its limits and its journal shard count; and how this
-/// node serves it ([`LiveServer`](crate::LiveServer)).
+/// One Live app: its store (an embedded file or a TiKV handle, each with a
+/// keyspace and a root prefix, R1 plan Ruling 1; LV1 row T20-9), its limits
+/// and its journal shard count; and how this node serves it
+/// ([`LiveServer`](crate::LiveServer)).
 #[derive(Debug, Clone)]
 pub struct LiveConfig {
     /// The app's name; the keyspace it derived is `loams_live_<app>`.
     pub app: String,
-    /// The TiKV handle: the PD endpoints, the keyspace and the root prefix.
-    pub tikv: TikvConfig,
+    /// The store: an embedded file, or a TiKV handle (the PD endpoints);
+    /// each with the keyspace and the root prefix.
+    pub store: StoreConfig,
     /// The per-document and per-write limits R1 fixes.
     pub limits: Limits,
     /// How many journal shards the app's commit journal has.
@@ -64,13 +66,20 @@ impl LiveConfig {
         ))
     }
 
-    /// App `app` on the handle `tikv` (whose keyspace and root the caller
+    /// App `app` on the TiKV handle `tikv` (whose keyspace and root the
+    /// caller chose), with the defaults of [`LiveConfig::new`]. The name is
+    /// not checked.
+    pub fn with_tikv(app: &str, tikv: TikvConfig) -> Self {
+        LiveConfig::with_store(app, StoreConfig::Tikv(tikv))
+    }
+
+    /// App `app` on the store `store` (whose keyspace and root the caller
     /// chose), with the defaults of [`LiveConfig::new`]. The name is not
     /// checked.
-    pub fn with_tikv(app: &str, tikv: TikvConfig) -> Self {
+    pub fn with_store(app: &str, store: StoreConfig) -> Self {
         LiveConfig {
             app: app.to_string(),
-            tikv,
+            store,
             limits: Limits::default(),
             journal_shards: DEFAULT_JOURNAL_SHARDS,
             node: "1".to_string(),
@@ -108,10 +117,28 @@ mod tests {
         let config = LiveConfig::new(vec!["127.0.0.1:2379".into()], "chat")
             .expect("chat is a valid app name");
         assert_eq!(config.app, "chat");
-        assert_eq!(config.tikv.keyspace, "loams_live_chat");
-        assert_eq!(config.tikv.pd, ["127.0.0.1:2379".to_string()]);
+        assert_eq!(config.store.keyspace(), "loams_live_chat");
+        let StoreConfig::Tikv(tikv) = &config.store else {
+            panic!("new configures TiKV until Task 23");
+        };
+        assert_eq!(tikv.pd, ["127.0.0.1:2379".to_string()]);
         assert_eq!(config.journal_shards, DEFAULT_JOURNAL_SHARDS);
         assert_eq!(config.limits, Limits::default());
+    }
+
+    #[test]
+    fn with_store_keeps_the_store_and_with_tikv_wraps_it() {
+        let embedded = StoreConfig::Embedded(loams_kv::EmbeddedConfig::new(
+            "/data/live/store.redb",
+            keyspace_of("chat"),
+        ));
+        let config = LiveConfig::with_store("chat", embedded);
+        assert!(
+            matches!(&config.store, StoreConfig::Embedded(e) if e.keyspace == "loams_live_chat")
+        );
+        assert_eq!(config.journal_shards, DEFAULT_JOURNAL_SHARDS);
+        let tikv = LiveConfig::with_tikv("chat", TikvConfig::new(vec!["pd:2379".into()], "ks"));
+        assert!(matches!(&tikv.store, StoreConfig::Tikv(t) if t.keyspace == "ks"));
     }
 
     #[test]
@@ -138,8 +165,8 @@ mod tests {
         assert_eq!(
             LiveConfig::new(Vec::new(), &longest)
                 .expect("64 bytes is allowed")
-                .tikv
-                .keyspace,
+                .store
+                .keyspace(),
             format!("{KEYSPACE_PREFIX}{longest}")
         );
         let too_long = "a".repeat(MAX_NAME_BYTES + 1);

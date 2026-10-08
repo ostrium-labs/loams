@@ -1,8 +1,9 @@
 //! `loams dev` with Loam Live (R1 plan Task 12): the sync API listens on
 //! loopback beside the HTTP API, and its TiKV handle is swept by the
 //! metastore's GC loop when both are on one cluster, else by its own loop.
-//! Each test uses a random root in the test keyspaces and skips without
-//! `LOAMS_TEST_PD`.
+//! The TiKV tests use a random root in the test keyspaces and skip without
+//! `LOAMS_TEST_PD`; on an embedded store Live needs no cluster and no
+//! cluster GC loop (LV1 row T20-9).
 #![cfg(feature = "live")]
 
 use std::net::SocketAddr;
@@ -29,6 +30,28 @@ async fn serves(server: &Server) {
         .await
         .expect("the Live listener accepts");
     assert_eq!(server.live_stats().expect("stats").missed_invalidations, 0);
+}
+
+/// On an embedded store Live starts without a cluster and runs no cluster
+/// GC loop (the store collects its own versions).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn dev_serves_live_on_an_embedded_store() {
+    let dir = TempDir::new().expect("a temp dir");
+    let mut config = ServerConfig::new(dir.path());
+    config.listen = SocketAddr::from(([127, 0, 0, 1], 0));
+    config.log.flush_interval = Duration::from_millis(20);
+    let store = loams_live::EmbeddedConfig::new(
+        dir.path().join("live").join("store.redb"),
+        loams_live::keyspace_of("t21"),
+    );
+    let mut live =
+        loams_live::LiveConfig::with_store("t21", loams_live::StoreConfig::Embedded(store));
+    live.listen = SocketAddr::from(([127, 0, 0, 1], 0));
+    config.live = Some(live);
+    let server = Server::start(config).await.expect("starts");
+    serves(&server).await;
+    assert_eq!(server.live_swept_by_metastore_gc(), Some(false));
+    server.shutdown().await.expect("stops");
 }
 
 /// On the openraft metastore, Live runs its own cluster GC loop.

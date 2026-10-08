@@ -1046,7 +1046,10 @@ impl Server {
                 Some(live) => {
                     let covered = matches!(
                         &config.meta,
-                        MetaBackend::Tikv(meta) if same_cluster(&meta.tikv.pd, &live.tikv.pd)
+                        MetaBackend::Tikv(meta) if matches!(
+                            &live.store,
+                            loams_live::StoreConfig::Tikv(t) if same_cluster(&meta.tikv.pd, &t.pd)
+                        )
                     );
                     Some(LiveRuntime::start(live, !covered).await?)
                 }
@@ -1938,11 +1941,14 @@ impl Server {
         self.live.as_ref().map(|live| live.handle.stats())
     }
 
-    /// Whether Loam Live's handle is swept by the metastore's GC loop
-    /// (`true`), runs its own GC loop (`false`), or Live is off (`None`).
+    /// Whether Loam Live's TiKV handle is swept by the metastore's GC loop
+    /// (`true`), or Live runs its own GC (`false`: its own cluster GC loop,
+    /// or the embedded store's GC), or Live is off (`None`).
     #[cfg(feature = "live")]
     pub fn live_swept_by_metastore_gc(&self) -> Option<bool> {
-        self.live.as_ref().map(|live| live.gc.is_none())
+        self.live
+            .as_ref()
+            .map(|live| live.gc.is_none() && live.handle.store().as_tikv().is_some())
     }
 
     /// The address Flight SQL listens on, when it does.

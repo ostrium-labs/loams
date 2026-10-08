@@ -1,7 +1,7 @@
 //! R1 plan Task 12: the connect-rust sync service, through the generated
 //! `LiveServiceClient` over HTTP/1.1 and HTTP/2 (design §20 §7). The
-//! loopback refusal runs without a cluster; the rest need TiKV and skip
-//! without `LOAMS_TEST_PD`.
+//! loopback refusal and the embedded-store server run without a cluster;
+//! the rest need TiKV and skip without `LOAMS_TEST_PD`.
 
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -15,7 +15,9 @@ use loams_live::pb::__buffa::oneof::query_update::Update;
 use loams_live::pb::__buffa::oneof::watch_request::Start;
 use loams_live::session::{ClientState, QueryResult, SESSION_HEADER, SessionConfig, Version};
 use loams_live::system::{INSERT, QUERY};
-use loams_live::{LiveConfig, LiveError, LiveHandle, LiveServer, LiveValue, check_listen, pb};
+use loams_live::{
+    LiveConfig, LiveError, LiveHandle, LiveServer, LiveValue, StoreConfig, check_listen, pb,
+};
 use tokio_util::sync::CancellationToken;
 
 type Client = pb::LiveServiceClient<HttpClient>;
@@ -87,6 +89,47 @@ async fn non_loopback_bind_is_refused() {
         assert_ne!(handle.addr.port(), 0);
         handle.stop().await;
     }
+}
+
+/// LV1 row T20-9: a `LiveServer` starts on any store. On an embedded store,
+/// with no cluster, a Mutate reaches a watching session and a Query agrees.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn server_runs_on_an_embedded_store() {
+    let dir = loams_kv::testing::TempDir::new_in(std::path::Path::new(env!("CARGO_TARGET_TMPDIR")))
+        .expect("a directory");
+    let store = loams_kv::EmbeddedConfig::new(
+        dir.path().join("live").join("store.redb"),
+        loams_live::keyspace_of("t21"),
+    );
+    let mut config = LiveConfig::with_store("t21", StoreConfig::Embedded(store));
+    config.listen = "127.0.0.1:0".parse().expect("an address");
+    let handle = LiveServer::start(config, CancellationToken::new())
+        .await
+        .expect("the server starts");
+    assert_eq!(handle.store().backend(), loams_kv::Backend::Embedded);
+    assert!(handle.store().as_tikv().is_none());
+    let c = client(&handle, true);
+    let mut w = watch(&c, Start::Initial(Box::new(set(1, vec![spec(7, "msgs")])))).await;
+    let mut state = ClientState::new();
+    state
+        .apply(&next(&mut w).await)
+        .expect("from the zero version");
+    assert_eq!(docs(&state, 7), 0);
+    let commit_ts = insert(&c, "msgs", 1, None).await;
+    let t = until(&mut w, &mut state, |s, _| docs(s, 7) == 1).await;
+    assert!(end(&t).ts >= commit_ts);
+    let q = c
+        .query(pb::QueryRequest {
+            function: QUERY.into(),
+            args: spec(0, "msgs").args,
+            ..Default::default()
+        })
+        .await
+        .expect("Query")
+        .into_owned();
+    let result = LiveValue::from_proto(q.result.into_option().expect("a result")).expect("ok");
+    assert!(matches!(result, LiveValue::Array(d) if d.len() == 1));
+    handle.stop().await;
 }
 
 // ---- on TiKV ----
