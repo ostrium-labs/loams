@@ -23,3 +23,5 @@
       name: '@loams/plugin-overview'
     - id: desktop-settings
       name: '@loams/plugin-desktop-settings'
+    - id: live
+      name: '@loams/plugin-live'

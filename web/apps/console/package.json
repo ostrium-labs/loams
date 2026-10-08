@@ -32,6 +32,7 @@
     "@loams/plugin-factory": "workspace:*",
     "@loams/plugin-graph": "workspace:*",
     "@loams/plugin-identity": "workspace:*",
+    "@loams/plugin-live": "workspace:*",
     "@loams/plugin-namespaces": "workspace:*",
     "@loams/plugin-overview": "workspace:*",
     "@loams/plugin-rpc": "workspace:*",

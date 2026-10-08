@@ -17,6 +17,7 @@ import factoryPkg from '@loams/plugin-factory/package.json';
 import graphPkg from '@loams/plugin-graph/package.json';
 import overviewPkg from '@loams/plugin-overview/package.json';
 import streamsPkg from '@loams/plugin-streams/package.json';
+import livePkg from '@loams/plugin-live/package.json';
 import desktopYml from '../../catalog/desktop.yml?raw';
 import type { modules } from './modules.js';
 import { startConsole } from './start.js';
@@ -32,6 +33,7 @@ export const desktopModules: typeof modules = {
   '@loams/plugin-streams': () => import('@loams/plugin-streams'),
   '@loams/plugin-overview': () => import('@loams/plugin-overview'),
   '@loams/plugin-desktop-settings': () => import('@loams/plugin-desktop-settings'),
+  '@loams/plugin-live': () => import('@loams/plugin-live'),
 };
 /** Their package.json manifests. */
 export const desktopManifests: unknown[] = [
@@ -44,6 +46,7 @@ export const desktopManifests: unknown[] = [
   streamsPkg,
   overviewPkg,
   desktopSettingsPkg,
+  livePkg,
 ];
 
 export async function startDesktop(

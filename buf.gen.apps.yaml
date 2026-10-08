@@ -21,6 +21,8 @@ inputs:
       - proto/loams/errors/v1
       # Data Studio (AP1e): the collection data plane clients.
       - proto/loams/collection/v1
+      # Loams Live (AP1e): the Live page's watch/query/mutate client.
+      - proto/loams/live/v1
 plugins:
   - local: web/packages/proto/node_modules/.bin/protoc-gen-es
     out: web/packages/proto/src/gen
