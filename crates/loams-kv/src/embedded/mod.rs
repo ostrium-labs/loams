@@ -137,6 +137,7 @@ pub(crate) struct Core {
     db: Database,
     oracle: Oracle,
     gc: Mutex<GcState>,
+    gc_tuning: gc::GcTuning,
     counters: Counters,
     #[cfg(feature = "faults")]
     io_faults: Arc<faulty::Switch>,
@@ -397,6 +398,7 @@ impl Shared {
             db,
             oracle: Oracle::new(Ts(high_water)),
             gc: Mutex::new(GcState::new(Ts(safe_point))),
+            gc_tuning: gc::GcTuning::default(),
             counters: Counters::default(),
             #[cfg(feature = "faults")]
             io_faults,
@@ -812,6 +814,12 @@ impl Handle {
         CommitterHold {
             core: self.shared.core.clone(),
         }
+    }
+
+    /// Paces GC rounds: `batch` table entries per write transaction, and
+    /// `pause` between them.
+    pub fn tune_gc(&self, batch: usize, pause: Duration) {
+        self.shared.core.gc_tuning.set(batch, pause);
     }
 
     /// The oracle's last timestamp issued and its persisted mark.

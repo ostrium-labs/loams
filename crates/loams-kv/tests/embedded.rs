@@ -287,6 +287,93 @@ async fn gc_ignores_open_snapshots_below_the_read_floor_and_drops_deleted_keys()
     assert!(h.stats().gc_runs >= 2);
 }
 
+/// `keys` keys with `versions` versions each, written one version of every
+/// key per transaction.
+async fn many_versions(store: &Store, keys: u16, versions: u8) {
+    for v in 0..versions {
+        store
+            .run(TxnOptions::new("kv.embedded.versions"), move |txn| {
+                Box::pin(async move {
+                    for k in 0..keys {
+                        txn.put(&k.to_be_bytes(), vec![v]).await?;
+                    }
+                    Ok(())
+                })
+            })
+            .await
+            .expect("written");
+    }
+}
+
+/// A GC round works in bounded batches (row T21-18): with more versions than
+/// one batch scans, it takes several write transactions, deletes every
+/// version below each key's newest, and leaves the newest readable.
+#[tokio::test]
+async fn gc_runs_in_bounded_batches() {
+    let dir = tmp();
+    let store = open(&dir.path().join("store.redb"), "gc").await;
+    let h = handle(&store);
+    many_versions(&store, 200, 3).await;
+    h.tune_gc(50, Duration::ZERO);
+    let report = h
+        .gc_once_at(wall_ms() + 3_600_000)
+        .await
+        .expect("a GC round");
+    assert_eq!(
+        report.versions_deleted, 400,
+        "two older versions of 200 keys"
+    );
+    assert!(
+        report.batches >= 12,
+        "600 entries in batches of 50: {report:?}"
+    );
+    let now = store.now().await.expect("now");
+    let mut snap = store.snapshot(now).await.expect("a snapshot");
+    let all = snap.scan(&[], None, 1_000).await.expect("scan");
+    assert_eq!(all.len(), 200);
+    assert!(
+        all.iter().all(|(_, v)| v == &[2]),
+        "each key's newest version"
+    );
+    // A second round finds nothing more.
+    let again = h
+        .gc_once_at(wall_ms() + 3_600_000)
+        .await
+        .expect("a GC round");
+    assert_eq!(again.versions_deleted, 0);
+}
+
+/// A long GC round does not hold commits back for the whole pass: a commit
+/// started during the round finishes before the round does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn gc_does_not_block_commits_for_a_whole_pass() {
+    let dir = tmp();
+    let store = open(&dir.path().join("store.redb"), "gc").await;
+    let h = handle(&store).clone();
+    many_versions(&store, 200, 3).await;
+    // 600 entries, 20 per batch, 30 ms between batches: about a second.
+    h.tune_gc(20, Duration::from_millis(30));
+    let gc = tokio::spawn(async move {
+        let report = h
+            .gc_once_at(wall_ms() + 3_600_000)
+            .await
+            .expect("a GC round");
+        (report, std::time::Instant::now())
+    });
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let started = std::time::Instant::now();
+    put(&store, b"during", b"gc").await;
+    let committed = std::time::Instant::now();
+    let (report, gc_done) = gc.await.expect("joined");
+    assert!(report.batches >= 30, "{report:?}");
+    assert!(
+        committed < gc_done,
+        "the commit waited for the whole GC pass ({:?})",
+        committed - started
+    );
+    assert!(committed - started < Duration::from_millis(500));
+}
+
 /// 100 concurrent commits share redb write transactions (and fsyncs).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn group_commit_batches_fsyncs() {

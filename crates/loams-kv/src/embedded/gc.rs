@@ -1,7 +1,8 @@
 //! GC of the embedded store (LV1 plan Task 21): barriers, open snapshots,
 //! the safe point and the GC thread.
 //!
-//! A GC round computes `safe_point = min(now − gc_life_time, the last
+//! A GC round works through the table in bounded batches, one write
+//! transaction each (row T21-18). It computes `safe_point = min(now − gc_life_time, the last
 //! timestamp issued, oldest open snapshot or transaction still inside the
 //! read window, live barriers)`,
 //! never moving it back, persists
@@ -12,6 +13,8 @@
 //! `gc_interval`.
 
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Bound;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
@@ -144,6 +147,9 @@ pub struct GcReport {
     pub versions_deleted: u64,
     /// Expired commit tokens and fences deleted.
     pub tokens_swept: u64,
+    /// The write transactions the round's version deletion took (one per
+    /// batch of table entries).
+    pub batches: u64,
 }
 
 impl Shared {
@@ -158,7 +164,7 @@ impl Shared {
         let window = life.saturating_sub(super::millis(super::GC_SAFE_MARGIN));
         let floor = Ts::from_parts(now_ms.saturating_sub(window), 0);
         let safe_point = core.gc_state().advance(candidate, floor);
-        let versions_deleted = collect(core, safe_point).map_err(super::storage)?;
+        let (versions_deleted, batches) = collect(core, safe_point).map_err(super::storage)?;
         core.counters.gc_runs.inc();
         core.counters.versions_deleted.add(versions_deleted);
         core.counters.tokens_swept.add(tokens_swept);
@@ -166,6 +172,7 @@ impl Shared {
             safe_point,
             versions_deleted,
             tokens_swept,
+            batches,
         })
     }
 
@@ -186,52 +193,116 @@ impl Shared {
     }
 }
 
-/// Deletes the versions no read at or above `safe_point` sees, and persists
-/// the safe point; returns how many versions went.
-fn collect(core: &Core, safe_point: Ts) -> Result<u64, redb::Error> {
-    let write = core.db.begin_write()?;
-    let mut deleted = 0;
-    {
-        let mut table = write.open_table(VERSIONS)?;
-        let mut doomed: Vec<Vec<u8>> = Vec::new();
-        {
-            let mut current: Option<Vec<u8>> = None;
-            // Whether the current key's newest version at or below the safe
-            // point was seen (everything older goes).
-            let mut kept = false;
-            for entry in table.iter()? {
-                let (k, v) = entry?;
-                let composite = k.value();
-                let Some((prefix, ts)) = split(composite) else {
-                    continue;
+/// How a GC round paces itself: the table entries one write transaction
+/// scans, and a pause between transactions (zero outside tests).
+#[derive(Debug)]
+pub(crate) struct GcTuning {
+    batch: AtomicUsize,
+    pause_ms: AtomicU64,
+}
+
+impl Default for GcTuning {
+    fn default() -> Self {
+        GcTuning {
+            batch: AtomicUsize::new(GC_BATCH),
+            pause_ms: AtomicU64::new(0),
+        }
+    }
+}
+
+impl GcTuning {
+    #[cfg_attr(not(feature = "faults"), allow(dead_code))]
+    pub(crate) fn set(&self, batch: usize, pause: Duration) {
+        self.batch.store(batch.max(1), Ordering::Relaxed);
+        self.pause_ms.store(
+            u64::try_from(pause.as_millis()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+    }
+}
+
+/// The table entries one GC write transaction scans by default.
+const GC_BATCH: usize = 4_096;
+
+/// Where a GC round is in the table between two write transactions: the
+/// last entry it scanned, and whether the key it is in already kept its
+/// newest version at or below the safe point.
+#[derive(Debug, Default)]
+struct Cursor {
+    last: Option<Vec<u8>>,
+    key: Option<Vec<u8>>,
+    kept: bool,
+}
+
+/// Deletes the versions no read at or above `safe_point` sees, in bounded
+/// batches (row T21-18): each write transaction scans at most the tuned
+/// number of entries from the cursor, deletes what it found doomed there,
+/// and commits, so commits interleave with a round and no list of doomed
+/// versions outgrows a batch. The first transaction persists the safe
+/// point, before any deletion. Returns the versions deleted and the write
+/// transactions taken.
+fn collect(core: &Core, safe_point: Ts) -> Result<(u64, u64), redb::Error> {
+    let batch = core.gc_tuning.batch.load(Ordering::Relaxed).max(1);
+    let pause = Duration::from_millis(core.gc_tuning.pause_ms.load(Ordering::Relaxed));
+    let mut cursor = Cursor::default();
+    let (mut deleted, mut writes) = (0, 0);
+    loop {
+        let write = core.db.begin_write()?;
+        let done = {
+            let mut table = write.open_table(VERSIONS)?;
+            let mut doomed: Vec<Vec<u8>> = Vec::new();
+            let mut scanned = 0;
+            {
+                let lower = match &cursor.last {
+                    Some(last) => Bound::Excluded(last.as_slice()),
+                    None => Bound::Unbounded,
                 };
-                if current.as_deref() != Some(prefix) {
-                    current = Some(prefix.to_vec());
-                    kept = false;
-                }
-                if ts > safe_point {
-                    continue;
-                }
-                if kept {
-                    doomed.push(composite.to_vec());
-                } else {
-                    kept = true;
-                    if is_tombstone(v.value()) {
-                        doomed.push(composite.to_vec());
+                for entry in table.range::<&[u8]>((lower, Bound::Unbounded))? {
+                    let (k, v) = entry?;
+                    let composite = k.value();
+                    scanned += 1;
+                    cursor.last = Some(composite.to_vec());
+                    if let Some((prefix, ts)) = split(composite) {
+                        if cursor.key.as_deref() != Some(prefix) {
+                            cursor.key = Some(prefix.to_vec());
+                            cursor.kept = false;
+                        }
+                        if ts <= safe_point {
+                            if cursor.kept {
+                                doomed.push(composite.to_vec());
+                            } else {
+                                cursor.kept = true;
+                                if is_tombstone(v.value()) {
+                                    doomed.push(composite.to_vec());
+                                }
+                            }
+                        }
+                    }
+                    if scanned >= batch {
+                        break;
                     }
                 }
             }
+            for k in &doomed {
+                table.remove(k.as_slice())?;
+                deleted += 1;
+            }
+            if writes == 0 {
+                let mut oracle = write.open_table(ORACLE)?;
+                oracle.insert(GC_SAFE_POINT, safe_point.0)?;
+            }
+            scanned < batch
+        };
+        write.commit()?;
+        writes += 1;
+        core.counters.write_transactions.inc();
+        if done {
+            return Ok((deleted, writes));
         }
-        for k in &doomed {
-            table.remove(k.as_slice())?;
-            deleted += 1;
+        if !pause.is_zero() {
+            std::thread::sleep(pause);
         }
-        let mut oracle = write.open_table(ORACLE)?;
-        oracle.insert(GC_SAFE_POINT, safe_point.0)?;
     }
-    write.commit()?;
-    core.counters.write_transactions.inc();
-    Ok(deleted)
 }
 
 impl Handle {
