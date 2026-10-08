@@ -37,6 +37,9 @@ use tokio::time::Instant;
 use crate::errors::{ChError, HouseError};
 use crate::watchdog::{ExitReason, KillHandle, Launcher, WorkerShared};
 
+/// The most bytes [`WorkerLease::run`] collects (R2.11, M6).
+pub const RUN_MAX_BYTES: usize = 64 * 1024 * 1024;
+
 /// The pool's knobs, with §49 §10.1's defaults.
 #[derive(Clone, Debug)]
 pub struct PoolConfig {
@@ -867,13 +870,38 @@ impl WorkerLease {
         }
     }
 
-    /// Runs a statement to its end and collects its output.
+    /// Runs a statement to its end and collects its output, at most
+    /// [`RUN_MAX_BYTES`]: for tests and small internal statements. Client results
+    /// stream through [`WorkerLease::next_event`] instead (R2.11, M6).
     pub async fn run(&mut self, execute: Execute) -> Result<Collected, HouseError> {
+        self.run_capped(execute, RUN_MAX_BYTES).await
+    }
+
+    /// [`WorkerLease::run`] with its own cap. Past `max_bytes` the statement is
+    /// cancelled — the worker is killed, as for any statement abandoned mid-way —
+    /// and the answer is `36 BAD_ARGUMENTS` naming the cap.
+    pub async fn run_capped(
+        &mut self,
+        execute: Execute,
+        max_bytes: usize,
+    ) -> Result<Collected, HouseError> {
+        let query_id = execute.query_id.clone();
         self.start(execute).await?;
         let mut out = Collected::default();
         loop {
             match self.next_event().await? {
                 Event::Chunk(chunk) => {
+                    if out.bytes.len() + chunk.bytes.len() > max_bytes {
+                        if let Some(worker) = self.worker.as_mut() {
+                            worker.shared.kill(ExitReason::Cancel);
+                            worker.dead = true;
+                            worker.in_flight = false;
+                        }
+                        return Err(HouseError::from(ChError::bad_arguments(format!(
+                            "query {query_id}: the result is larger than the {max_bytes} \
+                             bytes WorkerLease::run collects; stream it with next_event"
+                        ))));
+                    }
                     out.chunks += 1;
                     out.bytes.extend_from_slice(&chunk.bytes);
                 }

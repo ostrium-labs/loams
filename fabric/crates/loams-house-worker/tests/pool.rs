@@ -1009,10 +1009,53 @@ async fn kill_handle_goes_stale_at_the_terminal_frame() {
         );
     }
     assert_eq!(
-        lease.run(statement("SELECT 3", "TSV")).await.expect("N+1 runs").bytes,
+        lease
+            .run(statement("SELECT 3", "TSV"))
+            .await
+            .expect("N+1 runs")
+            .bytes,
         b"3\n"
     );
     assert_eq!(lease.pid(), pid);
     pool.release(lease, Outcome::Completed);
-    assert_eq!(pool.stats().kills.values().sum::<u64>(), 0, "{:?}", pool.stats());
+    assert_eq!(
+        pool.stats().kills.values().sum::<u64>(),
+        0,
+        "{:?}",
+        pool.stats()
+    );
+}
+
+/// R2.11 (M6): `WorkerLease::run` collects a result in memory, so it is capped: past
+/// the cap the statement is cancelled (its worker killed, the pool replenished) and
+/// the caller gets `36 BAD_ARGUMENTS` naming the cap, not an unbounded allocation.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_output_is_capped() {
+    let pool = pool("run-cap", small(2)).await;
+    let mut lease = pool.acquire("ns").await.expect("worker");
+    assert_eq!(loams_house::admission::RUN_MAX_BYTES, 64 * 1024 * 1024);
+    let err = lease
+        .run_capped(
+            statement("SELECT number FROM numbers(100000)", "TSV"),
+            10_000,
+        )
+        .await
+        .expect_err("over the cap");
+    assert_eq!(err.code(), 36, "{err}");
+    assert!(err.message().contains("10000"), "{err}");
+    pool.release(lease, Outcome::Completed);
+    assert_eq!(
+        pool.stats().kills_for(ExitReason::Cancel),
+        1,
+        "{:?}",
+        pool.stats()
+    );
+
+    let mut next = pool.acquire("ns").await.expect("another worker");
+    let out = next
+        .run_capped(statement("SELECT 1", "TSV"), 10_000)
+        .await
+        .expect("under the cap");
+    assert_eq!(out.bytes, b"1\n");
+    pool.release(next, Outcome::Completed);
 }
