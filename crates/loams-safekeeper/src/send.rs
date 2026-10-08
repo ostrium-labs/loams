@@ -234,6 +234,8 @@ where
     W: AsyncWrite + Unpin,
 {
     let head = svc.store().load(&tl).await?.ok_or(Error::NotFound(tl))?;
+    // A pageserver streaming here keeps the timeline published.
+    let _reading = svc.reader(tl);
     if start_lsn < head.trimmed_lsn {
         return Err(Error::Trimmed {
             from: start_lsn,

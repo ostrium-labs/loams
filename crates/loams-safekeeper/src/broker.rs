@@ -11,17 +11,26 @@
 //! - `safekeeper_id` is the node id walproposer sees: the acceptor's id, or
 //!   the pool's logical id for a stateless TiKV pool, whose instances all
 //!   advertise the pool's address.
-//! - A timeline is served while a proposer streams to this instance, and
-//!   after that while its pageserver has not caught up
-//!   (`remote_consistent_lsn < commit_lsn`).
+//! - The published set is bounded ([`Published`]). A timeline is published
+//!   while a proposer streams to this instance or a pageserver reads from it;
+//!   for `staleness` after that while its pageserver has not caught up
+//!   (`remote_consistent_lsn < commit_lsn`); and, from discovery, only while
+//!   it is being asked about. It leaves the set when it has been inactive
+//!   for `staleness`, so an Arm A acceptor the pageserver does not stream
+//!   from stops publishing even though its `remote_consistent_lsn` never
+//!   moves (ruling R32.5; Task 39 owns a peer pull of that LSN).
+//! - Each round reads the heads of the set's timelines with bounded
+//!   concurrency within a time budget, starting where the previous round
+//!   stopped, so a slow store delays publication without stalling it.
 //!
 //! The client is generated from the vendored `proto/storage_broker/
 //! broker.proto` (Apache-2.0, Neon; see the repository's `NOTICE`).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::ReceiverStream;
@@ -60,6 +69,16 @@ pub struct BrokerConfig {
     pub interval: Duration,
     /// The pause before reconnecting after an error.
     pub retry: Duration,
+    /// How long an inactive timeline stays in the published set (and is
+    /// published while its pageserver lags).
+    pub staleness: Duration,
+    /// How long a discovery request keeps its timeline published.
+    pub discovery_window: Duration,
+    /// Heads read at once per round.
+    pub concurrency: usize,
+    /// How long a round may take; what is not read by then waits for the
+    /// next round.
+    pub round_budget: Duration,
 }
 
 /// Check `--broker-endpoint`: `http://host:port`. TLS to the broker
@@ -154,6 +173,10 @@ impl BrokerConfig {
             availability_zone: None,
             interval: Duration::from_secs(1),
             retry: Duration::from_secs(1),
+            staleness: Duration::from_secs(300),
+            discovery_window: Duration::from_secs(30),
+            concurrency: 16,
+            round_budget: Duration::from_millis(500),
         }
     }
 }
@@ -215,25 +238,130 @@ pub async fn timeline_info<S: WalStore>(
     }))
 }
 
-/// Whether `info` is worth publishing: a proposer streams here, or the
-/// pageserver has WAL left to persist.
-fn served<S: WalStore>(svc: &WalService<S>, tl: TimelineId, info: &SafekeeperTimelineInfo) -> bool {
-    svc.progress(tl).active || Lsn(info.remote_consistent_lsn) < Lsn(info.commit_lsn)
+/// The timelines this instance publishes (bounded; see the module docs).
+#[derive(Debug, Default)]
+pub struct Published {
+    entries: Mutex<HashMap<TimelineId, Entry>>,
+    /// Where the next round starts (rounds that run out of budget rotate).
+    cursor: AtomicUsize,
 }
 
-/// One round: the info of every timeline this instance serves.
-pub async fn served_infos<S: WalStore>(
-    svc: &WalService<S>,
+#[derive(Clone, Copy, Debug, Default)]
+struct Entry {
+    /// When a proposer or a reader was last seen on this instance.
+    last_active: Option<Instant>,
+    /// Asked about through discovery: published until then.
+    asked_until: Option<Instant>,
+}
+
+/// A timeline a round considers, and why.
+#[derive(Clone, Copy, Debug)]
+struct Candidate {
+    tl: TimelineId,
+    /// A proposer or a reader is on this instance now, or it is asked about.
+    always: bool,
+}
+
+impl Published {
+    /// The timelines in the set.
+    pub fn timelines(&self) -> Vec<TimelineId> {
+        let m = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        let mut out: Vec<TimelineId> = m.keys().copied().collect();
+        out.sort_unstable_by_key(|t| (t.tenant.0, t.timeline.0));
+        out
+    }
+
+    /// A discovery request for `tl`: publish it until `until`.
+    fn ask(&self, tl: TimelineId, until: Instant) {
+        let mut m = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        let e = m.entry(tl).or_default();
+        e.asked_until = Some(e.asked_until.map_or(until, |u| u.max(until)));
+    }
+
+    /// Refresh activity, drop what is stale, and list this round's
+    /// candidates, rotated to start at the cursor.
+    fn candidates(
+        &self,
+        active: &[TimelineId],
+        cfg: &BrokerConfig,
+        now: Instant,
+    ) -> Vec<Candidate> {
+        let mut m = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        for tl in active {
+            m.entry(*tl).or_default().last_active = Some(now);
+        }
+        let active: HashSet<TimelineId> = active.iter().copied().collect();
+        m.retain(|tl, e| {
+            let asked = e.asked_until.is_some_and(|u| u > now);
+            let recent = e
+                .last_active
+                .is_some_and(|t| now.duration_since(t) < cfg.staleness);
+            active.contains(tl) || asked || recent
+        });
+        let mut out: Vec<Candidate> = m
+            .iter()
+            .map(|(tl, e)| Candidate {
+                tl: *tl,
+                always: active.contains(tl) || e.asked_until.is_some_and(|u| u > now),
+            })
+            .collect();
+        out.sort_unstable_by_key(|c| (c.tl.tenant.0, c.tl.timeline.0));
+        if !out.is_empty() {
+            let k = self.cursor.load(Ordering::Relaxed) % out.len();
+            out.rotate_left(k);
+        }
+        out
+    }
+}
+
+/// One round: the info to publish for every candidate whose head is read
+/// within the budget, `cfg.concurrency` at a time.
+pub async fn publish_round<S: WalStore>(
+    svc: &Arc<WalService<S>>,
     cfg: &BrokerConfig,
+    published: &Published,
 ) -> Vec<SafekeeperTimelineInfo> {
+    let now = Instant::now();
+    let cands = published.candidates(&svc.active_timelines(), cfg, now);
+    let total = cands.len();
+    let deadline = tokio::time::Instant::now() + cfg.round_budget;
+    let mut pending = cands.into_iter();
+    let mut tasks = tokio::task::JoinSet::new();
     let mut out = Vec::new();
-    for tl in svc.known_timelines() {
-        match timeline_info(svc, tl, cfg).await {
-            Ok(Some(info)) if served(svc, tl, &info) => out.push(info),
-            Ok(_) => {}
-            Err(e) => debug!(%tl, error = %e, "broker: no info"),
+    let mut done = 0usize;
+    loop {
+        while tasks.len() < cfg.concurrency.max(1) {
+            let Some(c) = pending.next() else { break };
+            let (svc, cfg) = (svc.clone(), cfg.clone());
+            tasks.spawn(async move { (c, timeline_info(&svc, c.tl, &cfg).await) });
+        }
+        let next = match tokio::time::timeout_at(deadline, tasks.join_next()).await {
+            Ok(Some(r)) => r,
+            Ok(None) => break,
+            Err(_) => {
+                warn!(
+                    read = done,
+                    total, budget = ?cfg.round_budget,
+                    "broker: a round ran out of time; the rest waits for the next"
+                );
+                tasks.abort_all();
+                break;
+            }
+        };
+        done += 1;
+        match next {
+            Ok((c, Ok(Some(info)))) => {
+                // Lagging timelines are published while recently active.
+                if c.always || Lsn(info.remote_consistent_lsn) < Lsn(info.commit_lsn) {
+                    out.push(info);
+                }
+            }
+            Ok((_, Ok(None))) => {}
+            Ok((c, Err(e))) => debug!(tl = %c.tl, error = %e, "broker: no info"),
+            Err(e) => debug!(error = %e, "broker: a head read failed"),
         }
     }
+    published.cursor.fetch_add(done, Ordering::Relaxed);
     out
 }
 
@@ -252,19 +380,23 @@ async fn connect(
     Ok(BrokerServiceClient::new(ch))
 }
 
-/// Publish every served timeline every `cfg.interval` over one
-/// `PublishSafekeeperInfo` stream, until it fails.
-async fn push_once<S: WalStore>(svc: &Arc<WalService<S>>, cfg: &BrokerConfig) -> Result<(), Error> {
+/// Publish the set every `cfg.interval` over one `PublishSafekeeperInfo`
+/// stream, until it fails.
+async fn push_once<S: WalStore>(
+    svc: &Arc<WalService<S>>,
+    cfg: &BrokerConfig,
+    published: &Arc<Published>,
+) -> Result<(), Error> {
     let mut client = connect(cfg).await?;
     let (tx, rx) = tokio::sync::mpsc::channel(256);
-    let feeder = {
-        let (svc, cfg) = (svc.clone(), cfg.clone());
+    let publisher = {
+        let (svc, cfg, published) = (svc.clone(), cfg.clone(), published.clone());
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(cfg.interval);
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 tick.tick().await;
-                for info in served_infos(&svc, &cfg).await {
+                for info in publish_round(&svc, &cfg, &published).await {
                     if tx.send(info).await.is_err() {
                         return;
                     }
@@ -275,7 +407,7 @@ async fn push_once<S: WalStore>(svc: &Arc<WalService<S>>, cfg: &BrokerConfig) ->
     let res = client
         .publish_safekeeper_info(tonic::Request::new(ReceiverStream::new(rx)))
         .await;
-    feeder.abort();
+    publisher.abort();
     match res {
         Ok(_) => Err(Error::Io("broker: publish stream ended".into())),
         Err(e) => Err(Error::Io(format!("broker: publish: {e}"))),
@@ -283,10 +415,12 @@ async fn push_once<S: WalStore>(svc: &Arc<WalService<S>>, cfg: &BrokerConfig) ->
 }
 
 /// Answer discovery requests for timelines the store holds, until the
-/// subscription fails.
+/// subscription fails. A request that cannot be answered (a store error) is
+/// logged and skipped; it does not end the subscription.
 async fn discover_once<S: WalStore>(
     svc: &Arc<WalService<S>>,
     cfg: &BrokerConfig,
+    published: &Published,
 ) -> Result<(), Error> {
     let mut client = connect(cfg).await?;
     let request = SubscribeByFilterRequest {
@@ -324,11 +458,17 @@ async fn discover_once<S: WalStore>(
                 continue;
             }
         };
-        let Some(info) = timeline_info(svc, tl, cfg).await? else {
-            continue; // not a timeline of ours
+        let info = match timeline_info(svc, tl, cfg).await {
+            Ok(Some(info)) => info,
+            Ok(None) => continue, // not a timeline of ours
+            Err(e) => {
+                warn!(%tl, error = %e, "broker: cannot answer a discovery request");
+                continue;
+            }
         };
-        // Serve it from now on: the pageserver connects next.
-        svc.note_timeline(tl);
+        // Published while it is asked about; the pageserver connects next,
+        // and its reader keeps it published.
+        published.ask(tl, Instant::now() + cfg.discovery_window);
         info!(%tl, commit = %Lsn(info.commit_lsn), "broker: answering discovery");
         client
             .publish_one(TypedMessage {
@@ -350,33 +490,47 @@ async fn discover_once<S: WalStore>(
     Err(Error::Io("broker: subscription ended".into()))
 }
 
+/// The broker tasks of one `loams-wal`; dropping it leaves them running.
+#[derive(Debug)]
+pub struct BrokerTasks {
+    pub push: JoinHandle<()>,
+    pub discover: JoinHandle<()>,
+    /// The published set, shared by both.
+    pub published: Arc<Published>,
+}
+
 /// Run publication and discovery until the process stops, reconnecting
 /// after every error.
-pub fn spawn<S: WalStore>(
-    svc: Arc<WalService<S>>,
-    cfg: BrokerConfig,
-) -> (JoinHandle<()>, JoinHandle<()>) {
+pub fn spawn<S: WalStore>(svc: Arc<WalService<S>>, cfg: BrokerConfig) -> BrokerTasks {
     info!(endpoint = %cfg.endpoint, advertise = %cfg.advertise_pg, "broker publication on");
+    let published = Arc::new(Published::default());
     let push = {
-        let (svc, cfg) = (svc.clone(), cfg.clone());
+        let (svc, cfg, published) = (svc.clone(), cfg.clone(), published.clone());
         tokio::spawn(async move {
             loop {
-                if let Err(e) = push_once(&svc, &cfg).await {
-                    warn!(error = %e, "broker: reconnecting");
+                if let Err(e) = push_once(&svc, &cfg, &published).await {
+                    warn!(error = %e, "broker publication: reconnecting");
                 }
                 tokio::time::sleep(cfg.retry).await;
             }
         })
     };
-    let discover = tokio::spawn(async move {
-        loop {
-            if let Err(e) = discover_once(&svc, &cfg).await {
-                debug!(error = %e, "broker discovery: reconnecting");
+    let discover = {
+        let published = published.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = discover_once(&svc, &cfg, &published).await {
+                    warn!(error = %e, "broker discovery: reconnecting");
+                }
+                tokio::time::sleep(cfg.retry).await;
             }
-            tokio::time::sleep(cfg.retry).await;
-        }
-    });
-    (push, discover)
+        })
+    };
+    BrokerTasks {
+        push,
+        discover,
+        published,
+    }
 }
 
 /// The distinct timelines in a batch of published infos (for tests and

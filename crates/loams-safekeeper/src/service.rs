@@ -207,6 +207,9 @@ impl Tail {
 struct Registry {
     timelines: Mutex<HashMap<TimelineId, watch::Sender<Progress>>>,
     sessions: Mutex<HashMap<TimelineId, u32>>,
+    /// Replication readers (pageservers, replicas) streaming each timeline
+    /// from this instance.
+    readers: Mutex<HashMap<TimelineId, u32>>,
     tails: Mutex<HashMap<TimelineId, Tail>>,
     /// Pageserver feedback per timeline, as it arrives on this instance's
     /// replication connections (every shard's), for the walproposers
@@ -249,7 +252,11 @@ impl Registry {
             let mut m = self.sessions.lock().unwrap_or_else(|p| p.into_inner());
             let n = m.entry(tl).or_default();
             *n = n.saturating_add_signed(delta);
-            *n
+            let n = *n;
+            if n == 0 {
+                m.remove(&tl);
+            }
+            n
         };
         if n == 0 {
             // No local proposer: the tail can go stale, so drop it (this also
@@ -374,20 +381,52 @@ impl<S: WalStore> WalService<S> {
         )
     }
 
-    /// The timelines this instance has seen: pushed to, read from, or asked
-    /// about through the broker (§46 §9.2's publication set).
-    pub fn known_timelines(&self) -> Vec<TimelineId> {
+    /// The timelines active on this instance now: a proposer streams to it,
+    /// or a pageserver or replica reads from it (the broker publishes them).
+    pub fn active_timelines(&self) -> Vec<TimelineId> {
+        let mut out: Vec<TimelineId> = {
+            let m = self
+                .registry
+                .sessions
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            m.iter().filter(|(_, n)| **n > 0).map(|(t, _)| *t).collect()
+        };
         let m = self
             .registry
-            .timelines
+            .readers
             .lock()
             .unwrap_or_else(|p| p.into_inner());
-        m.keys().copied().collect()
+        out.extend(m.iter().filter(|(_, n)| **n > 0).map(|(t, _)| *t));
+        out.sort_unstable_by_key(|t| (t.tenant.0, t.timeline.0));
+        out.dedup();
+        out
     }
 
-    /// Remember `tl`, so that it is published to the broker.
-    pub fn note_timeline(&self, tl: TimelineId) {
-        self.registry.sender(tl);
+    /// Whether a pageserver or replica streams `tl` from this instance.
+    pub fn has_readers(&self, tl: TimelineId) -> bool {
+        let m = self
+            .registry
+            .readers
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        m.get(&tl).is_some_and(|n| *n > 0)
+    }
+
+    /// Count a replication reader of `tl` until the guard drops.
+    pub(crate) fn reader(self: &Arc<Self>, tl: TimelineId) -> ReaderGuard<S> {
+        {
+            let mut m = self
+                .registry
+                .readers
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            *m.entry(tl).or_default() += 1;
+        }
+        ReaderGuard {
+            svc: self.clone(),
+            tl,
+        }
     }
 
     /// Wakes on every change of this instance's view of `tl`.
@@ -868,6 +907,8 @@ impl<S: WalStore> WalService<S> {
         Ok(())
     }
 
+    /// The vanilla `START_REPLICATION`: a pageserver or replica (no term),
+    /// or the compute's recovery reader (a term).
     async fn replicate<R, W>(
         self: Arc<Self>,
         tl: TimelineId,
@@ -892,6 +933,9 @@ impl<S: WalStore> WalService<S> {
         send(&mut wr, &mut buf).await?;
         info!(%tl, start = %start_lsn, ?term, "replication started");
 
+        // A pageserver or replica keeps the timeline published (the
+        // compute's recovery reader, with a term, does not).
+        let _reading = term.is_none().then(|| self.reader(tl));
         let (reader, mut fb) = self.feedback_reader(tl, rd);
         let mut watch = self.registry.sender(tl).subscribe();
         let mut keepalive = tokio::time::interval(self.config.keepalive_interval);
@@ -977,6 +1021,29 @@ enum Event {
     Msg(Option<ProposerMessage>),
     Tick,
     Feedback(Result<PageserverFeedback, broadcast::error::RecvError>),
+}
+
+/// A replication reader of a timeline, counted until dropped.
+pub(crate) struct ReaderGuard<S: WalStore> {
+    svc: Arc<WalService<S>>,
+    tl: TimelineId,
+}
+
+impl<S: WalStore> Drop for ReaderGuard<S> {
+    fn drop(&mut self) {
+        let mut m = self
+            .svc
+            .registry
+            .readers
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(n) = m.get_mut(&self.tl) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                m.remove(&self.tl);
+            }
+        }
+    }
 }
 
 /// Pageserver feedback events queued per walproposer before the oldest are

@@ -144,6 +144,10 @@ struct Args {
     /// The availability zone published to the broker.
     #[arg(long)]
     availability_zone: Option<String>,
+    /// How long a timeline with no proposer and no reader on this instance
+    /// stays published (while its pageserver lags), in seconds.
+    #[arg(long, default_value_t = 300)]
+    broker_staleness_secs: u64,
     /// Set by the caller of [`main`], not on the command line.
     #[arg(skip)]
     interpreter: Option<Interpreter>,
@@ -204,6 +208,7 @@ async fn run_with<S: WalStore>(
     );
     if let Some(mut cfg) = broker {
         cfg.availability_zone = args.availability_zone.clone();
+        cfg.staleness = Duration::from_secs(args.broker_staleness_secs);
         drop(crate::broker::spawn(svc.clone(), cfg));
     }
     if let Some(f) = on_start {
