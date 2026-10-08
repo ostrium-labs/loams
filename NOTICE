@@ -106,3 +106,8 @@ Obscura source is copied. Loams therefore does not redistribute Obscura's
 Apache-2.0 notice with this file. The release asset an operator installs is
 Obscura's own, under its own licence, and the pinned version is recorded in
 crates/loams-sidebar-browser/src/engine.rs.
+
+dsh-desktop (https://github.com/dataelement/dsh-desktop), MIT License,
+Copyright (c) 2026 DataElement. apps/desktop-electron adapts parts of its
+Electron shell (build configuration and main-process patterns); each adapted
+file carries an attribution header. See apps/desktop-electron/NOTICE.

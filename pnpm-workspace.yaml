@@ -8,6 +8,7 @@ packages:
   - plugins
   - plugins/apps/*
   - plugins/packages/*
+  - apps/desktop-electron
 
 # Keep Vite+ isolated from the console's ordinary Vite/Vitest toolchain.
 overrides:
@@ -22,3 +23,5 @@ allowBuilds:
   '@bufbuild/buf': false
   vite-plus: true
   msw: false
+  electron: true
+  electron-winstaller: false

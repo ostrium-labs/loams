@@ -12,7 +12,7 @@
     "typecheck": "nx run-many --targets=typecheck --projects=@loams/*,plugins-dashboard-ui --parallel=2",
     "dev:console": "nx run @loams/console:dev",
     "dev:plugins": "nx run plugins-server:start",
-    "build:desktop": "nx run loams-desktop:build",
+    "build:desktop": "nx run loams-desktop-electron:build",
     "build:android": "nx run mobile-android:build",
     "build:ios": "nx run mobile-ios:build",
     "check:monorepo": "python3 tools/monorepo/check.py",

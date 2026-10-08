@@ -1,0 +1,9 @@
+{
+	"extends": "../../web/tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["ES2023"],
+		"types": ["node"],
+		"jsx": "preserve"
+	},
+	"include": ["src", "test", "electron.vite.config.ts", "vitest.config.ts"]
+}
