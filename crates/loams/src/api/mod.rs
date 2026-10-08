@@ -43,10 +43,12 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use bytes::Bytes;
 use loams_collection::ConsistencyToken;
-use loams_common::meta::{Consistency, MetaStore, Retention, StreamState, TargetRef, WalClass};
+use loams_common::meta::{
+    Consistency, Link, MetaStore, Retention, StreamState, TargetRef, WalClass,
+};
 use loams_common::{NamespaceId, StreamId};
 use loams_hot::{ForwardStats, HotTierImpl, Roles};
-use loams_link::{COUNTER_KIND, CounterTable, TargetRegistry};
+use loams_link::{COUNTER_KIND, CounterTable, LinkApplySource, TargetRegistry};
 use loams_log::{FetchRequest, LogReader, LogWriter, Record};
 use loams_query::hot::HotLayer;
 use loams_query::placement::Placement;
@@ -93,6 +95,9 @@ pub struct AppState {
     pub store: Store,
     /// The link targets, by kind: describes every registered link kind.
     pub registry: TargetRegistry,
+    /// The worker's link-apply source (the same one, cloned): which links
+    /// have a target kind with no factory (AP1e Task 19, D672).
+    pub link_apply: LinkApplySource,
     /// Collections, documents, queries and SQL (plan M1.2).
     pub collections: Arc<CollectionService>,
     /// This node's hot tier; `None` with `--hot off` (plan M1.3 Task 8).
@@ -181,7 +186,10 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/v1/namespaces", post(create_namespace))
-        .route("/v1/namespaces/{ns}/streams", post(create_stream))
+        .route(
+            "/v1/namespaces/{ns}/streams",
+            post(create_stream).get(list_streams),
+        )
         .route("/v1/namespaces/{ns}/streams/{stream}", get(describe_stream))
         .route(
             "/v1/namespaces/{ns}/streams/{stream}/partitions/{partition}/records",
@@ -195,7 +203,10 @@ pub fn router(state: AppState) -> Router {
             "/v1/namespaces/{ns}/streams/{stream}/partitions/{partition}/events",
             get(events::fetch_events),
         )
-        .route("/v1/namespaces/{ns}/links", post(create_link))
+        .route(
+            "/v1/namespaces/{ns}/links",
+            post(create_link).get(list_links),
+        )
         .route("/v1/namespaces/{ns}/links/{link}", get(describe_link))
         .route(
             "/v1/namespaces/{ns}/collections",
@@ -406,6 +417,36 @@ async fn create_stream(
         )
         .await?;
     Ok((StatusCode::CREATED, axum::Json(json!({ "id": id.0 }))).into_response())
+}
+
+/// `GET /v1/namespaces/{ns}/streams` (AP1e Task 19, D672): the namespace's
+/// streams, sorted by name, each with its partition count and, when either
+/// limit is set, its retention. Implicit collection streams are listed too.
+async fn list_streams(
+    State(state): State<AppState>,
+    ns: Result<Path<String>, PathRejection>,
+) -> ApiResult {
+    let Path(ns) = ns?;
+    let namespace = namespace_id(&*state.meta, &ns).await?;
+    let mut streams = state
+        .meta
+        .streams(Consistency::Local, Some(namespace))
+        .await?;
+    streams.sort_by(|a, b| a.name.cmp(&b.name));
+    let streams: Vec<Value> = streams
+        .into_iter()
+        .map(|stream| {
+            let mut body = json!({ "name": stream.name, "partitions": stream.partitions });
+            if stream.retention != Retention::default() {
+                body["retention"] = json!({
+                    "max_age_ms": stream.retention.max_age_ms,
+                    "max_bytes": stream.retention.max_bytes,
+                });
+            }
+            body
+        })
+        .collect();
+    Ok(axum::Json(json!({ "streams": streams })).into_response())
 }
 
 async fn describe_stream(
@@ -643,6 +684,59 @@ async fn create_link(
     Ok((StatusCode::CREATED, axum::Json(json!({ "id": id.0 }))).into_response())
 }
 
+/// A link's status: `unregistered` when no factory is registered for its
+/// target kind, so nothing applies it, else `running`.
+///
+/// [`LinkApplySource::unregistered`] is as of the worker's last poll, so a
+/// link created since then is also checked against the registry the worker
+/// was built from.
+fn link_status(state: &AppState, link: &Link) -> &'static str {
+    let unregistered = state.link_apply.unregistered().contains_key(&link.id)
+        || state.registry.get(&link.target.kind).is_none();
+    if unregistered {
+        "unregistered"
+    } else {
+        "running"
+    }
+}
+
+/// `GET /v1/namespaces/{ns}/links` (AP1e Task 19, D672): the namespace's
+/// links, sorted by name, each with its source stream's name, its target and
+/// its status ([`link_status`]).
+async fn list_links(
+    State(state): State<AppState>,
+    ns: Result<Path<String>, PathRejection>,
+) -> ApiResult {
+    let Path(ns) = ns?;
+    let namespace = namespace_id(&*state.meta, &ns).await?;
+    // A listing: the links and their sources' names need not come from one
+    // state. A link whose source is gone is listed without one.
+    let sources: HashMap<StreamId, String> = state
+        .meta
+        .streams(Consistency::Local, Some(namespace))
+        .await?
+        .into_iter()
+        .map(|stream| (stream.id, stream.name))
+        .collect();
+    let mut links = state
+        .meta
+        .links(Consistency::Local, Some(namespace))
+        .await?;
+    links.sort_by(|a, b| a.name.cmp(&b.name));
+    let links: Vec<Value> = links
+        .iter()
+        .map(|link| {
+            json!({
+                "name": link.name,
+                "source": sources.get(&link.source),
+                "target": { "kind": link.target.kind, "name": link.target.name },
+                "status": link_status(&state, link),
+            })
+        })
+        .collect();
+    Ok(axum::Json(json!({ "links": links })).into_response())
+}
+
 async fn describe_link(
     State(state): State<AppState>,
     path: Result<Path<(String, String)>, PathRejection>,
@@ -659,21 +753,39 @@ async fn describe_link(
         .ok_or_else(not_found)?;
     let source = state
         .meta
-        .stream(Consistency::Local, link.source)
+        .stream_state(Consistency::Local, link.source)
         .await?
-        .map(|st| st.name)
         .ok_or_else(not_found)?;
+    let high_watermarks: Vec<u64> = source
+        .partitions
+        .iter()
+        .map(|bounds| bounds.as_ref().map_or(0, |b| b.high_watermark))
+        .collect();
     let mut body = json!({
         "id": link.id.0,
         "name": link.name,
-        "source": source,
+        "source": source.stream.name,
         "target": { "kind": link.target.kind, "name": link.target.name },
         "options": link.options,
+        "status": link_status(&state, &link),
     });
     let applied_json = |applied: &std::collections::BTreeMap<u32, u64>| -> Value {
         applied
             .iter()
             .map(|(partition, offset)| json!({ "partition": partition, "offset": offset }))
+            .collect()
+    };
+    // Per source partition, the records between the high watermark and the
+    // applied offset (a partition never applied counts from 0). The high
+    // watermarks are read before the applied offsets, so the lag is never
+    // overstated by records produced in between; it may be understated.
+    let lag_json = |applied: &std::collections::BTreeMap<u32, u64>| -> Value {
+        (0u32..)
+            .zip(&high_watermarks)
+            .map(|(partition, hwm)| {
+                let applied = applied.get(&partition).copied().unwrap_or(0);
+                json!({ "partition": partition, "records": hwm.saturating_sub(applied) })
+            })
             .collect()
     };
     if link.target.kind == COUNTER_KIND {
@@ -682,12 +794,17 @@ async fn describe_link(
         let snapshot = table.snapshot().await?;
         body["version"] = json!(snapshot.version);
         body["applied"] = applied_json(&snapshot.applied);
+        body["lag"] = lag_json(&snapshot.applied);
         body["counters"] = json!(snapshot.counters);
         body["skipped"] = json!(snapshot.skipped);
     } else if let Some(factory) = state.registry.get(&link.target.kind) {
         let loaded = factory.open(&state.meta, &link)?.load().await?;
         body["version"] = json!(loaded.version);
         body["applied"] = applied_json(&loaded.applied);
+        body["lag"] = lag_json(&loaded.applied);
+    } else {
+        // Nothing applies a link of an unregistered kind.
+        body["lag"] = lag_json(&std::collections::BTreeMap::new());
     }
     Ok(axum::Json(body).into_response())
 }

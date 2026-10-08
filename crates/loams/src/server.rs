@@ -1665,12 +1665,14 @@ impl Server {
                 config.link.max_commit_delay,
             )))
             .with(collection_factory.clone());
-        worker.add_source(Arc::new(LinkApplySource::new(
+        // The API reports which links this source finds unregistered.
+        let link_apply = LinkApplySource::new(
             meta_store.clone(),
             reader.clone(),
             registry.clone(),
             config.link.clone(),
-        )));
+        );
+        worker.add_source(Arc::new(link_apply.clone()));
         worker.add_source(Arc::new(SegmenterSource::new(
             store.clone(),
             cache.clone(),
@@ -1815,6 +1817,7 @@ impl Server {
             reader,
             store: store.clone(),
             registry,
+            link_apply,
             collections: collections.clone(),
             hot: hot.clone(),
             placement,

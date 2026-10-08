@@ -981,6 +981,12 @@ async fn the_link_endpoint_shows_version_and_applied_for_collections() {
         reader: reader.clone(),
         store: store.clone(),
         registry: registry.clone(),
+        link_apply: LinkApplySource::new(
+            meta.clone(),
+            reader.clone(),
+            registry.clone(),
+            LinkConfig::default(),
+        ),
         collections: loams_query::CollectionService::new(
             ctx.clone(),
             loams_collection::CollectionWriter::new(meta.clone(), writer.clone()),
@@ -1358,4 +1364,156 @@ fn the_dev_binary_prints_the_flight_sql_line() {
     let flight: SocketAddr = flight.unwrap().parse().expect("an address");
     assert!(flight.ip().is_loopback());
     assert_ne!(flight.port(), 0, "the bound port, not the requested one");
+}
+
+/// AP1e Task 19 (D672): the namespace's streams, sorted by name, each with
+/// its partition count and, when it has a limit, its retention.
+#[tokio::test]
+async fn list_streams_sorted() {
+    let dir = TempDir::new().unwrap();
+    let server = Server::start(config(&dir, lazy_segmenter())).await.unwrap();
+    let api = Api::new(&server);
+    api.setup(2).await;
+    for (name, partitions, retention) in [
+        ("zeta", 1, Value::Null),
+        ("alpha", 3, json!({"max_age_ms": 60_000})),
+    ] {
+        let (status, body) = api
+            .post(
+                "/v1/namespaces/acme/streams",
+                json!({"name": name, "partitions": partitions, "retention": retention}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+    // Another namespace's streams are not listed.
+    let (status, _) = api.post("/v1/namespaces", json!({"name": "other"})).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _) = api
+        .post(
+            "/v1/namespaces/other/streams",
+            json!({"name": "beta", "partitions": 1}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = api.get("/v1/namespaces/acme/streams").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({"streams": [
+            {"name": "alpha", "partitions": 3,
+             "retention": {"max_age_ms": 60_000, "max_bytes": null}},
+            {"name": "events", "partitions": 2},
+            {"name": "zeta", "partitions": 1},
+        ]})
+    );
+    server.shutdown().await.unwrap();
+}
+
+/// AP1e Task 19 (D672): the namespace's links, sorted by name, with their
+/// source's name, their target and whether a target is registered for them.
+#[tokio::test]
+async fn list_links_with_status() {
+    let dir = TempDir::new().unwrap();
+    let server = Server::start(config(&dir, lazy_segmenter())).await.unwrap();
+    let api = Api::new(&server);
+    api.setup(2).await;
+    for body in [
+        json!({"name": "orphan", "source": "events", "target": {"kind": "nosuch", "name": "x"}}),
+        json!({"name": "counts", "source": "events"}),
+    ] {
+        let (status, body) = api.post("/v1/namespaces/acme/links", body).await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+    let (status, body) = api.get("/v1/namespaces/acme/links").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({"links": [
+            {"name": "counts", "source": "events",
+             "target": {"kind": "counter", "name": "counts"}, "status": "running"},
+            {"name": "orphan", "source": "events",
+             "target": {"kind": "nosuch", "name": "x"}, "status": "unregistered"},
+        ]})
+    );
+    server.shutdown().await.unwrap();
+}
+
+/// AP1e Task 19 (D672): link describe reports, per source partition, the
+/// records between the high watermark and the applied offset, and the
+/// link's status.
+#[tokio::test]
+async fn link_describe_has_lag() {
+    let dir = TempDir::new().unwrap();
+    let mut cfg = config(&dir, lazy_segmenter());
+    cfg.link.batch_interval = Duration::ZERO;
+    let server = Server::start(cfg).await.unwrap();
+    let api = Api::new(&server);
+    api.setup(2).await;
+    for body in [
+        json!({"name": "counts", "source": "events"}),
+        json!({"name": "orphan", "source": "events", "target": {"kind": "nosuch", "name": "x"}}),
+    ] {
+        let (status, body) = api.post("/v1/namespaces/acme/links", body).await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+    }
+    let (status, body) = api.get("/v1/namespaces/acme/links/orphan").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["lag"],
+        json!([{"partition": 0, "records": 0}, {"partition": 1, "records": 0}])
+    );
+    api.produce(0, &["1", "2", "3"]).await;
+    api.produce(1, &["4"]).await;
+
+    // A link nothing applies lags by everything produced.
+    let (status, body) = api.get("/v1/namespaces/acme/links/orphan").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], json!("unregistered"));
+    assert_eq!(
+        body["lag"],
+        json!([{"partition": 0, "records": 3}, {"partition": 1, "records": 1}])
+    );
+
+    // An applied link's lag falls to zero.
+    let deadline = Instant::now() + WAIT;
+    let body = loop {
+        let (status, body) = api.get("/v1/namespaces/acme/links/counts").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        if body["lag"] == json!([{"partition": 0, "records": 0}, {"partition": 1, "records": 0}]) {
+            break body;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the link never caught up: {body}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert_eq!(body["status"], json!("running"));
+    assert_eq!(
+        body["applied"],
+        json!([{"partition": 0, "offset": 3}, {"partition": 1, "offset": 1}])
+    );
+    server.shutdown().await.unwrap();
+}
+
+/// AP1e Task 19 (D672): listing in a namespace that does not exist is 404
+/// with the usual error body.
+#[tokio::test]
+async fn unknown_namespace_404() {
+    let dir = TempDir::new().unwrap();
+    let server = Server::start(config(&dir, lazy_segmenter())).await.unwrap();
+    let api = Api::new(&server);
+    for path in ["/v1/namespaces/nope/streams", "/v1/namespaces/nope/links"] {
+        let (status, body) = api.get(path).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}: {body}");
+        assert_eq!(body["error"], json!("not_found"), "{path}: {body}");
+        assert_eq!(
+            body["message"],
+            json!("namespace \"nope\" not found"),
+            "{path}: {body}"
+        );
+    }
+    server.shutdown().await.unwrap();
 }

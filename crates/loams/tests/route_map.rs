@@ -26,12 +26,13 @@ type Route = (String, String);
 const METHODS: [&str; 7] = ["get", "post", "put", "delete", "patch", "head", "options"];
 
 /// How many `/v1` method+path pairs the as-built router serves (ruling 0.1 in
-/// `docs/api/route-map.md`): 25 registered in `api::router` plus `hot` and
-/// `warm`, which `hot::routes()` registers separately and `api::router`
-/// merges. `/health`, `/ready` and the `/internal/*` routes are not app
-/// routes, so they are not counted. Changing a router without updating this
+/// `docs/api/route-map.md`): 27 registered in `api::router` (25, plus the
+/// stream and link listings of AP1e Task 19) plus `hot` and `warm`, which
+/// `hot::routes()` registers separately and `api::router` merges. `/health`,
+/// `/ready` and the `/internal/*` routes are not app routes, so they are not
+/// counted. Changing a router without updating this
 /// number and ruling 0.1 fails here.
-const APP_ROUTE_COUNT: usize = 27;
+const APP_ROUTE_COUNT: usize = 29;
 
 /// Whether a path is an app route (under `/v1`, but not the console's
 /// `/api/v1`).
