@@ -100,10 +100,8 @@ describe('boot instance refresh', () => {
     const warm = createMockControl().transport;
     let ready = false;
     const transport = {
-      unary: (...a: Parameters<Transport['unary']>) =>
-        (ready ? warm : cold).unary(...a),
-      stream: (...a: Parameters<Transport['stream']>) =>
-        (ready ? warm : cold).stream(...a),
+      unary: (...a: Parameters<Transport['unary']>) => (ready ? warm : cold).unary(...a),
+      stream: (...a: Parameters<Transport['stream']>) => (ready ? warm : cold).stream(...a),
     } as Transport;
     let stale: () => void = () => {};
     const platform: PluginModule = {
@@ -133,6 +131,73 @@ describe('boot instance refresh', () => {
     expect(log).toContain('consumer active');
     expect(handle.plugins().find((p) => p.id === 'consumer')?.status).toBe('active');
     await handle.dispose();
+  });
+});
+
+describe('boot instance refresh failures', () => {
+  function rig(mode: { v: 'cold' | 'warm' | 'fail' | 'slow' }) {
+    const cold = createMockControl({ apiVersions: ['loams.instance.v1'] }).transport;
+    const warm = createMockControl().transport;
+    const pick = async () => {
+      if (mode.v === 'fail') throw new Error('transient');
+      if (mode.v === 'slow') await new Promise((r) => setTimeout(r, 60));
+      return mode.v === 'cold' ? cold : warm;
+    };
+    const transport = {
+      unary: async (...a: Parameters<Transport['unary']>) => (await pick()).unary(...a),
+      stream: async (...a: Parameters<Transport['stream']>) => (await pick()).stream(...a),
+    } as Transport;
+    const hooks = { stale: () => {} };
+    const platform: PluginModule = {
+      name: 'platform-test',
+      apply(ctx: Context) {
+        ctx.provide('platform', {
+          kind: 'desktop',
+          fetch: globalThis.fetch,
+          baseUrl: 'mock:',
+          openExternal: async () => {},
+          notify: async () => {},
+          clipboardWrite: async () => {},
+          onInstanceStale: (cb: () => void) => {
+            hooks.stale = cb;
+            return () => {};
+          },
+        });
+        ctx.provide('transport', transport);
+      },
+    };
+    return { platform, hooks };
+  }
+
+  it('a_failed_refresh_keeps_the_current_flags', async () => {
+    log.length = 0;
+    const mode = { v: 'warm' as 'cold' | 'warm' | 'fail' | 'slow' };
+    const { platform, hooks } = rig(mode);
+    const handle = await boot({ catalog, manifests, modules, platform });
+    await settle();
+    expect(log).toContain('consumer active');
+    mode.v = 'fail';
+    hooks.stale();
+    await new Promise((r) => setTimeout(r, 100));
+    // The flags were not swapped for the empty ones: the consumer stays up.
+    expect(handle.plugins().find((p) => p.id === 'consumer')?.status).toBe('active');
+    expect(log).not.toContain('consumer disposed');
+    await handle.dispose();
+  });
+
+  it('a_refresh_that_lands_after_dispose_provides_nothing', async () => {
+    log.length = 0;
+    const mode = { v: 'cold' as 'cold' | 'warm' | 'fail' | 'slow' };
+    const { platform, hooks } = rig(mode);
+    const handle = await boot({ catalog, manifests, modules, platform });
+    await settle();
+    expect(log).not.toContain('consumer active');
+    mode.v = 'slow';
+    hooks.stale();
+    await handle.dispose();
+    mode.v = 'slow';
+    await new Promise((r) => setTimeout(r, 150));
+    expect(log).not.toContain('consumer active');
   });
 });
 

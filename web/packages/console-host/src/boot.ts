@@ -107,7 +107,16 @@ export const flagsPlugin: PluginModule = {
   async apply(ctx) {
     const transport = (ctx as unknown as { transport: Transport }).transport;
     const client = createClient(instance.InstanceService, transport);
-    const read = async (): Promise<FlagsService> => {
+    const unknown: FlagsService = {
+      edition: 'unknown',
+      instanceName: '',
+      serverVersion: '',
+      features: {},
+      apiVersions: [],
+      has: () => false,
+    };
+    /** The instance's flags, or undefined when GetInstance failed. */
+    const read = async (): Promise<FlagsService | undefined> => {
       try {
         const info = await client.getInstance({});
         const editions = { 1: 'oss', 2: 'cloud', 3: 'byoc' } as const;
@@ -121,22 +130,22 @@ export const flagsPlugin: PluginModule = {
         };
       } catch (error) {
         console.warn('loams console: GetInstance failed; no API is available', error);
-        return {
-          edition: 'unknown',
-          instanceName: '',
-          serverVersion: '',
-          features: {},
-          apiVersions: [],
-          has: () => false,
-        };
+        return undefined;
       }
     };
-    let release = ctx.provide('flags', await read());
+    let release = ctx.provide('flags', (await read()) ?? unknown);
+    let disposed = false;
+    ctx.effect(() => () => {
+      disposed = true;
+    });
     // A platform may say the instance changed (the desktop engine came up): re-read,
     // and re-provide only when the answer differs, so dependent plugins restart once.
+    // A failed re-read keeps the current flags, and a read that lands after this
+    // plugin was disposed provides nothing.
     const platform = ctx.get('platform', true) as PlatformService | undefined;
     const off = platform?.onInstanceStale?.(() => {
       void read().then((next) => {
+        if (!next || disposed) return;
         const cur = ctx.get('flags', true) as FlagsService | undefined;
         if (cur && JSON.stringify(cur.apiVersions) === JSON.stringify(next.apiVersions)) return;
         // Dropping the service restarts the plugins that inject it; they read the new one.
