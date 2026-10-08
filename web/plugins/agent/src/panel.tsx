@@ -39,16 +39,19 @@ const json = (v: unknown): string => {
   }
 };
 
-/** Model Markdown, sanitised. Links open in the system browser; code blocks copy. */
+/**
+ * Model Markdown, sanitised. A link opens in the system browser only after the user saw its
+ * full URL (the link text can say anything); code blocks copy.
+ */
 export function Markdown({ text, desktop }: { text: string; desktop: LoamsDesktopApi }) {
   const html = useMemo(() => renderMarkdown(text), [text]);
+  const [pending, setPending] = useState<string>();
   const onClick = (e: MouseEvent<HTMLDivElement>) => {
     const el = e.target instanceof Element ? e.target : null;
     const link = el?.closest('a');
     if (link) {
       e.preventDefault();
-      const href = safeHref(link.getAttribute('href'));
-      if (href) void desktop.shell.openExternal(href);
+      setPending(safeHref(link.getAttribute('href')));
       return;
     }
     const copy = el?.closest('button[data-copy]');
@@ -63,15 +66,41 @@ export function Markdown({ text, desktop }: { text: string; desktop: LoamsDeskto
     }
   };
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: delegated clicks on sanitised links and copy buttons
-    // biome-ignore lint/a11y/useKeyWithClickEvents: links and buttons inside handle the keyboard natively
-    <div
-      className="text-sm break-words"
-      onClick={onClick}
-      onAuxClick={(e) => e.target instanceof Element && e.target.closest('a') && e.preventDefault()}
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown sanitises with DOMPurify, no raw HTML or images
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: delegated clicks on sanitised links and copy buttons */}
+      {/* biome-ignore lint/a11y/useKeyWithClickEvents: links and buttons inside handle the keyboard natively */}
+      <div
+        className="text-sm break-words"
+        onClick={onClick}
+        onAuxClick={(e) =>
+          e.target instanceof Element && e.target.closest('a') && e.preventDefault()
+        }
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: renderMarkdown sanitises with DOMPurify, no raw HTML or images
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      {pending && (
+        <div className="mt-2 flex flex-col gap-2 border border-rule p-2">
+          <p className="m-0 text-xs text-muted">Open this address in your browser?</p>
+          <p className="m-0 font-mono text-xs break-all">{pending}</p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                const href = pending;
+                setPending(undefined);
+                void desktop.shell.openExternal(href);
+              }}
+            >
+              Open link
+            </Button>
+            <Button size="sm" onClick={() => setPending(undefined)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

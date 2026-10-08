@@ -265,7 +265,31 @@ describe('agent panel', () => {
     expect(log.textContent).toContain('<script>alert(1)</script>');
     expect(log.innerHTML).not.toContain('evil.test/p.png');
     fireEvent.click(within(log).getByRole('link', { name: 'go' }));
+    expect(d.open).not.toHaveBeenCalled();
+    fireEvent.click(within(log).getByRole('button', { name: 'Open link' }));
     expect(d.open).toHaveBeenCalledWith('https://example.com/');
+  });
+
+  it('link_confirm_shows_the_full_url', async () => {
+    const d = await mount();
+    type('x');
+    fireEvent.keyDown(screen.getByLabelText('Message'), { key: 'Enter' });
+    await waitFor(() => expect(d.sent).toHaveLength(1));
+    d.emit({
+      kind: 'delta',
+      chatId: CID,
+      text: '[your dashboard](https://evil.example/steal?x=1)',
+    });
+    const log = screen.getByRole('log');
+    fireEvent.click(within(log).getByRole('link', { name: 'your dashboard' }));
+    expect(d.open).not.toHaveBeenCalled();
+    expect(within(log).getByText('https://evil.example/steal?x=1')).toBeTruthy();
+    fireEvent.click(within(log).getByRole('button', { name: 'Cancel' }));
+    expect(d.open).not.toHaveBeenCalled();
+    expect(within(log).queryByText('https://evil.example/steal?x=1')).toBeNull();
+    fireEvent.click(within(log).getByRole('link', { name: 'your dashboard' }));
+    fireEvent.click(within(log).getByRole('button', { name: 'Open link' }));
+    expect(d.open).toHaveBeenCalledWith('https://evil.example/steal?x=1');
   });
 
   it('copy_button_copies_code', async () => {
