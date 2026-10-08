@@ -1,8 +1,9 @@
 import { EventEmitter } from "node:events";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { resolveRuntime } from "../src/main/stacks/ipc.electron";
 import { detectRuntime } from "../src/main/stacks/runtime";
 import {
 	bindLiveToTikv,
@@ -59,13 +60,13 @@ const PODMAN_ARRAY = JSON.stringify([
 	},
 ]);
 
-function manager(runtime: ReturnType<typeof detectRuntime>, run: RunFn) {
-	return new StackManager({
-		runtime,
-		stacksDir: "/res/stacks",
-		logsDir: mkdtempSync(join(tmpdir(), "stacks-test-")),
-		run,
-	});
+const LOGS = () => mkdtempSync(join(tmpdir(), "stacks-test-"));
+function manager(
+	runtime: ReturnType<typeof detectRuntime>,
+	run: RunFn,
+	logsDir = LOGS(),
+) {
+	return new StackManager({ runtime, stacksDir: "/res/stacks", logsDir, run });
 }
 
 describe("stacks", () => {
@@ -232,13 +233,144 @@ describe("stacks", () => {
 		expect(pds).toEqual([TIKV_PD_ADDR]);
 		expect(TIKV_PD_ADDR).toBe("127.0.0.1:19379");
 		await m.stop("tikv");
+		// One stopped observation is not enough; the next poll confirms it.
+		expect(pds).toEqual([TIKV_PD_ADDR]);
+		await m.state("tikv");
 		expect(pds).toEqual([TIKV_PD_ADDR, null]);
 		// Other stacks and non-terminal phases never touch the engine.
 		const em = new EventEmitter();
 		bindLiveToTikv(em, engine);
-		em.emit("state", "wesql", { phase: "running", services: [] });
-		em.emit("state", "tikv", { phase: "starting" });
-		em.emit("state", "tikv", { phase: "error", message: "x" });
+		em.emit("observed", "wesql", { phase: "running", services: [] });
+		em.emit("observed", "tikv", { phase: "starting" });
+		em.emit("observed", "tikv", { phase: "error", message: "x" });
 		expect(pds).toHaveLength(2);
+		// stopped, running, stopped never reaches two consecutive stops
+		const pds2: (string | null)[] = [];
+		const em2 = new EventEmitter();
+		bindLiveToTikv(em2, { setLivePd: async (p) => void pds2.push(p) });
+		const run = { phase: "running", services: [] };
+		for (const s of [{ phase: "stopped" }, run, { phase: "stopped" }])
+			em2.emit("observed", "tikv", s);
+		expect(pds2).toEqual([TIKV_PD_ADDR]);
+		// a rejecting setLivePd is caught
+		const errs: unknown[] = [];
+		const em3 = new EventEmitter();
+		bindLiveToTikv(
+			em3,
+			{ setLivePd: () => Promise.reject(new Error("boom")) },
+			(e) => errs.push(e),
+		);
+		em3.emit("observed", "tikv", run);
+		await new Promise((r) => setTimeout(r, 5));
+		expect(errs).toHaveLength(1);
+	});
+
+	it("poll_ps_is_not_logged_on_success", async () => {
+		const dir = LOGS();
+		const m = manager(
+			{ bin: "docker", args: ["compose"] },
+			async (_b, args, o) => {
+				const ps = args.includes("ps");
+				expect(o.quiet).toBe(ps);
+				if (!ps) o.log("up output\n");
+				return { code: 0, stdout: "" };
+			},
+			dir,
+		);
+		await m.state("tikv");
+		await m.state("tikv");
+		const f = join(dir, "stacks", "tikv.log");
+		expect(existsSync(f)).toBe(false);
+		await m.start("tikv");
+		expect(readFileSync(f, "utf8")).toContain("up output");
+	});
+
+	it("ps_nonzero_and_bad_json_are_error_state", async () => {
+		const bad = manager({ bin: "docker", args: ["compose"] }, async () => ({
+			code: 2,
+			stdout: "",
+		}));
+		expect(await bad.state("tikv")).toMatchObject({ phase: "error" });
+		const junk = manager({ bin: "docker", args: ["compose"] }, async () => ({
+			code: 0,
+			stdout: "{not json",
+		}));
+		expect(await junk.state("tikv")).toMatchObject({ phase: "error" });
+	});
+
+	it("concurrent_postgres_and_wesql_start_one_refused", async () => {
+		let release: () => void = () => {};
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		const ups: string[] = [];
+		const m = manager(
+			{ bin: "docker", args: ["compose"] },
+			async (_b, args) => {
+				if (args.includes("up")) {
+					ups.push(args.join(" "));
+					await gate;
+				}
+				return { code: 0, stdout: "" };
+			},
+		);
+		const a = m.start("postgres");
+		const b = m.start("wesql");
+		expect(await b).toMatchObject({ ok: false });
+		release();
+		expect(await a).toMatchObject({ ok: true });
+		expect(ups).toHaveLength(1);
+		// the refusal released nothing it did not hold, and tikv is independent
+		expect(await m.start("wesql")).toMatchObject({ ok: true });
+	});
+
+	it("double_start_same_id_runs_once", async () => {
+		let release: () => void = () => {};
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		let ups = 0;
+		const m = manager(
+			{ bin: "docker", args: ["compose"] },
+			async (_b, args) => {
+				if (args.includes("up")) {
+					ups++;
+					await gate;
+				}
+				return { code: 0, stdout: "" };
+			},
+		);
+		const a = m.start("tikv");
+		const b = m.start("tikv");
+		expect(await b).toMatchObject({ ok: false, code: "busy" });
+		release();
+		await a;
+		expect(ups).toBe(1);
+	});
+
+	it("runtime_probe_is_async_ordered_and_lazy", async () => {
+		const probed: string[] = [];
+		const works = async (rt: { bin: string }) => {
+			probed.push(rt.bin);
+			return rt.bin === "podman";
+		};
+		const rt = await resolveRuntime(have("docker", "podman"), works);
+		expect(rt).toEqual({ bin: "podman", args: ["compose"] });
+		expect(probed).toEqual(["docker", "podman"]);
+		expect(await resolveRuntime(have("docker"), async () => false)).toBeNull();
+		// the manager does not call the resolver until first use
+		let calls = 0;
+		const m = new StackManager({
+			runtime: async () => {
+				calls++;
+				return null;
+			},
+			stacksDir: "/r",
+			logsDir: LOGS(),
+		});
+		expect(calls).toBe(0);
+		await m.state("tikv");
+		await m.state("wesql");
+		expect(calls).toBe(1);
 	});
 });

@@ -1,11 +1,11 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { ipcMain } from "electron";
 import { CH, type StackId, type StackState } from "../../shared/contracts";
 import { assertTrustedSender } from "../security/policy";
 import { getMainWindow } from "../shell/main-window";
-import { detectRuntime } from "./runtime";
+import { type ComposeRuntime, detectRuntime } from "./runtime";
 import {
 	POLL_MS,
 	STACK_IDS,
@@ -27,30 +27,40 @@ export function whichBin(bin: string): string | null {
 	return null;
 }
 
-/** `docker compose` needs the plugin, not just the docker binary. */
-function composeWorks(bin: string, args: string[]): boolean {
-	try {
-		execFileSync(bin, [...args, "version"], {
-			stdio: "ignore",
-			timeout: 15_000,
-		});
-		return true;
-	} catch {
-		return false;
+/** Picks the first usable runtime; the compose plugin is probed asynchronously. */
+export async function resolveRuntime(
+	which: (bin: string) => string | null,
+	works: (rt: ComposeRuntime) => Promise<boolean>,
+): Promise<ComposeRuntime | null> {
+	const skipped = new Set<string>();
+	for (;;) {
+		const rt = detectRuntime((b) => (skipped.has(b) ? null : which(b)));
+		if (!rt) return null;
+		if (await works(rt)) return rt;
+		skipped.add(rt.bin);
 	}
 }
 
+/** `docker compose` needs the plugin, not just the docker binary. */
+function composeWorks(rt: ComposeRuntime): Promise<boolean> {
+	return new Promise((resolve) => {
+		execFile(
+			rt.bin,
+			[...rt.args, "version"],
+			{ timeout: 15_000, windowsHide: true },
+			(err) => resolve(!err),
+		);
+	});
+}
+
+/** The runtime is resolved lazily on first use; creating the manager does no I/O. */
 export function createStackManager(
 	deps: Pick<StackManagerDeps, "stacksDir" | "logsDir">,
 ): StackManager {
-	let runtime = detectRuntime(whichBin);
-	if (runtime && !composeWorks(runtime.bin, runtime.args)) {
-		// Fall through the remaining candidates when the preferred one lacks compose.
-		const skip = runtime.bin;
-		runtime = detectRuntime((b) => (b === skip ? null : whichBin(b)));
-		if (runtime && !composeWorks(runtime.bin, runtime.args)) runtime = null;
-	}
-	return new StackManager({ ...deps, runtime });
+	return new StackManager({
+		...deps,
+		runtime: () => resolveRuntime(whichBin, composeWorks),
+	});
 }
 
 function isStackId(v: unknown): v is StackId {

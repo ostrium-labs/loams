@@ -207,8 +207,16 @@ const singleInstance = initSingleInstance({
 				stacksDir: paths.stacksDir,
 				logsDir: paths.logs,
 			});
-			bindLiveToTikv(stacks, engine);
+			bindLiveToTikv(stacks, engine, (e) =>
+				console.error("[stacks] setLivePd failed:", e),
+			);
 			registerStacksIpc(stacks);
+			// A tikv stack left running from last time starts the engine with Live directly,
+			// but a slow or absent runtime must not hold the engine back for long.
+			await Promise.race([
+				stacks.state("tikv"),
+				new Promise((r) => setTimeout(r, 2000)),
+			]);
 			if (engineAutoStart()) engine.start();
 			installAppProtocol(session.defaultSession, {
 				distRoot: paths.consoleDist,

@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { IpcResult, StackId, StackState } from "../../shared/contracts";
+import { RotatingLog } from "../engine/log-rotate";
 import type { ComposeRuntime } from "./runtime";
 
 export interface StackDef {
@@ -140,23 +140,32 @@ export interface RunResult {
 	code: number;
 	stdout: string;
 }
+export interface RunOpts {
+	timeoutMs: number;
+	log: (chunk: string | Uint8Array) => void;
+	/** Poll calls: log only when the command fails. */
+	quiet?: boolean;
+}
 export type RunFn = (
 	bin: string,
 	args: string[],
-	opts: { timeoutMs: number; logFile: string },
+	opts: RunOpts,
 ) => Promise<RunResult>;
 
-/** Spawns with an argument array (no shell); appends all output to the log file. */
-export const runCommand: RunFn = (bin, args, { timeoutMs, logFile }) =>
+/** Spawns with an argument array (no shell); output goes to `log`. */
+export const runCommand: RunFn = (bin, args, { timeoutMs, log, quiet }) =>
 	new Promise((resolve) => {
-		const log = (s: string | Buffer) => {
-			try {
-				appendFileSync(logFile, s);
-			} catch {
-				/* logging is best effort */
-			}
+		let pending = "";
+		const out = (s: string | Uint8Array) => {
+			if (quiet) pending += s.toString();
+			else log(s);
 		};
-		log(`\n$ ${bin} ${args.join(" ")}\n`);
+		const header = `\n$ ${bin} ${args.join(" ")}\n`;
+		if (!quiet) log(header);
+		const finish = (code: number, stdout: string) => {
+			if (quiet && code !== 0) log(header + pending);
+			resolve({ code, stdout });
+		};
 		let stdout = "";
 		let child: ReturnType<typeof spawn>;
 		try {
@@ -165,32 +174,33 @@ export const runCommand: RunFn = (bin, args, { timeoutMs, logFile }) =>
 				windowsHide: true,
 			});
 		} catch (e) {
-			log(`spawn error: ${(e as Error).message}\n`);
-			resolve({ code: -1, stdout: "" });
+			out(`spawn error: ${(e as Error).message}\n`);
+			finish(-1, "");
 			return;
 		}
 		const timer = setTimeout(() => {
-			log(`timed out after ${timeoutMs} ms\n`);
+			out(`timed out after ${timeoutMs} ms\n`);
 			child.kill("SIGKILL");
 		}, timeoutMs);
 		child.stdout?.on("data", (c: Buffer) => {
 			stdout += c.toString();
-			log(c);
+			out(c);
 		});
-		child.stderr?.on("data", (c: Buffer) => log(c));
+		child.stderr?.on("data", (c: Buffer) => out(c));
 		child.once("error", (e) => {
-			log(`spawn error: ${e.message}\n`);
+			out(`spawn error: ${e.message}\n`);
 			clearTimeout(timer);
-			resolve({ code: -1, stdout });
+			finish(-1, stdout);
 		});
 		child.once("close", (code) => {
 			clearTimeout(timer);
-			resolve({ code: code ?? -1, stdout });
+			finish(code ?? -1, stdout);
 		});
 	});
 
 export interface StackManagerDeps {
-	runtime: ComposeRuntime | null;
+	/** The runtime, or an async resolver called lazily on first use (never at startup). */
+	runtime: ComposeRuntime | null | (() => Promise<ComposeRuntime | null>);
 	stacksDir: string;
 	logsDir: string;
 	run?: RunFn;
@@ -202,40 +212,60 @@ export class StackManager extends EventEmitter {
 	private readonly busy = new Set<StackId>();
 	/** Stacks whose last start/stop failed; the error stays until a ps shows them up or the next command. */
 	private readonly failed = new Set<StackId>();
+	/** One lock per start/stop: shared by postgres and wesql (same host port), per id for tikv. */
+	private readonly locks = new Set<string>();
+	private readonly logs = new Map<StackId, RotatingLog>();
 	private readonly run: RunFn;
+	private rt: Promise<ComposeRuntime | null> | undefined;
 
 	constructor(private readonly deps: StackManagerDeps) {
 		super();
 		this.run = deps.run ?? runCommand;
 	}
 
-	private logFile(id: StackId): string {
-		const dir = join(this.deps.logsDir, "stacks");
-		try {
-			mkdirSync(dir, { recursive: true });
-		} catch {
-			/* surfaced by the command failing to log; not fatal */
+	private runtime(): Promise<ComposeRuntime | null> {
+		this.rt ??= Promise.resolve(
+			typeof this.deps.runtime === "function"
+				? this.deps.runtime()
+				: this.deps.runtime,
+		).catch(() => null);
+		return this.rt;
+	}
+
+	private log(id: StackId): RotatingLog {
+		let l = this.logs.get(id);
+		if (!l) {
+			l = new RotatingLog(join(this.deps.logsDir, "stacks", `${id}.log`));
+			this.logs.set(id, l);
 		}
-		return join(dir, `${id}.log`);
+		return l;
 	}
 
 	private set(id: StackId, s: StackState): void {
+		this.emit("observed", id, s);
 		if (JSON.stringify(this.cur.get(id)) === JSON.stringify(s)) return;
 		this.cur.set(id, s);
 		this.emit("state", id, s);
 	}
 
-	private exec(id: StackId, action: string[]): Promise<RunResult> {
-		const rt = this.deps.runtime as ComposeRuntime;
+	private exec(
+		rt: ComposeRuntime,
+		id: StackId,
+		action: string[],
+		quiet = false,
+	): Promise<RunResult> {
+		const log = this.log(id);
 		return this.run(rt.bin, composeArgs(rt, id, this.deps.stacksDir, action), {
 			timeoutMs: this.deps.timeoutMs ?? COMMAND_TIMEOUT_MS,
-			logFile: this.logFile(id),
+			log: (c) => log.write(c),
+			quiet,
 		});
 	}
 
 	/** Queries the runtime for the current state (on demand and from the poller). */
 	async state(id: StackId): Promise<StackState> {
-		if (!this.deps.runtime) {
+		const rt = await this.runtime();
+		if (!rt) {
 			const s: StackState = {
 				phase: "unavailable",
 				reason: "no_container_runtime",
@@ -244,13 +274,13 @@ export class StackManager extends EventEmitter {
 			return s;
 		}
 		if (this.busy.has(id)) return this.cur.get(id) ?? { phase: "starting" };
-		const r = await this.exec(id, ["ps", "--format", "json"]);
+		const r = await this.exec(rt, id, ["ps", "--format", "json"], true);
 		if (this.busy.has(id)) return this.cur.get(id) ?? { phase: "starting" };
 		let s: StackState;
 		if (r.code !== 0)
 			s = {
 				phase: "error",
-				message: `${this.deps.runtime.bin} compose ps failed (exit ${r.code}); see stacks/${id}.log`,
+				message: `${rt.bin} compose ps failed (exit ${r.code}); see stacks/${id}.log`,
 			};
 		else {
 			try {
@@ -269,55 +299,72 @@ export class StackManager extends EventEmitter {
 	}
 
 	async start(id: StackId): Promise<IpcResult<void>> {
-		if (!this.deps.runtime) return unavailable();
-		if (this.busy.has(id))
+		const rt = await this.runtime();
+		if (!rt) return unavailable();
+		const key = lockKey(id);
+		if (this.locks.has(key))
 			return { ok: false, code: "busy", message: `${id} is already changing` };
-		if (SHARED_PORT_GROUP.includes(id)) {
-			for (const other of SHARED_PORT_GROUP) {
-				if (other === id) continue;
-				const o = await this.state(other);
-				if (o.phase === "running" || o.phase === "starting")
-					return {
-						ok: false,
-						code: "port_conflict",
-						message: `the ${other} stack already uses host port ${STACKS[id].ports.rustfs}; stop it first`,
-					};
-			}
-		}
+		this.locks.add(key);
 		this.busy.add(id);
-		this.failed.delete(id);
-		this.set(id, { phase: "starting" });
 		try {
-			const r = await this.exec(id, ["up", "-d"]);
-			if (r.code !== 0) {
-				const message = `compose up failed (exit ${r.code}); see stacks/${id}.log`;
-				this.failed.add(id);
-				this.set(id, { phase: "error", message });
-				return { ok: false, code: "compose_failed", message };
+			if (SHARED_PORT_GROUP.includes(id)) {
+				for (const other of SHARED_PORT_GROUP) {
+					if (other === id) continue;
+					const o = await this.state(other);
+					if (o.phase === "running" || o.phase === "starting")
+						return {
+							ok: false,
+							code: "port_conflict",
+							message: `the ${other} stack already uses host port ${STACKS[id].ports.rustfs}; stop it first`,
+						};
+				}
 			}
+			return await this.doStart(rt, id);
 		} finally {
 			this.busy.delete(id);
+			this.locks.delete(key);
 		}
+	}
+
+	private async doStart(
+		rt: ComposeRuntime,
+		id: StackId,
+	): Promise<IpcResult<void>> {
+		this.failed.delete(id);
+		this.set(id, { phase: "starting" });
+		const r = await this.exec(rt, id, ["up", "-d"]);
+		if (r.code !== 0) {
+			const message = `compose up failed (exit ${r.code}); see stacks/${id}.log`;
+			this.failed.add(id);
+			this.set(id, { phase: "error", message });
+			return { ok: false, code: "compose_failed", message };
+		}
+		this.busy.delete(id);
 		await this.state(id);
 		return { ok: true, value: undefined };
 	}
 
 	async stop(id: StackId): Promise<IpcResult<void>> {
-		if (!this.deps.runtime) return unavailable();
-		if (this.busy.has(id))
+		const rt = await this.runtime();
+		if (!rt) return unavailable();
+		const key = lockKey(id);
+		if (this.locks.has(key))
 			return { ok: false, code: "busy", message: `${id} is already changing` };
+		this.locks.add(key);
 		this.busy.add(id);
 		this.failed.delete(id);
 		try {
-			const r = await this.exec(id, ["down"]);
+			const r = await this.exec(rt, id, ["down"]);
 			if (r.code !== 0) {
 				const message = `compose down failed (exit ${r.code}); see stacks/${id}.log`;
 				this.failed.add(id);
 				this.set(id, { phase: "error", message });
 				return { ok: false, code: "compose_failed", message };
 			}
+			this.busy.delete(id);
 		} finally {
 			this.busy.delete(id);
+			this.locks.delete(key);
 		}
 		await this.state(id);
 		return { ok: true, value: undefined };
@@ -329,6 +376,10 @@ export class StackManager extends EventEmitter {
 	}
 }
 
+function lockKey(id: StackId): string {
+	return SHARED_PORT_GROUP.includes(id) ? "rustfs-9000" : id;
+}
+
 function unavailable(): IpcResult<void> {
 	return {
 		ok: false,
@@ -337,14 +388,26 @@ function unavailable(): IpcResult<void> {
 	};
 }
 
-/** The engine runs with Live while the tikv stack is up, and without it once it is down. */
+/** Consecutive polls that must see tikv stopped before the engine drops Live. */
+export const STOPPED_POLLS = 2;
+
+/**
+ * The engine runs with Live while the tikv stack is up, and without it once it has been seen
+ * stopped on two consecutive observations (a single missed `ps` must not restart the engine).
+ */
 export function bindLiveToTikv(
 	manager: EventEmitter,
 	engine: { setLivePd(pd: string | null): Promise<void> },
+	onError: (e: unknown) => void = () => {},
 ): void {
-	manager.on("state", (id: StackId, s: StackState) => {
+	let stopped = 0;
+	manager.on("observed", (id: StackId, s: StackState) => {
 		if (id !== "tikv") return;
-		if (s.phase === "running") void engine.setLivePd(TIKV_PD_ADDR);
-		else if (s.phase === "stopped") void engine.setLivePd(null);
+		if (s.phase === "stopped") {
+			if (++stopped >= STOPPED_POLLS) engine.setLivePd(null).catch(onError);
+			return;
+		}
+		stopped = 0;
+		if (s.phase === "running") engine.setLivePd(TIKV_PD_ADDR).catch(onError);
 	});
 }
