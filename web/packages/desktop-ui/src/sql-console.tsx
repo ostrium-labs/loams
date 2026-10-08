@@ -1,6 +1,6 @@
 import type { IpcResult, SqlResult } from '@loams/desktop/contracts';
-import { isWrite, type SqlDialect } from '@loams/desktop/sql-lex';
-import { Button, Dialog, Notice, Table, Textarea } from '@loams/ui';
+import type { SqlDialect } from '@loams/desktop/sql-lex';
+import { Button, Notice, Table, Textarea } from '@loams/ui';
 import { type KeyboardEvent, useId, useRef, useState } from 'react';
 
 export const MAX_ROWS = 1000;
@@ -19,13 +19,16 @@ function cell(v: unknown) {
   return text.length > MAX_CELL_CHARS ? `${text.slice(0, MAX_CELL_CHARS)}…` : text;
 }
 
-/** An SQL editor with a result grid. Writes ask first. Run with Ctrl/Cmd+Enter. */
+/**
+ * An SQL editor with a result grid. Run with Ctrl/Cmd+Enter. A statement that is not a
+ * plain read is confirmed by the main process (a native dialog), not here: one prompt.
+ */
 export function SqlConsole({
-  dialect,
   run,
   initial = '',
   placeholder = 'SELECT 1',
 }: {
+  /** The SQL dialect; main uses the same scanner to decide what needs a confirm. */
   dialect: SqlDialect;
   run: (sql: string) => Promise<IpcResult<SqlResult>>;
   initial?: string;
@@ -33,7 +36,6 @@ export function SqlConsole({
 }) {
   const [sql, setSql] = useState(initial);
   const [out, setOut] = useState<Outcome>({ state: 'idle' });
-  const [confirm, setConfirm] = useState<string>();
   const seq = useRef(0);
   const labelId = useId();
 
@@ -43,6 +45,11 @@ export function SqlConsole({
     try {
       const r = await run(text);
       if (mine !== seq.current) return;
+      // The user said no in main's confirm: nothing ran, nothing to report.
+      if (!r.ok && r.code === 'cancelled') {
+        setOut({ state: 'idle' });
+        return;
+      }
       setOut(
         r.ok
           ? { state: 'done', result: r.value }
@@ -62,8 +69,7 @@ export function SqlConsole({
   function submit() {
     const text = sql.trim();
     if (!text || out.state === 'running') return;
-    if (isWrite(text, dialect)) setConfirm(text);
-    else void exec(text);
+    void exec(text);
   }
 
   function onKeyDown(e: KeyboardEvent) {
@@ -148,34 +154,6 @@ export function SqlConsole({
           )}
         </div>
       )}
-
-      <Dialog
-        open={confirm !== undefined}
-        onClose={() => setConfirm(undefined)}
-        title="Run a statement that changes data?"
-        footer={
-          <>
-            <Button onClick={() => setConfirm(undefined)}>Cancel</Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                const text = confirm;
-                setConfirm(undefined);
-                if (text) void exec(text);
-              }}
-            >
-              Run anyway
-            </Button>
-          </>
-        }
-      >
-        <p className="m-0 text-sm text-muted">
-          This does not look like a plain SELECT, SHOW or EXPLAIN. It runs against your local stack
-          and may change data or schema. This check is a convenience, not a guarantee: a SELECT can
-          still call a function with side effects.
-        </p>
-        <pre className="mt-3 max-h-48 overflow-auto font-mono text-xs">{confirm}</pre>
-      </Dialog>
     </div>
   );
 }

@@ -122,18 +122,31 @@ const result = (over: Partial<SqlResult> = {}): IpcResult<SqlResult> => ({
 });
 
 describe('sql console', () => {
-  it('write_requires_confirm', async () => {
+  it('writes_are_confirmed_by_main_not_by_a_second_dialog', async () => {
     const run = vi.fn(async () => result());
     render(<SqlConsole dialect="postgres" run={run} />);
-    const editor = screen.getByLabelText('SQL editor');
-    fireEvent.change(editor, { target: { value: 'DELETE FROM t' } });
+    fireEvent.change(screen.getByLabelText('SQL editor'), { target: { value: 'DELETE FROM t' } });
     fireEvent.click(screen.getByRole('button', { name: 'Run' }));
-    expect(run).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
-    expect(run).not.toHaveBeenCalled();
-    fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true });
-    fireEvent.click(await screen.findByRole('button', { name: 'Run anyway' }));
     await waitFor(() => expect(run).toHaveBeenCalledWith('DELETE FROM t'));
+    expect(screen.queryByRole('button', { name: 'Run anyway' })).toBeNull();
+  });
+
+  it('a_cancelled_confirm_shows_no_error', async () => {
+    const run = vi.fn(async () => ({
+      ok: false as const,
+      code: 'cancelled',
+      message: 'cancelled',
+    }));
+    render(<SqlConsole dialect="postgres" run={run} />);
+    fireEvent.change(screen.getByLabelText('SQL editor'), { target: { value: 'DELETE FROM t' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(run).toHaveBeenCalled());
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: 'Run' }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    expect(screen.queryByText(/Query failed/)).toBeNull();
   });
 
   it('runs a plain select without a prompt, on Ctrl and Cmd+Enter', async () => {
