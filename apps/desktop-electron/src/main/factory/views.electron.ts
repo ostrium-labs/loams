@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { BrowserWindow, app as electronApp, screen, shell } from "electron";
+import { BrowserWindow, app as electronApp, screen } from "electron";
 import type { FactoryAppId, IpcResult } from "../../shared/contracts";
 import {
 	loadWindowState,
@@ -9,12 +9,8 @@ import {
 	type WindowState,
 } from "../shell/window-state";
 import { FACTORY_APPS } from "./apps";
-import {
-	downloadDecision,
-	frameNavigation,
-	viewPermission,
-	webOrigin,
-} from "./view-policy";
+import { FactoryHardening } from "./hardening.electron";
+import { webOrigin } from "./view-policy";
 
 interface UrlSource {
 	appUrls(app: FactoryAppId): { url: string; ssoOrigin?: string } | undefined;
@@ -28,13 +24,11 @@ interface UrlSource {
  */
 export class FactoryViews {
 	readonly #wins = new Map<FactoryAppId, BrowserWindow>();
-	readonly #downloadHooked = new Set<FactoryAppId>();
-	readonly #downloadCfg = new Map<
-		FactoryAppId,
-		{ appOrigin: string; ssoOrigin?: string }
-	>();
 
-	constructor(private readonly source: UrlSource) {}
+	constructor(
+		private readonly source: UrlSource,
+		private readonly hardening: FactoryHardening,
+	) {}
 
 	open(app: FactoryAppId): IpcResult<void> {
 		const existing = this.#wins.get(app);
@@ -44,8 +38,7 @@ export class FactoryViews {
 			return { ok: true, value: undefined };
 		}
 		const cfg = this.source.appUrls(app);
-		const appOrigin = cfg ? webOrigin(cfg.url) : undefined;
-		if (!cfg || !appOrigin)
+		if (!cfg || !webOrigin(cfg.url))
 			return {
 				ok: false,
 				code: "unconfigured",
@@ -70,72 +63,11 @@ export class FactoryViews {
 			minHeight: MIN_HEIGHT,
 			show: false,
 			title: `${label} — Loams Desktop`,
-			webPreferences: {
-				partition: `persist:factory-${app}`,
-				preload: undefined,
-				sandbox: true,
-				contextIsolation: true,
-				nodeIntegration: false,
-				webSecurity: true,
-				webviewTag: false,
-			},
+			webPreferences: FactoryHardening.webPreferences(app),
 		});
 		this.#wins.set(app, win);
 		const wc = win.webContents;
-		const guard = (
-			event: { preventDefault(): void },
-			url: string,
-			isMainFrame: boolean,
-		): void => {
-			const d = frameNavigation(appOrigin, url, isMainFrame, cfg.ssoOrigin);
-			if (d === "allow") return;
-			event.preventDefault();
-			if (d === "external") void shell.openExternal(url);
-		};
-		// will-frame-navigate covers the main frame and every subframe (will-navigate
-		// would double-fire for the main frame).
-		wc.on("will-frame-navigate", (e) => guard(e, e.url, e.isMainFrame));
-		wc.on("will-redirect", (e) => guard(e, e.url, e.isMainFrame));
-		wc.setWindowOpenHandler(({ url }) => {
-			const d = frameNavigation(appOrigin, url, true, cfg.ssoOrigin);
-			if (d === "external") void shell.openExternal(url);
-			// Allowed same-origin popups open in this window rather than a new one.
-			else if (d === "allow") void wc.loadURL(url);
-			return { action: "deny" };
-		});
-		wc.on("will-attach-webview", (event) => event.preventDefault());
-		// A page's own <title> must not replace the app label.
-		wc.on("page-title-updated", (event) => event.preventDefault());
-		const ses = wc.session;
-		// One will-download listener per partition session, even across reopen.
-		this.#downloadCfg.set(app, { appOrigin, ssoOrigin: cfg.ssoOrigin });
-		if (!this.#downloadHooked.has(app)) {
-			this.#downloadHooked.add(app);
-			ses.on("will-download", (event, item) => {
-				const c = this.#downloadCfg.get(app);
-				if (
-					!c ||
-					downloadDecision(c.appOrigin, item.getURL(), c.ssoOrigin) !== "allow"
-				)
-					event.preventDefault();
-				// Allowed: Electron's default save dialog (no setSavePath).
-			});
-		}
-		ses.setPermissionCheckHandler(
-			(_wc, permission, requestingOrigin, details) =>
-				details.isMainFrame !== false &&
-				viewPermission(
-					permission,
-					details.requestingUrl ?? requestingOrigin,
-					appOrigin,
-				),
-		);
-		ses.setPermissionRequestHandler((_wc, permission, callback, details) =>
-			callback(
-				details.isMainFrame !== false &&
-					viewPermission(permission, details.requestingUrl, appOrigin),
-			),
-		);
+		this.hardening.apply(app, wc, cfg);
 
 		if (state.isMaximized) win.maximize();
 		let last: WindowState = state;

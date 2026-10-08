@@ -43,6 +43,13 @@ export interface FactoryAppInfo {
 	fields?: Record<string, string>;
 	persistent: boolean; // false when safeStorage has no backend (session-only)
 }
+export interface EmbedRect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
 export interface FactoryQuery {
 	app: FactoryAppId;
 	op: string;
@@ -94,6 +101,12 @@ export interface LoamsDesktopApi {
 		query<T = unknown>(q: FactoryQuery): Promise<IpcResult<T>>;
 		openApp(app: FactoryAppId): Promise<IpcResult<void>>;
 		closeApp(app: FactoryAppId): Promise<void>;
+		/** D678: place the app's embedded view over `rect` (CSS px in the console window). */
+		showEmbedded(app: FactoryAppId, rect: EmbedRect): Promise<IpcResult<void>>;
+		hideEmbedded(): Promise<void>;
+		reloadEmbedded(app: FactoryAppId): Promise<void>;
+		/** Destroy the embedded view and open the app in its own window. */
+		popOut(app: FactoryAppId): Promise<IpcResult<void>>;
 	};
 	shell: {
 		openExternal(url: string): Promise<IpcResult<void>>;
@@ -140,6 +153,10 @@ export const CH = {
 	factoryQuery: "factory:query",
 	factoryOpen: "factory:open",
 	factoryClose: "factory:close",
+	factoryShowEmbedded: "factory:show-embedded",
+	factoryHideEmbedded: "factory:hide-embedded",
+	factoryReloadEmbedded: "factory:reload-embedded",
+	factoryPopOut: "factory:pop-out",
 	shellOpenExternal: "shell:open-external",
 	shellNotify: "shell:notify",
 	shellClipboard: "shell:clipboard",

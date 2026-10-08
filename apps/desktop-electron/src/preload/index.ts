@@ -37,6 +37,10 @@ const api: LoamsDesktopApi = {
 		query: (q) => invoke(CH.factoryQuery, q),
 		openApp: (app) => invoke(CH.factoryOpen, app),
 		closeApp: (app) => invoke(CH.factoryClose, app),
+		showEmbedded: (app, rect) => invoke(CH.factoryShowEmbedded, app, rect),
+		hideEmbedded: () => invoke(CH.factoryHideEmbedded),
+		reloadEmbedded: (app) => invoke(CH.factoryReloadEmbedded, app),
+		popOut: (app) => invoke(CH.factoryPopOut, app),
 	},
 	shell: {
 		openExternal: (url) => invoke(CH.shellOpenExternal, url),

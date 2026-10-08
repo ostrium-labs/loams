@@ -60,7 +60,7 @@ export function Switcher({
         <ChevronDown aria-hidden="true" size={14} />
       </button>
       {open && (
-        <div className="lc-server-menu" role="menu">
+        <div className="lc-server-menu" role="menu" data-overlay-open="">
           {servers.map((s) => (
             <button
               key={s.id}

@@ -8,11 +8,13 @@ import type { FactoryAppId } from '@loams/desktop/contracts';
 // Brings in the `desktop` service type (a module augmentation of `Services`).
 import type {} from '@loams/platform-electron';
 import { ConfigurePage } from './configure.js';
+import { EmbeddedApp } from './embedded.js';
 import { FactoryHome } from './home.js';
 import { PanelsPage } from './panels-page.js';
 import { SummaryCard } from './summary-card.js';
 
 export { ConfigurePage } from './configure.js';
+export { EmbeddedApp } from './embedded.js';
 export { FactoryHome } from './home.js';
 export { PanelsPage } from './panels-page.js';
 export { SummaryCard } from './summary-card.js';
@@ -26,6 +28,19 @@ const plugin: PluginModule = {
     const slots = service(ctx, 'slots');
     const navigate = (to: string) => router.navigate(to);
     // The router takes the first match: the longer path goes first.
+    ctx.effect(() =>
+      router.page(
+        {
+          id: 'factory-embedded',
+          path: '/factory/:app/app',
+          title: 'Software Factory',
+          plugin: 'factory',
+        },
+        ({ params }) => (
+          <EmbeddedApp desktop={desktop} app={params.app as FactoryAppId} navigate={navigate} />
+        ),
+      ),
+    );
     ctx.effect(() =>
       router.page(
         {

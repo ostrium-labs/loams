@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigurePage } from '../src/configure.js';
+import { EmbeddedApp } from '../src/embedded.js';
 import { FactoryHome } from '../src/home.js';
 import { PanelsPage } from '../src/panels-page.js';
 import { SummaryCard } from '../src/summary-card.js';
@@ -61,12 +62,58 @@ describe('factory home', () => {
     const { api, calls } = fakeDesktop({ apps });
     render(<FactoryHome desktop={api} navigate={n.navigate} />);
     const tile = (await screen.findAllByRole('article'))[0] as HTMLElement;
-    fireEvent.click(within(tile).getByRole('button', { name: 'Open app' }));
+    fireEvent.click(within(tile).getByRole('button', { name: 'Open in new window' }));
     expect(await within(tile).findByText('Opening apps is not available yet.')).toBeTruthy();
     expect(calls).toContain('open:forgejo');
     fireEvent.click(within(tile).getByRole('button', { name: 'Configure' }));
     fireEvent.click(within(tile).getByRole('button', { name: 'Panels' }));
-    expect(n.to).toEqual(['/factory/forgejo/configure', '/factory/forgejo']);
+    fireEvent.click(within(tile).getByRole('button', { name: 'Open app' }));
+    expect(n.to).toEqual([
+      '/factory/forgejo/configure',
+      '/factory/forgejo',
+      '/factory/forgejo/app',
+    ]);
+  });
+});
+
+describe('embedded', () => {
+  it('embedded_route_reports_rect_and_hides_on_unmount', async () => {
+    const apps = IDS.map((id) => info(id, id === 'forgejo' ? 'ok' : 'unconfigured'));
+    const { api, calls, shown } = fakeDesktop({ apps });
+    let box = { x: 248, y: 120, width: 700, height: 500 };
+    const spy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(() => ({ ...box, top: 0, left: 0, right: 0, bottom: 0 }) as DOMRect);
+    const n = nav();
+    const { unmount } = render(<EmbeddedApp desktop={api} app="forgejo" navigate={n.navigate} />);
+    await waitFor(() => expect(shown).toHaveLength(1));
+    expect(shown[0]).toEqual({ app: 'forgejo', rect: box });
+    // A window resize reports the new rect once.
+    box = { ...box, width: 600 };
+    fireEvent(window, new Event('resize'));
+    await waitFor(() => expect(shown).toHaveLength(2));
+    expect(shown[1]?.rect).toEqual(box);
+    // An open modal hides the view; closing it shows it again.
+    const dlg = document.createElement('div');
+    dlg.setAttribute('data-overlay-open', '');
+    document.body.append(dlg);
+    await waitFor(() => expect(calls).toContain('hide'));
+    dlg.remove();
+    await waitFor(() => expect(shown).toHaveLength(3));
+    calls.length = 0;
+    fireEvent.click(screen.getByRole('button', { name: /Pop out/ }));
+    await waitFor(() => expect(n.to).toEqual(['/factory']));
+    expect(calls).toContain('popout:forgejo');
+    unmount();
+    expect(calls).toContain('hide');
+    spy.mockRestore();
+  });
+
+  it('unconfigured_app_does_not_show_a_view', async () => {
+    const { api, shown } = fakeDesktop();
+    render(<EmbeddedApp desktop={api} app="zulip" navigate={nav().navigate} />);
+    expect(await screen.findByText('Zulip is not configured')).toBeTruthy();
+    expect(shown).toHaveLength(0);
   });
 });
 

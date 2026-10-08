@@ -79,8 +79,16 @@ export function PanelsPage({
             <Button size="sm" onClick={() => navigate(`/factory/${app}/configure`)}>
               Configure
             </Button>
-            <Button size="sm" variant="primary" disabled={!configured} onClick={() => void open()}>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!configured}
+              onClick={() => navigate(`/factory/${app}/app`)}
+            >
               Open app
+            </Button>
+            <Button size="sm" variant="quiet" disabled={!configured} onClick={() => void open()}>
+              Open in new window
             </Button>
           </>
         }

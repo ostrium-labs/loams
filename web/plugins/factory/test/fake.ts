@@ -83,6 +83,7 @@ export function fakeDesktop(
   } = {},
 ) {
   const calls: string[] = [];
+  const shown: { app: string; rect: unknown }[] = [];
   const queries: FactoryQuery[] = [];
   const configured: { app: string; url: string; fields: Record<string, string> }[] = [];
   const apps = init.apps ?? IDS.map((id) => info(id));
@@ -111,7 +112,19 @@ export function fakeDesktop(
         return { ok: false, code: 'not_ready', message: 'Opening apps is not available yet.' };
       },
       closeApp: async () => undefined,
+      showEmbedded: async (app: FactoryAppId, rect: unknown) => {
+        shown.push({ app, rect });
+        calls.push(`show:${app}`);
+        return { ok: true, value: undefined };
+      },
+      hideEmbedded: async () => void calls.push('hide'),
+      reloadEmbedded: async (app: FactoryAppId) => void calls.push(`reload:${app}`),
+      popOut: async (app: FactoryAppId) => {
+        calls.push(`popout:${app}`);
+        return { ok: true, value: undefined };
+      },
     },
+    shell: { openExternal: async (url: string) => void calls.push(`external:${url}`) },
   } as unknown as LoamsDesktopApi;
-  return { api, calls, queries, configured };
+  return { api, calls, queries, configured, shown };
 }

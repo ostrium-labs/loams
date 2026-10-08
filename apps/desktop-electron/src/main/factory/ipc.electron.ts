@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import {
 	CH,
 	type FactoryAppId,
@@ -7,6 +7,7 @@ import {
 } from "../../shared/contracts";
 import { assertTrustedSender } from "../security/policy";
 import { FACTORY_APPS } from "./apps";
+import type { FactoryEmbed } from "./embed.electron";
 import type { FactoryHost } from "./host";
 import type { FactoryViews } from "./views.electron";
 
@@ -21,6 +22,7 @@ const bad = (): IpcResult<never> => ({
 export function registerFactoryIpc(
 	host: FactoryHost,
 	views: FactoryViews,
+	embed: FactoryEmbed,
 ): void {
 	ipcMain.handle(CH.factoryList, async (e) => {
 		assertTrustedSender(e);
@@ -43,7 +45,10 @@ export function registerFactoryIpc(
 				fields as Record<string, string>,
 			);
 			// The window holds the old URL/SSO origin: close it so the next open is fresh.
-			if (r.ok) views.close(app);
+			if (r.ok) {
+				views.close(app);
+				embed.destroy(app);
+			}
 			return r;
 		},
 	);
@@ -56,6 +61,7 @@ export function registerFactoryIpc(
 		assertTrustedSender(e);
 		if (isApp(app)) {
 			views.close(app);
+			embed.destroy(app);
 			await host.remove(app);
 		}
 	});
@@ -72,5 +78,27 @@ export function registerFactoryIpc(
 		assertTrustedSender(e);
 		if (typeof q !== "object" || q === null) return bad();
 		return host.query(q as FactoryQuery);
+	});
+	ipcMain.handle(
+		CH.factoryShowEmbedded,
+		async (e, app: unknown, rect: unknown) => {
+			assertTrustedSender(e);
+			const win = BrowserWindow.fromWebContents(e.sender);
+			if (!isApp(app) || !win) return bad();
+			return embed.show(win, app, rect);
+		},
+	);
+	ipcMain.handle(CH.factoryHideEmbedded, async (e) => {
+		assertTrustedSender(e);
+		embed.hide();
+	});
+	ipcMain.handle(CH.factoryReloadEmbedded, async (e, app: unknown) => {
+		assertTrustedSender(e);
+		if (isApp(app)) embed.reload(app);
+	});
+	ipcMain.handle(CH.factoryPopOut, async (e, app: unknown) => {
+		assertTrustedSender(e);
+		if (!isApp(app)) return bad();
+		return embed.popOut(app);
 	});
 }

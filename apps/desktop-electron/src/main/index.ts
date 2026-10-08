@@ -16,6 +16,8 @@ import { appPaths } from "./app-paths";
 import { findEngineBinary, probeLiveSupport } from "./engine/binary";
 import { registerEngineIpc } from "./engine/ipc.electron";
 import { EngineSupervisor } from "./engine/supervisor";
+import { FactoryEmbed } from "./factory/embed.electron";
+import { FactoryHardening } from "./factory/hardening.electron";
 import { FactoryHost } from "./factory/host";
 import { registerFactoryIpc } from "./factory/ipc.electron";
 import { Vault } from "./factory/vault";
@@ -53,6 +55,7 @@ let registry: ServerRegistry;
 let engine: EngineSupervisor | undefined;
 let factory: FactoryHost | undefined;
 let factoryViews: FactoryViews | undefined;
+let factoryEmbed: FactoryEmbed | undefined;
 let tray: TrayHandle | undefined;
 let isQuitting = false;
 const settingsFile = (): string =>
@@ -166,8 +169,11 @@ const singleInstance = initSingleInstance({
 					decrypt: (b) => safeStorage.decryptString(b),
 				}),
 			);
-			factoryViews = new FactoryViews(factory);
-			registerFactoryIpc(factory, factoryViews);
+			const hardening = new FactoryHardening();
+			const views = new FactoryViews(factory, hardening);
+			factoryViews = views;
+			factoryEmbed = new FactoryEmbed(factory, hardening, (a) => views.open(a));
+			registerFactoryIpc(factory, views, factoryEmbed);
 			const paths = await appPaths();
 			const logFile = join(paths.logs, "engine.log");
 			engine = new EngineSupervisor({
@@ -245,6 +251,7 @@ const singleInstance = initSingleInstance({
 		app.on("before-quit", (e) => {
 			isQuitting = true;
 			tray?.destroy();
+			factoryEmbed?.closeAll();
 			factoryViews?.closeAll();
 			if (quitting || !engine) return;
 			e.preventDefault();

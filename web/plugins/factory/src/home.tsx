@@ -40,8 +40,15 @@ function Tile({
             >
               Configure
             </Button>
-            <Button size="sm" disabled={!configured} onClick={() => void open()}>
+            <Button
+              size="sm"
+              disabled={!configured}
+              onClick={() => navigate(`/factory/${app.id}/app`)}
+            >
               Open app
+            </Button>
+            <Button size="sm" variant="quiet" disabled={!configured} onClick={() => void open()}>
+              Open in new window
             </Button>
             {app.hasPanels && (
               <Button

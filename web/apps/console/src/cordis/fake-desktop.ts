@@ -349,6 +349,22 @@ export function createFakeDesktop(): LoamsDesktopApi {
         message: 'Apps open in the desktop app, not in the preview.',
       }),
       closeApp: async () => undefined,
+      // The preview has no native view: fill the page's placeholder instead.
+      showEmbedded: async () => {
+        const el = document.querySelector('[data-embedded-placeholder]');
+        if (el) el.textContent = 'Embedded view appears in the desktop app';
+        return ok;
+      },
+      hideEmbedded: async () => {
+        const el = document.querySelector('[data-embedded-placeholder]');
+        if (el) el.textContent = '';
+      },
+      reloadEmbedded: async () => undefined,
+      popOut: async () => ({
+        ok: false,
+        code: 'preview',
+        message: 'Apps open in the desktop app, not in the preview.',
+      }),
     },
     shell: {
       openExternal: async (url) => {

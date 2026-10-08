@@ -245,7 +245,7 @@ function UserMenu({ session }: { session: SessionService }) {
         {initials}
       </button>
       {open && (
-        <div className="lc-user-pop">
+        <div className="lc-user-pop" data-overlay-open="">
           <strong>{name}</strong>
           <span className="lc-muted">Signed in</span>
         </div>
