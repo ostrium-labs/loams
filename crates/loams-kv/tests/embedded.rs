@@ -132,6 +132,33 @@ async fn snapshots_far_ahead_are_refused_and_leave_the_oracle_alone() {
     assert!(store.now().await.expect("now") > near);
 }
 
+/// A commit group whose write transaction fails does not count its oracle
+/// mark as persisted: after an injected sync failure the oracle's durable
+/// mark is where the last successful write left it (review fix 2).
+#[tokio::test]
+async fn a_failed_group_write_persists_no_mark() {
+    let dir = tmp();
+    let store = open(&dir.path().join("store.redb"), "io").await;
+    let h = handle(&store);
+    let mut txn = h.begin(Mode::Optimistic).await.expect("begin");
+    txn.put(b"k", b"v".to_vec()).await.expect("put");
+    let (_, durable) = h.oracle_marks();
+    // Past the mark, the commit's timestamp needs a new one, written in the
+    // group's own write transaction.
+    while wall_ms() <= durable.physical_ms() + 5 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    h.fail_syncs(1);
+    let err = txn.commit().await.expect_err("the sync failed");
+    assert_eq!(err, TxnError::Undetermined { token: None });
+    let (last, after) = h.oracle_marks();
+    assert!(
+        last >= durable,
+        "a commit timestamp at or past the mark was allocated"
+    );
+    assert_eq!(after, durable, "the failed write's mark is not persisted");
+}
+
 /// A barrier at `t` keeps a snapshot at `t` readable after GC; once it is
 /// gone, GC drops what only `t` saw and both a snapshot and a barrier at `t`
 /// are refused.

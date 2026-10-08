@@ -165,14 +165,17 @@ impl Core {
             write.abort()?;
             return Ok(outcomes);
         };
+        let mut written = None;
         if last >= self.oracle.durable() {
             let mut oracle = write.open_table(ORACLE)?;
             let stored = oracle.get(HIGH_WATER)?.map_or(0, |g| g.value());
             let next = stored.max(Oracle::mark_for(last).0);
             oracle.insert(HIGH_WATER, next)?;
-            *mark = Some(Ts(next));
+            written = Some(Ts(next));
         }
         write.commit()?;
+        // Only a committed mark is persisted (review fix 2).
+        *mark = written;
         self.counters.write_transactions.inc();
         self.counters
             .commits

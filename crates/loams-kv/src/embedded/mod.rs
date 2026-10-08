@@ -21,6 +21,8 @@
 //! the safe point sees.
 
 mod commit;
+#[cfg(feature = "faults")]
+mod faulty;
 mod gc;
 mod mvcc;
 mod oracle;
@@ -135,6 +137,8 @@ pub(crate) struct Core {
     gc: Mutex<GcState>,
     counters: Counters,
     owners: AtomicU64,
+    #[cfg(feature = "faults")]
+    io_faults: Arc<faulty::Switch>,
 }
 
 impl std::fmt::Debug for Core {
@@ -261,10 +265,29 @@ pub fn is_open(path: &Path) -> bool {
     canonical(path).is_ok_and(|key| registry().get(&key).is_some_and(|w| w.strong_count() > 0))
 }
 
-fn create(path: &Path) -> Result<Database, KvError> {
+/// Opens the redb file; with the `faults` feature through a backend whose
+/// syncs a test can fail.
+fn create_db(
+    path: &Path,
+    #[cfg(feature = "faults")] io_faults: &Arc<faulty::Switch>,
+) -> Result<Database, DatabaseError> {
+    #[cfg(feature = "faults")]
+    return faulty::create(path, io_faults.clone());
+    #[cfg(not(feature = "faults"))]
+    Database::create(path)
+}
+
+fn create(
+    path: &Path,
+    #[cfg(feature = "faults")] io_faults: &Arc<faulty::Switch>,
+) -> Result<Database, KvError> {
     let give_up = Instant::now() + REOPEN_WAIT;
     loop {
-        match Database::create(path) {
+        match create_db(
+            path,
+            #[cfg(feature = "faults")]
+            io_faults,
+        ) {
             Ok(db) => return Ok(db),
             // This process's last handle may still be closing the file.
             Err(DatabaseError::DatabaseAlreadyOpen) if Instant::now() < give_up => {
@@ -305,7 +328,13 @@ impl Shared {
             }
             return Ok(shared);
         }
-        let db = create(&key)?;
+        #[cfg(feature = "faults")]
+        let io_faults = Arc::new(faulty::Switch::default());
+        let db = create(
+            &key,
+            #[cfg(feature = "faults")]
+            &io_faults,
+        )?;
         let (high_water, safe_point) = (|| -> Result<(u64, u64), redb::Error> {
             let write = db.begin_write()?;
             let marks = {
@@ -327,6 +356,8 @@ impl Shared {
             gc: Mutex::new(GcState::new(Ts(safe_point))),
             counters: Counters::default(),
             owners: AtomicU64::new(1),
+            #[cfg(feature = "faults")]
+            io_faults,
         });
         core.counters.write_transactions.inc();
         let (sender, requests) = mpsc::channel();
@@ -711,5 +742,21 @@ impl Handle {
         tokio::task::spawn_blocking(move || shared.gc_blocking(now_ms))
             .await
             .map_err(storage)?
+    }
+}
+
+/// Test hooks (feature `faults`).
+#[cfg(feature = "faults")]
+impl Handle {
+    /// Fails the store file's next `n` syncs with an I/O error, so the
+    /// write transactions that need them fail.
+    pub fn fail_syncs(&self, n: u32) {
+        self.shared.core.io_faults.fail_syncs(n);
+    }
+
+    /// The oracle's last timestamp issued and its persisted mark.
+    pub fn oracle_marks(&self) -> (Ts, Ts) {
+        let oracle = &self.shared.core.oracle;
+        (oracle.last(), oracle.durable())
     }
 }
