@@ -339,6 +339,10 @@ fn read_only_refuses_lexer_and_call_payloads() {
         "MATCH (a)--(b) CALL grafeo.labels() RETURN 1 AS x",
         r"RETURN '\'' NEXT CALL grafeo.labels() /*'*/",
         "MATCH (n) ſET n.y = 1 RETURN n",
+        // `<--` followed by a space is an arrow, not a comment (re-review 2a).
+        "MATCH (a)<-- (b) SET a.y = 1 RETURN a",
+        "MATCH (a)<-- (b) CALL { INSERT (:Z) } RETURN a",
+        "MATCH (a)<-- (b) CALL grafeo.labels() RETURN 1 AS x",
     ] {
         let err = graph
             .execute(statement, true)

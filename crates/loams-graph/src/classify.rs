@@ -322,8 +322,8 @@ fn writes_words(words: &[String]) -> bool {
 /// * A string (`'…'` or `"…"`) runs to its own closing quote, and a backslash escapes the next
 ///   character, so `'\''` is one string.
 /// * A backquoted identifier runs to its closing backquote; a doubled backquote is a literal one.
-/// * `/* … */` is a comment. `--` is a line comment only when a space, tab or line break follows;
-///   a bare `--` is an undirected edge. `//` is not a comment in GQL.
+/// * `/* … */` is a comment. `--` is a line comment only when a space, tab or line break follows
+///   and the character before it is not `<` or `-`; a bare `--`, and `<--`, are edges. `//` is not a comment in GQL.
 /// * A word starts with a letter or `_` and continues with letters, digits and `_` (Unicode).
 ///
 /// Comments are dropped because a comment is not a statement, strings because a value is data.
@@ -370,8 +370,10 @@ pub(crate) fn bare_words(statement: &str) -> Vec<String> {
                 }
                 i += 2;
             }
+            // `<--` and `---` are edges, whatever follows (re-review 2a).
             '-' if chars.get(i + 1) == Some(&'-')
-                && matches!(chars.get(i + 2), Some(' ' | '\t' | '\n' | '\r')) =>
+                && matches!(chars.get(i + 2), Some(' ' | '\t' | '\n' | '\r'))
+                && !matches!(i.checked_sub(1).map(|p| chars[p]), Some('<' | '-')) =>
             {
                 push_word(&mut word, &mut words);
                 while i < chars.len() && chars[i] != '\n' {
