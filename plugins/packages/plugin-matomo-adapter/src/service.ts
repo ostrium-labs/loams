@@ -6,7 +6,7 @@
  * WHAT IS REUSED
  * --------------
  * All HTTP mechanics — auth header assembly, query encoding, timeouts, error
- * normalization — come from `@loams-plugins/plugin-upstream-http`. This file owns only what
+ * normalization — come from `@loams-core/http`. This file owns only what
  * is genuinely Matomo's: the `index.php` request shape, the dot-form method
  * grammar, the `result: "error"` body branch, and the response-shape union.
  *
@@ -36,8 +36,8 @@ import {
   UpstreamError,
   UpstreamLogger,
   loggerFrom,
-} from "@loams-plugins/plugin-upstream-http";
-import type { PluginAgentSkill, PluginLoader, PluginManifest } from "@loams-plugins/core";
+} from "@loams-core/http";
+import type { PluginAgentSkill, PluginLoader, PluginManifest } from "@loams-core/host";
 import {
   MATOMO_DATATABLE_DEFAULT_LIMIT,
   MATOMO_ENDPOINT,

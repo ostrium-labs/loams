@@ -99,33 +99,45 @@ importers:
       '@cordisjs/plugin-logger-console':
         specifier: ^1.0.0
         version: 1.0.0(cordis@4.0.0-rc.10)
-      '@loams-plugins/bi-rpc':
+      '@loams-core/agent-tools':
         specifier: workspace:*
-        version: link:../../packages/bi-rpc
-      '@loams-plugins/core':
+        version: link:../../core/agent-tools
+      '@loams-core/bi':
         specifier: workspace:*
-        version: link:../../packages/core
-      '@loams-plugins/plugin-agent-tools':
+        version: link:../../core/bi
+      '@loams-core/bi-rpc':
         specifier: workspace:*
-        version: link:../../packages/plugin-agent-tools
-      '@loams-plugins/plugin-control-plane':
+        version: link:../../core/bi-rpc
+      '@loams-core/chart-specs':
         specifier: workspace:*
-        version: link:../../packages/plugin-control-plane
-      '@loams-plugins/plugin-dashboard-spec':
+        version: link:../../core/chart-specs
+      '@loams-core/charts':
         specifier: workspace:*
-        version: link:../../packages/plugin-dashboard-spec
-      '@loams-plugins/plugin-data':
+        version: link:../../core/charts
+      '@loams-core/dashboards':
         specifier: workspace:*
-        version: link:../../packages/plugin-data
-      '@loams-plugins/plugin-echarts-render':
+        version: link:../../core/dashboards
+      '@loams-core/data':
         specifier: workspace:*
-        version: link:../../packages/plugin-echarts-render
-      '@loams-plugins/plugin-flint':
+        version: link:../../core/data
+      '@loams-core/engine':
         specifier: workspace:*
-        version: link:../../packages/plugin-flint
-      '@loams-plugins/plugin-flow-render':
+        version: link:../../core/engine
+      '@loams-core/flows':
         specifier: workspace:*
-        version: link:../../packages/plugin-flow-render
+        version: link:../../core/flows
+      '@loams-core/host':
+        specifier: workspace:*
+        version: link:../../core/host
+      '@loams-core/live':
+        specifier: workspace:*
+        version: link:../../core/live
+      '@loams-core/store':
+        specifier: workspace:*
+        version: link:../../core/store
+      '@loams-core/types':
+        specifier: workspace:*
+        version: link:../../core/types
       '@loams-plugins/plugin-forgejo-adapter':
         specifier: workspace:*
         version: link:../../packages/plugin-forgejo-adapter
@@ -138,27 +150,15 @@ importers:
       '@loams-plugins/plugin-langfuse-adapter':
         specifier: workspace:*
         version: link:../../packages/plugin-langfuse-adapter
-      '@loams-plugins/plugin-loams-adapter':
-        specifier: workspace:*
-        version: link:../../packages/plugin-loams-adapter
-      '@loams-plugins/plugin-loams-live':
-        specifier: workspace:*
-        version: link:../../packages/plugin-loams-live
       '@loams-plugins/plugin-matomo-adapter':
         specifier: workspace:*
         version: link:../../packages/plugin-matomo-adapter
       '@loams-plugins/plugin-openpanel-adapter':
         specifier: workspace:*
         version: link:../../packages/plugin-openpanel-adapter
-      '@loams-plugins/plugin-store':
-        specifier: workspace:*
-        version: link:../../packages/plugin-store
       '@loams-plugins/plugin-zulip-adapter':
         specifier: workspace:*
         version: link:../../packages/plugin-zulip-adapter
-      '@loams-plugins/types':
-        specifier: workspace:*
-        version: link:../../packages/types
       cordis:
         specifier: ^4.0.0-rc.10
         version: 4.0.0-rc.10
@@ -166,7 +166,54 @@ importers:
         specifier: ^2.15.0
         version: 2.15.0(@types/node@24.13.6)(typescript@5.9.3)
 
-  plugins/packages/bi-rpc:
+  plugins/core/agent-tools:
+    dependencies:
+      '@loams-core/bi':
+        specifier: workspace:*
+        version: link:../bi
+      '@loams-core/chart-specs':
+        specifier: workspace:*
+        version: link:../chart-specs
+      '@loams-core/charts':
+        specifier: workspace:*
+        version: link:../charts
+      '@loams-core/dashboards':
+        specifier: workspace:*
+        version: link:../dashboards
+      '@loams-core/store':
+        specifier: workspace:*
+        version: link:../store
+      '@loams-core/types':
+        specifier: workspace:*
+        version: link:../types
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.0.0
+        version: 1.32.1(supports-color@10.2.2)(zod@3.25.76)
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+      uuid:
+        specifier: ^11.0.0
+        version: 11.1.1
+    devDependencies:
+      '@types/uuid':
+        specifier: ^10.0.0
+        version: 10.0.0
+
+  plugins/core/bi:
+    dependencies:
+      '@loams-core/types':
+        specifier: workspace:*
+        version: link:../types
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+    devDependencies:
+      vite-plus:
+        specifier: 1.0.0
+        version: 1.0.0(@types/node@24.13.6)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
+
+  plugins/core/bi-rpc:
     dependencies:
       '@bufbuild/protobuf':
         specifier: 2.16.0
@@ -175,21 +222,206 @@ importers:
         specifier: 2.2.0
         version: 2.2.0(@bufbuild/protobuf@2.16.0)
 
-  plugins/packages/core:
+  plugins/core/chart-specs:
+    dependencies:
+      '@loams-core/bi':
+        specifier: workspace:*
+        version: link:../bi
+      '@loams-core/types':
+        specifier: workspace:*
+        version: link:../types
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+      flint-chart:
+        specifier: ~0.5.1
+        version: 0.5.1(echarts@5.6.0)
+
+  plugins/core/charts:
+    dependencies:
+      '@loams-core/chart-specs':
+        specifier: workspace:*
+        version: link:../chart-specs
+      '@loams-core/data':
+        specifier: workspace:*
+        version: link:../data
+      '@loams-core/types':
+        specifier: workspace:*
+        version: link:../types
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+      flint-chart:
+        specifier: ~0.5.1
+        version: 0.5.1(echarts@5.6.0)
+
+  plugins/core/dashboard-ui:
     dependencies:
       '@base-ui/react':
         specifier: ^1.8.0
         version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@loams-plugins/plugin-dashboard-spec':
+      '@hookform/resolvers':
+        specifier: ^5.9.1
+        version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@3.25.76)
+      '@loams-core/host':
         specifier: workspace:*
-        version: link:../plugin-dashboard-spec
-      '@loams-plugins/plugin-store':
+        version: link:../host
+      '@tanstack/react-query':
+        specifier: ^5.104.1
+        version: 5.104.1(react@19.3.0)
+      '@xyflow/react':
+        specifier: ^12.12.0
+        version: 12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      echarts:
+        specifier: ^5.5.1
+        version: 5.6.0
+      fast-json-patch:
+        specifier: ^3.1.1
+        version: 3.1.1
+      lucide-react:
+        specifier: ^1.51.0
+        version: 1.52.0(@types/react@19.3.0)(react@19.3.0)
+      react:
+        specifier: ^19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: ^19.3.0
+        version: 19.3.0(react@19.3.0)
+      react-grid-layout:
+        specifier: ^2.2.4
+        version: 2.3.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      react-hook-form:
+        specifier: ^7.89.0
+        version: 7.89.0(@types/react@19.3.0)(react@19.3.0)
+      react-resizable:
+        specifier: ^3.2.0
+        version: 3.2.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      react-router:
+        specifier: ^8.4.0
+        version: 8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      tailwind-merge:
+        specifier: ^3.7.0
+        version: 3.7.0
+    devDependencies:
+      '@tailwindcss/vite':
+        specifier: ^4.3.3
+        version: 4.3.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))
+      '@testing-library/react':
+        specifier: ^16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      '@vitejs/plugin-react':
+        specifier: ^6.1.1
+        version: 6.1.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))
+      happy-dom:
+        specifier: ^20.14.5
+        version: 20.14.5
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vite:
+        specifier: npm:@voidzero-dev/vite-plus-core@1.0.0
+        version: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
+      vite-plus:
+        specifier: 1.0.0
+        version: 1.0.0(@types/node@24.13.6)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
+
+  plugins/core/dashboards:
+    dependencies:
+      '@loams-core/store':
         specifier: workspace:*
-        version: link:../plugin-store
-      '@loams-plugins/plugin-upstream-http':
+        version: link:../store
+      '@loams-core/types':
         specifier: workspace:*
-        version: link:../plugin-upstream-http
-      '@loams-plugins/types':
+        version: link:../types
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+      fast-json-patch:
+        specifier: ^3.1.0
+        version: 3.1.1
+      uuid:
+        specifier: ^11.0.0
+        version: 11.1.1
+    devDependencies:
+      '@types/uuid':
+        specifier: ^10.0.0
+        version: 10.0.0
+
+  plugins/core/data:
+    dependencies:
+      '@loams-core/bi':
+        specifier: workspace:*
+        version: link:../bi
+      '@loams-core/types':
+        specifier: workspace:*
+        version: link:../types
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+
+  plugins/core/engine:
+    dependencies:
+      '@loams-core/host':
+        specifier: workspace:*
+        version: link:../host
+      '@loams-core/http':
+        specifier: workspace:*
+        version: link:../http
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+
+  plugins/core/flows:
+    dependencies:
+      '@loams-core/chart-specs':
+        specifier: workspace:*
+        version: link:../chart-specs
+      '@loams-core/charts':
+        specifier: workspace:*
+        version: link:../charts
+      '@loams-core/data':
+        specifier: workspace:*
+        version: link:../data
+      '@loams-core/types':
+        specifier: workspace:*
+        version: link:../types
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+      flint-chart:
+        specifier: ~0.5.1
+        version: 0.5.1(echarts@5.6.0)
+
+  plugins/core/host:
+    dependencies:
+      '@base-ui/react':
+        specifier: ^1.8.0
+        version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@loams-core/dashboards':
+        specifier: workspace:*
+        version: link:../dashboards
+      '@loams-core/http':
+        specifier: workspace:*
+        version: link:../http
+      '@loams-core/store':
+        specifier: workspace:*
+        version: link:../store
+      '@loams-core/types':
         specifier: workspace:*
         version: link:../types
       '@tanstack/react-query':
@@ -236,325 +468,27 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(@types/react@19.3.0)
 
-  plugins/packages/dashboard-ui:
+  plugins/core/http:
     dependencies:
-      '@base-ui/react':
-        specifier: ^1.8.0
-        version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@hookform/resolvers':
-        specifier: ^5.9.1
-        version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@3.25.76)
-      '@loams-plugins/core':
-        specifier: workspace:*
-        version: link:../core
-      '@tanstack/react-query':
-        specifier: ^5.104.1
-        version: 5.104.1(react@19.3.0)
-      '@xyflow/react':
-        specifier: ^12.12.0
-        version: 12.12.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      class-variance-authority:
-        specifier: ^0.7.1
-        version: 0.7.1
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
-      echarts:
-        specifier: ^5.5.1
-        version: 5.6.0
-      fast-json-patch:
-        specifier: ^3.1.1
-        version: 3.1.1
-      lucide-react:
-        specifier: ^1.51.0
-        version: 1.52.0(@types/react@19.3.0)(react@19.3.0)
-      react:
-        specifier: ^19.3.0
-        version: 19.3.0
-      react-dom:
-        specifier: ^19.3.0
-        version: 19.3.0(react@19.3.0)
-      react-grid-layout:
-        specifier: ^2.2.4
-        version: 2.3.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      react-hook-form:
-        specifier: ^7.89.0
-        version: 7.89.0(@types/react@19.3.0)(react@19.3.0)
-      react-resizable:
-        specifier: ^3.2.0
-        version: 3.2.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      react-router:
-        specifier: ^8.4.0
-        version: 8.4.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      tailwind-merge:
-        specifier: ^3.7.0
-        version: 3.7.0
-    devDependencies:
-      '@tailwindcss/vite':
-        specifier: ^4.3.3
-        version: 4.3.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))
-      '@testing-library/react':
-        specifier: ^16.3.3
-        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@types/react':
-        specifier: ^19.3.0
-        version: 19.3.0
-      '@types/react-dom':
-        specifier: ^19.3.0
-        version: 19.3.0(@types/react@19.3.0)
-      '@vitejs/plugin-react':
-        specifier: ^6.1.1
-        version: 6.1.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))
-      happy-dom:
-        specifier: ^20.14.5
-        version: 20.14.5
-      tailwindcss:
-        specifier: ^4.3.3
-        version: 4.3.3
-      typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
-      vite:
-        specifier: npm:@voidzero-dev/vite-plus-core@1.0.0
-        version: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
-      vite-plus:
-        specifier: 1.0.0
-        version: 1.0.0(@types/node@24.13.6)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
-
-  plugins/packages/plugin-agent-tools:
-    dependencies:
-      '@loams-plugins/plugin-control-plane':
-        specifier: workspace:*
-        version: link:../plugin-control-plane
-      '@loams-plugins/plugin-dashboard-spec':
-        specifier: workspace:*
-        version: link:../plugin-dashboard-spec
-      '@loams-plugins/plugin-echarts-render':
-        specifier: workspace:*
-        version: link:../plugin-echarts-render
-      '@loams-plugins/plugin-flint':
-        specifier: workspace:*
-        version: link:../plugin-flint
-      '@loams-plugins/plugin-store':
-        specifier: workspace:*
-        version: link:../plugin-store
-      '@loams-plugins/types':
-        specifier: workspace:*
-        version: link:../types
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.0.0
-        version: 1.32.1(supports-color@10.2.2)(zod@3.25.76)
       cordis:
         specifier: ^4.0.0-rc.10
         version: 4.0.0-rc.10
-      uuid:
-        specifier: ^11.0.0
-        version: 11.1.1
-    devDependencies:
-      '@types/uuid':
-        specifier: ^10.0.0
-        version: 10.0.0
 
-  plugins/packages/plugin-control-plane:
+  plugins/core/live:
     dependencies:
-      '@loams-plugins/types':
+      '@loams-core/data':
         specifier: workspace:*
-        version: link:../types
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-    devDependencies:
-      vite-plus:
-        specifier: 1.0.0
-        version: 1.0.0(@types/node@24.13.6)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)
-
-  plugins/packages/plugin-dashboard-spec:
-    dependencies:
-      '@loams-plugins/plugin-store':
-        specifier: workspace:*
-        version: link:../plugin-store
-      '@loams-plugins/types':
-        specifier: workspace:*
-        version: link:../types
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-      fast-json-patch:
-        specifier: ^3.1.0
-        version: 3.1.1
-      uuid:
-        specifier: ^11.0.0
-        version: 11.1.1
-    devDependencies:
-      '@types/uuid':
-        specifier: ^10.0.0
-        version: 10.0.0
-
-  plugins/packages/plugin-data:
-    dependencies:
-      '@loams-plugins/plugin-control-plane':
-        specifier: workspace:*
-        version: link:../plugin-control-plane
-      '@loams-plugins/types':
+        version: link:../data
+      '@loams-core/types':
         specifier: workspace:*
         version: link:../types
       cordis:
         specifier: ^4.0.0-rc.10
         version: 4.0.0-rc.10
 
-  plugins/packages/plugin-echarts-render:
+  plugins/core/store:
     dependencies:
-      '@loams-plugins/plugin-data':
-        specifier: workspace:*
-        version: link:../plugin-data
-      '@loams-plugins/plugin-flint':
-        specifier: workspace:*
-        version: link:../plugin-flint
-      '@loams-plugins/types':
-        specifier: workspace:*
-        version: link:../types
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-      flint-chart:
-        specifier: ~0.5.1
-        version: 0.5.1(echarts@5.6.0)
-
-  plugins/packages/plugin-flint:
-    dependencies:
-      '@loams-plugins/plugin-control-plane':
-        specifier: workspace:*
-        version: link:../plugin-control-plane
-      '@loams-plugins/types':
-        specifier: workspace:*
-        version: link:../types
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-      flint-chart:
-        specifier: ~0.5.1
-        version: 0.5.1(echarts@5.6.0)
-
-  plugins/packages/plugin-flow-render:
-    dependencies:
-      '@loams-plugins/plugin-data':
-        specifier: workspace:*
-        version: link:../plugin-data
-      '@loams-plugins/plugin-echarts-render':
-        specifier: workspace:*
-        version: link:../plugin-echarts-render
-      '@loams-plugins/plugin-flint':
-        specifier: workspace:*
-        version: link:../plugin-flint
-      '@loams-plugins/types':
-        specifier: workspace:*
-        version: link:../types
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-      flint-chart:
-        specifier: ~0.5.1
-        version: 0.5.1(echarts@5.6.0)
-
-  plugins/packages/plugin-forgejo-adapter:
-    dependencies:
-      '@loams-plugins/core':
-        specifier: workspace:*
-        version: link:../core
-      '@loams-plugins/plugin-upstream-http':
-        specifier: workspace:*
-        version: link:../plugin-upstream-http
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-
-  plugins/packages/plugin-glitchtip-adapter:
-    dependencies:
-      '@loams-plugins/core':
-        specifier: workspace:*
-        version: link:../core
-      '@loams-plugins/plugin-upstream-http':
-        specifier: workspace:*
-        version: link:../plugin-upstream-http
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-
-  plugins/packages/plugin-itsaplan-adapter:
-    dependencies:
-      '@loams-plugins/core':
-        specifier: workspace:*
-        version: link:../core
-      '@loams-plugins/plugin-upstream-http':
-        specifier: workspace:*
-        version: link:../plugin-upstream-http
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-
-  plugins/packages/plugin-langfuse-adapter:
-    dependencies:
-      '@loams-plugins/core':
-        specifier: workspace:*
-        version: link:../core
-      '@loams-plugins/plugin-upstream-http':
-        specifier: workspace:*
-        version: link:../plugin-upstream-http
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-
-  plugins/packages/plugin-loams-adapter:
-    dependencies:
-      '@loams-plugins/core':
-        specifier: workspace:*
-        version: link:../core
-      '@loams-plugins/plugin-upstream-http':
-        specifier: workspace:*
-        version: link:../plugin-upstream-http
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-
-  plugins/packages/plugin-loams-live:
-    dependencies:
-      '@loams-plugins/plugin-data':
-        specifier: workspace:*
-        version: link:../plugin-data
-      '@loams-plugins/types':
-        specifier: workspace:*
-        version: link:../types
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-
-  plugins/packages/plugin-matomo-adapter:
-    dependencies:
-      '@loams-plugins/core':
-        specifier: workspace:*
-        version: link:../core
-      '@loams-plugins/plugin-upstream-http':
-        specifier: workspace:*
-        version: link:../plugin-upstream-http
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-
-  plugins/packages/plugin-openpanel-adapter:
-    dependencies:
-      '@loams-plugins/core':
-        specifier: workspace:*
-        version: link:../core
-      '@loams-plugins/plugin-upstream-http':
-        specifier: workspace:*
-        version: link:../plugin-upstream-http
-      cordis:
-        specifier: ^4.0.0-rc.10
-        version: 4.0.0-rc.10
-
-  plugins/packages/plugin-store:
-    dependencies:
-      '@loams-plugins/types':
+      '@loams-core/types':
         specifier: workspace:*
         version: link:../types
       cordis:
@@ -568,29 +502,95 @@ importers:
         specifier: ^8.11.0
         version: 8.23.1
 
-  plugins/packages/plugin-upstream-http:
+  plugins/core/types:
     dependencies:
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
+
+  plugins/packages/plugin-forgejo-adapter:
+    dependencies:
+      '@loams-core/host':
+        specifier: workspace:*
+        version: link:../../core/host
+      '@loams-core/http':
+        specifier: workspace:*
+        version: link:../../core/http
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+
+  plugins/packages/plugin-glitchtip-adapter:
+    dependencies:
+      '@loams-core/host':
+        specifier: workspace:*
+        version: link:../../core/host
+      '@loams-core/http':
+        specifier: workspace:*
+        version: link:../../core/http
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+
+  plugins/packages/plugin-itsaplan-adapter:
+    dependencies:
+      '@loams-core/host':
+        specifier: workspace:*
+        version: link:../../core/host
+      '@loams-core/http':
+        specifier: workspace:*
+        version: link:../../core/http
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+
+  plugins/packages/plugin-langfuse-adapter:
+    dependencies:
+      '@loams-core/host':
+        specifier: workspace:*
+        version: link:../../core/host
+      '@loams-core/http':
+        specifier: workspace:*
+        version: link:../../core/http
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+
+  plugins/packages/plugin-matomo-adapter:
+    dependencies:
+      '@loams-core/host':
+        specifier: workspace:*
+        version: link:../../core/host
+      '@loams-core/http':
+        specifier: workspace:*
+        version: link:../../core/http
+      cordis:
+        specifier: ^4.0.0-rc.10
+        version: 4.0.0-rc.10
+
+  plugins/packages/plugin-openpanel-adapter:
+    dependencies:
+      '@loams-core/host':
+        specifier: workspace:*
+        version: link:../../core/host
+      '@loams-core/http':
+        specifier: workspace:*
+        version: link:../../core/http
       cordis:
         specifier: ^4.0.0-rc.10
         version: 4.0.0-rc.10
 
   plugins/packages/plugin-zulip-adapter:
     dependencies:
-      '@loams-plugins/core':
+      '@loams-core/host':
         specifier: workspace:*
-        version: link:../core
-      '@loams-plugins/plugin-upstream-http':
+        version: link:../../core/host
+      '@loams-core/http':
         specifier: workspace:*
-        version: link:../plugin-upstream-http
+        version: link:../../core/http
       cordis:
         specifier: ^4.0.0-rc.10
         version: 4.0.0-rc.10
-
-  plugins/packages/types:
-    dependencies:
-      zod:
-        specifier: ^3.23.0
-        version: 3.25.76
 
   sdks/typescript/packages/client:
     dependencies:
@@ -7779,12 +7779,12 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.3.3
       '@tailwindcss/oxide-win32-x64-msvc': 4.3.3
 
-  '@tailwindcss/vite@4.3.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))':
+  '@tailwindcss/vite@4.3.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))':
     dependencies:
       '@tailwindcss/node': 4.3.3
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
-      vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
+      vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
 
   '@tanstack/query-core@5.104.1': {}
 
@@ -7930,10 +7930,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vitejs/plugin-react@6.1.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))':
+  '@vitejs/plugin-react@6.1.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
-      vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
+      vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
 
   '@vitejs/plugin-react@6.1.1(vite@8.3.1(@types/node@24.10.1)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
@@ -7952,17 +7952,30 @@ snapshots:
       - utf-8-validate
       - vite
 
-  '@vitest/browser-preview@5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)':
+  '@vitest/browser-preview@5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)':
     dependencies:
       '@testing-library/dom': 10.4.2
       '@testing-library/user-event': 14.6.7(@testing-library/dom@10.4.2)
-      '@vitest/browser': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
-      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      '@vitest/browser': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
     transitivePeerDependencies:
       - bufferutil
       - msw
       - utf-8-validate
       - vite
+
+  '@vitest/browser-preview@5.0.1(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)':
+    dependencies:
+      '@testing-library/dom': 10.4.2
+      '@testing-library/user-event': 14.6.7(@testing-library/dom@10.4.2)
+      '@vitest/browser': 5.0.1(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+    transitivePeerDependencies:
+      - bufferutil
+      - msw
+      - utf-8-validate
+      - vite
+    optional: true
 
   '@vitest/browser@5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@22.20.5)(typescript@5.9.3))(vitest@5.0.1)':
     dependencies:
@@ -7982,23 +7995,42 @@ snapshots:
       - utf-8-validate
       - vite
 
-  '@vitest/browser@5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)':
+  '@vitest/browser@5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)':
     dependencies:
       '@blazediff/core': 1.10.0
-      '@vitest/mocker': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      '@vitest/mocker': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
       '@vitest/ui': 5.0.1(vitest@5.0.1)
       '@vitest/utils': 5.0.1
       magic-string: 1.4.2
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
       - msw
       - utf-8-validate
       - vite
+
+  '@vitest/browser@5.0.1(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)':
+    dependencies:
+      '@blazediff/core': 1.10.0
+      '@vitest/mocker': 5.0.1(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      '@vitest/ui': 5.0.1(vitest@5.0.1)
+      '@vitest/utils': 5.0.1
+      magic-string: 1.4.2
+      pngjs: 7.0.0
+      sirv: 3.0.2
+      tinyrainbow: 3.2.0
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      ws: 8.22.0
+    transitivePeerDependencies:
+      - bufferutil
+      - msw
+      - utf-8-validate
+      - vite
+    optional: true
 
   '@vitest/coverage-v8@5.0.1(@vitest/browser@5.0.1)(vitest@5.0.1)':
     dependencies:
@@ -8030,7 +8062,7 @@ snapshots:
       msw: 2.15.0(@types/node@22.20.5)(typescript@5.9.3)
       vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@22.20.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
 
-  '@vitest/mocker@5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))':
+  '@vitest/mocker@5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.0.1
@@ -8038,7 +8070,17 @@ snapshots:
       magic-string: 1.4.2
     optionalDependencies:
       msw: 2.15.0(@types/node@24.13.6)(typescript@5.9.3)
-      vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
+      vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
+
+  '@vitest/mocker@5.0.1(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
+    dependencies:
+      '@jridgewell/trace-mapping': 0.3.31
+      '@vitest/spy': 5.0.1
+      estree-walker: 3.0.3
+      magic-string: 1.4.2
+    optionalDependencies:
+      msw: 2.15.0(@types/node@24.13.6)(typescript@5.9.3)
+      vite: 8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
 
   '@vitest/mocker@5.0.3(msw@2.15.0(@types/node@24.10.1)(typescript@5.9.3))(vite@8.3.1(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
@@ -8121,31 +8163,6 @@ snapshots:
       yuku-parser: 0.9.5
     optionalDependencies:
       '@types/node': 22.20.5
-      '@voidzero-dev/vite-plus-darwin-arm64': 1.0.0
-      '@voidzero-dev/vite-plus-darwin-x64': 1.0.0
-      '@voidzero-dev/vite-plus-linux-arm64-gnu': 1.0.0
-      '@voidzero-dev/vite-plus-linux-arm64-musl': 1.0.0
-      '@voidzero-dev/vite-plus-linux-x64-gnu': 1.0.0
-      '@voidzero-dev/vite-plus-linux-x64-musl': 1.0.0
-      '@voidzero-dev/vite-plus-win32-arm64-msvc': 1.0.0
-      '@voidzero-dev/vite-plus-win32-x64-msvc': 1.0.0
-      esbuild: 0.28.2
-      fsevents: 2.3.3
-      jiti: 2.7.0
-      tsx: 4.23.15
-      typescript: 5.9.3
-      yaml: 2.9.1
-
-  '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)':
-    dependencies:
-      '@oxc-project/runtime': 0.151.0
-      '@oxc-project/types': 0.151.0
-      lightningcss: 1.33.0
-      postcss: 8.5.28
-      yuku-codegen: 0.9.5
-      yuku-parser: 0.9.5
-    optionalDependencies:
-      '@types/node': 24.10.1
       '@voidzero-dev/vite-plus-darwin-arm64': 1.0.0
       '@voidzero-dev/vite-plus-darwin-x64': 1.0.0
       '@voidzero-dev/vite-plus-linux-arm64-gnu': 1.0.0
@@ -11203,9 +11220,9 @@ snapshots:
     dependencies:
       '@oxc-project/types': 0.151.0
       '@oxlint/plugins': 1.79.0
-      '@vitest/browser': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
-      '@vitest/browser-preview': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
-      '@vitest/mocker': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      '@vitest/browser': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
+      '@vitest/browser-preview': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
+      '@vitest/mocker': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
       '@vitest/pretty-format': 5.0.1
       '@vitest/snapshot': 5.0.1
       '@vitest/spy': 5.0.1
@@ -11214,7 +11231,7 @@ snapshots:
       oxlint: 1.85.0(oxlint-tsgolint@7.0.2003)(vite-plus@1.0.0(@types/node@24.13.6)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))
       oxlint-tsgolint: 7.0.2003
       vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
-      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      vitest: 5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
     optionalDependencies:
       '@voidzero-dev/vite-plus-darwin-arm64': 1.0.0
       '@voidzero-dev/vite-plus-darwin-x64': 1.0.0
@@ -11341,10 +11358,10 @@ snapshots:
     transitivePeerDependencies:
       - msw
 
-  vitest@5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3)):
+  vitest@5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
+      '@vitest/mocker': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))
       chai: 6.3.0
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
@@ -11355,11 +11372,37 @@ snapshots:
       tinybench: 6.1.4
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
-      vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
+      vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1)'
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 24.13.6
-      '@vitest/browser-preview': 5.0.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.10.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@5.9.3)(yaml@2.9.1))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vitest@5.0.1)
+      '@vitest/browser-preview': 5.0.1(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)
+      '@vitest/coverage-v8': 5.0.1(@vitest/browser@5.0.1)(vitest@5.0.1)
+      '@vitest/ui': 5.0.1(vitest@5.0.1)
+      happy-dom: 20.14.5
+      jsdom: 30.1.1(@noble/hashes@1.8.0)
+    transitivePeerDependencies:
+      - msw
+
+  vitest@5.0.1(@types/node@24.13.6)(@vitest/browser-preview@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1(vitest@5.0.1))(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
+    dependencies:
+      '@types/chai': 5.2.3
+      '@vitest/mocker': 5.0.1(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      chai: 6.3.0
+      es-module-lexer: 2.3.2
+      expect-type: 1.4.0
+      magic-string: 1.4.2
+      obug: 2.2.1
+      picomatch: 4.0.7
+      std-env: 4.3.0
+      tinybench: 6.1.4
+      tinyexec: 1.3.0
+      tinyglobby: 0.2.17
+      vite: 8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@types/node': 24.13.6
+      '@vitest/browser-preview': 5.0.1(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)
       '@vitest/coverage-v8': 5.0.1(@vitest/browser@5.0.1)(vitest@5.0.1)
       '@vitest/ui': 5.0.1(vitest@5.0.1)
       happy-dom: 20.14.5

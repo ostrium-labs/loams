@@ -11,7 +11,7 @@
  * WHAT IS REUSED
  * --------------
  * All HTTP mechanics — auth header assembly, query encoding, timeouts, error
- * normalization — come from `@loams-plugins/plugin-upstream-http`. This file owns what is
+ * normalization — come from `@loams-core/http`. This file owns what is
  * genuinely It's a Plan's: the absolute-path routes, the `{error, code?}` body
  * branch, and the per-route pagination and series-density differences.
  *
@@ -38,8 +38,8 @@ import {
   UpstreamError,
   UpstreamLogger,
   loggerFrom,
-} from "@loams-plugins/plugin-upstream-http";
-import type { PluginAgentSkill, PluginLoader, PluginManifest } from "@loams-plugins/core";
+} from "@loams-core/http";
+import type { PluginAgentSkill, PluginLoader, PluginManifest } from "@loams-core/host";
 import {
   ITSAPLAN_ABSENT_ENDPOINTS,
   ITSAPLAN_CHART_MAX_ROWS,

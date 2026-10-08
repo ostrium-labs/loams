@@ -30,17 +30,17 @@ check(manifest["scripts"]["test"] == "vp test --config vitest.config.ts", "Tests
 check(manifest["devDependencies"]["vite-plus"] == "1.0.0", "Vite+ version changed")
 check(manifest["devDependencies"]["vitest"] == "5.0.1", "Plugin Vitest version changed")
 check(manifest["devDependencies"]["vite"] == "npm:@voidzero-dev/vite-plus-core@1.0.0", "Plugin Vite alias changed")
-paths = sorted([*ROOT.glob("packages/*/package.json"), *ROOT.glob("apps/*/package.json")])
+paths = sorted([*ROOT.glob("core/*/package.json"), *ROOT.glob("packages/*/package.json"), *ROOT.glob("apps/*/package.json")])
 packages = {load(path)["name"]: path for path in paths}
 projects = {name: load(path.parent / "project.json")["name"] for name, path in packages.items()}
 check(len(set(projects.values())) == len(paths), "Duplicate Nx project names")
 aggregate = load(ROOT / "project.json")
 inputs = aggregate["targets"]["build"]["inputs"]
-check("{workspaceRoot}/plugins/packages/**/*" in inputs and "{workspaceRoot}/plugins/apps/**/*" in inputs,
+check("{workspaceRoot}/plugins/core/**/*" in inputs and "{workspaceRoot}/plugins/packages/**/*" in inputs and "{workspaceRoot}/plugins/apps/**/*" in inputs,
       "Aggregate inputs must include child sources explicitly")
 outputs = set(aggregate["targets"]["build"]["outputs"])
 references = {(ROOT / ref["path"]).resolve() for ref in load(ROOT / "tsconfig.json")["references"]}
-import_pattern = re.compile(r"(?:from\s+|import\s*\(|import\s+)[\"'](@loams-plugins/[^\"']+)[\"']")
+import_pattern = re.compile(r"(?:from\s+|import\s*\(|import\s+)[\"'](@loams-(?:plugins|core)/[^\"']+)[\"']")
 for name, path in packages.items():
     data = load(path)
     project = load(path.parent / "project.json")
@@ -87,6 +87,6 @@ def find_nested_git(directory):
     return False
 
 
-workspace_dirs = [*ROOT.glob("packages/*"), *ROOT.glob("apps/*")]
+workspace_dirs = [*ROOT.glob("core/*"), *ROOT.glob("packages/*"), *ROOT.glob("apps/*")]
 check(not any(find_nested_git(directory) for directory in workspace_dirs), "Nested .git artifact")
 print(f"Plugin workspace invariants pass: {len(paths)} packages/apps, {len(outputs)} aggregate build outputs")

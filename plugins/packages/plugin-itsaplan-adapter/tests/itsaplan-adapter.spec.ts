@@ -19,7 +19,7 @@ import type {
   ItsAPlanConfig,
   ItsAPlanDashboard,
 } from "../src/types.js";
-import type { AgentSkillContext, PluginRuntime } from "@loams-plugins/core";
+import type { AgentSkillContext, PluginRuntime } from "@loams-core/host";
 
 type MockedFetch = ReturnType<typeof vi.fn<typeof fetch>>;
 

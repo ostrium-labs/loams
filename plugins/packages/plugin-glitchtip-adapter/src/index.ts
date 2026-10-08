@@ -10,7 +10,7 @@
  * instance, `GET /api/openapi.json` is the version-drift check.
  */
 
-import type { PluginAgentSkill, PluginManifest } from "@loams-plugins/core";
+import type { PluginAgentSkill, PluginManifest } from "@loams-core/host";
 import { GLITCHTIP_API_PREFIX, GLITCHTIP_ENV_PREFIX } from "./types.js";
 
 export * from "./types.js";

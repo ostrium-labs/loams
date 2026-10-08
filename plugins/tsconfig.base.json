@@ -9,10 +9,10 @@
     "sourceMap": true,
     "strict": true,
     // Node only. Every project extending this base is server-side (Cordis services and
-    // adapters); packages/dashboard-ui is the sole browser target and does not extend
+    // adapters); core/dashboard-ui is the sole browser target and does not extend
     // this file. Naming it explicitly is what lets the type-aware lint program
     // (oxlint-tsgolint) see the Node globals -- left implicit, `Buffer.from(...)` in
-    // plugin-control-plane was reported as TS2591 by `vp check` while `tsc -b` took it.
+    // bi was reported as TS2591 by `vp check` while `tsc -b` took it.
     "types": ["node"],
     "esModuleInterop": true,
     "skipLibCheck": true,

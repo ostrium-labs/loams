@@ -13,7 +13,7 @@ import {
 } from "../src/service.js";
 import { MATOMO_METHOD_NAME_PATTERN, MATOMO_ENDPOINT } from "../src/types.js";
 import type { MatomoConfig, MatomoVisitsSummaryRow } from "../src/types.js";
-import type { PluginRuntime } from "@loams-plugins/core";
+import type { PluginRuntime } from "@loams-core/host";
 
 type MockedFetch = ReturnType<typeof vi.fn<typeof fetch>>;
 

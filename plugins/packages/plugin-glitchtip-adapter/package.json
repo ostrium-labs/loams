@@ -10,8 +10,8 @@
     "test": "pnpm --filter @loams-plugins/root test packages/plugin-glitchtip-adapter/tests"
   },
   "dependencies": {
-    "@loams-plugins/core": "workspace:*",
-    "@loams-plugins/plugin-upstream-http": "workspace:*",
+    "@loams-core/host": "workspace:*",
+    "@loams-core/http": "workspace:*",
     "cordis": "^4.0.0-rc.10"
   }
 }

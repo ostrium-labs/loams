@@ -67,7 +67,7 @@ pnpm --filter @loams-plugins/root dev       # API server on http://localhost:300
 pnpm --filter @loams-plugins/root dev:ui    # dashboard SPA on http://localhost:5173
 ```
 
-`dev:ui` delegates to the `@loams-plugins/dashboard-ui` workspace's own `dev`
+`dev:ui` delegates to the `@loams-core/dashboard-ui` workspace's own `dev`
 script. The server's CORS allowlist already includes
 `http://localhost:5173` and `http://127.0.0.1:5173`, so the SPA can talk to the
 API from the default dev port without any extra configuration.

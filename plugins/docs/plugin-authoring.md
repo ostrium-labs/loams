@@ -4,7 +4,7 @@ A plugin is two things: a **manifest** that describes it, and a **loader** that
 says how to bring it up and take it down. Neither the router, the shell, the
 console nor the A2A layer needs to know your plugin exists.
 
-All the types below are in `packages/core/src/types.ts`, which is frozen
+All the types below are in `core/host/src/types.ts`, which is frozen
 contract — other packages code against those field names.
 
 If you are writing a plugin for the Loams console specifically, note that the
@@ -15,7 +15,7 @@ order, so registration is always the composition root's job.
 ## The manifest
 
 ```ts
-import type { PluginManifest, PluginAgentSkill } from "@loams-plugins/core";
+import type { PluginManifest, PluginAgentSkill } from "@loams-core/host";
 
 export const weatherManifest: PluginManifest = {
   id: "weather",
@@ -95,7 +95,7 @@ is in [security.md](security.md).
 All four hooks are optional, and all four are torn down on disable.
 
 ```ts
-import type { PluginLoader } from "@loams-plugins/core";
+import type { PluginLoader } from "@loams-core/host";
 
 export const weatherLoader: PluginLoader = {
   service: WeatherService,
@@ -166,7 +166,7 @@ truthiness check.
 
 ## Routes
 
-A route is a `RouteSpec` from `packages/core/src/router.ts`:
+A route is a `RouteSpec` from `core/host/src/router.ts`:
 
 ```ts
 {
@@ -205,7 +205,7 @@ routes are:
 | `/console`     | the plugin console |
 
 To give a plugin a real screen, add one entry to
-`packages/core/src/ui/pluginPages/registry.ts`:
+`core/host/src/ui/pluginPages/registry.ts`:
 
 ```ts
 import type React from "react";
@@ -293,7 +293,7 @@ plugin's card and skills are refused. See [a2a.md](a2a.md).
 ## A complete minimal plugin
 
 Save as `packages/plugin-weather-adapter/src/index.ts` in a new workspace
-package that depends on `@loams-plugins/core`.
+package that depends on `@loams-core/host`.
 
 ```ts
 /**
@@ -311,7 +311,7 @@ import type {
   PluginAgentSkill,
   PluginLoader,
   PluginManifest,
-} from "@loams-plugins/core";
+} from "@loams-core/host";
 
 declare module "cordis" {
   interface Context {

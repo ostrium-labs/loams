@@ -7,7 +7,7 @@
  * order.
  */
 
-import type { PluginAgentSkill, PluginManifest } from "@loams-plugins/core";
+import type { PluginAgentSkill, PluginManifest } from "@loams-core/host";
 import { LANGFUSE_API_PREFIX, LANGFUSE_ENV_PREFIX, LANGFUSE_LEGACY_REMOVED_ON } from "./types.js";
 
 export * from "./types.js";

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vite-plus/test";
 import { Context, Service } from "cordis";
-import { createHarness, type Harness } from "../../../packages/core/tests/helpers.js";
-import { DASHBOARD_MANIFEST, dashboardLoader, mountCoreApi } from "@loams-plugins/core";
-import type { PluginStatus, RouteRequest } from "@loams-plugins/core";
+import { createHarness, type Harness } from "../../../core/host/tests/helpers.js";
+import { DASHBOARD_MANIFEST, dashboardLoader, mountCoreApi } from "@loams-core/host";
+import type { PluginStatus, RouteRequest } from "@loams-core/host";
 import { planPluginCatalog, registerPluginCatalog, type Env } from "../src/plugin-catalog.js";
 
 /**

@@ -1,0 +1,16 @@
+{
+  "name": "@loams-core/chart-specs",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@loams-core/bi": "workspace:*",
+    "cordis": "^4.0.0-rc.10",
+    "flint-chart": "~0.5.1",
+    "@loams-core/types": "workspace:*"
+  },
+  "scripts": {
+    "build": "pnpm --filter @loams-plugins/root build"
+  }
+}

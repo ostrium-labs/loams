@@ -6,7 +6,7 @@
  * WHAT IS REUSED
  * --------------
  * All HTTP mechanics — auth header assembly, query encoding, timeouts,
- * error normalization — come from `@loams-plugins/plugin-upstream-http`. This file owns only
+ * error normalization — come from `@loams-core/http`. This file owns only
  * what is genuinely Zulip's: the result/msg envelope, message-id-anchor
  * pagination, the `narrow` encoding, and the rate-limit headers that Zulip
  * uses to tell a client it is about to be throttled.
@@ -29,8 +29,8 @@ import {
   UpstreamLogger,
   buildQuery,
   loggerFrom,
-} from "@loams-plugins/plugin-upstream-http";
-import type { PluginAgentSkill, PluginLoader, PluginManifest } from "@loams-plugins/core";
+} from "@loams-core/http";
+import type { PluginAgentSkill, PluginLoader, PluginManifest } from "@loams-core/host";
 import {
   ZulipConfig,
   ZulipCustomField,

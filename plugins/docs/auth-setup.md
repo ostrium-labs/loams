@@ -9,8 +9,8 @@ a development server must not be able to reconfigure itself.
 The model itself is in [security.md](security.md). This document is about getting
 an identity provider wired up correctly.
 
-Implementation: `packages/core/src/auth/`. Tests:
-`packages/core/tests/auth.spec.ts`, which run against a **real fake IdP over real
+Implementation: `core/host/src/auth/`. Tests:
+`core/host/tests/auth.spec.ts`, which run against a **real fake IdP over real
 HTTP** using the genuine `openid-client` and `jose`. Every failure mode below is
 caught inside those libraries, so mocking them would sit on top of the code that
 has to survive them.

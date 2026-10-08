@@ -27,7 +27,7 @@ The plugin root deliberately has no npm `workspaces`, `devEngines`, or
 
 Core UI directly declares its React/query/router/primitives dependencies rather
 than borrowing the dashboard's hoisted modules. The dashboard declares its
-`@loams-plugins/core` dependency and directly imported `react-resizable` CSS.
+`@loams-core/host` dependency and directly imported `react-resizable` CSS.
 The dev/build config aliases the core UI subpath to sibling source, with no
 assumption about pnpm's symlink placement, and deduplicates shared React state.
 
@@ -71,7 +71,7 @@ pnpm --filter @loams-plugins/root test
 
 It uses `vp test --config vitest.config.ts`, which includes both libraries and
 server tests. Per-project Nx test targets append a file-path filter such as
-`packages/types/tests` to that same aggregate command, not an unsupported
+`core/types/tests` to that same aggregate command, not an unsupported
 `--project` name. Packages without tests have no Nx test target.
 
 Tool-independent checks can run before installation:

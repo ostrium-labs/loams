@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 import { Context } from "cordis";
 import { LangfuseAdapterService } from "../src/service.js";
-import { buildQuery } from "@loams-plugins/plugin-upstream-http";
+import { buildQuery } from "@loams-core/http";
 import {
   DEFAULT_LANGFUSE_OBSERVATION_FIELDS,
   LANGFUSE_API_PREFIX,

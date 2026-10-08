@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 import { Context } from "cordis";
-import { UpstreamClient, UpstreamError } from "@loams-plugins/plugin-upstream-http";
+import { UpstreamClient, UpstreamError } from "@loams-core/http";
 import {
   GLITCHTIP_API_PREFIX,
   GLITCHTIP_HEADER_HITS,

@@ -1,14 +1,14 @@
 # The A2A endpoint
 
 A2A is a **protocol translation layer over the agent bus**, not a second
-dispatch path. `packages/core/src/a2a.ts` builds the external wire shapes;
-`packages/core/src/bus.ts` does delivery. Every `message:send` becomes an
+dispatch path. `core/host/src/a2a.ts` builds the external wire shapes;
+`core/host/src/bus.ts` does delivery. Every `message:send` becomes an
 `AgentMessage`, is handed to the bus, and the reply is translated back.
 
 That layering is the point. A second dispatch path would give the platform two
 answers to "is this agent loaded?" and two places to get A2A error shapes wrong.
 
-Tests: `packages/core/tests/a2a.spec.ts`.
+Tests: `core/host/tests/a2a.spec.ts`.
 
 ## Routes
 

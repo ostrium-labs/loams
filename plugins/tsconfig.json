@@ -3,40 +3,40 @@
   "files": [],
   "references": [
     {
-      "path": "packages/bi-rpc"
+      "path": "core/bi-rpc"
     },
     {
-      "path": "packages/types"
+      "path": "core/types"
     },
     {
-      "path": "packages/plugin-upstream-http"
+      "path": "core/http"
     },
     {
-      "path": "packages/plugin-store"
+      "path": "core/store"
     },
     {
-      "path": "packages/plugin-data"
+      "path": "core/data"
     },
     {
-      "path": "packages/plugin-dashboard-spec"
+      "path": "core/dashboards"
     },
     {
-      "path": "packages/plugin-echarts-render"
+      "path": "core/charts"
     },
     {
-      "path": "packages/plugin-flow-render"
+      "path": "core/flows"
     },
     {
-      "path": "packages/plugin-flint"
+      "path": "core/chart-specs"
     },
     {
-      "path": "packages/plugin-control-plane"
+      "path": "core/bi"
     },
     {
-      "path": "packages/plugin-agent-tools"
+      "path": "core/agent-tools"
     },
     {
-      "path": "packages/core"
+      "path": "core/host"
     },
     {
       "path": "packages/plugin-zulip-adapter"
@@ -60,10 +60,10 @@
       "path": "packages/plugin-itsaplan-adapter"
     },
     {
-      "path": "packages/plugin-loams-adapter"
+      "path": "core/engine"
     },
     {
-      "path": "packages/plugin-loams-live"
+      "path": "core/live"
     },
     {
       "path": "apps/server"

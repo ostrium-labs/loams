@@ -21,7 +21,7 @@ import {
   serializeOpenPanelFilters,
 } from "../src/index.js";
 import { openPanelManifest } from "../src/index.js";
-import { buildQuery } from "@loams-plugins/plugin-upstream-http";
+import { buildQuery } from "@loams-core/http";
 
 /**
  * The cases here target the two ways OpenPanel fails SILENTLY: a bare response

@@ -1,0 +1,24 @@
+{
+  "name": "@loams-core/agent-tools",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@loams-core/bi": "workspace:*",
+    "@loams-core/dashboards": "workspace:*",
+    "@loams-core/charts": "workspace:*",
+    "@loams-core/chart-specs": "workspace:*",
+    "@loams-core/store": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "cordis": "^4.0.0-rc.10",
+    "uuid": "^11.0.0",
+    "@loams-core/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/uuid": "^10.0.0"
+  },
+  "scripts": {
+    "build": "pnpm --filter @loams-plugins/root build"
+  }
+}

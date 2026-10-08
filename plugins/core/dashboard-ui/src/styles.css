@@ -1,0 +1,338 @@
+/*
+ * Theme tokens + Tailwind v4 entrypoint.
+ *
+ * `--th-*` is the input layer: `useTheme` writes flint's ThemeInk onto the
+ * root element and nothing else. Everything below derives from it, so one
+ * state change repaints the entire shell.
+ *
+ * The defaults here are the Power BI Light palette the dashboard shipped with,
+ * so an unthemed dashboard is byte-identical to how it looked before theming.
+ *
+ * `@theme inline` (not `@theme`) is load-bearing. A plain `@theme` would bake
+ * each value into the generated utility, so `useTheme` writing `--th-canvas` onto
+ * <html> at runtime would have no effect on any `bg-canvas` utility. Inline
+ * keeps the utility pointing at the variable, which is what lets one style
+ * write repaint everything.
+ */
+@import "tailwindcss";
+
+/*
+ * The shell's own source.
+ *
+ * Tailwind v4 auto-detects sources from the Vite root, which for this build is
+ * `core/dashboard-ui` -- and the plugin console, the plugins page, the
+ * plugin page and the nav live in `core/host/src/ui`. Without this line
+ * every utility those files use (`bg-card`, `border-line`, `text-ink`, and all
+ * of the t3code primitives' token-backed classes) is silently absent from the
+ * emitted stylesheet: nothing throws, the CSS just does not exist. The ported
+ * primitives are here too, since they moved into the shell for the console's
+ * switch to reach them.
+ *
+ * Paths are relative to THIS file, not to the Vite root.
+ */
+@source "../../host/src/ui";
+
+@theme inline {
+  /* --- ink, written by useTheme (defaults = no theme) --- */
+  --th-canvas: #f3f2f1;
+  --th-plot: #ffffff;
+  --th-panel: #ffffff;
+  --th-text-primary: #252423;
+  --th-text-secondary: #605e5c;
+  --th-text-muted: #a19f9d;
+  --th-axis: #e1dfdd;
+  --th-grid: #f3f2f1;
+  --th-rule: #c8c6c4;
+  --th-series-single: #118dff;
+  --th-series-1: #118dff;
+  --th-series-2: #12239e;
+  --th-series-3: #e66c37;
+  --th-series-4: #6b007b;
+  --th-series-5: #e044a7;
+  --th-series-6: #744ec2;
+  --th-series-7: #d9b300;
+  --th-series-8: #d64550;
+
+  /* --- shell surfaces, derived from the ink --- */
+  --color-page: var(--th-canvas);
+  --color-plot: var(--th-plot);
+  --color-card: var(--th-panel);
+  --color-line: var(--th-axis);
+  --color-line-subtle: var(--th-grid);
+  --color-ink: var(--th-text-primary);
+  --color-ink-body: var(--th-text-secondary);
+  --color-ink-muted: var(--th-text-muted);
+  --color-ink-subtle: var(--th-rule);
+
+  /*
+   * The house's first categorical ink becomes the app accent: a theme that
+   * changes which colour the dashboard's own buttons wear. `color-mix` derives
+   * the tints and hover shades from it, so those follow the theme too. The
+   * solid fallback is declared first for engines without color-mix.
+   */
+  --color-primary: var(--th-series-1);
+  --color-primary-solid: #118dff;
+  --color-primary-hover: color-mix(in srgb, var(--th-series-1) 82%, #000000);
+  --color-primary-subtle: #deecf9;
+  --color-primary-subtle: color-mix(in srgb, var(--th-series-1) 14%, var(--bg-card));
+  --color-primary-border: color-mix(in srgb, var(--th-series-1) 38%, var(--bg-card));
+  --color-primary-ink: color-mix(in srgb, var(--th-series-1) 72%, #000000);
+  /*
+   * The ink ON the primary fill. `bg-primary`/`text-primary-foreground` is the
+   * pair the ported Button and Badge ask for, and without the foreground half
+   * they resolve to `text-primary-foreground` -> nothing, which renders the
+   * label as inherited body ink on an azure fill.
+   */
+  --color-primary-foreground: #ffffff;
+
+  --color-success: #107c10;
+  --color-danger: #d13438;
+  --color-warning: #ffaa44;
+  --color-info: var(--th-series-1);
+
+  --shadow-card: 0 1.6px 3.6px 0 rgba(0, 0, 0, 0.132), 0 0.3px 0.9px 0 rgba(0, 0, 0, 0.108);
+  --shadow-hover: 0 3.2px 7.2px 0 rgba(0, 0, 0, 0.132), 0 0.6px 1.8px 0 rgba(0, 0, 0, 0.108);
+
+  /*
+   * The theme's extra font sizes. Two steps below Tailwind's `text-xs` (12px)
+   * for dense UI: metadata rows, badges, counters and keyboard hints. 2xs is
+   * 11px, 3xs is 10px. `cn` registers these with tailwind-merge (see
+   * `core/host/src/ui/cn.ts`) so it treats them as font sizes, not
+   * colours -- without that, `text-2xs text-muted-foreground` drops the first.
+   */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: calc(1 / 0.6875);
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: calc(0.875 / 0.625);
+  --text-4xs: 0.5rem;
+  --text-4xs--line-height: 1;
+  --text-5xs: 0.4375rem;
+  --text-5xs--line-height: 1;
+
+  /*
+   * ------------------------------------------------------------------------
+   * Tokens the ported t3code primitives reference by name.
+   *
+   * These components are copied verbatim (MIT, T3 Tools Inc 2026), so their
+   * class strings ask for `--control-radius`, `--ring`, `--background` and
+   * the shadcn-style semantic scale. Without these they render unstyled --
+   * transparent switches, invisible focus rings, zero-radius buttons. The
+   * values are mapped onto the ink tokens above rather than imported
+   * wholesale, so a Flint theme still repaints them.
+   * ------------------------------------------------------------------------
+   */
+  --color-background: var(--th-canvas);
+  --color-foreground: var(--th-text-primary);
+
+  --color-muted: var(--th-grid);
+  --color-muted-foreground: var(--th-text-secondary);
+
+  --color-card: var(--th-panel);
+  --color-card-foreground: var(--th-text-primary);
+
+  --color-popover: var(--th-panel);
+  --color-popover-foreground: var(--th-text-primary);
+
+  --color-secondary: var(--th-grid);
+  --color-secondary-foreground: var(--th-text-primary);
+
+  --color-accent: var(--th-axis);
+  --color-accent-foreground: var(--th-text-primary);
+
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: #ffffff;
+
+  --color-input: var(--th-axis);
+  --color-border: var(--th-axis);
+
+  --color-ring: var(--th-series-1);
+
+  /* `error`/`warning`/`success` are t3code's names for the semantic set. */
+  --color-error: var(--danger);
+  --color-error-foreground: var(--danger);
+  --color-error-surface: color-mix(in srgb, var(--danger) 6%, var(--th-panel));
+  --color-success-foreground: var(--success);
+  --color-warning-foreground: var(--warning-ink, #7a4a00);
+  --color-warning-surface: color-mix(in srgb, var(--warning) 12%, var(--th-panel));
+  --color-info-foreground: var(--th-text-secondary);
+
+  /*
+   * Control geometry. `--control-radius` is read directly by the ported
+   * Button/Toggle as `rounded-[var(--control-radius)]`, and the `--radius-*`
+   * scale backs the `before:` pseudo-element insets.
+   */
+  --control-radius: 0.5rem;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+
+  /*
+   * The two animations this app adds on top of Tailwind's own.
+   *
+   * Both replace hand-written `@keyframes` rules, but the names are prefixed:
+   * Tailwind's default theme already ships `@keyframes spin` and `@keyframes
+   * pulse`, and two rules with the same name in one sheet means the app's
+   * version silently wins (or loses) depending on declaration order. Prefixing
+   * removes the collision entirely.
+   *
+   * `spin-slow` is the busy indicator; `live-pulse` is the header's "Live
+   * Backend" dot. `@keyframes` has to be declared at the top level, not inside
+   * `@theme` -- only the *variables* live there.
+   */
+  --animate-spin-slow: bi-spin 0.8s linear infinite;
+  --animate-live-pulse: bi-pulse 2s infinite ease-in-out;
+
+  /*
+   * The slide-over sheets. Both are decorative entrances -- the reduced-motion
+   * block at the foot of this file collapses them -- so the durations are the
+   * ones the CSS used to carry rather than Tailwind defaults.
+   */
+  --animate-sheet-in: bi-sheet-in 0.18s cubic-bezier(0, 0, 0.2, 1);
+  --animate-sheet-backdrop-in: bi-fade-in 0.15s ease-out;
+}
+
+@keyframes bi-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes bi-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes bi-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes bi-sheet-in {
+  from {
+    transform: translate3d(100%, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@layer base {
+  /*
+   * Legacy aliases for the rules that have not been converted to utilities yet.
+   *
+   * The names above (`--color-page`, `--color-ink-body`, ...) are what a
+   * converted component writes as `bg-page` / `text-ink-body`. The names here
+   * are what the *remaining* `var(--bg-page)` calls in the legacy layer below
+   * read. Both point at the same `--th-*` ink, so a Flint theme still drives
+   * them -- but deleting this block while any legacy rule survives would leave
+   * those rules resolving an undefined variable and render as initial values.
+   */
+  :root {
+    --bg-page: var(--th-canvas);
+    --bg-plot: var(--th-plot);
+    --bg-card: var(--th-panel);
+    --border-card: var(--th-axis);
+    --border-subtle: var(--th-grid);
+    --text-dark: var(--th-text-primary);
+    --text-body: var(--th-text-secondary);
+    --text-muted: var(--th-text-muted);
+    --text-subtle: var(--th-rule);
+
+    /* The solid fallback first, for engines without color-mix. */
+    --primary: var(--th-series-1);
+    --primary-solid: #118dff;
+    --primary-subtle: #deecf9;
+    --primary-subtle: color-mix(in srgb, var(--th-series-1) 14%, var(--bg-card));
+    --primary-hover: color-mix(in srgb, var(--th-series-1) 82%, #000000);
+    --primary-border: color-mix(in srgb, var(--th-series-1) 38%, var(--bg-card));
+    --primary-ink: color-mix(in srgb, var(--th-series-1) 72%, #000000);
+
+    --success: #107c10;
+    --danger: #d13438;
+    --warning: #ffaa44;
+
+    /*
+     * Read directly by the ported Button -- `outline` and `ghost` set
+     * `--control-icon-color: var(--contrast-muted-foreground)`, and the icon
+     * colour is then applied as `text-[var(--control-icon-color)]`. Without a
+     * declaration here that substitution is invalid at computed-value time, so
+     * every icon in an outlined button falls back to the surrounding ink and
+     * the muted/outlined distinction the variant exists to draw is lost.
+     */
+    --contrast-muted-foreground: var(--th-text-secondary);
+
+    --shadow-card: 0 1.6px 3.6px 0 rgba(0, 0, 0, 0.132), 0 0.3px 0.9px 0 rgba(0, 0, 0, 0.108);
+    --shadow-hover: 0 3.2px 7.2px 0 rgba(0, 0, 0, 0.132), 0 0.6px 1.8px 0 rgba(0, 0, 0, 0.108);
+  }
+
+  /*
+   * Visible focus for everything, including the theme controls. Tailwind's
+   * preflight drops the UA outline, so this restores a floor that reads
+   * against a themed surface.
+   */
+  :focus-visible {
+    outline: 2px solid var(--th-series-1);
+    outline-offset: 2px;
+  }
+
+  body {
+    font-family:
+      "Segoe UI",
+      wf_segoe-ui_normal,
+      -apple-system,
+      BlinkMacSystemFont,
+      Roboto,
+      sans-serif;
+    background-color: var(--th-canvas);
+    color: var(--th-text-primary);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/*
+ * =========================================================================
+ * END OF THE STYLESHEET
+ *
+ * There are no component rules left. Every selector that used to live in
+ * `@layer components` here has been converted to utilities in the component
+ * that owned it and deleted, and `tests/ui/utilities.spec.ts` asserts that
+ * none of them came back as a class name.
+ *
+ * That is why the `@source` above matters more than it looks: Tailwind scans
+ * source text, so a class has to exist in the source for its utility to exist
+ * in the output. A component that reaches for a utility nobody wrote gets no
+ * CSS and no error -- which is exactly the failure mode this stylesheet used
+ * to be full of.
+ * ====================================================================== */
+
+/*
+ * =========================================================================
+ * REDUCED MOTION
+ *
+ * The sheet entrances, the live dot and the skeleton shimmer are decorative;
+ * honour the preference rather than just shortening them. Unlayered on
+ * purpose: the `!important` declarations have to beat the utilities, and an
+ * unlayered rule beats every cascade layer outright.
+ * ====================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

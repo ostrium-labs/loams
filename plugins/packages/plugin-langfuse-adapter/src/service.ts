@@ -33,7 +33,7 @@ import {
   loggerFrom,
   type QueryValue,
   type UpstreamLogger,
-} from "@loams-plugins/plugin-upstream-http";
+} from "@loams-core/http";
 
 /** Base for every request: host + `/api/public`. */
 function apiPath(suffix: string): string {

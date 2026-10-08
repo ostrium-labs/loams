@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BUF_VERSION = "1.73.0"
 GENERATOR_VERSION = "2.16.0"
-GENERATED = ROOT / "packages/bi-rpc/src/gen"
+GENERATED = ROOT / "core/bi-rpc/src/gen"
 
 
 def run(*args):

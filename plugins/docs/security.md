@@ -36,7 +36,7 @@ This is the single most important thing to understand before you change it.
 An enable-time check looks correct and is wrong. A session created **before your
 plugin was deployed** predates it, was never granted its scopes, and would sail
 straight through the enable-time gate and then operate on the plugin for its
-whole lifetime. `packages/core/tests/auth.spec.ts` asserts exactly this: the
+whole lifetime. `core/host/tests/auth.spec.ts` asserts exactly this: the
 plugin is enabled by a fully-privileged admin, and a _later_ session without the
 scope is still refused.
 
@@ -129,7 +129,7 @@ default, which is exactly why the omission is easy to miss — tests of _those_
 flows pass while an authorization-code login silently trusts whatever the token
 endpoint returned.
 
-`packages/core/tests/auth.spec.ts` proves this both ways: a token forged with an
+`core/host/tests/auth.spec.ts` proves this both ways: a token forged with an
 unrelated key is **rejected**, and a genuine RS256 login still succeeds.
 
 Do not remove that flag without those two tests still passing.

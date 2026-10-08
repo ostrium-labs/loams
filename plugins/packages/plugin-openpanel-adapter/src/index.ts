@@ -5,7 +5,7 @@
  * registration belongs to the integration step that composes the plugin host.
  */
 
-import type { PluginAgentSkill, PluginManifest } from "@loams-plugins/core";
+import type { PluginAgentSkill, PluginManifest } from "@loams-core/host";
 import { OPENPANEL_ENV_PREFIX, OPENPANEL_REQUIRED_CLIENT_TYPE } from "./types.js";
 
 export * from "./types.js";

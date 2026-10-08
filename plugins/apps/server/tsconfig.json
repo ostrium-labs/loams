@@ -10,31 +10,31 @@
   ],
   "references": [
     {
-      "path": "../../packages/bi-rpc"
+      "path": "../../core/bi-rpc"
     },
     {
-      "path": "../../packages/core"
+      "path": "../../core/host"
     },
     {
-      "path": "../../packages/plugin-agent-tools"
+      "path": "../../core/agent-tools"
     },
     {
-      "path": "../../packages/plugin-control-plane"
+      "path": "../../core/bi"
     },
     {
-      "path": "../../packages/plugin-dashboard-spec"
+      "path": "../../core/dashboards"
     },
     {
-      "path": "../../packages/plugin-data"
+      "path": "../../core/data"
     },
     {
-      "path": "../../packages/plugin-echarts-render"
+      "path": "../../core/charts"
     },
     {
-      "path": "../../packages/plugin-flint"
+      "path": "../../core/chart-specs"
     },
     {
-      "path": "../../packages/plugin-flow-render"
+      "path": "../../core/flows"
     },
     {
       "path": "../../packages/plugin-forgejo-adapter"
@@ -49,7 +49,7 @@
       "path": "../../packages/plugin-langfuse-adapter"
     },
     {
-      "path": "../../packages/plugin-loams-adapter"
+      "path": "../../core/engine"
     },
     {
       "path": "../../packages/plugin-matomo-adapter"
@@ -58,13 +58,13 @@
       "path": "../../packages/plugin-openpanel-adapter"
     },
     {
-      "path": "../../packages/plugin-store"
+      "path": "../../core/store"
     },
     {
       "path": "../../packages/plugin-zulip-adapter"
     },
     {
-      "path": "../../packages/types"
+      "path": "../../core/types"
     }
   ]
 }

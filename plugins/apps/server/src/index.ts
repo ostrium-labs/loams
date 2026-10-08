@@ -1,22 +1,22 @@
 import http from "node:http";
 import { createConnectRouter } from "@connectrpc/connect";
-import { registerRpcServices, type RpcContext } from "@loams-plugins/bi-rpc";
+import { registerRpcServices, type RpcContext } from "@loams-core/bi-rpc";
 import { createNodeConnectBridge } from "./connect-bridge.js";
 import { Context } from "cordis";
 import ConsoleLogger from "@cordisjs/plugin-logger-console";
 import { StderrExporter } from "./logger.js";
-import { StoreService } from "@loams-plugins/plugin-store";
-import { ControlPlaneService } from "@loams-plugins/plugin-control-plane";
-import { DataService } from "@loams-plugins/plugin-data";
-import { FlintService } from "@loams-plugins/plugin-flint";
-import { RenderService } from "@loams-plugins/plugin-echarts-render";
-import { FlowRenderService } from "@loams-plugins/plugin-flow-render";
-import { DashboardSpecService } from "@loams-plugins/plugin-dashboard-spec";
+import { StoreService } from "@loams-core/store";
+import { ControlPlaneService } from "@loams-core/bi";
+import { DataService } from "@loams-core/data";
+import { FlintService } from "@loams-core/chart-specs";
+import { RenderService } from "@loams-core/charts";
+import { FlowRenderService } from "@loams-core/flows";
+import { DashboardSpecService } from "@loams-core/dashboards";
 import {
   LoamsLiveService,
   type LoamsStreamName,
-} from "@loams-plugins/plugin-loams-live";
-import { AgentToolsService, startMCPServer } from "@loams-plugins/plugin-agent-tools";
+} from "@loams-core/live";
+import { AgentToolsService, startMCPServer } from "@loams-core/agent-tools";
 import {
   AgentBus,
   AuthService,
@@ -30,7 +30,7 @@ import {
   mountCoreApi,
   resolveAllowedOrigins,
   type AuthConfig,
-} from "@loams-plugins/core";
+} from "@loams-core/host";
 import { startMswSupersetMock } from "./mock-msw-server.js";
 import { registerPluginCatalog } from "./plugin-catalog.js";
 

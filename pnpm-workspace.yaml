@@ -7,6 +7,7 @@ packages:
   - sdks/typescript/packages/*
   - plugins
   - plugins/apps/*
+  - plugins/core/*
   - plugins/packages/*
   - apps/desktop-electron
 

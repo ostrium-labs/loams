@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { Context } from "cordis";
-import { AgentBus, HttpRouter, type PluginManifest, type PluginRuntime } from "@loams-plugins/core";
+import { AgentBus, HttpRouter, type PluginManifest, type PluginRuntime } from "@loams-core/host";
 import {
   ZulipAdapterService,
   ZulipApiError,

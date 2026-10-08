@@ -8,11 +8,11 @@ import {
   DataService,
   ThemeService,
   type RpcContext,
-} from "@loams-plugins/bi-rpc";
+} from "@loams-core/bi-rpc";
 import { createNodeConnectBridge } from "../src/connect-bridge.js";
 
 /**
- * The unit tests in `@loams-plugins/bi-rpc` prove the service implementations. These prove
+ * The unit tests in `@loams-core/bi-rpc` prove the service implementations. These prove
  * the WIRING: that a real Connect client talking to a real Node http server,
  * through the hand-written bridge, gets a real answer.
  *

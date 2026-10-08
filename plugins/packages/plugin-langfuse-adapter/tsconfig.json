@@ -7,10 +7,10 @@
   },
   "references": [
     {
-      "path": "../core"
+      "path": "../../core/host"
     },
     {
-      "path": "../plugin-upstream-http"
+      "path": "../../core/http"
     }
   ],
   "include": [

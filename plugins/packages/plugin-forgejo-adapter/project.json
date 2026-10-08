@@ -6,8 +6,8 @@
     "scope:plugins"
   ],
   "implicitDependencies": [
-    "plugins-core",
-    "plugins-plugin-upstream-http"
+    "plugins-host",
+    "plugins-http"
   ],
   "targets": {
     "build": {
@@ -19,6 +19,7 @@
         "{workspaceRoot}/plugins/vite.config.ts",
         "{workspaceRoot}/plugins/vitest.config.ts",
         "{workspaceRoot}/plugins/project.json",
+        "{workspaceRoot}/plugins/core/**/*",
         "{workspaceRoot}/plugins/packages/**/*",
         "{workspaceRoot}/plugins/apps/**/*",
         "{workspaceRoot}/plugins/proto/**/*",
@@ -56,6 +57,7 @@
         "{workspaceRoot}/plugins/vite.config.ts",
         "{workspaceRoot}/plugins/vitest.config.ts",
         "{workspaceRoot}/plugins/project.json",
+        "{workspaceRoot}/plugins/core/**/*",
         "{workspaceRoot}/plugins/packages/**/*",
         "{workspaceRoot}/plugins/apps/**/*",
         "{workspaceRoot}/plugins/proto/**/*",
@@ -93,6 +95,7 @@
         "{workspaceRoot}/plugins/vite.config.ts",
         "{workspaceRoot}/plugins/vitest.config.ts",
         "{workspaceRoot}/plugins/project.json",
+        "{workspaceRoot}/plugins/core/**/*",
         "{workspaceRoot}/plugins/packages/**/*",
         "{workspaceRoot}/plugins/apps/**/*",
         "{workspaceRoot}/plugins/proto/**/*",

@@ -32,7 +32,7 @@ import {
   loggerFrom,
   type QueryValue,
   type UpstreamLogger,
-} from "@loams-plugins/plugin-upstream-http";
+} from "@loams-core/http";
 
 export class GlitchtipAdapterService extends Service {
   static inject = [];

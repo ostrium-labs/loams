@@ -28,13 +28,13 @@ Contributing and local validation commands are in
 
 | Path                              | What lives there                                                                                                     |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`                   | The plugin platform: `types.ts`, `registry.ts`, `host.ts`, `bus.ts`, `router.ts`, `a2a.ts`, `api.ts`, `auth/`, `ui/` |
-| `packages/types`                  | Shared zod schemas used across packages                                                                              |
-| `packages/plugin-upstream-http`   | The shared HTTP client every adapter builds on (auth assembly, query encoding, timeouts, error normalisation)        |
+| `core/host`                   | The plugin platform: `types.ts`, `registry.ts`, `host.ts`, `bus.ts`, `router.ts`, `a2a.ts`, `api.ts`, `auth/`, `ui/` |
+| `core/types`                  | Shared zod schemas used across packages                                                                              |
+| `core/http`   | The shared HTTP client every adapter builds on (auth assembly, query encoding, timeouts, error normalisation)        |
 | `packages/plugin-*-adapter`       | One read-only adapter per upstream, each exporting a manifest and usually a loader                                   |
-| `packages/dashboard-ui`           | The console SPA                                                                                                      |
+| `core/dashboard-ui`           | The console SPA                                                                                                      |
 | `packages/plugin-*` (non-adapter) | Feature services: store, data, flint, render, dashboard-spec, agent-tools                                            |
-| `packages/bi-rpc`                 | ConnectRPC bindings generated from `proto/bi/v1/` — see the note in the README about the historical name             |
+| `core/bi-rpc`                 | ConnectRPC bindings generated from `proto/bi/v1/` — see the note in the README about the historical name             |
 | `apps/server`                     | Boot order, the mock upstream, the plugin catalog, the HTTP server                                                   |
 
 | `proto/bi/v1/`                    | The `bi.v1` protobuf contract. The namespace predates the `@loams-plugins` scope and is deliberately not renamed.    |

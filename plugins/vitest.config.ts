@@ -12,6 +12,9 @@ export default defineConfig({
       "packages/*/tests/**/*.spec.ts",
       "packages/*/tests/**/*.spec.tsx",
       "packages/*/tests/**/*.test.ts",
+      "core/*/tests/**/*.spec.ts",
+      "core/*/tests/**/*.spec.tsx",
+      "core/*/tests/**/*.test.ts",
       // Apps carry tests too (the Connect bridge lives in apps/server). They
       // were silently skipped before this glob existed: `vitest run <path>`
       // exits 1 with "No test files found" rather than reporting a failure.
@@ -22,7 +25,7 @@ export default defineConfig({
     environment: "node",
     coverage: {
       provider: "v8",
-      include: ["packages/*/src/**/*.ts", "apps/*/src/**/*.ts"],
+      include: ["core/*/src/**/*.ts", "packages/*/src/**/*.ts", "apps/*/src/**/*.ts"],
       exclude: ["**/index.ts", "**/*.d.ts", "**/gen/**"],
     },
     testTimeout: 10000,

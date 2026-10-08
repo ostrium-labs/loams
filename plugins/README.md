@@ -36,7 +36,7 @@ you depend on them, and read the source before building against them.
 
 ## Architecture
 
-Everything below is described from `packages/core/src`.
+Everything below is described from `core/host/src`.
 
 ### The manifest contract
 
@@ -200,7 +200,7 @@ Adapters read their own variables — `ZULIP_URL`, `FORGEJO_TOKEN`,
 Other scripts use `pnpm --filter @loams-plugins/root`: `build` (`tsc -b
  tsconfig.json`), `test` (`vp test --config vitest.config.ts`), `lint` (`vp lint
 --config vite.config.ts`), and `mcp` (server with `ENABLE_MCP=true`). The dashboard
-is built separately with `pnpm --filter @loams-plugins/dashboard-ui build`.
+is built separately with `pnpm --filter @loams-core/dashboard-ui build`.
 
 With `ENABLE_MCP=true` this process is also an MCP stdio server, so **stdout is
 reserved for JSON-RPC framing and all logs go to stderr**. Writing a status line
@@ -228,29 +228,29 @@ it.` That is a supported state on a fresh checkout, not a failure.
 | package                                    | what it is                                                                                         |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | `@loams-plugins/root`                      | the workspace root; scripts and toolchain config                                                   |
-| `@loams-plugins/core`                      | the plugin platform: types, registry, host, bus, router, A2A, api, `auth/`, `ui/`                  |
-| `@loams-plugins/types`                     | shared zod schemas (`PluginStatus`, theme specs)                                                   |
-| `@loams-plugins/plugin-control-plane`      | the control-plane client (`@loams-plugins/plugin-control-plane` speaks Apache Superset's REST API) |
-| `@loams-plugins/plugin-upstream-http`      | the shared HTTP client every adapter builds on                                                     |
-| `@loams-plugins/plugin-store`              | persistence for dashboards, widgets and plugin enable flags                                        |
-| `@loams-plugins/plugin-data`               | widget data fetching                                                                               |
-| `@loams-plugins/plugin-echarts-render`     | widget → ECharts option compiler                                                                   |
-| `@loams-plugins/plugin-flint`              | theme resolution                                                                                   |
-| `@loams-plugins/plugin-dashboard-spec`     | dashboard document schema                                                                          |
-| `@loams-plugins/plugin-agent-tools`        | agent tooling service                                                                              |
+| `@loams-core/host`                      | the plugin platform: types, registry, host, bus, router, A2A, api, `auth/`, `ui/`                  |
+| `@loams-core/types`                     | shared zod schemas (`PluginStatus`, theme specs)                                                   |
+| `@loams-core/bi`      | the control-plane client (`@loams-core/bi` speaks Apache Superset's REST API) |
+| `@loams-core/http`      | the shared HTTP client every adapter builds on                                                     |
+| `@loams-core/store`              | persistence for dashboards, widgets and plugin enable flags                                        |
+| `@loams-core/data`               | widget data fetching                                                                               |
+| `@loams-core/charts`     | widget → ECharts option compiler                                                                   |
+| `@loams-core/chart-specs`              | theme resolution                                                                                   |
+| `@loams-core/dashboards`     | dashboard document schema                                                                          |
+| `@loams-core/agent-tools`        | agent tooling service                                                                              |
 | `@loams-plugins/plugin-<upstream>-adapter` | one read-only adapter per upstream                                                                 |
-| `@loams-plugins/dashboard-ui`              | the console SPA                                                                                    |
-| `@loams-plugins/bi-rpc`                    | ConnectRPC bindings for the `bi.v1` contract                                                       |
+| `@loams-core/dashboard-ui`              | the console SPA                                                                                    |
+| `@loams-core/bi-rpc`                    | ConnectRPC bindings for the `bi.v1` contract                                                       |
 | `@loams-plugins/server`                    | `apps/server`: boot order, catalog, mock upstream, HTTP server                                     |
 
 ### About `bi-rpc` and the `bi.v1` namespace
 
-`@loams-plugins/bi-rpc` holds the generated TypeScript for the `bi.v1` protobuf
+`@loams-core/bi-rpc` holds the generated TypeScript for the `bi.v1` protobuf
 contract in `proto/bi/v1/`. **The name is historical and it is deliberate.** The
 scope rename was `@bi/*` → `@loams-plugins/*`; it did not rename the RPC
 namespace, because `bi.v1` is a wire contract and renaming it would break every
 client that has already compiled against it. Message names such as
-`bi.v1.ListDashboardsRequest` are unchanged, and `packages/bi-rpc/src/gen/bi/v1/`
+`bi.v1.ListDashboardsRequest` are unchanged, and `core/bi-rpc/src/gen/bi/v1/`
 is untouched. The remaining `bi:` string in this repository is the default
 `ADMIN_SCOPE` value, which is overridable and documented in
 [docs/auth-setup.md](docs/auth-setup.md).

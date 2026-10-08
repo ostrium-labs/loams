@@ -9,7 +9,7 @@ client, so no upstream's licence obligations are inherited. See [NOTICE](../NOTI
 
 ## The shared client
 
-Everything mechanical comes from `@loams-plugins/plugin-upstream-http`:
+Everything mechanical comes from `@loams-core/http`:
 
 | export           | what it owns                                                                                   |
 | ---------------- | ---------------------------------------------------------------------------------------------- |
@@ -98,7 +98,7 @@ worth an `error`.
 ### Control plane (`alwaysOn`, `order: 1`)
 
 The plugin id is `control-plane` and the client is
-`@loams-plugins/plugin-control-plane`. The upstream it speaks is **Apache
+`@loams-core/bi`. The upstream it speaks is **Apache
 Superset** over its REST API, so the env prefix stays `SUPERSET_` and the base
 URL is still `/api/v1` — the id is this project's naming, the wire is Superset's.
 
@@ -224,7 +224,7 @@ worse than no toggle, so the toggle is disabled instead.
 ### Loams
 
 The platform this console sits alongside. Full detail in
-[`packages/plugin-loams-adapter/README.md`](../packages/plugin-loams-adapter/README.md),
+[`core/engine/README.md`](../core/engine/README.md),
 which cites the upstream source file and line for every field. Summary:
 
 - Plain REST, not Connect-RPC. Loams' REST table is the documented read surface

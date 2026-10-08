@@ -41,7 +41,7 @@
  */
 
 import type { Context } from "cordis";
-import type { PluginLoader, PluginManifest, PluginStatus } from "@loams-plugins/core";
+import type { PluginLoader, PluginManifest, PluginStatus } from "@loams-core/host";
 import {
   GlitchtipAdapterService,
   glitchtipManifest,
@@ -53,7 +53,7 @@ import {
 } from "@loams-plugins/plugin-openpanel-adapter";
 import { forgejoLoader, forgejoManifest } from "@loams-plugins/plugin-forgejo-adapter";
 import { itsaplanLoader, itsaplanManifest } from "@loams-plugins/plugin-itsaplan-adapter";
-import { loamsLoader, loamsManifest } from "@loams-plugins/plugin-loams-adapter";
+import { loamsLoader, loamsManifest } from "@loams-core/engine";
 import { matomoLoader, matomoManifest } from "@loams-plugins/plugin-matomo-adapter";
 import { zulipLoader, zulipManifest } from "@loams-plugins/plugin-zulip-adapter";
 
@@ -95,7 +95,7 @@ function compact(config: Record<string, unknown>): Record<string, unknown> {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The control-plane client (`@loams-plugins/plugin-control-plane`), which ships no
+ * The control-plane client (`@loams-core/bi`), which ships no
  * manifest of its own.
  *
  * The plugin identity is "control plane", but the upstream it actually speaks to is

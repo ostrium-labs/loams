@@ -8,7 +8,7 @@
  *
  * WHAT IS REUSED
  * --------------
- * All HTTP mechanics come from `@loams-plugins/plugin-upstream-http`. What lives here is
+ * All HTTP mechanics come from `@loams-core/http`. What lives here is
  * what is genuinely Forgejo's: the absence of an envelope, bare-array list
  * responses, `X-Total-Count` / `Link` pagination, and the set of responses that
  * return success while meaning something other than what they look like.
@@ -31,8 +31,8 @@ import {
   UpstreamError,
   UpstreamLogger,
   loggerFrom,
-} from "@loams-plugins/plugin-upstream-http";
-import type { PluginAgentSkill, PluginLoader, PluginManifest } from "@loams-plugins/core";
+} from "@loams-core/http";
+import type { PluginAgentSkill, PluginLoader, PluginManifest } from "@loams-core/host";
 import {
   FORGEJO_DEFAULT_LIMIT,
   FORGEJO_MAX_LIMIT,

@@ -46,7 +46,7 @@ import {
   loggerFrom,
   type QueryValue,
   type UpstreamLogger,
-} from "@loams-plugins/plugin-upstream-http";
+} from "@loams-core/http";
 
 /**
  * A sliding-window rate limiter.

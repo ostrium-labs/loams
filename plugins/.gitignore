@@ -12,9 +12,13 @@ coverage/
 # these into packages/*/tests/ before "exclude": ["tests"] was added to the
 # composite tsconfigs, so the sources no longer produce them but the stale files
 # lingered and were committable. Keep them out.
+core/*/tests/**/*.spec.js
 packages/*/tests/**/*.spec.js
+core/*/tests/**/*.spec.js.map
 packages/*/tests/**/*.spec.js.map
+core/*/tests/**/*.spec.d.ts
 packages/*/tests/**/*.spec.d.ts
+core/*/tests/**/*.spec.d.ts.map
 packages/*/tests/**/*.spec.d.ts.map
 
 # Tooling/skill directories that are environment artifacts, not project source.

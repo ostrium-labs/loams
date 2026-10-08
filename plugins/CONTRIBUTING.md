@@ -55,9 +55,9 @@ is JSON-RPC framing and a single `console.log` corrupts the transport. See
 - **Manifest and loader must agree on skill ids.** A `PluginAgentSkill.id` with no
   handler is an advertised agent that cannot answer.
 - **Do not rename the `bi.v1` protobuf namespace.** It is the RPC contract, not a
-  package name. The generated tree is `packages/bi-rpc/src/gen/bi/v1/`.
+  package name. The generated tree is `core/bi-rpc/src/gen/bi/v1/`.
 - **Vendored MIT files keep their headers.** The nine primitives under
-  `packages/core/src/ui/primitives/` carry the attribution required by T3 Code's
+  `core/host/src/ui/primitives/` carry the attribution required by T3 Code's
   licence, and a test enforces it. If you touch them, keep the header.
 
 ## Writing a plugin
@@ -84,7 +84,7 @@ you can make "off" leave a trace, that is a bug.
 
 1. Create `packages/plugin-<name>-adapter/` with a `package.json` named
    `@loams-plugins/plugin-<name>-adapter`.
-2. Build on `UpstreamClient` from `@loams-plugins/plugin-upstream-http`. Do not
+2. Build on `UpstreamClient` from `@loams-core/http`. Do not
    reimplement header assembly, query encoding, timeouts or error normalisation.
 3. Export **both** a `PluginManifest` and a `PluginLoader`. If you can only ship
    the manifest, set `autoEnable: false` in the catalog and the boot warning will

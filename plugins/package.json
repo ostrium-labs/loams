@@ -12,7 +12,7 @@
     "format": "vp fmt",
     "mcp": "ENABLE_MCP=true tsx apps/server/src/index.ts",
     "dev:server": "tsx apps/server/src/index.ts",
-    "dev:ui": "pnpm --filter @loams-plugins/dashboard-ui dev",
+    "dev:ui": "pnpm --filter @loams-core/dashboard-ui dev",
     "dev": "tsx apps/server/src/index.ts",
     "check:workspace": "node scripts/run-python.mjs scripts/check-workspace.py",
     "proto:lint": "node scripts/run-python.mjs scripts/proto.py lint",

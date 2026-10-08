@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vite-plus/test";
 import { Context } from "cordis";
-import { AgentBus, HttpRouter, type PluginManifest, type PluginRuntime } from "@loams-plugins/core";
-import { UpstreamError } from "@loams-plugins/plugin-upstream-http";
+import { AgentBus, HttpRouter, type PluginManifest, type PluginRuntime } from "@loams-core/host";
+import { UpstreamError } from "@loams-core/http";
 import {
   ForgejoAdapterService,
   clampLimit,
