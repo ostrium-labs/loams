@@ -128,8 +128,11 @@ pub struct JobOutcome {
     pub log_tail: String,
 }
 
-/// The compute runtime contract. Every method is idempotent, so a saga step
-/// can be replayed after a crash.
+/// The compute runtime contract. Every pool method is idempotent, so a saga
+/// step can be replayed after a crash. `run_job` is replay-safe only in the
+/// sense that a replay is not refused: it runs the job again (a stale
+/// container of the same name is replaced), so the job itself must be
+/// idempotent or checkpointed (Task 15, BR).
 #[async_trait]
 pub trait SqlRuntime: Send + Sync + fmt::Debug {
     /// Creates `branch`'s pool, or brings an existing one to `class` and
@@ -154,5 +157,6 @@ pub trait SqlRuntime: Send + Sync + fmt::Debug {
     async fn delete_pool(&self, branch: &BranchId) -> Result<(), RuntimeError>;
 
     /// Runs a job to completion. A non-zero exit is an outcome, not an error.
+    /// A replay runs the job again; see the trait docs.
     async fn run_job(&self, spec: &JobSpec) -> Result<JobOutcome, RuntimeError>;
 }

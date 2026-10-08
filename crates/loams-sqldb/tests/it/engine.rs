@@ -3,9 +3,10 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use loams_sqldb::images::Images;
 use loams_sqldb::model::{BranchId, Class, Endpoints};
-use loams_sqldb::runtime::SqlRuntime;
 use loams_sqldb::runtime::local::{ContainerEngine, LocalRuntime, LocalRuntimeConfig};
+use loams_sqldb::runtime::{JobSpec, SqlRuntime};
 
 struct Harness {
     dir: PathBuf,
@@ -171,4 +172,69 @@ async fn created_container_is_replaced_on_reconcile() {
         "{}",
         h.calls()
     );
+}
+
+/// Minor: `pool_status` survives a member removed between `ps` and `inspect`.
+#[tokio::test]
+async fn pool_status_tolerates_concurrent_removal() {
+    let h = Harness::new("vanish", 46_400);
+    let a = br('e');
+    h.rt.ensure_pool(&a, Class::Xs, 2).await.expect("ensure");
+    h.switch("vanish-on-inspect", "");
+    let st = h.rt.pool_status(&a).await.expect("status").expect("pool");
+    assert_eq!(st.members.iter().map(|m| m.index).collect::<Vec<_>>(), [1]);
+}
+
+/// Minors: swap equals memory; the host TLS directory is not relabelled.
+#[tokio::test]
+async fn member_arguments_limit_swap_and_keep_tls_labels() {
+    let h = Harness::new("args", 46_500);
+    let a = br('f');
+    h.rt.ensure_pool(&a, Class::Xs, 1).await.expect("ensure");
+    let run = h
+        .calls()
+        .lines()
+        .find(|l| l.starts_with("run "))
+        .expect("run")
+        .to_owned();
+    let mem = Class::Xs.memory_bytes();
+    assert!(
+        run.contains(&format!("--memory {mem}b --memory-swap {mem}b")),
+        "{run}"
+    );
+    let tls = format!("{}:/etc/tidb/tls:ro ", h.dir.join("tls").display());
+    assert!(
+        run.contains(&tls),
+        "TLS mount must be read-only, not relabelled: {run}"
+    );
+    // TiDB's socket directory (R2.10), per pool.
+    let sock = format!(
+        "{}:/var/run/tidb:rw,z",
+        h.dir.join("pools").join(a.as_str()).join("run").display()
+    );
+    assert!(run.contains(&sock), "socket mount missing: {run}");
+    assert!(
+        run.contains(&Images::load().expect("pins").tidb().reference()),
+        "{run}"
+    );
+}
+
+/// Minor: a job container left by a crash does not block the replay.
+#[tokio::test]
+async fn run_job_replaces_a_stale_container() {
+    let h = Harness::new("job", 46_600);
+    let stale = h.dir.join("engine-state/c/loams-sqldb-unit-job-backup-1");
+    std::fs::create_dir_all(&stale).expect("stale");
+    std::fs::write(stale.join("labels"), "").expect("labels");
+    std::fs::write(stale.join("status"), "exited").expect("status");
+    h.switch("job-exit", "3");
+    let spec = JobSpec {
+        name: "backup-1".into(),
+        image: Images::load().expect("pins").br().clone(),
+        args: vec!["backup".into()],
+        env: vec![],
+        timeout: Duration::from_secs(30),
+    };
+    assert_eq!(h.rt.run_job(&spec).await.expect("job").exit_code, 3);
+    assert_eq!(h.containers(), vec![]);
 }

@@ -354,10 +354,24 @@ impl LocalRuntime {
              {{{{index .Config.Labels \"{LABEL_MEMBER}\"}}}}\t{{{{index .Config.Labels \"{LABEL_FINGERPRINT}\"}}}}"
         );
         let mut args = strings(["inspect", "--format", &format]);
-        args.extend(ids);
-        // A container removed between `ps` and `inspect` makes inspect fail;
-        // the next call sees a consistent list.
-        let out = self.engine(&args).await?;
+        args.extend(ids.iter().cloned());
+        let out = match self.engine(&args).await {
+            Ok(out) => out,
+            // A container removed between `ps` and `inspect` fails the whole
+            // inspect: look at each one, skipping those that are gone.
+            Err(_) => {
+                let mut out = String::new();
+                for id in &ids {
+                    if let Ok(one) = self
+                        .engine(&strings(["inspect", "--format", &format, id]))
+                        .await
+                    {
+                        out.push_str(&one);
+                    }
+                }
+                out
+            }
+        };
         let mut list = Vec::new();
         for line in out.lines().filter(|l| !l.trim().is_empty()) {
             let f: Vec<&str> = line.split('\t').collect();
@@ -417,7 +431,9 @@ impl LocalRuntime {
         ] {
             a.extend(strings(["--label", &format!("{k}={v}")]));
         }
-        a.extend(strings(["--memory", &format!("{}b", class.memory_bytes())]));
+        // Swap equal to memory: the class limit is the whole budget.
+        let mem = format!("{}b", class.memory_bytes());
+        a.extend(strings(["--memory", &mem, "--memory-swap", &mem]));
         if self.config.cpu_limits {
             let m = class.vcpu_millis();
             a.extend(strings([
@@ -434,15 +450,26 @@ impl LocalRuntime {
             "-v",
             &mount(&dir.join("init.sql"), render::INIT_SQL_PATH),
         ]));
+        // The operator's TLS directory is mounted read-only and not
+        // relabelled; on SELinux hosts it must already carry a container
+        // label (`chcon -Rt container_file_t`).
         a.extend(strings([
             "-v",
-            &mount(&self.config.tls_dir, render::TLS_DIR),
+            &format!("{}:{}:ro", self.config.tls_dir.display(), render::TLS_DIR),
+        ]));
+        // TiDB's socket, the only way to root@localhost (auth_socket, R2.10).
+        a.extend(strings([
+            "-v",
+            &format!("{}:{}:rw,z", dir.join("run").display(), render::SOCKET_DIR),
         ]));
         if let (true, Some(d)) = (
             self.config.endpoints.cluster_tls(),
             &self.config.cluster_tls_dir,
         ) {
-            a.extend(strings(["-v", &mount(d, render::CLUSTER_TLS_DIR)]));
+            a.extend(strings([
+                "-v",
+                &format!("{}:{}:ro", d.display(), render::CLUSTER_TLS_DIR),
+            ]));
         }
         a.push(self.config.images.tidb().reference());
         a.extend(strings([
@@ -622,6 +649,9 @@ impl SqlRuntime for LocalRuntime {
         }
         a.push(spec.image.reference());
         a.extend(spec.args.iter().cloned());
+        // A container of the same name left by a crash would refuse the
+        // name; the replayed job replaces it.
+        let _ = self.engine(&strings(["rm", "-f", &name])).await;
         let child = Command::new(self.config.engine.program())
             .args(&a)
             .stdin(Stdio::null())
