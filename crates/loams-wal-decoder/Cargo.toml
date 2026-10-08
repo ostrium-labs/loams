@@ -21,8 +21,10 @@ members = ["."]
 [lib]
 path = "src/lib.rs"
 
-# Not `loams-wal`: both workspaces build into the one shared target dir, and
-# scripts/loams-pg-bench/run.sh takes <target>/release/loams-wal.
+# Not `loams-wal`: where both workspaces share one target dir (a configured
+# target-dir, as on the build machine), a binary of the same name would
+# overwrite the main workspace's loams-wal. scripts/loams-pg-bench/run.sh
+# runs this one (LOAMS_WAL, else this workspace's target dir).
 [[bin]]
 name = "loams-wal-interpreted"
 path = "src/bin/loams-wal-interpreted.rs"

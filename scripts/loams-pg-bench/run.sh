@@ -122,8 +122,18 @@ command -v docker-compose >/dev/null || COMPOSE=(docker compose)
 ENGINE=docker
 case ${DOCKER_HOST:-} in *podman*) ENGINE=podman ;; esac
 command -v "$ENGINE" >/dev/null || ENGINE=podman
-LOAMS_WAL=${LOAMS_WAL:-$(cargo metadata --format-version 1 --no-deps 2>/dev/null |
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/release/loams-wal-interpreted}
+# loams-wal-interpreted is built in the decoder's own workspace, so ask that
+# workspace for its target dir (LOAMS_WAL overrides it).
+LOAMS_WAL=${LOAMS_WAL:-$(cargo metadata --format-version 1 --no-deps --offline \
+  --manifest-path "$ROOT/crates/loams-wal-decoder/Cargo.toml" 2>/dev/null |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])' 2>/dev/null ||
+  echo "<no target dir>")/release/loams-wal-interpreted}
+need_loams_wal() {
+  [ -x "$LOAMS_WAL" ] && return 0
+  echo "run: no loams-wal-interpreted at $LOAMS_WAL: build it in crates/loams-wal-decoder" \
+    "(see the header), or point LOAMS_WAL at the binary" >&2
+  exit 1
+}
 BROKER=http://127.0.0.1:50051
 PD=127.0.0.1:19379
 TAG=loams-bench
@@ -184,7 +194,7 @@ case $variant in
     else SAFEKEEPERS=127.0.0.1:5454; fi
     ;;
   loams)
-    [ -x "$LOAMS_WAL" ] || { echo "run: no loams-wal at $LOAMS_WAL (see the header)" >&2; exit 1; }
+    need_loams_wal
     stores=$(curl -sf "http://$PD/pd/api/v1/stores" 2>/dev/null |
       python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])' 2>/dev/null || echo 0)
     # A playground started with another store count or TiKV config is restarted.
@@ -214,7 +224,7 @@ case $variant in
     SAFEKEEPERS=127.0.0.1:5460
     ;;
   nvme-*)
-    [ -x "$LOAMS_WAL" ] || { echo "run: no loams-wal at $LOAMS_WAL (see the header)" >&2; exit 1; }
+    need_loams_wal
     wal_root=${disk_root:-$RUN_DIR/nvme}
     SAFEKEEPERS=
     : >"$RUN_DIR/loams-wal.pids"

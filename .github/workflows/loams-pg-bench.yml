@@ -30,6 +30,8 @@ jobs:
     timeout-minutes: 720
     steps:
       - uses: actions/checkout@v7
+      - name: protoc
+        run: command -v protoc || { sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev; }
       # loams-wal with the interpreted sender (PG2 Task 31): the pageserver
       # reads WAL from it, found through the broker (Task 32); no feeder.
       - name: build loams-wal-interpreted
@@ -41,6 +43,11 @@ jobs:
           scripts/pg2/seed-neon-submodules.sh crates/loams-wal-decoder/Cargo.lock
           cd crates/loams-wal-decoder
           POSTGRES_INSTALL_DIR=$PWD/pg_install cargo build --release --locked --features tikv --bin loams-wal-interpreted
+          # The decoder workspace's own target dir (it is not the main
+          # workspace's unless a shared target-dir is configured).
+          target=$(cargo metadata --format-version 1 --no-deps --offline |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+          echo "LOAMS_WAL=$target/release/loams-wal-interpreted" >> "$GITHUB_ENV"
       - name: tiup components
         run: |
           command -v tiup || curl --proto '=https' --tlsv1.2 -sSf https://tiup-mirrors.pingcap.com/install.sh | sh
@@ -72,4 +79,4 @@ jobs:
           fi
           compose=(docker-compose); command -v docker-compose >/dev/null || compose=(docker compose)
           "${compose[@]}" -f deploy/loams-pg-bench/compose.yaml \
-            --profile sk --profile sk3 --profile loams down -v || true
+            --profile sk --profile sk3 down -v || true
