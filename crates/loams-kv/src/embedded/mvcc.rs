@@ -339,7 +339,9 @@ impl Txn {
     }
 
     fn check_window(&self) -> Result<(), TxnError> {
-        if Instant::now() > self.refuse_reads_after {
+        if Instant::now() > self.refuse_reads_after
+            || self.reader.handle.shared.core.collected(self.reader.at)
+        {
             return Err(TxnError::Fatal(BELOW_SAFE_POINT.to_string()));
         }
         Ok(())
@@ -625,8 +627,9 @@ impl Snap {
     }
 
     fn check_window(&self) -> Result<(), TxnError> {
-        if Instant::now() > self.refuse_reads_after
-            && !self.reader.handle.shared.core.covered(self.reader.at)
+        let core = &self.reader.handle.shared.core;
+        if (Instant::now() > self.refuse_reads_after && !core.covered(self.reader.at))
+            || core.collected(self.reader.at)
         {
             return Err(TxnError::Fatal(BELOW_SAFE_POINT.to_string()));
         }

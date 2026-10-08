@@ -156,6 +156,11 @@ impl Core {
         self.gc_state().covers(at)
     }
 
+    /// Whether GC is past `at`: what only reads at `at` saw may be gone.
+    fn collected(&self, at: Ts) -> bool {
+        self.gc_state().safe_point > at
+    }
+
     /// Persists the oracle's mark at `mark` or above (blocking).
     fn persist_mark(&self, mark: Ts) -> Result<(), redb::Error> {
         let _one = self

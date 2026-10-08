@@ -2,7 +2,8 @@
 //! the safe point and the GC thread.
 //!
 //! A GC round computes `safe_point = min(now − gc_life_time, the last
-//! timestamp issued, oldest open snapshot or transaction, live barriers)`,
+//! timestamp issued, oldest open snapshot or transaction still inside the
+//! read window, live barriers)`,
 //! never moving it back, persists
 //! it (`oracle.gc_safe_point`), and deletes every version older than the
 //! newest version at or below it (that version too when it is a
@@ -78,10 +79,14 @@ impl GcState {
         }
     }
 
-    /// The next safe point for a GC at `candidate` (`now − gc_life_time`).
-    fn advance(&mut self, candidate: Ts) -> Ts {
+    /// The next safe point for a GC at `candidate` (`now − gc_life_time`),
+    /// with `floor` the oldest timestamp a read may still use (`now −
+    /// (gc_life_time − 1 min)`). Open reads older than the floor are
+    /// ignored: past their window they can no longer read, unless a
+    /// barrier (counted on its own) covers them (review fix 7).
+    fn advance(&mut self, candidate: Ts, floor: Ts) -> Ts {
         let mut sp = candidate;
-        if let Some((&oldest, _)) = self.open.first_key_value() {
+        if let Some((&oldest, _)) = self.open.range(floor..).next() {
             sp = sp.min(oldest);
         }
         if let Some(barrier) = self.live_barriers().min() {
@@ -150,7 +155,9 @@ impl Shared {
         // Never past a timestamp the oracle issued, whatever `now_ms` says
         // (review fix 5): reads at the clock stay possible.
         let candidate = Ts::from_parts(now_ms.saturating_sub(life), 0).min(core.oracle.last());
-        let safe_point = core.gc_state().advance(candidate);
+        let window = life.saturating_sub(super::millis(super::GC_SAFE_MARGIN));
+        let floor = Ts::from_parts(now_ms.saturating_sub(window), 0);
+        let safe_point = core.gc_state().advance(candidate, floor);
         let versions_deleted = collect(core, safe_point).map_err(super::storage)?;
         core.counters.gc_runs.inc();
         core.counters.versions_deleted.add(versions_deleted);

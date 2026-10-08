@@ -220,10 +220,12 @@ async fn gc_respects_barrier() {
     }
 }
 
-/// An open snapshot holds GC at its timestamp; a deleted key's versions
+/// An open snapshot inside the read window holds GC at its timestamp; one
+/// older than the read floor does not (it can no longer read, review fix
+/// 7) and refuses its reads once GC passes it. A deleted key's versions
 /// (its tombstone included) all go once GC passes them.
 #[tokio::test]
-async fn gc_keeps_open_snapshots_and_drops_deleted_keys() {
+async fn gc_ignores_open_snapshots_below_the_read_floor_and_drops_deleted_keys() {
     let dir = tmp();
     let store = open(&dir.path().join("store.redb"), "gc").await;
     let h = handle(&store);
@@ -239,17 +241,25 @@ async fn gc_keeps_open_snapshots_and_drops_deleted_keys() {
         .await
         .expect("deleted");
 
-    let far = wall_ms() + 3_600_000;
-    let report = h.gc_once_at(far).await.expect("a GC round");
-    assert_eq!(report.safe_point, at, "held at the open snapshot");
+    // At the clock, nothing is old enough to go.
+    let report = h.gc_once().await.expect("a GC round");
     assert_eq!(report.versions_deleted, 0);
     assert_eq!(held.get(b"k").await.expect("get"), Some(b"v1".to_vec()));
-    assert_eq!(held.get(b"gone").await.expect("get"), Some(b"x".to_vec()));
-    drop(held);
 
-    let report = h.gc_once_at(far).await.expect("a GC round");
+    // An hour on, `held` is far below the read floor: it holds nothing.
+    let (last, _) = h.oracle_marks();
+    let report = h
+        .gc_once_at(wall_ms() + 3_600_000)
+        .await
+        .expect("a GC round");
+    assert_eq!(report.safe_point, last, "not held at the open snapshot");
     // k: v1; gone: x and its tombstone.
     assert_eq!(report.versions_deleted, 3);
+    assert_eq!(
+        held.get(b"k").await,
+        Err(TxnError::Fatal("read below the GC safe point".into())),
+        "a read GC has passed is refused, never answered from what is left"
+    );
     assert!(h.stats().gc_runs >= 2);
 }
 
