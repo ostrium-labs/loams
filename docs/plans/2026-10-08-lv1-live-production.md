@@ -285,6 +285,11 @@ Embedded-only tests:
 
 **Consumes:** `LiveArgs`, `LiveRuntime`, `ServerError::Live*`.
 
+**Prerequisites** (Task 21 review, minor items 3 and 4, to land before the embedded store becomes the default):
+- **Incremental embedded GC.** A GC round works in bounded key ranges, one redb write transaction each, with a resume cursor between them. It never collects an unbounded list of doomed versions, and it never holds the write lock for a whole-table scan.
+- **Scans skip older versions.** An embedded scan re-seeks past a key's older versions instead of stepping through them. A large scan runs in `spawn_blocking` (row T21-12) rather than inline on a runtime worker.
+- Tests: GC of a store with more versions than one range takes several write transactions and finishes; a scan over keys with many versions reads each key's newest visible one; neither blocks a concurrent commit for a whole-table pass.
+
 **Produces:**
 - Cargo features: `live = ["dep:loams-live", "loams-kv/embedded"]`, **in `default`**; `live-tikv = ["live", "tikv", "loams-kv/tikv"]`. The `full` variant enables `live-tikv`.
 - The flag `--live-store <embedded | tikv://<pd>[,<pd>]/<keyspace>>`, default `embedded`, stored under `<data_dir>/live/`. `--live-pd` and `--live-keyspace` stay one release as aliases that imply `tikv://` and print a deprecation line.
