@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vite-plus/test";
 import { mapColumnsToSemanticTypes } from "../src/type-mapper.js";
-import type { SupersetColumn } from "@loams-core/types";
+import type { BiColumn } from "@loams-core/types";
 
 /**
- * Superset's dataset API always returns `filterable` and `groupby` alongside the
- * name and type, and `SupersetColumn` requires them. These fixtures spell that
+ * The BI backend's dataset API always returns `filterable` and `groupby` alongside the
+ * name and type, and `BiColumn` requires them. These fixtures spell that
  * out rather than weakening the type, because the mapper never reads them and a
  * cast here would hide a future field going missing.
  */
-function column(column_name: string, type: string, is_dttm = false): SupersetColumn {
+function column(column_name: string, type: string, is_dttm = false): BiColumn {
   return { column_name, type, is_dttm, filterable: true, groupby: true };
 }
 
@@ -44,7 +44,7 @@ describe("type-mapper", () => {
   });
 
   it("Test multiple columns mapped correctly", () => {
-    const columns: SupersetColumn[] = [
+    const columns: BiColumn[] = [
       column("id", "INT"),
       column("name", "VARCHAR"),
       column("price", "DECIMAL"),

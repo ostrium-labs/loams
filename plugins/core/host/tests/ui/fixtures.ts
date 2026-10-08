@@ -47,7 +47,7 @@ export function dashboardPlugin(overrides: Partial<PluginStatus> = {}): PluginSt
   return plugin({
     id: "dashboard",
     name: "Dashboard",
-    description: "Analytics and performance, powered by Superset and Flint.",
+    description: "Analytics and performance, powered by the BI backend and chart specs.",
     uiPath: "/plugins/dashboard",
     alwaysOn: true,
     order: 0,

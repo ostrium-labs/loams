@@ -10,13 +10,13 @@ interface ThemeReportPanelProps {
 }
 
 /**
- * Surfaces flint's `report` and its invalid-theme error.
+ * Surfaces chart-specs' `report` and its invalid-theme error.
  *
- * flint deliberately does not swallow downgrades — "silent fallbacks are
+ * chart-specs deliberately does not swallow downgrades — "silent fallbacks are
  * indistinguishable from bugs" — so this panel does the same. The report is
- * informational and non-blocking: the theme IS applied, flint just had to
+ * informational and non-blocking: the theme IS applied, chart-specs just had to
  * approximate something. The error state is separate and blocking, because an
- * unknown preset name means flint refused to resolve at all and nothing is
+ * unknown preset name means chart-specs refused to resolve at all and nothing is
  * being themed; rendering the dashboard as if it were themed would be a lie.
  *
  * Both states are `Alert`: an error and a warning are exactly its variants, and
@@ -29,7 +29,7 @@ export const ThemeReportPanel: React.FC<ThemeReportPanelProps> = ({ report, erro
         <AlertTitle>Theme could not be applied</AlertTitle>
         <AlertDescription>{error}</AlertDescription>
         <AlertDescription>
-          Flint treats an unknown preset name as an error rather than quietly rendering unthemed, so
+          chart-specs treats an unknown preset name as an error rather than quietly rendering unthemed, so
           the dashboard is left on its defaults and the problem is shown here instead.
         </AlertDescription>
       </Alert>
@@ -51,11 +51,11 @@ export const ThemeReportPanel: React.FC<ThemeReportPanelProps> = ({ report, erro
     <Alert variant="warning">
       <InfoCircleIcon />
       <AlertTitle>
-        {report.length} simplification{report.length === 1 ? "" : "s"} from Flint
+        {report.length} simplification{report.length === 1 ? "" : "s"} from chart-specs
       </AlertTitle>
       <AlertDescription>
         <p className="m-0">
-          This theme resolved, but Flint had to approximate the following. Nothing is broken — it is
+          This theme resolved, but chart-specs had to approximate the following. Nothing is broken — it is
           telling you where it traded fidelity for a rule.
         </p>
         <ul className="m-0 flex list-none flex-col gap-[0.4rem]">

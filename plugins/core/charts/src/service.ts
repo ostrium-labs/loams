@@ -1,10 +1,10 @@
 import { Context, Service } from "cordis";
-import { registerChartKind, compileNativeWidget, declineEChartsRender } from "./compiler.js";
+import { registerChartKind, compileNativeWidget, declineChartRender } from "./compiler.js";
 import type { RenderDecline } from "./compiler.js";
 import { applyGroundedInk, buildThemeFacts, collectUnmappedDecisions } from "./theme-decisions.js";
 import type { ThemeGroundingFacts } from "./theme-decisions.js";
 import type { DesignDecisions, ThemeReport } from "flint-chart/core";
-// Side-effect imports: augment cordis Context with the `data` and `flint` keys
+// Side-effect imports: augment cordis Context with the `data` and `chart-specs` keys
 // this service injects. Re-declaring them locally would conflict with the
 // packages that own them.
 import "@loams-core/data";
@@ -20,7 +20,7 @@ import "@loams-core/chart-specs";
  * a route that forwards `params` verbatim.
  *
  * It is stripped before the data query (see `splitRenderParams`), because every
- * entry in `params` becomes a filter column in `SupersetAdapter.queryData`. A
+ * entry in `params` becomes a filter column in `BiService.queryData`. A
  * caller that puts the theme there MUST strip it before its own direct
  * `fetchWidgetData` call, or the chart will be queried with a filter on a column
  * named after this key.
@@ -31,13 +31,13 @@ export const DASHBOARD_THEME_PARAM = "__dashboardTheme";
 const MAX_REMEMBERED_WARNINGS = 32;
 
 /**
- * The slice of the flint service this package depends on.
+ * The slice of the chart-specs service this package depends on.
  *
  * Declared structurally rather than imported from `@loams-core/chart-specs` so that a
  * missing or differently shaped resolver degrades to "unthemed" instead of
  * failing to compile - and so the theme path can be exercised against a stub.
  */
-interface FlintThemeBridge {
+interface ChartSpecThemeBridge {
   resolveWidgetTheme?(widget: unknown, dashboardTheme?: unknown): ThemeResolutionLike | undefined;
   groundTheme?(
     spec: unknown,
@@ -46,7 +46,7 @@ interface FlintThemeBridge {
   ): ThemeGroundingLike | undefined;
 }
 
-/** The shape of `FlintService.resolveWidgetTheme`'s return, read defensively. */
+/** The shape of `ChartSpecService.resolveWidgetTheme`'s return, read defensively. */
 interface ThemeResolutionLike {
   valid?: boolean;
   source?: string;
@@ -54,7 +54,7 @@ interface ThemeResolutionLike {
   report?: ThemeReport[];
 }
 
-/** The shape of `FlintService.groundTheme`'s return, read defensively. */
+/** The shape of `ChartSpecService.groundTheme`'s return, read defensively. */
 interface ThemeGroundingLike {
   valid?: boolean;
   report?: ThemeReport[];
@@ -88,7 +88,7 @@ export function splitRenderParams(params?: Record<string, unknown>): {
   return { dataParams, dashboardTheme };
 }
 
-/** Flatten flint's `ThemeReport[]` into one loggable line. */
+/** Flatten chart-specs' `ThemeReport[]` into one loggable line. */
 function describeThemeReport(report: ThemeReport[] | undefined): string {
   if (!Array.isArray(report) || report.length === 0) return "no report attached";
   return report.map((entry) => `${entry.path}: ${entry.message}`).join("; ");
@@ -102,20 +102,20 @@ function describeThemeReport(report: ThemeReport[] | undefined): string {
  * have rendered it. This says what is actually true and names the package that
  * does render it.
  */
-export class NotAnEChartsWidgetError extends Error {
+export class NotAChartWidgetError extends Error {
   readonly widgetType: string;
   readonly reason: string;
 
   constructor(decline: RenderDecline) {
     super(decline.reason);
-    this.name = "NotAnEChartsWidgetError";
+    this.name = "NotAChartWidgetError";
     this.widgetType = decline.widgetType;
     this.reason = decline.reason;
   }
 }
 
 export class RenderService extends Service {
-  static inject = ["data", "flint"];
+  static inject = ["data", "chartSpecs"];
 
   registerKind = registerChartKind;
 
@@ -135,18 +135,18 @@ export class RenderService extends Service {
    * also arrive as `params[DASHBOARD_THEME_PARAM]`, which this method strips
    * before the data query; an explicit argument outranks the reserved key.
    *
-   * Precedence over the per-widget `flint.theme_spec` is NOT decided here: it
+   * Precedence over the per-widget `chartSpec.theme_spec` is NOT decided here: it
    * belongs to `resolveWidgetTheme`, which is also where a bare preset name, a
    * `{ preset, custom }` pair and a malformed widget override are all resolved.
    *
-   * @throws {NotAnEChartsWidgetError} when the widget is not an ECharts widget.
+   * @throws {NotAChartWidgetError} when the widget is not a chart widget.
    * A `graph` widget reaches here when a caller routed it to the wrong renderer;
    * the error names the package that owns it. Use `tryCompileWidget` where the
    * widget's type is not known in advance.
    */
   async compileWidget(widget: any, params?: Record<string, unknown>, dashboardTheme?: unknown) {
-    const decline = declineEChartsRender(widget);
-    if (decline) throw new NotAnEChartsWidgetError(decline);
+    const decline = declineChartRender(widget);
+    if (decline) throw new NotAChartWidgetError(decline);
 
     const { dataParams, dashboardTheme: themeFromParams } = splitRenderParams(params);
     const data = await this.ctx.data.fetchWidgetData(widget, dataParams);
@@ -154,14 +154,14 @@ export class RenderService extends Service {
 
     let options: Record<string, unknown> | undefined;
 
-    if (widget.flint) {
+    if (widget.chartSpec) {
       try {
-        if (this.ctx.flint) {
-          options = await this.ctx.flint.compile(widget, data);
+        if (this.ctx.chartSpecs) {
+          options = await this.ctx.chartSpecs.compile(widget, data);
         }
       } catch (e) {
         this.ctx.logger.warn(
-          "Flint compile failed, falling back to basic mapper:",
+          "chart-specs compile failed, falling back to basic mapper:",
           (e as Error).message,
         );
       }
@@ -169,7 +169,7 @@ export class RenderService extends Service {
 
     if (!options) options = compileNativeWidget(widget, rows);
 
-    // The theme is applied AFTER compilation, deliberately. `FlintService.compile`
+    // The theme is applied AFTER compilation, deliberately. `ChartSpecService.compile`
     // falls back to a hardcoded Power BI theme and rewrites `res.color`, so an
     // overlay applied before it would be silently outranked for every widget
     // without its own `theme_spec`. A theme that loses to a fallback is not a
@@ -190,7 +190,7 @@ export class RenderService extends Service {
     params?: Record<string, unknown>,
     dashboardTheme?: unknown,
   ): Promise<{ rendered: true; options: Record<string, unknown> } | RenderDecline> {
-    const decline = declineEChartsRender(widget);
+    const decline = declineChartRender(widget);
     if (decline) return decline;
     return { rendered: true, options: await this.compileWidget(widget, params, dashboardTheme) };
   }
@@ -203,13 +203,13 @@ export class RenderService extends Service {
   /**
    * The chart type grounding is told about.
    *
-   * The widget's own flint declaration when it has one - that is the semantic
+   * The widget's own chart-specs declaration when it has one - that is the semantic
    * chart the author asked for - otherwise the realized mark family, which is
    * the coarsest true statement available about a compiled option.
    */
   private _chartType(widget: unknown, options: Record<string, unknown>): string {
-    const flint = isPlainObject(widget) ? widget.flint : undefined;
-    const declared = asString(isPlainObject(flint) ? flint.chartType : undefined);
+    const chartSpecs = isPlainObject(widget) ? widget.chartSpec : undefined;
+    const declared = asString(isPlainObject(chartSpecs) ? chartSpecs.chartType : undefined);
     if (declared !== undefined) return declared;
     const first = Array.isArray(options.series) ? options.series.find(isPlainObject) : undefined;
     return asString(first?.type) ?? "";
@@ -223,7 +223,7 @@ export class RenderService extends Service {
   }
 
   /**
-   * Overlay the widget's effective flint theme onto compiled ECharts options.
+   * Overlay the widget's effective chart-specs theme onto compiled ECharts options.
    *
    * Four steps, each of which can decline without taking the chart down:
    * resolve the selection (`resolveWidgetTheme`), ground it against this chart
@@ -237,7 +237,7 @@ export class RenderService extends Service {
     dashboardTheme: unknown,
     rows: unknown[],
   ): Record<string, unknown> {
-    const bridge = this.ctx.flint as unknown as FlintThemeBridge | undefined;
+    const bridge = this.ctx.chartSpecs as unknown as ChartSpecThemeBridge | undefined;
     if (
       !bridge ||
       typeof bridge.resolveWidgetTheme !== "function" ||
@@ -245,7 +245,7 @@ export class RenderService extends Service {
     ) {
       this._warnOnce(
         "no-bridge",
-        "No flint theme service (neither resolveWidgetTheme() nor groundTheme()); rendering unthemed",
+        "No chart-specs theme service (neither resolveWidgetTheme() nor groundTheme()); rendering unthemed",
       );
       return options;
     }

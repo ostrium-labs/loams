@@ -96,11 +96,10 @@ any obligation arises:
 The remaining upstreams (Apache Superset, Zulip, Langfuse, GlitchTip) are
 reached the same way, over HTTP only.
 
-Note on naming: `core/bi/` is this repository's name for the
-client that speaks **Apache Superset's** REST API, so Superset is still the
-upstream product named above. The plugin id (`control-plane`) is this project's
-naming; the wire is Superset's. The `SUPERSET_*` environment variables and the
-`SUPERSET` `envPrefix` describe that same wire and are unchanged.
+Note on naming: `core/bi/` is the client for the BI backend, which speaks the
+Apache Superset REST API, so Superset is still the upstream product named above.
+The plugin id (`bi`) and the `LOAMS_BI_*` environment variables are this project's
+naming; the wire is Superset's.
 
 Note on `loams-dev`: Loams is Apache-2.0, and this adapter calls it exactly as
 it calls any other upstream — over HTTP, with no code shared. The proprietary

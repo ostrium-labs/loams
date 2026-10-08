@@ -14,7 +14,7 @@ import type { DesignDecisions } from "flint-chart/core";
  *
  * Cast rather than constructed: `DesignDecisions` has ~40 required fields and
  * this suite exercises the handful the mapping reads. The end-to-end proof that
- * real flint decisions map correctly lives in `theme-bridge.spec.ts`, which
+ * real chart-specs decisions map correctly lives in `theme-bridge.spec.ts`, which
  * grounds an actual shipped house.
  */
 function grounded(overrides?: Record<string, unknown>): DesignDecisions {
@@ -64,7 +64,7 @@ describe("buildThemeFacts", () => {
     expect(facts.channelSemantics).toEqual({});
   });
 
-  it("translates ECharts series types into flint mark families", () => {
+  it("translates ECharts series types into chart-specs mark families", () => {
     expect(buildThemeFacts({ series: [{ type: "bar" }] }).markTypes).toEqual(["band"]);
     expect(buildThemeFacts({ series: [{ type: "pie" }] }).markTypes).toEqual(["arc"]);
     expect(buildThemeFacts({ series: [{ type: "heatmap" }] }).markTypes).toEqual(["cell"]);

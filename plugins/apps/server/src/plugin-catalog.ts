@@ -91,21 +91,21 @@ function compact(config: Record<string, unknown>): Record<string, unknown> {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Control plane                                                               */
+/* BI backend                                                                 */
 /* -------------------------------------------------------------------------- */
 
 /**
- * The control-plane client (`@loams-core/bi`), which ships no
+ * The BI client (`@loams-core/bi`), which ships no
  * manifest of its own.
  *
- * The plugin identity is "control plane", but the upstream it actually speaks to is
- * Apache Superset over its REST API, so `upstream` names Superset and `envPrefix`
- * stays `SUPERSET` -- both are facts about the wire, not about this project's naming.
- * Renaming them would misdescribe the protocol.
+ * The plugin identity is "bi" (the BI backend client). The backend speaks the Apache
+ * Superset REST API; that is a fact about the wire, so `upstream.product` stays neutral,
+ * while `envPrefix` is the neutral `LOAMS_BI` (the legacy `SUPERSET_*` variables are
+ * still read as deprecated fallbacks by `index.ts`).
  *
  * It is `alwaysOn` for the same reason the dashboard is, and the mechanism is the
  * one `host.ts` documents: the service is attached on the root context at boot (the
- * thirteen original `/api/*` routes read `ctx.controlPlane` directly), so a console
+ * thirteen original `/api/*` routes read `ctx.bi` directly), so a console
  * toggle could not unload it. A toggle that reports success while nothing changes
  * is worse than no toggle, so the toggle is disabled instead.
  *
@@ -113,18 +113,18 @@ function compact(config: Record<string, unknown>): Record<string, unknown> {
  * for it (`registry.ts` only consults persisted state when `alwaysOn` is not set), so
  * the id change costs no stored toggle state.
  */
-export const CONTROL_PLANE_MANIFEST: PluginManifest = {
-  id: "control-plane",
-  name: "Control Plane",
+export const BI_MANIFEST: PluginManifest = {
+  id: "bi",
+  name: "BI",
   description:
-    "The BI warehouse this dashboard reads from: datasets, charts and query results, over the Superset-compatible control-plane API.",
+    "The BI warehouse this dashboard reads from: datasets, charts and query results, over the Superset-compatible REST API.",
   version: "1.0.0",
   category: "core",
-  uiPath: "/plugins/control-plane",
+  uiPath: "/plugins/bi",
   order: 1,
   alwaysOn: true,
   defaultEnabled: true,
-  upstream: { product: "Apache Superset", envPrefix: "SUPERSET" },
+  upstream: { product: "BI backend", envPrefix: "LOAMS_BI" },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -350,7 +350,7 @@ function refusingLoader(message: string): PluginLoader {
 export function planPluginCatalog(env: Env = process.env): CatalogPlan {
   const entries: CatalogEntryPlan[] = [
     // Always on and attached at boot, so there is no loader and no env gate.
-    { manifest: CONTROL_PLANE_MANIFEST, missing: [] },
+    { manifest: BI_MANIFEST, missing: [] },
     ...ENTRIES.map((entry) => {
       const missing = missingEnv(env, entry.requiredEnv);
       const usable = missing.length === 0;

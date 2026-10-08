@@ -1,23 +1,23 @@
 import { describe, it, expect, beforeEach } from "vite-plus/test";
 import { Context } from "cordis";
-import { FlintService } from "../src/service.js";
+import { ChartSpecService } from "../src/service.js";
 import { THEME_PRESETS, resolveThemeSpec } from "flint-chart/core";
 import type { Widget } from "@loams-core/types";
 
-function makeService(): FlintService {
+function makeService(): ChartSpecService {
   const ctx = new Context();
-  ctx.provide("controlPlane", {});
-  return new FlintService(ctx);
+  ctx.provide("bi", {});
+  return new ChartSpecService(ctx);
 }
 
 const chartWidget = (themeSpec?: unknown): Widget => ({
   id: "w1",
   type: "chart",
-  flint: { chartType: "Bar Chart", encodings: {}, theme_spec: themeSpec as never },
+  chartSpec: { chartType: "Bar Chart", encodings: {}, theme_spec: themeSpec as never },
 });
 
-describe("FlintService.listThemes", () => {
-  let service: FlintService;
+describe("ChartSpecService.listThemes", () => {
+  let service: ChartSpecService;
   beforeEach(() => {
     service = makeService();
   });
@@ -47,8 +47,8 @@ describe("FlintService.listThemes", () => {
   });
 });
 
-describe("FlintService.resolveTheme", () => {
-  let service: FlintService;
+describe("ChartSpecService.resolveTheme", () => {
+  let service: ChartSpecService;
   beforeEach(() => {
     service = makeService();
   });
@@ -74,7 +74,7 @@ describe("FlintService.resolveTheme", () => {
     }
   });
 
-  // The important regression test: flint treats an unknown preset name as an
+  // The important regression test: chart-specs treats an unknown preset name as an
   // ERROR rather than silently falling back to some other house. The service
   // must absorb that into a report, never throw, and never invent a spec.
   it("does NOT throw on an unknown preset name, and reports valid: false", () => {
@@ -102,8 +102,8 @@ describe("FlintService.resolveTheme", () => {
   });
 });
 
-describe("FlintService.resolveTheme — inheritance semantics", () => {
-  let service: FlintService;
+describe("ChartSpecService.resolveTheme — inheritance semantics", () => {
+  let service: ChartSpecService;
   beforeEach(() => {
     service = makeService();
   });
@@ -157,8 +157,8 @@ describe("FlintService.resolveTheme — inheritance semantics", () => {
   });
 });
 
-describe("FlintService.resolveWidgetTheme — precedence", () => {
-  let service: FlintService;
+describe("ChartSpecService.resolveWidgetTheme — precedence", () => {
+  let service: ChartSpecService;
   beforeEach(() => {
     service = makeService();
   });
@@ -201,8 +201,8 @@ describe("FlintService.resolveWidgetTheme — precedence", () => {
   });
 });
 
-describe("FlintService.groundTheme", () => {
-  let service: FlintService;
+describe("ChartSpecService.groundTheme", () => {
+  let service: ChartSpecService;
   beforeEach(() => {
     service = makeService();
   });
@@ -220,7 +220,7 @@ describe("FlintService.groundTheme", () => {
     const spec = resolveThemeSpec("nyt");
     const res = service.groundTheme(spec!, "Bar Chart");
     // Unknown mark channel + no table means the ground cannot honour everything,
-    // and flint says so rather than pretending it did.
+    // and chart-specs says so rather than pretending it did.
     expect(res.report.length).toBeGreaterThan(0);
     for (const entry of res.report) {
       expect(entry.stage).toBe("ground");

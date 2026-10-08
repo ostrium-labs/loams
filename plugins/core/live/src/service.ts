@@ -1,7 +1,7 @@
 /**
  * Loams' own live state, as a dashboard data source.
  *
- * The dashboard reads Superset through the control plane, which is a warehouse:
+ * The dashboard reads the BI backend through the control plane, which is a warehouse:
  * good for history, wrong for "what is happening right now". Loams already
  * publishes operations, approvals and notifications as server-streaming watch
  * RPCs, so this keeps one projected copy of each and serves it to widgets

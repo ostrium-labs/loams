@@ -23,7 +23,7 @@ declare module "cordis" {
 }
 
 export class AgentToolsService extends Service {
-  static inject = ["dashboard", "data", "render", "controlPlane", "flint", "store"];
+  static inject = ["dashboard", "data", "render", "bi", "chartSpecs", "store"];
 
   constructor(ctx: Context) {
     super(ctx, "agentTools");
@@ -33,13 +33,13 @@ export class AgentToolsService extends Service {
     return [
       {
         name: "list_datasets",
-        description: "List datasets available in Superset",
+        description: "List datasets available in the BI backend",
         inputSchema: {
           type: "object",
           properties: {},
         },
         handler: async () => {
-          return await this.ctx.controlPlane.listDatasets();
+          return await this.ctx.bi.listDatasets();
         },
       },
       {
@@ -53,7 +53,7 @@ export class AgentToolsService extends Service {
           required: ["id"],
         },
         handler: async ({ id }) => {
-          return await this.ctx.controlPlane.describeDataset(id);
+          return await this.ctx.bi.describeDataset(id);
         },
       },
       {
@@ -132,31 +132,31 @@ export class AgentToolsService extends Service {
         },
       },
       {
-        name: "add_flint_widget",
-        description: "Create and add a Flint widget to a dashboard",
+        name: "add_chart_spec_widget",
+        description: "Create and add a chart-specs widget to a dashboard",
         inputSchema: {
           type: "object",
           properties: {
             dashboardId: { type: "string" },
             datasetId: { type: "number" },
-            flintSpec: { type: "object" },
+            chartSpec: { type: "object" },
             position: { type: "object" },
           },
-          required: ["dashboardId", "datasetId", "flintSpec"],
+          required: ["dashboardId", "datasetId", "chartSpec"],
         },
-        handler: async ({ dashboardId, datasetId, flintSpec, position }) => {
-          const validation = await this.ctx.flint.validate(flintSpec);
+        handler: async ({ dashboardId, datasetId, chartSpec, position }) => {
+          const validation = await this.ctx.chartSpecs.validate(chartSpec);
           if (!validation.valid || validation.spec === undefined) {
-            throw new Error(`Invalid flint spec: ${validation.errors.join("; ")}`);
+            throw new Error(`Invalid chart spec: ${validation.errors.join("; ")}`);
           }
           const widget: Widget = {
             id: uuidv4(),
             type: "chart",
             data: {
-              source: "superset",
+              source: "bi",
               datasetId,
             },
-            flint: validation.spec,
+            chartSpec: validation.spec,
           };
           return await this.ctx.dashboard.addWidget(dashboardId, widget, position);
         },

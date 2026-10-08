@@ -52,7 +52,7 @@ const HALF = "flex-1";
 export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose, onAdd }) => {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number>(1);
-  const [mode, setMode] = useState<"flint" | "native">("flint");
+  const [mode, setMode] = useState<"spec" | "native">("spec");
   const [title, setTitle] = useState("");
   const [chartKind, setChartKind] = useState<any>("bar");
   const [xAxis, setXAxis] = useState("");
@@ -79,15 +79,15 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
 
     let widget: Widget;
 
-    if (mode === "flint") {
+    if (mode === "spec") {
       widget = {
         id,
         type: "chart",
-        data: { source: "superset", datasetId: selectedDatasetId },
-        flint: {
+        data: { source: "bi", datasetId: selectedDatasetId },
+        chartSpec: {
           chartType:
             chartKind === "line" ? "Line Chart" : chartKind === "pie" ? "Pie Chart" : "Bar Chart",
-          title: title || "New Flint Chart",
+          title: title || "New Chart",
           encodings: {
             x: { field: xAxis || columns[0]?.column_name || "x" },
             y: { field: yAxis || columns[1]?.column_name || "y" },
@@ -99,7 +99,7 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
       widget = {
         id,
         type: "chart",
-        data: { source: "superset", datasetId: selectedDatasetId },
+        data: { source: "bi", datasetId: selectedDatasetId },
         chart: {
           kind: chartKind,
           encode: {
@@ -161,11 +161,11 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
             <div className={MODE_ROW} role="group" aria-labelledby="add-widget-mode-label">
               <Button
                 variant="outline"
-                aria-pressed={mode === "flint"}
-                className={cn(MODE, mode === "flint" ? MODE_ON : MODE_OFF)}
-                onClick={() => setMode("flint")}
+                aria-pressed={mode === "spec"}
+                className={cn(MODE, mode === "spec" ? MODE_ON : MODE_OFF)}
+                onClick={() => setMode("spec")}
               >
-                Microsoft Flint (Semantic Spec)
+                Chart spec (semantic)
               </Button>
               <Button
                 variant="outline"
@@ -173,14 +173,14 @@ export const AddWidgetModal: React.FC<AddWidgetModalProps> = ({ isOpen, onClose,
                 className={cn(MODE, mode === "native" ? MODE_ON : MODE_OFF)}
                 onClick={() => setMode("native")}
               >
-                Native ECharts
+                Native chart
               </Button>
             </div>
           </div>
 
           <div className={GROUP}>
             <Label className={LABEL} htmlFor="add-widget-dataset">
-              Superset Dataset
+              BI Dataset
             </Label>
             <select
               id="add-widget-dataset"

@@ -24,7 +24,7 @@ const noop = () => {};
 
 function ctx(): RpcContext {
   return {
-    controlPlane: {
+    bi: {
       listDatasets: async () => ({ result: [{ id: 1, table_name: "sales" }] }),
       describeDataset: async () => ({ id: 7, table_name: "sales", columns: [] }),
       queryData: async () => ({ data: [{ region: "emea", revenue: 1200.5, active: true }] }),
@@ -37,7 +37,7 @@ function ctx(): RpcContext {
     },
     data: { fetchWidgetData: async () => ({ data: [] }) },
     render: { compileWidget: async () => ({ series: [] }) },
-    flint: {
+    chartSpecs: {
       listThemes: () => [
         { id: "economist", label: "Economist", description: "Print-first", icon: "<svg/>" },
       ],

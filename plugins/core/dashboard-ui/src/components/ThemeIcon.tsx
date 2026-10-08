@@ -58,10 +58,10 @@ export const ThemeIcon: React.FC<ThemeIconProps> = ({ svg, label, size = 20 }) =
 };
 
 /**
- * A local stand-in for flint's `DEFAULT_THEME_ICON`, which the theme service
+ * A local stand-in for chart-specs' `DEFAULT_THEME_ICON`, which the theme service
  * does not return on `GET /api/themes` (that endpoint lists the ten houses, and
- * "no house" is not one of them). Without it the "Flint defaults" choice would
- * be an empty slot, which is exactly what flint exports the constant to avoid.
+ * "no house" is not one of them). Without it the "Default theme" choice would
+ * be an empty slot, which is exactly what chart-specs exports the constant to avoid.
  */
 export const DefaultThemeIcon: React.FC<{ size?: number }> = ({ size = 20 }) => (
   <svg
@@ -74,7 +74,7 @@ export const DefaultThemeIcon: React.FC<{ size?: number }> = ({ size = 20 }) => 
     strokeWidth="1.4"
     strokeLinecap="round"
     role="img"
-    aria-label="Flint defaults"
+    aria-label="Default theme"
   >
     <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
     <line x1="1.5" y="10.5" x2="14.5" y2="10.5" />

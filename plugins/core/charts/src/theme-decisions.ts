@@ -1,5 +1,5 @@
 /**
- * Flint `DesignDecisions` -> ECharts option keys.
+ * chart-specs `DesignDecisions` -> ECharts option keys.
  *
  * flint-chart's visual theming is realized by its Vega-Lite assembler only; its
  * ECharts assembler accepts a `theme_spec` and discards it. This module is the
@@ -9,7 +9,7 @@
  * `ThemeSpec` is level 1: it states ink and policy without binding any of it to
  * a chart. `groundTheme` turns it into `DesignDecisions` - level 2, still
  * backend-neutral, but with every role bound to this chart. Reading the spec
- * directly would mean re-implementing flint's presence ordinals, its ink
+ * directly would mean re-implementing chart-specs' presence ordinals, its ink
  * borrowing chain and its accessibility rules, and getting them subtly wrong.
  * So this module consumes decisions and never a spec.
  *
@@ -32,17 +32,17 @@
 import type { DesignDecisions } from "flint-chart/core";
 
 /** A single ECharts option object. Deliberately structural, not echarts' own types. */
-export type EChartsOptionLike = Record<string, unknown>;
+export type ChartOptionLike = Record<string, unknown>;
 
 type Dict = Record<string, unknown>;
 
-/** The screen channel of one axis. flint's `DesignDecisions.axes` is keyed by these. */
+/** The screen channel of one axis. chart-specs' `DesignDecisions.axes` is keyed by these. */
 export type AxisChannel = "x" | "y";
 
 /**
  * One axis, from both sides.
  *
- * flint keys its bound axes by screen channel (`x`, `y`); ECharts keys its
+ * chart-specs keys its bound axes by screen channel (`x`, `y`); ECharts keys its
  * option by axis name (`xAxis`, `yAxis`). Nothing else in the two trees shares a
  * name for an axis, so the pairing is stated once here rather than at each site.
  */
@@ -79,9 +79,9 @@ export interface ThemeGroundingFacts {
 // ─── Chart facts ────────────────────────────────────────────────────────────
 
 /**
- * ECharts series type -> flint `GeometryKind`.
+ * ECharts series type -> chart-specs `GeometryKind`.
  *
- * flint's mark vocabulary is `'line' | 'point' | 'area' | 'band' | 'arc' |
+ * chart-specs' mark vocabulary is `'line' | 'point' | 'area' | 'band' | 'arc' |
  * 'cell'`. A bar is `band` (a bar in a row) rather than `cell` (a tile in a
  * grid); a pie is `arc`. Only these five series types are translated: one this
  * table does not name contributes no mark family rather than a wrong one.
@@ -128,12 +128,12 @@ function lookup(table: Dict, key: string): string | undefined {
   return asString(table[key]);
 }
 
-function seriesList(options: EChartsOptionLike): Dict[] {
+function seriesList(options: ChartOptionLike): Dict[] {
   if (!Array.isArray(options.series)) return [];
   return options.series.filter(isPlainObject);
 }
 
-function seriesTypes(options: EChartsOptionLike): string[] {
+function seriesTypes(options: ChartOptionLike): string[] {
   const types: string[] = [];
   for (const entry of seriesList(options)) {
     const type = asString(entry.type);
@@ -152,7 +152,7 @@ function seriesTypes(options: EChartsOptionLike): string[] {
  * made. An axis the option does not carry is absent from the record, which is
  * what makes grounding bind no decision for it.
  */
-function readChannelSemantics(options: EChartsOptionLike): Record<string, unknown> {
+function readChannelSemantics(options: ChartOptionLike): Record<string, unknown> {
   const semantics: Record<string, unknown> = {};
   const series = seriesList(options)[0];
   const encode = readGroup(series?.encode);
@@ -180,7 +180,7 @@ function readChannelSemantics(options: EChartsOptionLike): Record<string, unknow
  * something with axes, series and a title: the facts grounding wants are
  * properties of that tree, not of the widget that asked for it.
  */
-export function buildThemeFacts(options: EChartsOptionLike, rows?: unknown[]): ThemeGroundingFacts {
+export function buildThemeFacts(options: ChartOptionLike, rows?: unknown[]): ThemeGroundingFacts {
   const markTypes = seriesTypes(options)
     .map((type) => lookup(MARK_FAMILY_BY_SERIES_TYPE, type))
     .filter((family): family is string => family !== undefined);
@@ -244,7 +244,7 @@ export interface GroundedInk {
   separators?: Record<string, { color?: string; gap?: number }>;
 }
 
-/** `'transparent'` is flint's "no ink", not a colour to write down. */
+/** `'transparent'` is chart-specs' "no ink", not a colour to write down. */
 function readRule(value: unknown): GroundedRule | undefined {
   const rule = readGroup(value);
   if (!rule) return undefined;
@@ -393,7 +393,7 @@ function mapOneOrMany(value: unknown, fn: (item: Dict) => Dict): unknown {
 }
 
 /** The row count a dataset-bound series would draw, when the option states it. */
-function datasetRowCount(options: EChartsOptionLike): number | undefined {
+function datasetRowCount(options: ChartOptionLike): number | undefined {
   const dataset = options.dataset;
   const first = Array.isArray(dataset) ? dataset[0] : dataset;
   const source = readGroup(first)?.source;
@@ -408,7 +408,7 @@ function datasetRowCount(options: EChartsOptionLike): number | undefined {
  * come from `data` or, on a dataset-bound series, from the rows the caller
  * fetched (or, failing that, from the dataset the option carries).
  */
-export function countColorDemands(options: EChartsOptionLike, rows?: unknown[]): number {
+export function countColorDemands(options: ChartOptionLike, rows?: unknown[]): number {
   const series = seriesList(options);
   if (series.length === 0) return 0;
   const rowCount = rows?.length ?? datasetRowCount(options);
@@ -588,10 +588,10 @@ function styleTooltip(tooltip: Dict, ink: GroundedInk): Dict {
  *   overlay.
  */
 export function applyGroundedInk(
-  options: EChartsOptionLike,
+  options: ChartOptionLike,
   decisions: DesignDecisions,
   rows?: unknown[],
-): EChartsOptionLike {
+): ChartOptionLike {
   if (!isPlainObject(options)) return options;
   const ink = readGroundedInk(decisions);
 
@@ -659,7 +659,7 @@ export function applyGroundedInk(
  * Grounded decision blocks with no ECharts option key.
  *
  * Reported at debug level, because a house that is only partly realized should
- * be visible in the logs rather than silently half-applied. Flint's own rule is
+ * be visible in the logs rather than silently half-applied. chart-specs' own rule is
  * that a silent fallback is indistinguishable from a bug.
  */
 export function collectUnmappedDecisions(decisions: DesignDecisions): string[] {

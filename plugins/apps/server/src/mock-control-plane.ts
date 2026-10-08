@@ -528,9 +528,9 @@ export const MOCK_DATASETS: Record<number, MockDataset> = {
 };
 
 /**
- * Creates and starts the Mock Superset HTTP server
+ * Creates and starts the Mock the BI backend HTTP server
  */
-export function startMockSupersetServer(port = 8088): Promise<http.Server> {
+export function startMockBiServer(port = 8088): Promise<http.Server> {
   return new Promise((resolve) => {
     const server = http.createServer(async (req, res) => {
       // CORS headers
@@ -552,7 +552,7 @@ export function startMockSupersetServer(port = 8088): Promise<http.Server> {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
-            access_token: "mock-jwt-access-token-cordis-superset-demo",
+            access_token: "mock-jwt-access-token-cordis-bi-demo",
             refresh_token: "mock-jwt-refresh-token",
           }),
         );
@@ -677,7 +677,7 @@ export function startMockSupersetServer(port = 8088): Promise<http.Server> {
     });
 
     server.listen(port, () => {
-      process.stdout.write(`[Mock Superset Server] listening on http://localhost:${port}\n`);
+      process.stdout.write(`[Mock the BI backend Server] listening on http://localhost:${port}\n`);
       resolve(server);
     });
   });

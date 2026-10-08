@@ -85,7 +85,7 @@ describe("ThemeSpecSchema — strict colour validation", () => {
 });
 
 describe("ThemeSpecSchema — passthrough preserves unknown keys", () => {
-  it("round-trips an unknown TOP-level key from a newer flint", () => {
+  it("round-trips an unknown TOP-level key from a newer chart-specs", () => {
     const authored = {
       ink: { text: { primary: "#121212" } },
       someFutureTopLevelBlock: { enabled: true, strength: 0.5 },
@@ -155,13 +155,13 @@ describe("DashboardSpecSchema — dashboard-level theme", () => {
         w1: {
           id: "w1",
           type: "chart",
-          flint: { chartType: "Bar Chart", encodings: {}, theme_spec: "economist" },
+          chartSpec: { chartType: "Bar Chart", encodings: {}, theme_spec: "economist" },
         },
       },
     });
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    expect(parsed.data.widgets.w1?.flint?.theme_spec).toBe("economist");
+    expect(parsed.data.widgets.w1?.chartSpec?.theme_spec).toBe("economist");
     expect(parsed.data.theme?.preset).toBe("swiss");
   });
 });

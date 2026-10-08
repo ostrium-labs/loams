@@ -1,7 +1,7 @@
 /*
  * Theme tokens + Tailwind v4 entrypoint.
  *
- * `--th-*` is the input layer: `useTheme` writes flint's ThemeInk onto the
+ * `--th-*` is the input layer: `useTheme` writes chart-specs' ThemeInk onto the
  * root element and nothing else. Everything below derives from it, so one
  * state change repaints the entire shell.
  *
@@ -118,7 +118,7 @@
    * the shadcn-style semantic scale. Without these they render unstyled --
    * transparent switches, invisible focus rings, zero-radius buttons. The
    * values are mapped onto the ink tokens above rather than imported
-   * wholesale, so a Flint theme still repaints them.
+   * wholesale, so a chart-specs theme still repaints them.
    * ------------------------------------------------------------------------
    */
   --color-background: var(--th-canvas);
@@ -234,7 +234,7 @@
    * The names above (`--color-page`, `--color-ink-body`, ...) are what a
    * converted component writes as `bg-page` / `text-ink-body`. The names here
    * are what the *remaining* `var(--bg-page)` calls in the legacy layer below
-   * read. Both point at the same `--th-*` ink, so a Flint theme still drives
+   * read. Both point at the same `--th-*` ink, so a chart-specs theme still drives
    * them -- but deleting this block while any legacy rule survives would leave
    * those rules resolving an undefined variable and render as initial values.
    */

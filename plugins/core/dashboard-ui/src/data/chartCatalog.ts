@@ -69,7 +69,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField, seriesField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: xField, y: yField ? [yField] : undefined, series: seriesField },
@@ -93,8 +93,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField, seriesField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Stacked Bar Chart",
         title,
         encodings: {
@@ -121,7 +121,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField, seriesField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: xField, y: [yField], series: seriesField },
@@ -140,7 +140,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: yField, y: [xField] },
@@ -160,8 +160,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Stacked Bar Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -179,7 +179,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: xField, y: [yField] },
@@ -198,7 +198,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: xField, y: [yField] },
@@ -217,8 +217,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Lollipop Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -236,7 +236,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "waterfall" as any,
         encode: { x: xField, y: [yField] },
@@ -255,8 +255,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Pyramid Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -282,7 +282,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "line",
         encode: { x: xField, y: [yField] },
@@ -301,7 +301,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "line",
         encode: { x: xField, y: [yField] },
@@ -320,7 +320,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "line",
         encode: { x: xField, y: [yField] },
@@ -339,7 +339,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "line",
         encode: { x: xField, y: [yField] },
@@ -359,7 +359,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "area",
         encode: { x: xField, y: [yField] },
@@ -378,7 +378,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "area",
         encode: { x: xField, y: [yField] },
@@ -397,7 +397,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "area",
         encode: { x: xField, y: [yField] },
@@ -416,7 +416,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "area",
         encode: { x: xField, y: [yField] },
@@ -445,8 +445,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Streamgraph",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -466,7 +466,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "pie",
         encode: { x: xField, value: yField },
@@ -486,7 +486,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "pie",
         encode: { x: xField, value: yField },
@@ -508,7 +508,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "pie",
         encode: { x: xField, value: yField },
@@ -530,8 +530,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Rose Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -549,7 +549,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "funnel",
         encode: { x: xField, value: yField },
@@ -568,7 +568,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "funnel",
         encode: { x: xField, value: yField },
@@ -588,8 +588,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Treemap",
         title,
         encodings: { color: { field: xField }, size: { field: yField } },
@@ -607,8 +607,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Sunburst Chart",
         title,
         encodings: { color: { field: xField }, size: { field: yField } },
@@ -629,7 +629,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "scatter",
         encode: { x: xField, y: [yField] },
@@ -648,7 +648,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "scatter",
         encode: { x: xField, y: [yField] },
@@ -667,8 +667,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Connected Scatter Plot",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -686,8 +686,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Regression",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -705,8 +705,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Strip Plot",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -724,8 +724,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Boxplot",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -743,8 +743,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Density Plot",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -762,8 +762,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "ECDF Plot",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -784,7 +784,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: xField, y: [yField] },
@@ -803,7 +803,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "area",
         encode: { x: xField, y: [yField] },
@@ -823,8 +823,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Gauge Chart",
         title,
         encodings: { size: { field: yField }, column: { field: xField } },
@@ -842,8 +842,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Gauge Chart",
         title,
         encodings: { size: { field: yField }, column: { field: xField } },
@@ -861,8 +861,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Bullet Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -880,7 +880,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: xField, y: [yField] },
@@ -899,8 +899,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Ranged Dot Plot",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -920,8 +920,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Radar Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -939,8 +939,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Rose Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -958,8 +958,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Parallel Coordinates",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -977,7 +977,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "sankey",
         encode: { x: xField, value: yField },
@@ -996,8 +996,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Network Graph",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -1015,8 +1015,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Tree",
         title,
         encodings: { color: { field: xField }, size: { field: yField } },
@@ -1037,7 +1037,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "heatmap",
         encode: { x: xField, y: [yField], value: yField },
@@ -1056,8 +1056,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId: datasetId === 1 ? 2 : datasetId },
-      flint: {
+      data: { source: "bi", datasetId: datasetId === 1 ? 2 : datasetId },
+      chartSpec: {
         chartType: "Calendar Heatmap",
         title,
         encodings: {
@@ -1078,8 +1078,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Slope Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -1097,8 +1097,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Bump Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },
@@ -1116,8 +1116,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Candlestick Chart",
         title,
         encodings: {
@@ -1141,7 +1141,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: xField, y: [yField] },
@@ -1171,7 +1171,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: xField, y: [yField] },
@@ -1190,8 +1190,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Histogram",
         title,
         encodings: { x: { field: yField || "revenue" } },
@@ -1209,7 +1209,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "pie",
         encode: { x: xField, value: yField },
@@ -1228,7 +1228,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "sankey",
         encode: { x: xField, value: yField },
@@ -1247,8 +1247,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Gauge Chart",
         title,
         encodings: { size: { field: yField }, column: { field: xField } },
@@ -1266,7 +1266,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "bar",
         encode: { x: xField, y: [yField] },
@@ -1303,7 +1303,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "line",
         encode: { x: xField, y: [yField] },
@@ -1322,7 +1322,7 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
+      data: { source: "bi", datasetId },
       chart: {
         kind: "scatter",
         encode: { x: xField, y: [yField] },
@@ -1341,8 +1341,8 @@ export const CHART_CATALOG: ChartCatalogItem[] = [
     buildWidget: ({ id, title, datasetId, xField, yField }) => ({
       id,
       type: "chart",
-      data: { source: "superset", datasetId },
-      flint: {
+      data: { source: "bi", datasetId },
+      chartSpec: {
         chartType: "Radar Chart",
         title,
         encodings: { x: { field: xField }, y: { field: yField } },

@@ -29,7 +29,7 @@ plugin-local lockfile; the root lockfile controls the install. See
 ## Configure
 
 Nothing is required. On a fresh checkout with no environment variables set, the
-server boots, an MSW mock of Apache Superset starts alongside it, and a seeded
+server boots, an MSW mock of the BI backend starts alongside it, and a seeded
 six-widget dashboard is written to the in-memory store. You get a working
 dashboard with no upstream credentials at all — which is deliberate, because a
 missing adapter is a supported configuration and not an error.
@@ -39,16 +39,17 @@ The variables the server reads:
 | variable        | default                           | meaning                                                           |
 | --------------- | --------------------------------- | ----------------------------------------------------------------- |
 | `PORT`          | `3001`                            | HTTP API port                                                     |
-| `SUPERSET_PORT` | `8088`                            | port the bundled mock Superset listens on                         |
-| `SUPERSET_URL`  | `http://localhost:$SUPERSET_PORT` | Superset base URL                                                 |
-| `SUPERSET_USER` | `admin`                           | Superset username                                                 |
-| `SUPERSET_PASS` | `admin`                           | Superset password                                                 |
+| `LOAMS_BI_PORT` | `8088`                            | port the bundled mock BI backend listens on                       |
+| `LOAMS_BI_URL`  | `http://localhost:$LOAMS_BI_PORT` | BI backend base URL                                               |
+| `LOAMS_BI_USER` | `admin`                           | BI backend username                                               |
+| `LOAMS_BI_PASS` | `admin`                           | BI backend password                                               |
 | `DATABASE_URL`  | `memory`                          | store connection string                                           |
 | `ENABLE_MCP`    | unset                             | `true` additionally serves the MCP stdio server from this process |
 
-To point at a real Superset, set `SUPERSET_URL`, `SUPERSET_USER` and
-`SUPERSET_PASS`. The mock server is started unconditionally at boot and will
-occupy `SUPERSET_PORT` regardless of whether you use it; change that port if it
+To point at a real BI backend, set `LOAMS_BI_URL`, `LOAMS_BI_USER` and
+`LOAMS_BI_PASS`. The legacy `SUPERSET_*` names are still read as deprecated
+fallbacks, with a one-time warning. The mock server is started unconditionally at boot and will
+occupy `LOAMS_BI_PORT` regardless of whether you use it; change that port if it
 collides with something.
 
 Upstream adapters read their own variables — `ZULIP_URL`, `FORGEJO_TOKEN`,
@@ -101,9 +102,9 @@ Useful endpoints:
 | `GET /api/dashboards/:id`   | one dashboard spec                                               |
 | `POST /api/dashboards`      | create a dashboard                                               |
 | `PATCH /api/dashboards/:id` | JSON-Patch a spec, with `baseVersion` for optimistic concurrency |
-| `GET /api/datasets`         | Superset datasets                                                |
+| `GET /api/datasets`         | BI datasets                                                      |
 | `POST /api/widgets/data`    | the rows behind one widget                                       |
-| `POST /api/widgets/preview` | compiled ECharts option plus sample rows                         |
+| `POST /api/widgets/preview` | compiled chart option plus sample rows                           |
 | `GET /api/themes`           | the theme catalogue                                              |
 
 ## Your first plugin enablement

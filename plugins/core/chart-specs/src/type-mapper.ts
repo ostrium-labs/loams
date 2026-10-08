@@ -1,6 +1,6 @@
-import type { SupersetColumn } from "@loams-core/types";
+import type { BiColumn } from "@loams-core/types";
 
-export function mapColumnsToSemanticTypes(columns: SupersetColumn[]): Record<string, string> {
+export function mapColumnsToSemanticTypes(columns: BiColumn[]): Record<string, string> {
   const result: Record<string, string> = {};
 
   for (const col of columns) {

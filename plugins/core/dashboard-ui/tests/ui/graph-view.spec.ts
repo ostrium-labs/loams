@@ -204,7 +204,7 @@ describe("graph titles", () => {
   });
 
   it("shows the dataset as the subtitle, like the chart card does", () => {
-    const w = widget({ data: { source: "superset", datasetId: 7 } });
+    const w = widget({ data: { source: "bi", datasetId: 7 } });
     expect(graphSubtitle(w)).toBe("Dataset #7");
   });
 

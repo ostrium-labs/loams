@@ -1,10 +1,10 @@
 import type { ThemeInk, ThemeSelection, ThemeSpec } from "./types";
 
 /**
- * Ink helpers: dotted-path get/set over a spec, flint's merge semantics, and
+ * Ink helpers: dotted-path get/set over a spec, chart-specs' merge semantics, and
  * the shell CSS custom properties the ink is projected onto.
  *
- * The projection is deliberately one-way and shell-only. flint's `theme_spec`
+ * The projection is deliberately one-way and shell-only. chart-specs' `theme_spec`
  * is applied to charts on the server (the ECharts assembler maps ThemeInk to
  * ECharts options); this side paints header, filter bar, inspector and widget
  * cards. Touching ECharts options here would duplicate the sibling's mapping
@@ -71,7 +71,7 @@ export function getPath(root: unknown, path: string): unknown {
 /**
  * Immutably set a dotted path, creating intermediate objects and dropping keys
  * whose new value is `undefined`. Dropping rather than writing `undefined`
- * matters: flint MERGES nested policy objects, so an explicit
+ * matters: chart-specs MERGES nested policy objects, so an explicit
  * `ink.surface.canvas: undefined` would still read as "stated" to the merge
  * and would mask the preset's own value on some code paths. Erasing the key is
  * the honest representation of "not overridden".
@@ -106,7 +106,7 @@ function clonePlain<T>(value: T): T {
 /* ------------------------------------------------------------------- merging */
 
 /**
- * flint's inheritance rule, applied locally so the customizer can preview a
+ * chart-specs' inheritance rule, applied locally so the customizer can preview a
  * spec that `extends` a preset without a round-trip: nested policy objects
  * MERGE, arrays and scalars REPLACE.
  *
@@ -177,7 +177,7 @@ const SERIES_SLOTS = 8;
  * an absent field leaves the stylesheet default in place, which is what makes
  * partial customisation work (override one colour, inherit the rest).
  *
- * `series.categorical` is projected onto ordered slots because flint treats
+ * `series.categorical` is projected onto ordered slots because chart-specs treats
  * array order as meaningful — slot 1 is the first series, and so on.
  */
 export function inkToCssVars(ink: ThemeInk | undefined): Array<[ThemeCssVarName, string]> {
@@ -228,7 +228,7 @@ export function categoricalSwatches(ink: ThemeInk | undefined): string[] {
 
 /** A stable, human-readable name for a selection, for headings and save copy. */
 export function describeSelection(selection: ThemeSelection | null | undefined): string {
-  if (selection === null || selection === undefined || selection === "") return "Flint defaults";
+  if (selection === null || selection === undefined || selection === "") return "Default theme";
   if (typeof selection === "string") return selection;
   return selection.label || selection.extends || "Custom";
 }

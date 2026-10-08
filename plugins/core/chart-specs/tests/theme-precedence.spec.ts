@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from "vite-plus/test";
 import { Context } from "cordis";
-import { FlintService } from "../src/service.js";
+import { ChartSpecService } from "../src/service.js";
 import { THEME_PRESETS } from "flint-chart/core";
-import type { SupersetQueryResult, Widget } from "@loams-core/types";
+import type { BiQueryResult, Widget } from "@loams-core/types";
 
 /**
  * `compile` used to hardcode `powerbi-light` as the assembler's `theme_spec` and
@@ -16,19 +16,19 @@ import type { SupersetQueryResult, Widget } from "@loams-core/types";
 
 const PBI_PALETTE_HEAD = "#118dff";
 
-function makeService(): FlintService {
+function makeService(): ChartSpecService {
   const ctx = new Context();
-  ctx.provide("controlPlane", {});
-  return new FlintService(ctx);
+  ctx.provide("bi", {});
+  return new ChartSpecService(ctx);
 }
 
-const ROWS: SupersetQueryResult = {
+const ROWS: BiQueryResult = {
   data: [
     { category: "alpha", value: 10 },
     { category: "beta", value: 20 },
     { category: "gamma", value: 30 },
   ],
-} as unknown as SupersetQueryResult;
+} as unknown as BiQueryResult;
 
 const chartWidget = (themeSpec?: unknown): Widget =>
   ({
@@ -37,7 +37,7 @@ const chartWidget = (themeSpec?: unknown): Widget =>
     position: { x: 0, y: 0, w: 6, h: 4 },
     title: "Test",
     datasetId: 1,
-    flint: {
+    chartSpec: {
       chartType: "Bar Chart",
       encodings: { x: { field: "category" }, y: { field: "value" } },
       theme_spec: themeSpec as never,
@@ -49,8 +49,8 @@ function paletteOf(option: Record<string, unknown>): string[] {
   return Array.isArray(color) ? (color as string[]) : [];
 }
 
-describe("FlintService.compile theme handling", () => {
-  let service: FlintService;
+describe("ChartSpecService.compile theme handling", () => {
+  let service: ChartSpecService;
   beforeEach(() => {
     service = makeService();
   });
@@ -94,7 +94,7 @@ describe("FlintService.compile theme handling", () => {
   it("renders a chart with no rows without throwing", async () => {
     const option = await service.compile(
       chartWidget(),
-      { data: [] } as unknown as SupersetQueryResult,
+      { data: [] } as unknown as BiQueryResult,
       { preset: "economist" },
     );
     expect(option).toBeTruthy();

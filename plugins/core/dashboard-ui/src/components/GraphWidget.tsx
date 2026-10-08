@@ -53,7 +53,7 @@ interface GraphWidgetProps {
   /**
    * The dashboard-level theme selection, sent with the preview request.
    *
-   * A graph widget cannot carry its own `flint.theme_spec` -- the schema
+   * A graph widget cannot carry its own `chartSpec.theme_spec` -- the schema
    * forbids it, because that is one of the ECharts inputs -- so this is always
    * the effective theme for the tile.
    */
@@ -94,7 +94,7 @@ export const GraphWidget: React.FC<GraphWidgetProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   /**
-   * A `loams` graph shows current state and re-reads; a Superset graph is a
+   * A `loams` graph shows current state and re-reads; a the BI backend graph is a
    * warehouse scan over a period and would only get more expensive.
    */
   const live = widget.data.source === "loams";

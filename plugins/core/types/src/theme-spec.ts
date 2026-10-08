@@ -10,11 +10,11 @@ import { z } from "zod";
  *     validated strictly, because a bad colour is user-visible the moment the
  *     dashboard renders.
  *  2. Everything else, and every key we do not know about, passes through
- *     untouched. A spec authored against a newer flint must survive a
+ *     untouched. A spec authored against a newer chart-specs must survive a
  *     parse/serialise round trip through this repo without being silently
  *     stripped — otherwise storing a dashboard quietly destroys fields.
  *
- * Rule 2 is why the mirror is partial. Flint's `ThemeSpec` is level 1: it never
+ * Rule 2 is why the mirror is partial. chart-specs' `ThemeSpec` is level 1: it never
  * names a chart type, a channel, a mark type or a backend property, so the
  * fields we skip here (`structure`, `marks`, `legend`, `geometry`, ...) are the
  * compiler's business and a dashboard author has no business hand-writing them.
@@ -46,7 +46,7 @@ export const ThemeRampSchema = z
 export type ThemeRamp = z.infer<typeof ThemeRampSchema>;
 
 /**
- * `ThemeInk` — the block a customizer actually edits. Mirrors flint's
+ * `ThemeInk` — the block a customizer actually edits. Mirrors chart-specs'
  * `ThemeInk` field for field, with every colour held to `ThemeColorSchema`.
  */
 export const ThemeInkSchema = z
@@ -131,11 +131,11 @@ const TypeRoleSchema = z
  * `ink` and `type` are mirrored because they are the two blocks a customizer
  * edits by hand. The remaining policy blocks are carried as opaque records:
  * they are the compiler's to interpret, and mirroring them here would make this
- * repo the place that breaks when flint grows one.
+ * repo the place that breaks when chart-specs grows one.
  */
 export const ThemeSpecSchema = z
   .object({
-    /** Start from a flint-shipped house, then override only what is stated. */
+    /** Start from a built-in house, then override only what is stated. */
     extends: z.string().min(1).optional(),
     id: z.string().min(1).optional(),
     label: z.string().optional(),
@@ -182,12 +182,12 @@ export type ThemeSpec = z.infer<typeof ThemeSpecSchema>;
  * A dashboard's theme choice: a shipped house by id, and/or a custom spec that
  * may itself `extends` a house.
  *
- * Both fields optional. Neither present means "no theme" — flint's own defaults
+ * Both fields optional. Neither present means "no theme" — chart-specs' own defaults
  * apply, which is a real, renderable state and not an error.
  *
  * When BOTH are given, `custom` wins and `preset` becomes its base: layering
  * happens in this repo by writing `preset` into `custom.extends` before handing
- * the spec to flint, so the merge is flint's own and keeps its semantics —
+ * the spec to chart-specs, so the merge is chart-specs' own and keeps its semantics —
  * nested policy objects MERGE, arrays and scalars REPLACE.
  */
 export const ThemeSelectionSchema = z.object({
@@ -198,12 +198,12 @@ export type ThemeSelection = z.infer<typeof ThemeSelectionSchema>;
 
 /**
  * Alias for `ThemeSelection`, named for its use: this is the dashboard-level
- * theme field, as opposed to a per-widget `flint.theme_spec`.
+ * theme field, as opposed to a per-widget `chartSpec.theme_spec`.
  */
 export type DashboardTheme = ThemeSelection;
 
 /**
- * The catalogue entry `FlintService.listThemes()` returns, mirrored here so the
+ * The catalogue entry `ChartSpecService.listThemes()` returns, mirrored here so the
  * UI can be typed without depending on `chart-specs`.
  */
 export const ThemeCatalogueEntrySchema = z.object({

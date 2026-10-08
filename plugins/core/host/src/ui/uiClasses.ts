@@ -13,7 +13,7 @@
  * this file is only the layout vocabulary those pages share.
  *
  * Colour comes from the `@theme inline` tokens, which are `--th-*` under the
- * hood -- so a Flint theme repaints all of this with no extra wiring.
+ * hood -- so a chart-specs theme repaints all of this with no extra wiring.
  */
 
 /** The centred content column every shell page sits in. */

@@ -250,8 +250,8 @@ export const ThemePickerSheet: React.FC<ThemePickerSheetProps> = ({
                       <DefaultThemeIcon />
                     </span>
                     <span className={PRESET_META}>
-                      <span className={PRESET_NAME}>Flint defaults</span>
-                      <span className={PRESET_DESC}>No house. Flint&apos;s own neutral theme.</span>
+                      <span className={PRESET_NAME}>Default theme</span>
+                      <span className={PRESET_DESC}>No house. The built-in neutral theme.</span>
                     </span>
                   </button>
 

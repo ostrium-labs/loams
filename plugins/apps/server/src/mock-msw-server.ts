@@ -1,5 +1,5 @@
 /**
- * Feature-rich TypeScript Mock Superset HTTP Server powered by MSW (Mock Service Worker).
+ * Feature-rich TypeScript Mock the BI backend HTTP Server powered by MSW (Mock Service Worker).
  *
  * Provides:
  * - MSW Request Handlers (http.get, http.post, HttpResponse.json, delay)
@@ -639,12 +639,12 @@ export function executeDatasetQuery(
 /**
  * Feature-rich MSW HTTP Request Handlers
  */
-export const supersetMockHandlers = [
+export const biMockHandlers = [
   // 1. Auth: /api/v1/security/login
   mswHttp.post("http://localhost:8088/api/v1/security/login", async () => {
     await delay(10);
     return HttpResponse.json({
-      access_token: "mock-msw-access-token-cordis-superset-demo",
+      access_token: "mock-msw-access-token-cordis-bi-demo",
       refresh_token: "mock-msw-refresh-token",
     });
   }),
@@ -719,11 +719,11 @@ export const supersetMockHandlers = [
 /**
  * Initialize MSW interceptor and HTTP Server fallback
  */
-export function startMswSupersetMock(
+export function startMswBiMock(
   port = 8088,
 ): Promise<{ mswServer: any; httpServer: http.Server }> {
   // 1. Activate MSW Node Server for global fetch interception
-  const mswServer = setupServer(...supersetMockHandlers);
+  const mswServer = setupServer(...biMockHandlers);
   mswServer.listen({ onUnhandledRequest: "bypass" });
 
   // 2. Also start native HTTP Server on port 8088 to serve non-intercepted callers
@@ -746,7 +746,7 @@ export function startMswSupersetMock(
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
-            access_token: "mock-msw-access-token-cordis-superset-demo",
+            access_token: "mock-msw-access-token-cordis-bi-demo",
             refresh_token: "mock-msw-refresh-token",
           }),
         );
@@ -834,7 +834,7 @@ export function startMswSupersetMock(
 
     httpServer.listen(port, () => {
       process.stdout.write(
-        `[MSW Mock Superset Server] listening on http://localhost:${port} and intercepting fetch\n`,
+        `[MSW Mock the BI backend Server] listening on http://localhost:${port} and intercepting fetch\n`,
       );
       resolve({ mswServer, httpServer });
     });

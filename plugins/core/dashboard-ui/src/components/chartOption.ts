@@ -11,7 +11,7 @@
  *
  * `hasTheme` must be the EFFECTIVE theme for that widget: the per-widget
  * override when there is one, otherwise the dashboard theme. `App.tsx` computes
- * it as `Boolean(widget.flint?.theme_spec ?? spec.theme)`.
+ * it as `Boolean(widget.chartSpec?.theme_spec ?? spec.theme)`.
  */
 import type { Widget } from "../api";
 
@@ -32,7 +32,7 @@ export const POWER_BI_SERIES = [
 ];
 
 /**
- * The two defaults flint and Apache ECharts ship.
+ * The two defaults chart-specs and Apache ECharts ship.
  *
  * If the server left one of those in place, nobody has chosen this chart's ink
  * and the Power BI Light palette applies. Anything else was chosen deliberately

@@ -1,10 +1,10 @@
 /**
- * Flint `DesignDecisions` -> the ink a React Flow graph is painted with.
+ * chart-specs `DesignDecisions` -> the ink a React Flow graph is painted with.
  *
  * The seam is the *grounded* theme, not the authored one, for the reason
  * `charts/src/theme-decisions.ts` states at length: `ThemeSpec` is
  * level 1 and binds no colour to any role, while `groundTheme` produces level 2,
- * with flint's ink borrowing chain, presence ordinals and accessibility rules
+ * with chart-specs' ink borrowing chain, presence ordinals and accessibility rules
  * already applied. Reading a spec here would mean re-implementing all of that
  * and getting it subtly wrong. So this consumes decisions and never a spec.
  *
@@ -15,7 +15,7 @@
  * exactly as it would paint the series of a bar chart of the same count.
  *
  * Every read is defensive and every field falls back independently, because a
- * theme that partially resolves is a real state: flint grounds what it can and
+ * theme that partially resolves is a real state: chart-specs grounds what it can and
  * reports the rest. One absent role must not blank the whole tile.
  */
 
@@ -83,7 +83,7 @@ export function flowThemeFromDecisions(decisions: unknown): FlowTheme {
   const palette = Array.isArray(series)
     ? series.filter((ink): ink is string => asInk(ink) !== undefined)
     : [];
-  // The rule ink is borrowed from either place flint drew a rule, in that order:
+  // The rule ink is borrowed from either place chart-specs drew a rule, in that order:
   // the frame is the box around the whole thing, the baseline is the line marks
   // stand on, and for a graph the frame is the closer match.
   const frame = asInk(at(decisions.frame, "color"));

@@ -35,7 +35,7 @@ interface WidgetCardProps {
   /**
    * The dashboard-level theme selection, sent with the preview request so the
    * compiled option matches what the dashboard will actually render. A widget
-   * with its own `flint.theme_spec` overrides this server-side.
+   * with its own `chartSpec.theme_spec` overrides this server-side.
    */
   dashboardTheme?: unknown;
 }
@@ -57,7 +57,7 @@ export const WidgetCard: React.FC<WidgetCardProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * A `loams` tile shows current state, so it re-reads; a Superset tile is a
+   * A `loams` tile shows current state, so it re-reads; a the BI backend tile is a
    * warehouse scan over a period and would only get more expensive.
    */
   const live = widget.data.source === "loams";
@@ -136,16 +136,16 @@ export const WidgetCard: React.FC<WidgetCardProps> = ({
   const overrides = (widget.chart?.optionOverrides as any) || {};
   const title =
     overrides?.title?.text ||
-    widget.flint?.title ||
+    widget.chartSpec?.title ||
     (widget.chart?.kind ? `${widget.chart.kind.toUpperCase()} Chart` : "Chart Widget");
 
   const subtitle =
     overrides?.title?.subtext ||
-    widget.flint?.subtitle ||
+    widget.chartSpec?.subtitle ||
     (widget.data?.datasetId ? `Dataset #${widget.data.datasetId}` : "");
 
   const renderChartIcon = () => {
-    if (widget.flint) return <SparklesIcon />;
+    if (widget.chartSpec) return <SparklesIcon />;
     const kind = widget.chart?.kind;
     if (kind === "bar") return <BarChartIcon />;
     if (kind === "pie") return <PieChartIcon />;

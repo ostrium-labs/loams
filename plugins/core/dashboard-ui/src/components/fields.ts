@@ -8,7 +8,7 @@
  * `.sheet-help-text` -- five names for one shape, which is how `.form-label`
  * ended up referenced with no rule at all.
  *
- * Colours come from the `@theme inline` ink tokens, so a Flint theme repaints
+ * Colours come from the `@theme inline` ink tokens, so a chart-specs theme repaints
  * every panel from the same write that repaints the charts.
  */
 import { cn } from "@loams-core/host/ui";

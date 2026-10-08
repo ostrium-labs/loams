@@ -115,7 +115,7 @@ export type Column = Message<"bi.v1.Column"> & {
   type: string;
 
   /**
-   * Flint semantic type ("Quantity", "Price", "DateTime", "Category", ...).
+   * Chart-spec semantic type ("Quantity", "Price", "DateTime", "Category", ...).
    *
    * @generated from field: string semantic_type = 3;
    */

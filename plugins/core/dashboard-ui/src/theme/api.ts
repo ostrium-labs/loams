@@ -78,11 +78,11 @@ export async function fetchThemes(): Promise<ThemePresetSummary[]> {
 }
 
 /**
- * `GET /api/themes/:id` — the resolved spec plus flint's `report`.
+ * `GET /api/themes/:id` — the resolved spec plus chart-specs' `report`.
  *
  * A theme that resolves but carries report entries is VALID and downgraded; a
  * theme that does not resolve comes back `valid: false` and must be shown as an
- * error, because flint treats an unknown house name as an error rather than
+ * error, because chart-specs treats an unknown house name as an error rather than
  * quietly rendering unthemed.
  */
 export async function fetchTheme(id: string): Promise<ThemeResolution> {

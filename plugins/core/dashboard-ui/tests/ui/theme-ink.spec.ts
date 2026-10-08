@@ -1,5 +1,5 @@
 /**
- * The Flint ink -> CSS variable projection.
+ * The chart-specs ink -> CSS variable projection.
  *
  * This is the seam the whole shell hangs off: `useTheme` writes whatever
  * `inkToCssVars` returns onto `<html>`, and every themed surface -- the header,
@@ -74,7 +74,7 @@ describe("inkToCssVars", () => {
   });
 
   it("maps the categorical array onto ordered slots", () => {
-    // flint treats array order as meaningful: slot 1 is the first series.
+    // chart-specs treats array order as meaningful: slot 1 is the first series.
     const vars = varsOf({ series: { categorical: ["#a", "#b", "#c"] } });
     expect(vars[THEME_CSS_VARS.series1]).toBe("#a");
     expect(vars[THEME_CSS_VARS.series2]).toBe("#b");
@@ -174,7 +174,7 @@ describe("ink helpers", () => {
   });
 
   it("names a selection for headings", () => {
-    expect(describeSelection(null)).toBe("Flint defaults");
+    expect(describeSelection(null)).toBe("Default theme");
     expect(describeSelection("power-bi")).toBe("power-bi");
     expect(describeSelection({ ink: {}, label: "Mine" })).toBe("Mine");
   });

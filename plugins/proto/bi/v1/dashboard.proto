@@ -58,7 +58,7 @@ message PatchDashboardRequest {
 
 message Widget {
   string id = 1;
-  // A widget as JSON: type, position, datasetId, and the `flint` chart spec.
+  // A widget as JSON: type, position, datasetId, and the `chartSpec` chart spec.
   google.protobuf.Struct spec = 2;
   google.protobuf.Struct position = 3;
 }
@@ -82,7 +82,7 @@ message PreviewWidgetRequest {
 }
 
 message PreviewWidgetResponse {
-  // A compiled ECharts option as JSON.
+  // A compiled chart option as JSON.
   google.protobuf.Struct option = 1;
   repeated Row sample_rows = 2;
   int32 row_count = 3;

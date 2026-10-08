@@ -218,7 +218,7 @@ export type Widget = Message<"bi.v1.Widget"> & {
   id: string;
 
   /**
-   * A widget as JSON: type, position, datasetId, and the `flint` chart spec.
+   * A widget as JSON: type, position, datasetId, and the `chartSpec` chart spec.
    *
    * @generated from field: google.protobuf.Struct spec = 2;
    */
@@ -318,7 +318,7 @@ export const PreviewWidgetRequestSchema: GenMessage<PreviewWidgetRequest> =
  */
 export type PreviewWidgetResponse = Message<"bi.v1.PreviewWidgetResponse"> & {
   /**
-   * A compiled ECharts option as JSON.
+   * A compiled chart option as JSON.
    *
    * @generated from field: google.protobuf.Struct option = 1;
    */

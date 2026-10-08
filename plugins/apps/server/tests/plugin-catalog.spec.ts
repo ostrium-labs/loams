@@ -44,8 +44,8 @@ const FULL_ENV: Env = {
 const FRESH_CHECKOUT_INVENTORY = [
   { id: "dashboard", uiPath: "/", enabled: true, alwaysOn: true, skills: 3 },
   {
-    id: "control-plane",
-    uiPath: "/plugins/control-plane",
+    id: "bi",
+    uiPath: "/plugins/bi",
     enabled: true,
     alwaysOn: true,
     skills: 0,

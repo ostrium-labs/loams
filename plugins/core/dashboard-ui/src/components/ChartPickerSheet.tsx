@@ -442,7 +442,7 @@ export const ChartPickerSheet: React.FC<ChartPickerSheetProps> = ({ isOpen, onCl
                   ? `Showing matches across all 63 visuals for "${searchQuery}"`
                   : selectedCategory === "recommended"
                     ? "10 Core visual types • Select category tabs or search to explore all 63"
-                    : `Explore ${selectedCategory.toUpperCase()} visuals powered by ECharts & Microsoft Flint`}
+                    : `Explore ${selectedCategory.toUpperCase()} visuals powered by the chart engine`}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -573,10 +573,10 @@ export const ChartPickerSheet: React.FC<ChartPickerSheetProps> = ({ isOpen, onCl
               />
             </div>
 
-            {/* Superset Dataset Picker */}
+            {/* BI Dataset Picker */}
             <div className={GROUP}>
               <Label className={LABEL} htmlFor="chart-dataset">
-                Superset Query Dataset
+                BI Query Dataset
               </Label>
               <select
                 id="chart-dataset"
@@ -590,7 +590,7 @@ export const ChartPickerSheet: React.FC<ChartPickerSheetProps> = ({ isOpen, onCl
                   </option>
                 ))}
               </select>
-              <span className={HELP}>Live query metadata loaded from Superset REST backend</span>
+              <span className={HELP}>Live query metadata loaded from the BI backend</span>
             </div>
 
             {/* Primary Field (X-Axis / Category) */}

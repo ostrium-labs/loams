@@ -104,7 +104,7 @@ describe("ported primitive tokens", () => {
     expect(STYLESHEET).toContain("@theme inline");
   });
 
-  it("keeps the Flint ink layer as the source of the theme", () => {
+  it("keeps the chart-specs ink layer as the source of the theme", () => {
     expect(STYLESHEET).toContain("--th-canvas");
     expect(STYLESHEET).toContain("--th-text-primary");
   });

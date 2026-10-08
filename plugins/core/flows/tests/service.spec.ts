@@ -3,9 +3,9 @@
  *
  * The shape mirrors `charts`'s `RenderService` exactly, and for
  * the same reason. Both are cordis services declaring `static inject = ["data",
- * "flint"]`, both fetch through `ctx.data.fetchWidgetData`, and both resolve
- * their theme through `ctx.flint.resolveWidgetTheme` rather than reading
- * `widget.flint.theme_spec` or `dashboardSpec.theme` themselves -- that
+ * "chartSpecs"]`, both fetch through `ctx.data.fetchWidgetData`, and both resolve
+ * their theme through `ctx.chartSpecs.resolveWidgetTheme` rather than reading
+ * `widget.chartSpec.theme_spec` or `dashboardSpec.theme` themselves -- that
  * precedence is the documented contract in `dashboard-spec.ts`, and
  * re-implementing it here would be a second, silently divergent copy.
  *
@@ -13,7 +13,7 @@
  * this terminates in a node/edge pair, which is why `graph` is a sibling widget
  * type and not a chart kind.
  *
- * The theme assertions here are about DEGRADATION, not about flint's colour
+ * The theme assertions here are about DEGRADATION, not about chart-specs' colour
  * choices. A theme that cannot be resolved must leave a renderable graph, which
  * is the property that a screenshot cannot show.
  */
@@ -28,7 +28,7 @@ const ROWS = [
   { id: "api", name: "API tier" },
 ];
 
-/** A resolution+grounding the stub hands back, shaped like flint's real one. */
+/** A resolution+grounding the stub hands back, shaped like chart-specs' real one. */
 const GROUNDED = {
   valid: true,
   decisions: {
@@ -43,17 +43,17 @@ const GROUNDED = {
 interface HarnessOptions {
   rows?: unknown[];
   fetch?: (widget: unknown, params?: Record<string, unknown>) => unknown;
-  flint?: unknown;
+  chartSpecs?: unknown;
 }
 
 /**
- * A context with stubbed `data` and `flint`.
+ * A context with stubbed `data` and `chart-specs`.
  *
- * `flint` defaults to a bridge that resolves and grounds successfully. Pass
- * `flint: null` for "no flint service at all" -- `undefined` cannot express
+ * `chart-specs` defaults to a bridge that resolves and grounds successfully. Pass
+ * `chartSpecs: null` for "no chart-specs service at all" -- `undefined` cannot express
  * that here, because it is the default-bridge sentinel.
  */
-function harness({ rows = ROWS, fetch, flint }: HarnessOptions = {}) {
+function harness({ rows = ROWS, fetch, chartSpecs }: HarnessOptions = {}) {
   const ctx = new Context();
   const resolveCalls: { widget: unknown; dashboardTheme: unknown }[] = [];
   const dataCalls: (Record<string, unknown> | undefined)[] = [];
@@ -65,12 +65,12 @@ function harness({ rows = ROWS, fetch, flint }: HarnessOptions = {}) {
     },
   });
 
-  if (flint === null) {
+  if (chartSpecs === null) {
     // What "chart-specs is not installed" looks like on a cordis context.
-    ctx.provide("flint", null as never);
+    ctx.provide("chartSpecs", null as never);
   } else {
     const bridge =
-      flint === undefined
+      chartSpecs === undefined
         ? {
             resolveWidgetTheme(widget: unknown, dashboardTheme: unknown) {
               resolveCalls.push({ widget, dashboardTheme });
@@ -80,8 +80,8 @@ function harness({ rows = ROWS, fetch, flint }: HarnessOptions = {}) {
               return GROUNDED;
             },
           }
-        : flint;
-    ctx.provide("flint", bridge as never);
+        : chartSpecs;
+    ctx.provide("chartSpecs", bridge as never);
   }
   return { flow: new FlowRenderService(ctx), resolveCalls, dataCalls, ctx };
 }
@@ -89,7 +89,7 @@ function harness({ rows = ROWS, fetch, flint }: HarnessOptions = {}) {
 const GRAPH_WIDGET = {
   id: "w-graph",
   type: "graph",
-  data: { source: "superset", datasetId: 1 },
+  data: { source: "bi", datasetId: 1 },
   graph: {
     // `labelField`, not an auto-detected column: guessing which field holds a
     // node's label is magic, and the spec names it explicitly instead.
@@ -147,7 +147,7 @@ describe("FlowRenderService.compileGraphWidget", () => {
     expect(dataCalls[0]).toEqual({ region: "North" });
   });
 
-  it("resolves the theme through ctx.flint, handing it the dashboard theme", async () => {
+  it("resolves the theme through ctx.chartSpecs, handing it the dashboard theme", async () => {
     const { flow, resolveCalls } = harness();
     await flow.compileGraphWidget(GRAPH_WIDGET, undefined, { preset: "house" });
     expect(resolveCalls).toHaveLength(1);
@@ -208,7 +208,7 @@ describe("FlowRenderService.compileGraphWidget", () => {
 describe("FlowRenderService theme degradation", () => {
   /** Every one of these must still yield a renderable graph. */
   const broken = {
-    "no flint service at all": null,
+    "no chart-specs service at all": null,
     "resolveWidgetTheme throws": {
       resolveWidgetTheme() {
         throw new Error("boom");
@@ -238,9 +238,9 @@ describe("FlowRenderService theme degradation", () => {
     "a bridge with neither method": {},
   };
 
-  for (const [label, flint] of Object.entries(broken)) {
+  for (const [label, chartSpecs] of Object.entries(broken)) {
     it(`renders with the default theme when ${label}`, async () => {
-      const { flow } = harness({ flint });
+      const { flow } = harness({ chartSpecs });
       const result = await flow.compileGraphWidget(GRAPH_WIDGET);
       expect(result.nodes).toHaveLength(2);
       expect(result.theme).toEqual(DEFAULT_FLOW_THEME);
@@ -251,7 +251,7 @@ describe("FlowRenderService theme degradation", () => {
     // The dashboard and the widget both named no house. That is a renderable
     // state, and it must not be reported as a broken theme.
     const { flow, ctx } = harness({
-      flint: { resolveWidgetTheme: () => ({ valid: true, source: "none" }) },
+      chartSpecs: { resolveWidgetTheme: () => ({ valid: true, source: "none" }) },
     });
     const warn = vi.spyOn(ctx.logger, "warn");
     const result = await flow.compileGraphWidget(GRAPH_WIDGET);
@@ -260,7 +260,7 @@ describe("FlowRenderService theme degradation", () => {
   });
 
   it("logs a theme failure once rather than once per render", async () => {
-    const { flow, ctx } = harness({ flint: { resolveWidgetTheme: () => undefined } });
+    const { flow, ctx } = harness({ chartSpecs: { resolveWidgetTheme: () => undefined } });
     const warn = vi.spyOn(ctx.logger, "warn");
     await flow.compileGraphWidget(GRAPH_WIDGET);
     await flow.compileGraphWidget(GRAPH_WIDGET);
@@ -270,7 +270,7 @@ describe("FlowRenderService theme degradation", () => {
 
   it("falls back to the default theme when the grounded decisions are junk", async () => {
     const { flow } = harness({
-      flint: {
+      chartSpecs: {
         resolveWidgetTheme: () => ({ valid: true, source: "preset", spec: { preset: "house" } }),
         groundTheme: () => ({ valid: true, decisions: { surface: "not-an-object" } }),
       },
@@ -282,7 +282,7 @@ describe("FlowRenderService theme degradation", () => {
 
   it("keeps whatever ink the decisions do state, and defaults the rest", async () => {
     const { flow } = harness({
-      flint: {
+      chartSpecs: {
         resolveWidgetTheme: () => ({ valid: true, source: "preset", spec: { preset: "house" } }),
         groundTheme: () => ({ valid: true, decisions: { text: { primary: "#010203" } } }),
       },

@@ -203,7 +203,7 @@ describe("a2a", () => {
               skills: [{ id: "listChannels", name: "List channels", description: "d" }],
             },
           },
-          { id: "flint", name: "Flint", description: "no agent here" },
+          { id: "chart-specs", name: "Chart specs", description: "no agent here" },
         ],
         { baseUrl: "http://localhost:3001" },
       );

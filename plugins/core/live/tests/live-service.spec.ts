@@ -34,8 +34,8 @@ describe.skipIf(!live)("LoamsLiveService against a live mock", () => {
     // `DataService` injects the control plane, so it has to be on the context
     // before DataService loads or DataService itself is skipped -- and then
     // `data` is unresolved, which silently skips everything that injects it.
-    ctx.provide("controlPlane");
-    ctx.set("controlPlane", {
+    ctx.provide("bi");
+    ctx.set("bi", {
       queryData: async () => ({ data: [], rowcount: 0 }),
     });
     await ctx.plugin(DataService);
@@ -60,8 +60,8 @@ describe.skipIf(!live)("LoamsLiveService against a live mock", () => {
     // A fresh context: a context can only host one service per key, so the
     // second instance has to be built on its own.
     const solo = new Context();
-    solo.provide("controlPlane");
-    solo.set("controlPlane", { queryData: async () => ({ data: [], rowcount: 0 }) });
+    solo.provide("bi");
+    solo.set("bi", { queryData: async () => ({ data: [], rowcount: 0 }) });
     await solo.plugin(DataService);
     const broken = new LoamsLiveService(solo, {
       baseUrl: "http://127.0.0.1:1",

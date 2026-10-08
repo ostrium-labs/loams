@@ -34,21 +34,21 @@ describe("Zod Schemas", () => {
     expect(result.success).toBe(false);
   });
 
-  it("Widget XOR constraint works: chart-type widget with neither flint nor chart is rejected", () => {
+  it("Widget XOR constraint works: chart-type widget with neither chart-specs nor chart is rejected", () => {
     const widget = {
       id: randomUUID(),
       type: "chart",
-      // no flint, no chart
+      // no chart-specs, no chart
     };
     const result = WidgetSchema.safeParse(widget);
     expect(result.success).toBe(false);
   });
 
-  it("Widget XOR constraint works: chart-type widget with both flint and chart is rejected", () => {
+  it("Widget XOR constraint works: chart-type widget with both chart-specs and chart is rejected", () => {
     const widget = {
       id: randomUUID(),
       type: "chart",
-      flint: {
+      chartSpec: {
         chartType: "bar",
         encodings: {},
       },
@@ -61,7 +61,7 @@ describe("Zod Schemas", () => {
     expect(result.success).toBe(false);
   });
 
-  it("Non-chart widgets (text, filter) pass without flint/chart", () => {
+  it("Non-chart widgets (text, filter) pass without chartSpec/chart", () => {
     const widget1 = {
       id: randomUUID(),
       type: "text",
@@ -82,5 +82,22 @@ describe("Zod Schemas", () => {
     expect(LayoutItemSchema.safeParse(invalidW).success).toBe(false);
     expect(LayoutItemSchema.safeParse(invalidX).success).toBe(false);
     expect(LayoutItemSchema.safeParse(invalidY).success).toBe(false);
+  });
+});
+
+describe("legacy widget documents", () => {
+  it("upgrades `flint` and `source: superset` on input", () => {
+    const result = WidgetSchema.safeParse({
+      id: "w",
+      type: "chart",
+      data: { source: "superset", datasetId: 1 },
+      flint: { chartType: "Bar Chart", encodings: {} },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.data?.source).toBe("bi");
+      expect(result.data.chartSpec).toBeDefined();
+      expect("flint" in result.data).toBe(false);
+    }
   });
 });

@@ -7,7 +7,7 @@ export const InteractionSchema = z.object({
 });
 export type Interaction = z.infer<typeof InteractionSchema>;
 
-export const FlintSpecSchema = z.object({
+export const ChartSpecSchema = z.object({
   chartType: z.string(),
   encodings: z.record(
     z.string(),
@@ -31,7 +31,7 @@ export const FlintSpecSchema = z.object({
   chartProperties: z.record(z.string(), z.unknown()).optional(),
   theme_spec: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
 });
-export type FlintSpec = z.infer<typeof FlintSpecSchema>;
+export type ChartSpec = z.infer<typeof ChartSpecSchema>;
 
 export const ChartSchema = z.object({
   kind: z.enum(["line", "bar", "pie", "scatter", "heatmap", "funnel", "sankey", "area", "custom"]),
@@ -55,8 +55,8 @@ export type Chart = z.infer<typeof ChartSchema>;
 export const LoamsStreamSchema = z.enum(["operations", "approvals", "notifications"]);
 export type LoamsStream = z.infer<typeof LoamsStreamSchema>;
 
-export const SupersetDataSourceSchema = z.object({
-  source: z.literal("superset"),
+export const BiDataSourceSchema = z.object({
+  source: z.literal("bi"),
   datasetId: z.number().nullable().optional(),
   sql: z.string().nullable().optional(),
   params: z.array(z.string()).optional(),
@@ -80,7 +80,7 @@ export const LoamsDataSourceSchema = z.object({
 export type LoamsDataSource = z.infer<typeof LoamsDataSourceSchema>;
 
 export const DataSourceSchema = z.discriminatedUnion("source", [
-  SupersetDataSourceSchema,
+  BiDataSourceSchema,
   LoamsDataSourceSchema,
 ]);
 export type DataSource = z.infer<typeof DataSourceSchema>;
@@ -320,14 +320,14 @@ const WidgetBaseSchema = z.object({
   id: z.string().min(1),
   type: z.enum(["chart", "kpi", "table", "text", "filter", "graph"]),
   data: DataSourceSchema.optional(),
-  flint: FlintSpecSchema.optional(),
+  chartSpec: ChartSpecSchema.optional(),
   chart: ChartSchema.optional(),
   /**
    * The node/edge description for a `graph` widget.
    *
    * `graph` is a SIBLING of `chart`, not a new `ChartSchema.kind`, and that is
    * the whole design decision. Every existing render path -- native kinds and
-   * the flint assembler alike -- terminates in an ECharts option object, and a
+   * the chart-specs assembler alike -- terminates in an ECharts option object, and a
    * function returning an options blob cannot express a React Flow graph, whose
    * input is a `nodes`/`edges` pair it mounts through its own component tree
    * with its own drag, zoom and pan state. So the graph widget gets its own
@@ -339,38 +339,57 @@ const WidgetBaseSchema = z.object({
 });
 
 /**
+ * Documents saved before the neutral rename carry `data.source: "superset"` and a
+ * `flint` key. Both are still accepted on input and upgraded in place, so stored
+ * dashboards keep loading; output always uses `"bi"` and `chartSpec`.
+ */
+function upgradeLegacyWidget(input: unknown): unknown {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
+  const widget: Record<string, unknown> = { ...(input as Record<string, unknown>) };
+  if ("flint" in widget) {
+    if (!("chartSpec" in widget)) widget.chartSpec = widget.flint;
+    delete widget.flint;
+  }
+  const data = widget.data;
+  if (typeof data === "object" && data !== null && (data as { source?: unknown }).source === "superset") {
+    widget.data = { ...(data as Record<string, unknown>), source: "bi" };
+  }
+  return widget;
+}
+
+/**
  * The terminal-type rules.
  *
  * Each rule is scoped to exactly one `type`. The chart rule predates `graph` and
- * is unchanged: `type === "chart"` must carry exactly one of `flint` or `chart`.
+ * is unchanged: `type === "chart"` must carry exactly one of `chart-specs` or `chart`.
  * The graph rules are its mirror image. Both directions matter, because the
  * failure they prevent is a widget that reaches two renderers that each believe
  * they own it -- one of which would then throw `Unknown chart kind` at the
  * author instead of drawing anything.
  */
-export const WidgetSchema = WidgetBaseSchema.refine(
+export const WidgetSchema = z.preprocess(upgradeLegacyWidget, WidgetBaseSchema.refine(
   (data) => {
     if (data.type === "chart") {
-      const hasFlint = data.flint !== undefined;
+      const hasChartSpec = data.chartSpec !== undefined;
       const hasChart = data.chart !== undefined;
-      return (hasFlint && !hasChart) || (!hasFlint && hasChart);
+      return (hasChartSpec && !hasChart) || (!hasChartSpec && hasChart);
     }
     return true;
   },
   {
-    message: "Chart widgets must have exactly one of 'flint' or 'chart' defined.",
+    message: "Chart widgets must have exactly one of 'chartSpec' or 'chart' defined.",
   },
 )
   .refine((data) => data.type !== "graph" || data.graph !== undefined, {
     message: "Graph widgets must define 'graph'.",
   })
   .refine(
-    (data) => data.type !== "graph" || (data.flint === undefined && data.chart === undefined),
+    (data) => data.type !== "graph" || (data.chartSpec === undefined && data.chart === undefined),
     {
       message:
-        "Graph widgets are rendered by flows, not ECharts; they must not declare 'flint' or 'chart'.",
+        "Graph widgets are rendered by flows, not charts; they must not declare 'chartSpec' or 'chart'.",
     },
-  );
+  ));
 
 export type Widget = z.infer<typeof WidgetSchema>;
 
@@ -402,15 +421,15 @@ export const DashboardSpecSchema = z.object({
   /**
    * The default visual theme for every widget on this dashboard.
    *
-   * PRECEDENCE: a per-widget `flint.theme_spec` (see `FlintSpecSchema` above)
+   * PRECEDENCE: a per-widget `chartSpec.theme_spec` (see `ChartSpecSchema` above)
    * WINS over this field. That one is a per-widget override authored alongside
    * the chart spec, so it is the more specific statement; this field is the
    * house the dashboard was built in, and applies to every widget that does not
    * override it. Resolve the effective pair through
-   * `ctx.flint.resolveWidgetTheme(widget, dashboardSpec.theme)` rather than
+   * `ctx.chartSpecs.resolveWidgetTheme(widget, dashboardSpec.theme)` rather than
    * reading either field directly.
    *
-   * Omitting it means "no theme", which is a real renderable state: flint's own
+   * Omitting it means "no theme", which is a real renderable state: chart-specs' own
    * defaults apply.
    */
   theme: ThemeSelectionSchema.optional(),

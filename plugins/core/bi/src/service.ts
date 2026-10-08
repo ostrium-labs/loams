@@ -1,17 +1,17 @@
 import { Context, Service } from "cordis";
-import { ControlPlaneConfig, ControlPlaneDataset } from "./types.js";
+import { BiConfig, BiDataset } from "./types.js";
 
-export class ControlPlaneService extends Service {
+export class BiService extends Service {
   static inject = [];
 
   private _token: string | null = null;
   private _tokenExpiry: number = 0;
   private _csrfToken: string | null = null;
-  private _datasetCache: Map<number, ControlPlaneDataset> = new Map();
-  public config: ControlPlaneConfig;
+  private _datasetCache: Map<number, BiDataset> = new Map();
+  public config: BiConfig;
 
-  constructor(ctx: Context, config: ControlPlaneConfig) {
-    super(ctx, "controlPlane");
+  constructor(ctx: Context, config: BiConfig) {
+    super(ctx, "bi");
     this.config = config;
   }
 
@@ -91,7 +91,7 @@ export class ControlPlaneService extends Service {
     return response.json();
   }
 
-  async describeDataset(id: number): Promise<ControlPlaneDataset> {
+  async describeDataset(id: number): Promise<BiDataset> {
     if (this._datasetCache.has(id)) {
       return this._datasetCache.get(id)!;
     }
@@ -180,6 +180,6 @@ export class ControlPlaneService extends Service {
 
 declare module "cordis" {
   interface Context {
-    controlPlane: ControlPlaneService;
+    bi: BiService;
   }
 }

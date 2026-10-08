@@ -29,8 +29,8 @@ describe.skipIf(!live)("the columns a Loams-live dashboard widget names", () => 
 
   beforeAll(async () => {
     ctx = new Context();
-    ctx.provide("controlPlane");
-    ctx.set("controlPlane", { queryData: async () => ({ data: [], rowcount: 0 }) });
+    ctx.provide("bi");
+    ctx.set("bi", { queryData: async () => ({ data: [], rowcount: 0 }) });
     await ctx.plugin(DataService);
     await ctx.plugin(LoamsLiveService, { baseUrl, streams: ["operations", "approvals"] });
     service = ctx.loamsLive;

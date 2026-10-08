@@ -3,7 +3,7 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * Every upstream this project talks to — Superset, Zulip, Forgejo, Langfuse,
+ * Every upstream this project talks to — the BI backend, Zulip, Forgejo, Langfuse,
  * OpenPanel, Glitchtip, Matomo — is a separate product with its own auth scheme,
  * its own error shape, and its own pagination convention. Written naively,
  * each adapter re-implements token caching, `Authorization` header assembly,
@@ -45,7 +45,7 @@ import { Context } from "cordis";
 export type UpstreamAuth =
   /** No credentials. Correct for a local mock server. */
   | { kind: "none" }
-  /** `Authorization: Bearer <token>`. Matomo's `token_auth`, Superset's JWT. */
+  /** `Authorization: Bearer <token>`. Matomo's `token_auth`, the BI backend's JWT. */
   | { kind: "bearer"; token: string }
   /** `Authorization: Basic base64(user:pass)`. Zulip's `email:api_key`. */
   | { kind: "basic"; username: string; password: string }
@@ -77,7 +77,7 @@ export interface UpstreamConfig {
    * `null` to report the failure as-is.
    *
    * This exists because token lifetimes differ wildly across the upstreams:
-   * Matomo's `token_auth` does not expire, Zulip API keys do not, but Superset's
+   * Matomo's `token_auth` does not expire, Zulip API keys do not, but the BI backend's
    * access JWT expires in 15 minutes. Without a refresh hook every long-running
    * dashboard server would start failing at a fixed interval after boot.
    */

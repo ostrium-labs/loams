@@ -3,9 +3,9 @@
  *
  * Structurally this is `charts`'s `RenderService` with a
  * different terminal value, and it is a deliberate mirror rather than a
- * near-copy: both declare `static inject = ["data", "flint"]`, both fetch
+ * near-copy: both declare `static inject = ["data", "chartSpecs"]`, both fetch
  * through `ctx.data.fetchWidgetData`, and both resolve their theme through
- * `ctx.flint.resolveWidgetTheme` instead of reading `widget.flint.theme_spec` or
+ * `ctx.chartSpecs.resolveWidgetTheme` instead of reading `widget.chartSpec.theme_spec` or
  * `dashboardSpec.theme` themselves. That precedence is documented at length in
  * `dashboard-spec.ts` and a per-widget override WINS over the dashboard default,
  * so re-implementing it here would be a second copy free to drift.
@@ -18,7 +18,7 @@
  *
  * The theme path degrades at every step. A graph tile that renders in the
  * dashboard's own colours is strictly better than a tile that throws and shows an
- * error, so an unresolvable theme, a throwing resolver and a missing flint
+ * error, so an unresolvable theme, a throwing resolver and a missing chart-specs
  * service all land on `DEFAULT_FLOW_THEME` with a log line, exactly as the
  * echarts service lands on unthemed options.
  */
@@ -27,7 +27,7 @@ import { DASHBOARD_THEME_PARAM, splitRenderParams } from "@loams-core/charts";
 import { compileGraph, type CompiledGraph } from "./compiler.js";
 import { flowThemeFromDecisions, DEFAULT_FLOW_THEME, type FlowTheme } from "./theme.js";
 import type { DesignDecisions, ThemeReport } from "flint-chart/core";
-// Side-effect imports: augment cordis Context with the `data` and `flint` keys
+// Side-effect imports: augment cordis Context with the `data` and `chart-specs` keys
 // this service injects. Re-declaring them locally would conflict with the
 // packages that own them.
 import "@loams-core/data";
@@ -48,18 +48,18 @@ export { DASHBOARD_THEME_PARAM };
 const MAX_REMEMBERED_WARNINGS = 32;
 
 /**
- * The slice of the flint service this package depends on.
+ * The slice of the chart-specs service this package depends on.
  *
  * Declared structurally, for the same reason `charts` does it: a
  * missing or differently shaped resolver degrades to "unthemed" instead of
  * failing to compile, and so the theme path can be exercised against a stub.
  */
-interface FlintThemeBridge {
+interface ChartSpecThemeBridge {
   resolveWidgetTheme?(widget: unknown, dashboardTheme?: unknown): ThemeResolutionLike | undefined;
   groundTheme?(spec: unknown, chartType: string, facts?: unknown): ThemeGroundingLike | undefined;
 }
 
-/** The shape of `FlintService.resolveWidgetTheme`'s return, read defensively. */
+/** The shape of `ChartSpecService.resolveWidgetTheme`'s return, read defensively. */
 interface ThemeResolutionLike {
   valid?: boolean;
   source?: string;
@@ -67,7 +67,7 @@ interface ThemeResolutionLike {
   report?: ThemeReport[];
 }
 
-/** The shape of `FlintService.groundTheme`'s return, read defensively. */
+/** The shape of `ChartSpecService.groundTheme`'s return, read defensively. */
 interface ThemeGroundingLike {
   valid?: boolean;
   report?: ThemeReport[];
@@ -81,7 +81,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * Thrown when a widget this service cannot draw reaches it.
  *
- * The graph mirror of `NotAnEChartsWidgetError`, and for the same reason: a
+ * The graph mirror of `NotAChartWidgetError`, and for the same reason: a
  * well-formed chart widget reaching the flow renderer should not report
  * "graph needs at least one node", which is true and useless. It should say the
  * widget is not a graph and name the package that does own it.
@@ -105,7 +105,7 @@ export interface CompiledGraphWidget extends CompiledGraph {
 }
 
 export class FlowRenderService extends Service {
-  static inject = ["data", "flint"];
+  static inject = ["data", "chartSpecs"];
 
   /** Warnings already emitted, so one bad theme logs once and not once a render. */
   private readonly _warned = new Set<string>();
@@ -183,7 +183,7 @@ export class FlowRenderService extends Service {
     }
   }
 
-  /** Flatten flint's `ThemeReport[]` into one loggable line. */
+  /** Flatten chart-specs' `ThemeReport[]` into one loggable line. */
   private _describeReport(report: ThemeReport[] | undefined): string {
     if (!Array.isArray(report) || report.length === 0) return "no report attached";
     return report.map((entry) => `${entry.path}: ${entry.message}`).join("; ");
@@ -206,11 +206,11 @@ export class FlowRenderService extends Service {
    * it belongs to `resolveWidgetTheme`.
    */
   private _resolveTheme(widget: unknown, dashboardTheme: unknown): FlowTheme {
-    const bridge = this.ctx.flint as unknown as FlintThemeBridge | undefined;
+    const bridge = this.ctx.chartSpecs as unknown as ChartSpecThemeBridge | undefined;
     if (!bridge || typeof bridge.resolveWidgetTheme !== "function") {
       this._warnOnce(
         "no-bridge",
-        "No flint theme service; rendering the graph with the dashboard's own tokens",
+        "No chart-specs theme service; rendering the graph with the dashboard's own tokens",
       );
       return { ...DEFAULT_FLOW_THEME };
     }
@@ -247,12 +247,12 @@ export class FlowRenderService extends Service {
     if (typeof bridge.groundTheme !== "function") {
       this._warnOnce(
         "no-ground",
-        "No groundTheme() on the flint service; rendering the graph unthemed",
+        "No groundTheme() on the chart-specs service; rendering the graph unthemed",
       );
       return { ...DEFAULT_FLOW_THEME };
     }
 
-    // `graph` is not a chart type flint knows, so grounding may report that it
+    // `graph` is not a chart type chart-specs knows, so grounding may report that it
     // could not honour part of the spec. That is fine: `flowThemeFromDecisions`
     // maps whatever it did bind and falls back per role for the rest.
     let grounding: ThemeGroundingLike | undefined;

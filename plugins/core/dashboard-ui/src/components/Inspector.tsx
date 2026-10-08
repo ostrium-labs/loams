@@ -45,7 +45,7 @@ export const Inspector: React.FC<InspectorProps> = ({
   const [kind, setKind] = useState<any>("line");
   const [xAxis, setXAxis] = useState("");
   const [yAxis, setYAxis] = useState("");
-  const [flintJson, setFlintJson] = useState("");
+  const [chartSpecJson, setChartSpecJson] = useState("");
   const [widgetTheme, setWidgetTheme] = useState<ThemeSelection | null>(null);
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export const Inspector: React.FC<InspectorProps> = ({
 
   useEffect(() => {
     if (!widget) return;
-    setTitle(widget.flint?.title || (widget.chart?.optionOverrides as any)?.title?.text || "");
+    setTitle(widget.chartSpec?.title || (widget.chart?.optionOverrides as any)?.title?.text || "");
     if (widget.chart) {
       setKind(widget.chart.kind || "line");
       setXAxis(String(widget.chart.encode?.x || ""));
@@ -68,9 +68,9 @@ export const Inspector: React.FC<InspectorProps> = ({
         ),
       );
     }
-    if (widget.flint) {
-      setFlintJson(JSON.stringify(widget.flint, null, 2));
-      setWidgetTheme(widget.flint.theme_spec ?? null);
+    if (widget.chartSpec) {
+      setChartSpecJson(JSON.stringify(widget.chartSpec, null, 2));
+      setWidgetTheme(widget.chartSpec.theme_spec ?? null);
     } else {
       setWidgetTheme(null);
     }
@@ -84,19 +84,19 @@ export const Inspector: React.FC<InspectorProps> = ({
   const handleSave = () => {
     const updated = JSON.parse(JSON.stringify(widget)) as Widget;
 
-    if (widget.flint) {
+    if (widget.chartSpec) {
       try {
-        const parsedFlint = JSON.parse(flintJson);
-        parsedFlint.title = title;
+        const parsedChartSpec = JSON.parse(chartSpecJson);
+        parsedChartSpec.title = title;
         // The dedicated control owns theme_spec; the raw JSON box may be stale.
         if (widgetTheme) {
-          parsedFlint.theme_spec = widgetTheme;
+          parsedChartSpec.theme_spec = widgetTheme;
         } else {
-          delete parsedFlint.theme_spec;
+          delete parsedChartSpec.theme_spec;
         }
-        updated.flint = parsedFlint;
+        updated.chartSpec = parsedChartSpec;
       } catch (err: any) {
-        alert("Invalid Flint JSON: " + err.message);
+        alert("Invalid chart spec JSON: " + err.message);
         return;
       }
     } else if (widget.chart) {
@@ -148,7 +148,7 @@ export const Inspector: React.FC<InspectorProps> = ({
           id="inspector-type"
           type="text"
           className={cn(CONTROL, CONTROL_DISABLED)}
-          value={widget.flint ? "Microsoft Flint (Semantic)" : `Native ECharts (${kind})`}
+          value={widget.chartSpec ? "Chart spec (semantic)" : `Native chart (${kind})`}
           disabled
         />
       </div>
@@ -227,9 +227,9 @@ export const Inspector: React.FC<InspectorProps> = ({
         </>
       )}
 
-      {widget.flint && (
+      {widget.chartSpec && (
         <WidgetThemeField
-          value={widget.flint.theme_spec}
+          value={widget.chartSpec.theme_spec}
           presets={themePresets}
           dashboardSelection={dashboardTheme}
           catalogError={themeCatalogError}
@@ -237,17 +237,17 @@ export const Inspector: React.FC<InspectorProps> = ({
         />
       )}
 
-      {widget.flint && (
+      {widget.chartSpec && (
         <div className={GROUP}>
-          <Label className={LABEL} htmlFor="inspector-flint">
-            Flint Specification (JSON)
+          <Label className={LABEL} htmlFor="inspector-chart-spec">
+            Chart Specification (JSON)
           </Label>
           <textarea
-            id="inspector-flint"
+            id="inspector-chart-spec"
             className={CONTROL_AREA}
             rows={10}
-            value={flintJson}
-            onChange={(e) => setFlintJson(e.target.value)}
+            value={chartSpecJson}
+            onChange={(e) => setChartSpecJson(e.target.value)}
           />
         </div>
       )}

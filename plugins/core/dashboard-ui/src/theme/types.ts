@@ -8,7 +8,7 @@
  * structural subsets, so a spec sent here round-trips through the server
  * unchanged.
  *
- * Field meaning, per flint's own typings:
+ * Field meaning, per chart-specs' own typings:
  *  - `resolveThemeSpec` takes a preset name, a ThemeSpec, or a ThemeSpec that
  *    `extends` a preset plus overrides.
  *  - Nested policy objects MERGE; arrays and scalars REPLACE.
@@ -61,7 +61,7 @@ export interface ThemeSpec {
 /** What a caller may store: a preset name, or a spec object. */
 export type ThemeSelection = string | ThemeSpec;
 
-/** A downgrade or approximation flint chose to make rather than swallow. */
+/** A downgrade or approximation chart-specs chose to make rather than swallow. */
 export interface ThemeReportEntry {
   stage: string;
   path: string;
@@ -85,7 +85,7 @@ export interface ThemeResolution {
 }
 
 /**
- * "No house" — flint's own defaults. Persisted as a removed field rather than
+ * "No house" — chart-specs' own defaults. Persisted as a removed field rather than
  * a magic string, so clearing a theme is a removal and not a value that
  * happens to mean absence.
  */

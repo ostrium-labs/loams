@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vite-plus/test";
 import { Context } from "cordis";
-import { ControlPlaneService } from "../src/service.js";
+import { BiService } from "../src/service.js";
 
-describe("ControlPlaneService", () => {
+describe("BiService", () => {
   let ctx: Context;
-  let service: ControlPlaneService;
+  let service: BiService;
 
   beforeEach(() => {
     ctx = new Context();
-    service = new ControlPlaneService(ctx, {
+    service = new BiService(ctx, {
       baseUrl: "http://localhost:8088",
       username: "admin",
       password: "admin_password",

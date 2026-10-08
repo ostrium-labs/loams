@@ -1,4 +1,4 @@
-export interface SupersetColumn {
+export interface BiColumn {
   column_name: string;
   type: string;
   is_dttm: boolean;
@@ -7,13 +7,13 @@ export interface SupersetColumn {
   groupby: boolean;
 }
 
-export interface SupersetMetric {
+export interface BiMetric {
   metric_name: string;
   expression: string;
   verbose_name?: string;
 }
 
-export interface ControlPlaneDataset {
+export interface BiDataset {
   id: number;
   table_name: string;
   schema: string;
@@ -21,12 +21,12 @@ export interface ControlPlaneDataset {
     id: number;
     database_name: string;
   };
-  columns: SupersetColumn[];
-  metrics: SupersetMetric[];
+  columns: BiColumn[];
+  metrics: BiMetric[];
   description?: string;
 }
 
-export interface SupersetQueryResult {
+export interface BiQueryResult {
   data: Record<string, unknown>[];
   colnames: string[];
   coltypes: number[];

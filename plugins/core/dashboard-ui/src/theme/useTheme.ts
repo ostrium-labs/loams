@@ -19,7 +19,7 @@ import type {
  *
  * Resolution is server-authoritative. `resolveThemeSpec` runs on the server, so
  * an unknown preset name comes back as `valid: false` and is rendered as an
- * error. flint is explicit that this is not a silent fallback, and neither is
+ * error. chart-specs is explicit that this is not a silent fallback, and neither is
  * this UI.
  */
 
@@ -36,7 +36,7 @@ export interface ThemeState {
   baseInk: ThemeInk | undefined;
   /** Resolved/merged ink driving the shell's CSS custom properties. */
   ink: ThemeInk | undefined;
-  /** flint's own downgrade notes for the current selection. */
+  /** chart-specs' own downgrade notes for the current selection. */
   report: ThemeReportEntry[];
   /** Non-null when the selection cannot resolve. Never silently ignored. */
   error: string | null;
@@ -134,11 +134,11 @@ export function useTheme({ initialSelection }: UseThemeOptions): ThemeState {
       .then((resolution) => {
         if (requestRef.current !== token) return;
         if (!resolution.valid) {
-          // flint treats an unknown house as an error. Say so; do not paint.
+          // chart-specs treats an unknown house as an error. Say so; do not paint.
           setResolvedSpec(undefined);
           setReport(resolution.report);
           setError(
-            `Theme "${presetId}" could not be resolved. Flint reports an unknown preset name as an error rather than falling back, so nothing is being themed.`,
+            `Theme "${presetId}" could not be resolved. chart-specs reports an unknown preset name as an error rather than falling back, so nothing is being themed.`,
           );
           setResolving(false);
           return;
@@ -159,7 +159,7 @@ export function useTheme({ initialSelection }: UseThemeOptions): ThemeState {
 
   /**
    * The effective ink: the resolved base from the server merged with any local
-   * overrides. Nested objects merge and arrays replace, matching flint — so
+   * overrides. Nested objects merge and arrays replace, matching chart-specs — so
    * typing one new hex into an `extends` theme changes only that field.
    */
   const ink = useMemo<ThemeInk | undefined>(() => {

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vite-plus/test";
 import { Context } from "cordis";
-import { FlintService } from "@loams-core/chart-specs";
+import { ChartSpecService } from "@loams-core/chart-specs";
 import { DASHBOARD_THEME_PARAM, RenderService, splitRenderParams } from "../src/service.js";
 
 /**
  * End-to-end: a widget rendered through `RenderService.compileWidget` with the
- * real `FlintService` behind it, so the whole chain is exercised - resolve the
+ * real `ChartSpecService` behind it, so the whole chain is exercised - resolve the
  * selection, ground it against this chart, map the grounded ink onto option keys.
  *
  * These assertions are the ones that matter to a reader of a dashboard: a themed
@@ -22,7 +22,7 @@ function barWidget(themeSpec?: unknown) {
   return {
     id: "w1",
     type: "chart",
-    flint: {
+    chartSpec: {
       chartType: "Bar Chart",
       encodings: { x: { field: "region" }, y: { field: "value" } },
       ...(themeSpec === undefined ? {} : { theme_spec: themeSpec }),
@@ -33,7 +33,7 @@ function barWidget(themeSpec?: unknown) {
 /**
  * Structural comparison.
  *
- * `FlintService.compile` mints a fresh `tooltip.formatter` closure on every
+ * `ChartSpecService.compile` mints a fresh `tooltip.formatter` closure on every
  * call, so two compiles of the same widget are deeply equal but not reference
  * equal, and `toEqual` would fail on a difference no reader of the chart can see.
  */
@@ -41,10 +41,10 @@ const snapshot = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
 
 function harness() {
   const ctx = new Context();
-  ctx.provide("controlPlane", {});
-  // `new FlintService(ctx)` registers itself on the context it is given, which
+  ctx.provide("bi", {});
+  // `new ChartSpecService(ctx)` registers itself on the context it is given, which
   // is why this harness does not `provide` it again.
-  const flint = new FlintService(ctx);
+  const chartSpecs = new ChartSpecService(ctx);
 
   const dataCalls: (Record<string, unknown> | undefined)[] = [];
   ctx.provide("data", {
@@ -55,7 +55,7 @@ function harness() {
   });
 
   const warn = vi.spyOn(ctx.logger, "warn");
-  return { render: new RenderService(ctx), flint, warn, dataCalls };
+  return { render: new RenderService(ctx), chartSpecs, warn, dataCalls };
 }
 
 describe("compileWidget — a theme actually changes the option", () => {
@@ -66,7 +66,7 @@ describe("compileWidget — a theme actually changes the option", () => {
     const themed = (await render.compileWidget(barWidget(), undefined, { preset: "swiss" })) as any;
 
     // Palette: the house's single ink for a one-series chart, replacing the
-    // hardcoded Power BI fallback `FlintService.compile` leaves behind.
+    // hardcoded Power BI fallback `ChartSpecService.compile` leaves behind.
     expect(themed.color).toEqual(["#e2231a"]);
     expect(unthemed.color).not.toEqual(themed.color);
 
@@ -110,7 +110,7 @@ describe("compileWidget — a theme actually changes the option", () => {
 
   it("hands a native chart kind the palette too, one ink per slice", async () => {
     const { render } = harness();
-    // A native (non-flint) widget: the theme path must not be flint-only.
+    // A native (non-chart-spec) widget: the theme path must not be chart-spec-only.
     const widget = {
       id: "w2",
       type: "chart",
@@ -123,10 +123,10 @@ describe("compileWidget — a theme actually changes the option", () => {
   });
 
   it("themes a copy: the options the compiler returned are not touched", async () => {
-    const { render, flint } = harness();
-    const compile = flint.compile.bind(flint);
+    const { render, chartSpecs } = harness();
+    const compile = chartSpecs.compile.bind(chartSpecs);
     let compiled: Record<string, unknown> | undefined;
-    vi.spyOn(flint, "compile").mockImplementation(async (widget, data) => {
+    vi.spyOn(chartSpecs, "compile").mockImplementation(async (widget, data) => {
       compiled = await compile(widget as any, data as any);
       return compiled;
     });
@@ -170,18 +170,18 @@ describe("compileWidget — precedence and fallbacks", () => {
   });
 
   it("renders exactly as it does today when nothing names a theme", async () => {
-    const { render, flint } = harness();
+    const { render, chartSpecs } = harness();
     const rendered = await render.compileWidget(barWidget());
     expect(snapshot(rendered)).toEqual(
-      snapshot(await flint.compile(barWidget() as any, { data: ROWS } as any)),
+      snapshot(await chartSpecs.compile(barWidget() as any, { data: ROWS } as any)),
     );
   });
 
   it("treats source 'none' as a real answer, not a failure", async () => {
-    const { render, flint, warn } = harness();
+    const { render, chartSpecs, warn } = harness();
     const rendered = await render.compileWidget(barWidget(), undefined, {});
     expect(snapshot(rendered)).toEqual(
-      snapshot(await flint.compile(barWidget() as any, { data: ROWS } as any)),
+      snapshot(await chartSpecs.compile(barWidget() as any, { data: ROWS } as any)),
     );
     expect(warn).not.toHaveBeenCalled();
   });
@@ -205,7 +205,7 @@ describe("compileWidget — an unresolvable theme", () => {
       await render.compileWidget(barWidget(), undefined, { preset: "nope-not-real" });
     }
 
-    // Only this package's own line is deduplicated: `FlintService.resolveTheme`
+    // Only this package's own line is deduplicated: `ChartSpecService.resolveTheme`
     // logs the same failure on every call, which is upstream's behaviour.
     const mine = warn.mock.calls
       .map((call) => call.join(" "))
@@ -216,11 +216,11 @@ describe("compileWidget — an unresolvable theme", () => {
     expect(mine[0]).toContain("w1");
   });
 
-  it("does not throw when the flint service cannot resolve anything at all", async () => {
+  it("does not throw when the chart-specs service cannot resolve anything at all", async () => {
     const { render, warn } = harness();
-    (render as any).ctx.flint = undefined;
+    (render as any).ctx.chartSpecs = undefined;
     // A native widget, so this exercises the degraded path without depending on
-    // the flint assembler being able to compile anything.
+    // the chart-specs assembler being able to compile anything.
     const widget = {
       id: "w3",
       type: "chart",

@@ -4,7 +4,7 @@
  * "Off" here means the service is disposed, its routes are gone, and its
  * skills no longer answer. Not "hidden from a list". The user was explicit
  * about this, and it is also the only reading that makes an enable/disable
- * button mean anything: an adapter that keeps polling Superset after you turned
+ * button mean anything: an adapter that keeps polling the BI backend after you turned
  * it off is a plugin platform that does not work.
  *
  * The observable proof is the 404. A disabled plugin's route is removed from

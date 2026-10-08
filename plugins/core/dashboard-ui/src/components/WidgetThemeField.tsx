@@ -6,7 +6,7 @@ import { describeSelection } from "../theme/ink";
 import type { ThemePresetSummary, ThemeSelection } from "../theme/types";
 
 interface WidgetThemeFieldProps {
-  /** Currently stored on `widget.flint.theme_spec`, if any. */
+  /** Currently stored on `widget.chartSpec.theme_spec`, if any. */
   value: ThemeSelection | undefined;
   presets: ThemePresetSummary[];
   /** What the dashboard-level theme currently is, for the copy below. */
@@ -32,12 +32,12 @@ const PRECEDENCE = "mt-[0.1rem]";
  * Per-widget theme override.
  *
  * Precedence is the thing worth being loud about: a widget's own
- * `flint.theme_spec` WINS over the dashboard theme. That is deliberate — one
+ * `chartSpec.theme_spec` WINS over the dashboard theme. That is deliberate — one
  * chart can be the exception — but it is surprising if the copy does not say so,
  * because a widget can look un-themed while the dashboard around it is themed,
  * and the obvious conclusion ("the theme is broken") is the wrong one.
  *
- * Only flint widgets carry `theme_spec`; a native-ECharts widget has no such
+ * Only chart-specs widgets carry `theme_spec`; a native-ECharts widget has no such
  * field, so the control is not offered for one.
  */
 export const WidgetThemeField: React.FC<WidgetThemeFieldProps> = ({
@@ -113,7 +113,7 @@ export const WidgetThemeField: React.FC<WidgetThemeFieldProps> = ({
             </span>
             <span className={PREVIEW_TEXT}>
               Inheriting the dashboard theme
-              {dashboardSelection === null && " (which is Flint defaults)"}.
+              {dashboardSelection === null && " (which is the default theme)"}.
             </span>
           </>
         ) : typeof current === "string" ? (

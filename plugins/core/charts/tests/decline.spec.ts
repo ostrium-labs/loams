@@ -15,13 +15,13 @@
  */
 import { describe, expect, it, vi } from "vite-plus/test";
 import { Context } from "cordis";
-import { compileNativeWidget, declineEChartsRender } from "../src/compiler.js";
-import { NotAnEChartsWidgetError, RenderService } from "../src/service.js";
+import { compileNativeWidget, declineChartRender } from "../src/compiler.js";
+import { NotAChartWidgetError, RenderService } from "../src/service.js";
 
 const GRAPH_WIDGET = {
   id: "w-graph",
   type: "graph",
-  data: { source: "superset", datasetId: 1 },
+  data: { source: "bi", datasetId: 1 },
   graph: { nodes: [{ id: "a" }], edges: [] },
 };
 
@@ -34,13 +34,13 @@ function harness(options: { widget?: unknown; rows?: unknown[] } = {}) {
       return { data: options.rows ?? [{ x: 1, y: 2 }], rowcount: 1 };
     },
   });
-  ctx.provide("flint", {} as never);
+  ctx.provide("chartSpecs", {} as never);
   return { render: new RenderService(ctx), dataCalls };
 }
 
-describe("declineEChartsRender", () => {
+describe("declineChartRender", () => {
   it("declines a graph widget", () => {
-    const decline = declineEChartsRender(GRAPH_WIDGET);
+    const decline = declineChartRender(GRAPH_WIDGET);
     expect(decline).toEqual({
       rendered: false,
       widgetType: "graph",
@@ -48,32 +48,32 @@ describe("declineEChartsRender", () => {
     });
   });
 
-  it("says plainly that the widget is not an ECharts widget", () => {
-    expect(declineEChartsRender(GRAPH_WIDGET)?.reason).toMatch(/not an ECharts widget/i);
+  it("says plainly that the widget is not a chart widget", () => {
+    expect(declineChartRender(GRAPH_WIDGET)?.reason).toMatch(/not a chart widget/i);
   });
 
   it("declines the other non-chart types too", () => {
     for (const type of ["kpi", "table", "text", "filter"]) {
-      expect(declineEChartsRender({ id: "w", type })?.widgetType).toBe(type);
+      expect(declineChartRender({ id: "w", type })?.widgetType).toBe(type);
     }
   });
 
   it("does not decline a chart widget", () => {
     expect(
-      declineEChartsRender({ id: "w", type: "chart", chart: { kind: "line" } }),
+      declineChartRender({ id: "w", type: "chart", chart: { kind: "line" } }),
     ).toBeUndefined();
   });
 
   it("does not decline an untyped widget, so the existing contract is untouched", () => {
     // Pre-`graph` callers pass `{ chart: { kind } }` with no `type` at all.
-    expect(declineEChartsRender({ chart: { kind: "line" } })).toBeUndefined();
+    expect(declineChartRender({ chart: { kind: "line" } })).toBeUndefined();
   });
 
   it("does not decline on junk input", () => {
-    expect(declineEChartsRender(undefined)).toBeUndefined();
-    expect(declineEChartsRender(null)).toBeUndefined();
-    expect(declineEChartsRender("chart")).toBeUndefined();
-    expect(declineEChartsRender({ type: 7 })).toBeUndefined();
+    expect(declineChartRender(undefined)).toBeUndefined();
+    expect(declineChartRender(null)).toBeUndefined();
+    expect(declineChartRender("chart")).toBeUndefined();
+    expect(declineChartRender({ type: 7 })).toBeUndefined();
   });
 });
 
@@ -114,7 +114,7 @@ describe("RenderService.tryCompileWidget", () => {
 describe("RenderService.compileWidget on a graph widget", () => {
   it("throws the decline error, not 'Unknown chart kind'", async () => {
     const { render } = harness();
-    await expect(render.compileWidget(GRAPH_WIDGET)).rejects.toThrow(NotAnEChartsWidgetError);
+    await expect(render.compileWidget(GRAPH_WIDGET)).rejects.toThrow(NotAChartWidgetError);
   });
 
   it("the decline error names the flow package", async () => {
@@ -125,9 +125,9 @@ describe("RenderService.compileWidget on a graph widget", () => {
   it("the decline error carries the widget type as data", async () => {
     const { render } = harness();
     const err = await render.compileWidget(GRAPH_WIDGET).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(NotAnEChartsWidgetError);
-    expect((err as NotAnEChartsWidgetError).widgetType).toBe("graph");
-    expect((err as NotAnEChartsWidgetError).reason).toMatch(/not an ECharts widget/i);
+    expect(err).toBeInstanceOf(NotAChartWidgetError);
+    expect((err as NotAChartWidgetError).widgetType).toBe("graph");
+    expect((err as NotAChartWidgetError).reason).toMatch(/not a chart widget/i);
   });
 });
 
@@ -142,23 +142,23 @@ describe("the pre-existing chart errors are unchanged", () => {
     expect(() => compileNativeWidget({ type: "chart" }, [])).toThrowError("Chart kind is required");
   });
 
-  it("still throws for a flint widget whose native fallback has no chart", async () => {
+  it("still throws for a chart-specs widget whose native fallback has no chart", async () => {
     const { render } = harness();
     await expect(
-      render.compileWidget({ id: "w", type: "chart", flint: { chartType: "Bar", encodings: {} } }),
+      render.compileWidget({ id: "w", type: "chart", chartSpec: { chartType: "Bar", encodings: {} } }),
     ).rejects.toThrow(/Chart kind is required/);
   });
 
-  it("still compiles a chart widget whose flint compile fails, via the native path", async () => {
+  it("still compiles a chart widget whose chart-specs compile fails, via the native path", async () => {
     const ctx = new Context();
     ctx.provide("data", {
       async fetchWidgetData() {
         return { data: [{ x: 1, y: 2 }] };
       },
     });
-    ctx.provide("flint", {
+    ctx.provide("chartSpecs", {
       compile: vi.fn(async () => {
-        throw new Error("flint is down");
+        throw new Error("chart-specs is down");
       }),
       resolveWidgetTheme: () => ({ valid: true, source: "none" }),
     } as never);
@@ -166,7 +166,7 @@ describe("the pre-existing chart errors are unchanged", () => {
     const options = await new RenderService(ctx).compileWidget({
       id: "w",
       type: "chart",
-      flint: { chartType: "Bar", encodings: {} },
+      chartSpec: { chartType: "Bar", encodings: {} },
       chart: { kind: "bar", encode: { x: "x", y: "y" } },
     });
     expect(options.series).toBeDefined();

@@ -10,7 +10,7 @@ Renders `graph` dashboard widgets into the `{ nodes, edges }` pair
 `charts` has a registry, `registerChartKind(kind, { compile })`,
 and every entry's `compile` returns an ECharts **option object**. That is the
 terminal value of that pipeline: `RenderService.compileWidget` hands it to
-`EChartsInstance.setOption`. The native kinds and the flint assembler both end
+`EChartsInstance.setOption`. The native kinds and the chart-specs assembler both end
 there.
 
 React Flow has no such option object. Its input is two arrays -- `nodes[]` and
@@ -23,7 +23,7 @@ So `graph` is a **sibling `Widget.type`** rather than a new `ChartSchema.kind`.
 That keeps the ECharts contract intact -- every registered kind still terminates
 in an option object -- and gives the graph its own terminal type. Correspondingly,
 `charts` **declines** a graph widget
-(`declineEChartsRender`) instead of throwing `Unknown chart kind: undefined`,
+(`declineChartRender`) instead of throwing `Unknown chart kind: undefined`,
 which is what it used to do for anything it did not recognise.
 
 A `ChartSchema.kind` is a legitimate thing to add for the _next_ graph-shaped
@@ -37,11 +37,11 @@ Mirrors `charts` exactly:
 |                 | `charts`                                | this package                     |
 | --------------- | ------------------------------------------------------ | -------------------------------- |
 | service         | `RenderService` (`ctx.render`)                         | `FlowRenderService` (`ctx.flow`) |
-| `static inject` | `["data", "flint"]`                                    | `["data", "flint"]`              |
+| `static inject` | `["data", "chartSpecs"]`                                    | `["data", "chartSpecs"]`              |
 | data            | `ctx.data.fetchWidgetData`                             | same                             |
-| theme           | `ctx.flint.resolveWidgetTheme(widget, dashboardTheme)` | same                             |
+| theme           | `ctx.chartSpecs.resolveWidgetTheme(widget, dashboardTheme)` | same                             |
 | terminal value  | ECharts option object                                  | `{ nodes, edges }`               |
-| refuses         | `NotAnEChartsWidgetError`                              | `NotAGraphWidgetError`           |
+| refuses         | `NotAChartWidgetError`                              | `NotAGraphWidgetError`           |
 
 `compileGraphWidget(widget, params?, dashboardTheme?)` returns
 `{ nodes, edges, diagnostics, theme, fitView, pannable, zoomable }`.
@@ -50,19 +50,19 @@ of widgets.
 
 ## Theme resolution
 
-The effective theme comes from `ctx.flint.resolveWidgetTheme(widget, dashboardTheme)`,
-**not** from reading `widget.flint.theme_spec` or `dashboardSpec.theme` directly.
+The effective theme comes from `ctx.chartSpecs.resolveWidgetTheme(widget, dashboardTheme)`,
+**not** from reading `widget.chartSpec.theme_spec` or `dashboardSpec.theme` directly.
 That precedence -- a per-widget override WINS over the dashboard default -- is
 documented at length in `core/types/src/dashboard-spec.ts`, and a bare preset
 name, a `{ preset, custom }` pair and a malformed per-widget override are all
 resolved there. A second implementation would be free to drift.
 
-`graph.ts` consumes flint's **grounded** decisions, never an authored
+`graph.ts` consumes chart-specs' **grounded** decisions, never an authored
 `ThemeSpec`, for the reason `charts/src/theme-decisions.ts` sets
-out: grounding is where flint's ink borrowing chain, presence ordinals and
+out: grounding is where chart-specs' ink borrowing chain, presence ordinals and
 accessibility rules get applied.
 
-Degradation is total and deliberate -- a missing flint service, a throwing
+Degradation is total and deliberate -- a missing chart-specs service, a throwing
 resolver, an unresolvable theme, an invalid grounding and a mapper failure all
 land on `DEFAULT_FLOW_THEME` with one log line (once per distinct cause). An
 unthemed graph tile is strictly better than an error tile. `source: 'none'` is

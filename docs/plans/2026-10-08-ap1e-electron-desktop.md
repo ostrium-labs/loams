@@ -548,7 +548,7 @@ Commit `feat(desktop): signed-manifest updater`.
 - The Nx targets `package-linux`, `package-macos` and `package-windows` run `fetch-engine` then `electron-builder --linux|--mac|--win --publish never`.
 
 **CI** (`desktop-electron.yml`):
-- Triggers: on PRs touching `apps/desktop-electron/**`, `web/**` or `plugins/packages/**`.
+- Triggers: on PRs touching `apps/desktop-electron/**`, `web/**`, `plugins/core/**` or `plugins/packages/**`.
 - Matrix ubuntu-24.04, macos-15, windows-2025.
 - Steps: pnpm install, then `nx run-many -t test typecheck -p loams-desktop-electron @loams/console ...plugins`, then `cargo build --release -p loams` (with Swatinem/rust-cache), then `package-<os>` unsigned, then the Playwright smoke (Task 16) under `xvfb-run` on Linux, then upload the artifacts labelled `unsigned`.
 - Signing jobs run only on `release` events, with environment secrets (owner action: Q420, Q421).

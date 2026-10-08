@@ -15,7 +15,7 @@ import { RowSchema } from "../src/gen/bi/v1/data_pb.js";
  *  - Column values keep their JSON type across the wire. A `map<string, double>`
  *    would coerce `true` and `"2024-01-01"` into numbers and quietly corrupt a
  *    dashboard, so `Value` is a typed oneof and this asserts every branch.
- *  - The several different response envelopes Superset returns are all unwrapped
+ *  - The several different response envelopes the BI backend returns are all unwrapped
  *    (`{result:[...]}`, `{result:[{data:[...]}]}`, a bare array).
  *  - A missing cordis port produces a message naming the port, not a crash deep
  *    inside protobuf serialization.
@@ -24,7 +24,7 @@ import { RowSchema } from "../src/gen/bi/v1/data_pb.js";
 function makeCtx(overrides: Partial<RpcContext> = {}): RpcContext {
   const noop = () => {};
   return {
-    controlPlane: {
+    bi: {
       listDatasets: async () => ({ result: [{ id: 1, table_name: "sales" }] }),
       describeDataset: async () => ({
         id: 7,
@@ -41,7 +41,7 @@ function makeCtx(overrides: Partial<RpcContext> = {}): RpcContext {
     },
     data: { fetchWidgetData: async () => ({ rowcount: 0, data: [] }) },
     render: { compileWidget: async () => ({ series: [] }) },
-    flint: {
+    chartSpecs: {
       listThemes: () => [],
       resolveTheme: () => ({ valid: true, report: [] }),
     },
@@ -72,8 +72,8 @@ function rowValues(row: { values: Record<string, StructValueMessage> }): Record<
 describe("DataService.Query value encoding", () => {
   it("preserves number, string, boolean, and null column types", async () => {
     const ctx = makeCtx({
-      controlPlane: {
-        ...makeCtx().controlPlane,
+      bi: {
+        ...makeCtx().bi,
         queryData: async () => ({
           rowcount: 1,
           data: [{ n: 42, s: "hello", b: true, nul: null }],
@@ -92,8 +92,8 @@ describe("DataService.Query value encoding", () => {
 
   it("serializes a Date column as its ISO string rather than a number", async () => {
     const ctx = makeCtx({
-      controlPlane: {
-        ...makeCtx().controlPlane,
+      bi: {
+        ...makeCtx().bi,
         queryData: async () => ({ data: [{ when: new Date("2024-03-01T00:00:00.000Z") }] }),
       },
     });
@@ -103,8 +103,8 @@ describe("DataService.Query value encoding", () => {
 
   it("preserves a nested JSON column as JSON instead of stringifying it", async () => {
     const ctx = makeCtx({
-      controlPlane: {
-        ...makeCtx().controlPlane,
+      bi: {
+        ...makeCtx().bi,
         queryData: async () => ({ data: [{ agg: { sum: 3 } }] }),
       },
     });
@@ -114,8 +114,8 @@ describe("DataService.Query value encoding", () => {
 
   it("unwraps the { result: [{ data }] } envelope", async () => {
     const ctx = makeCtx({
-      controlPlane: {
-        ...makeCtx().controlPlane,
+      bi: {
+        ...makeCtx().bi,
         queryData: async () => ({ result: [{ data: [{ a: 1 }, { a: 2 }] }] }),
       },
     });
@@ -125,8 +125,8 @@ describe("DataService.Query value encoding", () => {
 
   it("unwraps a bare array payload", async () => {
     const ctx = makeCtx({
-      controlPlane: {
-        ...makeCtx().controlPlane,
+      bi: {
+        ...makeCtx().bi,
         queryData: async () => [{ a: 1 }],
       },
     });
@@ -160,7 +160,7 @@ describe("DataService dataset listing", () => {
 describe("ThemeService", () => {
   it("returns the catalogue with icons", async () => {
     const ctx = makeCtx({
-      flint: {
+      chartSpecs: {
         listThemes: () => [
           { id: "economist", label: "Economist", description: "d", icon: "<svg/>" },
         ],
@@ -174,7 +174,7 @@ describe("ThemeService", () => {
 
   it("treats a resolved-but-downgraded theme as valid, with its report", async () => {
     const ctx = makeCtx({
-      flint: {
+      chartSpecs: {
         listThemes: () => [],
         resolveTheme: () => ({
           valid: true,
@@ -192,7 +192,7 @@ describe("ThemeService", () => {
 
   it("returns valid:false and no spec for an unresolvable theme", async () => {
     const ctx = makeCtx({
-      flint: {
+      chartSpecs: {
         listThemes: () => [],
         resolveTheme: () => ({
           valid: false,

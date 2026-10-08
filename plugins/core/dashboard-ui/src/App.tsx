@@ -32,7 +32,7 @@ const DEFAULT_DASHBOARD_ID = "e3b0c442-98fc-1c14-9afbf4c8996fb924";
  *
  * Written as utilities rather than the `.dashboard-*` rules this file used to
  * lean on. The colours are the `--th-*` ink tokens through the `@theme inline`
- * aliases (`bg-card`, `text-ink-body`, ...), so a Flint theme repaints the whole
+ * aliases (`bg-card`, `text-ink-body`, ...), so a chart-specs theme repaints the whole
  * header from the same write that repaints the charts.
  */
 
@@ -214,7 +214,7 @@ export function App() {
   /**
    * Persist the dashboard-level house.
    *
-   * Stored at `/theme` on the spec. A widget's own `flint.theme_spec` still
+   * Stored at `/theme` on the spec. A widget's own `chartSpec.theme_spec` still
    * wins over this — that precedence is the server's, and the copy in both the
    * picker and the Inspector says so.
    *
@@ -290,7 +290,7 @@ export function App() {
             </Badge>
           </div>
           <div className={DESCRIPTION}>
-            Interactive ECharts visualizations powered by Apache Superset and Microsoft Flint
+            Interactive visualizations powered by the BI backend and the chart-spec engine
           </div>
         </div>
 
@@ -435,7 +435,7 @@ export function App() {
                    * its drag/zoom/pan state and its teardown, and none of that
                    * is an ECharts concern.
                    *
-                   * A graph widget cannot carry `flint.theme_spec` (the schema
+                   * A graph widget cannot carry `chartSpec.theme_spec` (the schema
                    * forbids it), so the dashboard theme is unconditionally the
                    * effective one for it -- no per-widget override to prefer.
                    */}
@@ -462,7 +462,7 @@ export function App() {
                        * card whether the server owns its colours — see the
                        * `hasTheme` note in WidgetCard.
                        */
-                      hasTheme={Boolean(widget.flint?.theme_spec ?? spec.theme)}
+                      hasTheme={Boolean(widget.chartSpec?.theme_spec ?? spec.theme)}
                       dashboardTheme={spec.theme}
                       onSelect={setSelectedWidget}
                       onDelete={handleDeleteWidget}

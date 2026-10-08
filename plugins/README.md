@@ -135,18 +135,18 @@ The full model, including where admin gating and service tokens sit, is in
 Ten adapters are registered at boot. The first two are `alwaysOn`: the host loads
 them, the registry refuses to disable them, and the console toggle is disabled.
 
-| id              | reads                                                                                      | required env                                                      | always on                      |
-| --------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------ |
-| `dashboard`     | this console's own dashboards, widgets and their data                                      | —                                                                 | yes (pinned first, `order: 0`) |
-| `control-plane` | an Apache Superset deployment over the control-plane API — datasets, charts, query results | —                                                                 | yes (`order: 1`)               |
-| `zulip`         | Zulip realm: channels, topics, message search, user metrics                                | `ZULIP_URL`, `ZULIP_EMAIL`, `ZULIP_API_KEY`                       | no                             |
-| `forgejo`       | Forgejo instance: repositories, issues, PRs, commits, contributors                         | `FORGEJO_URL`, `FORGEJO_TOKEN`                                    | no                             |
-| `langfuse`      | Langfuse LLM observability: observations, metrics, scores                                  | `LANGFUSE_URL`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`      | no                             |
-| `openpanel`     | OpenPanel product analytics: traffic, funnels, retention, events                           | `OPENPANEL_URL`, `OPENPANEL_CLIENT_ID`, `OPENPANEL_CLIENT_SECRET` | no                             |
-| `glitchtip`     | GlitchTip error/performance monitoring: issues, events, releases                           | `GLITCHTIP_URL`, `GLITCHTIP_TOKEN`                                | no                             |
-| `matomo`        | Matomo 5 web analytics: visits, actions, referrers, devices, goals                         | `MATOMO_URL`, `MATOMO_API_TOKEN`                                  | no                             |
-| `itsaplan`      | It's a Plan delivery analytics: issues, throughput, burnup, activity                       | `ITSAPLAN_URL`, `ITSAPLAN_API_KEY`                                | no                             |
-| `loams`         | a Loams deployment: collections, hybrid retrieval, documents, counts                       | `LOAMS_URL`                                                       | no                             |
+| id          | reads                                                                | required env                                                      | always on                      |
+| ----------- | -------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------ |
+| `dashboard` | this console's own dashboards, widgets and their data                | —                                                                 | yes (pinned first, `order: 0`) |
+| `bi`        | the BI backend over its REST API — datasets, charts, query results   | —                                                                 | yes (`order: 1`)               |
+| `zulip`     | Zulip realm: channels, topics, message search, user metrics          | `ZULIP_URL`, `ZULIP_EMAIL`, `ZULIP_API_KEY`                       | no                             |
+| `forgejo`   | Forgejo instance: repositories, issues, PRs, commits, contributors   | `FORGEJO_URL`, `FORGEJO_TOKEN`                                    | no                             |
+| `langfuse`  | Langfuse LLM observability: observations, metrics, scores            | `LANGFUSE_URL`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`      | no                             |
+| `openpanel` | OpenPanel product analytics: traffic, funnels, retention, events     | `OPENPANEL_URL`, `OPENPANEL_CLIENT_ID`, `OPENPANEL_CLIENT_SECRET` | no                             |
+| `glitchtip` | GlitchTip error/performance monitoring: issues, events, releases     | `GLITCHTIP_URL`, `GLITCHTIP_TOKEN`                                | no                             |
+| `matomo`    | Matomo 5 web analytics: visits, actions, referrers, devices, goals   | `MATOMO_URL`, `MATOMO_API_TOKEN`                                  | no                             |
+| `itsaplan`  | It's a Plan delivery analytics: issues, throughput, burnup, activity | `ITSAPLAN_URL`, `ITSAPLAN_API_KEY`                                | no                             |
+| `loams`     | a Loams deployment: collections, hybrid retrieval, documents, counts | `LOAMS_URL`                                                       | no                             |
 
 An adapter is auto-enabled at boot **only if its required variables are present**
 and its own manifest opts in with `defaultEnabled`. A fresh checkout therefore
@@ -183,15 +183,18 @@ pnpm --filter @loams-plugins/root dev:ui   # dashboard-ui on http://localhost:51
 
 Server environment variables (all optional; defaults in brackets):
 
-| variable                          | meaning                                                    |
-| --------------------------------- | ---------------------------------------------------------- |
-| `PORT`                            | HTTP API port [`3001`]                                     |
-| `SUPERSET_PORT`                   | port for the bundled mock upstream [`8088`]                |
-| `SUPERSET_URL`                    | real Superset base URL [`http://localhost:$SUPERSET_PORT`] |
-| `SUPERSET_USER` / `SUPERSET_PASS` | Superset credentials [`admin` / `admin`]                   |
-| `DATABASE_URL`                    | store connection string [`memory`]                         |
-| `ENABLE_MCP`                      | `true` also serves the MCP stdio server on this process    |
-| `CORS_ALLOWED_ORIGINS`            | comma-separated origin allowlist. `*` is rejected          |
+| variable                          | meaning                                                 |
+| --------------------------------- | ------------------------------------------------------- |
+| `PORT`                            | HTTP API port [`3001`]                                  |
+| `LOAMS_BI_PORT`                   | port for the bundled mock BI backend [`8088`]           |
+| `LOAMS_BI_URL`                    | BI backend base URL [`http://localhost:$LOAMS_BI_PORT`] |
+| `LOAMS_BI_USER` / `LOAMS_BI_PASS` | BI backend credentials [`admin` / `admin`]              |
+
+The old `SUPERSET_PORT`, `SUPERSET_URL`, `SUPERSET_USER` and `SUPERSET_PASS` names are
+still read as deprecated fallbacks and log a one-time warning.
+| `DATABASE_URL` | store connection string [`memory`] |
+| `ENABLE_MCP` | `true` also serves the MCP stdio server on this process |
+| `CORS_ALLOWED_ORIGINS` | comma-separated origin allowlist. `*` is rejected |
 
 Adapters read their own variables — `ZULIP_URL`, `FORGEJO_TOKEN`,
 `LANGFUSE_PUBLIC_KEY` and so on. The full list is in
@@ -225,23 +228,23 @@ it.` That is a supported state on a fresh checkout, not a failure.
 
 ## Package layout
 
-| package                                    | what it is                                                                                         |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `@loams-plugins/root`                      | the workspace root; scripts and toolchain config                                                   |
-| `@loams-core/host`                      | the plugin platform: types, registry, host, bus, router, A2A, api, `auth/`, `ui/`                  |
-| `@loams-core/types`                     | shared zod schemas (`PluginStatus`, theme specs)                                                   |
-| `@loams-core/bi`      | the control-plane client (`@loams-core/bi` speaks Apache Superset's REST API) |
-| `@loams-core/http`      | the shared HTTP client every adapter builds on                                                     |
-| `@loams-core/store`              | persistence for dashboards, widgets and plugin enable flags                                        |
-| `@loams-core/data`               | widget data fetching                                                                               |
-| `@loams-core/charts`     | widget → ECharts option compiler                                                                   |
-| `@loams-core/chart-specs`              | theme resolution                                                                                   |
-| `@loams-core/dashboards`     | dashboard document schema                                                                          |
-| `@loams-core/agent-tools`        | agent tooling service                                                                              |
-| `@loams-plugins/plugin-<upstream>-adapter` | one read-only adapter per upstream                                                                 |
-| `@loams-core/dashboard-ui`              | the console SPA                                                                                    |
-| `@loams-core/bi-rpc`                    | ConnectRPC bindings for the `bi.v1` contract                                                       |
-| `@loams-plugins/server`                    | `apps/server`: boot order, catalog, mock upstream, HTTP server                                     |
+| package                                    | what it is                                                                        |
+| ------------------------------------------ | --------------------------------------------------------------------------------- |
+| `@loams-plugins/root`                      | the workspace root; scripts and toolchain config                                  |
+| `@loams-core/host`                         | the plugin platform: types, registry, host, bus, router, A2A, api, `auth/`, `ui/` |
+| `@loams-core/types`                        | shared zod schemas (`PluginStatus`, theme specs)                                  |
+| `@loams-core/bi`                           | the BI backend client (the bi backend speaks the Apache Superset REST API)        |
+| `@loams-core/http`                         | the shared HTTP client every adapter builds on                                    |
+| `@loams-core/store`                        | persistence for dashboards, widgets and plugin enable flags                       |
+| `@loams-core/data`                         | widget data fetching                                                              |
+| `@loams-core/charts`                       | widget → chart option compiler                                                    |
+| `@loams-core/chart-specs`                  | chart specs and theme resolution                                                  |
+| `@loams-core/dashboards`                   | dashboard document schema                                                         |
+| `@loams-core/agent-tools`                  | agent tooling service                                                             |
+| `@loams-plugins/plugin-<upstream>-adapter` | one read-only adapter per upstream                                                |
+| `@loams-core/dashboard-ui`                 | the console SPA                                                                   |
+| `@loams-core/bi-rpc`                       | ConnectRPC bindings for the `bi.v1` contract                                      |
+| `@loams-plugins/server`                    | `apps/server`: boot order, catalog, mock upstream, HTTP server                    |
 
 ### About `bi-rpc` and the `bi.v1` namespace
 

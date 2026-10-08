@@ -77,7 +77,7 @@ export function applyOverrides(
 }
 
 /**
- * Compile a native (non-Flint) widget into an ECharts option.
+ * Compile a native (non-chart-specs) widget into an ECharts option.
  * Requires widget.chart to be defined.
  */
 export function compileNativeWidget(widget: any, data: any): Record<string, unknown> {
@@ -114,7 +114,7 @@ export function compileNativeWidget(widget: any, data: any): Record<string, unkn
  * React Flow's terminal value is a `nodes`/`edges` pair -- see
  * `@loams-core/flows`.
  */
-export const ECHARTS_WIDGET_TYPES: ReadonlySet<string> = new Set(["chart"]);
+export const CHART_WIDGET_TYPES: ReadonlySet<string> = new Set(["chart"]);
 
 /** A widget this package will not render, and the package that owns it. */
 export interface RenderDecline {
@@ -126,8 +126,8 @@ export interface RenderDecline {
 /** Where a declined widget type actually goes. */
 const DECLINE_OWNER: Record<string, string> = {
   graph: "@loams-core/flows",
-  kpi: "@loams-plugins/plugin-kpi (unimplemented; not an ECharts widget)",
-  table: "@loams-plugins/plugin-table (unimplemented; not an ECharts widget)",
+  kpi: "@loams-core/kpi (unimplemented; not a chart widget)",
+  table: "@loams-core/table (unimplemented; not a chart widget)",
   text: "the dashboard's text renderer",
   filter: "the dashboard's filter bar",
 };
@@ -140,19 +140,19 @@ const DECLINE_OWNER: Record<string, string> = {
  * `{ chart: { kind } }` and rely on the option object being produced, so an
  * absent type is not treated as a non-chart type here.
  */
-export function declineEChartsRender(widget: unknown): RenderDecline | undefined {
+export function declineChartRender(widget: unknown): RenderDecline | undefined {
   if (typeof widget !== "object" || widget === null || Array.isArray(widget)) return undefined;
   const type = (widget as { type?: unknown }).type;
   // A non-string `type` is a malformed widget, not a routing decision. Leaving
   // it to `compileNativeWidget`'s existing errors keeps those messages intact.
-  if (typeof type !== "string" || ECHARTS_WIDGET_TYPES.has(type)) return undefined;
+  if (typeof type !== "string" || CHART_WIDGET_TYPES.has(type)) return undefined;
 
   const owner = DECLINE_OWNER[type];
   return {
     rendered: false,
     widgetType: type,
     reason:
-      `Widget type "${type}" is not an ECharts widget: this package terminates in an ECharts ` +
+      `Widget type "${type}" is not a chart widget: this package terminates in a chart ` +
       `option object, and a "${type}" widget does not. Rendered instead by ${owner ?? "another renderer"}.`,
   };
 }

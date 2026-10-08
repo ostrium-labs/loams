@@ -6,9 +6,9 @@ import { Context } from "cordis";
 import ConsoleLogger from "@cordisjs/plugin-logger-console";
 import { StderrExporter } from "./logger.js";
 import { StoreService } from "@loams-core/store";
-import { ControlPlaneService } from "@loams-core/bi";
+import { BiService } from "@loams-core/bi";
 import { DataService } from "@loams-core/data";
-import { FlintService } from "@loams-core/chart-specs";
+import { ChartSpecService } from "@loams-core/chart-specs";
 import { RenderService } from "@loams-core/charts";
 import { FlowRenderService } from "@loams-core/flows";
 import { DashboardSpecService } from "@loams-core/dashboards";
@@ -31,20 +31,21 @@ import {
   resolveAllowedOrigins,
   type AuthConfig,
 } from "@loams-core/host";
-import { startMswSupersetMock } from "./mock-msw-server.js";
+import { startMswBiMock } from "./mock-msw-server.js";
+import { readEnvWithFallback } from "./env.js";
 import { registerPluginCatalog } from "./plugin-catalog.js";
 
 export const DEFAULT_DASHBOARD_ID = "e3b0c442-98fc-1c14-9afbf4c8996fb924";
 
 async function bootstrap() {
-  const SUPERSET_PORT = parseInt(process.env.SUPERSET_PORT || "8088", 10);
+  const BI_PORT = parseInt(readEnvWithFallback("LOAMS_BI_PORT", "BI_PORT") || "8088", 10);
   const API_PORT = parseInt(process.env.PORT || "3001", 10);
 
-  // 1. Start Feature-rich MSW Mock Superset Server
+  // 1. Start Feature-rich MSW Mock BI Server
   // stderr, not stdout: this process may be the MCP stdio server, and stdout is
   // reserved there for JSON-RPC framing. A bare status line there would corrupt it.
-  process.stderr.write("Starting MSW Mock Superset Server...\n");
-  await startMswSupersetMock(SUPERSET_PORT);
+  process.stderr.write("Starting MSW Mock BI Server...\n");
+  await startMswBiMock(BI_PORT);
 
   // 2. Initialize Cordis Root Context
   const ctx = new Context();
@@ -75,14 +76,14 @@ async function bootstrap() {
     connectionString: process.env.DATABASE_URL || "memory",
   });
 
-  await ctx.plugin(ControlPlaneService, {
-    baseUrl: process.env.SUPERSET_URL || `http://localhost:${SUPERSET_PORT}`,
-    username: process.env.SUPERSET_USER || "admin",
-    password: process.env.SUPERSET_PASS || "admin",
+  await ctx.plugin(BiService, {
+    baseUrl: readEnvWithFallback("LOAMS_BI_URL", "SUPERSET_URL") || `http://localhost:${BI_PORT}`,
+    username: readEnvWithFallback("LOAMS_BI_USER", "SUPERSET_USER") || "admin",
+    password: readEnvWithFallback("LOAMS_BI_PASS", "SUPERSET_PASS") || "admin",
   });
 
   await ctx.plugin(DataService);
-  await ctx.plugin(FlintService);
+  await ctx.plugin(ChartSpecService);
   await ctx.plugin(RenderService);
   // Graph widgets, not chart widgets. Registered after `RenderService` and for a
   // stated reason: the two renderers are mutually exclusive per widget -- a
@@ -111,7 +112,7 @@ async function bootstrap() {
     ctx.loamsLive.start();
   } else {
     console.warn(
-      "[loams-live] LOAMS_URL is unset: widgets with `data.source: \"loams\"` will fall back to Superset",
+      "[loams-live] LOAMS_URL is unset: widgets with `data.source: \"loams\"` will fall back to the BI backend",
     );
   }
 
@@ -170,9 +171,9 @@ async function bootstrap() {
     "✓ Cordis context initialized with plugins: %s",
     [
       "store",
-      "controlPlane",
+      "bi",
       "data",
-      "flint",
+      "chartSpecs",
       "render",
       "flow",
       "dashboard",
@@ -232,7 +233,7 @@ async function bootstrap() {
         "widget-revenue-trend": {
           id: "widget-revenue-trend",
           type: "chart",
-          data: { source: "superset", datasetId: 1 },
+          data: { source: "bi", datasetId: 1 },
           chart: {
             kind: "line",
             encode: { x: "quarter", y: ["revenue", "profit"] },
@@ -247,7 +248,7 @@ async function bootstrap() {
         "widget-user-growth": {
           id: "widget-user-growth",
           type: "chart",
-          data: { source: "superset", datasetId: 2 },
+          data: { source: "bi", datasetId: 2 },
           chart: {
             kind: "line",
             encode: { x: "date", y: ["visitors", "active_users"] },
@@ -262,7 +263,7 @@ async function bootstrap() {
         "widget-category-sales": {
           id: "widget-category-sales",
           type: "chart",
-          data: { source: "superset", datasetId: 3 },
+          data: { source: "bi", datasetId: 3 },
           chart: {
             kind: "bar",
             encode: { x: "category", y: "sales" },
@@ -278,7 +279,7 @@ async function bootstrap() {
         "widget-market-share": {
           id: "widget-market-share",
           type: "chart",
-          data: { source: "superset", datasetId: 3 },
+          data: { source: "bi", datasetId: 3 },
           chart: {
             kind: "pie",
             encode: { x: "category", value: "market_share" },
@@ -291,7 +292,7 @@ async function bootstrap() {
         "widget-server-health": {
           id: "widget-server-health",
           type: "chart",
-          data: { source: "superset", datasetId: 4 },
+          data: { source: "bi", datasetId: 4 },
           chart: {
             kind: "bar",
             encode: { x: "server_name", y: ["cpu_usage", "memory_usage"] },
@@ -562,7 +563,7 @@ function startHttpApiServer(ctx: Context, port: number) {
 
       // 7. GET /api/datasets
       if (path === "/api/datasets" && req.method === "GET") {
-        const datasets = await ctx.controlPlane.listDatasets();
+        const datasets = await ctx.bi.listDatasets();
         sendJson(200, datasets);
         return;
       }
@@ -570,7 +571,7 @@ function startHttpApiServer(ctx: Context, port: number) {
       // 8. GET /api/datasets/:id
       const datasetMatch = path.match(/^\/api\/datasets\/(\d+)$/);
       if (datasetMatch && req.method === "GET") {
-        const ds = await ctx.controlPlane.describeDataset(parseInt(datasetMatch[1], 10));
+        const ds = await ctx.bi.describeDataset(parseInt(datasetMatch[1], 10));
         sendJson(200, ds);
         return;
       }
@@ -589,7 +590,7 @@ function startHttpApiServer(ctx: Context, port: number) {
         const params = body.params || {};
         // `body.dashboardTheme` is optional. Omitting it previews the widget with
         // no dashboard theme, which is exactly right for a widget that carries
-        // its own `flint.theme_spec`.
+        // its own `chartSpec.theme_spec`.
         const option = await ctx.render.compileWidget(body.widget, params, body.dashboardTheme);
         const data = await ctx.data.fetchWidgetData(body.widget, params);
         const rows = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
@@ -638,23 +639,23 @@ function startHttpApiServer(ctx: Context, port: number) {
 
       // 11. GET /api/themes — the theme catalogue, sorted by label.
       if (path === "/api/themes" && req.method === "GET") {
-        // Served from `ctx.flint`, which reads flint's own THEME_PRESETS rather
+        // Served from `ctx.chartSpecs`, which reads chart-specs' own THEME_PRESETS rather
         // than `listThemePresets()`: the picker renders a swatch per theme and
         // that helper omits `icon`.
-        sendJson(200, { themes: ctx.flint.listThemes() });
+        sendJson(200, { themes: ctx.chartSpecs.listThemes() });
         return;
       }
 
-      // 12. GET /api/themes/:id — one theme, resolved, plus flint's report.
+      // 12. GET /api/themes/:id — one theme, resolved, plus chart-specs' report.
       //
       // A resolved theme that carries report entries is VALID but downgraded;
       // an unresolvable one comes back `valid: false` with the report attached,
-      // because flint treats an unknown house name as an error rather than
+      // because chart-specs treats an unknown house name as an error rather than
       // silently rendering some other house's colours. The UI shows the report
       // either way.
       const themeMatch = path.match(/^\/api\/themes\/([a-zA-Z0-9._-]+)$/);
       if (themeMatch && req.method === "GET") {
-        const resolution = ctx.flint.resolveTheme(decodeURIComponent(themeMatch[1]));
+        const resolution = ctx.chartSpecs.resolveTheme(decodeURIComponent(themeMatch[1]));
         sendJson(200, {
           valid: resolution.valid,
           spec: resolution.spec,

@@ -2,25 +2,25 @@ import { Context, Service } from "cordis";
 import {
   DEFAULT_THEME_ICON,
   THEME_PRESETS,
-  groundTheme as flintGroundTheme,
+  groundTheme as chartSpecGroundTheme,
   resolveThemeSpec,
 } from "flint-chart/core";
 import type {
   DesignDecisions,
   GroundingContext,
   ThemeReport,
-  ThemeSpec as FlintThemeSpec,
+  ThemeSpec as ChartThemeSpec,
 } from "flint-chart/core";
 import { mapColumnsToSemanticTypes } from "./type-mapper.js";
-import type { DashboardTheme, SupersetQueryResult, Widget } from "@loams-core/types";
-import { FlintSpecSchema, ThemeSpecSchema } from "@loams-core/types";
+import type { DashboardTheme, BiQueryResult, Widget } from "@loams-core/types";
+import { ChartSpecSchema, ThemeSpecSchema } from "@loams-core/types";
 import type { ThemeCatalogueEntry } from "@loams-core/types";
-// Side-effect import: augments cordis Context with the `controlPlane` key this service injects.
+// Side-effect import: augments cordis Context with the `bi` key this service injects.
 import "@loams-core/bi";
 
 declare module "cordis" {
   interface Context {
-    flint: FlintService;
+    chartSpecs: ChartSpecService;
   }
 }
 
@@ -29,13 +29,13 @@ declare module "cordis" {
  *
  * Discriminated on `valid`, then on `source`, so a caller can narrow without
  * inspecting the optional fields. `report` is ALWAYS present — including on the
- * success path — because flint reports downgrades and approximations rather
+ * success path — because chart-specs reports downgrades and approximations rather
  * than swallowing them, and a caller that only saw `spec` would treat a
  * downgraded theme as fully applied.
  */
 export type ThemeResolution =
   | { valid: true; source: "none"; report: ThemeReport[]; spec?: undefined }
-  | { valid: true; source: "preset" | "custom"; report: ThemeReport[]; spec: FlintThemeSpec }
+  | { valid: true; source: "preset" | "custom"; report: ThemeReport[]; spec: ChartThemeSpec }
   | { valid: false; source: "preset" | "custom"; report: ThemeReport[]; spec?: undefined };
 
 /** The result of grounding a spec against a chart. */
@@ -49,7 +49,7 @@ export type ThemeGrounding =
  * `GroundingContext` requires these as non-optional, so a caller that knows
  * only a chart type cannot supply an honest value for all of them. Rather than
  * inventing them, this service leaves the unknown ones at the neutral "not
- * known" value and lets flint's `report` record whatever the ground could not
+ * known" value and lets chart-specs' `report` record whatever the ground could not
  * honour as a result. A caller that DOES know the real facts passes them here
  * and gets a better answer.
  */
@@ -69,18 +69,18 @@ export interface GroundingFacts {
   hostSurface?: string;
 }
 
-export class FlintService extends Service {
-  static inject = ["controlPlane"];
+export class ChartSpecService extends Service {
+  static inject = ["bi"];
 
   constructor(ctx: Context) {
-    super(ctx, "flint");
+    super(ctx, "chartSpecs");
   }
 
   /**
    * The house an unthemed chart falls back to.
    *
    * This is a real renderable default, not a theme override: it only applies
-   * when {@link FlintService.resolveWidgetTheme} reports `source: 'none'`. As
+   * when {@link ChartSpecService.resolveWidgetTheme} reports `source: 'none'`. As
    * long as a widget resolves to a real theme, that theme wins outright and
    * this never reaches the assembler.
    */
@@ -104,7 +104,7 @@ export class FlintService extends Service {
       // Bounded: stop tracking rather than grow forever. The warning below says
       // so explicitly so silence is not mistaken for "no problems".
       this.ctx.logger.debug(
-        "flint: theme warning deduplication limit reached; further theme warnings suppressed",
+        "chart-specs: theme warning deduplication limit reached; further theme warnings suppressed",
       );
       return;
     }
@@ -137,12 +137,12 @@ export class FlintService extends Service {
    * Compile a widget to a backend-neutral ECharts option.
    *
    * `dashboardTheme` is the dashboard-level selection. It is honoured only when
-   * the widget carries no `flint.theme_spec` of its own — see
-   * {@link FlintService.resolveWidgetTheme} for the precedence rule, which is
+   * the widget carries no `chartSpec.theme_spec` of its own — see
+   * {@link ChartSpecService.resolveWidgetTheme} for the precedence rule, which is
    * deliberately not re-implemented here.
    *
    * THEME OWNERSHIP: the theme resolved here is the `theme_spec` handed to
-   * flint's assembler. Flint documents `theme_spec` as realized by its
+   * chart-specs' assembler. chart-specs documents `theme_spec` as realized by its
    * Vega-Lite assembler, and this repo renders ECharts, so the returned option
    * is NOT reliably themed by this call alone. Callers that need themes to
    * actually paint (the ECharts renderer) apply the resolved spec to the option
@@ -151,10 +151,10 @@ export class FlintService extends Service {
    */
   async compile(
     widget: Widget,
-    data: SupersetQueryResult,
+    data: BiQueryResult,
     dashboardTheme?: DashboardTheme | string | null,
   ): Promise<Record<string, unknown>> {
-    const flintSpec = widget.flint || ({ chartType: "Bar Chart", encodings: {} } as any);
+    const chartSpec = widget.chartSpec || ({ chartType: "Bar Chart", encodings: {} } as any);
     const rows = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
 
     // Infer semantic types
@@ -167,20 +167,20 @@ export class FlintService extends Service {
     const resolution = this.resolveWidgetTheme(widget, dashboardTheme);
     const resolvedSpec = resolution.valid ? resolution.spec : undefined;
     const isThemed = resolvedSpec !== undefined;
-    const pbiColors = FlintService.FALLBACK_PALETTE;
+    const pbiColors = ChartSpecService.FALLBACK_PALETTE;
 
     const input = {
       data: { values: rows },
       semantic_types: semanticTypes,
       chart_spec: {
-        chartType: flintSpec.chartType,
-        encodings: flintSpec.encodings,
-        title: flintSpec.title,
-        subtitle: flintSpec.subtitle,
-        baseSize: flintSpec.baseSize || { width: 400, height: 320 },
-        chartProperties: flintSpec.chartProperties,
+        chartType: chartSpec.chartType,
+        encodings: chartSpec.encodings,
+        title: chartSpec.title,
+        subtitle: chartSpec.subtitle,
+        baseSize: chartSpec.baseSize || { width: 400, height: 320 },
+        chartProperties: chartSpec.chartProperties,
       },
-      theme_spec: resolvedSpec ?? { id: FlintService.FALLBACK_THEME_ID },
+      theme_spec: resolvedSpec ?? { id: ChartSpecService.FALLBACK_THEME_ID },
     };
 
     try {
@@ -208,23 +208,23 @@ export class FlintService extends Service {
       // Fall through to semantic fallback compiler
     }
 
-    // Semantic Fallback Compiler for Flint Spec: guarantees every single chart type renders data
+    // Semantic Fallback Compiler for chart-specs Spec: guarantees every single chart type renders data
     const xField =
-      flintSpec.encodings?.x?.field ||
-      flintSpec.encodings?.x ||
-      flintSpec.encodings?.color?.field ||
+      chartSpec.encodings?.x?.field ||
+      chartSpec.encodings?.x ||
+      chartSpec.encodings?.color?.field ||
       Object.keys(rows[0] || {})[0] ||
       "x";
     const yField =
-      flintSpec.encodings?.y?.field ||
-      flintSpec.encodings?.y ||
-      flintSpec.encodings?.size?.field ||
+      chartSpec.encodings?.y?.field ||
+      chartSpec.encodings?.y ||
+      chartSpec.encodings?.size?.field ||
       Object.keys(rows[0] || {})[1] ||
       "y";
-    const cType = (flintSpec.chartType || "").toLowerCase();
+    const cType = (chartSpec.chartType || "").toLowerCase();
 
-    const titleObj = flintSpec.title
-      ? { text: flintSpec.title, subtext: flintSpec.subtitle }
+    const titleObj = chartSpec.title
+      ? { text: chartSpec.title, subtext: chartSpec.subtitle }
       : undefined;
 
     if (cType.includes("gauge") || cType.includes("meter")) {
@@ -253,7 +253,7 @@ export class FlintService extends Service {
             data: [
               {
                 value: val > 100 ? Math.round(val % 100) : Math.round(val),
-                name: flintSpec.title || "Score",
+                name: chartSpec.title || "Score",
               },
             ],
           },
@@ -314,7 +314,7 @@ export class FlintService extends Service {
             symbolSize: 8,
             data: [
               {
-                name: flintSpec.title || "Root",
+                name: chartSpec.title || "Root",
                 children: rows.map((r: any) => ({
                   name: String(r[xField] ?? ""),
                   value: Number(r[yField] ?? 0),
@@ -429,8 +429,8 @@ export class FlintService extends Service {
     };
   }
 
-  async validate(flintSpec: Record<string, unknown>, sampleData?: any[]) {
-    const parsed = FlintSpecSchema.safeParse(flintSpec);
+  async validate(chartSpec: Record<string, unknown>, sampleData?: any[]) {
+    const parsed = ChartSpecSchema.safeParse(chartSpec);
     if (parsed.success) {
       return {
         valid: true as const,
@@ -447,15 +447,15 @@ export class FlintService extends Service {
   }
 
   async inferSemanticTypes(datasetId: number): Promise<Record<string, string>> {
-    const controlPlaneService: any = this.ctx.controlPlane; // Using any as the control-plane service type is not known here, but the method is defined in requirements
-    const describeInfo = await controlPlaneService.describeDataset(datasetId);
+    const biService: any = this.ctx.bi; // Using any as the control-plane service type is not known here, but the method is defined in requirements
+    const describeInfo = await biService.describeDataset(datasetId);
     if (!describeInfo || !describeInfo.columns) {
       return {};
     }
     return mapColumnsToSemanticTypes(describeInfo.columns);
   }
 
-  private _inferSemanticTypes(widget: Widget, data: SupersetQueryResult): Record<string, string> {
+  private _inferSemanticTypes(widget: Widget, data: BiQueryResult): Record<string, string> {
     // Simple heuristic from data values when columns are not available, or could map from column names if present
     const semanticTypes: Record<string, string> = {};
     if (data.data && data.data.length > 0) {
@@ -482,12 +482,12 @@ export class FlintService extends Service {
   }
 
   /**
-   * The houses flint ships, as a picker-ready catalogue.
+   * The houses chart-specs ships, as a picker-ready catalogue.
    *
    * Built from `THEME_PRESETS` rather than from `listThemePresets()`: that
    * helper deliberately omits `icon`, and rendering a swatch per house is the
    * point of this method. Sorted by `label` so the picker order is stable and
-   * human-alphabetical rather than whatever order flint happens to declare its
+   * human-alphabetical rather than whatever order chart-specs happens to declare its
    * presets in.
    */
   listThemes(): ThemeCatalogueEntry[] {
@@ -506,7 +506,7 @@ export class FlintService extends Service {
    *
    * "Not theming" is a deliberate choice, not an empty slot, so it gets a tile
    * of its own. Kept as its own accessor rather than prepended to
-   * {@link FlintService.listThemes} because it has no `id`: appending a fake
+   * {@link ChartSpecService.listThemes} because it has no `id`: appending a fake
    * house to the catalogue would make it look selectable by id and resolvable
    * as a preset.
    */
@@ -524,7 +524,7 @@ export class FlintService extends Service {
    * Callers get a value they can render with, not an exception.
    *
    * Layering: when a selection carries both `preset` and `custom`, the preset
-   * becomes the custom spec's base via `extends`, so the merge is flint's own
+   * becomes the custom spec's base via `extends`, so the merge is chart-specs' own
    * — nested policy objects MERGE, arrays and scalars REPLACE.
    */
   resolveTheme(theme?: DashboardTheme | string | null): ThemeResolution {
@@ -539,9 +539,9 @@ export class FlintService extends Service {
       return { valid: true, source: "none", report: [], spec: undefined };
     }
 
-    let candidate: FlintThemeSpec | string;
+    let candidate: ChartThemeSpec | string;
     if (selection.custom !== undefined) {
-      const custom = this._toFlintSpec(selection.custom);
+      const custom = this._toChartSpec(selection.custom);
       // `custom` may already name its own base. An explicit `extends` is the
       // author's decision and outranks the selection's `preset`.
       candidate =
@@ -570,7 +570,7 @@ export class FlintService extends Service {
             : "theme.preset";
       this._warnOnce(
         `resolve:${path}:${message}`,
-        `flint: could not resolve theme at ${path}: ${message}`,
+        `chart-specs: could not resolve theme at ${path}: ${message}`,
       );
       return {
         valid: false,
@@ -584,7 +584,7 @@ export class FlintService extends Service {
   /**
    * The EFFECTIVE theme for one widget.
    *
-   * PRECEDENCE: a per-widget `flint.theme_spec` wins over the dashboard-level
+   * PRECEDENCE: a per-widget `chartSpec.theme_spec` wins over the dashboard-level
    * `theme`. The per-widget value is authored next to the chart spec and is the
    * more specific statement, so it overrides the dashboard's house; the
    * dashboard-level `theme` is the default for every widget that does not
@@ -599,9 +599,9 @@ export class FlintService extends Service {
     widget: Widget,
     dashboardTheme?: DashboardTheme | string | null,
   ): ThemeResolution {
-    const widgetTheme = widget.flint?.theme_spec;
+    const widgetTheme = widget.chartSpec?.theme_spec;
 
-    // `FlintSpecSchema.theme_spec` is `string | Record<string, unknown>`: a bare
+    // `ChartSpecSchema.theme_spec` is `string | Record<string, unknown>`: a bare
     // preset NAME is a legal per-widget override, so it goes straight to the
     // resolver. It also wins outright — naming a house replaces the dashboard's
     // rather than layering on top of it.
@@ -617,7 +617,7 @@ export class FlintService extends Service {
           .join("; ");
         this._warnOnce(
           `widget:${widget.id}:${issues}`,
-          `flint: per-widget theme_spec on widget ${widget.id} is invalid, falling back to the dashboard theme: ${issues}`,
+          `chart-specs: per-widget theme_spec on widget ${widget.id} is invalid, falling back to the dashboard theme: ${issues}`,
         );
       } else {
         return this.resolveTheme({
@@ -644,7 +644,7 @@ export class FlintService extends Service {
    * size, whether it is titled). The defaults describe a single, unfaceted,
    * untitled chart.
    */
-  groundTheme(spec: FlintThemeSpec, chartType: string, facts: GroundingFacts = {}): ThemeGrounding {
+  groundTheme(spec: ChartThemeSpec, chartType: string, facts: GroundingFacts = {}): ThemeGrounding {
     const canvasSize = facts.canvasSize ?? { width: 480, height: 320 };
     const subplot = facts.subplotSize ?? { width: canvasSize.width, height: canvasSize.height };
     const ctx: GroundingContext = {
@@ -675,11 +675,11 @@ export class FlintService extends Service {
     if (facts.hostSurface !== undefined) ctx.hostSurface = facts.hostSurface;
 
     try {
-      const decisions = flintGroundTheme(spec, ctx);
+      const decisions = chartSpecGroundTheme(spec, ctx);
       return { valid: true, report: decisions.report ?? [], decisions };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.ctx.logger.warn(`flint: groundTheme failed for chartType ${chartType}: ${message}`);
+      this.ctx.logger.warn(`chart-specs: groundTheme failed for chartType ${chartType}: ${message}`);
       return {
         valid: false,
         report: [{ stage: "ground", path: chartType, message }],
@@ -689,16 +689,16 @@ export class FlintService extends Service {
   }
 
   /**
-   * The validated authoring subset of a `ThemeSpec`, as a flint `ThemeSpec`.
+   * The validated authoring subset of a `ThemeSpec`, as a chart-specs `ThemeSpec`.
    *
    * `@loams-core/types` mirrors the subset we expose and validates it, and mirrors it
    * with a passthrough index signature so unknown keys survive the round trip.
-   * Flint's own `ThemeSpec` is the superset, with no index signature. One
+   * chart-specs' own `ThemeSpec` is the superset, with no index signature. One
    * documented cast in one place beats an `any` at every call site, and it is
    * sound in the direction that matters: we widen a validated subset, we do not
    * invent fields.
    */
-  private _toFlintSpec(spec: NonNullable<DashboardTheme["custom"]>): FlintThemeSpec {
-    return spec as unknown as FlintThemeSpec;
+  private _toChartSpec(spec: NonNullable<DashboardTheme["custom"]>): ChartThemeSpec {
+    return spec as unknown as ChartThemeSpec;
   }
 }

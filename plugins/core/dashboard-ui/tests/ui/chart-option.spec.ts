@@ -208,7 +208,7 @@ describe("the categorical palette", () => {
     expect(compose({ series: [] }, false).color).toEqual([...POWER_BI_SERIES]);
   });
 
-  it("replaces either of the two defaults flint and ECharts ship", () => {
+  it("replaces either of the two defaults chart-specs and ECharts ship", () => {
     expect(compose({ color: ["#0284c7"], series: [] }, false).color).toEqual([...POWER_BI_SERIES]);
     expect(compose({ color: ["#5470c6"], series: [] }, false).color).toEqual([...POWER_BI_SERIES]);
   });
@@ -274,7 +274,7 @@ describe("input hardening", () => {
 
 describe("paramFilterFor", () => {
   const widget = (interactions: NonNullable<Widget["interactions"]>): Widget =>
-    ({ id: "w", type: "chart", data: { source: "superset" }, interactions }) as Widget;
+    ({ id: "w", type: "chart", data: { source: "bi" }, interactions }) as Widget;
 
   it("writes the clicked field's value into every param it names", () => {
     const filter = paramFilterFor(
@@ -324,7 +324,7 @@ describe("App threads the effective theme through", () => {
 
   it("computes the flag from the widget override, falling back to the dashboard", () => {
     // Per-widget WINS over dashboard-level, so the override is read first.
-    expect(source).toContain("hasTheme={Boolean(widget.flint?.theme_spec ?? spec.theme)}");
+    expect(source).toContain("hasTheme={Boolean(widget.chartSpec?.theme_spec ?? spec.theme)}");
   });
 
   it("passes the dashboard theme alongside it", () => {

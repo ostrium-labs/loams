@@ -4,7 +4,7 @@
  *
  * WHY A GATEWAY LAYER AT ALL
  * -------------------------
- * The upstreams this project talks to (Superset today; Forgejo, Zulip,
+ * The upstreams this project talks to (the BI backend today; Forgejo, Zulip,
  * Glitchtip, Langfuse, OpenPanel and ItsAPlan if their adapters are added) all
  * speak REST over HTTP with their own auth schemes and their own response
  * shapes. None of them speak gRPC. So this package is NOT a client for those
@@ -19,7 +19,7 @@
  *
  * Row/value encoding
  * ------------------
- * Superset returns a column-keyed array of JSON rows whose column types are not
+ * The BI backend returns a column-keyed array of JSON rows whose column types are not
  * known until runtime. A `map<string, double>` would silently coerce the string
  * and boolean columns. `Row.values` is therefore a `map<string, Value>` with an
  * explicit oneof, so a numeric column stays a number and a string column stays a
@@ -81,7 +81,7 @@ export type { ServiceImpl } from "@connectrpc/connect";
 // message instead of failing to resolve at import time.
 // ---------------------------------------------------------------------------
 
-export interface ControlPlanePort {
+export interface BiPort {
   listDatasets(): Promise<unknown>;
   describeDataset(
     id: number,
@@ -119,7 +119,7 @@ export interface RenderPort {
   ): Promise<unknown>;
 }
 
-export interface FlintPort {
+export interface ChartSpecPort {
   listThemes(): Array<{ id: string; label: string; description: string; icon: string }>;
   resolveTheme(theme?: unknown): {
     valid: boolean;
@@ -129,11 +129,11 @@ export interface FlintPort {
 }
 
 export interface RpcContext {
-  controlPlane: ControlPlanePort;
+  bi: BiPort;
   dashboard: DashboardPort;
   data: DataPort;
   render: RenderPort;
-  flint: FlintPort;
+  chartSpecs: ChartSpecPort;
   logger: {
     info(...args: unknown[]): void;
     warn(...args: unknown[]): void;
@@ -183,7 +183,7 @@ function toPbRow(row: unknown): PbRow {
 }
 
 /**
- * Normalize a Superset result payload into rows.
+ * Normalize a the BI backend result payload into rows.
  *
  * `queryData` returns `result[0]` (or the whole body) and the dataset list
  * returns a `{ result: [...] }` envelope, so both shapes are unwrapped here
@@ -210,12 +210,12 @@ function extractCount(payload: unknown, rows: unknown[]): number {
 export function createDataService(ctx: RpcContext): ServiceImpl<typeof DataService> {
   return {
     async listDatasets(): Promise<ListDatasetsResponse> {
-      const controlPlane = requirePort<ControlPlanePort>(
+      const bi = requirePort<BiPort>(
         ctx,
-        "controlPlane",
+        "bi",
         "DataService.ListDatasets",
       );
-      const payload = await controlPlane.listDatasets();
+      const payload = await bi.listDatasets();
       const list = isRecord(payload) && Array.isArray(payload.result) ? payload.result : [];
       const datasets = list.filter(isRecord).map((row) =>
         create(DatasetRefSchema, {
@@ -229,12 +229,12 @@ export function createDataService(ctx: RpcContext): ServiceImpl<typeof DataServi
     },
 
     async describeDataset(request): Promise<DescribeDatasetResponse> {
-      const controlPlane = requirePort<ControlPlanePort>(
+      const bi = requirePort<BiPort>(
         ctx,
-        "controlPlane",
+        "bi",
         "DataService.DescribeDataset",
       );
-      const described = await controlPlane.describeDataset(Number(request.id));
+      const described = await bi.describeDataset(Number(request.id));
       const rawColumns = Array.isArray(described?.columns) ? described.columns : [];
       return create(DescribeDatasetResponseSchema, {
         id: BigInt(Number(described?.id ?? request.id)),
@@ -252,7 +252,7 @@ export function createDataService(ctx: RpcContext): ServiceImpl<typeof DataServi
     },
 
     async query(request): Promise<QueryResponse> {
-      const controlPlane = requirePort<ControlPlanePort>(ctx, "controlPlane", "DataService.Query");
+      const bi = requirePort<BiPort>(ctx, "bi", "DataService.Query");
       // Repeated fields default to empty on a real message, but these handlers
       // are also called directly in tests with plain literals. Defaulting here
       // keeps both paths honest instead of throwing on `undefined.map`.
@@ -263,7 +263,7 @@ export function createDataService(ctx: RpcContext): ServiceImpl<typeof DataServi
       }));
       const columns = request.columns ?? [];
       const orderby = request.orderby ?? [];
-      const payload = await controlPlane.queryData(
+      const payload = await bi.queryData(
         Number(request.datasetId),
         columns,
         filters.length > 0 ? filters : undefined,
@@ -388,9 +388,9 @@ export function createDashboardService(ctx: RpcContext): ServiceImpl<typeof Dash
 export function createThemeService(ctx: RpcContext): ServiceImpl<typeof ThemeService> {
   return {
     async listThemes(): Promise<ListThemesResponse> {
-      const flint = requirePort<FlintPort>(ctx, "flint", "ThemeService.ListThemes");
+      const chartSpecs = requirePort<ChartSpecPort>(ctx, "chartSpecs", "ThemeService.ListThemes");
       return create(ListThemesResponseSchema, {
-        themes: flint.listThemes().map((t) =>
+        themes: chartSpecs.listThemes().map((t) =>
           create(ThemeSummarySchema, {
             id: t.id,
             label: t.label,
@@ -402,8 +402,8 @@ export function createThemeService(ctx: RpcContext): ServiceImpl<typeof ThemeSer
     },
 
     async getTheme(request): Promise<GetThemeResponse> {
-      const flint = requirePort<FlintPort>(ctx, "flint", "ThemeService.GetTheme");
-      const resolution = flint.resolveTheme(request.id);
+      const chartSpecs = requirePort<ChartSpecPort>(ctx, "chartSpecs", "ThemeService.GetTheme");
+      const resolution = chartSpecs.resolveTheme(request.id);
       return create(GetThemeResponseSchema, {
         valid: resolution.valid === true,
         // A resolved-but-downgraded theme is still valid and carries a report.

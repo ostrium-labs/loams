@@ -1,16 +1,16 @@
 import { Context, Service } from "cordis";
-// Side-effect import: augments cordis Context with the `controlPlane` key this service injects.
+// Side-effect import: augments cordis Context with the `bi` key this service injects.
 import "@loams-core/bi";
 import { EMPTY_RESULT, type DataProvider, type QueryResult } from "./provider.js";
 
 export class DataService extends Service {
-  static inject = ["controlPlane"];
+  static inject = ["bi"];
 
   private _cache: Map<string, { data: any; ts: number }> = new Map();
   private _inflight: Map<string, Promise<any>> = new Map();
   private _params: Map<string, unknown> = new Map();
   private _cacheTTL = 5 * 60 * 1000;
-  /** Keyed on `widget.data.source`; Superset is the built-in fallback. */
+  /** Keyed on `widget.data.source`; the BI backend is the built-in fallback. */
   private _providers: Map<string, DataProvider> = new Map();
 
   constructor(ctx: Context) {
@@ -33,7 +33,7 @@ export class DataService extends Service {
     };
   }
 
-  /** The provider a widget resolves to, or `undefined` for the Superset path. */
+  /** The provider a widget resolves to, or `undefined` for the the BI backend path. */
   providerFor(widget: any): DataProvider | undefined {
     const source = widget?.data?.source;
     return typeof source === "string" ? this._providers.get(source) : undefined;
@@ -131,11 +131,11 @@ export class DataService extends Service {
     if (provider) {
       return provider.query(this._bindParams(widget, params), params);
     }
-    if (typeof this.ctx.controlPlane?.queryData !== "function") {
+    if (typeof this.ctx.bi?.queryData !== "function") {
       return EMPTY_RESULT;
     }
     const bound = this._bindParams(widget, params);
-    const res = await this.ctx.controlPlane.queryData(bound);
+    const res = await this.ctx.bi.queryData(bound);
     if (res?.result?.[0]) {
       return res.result[0];
     }

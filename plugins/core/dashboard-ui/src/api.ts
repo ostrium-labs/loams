@@ -6,10 +6,10 @@ export interface DashboardSpec {
   title: string;
   /**
    * Dashboard-level house: a preset id, a custom ThemeSpec, or absent for
-   * flint's own defaults.
+   * chart-specs' own defaults.
    *
    * Persisted through the dashboard PATCH at `/theme`. A widget's own
-   * `flint.theme_spec` overrides this — per-widget wins over dashboard-level.
+   * `chartSpec.theme_spec` overrides this — per-widget wins over dashboard-level.
    */
   theme?: ThemeSelection | null;
   params: Array<{
@@ -30,10 +30,10 @@ export interface DashboardSpec {
 }
 
 /**
- * A widget's data source: either the Superset warehouse, or one of Loams' own
+ * A widget's data source: either the the BI backend warehouse, or one of Loams' own
  * cursor-resumable watch streams.
  *
- * Mirrors `SupersetDataSourceSchema | LoamsDataSourceSchema` in
+ * Mirrors `BiDataSourceSchema | LoamsDataSourceSchema` in
  * `@loams-core/types`, restated rather than imported because this package is
  * a noEmit browser bundle and the zod schemas would pull in server-side code.
  * A `loams` widget is a projection of "what is happening now" rather than a
@@ -41,7 +41,7 @@ export interface DashboardSpec {
  */
 export type WidgetDataSource =
   | {
-      source: "superset";
+      source: "bi";
       datasetId?: number;
       sql?: string;
       params?: string[];
@@ -57,7 +57,7 @@ export interface Widget {
   id: string;
   type: "chart" | "kpi" | "table" | "text" | "filter" | "graph";
   data: WidgetDataSource;
-  flint?: {
+  chartSpec?: {
     chartType: string;
     title?: string;
     subtitle?: string;

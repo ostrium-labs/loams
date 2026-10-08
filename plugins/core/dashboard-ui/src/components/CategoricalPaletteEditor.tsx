@@ -32,7 +32,7 @@ const ACTION = "min-w-7 cursor-pointer px-1 disabled:cursor-not-allowed disabled
 /**
  * Editor for `series.categorical`.
  *
- * Order is semantically meaningful — flint assigns series to colours
+ * Order is semantically meaningful — chart-specs assigns series to colours
  * positionally, so the second swatch is the second series in every chart. That
  * is why this offers reorder rather than treating the list as a set, and why
  * the copy says so out loud.

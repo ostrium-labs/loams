@@ -4,12 +4,12 @@
  * Two things are being held here, and they are the reason `graph` is a sibling
  * `Widget.type` rather than a new `ChartSchema.kind`:
  *
- * 1. The chart rule must survive. "Exactly one of `flint` or `chart`" is stated
+ * 1. The chart rule must survive. "Exactly one of `chart-specs` or `chart`" is stated
  *    for `type === "chart"` and nowhere else, so adding a type cannot have
  *    quietly widened or narrowed it. The chart cases below are the regression
  *    floor for that.
  * 2. A graph widget has to be recognisably a graph widget. It carries a `graph`
- *    block, and it must NOT also claim `flint` or `chart`: those are the two
+ *    block, and it must NOT also claim `chart-specs` or `chart`: those are the two
  *    inputs to the ECharts pipeline, and a widget that fed both would be routed
  *    to two renderers that both believe they own it. The terminal-type contract
  *    is enforced at parse time, where the mistake is still cheap.
@@ -25,7 +25,7 @@ import { DashboardSpecSchema, GraphSpecSchema, WidgetSchema } from "../src/dashb
 const GRAPH_WIDGET = {
   id: "w-graph",
   type: "graph",
-  data: { source: "superset", datasetId: 3 },
+  data: { source: "bi", datasetId: 3 },
   graph: {
     nodes: [
       { id: "web", label: "Web" },
@@ -102,38 +102,38 @@ describe("graph widget type", () => {
       chart: { kind: "line", encode: { x: "a", y: "b" } },
     });
     expect(result.success).toBe(false);
-    expect(issuesOf(result).join(" ")).toContain("must not declare 'flint' or 'chart'");
+    expect(issuesOf(result).join(" ")).toContain("must not declare 'chartSpec' or 'chart'");
   });
 
-  it("rejects a graph widget that also declares flint", () => {
+  it("rejects a graph widget that also declares chart-specs", () => {
     const result = WidgetSchema.safeParse({
       ...GRAPH_WIDGET,
-      flint: { chartType: "Bar Chart", encodings: {} },
+      chartSpec: { chartType: "Bar Chart", encodings: {} },
     });
     expect(result.success).toBe(false);
-    expect(issuesOf(result).join(" ")).toContain("must not declare 'flint' or 'chart'");
+    expect(issuesOf(result).join(" ")).toContain("must not declare 'chartSpec' or 'chart'");
   });
 });
 
 describe("the chart rule survives the new type", () => {
-  it("still rejects a chart widget with neither flint nor chart", () => {
+  it("still rejects a chart widget with neither chart-specs nor chart", () => {
     const result = WidgetSchema.safeParse({ id: "w", type: "chart" });
     expect(result.success).toBe(false);
     expect(issuesOf(result).join(" ")).toContain(
-      "Chart widgets must have exactly one of 'flint' or 'chart' defined.",
+      "Chart widgets must have exactly one of 'chartSpec' or 'chart' defined.",
     );
   });
 
-  it("still rejects a chart widget with both flint and chart", () => {
+  it("still rejects a chart widget with both chart-specs and chart", () => {
     const result = WidgetSchema.safeParse({
       id: "w",
       type: "chart",
-      flint: { chartType: "Bar Chart", encodings: {} },
+      chartSpec: { chartType: "Bar Chart", encodings: {} },
       chart: { kind: "line", encode: {} },
     });
     expect(result.success).toBe(false);
     expect(issuesOf(result).join(" ")).toContain(
-      "Chart widgets must have exactly one of 'flint' or 'chart' defined.",
+      "Chart widgets must have exactly one of 'chartSpec' or 'chart' defined.",
     );
   });
 
@@ -143,13 +143,13 @@ describe("the chart rule survives the new type", () => {
         .success,
     ).toBe(true);
     expect(
-      WidgetSchema.safeParse({ id: "w", type: "chart", flint: { chartType: "Pie", encodings: {} } })
+      WidgetSchema.safeParse({ id: "w", type: "chart", chartSpec: { chartType: "Pie", encodings: {} } })
         .success,
     ).toBe(true);
   });
 
   it("does not constrain a non-chart widget that has no chart block", () => {
-    // A text/kpi/table widget carries neither `flint` nor `chart`, and must
+    // A text/kpi/table widget carries neither `chart-specs` nor `chart`, and must
     // keep parsing. This is the case a careless "every widget needs exactly
     // one" rewrite would have broken.
     for (const type of ["kpi", "table", "text", "filter"] as const) {
