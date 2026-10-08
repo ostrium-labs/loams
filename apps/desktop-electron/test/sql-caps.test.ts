@@ -261,15 +261,24 @@ describe("sql caps", () => {
 		).rejects.toMatchObject({ code: "invalid" });
 	});
 
-	it("mysql_agent_reads_as_the_select_only_user", async () => {
+	it("mysql_agent_reads_as_the_select_only_user_with_per_schema_grants", async () => {
 		const logins: (string | undefined)[] = [];
 		const log: string[] = [];
+		let dbs = [
+			"information_schema",
+			"mysql",
+			"performance_schema",
+			"sys",
+			"shop",
+		];
 		const connect = async (as?: { user: string; password: Secret }) => {
 			logins.push(as?.user);
 			return {
 				dialect: "mysql" as const,
 				query: async (sql: string) => {
 					log.push(`${as?.user ?? "root"}: ${sql}`);
+					if (sql === "SHOW DATABASES")
+						return { columns: ["Database"], rows: dbs.map((d) => [d]) };
 					return { columns: ["1"], rows: [[1]] };
 				},
 				params: async () => ({ columns: [], rows: [] }),
@@ -279,13 +288,31 @@ describe("sql caps", () => {
 		const be = createWesqlBackend({ connect });
 		await be.query("SELECT 1", { agent: true });
 		await be.query("SELECT 2", { agent: true });
-		expect(logins).toEqual([undefined, "loams_ro", "loams_ro"]);
-		const admin = log.filter((l) => l.startsWith("root:"));
-		expect(admin).toHaveLength(5); // provisioned once, not per query
-		expect(admin[0]).toMatch(
+		const admin = () =>
+			log.filter((l) => l.startsWith("root:")).map((l) => l.slice(6));
+		expect(admin()[0]).toMatch(
 			/CREATE USER IF NOT EXISTS 'loams_ro'@'%' IDENTIFIED BY '[\w-]{32}'/,
 		);
-		expect(admin[3]).toBe("root: GRANT SELECT ON *.* TO 'loams_ro'@'%'");
+		// provisioned once; only the user schema is granted (once); never a global grant
+		expect(admin().filter((l) => l.startsWith("GRANT"))).toEqual([
+			"GRANT SELECT ON `shop`.* TO 'loams_ro'@'%'",
+		]);
+		expect(
+			admin().some(
+				(l) =>
+					l.includes("*.*") ||
+					/mysql|sys|performance_schema/.test(l.replace("SHOW DATABASES", "")),
+			),
+		).toBe(false);
+		// a schema created later becomes readable on the next agent read; `_` cannot act as a pattern
+		dbs = [...dbs, "new_db"];
+		await be.query("SELECT 3", { agent: true });
+		expect(
+			admin()
+				.filter((l) => l.startsWith("GRANT"))
+				.at(-1),
+		).toBe("GRANT SELECT ON `new\\_db`.* TO 'loams_ro'@'%'");
+		expect(logins.filter((l) => l === "loams_ro")).toHaveLength(3);
 		expect(
 			log
 				.filter((l) => l.startsWith("loams_ro:"))

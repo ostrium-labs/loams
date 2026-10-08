@@ -75,8 +75,20 @@ describe.skipIf(!process.env.LOAMS_IT_WESQL)("wesql stack", () => {
 		await expect(
 			w.query("CREATE TABLE test.it_x (a int)", { agent: true }),
 		).rejects.toBeTruthy();
+		await expect(
+			w.query("SELECT user FROM mysql.user", { agent: true }),
+		).rejects.toMatchObject({ code: "ER_TABLEACCESS_DENIED_ERROR" });
+		// A schema created after loams_ro exists is readable on the next agent read.
+		await w.query("DROP DATABASE IF EXISTS it_new_db");
+		await w.query("CREATE DATABASE it_new_db");
+		await w.query("CREATE TABLE IF NOT EXISTS it_new_db.t (a int)");
+		await w.query("INSERT INTO it_new_db.t VALUES (42)");
+		expect(
+			(await w.query("SELECT a FROM it_new_db.t", { agent: true })).rows,
+		).toEqual([[42]]);
+		await w.query("DROP DATABASE it_new_db");
 		const big = await w.query(
-			"SELECT a.ORDINAL_POSITION FROM information_schema.COLUMNS a CROSS JOIN information_schema.COLUMNS b",
+			"SELECT a.ID FROM information_schema.COLLATIONS a CROSS JOIN information_schema.COLLATIONS b CROSS JOIN information_schema.COLLATIONS c",
 			{ agent: true },
 		);
 		expect(big.rowCount).toBe(1000);
@@ -84,5 +96,5 @@ describe.skipIf(!process.env.LOAMS_IT_WESQL)("wesql stack", () => {
 		expect((await w.schemas()).map((s) => s.name)).toContain(
 			"information_schema",
 		);
-	});
+	}, 60_000);
 });

@@ -39,6 +39,19 @@ export function wesqlDev(env: NodeJS.ProcessEnv = process.env) {
 /** The dedicated SELECT-only account used by agent reads. */
 export const RO_USER = "loams_ro";
 
+/** Never granted to `loams_ro`. information_schema stays visible by MySQL design but lists only granted objects. */
+export const SYSTEM_SCHEMAS = new Set([
+	"mysql",
+	"sys",
+	"performance_schema",
+	"information_schema",
+]);
+
+/** A schema name as a GRANT target: quoted, with `_` and `%` escaped so it cannot act as a pattern. */
+export function grantTarget(db: string): string {
+	return `\`${db.replace(/\\/g, "\\\\").replace(/`/g, "``").replace(/[_%]/g, "\\$&")}\``;
+}
+
 export interface MySqlBackend extends SqlBackend {
 	schemas(): Promise<WesqlSchema[]>;
 	tables(schema: string): Promise<WesqlTable[]>;
@@ -95,10 +108,15 @@ export function connectMySql(
 					resolve({ columns, rows });
 				};
 				q.on("fields", ((f: { name: string }[]) => {
-					columns = f.map((x) => x.name);
+					if (Array.isArray(f)) columns = f.map((x) => x.name); // null for writes
 				}) as never);
 				q.on("result", ((row: unknown) => {
-					if (settled || !Array.isArray(row)) return; // OK packet from a write
+					if (settled) return;
+					if (!Array.isArray(row)) {
+						// OK packet from a write: the driver emits no 'end' for it.
+						finish();
+						return;
+					}
 					rows.push(row);
 					if (rows.length >= limit) {
 						kill();
@@ -152,27 +170,41 @@ export function createWesqlBackend(
 	let roReady: Promise<void> | undefined;
 	const secrets = [dev.password, roPassword];
 
-	/** Creates (or refreshes) the SELECT-only account on first agent read. */
+	/** Schemas `loams_ro` already holds SELECT on in this run. */
+	const granted = new Set<string>();
+
+	/**
+	 * Creates the SELECT-only account on first use, then on every agent read grants SELECT on each
+	 * non-system schema it does not hold yet (diff of SHOW DATABASES against `granted`). There is no
+	 * global grant, so mysql.* (account hashes) stays unreadable.
+	 */
 	async function ensureReadOnlyUser(): Promise<void> {
-		roReady ??= (async () => {
-			const s = await connect();
-			try {
+		const s = await connect();
+		try {
+			const u = `'${RO_USER}'@'%'`;
+			if (!roReady) {
 				const pw = roPassword.reveal();
-				const u = `'${RO_USER}'@'%'`;
-				await s.query(`CREATE USER IF NOT EXISTS ${u} IDENTIFIED BY '${pw}'`);
-				await s.query(`ALTER USER ${u} IDENTIFIED BY '${pw}'`);
-				await s.query(`REVOKE ALL PRIVILEGES, GRANT OPTION FROM ${u}`);
-				await s.query(`GRANT SELECT ON *.* TO ${u}`);
-				// Best effort: only works with partial_revokes=ON; keeps account hashes out of reach when it does.
-				await s.query(`REVOKE SELECT ON mysql.* FROM ${u}`).catch(() => {});
-			} finally {
-				await s.close();
+				roReady = (async () => {
+					await s.query(`CREATE USER IF NOT EXISTS ${u} IDENTIFIED BY '${pw}'`);
+					await s.query(`ALTER USER ${u} IDENTIFIED BY '${pw}'`);
+					await s.query(`REVOKE ALL PRIVILEGES, GRANT OPTION FROM ${u}`);
+				})().catch((e) => {
+					roReady = undefined;
+					throw e;
+				});
 			}
-		})().catch((e) => {
-			roReady = undefined;
-			throw e;
-		});
-		return roReady;
+			await roReady;
+			const dbs = (await s.query("SHOW DATABASES")).rows.map((r) =>
+				String(r[0]),
+			);
+			for (const db of dbs) {
+				if (SYSTEM_SCHEMAS.has(db.toLowerCase()) || granted.has(db)) continue;
+				await s.query(`GRANT SELECT ON ${grantTarget(db)}.* TO ${u}`);
+				granted.add(db);
+			}
+		} finally {
+			await s.close();
+		}
 	}
 
 	async function withSession<T>(
