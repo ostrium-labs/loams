@@ -1,0 +1,29 @@
+[package]
+name = "loams-sqlgate"
+description = "The Loams SQL gate (design §47 §12): TLS, auth, wake and accounting in front of tidb-server. This crate starts with its sans-I/O MySQL codec."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# The codec (src/codec) is sans-I/O: no tokio, sockets, clocks or randomness.
+# Callers supply bytes, nonces and verdicts; it returns bytes and actions.
+# Untrusted input is parsed with explicit bounds (codec::handshake::Limits,
+# packet::Assembler's maximum) and never panics (tests/it/fuzz.rs, fuzz/).
+[dependencies]
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
+proptest.workspace = true
+serde_json.workspace = true
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints]
+workspace = true

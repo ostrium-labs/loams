@@ -1,0 +1,36 @@
+# cargo-fuzz targets for the gate codec (SQ1 Task 3). Outside the workspace
+# (it needs nightly and libFuzzer):
+#   cargo +nightly fuzz run handshake_response -- -max_total_time=60
+#   cargo +nightly fuzz run packet_framing -- -max_total_time=60
+# The invariants live in loams_sqlgate::fuzz; tests/it/fuzz.rs runs them
+# under proptest on stable.
+[package]
+name = "loams-sqlgate-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+loams-sqlgate = { path = ".." }
+
+[[bin]]
+name = "handshake_response"
+path = "fuzz_targets/handshake_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "packet_framing"
+path = "fuzz_targets/packet_framing.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

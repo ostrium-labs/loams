@@ -796,3 +796,32 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - **One TiDB connector, always PROXY v2.** Every connection to TiDB goes through one connector that always sends a PROXY v2 header, including on desktop loopback. That covers the gate (Task 4), the control plane's `ri_control` (Task 9) and `loams dev` (Task 12). So the desktop's gate networks include loopback, and nothing connects to TiDB without the header (`fallbackable = false`). This settles R2.6's note for Tasks 9 and 12.
   - **No TiDB fork patch for the socket panic.** The Unix socket stays disabled (`socket = ""`, R2.11), and the §47 §5.4 patch queue does not take it.
 - **R2.7 Deviation.** `docs/sqldb/licensing.md` and the crate's `build.rs` were added. `build.rs` turns `LOAMS_IT_SQLDB=1` into the cfg `loams_it_sqldb`, so container tests are `#[ignore]` unless it is set.
+- **R3.1 The gate codec (Task 3).** `crates/loams-sqlgate/src/codec/{packet,handshake,auth,command}.rs` are sans-I/O: no tokio, sockets, clocks or randomness. Nonces come from the caller as `Nonce::from_random(bytes)`, which maps them into `1..=127`.
+  - **Bounds.** Every decoder is bounded and total.
+    - `handshake::Limits`: user 128 B, auth response 4 KiB, database 256 B, plugin 64 B, attributes 64 KiB and 128 pairs.
+    - `packet::Assembler`: a maximum message size, checked from each frame header before the payload is buffered, plus a sequence-id check.
+    - Fixed limits: `AuthSwitchRequest` data 1 KiB, a cleartext password or token 1 KiB, OK and ERR info 64 KiB.
+  - **Strictness.**
+    - Trailing bytes are refused after a `HandshakeResponse41` and after a greeting.
+    - Strings must be UTF-8.
+    - Pre-4.1 clients are refused.
+    - The 23-byte filler is skipped unchecked, because MariaDB keeps extended capabilities there.
+- **R3.2 Capabilities.**
+  - **Offered:** `GATE_SUPPORTED ∩ upstream`.
+  - **Never offered:** compression (zlib or zstd), multi-factor auth, query attributes, optional result-set metadata, and the extension and client-only flags.
+  - **Required of clients:** 4.1, secure connection and plugin auth.
+  - **The upstream leg** carries the same `RELAY_SENSITIVE` flags, so result framing matches on both legs for the byte relay (`capabilities_never_exceed_upstream`, a proptest).
+- **R3.3 Authentication.**
+  - **Method.** Every client is authenticated with `caching_sha2_password`. Other plugins get an `AuthSwitchRequest`.
+  - **Full auth.** It happens only over TLS. Without TLS it fails with `SecureTransportRequired`, which becomes 3159 in Task 4. A request for the RSA public key (`0x02`) is always refused.
+  - **Empty passwords** are checked in full.
+  - **Secrets.** `Password` prints `[redacted]` and is zeroed on drop. `HandshakeResponse41`'s `Debug` redacts the auth response.
+  - **The gate's upstream login** (`client_auth_response`) speaks `caching_sha2_password` and `mysql_clear_password`, the latter for `tidb_auth_token` (R2.12).
+- **R3.4 Captured fixtures.** `scripts/sqlgate/capture/` (a recording proxy plus client drivers) captured mysql 8.4.10, Connector/J 9.7.0, mysql2 3.15.3 and, as an extra, libmariadb 3.4.10 against TiDB v8.5.8.
+  - **What the tests check.** Greetings and responses re-encode byte for byte. The SHA-2 scramble of each client matches `scramble_caching_sha2` for the test password.
+  - **go-sql-driver is missing.** It was not on the host, and fetching Go modules is outside the allowed downloads. **Open:** capture it when a client is available (`capture.sh` takes any client).
+- **R3.5 Fuzzing.**
+  - **Targets.** `crates/loams-sqlgate/fuzz` is a cargo-fuzz crate outside the workspace, with targets `handshake_response` and `packet_framing`. Its seed corpus comes from the captures. The invariants live in `loams_sqlgate::fuzz` (a doc-hidden module, an addition to the task's file list).
+  - **Named tests.** `fuzz_handshake_response` and `fuzz_packet_framing` run the same invariants under proptest in `cargo test`.
+  - **CI.** A new `sqlgate-fuzz` job in `ci.yml` (nightly toolchain, `cargo-fuzz`) runs each target for 60 s, and the `CI required` job depends on it.
+  - **Local run.** Each target ran 60 s on the pinned stable toolchain (`RUSTC_BOOTSTRAP=1 cargo fuzz run -s none`): 25.0 M and 40.0 M executions, with no crash.
