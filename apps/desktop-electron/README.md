@@ -57,8 +57,10 @@ Point the app at your build with `LOAMS_BIN=<target>/release/loams`.
 
 Running against:
 
-- **The apps mock** (a control-plane stand-in for the cloud pages): `cargo run -p loams-apps-mock`, then add its URL as a
-  server in the app (or use `pnpm --filter @loams/console dev`, whose Vite proxy targets it).
+- **The apps mock** backs the cloud console REST API and the app protos with seed data. `cargo run -p loams-apps-mock`
+  serves `http://127.0.0.1:8084` (change it with `--listen`). Add that URL as a server in the app. In a browser,
+  `LOAMS_API=<url> pnpm --filter @loams/console dev` serves the console on `:5173` under `/ui/` (the cordis console is at
+  `/ui/cordis.html`; add `?desktop` for the desktop edition with the fake bridge).
 - **The local engine**: the default server. The cloud-only pages hide themselves (`features.local`).
 
 ### Browser preview
@@ -82,7 +84,7 @@ pnpm --filter @loams/desktop test:e2e    # Playwright _electron smoke test (need
 ```
 
 The smoke test launches the app, waits for the local engine, loads the console and checks Data Studio and the factory home.
-`LOAMS_E2E_ENGINE` picks the engine: `real` (fails if the binary is missing), `fake` (a Node script serving `GetInstance`),
+`LOAMS_E2E_ENGINE` picks the engine: `real` (fails if the binary is missing; needs `LOAMS_BIN` or a release engine in the Cargo target directory), `fake` (a Node script serving `GetInstance`),
 or `auto` (default: the real engine if found, else the fake). CI sets `real`. Live tests against the container stacks are opt-in
 (`LOAMS_IT_PG=1`, `LOAMS_IT_WESQL=1`).
 
@@ -95,7 +97,7 @@ or `auto` (default: the real engine if found, else the fake). CI sets `real`. Li
   only and the UI says so. Provider API keys are bound to the origin they were saved with.
 - **Hardening.** `contextIsolation`, `sandbox`, no `nodeIntegration`, `<webview>` refused, `window.open` limited to http(s) in the
   system browser, most permissions denied. Every IPC handler checks the sender.
-- **Updates (D661).** Off unless `LOAMS_UPDATE_FEED` is set; `latest*.yml` must carry a valid Ed25519 signature.
+- **Updates (D661).** Off unless `LOAMS_UPDATE_FEED` is set; `latest*.yml` must carry a valid Ed25519 signature against the key compiled in from `LOAMS_UPDATE_PUBKEY` (see Packaging).
 - **Agent (D675, D679).** The panel is Loams' own, with budgets per turn (25 iterations, 10 minutes, 200k tokens; the clock pauses
   during approval waits). Output is rendered as text or markdown without raw HTML or remote images. Chats stay on disk locally.
   Anthropic refusal fallback is off unless enabled per provider.
@@ -137,7 +139,7 @@ pnpm nx run loams-desktop-electron:package-linux     # or package-macos / packag
   electron-vite `define`; `LOAMS_UPDATE_FEED` also turns on the generic `publish` block (writes `latest*.yml`).
 - Windows signing: set `WINDOWS_SIGN_KEYSTORE` (+ `WINDOWS_SIGN_STOREPASS`, optional `_ALIAS`, `_STORETYPE`,
   `_TSA`) to sign through Jsign (`scripts/windows-sign.cjs`). SignPath submission is a release-workflow step.
-- Later tasks add `extraResources` entries in the config: `stacks/` (Task 21) and `connectors.json` (Task 27).
+- The package ships the console build (`web/apps/console/dist`), the stripped engine (built with `live,durable`) in `resources/bin/`, `stacks/` (the compose files), `connectors.json`, and the tray icons (inside the asar).
 - AppImage on a host without FUSE: `./Loams*.AppImage --appimage-extract-and-run`.
 - CI: `.github/workflows/desktop-electron.yml` (unsigned artifacts; macOS and Windows are `continue-on-error`).
 
