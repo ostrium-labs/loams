@@ -441,11 +441,17 @@ async fn real_step(txn: &mut embedded::Txn, step: &Step) -> Seen {
     }
 }
 
-/// The model check's store: one file for every case, a fresh root each.
+/// The model check's store: one file for every case, a fresh root each, in
+/// a fixed directory reset on each run (a static is never dropped, so a
+/// `TempDir` would be left behind).
 fn model_path() -> &'static PathBuf {
-    static DIR: OnceLock<TempDir> = OnceLock::new();
     static PATH: OnceLock<PathBuf> = OnceLock::new();
-    PATH.get_or_init(|| DIR.get_or_init(tmp).path().join("model.redb"))
+    PATH.get_or_init(|| {
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("loams-kv-model-check");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("the model check's directory");
+        dir.join("model.redb")
+    })
 }
 
 fn runtime() -> &'static tokio::runtime::Runtime {
