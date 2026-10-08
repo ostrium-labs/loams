@@ -252,6 +252,8 @@ Steps: write the tests (FAIL: package missing) → write the proto → generate 
 
 **Files:** create `crates/loams-neon/` (as in the file structure). Modify `deploy/neon/compose.yaml` to pin the Task 0 digests, and its README to list them. Tests: `tests/client.rs` (fixtures) and `tests/it_deploy_neon.rs` (`#[ignore]`, run in `pg2-e2e.yml`).
 
+*(Amended by Task 32's review, R32.2.)* Also pin the Neon images of `deploy/loams-pg-bench/compose.yaml` (`neon`, `compute-node-v17`; today `${NEON_TAG:-latest}`) by digest, move `pg2.yml`'s `PG_HEADERS_IMAGE` and `loams-pg-bench.yml`'s to the fork's pinned `neon` image, and add a `pg2-e2e.yml` job that builds `loams-wal-interpreted` and runs `scripts/pg2/it-pageserver-loams-wal.sh` (`it_pageserver_discovers_loams_wal_via_broker`, which is also Task 31's `it_pageserver_ingests_from_loams_wal_without_safekeeper`).
+
 **Interfaces:**
 - `NeonClient::new(endpoints: NeonEndpoints, auth: Option<Secret<String>>)`, with methods:
   - `attach_tenant(t, generation, conf)` (`PUT /v1/tenant/{t}/location_config`);
@@ -541,6 +543,8 @@ Commit `feat(pg): autoscaler`.
 **Files:** `src/service/endpoints.rs` (extended) and `src/reconcile/endpoint.rs`. Tests: `tests/replicas.rs`.
 
 **Interfaces:** `read_only` endpoints start computes with `mode = Replica` (Task 2's spec builder). Any number per branch, each up to the limit. `RestartEndpoint{promote: true}` on a read-only endpoint whose read-write endpoint is down calls `compute_ctl /promote` and swaps the endpoint types.
+
+*(Amended by Task 32's review, M4.)* Replicas read WAL from `loams-wal`, which publishes `standby_horizon = 0` today. With read-only endpoints, `loams-wal` must take the replicas' hot-standby `apply_lsn` (as the fork's `walsenders.get_hotstandby()`) and publish it as `standby_horizon` in `SafekeeperTimelineInfo` and in discovery responses, so that the pageserver keeps what the replicas still need. Test: `standby_horizon_published_from_replica_feedback`.
 
 Tests:
 - `ro_endpoint_starts_replica_spec`
@@ -905,11 +909,17 @@ Commit `feat(wal): metrics and health`.
 
 **Tests:** `http_tls_required_when_configured`, `pg_sslrequest_negotiated`, `plaintext_refused_with_tls` and `jwt_scoped_to_tenant`.
 
+*(Amended by Task 32's review, R32.6.)* Also the storage broker client: `--broker-endpoint https://...` with `--broker-ca` (the fork's `make_tls_config`: the CA certificates for the broker's TLS), replacing today's refusal of `https://`. Test: `broker_client_tls_with_ca`.
+
 Commit `feat(wal): tls and tenant tokens`.
 
 ### Task 39: HA, failover and fencing
 
 **Files:** for Arm A, `crates/loams-safekeeper/src/{acceptor.rs,meta.rs}` and a `membership.rs` (Q261: `pg-control` writes the new member set and generation to TiKV, the new acceptor resyncs from the bucket and a peer, and walproposer gets the new `mconf` through a compute `/configure`). For the TiKV store, a timeout on the reconnect path. In `pg-control`, `wal_pool.rs` maps projects to pools and runs the quiesced move as a saga (§46 §9.5).
+
+*(Amended by Task 32's review, R32.5 and M1.)*
+- **The broker peer pull.** Arm A acceptors learn each other's `remote_consistent_lsn`, `commit_lsn` and `backup_lsn` from the broker, as the fork's safekeeper `pull_loop` does (`SubscribeSafekeeperInfo`, `record_safekeeper_info`). An acceptor the pageserver does not stream from then trims and stops publishing on the real pageserver progress, not on Task 32's staleness timeout (R32.5), which stays as the fallback. Test: `peer_remote_consistent_lsn_from_broker`.
+- **Publishing after a restart.** At start, an instance loads the timelines its store holds whose pageserver lags (`remote_consistent_lsn < commit_lsn`) into the published set, so a lagging timeline is published again without waiting for a pageserver's discovery request. The TiKV store needs a scan of the heads, and the NVMe store's metadata a listing. Test: `lagging_timelines_published_after_restart`.
 
 **Tests:**
 - `acceptor_loss_no_stall` (Arm A);
@@ -1187,7 +1197,7 @@ Commit `feat(desktop): postgres page on the control plane`.
 - `docs/runbooks/loams-postgres/{failover.md,restore.md,upgrade.md,wal-incident.md,pgdog.md}`;
 - user docs (connect, branch, restore, limits);
 - `docs/plans/README.md` (status);
-- §46 §19 (as built);
+- §46 §19 (as built). *(Task 32's review, M9.)* That includes §46 §9 and §28 §6.7, §7.2 and D271, which still describe the feeder and its `--no-sync` safekeeper as the pageserver's path. It was deleted in Task 31/32 (commit `3a91c0dc`; the pageserver finds `loams-wal` through the broker, R32.1–R32.3).
 - `docs/design/12-roadmap-testing-risks.md` (a PG2 row).
 
 Steps: each runbook step is executed once on kind and marked verified. Commit `docs(pg): runbooks and status`.
@@ -1323,8 +1333,23 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
 - **R32.2 The pageserver end-to-end test passes; it is not in CI yet.**
   - `scripts/pg2/it-pageserver-loams-wal.sh` and the ignored wrapper `it_pageserver_discovers_loams_wal_via_broker` (`crates/loams-wal-decoder/tests/it_pageserver.rs`) use `deploy/loams-pg-bench` with no safekeeper and no feeder. A compute writes 400k rows (more than its `shared_buffers`) through `loams-wal-interpreted`; the pageserver's `last_record_lsn` passes the flush LSN within about 3 s; a fresh compute (basebackup from the pageserver) reads the rows back.
   - It passed three times on 2026-10-09: before and after the feeder's deletion, and with a `tikv`-feature binary. In the first run the pageserver found `loams-wal` through discovery before the first publication arrived, so both paths ran.
-  - It is not in CI, because the bench's Neon images are still `latest`, not pinned by digest (Task 2). It goes to `pg2-e2e.yml` when they are pinned.
+  - It is not in CI, because the bench's Neon images are still `latest`, not pinned by digest. *(Updated in Task 32's review.)* Task 2's text now owns both: pinning `deploy/loams-pg-bench`'s Neon images by digest, and the `pg2-e2e.yml` job that runs the script.
 - **R32.3 Task 31's open items.**
   - The compose end-to-end test passes (R32.2), so the feeder is deleted (owner's condition, R31.11), with `no_feeder_flag_exists`.
   - `run.sh` and the benchmark workflow now run `loams-wal-interpreted` with `--broker-endpoint`, and the result JSON no longer has `feeder_cpu_s`.
   - Task 31 now waits only on R31.1's before/after measurement on the `loam-bench` runner. The "before" side has to be an older build (dev before `3a91c0dc`), since the feeder no longer exists at head.
+- **R32.4 Startup checks (review I4).** `--broker-endpoint` must be `http://host:port`: a missing scheme is refused, and so is `https://` until Task 38 (R32.6). `--advertise-pg` and `--advertise-http` must be `host:port`, with an IPv6 host in brackets. When the listener is not on loopback, an advertised address that is unspecified or loopback is refused. All of this is checked before the service starts.
+- **R32.5 A bounded published set; Arm A staleness (review I2; controller ruling I3).**
+  - The broker owns its published set. A timeline is published:
+    - while a proposer or a replication reader (pageserver or replica, not the compute's recovery reader) is on this instance;
+    - for `--broker-staleness-secs` (default 300) after that, while its pageserver lags;
+    - after a discovery request, for 30 s.
+  - A timeline leaves the set once it is inactive and stale.
+  - So an Arm A acceptor the pageserver does not stream from goes inactive after the staleness timeout, even though no peer tells it the pageserver's `remote_consistent_lsn`. The real peer pull is Task 39's (its text is amended).
+  - Each round reads heads 16 at a time within 500 ms, starting where the last round stopped.
+- **R32.6 Broker TLS belongs to Task 38 (review I6).** Today `https://` endpoints are refused with a pointer to Task 38. Task 38's text now includes `https://` with `--broker-ca`, as in the fork's `make_tls_config`.
+- **R32.7 Notes moved to other tasks (review M1, M4, M9).**
+  - Publishing lagging timelines after a restart (loading them from the store at start): Task 39.
+  - `standby_horizon` from replica feedback: Task 16.
+  - Replacing the feeder text in §46 and §28's as-built descriptions: Task 60.
+
