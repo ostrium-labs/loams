@@ -66,6 +66,7 @@ export function registerChatIpc(deps: AgentDeps): ChatService {
 			if (w && !w.isDestroyed()) w.webContents.send(CH.chatEvent, e);
 		},
 		now: Date.now,
+		extraSecrets: () => deps.factory.allSecrets(),
 	});
 
 	ipcMain.handle(CH.chatProviders, (e) => {

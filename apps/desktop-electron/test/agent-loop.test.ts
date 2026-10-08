@@ -601,6 +601,7 @@ const xor: VaultCrypto = {
 function service(
 	fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
 	runs: string[] = [],
+	extraSecrets?: () => string[],
 ) {
 	const dir = mkdtempSync(join(tmpdir(), "agent-"));
 	const events: ChatEvent[] = [];
@@ -616,6 +617,7 @@ function service(
 		tools: registry(runs),
 		emit: (e) => events.push(e),
 		now: Date.now,
+		extraSecrets,
 	});
 	return { dir, events, svc, configs, store };
 }
@@ -824,6 +826,30 @@ describe("chat service", () => {
 		const view = await svc.get(c.value.id);
 		expect(JSON.stringify(view)).not.toContain(KEY);
 		expect(configs.secrets()).toEqual([KEY]);
+	});
+
+	it("factory_secrets_are_scrubbed_from_the_transcript", async () => {
+		const TOKEN = "forgejo-TOKEN-abcdef0123";
+		const fetchImpl = async () =>
+			new Response(
+				`data: ${JSON.stringify({ type: "error", error: { type: "x", message: `leaked ${TOKEN} ${encodeURIComponent(TOKEN)}` } })}\n\n`,
+				{ status: 200 },
+			);
+		const { svc, events, dir, store } = service(fetchImpl, [], () => [TOKEN]);
+		svc.configureProvider("anthropic", {
+			model: "claude-sonnet-5-5",
+			apiKey: "sk-ant-other-0123456789",
+		});
+		const c = await svc.create({});
+		if (!c.ok) throw new Error("create");
+		await svc.send(c.value.id, `the token is ${TOKEN}`, {});
+		await until(() => events.some((e) => e.kind === "done"));
+		await store.flush();
+		const all = JSON.stringify(events);
+		expect(all).toContain("[redacted]");
+		expect(all).not.toContain(TOKEN);
+		for (const f of readdirSync(join(dir, "chats")))
+			expect(readFileSync(join(dir, "chats", f), "utf8")).not.toContain(TOKEN);
 	});
 
 	it("send_validates_and_refuses_unconfigured", async () => {

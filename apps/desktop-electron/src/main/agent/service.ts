@@ -56,6 +56,11 @@ export interface ChatServiceDeps {
 	emit(e: ChatEvent): void;
 	now(): number;
 	budgets?: Partial<Budgets>;
+	/**
+	 * Every other secret the vault holds (factory app credentials), already in all their
+	 * encoded forms. Scrubbed from the transcript with the provider keys.
+	 */
+	extraSecrets?: () => string[];
 }
 
 const bad = (message: string, code = "bad_request"): IpcResult<never> => ({
@@ -71,7 +76,11 @@ export class ChatService {
 	constructor(private readonly deps: ChatServiceDeps) {}
 
 	#secrets(): string[] {
-		return secretForms(this.deps.configs.secrets());
+		// extraSecrets are already expanded (FactoryHost.allSecrets): not expanded again.
+		const extra = this.deps.extraSecrets?.() ?? [];
+		return [
+			...new Set([...secretForms(this.deps.configs.secrets()), ...extra]),
+		];
 	}
 
 	providers(): ChatProviderInfo[] {

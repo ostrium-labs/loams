@@ -153,6 +153,14 @@ export class FactoryHost {
 		return secretForms(secret, plain);
 	}
 
+	/** Every configured app's secrets in every encoded form (the agent transcript scrubber). */
+	allSecrets(): string[] {
+		const out = new Set<string>();
+		for (const app of Object.keys(this.apps) as FactoryAppId[])
+			for (const f of this.#secrets(app)) out.add(f);
+		return [...out];
+	}
+
 	#plainFields(app: FactoryAppId): Record<string, string> {
 		const e = this.vault.get(app);
 		const out: Record<string, string> = {};

@@ -130,6 +130,18 @@ describe("factory host", () => {
 		expect(r.ok && r.value.health).toBe("ok");
 	});
 
+	it("all_secrets_lists_every_app_secret_form_but_no_plain_field", async () => {
+		const h = mk();
+		await h.configure("forgejo", "https://f.example", {
+			token: SECRET,
+			ssoOrigin: "https://sso.example",
+		});
+		const all = h.allSecrets();
+		expect(all).toContain(SECRET);
+		expect(all).toContain(encodeURIComponent(SECRET));
+		expect(all).not.toContain("https://sso.example");
+	});
+
 	it("reconfigure_same_origin_keeps_secrets", async () => {
 		const h = mk();
 		await h.configure("forgejo", "https://f.example", { token: SECRET });
