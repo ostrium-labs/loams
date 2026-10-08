@@ -70,7 +70,10 @@ curl -sf localhost:7680/v1/status >/dev/null || fail "loams-wal did not start ($
 
 # 3. A tenant, a timeline and a compute on loams-wal only.
 export TENANT_ID=$(openssl rand -hex 16) TIMELINE_ID=$(openssl rand -hex 16)
-export SAFEKEEPERS=127.0.0.1:5460 SHARED_BUFFERS=${SHARED_BUFFERS:-128MB}
+# shared_buffers well below the ~120 MB the test writes, and no local file
+# cache (the bench compute's config sets none), so the compute evicts pages
+# and reads them back from the pageserver while it runs.
+export SAFEKEEPERS=127.0.0.1:5460 SHARED_BUFFERS=${SHARED_BUFFERS:-16MB}
 curl -sf -X PUT -H 'Content-Type: application/json' \
   -d '{"mode":"AttachedSingle","generation":1,"tenant_conf":{}}' \
   "localhost:9898/v1/tenant/$TENANT_ID/location_config" >/dev/null
@@ -95,8 +98,8 @@ psql() {
 log "tenant=$TENANT_ID timeline=$TIMELINE_ID wal=$SAFEKEEPERS"
 start_compute
 
-# 4. Writes: more than shared_buffers, so pages are evicted and read back
-#    from the pageserver while the compute runs.
+# 4. Writes: several times shared_buffers, so pages are evicted and read
+#    back from the pageserver (the count below reads them all).
 psql -c "create table it (id int primary key, payload text)"
 psql -c "insert into it select g, repeat(md5(g::text), 8) from generate_series(1, 400000) g"
 want=$(psql -c "select count(*) || ':' || sum(id) from it")
