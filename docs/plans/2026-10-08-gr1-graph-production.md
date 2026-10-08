@@ -250,6 +250,8 @@ Commit `feat(api): serve loams.graph.v1 behind the graph feature (D741)`.
 
 ### Task 6: Limits v1, streaming and redaction
 
+> **From Task 3 review (M2):** shortest-path searches (`ANY`/`ALL SHORTEST`, `shortestPath`, `allShortestPaths`, and a `ShortestPath` operator anywhere in the plan) are refused with `graph_unbounded_path`, because Grafeo's `ShortestPathOp` has no hop bound. Task 6 adds a bound and serves them within `StatementLimits`. The `MAX_PATH_HOPS = 10` constant in `classify.rs` also becomes `StatementLimits.max_path_hops`.
+
 **Files:** `src/limits.rs`, `src/redact.rs`, `src/service/stream.rs`, `tests/limits.rs`.
 
 **Interfaces produced:** `StatementLimits` (§48 §13.1 defaults and maxima), a per-namespace concurrency semaphore, deadline propagation into the engine (Task 0's mechanism), `ExecuteStream` in chunks of ≤ 1 000 rows or 1 MiB, `Explain`; `redact_literals(stmt) -> String` (strings and numbers replaced by `?`, using `bare_words`'s scanner) and `fingerprint(stmt) -> u64`.
@@ -486,6 +488,8 @@ Commit `docs(graph): GraphRAG example and harness`.
 
 ### Task 24: Authentication and per-graph authorization
 
+> **From Task 3 review (M1):** schema DDL does not run today. Grafeo's `execute_with_params`, which every Loams path uses, answers "Schema DDL commands cannot be executed as queries", so the gate files DDL as Admin and the engine then refuses it. Task 24, with Task 9's `SchemaChange` routing (R0.6 (d)), decides who may run DDL and runs it on Grafeo's non-parameterised path; Task 31 reviews that path.
+
 **Files:** `src/authz.rs`, the OpenFGA model file MT1 owns (add `type graph`, §48 §11.1), RBAC role expansion, `tests/authz.rs`. Depends on MT1's interceptor; until it lands, test against the `Authorizer` trait with the built-in RBAC.
 
 **Interfaces produced:** per-RPC checks per §48 §11.1's table; `Access` from `classify` + engine; Grafeo session role from the caller's strongest relation; agent scopes `graph:read|write|admin`; `ListGraphs` through `filter_visible`; `graph_classifier_disagreement` logged and counted.
@@ -505,6 +509,8 @@ Tests: `graph_count_quota`, `element_quota_blocks_write_and_link`, `stored_bytes
 Commit `feat(graph): namespace quotas`.
 
 ### Task 26: Memory governance
+
+> **From Task 3 review (M4):** reopening a poisoned graph waits for every holder of its handle to drop it (`graph_reloading` until then, `a_held_poisoned_graph_answers_reloading_until_released`). A long-running statement on another thread can therefore starve the reopen indefinitely. Task 26's watchdog, which detaches runaway statements, must also bound how long a poisoned graph may stay unopened, and fail it (`GraphState::Failed`) past that.
 
 **Files:** `src/memory.rs`, `tests/limits.rs`.
 
@@ -553,6 +559,8 @@ Tests: `helm_template_renders_graph_role` (helm unittest or the repo's chart tes
 Commit `feat(deploy): graph role, dashboards, alerts and runbook`.
 
 ### Task 31: Security hardening
+
+> **From Task 3 review:** (1) **Id forging via `RETURN n` (security note, from Task 2 N3).** Grafeo's own projection of a bare node or relationship inserts properties after the reserved keys, so a node with a property `_id` or `_labels` is answered on the wire with the forged id or labels. Path elements are safe (resolved by Loams, real fields win). Task 31 either refuses writes of `_`-prefixed reserved property names or rebuilds projected elements from the store. (2) **M1:** see Task 24 on DDL.
 
 **Files:** `src/classify.rs` (procedure/function allowlist), `crates/loams-graph/fuzz/fuzz_targets/{execute.rs,changeset_decode.rs,portable_snapshot.rs,value_from_proto.rs}`, `docs/security/graph-threat-model.md`, `supply-chain/` (cargo-vet entries for the six Grafeo crates), CI job `graph-fuzz` (nightly, 1 h per target; 24 h before GA).
 
@@ -988,8 +996,8 @@ Rulings:
 
 **R3.1 The gate (`src/classify.rs`).** Every execution path calls `gate(statement, language)` before the engine runs anything: `Execute`, both kinds of batch (an atomic batch gates every statement before the first runs), and `Explain`. The gate:
 - refuses an empty statement;
-- refuses file access by a **keyword backstop** that reads every alphabetic word, including those inside strings and comments: `LOAD` followed by `DATA`/`CSV`/`GRAPH`/`JSON`/`JSONL`/`PARQUET`/`FROM`. The cost is a refusal for a statement that merely mentions "load data" in a string. In exchange the backstop cannot be walked around by a comment syntax Loams and Grafeo disagree on (`//`), and it also blocks a `CREATE PROCEDURE` whose body loads a file;
-- runs `engine_classify` (Grafeo's `translate_full`). The plan walk refuses `LoadData`/`LoadGraph` (file access → `PERMISSION_DENIED`/`graph_statement_not_allowed`, R0.11); `CreateGraph`/`DropGraph`/`CopyGraph`/`MoveGraph`/`AddGraph`/`ClearGraph`/`CreatePropertyGraph` (→ `FAILED_PRECONDITION`/`graph_statement_not_allowed`, R0.10 (b)); and an `Expand` with no `max_hops` or one above `MAX_PATH_HOPS` = 10 (→ `INVALID_ARGUMENT`/`graph_unbounded_path`, R0.8 (b); Task 6 makes the limit per graph);
+- refuses file access. **The load-bearing check is the plan walk** (next item): Grafeo's own translator produces the plan the engine runs, and a `LoadData`/`LoadGraph` operator anywhere in it is refused. A **keyword backstop** adds defence in depth (corrected in review M3). It reads every alphabetic word, including those inside strings and comments, and refuses `LOAD` followed by `DATA`/`CSV`/`GRAPH`/`JSON`/`JSONL`/`PARQUET`/`FROM`. It catches a statement the translator cannot parse but a future engine might run, and a `CREATE PROCEDURE` whose body loads a file. Its cost is a refusal for a statement that merely mentions "load data" in a string;
+- runs `engine_classify` (Grafeo's `translate_full`). The plan check has two passes: the operator tree, and since review C1 the plan's derived `Debug` rendering. The second pass prints every operator and expression, including `EXISTS`/`COUNT`/`VALUE` subqueries, and fails closed. It refuses `LoadData`/`LoadGraph` (file access → `PERMISSION_DENIED`/`graph_statement_not_allowed`, R0.11); `CreateGraph`/`DropGraph`/`CopyGraph`/`MoveGraph`/`AddGraph`/`ClearGraph`/`CreatePropertyGraph` (→ `FAILED_PRECONDITION`/`graph_statement_not_allowed`, R0.10 (b)); and an `Expand` with no `max_hops` or one above `MAX_PATH_HOPS` = 10 (→ `INVALID_ARGUMENT`/`graph_unbounded_path`, R0.8 (b); Task 6 makes the limit per graph);
 - refuses session commands: the transaction ones with `graph_transaction_statement`, and every other one (`USE GRAPH`, `SESSION SET …`, `SESSION RESET`, projections, `CREATE`/`DROP GRAPH`) with `graph_statement_not_allowed`. Measured: Grafeo's parameterised path refuses session commands anyway ("Session commands cannot be executed as queries");
 - answers `max(guard, engine)`. When the translator cannot parse a statement, the guard's answer stands, and the engine then reports the syntax error.
 
@@ -1009,3 +1017,16 @@ Rulings:
 **R3.7 Reasons.** `GraphError::reason()` gives the `ErrorInfo.reason`: an engine error whose text contains "syntax error" is `gql_syntax_error`, and the rest are as listed in `graph.proto`'s header. New `GraphError` variants: `TransactionStatement`, `StatementNotAllowed { file_access, what }`, `UnboundedPath`, `EnginePanic` and `Reloading`.
 
 **R3.8 Files.** `service.rs` is split into `service/{mod.rs, data.rs, errors.rs}`; admin handlers stay in `mod.rs` until Task 4's `admin.rs`. New tests are `tests/classify.rs` (corpus, LOAD DATA, management, unbounded paths, storage) and `tests/failpoints.rs`, beside the planned `tests/service.rs` and `tests/graph.rs`. `grafeo-adapters` (=0.5.43, no features) is named for the AST's `SessionCommand`.
+
+**R3.9 Task 3 security review, fix round 1** (one commit each):
+- **C1:** the `Debug` pass bounds variable-length patterns inside subqueries (the reviewer's four payloads are in `refused.gql`).
+- **I1:** any `CallProcedure` in the plan is at least Write. `bare_words` follows Grafeo's lexer: `-- ` comments only, backslash escapes in strings, doubled backquotes, no `//` comment, Unicode `to_uppercase`. The two read-only `CALL` corpus cases are now `engine=write`.
+- **I2:** an in-memory graph, or a persistent one whose poisoned engine will not close (the close flushes the WAL), moves to terminal `GraphState::Failed` (wire `GRAPH_STATE_FAILED`, `FAILED_PRECONDITION`/`graph_engine_panic`) instead of reopening short. Task 5 requires a data directory outside dev mode.
+- **I3:** the registry is keyed by `(namespace, name)`, and `validate_names` refuses graph names outside `[a-z][a-z0-9_-]{0,62}` and namespaces outside `[A-Za-z0-9_-]{1,63}`.
+- **I4:** the ReadOnly-role corpus test runs on Loams's own `run_engine` path through `Graph::execute_forced` (feature `test-hooks`, enabled only by the crate's self dev-dependency).
+- **M2:** shortest-path searches are refused (Task 6 note).
+- **M5:** the gate and path resolution run inside `catch_unwind` (failpoints `loams_graph::gate`, `loams_graph::resolve`).
+- **M6:** `Graph::open_or_existing` makes `CreateGraph` idempotent under concurrency.
+- **M7:** quantifier and held-handle tests.
+- **M1, M4 and the N3 id-forging note** are recorded under Tasks 24, 26 and 31.
+
