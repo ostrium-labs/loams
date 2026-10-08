@@ -1,26 +1,29 @@
-import { ipcMain } from "electron";
-import { CH, type ServerEntry } from "../../shared/contracts";
+import { ipcMain, session } from "electron";
+import { CH } from "../../shared/contracts";
 import { assertTrustedSender } from "../security/policy";
 import { getMainWindow } from "../shell/main-window";
+import { clearConsoleCookies, serverHandlers } from "./handlers";
 import type { ServerRegistry } from "./registry";
 
 export function registerServerIpc(registry: ServerRegistry): void {
+	const h = serverHandlers(registry, {
+		clearCookies: () => clearConsoleCookies(session.defaultSession.cookies),
+		reload: () => getMainWindow()?.webContents.reloadIgnoringCache(),
+	});
 	ipcMain.handle(CH.serversList, (e) => {
 		assertTrustedSender(e);
-		return registry.list();
+		return h.list();
 	});
-	ipcMain.handle(CH.serversAdd, (e, entry: Omit<ServerEntry, "id">) => {
+	ipcMain.handle(CH.serversAdd, (e, entry: unknown) => {
 		assertTrustedSender(e);
-		return registry.add(entry);
+		return h.add(entry);
 	});
-	ipcMain.handle(CH.serversRemove, (e, id: string) => {
+	ipcMain.handle(CH.serversRemove, (e, id: unknown) => {
 		assertTrustedSender(e);
-		return registry.remove(id);
+		return h.remove(id);
 	});
-	ipcMain.handle(CH.serversActivate, (e, id: string) => {
+	ipcMain.handle(CH.serversActivate, (e, id: unknown) => {
 		assertTrustedSender(e);
-		const r = registry.activate(id);
-		if (r.ok) getMainWindow()?.webContents.reloadIgnoringCache();
-		return r;
+		return h.activate(id);
 	});
 }
