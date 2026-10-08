@@ -14,6 +14,7 @@ import {
 import type { EngineState } from "../shared/contracts";
 import { VERSION_ARG } from "../shared/version";
 import { registerChatIpc } from "./agent/ipc.electron";
+import { registerTools } from "./agent/tools";
 import type { ChatService } from "./agent/service";
 import { appPaths } from "./app-paths";
 import { ConnectorCatalog, catalogPath } from "./connectors/catalog";
@@ -52,6 +53,7 @@ import {
 	type WindowState,
 } from "./shell/window-state";
 import { createSqlServices, registerSqlIpc } from "./sql/ipc.electron";
+import { sqlAgentTools } from "./sql/tools";
 import { createStackManager, registerStacksIpc } from "./stacks/ipc.electron";
 import { bindLiveToTikv } from "./stacks/stacks";
 import { startUpdater, type UpdaterHandle } from "./update/updater.electron";
@@ -200,6 +202,9 @@ const singleInstance = initSingleInstance({
 				},
 			);
 			factory = new FactoryHost(vault);
+			// Postgres and WeSQL services: the pages (IPC) and the agent tools share them.
+			const sql = createSqlServices(app.getPath("userData"));
+			registerTools(sqlAgentTools(sql));
 			chat = registerChatIpc({
 				session: session.defaultSession,
 				vault,
@@ -236,7 +241,7 @@ const singleInstance = initSingleInstance({
 				console.error("[stacks] setLivePd failed:", e),
 			);
 			registerStacksIpc(stacks, paths.logs);
-			registerSqlIpc(createSqlServices(app.getPath("userData")));
+			registerSqlIpc(sql);
 			// A tikv stack left running from last time starts the engine with Live directly,
 			// but a slow or absent runtime must not hold the engine back for long.
 			await Promise.race([

@@ -533,6 +533,7 @@ export function createFakeDesktop(): LoamsDesktopApi {
           elapsedMs: 4,
         },
       }),
+    },
   };
 }
 
