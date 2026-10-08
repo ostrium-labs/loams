@@ -490,7 +490,7 @@ impl<'a> LiveTxn<'a> {
 pub struct RunnerOptions {
     /// Attempts per mutation ([`DEFAULT_MUTATION_ATTEMPTS`]).
     pub max_attempts: u32,
-    /// How mutations commit: two-phase commit until `store-client` resolves
+    /// How mutations commit: two-phase commit until `tikv-client` resolves
     /// async-commit locks on the read path (R1 plan row T7-1).
     pub commit_mode: CommitMode,
     /// Opt-in: a mutation that read an index range and writes also locks
