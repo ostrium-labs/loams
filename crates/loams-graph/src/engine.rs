@@ -307,7 +307,8 @@ impl Graph {
         name: &str,
         spec: OpenSpec,
     ) -> Result<Arc<Graph>, GraphError> {
-        let key = format!("{namespace}/{name}");
+        validate_names(namespace, name)?;
+        let key = (namespace.to_string(), name.to_string());
         let mut graphs = engine
             .graphs
             .lock()
@@ -668,7 +669,9 @@ impl Graph {
 /// two engines and be sure they share nothing.
 #[derive(Debug)]
 pub struct Engine {
-    graphs: Mutex<HashMap<String, Arc<Graph>>>,
+    /// Keyed by `(namespace, name)`, never by a joined string, so no two pairs share a key
+    /// (security review I3).
+    graphs: Mutex<HashMap<(String, String), Arc<Graph>>>,
     /// Where persistent graphs live: `<data_dir>/graphs/<graph_id>/`. `None` keeps every graph in
     /// memory.
     data_dir: Option<PathBuf>,
@@ -736,7 +739,7 @@ impl Engine {
             );
             return Err(GraphError::Failed);
         }
-        let key = format!("{}/{}", graph.namespace, graph.name);
+        let key = (graph.namespace.clone(), graph.name.clone());
         let mut graphs = self
             .graphs
             .lock()
@@ -798,7 +801,8 @@ impl Engine {
     /// graph checkpoints and releases its file lock. Dropping the last `Arc` would drop the lock
     /// too, but only after the engine's own shutdown work had been skipped.
     pub fn close(&self, namespace: &str, name: &str) -> Result<bool, GraphError> {
-        let key = format!("{namespace}/{name}");
+        validate_names(namespace, name)?;
+        let key = (namespace.to_string(), name.to_string());
         let mut graphs = self
             .graphs
             .lock()
@@ -808,7 +812,7 @@ impl Engine {
         };
         if Arc::strong_count(graph) > 1 {
             return Err(GraphError::Engine(format!(
-                "graph {key} is still in use by another holder"
+                "graph {namespace}/{name} is still in use by another holder"
             )));
         }
         // `GrafeoDB::close` takes `&self`, so this runs with the graph still registered; the
@@ -817,13 +821,46 @@ impl Engine {
         // releases its file lock, because the caller asked for it gone.
         if let Err(err) = graph.db.close() {
             if graph.is_poisoned() {
-                tracing::warn!(%key, error = %err, "closing a poisoned graph failed; dropping it");
+                tracing::warn!(%namespace, %name, error = %err, "closing a poisoned graph failed; dropping it");
             } else {
                 return Err(as_engine_error(err));
             }
         }
         Ok(graphs.remove(&key).is_some())
     }
+}
+
+/// Validates a namespace and a graph name (security review I3; Task 4's catalog keeps the same
+/// rules):
+///
+/// * a graph name is `[a-z][a-z0-9_-]{0,62}`;
+/// * a namespace is `[A-Za-z0-9_-]{1,63}`.
+///
+/// Neither may hold `/`, so no pair can be mistaken for another, and neither may be empty.
+///
+/// # Errors
+///
+/// [`GraphError::InvalidValue`] naming the rule that failed.
+pub fn validate_names(namespace: &str, name: &str) -> Result<(), GraphError> {
+    let namespace_ok = (1..=63).contains(&namespace.len())
+        && namespace
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    if !namespace_ok {
+        return Err(GraphError::InvalidValue(format!(
+            "namespace {namespace:?} must be 1 to 63 characters of A-Z, a-z, 0-9, _ and -"
+        )));
+    }
+    let mut bytes = name.bytes();
+    let name_ok = name.len() <= 63
+        && bytes.next().is_some_and(|b| b.is_ascii_lowercase())
+        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-');
+    if !name_ok {
+        return Err(GraphError::InvalidValue(format!(
+            "graph name {name:?} must match [a-z][a-z0-9_-]{{0,62}}"
+        )));
+    }
+    Ok(())
 }
 
 /// A poisoned registry lock. Named so the message does not carry a `PoisonError`'s debug form.

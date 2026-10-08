@@ -110,6 +110,7 @@ pub fn create_graph(
     for language in &req.languages {
         check_language(language.as_known(), language)?;
     }
+    crate::engine::validate_names(&req.namespace, &req.name).map_err(map_engine)?;
     if let Ok(existing) = find(engine, &req.namespace, &req.name) {
         return Ok(graph_message(&existing));
     }
@@ -145,6 +146,7 @@ pub fn delete_graph(
     engine: &Engine,
     req: pb::DeleteGraphRequest,
 ) -> Result<ops::Operation, ConnectError> {
+    crate::engine::validate_names(&req.namespace, &req.name).map_err(map_engine)?;
     engine.close(&req.namespace, &req.name).map_err(internal)?;
     let mut operation = ops::Operation {
         kind: "graph.delete".to_string(),
@@ -169,6 +171,7 @@ pub(crate) fn find_serving(
 
 /// Finds an open graph, or answers `NotFound`.
 fn find(engine: &Engine, namespace: &str, name: &str) -> Result<Arc<Graph>, ConnectError> {
+    crate::engine::validate_names(namespace, name).map_err(map_engine)?;
     engine
         .list(Some(namespace))
         .map_err(internal)?

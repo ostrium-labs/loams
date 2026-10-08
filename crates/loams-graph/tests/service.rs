@@ -242,3 +242,69 @@ fn transaction_statements_refused() {
         }
     }
 }
+
+/// Security review I3: the registry is keyed by `(namespace, name)`, and both are validated, so
+/// `("a/b", "c")` and `("a", "b/c")` cannot name the same graph.
+#[test]
+fn names_are_validated_and_cannot_collide() {
+    let engine = Engine::new();
+    for (namespace, name) in [
+        ("a/b", "c"),
+        ("a", "b/c"),
+        ("", "g"),
+        ("a", ""),
+        ("a", "Upper"),
+        ("a", "9lives"),
+        ("a", &"g".repeat(64)),
+        (&"n".repeat(64) as &str, "g"),
+        ("a", "has space"),
+        ("a\u{0}", "g"),
+    ] {
+        let err = service::create_graph(
+            &engine,
+            pb::CreateGraphRequest {
+                namespace: namespace.to_string(),
+                name: name.to_string(),
+                ..Default::default()
+            },
+        )
+        .expect_err("an invalid name is refused");
+        assert_eq!(
+            err.code,
+            ErrorCode::InvalidArgument,
+            "{namespace:?}/{name:?}: {err:?}"
+        );
+        assert_eq!(reason(&err), "invalid_argument");
+        let err =
+            loams_graph::Graph::open(&engine, namespace, name, loams_graph::OpenSpec::in_memory())
+                .expect_err("and the engine refuses it too");
+        assert_eq!(err.reason(), "invalid_argument");
+    }
+    // A delete that would have matched `a/b` + `c` under a string key is refused, not a no-op on
+    // someone else's graph.
+    let err = service::delete_graph(
+        &engine,
+        pb::DeleteGraphRequest {
+            namespace: "a".to_string(),
+            name: "b/c".to_string(),
+            ..Default::default()
+        },
+    )
+    .expect_err("refused");
+    assert_eq!(err.code, ErrorCode::InvalidArgument);
+    // Valid names at the limits are fine.
+    for (namespace, name) in [
+        ("a", "g"),
+        (&"n".repeat(63) as &str, &"g".repeat(63) as &str),
+    ] {
+        service::create_graph(
+            &engine,
+            pb::CreateGraphRequest {
+                namespace: namespace.to_string(),
+                name: name.to_string(),
+                ..Default::default()
+            },
+        )
+        .expect("valid");
+    }
+}
