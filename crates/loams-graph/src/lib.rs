@@ -24,6 +24,7 @@
 
 pub mod engine;
 pub mod service;
+pub mod value;
 
 pub use engine::{BatchStatement, Engine, Graph, GraphError, GraphRow, OpenSpec};
 pub use service::GraphServiceImpl;

@@ -1,6 +1,6 @@
 //! What Loams's embedded graph engine actually does, measured against Grafeo 0.5.43.
 //!
-//! Every test here drives the crate the way the Connect-RPC service does — `service::open`,
+//! Every test here drives the crate the way the Connect-RPC service does — `service::create_graph`,
 //! `service::execute`, and the rest — so the protobuf conversions are exercised by the same
 //! assertions that exercise the engine. Where a claim in the design is only true up to what an
 //! engine does, the test says which part it measured; see `tests/probe*` history in the report for
@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use connectrpc::{ConnectError, ErrorCode};
 use loams_graph::{BatchStatement, Engine, Graph, GraphError, OpenSpec, service};
 use loams_proto::loams::graph::v1 as pb;
+use pb::__buffa::oneof::value::Kind;
 
 /// A fresh engine with no graphs open.
 fn engine() -> Engine {
@@ -19,15 +20,15 @@ fn engine() -> Engine {
 
 /// Opens an in-memory graph through the service, the way a caller would.
 fn open(engine: &Engine, namespace: &str, name: &str) -> pb::Graph {
-    service::open(
+    service::create_graph(
         engine,
-        pb::OpenRequest {
+        pb::CreateGraphRequest {
             namespace: namespace.to_string(),
             name: name.to_string(),
             ..Default::default()
         },
     )
-    .expect("opening an in-memory graph cannot fail")
+    .expect("creating an in-memory graph cannot fail")
 }
 
 /// Runs one statement against an open graph.
@@ -41,7 +42,7 @@ fn execute(
         engine,
         pb::ExecuteRequest {
             namespace: namespace.to_string(),
-            name: name.to_string(),
+            graph: name.to_string(),
             statement: statement.to_string(),
             ..Default::default()
         },
@@ -65,17 +66,19 @@ fn rows(response: &pb::ExecuteResponse) -> &pb::RowSet {
 /// is why the contract is positional, so the tests read them positionally too.
 fn scalar(response: &pb::ExecuteResponse, column: usize) -> String {
     let set = rows(response);
-    let value = &set.rows[0].values[column];
-    value
-        .as_str()
-        .map_or_else(|| format!("{value:?}"), ToString::to_string)
+    match &set.rows[0].values[column].kind {
+        Some(Kind::String(text)) => text.clone(),
+        other => format!("{other:?}"),
+    }
 }
 
-/// A number out of a response, by column position.
-fn number(response: &pb::ExecuteResponse, column: usize) -> f64 {
-    rows(response).rows[0].values[column]
-        .as_number()
-        .expect("the column should hold a number")
+/// An integer out of a response, by column position. Exact: `INT64` crosses as `int64` since
+/// GR1 Task 2, not as a double.
+fn number(response: &pb::ExecuteResponse, column: usize) -> i64 {
+    match &rows(response).rows[0].values[column].kind {
+        Some(Kind::Int64(n)) => *n,
+        other => panic!("the column should hold an INT64, not {other:?}"),
+    }
 }
 
 /// The message text of a refused call.
@@ -136,18 +139,16 @@ fn gql_round_trips_a_graph() {
     assert_eq!(scalar(&traversal, 0), "Alix");
     assert_eq!(scalar(&traversal, 1), "PLACED");
     assert_eq!(scalar(&traversal, 2), "Bo");
-    assert_eq!(number(&traversal, 3), 2026.0);
+    assert_eq!(number(&traversal, 3), 2026);
 
-    // The engine's own row counter and elapsed clock are real measurements, not the zeros the first
-    // draft hardcoded: one row returned, and a statement that took measurable time to plan and run.
-    assert_eq!(traversal.rows_read, 1, "rows_scanned is the row count");
+    // The engine's elapsed clock is a real measurement. (`rows_read` and `bytes_read` left the
+    // contract in GR1 Task 2: the engine counts neither, §48 §8.2.)
     assert!(
         traversal.elapsed_nanos > 0,
         "the engine times every statement, so an elapsed of zero would mean we stopped reading it"
     );
 
-    // A whole node crosses as a map of `_id`, `_labels` and its properties, and the node id is also
-    // lifted into the row so a client can address it without a second lookup.
+    // A whole node crosses as a typed `Node`: its id, its labels and its properties.
     let node = ok(
         &engine,
         "acme",
@@ -155,22 +156,17 @@ fn gql_round_trips_a_graph() {
         "MATCH (c:Customer {name: 'Bo'}) RETURN c",
     );
     let returned = &rows(&node).rows[0];
-    assert_eq!(
-        returned.node_ids.len(),
-        1,
-        "one node in the row: {returned:?}"
+    let Some(Kind::Node(bo)) = &returned.values[0].kind else {
+        panic!("a node arrives as a Node: {returned:?}");
+    };
+    assert_eq!(bo.labels, ["Customer"]);
+    assert!(
+        matches!(bo.properties.get("name").and_then(|v| v.kind.as_ref()), Some(Kind::String(s)) if s == "Bo"),
+        "the node's own properties travel with it: {bo:?}"
     );
-    let alix = returned.node_ids[0].clone();
-    let fields = returned.values[0]
-        .as_struct()
-        .expect("a node arrives as a struct");
-    assert_eq!(
-        fields.fields.get("name").and_then(|v| v.as_str()),
-        Some("Bo"),
-        "the node's own properties travel with it: {fields:?}"
-    );
+    let alix = bo.id;
 
-    // And the lifted id addresses the node in a later statement, which is the point of lifting it.
+    // And the id addresses the node in a later statement, which is the point of lifting it.
     // Measured: Grafeo addresses a node with `id(n)`, and that is the same integer the projection
     // puts in `_id` -- `WHERE c._id = 1` and `WHERE element_id(c) = 1` both match nothing, so a
     // client has to be told which of the three spellings works rather than left to find out.
@@ -183,7 +179,7 @@ fn gql_round_trips_a_graph() {
     assert_eq!(
         scalar(&by_id, 0),
         "Bo",
-        "the lifted id addresses the node it came from"
+        "the id addresses the node it came from"
     );
     assert_eq!(
         rows(&ok(
@@ -198,27 +194,23 @@ fn gql_round_trips_a_graph() {
         "and `_id` is readable as a projection"
     );
 
-    // Every statement is counted, so `Graph.statements_executed` is a measurement too.
-    let graph = service::open(
-        &engine,
-        pb::OpenRequest {
-            namespace: "acme".to_string(),
-            name: "orders".to_string(),
-            ..Default::default()
-        },
-    )
-    .expect("reopening the same graph returns the same one");
+    // Every statement is counted, so `statements_executed` is a measurement too.
+    let graph = Graph::open(&engine, "acme", "orders", OpenSpec::default())
+        .expect("reopening the same graph returns the same one");
     assert_eq!(
-        graph.statements_executed, 7,
+        graph.statements_executed(),
+        7,
         "every statement above was counted: two inserts, the edge, the traversal, the node, the \
          lookup by id and the `_id` projection"
     );
-    assert_eq!(graph.handle, "acme/orders");
-    assert!(!graph.persistent, "an empty database_path is in-memory");
+    assert!(
+        !graph.is_persistent(),
+        "a graph created over the service is in memory"
+    );
 }
 
 #[test]
-fn values_survive_the_json_round_trip() {
+fn values_cross_typed() {
     let engine = engine();
     open(&engine, "acme", "types");
 
@@ -226,7 +218,7 @@ fn values_survive_the_json_round_trip() {
         &engine,
         "acme",
         "types",
-        "INSERT (:Reading {n: 7, ratio: 0.25, ok: true, missing: null, \
+        "INSERT (:Reading {n: 9007199254740993, ratio: 0.25, ok: true, missing: null, \
          at: datetime('2026-10-04T09:30:00Z'), day: date('2026-10-04'), \
          tags: ['a', 'b'], meta: {k: 1}})",
     );
@@ -239,47 +231,39 @@ fn values_survive_the_json_round_trip() {
     let set = rows(&read);
     assert_eq!(set.rows.len(), 1);
     let row = &set.rows[0];
-    assert_eq!(
-        row.values[0].as_number(),
-        Some(7.0),
-        "an Int64 crosses as a number"
-    );
-    assert_eq!(
-        row.values[1].as_number(),
-        Some(0.25),
-        "a Float64 keeps its fraction"
-    );
-    assert_eq!(row.values[2].as_bool(), Some(true));
-    assert_eq!(
-        row.values[3].as_number(),
-        None,
+    // 2^53 + 1: the fabric-era double could not hold it (§48 §5 finding 6).
+    assert_eq!(number(&read, 0), 9_007_199_254_740_993);
+    assert!(matches!(row.values[1].kind, Some(Kind::Float64(f)) if f == 0.25));
+    assert!(matches!(row.values[2].kind, Some(Kind::Boolean(true))));
+    assert!(
+        matches!(row.values[3].kind, Some(Kind::Null(_))),
         "null is null, not a zero: {:?}",
         row.values[3]
     );
-    // Temporal values cross as ISO 8601 text through grafeo's own `Display`, so a GQL client reads
-    // what it wrote rather than microseconds since the epoch.
-    assert_eq!(
-        row.values[4].as_str(),
-        Some("2026-10-04T09:30:00.000000Z"),
-        "a timestamp is ISO 8601"
-    );
-    assert_eq!(
-        row.values[5].as_str(),
-        Some("2026-10-04"),
-        "a date is ISO 8601"
-    );
-    let tags = row.values[6].as_list().expect("a list crosses as a list");
+    // `datetime(...)` is Grafeo's microsecond Timestamp, a wall-clock date and time.
+    let Some(Kind::LocalDatetime(at)) = &row.values[4].kind else {
+        panic!("a datetime is a local_datetime: {:?}", row.values[4]);
+    };
+    let date = at.date.as_option().expect("a date");
+    let time = at.time.as_option().expect("a time");
+    assert_eq!((date.year, date.month, date.day), (2026, 10, 4));
+    assert_eq!((time.hour, time.minute, time.second), (9, 30, 0));
+    let Some(Kind::Date(day)) = &row.values[5].kind else {
+        panic!("a date is a date: {:?}", row.values[5]);
+    };
+    assert_eq!((day.year, day.month, day.day), (2026, 10, 4));
+    let Some(Kind::List(tags)) = &row.values[6].kind else {
+        panic!("a list crosses as a list: {:?}", row.values[6]);
+    };
     assert_eq!(tags.values.len(), 2);
-    assert_eq!(tags.values[1].as_str(), Some("b"));
-    let meta = row.values[7]
-        .as_struct()
-        .expect("a map crosses as a struct");
-    assert_eq!(meta.fields.get("k").and_then(|v| v.as_number()), Some(1.0));
-
-    // Bytes have no JSON counterpart. This crate sends an array of byte values rather than a lossy
-    // string, and Grafeo 0.5.43's `bytes()` literal yields null rather than a byte value, so the
-    // conversion is exercised through the engine only as far as the engine goes: the assertion is
-    // that nothing panicked and the column still lines up.
+    assert!(matches!(&tags.values[1].kind, Some(Kind::String(s)) if s == "b"));
+    let Some(Kind::Map(meta)) = &row.values[7].kind else {
+        panic!("a map crosses as a map: {:?}", row.values[7]);
+    };
+    assert!(matches!(
+        meta.entries.get("k").and_then(|v| v.kind.as_ref()),
+        Some(Kind::Int64(1))
+    ));
     assert_eq!(set.columns.len(), row.values.len());
 }
 
@@ -288,10 +272,7 @@ fn open_is_idempotent_and_conflict_is_refused() {
     let engine = engine();
     let first = open(&engine, "acme", "orders");
     let second = open(&engine, "acme", "orders");
-    assert_eq!(
-        first.handle, second.handle,
-        "the same key is the same graph"
-    );
+    assert_eq!(first, second, "the same key is the same graph");
     assert_eq!(
         engine.list(Some("acme")).map(|graphs| graphs.len()),
         Ok(1),
@@ -307,34 +288,64 @@ fn open_is_idempotent_and_conflict_is_refused() {
         "orders",
         "MATCH (k:K) RETURN count(k) AS c",
     );
-    assert_eq!(number(&count, 0), 1.0);
+    assert_eq!(number(&count, 0), 1);
 
     // Reopening with a different read-only flag, or a different path, is a conflict rather than a
-    // second opinion about one graph's storage. Both are refused before anything is opened.
-    let err = service::open(
+    // second opinion about one graph's storage. The service takes no path or flag from a client
+    // (Review Focus 4), so the conflict is the engine's, and it is refused before anything opens.
+    let err = Graph::open(
         &engine,
-        pb::OpenRequest {
-            namespace: "acme".to_string(),
-            name: "orders".to_string(),
+        "acme",
+        "orders",
+        OpenSpec {
+            database_path: PathBuf::new(),
             read_only: true,
-            ..Default::default()
         },
     )
     .expect_err("read_only disagrees with the open graph");
-    assert_eq!(err.code, ErrorCode::AlreadyExists, "{err:?}");
-    assert!(message(&err).contains("acme/orders"), "{err:?}");
+    assert!(matches!(err, GraphError::Conflict { .. }), "{err:?}");
+    assert!(err.to_string().contains("acme/orders"), "{err:?}");
 
-    let err = service::open(
+    let err = Graph::open(
         &engine,
-        pb::OpenRequest {
-            namespace: "acme".to_string(),
-            name: "orders".to_string(),
-            database_path: scratch_path("conflict").to_string_lossy().into_owned(),
-            ..Default::default()
+        "acme",
+        "orders",
+        OpenSpec {
+            database_path: scratch_path("conflict"),
+            read_only: false,
         },
     )
     .expect_err("a different path is a different graph");
+    assert!(matches!(err, GraphError::Conflict { .. }), "{err:?}");
+
+    // And a persistent graph opened in the engine is a conflict for a service create of the same
+    // name, which would open it in memory.
+    let path = scratch_path("service-conflict");
+    let held = Graph::open(
+        &engine,
+        "acme",
+        "stored",
+        OpenSpec {
+            database_path: path.clone(),
+            read_only: false,
+        },
+    )
+    .expect("open persistent");
+    let err = service::create_graph(
+        &engine,
+        pb::CreateGraphRequest {
+            namespace: "acme".to_string(),
+            name: "stored".to_string(),
+            ..Default::default()
+        },
+    )
+    .expect_err("an in-memory create disagrees with the persistent graph");
     assert_eq!(err.code, ErrorCode::AlreadyExists, "{err:?}");
+    drop(held);
+    assert_eq!(engine.close("acme", "stored"), Ok(true));
+    if let Some(directory) = path.parent() {
+        std::fs::remove_dir_all(directory).ok();
+    }
 
     // A different name in the same namespace is a different graph, and shares nothing.
     open(&engine, "acme", "returns");
@@ -347,7 +358,7 @@ fn open_is_idempotent_and_conflict_is_refused() {
     );
     assert_eq!(
         number(&empty, 0),
-        0.0,
+        0,
         "the other graph in the namespace does not see the first graph's nodes"
     );
 }
@@ -440,7 +451,7 @@ fn read_only_refuses_a_write() {
         &engine,
         pb::ExecuteRequest {
             namespace: "acme".to_string(),
-            name: "guard".to_string(),
+            graph: "guard".to_string(),
             statement: "MATCH (d:Doc) RETURN d.body".to_string(),
             read_only: true,
             ..Default::default()
@@ -472,7 +483,7 @@ fn read_only_refuses_a_write() {
             &engine,
             pb::ExecuteRequest {
                 namespace: "acme".to_string(),
-                name: "guard".to_string(),
+                graph: "guard".to_string(),
                 statement: statement.to_string(),
                 read_only: true,
                 ..Default::default()
@@ -494,7 +505,7 @@ fn read_only_refuses_a_write() {
         "guard",
         "MATCH (d:Doc) RETURN count(d) AS c",
     );
-    assert_eq!(number(&count, 0), 1.0, "only the first insert landed");
+    assert_eq!(number(&count, 0), 1, "only the first insert landed");
 
     // A graph opened read-only refuses a write even when the request forgot to ask for it.
     let readonly = Graph::open(
@@ -527,7 +538,7 @@ fn read_only_refuses_a_write() {
         &engine,
         pb::ExecuteRequest {
             namespace: "acme".to_string(),
-            name: "guard".to_string(),
+            graph: "guard".to_string(),
             statement: "MATCH (d:Doc) WHERE d.body = 'INSERT' RETURN count(d) AS c".to_string(),
             read_only: true,
             ..Default::default()
@@ -536,7 +547,7 @@ fn read_only_refuses_a_write() {
     .expect("a read that mentions INSERT is still a read");
     assert_eq!(
         number(&contains, 0),
-        0.0,
+        0,
         "the engine read 'INSERT' as the string it is, which is only possible because the guard \
          did not treat it as syntax"
     );
@@ -634,7 +645,7 @@ fn a_refused_statement_keeps_the_engine_message() {
     let unknown = ok(&engine, "acme", "diagnostics", "RETURN nosuchfunction(1)");
     let value = &rows(&unknown).rows[0].values[0];
     assert!(
-        value.is_null(),
+        matches!(value.kind, Some(Kind::Null(_))),
         "grafeo's own answer, not one of ours: {unknown:?}"
     );
 }
@@ -661,7 +672,7 @@ fn batch_is_one_transaction() {
         &engine,
         pb::ExecuteBatchRequest {
             namespace: "acme".to_string(),
-            name: "batch".to_string(),
+            graph: "batch".to_string(),
             statements,
             atomic: true,
             ..Default::default()
@@ -677,7 +688,7 @@ fn batch_is_one_transaction() {
         "batch",
         "MATCH (l:Line) RETURN count(l) AS c",
     );
-    assert_eq!(number(&read, 0), 3.0, "every insert in the batch landed");
+    assert_eq!(number(&read, 0), 3, "every insert in the batch landed");
     let edge = ok(
         &engine,
         "acme",
@@ -686,7 +697,7 @@ fn batch_is_one_transaction() {
     );
     assert_eq!(
         number(&edge, 0),
-        1.0,
+        1,
         "and the statement that read the first two"
     );
 
@@ -707,7 +718,7 @@ fn batch_is_one_transaction() {
         &engine,
         pb::ExecuteBatchRequest {
             namespace: "acme".to_string(),
-            name: "batch".to_string(),
+            graph: "batch".to_string(),
             statements,
             atomic: true,
             ..Default::default()
@@ -723,7 +734,7 @@ fn batch_is_one_transaction() {
     );
     assert_eq!(
         number(&after, 0),
-        3.0,
+        3,
         "the failed batch rolled its first statement back: {after:?}"
     );
 
@@ -752,7 +763,7 @@ fn batch_is_one_transaction() {
             &engine,
             pb::ExecuteBatchRequest {
                 namespace: "acme".to_string(),
-                name: "batch".to_string(),
+                graph: "batch".to_string(),
                 statements,
                 atomic: true,
                 ..Default::default()
@@ -768,7 +779,7 @@ fn batch_is_one_transaction() {
         "batch",
         "MATCH (l:Line) RETURN count(l) AS c",
     );
-    assert_eq!(number(&after, 0), 3.0, "a refused batch wrote nothing");
+    assert_eq!(number(&after, 0), 3, "a refused batch wrote nothing");
 
     // `atomic = false` is a series of independent statements, which the contract says so itself.
     let statements = vec!["INSERT (:Line {sku: 'e'})", "INSERT (:Line {sku: 'f'})"]
@@ -782,7 +793,7 @@ fn batch_is_one_transaction() {
         &engine,
         pb::ExecuteBatchRequest {
             namespace: "acme".to_string(),
-            name: "batch".to_string(),
+            graph: "batch".to_string(),
             statements,
             atomic: false,
             ..Default::default()
@@ -793,13 +804,14 @@ fn batch_is_one_transaction() {
         !response.committed,
         "no single transaction means nothing to report as committed"
     );
+    assert_eq!(response.committed_through, 2, "both statements committed");
     let after = ok(
         &engine,
         "acme",
         "batch",
         "MATCH (l:Line) RETURN count(l) AS c",
     );
-    assert_eq!(number(&after, 0), 5.0);
+    assert_eq!(number(&after, 0), 5);
 }
 
 #[test]
@@ -807,18 +819,14 @@ fn an_unavailable_language_is_unimplemented() {
     let engine = engine();
     open(&engine, "acme", "languages");
 
-    // What this build has, per `EngineInfo`. Measured rather than asserted from the source: the
-    // dependency is `grafeo` with its default features plus `wal`, `spill` and `mmap`, which is the
-    // one combination that gives the LPG model and GQL while leaving `cypher`, `sparql`, `gremlin`,
-    // `graphql` and `sql-pgq` switched off (see this crate's `Cargo.toml`).
+    // What this build has, per `EngineInfo`: Grafeo with `gql` and none of `cypher`, `sparql`,
+    // `gremlin`, `graphql` or `sql-pgq` (root `Cargo.toml`, R0.2).
     let info = service::engine_info(&engine);
     assert_eq!(
         info.languages.as_slice(),
         [pb::QueryLanguage::Gql],
         "one language, and it is the only one this build has"
     );
-    assert!(info.embedded, "D634 (b): the engine is in this process");
-    assert!(info.ephemeral, "the only open graph is in-memory");
     assert_eq!(info.engine_version, loams_graph::ENGINE_VERSION);
 
     for language in [
@@ -832,7 +840,7 @@ fn an_unavailable_language_is_unimplemented() {
             &engine,
             pb::ExecuteRequest {
                 namespace: "acme".to_string(),
-                name: "languages".to_string(),
+                graph: "languages".to_string(),
                 statement: "MATCH (n) RETURN n".to_string(),
                 language: language.into(),
                 ..Default::default()
@@ -850,7 +858,7 @@ fn an_unavailable_language_is_unimplemented() {
             &engine,
             pb::ExecuteBatchRequest {
                 namespace: "acme".to_string(),
-                name: "languages".to_string(),
+                graph: "languages".to_string(),
                 statements: Vec::new(),
                 language: language.into(),
                 ..Default::default()
@@ -866,7 +874,7 @@ fn an_unavailable_language_is_unimplemented() {
         &engine,
         pb::ExecuteRequest {
             namespace: "acme".to_string(),
-            name: "languages".to_string(),
+            graph: "languages".to_string(),
             statement: "MATCH (n) RETURN n".to_string(),
             language: 4242.into(),
             ..Default::default()
@@ -881,19 +889,19 @@ fn an_unavailable_language_is_unimplemented() {
             &engine,
             pb::ExecuteRequest {
                 namespace: "acme".to_string(),
-                name: "languages".to_string(),
+                graph: "languages".to_string(),
                 statement: "RETURN 1 AS one".to_string(),
                 language: language.into(),
                 ..Default::default()
             },
         )
         .unwrap_or_else(|err| panic!("{language:?} should be served: {err:?}"));
-        assert_eq!(number(&response, 0), 1.0);
+        assert_eq!(number(&response, 0), 1);
     }
 }
 
 #[test]
-fn list_and_close_manage_the_registry() {
+fn list_and_delete_manage_the_registry() {
     let engine = engine();
     open(&engine, "acme", "one");
     open(&engine, "acme", "two");
@@ -928,29 +936,48 @@ fn list_and_close_manage_the_registry() {
         },
     )
     .expect("the same spec returns the open graph");
-    let err = service::close(
+    let err = service::delete_graph(
         &engine,
-        pb::CloseRequest {
+        pb::DeleteGraphRequest {
             namespace: "acme".to_string(),
             name: "one".to_string(),
             ..Default::default()
         },
     )
-    .expect_err("a held handle refuses the close");
+    .expect_err("a held handle refuses the delete");
     assert_eq!(err.code, ErrorCode::Internal, "{err:?}");
     assert!(message(&err).contains("still in use"), "{err:?}");
 
     // Once the last handle goes, the close succeeds and the graph leaves the registry.
     drop(held);
-    service::close(
+    service::delete_graph(
         &engine,
-        pb::CloseRequest {
+        pb::DeleteGraphRequest {
             namespace: "acme".to_string(),
             name: "one".to_string(),
             ..Default::default()
         },
     )
-    .expect("closing with no holder succeeds");
+    .expect("deleting with no holder succeeds");
+    // The delete is answered as a finished operation on the graph.
+    let operation = service::delete_graph(
+        &engine,
+        pb::DeleteGraphRequest {
+            namespace: "acme".to_string(),
+            name: "two".to_string(),
+            ..Default::default()
+        },
+    )
+    .expect("delete");
+    assert_eq!(operation.kind, "graph.delete");
+    assert_eq!(
+        operation.target.get("graph").map(String::as_str),
+        Some("two")
+    );
+    assert_eq!(
+        operation.state.as_known(),
+        Some(loams_proto::loams::operations::v1::OperationState::Succeeded)
+    );
     let listed = service::list_graphs(
         &engine,
         pb::ListGraphsRequest {
@@ -959,7 +986,7 @@ fn list_and_close_manage_the_registry() {
         },
     )
     .expect("listing cannot fail");
-    assert_eq!(listed.graphs.len(), 1);
+    assert_eq!(listed.graphs.len(), 0);
 
     // A closed graph is gone, not dormant: executing against it is `NotFound`.
     let err =
@@ -967,15 +994,15 @@ fn list_and_close_manage_the_registry() {
     assert_eq!(err.code, ErrorCode::NotFound, "{err:?}");
 
     // Closing something that is not open is not an error; it is already in the state asked for.
-    service::close(
+    service::delete_graph(
         &engine,
-        pb::CloseRequest {
+        pb::DeleteGraphRequest {
             namespace: "acme".to_string(),
             name: "one".to_string(),
             ..Default::default()
         },
     )
-    .expect("closing an unopened graph is a no-op");
+    .expect("deleting an unopened graph is a no-op");
 
     // And a statement against a graph that was never opened is `NotFound` rather than a refusal to
     // open one implicitly.
@@ -1006,7 +1033,7 @@ fn sessions_do_not_share_state_but_the_current_graph_survives_a_call() {
     );
     assert_eq!(
         number(&count, 0),
-        1.0,
+        1,
         "a committed write is visible to the next statement: there is no session affinity"
     );
 
@@ -1021,7 +1048,7 @@ fn sessions_do_not_share_state_but_the_current_graph_survives_a_call() {
     );
     assert_eq!(
         number(&in_scratch, 0),
-        0.0,
+        0,
         "USE GRAPH routed the next statement, which is a fresh session reading state the previous \
          call left behind"
     );
@@ -1036,7 +1063,7 @@ fn sessions_do_not_share_state_but_the_current_graph_survives_a_call() {
     );
     assert_eq!(
         number(&restored, 0),
-        1.0,
+        1,
         "and the default graph still holds only its own node, so the two graphs never shared a store"
     );
 
@@ -1067,7 +1094,7 @@ fn sessions_do_not_share_state_but_the_current_graph_survives_a_call() {
     );
     assert_eq!(
         count.rows[0].values[0],
-        serde_json::json!(1),
+        grafeo::Value::Int64(1),
         "only the committed node is counted"
     );
 }
@@ -1078,7 +1105,6 @@ fn graph_service_impl_serves_one_engine() {
     let service = loams_graph::GraphServiceImpl::new(std::sync::Arc::clone(&engine));
     assert!(std::sync::Arc::ptr_eq(service.engine(), &engine));
     let info = service.engine_info();
-    assert!(info.embedded);
     assert_eq!(info.engine_version, loams_graph::ENGINE_VERSION);
     assert_eq!(engine.standard, loams_graph::GQL_STANDARD);
 }

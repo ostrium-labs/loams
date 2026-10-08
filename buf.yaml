@@ -10,13 +10,6 @@ modules:
 lint:
   use:
     - STANDARD
-  ignore:
-    # Temporary, GR1 Task 1 only: `loams.graph.v1` moved here from
-    # `fabric/proto/` with its content unchanged (design §48, D741), and the
-    # as-built file uses `google.protobuf.Empty` and non-standard request and
-    # response names. GR1 Task 2 reworks the file (D746) and deletes this
-    # ignore; Task 2's test is `buf lint` clean without it.
-    - proto/loams/graph
   ignore_only:
     # Watch streams `Transition`, the protocol's unit (design §20 §7.1),
     # rather than a `WatchResponse` wrapper (plan row T7-4).
@@ -30,6 +23,12 @@ lint:
       - proto/loams/live/v1/live.proto
       - proto/loams/collection/v1/collection.proto
       - proto/loams/collection/v1/document.proto
+      # `loams.graph.v1` (GR1 Task 2, design §48 §8.2): CreateGraph, GetGraph
+      # and UpdateGraph answer the graph's own `Graph`, GetEngineInfo answers
+      # `EngineInfo`, GetSchema `GraphSchema` and Explain `Plan`; the four
+      # slow RPCs answer `loams.operations.v1.Operation` and ExecuteStream
+      # streams `ResultChunk`.
+      - proto/loams/graph/v1/graph.proto
     # For the same reason: `CreateCollection` and `GetCollection` both answer
     # `CollectionInfo`, the collection's own document, and `ListCollections`
     # embeds it. A per-RPC response message would make every caller unwrap
@@ -46,8 +45,15 @@ lint:
     RPC_REQUEST_RESPONSE_UNIQUE:
       - proto/loams/collection/v1/collection.proto
       - proto/loams/collection/v1/document.proto
+      # `loams.graph.v1`: `Graph` and `loams.operations.v1.Operation` each
+      # answer several RPCs (see above, §48 §8.2).
+      - proto/loams/graph/v1/graph.proto
 breaking:
   use:
     - FILE
   ignore:
     - proto/loams/live
+    # `loams.graph.v1` is `unstable: true` until GR1e (design §48 §8.1): the
+    # SDKs and `buf breaking` treat it as experimental, and GR1 Task 39
+    # removes this line when the package is frozen at GA.
+    - proto/loams/graph

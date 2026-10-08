@@ -930,3 +930,40 @@ Rulings:
 **R1.5 CI.** A `graph` job in `ci.yml` (filter: `crates/loams-graph/**`, `crates/loams-proto/**`, `proto/loams/graph/**`, `crates/loams/Cargo.toml`, `connectors/licences.toml`, `fabric/Cargo.lock`, plus the toolchain set) runs `loams_default_build_has_no_grafeo` (the `cargo tree -p loams -e normal --prefix none --locked` output is captured under `pipefail`, must contain the `loams v` root line, and must have 0 `grafeo` lines; it has 0 today) and `cargo test -p loams-graph --locked`, and is in `required`. `fabric.yml` names no graph path, so it is unchanged.
 
 **R1.6 Lockfiles.** Root `Cargo.lock` gains nine packages: `grafeo`, `grafeo-adapters`, `grafeo-common`, `grafeo-core`, `grafeo-engine`, `grafeo-storage` (all 0.5.43), `arcstr` 1.2.0, `crossbeam` 0.8.5 and `fs2` 0.4.3; no `arrow*`. `fabric/Cargo.lock` drops every grafeo crate and arrow 60, which lets its arrow 59 entries lose their version qualifiers. `cargo deny check licenses bans sources` is clean in both workspaces; `advisories` was not run (no local advisory database, and this task fetches nothing).
+
+### Task 2 (2026-10-08, on `backend/gr1`)
+
+**R2.1 The proto follows §48 §8.2, with these additions and choices.**
+- `Graph.version` (12) and `UpdateGraphRequest.expected_version` carry Task 4's catalog CAS.
+- `ExecuteStream` takes `ExecuteStreamRequest { ExecuteRequest request; uint32 chunk_rows }` instead of the bare `ExecuteRequest`. This keeps `RPC_REQUEST_STANDARD_NAME` clean without an ignore.
+- `ExecuteBatchRequest` has `isolation`, `optional if_version`, `timeout_ms` and `idempotency_key`. `ExecuteBatchResponse` has `committed_through` and `consistency_token` (§48 §7.3).
+- `Consistency` is a oneof: `strong`, `eventual`, or `at_least` holding a token string.
+- `GraphMapping` is `VertexMapping`/`EdgeMapping` per §07 §2.1. Task 17 may refine it while the package is unstable.
+- `go_package = "loams.dev/go/gen/loams/graph/v1;graphv1"`. This is §44's module and the path the Go templates map every other package to.
+- Both services carry `ModuleOptions { name: "graph", unstable: true }` and no `FacadeOptions` yet (SDK tasks 36–37), so the SDK facades are unchanged.
+
+**R2.2 buf.** R1.2's temporary lint ignore is gone. `graph.proto` joins `collection.proto`'s per-file `RPC_RESPONSE_STANDARD_NAME` and `RPC_REQUEST_RESPONSE_UNIQUE` exceptions. These are forced by §48 §8.2: `Graph` and `Operation` each answer several RPCs, and `EngineInfo`, `GraphSchema`, `Plan` and `ResultChunk` are answers without a Response suffix. `buf breaking` ignores `proto/loams/graph` while the package is `unstable` (§48 §8.1); Task 39 removes that line. `buf lint` is clean, and `buf format -d --path proto/loams/graph/v1/graph.proto` is clean. Other files have formatting diffs that were already there before this task.
+
+**R2.3 `loams-proto` also compiles `loams/operations/v1/operations.proto`,** because `graph.proto` imports it. `loams-apps-mock` generates the same package for its own server, as both crates already do for `loams.errors.v1`. As a result, `FILE_DESCRIPTOR_SET`, and so reflection, lists `loams.operations.v1.OperationsService`. Also, `loams-facade-gen`'s `every_mapped_package_is_generated_by_the_crate_it_names` now checks `loams.operations.v1` (its pinned list is updated), and the Rust map already names `loams_proto::loams::operations::v1`.
+
+**R2.4 Value mapping (`src/value.rs`).**
+- Grafeo has no unsigned integer. A `uint64` up to `i64::MAX` decodes to INT64, and a larger one is refused (`uint64_round_trips` pins both).
+- Grafeo has no decimal, so a `decimal` is refused.
+- Grafeo's `Timestamp` (what `datetime()`/`localdatetime()` produce) is answered as `local_datetime`. Datetimes are microsecond-precise, and a sub-microsecond nanosecond part is refused.
+- `Time` without an offset is `local_time`, and with an offset is `zoned_time`.
+- Two Grafeo values that are not in §8.2's list get fields of their own: `Vector` (20) and `Counter` (21, GCounter/OnCounter).
+- Nodes and relationships are recognised by the engine's projected-map shape: `_id` + `_labels` for a node, and `_id` + `_type` + `_source` + `_target` for a relationship.
+- **Measured: Grafeo 0.5.43 builds a `Value::Path` of element ids (`Int64`), not maps.** A path's `Node`/`Relationship` therefore carry only `id`, and an id-only element decodes back to the id. Task 20/21 or the page reads labels by returning the elements too.
+
+**R2.5 The engine answers `grafeo::Value` rows.** `GraphRow.values` is `Vec<grafeo::Value>`. The JSON conversion, `node_ids`, `relationship_ids` and the `rows_read`/`bytes_read`/`rows_affected` wire fields are gone. `Graph::execute_with_params` is new, and `Execute` binds `parameters` through it.
+
+**R2.6 The handlers are transitional until Tasks 3–6.**
+- `service.rs` keeps the fabric-era in-memory registry behind the new messages: `create_graph`, `get_graph`, `list_graphs` (one page), `delete_graph` (closes the graph and answers a finished `Operation` with no id), `execute` and `execute_batch`.
+- Non-atomic batch parameters are still Task 3's (`non_atomic_batch_binds_parameters`).
+- The service takes no storage path, so `tests/graph.rs` exercises persistence and open-conflicts through the engine API.
+
+**R2.7 `proto_has_no_path_fields` matches words, not substrings.** It splits a field name on `_` and flags `path`, `url`, `uri`, `dir`, `directory`, `file`, `filename`, `folder` or `location`. Matching substrings would flag `ExplainRequest.profile` and `EngineInfo.gql_profile` (they contain "file"). Two graph-semantic fields are allowed beside `object_key`/`object_prefix`: `Value.path` (GQL PATH) and `GraphLimits.max_path_hops`.
+
+**R2.8 Q-T0-4 (fields 17/18 of `loams.collection.v1`) stays with Task 20.** That task adds the typed `rerank_spec`/`expand_spec` fields and deprecates 17 and 18.
+
+**Shared-target hazard.** Worktrees share `loams-proto`'s build-script output, so a build can run another worktree's generated code. Run `touch crates/loams-proto/build.rs proto/loams/graph/v1/graph.proto` after switching.

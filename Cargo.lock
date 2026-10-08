@@ -6706,12 +6706,15 @@ dependencies = [
 name = "loams-graph"
 version = "0.0.1"
 dependencies = [
+ "buffa",
  "buffa-types",
  "connectrpc",
  "grafeo",
  "grafeo-common",
  "grafeo-engine",
  "loams-proto",
+ "prost 0.14.4",
+ "prost-types",
  "serde_json",
  "thiserror 2.0.21",
  "toml 0.8.23",

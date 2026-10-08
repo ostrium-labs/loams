@@ -58,6 +58,9 @@ pub enum GraphError {
         "query language {0} is not available in this build; loams-graph compiles Grafeo with GQL only"
     )]
     LanguageUnavailable(&'static str),
+    /// A wire value the engine cannot hold exactly (see [`crate::value::from_proto`]).
+    #[error("invalid value: {0}")]
+    InvalidValue(String),
     /// A parameter name in a statement has no binding.
     #[error(
         "statement refers to {name}, which has no binding; a graph value is never interpolated into the text"
@@ -82,16 +85,10 @@ pub struct OpenSpec {
 /// result legitimately repeats a key across a path and a map would collapse those duplicates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GraphRow {
-    /// One row's values, as JSON. `serde_json::Value` rather than a string because a GQL result is
-    /// typed, and a connector downstream needs the type as much as the text.
-    pub values: Vec<serde_json::Value>,
-    /// Node ids the row's values named, so a caller can address them without a second lookup.
-    ///
-    /// Collected rather than returned by the engine, because Grafeo has no node value type: a node
-    /// comes back as a map carrying `_id` and `_labels` (see [`node_id_in`]).
-    pub node_ids: Vec<String>,
-    /// Relationship ids, likewise.
-    pub relationship_ids: Vec<String>,
+    /// One row's values, as the engine answered them. The wire form is
+    /// [`crate::value::to_proto`]'s, which keeps every type (GR1 Task 2); the fabric-era JSON form
+    /// turned every integer into a double.
+    pub values: Vec<Value>,
 }
 
 /// One statement of a batch, with its parameters already bound.
@@ -292,6 +289,26 @@ impl Graph {
     pub fn execute(&self, statement: &str, read_only: bool) -> Result<GraphResult, GraphError> {
         Self::check(statement, read_only || self.read_only)?;
         self.run(statement)
+    }
+
+    /// Runs one statement with `$name` parameters bound by the engine, as its own transaction.
+    ///
+    /// The statement reaches the engine unchanged and a value is never interpolated into it; the
+    /// read-only guard is the same one [`Graph::execute`] applies.
+    pub fn execute_with_params(
+        &self,
+        statement: &str,
+        parameters: HashMap<String, Value>,
+        read_only: bool,
+    ) -> Result<GraphResult, GraphError> {
+        Self::check(statement, read_only || self.read_only)?;
+        let result = self
+            .db
+            .session()
+            .execute_with_params(statement, parameters)
+            .map_err(as_engine_error)?;
+        self.statements_executed.fetch_add(1, Ordering::Relaxed);
+        Ok(GraphResult::from(result))
     }
 
     /// Runs statements as one engine transaction, so a write batch lands whole or not at all.
@@ -590,21 +607,13 @@ impl From<QueryResult> for GraphResult {
         let rows_read = result.rows_scanned;
         let elapsed_nanos = result.execution_time_ms.map(|ms| (ms * 1_000_000.0) as u64);
 
-        let mut rows = Vec::new();
-        for row in result.rows() {
-            let mut node_ids = Vec::new();
-            let mut relationship_ids = Vec::new();
-            let mut values = Vec::with_capacity(row.len());
-            for value in row {
-                collect_ids(value, &mut node_ids, &mut relationship_ids);
-                values.push(to_json(value));
-            }
-            rows.push(GraphRow {
-                values,
-                node_ids,
-                relationship_ids,
-            });
-        }
+        let rows = result
+            .rows()
+            .iter()
+            .map(|row| GraphRow {
+                values: row.to_vec(),
+            })
+            .collect();
 
         Self {
             // `LogicalType`'s own rendering (`INT64`, `STRING`, `NODE`), which is a type *name*
@@ -621,139 +630,5 @@ impl From<QueryResult> for GraphResult {
             elapsed_nanos,
             rows_affected: None,
         }
-    }
-}
-
-/// Collects the node and relationship ids a value names.
-///
-/// Grafeo has no `Value::Node`: a node arrives as a map of `_id`, `_labels` and its properties, and
-/// a relationship as a map of `_id`, `_type`, `_source`, `_target` and its properties (see
-/// `grafeo_core::execution::operators::project`). So the reserved keys are what distinguishes a
-/// graph element from an ordinary map, and the walk is recursive because a path, a list or a
-/// property can carry one.
-fn collect_ids(value: &Value, node_ids: &mut Vec<String>, relationship_ids: &mut Vec<String>) {
-    match value {
-        Value::Map(map) => {
-            // `_labels` marks a node and `_type` marks a relationship; a map with neither is an
-            // ordinary property map, so its `_id`-shaped entries are not mistaken for graph ids.
-            let is_node = map.keys().any(|key| key.as_str() == "_labels");
-            let is_edge = map.keys().any(|key| key.as_str() == "_type");
-            if is_node || is_edge {
-                let id = map
-                    .iter()
-                    .find(|(key, _)| key.as_str() == "_id")
-                    .and_then(|(_, id)| match id {
-                        Value::Int64(id) => Some(id.to_string()),
-                        _ => None,
-                    });
-                match (id, is_node) {
-                    (Some(id), true) => push_unique(node_ids, id),
-                    (Some(id), false) => push_unique(relationship_ids, id),
-                    // A graph element with no `_id` is malformed; the engine said so itself if it
-                    // mattered, and an id-less entry would only mislead a caller.
-                    (None, _) => {}
-                }
-            }
-            for nested in map.values() {
-                collect_ids(nested, node_ids, relationship_ids);
-            }
-        }
-        Value::List(items) => {
-            for nested in items.iter() {
-                collect_ids(nested, node_ids, relationship_ids);
-            }
-        }
-        Value::Path { nodes, edges } => {
-            for nested in nodes.iter().chain(edges.iter()) {
-                collect_ids(nested, node_ids, relationship_ids);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Adds an id unless the row already carries it, so a repeated entity is listed once.
-fn push_unique(ids: &mut Vec<String>, id: String) {
-    if !ids.contains(&id) {
-        ids.push(id);
-    }
-}
-
-/// Converts one engine value into JSON, losing nothing a connector needs.
-fn to_json(value: &Value) -> serde_json::Value {
-    use serde_json::{Map, Value as Json};
-    match value {
-        Value::Null => Json::Null,
-        Value::Bool(b) => Json::Bool(*b),
-        Value::Int64(i) => Json::from(*i),
-        // A NaN or an infinity has no JSON number, and `from_f64` says so rather than inventing a
-        // value; a null here is the honest answer and `column_types` still says `FLOAT64`.
-        Value::Float64(f) => serde_json::Number::from_f64(*f).map_or(Json::Null, Json::Number),
-        // `ArcStr` derefs to `str`; `to_string` is the cheapest owned copy of an interned string.
-        Value::String(s) => Json::String(s.to_string()),
-        // Bytes have no JSON counterpart. An array of byte values is lossless, where a lossy UTF-8
-        // string or a base64 encoding would both be a second, unstated convention on the wire.
-        Value::Bytes(bytes) => Json::Array(bytes.iter().map(|b| Json::from(*b)).collect()),
-        // The temporal types render as ISO 8601 through grafeo's own `Display`, so a timestamp
-        // crosses as the text a GQL client expects rather than as microseconds since the epoch.
-        Value::Timestamp(t) => Json::String(t.to_string()),
-        Value::Date(d) => Json::String(d.to_string()),
-        Value::Time(t) => Json::String(t.to_string()),
-        Value::Duration(d) => Json::String(d.to_string()),
-        Value::ZonedDatetime(z) => Json::String(z.to_string()),
-        Value::List(items) => Json::Array(items.iter().map(to_json).collect()),
-        Value::Vector(values) => Json::Array(
-            values
-                .iter()
-                .map(|v| {
-                    serde_json::Number::from_f64(f64::from(*v)).map_or(Json::Null, Json::Number)
-                })
-                .collect(),
-        ),
-        Value::Map(map) => {
-            let mut object = Map::with_capacity(map.len());
-            for (key, value) in map.iter() {
-                object.insert(key.as_str().to_string(), to_json(value));
-            }
-            Json::Object(object)
-        }
-        // A path keeps its two halves rather than being flattened, because the edge between
-        // consecutive nodes is the answer a path query asked for.
-        Value::Path { nodes, edges } => {
-            let mut object = Map::new();
-            object.insert(
-                "nodes".into(),
-                Json::Array(nodes.iter().map(to_json).collect()),
-            );
-            object.insert(
-                "edges".into(),
-                Json::Array(edges.iter().map(to_json).collect()),
-            );
-            Json::Object(object)
-        }
-        Value::GCounter(counts) => {
-            let mut object = Map::with_capacity(counts.len());
-            for (replica, total) in counts.iter() {
-                object.insert(replica.clone(), Json::from(*total));
-            }
-            Json::Object(object)
-        }
-        Value::OnCounter { pos, neg } => {
-            let render = |counts: &std::collections::HashMap<String, u64>| {
-                let mut object = Map::with_capacity(counts.len());
-                for (replica, total) in counts.iter() {
-                    object.insert(replica.clone(), Json::from(*total));
-                }
-                Json::Object(object)
-            };
-            let mut object = Map::new();
-            object.insert("pos".into(), render(pos));
-            object.insert("neg".into(), render(neg));
-            Json::Object(object)
-        }
-        // `grafeo::Value` is `#[non_exhaustive]`, so a variant added after this build cannot be
-        // matched here and would otherwise be dropped from a result. It crosses through grafeo's
-        // own serde form instead, which is a documented answer rather than a silent hole.
-        other => serde_json::to_value(other).unwrap_or(Json::Null),
     }
 }

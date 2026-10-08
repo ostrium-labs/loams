@@ -29,9 +29,13 @@ const FILES: &[&str] = &[
     "loams/collection/v1/collection.proto",
     "loams/collection/v1/document.proto",
     "loams/collection/v1/query.proto",
-    // Loams Graph (design §48, D741). Moved from `fabric/proto/` by GR1
-    // Task 1 with its content unchanged; GR1 Task 2 reworks it (D746). Its
-    // Rust types used to come from `fabric/`'s `loams-graph-proto`.
+    // `loams.graph.v1`'s slow RPCs answer an `Operation` (GR1 Task 2).
+    // `loams-apps-mock` generates this package too, for its own server, as
+    // both crates already do for `loams.errors.v1`.
+    "loams/operations/v1/operations.proto",
+    // Loams Graph (design §48, D741, D746): moved from `fabric/proto/` by
+    // GR1 Task 1 and reworked by Task 2. Its Rust types used to come from
+    // `fabric/`'s `loams-graph-proto`.
     "loams/graph/v1/graph.proto",
 ];
 
