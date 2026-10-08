@@ -56,6 +56,7 @@ export function info(
   id: FactoryAppId,
   health: FactoryHealth = 'unconfigured',
   persistent = true,
+  fields?: Record<string, string>,
 ): FactoryAppInfo {
   const d = DEFS[id];
   return {
@@ -65,6 +66,7 @@ export function info(
     health,
     hasPanels: id !== 'openobserve',
     credentialFields: [...d.fields.map(([key, label, secret]) => ({ key, label, secret })), SSO],
+    ...(fields ? { fields } : {}),
     persistent,
   };
 }

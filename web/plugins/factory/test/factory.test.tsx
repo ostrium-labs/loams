@@ -83,6 +83,22 @@ describe('configure', () => {
     );
   });
 
+  it('configure_prefills_non_secret_fields_and_keeps_secret_blank', async () => {
+    const apps = IDS.map((id) =>
+      id === 'plane' ? info(id, 'ok', true, { projectKey: 'DEMO' }) : info(id),
+    );
+    const { api, configured } = fakeDesktop({ apps });
+    render(<ConfigurePage desktop={api} app="plane" navigate={nav().navigate} />);
+    const key = (await screen.findByLabelText('Project key')) as HTMLInputElement;
+    expect(key.value).toBe('DEMO');
+    const secret = screen.getByLabelText('API key') as HTMLInputElement;
+    expect(secret.value).toBe('');
+    expect(secret.placeholder).toBe('Saved — leave blank to keep');
+    fireEvent.click(screen.getByRole('button', { name: 'Save and test' }));
+    await screen.findByText('Connected');
+    expect(configured[0]?.fields).toEqual({ projectKey: 'DEMO' });
+  });
+
   it('save_configures_then_tests_and_shows_health', async () => {
     const { api, calls, configured } = fakeDesktop();
     render(<ConfigurePage desktop={api} app="zulip" navigate={nav().navigate} />);

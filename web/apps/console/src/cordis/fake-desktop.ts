@@ -130,6 +130,11 @@ const PREVIEW_URLS: Partial<Record<FactoryAppId, string>> = {
   matomo: 'https://stats.demo.invalid',
 };
 
+/** Non-secret values the preview keeps in memory, by app. */
+const PREVIEW_FIELDS: Partial<Record<FactoryAppId, Record<string, string>>> = {
+  matomo: { idSite: '1' },
+};
+
 const day = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 const dateOnly = (n: number) => day(n).slice(0, 10);
 
@@ -208,12 +213,35 @@ const PREVIEW_DATA: Record<string, unknown> = {
   ],
 };
 
+/** What a configured app with no sample data returns: empty lists, never an error. */
+const EMPTY: Record<string, unknown> = {
+  'plane.stats': {},
+  'openpanel.insights': { summary: {}, series: [], topPages: [] },
+  'langfuse.daily': { available: true, days: [] },
+  'forgejo.version': {},
+  'zulip.server': {},
+};
+const LIST_OPS = new Set([
+  'forgejo.repos',
+  'forgejo.issues',
+  'zulip.streams',
+  'zulip.messages',
+  'plane.issues',
+  'glitchtip.organizations',
+  'glitchtip.issues',
+  'matomo.visits',
+  'matomo.pages',
+  'langfuse.traces',
+]);
+
 const fakeQuery = (q: FactoryQuery): IpcResult<unknown> => {
   if (!PREVIEW_URLS[q.app]) {
     return { ok: false, code: 'unconfigured', message: `${q.app} is not configured.` };
   }
   const key = `${q.app}.${q.op}`;
   const data = PREVIEW_DATA[q.params['type'] === 'pulls' ? `${key}:pulls` : key];
+  if (data === undefined && key in EMPTY) return { ok: true, value: EMPTY[key] };
+  if (data === undefined && LIST_OPS.has(key)) return { ok: true, value: [] };
   return data === undefined
     ? { ok: false, code: 'unknown_op', message: `Unknown op ${q.op}.` }
     : { ok: true, value: data };
@@ -225,6 +253,7 @@ function previewInfo({ fields, ...a }: (typeof PREVIEW_FACTORY_APPS)[number]): F
     ...a,
     url,
     health: url ? 'ok' : 'unconfigured',
+    ...(url ? { fields: PREVIEW_FIELDS[a.id] ?? {} } : {}),
     credentialFields: [
       ...fields.map(([key, label, secret]) => ({ key, label, secret })),
       SSO_FIELD,
@@ -294,11 +323,16 @@ export function createFakeDesktop(): LoamsDesktopApi {
     },
     factory: {
       list: async (): Promise<FactoryAppInfo[]> => PREVIEW_FACTORY_APPS.map(previewInfo),
-      configure: async (app, url) => {
+      configure: async (app, url, fields) => {
         const def = PREVIEW_FACTORY_APPS.find((x) => x.id === app);
         if (!def) return { ok: false, code: 'unknown_app', message: 'Unknown app' };
         // The preview keeps the URL in memory only; no secret is stored.
         PREVIEW_URLS[app] = url;
+        const plain = def.fields.filter(([, , secret]) => !secret).map(([k]) => k);
+        PREVIEW_FIELDS[app] = {
+          ...PREVIEW_FIELDS[app],
+          ...Object.fromEntries(Object.entries(fields).filter(([k, v]) => plain.includes(k) && v)),
+        };
         return { ok: true, value: previewInfo(def) };
       },
       test: async (app) =>

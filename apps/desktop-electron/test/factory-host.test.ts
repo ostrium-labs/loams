@@ -88,9 +88,42 @@ describe("factory host", () => {
 		expect(blob).not.toContain(SECRET);
 		expect(blob).not.toContain(encodeURIComponent(SECRET));
 		expect(blob).toContain("[redacted]");
+		// The info carries non-secret fields only, never a secret value.
+		expect(
+			(replies[1] as { fields?: Record<string, string> }[]).find(
+				(a) => a.fields,
+			)?.fields,
+		).toEqual({});
 		expect((replies[1] as { url?: string }[]).find((a) => a.url)?.url).toBe(
 			"https://f.example",
 		);
+	});
+
+	it("reconfigure_url_only_keeps_secrets", async () => {
+		const h = mk();
+		await h.configure("forgejo", "https://f.example", { token: SECRET });
+		const r = await h.configure("forgejo", "https://g.example", {});
+		expect(r.ok).toBe(true);
+		expect(Fake.made.at(-1)?.config["token"]).toBe(SECRET);
+		expect(Fake.made.at(-1)?.config["baseUrl"]).toBe("https://g.example");
+		const first = await mk().configure("forgejo", "https://f.example", {});
+		expect(first).toMatchObject({ ok: false, code: "bad_fields" });
+	});
+
+	it("reconfigure_keeps_unretyped_non_secret_fields", async () => {
+		const h = mk();
+		await h.configure("forgejo", "https://f.example", {
+			token: SECRET,
+			ssoOrigin: "https://sso.example",
+		});
+		const r = await h.configure("forgejo", "https://f.example", {
+			token: "new-token",
+		});
+		expect(r.ok && r.value.fields).toEqual({
+			ssoOrigin: "https://sso.example",
+		});
+		expect(h.appUrls("forgejo")?.ssoOrigin).toBe("https://sso.example");
+		expect(Fake.made.at(-1)?.config["token"]).toBe("new-token");
 	});
 
 	it("adapter_error_is_redacted", async () => {

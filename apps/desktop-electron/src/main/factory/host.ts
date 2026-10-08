@@ -115,6 +115,7 @@ export class FactoryHost {
 				: "unconfigured",
 			hasPanels: def.hasPanels,
 			credentialFields: def.credentialFields.map((f: CredField) => ({ ...f })),
+			...(entry ? { fields: this.#plainFields(app) } : {}),
 			persistent: this.vault.persistent,
 		};
 	}
@@ -266,6 +267,13 @@ export class FactoryHost {
 		const clean: Record<string, string> = {};
 		for (const [k, v] of Object.entries(fields))
 			if (allowed.has(k) && typeof v === "string" && v.length > 0) clean[k] = v;
+		// Reconfiguring keeps a stored value for any field left blank.
+		const stored = this.vault.get(app);
+		if (stored)
+			for (const f of def.credentialFields) {
+				const kept = stored.fields[f.key]?.reveal();
+				if (!clean[f.key] && kept) clean[f.key] = kept;
+			}
 		const missing = def.credentialFields.find((f) => f.secret && !clean[f.key]);
 		if (missing)
 			return {

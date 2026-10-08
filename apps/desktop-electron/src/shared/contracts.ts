@@ -39,6 +39,8 @@ export interface FactoryAppInfo {
 	health: FactoryHealth;
 	hasPanels: boolean;
 	credentialFields: { key: string; label: string; secret: boolean }[];
+	/** Stored values of the non-secret credential fields only; never a secret. */
+	fields?: Record<string, string>;
 	persistent: boolean; // false when safeStorage has no backend (session-only)
 }
 export interface FactoryQuery {

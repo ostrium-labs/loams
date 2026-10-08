@@ -29,6 +29,7 @@ export function ConfigurePage({
         const found = all.find((a) => a.id === app) ?? null;
         setInfo(found);
         setUrl((u) => u || found?.url || '');
+        setValues((v) => ({ ...(found?.fields ?? {}), ...v }));
       })
       .catch((e) => live && setError(e instanceof Error ? e.message : String(e)));
     return () => {
@@ -126,6 +127,7 @@ export function ConfigurePage({
                     type={f.secret ? 'password' : 'text'}
                     value={values[f.key] ?? ''}
                     onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                    placeholder={f.secret && configured ? 'Saved — leave blank to keep' : undefined}
                     autoComplete={f.secret ? 'new-password' : 'off'}
                     spellCheck={false}
                   />

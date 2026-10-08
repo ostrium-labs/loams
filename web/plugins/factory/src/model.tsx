@@ -22,6 +22,17 @@ export const ROLES: Record<FactoryAppId, string> = {
   openobserve: 'Logs, metrics and traces',
 };
 
+export const APP_LABELS: Record<FactoryAppId, string> = {
+  forgejo: 'Forgejo',
+  zulip: 'Zulip',
+  plane: 'Plane (ItsAPlan)',
+  glitchtip: 'GlitchTip',
+  openpanel: 'OpenPanel',
+  matomo: 'Matomo',
+  langfuse: 'Langfuse',
+  openobserve: 'OpenObserve',
+};
+
 export const HEALTH: Record<FactoryHealth, { status: Status; label: string }> = {
   ok: { status: 'done', label: 'Connected' },
   auth_failed: { status: 'failed', label: 'Auth failed' },
@@ -85,10 +96,12 @@ export function useQuery<T>(
 
 export function QueryError({
   app,
+  label,
   code,
   message,
 }: {
   app: FactoryAppId;
+  label?: string;
   code: string;
   message: string;
 }) {
@@ -98,7 +111,7 @@ export function QueryError({
         {code === 'auth_failed' ? (
           <a href={configureHref(app)}>Update credentials</a>
         ) : code === 'unconfigured' ? (
-          <a href={configureHref(app)}>Configure {app}</a>
+          <a href={configureHref(app)}>Configure {label ?? app}</a>
         ) : undefined}
       </Notice>
     </div>
@@ -145,7 +158,7 @@ export function QueryCard<T>({
       {q.state === 'loading' ? (
         <p className="p-4 text-sm text-muted">Loading…</p>
       ) : q.state === 'error' ? (
-        <QueryError app={app} code={q.code} message={q.message} />
+        <QueryError app={app} label={APP_LABELS[app]} code={q.code} message={q.message} />
       ) : (
         children(q.data)
       )}
