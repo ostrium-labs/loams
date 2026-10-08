@@ -96,15 +96,39 @@ pub(crate) fn committer(core: Arc<Core>, requests: Receiver<Request>) {
                 Err(_) => break,
             }
         }
-        core.commit_group(group);
+        // A panicking group is answered (its senders dropped: an unknown
+        // outcome) and the committer goes on with the next.
+        let applied = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            core.commit_group(group);
+        }));
+        if applied.is_err() {
+            tracing::error!("the embedded committer panicked in a commit group");
+        }
+    }
+}
+
+/// Ends a commit group however `commit_group` leaves: the oracle's
+/// in-flight group is cleared and waiting readers wake, even on a panic
+/// (review fix 9).
+struct Finish<'a> {
+    oracle: &'a Oracle,
+    mark: Option<Ts>,
+}
+
+impl Drop for Finish<'_> {
+    fn drop(&mut self) {
+        self.oracle.finish_group(self.mark.take());
     }
 }
 
 impl Core {
     fn commit_group(&self, group: Vec<Request>) {
-        let mut mark = None;
-        let outcomes = self.apply_group(&group, &mut mark);
-        self.oracle.finish_group(mark);
+        let mut finish = Finish {
+            oracle: &self.oracle,
+            mark: None,
+        };
+        let outcomes = self.apply_group(&group, &mut finish.mark);
+        drop(finish);
         match outcomes {
             Ok(outcomes) => {
                 for (req, outcome) in group.into_iter().zip(outcomes) {
@@ -142,6 +166,10 @@ impl Core {
                     }
                     Ok(()) => {
                         let ts = self.oracle.allocate_commit();
+                        #[cfg(feature = "faults")]
+                        if self.io_faults.take_panic() {
+                            panic!("injected committer panic");
+                        }
                         for m in &req.mutations {
                             let stored = match &m.op {
                                 Op::Put(v) | Op::Insert(v) => encode(Some(v)),

@@ -159,6 +159,30 @@ async fn a_failed_group_write_persists_no_mark() {
     assert_eq!(after, durable, "the failed write's mark is not persisted");
 }
 
+/// A committer that panics mid-group, after allocating a commit timestamp,
+/// leaves no in-flight group behind: reads at or above that timestamp do
+/// not hang, its commit is an unknown outcome, and the next commit applies
+/// (review fix 9).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_committer_panic_hangs_no_reader() {
+    let dir = tmp();
+    let store = open(&dir.path().join("store.redb"), "panic").await;
+    let h = handle(&store);
+    let mut txn = h.begin().await.expect("begin");
+    txn.put(b"k", b"lost".to_vec()).await.expect("put");
+    h.panic_committer();
+    let err = txn.commit().await.expect_err("the committer panicked");
+    assert_eq!(err, TxnError::Undetermined { token: None });
+    let now = store.now().await.expect("now");
+    let read = tokio::time::timeout(Duration::from_secs(5), get_at(&store, now, b"k"))
+        .await
+        .expect("the read does not hang on the panicked group");
+    assert_eq!(read, None, "the panicked group applied nothing");
+    put(&store, b"k", b"after").await;
+    let now = store.now().await.expect("now");
+    assert_eq!(get_at(&store, now, b"k").await, Some(b"after".to_vec()));
+}
+
 /// A barrier at `t` keeps a snapshot at `t` readable after GC; once it is
 /// gone, GC drops what only `t` saw and both a snapshot and a barrier at `t`
 /// are refused.

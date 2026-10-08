@@ -798,6 +798,12 @@ impl Handle {
         self.shared.core.io_faults.fail_syncs(n);
     }
 
+    /// Makes the committer panic in its next commit group, after it
+    /// allocates a commit timestamp.
+    pub fn panic_committer(&self) {
+        self.shared.core.io_faults.panic_next_group();
+    }
+
     /// The oracle's last timestamp issued and its persisted mark.
     pub fn oracle_marks(&self) -> (Ts, Ts) {
         let oracle = &self.shared.core.oracle;

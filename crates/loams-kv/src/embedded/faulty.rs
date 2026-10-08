@@ -1,14 +1,14 @@
-//! Injected I/O faults of an embedded store file (feature `faults`): the
-//! file is opened through a redb storage backend that forwards to redb's
-//! own file backend and fails the next `n` syncs on demand, so a commit's
-//! write transaction fails as on a real I/O error.
+//! Injected faults of an embedded store file (feature `faults`): the file
+//! is opened through a redb storage backend that forwards to redb's own file
+//! backend and fails the next `n` syncs on demand, so a commit's write
+//! transaction fails as on a real I/O error; and a committer panic.
 
 use std::fs::OpenOptions;
 use std::io;
 use std::ops::Bound;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use redb::backends::FileBackend;
 use redb::{BackendError, Database, DatabaseError, StorageBackend, StorageError};
@@ -17,9 +17,20 @@ use redb::{BackendError, Database, DatabaseError, StorageBackend, StorageError};
 #[derive(Debug, Default)]
 pub(crate) struct Switch {
     fail_syncs: AtomicU32,
+    panic_next_group: AtomicBool,
 }
 
 impl Switch {
+    /// Makes the committer panic in its next group, after it allocates a
+    /// commit timestamp.
+    pub(crate) fn panic_next_group(&self) {
+        self.panic_next_group.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn take_panic(&self) -> bool {
+        self.panic_next_group.swap(false, Ordering::SeqCst)
+    }
+
     /// Fails the next `n` syncs.
     pub(crate) fn fail_syncs(&self, n: u32) {
         self.fail_syncs.store(n, Ordering::SeqCst);
