@@ -10,6 +10,7 @@
 
 import type {
   EngineState,
+  FactoryAppId,
   FactoryAppInfo,
   IpcResult,
   LoamsDesktopApi,
@@ -62,6 +63,76 @@ const readyState = (): EngineState => ({
   durableUrl: 'http://127.0.0.1:8081',
   pid: 4242,
 });
+
+const SSO_FIELD = { key: 'ssoOrigin', label: 'SSO origin (optional)', secret: false };
+const PREVIEW_FACTORY_APPS: {
+  id: FactoryAppId;
+  fields: [string, string, boolean][];
+  label: string;
+  hasPanels: boolean;
+}[] = [
+  { id: 'forgejo', fields: [['token', 'Access token', true]], label: 'Forgejo', hasPanels: true },
+  {
+    id: 'zulip',
+    fields: [
+      ['email', 'Email', false],
+      ['apiKey', 'API key', true],
+    ],
+    label: 'Zulip',
+    hasPanels: true,
+  },
+  {
+    id: 'plane',
+    fields: [
+      ['apiKey', 'API key', true],
+      ['projectKey', 'Project key', false],
+    ],
+    label: 'Plane (ItsAPlan)',
+    hasPanels: true,
+  },
+  { id: 'glitchtip', fields: [['token', 'API token', true]], label: 'GlitchTip', hasPanels: true },
+  {
+    id: 'openpanel',
+    fields: [
+      ['clientId', 'Client ID', true],
+      ['clientSecret', 'Client secret', true],
+      ['projectId', 'Project ID', false],
+    ],
+    label: 'OpenPanel',
+    hasPanels: true,
+  },
+  {
+    id: 'matomo',
+    fields: [
+      ['apiToken', 'API token', true],
+      ['idSite', 'Site ID', false],
+    ],
+    label: 'Matomo',
+    hasPanels: true,
+  },
+  {
+    id: 'langfuse',
+    fields: [
+      ['publicKey', 'Public key', true],
+      ['secretKey', 'Secret key', true],
+    ],
+    label: 'Langfuse',
+    hasPanels: true,
+  },
+  { id: 'openobserve', fields: [], label: 'OpenObserve', hasPanels: false },
+];
+
+function previewInfo({ fields, ...a }: (typeof PREVIEW_FACTORY_APPS)[number]): FactoryAppInfo {
+  return {
+    ...a,
+    health: 'unconfigured',
+    credentialFields: [
+      ...fields.map(([key, label, secret]) => ({ key, label, secret })),
+      SSO_FIELD,
+    ],
+    persistent: true,
+  };
+}
 
 export function createFakeDesktop(): LoamsDesktopApi {
   const data = load();
@@ -123,22 +194,22 @@ export function createFakeDesktop(): LoamsDesktopApi {
       },
     },
     factory: {
-      list: async (): Promise<FactoryAppInfo[]> => [],
+      list: async (): Promise<FactoryAppInfo[]> => PREVIEW_FACTORY_APPS.map(previewInfo),
       configure: async () => ({
         ok: false,
         code: 'preview',
         message: 'Not available in the preview.',
       }),
-      test: async (app) => ({
-        id: app,
-        label: app,
-        health: 'unconfigured',
-        hasPanels: false,
-        credentialFields: [],
-        persistent: false,
-      }),
+      test: async (app) =>
+        previewInfo(
+          PREVIEW_FACTORY_APPS.find((a) => a.id === app) as (typeof PREVIEW_FACTORY_APPS)[number],
+        ),
       remove: async () => undefined,
-      query: async () => ({ ok: false, code: 'unconfigured', message: 'Not configured.' }),
+      query: async () => ({
+        ok: false,
+        code: 'unconfigured',
+        message: 'Apps are configured in the desktop app.',
+      }),
       openApp: async () => ok,
       closeApp: async () => undefined,
     },

@@ -12,6 +12,17 @@
 		"typecheck": "tsc --noEmit -p tsconfig.node.json",
 		"package": "electron-builder --config electron-builder.config.cjs"
 	},
+	"dependencies": {
+		"@loams-plugins/plugin-forgejo-adapter": "workspace:*",
+		"@loams-plugins/plugin-glitchtip-adapter": "workspace:*",
+		"@loams-plugins/plugin-itsaplan-adapter": "workspace:*",
+		"@loams-plugins/plugin-langfuse-adapter": "workspace:*",
+		"@loams-plugins/plugin-matomo-adapter": "workspace:*",
+		"@loams-plugins/plugin-openpanel-adapter": "workspace:*",
+		"@loams-plugins/plugin-zulip-adapter": "workspace:*",
+		"cordis": "4.0.0-rc.10",
+		"zod": "3.25.76"
+	},
 	"devDependencies": {
 		"@types/node": "24.13.6",
 		"electron": "44.4.5",

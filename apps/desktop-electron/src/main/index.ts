@@ -2,12 +2,15 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow, screen, session } from "electron";
+import { app, BrowserWindow, safeStorage, screen, session } from "electron";
 import type { EngineState } from "../shared/contracts";
 import { appPaths } from "./app-paths";
 import { findEngineBinary, probeLiveSupport } from "./engine/binary";
 import { registerEngineIpc } from "./engine/ipc.electron";
 import { EngineSupervisor } from "./engine/supervisor";
+import { FactoryHost } from "./factory/host";
+import { registerFactoryIpc } from "./factory/ipc.electron";
+import { Vault } from "./factory/vault";
 import {
 	installAppProtocol,
 	registerAppScheme,
@@ -30,6 +33,7 @@ registerAppScheme();
 
 let registry: ServerRegistry;
 let engine: EngineSupervisor | undefined;
+let factory: FactoryHost | undefined;
 
 /** `engine.autoStart` in userData/settings.json; default true. */
 function engineAutoStart(): boolean {
@@ -108,6 +112,14 @@ const singleInstance = initSingleInstance({
 				{ devDemo: !app.isPackaged },
 			);
 			registerServerIpc(registry);
+			factory = new FactoryHost(
+				new Vault(join(app.getPath("userData"), "factory-vault.json"), {
+					available: () => safeStorage.isEncryptionAvailable(),
+					encrypt: (v) => safeStorage.encryptString(v),
+					decrypt: (b) => safeStorage.decryptString(b),
+				}),
+			);
+			registerFactoryIpc(factory);
 			const paths = await appPaths();
 			const logFile = join(paths.logs, "engine.log");
 			engine = new EngineSupervisor({
