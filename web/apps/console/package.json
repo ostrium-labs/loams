@@ -36,6 +36,7 @@
     "@loams/plugin-sandbox": "workspace:*",
     "@loams/plugin-shell": "workspace:*",
     "@loams/plugin-stack-status": "workspace:*",
+    "@loams/plugin-streams": "workspace:*",
     "@loams/proto": "workspace:*",
     "@loams/slots": "workspace:*",
     "@loams/ui": "workspace:*",

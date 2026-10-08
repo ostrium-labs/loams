@@ -14,6 +14,7 @@ import desktopServersPkg from '@loams/plugin-desktop-servers/package.json';
 import durablePkg from '@loams/plugin-durable/package.json';
 import factoryPkg from '@loams/plugin-factory/package.json';
 import graphPkg from '@loams/plugin-graph/package.json';
+import streamsPkg from '@loams/plugin-streams/package.json';
 import desktopYml from '../../catalog/desktop.yml?raw';
 import type { modules } from './modules.js';
 import { startConsole } from './start.js';
@@ -26,6 +27,7 @@ export const desktopModules: typeof modules = {
   '@loams/plugin-durable': () => import('@loams/plugin-durable'),
   '@loams/plugin-connectors': () => import('@loams/plugin-connectors'),
   '@loams/plugin-graph': () => import('@loams/plugin-graph'),
+  '@loams/plugin-streams': () => import('@loams/plugin-streams'),
 };
 /** Their package.json manifests. */
 export const desktopManifests: unknown[] = [
@@ -35,6 +37,7 @@ export const desktopManifests: unknown[] = [
   durablePkg,
   connectorsPkg,
   graphPkg,
+  streamsPkg,
 ];
 
 export async function startDesktop(

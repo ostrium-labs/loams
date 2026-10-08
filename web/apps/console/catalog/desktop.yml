@@ -17,3 +17,5 @@
       name: '@loams/plugin-connectors'
     - id: graph
       name: '@loams/plugin-graph'
+    - id: streams
+      name: '@loams/plugin-streams'
