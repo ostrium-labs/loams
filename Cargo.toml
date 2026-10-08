@@ -178,6 +178,7 @@ loams-es = { path = "crates/loams-es", version = "0.0.1" }
 loams-hnsw = { path = "crates/loams-hnsw", version = "0.0.1" }
 loams-hot = { path = "crates/loams-hot", version = "0.0.1" }
 loams-link = { path = "crates/loams-link", version = "0.0.1" }
+loams-kv = { path = "crates/loams-kv", version = "0.0.1" }
 loams-live = { path = "crates/loams-live", version = "0.0.1" }
 loams-live-proto = { path = "crates/loams-live-proto", version = "0.0.1" }
 # The public `loams.*.v1` packages of the unified Connect API and their
@@ -195,6 +196,7 @@ loams-quickwit = { path = "crates/loams-quickwit", version = "0.0.1" }
 loams-store = { path = "crates/loams-store", version = "0.0.1" }
 loams-text = { path = "crates/loams-text", version = "0.0.1" }
 loams-tikv = { path = "crates/loams-tikv", version = "0.0.1" }
+loams-tuple = { path = "crates/loams-tuple", version = "0.0.1" }
 loams-web-bridge = { path = "crates/loams-web-bridge", version = "0.0.1" }
 loams-worker = { path = "crates/loams-worker", version = "0.0.1" }
 

@@ -1,0 +1,14 @@
+[package]
+name = "loams-tuple"
+description = "Loams's order-preserving tuple codec (design §20 §4.3): index keys whose byte order is their value order, shared by loams-kv and loams-tikv."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+
+[lints]
+workspace = true

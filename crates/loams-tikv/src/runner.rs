@@ -166,6 +166,28 @@ pub struct TikvStats {
     pub unknown_outcomes: u64,
 }
 
+/// What a [`Tikv::run_as`] body works on: the attempt's [`Txn`] itself, or a
+/// type that owns it, such as `loams-kv`'s backend-neutral transaction
+/// (LV1 plan Task 20, row T20-2). The runner wraps each attempt's
+/// transaction before the body and reaches it again through
+/// [`txn`](Self::txn) for the commit token, the commit and the rollback.
+pub trait RunTxn: Send {
+    /// Wraps an attempt's transaction.
+    fn wrap(txn: Txn) -> Self;
+    /// The wrapped transaction.
+    fn txn(&mut self) -> &mut Txn;
+}
+
+impl RunTxn for Txn {
+    fn wrap(txn: Txn) -> Self {
+        txn
+    }
+
+    fn txn(&mut self) -> &mut Txn {
+        self
+    }
+}
+
 /// How one attempt ended.
 enum Attempt<T> {
     Committed {
@@ -227,10 +249,29 @@ impl Tikv {
     /// returns `Err(TxnError::Conflict)` to ask for a restart; to reject
     /// without a retry, return `Ok` with the caller's own error inside `T`
     /// (the transaction then commits whatever it wrote), or `Fatal`.
-    pub async fn run<T, F>(&self, opts: TxnOptions, mut body: F) -> Result<Committed<T>, TxnError>
+    pub async fn run<T, F>(&self, opts: TxnOptions, body: F) -> Result<Committed<T>, TxnError>
     where
         T: Send,
         F: for<'t> FnMut(&'t mut Txn) -> BoxFuture<'t, Result<T, TxnError>>,
+    {
+        self.run_as::<Txn, T, TxnError, F>(opts, body).await
+    }
+
+    /// [`run`](Self::run) with the body working on `W`, a [`RunTxn`] that
+    /// owns each attempt's transaction, and failing with `E`, an error that
+    /// converts to a [`TxnError`] (its class decides the retry). The
+    /// retries, the commit token, the fault points and the error classes are
+    /// those of `run`.
+    pub async fn run_as<W, T, E, F>(
+        &self,
+        opts: TxnOptions,
+        mut body: F,
+    ) -> Result<Committed<T>, TxnError>
+    where
+        W: RunTxn,
+        T: Send,
+        E: Into<TxnError>,
+        F: for<'t> FnMut(&'t mut W) -> BoxFuture<'t, Result<T, E>>,
     {
         let deadline = Instant::now() + opts.deadline;
         let commit_mode = opts.commit_mode.unwrap_or(self.commit_mode);
@@ -248,7 +289,7 @@ impl Tikv {
                 return Err(TxnError::Deadline);
             }
             match self
-                .attempt(&opts, commit_mode, attempt, deadline, &mut body)
+                .attempt::<W, T, E, F>(&opts, commit_mode, attempt, deadline, &mut body)
                 .await
             {
                 Attempt::Committed {
@@ -358,7 +399,7 @@ impl Tikv {
         self.faults.as_ref().and_then(|f| f.at(op, point, attempt))
     }
 
-    async fn attempt<T, F>(
+    async fn attempt<W, T, E, F>(
         &self,
         opts: &TxnOptions,
         commit_mode: CommitMode,
@@ -367,8 +408,10 @@ impl Tikv {
         body: &mut F,
     ) -> Attempt<T>
     where
+        W: RunTxn,
         T: Send,
-        F: for<'t> FnMut(&'t mut Txn) -> BoxFuture<'t, Result<T, TxnError>>,
+        E: Into<TxnError>,
+        F: for<'t> FnMut(&'t mut W) -> BoxFuture<'t, Result<T, E>>,
     {
         match self.fault(opts.op, FaultPoint::BeforeBegin, attempt) {
             Some(Fault::Refuse | Fault::LoseAck) => {
@@ -417,14 +460,16 @@ impl Tikv {
         };
         self.clients.tso_ok();
         self.tso.observe(&inner.start_timestamp());
-        let mut txn = Txn::new(inner, self.clone(), attempt);
+        let mut wrapped = W::wrap(Txn::new(inner, self.clone(), attempt));
 
         // The body.
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let value = match tokio::time::timeout(remaining, body(&mut txn)).await {
+        let value = match tokio::time::timeout(remaining, body(&mut wrapped)).await {
             Ok(Ok(value)) => value,
             Ok(Err(e)) => {
-                self.rollback(&mut txn).await;
+                let e: TxnError = e.into();
+                let txn = wrapped.txn();
+                self.rollback(txn).await;
                 if txn.tso_closed {
                     self.supervise(
                         deadline,
@@ -439,14 +484,15 @@ impl Tikv {
                 };
             }
             Err(_) => {
-                self.rollback(&mut txn).await;
+                self.rollback(wrapped.txn()).await;
                 return Attempt::Fail(TxnError::Deadline);
             }
         };
+        let txn = wrapped.txn();
 
         let mut lost = false;
         if let Some(f) = self.fault(opts.op, FaultPoint::BeforePrewrite, attempt) {
-            match self.pre_commit_fault(f, &mut txn, "prewrite").await {
+            match self.pre_commit_fault(f, txn, "prewrite").await {
                 Some(outcome) => return outcome,
                 None => lost = f == Fault::LoseAck,
             }
@@ -456,13 +502,13 @@ impl Tikv {
         if !lost && let Some(token) = &token {
             let start_ms = Tikv::physical_ms(&txn.start_ts());
             if let Err(e) = txn.put(&token_key(token), token_value(start_ms)).await {
-                self.rollback(&mut txn).await;
+                self.rollback(txn).await;
                 return Attempt::Fail(e);
             }
         }
 
         if !lost && let Some(f) = self.fault(opts.op, FaultPoint::BeforeCommit, attempt) {
-            match self.pre_commit_fault(f, &mut txn, "commit").await {
+            match self.pre_commit_fault(f, txn, "commit").await {
                 Some(outcome) => return outcome,
                 None => lost = f == Fault::LoseAck,
             }
@@ -474,25 +520,25 @@ impl Tikv {
         // The commit.
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            self.rollback(&mut txn).await;
+            self.rollback(txn).await;
             return Attempt::Fail(TxnError::Deadline);
         }
         let committed = tokio::time::timeout(remaining, txn.inner.commit()).await;
         let commit_ts = match committed {
             Err(_) => {
                 // The commit future is dropped: its requests may still land.
-                drop(txn);
+                drop(wrapped);
                 return self.unknown_outcome(token, value).await;
             }
             Ok(Ok(ts)) => ts.unwrap_or_else(|| txn.start_ts()),
             Ok(Err(e)) => {
                 let class = classify(&e);
                 if class == Class::Undetermined {
-                    drop(txn);
+                    drop(wrapped);
                     return self.unknown_outcome(token, value).await;
                 }
                 // Row R9: any other commit error means it did not commit.
-                self.rollback(&mut txn).await;
+                self.rollback(txn).await;
                 if class == Class::TsoClosed {
                     self.supervise(
                         deadline,

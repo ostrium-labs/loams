@@ -1,0 +1,34 @@
+[package]
+name = "loams-kv"
+description = "The store seam of Loams Live: Store, Txn, Snap, Ts, the transaction runner's options and errors, fault hooks and GC barriers, over an embedded backend or TiKV (design §45 §8)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# The tikv backend depends on loams-tikv, which is publish = false (its
+# tikv-client is a git dependency, R1 plan row R4).
+publish = false
+
+[features]
+# The TiKV backend: Store::Tikv, wrapping loams-tikv.
+tikv = ["dep:loams-tikv"]
+# Store::with_faults: the runner's fault hooks for tests and the fault
+# matrix (R1 plan Tasks 2 and 6).
+faults = ["loams-tikv?/faults"]
+
+[dependencies]
+futures.workspace = true
+loams-tikv = { workspace = true, optional = true }
+loams-tuple.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+loams-kv = { path = ".", features = ["tikv", "faults"] }
+loams-tikv.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

@@ -6607,6 +6607,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-kv"
+version = "0.0.1"
+dependencies = [
+ "futures",
+ "loams-kv",
+ "loams-tikv",
+ "loams-tuple",
+ "proptest",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-link"
 version = "0.0.1"
 dependencies = [
@@ -7063,6 +7077,7 @@ dependencies = [
  "fail 0.4.0",
  "futures",
  "loams-tikv",
+ "loams-tuple",
  "proptest",
  "rand 0.9.5",
  "reqwest 0.13.5",
@@ -7073,6 +7088,13 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "loams-tuple"
+version = "0.0.1"
+dependencies = [
+ "thiserror 2.0.21",
 ]
 
 [[package]]

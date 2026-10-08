@@ -16,6 +16,7 @@ faults = []
 
 [dependencies]
 futures.workspace = true
+loams-tuple.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true
