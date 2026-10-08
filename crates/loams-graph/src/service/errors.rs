@@ -45,6 +45,7 @@ pub(crate) fn code_of(err: &GraphError) -> ErrorCode {
         GraphError::Conflict { .. } => ErrorCode::AlreadyExists,
         GraphError::EnginePanic => ErrorCode::Internal,
         GraphError::Reloading => ErrorCode::Unavailable,
+        GraphError::Failed => ErrorCode::FailedPrecondition,
     }
 }
 

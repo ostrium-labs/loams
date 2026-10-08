@@ -242,6 +242,7 @@ Tests:
 - `instance_advertises_graph_when_feature_on` and `…_unavailable_when_off` (two builds in CI).
 - `graph_rpcs_answer_not_in_variant_without_feature`: every RPC of both services.
 - `connect_json_grpc_and_grpc_web_reach_execute`: one statement over each protocol on the main port.
+- `graph_requires_a_data_dir`: `loams serve` with `graph` and no `[graph] data_dir` refuses to start, unless it runs in an explicit dev or in-memory mode (`loams dev`, or a flag that says graphs are ephemeral). An in-memory graph fails rather than reopening after an engine panic (Task 3 review I2), so a served graph must be persistent.
 - `non_loopback_listen_without_authorizer_refused`: `loams serve` with `graph` on a non-loopback address and the `AllowAll` authorizer exits with a clear message (D750; until MT1).
 - `reflection_lists_only_served_or_stubbed_services`: every service `grpc.reflection.v1` lists (from `loams_proto::FILE_DESCRIPTOR_SET`) is either served or answered by a `not_in_variant` stub, with and without `graph` (Task 1 R1.1 made reflection list `GraphService` before it is mounted). A package that `loams-proto` compiles only because a served package imports it is exempt, and the test names it: `loams.operations.v1` (imported by `loams.graph.v1`, R2.3) until API1 serves `OperationsService`.
 

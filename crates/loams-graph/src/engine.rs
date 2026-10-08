@@ -102,6 +102,13 @@ pub enum GraphError {
     /// The graph is poisoned by an earlier panic and has not been reopened yet.
     #[error("the graph is reloading after an engine failure; retry")]
     Reloading,
+    /// An engine panic lost the graph and it cannot be reopened from storage (an in-memory graph,
+    /// or a poisoned engine that would not close cleanly). It is never served again empty, so an
+    /// acknowledged write is never silently lost (security review I2).
+    #[error(
+        "the graph was lost to an engine failure and cannot be reopened from storage; delete it and create it again"
+    )]
+    Failed,
 }
 
 impl GraphError {
@@ -120,7 +127,7 @@ impl GraphError {
             Self::TransactionStatement => "graph_transaction_statement",
             Self::StatementNotAllowed { .. } => "graph_statement_not_allowed",
             Self::UnboundedPath { .. } => "graph_unbounded_path",
-            Self::EnginePanic => "graph_engine_panic",
+            Self::EnginePanic | Self::Failed => "graph_engine_panic",
             Self::Reloading => "graph_reloading",
         }
     }
@@ -176,6 +183,8 @@ pub enum GraphState {
     Ready,
     /// An engine call panicked; the graph reopens on its next call.
     Poisoned,
+    /// An engine call panicked and the graph cannot be reopened from storage.
+    Failed,
 }
 
 /// One row of a result. Values positionally aligned with the result's column names, because a graph
@@ -260,6 +269,8 @@ pub struct Graph {
     /// Set when an engine call panicked (R0.13): the graph's in-memory state is whatever the
     /// panicking call left, so it is not served again until it is reopened.
     poisoned: AtomicBool,
+    /// Set when a poisoned graph cannot be reopened from storage (I2); terminal.
+    failed: AtomicBool,
     /// A counter rather than a plain field because `execute` takes `&self`: several statements can
     /// be in flight against one graph, and a lost update here would be a wrong number on the wire.
     statements_executed: AtomicU64,
@@ -351,6 +362,7 @@ impl Graph {
             persistent: spec.dir.is_some(),
             spec,
             poisoned: AtomicBool::new(false),
+            failed: AtomicBool::new(false),
             statements_executed: AtomicU64::new(0),
         })
     }
@@ -362,7 +374,9 @@ impl Graph {
 
     /// Whether the graph is serving or waiting to be reopened.
     pub fn state(&self) -> GraphState {
-        if self.is_poisoned() {
+        if self.failed.load(Ordering::Acquire) {
+            GraphState::Failed
+        } else if self.is_poisoned() {
             GraphState::Poisoned
         } else {
             GraphState::Ready
@@ -394,6 +408,9 @@ impl Graph {
     /// answers [`GraphError::EnginePanic`]; other graphs are untouched. A poisoned graph answers
     /// [`GraphError::Reloading`] until it is reopened ([`Engine::reopen_if_poisoned`]).
     fn call<T>(&self, f: impl FnOnce() -> Result<T, GraphError>) -> Result<T, GraphError> {
+        if self.failed.load(Ordering::Acquire) {
+            return Err(GraphError::Failed);
+        }
         if self.is_poisoned() {
             return Err(GraphError::Reloading);
         }
@@ -705,6 +722,20 @@ impl Engine {
         if !graph.is_poisoned() {
             return Ok(graph);
         }
+        if graph.failed.load(Ordering::Acquire) {
+            return Err(GraphError::Failed);
+        }
+        // An in-memory graph has nothing to reopen from: reopening it would serve an empty graph
+        // in its place and lose every acknowledged write without a word (I2). It fails instead.
+        if !graph.persistent {
+            graph.failed.store(true, Ordering::Release);
+            tracing::error!(
+                namespace = %graph.namespace,
+                name = %graph.name,
+                "an in-memory graph was lost to an engine panic; it is failed, not reopened"
+            );
+            return Err(GraphError::Failed);
+        }
         let key = format!("{}/{}", graph.namespace, graph.name);
         let mut graphs = self
             .graphs
@@ -726,10 +757,13 @@ impl Engine {
         }
         let spec = old.spec.clone();
         let (namespace, name) = (old.namespace.clone(), old.name.clone());
-        // Best effort: the panicking call may have left the engine unable to close cleanly; the
-        // drop that follows releases its file lock either way.
+        // The close flushes the WAL. If it fails, buffered commits may not be on disk, and a reopen
+        // could serve a graph missing acknowledged writes, so the graph fails instead (I2).
         if let Err(err) = old.db.close() {
-            tracing::warn!(%namespace, %name, error = %err, "closing a poisoned graph failed");
+            tracing::error!(%namespace, %name, error = %err, "closing a poisoned graph failed; it is failed, not reopened");
+            old.failed.store(true, Ordering::Release);
+            graphs.insert(key, old);
+            return Err(GraphError::Failed);
         }
         drop(old);
         let fresh = Arc::new(Graph::open_db(&namespace, &name, spec)?);
@@ -779,7 +813,15 @@ impl Engine {
         }
         // `GrafeoDB::close` takes `&self`, so this runs with the graph still registered; the
         // registry entry is dropped immediately afterwards.
-        graph.db.close().map_err(as_engine_error)?;
+        // A poisoned or failed engine may not close cleanly; it is dropped either way, which
+        // releases its file lock, because the caller asked for it gone.
+        if let Err(err) = graph.db.close() {
+            if graph.is_poisoned() {
+                tracing::warn!(%key, error = %err, "closing a poisoned graph failed; dropping it");
+            } else {
+                return Err(as_engine_error(err));
+            }
+        }
         Ok(graphs.remove(&key).is_some())
     }
 }

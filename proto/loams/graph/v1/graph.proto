@@ -170,6 +170,10 @@ enum GraphState {
   GRAPH_STATE_RELOADING = 4;
   // Deleted; storage is purged after the retention hold.
   GRAPH_STATE_DELETING = 5;
+  // An engine failure lost the graph's in-memory state and it cannot be
+  // reopened from storage (an in-memory graph, or a close that failed).
+  // Statements answer `graph_engine_panic`; delete and create it again.
+  GRAPH_STATE_FAILED = 6;
 }
 
 // One graph.

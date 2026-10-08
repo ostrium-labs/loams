@@ -78,6 +78,7 @@ fn graph_message(graph: &Graph) -> pb::Graph {
         state: match graph.state() {
             GraphState::Ready => pb::GraphState::Ready,
             GraphState::Poisoned => pb::GraphState::Reloading,
+            GraphState::Failed => pb::GraphState::Failed,
         }
         .into(),
         ..Default::default()

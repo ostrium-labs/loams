@@ -96,3 +96,44 @@ fn engine_panic_poisons_one_graph() {
     scenario.teardown();
     std::fs::remove_dir_all(&data_dir).ok();
 }
+
+/// Security review I2: an in-memory graph is never reopened empty after a panic; it fails and
+/// says so, so an acknowledged write is never silently lost. Deleting it still works.
+#[test]
+fn in_memory_graph_fails_rather_than_reopening_empty() {
+    let scenario = fail::FailScenario::setup();
+    let engine = Engine::new();
+    create(&engine, "mem");
+    execute(&engine, "mem", "INSERT (:Kept {v: 1})").expect("an acknowledged write");
+    fail::cfg("loams_graph::engine_call", "1*panic(injected)").expect("cfg");
+    let err = execute(&engine, "mem", "MATCH (k:Kept) RETURN k.v").expect_err("panicked");
+    assert_eq!(reason(&err), "graph_engine_panic");
+    for _ in 0..2 {
+        let err = execute(&engine, "mem", "MATCH (k:Kept) RETURN k.v")
+            .expect_err("never answered from an empty reopen");
+        assert_eq!(err.code, ErrorCode::FailedPrecondition, "{err:?}");
+        assert_eq!(reason(&err), "graph_engine_panic");
+    }
+    let state = service::get_graph(
+        &engine,
+        pb::GetGraphRequest {
+            namespace: "acme".to_string(),
+            name: "mem".to_string(),
+            ..Default::default()
+        },
+    )
+    .expect("listed");
+    assert_eq!(state.state.as_known(), Some(pb::GraphState::Failed));
+    service::delete_graph(
+        &engine,
+        pb::DeleteGraphRequest {
+            namespace: "acme".to_string(),
+            name: "mem".to_string(),
+            ..Default::default()
+        },
+    )
+    .expect("a failed graph can be deleted");
+    create(&engine, "mem");
+    execute(&engine, "mem", "RETURN 1 AS one").expect("and created again");
+    scenario.teardown();
+}
