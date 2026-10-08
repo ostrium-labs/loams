@@ -32,7 +32,12 @@ async fn inproc_worker_serves_and_cancels() {
         max_workers: 2,
         ..PoolConfig::default()
     };
-    let pool = WorkerPool::start(config, Arc::new(InprocWorker::new(root)))
+    let launcher = InprocWorker::new(root);
+    assert!(
+        !launcher.engine_config().install_signal_handlers,
+        "chDB's signal handlers stay out of the front's process (review I5)"
+    );
+    let pool = WorkerPool::start(config, Arc::new(launcher))
         .await
         .expect("the pool starts");
 
@@ -54,7 +59,7 @@ async fn inproc_worker_serves_and_cancels() {
     let handle = lease.kill_handle().expect("handle");
     lease
         .start(statement(
-            "SELECT sleepEachRow(0.5) FROM numbers(20) SETTINGS max_block_size = 1",
+            "SELECT sleepEachRow(0.5) FROM numbers(4) SETTINGS max_block_size = 1",
         ))
         .await
         .expect("started");
@@ -78,4 +83,12 @@ async fn inproc_worker_serves_and_cancels() {
         b"1\n"
     );
     pool.release(next, Outcome::Completed);
+
+    // Not isolated: the killed statement keeps its thread until it ends, and this
+    // process must not exit before then (libchdb's static destructors racing it
+    // crash the process once chDB's handlers are off, review I5).
+    assert!(
+        handle.wait_exit(Duration::from_secs(10)).await.is_some(),
+        "the in-process worker's thread ends when its statement does"
+    );
 }

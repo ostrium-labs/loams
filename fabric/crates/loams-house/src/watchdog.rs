@@ -267,6 +267,14 @@ impl KillHandle {
         self.shared.pid()
     }
 
+    /// Waits up to `limit` for the worker to be gone, and says how it ended. For an
+    /// `InprocWorker` that is when its thread returns, which is when the statement
+    /// it was running finishes: a front must not exit before then, because libchdb's
+    /// static destructors racing a running statement crash the process.
+    pub async fn wait_exit(&self, limit: Duration) -> Option<String> {
+        self.shared.wait_exit(limit).await
+    }
+
     /// Kills the worker with `reason` at `deadline` unless the returned guard is
     /// dropped first (§49 §12: `max_execution_time` plus 2 s).
     pub fn kill_at(&self, deadline: Instant, reason: ExitReason) -> Deadline {
@@ -528,6 +536,19 @@ impl InprocWorker {
 }
 
 #[cfg(feature = "inproc-worker")]
+impl InprocWorker {
+    /// The engine the in-process workers share: the worker's configuration, but
+    /// **without chDB's signal handlers** (HS1 Task 2 review I5). The process is
+    /// the front's, and a library must not take its signals (FL2 Ruling 2's
+    /// default); only a worker process, which is chDB's own, keeps them (§49 §4.1).
+    pub fn engine_config(&self) -> loams_house_worker::EngineConfig {
+        let mut config = loams_house_worker::engine_config(&self.args);
+        config.install_signal_handlers = false;
+        config
+    }
+}
+
+#[cfg(feature = "inproc-worker")]
 impl Launcher for InprocWorker {
     fn launch(&self, id: &str) -> Result<Launched, HouseError> {
         loams_house_worker::config::write_files(&self.args)
@@ -546,7 +567,7 @@ impl Launcher for InprocWorker {
             exit,
         });
         let done = Arc::clone(&control);
-        let config = loams_house_worker::engine_config(&self.args);
+        let config = self.engine_config();
         std::thread::Builder::new()
             .name(format!("house-inproc-{id}"))
             .spawn(move || {

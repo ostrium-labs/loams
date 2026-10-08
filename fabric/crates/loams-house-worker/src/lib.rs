@@ -16,4 +16,6 @@ pub mod config;
 pub mod serve;
 
 pub use config::WorkerArgs;
+/// The engine configuration type [`engine_config`] returns.
+pub use loams_chdb::EngineConfig;
 pub use serve::{End, Hosting, Worker, engine_config, engine_error};
