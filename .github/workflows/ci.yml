@@ -43,6 +43,7 @@ jobs:
       durable: ${{ steps.filter.outputs.durable }}
       deny: ${{ steps.filter.outputs.deny }}
       graph: ${{ steps.filter.outputs.graph }}
+      sqlgate: ${{ steps.filter.outputs.sqlgate }}
       protos: ${{ steps.filter.outputs.protos }}
       app-protos: ${{ steps.filter.outputs.app-protos }}
       sdk-typescript: ${{ steps.filter.outputs.sdk-typescript }}
@@ -168,6 +169,9 @@ jobs:
             # Loams Graph (GR1, design §48): the engine crate, its proto, the
             # licence gate input it is checked against, and loams's manifest,
             # whose default build must not link Grafeo.
+            sqlgate:
+              - *toolchain
+              - "crates/loams-sqlgate/**"
             graph:
               - *toolchain
               - "crates/loams-graph/**"
@@ -1444,6 +1448,30 @@ jobs:
       - name: loams-graph with failpoints
         run: cargo test -p loams-graph --features failpoints --locked --test failpoints
 
+  # SQ1 Task 3: the gate's sans-I/O MySQL codec parses untrusted client
+  # packets. Each cargo-fuzz target runs 60 s from the captured-client seed
+  # corpus; the same invariants run under proptest in `cargo test`.
+  sqlgate-fuzz:
+    name: Loams SQL gate codec fuzzing
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sqlgate == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: nightly toolchain (libFuzzer instrumentation)
+        run: rustup toolchain install nightly --profile minimal
+      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
+        with:
+          tool: cargo-fuzz
+      - name: fuzz handshake_response and packet_framing, 60 s each
+        working-directory: crates/loams-sqlgate
+        run: |
+          set -euo pipefail
+          for t in handshake_response packet_framing; do
+            mkdir -p "fuzz/corpus/$t"
+            cargo +nightly fuzz run "$t" "fuzz/corpus/$t" -- -max_total_time=60 -rss_limit_mb=2048
+          done
+
   deny:
     name: licenses, advisories, sources
     needs: changes
@@ -1691,6 +1719,7 @@ jobs:
       - sdk-csharp
       - sdk-swift
       - graph
+      - sqlgate-fuzz
       - deny
       - web
       - dapr-edge
