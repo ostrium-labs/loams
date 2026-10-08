@@ -86,6 +86,32 @@ describe("sse", () => {
 	});
 });
 
+describe("sse limits", () => {
+	it("multi_byte_split_at_chunk_size_1", async () => {
+		const text = 'data: {"t":"é😀中"}\n\n';
+		const msgs = [];
+		for await (const m of readSse(chunked(text, 1))) msgs.push(m);
+		expect(msgs).toEqual([{ event: "message", data: '{"t":"é😀中"}' }]);
+	});
+
+	it("over_long_line_is_an_error", async () => {
+		const long = `data: ${"x".repeat(200)}`;
+		const read = async () => {
+			for await (const _ of readSse(chunked(long, 16), 100)) {
+				// drain
+			}
+		};
+		await expect(read()).rejects.toThrow(/longer than 100/);
+		const many = "data: aaaaaaaaaa\n".repeat(20);
+		const readMany = async () => {
+			for await (const _ of readSse(chunked(many, 7), 100)) {
+				// drain
+			}
+		};
+		await expect(readMany()).rejects.toThrow(/longer than 100/);
+	});
+});
+
 describe("anthropic provider", () => {
 	it("anthropic_sse_parsing", async () => {
 		const { calls, fetch } = sseFetch(fixture("anthropic-tool-use.sse"), 5);
@@ -133,16 +159,92 @@ describe("anthropic provider", () => {
 		expect(body).toMatchObject({
 			model: "claude-sonnet-5-5",
 			stream: true,
-			system: "sys",
 			thinking: { type: "adaptive", display: "summarized" },
-			fallbacks: "default",
+			// Prompt caching: system, the last tool, and the automatic breakpoint.
+			system: [
+				{ type: "text", text: "sys", cache_control: { type: "ephemeral" } },
+			],
+			cache_control: { type: "ephemeral" },
 		});
 		expect(body.tools[0]).toMatchObject({
 			name: "collections_list",
 			input_schema: { type: "object" },
 			eager_input_streaming: true,
+			cache_control: { type: "ephemeral" },
 		});
-		expect(h["anthropic-beta"]).toBe("server-side-fallback-2026-07-01");
+		// The refusal fallback is opt-in: off by default.
+		expect(body.fallbacks).toBeUndefined();
+		expect(h["anthropic-beta"]).toBeUndefined();
+		expect(events).toContainEqual({
+			type: "model",
+			model: "claude-sonnet-5-5",
+		});
+	});
+
+	it("fallback_opt_in_sends_beta_and_reports_models", async () => {
+		const ev = (o: unknown) => `data: ${JSON.stringify(o)}\n\n`;
+		const sse =
+			ev({
+				type: "message_start",
+				message: { model: "claude-sonnet-5-5", usage: { input_tokens: 3 } },
+			}) +
+			ev({
+				type: "content_block_start",
+				index: 0,
+				content_block: { type: "text", text: "" },
+			}) +
+			ev({
+				type: "content_block_delta",
+				index: 0,
+				delta: { type: "text_delta", text: "partial" },
+			}) +
+			ev({
+				type: "content_block_start",
+				index: 1,
+				content_block: {
+					type: "fallback",
+					from: { model: "claude-sonnet-5-5" },
+					to: { model: "claude-opus-4-8" },
+				},
+			}) +
+			ev({ type: "content_block_stop", index: 1 }) +
+			ev({
+				type: "message_delta",
+				delta: { stop_reason: "end_turn" },
+				usage: { output_tokens: 4 },
+			});
+		const { calls, fetch } = sseFetch(sse);
+		const p = createAnthropicProvider({
+			apiKey: new Secret("sk-ant-test"),
+			fetch,
+			fallback: true,
+		});
+		const events = await collect(p.streamTurn(req("claude-sonnet-5-5")));
+		const body = JSON.parse(String(calls[0]?.init.body));
+		expect(body.fallbacks).toBe("default");
+		expect(
+			(calls[0]?.init.headers as Record<string, string> | undefined)?.[
+				"anthropic-beta"
+			],
+		).toBe("server-side-fallback-2026-07-01");
+		expect(events).toContainEqual({
+			type: "fallback",
+			index: 1,
+			from: "claude-sonnet-5-5",
+			to: "claude-opus-4-8",
+		});
+		// Opted in but on a model the fallback does not cover: nothing is sent.
+		const other = sseFetch(sse);
+		await collect(
+			createAnthropicProvider({
+				apiKey: new Secret("k"),
+				fetch: other.fetch,
+				fallback: true,
+			}).streamTurn(req("claude-haiku-4-5")),
+		);
+		expect(
+			JSON.parse(String(other.calls[0]?.init.body)).fallbacks,
+		).toBeUndefined();
 	});
 
 	it("custom_base_url_sends_plain_request", async () => {
@@ -157,6 +259,7 @@ describe("anthropic provider", () => {
 		const body = JSON.parse(String(calls[0]?.init.body));
 		expect(body.thinking).toBeUndefined();
 		expect(body.fallbacks).toBeUndefined();
+		expect(body.cache_control).toBeUndefined();
 		expect(body.tools[0].eager_input_streaming).toBeUndefined();
 	});
 
@@ -287,6 +390,46 @@ describe("openai-compatible provider", () => {
 				},
 			});
 		}
+	});
+
+	it("tool_calls_without_index_are_keyed_by_id", async () => {
+		const d = (o: unknown) => `data: ${JSON.stringify(o)}\n\n`;
+		const tc = (calls: unknown[]) =>
+			d({
+				choices: [
+					{ index: 0, delta: { tool_calls: calls }, finish_reason: null },
+				],
+			});
+		const sse =
+			tc([
+				{
+					id: "a",
+					function: { name: "streams_list", arguments: '{"namespace":' },
+				},
+			]) +
+			tc([
+				{
+					id: "b",
+					function: { name: "links_list", arguments: '{"namespace":"x"}' },
+				},
+			]) +
+			tc([{ id: "a", function: { arguments: '"y"}' } }]) +
+			"data: [DONE]\n\n";
+		const { fetch } = sseFetch(sse);
+		const p = createOpenAIProvider({
+			id: "ollama",
+			baseUrl: "http://127.0.0.1:1/v1",
+			fetch,
+		});
+		const uses = (await collect(p.streamTurn(req("m")))).filter(
+			(e) => e.type === "tool_use",
+		);
+		expect(
+			uses.map((u) => u.type === "tool_use" && [u.id, u.name, u.input]),
+		).toEqual([
+			["a", "streams_list", { namespace: "y" }],
+			["b", "links_list", { namespace: "x" }],
+		]);
 	});
 
 	it("keyless_endpoint_sends_no_authorization", async () => {

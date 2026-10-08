@@ -1,9 +1,10 @@
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	CANCELLED,
+	CUT_OFF,
 	DENIED,
 	runTurn,
 	type TurnDeps,
@@ -278,6 +279,121 @@ describe("agent loop", () => {
 		});
 	});
 
+	it("token_budget_counts_incremental_input", async () => {
+		// Each call re-sends a 90k history that grows by 1k: billed input sums past 200k
+		// after three calls, but the budget counts 90k + 1k + 1k ... plus outputs.
+		const d = deps({
+			provider: scripted((_r, n) =>
+				n < 5
+					? [
+							{
+								type: "tool_use",
+								index: 0,
+								id: `u${n}`,
+								name: "read_thing",
+								input: {},
+								raw: "{}",
+							},
+							{
+								type: "usage",
+								inputTokens: 90_000 + n * 1_000,
+								outputTokens: 100,
+							},
+							{ type: "stop", reason: "tool_use" },
+						]
+					: say("done"),
+			),
+		});
+		expect(await runTurn(newChat(), "q", d)).toBe("end_turn");
+		expect(d.events.at(-1)).toMatchObject({
+			usage: { inputTokens: 460_000 + 10, outputTokens: 505 },
+		});
+	});
+
+	it("max_tokens_tool_calls_are_not_run", async () => {
+		const runs: string[] = [];
+		const seen: TurnRequest[] = [];
+		const d = deps({
+			provider: scripted(
+				(_r, n) =>
+					n === 0
+						? [
+								{
+									type: "tool_use",
+									index: 0,
+									id: "u1",
+									name: "write_a",
+									input: { n: 1 },
+									raw: "",
+								},
+								{ type: "stop", reason: "max_tokens" },
+							]
+						: say("smaller steps"),
+				seen,
+			),
+			tools: registry(runs),
+			askApproval: () => {
+				throw new Error("must not ask");
+			},
+		});
+		expect(await runTurn(newChat(), "q", d)).toBe("end_turn");
+		expect(runs).toEqual([]);
+		expect(seen[1]?.messages.at(-1)?.content).toEqual([
+			{ type: "tool_result", toolUseId: "u1", text: CUT_OFF, isError: true },
+		]);
+	});
+
+	it("fallback_model_is_recorded_and_announced", async () => {
+		const d = deps({
+			provider: scripted(() => [
+				{ type: "model", model: "claude-sonnet-5-5" },
+				{ type: "text", index: 0, text: "a" },
+				{
+					type: "fallback",
+					index: 1,
+					from: "claude-sonnet-5-5",
+					to: "claude-opus-4-8",
+				},
+				{ type: "text", index: 2, text: "b" },
+				{ type: "stop", reason: "end_turn" },
+			]),
+			model: "claude-sonnet-5-5",
+		});
+		const chat = newChat();
+		await runTurn(chat, "q", d);
+		expect(d.events.filter((e) => e.kind === "model")).toEqual([
+			{
+				kind: "model",
+				chatId: chat.id,
+				model: "claude-opus-4-8",
+				fallbackFrom: "claude-sonnet-5-5",
+			},
+		]);
+		expect(chat.messages.at(-1)).toMatchObject({
+			model: "claude-opus-4-8",
+			fallbackFrom: "claude-sonnet-5-5",
+		});
+		// Sticky routing: another model named up front is announced; a longer own id is not.
+		const sticky = deps({
+			provider: scripted(() => [
+				{ type: "model", model: "claude-opus-4-8" },
+				...say("x"),
+			]),
+			model: "claude-sonnet-5-5",
+		});
+		await runTurn(newChat(), "q", sticky);
+		expect(sticky.events.filter((e) => e.kind === "model")).toHaveLength(1);
+		const own = deps({
+			provider: scripted(() => [
+				{ type: "model", model: "llama3.1:latest" },
+				...say("x"),
+			]),
+			model: "llama3.1",
+		});
+		await runTurn(newChat(), "q", own);
+		expect(own.events.filter((e) => e.kind === "model")).toHaveLength(0);
+	});
+
 	it("wall_clock_budget_stops", async () => {
 		const d = deps({
 			provider: scripted(() => toolUse("u1", "slow", {})),
@@ -493,14 +609,15 @@ function service(
 		new Vault(join(dir, "credentials.bin"), xor),
 		fetchImpl,
 	);
+	const store = new ChatStore(join(dir, "chats"));
 	const svc = new ChatService({
-		store: new ChatStore(join(dir, "chats")),
+		store,
 		configs,
 		tools: registry(runs),
 		emit: (e) => events.push(e),
 		now: Date.now,
 	});
-	return { dir, events, svc, configs };
+	return { dir, events, svc, configs, store };
 }
 
 /** An Anthropic-shaped SSE body for one tool_use (or plain text when tool is undefined). */
@@ -592,8 +709,8 @@ describe("chat service", () => {
 				apiKey: "sk-ant-xyz",
 			}).ok,
 		).toBe(true);
-		const a = svc.create({ provider: "anthropic" });
-		const b = svc.create({ provider: "anthropic" });
+		const a = await svc.create({ provider: "anthropic" });
+		const b = await svc.create({ provider: "anthropic" });
 		if (!a.ok || !b.ok) throw new Error("create failed");
 
 		const waitApproval = async (chatId: string, tool: string) => {
@@ -619,19 +736,16 @@ describe("chat service", () => {
 			);
 
 		// Chat A: "always" for write_a.
-		expect(svc.send(a.value.id, "write_a", {}).ok).toBe(true);
+		expect((await svc.send(a.value.id, "write_a", {})).ok).toBe(true);
 		const id1 = await waitApproval(a.value.id, "write_a");
-		expect(
-			svc.get(a.value.id).ok &&
-				(svc.get(a.value.id) as { value: { pending: unknown[] } }).value
-					.pending,
-		).toHaveLength(1);
+		const view = await svc.get(a.value.id);
+		expect(view.ok && view.value.pending).toHaveLength(1);
 		expect(svc.approve(a.value.id, id1, "always").ok).toBe(true);
 		await turnDone(a.value.id, 1);
 
 		// Same chat, same tool: runs without asking.
 		events.length = 0;
-		expect(svc.send(a.value.id, "write_a", {}).ok).toBe(true);
+		expect((await svc.send(a.value.id, "write_a", {})).ok).toBe(true);
 		await turnDone(a.value.id, 1);
 		expect(events.find((e) => e.kind === "tool_call")).toMatchObject({
 			tool: "write_a",
@@ -640,21 +754,21 @@ describe("chat service", () => {
 
 		// Same chat, another write tool: asks.
 		events.length = 0;
-		svc.send(a.value.id, "write_b", {});
+		await svc.send(a.value.id, "write_b", {});
 		const id2 = await waitApproval(a.value.id, "write_b");
 		svc.approve(a.value.id, id2, "once");
 		await turnDone(a.value.id, 1);
 
 		// Another chat, same tool: asks.
-		svc.send(b.value.id, "write_a", {});
+		await svc.send(b.value.id, "write_a", {});
 		const id3 = await waitApproval(b.value.id, "write_a");
 		svc.approve(b.value.id, id3, "deny");
 		await turnDone(b.value.id, 1);
 
 		expect(runs).toEqual(["write_a:{}", "write_a:{}", "write_b:{}"]);
-		const stored = svc.get(a.value.id);
+		const stored = await svc.get(a.value.id);
 		expect(stored.ok && stored.value.alwaysAllow).toEqual(["write_a"]);
-		const storedB = svc.get(b.value.id);
+		const storedB = await svc.get(b.value.id);
 		expect(storedB.ok && storedB.value.alwaysAllow).toEqual([]);
 	});
 
@@ -675,7 +789,7 @@ describe("chat service", () => {
 				{ status: 200 },
 			);
 		};
-		const { svc, events, dir, configs } = service(fetchImpl);
+		const { svc, events, dir, configs, store } = service(fetchImpl);
 		const r = svc.configureProvider("anthropic", {
 			model: "claude-sonnet-5-5",
 			apiKey: KEY,
@@ -687,13 +801,14 @@ describe("chat service", () => {
 			hasKey: true,
 			configured: true,
 		});
-		const c = svc.create({});
+		const c = await svc.create({});
 		if (!c.ok) throw new Error("create");
-		svc.send(c.value.id, `my key is ${KEY}?`, {});
+		await svc.send(c.value.id, `my key is ${KEY}?`, {});
 		await until(() => events.some((e) => e.kind === "done"));
-		svc.send(c.value.id, "again", {});
+		await svc.send(c.value.id, "again", {});
 		await until(() => events.filter((e) => e.kind === "done").length === 2);
 
+		await store.flush();
 		const all = JSON.stringify(events);
 		expect(all).toContain("[redacted]");
 		expect(all).not.toContain(KEY);
@@ -706,24 +821,24 @@ describe("chat service", () => {
 		expect(readFileSync(join(dir, "credentials.bin"), "utf8")).not.toContain(
 			KEY,
 		);
-		const view = svc.get(c.value.id);
+		const view = await svc.get(c.value.id);
 		expect(JSON.stringify(view)).not.toContain(KEY);
 		expect(configs.secrets()).toEqual([KEY]);
 	});
 
-	it("send_validates_and_refuses_unconfigured", () => {
+	it("send_validates_and_refuses_unconfigured", async () => {
 		const { svc } = service(async () => new Response(""));
-		const c = svc.create({ provider: "deepseek" });
+		const c = await svc.create({ provider: "deepseek" });
 		if (!c.ok) throw new Error("create");
-		expect(svc.send(c.value.id, "hi", {})).toMatchObject({
+		expect(await svc.send(c.value.id, "hi", {})).toMatchObject({
 			ok: false,
 			code: "unconfigured",
 		});
-		expect(svc.send("../etc", "hi", {})).toMatchObject({
+		expect(await svc.send("../etc", "hi", {})).toMatchObject({
 			ok: false,
 			code: "not_found",
 		});
-		expect(svc.send(c.value.id, "", {})).toMatchObject({ ok: false });
+		expect(await svc.send(c.value.id, "", {})).toMatchObject({ ok: false });
 		expect(svc.approve(c.value.id, "x", "maybe")).toMatchObject({ ok: false });
 		expect(
 			svc.configureProvider("ollama", {
@@ -742,6 +857,109 @@ describe("chat service", () => {
 		});
 	});
 
+	it("key_is_bound_to_its_origin", async () => {
+		const KEY = "sk-ant-bound-0123456789";
+		const urls: string[] = [];
+		const keys: (string | undefined)[] = [];
+		const fetchImpl = async (url: string, init: RequestInit) => {
+			urls.push(url);
+			keys.push((init.headers as Record<string, string>)["x-api-key"]);
+			return new Response(anthropicSse(), { status: 200 });
+		};
+		const { svc, configs, dir } = service(fetchImpl);
+		expect(
+			configs.configure("anthropic", { model: "m", apiKey: "short" }),
+		).toMatchObject({
+			ok: false,
+			code: "bad_key",
+		});
+		expect(configs.configure("anthropic", { model: "m", apiKey: KEY }).ok).toBe(
+			true,
+		);
+		// Same origin, other path: the key stays.
+		expect(
+			configs.configure("anthropic", {
+				model: "m",
+				baseUrl: "https://api.anthropic.com/",
+			}),
+		).toMatchObject({ ok: true, value: { hasKey: true } });
+		// Redirect attempt: another origin without a new key clears the key.
+		expect(
+			configs.configure("anthropic", {
+				model: "m",
+				baseUrl: "https://evil.example",
+			}),
+		).toMatchObject({ ok: false, code: "key_required" });
+		expect(configs.info("anthropic")).toMatchObject({
+			hasKey: false,
+			configured: false,
+		});
+		const c = await svc.create({ provider: "anthropic" });
+		if (!c.ok) throw new Error("create");
+		expect(await svc.send(c.value.id, "hi", {})).toMatchObject({
+			code: "unconfigured",
+		});
+		expect(urls).toEqual([]);
+
+		// A providers.json edited behind the app's back cannot redirect a stored key either.
+		expect(
+			configs.configure("anthropic", {
+				model: "m",
+				baseUrl: "https://api.anthropic.com",
+				apiKey: KEY,
+			}).ok,
+		).toBe(true);
+		writeFileSync(
+			join(dir, "agent", "providers.json"),
+			JSON.stringify({
+				anthropic: { baseUrl: "https://evil.example", model: "m" },
+			}),
+		);
+		const edited = new ProviderConfigs(
+			join(dir, "agent", "providers.json"),
+			new Vault(join(dir, "credentials.bin"), xor),
+			fetchImpl,
+		);
+		expect(edited.info("anthropic").hasKey).toBe(false);
+		expect("error" in edited.create("anthropic")).toBe(true);
+		expect(keys).toEqual([]);
+	});
+
+	it("fallback_is_opt_in_per_provider", async () => {
+		const bodies: Record<string, unknown>[] = [];
+		const fetchImpl = async (_u: string, init: RequestInit) => {
+			bodies.push(JSON.parse(String(init.body)));
+			return new Response(anthropicSse(), { status: 200 });
+		};
+		const { svc, configs, events } = service(fetchImpl);
+		configs.configure("anthropic", {
+			model: "claude-sonnet-5-5",
+			apiKey: "sk-ant-0123456789",
+		});
+		expect(configs.info("anthropic").fallback).toBe(false);
+		const c = await svc.create({ provider: "anthropic" });
+		if (!c.ok) throw new Error("create");
+		await svc.send(c.value.id, "one", {});
+		await until(() => events.filter((e) => e.kind === "done").length === 1);
+		expect(bodies[0]?.fallbacks).toBeUndefined();
+		expect(
+			configs.configure("anthropic", {
+				model: "claude-sonnet-5-5",
+				fallback: true,
+			}),
+		).toMatchObject({ ok: true, value: { fallback: true, hasKey: true } });
+		await svc.send(c.value.id, "two", {});
+		await until(() => events.filter((e) => e.kind === "done").length === 2);
+		expect(bodies[1]?.fallbacks).toBe("default");
+		// The setting survives a reconfigure that does not mention it.
+		expect(
+			configs.configure("anthropic", { model: "claude-sonnet-5-5" }),
+		).toMatchObject({
+			value: { fallback: true },
+		});
+		expect(configs.info("ollama").fallback).toBeUndefined();
+	});
+
 	it("cancel_resolves_and_remove_deletes", async () => {
 		const fetchImpl = async (_u: string, init: RequestInit) =>
 			new Promise<Response>((_, reject) =>
@@ -751,17 +969,17 @@ describe("chat service", () => {
 			);
 		const { svc, events } = service(fetchImpl);
 		svc.configureProvider("ollama", { model: "llama3.1" });
-		const c = svc.create({ provider: "ollama" });
+		const c = await svc.create({ provider: "ollama" });
 		if (!c.ok) throw new Error("create");
-		expect(svc.send(c.value.id, "hi", {}).ok).toBe(true);
-		expect(svc.send(c.value.id, "again", {})).toMatchObject({
+		expect((await svc.send(c.value.id, "hi", {})).ok).toBe(true);
+		expect(await svc.send(c.value.id, "again", {})).toMatchObject({
 			ok: false,
 			code: "busy",
 		});
 		await svc.cancel(c.value.id);
 		expect(events.at(-1)).toMatchObject({ kind: "done", stop: "cancelled" });
-		expect(svc.list().map((x) => x.id)).toEqual([c.value.id]);
+		expect((await svc.list()).map((x) => x.id)).toEqual([c.value.id]);
 		expect((await svc.remove(c.value.id)).ok).toBe(true);
-		expect(svc.list()).toEqual([]);
+		expect(await svc.list()).toEqual([]);
 	});
 });

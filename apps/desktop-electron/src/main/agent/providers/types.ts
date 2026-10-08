@@ -37,7 +37,9 @@ export type ProviderEvent =
 			raw: string;
 	  }
 	/** A server-side model fallback: blocks before it that are not text are discarded. */
-	| { type: "fallback"; index: number }
+	| { type: "fallback"; index: number; from?: string; to?: string }
+	/** The model serving this call, as the provider reports it. */
+	| { type: "model"; model: string }
 	/** Totals for this call so far (each usage event replaces the previous one). */
 	| { type: "usage"; inputTokens: number; outputTokens: number }
 	| { type: "stop"; reason: ProviderStop };

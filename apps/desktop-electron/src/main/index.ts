@@ -307,9 +307,11 @@ const singleInstance = initSingleInstance({
 			app.on("activate", () => showMainWindow(open));
 		});
 		let quitting = false;
+		let chatStopping: Promise<void> | undefined;
 		app.on("before-quit", (e) => {
 			isQuitting = true;
-			void chat?.dispose();
+			// Stop running agent turns and let their chat files land, bounded (below).
+			chatStopping ??= chat?.dispose().catch(() => undefined);
 			tray?.destroy();
 			factoryEmbed?.closeAll();
 			factoryViews?.closeAll();
@@ -320,11 +322,11 @@ const singleInstance = initSingleInstance({
 				void updater.installOnQuit().finally(() => app.quit());
 				return;
 			}
-			if (quitting || !engine) return;
+			if (quitting || (!engine && !chatStopping)) return;
 			e.preventDefault();
 			quitting = true;
 			void Promise.race([
-				engine.stop(),
+				Promise.all([engine?.stop(), chatStopping]),
 				new Promise((r) => setTimeout(r, 6000)),
 			]).finally(() => app.quit());
 		});

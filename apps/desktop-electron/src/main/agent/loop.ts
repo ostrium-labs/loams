@@ -25,6 +25,8 @@ export const BUDGETS: Budgets = {
 };
 
 export const DENIED = "The user denied this action.";
+export const CUT_OFF =
+	"Not run: the answer hit the output limit (max_tokens) before this call was complete. Try a smaller step.";
 export const CANCELLED = "Not run: the turn was stopped.";
 
 export interface PendingCall {
@@ -60,7 +62,11 @@ export function scrub<T>(value: T, secrets: readonly string[]): T {
 	return clean === json ? value : (JSON.parse(clean) as T);
 }
 
-/** A stopwatch for the wall-clock budget that does not run while the user decides on an approval. */
+/**
+ * A stopwatch for the wall-clock budget. It is paused while a write call waits for the
+ * user's approval (controller ruling, Task 28 fix round 1): user think time does not count
+ * against the 10 minutes, so stepping away does not lose the turn. Cancel works at any time.
+ */
 class Clock {
 	#left: number;
 	#since = 0;
@@ -143,13 +149,22 @@ export async function runTurn(
 	const chatId = chat.id;
 	const secrets = () => deps.secrets();
 	const emit = (e: ChatEvent) => deps.emit(scrub(e, secrets()));
+	// Secrets are scrubbed where content enters the chat (the user's text, the model's
+	// parts, tool results), so a save never has to scan the whole history.
 	const save = () => {
 		chat.updatedAt = deps.now();
-		const clean = scrub(chat, secrets());
-		if (clean !== chat) Object.assign(chat, clean);
 		deps.save(chat);
 	};
+	/** Billed totals, reported in `done`. */
 	const usage = { inputTokens: 0, outputTokens: 0 };
+	/**
+	 * The token budget counts what this turn adds: every output token, and each call's
+	 * input only by how much it grew over the previous call's (the first call counts in
+	 * full). Re-sent history is not counted again on every iteration, so 200k is roughly
+	 * "context plus everything generated", not "billed input summed over iterations".
+	 */
+	let budgetUsed = 0;
+	let prevInput = 0;
 
 	const ctl = new AbortController();
 	const onCancel = () => ctl.abort();
@@ -160,6 +175,7 @@ export async function runTurn(
 
 	// The user's message. A turn that stopped after tool results leaves a user
 	// message last; the text joins it so roles keep alternating.
+	userText = redact(userText, secrets());
 	const last = chat.messages[chat.messages.length - 1];
 	if (last?.role === "user") {
 		last.content.push({ type: "text", text: userText });
@@ -207,10 +223,11 @@ export async function runTurn(
 	for (let iteration = 0; ; iteration++) {
 		if (signal.aborted) return stopOnAbort();
 		if (iteration >= budgets.iterations) return finish("iteration_cap");
-		if (usage.inputTokens + usage.outputTokens >= budgets.tokens)
-			return finish("token_budget");
+		if (budgetUsed >= budgets.tokens) return finish("token_budget");
 
 		// ---- one provider call ----
+		let served: string | undefined;
+		let fallbackFrom: string | undefined;
 		const blocks = new Map<number, ChatPart>();
 		let callUsage = { inputTokens: 0, outputTokens: 0 };
 		let stop: ProviderStop = "end_turn";
@@ -269,6 +286,17 @@ export async function runTurn(
 						// Echo rules after a server-side fallback: drop the non-text blocks before it.
 						for (const [i, b] of blocks)
 							if (i < ev.index && b.type !== "text") blocks.delete(i);
+						fallbackFrom = ev.from ?? served ?? deps.model;
+						if (ev.to) served = ev.to;
+						if (served)
+							emit({ kind: "model", chatId, model: served, fallbackFrom });
+						break;
+					case "model":
+						served = ev.model;
+						// Sticky routing after an earlier fallback names another model up front.
+						// A provider's own longer id ("llama3.1:latest", a dated id) is not a switch.
+						if (!ev.model.startsWith(deps.model))
+							emit({ kind: "model", chatId, model: ev.model });
 						break;
 					case "usage":
 						callUsage = {
@@ -290,14 +318,26 @@ export async function runTurn(
 		}
 		usage.inputTokens += callUsage.inputTokens;
 		usage.outputTokens += callUsage.outputTokens;
+		budgetUsed +=
+			callUsage.outputTokens + Math.max(0, callUsage.inputTokens - prevInput);
+		if (callUsage.inputTokens > 0) prevInput = callUsage.inputTokens;
 
-		const parts = [...blocks.entries()]
-			.sort((a, b) => a[0] - b[0])
-			.map(([, p]) => p)
-			// A text block that never got text adds nothing.
-			.filter((p) => p.type !== "text" || p.text.length > 0);
+		const parts = scrub(
+			[...blocks.entries()]
+				.sort((a, b) => a[0] - b[0])
+				.map(([, p]) => p)
+				// A text block that never got text adds nothing.
+				.filter((p) => p.type !== "text" || p.text.length > 0),
+			secrets(),
+		);
 		if (parts.length > 0) {
-			chat.messages.push({ role: "assistant", content: parts, at: deps.now() });
+			chat.messages.push({
+				role: "assistant",
+				content: parts,
+				at: deps.now(),
+				...(served ? { model: served } : {}),
+				...(fallbackFrom ? { fallbackFrom } : {}),
+			});
 			save();
 		}
 		if (signal.aborted) return stopOnAbort();
@@ -316,8 +356,39 @@ export async function runTurn(
 
 		const calls = parts.flatMap((p) => (p.type === "tool_use" ? [p] : []));
 		if (calls.length === 0) return finish("end_turn");
-		if (usage.inputTokens + usage.outputTokens >= budgets.tokens)
+		if (budgetUsed >= budgets.tokens)
 			return finish("token_budget", "Not run: the token budget is used up.");
+		if (stop === "max_tokens") {
+			// The calls may be cut short: answer them without running anything and let the
+			// model try again in smaller steps.
+			const cut: ChatPart[] = calls.map((c) => ({
+				type: "tool_result",
+				toolUseId: c.id,
+				text: CUT_OFF,
+				isError: true,
+			}));
+			for (const c of calls) {
+				emit({
+					kind: "tool_call",
+					chatId,
+					callId: c.id,
+					tool: c.name,
+					args: c.input,
+					risk: deps.tools.get(c.name)?.risk ?? "read",
+					needsApproval: false,
+				});
+				emit({
+					kind: "tool_result",
+					chatId,
+					callId: c.id,
+					ok: false,
+					text: CUT_OFF,
+				});
+			}
+			chat.messages.push({ role: "user", content: cut, at: deps.now() });
+			save();
+			continue;
+		}
 
 		// ---- the tools, in order ----
 		const results: ChatPart[] = [];

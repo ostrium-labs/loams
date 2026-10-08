@@ -1,4 +1,5 @@
 import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import * as fsp from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,7 +8,7 @@ import {
 	builtinTools,
 } from "../src/main/agent/builtin-tools";
 import { readOnlyViolation } from "../src/main/agent/sql-guard";
-import { ChatStore, newChatId } from "../src/main/agent/store";
+import { ChatStore, newChatId, type StoreFs } from "../src/main/agent/store";
 import {
 	resultText,
 	type ToolDef,
@@ -137,7 +138,13 @@ describe("builtin tools", () => {
 			["factory_query", "read"],
 		]);
 		// Every schema compiles and the names are unique.
-		new ToolRegistry().register([...tools.values()]);
+		const reg = new ToolRegistry();
+		reg.register([...tools.values()]);
+		// Namespace names: no path tricks.
+		for (const bad of ["..", ".", "...", "a/b", "a b", ""])
+			expect(reg.check("streams_list", { namespace: bad }), bad).toBeDefined();
+		for (const ok of ["default", "my.ns", "a_b-1", ".hidden"])
+			expect(reg.check("streams_list", { namespace: ok }), ok).toBeUndefined();
 	});
 
 	it("data_plane_tools_call_the_engine_routes", async () => {
@@ -150,10 +157,10 @@ describe("builtin tools", () => {
 						? { links: [{ name: "l" }] }
 						: { hits: [] },
 		);
-		expect(await run("collections_list", { namespace: "my ns" })).toEqual([
+		expect(await run("collections_list", { namespace: "my-ns" })).toEqual([
 			{ name: "docs" },
 		]);
-		expect(calls[0]?.path).toBe("/v1/namespaces/my%20ns/collections");
+		expect(calls[0]?.path).toBe("/v1/namespaces/my-ns/collections");
 		expect(await run("streams_list", { namespace: "a" })).toEqual([
 			{ name: "s" },
 		]);
@@ -330,20 +337,61 @@ describe("chat store", () => {
 		messages: [],
 	});
 
-	it("saves_atomically_and_lists_newest_first", () => {
+	it("saves_atomically_and_lists_newest_first", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "chats-"));
 		const s = new ChatStore(dir);
 		const a = newChatId();
 		const b = newChatId();
-		s.save(chat(a, 1));
-		s.save(chat(b, 5));
+		await s.save(chat(a, 1));
+		await s.save(chat(b, 5));
 		writeFileSync(join(dir, "c_garbage00.json"), "{not json");
-		expect(s.list().map((c) => c.id)).toEqual([b, a]);
+		expect((await s.list()).map((c) => c.id)).toEqual([b, a]);
 		expect(readdirSync(dir).filter((f) => f.endsWith(".tmp"))).toEqual([]);
-		expect(s.get(a)?.updatedAt).toBe(1);
-		s.remove(a);
-		expect(s.get(a)).toBeUndefined();
-		expect(s.get("../x")).toBeUndefined();
+		expect((await s.get(a))?.updatedAt).toBe(1);
+		await s.remove(a);
+		expect(await s.get(a)).toBeUndefined();
+		expect((await s.list()).map((c) => c.id)).toEqual([b]);
+		expect(await s.get("../x")).toBeUndefined();
 		expect(() => s.save(chat("../../evil", 1))).toThrow(/bad chat id/);
+	});
+
+	it("list_uses_the_index_not_every_file", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "chats-"));
+		const seed = new ChatStore(dir);
+		for (let i = 0; i < 5; i++) await seed.save(chat(newChatId(), i));
+		const reads: string[] = [];
+		const counting = {
+			...fsp,
+			readFile: (path: string, enc: "utf8") => {
+				reads.push(path);
+				return fsp.readFile(path, enc);
+			},
+			readdir: (path: string) => {
+				reads.push(`dir:${path}`);
+				return fsp.readdir(path);
+			},
+		} as unknown as StoreFs;
+		const s = new ChatStore(dir, counting);
+		expect(await s.list()).toHaveLength(5);
+		expect(reads).toHaveLength(6); // one readdir, five files, once
+		const c = chat(newChatId(), 99);
+		await s.save(c);
+		const again = await s.list();
+		expect(again).toHaveLength(6);
+		expect(again[0]?.id).toBe(c.id);
+		expect(reads).toHaveLength(6); // no re-read on later calls
+	});
+
+	it("queued_writes_land_in_order_and_snapshot_at_call_time", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "chats-"));
+		const s = new ChatStore(dir);
+		const c = chat(newChatId(), 1);
+		void s.save(c);
+		c.title = "second";
+		c.updatedAt = 2;
+		void s.save(c);
+		c.title = "not saved";
+		await s.flush();
+		expect((await s.get(c.id))?.title).toBe("second");
 	});
 });

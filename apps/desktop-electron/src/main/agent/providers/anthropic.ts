@@ -33,7 +33,11 @@ export interface AnthropicOptions {
 	baseUrl?: string;
 	apiKey: Secret;
 	fetch: FetchLike;
+	/** Opt-in server-side refusal fallback (`fallbacks: "default"`, beta). Off by default. */
+	fallback?: boolean;
 }
+
+const EPHEMERAL = { type: "ephemeral" } as const;
 
 type Block = Record<string, unknown>;
 
@@ -103,21 +107,27 @@ export function createAnthropicProvider(opts: AnthropicOptions): Provider {
 	return {
 		id: "anthropic",
 		async *streamTurn(req: TurnRequest): AsyncGenerator<ProviderEvent> {
-			const fallbacks = firstParty && FALLBACK_MODELS.has(req.model);
+			const fallbacks =
+				opts.fallback === true && firstParty && FALLBACK_MODELS.has(req.model);
+			const last = req.tools.length - 1;
+			// Prompt caching: tools and system are the same on every iteration of a turn,
+			// so breakpoints there (and the automatic one on the growing history) cut cost.
 			const body: Record<string, unknown> = {
 				model: req.model,
 				max_tokens: MAX_TOKENS,
 				stream: true,
-				system: req.system,
+				system: [{ type: "text", text: req.system, cache_control: EPHEMERAL }],
 				messages: toAnthropicMessages(req.messages),
-				tools: req.tools.map((t) => ({
+				tools: req.tools.map((t, i) => ({
 					name: t.name,
 					description: t.description,
 					input_schema: t.schema,
 					// Proxies may reject the field; the loop validates inputs either way.
 					...(firstParty ? { eager_input_streaming: true } : {}),
+					...(i === last ? { cache_control: EPHEMERAL } : {}),
 				})),
 			};
+			if (firstParty) body.cache_control = EPHEMERAL;
 			if (ADAPTIVE.test(req.model))
 				body.thinking = { type: "adaptive", display: "summarized" };
 			if (fallbacks) body.fallbacks = "default";
@@ -153,7 +163,10 @@ export function createAnthropicProvider(opts: AnthropicOptions): Provider {
 				const type = ev.type ?? msg.event;
 				const index = num(ev.index);
 				if (type === "message_start") {
-					const u = ((ev.message as Block | undefined)?.usage ?? {}) as Block;
+					const m = (ev.message ?? {}) as Block;
+					if (typeof m.model === "string" && m.model)
+						yield { type: "model", model: m.model };
+					const u = (m.usage ?? {}) as Block;
 					input =
 						num(u.input_tokens) +
 						num(u.cache_creation_input_tokens) +
@@ -182,7 +195,16 @@ export function createAnthropicProvider(opts: AnthropicOptions): Provider {
 							index,
 							data: String(b.data ?? ""),
 						};
-					else if (b.type === "fallback") yield { type: "fallback", index };
+					else if (b.type === "fallback") {
+						const from = (b.from as Block | undefined)?.model;
+						const to = (b.to as Block | undefined)?.model;
+						yield {
+							type: "fallback",
+							index,
+							...(typeof from === "string" ? { from } : {}),
+							...(typeof to === "string" ? { to } : {}),
+						};
+					}
 				} else if (type === "content_block_delta") {
 					const d = (ev.delta ?? {}) as Block;
 					if (d.type === "text_delta")

@@ -6,15 +6,22 @@ export interface SseMessage {
 	data: string;
 }
 
+/** A line, or one event's data, longer than this many characters is an error (a broken or hostile server). */
+export const MAX_SSE_CHARS = 1024 * 1024;
+
 export async function* readSse(
 	body: ReadableStream<Uint8Array>,
+	max = MAX_SSE_CHARS,
 ): AsyncGenerator<SseMessage> {
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
 	let buf = "";
 	let event = "";
 	let data: string[] = [];
+	let dataSize = 0;
 	let finished = false;
+	const tooLong = () =>
+		new Error(`event stream line longer than ${max} characters`);
 	const flush = (): SseMessage | undefined => {
 		const msg =
 			data.length > 0
@@ -22,6 +29,7 @@ export async function* readSse(
 				: undefined;
 		event = "";
 		data = [];
+		dataSize = 0;
 		return msg;
 	};
 	try {
@@ -44,10 +52,15 @@ export async function* readSse(
 					let value = colon < 0 ? "" : line.slice(colon + 1);
 					if (value.startsWith(" ")) value = value.slice(1);
 					if (field === "event") event = value;
-					else if (field === "data") data.push(value);
+					else if (field === "data") {
+						dataSize += value.length;
+						if (dataSize > max) throw tooLong();
+						data.push(value);
+					}
 				}
 				nl = buf.search(/\r\n|\r|\n/);
 			}
+			if (buf.length > max) throw tooLong();
 			if (done) {
 				// A last data line without a line end still counts.
 				if (buf.length > 0 && !buf.startsWith(":")) {

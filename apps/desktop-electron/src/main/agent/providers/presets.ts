@@ -73,7 +73,19 @@ const vaultKey = (id: ChatProviderId) => `agent:${id}` as const;
 interface Saved {
 	baseUrl?: string;
 	model?: string;
+	/** Anthropic: opt-in server-side refusal fallback. */
+	fallback?: boolean;
 }
+
+export const MIN_KEY_CHARS = 8;
+
+const originOf = (url: string): string | undefined => {
+	try {
+		return new URL(url).origin;
+	} catch {
+		return undefined;
+	}
+};
 
 /** http(s) only, no userinfo; plain http only to loopback (keys must not travel in clear). */
 export function checkBaseUrl(raw: string): string | undefined {
@@ -111,21 +123,41 @@ export class ProviderConfigs {
 					this.#saved[k] = {
 						...(typeof v.baseUrl === "string" ? { baseUrl: v.baseUrl } : {}),
 						...(typeof v.model === "string" ? { model: v.model } : {}),
+						...(v.fallback === true ? { fallback: true } : {}),
 					};
 		} catch {
 			// first run
 		}
 	}
 
-	#key(id: ChatProviderId): Secret | undefined {
+	#baseUrl(id: ChatProviderId): string {
+		return this.#saved[id]?.baseUrl ?? PRESETS[id].baseUrl;
+	}
+
+	/** The stored key, whatever origin it was entered for (redaction uses this). */
+	#storedKey(id: ChatProviderId): Secret | undefined {
 		const k = this.vault.get(vaultKey(id))?.fields.apiKey;
 		return k?.reveal() ? k : undefined;
 	}
 
-	/** Every form of every stored key, for redaction. */
+	/**
+	 * The key, only if it was entered for the origin the provider points at now. A key is
+	 * bound to its origin: an edited providers.json cannot send it somewhere else.
+	 */
+	#key(id: ChatProviderId): Secret | undefined {
+		const entry = this.vault.get(vaultKey(id));
+		const k = this.#storedKey(id);
+		if (!entry || !k) return undefined;
+		const bound = originOf(entry.url);
+		return bound !== undefined && bound === originOf(this.#baseUrl(id))
+			? k
+			: undefined;
+	}
+
+	/** Every stored key, for redaction. */
 	secrets(): string[] {
 		return (Object.keys(PRESETS) as ChatProviderId[]).flatMap((id) => {
-			const k = this.#key(id)?.reveal();
+			const k = this.#storedKey(id)?.reveal();
 			return k ? [k] : [];
 		});
 	}
@@ -135,10 +167,11 @@ export class ProviderConfigs {
 		const s = this.#saved[id] ?? {};
 		const hasKey = this.#key(id) !== undefined;
 		return {
+			...(p.kind === "anthropic" ? { fallback: s.fallback === true } : {}),
 			id,
 			label: p.label,
 			kind: p.kind,
-			baseUrl: s.baseUrl ?? p.baseUrl,
+			baseUrl: this.#baseUrl(id),
 			model: s.model ?? p.defaultModel,
 			defaultModel: p.defaultModel,
 			needsKey: p.needsKey,
@@ -179,13 +212,40 @@ export class ProviderConfigs {
 		const apiKey = typeof c.apiKey === "string" ? c.apiKey.trim() : "";
 		if (apiKey.length > 4096)
 			return { ok: false, code: "bad_key", message: "The key is too long" };
+		if (apiKey && apiKey.length < MIN_KEY_CHARS)
+			return {
+				ok: false,
+				code: "bad_key",
+				message: `The key is too short (at least ${MIN_KEY_CHARS} characters)`,
+			};
 		const p = PRESETS[id];
+		const effective = baseUrl ?? p.baseUrl;
+		const fallback =
+			p.kind === "anthropic" &&
+			(typeof c.fallback === "boolean"
+				? c.fallback
+				: this.#saved[id]?.fallback === true);
 		this.#saved[id] = {
 			...(baseUrl && baseUrl !== p.baseUrl ? { baseUrl } : {}),
 			...(model !== p.defaultModel ? { model } : {}),
+			...(fallback ? { fallback: true } : {}),
 		};
 		this.#write();
-		if (apiKey) this.vault.set(vaultKey(id), baseUrl ?? p.baseUrl, { apiKey });
+		if (apiKey) {
+			this.vault.set(vaultKey(id), effective, { apiKey });
+			return { ok: true, value: this.info(id) };
+		}
+		// No new key: a stored key stays only while the origin is unchanged.
+		const entry = this.vault.get(vaultKey(id));
+		if (entry && originOf(entry.url) !== originOf(effective)) {
+			this.vault.remove(vaultKey(id));
+			if (p.needsKey)
+				return {
+					ok: false,
+					code: "key_required",
+					message: `The base URL now points at ${originOf(effective)}. The stored key was for another server and has been removed: enter the key for this one.`,
+				};
+		}
 		return { ok: true, value: this.info(id) };
 	}
 
@@ -204,6 +264,7 @@ export class ProviderConfigs {
 				baseUrl: info.baseUrl,
 				apiKey: key,
 				fetch: this.fetchImpl,
+				fallback: info.fallback === true,
 			});
 		}
 		return createOpenAIProvider({

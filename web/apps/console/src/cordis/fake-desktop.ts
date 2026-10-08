@@ -447,6 +447,7 @@ export function createFakeDesktop(): LoamsDesktopApi {
     },
     update: previewUpdate(),
     stacks: previewStacks(),
+    chat: createFakeChat(),
   };
 }
 
@@ -492,7 +493,6 @@ function previewStacks(): LoamsDesktopApi['stacks'] {
       listeners.add(cb);
       return () => void listeners.delete(cb);
     },
-    chat: createFakeChat(),
   };
 }
 
@@ -515,6 +515,7 @@ const FAKE_PROVIDERS: ChatProviderInfo[] = [
   hasKey: id === 'anthropic',
   configured: id === 'anthropic' || !needsKey,
   persistent: true,
+  ...(kind === 'anthropic' ? { fallback: false } : {}),
 }));
 
 function createFakeChat(): LoamsDesktopApi['chat'] {
@@ -639,6 +640,7 @@ function createFakeChat(): LoamsDesktopApi['chat'] {
       if (!cfg.model.trim()) return { ok: false, code: 'bad_model', message: 'Enter a model name' };
       p.model = cfg.model.trim();
       if (cfg.baseUrl) p.baseUrl = cfg.baseUrl;
+      if (p.kind === 'anthropic' && typeof cfg.fallback === 'boolean') p.fallback = cfg.fallback;
       // The preview never keeps the key: it only records that one was given.
       if (cfg.apiKey) p.hasKey = true;
       p.configured = p.hasKey || !p.needsKey;

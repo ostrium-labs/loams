@@ -122,11 +122,15 @@ export function createOpenAIProvider(opts: OpenAIOptions): Provider {
 			if (!res.ok) throw await httpError(res);
 			if (!res.body) throw new ProviderError(res.status, "empty response");
 
-			// Blocks: 0 reasoning, 1 text, 2+i tool call i.
+			// Blocks: 0 reasoning, 1 text, 2+i the i-th tool call seen. Calls are keyed by
+			// their `index`, or by `id` for servers that omit it; a delta with neither
+			// continues the last call.
 			const calls = new Map<
-				number,
+				string,
 				{ id: string; name: string; args: string }
 			>();
+			let lastKey: string | undefined;
+			let model: string | undefined;
 			let stop: ProviderStop | undefined;
 			for await (const msg of readSse(res.body)) {
 				if (msg.data.trim() === "[DONE]") break;
@@ -139,6 +143,10 @@ export function createOpenAIProvider(opts: OpenAIOptions): Provider {
 				if (chunk.error) {
 					const e = chunk.error as Obj;
 					throw new ProviderError(0, String(e.message ?? "stream error"));
+				}
+				if (!model && typeof chunk.model === "string" && chunk.model) {
+					model = chunk.model;
+					yield { type: "model", model };
 				}
 				const usage = chunk.usage as Obj | undefined | null;
 				if (usage)
@@ -160,21 +168,30 @@ export function createOpenAIProvider(opts: OpenAIOptions): Provider {
 					yield { type: "text", index: 1, text: delta.content };
 				if (Array.isArray(delta.tool_calls)) {
 					for (const tc of delta.tool_calls as Obj[]) {
-						const i = num(tc.index);
+						const key =
+							typeof tc.index === "number"
+								? `i:${tc.index}`
+								: typeof tc.id === "string" && tc.id
+									? `id:${tc.id}`
+									: (lastKey ?? "i:0");
+						lastKey = key;
 						const fn = (tc.function ?? {}) as Obj;
-						const cur = calls.get(i) ?? { id: "", name: "", args: "" };
+						const cur = calls.get(key) ?? { id: "", name: "", args: "" };
 						if (typeof tc.id === "string" && tc.id) cur.id = tc.id;
 						if (typeof fn.name === "string" && fn.name) cur.name = fn.name;
 						if (typeof fn.arguments === "string") cur.args += fn.arguments;
 						// Some servers (Ollama) send the arguments as an object in one chunk.
 						else if (fn.arguments && typeof fn.arguments === "object")
 							cur.args = JSON.stringify(fn.arguments);
-						calls.set(i, cur);
+						calls.set(key, cur);
 					}
 				}
 				if (choice.finish_reason) stop = stopOf(choice.finish_reason);
 			}
-			for (const [i, c] of [...calls].sort((a, b) => a[0] - b[0])) {
+			// Map order is first-seen order.
+			let i = -1;
+			for (const c of calls.values()) {
+				i++;
 				let input: unknown;
 				try {
 					input = c.args.trim() === "" ? {} : JSON.parse(c.args);

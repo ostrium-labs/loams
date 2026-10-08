@@ -198,10 +198,18 @@ export interface LoamsDesktopApi {
 	/** D675: the agent panel. The loop runs in main; keys never cross IPC. */
 	chat: {
 		providers(): Promise<ChatProviderInfo[]>;
-		/** An empty or missing `apiKey` keeps the stored key. */
+		/**
+		 * An empty or missing `apiKey` keeps the stored key, unless the base URL moves to another
+		 * origin: then the key is cleared and the result is `key_required`.
+		 */
 		configureProvider(
 			id: ChatProviderId,
-			cfg: { baseUrl?: string; model: string; apiKey?: string },
+			cfg: {
+				baseUrl?: string;
+				model: string;
+				apiKey?: string;
+				fallback?: boolean;
+			},
 		): Promise<IpcResult<ChatProviderInfo>>;
 		list(): Promise<ChatSummary[]>;
 		get(chatId: string): Promise<IpcResult<ChatView>>;
@@ -310,7 +318,9 @@ export type ChatEvent =
 			stop: ChatStopReason;
 			usage: { inputTokens: number; outputTokens: number };
 	  }
-	| { kind: "error"; chatId: string; message: string };
+	| { kind: "error"; chatId: string; message: string }
+	/** The model that actually answered, when it differs from the one asked for (a server-side fallback). */
+	| { kind: "model"; chatId: string; model: string; fallbackFrom?: string };
 export type ChatProviderId = "anthropic" | "deepseek" | "openai" | "ollama";
 export type ChatApproval = "once" | "always" | "deny";
 export interface ChatProviderInfo {
@@ -328,6 +338,8 @@ export interface ChatProviderInfo {
 	configured: boolean;
 	/** False when the vault has no encryption backend: the key lasts for this session only. */
 	persistent: boolean;
+	/** Anthropic only: the server-side refusal fallback (opt-in, beta). */
+	fallback?: boolean;
 }
 /** One block of a stored message. Tool results are plain text, never HTML. */
 export type ChatPart =
@@ -342,6 +354,10 @@ export interface ChatMessage {
 	at: number;
 	/** On the last assistant message of a turn. */
 	stop?: ChatStopReason;
+	/** Assistant messages: the model that served it, as the provider reported it. */
+	model?: string;
+	/** Set when a server-side fallback switched models mid-answer. */
+	fallbackFrom?: string;
 }
 export interface ChatSummary {
 	id: string;

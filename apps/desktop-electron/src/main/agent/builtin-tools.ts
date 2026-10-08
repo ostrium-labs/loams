@@ -35,6 +35,8 @@ const ns = {
 	type: "string",
 	minLength: 1,
 	maxLength: 256,
+	// Letters, digits, ".", "_" and "-", and not "." or ".." (or any dot-only name).
+	pattern: "^(?!\\.+$)[A-Za-z0-9._-]+$",
 	description: "The namespace (the active namespace from the context, if any).",
 } as const;
 

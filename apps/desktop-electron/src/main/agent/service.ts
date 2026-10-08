@@ -66,6 +66,7 @@ const bad = (message: string, code = "bad_request"): IpcResult<never> => ({
 
 export class ChatService {
 	readonly #running = new Map<string, Running>();
+	readonly #starting = new Set<string>();
 
 	constructor(private readonly deps: ChatServiceDeps) {}
 
@@ -83,14 +84,14 @@ export class ChatService {
 		return r.ok ? r : scrub(r, this.#secrets());
 	}
 
-	list(): ChatSummary[] {
+	list(): Promise<ChatSummary[]> {
 		return this.deps.store.list();
 	}
 
-	get(id: unknown): IpcResult<ChatView> {
+	async get(id: unknown): Promise<IpcResult<ChatView>> {
 		if (!isChatId(id)) return bad("Unknown chat", "not_found");
 		const run = this.#running.get(id);
-		const chat = run?.chat ?? this.deps.store.get(id);
+		const chat = run?.chat ?? (await this.deps.store.get(id));
 		if (!chat) return bad("Unknown chat", "not_found");
 		return {
 			ok: true,
@@ -109,7 +110,7 @@ export class ChatService {
 		return all.find((p) => p.configured) ?? (all[0] as ChatProviderInfo);
 	}
 
-	create(opts: unknown): IpcResult<ChatSummary> {
+	async create(opts: unknown): Promise<IpcResult<ChatSummary>> {
 		const o = (typeof opts === "object" && opts !== null ? opts : {}) as {
 			provider?: unknown;
 			model?: unknown;
@@ -132,19 +133,33 @@ export class ChatService {
 			alwaysAllow: [],
 			messages: [],
 		};
-		this.deps.store.save(chat);
+		await this.deps.store.save(chat);
 		return { ok: true, value: chatSummary(chat) };
 	}
 
-	send(id: unknown, text: unknown, opts: unknown): IpcResult<void> {
+	async send(
+		id: unknown,
+		text: unknown,
+		opts: unknown,
+	): Promise<IpcResult<void>> {
 		if (!isChatId(id)) return bad("Unknown chat", "not_found");
 		if (typeof text !== "string" || !text.trim())
 			return bad("Write a message first");
 		if (text.length > MAX_MESSAGE_CHARS) return bad("The message is too long");
 		if (this.#running.has(id))
 			return bad("This chat is still answering. Stop it first.", "busy");
-		const chat = this.deps.store.get(id);
+		if (this.#starting.has(id))
+			return bad("This chat is still answering. Stop it first.", "busy");
+		this.#starting.add(id);
+		let chat: ChatRecord | undefined;
+		try {
+			chat = await this.deps.store.get(id);
+		} finally {
+			this.#starting.delete(id);
+		}
 		if (!chat) return bad("Unknown chat", "not_found");
+		if (this.#running.has(id))
+			return bad("This chat is still answering. Stop it first.", "busy");
 		const o = (typeof opts === "object" && opts !== null ? opts : {}) as {
 			provider?: unknown;
 			model?: unknown;
@@ -180,7 +195,14 @@ export class ChatService {
 				today,
 			),
 			emit: (e) => this.deps.emit(e),
-			save: (c) => this.deps.store.save(c),
+			// Fire and forget: the store serialises now and writes in the background, in order.
+			save: (c) => {
+				this.deps.store.save(c).catch((e: unknown) => {
+					console.error(
+						`[agent] saving chat ${c.id} failed: ${(e as NodeJS.ErrnoException)?.code ?? "error"}`,
+					);
+				});
+			},
 			askApproval: (call) =>
 				new Promise<ChatApproval>((resolve) => {
 					run.pending.set(call.callId, {
@@ -239,12 +261,13 @@ export class ChatService {
 	async remove(id: unknown): Promise<IpcResult<void>> {
 		if (!isChatId(id)) return bad("Unknown chat", "not_found");
 		await this.cancel(id);
-		this.deps.store.remove(id);
+		await this.deps.store.remove(id);
 		return { ok: true, value: undefined };
 	}
 
-	/** Stops every running turn (app quit). */
+	/** Stops every running turn and waits for the chat files to land (app quit). */
 	async dispose(): Promise<void> {
 		await Promise.all([...this.#running.keys()].map((id) => this.cancel(id)));
+		await this.deps.store.flush();
 	}
 }
