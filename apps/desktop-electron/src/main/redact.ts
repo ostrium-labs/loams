@@ -3,7 +3,7 @@ import type { Secret } from "./factory/vault";
 
 export const MASK = "[redacted]";
 
-const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Replaces every known secret value (longest first) with `mask`. With `credentials`, also
@@ -28,8 +28,8 @@ export function redact(
 		.map((s) => (typeof s === "string" ? s : s.reveal()))
 		.filter((v) => v.length > 0)
 		.sort((a, b) => b.length - a.length);
-	const keepUser = opts.credentials ? `(?!:${escape(mask)}@)` : "";
+	const keepUser = opts.credentials ? `(?!:${escapeRe(mask)}@)` : "";
 	for (const v of values)
-		out = out.replace(new RegExp(`${escape(v)}${keepUser}`, "g"), mask);
+		out = out.replace(new RegExp(`${escapeRe(v)}${keepUser}`, "g"), mask);
 	return out;
 }
