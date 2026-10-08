@@ -1,6 +1,8 @@
-import { app, type BrowserWindow } from "electron";
+import { app, type BrowserWindow, ipcMain } from "electron";
 import { CH } from "../../shared/contracts";
 import { parseDeepLink } from "../../shared/deeplink";
+import { assertTrustedSender } from "../security/policy";
+import { NavQueue } from "./nav-queue";
 
 export interface SingleInstanceDeps {
 	getWindow: () => BrowserWindow | undefined;
@@ -17,48 +19,54 @@ export function initSingleInstance(deps: SingleInstanceDeps): void {
 		app.quit();
 		return;
 	}
-	let pending: string | undefined;
+	const queue = new NavQueue();
 
-	const deliver = (raw: string): void => {
-		const win = deps.getWindow();
-		if (!win) {
-			pending = raw;
-			return;
-		}
-		if (win.isMinimized()) win.restore();
-		win.focus();
-		const link = parseDeepLink(raw);
-		if (!link) {
-			console.warn("dropped unparseable loams:// link");
-			return;
-		}
-		win.webContents.send(CH.shellNavigate, link.path);
-	};
-
-	app.setAsDefaultProtocolClient("loams");
-	app.on("second-instance", (_e, argv) => {
-		const raw = linkFromArgv(argv);
-		if (raw) return deliver(raw);
+	const focus = (): BrowserWindow | undefined => {
 		const win = deps.getWindow();
 		if (win) {
 			if (win.isMinimized()) win.restore();
 			win.focus();
 		}
+		return win;
+	};
+
+	const deliver = (raw: string): void => {
+		const win = focus();
+		const link = parseDeepLink(raw);
+		if (!link) {
+			console.warn("dropped unparseable loams:// link");
+			return;
+		}
+		// Held links are picked up by the renderer via CH.shellPendingNav.
+		if (queue.submit(link.path) === "push" && win) {
+			win.webContents.send(CH.shellNavigate, link.path);
+		}
+	};
+
+	ipcMain.handle(CH.shellPendingNav, (event) => {
+		assertTrustedSender(event);
+		return queue.take();
+	});
+	// A new page load has not subscribed yet; hash-only changes keep the page.
+	app.on("browser-window-created", (_e, w) => {
+		w.webContents.on(
+			"did-start-navigation",
+			(details: { isMainFrame: boolean; isSameDocument: boolean }) => {
+				if (details.isMainFrame && !details.isSameDocument) queue.reset();
+			},
+		);
+	});
+	app.setAsDefaultProtocolClient("loams");
+	app.on("second-instance", (_e, argv) => {
+		const raw = linkFromArgv(argv);
+		if (raw) deliver(raw);
+		else focus();
 	});
 	app.on("open-url", (event, url) => {
 		event.preventDefault();
 		deliver(url);
 	});
-	pending = linkFromArgv(process.argv);
-	// Links that arrived before the window existed are delivered once it loads.
-	app.on("browser-window-created", (_e, w) => {
-		w.webContents.once("did-finish-load", () => {
-			if (pending) {
-				const p = pending;
-				pending = undefined;
-				deliver(p);
-			}
-		});
-	});
+	const initial = linkFromArgv(process.argv);
+	if (initial) deliver(initial);
 	deps.onPrimary();
 }

@@ -82,6 +82,8 @@ export interface LoamsDesktopApi {
 		notify(title: string, body?: string): Promise<void>;
 		clipboardWrite(text: string): Promise<void>;
 		onNavigate(cb: (path: string) => void): () => void; // deep links
+		/** Call once after subscribing with onNavigate; returns a link received before the page was ready. */
+		takePendingNavigation(): Promise<string | null>;
 		setBadge(count: number): Promise<void>; // pending approvals in tray
 	};
 	update: {
@@ -123,6 +125,7 @@ export const CH = {
 	shellNotify: "shell:notify",
 	shellClipboard: "shell:clipboard",
 	shellNavigate: "shell:navigate",
+	shellPendingNav: "shell:pending-nav",
 	shellBadge: "shell:badge",
 	updateState: "update:state",
 	updateCheck: "update:check",
