@@ -425,7 +425,10 @@ impl Txn {
     ) -> Result<Vec<Pair>, TxnError> {
         self.check_window()?;
         let upper = end.map_or(Bound::Unbounded, Bound::Excluded);
-        let in_range = || self.buffer.range::<[u8], _>((Bound::Included(start), upper));
+        let in_range = || {
+            self.buffer
+                .range::<[u8], _>((Bound::Included(start), upper))
+        };
         // Fetch enough to cover the keys the buffer hides.
         let hidden = in_range()
             .filter(|(_, e)| matches!(e, Entry::Del | Entry::CheckNotExist))
@@ -496,7 +499,10 @@ impl Txn {
         }
         let prefixes: Vec<Vec<u8>> = wanted.iter().map(|k| handle.prefix(k)).collect();
         core.locks.acquire(&prefixes, self.owner).await?;
-        let at = handle.now().await.map_err(|e| TxnError::NotApplied(e.to_string()))?;
+        let at = handle
+            .now()
+            .await
+            .map_err(|e| TxnError::NotApplied(e.to_string()))?;
         core.oracle.wait_visible(at).await;
         for k in wanted {
             self.for_update.insert(k, at);
@@ -665,7 +671,12 @@ pub struct Snap {
 }
 
 impl Snap {
-    pub(crate) fn new(handle: Handle, at: Ts, refuse_reads_after: Instant, open: OpenGuard) -> Self {
+    pub(crate) fn new(
+        handle: Handle,
+        at: Ts,
+        refuse_reads_after: Instant,
+        open: OpenGuard,
+    ) -> Self {
         Snap {
             reader: Reader { handle, at },
             refuse_reads_after,
@@ -744,14 +755,32 @@ mod tests {
     #[test]
     fn escaping_keeps_order_and_is_prefix_free() {
         let keys: [&[u8]; 8] = [
-            b"", b"\x00", b"\x00\x00", b"\x00\x01", b"\x00\xff", b"a", b"a\x00", b"a\x01",
+            b"",
+            b"\x00",
+            b"\x00\x00",
+            b"\x00\x01",
+            b"\x00\xff",
+            b"a",
+            b"a\x00",
+            b"a\x01",
         ];
         let prefixes: Vec<Vec<u8>> = keys.iter().map(|k| prefix(7, b"r\x00", k)).collect();
         for (i, a) in prefixes.iter().enumerate() {
             for (j, b) in prefixes.iter().enumerate() {
-                assert_eq!(a.cmp(b), keys[i].cmp(keys[j]), "{:?} vs {:?}", keys[i], keys[j]);
+                assert_eq!(
+                    a.cmp(b),
+                    keys[i].cmp(keys[j]),
+                    "{:?} vs {:?}",
+                    keys[i],
+                    keys[j]
+                );
                 if i != j {
-                    assert!(!b.starts_with(a), "{:?} is a prefix of {:?}", keys[i], keys[j]);
+                    assert!(
+                        !b.starts_with(a),
+                        "{:?} is a prefix of {:?}",
+                        keys[i],
+                        keys[j]
+                    );
                 }
             }
             assert_eq!(relative(a, 2), keys[i]);

@@ -131,7 +131,9 @@ impl Store {
     /// v2 (`loams_tikv::Tikv::connect`).
     pub async fn open(config: StoreConfig) -> Result<Self, KvError> {
         match config {
-            StoreConfig::Embedded(config) => Ok(Store::Embedded(embedded::Handle::open(config).await?)),
+            StoreConfig::Embedded(config) => {
+                Ok(Store::Embedded(embedded::Handle::open(config).await?))
+            }
             #[cfg(feature = "tikv")]
             StoreConfig::Tikv(config) => Ok(Store::Tikv(loams_tikv::Tikv::connect(config).await?)),
         }

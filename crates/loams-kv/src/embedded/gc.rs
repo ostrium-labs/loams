@@ -227,20 +227,14 @@ fn collect(core: &Core, safe_point: Ts) -> Result<u64, redb::Error> {
 impl Handle {
     /// The latest live value of every key under `prefix` (relative to this
     /// handle's root).
-    fn latest_with_prefix<T>(
-        &self,
-        table: &T,
-        prefix: &[u8],
-    ) -> Result<Vec<Pair>, KvError>
+    fn latest_with_prefix<T>(&self, table: &T, prefix: &[u8]) -> Result<Vec<Pair>, KvError>
     where
         T: ReadableTable<&'static [u8], &'static [u8]>,
     {
         let mut out = Vec::new();
         let lo = self.prefix(prefix);
         let lo = &lo[..lo.len() - 2];
-        let range = table
-            .range(lo..)
-            .map_err(super::storage)?;
+        let range = table.range(lo..).map_err(super::storage)?;
         let mut current: Option<Vec<u8>> = None;
         for entry in range {
             let (k, v) = entry.map_err(super::storage)?;

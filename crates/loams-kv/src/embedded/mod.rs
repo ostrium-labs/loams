@@ -187,9 +187,7 @@ impl Core {
         loop {
             match self.oracle.try_now() {
                 Ok(ts) => return Ok(ts),
-                Err(next) => self
-                    .persist_mark(Oracle::mark_for(next))
-                    .map_err(storage)?,
+                Err(next) => self.persist_mark(Oracle::mark_for(next)).map_err(storage)?,
             }
         }
     }
@@ -260,11 +258,7 @@ fn canonical(path: &Path) -> std::io::Result<PathBuf> {
 
 /// Whether this process has the store file at `path` open.
 pub fn is_open(path: &Path) -> bool {
-    canonical(path).is_ok_and(|key| {
-        registry()
-            .get(&key)
-            .is_some_and(|w| w.strong_count() > 0)
-    })
+    canonical(path).is_ok_and(|key| registry().get(&key).is_some_and(|w| w.strong_count() > 0))
 }
 
 fn create(path: &Path) -> Result<Database, KvError> {
@@ -299,9 +293,8 @@ impl Shared {
         if let Some(dir) = config.path.parent()
             && !dir.as_os_str().is_empty()
         {
-            std::fs::create_dir_all(dir).map_err(|e| {
-                KvError::Embedded(format!("creating {}: {e}", dir.display()))
-            })?;
+            std::fs::create_dir_all(dir)
+                .map_err(|e| KvError::Embedded(format!("creating {}: {e}", dir.display())))?;
         }
         let key = canonical(&config.path)
             .map_err(|e| KvError::Embedded(format!("{}: {e}", config.path.display())))?;
@@ -444,7 +437,10 @@ impl Handle {
     }
 
     /// [`open`](Self::open), removing `dir` once the file is closed.
-    pub(crate) async fn open_owning(config: EmbeddedConfig, dir: TempDir) -> Result<Handle, KvError> {
+    pub(crate) async fn open_owning(
+        config: EmbeddedConfig,
+        dir: TempDir,
+    ) -> Result<Handle, KvError> {
         Self::open_with(config, Some(dir)).await
     }
 

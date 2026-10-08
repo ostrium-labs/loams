@@ -146,10 +146,7 @@ pub async fn first_committer_wins(factory: Factory) {
                 .await
         }
     };
-    let (a, b) = tokio::join!(
-        tokio::spawn(writer(b"a")),
-        tokio::spawn(writer(b"b"))
-    );
+    let (a, b) = tokio::join!(tokio::spawn(writer(b"a")), tokio::spawn(writer(b"b")));
     let (a, b) = (a.expect("joined"), b.expect("joined"));
     let won = match (&a, &b) {
         (Ok(_), Err(TxnError::Conflict)) => b"a",
@@ -413,7 +410,9 @@ pub async fn roots_are_isolated(factory: Factory) {
         (
             snap.get(b"k").await.expect("get"),
             snap.scan(b"", None, 10).await.expect("scan"),
-            snap.scan_reverse(b"", None, 10).await.expect("reverse scan"),
+            snap.scan_reverse(b"", None, 10)
+                .await
+                .expect("reverse scan"),
         )
     };
     let (ak, ascan, arev) = read(a.clone()).await;

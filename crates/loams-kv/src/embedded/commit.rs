@@ -152,7 +152,8 @@ impl Core {
                                 Op::Del => encode(None),
                                 Op::CheckNotExist | Op::Lock => continue,
                             };
-                            table.insert(version_key(&m.prefix, ts).as_slice(), stored.as_slice())?;
+                            table
+                                .insert(version_key(&m.prefix, ts).as_slice(), stored.as_slice())?;
                         }
                         last = Some(ts);
                         outcomes.push(Ok(ts));
@@ -574,7 +575,11 @@ async fn resolve_token(handle: &Handle, token: &Token) -> Option<Resolved> {
 
 /// Deletes the expired tokens and fences among `keys` (relative to the
 /// handle's root) as one transaction; returns how many went.
-pub(crate) fn sweep_tokens_blocking(handle: &Handle, now_ms: u64, keys: Vec<(Vec<u8>, Vec<u8>)>) -> u64 {
+pub(crate) fn sweep_tokens_blocking(
+    handle: &Handle,
+    now_ms: u64,
+    keys: Vec<(Vec<u8>, Vec<u8>)>,
+) -> u64 {
     let expired: Vec<Vec<u8>> = keys
         .into_iter()
         .filter(|(_, v)| token_expiry(v).is_some_and(|e| e < now_ms))

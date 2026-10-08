@@ -10,9 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use loams_kv::embedded::{self, Handle};
 use loams_kv::testing::TempDir;
-use loams_kv::{
-    EmbeddedConfig, KvError, Mode, Store, StoreConfig, Ts, TxnError, TxnOptions,
-};
+use loams_kv::{EmbeddedConfig, KvError, Mode, Store, StoreConfig, Ts, TxnError, TxnOptions};
 use proptest::prelude::*;
 
 fn tmp() -> TempDir {
@@ -133,7 +131,10 @@ async fn gc_respects_barrier() {
         }
         other => panic!("expected GcSafePoint, got {other:?}"),
     }
-    match store.barrier("gc-test/2", at, Duration::from_secs(60)).await {
+    match store
+        .barrier("gc-test/2", at, Duration::from_secs(60))
+        .await
+    {
         Err(KvError::BarrierBelowSafePoint {
             service_id,
             ts,
@@ -208,7 +209,10 @@ async fn group_commit_batches_fsyncs() {
         .snapshot(store.now().await.expect("now"))
         .await
         .expect("a snapshot");
-    assert_eq!(snap.scan(b"g", Some(b"h"), 200).await.expect("scan").len(), 100);
+    assert_eq!(
+        snap.scan(b"g", Some(b"h"), 200).await.expect("scan").len(),
+        100
+    );
 }
 
 /// Handles on one path share one database (redb locks its file); each
@@ -415,7 +419,9 @@ impl Model {
 }
 
 async fn real_step(txn: &mut embedded::Txn, step: &Step) -> Seen {
-    let pairs = |p: Vec<(Vec<u8>, Vec<u8>)>| Seen::Pairs(p.into_iter().map(|(k, v)| (k[0], v[0])).collect());
+    let pairs = |p: Vec<(Vec<u8>, Vec<u8>)>| {
+        Seen::Pairs(p.into_iter().map(|(k, v)| (k[0], v[0])).collect())
+    };
     match *step {
         Step::Get(k) => Seen::Value(txn.get(&[k]).await.expect("get").map(|v| v[0])),
         Step::Put(k, v) => {
