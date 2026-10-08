@@ -110,6 +110,16 @@ pub fn gate(statement: &str, language: QueryLanguage) -> Result<Access, GraphErr
             what: "LOAD reads server files".to_string(),
         });
     }
+    // Shortest-path searches have no hop bound Loams can check (Grafeo's `ShortestPathOp` has
+    // none): refused by keyword and by operator until Task 6 bounds them (security review M2).
+    if bare_words(statement)
+        .iter()
+        .any(|w| matches!(w.as_str(), "SHORTEST" | "SHORTESTPATH" | "ALLSHORTESTPATHS"))
+    {
+        return Err(GraphError::UnboundedPath {
+            max_hops: MAX_PATH_HOPS,
+        });
+    }
     let guard = classify(statement, language);
     match engine_classify(statement) {
         Ok(engine) => Ok(guard.max(engine)),
@@ -182,6 +192,11 @@ fn check_plan(root: &LogicalOperator) -> Result<(), GraphError> {
                 what: "graph management is not served".to_string(),
             });
         }
+    }
+    if text.contains("ShortestPath(") {
+        return Err(GraphError::UnboundedPath {
+            max_hops: MAX_PATH_HOPS,
+        });
     }
     // Every `ExpandOp` prints `max_hops: None` or `max_hops: Some(<n>)`.
     for (at, _) in text.match_indices("max_hops: ") {

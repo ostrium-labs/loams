@@ -360,3 +360,22 @@ fn read_only_refuses_lexer_and_call_payloads() {
         "nothing was written"
     );
 }
+
+/// Security review M2: shortest-path searches have no hop bound Loams can check, so they are
+/// refused until Task 6 adds one.
+#[test]
+fn shortest_path_searches_are_refused() {
+    let engine = Engine::new();
+    let graph = Graph::open(&engine, "acme", "sp", OpenSpec::default()).expect("open");
+    for statement in [
+        "MATCH (a), (b) MATCH p = shortestPath((a)-[*]-(b)) RETURN p",
+        "MATCH (a), (b) MATCH p = allShortestPaths((a)-[*]-(b)) RETURN p",
+        "MATCH p = ANY SHORTEST (a)-[*]-(b) RETURN p",
+        "MATCH p = ALL SHORTEST (a)-[*]-(b) RETURN p",
+        "MATCH p = ANY SHORTEST (a)-[*1..3]-(b) RETURN p",
+        "MATCH (a) WHERE EXISTS { MATCH p = ANY SHORTEST (a)-[*]-(b) } RETURN a",
+    ] {
+        let err = graph.execute(statement, true).expect_err("refused");
+        assert_eq!(err.reason(), "graph_unbounded_path", "{statement}: {err}");
+    }
+}
