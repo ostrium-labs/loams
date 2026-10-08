@@ -16,11 +16,11 @@ fn no_feeder_flag_exists() {
         !names.iter().any(|n| n.contains("feed")),
         "feeder options: {names:?}"
     );
-    assert!(
-        cmd.clone()
-            .try_get_matches_from(["loams-wal", "--feed-safekeeper", "127.0.0.1:5457"])
-            .is_err()
-    );
+    let err = cmd
+        .clone()
+        .try_get_matches_from(["loams-wal", "--feed-safekeeper", "127.0.0.1:5457"])
+        .unwrap_err();
+    assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     // The broker options that replace it are there.
     assert!(names.iter().any(|n| n == "broker-endpoint"), "{names:?}");
 }
