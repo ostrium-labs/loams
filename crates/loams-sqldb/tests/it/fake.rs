@@ -108,3 +108,76 @@ async fn fake_runtime_runs_jobs() {
         3
     );
 }
+
+#[tokio::test]
+async fn fake_runtime_restarts_members_on_class_change() {
+    let rt = FakeRuntime::new();
+    let b = br(4);
+    let names = |st: &loams_sqldb::runtime::PoolStatus| {
+        st.members
+            .iter()
+            .map(|m| m.name.clone())
+            .collect::<Vec<_>>()
+    };
+    let xs = names(&rt.ensure_pool(&b, Class::Xs, 2).await.expect("xs"));
+    let same = names(&rt.ensure_pool(&b, Class::Xs, 2).await.expect("xs again"));
+    assert_eq!(xs, same, "an unchanged pool keeps its members");
+    let s = names(&rt.ensure_pool(&b, Class::S, 2).await.expect("s"));
+    assert_eq!(s.len(), 2);
+    assert!(
+        xs.iter().zip(&s).all(|(a, b)| a != b),
+        "class change replaces every member: {xs:?} {s:?}"
+    );
+}
+
+#[tokio::test]
+async fn fake_runtime_reports_and_replaces_exited_members() {
+    let rt = FakeRuntime::new();
+    let b = br(5);
+    let before = rt
+        .ensure_pool(&b, Class::Xs, 1)
+        .await
+        .expect("ensure")
+        .members[0]
+        .name
+        .clone();
+    rt.crash_member(&b, 0, Some(137));
+    let st = rt.pool_status(&b).await.expect("status").expect("pool");
+    assert_eq!(st.members[0].state, MemberState::Exited { code: Some(137) });
+    assert_eq!(st.ready(), 0);
+    let st = rt.scale(&b, 1).await.expect("scale replaces it");
+    assert_eq!(st.members[0].state, MemberState::Ready);
+    assert_ne!(st.members[0].name, before);
+}
+
+#[tokio::test]
+async fn fake_runtime_applies_then_errors() {
+    let rt = FakeRuntime::new();
+    let b = br(6);
+    rt.fail_after_next(Op::EnsurePool);
+    assert!(matches!(
+        rt.ensure_pool(&b, Class::Xs, 1).await,
+        Err(RuntimeError::Unavailable(_))
+    ));
+    assert_eq!(
+        rt.pool_status(&b)
+            .await
+            .expect("s")
+            .expect("applied")
+            .members
+            .len(),
+        1
+    );
+    rt.fail_after_next(Op::Scale);
+    assert!(rt.scale(&b, 0).await.is_err());
+    assert_eq!(
+        rt.pool_status(&b).await.expect("s").expect("pool").replicas,
+        0
+    );
+    rt.fail_after_next(Op::DeletePool);
+    assert!(rt.delete_pool(&b).await.is_err());
+    assert!(
+        rt.pool_status(&b).await.expect("s").is_none(),
+        "deleted despite the error"
+    );
+}

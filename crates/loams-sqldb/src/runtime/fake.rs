@@ -1,5 +1,6 @@
 //! An in-memory [`SqlRuntime`] for saga tests: records every call, injects
-//! one-shot failures, and can hold new members in `Starting`.
+//! one-shot failures before or after the effect, can hold new members in
+//! `Starting`, crash members, and replaces every member on a class change.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -40,12 +41,19 @@ pub enum Call {
     RunJob(String),
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Sim {
+    /// Bumped whenever the member is replaced (class change, after exit).
+    generation: u32,
+    starting: bool,
+    exited: Option<Option<i32>>,
+}
+
 #[derive(Debug)]
 struct Pool {
     class: Class,
     replicas: u32,
-    /// Member indexes still `Starting`.
-    starting: BTreeSet<u32>,
+    members: BTreeMap<u32, Sim>,
 }
 
 #[derive(Debug, Default)]
@@ -53,8 +61,10 @@ struct State {
     pools: BTreeMap<BranchId, Pool>,
     calls: Vec<Call>,
     fail: BTreeSet<Op>,
+    fail_after: BTreeSet<Op>,
     hold_starting: bool,
     job_exit_code: i32,
+    next_generation: u32,
 }
 
 /// See the module docs.
@@ -75,14 +85,33 @@ impl FakeRuntime {
         self.lock().fail.insert(op);
     }
 
+    /// The next call of `op` takes effect, then fails with
+    /// [`RuntimeError::Unavailable`] (a crash after the effect).
+    pub fn fail_after_next(&self, op: Op) {
+        self.lock().fail_after.insert(op);
+    }
+
+    /// Marks a member as exited (a crash or OOM kill); the next
+    /// `ensure_pool` or `scale` replaces it.
+    pub fn crash_member(&self, branch: &BranchId, index: u32, code: Option<i32>) {
+        if let Some(m) = self
+            .lock()
+            .pools
+            .get_mut(branch)
+            .and_then(|p| p.members.get_mut(&index))
+        {
+            m.exited = Some(code);
+        }
+    }
+
     /// While on, members created by `ensure_pool` or `scale` stay
     /// `Starting`; turning it off makes every member ready.
     pub fn hold_starting(&self, on: bool) {
         let mut st = self.lock();
         st.hold_starting = on;
         if !on {
-            for pool in st.pools.values_mut() {
-                pool.starting.clear();
+            for m in st.pools.values_mut().flat_map(|p| p.members.values_mut()) {
+                m.starting = false;
             }
         }
     }
@@ -116,32 +145,66 @@ impl State {
         Ok(())
     }
 
-    fn resize(&mut self, branch: &BranchId, replicas: u32) {
-        let hold = self.hold_starting;
+    /// The result of an applied call, or the injected after-effect failure.
+    fn leave<T>(&mut self, op: Op, value: T) -> Result<T, RuntimeError> {
+        if self.fail_after.remove(&op) {
+            return Err(RuntimeError::Unavailable(format!(
+                "injected failure after {op:?}"
+            )));
+        }
+        Ok(value)
+    }
+
+    fn fresh(&mut self) -> Sim {
+        self.next_generation += 1;
+        Sim {
+            generation: self.next_generation,
+            starting: self.hold_starting,
+            exited: None,
+        }
+    }
+
+    /// Brings `branch` to `replicas` at `class`: a class change replaces
+    /// every member, an exited member is replaced, extra members go.
+    fn reconcile(&mut self, branch: &BranchId, class: Class, replicas: u32) {
+        let Some(pool) = self.pools.get(branch) else {
+            return;
+        };
+        let restart_all = pool.class != class;
+        let keep: Vec<(u32, Sim)> = pool
+            .members
+            .iter()
+            .filter(|(i, m)| **i < replicas && !restart_all && m.exited.is_none())
+            .map(|(i, m)| (*i, *m))
+            .collect();
+        let mut members: BTreeMap<u32, Sim> = keep.into_iter().collect();
+        for index in 0..replicas {
+            members.entry(index).or_insert_with(|| self.fresh());
+        }
         if let Some(pool) = self.pools.get_mut(branch) {
-            if hold {
-                pool.starting.extend(pool.replicas..replicas);
-            }
-            pool.starting.retain(|&i| i < replicas);
+            pool.class = class;
             pool.replicas = replicas;
+            pool.members = members;
         }
     }
 
     fn status(&self, branch: &BranchId) -> Option<PoolStatus> {
         let pool = self.pools.get(branch)?;
-        let members = (0..pool.replicas)
-            .map(|index| {
+        let members = pool
+            .members
+            .iter()
+            .map(|(&index, sim)| {
                 let port = 24_000 + u16::try_from(index).unwrap_or(u16::MAX - 24_000);
                 let ip = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
                 Member {
                     index,
-                    name: format!("fake-{branch}-{index}"),
+                    name: format!("fake-{branch}-{index}-g{}", sim.generation),
                     mysql_addr: SocketAddr::new(ip, port),
                     status_addr: SocketAddr::new(ip, port + 1_000),
-                    state: if pool.starting.contains(&index) {
-                        MemberState::Starting
-                    } else {
-                        MemberState::Ready
+                    state: match (sim.exited, sim.starting) {
+                        (Some(code), _) => MemberState::Exited { code },
+                        (None, true) => MemberState::Starting,
+                        (None, false) => MemberState::Ready,
                     },
                 }
             })
@@ -168,49 +231,54 @@ impl SqlRuntime for FakeRuntime {
             Op::EnsurePool,
             Call::EnsurePool(branch.clone(), class, replicas),
         )?;
-        st.pools
-            .entry(branch.clone())
-            .or_insert(Pool {
-                class,
-                replicas: 0,
-                starting: BTreeSet::new(),
-            })
-            .class = class;
-        st.resize(branch, replicas);
-        st.status(branch)
-            .ok_or_else(|| RuntimeError::NoPool(branch.clone()))
+        st.pools.entry(branch.clone()).or_insert(Pool {
+            class,
+            replicas: 0,
+            members: BTreeMap::new(),
+        });
+        st.reconcile(branch, class, replicas);
+        let status = st
+            .status(branch)
+            .ok_or_else(|| RuntimeError::NoPool(branch.clone()))?;
+        st.leave(Op::EnsurePool, status)
     }
 
     async fn scale(&self, branch: &BranchId, replicas: u32) -> Result<PoolStatus, RuntimeError> {
         let mut st = self.lock();
         st.enter(Op::Scale, Call::Scale(branch.clone(), replicas))?;
-        if !st.pools.contains_key(branch) {
-            return Err(RuntimeError::NoPool(branch.clone()));
-        }
-        st.resize(branch, replicas);
-        st.status(branch)
-            .ok_or_else(|| RuntimeError::NoPool(branch.clone()))
+        let class = st
+            .pools
+            .get(branch)
+            .map(|p| p.class)
+            .ok_or_else(|| RuntimeError::NoPool(branch.clone()))?;
+        st.reconcile(branch, class, replicas);
+        let status = st
+            .status(branch)
+            .ok_or_else(|| RuntimeError::NoPool(branch.clone()))?;
+        st.leave(Op::Scale, status)
     }
 
     async fn pool_status(&self, branch: &BranchId) -> Result<Option<PoolStatus>, RuntimeError> {
         let mut st = self.lock();
         st.enter(Op::PoolStatus, Call::PoolStatus(branch.clone()))?;
-        Ok(st.status(branch))
+        let status = st.status(branch);
+        st.leave(Op::PoolStatus, status)
     }
 
     async fn delete_pool(&self, branch: &BranchId) -> Result<(), RuntimeError> {
         let mut st = self.lock();
         st.enter(Op::DeletePool, Call::DeletePool(branch.clone()))?;
         st.pools.remove(branch);
-        Ok(())
+        st.leave(Op::DeletePool, ())
     }
 
     async fn run_job(&self, spec: &JobSpec) -> Result<JobOutcome, RuntimeError> {
         let mut st = self.lock();
         st.enter(Op::RunJob, Call::RunJob(spec.name.clone()))?;
-        Ok(JobOutcome {
+        let outcome = JobOutcome {
             exit_code: st.job_exit_code,
             log_tail: String::new(),
-        })
+        };
+        st.leave(Op::RunJob, outcome)
     }
 }
