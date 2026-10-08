@@ -1,0 +1,39 @@
+# Rendered by loams-sqldb (render::tidb). Do not edit.
+# Branch br_0123456789abcdef, class xs: 0.25 vCPU, 768 MiB.
+
+store = "tikv"
+path = "127.0.0.1:29379"
+# Every Loams TiDB serves exactly one keyspace (D260).
+keyspace-name = "br_0123456789abcdef"
+# One region per database, not one per system table (R1.4).
+split-table = false
+server-version = "8.0.11-TiDB-v8.5.8-Loams"
+enable-global-kill = true
+# Runs once, at the keyspace's first bootstrap: class memory limits and log
+# redaction (global variables in v8.5.8, not config items).
+initialize-sql-file = "/etc/tidb/init.sql"
+
+[instance]
+tidb_enable_ddl = true
+
+[performance]
+# The v8.5.8 default (true) holds the port until statistics load (R1.3).
+force-init-stats = false
+lite-init-stats = true
+
+[proxy-protocol]
+# loams-sqlgate's networks; every connection from them carries a PROXY header.
+networks = "127.0.0.1/32"
+header-timeout = 5
+fallbackable = false
+
+[security]
+ssl-ca = "/etc/tidb/tls/ca.crt"
+ssl-cert = "/etc/tidb/tls/tls.crt"
+ssl-key = "/etc/tidb/tls/tls.key"
+tls-version = "TLSv1.2"
+
+[log]
+level = "info"
+# Statement literals are wrapped in redaction markers (tidb_redact_log =
+# MARKER, set in initialize-sql-file).

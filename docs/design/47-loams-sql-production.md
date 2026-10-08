@@ -162,7 +162,7 @@ What it costs (§13):
 - **Statistics.** Statistics are loaded asynchronously with `force-init-stats = false`. A forum report on v6.5 shows a 5-minute "init stats" phase *before* the port opened when it was forced (ask.pingcap.com #7137), so this setting is mandatory.
 - **Pod scheduling.** With an image already on the node it costs 0.5–2 s; a node pull costs 5–20 s, so every node keeps the image (DaemonSet pre-pull).
 - **Total.** Connect-to-first-result p50 **≈ 2 s**, p95 **≈ 5 s** for a warm node with a pre-pulled image **(estimate)**. No data is downloaded, and this does not depend on database size, unlike the earlier draft's 30–60 s cold resume.
-- **Memory.** 180–365 MB RSS per idle-to-busy `tidb-server` **(spike)**. The smallest class is therefore 0.5 GiB, and `xs` pools are packed densely.
+- **Memory.** 224 MiB idle, 306 MiB after load and a 493 MiB peak per `tidb-server` (Task 1, R1.5). The smallest class is therefore 0.75 GiB (R2.1), and `xs` pools are packed densely.
 
 ### 5.3 More than one pod
 TiDB pods of one keyspace coordinate through PD (DDL owner, global kill, auto-ID allocation). With more than one pod, AUTO_INCREMENT values are unique but not sequential across pods unless `AUTO_ID_CACHE 1` is set (docs). The gate balances connections across pods. Classes `xs`–`m` use one pod, and `l`+ autoscale on CPU.
@@ -381,14 +381,14 @@ Mutations are `loams.operations.v1` operations run as Resonate sagas with determ
 
 | Class | vCPU | Memory | Gate connections | Pods (min–max) | `tidb_server_memory_limit` |
 |---|---|---|---|---|---|
-| `xs` | 0.25 | 0.5 GiB | 100 | 0–1 | 400 MiB |
-| `s` | 0.5 | 1 GiB | 200 | 0–1 | 800 MiB |
-| `m` | 1 | 2 GiB | 500 | 0–1 | 1.6 GiB |
-| `l` | 2 | 4 GiB | 1 000 | 0–2 | 3.2 GiB |
-| `xl` | 4 | 8 GiB | 2 000 | 1–4 | 6.4 GiB |
-| `2xl` | 8 | 16 GiB | 4 000 | 1–8 | 13 GiB |
+| `xs` | 0.25 | 0.75 GiB | 100 | 0–1 | 614 MiB |
+| `s` | 0.5 | 1 GiB | 200 | 0–1 | 819 MiB |
+| `m` | 1 | 2 GiB | 500 | 0–1 | 1 638 MiB |
+| `l` | 2 | 4 GiB | 1 000 | 0–2 | 3 276 MiB |
+| `xl` | 4 | 8 GiB | 2 000 | 1–4 | 6 553 MiB |
+| `2xl` | 8 | 16 GiB | 4 000 | 1–8 | 13 107 MiB |
 
-(Estimates; Task 24 tunes them.)
+(Estimates; Task 24 tunes them. `xs` moved from 0.5 to 0.75 GiB and every `tidb_server_memory_limit` is 80 % of the pod limit, per SQ1 ruling R2.1: TiDB peaked at 493 MiB, and v8.5.8 clamps limits below 512 MiB.)
 - **Storage.** It is metered per keyspace (PD region sizes, verify) and capped by a quota, not a volume. Above the quota the database turns read-only.
 - **Density.** The target is ≥ 10 000 databases per TiKV cluster at the `xs`/`s` mix, after §6.3's measurement (Q660).
 

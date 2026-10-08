@@ -724,3 +724,36 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - sysbench was not installed, so the RSS load used the `mysql`-loop fallback the task allows.
   - `shellcheck` was not installed and was not fetched, so `bash -n` passes, but the "shellcheck clean" exit item is **still open**.
   - `bootstrap_ms` in `regions.jsonl` includes TiDB's graceful stop.
+- **R2.1 Classes (controller ruling on R1.5, 2026-10-09): `xs` is 0.75 GiB.** `tidb_server_memory_limit` is 80 % of the pod memory limit. `split-table = false` and `force-init-stats = false` are kept (R1.3, R1.4).
+  - **Why.** TiDB peaked at 493 MiB under load (R1.5). TiDB v8.5.8 also clamps any `tidb_server_memory_limit` below 512 MiB up to 512 MiB (`parseMemoryLimit`, `pkg/sessionctx/variable/varsutil.go`), so the 0.5 GiB `xs` of §47 §15 could not have had its 400 MiB limit.
+  - **Cost.** Lower `xs` density. The owner may revise this.
+  - **Limits.** `tidb_mem_quota_query` is 40 % of the pod memory limit (an estimate; Task 24 tunes both). Values are whole MiB, rounded down.
+  - **Class table** (this plan's source of truth for `model::Class`; §47 §15 is updated to match; Task 23's `class_table_matches_docs` checks `docs/sqldb/classes.md` against it):
+
+    | Class | vCPU | Memory | `tidb_server_memory_limit` | `tidb_mem_quota_query` | Gate connections | Pods (min–max) |
+    |---|---|---|---|---|---|---|
+    | `xs` | 0.25 | 0.75 GiB (768 MiB) | 614 MiB | 307 MiB | 100 | 0–1 |
+    | `s` | 0.5 | 1 GiB | 819 MiB | 409 MiB | 200 | 0–1 |
+    | `m` | 1 | 2 GiB | 1 638 MiB | 819 MiB | 500 | 0–1 |
+    | `l` | 2 | 4 GiB | 3 276 MiB | 1 638 MiB | 1 000 | 0–2 |
+    | `xl` | 4 | 8 GiB | 6 553 MiB | 3 276 MiB | 2 000 | 1–4 |
+    | `2xl` | 8 | 16 GiB | 13 107 MiB | 6 553 MiB | 4 000 | 1–8 |
+- **R2.2 Memory limits and log redaction are bootstrap SQL, not `tidb.toml`.**
+  - **The constraint.** In v8.5.8, `tidb_server_memory_limit`, `tidb_mem_quota_query` and `tidb_redact_log` are global system variables. They are not config items, and `mem-quota-query` is a removed config item.
+  - **How they are applied.** `render::tidb` sets `initialize-sql-file = "/etc/tidb/init.sql"`, and `render::tidb_init_sql(class)` writes `SET GLOBAL` for all three. TiDB runs that file once, at the keyspace's first bootstrap.
+  - **Later changes.** The values live in the keyspace's `mysql.global_variables`. So a class change, or a copy branch whose class differs from its parent's, must re-apply `render::tidb_globals(class)` through `ri_control` (Tasks 7, 11 and 13).
+  - **Verified on the spike stack.** After bootstrap, `@@global.tidb_server_memory_limit = 614MB`, `tidb_redact_log = MARKER` and `tidb_mem_quota_query = 321912832`.
+- **R2.3 `enable-global-kill` is a top-level key.** In v8.5.8 it is a top-level key, not one under `[security]` (`experimental.enable-global-kill` is a removed key). It is rendered at the top level. TiDB's own `--config-check --config-strict` accepts both golden configs (`rendered_config_passes_tidb_config_check`, `LOAMS_IT_SQLDB=1`).
+- **R2.4 Rendering details** that the task did not spell out:
+  - **Kept in the config, not on the command line.** `store = "tikv"` and `path` live in the config. Per-member `--host`, `-P`, `--status-host`, `--status` and `--advertise-address` stay on the command line, so every member shares one file.
+  - **Other keys.** `[instance] tidb_enable_ddl = true` (§47 §5.1). `[security] tls-version = "TLSv1.2"`. `[proxy-protocol] header-timeout = 5`.
+  - **Cluster TLS.** `cluster-ssl-*` is rendered only when `Endpoints::with_cluster_tls(true)`.
+  - **Fixed container paths** (Kubernetes TLS Secret layout): `/etc/tidb/{tidb.toml,init.sql}`, `/etc/tidb/tls/{ca.crt,tls.crt,tls.key}` and `/etc/tidb/cluster-tls/…`.
+  - **Gate networks.** They are `Cidr` values with host bits cleared. `*`, `0.0.0.0/0` and `::/0` are refused.
+- **R2.5 Branch ids in Task 2.** `model::BranchId` accepts `br_` + 16 of `[0-9a-z]`. That covers every lower-case base32 alphabet and fits PD's keyspace-name rule. Task 7's `ids.rs` may narrow it to the chosen alphabet.
+- **R2.6 Runtime contract details.**
+  - **Class pod limits.** `SqlRuntime` does not enforce them (§47 §15). That is control-plane policy, and the IT scales an `xs` pool to 2 to exercise a warm second member.
+  - **`LocalRuntime` state.** It keeps `state_dir/<branch>/{pool.json,tidb.toml,init.sql}`, with stable per-member port pairs from 24000+N and 25000+N. It labels containers `io.loams.sqldb.*` and replaces a member whose fingerprint changed (rendered config, image, class).
+  - **CPU limits.** `LocalRuntime` passes `--cpus` by class unless `cpu_limits = false`. The IT turns it off, because a first bootstrap at 0.25 vCPU takes minutes. Memory is always limited.
+  - **Bootstrap time.** The first bootstrap took about 8–45 s here, and it stays in `CreateDatabase` (R1.2). Task 7 should bootstrap at a larger class, or without a CPU limit.
+- **R2.7 Deviation.** `docs/sqldb/licensing.md` and the crate's `build.rs` were added. `build.rs` turns `LOAMS_IT_SQLDB=1` into the cfg `loams_it_sqldb`, so container tests are `#[ignore]` unless it is set.
