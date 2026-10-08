@@ -33,7 +33,7 @@ export class DataService extends Service {
     };
   }
 
-  /** The provider a widget resolves to, or `undefined` for the the BI backend path. */
+  /** The provider a widget resolves to, or `undefined` for the BI backend path. */
   providerFor(widget: any): DataProvider | undefined {
     const source = widget?.data?.source;
     return typeof source === "string" ? this._providers.get(source) : undefined;

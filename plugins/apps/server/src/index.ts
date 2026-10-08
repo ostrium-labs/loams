@@ -38,7 +38,7 @@ import { registerPluginCatalog } from "./plugin-catalog.js";
 export const DEFAULT_DASHBOARD_ID = "e3b0c442-98fc-1c14-9afbf4c8996fb924";
 
 async function bootstrap() {
-  const BI_PORT = parseInt(readEnvWithFallback("LOAMS_BI_PORT", "BI_PORT") || "8088", 10);
+  const BI_PORT = parseInt(readEnvWithFallback("LOAMS_BI_PORT", "SUPERSET_PORT") || "8088", 10);
   const API_PORT = parseInt(process.env.PORT || "3001", 10);
 
   // 1. Start Feature-rich MSW Mock BI Server

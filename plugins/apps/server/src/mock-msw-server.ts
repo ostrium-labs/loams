@@ -1,5 +1,5 @@
 /**
- * Feature-rich TypeScript Mock the BI backend HTTP Server powered by MSW (Mock Service Worker).
+ * Feature-rich TypeScript Mock BI HTTP Server powered by MSW (Mock Service Worker).
  *
  * Provides:
  * - MSW Request Handlers (http.get, http.post, HttpResponse.json, delay)
@@ -834,7 +834,7 @@ export function startMswBiMock(
 
     httpServer.listen(port, () => {
       process.stdout.write(
-        `[MSW Mock the BI backend Server] listening on http://localhost:${port} and intercepting fetch\n`,
+        `[MSW Mock BI Server] listening on http://localhost:${port} and intercepting fetch\n`,
       );
       resolve({ mswServer, httpServer });
     });

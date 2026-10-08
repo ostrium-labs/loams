@@ -94,7 +94,7 @@ export const GraphWidget: React.FC<GraphWidgetProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   /**
-   * A `loams` graph shows current state and re-reads; a the BI backend graph is a
+   * A `loams` graph shows current state and re-reads; a BI backend graph is a
    * warehouse scan over a period and would only get more expensive.
    */
   const live = widget.data.source === "loams";

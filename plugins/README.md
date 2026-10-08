@@ -189,12 +189,12 @@ Server environment variables (all optional; defaults in brackets):
 | `LOAMS_BI_PORT`                   | port for the bundled mock BI backend [`8088`]           |
 | `LOAMS_BI_URL`                    | BI backend base URL [`http://localhost:$LOAMS_BI_PORT`] |
 | `LOAMS_BI_USER` / `LOAMS_BI_PASS` | BI backend credentials [`admin` / `admin`]              |
-
-The old `SUPERSET_PORT`, `SUPERSET_URL`, `SUPERSET_USER` and `SUPERSET_PASS` names are
-still read as deprecated fallbacks and log a one-time warning.
 | `DATABASE_URL` | store connection string [`memory`] |
 | `ENABLE_MCP` | `true` also serves the MCP stdio server on this process |
 | `CORS_ALLOWED_ORIGINS` | comma-separated origin allowlist. `*` is rejected |
+
+The old `SUPERSET_PORT`, `SUPERSET_URL`, `SUPERSET_USER` and `SUPERSET_PASS` names are
+still read as deprecated fallbacks and log a one-time warning.
 
 Adapters read their own variables — `ZULIP_URL`, `FORGEJO_TOKEN`,
 `LANGFUSE_PUBLIC_KEY` and so on. The full list is in

@@ -208,7 +208,7 @@ export class ChartSpecService extends Service {
       // Fall through to semantic fallback compiler
     }
 
-    // Semantic Fallback Compiler for chart-specs Spec: guarantees every single chart type renders data
+    // Semantic Fallback Compiler for a chart spec: guarantees every single chart type renders data
     const xField =
       chartSpec.encodings?.x?.field ||
       chartSpec.encodings?.x ||
@@ -447,7 +447,7 @@ export class ChartSpecService extends Service {
   }
 
   async inferSemanticTypes(datasetId: number): Promise<Record<string, string>> {
-    const biService: any = this.ctx.bi; // Using any as the control-plane service type is not known here, but the method is defined in requirements
+    const biService: any = this.ctx.bi; // Using any as the bi service type is not known here, but the method is defined in requirements
     const describeInfo = await biService.describeDataset(datasetId);
     if (!describeInfo || !describeInfo.columns) {
       return {};

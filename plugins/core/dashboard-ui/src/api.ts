@@ -30,7 +30,7 @@ export interface DashboardSpec {
 }
 
 /**
- * A widget's data source: either the the BI backend warehouse, or one of Loams' own
+ * A widget's data source: either the BI backend warehouse, or one of Loams' own
  * cursor-resumable watch streams.
  *
  * Mirrors `BiDataSourceSchema | LoamsDataSourceSchema` in

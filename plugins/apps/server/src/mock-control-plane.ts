@@ -528,7 +528,7 @@ export const MOCK_DATASETS: Record<number, MockDataset> = {
 };
 
 /**
- * Creates and starts the Mock the BI backend HTTP server
+ * Creates and starts the Mock BI HTTP server
  */
 export function startMockBiServer(port = 8088): Promise<http.Server> {
   return new Promise((resolve) => {
@@ -677,7 +677,7 @@ export function startMockBiServer(port = 8088): Promise<http.Server> {
     });
 
     server.listen(port, () => {
-      process.stdout.write(`[Mock the BI backend Server] listening on http://localhost:${port}\n`);
+      process.stdout.write(`[Mock BI Server] listening on http://localhost:${port}\n`);
       resolve(server);
     });
   });

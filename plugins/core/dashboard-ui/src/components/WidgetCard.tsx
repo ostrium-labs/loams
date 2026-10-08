@@ -57,7 +57,7 @@ export const WidgetCard: React.FC<WidgetCardProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * A `loams` tile shows current state, so it re-reads; a the BI backend tile is a
+   * A `loams` tile shows current state, so it re-reads; a BI backend tile is a
    * warehouse scan over a period and would only get more expensive.
    */
   const live = widget.data.source === "loams";

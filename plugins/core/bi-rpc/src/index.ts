@@ -183,7 +183,7 @@ function toPbRow(row: unknown): PbRow {
 }
 
 /**
- * Normalize a the BI backend result payload into rows.
+ * Normalize a BI backend result payload into rows.
  *
  * `queryData` returns `result[0]` (or the whole body) and the dataset list
  * returns a `{ result: [...] }` envelope, so both shapes are unwrapped here

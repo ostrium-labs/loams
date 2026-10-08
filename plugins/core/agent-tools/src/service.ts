@@ -29,6 +29,26 @@ export class AgentToolsService extends Service {
     super(ctx, "agentTools");
   }
 
+  private async _addChartSpecWidget(args: any): Promise<any> {
+    const { dashboardId, datasetId, position } = args;
+    // `flintSpec` is the pre-rename argument name; accepted as a fallback for one release.
+    const chartSpec = args.chartSpec ?? args.flintSpec;
+    const validation = await this.ctx.chartSpecs.validate(chartSpec);
+    if (!validation.valid || validation.spec === undefined) {
+      throw new Error(`Invalid chart spec: ${validation.errors.join("; ")}`);
+    }
+    const widget: Widget = {
+      id: uuidv4(),
+      type: "chart",
+      data: {
+        source: "bi",
+        datasetId,
+      },
+      chartSpec: validation.spec,
+    };
+    return await this.ctx.dashboard.addWidget(dashboardId, widget, position);
+  }
+
   getToolDefinitions(): ToolDefinition[] {
     return [
       {
@@ -140,26 +160,27 @@ export class AgentToolsService extends Service {
             dashboardId: { type: "string" },
             datasetId: { type: "number" },
             chartSpec: { type: "object" },
+            flintSpec: { type: "object", description: "Deprecated: use chartSpec" },
             position: { type: "object" },
           },
-          required: ["dashboardId", "datasetId", "chartSpec"],
+          required: ["dashboardId", "datasetId"],
         },
-        handler: async ({ dashboardId, datasetId, chartSpec, position }) => {
-          const validation = await this.ctx.chartSpecs.validate(chartSpec);
-          if (!validation.valid || validation.spec === undefined) {
-            throw new Error(`Invalid chart spec: ${validation.errors.join("; ")}`);
-          }
-          const widget: Widget = {
-            id: uuidv4(),
-            type: "chart",
-            data: {
-              source: "bi",
-              datasetId,
-            },
-            chartSpec: validation.spec,
-          };
-          return await this.ctx.dashboard.addWidget(dashboardId, widget, position);
+        handler: (args) => this._addChartSpecWidget(args),
+      },
+      {
+        name: "add_flint_widget",
+        description: "Deprecated: use add_chart_spec_widget",
+        inputSchema: {
+          type: "object",
+          properties: {
+            dashboardId: { type: "string" },
+            datasetId: { type: "number" },
+            flintSpec: { type: "object" },
+            position: { type: "object" },
+          },
+          required: ["dashboardId", "datasetId", "flintSpec"],
         },
+        handler: (args) => this._addChartSpecWidget(args),
       },
       {
         name: "remove_widget",
