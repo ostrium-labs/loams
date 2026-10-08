@@ -1,7 +1,7 @@
 import type { IpcResult, SqlResult } from '@loams/desktop/contracts';
+import { isWrite, type SqlDialect } from '@loams/desktop/sql-lex';
 import { Button, Dialog, Notice, Table, Textarea } from '@loams/ui';
 import { type KeyboardEvent, useId, useRef, useState } from 'react';
-import { isWrite, type SqlDialect } from '@loams/desktop/sql-lex';
 
 export const MAX_ROWS = 1000;
 /** Longest cell text rendered; longer values are clipped with an ellipsis. */

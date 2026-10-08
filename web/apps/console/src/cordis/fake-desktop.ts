@@ -26,6 +26,7 @@ import type {
   IpcResult,
   LoamsDesktopApi,
   ServerEntry,
+  SqlResult,
   StackId,
   StackState,
 } from '@loams/desktop/contracts';
@@ -468,6 +469,22 @@ export function createFakeDesktop(): LoamsDesktopApi {
             lastRecordLsn: '0/16B4000',
             state: 'Active',
           },
+          {
+            timelineId: '9a4b'.repeat(8),
+            name: 'feature-x-wip (fake)',
+            ancestorTimelineId: 'c3d4'.repeat(8),
+            ancestorLsn: '0/16B3F00',
+            lastRecordLsn: '0/16B3FF8',
+            state: 'Active',
+          },
+          {
+            timelineId: '5e6f'.repeat(8),
+            name: 'hotfix (fake)',
+            ancestorTimelineId: 'a1b2'.repeat(8),
+            ancestorLsn: '0/17F0A00',
+            lastRecordLsn: '0/18200B8',
+            state: 'Active',
+          },
         ],
       }),
       createBranch: async (_t, b) => ({
@@ -480,7 +497,10 @@ export function createFakeDesktop(): LoamsDesktopApi {
           state: 'Active',
         },
       }),
-      walStatus: async (_t, tl) => ({ ok: true, value: { timelineId: tl, flushLsn: '0/1A2B3C4', commitLsn: '0/1A2B3C4' } }),
+      walStatus: async (_t, tl) => ({
+        ok: true,
+        value: { timelineId: tl, flushLsn: '0/1A2B3C4', commitLsn: '0/1A2B3C4' },
+      }),
       connection: async () => ({
         host: '127.0.0.1',
         port: 55433,
@@ -489,19 +509,20 @@ export function createFakeDesktop(): LoamsDesktopApi {
         passwordRef: 'fake-pg-ref',
       }),
       revealPassword: async () => 'fake-password',
-      query: async () => ({
-        ok: true,
-        value: {
-          columns: ['id', 'name'],
-          rows: [
-            [1, 'sample row (fake)'],
-            [2, 'another row (fake)'],
-          ],
-          rowCount: 2,
-          truncated: false,
-          elapsedMs: 3,
+      query: async (sql) =>
+        fakeSql(sql) ?? {
+          ok: true,
+          value: {
+            columns: ['id', 'name'],
+            rows: [
+              [1, 'sample row (fake)'],
+              [2, 'another row (fake)'],
+            ],
+            rowCount: 2,
+            truncated: false,
+            elapsedMs: 3,
+          },
         },
-      }),
     },
     wesql: {
       connection: async () => ({
@@ -512,7 +533,10 @@ export function createFakeDesktop(): LoamsDesktopApi {
         passwordRef: 'fake-wesql-ref',
       }),
       revealPassword: async () => 'fake-password',
-      schemas: async () => ({ ok: true, value: [{ name: 'information_schema' }, { name: 'shop (fake)' }] }),
+      schemas: async () => ({
+        ok: true,
+        value: [{ name: 'information_schema' }, { name: 'shop (fake)' }],
+      }),
       tables: async () => ({
         ok: true,
         value: [
@@ -520,21 +544,53 @@ export function createFakeDesktop(): LoamsDesktopApi {
           { name: 'order_totals', engine: '', rows: 0 },
         ],
       }),
-      query: async () => ({
-        ok: true,
-        value: {
-          columns: ['id', 'total'],
-          rows: [
-            [1, '19.90'],
-            [2, '5.00'],
-          ],
-          rowCount: 2,
-          truncated: false,
-          elapsedMs: 4,
+      query: async (sql) =>
+        fakeSql(sql) ?? {
+          ok: true,
+          value: {
+            columns: ['id', 'total'],
+            rows: [
+              [1, '19.90'],
+              [2, '5.00'],
+            ],
+            rowCount: 2,
+            truncated: false,
+            elapsedMs: 4,
+          },
         },
-      }),
     },
   };
+}
+
+/** Sample failures and big results for the SQL consoles; `undefined` falls through to the default rows. */
+function fakeSql(sql: string): IpcResult<SqlResult> | undefined {
+  if (/\bboom\b/i.test(sql)) {
+    return { ok: false, code: '42601', message: 'syntax error at or near "boom" (sample error)' };
+  }
+  if (/^\s*(insert|update|delete|create|drop|alter|truncate)\b/i.test(sql)) {
+    return {
+      ok: true,
+      value: { columns: [], rows: [], rowCount: 1, truncated: false, elapsedMs: 3 },
+    };
+  }
+  if (/\bmany\b/i.test(sql)) {
+    const rows = Array.from({ length: 1000 }, (_, i) => [
+      i + 1,
+      `sample-${i + 1}`,
+      i % 7 === 0 ? null : (i * 37) % 101,
+    ]);
+    return {
+      ok: true,
+      value: {
+        columns: ['id', 'name', 'score'],
+        rows,
+        rowCount: 1000,
+        truncated: true,
+        elapsedMs: 4,
+      },
+    };
+  }
+  return undefined;
 }
 
 // ---- Overview and Settings preview (Task 30) ----
@@ -549,6 +605,12 @@ function previewStacks(): LoamsDesktopApi['stacks'] {
     wesql: { phase: 'stopped' },
     tikv: { phase: 'unavailable', reason: 'no_container_runtime' },
   };
+  // `?noruntime` previews the install guidance on every stack.
+  if (/[?&]noruntime\b/.test(globalThis.location?.search ?? '')) {
+    for (const id of ['postgres', 'wesql'] as const) {
+      states[id] = { phase: 'unavailable', reason: 'no_container_runtime' };
+    }
+  }
   const listeners = new Set<(id: StackId, s: StackState) => void>();
   const set = (id: StackId, s: StackState) => {
     states[id] = s;

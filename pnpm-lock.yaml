@@ -777,6 +777,9 @@ importers:
       '@loams/plugin-overview':
         specifier: workspace:*
         version: link:../../plugins/overview
+      '@loams/plugin-postgres':
+        specifier: workspace:*
+        version: link:../../plugins/postgres
       '@loams/plugin-rpc':
         specifier: workspace:*
         version: link:../../plugins/rpc
@@ -792,6 +795,9 @@ importers:
       '@loams/plugin-streams':
         specifier: workspace:*
         version: link:../../plugins/streams
+      '@loams/plugin-wesql':
+        specifier: workspace:*
+        version: link:../../plugins/wesql
       '@loams/proto':
         specifier: workspace:*
         version: link:../../packages/proto
@@ -908,6 +914,43 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+
+  web/packages/desktop-ui:
+    dependencies:
+      '@loams/desktop':
+        specifier: workspace:*
+        version: link:../../../apps/desktop-electron
+      '@loams/ui':
+        specifier: workspace:*
+        version: link:../ui
+      lucide-react:
+        specifier: 1.48.0
+        version: 1.48.0(react@19.3.0)
+    devDependencies:
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      jsdom:
+        specifier: 30.1.1
+        version: 30.1.1(@noble/hashes@1.8.0)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: 19.3.0
+        version: 19.3.0(react@19.3.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@24.13.6)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   web/packages/durable-client:
     devDependencies:
@@ -1708,6 +1751,61 @@ importers:
         specifier: 5.0.3
         version: 5.0.3(@types/node@24.13.6)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
+  web/plugins/postgres:
+    dependencies:
+      '@loams/console-host':
+        specifier: workspace:*
+        version: link:../../packages/console-host
+      '@loams/cordis':
+        specifier: workspace:*
+        version: link:../../packages/cordis
+      '@loams/desktop-ui':
+        specifier: workspace:*
+        version: link:../../packages/desktop-ui
+      '@loams/slots':
+        specifier: workspace:*
+        version: link:../../packages/slots
+      '@loams/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      lucide-react:
+        specifier: 1.48.0
+        version: 1.48.0(react@19.3.0)
+    devDependencies:
+      '@loams/desktop':
+        specifier: workspace:*
+        version: link:../../../apps/desktop-electron
+      '@loams/platform-electron':
+        specifier: workspace:*
+        version: link:../../packages/platform-electron
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      jsdom:
+        specifier: 30.1.1
+        version: 30.1.1(@noble/hashes@1.8.0)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: 19.3.0
+        version: 19.3.0(react@19.3.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@24.13.6)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
   web/plugins/rpc:
     dependencies:
       '@bufbuild/protobuf':
@@ -1894,6 +1992,61 @@ importers:
       '@testing-library/react':
         specifier: 16.3.3
         version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/react':
+        specifier: 19.3.0
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: 19.3.0
+        version: 19.3.0(@types/react@19.3.0)
+      jsdom:
+        specifier: 30.1.1
+        version: 30.1.1(@noble/hashes@1.8.0)
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      react-dom:
+        specifier: 19.3.0
+        version: 19.3.0(react@19.3.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@24.13.6)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@1.8.0))(msw@2.15.0(@types/node@24.13.6)(typescript@5.9.3))(vite@8.3.1(@types/node@24.13.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  web/plugins/wesql:
+    dependencies:
+      '@loams/console-host':
+        specifier: workspace:*
+        version: link:../../packages/console-host
+      '@loams/cordis':
+        specifier: workspace:*
+        version: link:../../packages/cordis
+      '@loams/desktop-ui':
+        specifier: workspace:*
+        version: link:../../packages/desktop-ui
+      '@loams/slots':
+        specifier: workspace:*
+        version: link:../../packages/slots
+      '@loams/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      lucide-react:
+        specifier: 1.48.0
+        version: 1.48.0(react@19.3.0)
+    devDependencies:
+      '@loams/desktop':
+        specifier: workspace:*
+        version: link:../../../apps/desktop-electron
+      '@loams/platform-electron':
+        specifier: workspace:*
+        version: link:../../packages/platform-electron
+      '@testing-library/react':
+        specifier: 16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
