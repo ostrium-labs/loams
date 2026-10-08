@@ -592,6 +592,55 @@ async fn env_inner() {
         "argv is WorkerArgs: {cmdline}"
     );
 
+    // Nor any descriptor of the front's (review M5): stdin and stdout are
+    // /dev/null, fd 3 is its own socket, and no other descriptor is a socket —
+    // another worker's socket or a listener inherited from the front would be.
+    let mut fds = Vec::new();
+    for entry in std::fs::read_dir(format!("/proc/{pid}/fd")).expect("fd dir") {
+        let entry = entry.expect("fd");
+        let fd: i32 = entry
+            .file_name()
+            .to_string_lossy()
+            .parse()
+            .expect("fd number");
+        let target = std::fs::read_link(entry.path())
+            .map(|t| t.display().to_string())
+            .unwrap_or_default();
+        fds.push((fd, target));
+    }
+    fds.sort();
+    let target = |n: i32| fds.iter().find(|(fd, _)| *fd == n).map(|(_, t)| t.as_str());
+    assert_eq!(target(0), Some("/dev/null"), "{fds:?}");
+    assert_eq!(target(1), Some("/dev/null"), "{fds:?}");
+    assert!(
+        target(3).is_some_and(|t| t.starts_with("socket:")),
+        "{fds:?}"
+    );
+    // The worker clones fd 3 for its writer, so the same socket may appear twice;
+    // any *other* socket is something it inherited.
+    let own = target(3).unwrap_or_default().to_string();
+    let sockets: Vec<_> = fds
+        .iter()
+        .filter(|(_, t)| t.starts_with("socket:") && *t != own)
+        .collect();
+    assert!(
+        sockets.is_empty(),
+        "sockets beyond fd 3's: {sockets:?} of {fds:?}"
+    );
+    let front_sockets: Vec<String> = std::fs::read_dir("/proc/self/fd")
+        .expect("own fds")
+        .flatten()
+        .filter_map(|e| std::fs::read_link(e.path()).ok())
+        .map(|t| t.display().to_string())
+        .filter(|t| t.starts_with("socket:"))
+        .collect();
+    for (fd, t) in &fds {
+        assert!(
+            !front_sockets.contains(t),
+            "worker fd {fd} is the front's own {t}"
+        );
+    }
+
     // Nor do the files the worker wrote for itself.
     let dir = tmp_root_of(&cmdline);
     for file in ["config.xml", "users.xml"] {
