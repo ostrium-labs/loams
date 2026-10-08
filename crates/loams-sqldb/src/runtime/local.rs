@@ -9,10 +9,11 @@
 //! `io.loams.sqldb.*` labels; a member whose rendered config, image or class
 //! changed (its fingerprint label) is replaced.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -50,6 +51,13 @@ impl ContainerEngine {
     pub fn docker() -> Self {
         Self {
             program: "docker".into(),
+        }
+    }
+
+    /// Another program speaking the Podman/Docker CLI (tests use a fake).
+    pub fn custom(program: impl Into<String>) -> Self {
+        Self {
+            program: program.into(),
         }
     }
 
@@ -137,8 +145,11 @@ impl LocalRuntimeConfig {
 #[derive(Debug)]
 pub struct LocalRuntime {
     config: LocalRuntimeConfig,
-    /// Serialises mutations and port allocation within this process.
-    lock: Mutex<()>,
+    /// One lock per branch: mutations of a branch are serialised, branches
+    /// proceed independently (a wake on B never waits for a stop on A).
+    branch_locks: std::sync::Mutex<HashMap<BranchId, Arc<Mutex<()>>>>,
+    /// Held only while ports are chosen and the pool record is saved.
+    ports: std::sync::Mutex<()>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,7 +201,8 @@ impl LocalRuntime {
         std::fs::create_dir_all(&config.state_dir).map_err(|e| io_state(&config.state_dir, &e))?;
         Ok(Self {
             config,
-            lock: Mutex::new(()),
+            branch_locks: std::sync::Mutex::default(),
+            ports: std::sync::Mutex::default(),
         })
     }
 
@@ -215,6 +227,14 @@ impl LocalRuntime {
     /// The settings.
     pub fn config(&self) -> &LocalRuntimeConfig {
         &self.config
+    }
+
+    fn branch_lock(&self, branch: &BranchId) -> Arc<Mutex<()>> {
+        let mut locks = self
+            .branch_locks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        locks.entry(branch.clone()).or_default().clone()
     }
 
     fn pool_dir(&self, branch: &BranchId) -> PathBuf {
@@ -503,8 +523,15 @@ impl LocalRuntime {
         record: &mut PoolRecord,
     ) -> Result<PoolStatus, RuntimeError> {
         let fingerprint = self.render(branch, record.class)?;
-        self.allocate(record)?;
-        self.save(branch, record)?;
+        {
+            // Other branches allocate too: choose and save under one lock.
+            let _p = self
+                .ports
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.allocate(record)?;
+            self.save(branch, record)?;
+        }
         self.reconcile(branch, record, &fingerprint).await?;
         self.status(branch, record).await
     }
@@ -518,7 +545,8 @@ impl SqlRuntime for LocalRuntime {
         class: Class,
         replicas: u32,
     ) -> Result<PoolStatus, RuntimeError> {
-        let _g = self.lock.lock().await;
+        let lock = self.branch_lock(branch);
+        let _g = lock.lock().await;
         let mut record = self.load(branch)?.unwrap_or(PoolRecord {
             class,
             replicas,
@@ -530,7 +558,8 @@ impl SqlRuntime for LocalRuntime {
     }
 
     async fn scale(&self, branch: &BranchId, replicas: u32) -> Result<PoolStatus, RuntimeError> {
-        let _g = self.lock.lock().await;
+        let lock = self.branch_lock(branch);
+        let _g = lock.lock().await;
         let mut record = self
             .load(branch)?
             .ok_or_else(|| RuntimeError::NoPool(branch.clone()))?;
@@ -546,7 +575,8 @@ impl SqlRuntime for LocalRuntime {
     }
 
     async fn delete_pool(&self, branch: &BranchId) -> Result<(), RuntimeError> {
-        let _g = self.lock.lock().await;
+        let lock = self.branch_lock(branch);
+        let _g = lock.lock().await;
         for c in self.containers(branch).await? {
             self.remove(&c.name).await?;
         }
