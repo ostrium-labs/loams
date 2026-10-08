@@ -2,7 +2,7 @@
 //!
 //! [`Store`] is the one transaction surface `loams-live` uses. It is an enum
 //! over two backends (LV1 plan Ruling 1): **embedded**, MVCC on redb (Task
-//! 21; a stub until then), and **tikv** (feature `tikv`), which wraps
+//! 21, [`embedded`]), and **tikv** (feature `tikv`), which wraps
 //! `loams-tikv`'s handle. [`Store::run`] runs a body in a transaction with
 //! the runner's retries; [`Store::snapshot`] reads at a [`Ts`]. [`Txn`] and
 //! [`Snap`] are the transaction and the read-only view, every key relative
@@ -11,9 +11,11 @@
 //! runner's options, error classes and result; [`FaultPlan`] its fault hooks;
 //! [`GcBarrier`] holds GC below a timestamp. [`tuple`] is the
 //! order-preserving tuple codec. [`testing`] yields the stores a test runs
-//! on.
+//! on, and [`conformance`] holds every backend to the same semantics
+//! ([`kv_conformance!`]).
 
 mod codec;
+pub mod conformance;
 pub mod embedded;
 mod faults;
 mod gc;

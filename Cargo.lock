@@ -6793,6 +6793,8 @@ dependencies = [
  "loams-tikv",
  "loams-tuple",
  "proptest",
+ "rand 0.9.5",
+ "redb",
  "thiserror 2.0.21",
  "tokio",
  "tracing",

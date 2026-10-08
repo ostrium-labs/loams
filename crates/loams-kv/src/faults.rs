@@ -1,8 +1,9 @@
 //! Fault hooks of the transaction runner (R1 plan Task 2), backend-neutral.
 //!
 //! A [`FaultPlan`] is consulted at four points of every attempt of
-//! [`Store::run`](crate::Store::run). On the tikv backend each point and
-//! fault means exactly what `loams_tikv::faults` documents:
+//! [`Store::run`](crate::Store::run). Each point and fault means the same on
+//! both backends (on TiKV, exactly what `loams_tikv::faults` documents; the
+//! conformance case `fault_points_and_commit_tokens` holds both to it):
 //!
 //! | Point | `Refuse` | `Conflict` | `LoseAck` | `Delay(d)` |
 //! |---|---|---|---|---|

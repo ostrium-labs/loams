@@ -21,6 +21,10 @@ faults = ["loams-tikv?/faults"]
 futures.workspace = true
 loams-tikv = { workspace = true, optional = true }
 loams-tuple.workspace = true
+# Backoff jitter and commit tokens.
+rand.workspace = true
+# The embedded backend's file (LV1 plan Ruling 4).
+redb.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

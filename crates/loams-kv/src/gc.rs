@@ -17,8 +17,6 @@ pub struct GcBarrier {
 
 #[derive(Debug)]
 pub(crate) enum Inner {
-    // Constructed once the embedded backend exists (Task 21).
-    #[allow(dead_code)]
     Embedded(embedded::Handle),
     #[cfg(feature = "tikv")]
     Tikv(loams_tikv::GcBarrier),
@@ -38,7 +36,10 @@ impl GcBarrier {
     /// Removes the barrier.
     pub async fn delete(self) -> Result<(), KvError> {
         match self.inner {
-            Inner::Embedded(h) => h.absurd(),
+            Inner::Embedded(h) => {
+                h.remove_barrier(&self.service_id);
+                Ok(())
+            }
             #[cfg(feature = "tikv")]
             Inner::Tikv(b) => Ok(b.delete(&self.service_id).await?),
         }

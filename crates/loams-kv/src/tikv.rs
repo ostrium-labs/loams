@@ -81,7 +81,7 @@ impl RunTxn for Txn {
 
     fn txn(&mut self) -> &mut loams_tikv::Txn {
         match self {
-            Txn::Embedded(e) => e.absurd(),
+            Txn::Embedded(_) => unreachable!("the TiKV runner wraps TiKV transactions"),
             Txn::Tikv(t) => t,
         }
     }

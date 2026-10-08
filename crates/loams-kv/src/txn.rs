@@ -1,10 +1,6 @@
 //! [`Txn`] and [`Snap`]: reads and writes under a store's root, on either
 //! backend (LV1 plan Ruling 1: enums with inherent async methods).
 
-// Until Task 21 a build without `tikv` has only the uninhabited embedded
-// arm, which reads no argument.
-#![cfg_attr(not(feature = "tikv"), allow(unused_variables))]
-
 use crate::{Ts, TxnError, embedded};
 
 /// A key and its value, the key relative to the store's root.
@@ -15,8 +11,7 @@ pub const MAX_VALUE_BYTES: usize = 2 * 1024 * 1024;
 
 /// A transaction of [`Store::run`](crate::Store::run). Every key is relative
 /// to the store's root.
-// One per attempt or read, rarely moved; the embedded variant (a stub
-// until Task 21) grows to a comparable size.
+// One per attempt or read, rarely moved.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Txn {
@@ -28,8 +23,7 @@ pub enum Txn {
 /// A read-only view at one timestamp, from
 /// [`Store::snapshot`](crate::Store::snapshot). Every key is relative to the
 /// store's root.
-// One per attempt or read, rarely moved; the embedded variant (a stub
-// until Task 21) grows to a comparable size.
+// One per attempt or read, rarely moved.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Snap {
@@ -43,7 +37,7 @@ pub enum Snap {
 macro_rules! dispatch {
     ($self:expr, $t:ident => $call:expr) => {
         match $self {
-            Self::Embedded(e) => e.absurd(),
+            Self::Embedded($t) => $call,
             #[cfg(feature = "tikv")]
             Self::Tikv($t) => $call.map_err(TxnError::from),
         }
@@ -55,7 +49,7 @@ impl Txn {
     /// before it.
     pub fn start_ts(&self) -> Ts {
         match self {
-            Txn::Embedded(e) => e.absurd(),
+            Txn::Embedded(e) => e.start_ts(),
             #[cfg(feature = "tikv")]
             Txn::Tikv(t) => Ts::from(t.start_ts()),
         }
@@ -64,7 +58,7 @@ impl Txn {
     /// Which attempt of [`Store::run`](crate::Store::run) this is, from 1.
     pub fn attempt(&self) -> u32 {
         match self {
-            Txn::Embedded(e) => e.absurd(),
+            Txn::Embedded(e) => e.attempt(),
             #[cfg(feature = "tikv")]
             Txn::Tikv(t) => t.attempt(),
         }
@@ -136,7 +130,7 @@ impl Snap {
     /// The snapshot's timestamp.
     pub fn ts(&self) -> Ts {
         match self {
-            Snap::Embedded(e) => e.absurd(),
+            Snap::Embedded(e) => e.ts(),
             #[cfg(feature = "tikv")]
             Snap::Tikv(s) => Ts::from(s.ts().clone()),
         }
