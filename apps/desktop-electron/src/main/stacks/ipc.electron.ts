@@ -55,7 +55,10 @@ function composeWorks(rt: ComposeRuntime): Promise<boolean> {
 
 /** The runtime is resolved lazily on first use; creating the manager does no I/O. */
 export function createStackManager(
-	deps: Pick<StackManagerDeps, "stacksDir" | "logsDir">,
+	deps: Pick<
+		StackManagerDeps,
+		"stacksDir" | "logsDir" | "sourceDir" | "version" | "alwaysCopy"
+	>,
 ): StackManager {
 	return new StackManager({
 		...deps,

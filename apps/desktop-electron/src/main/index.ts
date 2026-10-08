@@ -233,8 +233,12 @@ const singleInstance = initSingleInstance({
 				tray?.refresh();
 			});
 			registerEngineIpc(engine, logFile);
+			// Compose runs from a per-user copy: no bind mount points into the app resources.
 			const stacks = createStackManager({
-				stacksDir: paths.stacksDir,
+				sourceDir: paths.stacksDir,
+				stacksDir: paths.stacksRunDir,
+				version: app.getVersion(),
+				alwaysCopy: !app.isPackaged,
 				logsDir: paths.logs,
 			});
 			bindLiveToTikv(stacks, engine, (e) =>

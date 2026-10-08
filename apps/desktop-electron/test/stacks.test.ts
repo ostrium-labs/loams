@@ -1,5 +1,11 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -11,6 +17,7 @@ import {
 	parsePs,
 	type RunFn,
 	StackManager,
+	syncStackDir,
 	TIKV_PD_ADDR,
 } from "../src/main/stacks/stacks";
 import type { StackState } from "../src/shared/contracts";
@@ -372,5 +379,62 @@ describe("stacks", () => {
 		await m.state("tikv");
 		await m.state("wesql");
 		expect(calls).toBe(1);
+	});
+});
+
+describe("stack directory copy (I7)", () => {
+	const src = () => {
+		const root = mkdtempSync(join(tmpdir(), "stack-src-"));
+		mkdirSync(join(root, "tikv"));
+		writeFileSync(join(root, "tikv", "compose.yaml"), "v1");
+		writeFileSync(join(root, "tikv", "pd.toml"), "pd");
+		return root;
+	};
+
+	it("copies_once_and_overwrites_on_version_change", () => {
+		const from = join(src(), "tikv");
+		const to = join(mkdtempSync(join(tmpdir(), "stack-run-")), "tikv");
+		expect(syncStackDir(from, to, "1.0.0")).toBe(true);
+		expect(readFileSync(join(to, "compose.yaml"), "utf8")).toBe("v1");
+		expect(readFileSync(join(to, "pd.toml"), "utf8")).toBe("pd");
+		writeFileSync(join(from, "compose.yaml"), "v2");
+		expect(syncStackDir(from, to, "1.0.0")).toBe(false);
+		expect(readFileSync(join(to, "compose.yaml"), "utf8")).toBe("v1");
+		expect(syncStackDir(from, to, "1.1.0")).toBe(true);
+		expect(readFileSync(join(to, "compose.yaml"), "utf8")).toBe("v2");
+		// A stale file from the old version does not survive the overwrite.
+		writeFileSync(join(to, "old.toml"), "x");
+		writeFileSync(join(from, "compose.yaml"), "v3");
+		expect(syncStackDir(from, to, "1.1.0", true)).toBe(true);
+		expect(existsSync(join(to, "old.toml"))).toBe(false);
+		expect(readFileSync(join(to, "compose.yaml"), "utf8")).toBe("v3");
+	});
+
+	it("compose_runs_from_the_copy_not_resources", async () => {
+		const resources = src();
+		const runDir = join(mkdtempSync(join(tmpdir(), "stack-run-")), "stacks");
+		const seen: string[][] = [];
+		const run: RunFn = async (_bin, args) => {
+			seen.push(args);
+			// The compose file must exist where compose is pointed at.
+			const f = args[args.indexOf("-f") + 1] as string;
+			expect(readFileSync(f, "utf8")).toBe("v1");
+			return { code: 0, stdout: "" };
+		};
+		const m = new StackManager({
+			runtime: { bin: "docker", args: ["compose"] },
+			sourceDir: resources,
+			stacksDir: runDir,
+			version: "1.0.0",
+			logsDir: LOGS(),
+			run,
+		});
+		await m.start("tikv");
+		expect(seen.length).toBeGreaterThan(0);
+		for (const a of seen) {
+			const f = a[a.indexOf("-f") + 1] as string;
+			expect(f).toBe(join(runDir, "tikv", "compose.yaml"));
+			expect(f.startsWith(resources)).toBe(false);
+		}
 	});
 });

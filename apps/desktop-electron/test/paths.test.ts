@@ -19,6 +19,7 @@ describe("resolvePaths", () => {
 		expect(p.serversFile).toBe("/home/u/.config/Loams/servers.json");
 		expect(p.logs).toBe(base.logs);
 		expect(p.stacksDir).toBe("/opt/Loams/resources/stacks");
+		expect(p.stacksRunDir).toBe("/home/u/.config/Loams/stacks");
 	});
 
 	it("dev_paths_use_repo_dist", () => {

@@ -1,6 +1,14 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { join } from "node:path";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import type { IpcResult, StackId, StackState } from "../../shared/contracts";
 import { RotatingLog } from "../engine/log-rotate";
 import type { ComposeRuntime } from "./runtime";
@@ -69,6 +77,36 @@ export function composeArgs(
 		join(stacksDir, STACKS[id].dir, "compose.yaml"),
 		...action,
 	];
+}
+
+const VERSION_MARKER = ".loams-stack-version";
+
+/**
+ * Copies a stack directory (compose.yaml plus the configs it bind-mounts) from the
+ * read-only app resources to a writable per-user copy, so no bind mount points into
+ * resourcesPath (which an update replaces under a running stack). The copy is redone
+ * when `version` changes or `force` is set; data lives in named volumes, not here.
+ * Returns true when it copied.
+ */
+export function syncStackDir(
+	from: string,
+	to: string,
+	version: string,
+	force = false,
+): boolean {
+	let have: string | undefined;
+	try {
+		have = readFileSync(join(to, VERSION_MARKER), "utf8").trim();
+	} catch {
+		have = undefined;
+	}
+	if (!force && have === version && existsSync(join(to, "compose.yaml")))
+		return false;
+	rmSync(to, { recursive: true, force: true });
+	mkdirSync(dirname(to), { recursive: true });
+	cpSync(from, to, { recursive: true });
+	writeFileSync(join(to, VERSION_MARKER), version);
+	return true;
 }
 
 export interface ServiceRow {
@@ -201,7 +239,17 @@ export const runCommand: RunFn = (bin, args, { timeoutMs, log, quiet }) =>
 export interface StackManagerDeps {
 	/** The runtime, or an async resolver called lazily on first use (never at startup). */
 	runtime: ComposeRuntime | null | (() => Promise<ComposeRuntime | null>);
+	/** Where compose runs: one subdirectory per stack (userData/stacks when packaged). */
 	stacksDir: string;
+	/**
+	 * The shipped stacks (resources/stacks, or deploy/ in dev). When set, each stack is
+	 * copied to `stacksDir` before its first command (see syncStackDir).
+	 */
+	sourceDir?: string;
+	/** The app version; a new version refreshes the copies. */
+	version?: string;
+	/** Re-copy on every launch (dev: the sources change without a version bump). */
+	alwaysCopy?: boolean;
 	logsDir: string;
 	run?: RunFn;
 	timeoutMs?: number;
@@ -217,6 +265,7 @@ export class StackManager extends EventEmitter {
 	private readonly logs = new Map<StackId, RotatingLog>();
 	private readonly run: RunFn;
 	private rt: Promise<ComposeRuntime | null> | undefined;
+	private readonly synced = new Set<StackId>();
 
 	constructor(private readonly deps: StackManagerDeps) {
 		super();
@@ -248,6 +297,20 @@ export class StackManager extends EventEmitter {
 		this.emit("state", id, s);
 	}
 
+	/** Copies the stack out of the app resources once per launch (no-op without sourceDir). */
+	private prepare(id: StackId): void {
+		const src = this.deps.sourceDir;
+		if (!src || this.synced.has(id)) return;
+		const dir = STACKS[id].dir;
+		syncStackDir(
+			join(src, dir),
+			join(this.deps.stacksDir, dir),
+			this.deps.version ?? "0",
+			this.deps.alwaysCopy === true,
+		);
+		this.synced.add(id);
+	}
+
 	private exec(
 		rt: ComposeRuntime,
 		id: StackId,
@@ -255,6 +318,13 @@ export class StackManager extends EventEmitter {
 		quiet = false,
 	): Promise<RunResult> {
 		const log = this.log(id);
+		try {
+			this.prepare(id);
+		} catch (e) {
+			const msg = `cannot copy the ${id} stack: ${(e as Error).message}\n`;
+			log.write(msg);
+			return Promise.resolve({ code: -1, stdout: "" });
+		}
 		return this.run(rt.bin, composeArgs(rt, id, this.deps.stacksDir, action), {
 			timeoutMs: this.deps.timeoutMs ?? COMMAND_TIMEOUT_MS,
 			log: (c) => log.write(c),
