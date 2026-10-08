@@ -11,6 +11,7 @@ import { EngineSupervisor } from "./engine/supervisor";
 import { FactoryHost } from "./factory/host";
 import { registerFactoryIpc } from "./factory/ipc.electron";
 import { Vault } from "./factory/vault";
+import { FactoryViews } from "./factory/views.electron";
 import {
 	installAppProtocol,
 	registerAppScheme,
@@ -34,6 +35,7 @@ registerAppScheme();
 let registry: ServerRegistry;
 let engine: EngineSupervisor | undefined;
 let factory: FactoryHost | undefined;
+let factoryViews: FactoryViews | undefined;
 
 /** `engine.autoStart` in userData/settings.json; default true. */
 function engineAutoStart(): boolean {
@@ -123,7 +125,8 @@ const singleInstance = initSingleInstance({
 					decrypt: (b) => safeStorage.decryptString(b),
 				}),
 			);
-			registerFactoryIpc(factory);
+			factoryViews = new FactoryViews(factory);
+			registerFactoryIpc(factory, factoryViews);
 			const paths = await appPaths();
 			const logFile = join(paths.logs, "engine.log");
 			engine = new EngineSupervisor({
@@ -156,6 +159,7 @@ const singleInstance = initSingleInstance({
 		});
 		let quitting = false;
 		app.on("before-quit", (e) => {
+			factoryViews?.closeAll();
 			if (quitting || !engine) return;
 			e.preventDefault();
 			quitting = true;

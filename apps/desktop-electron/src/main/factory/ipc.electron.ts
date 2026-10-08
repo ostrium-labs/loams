@@ -8,6 +8,7 @@ import {
 import { assertTrustedSender } from "../security/policy";
 import { FACTORY_APPS } from "./apps";
 import type { FactoryHost } from "./host";
+import type { FactoryViews } from "./views.electron";
 
 const isApp = (a: unknown): a is FactoryAppId =>
 	typeof a === "string" && Object.hasOwn(FACTORY_APPS, a);
@@ -17,7 +18,10 @@ const bad = (): IpcResult<never> => ({
 	message: "Invalid request",
 });
 
-export function registerFactoryIpc(host: FactoryHost): void {
+export function registerFactoryIpc(
+	host: FactoryHost,
+	views: FactoryViews,
+): void {
 	ipcMain.handle(CH.factoryList, async (e) => {
 		assertTrustedSender(e);
 		return host.list();
@@ -33,6 +37,8 @@ export function registerFactoryIpc(host: FactoryHost): void {
 				fields === null
 			)
 				return bad();
+			// The window holds the old URL/SSO origin: close it so the next open is fresh.
+			views.close(app);
 			return host.configure(app, url, fields as Record<string, string>);
 		},
 	);
@@ -43,7 +49,19 @@ export function registerFactoryIpc(host: FactoryHost): void {
 	});
 	ipcMain.handle(CH.factoryRemove, async (e, app: unknown) => {
 		assertTrustedSender(e);
-		if (isApp(app)) await host.remove(app);
+		if (isApp(app)) {
+			views.close(app);
+			await host.remove(app);
+		}
+	});
+	ipcMain.handle(CH.factoryOpen, async (e, app: unknown) => {
+		assertTrustedSender(e);
+		if (!isApp(app)) return bad();
+		return views.open(app);
+	});
+	ipcMain.handle(CH.factoryClose, async (e, app: unknown) => {
+		assertTrustedSender(e);
+		if (isApp(app)) views.close(app);
 	});
 	ipcMain.handle(CH.factoryQuery, async (e, q: unknown) => {
 		assertTrustedSender(e);
