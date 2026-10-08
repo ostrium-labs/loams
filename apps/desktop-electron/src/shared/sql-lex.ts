@@ -7,7 +7,18 @@ export type SqlDialect = "postgres" | "mysql";
 
 /** Words that change data or schema; a statement containing one needs a confirm. */
 const WRITE_WORDS =
-	/\b(insert|update|delete|merge|create|drop|alter|truncate|into|for\s+update|for\s+share)\b/i;
+	/\b(insert|update|delete|merge|create|drop|alter|truncate|into|for\s+update|for\s+share)\b/gi;
+
+/** A write word used as a keyword: a qualified name (`t.update`, `update.x`) is a column, not one. */
+function hasWriteWord(s: string): boolean {
+	for (const m of s.matchAll(WRITE_WORDS)) {
+		const before = s.slice(0, m.index).trimEnd();
+		const after = s.slice(m.index + m[0].length).trimStart();
+		if (before.endsWith(".") || after.startsWith(".")) continue;
+		return true;
+	}
+	return false;
+}
 
 /**
  * Functions with side effects that a SELECT can call. A small denylist, not
@@ -168,7 +179,7 @@ export function isWrite(sql: string, dialect: SqlDialect): boolean {
 		if (!READ_HEADS.has(head)) return true;
 		if (SIDE_EFFECT_CALL.test(s)) return true;
 		if (head === "show" || head === "describe" || head === "desc") return false;
-		return WRITE_WORDS.test(s);
+		return hasWriteWord(s);
 	});
 }
 

@@ -96,6 +96,8 @@ describe("sql guard", () => {
 			"SELECT * FROM docs FOR UPDATE",
 			"EXPLAIN ANALYZE DELETE FROM docs",
 			"EXPLAIN ANALYZE SELECT 1",
+			"/* x */ explain analyse select 1",
+			"EXPLAIN (BUFFERS, ANALYZE) SELECT 1",
 			"select 'unterminated",
 			"CALL proc()",
 			"SET x = 1",
