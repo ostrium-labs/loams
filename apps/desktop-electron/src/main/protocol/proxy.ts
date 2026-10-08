@@ -1,4 +1,5 @@
 const PREFIXES = [
+	"/durable/",
 	"/api/",
 	"/v1/",
 	"/loams.",
@@ -25,6 +26,8 @@ export async function proxyRequest(
 	req: Request,
 	target: string,
 	fetchImpl: typeof fetch,
+	/** Replaces the request path (the query string is kept). */
+	pathname?: string,
 ): Promise<Response> {
 	const src = new URL(req.url);
 	const dest = new URL(target);
@@ -33,13 +36,16 @@ export async function proxyRequest(
 	headers.delete("referer");
 	headers.set("origin", dest.origin);
 	const hasBody = req.method !== "GET" && req.method !== "HEAD";
-	const out = new Request(`${dest.origin}${src.pathname}${src.search}`, {
-		method: req.method,
-		headers,
-		body: hasBody ? req.body : undefined,
-		redirect: "manual",
-		duplex: "half",
-	});
+	const out = new Request(
+		`${dest.origin}${pathname ?? src.pathname}${src.search}`,
+		{
+			method: req.method,
+			headers,
+			body: hasBody ? req.body : undefined,
+			redirect: "manual",
+			duplex: "half",
+		},
+	);
 	const res = await fetchImpl(out);
 	const rh = new Headers(res.headers);
 	rh.delete("content-security-policy");

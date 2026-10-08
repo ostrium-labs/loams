@@ -221,6 +221,7 @@ const singleInstance = initSingleInstance({
 			installAppProtocol(session.defaultSession, {
 				distRoot: paths.consoleDist,
 				activeServer: () => registry.active(),
+				engineState: () => engine?.state() ?? { phase: "stopped" },
 				localShim: createLocalShim(
 					{ version: app.getVersion(), username: userInfo().username },
 					() => registry.active().kind,

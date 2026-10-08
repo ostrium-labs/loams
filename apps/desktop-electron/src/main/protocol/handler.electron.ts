@@ -1,7 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { protocol, type Session } from "electron";
-import type { ServerEntry } from "../../shared/contracts";
+import type { EngineState, ServerEntry } from "../../shared/contracts";
 import { isProxied, proxyRequest } from "./proxy";
+import { routeRequest } from "./route";
 import { resolveStatic } from "./static";
 
 export const APP_SCHEME = "loams-app";
@@ -11,6 +12,8 @@ export type LocalShim = (pathname: string, method: string) => Response | null;
 export interface AppProtocolDeps {
 	distRoot: string;
 	activeServer: () => ServerEntry;
+	/** The engine supervisor's state, for the durable and live listeners. */
+	engineState: () => EngineState;
 	/** Answers a few endpoints itself when the active server is the local engine. */
 	localShim: LocalShim;
 }
@@ -55,21 +58,28 @@ export function installAppProtocol(ses: Session, deps: AppProtocolDeps): void {
 
 		if (isProxied(url.pathname)) {
 			const server = deps.activeServer();
-			if (server.kind === "local" && server.url === "")
+			const route = routeRequest(url.pathname, server, deps.engineState());
+			if (route.kind === "reject")
 				return new Response(
 					JSON.stringify({
-						code: "engine_not_ready",
-						message: "the local engine is not ready yet",
+						code: route.body.code,
+						message: route.body.message,
 					}),
-					{ status: 503, headers: { "content-type": "application/json" } },
+					{
+						status: route.status,
+						headers: { "content-type": "application/json" },
+					},
 				);
 			if (server.kind === "local") {
 				const shimmed = deps.localShim(url.pathname, req.method);
 				if (shimmed) return shimmed;
 			}
 			try {
-				return await proxyRequest(req, server.url, (r) =>
-					ses.fetch(r as Request),
+				return await proxyRequest(
+					req,
+					route.target,
+					(r) => ses.fetch(r as Request),
+					route.pathname,
 				);
 			} catch (e) {
 				return new Response(
