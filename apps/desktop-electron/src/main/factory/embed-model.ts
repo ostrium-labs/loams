@@ -14,25 +14,31 @@ export interface Size {
 }
 
 /**
- * Round and clamp `rect` to the window's content area. Non-finite, negative or
- * non-numeric values are rejected (`undefined`). A rect that falls entirely
- * outside the content (or has no area) clamps to `null`: hide the view.
+ * Scale `rect` by the console's zoom factor (CSS px -> window DIPs), round it
+ * and clamp it to the window's content area. Negative x/y clamp to 0 and shrink
+ * the rect; a rect with no area left (or a negative size) clamps to `null`:
+ * hide the view. Non-finite or non-numeric values are rejected (`undefined`).
  */
 export function clampBounds(
 	rect: unknown,
 	content: Size,
+	zoom = 1,
 ): EmbedRect | null | undefined {
 	if (typeof rect !== "object" || rect === null) return undefined;
 	const r = rect as Record<string, unknown>;
 	const { x, y, width, height } = r;
 	for (const n of [x, y, width, height])
-		if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return undefined;
-	const nx = x as number;
-	const ny = y as number;
-	const left = Math.min(Math.round(nx), content.width);
-	const top = Math.min(Math.round(ny), content.height);
-	const right = Math.min(Math.round(nx + (width as number)), content.width);
-	const bottom = Math.min(Math.round(ny + (height as number)), content.height);
+		if (typeof n !== "number" || !Number.isFinite(n)) return undefined;
+	if (!Number.isFinite(zoom) || zoom <= 0) return undefined;
+	const nx = (x as number) * zoom;
+	const ny = (y as number) * zoom;
+	const nw = (width as number) * zoom;
+	const nh = (height as number) * zoom;
+	if (nw <= 0 || nh <= 0) return null;
+	const left = Math.max(0, Math.min(Math.round(nx), content.width));
+	const top = Math.max(0, Math.min(Math.round(ny), content.height));
+	const right = Math.max(0, Math.min(Math.round(nx + nw), content.width));
+	const bottom = Math.max(0, Math.min(Math.round(ny + nh), content.height));
 	if (right <= left || bottom <= top) return null;
 	return { x: left, y: top, width: right - left, height: bottom - top };
 }
@@ -84,6 +90,10 @@ export function isFocusConsoleKey(input: {
 
 export interface EmbedAdapter<V> {
 	contentSize(): Size;
+	/** The console's zoom factor (1 when unzoomed). */
+	zoom(): number;
+	isFocused(view: V): boolean;
+	focusConsole(): void;
 	/** A new hidden view loading the app, or undefined when it is not configured. */
 	create(app: FactoryAppId): V | undefined;
 	place(view: V, bounds: EmbedRect): void;
@@ -99,12 +109,25 @@ export class EmbedController<V> {
 	constructor(private readonly a: EmbedAdapter<V>) {}
 
 	show(app: FactoryAppId, rect: unknown): IpcResult<void> {
-		const bounds = clampBounds(rect, this.a.contentSize());
-		if (bounds === undefined)
+		const bounds = clampBounds(rect, this.a.contentSize(), this.a.zoom());
+		if (bounds === undefined) {
+			// Never leave a stale view showing after a bad report.
+			this.hide();
 			return { ok: false, code: "bad_request", message: "Invalid bounds" };
+		}
 		if (this.#visible && this.#visible !== app) this.hide();
+		if (bounds === null) {
+			this.hide();
+			return { ok: true, value: undefined };
+		}
 		let view = this.#views.get(app);
 		if (!view) {
+			// Make room first, so there are never more than `max` live views.
+			while (this.#lru.list().length >= this.#lru.max) {
+				const oldest = this.#lru.list()[0];
+				if (!oldest) break;
+				this.destroy(oldest);
+			}
 			view = this.a.create(app);
 			if (!view)
 				return {
@@ -115,18 +138,14 @@ export class EmbedController<V> {
 			this.#views.set(app, view);
 		}
 		for (const evicted of this.#lru.touch(app)) this.destroy(evicted);
-		if (bounds === null) {
-			this.a.conceal(view);
-			this.#visible = undefined;
-		} else {
-			this.a.place(view, bounds);
-			this.#visible = app;
-		}
+		this.a.place(view, bounds);
+		this.#visible = app;
 		return { ok: true, value: undefined };
 	}
 
 	hide(): void {
 		const v = this.#visible ? this.#views.get(this.#visible) : undefined;
+		if (v) this.#release(v);
 		if (v) this.a.conceal(v);
 		this.#visible = undefined;
 	}
@@ -137,7 +156,15 @@ export class EmbedController<V> {
 		this.#views.delete(app);
 		this.#lru.remove(app);
 		if (this.#visible === app) this.#visible = undefined;
-		if (v) this.a.destroy(v);
+		if (v) {
+			this.#release(v);
+			this.a.destroy(v);
+		}
+	}
+
+	/** A hidden or destroyed view must not keep the keyboard: return it to the console. */
+	#release(v: V): void {
+		if (this.a.isFocused(v)) this.a.focusConsole();
 	}
 
 	popOut(

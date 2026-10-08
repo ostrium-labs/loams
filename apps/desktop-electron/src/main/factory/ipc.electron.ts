@@ -61,7 +61,7 @@ export function registerFactoryIpc(
 		assertTrustedSender(e);
 		if (isApp(app)) {
 			views.close(app);
-			embed.destroy(app);
+			embed.remove(app);
 			await host.remove(app);
 		}
 	});

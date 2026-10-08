@@ -66,8 +66,15 @@ export function EmbeddedApp({
       hidden = false;
       desktop.factory
         .showEmbedded(app, rect)
-        .then((res) => alive && setError(res.ok ? undefined : res.message))
-        .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)));
+        .then((res) => {
+          // A failed report forgets the rect so the next layout event retries.
+          if (!res.ok) shown = undefined;
+          if (alive) setError(res.ok ? undefined : res.message);
+        })
+        .catch((e) => {
+          shown = undefined;
+          if (alive) setError(e instanceof Error ? e.message : String(e));
+        });
     };
     // One report per animation frame, however many layout events arrive.
     const schedule = () => {

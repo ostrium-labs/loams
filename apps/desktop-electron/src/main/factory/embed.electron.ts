@@ -32,6 +32,13 @@ export class FactoryEmbed {
 				const [width, height] = this.#win?.getContentSize() ?? [0, 0];
 				return { width: width ?? 0, height: height ?? 0 };
 			},
+			zoom: () => this.#win?.webContents.getZoomFactor() ?? 1,
+			isFocused: (v) =>
+				!v.webContents.isDestroyed() && v.webContents.isFocused(),
+			focusConsole: () => {
+				if (this.#win && !this.#win.isDestroyed())
+					this.#win.webContents.focus();
+			},
 			create: (app) => this.#create(app),
 			place: (v, b) => {
 				v.setBounds(b);
@@ -97,6 +104,12 @@ export class FactoryEmbed {
 
 	destroy(app: FactoryAppId): void {
 		this.#ctl.destroy(app);
+	}
+
+	/** The app was removed: drop its view and its hardening config. */
+	remove(app: FactoryAppId): void {
+		this.#ctl.destroy(app);
+		this.hardening.forget(app);
 	}
 
 	popOut(app: FactoryAppId): IpcResult<void> {

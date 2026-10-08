@@ -25,7 +25,6 @@ describe("embed model", () => {
 			clampBounds({ x: 0, y: 0, width: 0, height: 10 }, CONTENT),
 		).toBeNull();
 		for (const bad of [
-			{ x: -1, y: 0, width: 10, height: 10 },
 			{ x: 0, y: 0, width: Number.NaN, height: 10 },
 			{ x: 0, y: 0, width: 10, height: Number.POSITIVE_INFINITY },
 			{ x: "0", y: 0, width: 10, height: 10 },
@@ -34,6 +33,86 @@ describe("embed model", () => {
 			"rect",
 		])
 			expect(clampBounds(bad, CONTENT)).toBeUndefined();
+	});
+
+	it("negative_origin_clamped_and_shrunk", () => {
+		expect(
+			clampBounds({ x: -20, y: -10, width: 100, height: 50 }, CONTENT),
+		).toEqual({ x: 0, y: 0, width: 80, height: 40 });
+	});
+
+	it("zero_area_hides", () => {
+		// Entirely left of the window after clamping, and a negative size.
+		expect(
+			clampBounds({ x: -200, y: 0, width: 100, height: 50 }, CONTENT),
+		).toBeNull();
+		expect(
+			clampBounds({ x: 0, y: 0, width: -5, height: 50 }, CONTENT),
+		).toBeNull();
+		const { ctl, log } = harness();
+		ctl.show("forgejo", R);
+		expect(ctl.show("forgejo", { ...R, x: -500 }).ok).toBe(true);
+		expect(log).toContain("conceal:forgejo#1");
+	});
+
+	it("invalid_bounds_hide_current_view", () => {
+		const { ctl, log } = harness();
+		ctl.show("forgejo", R);
+		const r = ctl.show("forgejo", { ...R, width: Number.NaN });
+		expect(r).toMatchObject({ ok: false, code: "bad_request" });
+		expect(log).toContain("conceal:forgejo#1");
+		// A bad report for another app hides the visible one too.
+		ctl.show("forgejo", R);
+		log.length = 0;
+		ctl.show("zulip", null);
+		expect(log).toContain("conceal:forgejo#1");
+	});
+
+	it("zoom_scales_bounds", () => {
+		expect(
+			clampBounds({ x: 100, y: 50, width: 400, height: 200 }, CONTENT, 1.25),
+		).toEqual({ x: 125, y: 63, width: 500, height: 250 });
+		expect(
+			clampBounds({ x: 100, y: 50, width: 400, height: 200 }, CONTENT, 0.5),
+		).toEqual({ x: 50, y: 25, width: 200, height: 100 });
+	});
+
+	it("concealing_focused_view_returns_focus_to_console", () => {
+		const { ctl, log, focus } = harness();
+		ctl.show("forgejo", R);
+		focus.on = "forgejo#1";
+		ctl.hide();
+		expect(log).toEqual(
+			expect.arrayContaining(["focusConsole", "conceal:forgejo#1"]),
+		);
+		expect(log.indexOf("focusConsole")).toBeLessThan(
+			log.indexOf("conceal:forgejo#1"),
+		);
+		// Destroying a focused view does the same.
+		log.length = 0;
+		ctl.show("forgejo", R);
+		focus.on = "forgejo#1";
+		ctl.destroy("forgejo");
+		expect(log.indexOf("focusConsole")).toBeLessThan(
+			log.indexOf("destroy:forgejo#1"),
+		);
+		// An unfocused view leaves focus alone.
+		log.length = 0;
+		focus.on = "";
+		ctl.show("zulip", R);
+		ctl.hide();
+		expect(log).not.toContain("focusConsole");
+	});
+
+	it("evicts_before_creating_fifth_view", () => {
+		const { ctl, log } = harness();
+		for (const a of ["forgejo", "zulip", "plane", "glitchtip"] as const)
+			ctl.show(a, R);
+		log.length = 0;
+		ctl.show("matomo", R);
+		expect(log.indexOf("destroy:forgejo#1")).toBeLessThan(
+			log.indexOf("create:matomo"),
+		);
 	});
 
 	function harness(
@@ -46,9 +125,13 @@ describe("embed model", () => {
 		],
 	) {
 		const log: string[] = [];
+		const focus = { on: "" };
 		let n = 0;
 		const ctl = new EmbedController<string>({
 			contentSize: () => CONTENT,
+			zoom: () => 1,
+			isFocused: (v) => v === focus.on,
+			focusConsole: () => log.push("focusConsole"),
 			create: (app) => {
 				if (!configured.includes(app)) return undefined;
 				log.push(`create:${app}`);
@@ -58,7 +141,7 @@ describe("embed model", () => {
 			conceal: (v) => log.push(`conceal:${v}`),
 			destroy: (v) => log.push(`destroy:${v}`),
 		});
-		return { ctl, log };
+		return { ctl, log, focus };
 	}
 	const R = { x: 0, y: 0, width: 100, height: 100 };
 
@@ -90,7 +173,7 @@ describe("embed model", () => {
 
 	it("rejects_bad_bounds_and_unconfigured", () => {
 		const { ctl, log } = harness(["forgejo"]);
-		expect(ctl.show("forgejo", { ...R, width: -5 })).toMatchObject({
+		expect(ctl.show("forgejo", { ...R, width: Number.NaN })).toMatchObject({
 			ok: false,
 			code: "bad_request",
 		});
