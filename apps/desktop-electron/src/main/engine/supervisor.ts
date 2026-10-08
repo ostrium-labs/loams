@@ -68,7 +68,21 @@ export class EngineSupervisor extends EventEmitter {
 		if (this.cur.phase === "starting" || this.cur.phase === "ready") return;
 		this.restarts = [];
 		const gen = ++this.generation;
-		void this.run(gen, 1);
+		void this.guardedRun(gen, 1);
+	}
+
+	/** Any unexpected throw becomes `failed` (if still current), never an unhandled rejection. */
+	private async guardedRun(gen: number, attempt: number): Promise<void> {
+		try {
+			await this.run(gen, attempt);
+		} catch (e) {
+			if (gen !== this.generation) return;
+			const child = this.child;
+			this.generation++;
+			this.child = null;
+			if (child) await this.kill(child).catch(() => {});
+			this.fail(`unexpected error: ${(e as Error).message}`);
+		}
 	}
 
 	async stop(): Promise<void> {
@@ -130,6 +144,7 @@ export class EngineSupervisor extends EventEmitter {
 			const wantLive = liveOk && !!this.livePd;
 			ports = await reservePorts(wantLive ? 5 : 4);
 		} catch (e) {
+			if (!alive()) return;
 			this.fail(`could not reserve ports: ${(e as Error).message}`);
 			return;
 		}
@@ -188,6 +203,7 @@ export class EngineSupervisor extends EventEmitter {
 						method: "POST",
 						headers: { "content-type": "application/json" },
 						body: "{}",
+						signal: AbortSignal.timeout(2000),
 					},
 				);
 				if (r.ok) {
@@ -241,6 +257,6 @@ export class EngineSupervisor extends EventEmitter {
 		this.set({ phase: "starting", attempt: attempt + 1 });
 		await d.sleep(delay * 1000);
 		if (!alive()) return;
-		await this.run(gen, attempt + 1);
+		await this.run(gen, attempt + 1); // errors reach guardedRun
 	}
 }

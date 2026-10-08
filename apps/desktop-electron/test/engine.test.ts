@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -261,5 +261,72 @@ describe("engine", () => {
 		expect(existsSync(`${f}.2`)).toBe(true);
 		expect(existsSync(`${f}.3`)).toBe(false);
 		expect(readFileSync(f, "utf8").length).toBeLessThanOrEqual(100);
+	});
+
+	it("readiness_hung_request_times_out_to_failed", async () => {
+		let clock = 0;
+		let sawSignal = false;
+		const hung = ((_u: string, init?: RequestInit) => {
+			sawSignal = !!init?.signal;
+			return new Promise((_res, rej) => {
+				init?.signal?.addEventListener("abort", () => {
+					clock += 61_000; // the deadline passes while the request hangs
+					rej(new Error("aborted"));
+				});
+			});
+		}) as unknown as typeof fetch;
+		const sup = new EngineSupervisor(deps({ fetch: hung, now: () => clock }));
+		sup.start();
+		await until(() => sup.state().phase === "failed", 8000);
+		expect(sawSignal).toBe(true);
+		const st = sup.state();
+		expect(st.phase === "failed" && st.reason).toMatch(/did not become ready/);
+	}, 15000);
+
+	it("stale_run_cannot_overwrite_new_state", async () => {
+		let rejectFirst: (e: Error) => void = () => {};
+		let calls = 0;
+		const sup = new EngineSupervisor(
+			deps({
+				liveSupported: () => {
+					calls++;
+					return calls === 1
+						? new Promise<boolean>((_r, rej) => {
+								rejectFirst = rej;
+							})
+						: new Promise<boolean>(() => {});
+				},
+			}),
+		);
+		sup.start();
+		await until(() => calls === 1);
+		await sup.stop();
+		sup.start();
+		await until(() => calls === 2);
+		rejectFirst(new Error("late boom"));
+		await new Promise((r) => setTimeout(r, 50));
+		expect(sup.state().phase).toBe("starting");
+	});
+
+	it("unexpected_throw_in_run_goes_to_failed", async () => {
+		const sup = new EngineSupervisor(
+			deps({
+				binary: () => {
+					throw new Error("kaboom");
+				},
+			}),
+		);
+		sup.start();
+		await until(() => sup.state().phase === "failed");
+		const st = sup.state();
+		expect(st.phase === "failed" && st.reason).toMatch(/kaboom/);
+	});
+
+	it("log_dir_unwritable_degrades", () => {
+		const dir = scratch();
+		const blocker = join(dir, "file");
+		writeFileSync(blocker, "x");
+		const log = new RotatingLog(join(blocker, "sub", "engine.log"));
+		expect(() => log.write("hello")).not.toThrow();
 	});
 });

@@ -16,8 +16,8 @@ export class RotatingLog {
 		private readonly maxBytes = 10 * 1024 * 1024,
 		private readonly keep = 5,
 	) {
-		mkdirSync(dirname(file), { recursive: true });
 		try {
+			mkdirSync(dirname(file), { recursive: true });
 			this.size = statSync(file).size;
 		} catch {
 			this.size = 0;

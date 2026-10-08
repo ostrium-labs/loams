@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, screen, session } from "electron";
 import type { EngineState } from "../shared/contracts";
@@ -11,6 +12,7 @@ import {
 	installAppProtocol,
 	registerAppScheme,
 } from "./protocol/handler.electron";
+import { createLocalShim } from "./protocol/local-shim";
 import { secureWindow } from "./security/install.electron";
 import { registerServerIpc } from "./servers/ipc.electron";
 import { ServerRegistry } from "./servers/registry";
@@ -126,7 +128,10 @@ const singleInstance = initSingleInstance({
 			installAppProtocol(session.defaultSession, {
 				distRoot: paths.consoleDist,
 				activeServer: () => registry.active(),
-				localShim: () => null, // Task 6
+				localShim: createLocalShim(
+					{ version: app.getVersion(), username: userInfo().username },
+					() => registry.active().kind,
+				),
 			});
 			singleInstance.watchMainWindow(createWindow());
 			app.on("activate", () => {
