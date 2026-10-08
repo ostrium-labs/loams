@@ -39,7 +39,11 @@ export function PostgresPage({ desktop }: { desktop: LoamsDesktopApi }) {
                 />
               ),
             },
-            { id: 'sql', label: 'SQL', content: <SqlConsole run={desktop.pg.query} /> },
+            {
+              id: 'sql',
+              label: 'SQL',
+              content: <SqlConsole dialect="postgres" run={desktop.pg.query} />,
+            },
           ]}
         />
       ) : (

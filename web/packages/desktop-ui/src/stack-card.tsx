@@ -31,6 +31,9 @@ export function StackCard({
   openLogs?: () => unknown;
 }) {
   const state = useStack(desktop.stacks, id);
+  // `stacks.openLogs` arrives with the main-process stacks work; feature-detect it.
+  const apiOpenLogs = (desktop.stacks as { openLogs?: (id: StackId) => unknown }).openLogs;
+  const logs = openLogs ?? (apiOpenLogs ? () => apiOpenLogs.call(desktop.stacks, id) : undefined);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string>();
 
@@ -117,9 +120,9 @@ export function StackCard({
           <Button
             size="sm"
             variant="quiet"
-            disabled={!openLogs}
-            title={openLogs ? undefined : 'Stack logs are not exposed by the desktop API yet'}
-            onClick={() => void openLogs?.()}
+            disabled={!logs}
+            title={logs ? undefined : 'Stack logs are not exposed by the desktop API yet'}
+            onClick={() => void logs?.()}
           >
             Open logs
           </Button>

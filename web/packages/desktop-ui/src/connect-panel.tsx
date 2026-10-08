@@ -1,6 +1,6 @@
 import type { SqlConnection } from '@loams/desktop/contracts';
 import { Button, Card, Notice, Snippet } from '@loams/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type Dialect = 'postgres' | 'mysql';
 
@@ -38,6 +38,9 @@ export function ConnectPanel({
   const [error, setError] = useState<string>();
   const [password, setPassword] = useState<string>();
   const [copied, setCopied] = useState(false);
+  const revealSeq = useRef(0);
+  const copyTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
 
   useEffect(() => {
     let live = true;
@@ -50,8 +53,11 @@ export function ConnectPanel({
   }, [connection]);
 
   async function reveal() {
+    const mine = ++revealSeq.current;
     try {
-      setPassword(await revealPassword());
+      const value = await revealPassword();
+      // A Hide (or a newer Reveal) since the request makes this answer stale.
+      if (mine === revealSeq.current) setPassword(value);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -61,7 +67,8 @@ export function ConnectPanel({
     try {
       await copy(password ?? (await revealPassword()));
       setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1600);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -91,7 +98,13 @@ export function ConnectPanel({
                 Reveal
               </Button>
             ) : (
-              <Button size="sm" onClick={() => setPassword(undefined)}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  revealSeq.current++;
+                  setPassword(undefined);
+                }}
+              >
                 Hide
               </Button>
             )}

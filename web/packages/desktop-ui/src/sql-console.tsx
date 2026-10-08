@@ -1,9 +1,11 @@
 import type { IpcResult, SqlResult } from '@loams/desktop/contracts';
 import { Button, Dialog, Notice, Table, Textarea } from '@loams/ui';
 import { type KeyboardEvent, useId, useRef, useState } from 'react';
-import { isWrite } from './sql-write.js';
+import { isWrite, type SqlDialect } from '@loams/desktop/sql-lex';
 
 export const MAX_ROWS = 1000;
+/** Longest cell text rendered; longer values are clipped with an ellipsis. */
+export const MAX_CELL_CHARS = 2048;
 
 type Outcome =
   | { state: 'idle' }
@@ -13,16 +15,18 @@ type Outcome =
 
 function cell(v: unknown) {
   if (v === null || v === undefined) return <span className="text-faint">NULL</span>;
-  if (typeof v === 'object') return JSON.stringify(v);
-  return String(v);
+  const text = typeof v === 'object' ? (JSON.stringify(v) ?? String(v)) : String(v);
+  return text.length > MAX_CELL_CHARS ? `${text.slice(0, MAX_CELL_CHARS)}…` : text;
 }
 
 /** An SQL editor with a result grid. Writes ask first. Run with Ctrl/Cmd+Enter. */
 export function SqlConsole({
+  dialect,
   run,
   initial = '',
   placeholder = 'SELECT 1',
 }: {
+  dialect: SqlDialect;
   run: (sql: string) => Promise<IpcResult<SqlResult>>;
   initial?: string;
   placeholder?: string;
@@ -58,7 +62,7 @@ export function SqlConsole({
   function submit() {
     const text = sql.trim();
     if (!text || out.state === 'running') return;
-    if (isWrite(text)) setConfirm(text);
+    if (isWrite(text, dialect)) setConfirm(text);
     else void exec(text);
   }
 
@@ -69,7 +73,13 @@ export function SqlConsole({
     }
   }
 
-  const result = out.state === 'done' ? out.result : undefined;
+  // The renderer enforces the cap itself, whatever the backend sent.
+  const raw = out.state === 'done' ? out.result : undefined;
+  const result = raw && {
+    ...raw,
+    rows: raw.rows.length > MAX_ROWS ? raw.rows.slice(0, MAX_ROWS) : raw.rows,
+    truncated: raw.truncated || raw.rows.length > MAX_ROWS,
+  };
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
@@ -160,8 +170,9 @@ export function SqlConsole({
         }
       >
         <p className="m-0 text-sm text-muted">
-          This is not a plain SELECT, SHOW or EXPLAIN. It runs against your local stack and may
-          change data or schema.
+          This does not look like a plain SELECT, SHOW or EXPLAIN. It runs against your local stack
+          and may change data or schema. This check is a convenience, not a guarantee: a SELECT can
+          still call a function with side effects.
         </p>
         <pre className="mt-3 max-h-48 overflow-auto font-mono text-xs">{confirm}</pre>
       </Dialog>

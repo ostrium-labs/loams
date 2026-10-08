@@ -38,7 +38,11 @@ export function WesqlPage({ desktop }: { desktop: LoamsDesktopApi }) {
                 />
               ),
             },
-            { id: 'sql', label: 'SQL', content: <SqlConsole run={desktop.wesql.query} /> },
+            {
+              id: 'sql',
+              label: 'SQL',
+              content: <SqlConsole dialect="mysql" run={desktop.wesql.query} />,
+            },
           ]}
         />
       ) : (
