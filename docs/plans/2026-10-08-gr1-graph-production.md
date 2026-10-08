@@ -661,4 +661,254 @@ Commit `docs(gr1): production exit report`.
 
 ## Rulings made during execution
 
-(Empty. Task 0 starts it.)
+### Task 0 (2026-10-08, on `dev` at `6079e4d7`)
+
+How these were measured: a scratch crate in the worktree (`scratch/probe`, standalone `[workspace]`, never committed) built with the shared target and `-j 4`, its tests run one at a time under `systemd-run --user --scope -p MemoryMax=3G`; three more scratch manifests (`scratch/feat-{narrow,strict,cypher}`) for `cargo tree --offline` only. Grafeo sources were read from `~/.cargo/registry/src/index.crates.io-*/grafeo*-0.5.43/`. Quoted lines starting `P<n>` are probe output. Work happened in `~/Documents/Ostriumlabs/loams-wt/gr1` on branch `backend/gr1`, not the `gr1-graph-production` worktree or `feat/gr1-graph-production` branch the Global Constraints name (R0.0).
+
+**R0.0 Worktree and branch.** GR1 runs in `~/Documents/Ostriumlabs/loams-wt/gr1` on `backend/gr1` (the orchestrator's choice). Read the Global Constraints' path and branch as these.
+
+**R0.1 As built: all twelve of §48 §5's findings are still true on `dev`.**
+1. Still true. `fabric/crates/` holds `loams-chdb`, `loams-chdb-sys`, `loams-flow`, `loams-flow-proto`, `loams-graph`, `loams-graph-proto` and `loams-house`, with no `loams-fabric`. `service.rs` is still free functions. `CATALOGUE` in `crates/loams/src/api/connect.rs` has three rows (`instance`, `collection`, `live`) and none for graph.
+2. Still true. `string database_path = 3;` is in `fabric/proto/loams/graph/v1/graph.proto:104`, and `service::open` passes it to `OpenSpec`.
+3. Still true. `ExecuteRequest` has fields 1–5 (`namespace`, `name`, `statement`, `language`, `read_only`) and no parameters.
+4. Still true. `service.rs` `execute_batch` with `atomic = false` calls `graph.execute(&statement.text, false)`.
+5. Still true. Only `req.language` is passed to `check_language`.
+6. Still true. `to_pb_value` uses `n.as_f64()` and `to_gql_value` uses `Value::from(*number)` (f64).
+7. Still true. `rows_affected` and `bytes_read` are `None`, so the wire gets 0 (`engine.rs:131-153`).
+8. Still true. The guard is still `writes`/`bare_words` (`engine.rs:485,513`). Nothing calls `session_with_role`.
+9. Still true. `GrafeoDB::open(path)` uses the default `Config`. P11 prints `wal_durability=Batch { max_delay_ms: 100, max_records: 1000 }`.
+10. Still true. `Engine.graphs` is a `Mutex<HashMap<String, Arc<Graph>>>` (`engine.rs:386`), and `list_graphs` reads it.
+11. Still true. Fabric depends on `grafeo = { version = "0.5", features = ["wal","spill","mmap"] }` with defaults (`embedded` = `ai` + `arrow-export`). `fabric/Cargo.lock` has `grafeo-engine 0.5.43 -> arrow-array 60.0.0, arrow-ipc 60.0.0, arrow-schema 60.0.0`.
+12. Still true. `connectors/licences.toml` has `[components.grafeo|grafeo-core|grafeo-engine|grafeo-adapters|grafeo-common]` and no `grafeo-storage`, but `fabric/Cargo.lock` links `grafeo-storage 0.5.43`.
+
+**R0.2 Grafeo features (changes Task 1).** The narrowest set that keeps LPG, GQL, WAL, CDC, spill, algos, metrics and tracing:
+```toml
+grafeo        = { version = "=0.5.43", default-features = false, features = ["gql", "wal", "grafeo-file", "spill", "cdc", "algos", "metrics", "tracing", "parallel", "regex"] }
+grafeo-engine = { version = "=0.5.43", default-features = false, features = ["lpg"] }   # named directly: grafeo's own `lpg` turns on cypher, gremlin and sql-pgq
+grafeo-common = { version = "=0.5.43", default-features = false }
+```
+- `grafeo-file` is required: `backup_full` and `backup_incremental` are `#[cfg(all(feature = "wal", feature = "grafeo-file", feature = "lpg"))]` (`grafeo-engine/src/database/mod.rs:2742,2767`).
+- `mmap` is not needed. Outside `compact-store` and `vector-index` it gates nothing, and spill does not need it (`grafeo-core` `spill = []`).
+- `parallel` (rayon) and `regex` (GQL `=~`, matching fabric's choice against `regex-lite`) are kept on purpose. Without them, `scratch/feat-strict` has 57 packages instead of 65.
+- The probe crate compiles and runs with this set.
+- `cargo tree -e features -i grafeo-engine` (narrow) shows only `algos, cdc, crossbeam, gql, grafeo-file, grafeo-storage, lpg, metrics, parallel, rayon, regex, spill, tracing, wal`. The grafeo-side features are exactly the ten listed. `grafeo-adapters` gets `algos, gql, parallel, rayon, tracing`.
+- `cargo tree --offline -e features -i grafeo-engine`, run in `scratch/feat-narrow`, trimmed to grafeo-engine's own features:
+  ```
+  ├── grafeo-engine feature "algos"
+  │   └── grafeo feature "algos" (*)
+  ├── grafeo-engine feature "cdc"
+  │   └── grafeo feature "cdc" (*)
+  ├── grafeo-engine feature "crossbeam"
+  │   └── grafeo-engine feature "parallel"
+  │       └── grafeo feature "parallel" (*)
+  ├── grafeo-engine feature "gql"
+  │   └── grafeo feature "gql" (*)
+  ├── grafeo-engine feature "grafeo-file"
+  │   └── grafeo feature "grafeo-file" (*)
+  ├── grafeo-engine feature "grafeo-storage"
+  │   ├── grafeo-engine feature "grafeo-file" (*)
+  │   └── grafeo-engine feature "wal"
+  │       └── grafeo feature "wal" (*)
+  ├── grafeo-engine feature "lpg"
+  │   └── feat-narrow v0.0.0 (scratch/feat-narrow) (*)
+  ├── grafeo-engine feature "metrics"
+  │   └── grafeo feature "metrics" (*)
+  ├── grafeo-engine feature "parallel" (*)
+  ├── grafeo-engine feature "rayon"
+  │   └── grafeo-engine feature "parallel" (*)
+  ├── grafeo-engine feature "regex"
+  │   └── grafeo feature "regex" (*)
+  ├── grafeo-engine feature "spill"
+  │   └── grafeo feature "spill" (*)
+  ├── grafeo-engine feature "tracing"
+  │   └── grafeo feature "tracing" (*)
+  └── grafeo-engine feature "wal" (*)
+  ```
+- **arrow-array 60 is not in the tree.** The narrow tree has no `arrow*` package at all.
+- The tree's grafeo-specific packages are the six grafeo crates plus `arcstr bincode bumpalo byteorder bytes crc32fast crossbeam dashmap foldhash fs2 hashbrown(0.14, 0.17) indexmap memmap2 parking_lot rayon regex smallvec thiserror tokio unicode-normalization`. `tokio` (with `macros`) comes in through `grafeo-storage`'s `wal`, which cannot be turned off.
+- **With `cypher` added** (`scratch/feat-cypher`), the tree gains only the features `grafeo/cypher -> grafeo-engine/cypher -> grafeo-adapters/cypher` and **no package** (159 tree lines either way, no arrow). Task 33's `graph-cypher` feature therefore costs code size only.
+- The features `jemalloc` and `mimalloc-allocator` install a `#[global_allocator]` in `grafeo/src/lib.rs:61,65`. They must never be enabled. Task 1 adds a comment saying so.
+
+**R0.3 Pin: 0.5.43 is not yet 14 days old (changes Task 1 and D759; owner decision Q-T0-1).** From crates.io (`/api/v1/crates/<c>/versions`, read 2026-10-08), all six crates were published on the same dates: 0.5.44 on 2026-10-04, 0.5.43 on 2026-09-27, and 0.5.42 on 2026-05-04.
+- The newest release at least 14 days old today (published on or before 2026-09-24) is **0.5.42**.
+- 0.5.43 becomes eligible on **2026-10-11**, and 0.5.44 on 2026-10-18.
+- D759's premise ("0.5.43 exact"; only 0.5.44 is too new) is wrong by three days. Fabric adopted 0.5.43 on 2026-10-04, when it was 7 days old.
+- Ruling: every probe here ran against 0.5.43, so the plan keeps 0.5.43. Task 1's commit that adds the pin to the root workspace must not merge before 2026-10-11, unless the owner says otherwise. Do not re-probe on 0.5.42.
+
+**R0.4 `Session::set_viewing_epoch` isolates a session.** The pin holds across statements: `P1 pinned=Int64(1) pinned_rows_2nd_stmt=1 execute_at_epoch=Int64(1) latest=Int64(2) pin=EpochId(1) now=EpochId(2)`. `execute_at_epoch` agrees. GC at a pinned epoch is left to Task 9 step 4.
+
+**R0.5 `prepare_commit().commit()` does not reliably return the transaction's own commit epoch (changes Tasks 9 and 11; upstream Q679).**
+- `PreparedCommit::commit` is `self.session.commit()?; Ok(self.session.transaction_manager().current_epoch())` (`grafeo-engine/src/transaction/prepared.rs:124-128`). It reads the global epoch *after* committing and drops the epoch that `TransactionManager::commit` returns (`transaction/manager.rs:264`).
+- Sequential commits get the right value: `P2 commit_epoch=EpochId(1) current=EpochId(1)`.
+- With 4 threads and a barrier, 80 transactions returned only 70 distinct epochs, and 10 were later than the transaction's real epoch: `P2c ... distinct_returned_epochs=70 final_epoch=EpochId(80) event_epoch_matches=70 mismatches=[(0,0,3,[1]), (0,2,11,[10]), …]`.
+- The CDC event epoch *is* the real commit epoch: each transaction's events sit at exactly one epoch.
+- **A committed explicit read-only transaction also advances the global epoch.** Autocommit reads and rollbacks do not: `P2d after write=EpochId(1) autocommit-read=EpochId(1) ro-txn-commit=EpochId(2) rollback=EpochId(2) ro-session-read=EpochId(2)`. Epochs therefore have gaps with no change set.
+- `PreparedCommit::info()` reports `nodes_written: 0, edges_written: 0` until commit, as upstream documents.
+- Ruling: Task 11's `WriteLane` holds one per-graph commit mutex around `prepare_commit()` … `commit()`. Every *explicit transaction* on a graph's engine commits through the lane, read-only ones included: GQL batches, link targets, imports and algorithm write-back. Client reads run as autocommit statements on a viewing-epoch session and never `begin_transaction`. Under those two rules, `current_epoch()` read under the mutex is the transaction's epoch.
+- Task 11's durable-epoch tracking must accept epochs that have no record.
+- Task 9's spike adds `commit_epoch_is_exact_under_lane` (concurrent submitters through the lane; the returned epoch equals the CDC epoch). Upstream ask: return the manager's epoch.
+
+**R0.6 CDC (changes Tasks 9 and 10).** Events for a committed transaction can be retrieved by epoch (`changes_between(e, e)`), and a rollback records none. What they contain:
+- **Node create**: two events, `Create labels=Some(["Person"]) after=None`, then `Update after=Some({props})`, both at the commit epoch.
+- **Edge create**: `Create et=Some("KNOWS") src=Some(0) dst=Some(1)`, then `Update after=Some({"w": Int64(1)})`. **Edge endpoints are present on create.**
+- **Label add**: `Update labels=Some(["Person","Admin"]) before=None after=None`.
+- **Label remove**: `Update labels=Some(["Person","Admin"])`. This is the *same shape*, so an event does not say whether a label was added or removed, or what the resulting set is.
+- **Property remove**: `Update before={"name": String("b")} after={"name": Null}`.
+- **Delete** (`DETACH DELETE`): the node `Delete labels=Some(["Person"]) before={props}`, and the edge `Delete et=None src=None dst=None before={props}`. **Edge type and endpoints are missing on delete.**
+- **DDL** (`CREATE NODE TYPE`, `CREATE INDEX`, `CREATE GRAPH`, `DROP NODE TYPE`) produces **no CDC event and does not advance the epoch** (`cdc events 12->12; epoch EpochId(5)->EpochId(5)`).
+- `session_with_cdc(false)` writes nothing to CDC. A plain `session()` on a `Config::with_cdc()` database does.
+- The CDC log is in memory and per database, with default retention `max_epochs: Some(1000), max_events: Some(100_000)` (`cdc.rs:259-260`). `changes_between` scans every entity's history, so it costs O(events retained) (`cdc.rs:534`).
+
+Rulings:
+- (a) Task 9's `CdcCapture::take` resolves each touched element's final labels (and, for an edge, type and endpoints) from the store at the commit epoch, inside the lane, rather than from the events. A deleted edge's type and endpoints are taken from a pre-commit read or from Loams' own element map.
+- (b) Capture runs before CDC retention can prune: it takes and then prunes per commit through `CdcLog::prune_before`, and retention is set high.
+- (c) Sessions are always created with CDC on. `session_with_cdc(false)` is never used.
+- (d) DDL is routed to `SchemaChange` by classification (R0.10), never through CDC. Task 9's `ddl_capture_or_schema_record` takes the schema-record branch.
+
+**R0.7 Caller-chosen ids: only below GQL (affects Tasks 9 and 14).**
+- `LpgStore::create_node_with_id(NodeId, &[&str])` and `create_edge_with_id(EdgeId, src, dst, type)` exist, documented as "used for WAL recovery" (`grafeo-core/src/graph/lpg/store/versioning.rs:439,525`).
+- They work (`P4 ... true true; create_edge_with_id: "Ok(())"`) and GQL sees the ids (`[[Int64(1000)], [Int64(1001)]]`, edge `500`).
+- They **bypass MVCC and CDC**: they record no events and no epoch.
+- The allocator moves past them: the next GQL insert gets 1002, then 1003.
+- GQL has no way to choose an id.
+- Ruling: replay (Task 9 step 3, Task 14 recovery, followers in Task 15) may build a fresh, not-yet-serving engine with these calls, plus a direct store property API, which Task 9 confirms. On a live engine, writes go through GQL, and the `_lid` map stays the fallback.
+
+**R0.8 `query_timeout` does not bound a running statement and is not per session (changes Tasks 6 and 26; upstream Q679).**
+- The timeout is a database `Config` field, copied into each session's private `SessionConfig.query_timeout` when the session is created (`database/mod.rs:1773`). There is no public per-session setter and no cancel handle.
+- The deadline is checked only between pipeline chunks (`query/executor/mod.rs:87-111,205,350`).
+- Measured with a 300 ms timeout:
+  - a 300³ cartesian `count(*)` answered `timeout error` after **8.04 s**;
+  - a 300⁴ cartesian did not end within the 120 s harness budget;
+  - `MATCH p = (a:T {i:1})-[:N*]->(b) RETURN count(p)` on a 40-node `+1/+2` chain (about 10⁸ paths) **did not end within 120 s**;
+  - with a 5 s timeout, a cartesian `ORDER BY` returned the timeout error after **39.3 s**.
+- `SESSION SET PARAMETER $timeout` has no effect.
+
+Rulings:
+- (a) Task 6's deadline is enforced on the Loams side. The statement runs on a blocking thread. At the deadline the RPC answers `graph_statement_timeout`, and the thread is detached and counted (`loams_graph_detached_statements`). Per graph, at most `max_detached` (default 2) can exist; past that the graph's semaphore refuses new statements. The engine's own `query_timeout` is set to the largest allowed per-request timeout as a backstop.
+- (b) `classify` refuses an unbounded variable-length quantifier (`*`, `+`, or `{n,}` with no upper bound) and quantifiers above `StatementLimits.max_path_hops` (default 10) with `INVALID_ARGUMENT`/`graph_unbounded_path`. That is refusal, not rewriting, so it is allowed under D634.
+- (c) `client_cancel_stops_statement` becomes `client_cancel_answers_and_detaches`.
+- (d) `timeout_returns_statement_timeout` keeps "answer within 1 s".
+- Upstream asks: a per-session timeout, a cancel token, and deadline checks inside expand, cartesian-product and sort.
+
+**R0.9 `memory_limit` does not fail a statement (changes Task 26; owner question Q-T0-2).**
+- `memory_limit` is the budget of the `BufferManager`, a pressure signal for eviction and spill. The thresholds are 70/85/95 %, and "Critical (block allocations)" (`grafeo-common/src/memory/buffer/mod.rs:18-23`). No path returns a memory error to a statement.
+- Probe: `with_memory_limit(8 MiB)`, 1 500 nodes with 2 KB strings, then a cartesian `ORDER BY`.
+  - The statement ended only by **timeout** (`after 39.27s`). There was no memory error.
+  - **Peak RSS was 3 131 564 kB** (`VmHWM`, pinned at the 3 GiB cgroup cap).
+  - `memory_usage().total_bytes` said 1 252 501 for at least 3 MB of payload, so it under-counts.
+  - The process survived and later queries answered.
+- With no `memory_limit`, the budget defaults to 75 % of system RAM per database (`database/mod.rs:360`).
+
+Rulings:
+- (a) Loams always sets `memory_limit` and `spill_path` per graph (under `<data_dir>/graphs/<id>/spill`).
+- (b) Task 26's watchdog is **required**. The plan's "only if Task 0 showed Grafeo's limit can be exceeded" is answered yes. Because R0.8 shows a statement cannot be stopped, the watchdog's action on a graph over budget is to poison and reload it (fresh `GrafeoDB`), not just evict it.
+- (c) Grafeo shares the process heap, so `runaway_statement_fails_not_process` cannot be guaranteed in process. See Q-T0-2.
+
+**R0.10 Roles and engine classification (changes Tasks 3 and 24).**
+- `session_with_role(Role::ReadOnly)` refused every parseable write in the probe corpus, and nothing changed: `P7 ro writes that succeeded and changed state: []`. The corpus covered `INSERT`, `SET` property and label, `REMOVE`, `DELETE`, `DETACH DELETE`, comment-hidden `SET`, a string literal `'RETURN'`, `FILTER … SET`, `MERGE`, `NEXT`-chained writes in both orders, `UNWIND/FOR … INSERT`, `CREATE (:Cy)`, `CALL { INSERT }`, `CREATE/DROP NODE TYPE`, `CREATE INDEX`, and `CREATE/DROP GRAPH`.
+- Inside a transaction begun on a read-only session, the write is refused too.
+- `Role::ReadWrite` is refused DDL (Admin) but **may `CREATE GRAPH`/`DROP GRAPH`**. These are named graphs inside the database, gated at `StatementKind::Write` (`session/mod.rs:803-810`).
+- `CREATE PROCEDURE` needs Admin.
+- Grafeo 0.5.43 has no public "classify this statement" function. `StatementKind` is used only inside `Session`. But `grafeo_engine::query::translators::gql::translate_full(&str) -> GqlTranslationResult::{Plan, SessionCommand, SchemaCommand}` plus `LogicalPlan.root.has_mutations()` is public, and it agreed with the role check on every corpus statement.
+- `//` line comments are a syntax error in 0.5.43's GQL parser, so the Task 3 fixture lists them as parse errors.
+
+Rulings:
+- (a) Task 3's `engine_classify` is `translate_full`: a `Plan` with mutations is Write, a `Plan` without mutations is Read, `SchemaCommand` is Admin, and `SessionCommand` is mapped per command.
+- (b) `CREATE GRAPH`, `DROP GRAPH`, `USE GRAPH`/`SESSION SET GRAPH` and `CREATE/DROP PROJECTION` are refused outright with `FAILED_PRECONDITION`/`graph_statement_not_allowed`. One Loams graph is one `GrafeoDB`'s default graph.
+- (c) Task 24's "writer cannot DDL" holds through the engine role.
+
+**R0.11 `LOAD DATA` reads any file on the server, read-only role included (changes Tasks 3, 5 and 31; Review Focus 4).**
+- GQL `LOAD DATA FROM '<path>' FORMAT CSV|JSONL|PARQUET [WITH HEADERS] AS v` opens a server path with `std::fs::File::open` (`grafeo-core/src/execution/operators/load_data.rs:82,212`). It is not feature-gated for CSV and JSONL, and Parquet needs `parquet-import`, which is off.
+- It classifies as Read in both the engine role check and `translate_full`.
+- Probe: a `ReadOnly` session read a probe file (`Ok([[String("hunter2")]])`) and `/etc/hostname` (`Ok(1)`).
+- A `file://` prefix and `http://` URLs fail as "No such file", so there is no network access.
+- Ruling: Task 3's guard refuses any statement whose `translate_full` plan contains `LogicalOperator::LoadData`, and also the keyword pair `LOAD DATA` as a backstop. It uses `PERMISSION_DENIED`/`graph_statement_not_allowed`, before the engine runs anything. This is a **precondition for Task 5** (nothing is served over the network before it lands). Task 31's allowlist keeps it refused, and the classify corpus gets the `LOAD DATA` cases.
+
+**R0.12 `backup_full` on a checkpointed database works (Task 13).**
+- `wal_checkpoint()` → `Ok`. `backup_full` itself checkpoints the database (`checkpoint_to_file`) and writes `backup_full_0000.grafeo` (`start_epoch 0, end_epoch 1`).
+- `backup_incremental` writes `backup_incr_0001.wal`.
+- `backup_manifest.json` is kept.
+- `GrafeoDB::restore_to_epoch(dir, e, out)` restored both epochs correctly (`A-count` 1 at e1, 2 at e2) and refuses to overwrite an existing output.
+- An in-memory database refuses with `backup requires a persistent database`. Graphs are therefore always opened persistent under `<data_dir>/graphs/<id>/`, and the native snapshot is `backup_full` into a local staging directory and then uploaded.
+
+**R0.13 No Grafeo crate forces `panic = "abort"`.**
+- None of the six `Cargo.toml` files has a `[profile]` (and dependency profiles are ignored anyway).
+- No `std::process::abort`, `process::exit` or `panic::set_hook` appears in their sources.
+- `P9` (catch_unwind around a panic inside an open Grafeo transaction): `panic strategy unwind=true caught=true after-panic count=Int64(0)`, then `db usable after panic: Int64(1)`. The uncommitted insert stayed invisible, and the database kept working.
+- `parking_lot` locks do not poison. A caught panic therefore leaves Grafeo's locks usable, but its in-memory state is whatever the panicking call left. Task 3 keeps "a panic poisons the graph and it reopens".
+
+**R0.14 Shared state: no process-global cache holds data.** Every `static`, `OnceLock`, `LazyLock` and `thread_local!` in the six crates at 0.5.43:
+- `grafeo/src/lib.rs:61,65`: `GLOBAL` allocator, only with `jemalloc`/`mimalloc-allocator`, which are off.
+- `grafeo-adapters/src/plugins/algorithms/*.rs`: 25 `*_PARAMS: OnceLock<Vec<ParameterDef>>` (static parameter descriptions).
+- `grafeo-engine/src/query/planner/lpg/mutation.rs:700`: `PROCEDURES: OnceLock<BuiltinProcedures>` (the code registry).
+- `grafeo-common/src/utils/hash.rs:27`: `HASH_STATE: OnceLock<foldhash::fast::RandomState>` (process hash seed).
+- `grafeo-engine/src/query/translators/gql/mod.rs:2104`: `COUNTER: AtomicU32` (anonymous-variable names).
+- Under RDF and SPARQL, which are not compiled: `grafeo-core/src/graph/rdf/turtle/parser.rs:16`, `grafeo-engine/src/query/planner/rdf/mod.rs:5127-5216`, `query/translators/sparql.rs:20`.
+- Under `testing-*`, off: `grafeo-common/src/testing/{crash,statement_failure}.rs` thread-locals.
+- `grafeo-core/src/execution/operators/filter.rs:240`: per-operator `Arc<OnceLock<Value>>`, which is not static.
+- The plan cache (`Arc<QueryCache>`), the CDC log, the catalog, the buffer manager and the transaction manager are all fields of `GrafeoDB`, so they are per graph.
+- Per-graph isolation holds. Thread pools are shared (rayon's global pool).
+
+**R0.15 Procedures and functions (Task 31).**
+- `CALL grafeo.procedures()` lists 26 built-ins: `articulation_points, bellman_ford, betweenness_centrality, bfs, bridges, closeness_centrality, clustering_coefficient, connected_components, degree_centrality, dfs, dijkstra, floyd_warshall, kcore, kruskal, label_propagation, labels, louvain, max_flow, min_cost_max_flow, pagerank, prim, propertyKeys, relationshipTypes, sssp, strongly_connected_components, topological_sort`. All are `grafeo.`-prefixed, with `db.*` aliases for the three catalogue ones.
+- The `grafeo.search.*` procedures are absent without `vector-index`/`text-index`.
+- User procedures (`CREATE PROCEDURE`) need Admin.
+- **No procedure or function touches the filesystem or network.** The only `std::fs` reachable from a statement is `LOAD DATA` (R0.11). The other files that use `std::fs` are spill (under the server's `spill_path`), backup, import (Rust API only), compact-tiered/section (off) and the buffer manager.
+- No file in the six crates uses `std::net`, `TcpStream` or `std::process::Command`.
+- The algorithms run over the whole graph with no deadline checks, so Task 31 gives `CALL` its own statement-limit class.
+- Baseline counts of lines containing `unsafe ` for Task 31's inventory: grafeo 0, grafeo-core 42, grafeo-engine 6, grafeo-adapters 0, grafeo-common 22, grafeo-storage 3.
+
+**R0.16 The engine side of the API (changes Tasks 2, 5 and 12).**
+- `crates/loams-proto/build.rs` compiles a fixed `FILES` list (options, errors, instance, collection ×3) with `connectrpc_build::Config::new().files(..).includes(&[proto/]).include_file("_connectrpc.rs").emit_descriptor_set("loams_api_descriptor.bin").gate_client_feature(true)`. `lib.rs` `include_generated!`s them and exports `FILE_DESCRIPTOR_SET`. Task 2 appends `"loams/graph/v1/graph.proto"` to `FILES`. Nothing else is needed.
+- A catalogue row is a `Package { package, services, available, unstable }` in `CATALOGUE` (`connect.rs:96`). The handler is registered in `connect::routes()` (`rpc = …::register(rpc, state)`), and every path becomes an axum `route_service`.
+- An absent package follows the `LiveAbsent` pattern: every method returns `not_in_variant("<svc>/<Method>")` (`connect.rs:242ff`, `not_in_variant` at about `:318`).
+- API1's last tasks (sql, link, admin, auth, internal) have **not** landed. `loams-proto` has none of them.
+- `VARIANT` is computed from cargo features (`connect.rs:55`, `cfg!(any(feature = "tikv", "mysql-wire", "stream-grpc"))`), and `release/` holds only `aur`, `nfpm.yaml` and `systemd`, with no variant lists. Task 5 therefore adds `feature = "graph"` to `VARIANT`'s `full` list rather than editing release files.
+- **No auth interceptor or `Authorizer` exists** (no `trait Authorizer`, `AllowAll` or interceptor anywhere in `crates/`). MT1 is not in code. Task 5's `non_loopback_listen_without_authorizer_refused` therefore refuses every non-loopback `graph` listen until MT1 lands.
+- **`Roles` is not in `server.rs`.** It is `loams_hot::Roles` (`crates/loams-hot/src/registry.rs:27`): `{meta, log, query, worker, gateway}` booleans, a closed `parse` that errors with `unknown role`, `Display` as a comma list, and encoding into the node lease descriptor `v1;<incarnation>;<addr>;<roles>;<zone>`. It is parsed from `--roles` in `crates/loams/src/main.rs:847`.
+- Task 5 changes `crates/loams-hot/src/registry.rs`, not `server.rs`. A node from before `graph` existed fails to decode a peer descriptor that lists `graph`, so Task 28's rolling upgrade ships the parser change one release before any node advertises `graph`. Alternatively, Task 5 makes `decode` ignore unknown roles. Task 5 picks this and records it.
+- **`loams.internal.v1` is not served.** Node-to-node calls are axum REST under `/internal/v1/...` (`crates/loams/src/api/internal.rs`), on the main port and on `internal_router` (`api/mod.rs:267`). The move to `loams.internal.v1` is API1 Task 8 (WIP `c89a362a` did not do it).
+- Task 12's `GraphForward` goes in `loams.internal.v1` only if API1 Task 8 has landed by then. Otherwise it is an `/internal/v1/graph/...` route on `internal::routes()`, with a note to move it. Task 12 records which.
+
+**R0.17 Link framework (changes Tasks 10 and 18).**
+- `#[async_trait] trait LinkTarget: Send + Sync { async fn load(&self) -> Result<TargetState, LinkError>; async fn commit(&self, expected_version: u64, batch: ApplyBatch, fence: &Fence) -> Result<u64, CommitError>; }`, where `TargetState { version: u64, applied: BTreeMap<u32, u64> }`, `ApplyBatch { records: Vec<(u32, OffsetRecord)>, applied_after: BTreeMap<u32, u64> }`, and `CommitError::{Conflict, Fenced, Other}` (`crates/loams-link/src/target.rs`).
+- `trait LinkTargetFactory: Send + Sync + Debug { fn kind(&self) -> &str; fn open(&self, meta: &Arc<dyn MetaStore>, link: &Link) -> Result<Arc<dyn LinkTarget>, LinkError>; async fn retain(&self, links: &BTreeSet<LinkId>) {} }`, registered in `TargetRegistry::with` (`registry.rs`).
+- The exactly-once contract (`lib.rs`): each commit carries the batch's data and the offsets it applied, atomically, under the target's version (optimistic concurrency) and the task lease's fence. A crash re-reads the committed offsets. A zombie's commit fails.
+- Ruling: a graph link target's `commit` is one `GraphChangeSet` through the write lane. Its `load` must recover `version` and `applied` from the graph's durable state. Task 10's v1 record therefore carries an optional `link: Option<LinkApply { link: LinkId, version: u64, applied_after: BTreeMap<u32, u64> }>` from the start, so it is not a v2. The graph keeps the latest `LinkApply` per link in its manifest and snapshot. `expected_version` is checked under the lane mutex, and the fence is checked by the append (R0.18).
+
+**R0.18 The log has no fencing, but it has a CRC (changes Tasks 10 and 12).**
+- `MetaStore::commit_wal(WalCommit { object, created_at_ms, chunks: Vec<WalChunk { stream, partition, records, byte_range, max_timestamp_ms }> })` has **no fence or epoch** (`crates/loams-common/src/meta/`).
+- Leases (`acquire_lease`, which returns an epoch-bearing `LeaseGrant`) and `cas_pointer(PointerCas { …, fence: Option<Fence>, … })` are fenced. Appends are not.
+- Task 12's "the log refuses a stale epoch" therefore needs a metastore change: an optional `fence` on `WalCommit`, checked atomically with the offset assignment, in `loams-meta` and `loams-meta-tikv`, with a `loams-meta-conformance` case. That change is now part of Task 12 and needs the log owner's review.
+- Log batches already carry a crc32c over the batch (`crates/loams-log/src/batch.rs:9-11,129`), so **Task 10 adds no per-record CRC.**
+
+**R0.19 Search IR (changes Tasks 20 and 21).**
+- `crates/loams-query/src/ir.rs`'s `SearchRequest` has **no `expand` or `rerank`**.
+- `proto/loams/collection/v1/query.proto:230-232` declares `google.protobuf.Struct rerank = 17; google.protobuf.Struct expand = 18;` as "always `invalid_argument`", in `loams.collection.v1`, which is `unstable: false`.
+- Changing those fields' type to typed messages is a `buf breaking` FIELD_SAME_TYPE violation in a stable package. Task 20 therefore keeps 17/18 as they are, deprecated, and adds typed `Rerank rerank_spec`/`Expand expand_spec` fields with new numbers, unless the owner allows the type change (Q-T0-4).
+- DataFusion is 54.1. `TableFunctionImpl::call(&self, &[Expr])` takes its arguments at plan time (`datafusion-catalog-54.1.0/src/table.rs:557`), so a UDTF cannot see a `LATERAL` outer column. This was read from the signature, not executed. Task 21 implements the `seeds => 'SELECT …'` form and makes `lateral_join_with_collection` a documented refusal test.
+
+**R0.20 Desktop (changes Task 8).**
+- `web/plugins/graph` is AP1e Task 27's empty state: `src/graph-page.tsx` and `index.tsx`, and one test. It detects with `flags.has('loams.graph.v1')`, which reads `GetInstance.api_versions`, so it shows available packages only and cannot tell `not_in_variant` apart from `absent`. Task 8's `detect.ts` reads `services[]` (status) instead.
+- The pattern for a plugin to call Connect: inject `transport`, then `createClient(<pkg>.<Service>, transport)` from `@loams/proto`, as `plugins/data-studio/src/client.ts:102` does.
+- In Electron the transport is `createConnectTransport({ baseUrl: page origin, useBinaryFormat: true, fetch: desktopFetch })` (`web/packages/platform-electron/src/index.ts:103`).
+- The main process proxies every path that is not `/durable/` or `/loams.live.v1.` to the active server (`apps/desktop-electron/src/main/protocol/route.ts`), so `/loams.graph.v1.*` needs **no proxy change**.
+- Task 8 adds `./graph` to `web/packages/proto` (generation plus `exports`), adds `transport` to the plugin's `inject`, and adds `graph` to `apps/desktop-electron/scripts/fetch-engine.mjs`'s `--features live,durable`, its README, and `test/e2e/smoke.spec.ts`'s message. Coordination with the AP owner still applies.
+
+**R0.21 Licences (changes Task 1).**
+- All six crates declare `license = "Apache-2.0"` in their published `Cargo.toml`, and crates.io agrees for 0.5.42 through 0.5.44.
+- **None of the six `.crate` archives ships a `LICENSE` or `NOTICE` file.** Their `repository` is `https://github.com/GrafeoDB/grafeo`, and `grafeo-storage` lists `authors = ["S.T. Grond"]`.
+- Grafeo's `NOTICE` (if there is one) lives only in that repository. It was not read, because this task fetches no external repository (Q-T0-3).
+- Task 1 adds the `grafeo-storage` stanza (Apache-2.0) to `connectors/licences.toml`. It adds Grafeo's notice to the root `NOTICE` once the owner supplies it, or a "no NOTICE upstream at <commit>" line.
+- `cargo deny` needs no new allow entry. Apache-2.0 is already allowed.
+
+**R0.22 Smaller findings for later tasks.**
+- `connectors/registry/grafeo.yaml` and `fabric/crates/loams-flow/tests/registry.rs:83-88` assert that the runtime reference is `loams_flow::connectors::graph`, a module that does not exist. Task 1 points it at the engine's new home (`loams_graph`) or records why not.
+- In `fabric/`, nothing but the two graph crates depends on `loams-graph*`, so deleting them only touches `fabric/Cargo.lock` and `fabric.yml`. `fabric.yml` does not mention graph.
+- Grafeo's default `max_property_size` is 16 MiB and its default `query_timeout` is 30 s (P11). Task 6's `StatementLimits` sets both explicitly.
+
+**Questions for the owner raised by Task 0**
+- **Q-T0-1 (Task 1):** keep 0.5.43 and merge Task 1 on or after 2026-10-11, or drop to 0.5.42 now? (R0.3)
+- **Q-T0-2 (Task 26, §48 Review Focus 5):** Grafeo neither stops a runaway statement (R0.8) nor fails it on memory (R0.9). In process, Loams can only answer, detach and reload. Is that acceptable for GA, with upstream fixes asked for (Q679)? Or should each graph's engine run in a child process, which would change D741?
+- **Q-T0-3 (Task 1):** the crates ship no NOTICE. Supply Grafeo's upstream `NOTICE`/`LICENSE` at the 0.5.43 tag, or approve fetching it.
+- **Q-T0-4 (Task 20):** may `expand`/`rerank` (fields 17/18 of the stable `loams.collection.v1`) change type from `Struct` to typed messages, or must they be new fields? (R0.19)
