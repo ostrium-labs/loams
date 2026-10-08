@@ -1136,6 +1136,19 @@ pub mod inherited {
     }
 }
 
+/// Leaving the House worker's process at once (HS1 Task 2 review I3).
+pub mod process {
+    /// `_exit(code)`: ends the process now, without `atexit` handlers or static
+    /// destructors. libchdb's shutdown path is slow and has hung (FL2 Ruling 11,
+    /// §49 §10.1), and a worker whose socket has closed must be gone at once, even
+    /// while a statement holds its main thread.
+    pub fn exit_now(code: i32) -> ! {
+        // SAFETY: `_exit` takes no pointers and never returns; skipping Rust's own
+        // cleanup is the point.
+        unsafe { libc::_exit(code) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! The header and the binary are pinned separately — the header by review,

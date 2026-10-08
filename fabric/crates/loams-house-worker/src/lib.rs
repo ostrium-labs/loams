@@ -16,4 +16,4 @@ pub mod config;
 pub mod serve;
 
 pub use config::WorkerArgs;
-pub use serve::{End, Worker, engine_config, engine_error};
+pub use serve::{End, Hosting, Worker, engine_config, engine_error};

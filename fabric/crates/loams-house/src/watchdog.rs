@@ -552,7 +552,10 @@ impl Launcher for InprocWorker {
             .spawn(move || {
                 let started = std::time::Instant::now();
                 let end = match loams_house_worker::Worker::boot_on(config, started) {
-                    Ok(served) => format!("{:?}", served.serve(reader, worker)),
+                    Ok(served) => format!(
+                        "{:?}",
+                        served.serve(reader, worker, loams_house_worker::Hosting::InProcess)
+                    ),
                     Err(error) => format!("boot failed: {error}"),
                 };
                 done.exit

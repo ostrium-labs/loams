@@ -4,8 +4,9 @@
 use std::os::unix::net::UnixStream;
 use std::time::Instant;
 
-use loams_house_ipc::{EXIT_PROTOCOL, Frame, FrameCodec};
-use loams_house_worker::{End, Worker, WorkerArgs};
+use loams_chdb_sys::process::exit_now;
+use loams_house_ipc::{Frame, FrameCodec};
+use loams_house_worker::{Hosting, Worker, WorkerArgs};
 
 /// `EX_USAGE`: bad arguments.
 const EXIT_USAGE: i32 = 64;
@@ -20,7 +21,7 @@ fn main() {
         Ok(args) => args,
         Err(err) => {
             eprintln!("loams-house-worker: {err}");
-            std::process::exit(EXIT_USAGE);
+            exit_now(EXIT_USAGE);
         }
     };
     let socket = match loams_chdb_sys::inherited::take_worker_socket() {
@@ -30,14 +31,14 @@ fn main() {
                 "loams-house-worker {}: no hsw1 socket: {err}",
                 args.worker_id
             );
-            std::process::exit(EXIT_NO_SOCKET);
+            exit_now(EXIT_NO_SOCKET);
         }
     };
     let mut writer = match socket.try_clone() {
         Ok(writer) => writer,
         Err(err) => {
             eprintln!("loams-house-worker {}: {err}", args.worker_id);
-            std::process::exit(EXIT_NO_SOCKET);
+            exit_now(EXIT_NO_SOCKET);
         }
     };
 
@@ -56,20 +57,12 @@ fn main() {
                     poisoned: true,
                 },
             );
-            std::process::exit(EXIT_BOOT);
+            exit_now(EXIT_BOOT);
         }
     };
 
-    let code = match worker.serve(socket, writer) {
-        End::Closed => 0,
-        End::Protocol(why) => {
-            eprintln!("loams-house-worker {}: hsw1: {why}", args.worker_id);
-            EXIT_PROTOCOL
-        }
-        End::Io(why) => {
-            eprintln!("loams-house-worker {}: socket: {why}", args.worker_id);
-            1
-        }
-    };
-    std::process::exit(code);
+    let label = args.worker_id.clone();
+    worker
+        .serve(socket, writer, Hosting::Process(label.clone()))
+        .exit_process(&label)
 }

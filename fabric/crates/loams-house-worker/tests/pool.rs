@@ -626,3 +626,54 @@ async fn acquire_waits_then_answers_202() {
         "a released worker goes to the waiting caller"
     );
 }
+
+/// HS1 Task 2 review I3: a worker busy in a statement still exits as soon as its
+/// socket closes. The reader thread `_exit`s; the statement is not waited for.
+#[test]
+fn busy_worker_exits_when_its_socket_closes() {
+    let launcher = ProcessLauncher::new(common::WORKER, tmp_root("orphan"));
+    let launched = launcher.launch("orphan").expect("launch");
+    let mut socket = launched.socket;
+    assert!(matches!(
+        FrameCodec::read(&mut socket).expect("frame"),
+        Some(Frame::Ready(_))
+    ));
+    FrameCodec::write(&mut socket, &bind("ns")).expect("Bind");
+    assert_eq!(
+        FrameCodec::read(&mut socket).expect("frame"),
+        Some(Frame::Done)
+    );
+    FrameCodec::write(
+        &mut socket,
+        &Frame::Execute(statement("SELECT count() FROM numbers(1e12)", "TSV")),
+    )
+    .expect("Execute");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(launched.control.exit().borrow().is_none(), "still running");
+
+    let closed = Instant::now();
+    socket.shutdown(std::net::Shutdown::Both).expect("shutdown");
+    drop(socket);
+    let mut exit = launched.control.exit();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .expect("runtime");
+    let status = runtime.block_on(async {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if let Some(status) = exit.borrow().clone() {
+                    return status;
+                }
+                exit.changed().await.expect("exit watch");
+            }
+        })
+        .await
+    });
+    let status = status.unwrap_or_else(|_| {
+        launched.control.terminate();
+        panic!("the worker was still alive 1 s after its socket closed")
+    });
+    assert_eq!(status, "exited with 0");
+    assert!(closed.elapsed() < Duration::from_secs(1));
+}

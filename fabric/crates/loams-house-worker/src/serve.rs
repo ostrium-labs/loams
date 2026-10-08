@@ -42,6 +42,18 @@ pub const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 /// The query-level arguments of every user connection (HS1 R1.9).
 pub const USER_CONNECTION_ARGS: &[&str] = &["--readonly=2"];
 
+/// Where the serve loop runs, which decides what the end of the socket does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Hosting {
+    /// In its own process (`loams-house-worker`): when the socket ends, the reader
+    /// thread `_exit`s the process at once, even while a statement holds the main
+    /// thread (HS1 Task 2 review I3). The label names the worker in the log line.
+    Process(String),
+    /// On a thread of the front (`InprocWorker`): the end is handed back to the
+    /// serve loop, which returns it; the front's process must never exit here.
+    InProcess,
+}
+
 /// Why [`Worker::serve`] returned.
 #[derive(Debug)]
 pub enum End {
@@ -52,6 +64,29 @@ pub enum End {
     Protocol(String),
     /// The socket failed.
     Io(String),
+}
+
+impl End {
+    /// The process exit code for this end: 0 for a closed socket, 70 for a
+    /// protocol error ([`loams_house_ipc::EXIT_PROTOCOL`]), 1 for a socket error.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::Closed => 0,
+            Self::Protocol(_) => loams_house_ipc::EXIT_PROTOCOL,
+            Self::Io(_) => 1,
+        }
+    }
+
+    /// Logs the end (a closed socket is the normal end and is not logged) and
+    /// `_exit`s with [`End::exit_code`].
+    pub fn exit_process(&self, label: &str) -> ! {
+        match self {
+            Self::Closed => {}
+            Self::Protocol(why) => eprintln!("loams-house-worker {label}: hsw1: {why}"),
+            Self::Io(why) => eprintln!("loams-house-worker {label}: socket: {why}"),
+        }
+        loams_chdb_sys::process::exit_now(self.exit_code())
+    }
 }
 
 /// A booted worker.
@@ -121,12 +156,12 @@ impl Worker {
     }
 
     /// Sends `Ready`, then serves frames until the socket ends.
-    pub fn serve<R, W>(mut self, reader: R, mut writer: W) -> End
+    pub fn serve<R, W>(mut self, reader: R, mut writer: W, hosting: Hosting) -> End
     where
         R: Read + Send + 'static,
         W: Write,
     {
-        let frames = spawn_reader(reader);
+        let frames = spawn_reader(reader, hosting);
         if let Err(err) = send(&mut writer, &Frame::Ready(self.ready.clone())) {
             return err;
         }
@@ -396,7 +431,10 @@ pub fn replace_default_database(control: &Session) -> Result<(), ChdbError> {
 }
 
 /// Starts the thread that reads frames into a channel.
-fn spawn_reader<R: Read + Send + 'static>(mut reader: R) -> mpsc::Receiver<Result<Frame, End>> {
+fn spawn_reader<R: Read + Send + 'static>(
+    mut reader: R,
+    hosting: Hosting,
+) -> mpsc::Receiver<Result<Frame, End>> {
     let (tx, rx) = mpsc::channel();
     let spawned = std::thread::Builder::new()
         .name("hsw1-reader".to_string())
@@ -413,6 +451,12 @@ fn spawn_reader<R: Read + Send + 'static>(mut reader: R) -> mpsc::Receiver<Resul
                     Err(CodecError::Io(err)) => Err(End::Io(err.to_string())),
                     Err(err) => Err(End::Protocol(err.to_string())),
                 };
+                if let (Err(end), Hosting::Process(label)) = (&next, &hosting) {
+                    // The front is gone or out of step: nothing this process is
+                    // doing is wanted any more, and the main thread may be inside
+                    // a statement that runs for hours.
+                    end.exit_process(label);
+                }
                 let last = next.is_err();
                 if tx.send(next).is_err() || last {
                     return;
