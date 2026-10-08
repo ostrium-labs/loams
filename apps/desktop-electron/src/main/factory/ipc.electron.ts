@@ -54,8 +54,8 @@ export function registerFactoryIpc(
 	);
 	ipcMain.handle(CH.factoryTest, async (e, app: unknown) => {
 		assertTrustedSender(e);
-		if (!isApp(app)) throw new Error("unknown app");
-		return host.test(app);
+		if (!isApp(app)) return bad();
+		return { ok: true, value: await host.test(app) };
 	});
 	ipcMain.handle(CH.factoryRemove, async (e, app: unknown) => {
 		assertTrustedSender(e);

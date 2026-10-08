@@ -3,6 +3,14 @@ import { Button, Card, Field, Input, Notice } from '@loams/ui';
 import { useEffect, useState } from 'react';
 import { HealthPill, PageHead } from './model.js';
 
+const originOf = (u: string): string => {
+  try {
+    return new URL(u).origin;
+  } catch {
+    return '';
+  }
+};
+
 /** `/factory/:app/configure`: a form generated from the app's credential fields. */
 export function ConfigurePage({
   desktop,
@@ -72,7 +80,12 @@ export function ConfigurePage({
           ),
         ),
       );
-      setResult(await desktop.factory.test(app));
+      const tested = await desktop.factory.test(app);
+      if (!tested.ok) {
+        setError(tested.message);
+        return;
+      }
+      setResult(tested.value);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -80,6 +93,8 @@ export function ConfigurePage({
     }
   };
   const configured = info.health !== 'unconfigured';
+  // A stored secret is never sent to a different origin: main requires it again.
+  const originChanged = configured && !!info.url && originOf(url.trim()) !== originOf(info.url);
 
   return (
     <div className="lc-page">
@@ -118,7 +133,11 @@ export function ConfigurePage({
                 key={f.key}
                 label={f.label}
                 hint={
-                  f.secret && configured ? 'Stored. Enter a new value to replace it.' : undefined
+                  f.secret && originChanged
+                    ? 'Required: the URL points to a different origin, so the stored value is not reused.'
+                    : f.secret && configured
+                      ? 'Stored. Enter a new value to replace it.'
+                      : undefined
                 }
               >
                 {(p) => (
@@ -127,7 +146,12 @@ export function ConfigurePage({
                     type={f.secret ? 'password' : 'text'}
                     value={values[f.key] ?? ''}
                     onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                    placeholder={f.secret && configured ? 'Saved — leave blank to keep' : undefined}
+                    required={f.secret && originChanged}
+                    placeholder={
+                      f.secret && configured && !originChanged
+                        ? 'Saved — leave blank to keep'
+                        : undefined
+                    }
                     autoComplete={f.secret ? 'new-password' : 'off'}
                     spellCheck={false}
                   />

@@ -165,6 +165,41 @@ describe('configure', () => {
     expect((screen.getByLabelText('API key') as HTMLInputElement).value).toBe('');
   });
 
+  it('new_origin_makes_secret_fields_required', async () => {
+    const { api } = fakeDesktop({ apps: IDS.map((id) => info(id, 'ok')) });
+    render(<ConfigurePage desktop={api} app="forgejo" navigate={nav().navigate} />);
+    const token = (await screen.findByLabelText('Access token')) as HTMLInputElement;
+    expect(token.required).toBe(false);
+    // Same origin, other path: the stored token is kept.
+    fireEvent.change(screen.getByLabelText('URL'), {
+      target: { value: 'https://forgejo.example.test/git' },
+    });
+    expect(token.required).toBe(false);
+    fireEvent.change(screen.getByLabelText('URL'), {
+      target: { value: 'https://other.example.test' },
+    });
+    expect(token.required).toBe(true);
+    expect(token.placeholder).toBe('');
+    expect(screen.getByText(/different origin/)).toBeTruthy();
+    // The optional non-secret field is not forced.
+    expect((screen.getByLabelText('SSO origin (optional)') as HTMLInputElement).required).toBe(
+      false,
+    );
+  });
+
+  it('test_failure_is_shown', async () => {
+    const { api } = fakeDesktop({
+      tested: { ok: false, code: 'bad_request', message: 'Invalid request' },
+    });
+    render(<ConfigurePage desktop={api} app="forgejo" navigate={nav().navigate} />);
+    fireEvent.change(await screen.findByLabelText('URL'), {
+      target: { value: 'https://f.example.test' },
+    });
+    fireEvent.change(screen.getByLabelText('Access token'), { target: { value: 't' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save and test' }));
+    expect(await screen.findByText('Invalid request')).toBeTruthy();
+  });
+
   it('configure_error_is_shown_and_test_skipped', async () => {
     const { api, calls } = fakeDesktop({
       configure: { ok: false, code: 'invalid_url', message: 'Use https://.' },

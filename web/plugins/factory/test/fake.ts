@@ -79,7 +79,7 @@ export function fakeDesktop(
     apps?: FactoryAppInfo[];
     queries?: Record<string, Handler | unknown>;
     configure?: IpcResult<FactoryAppInfo>;
-    tested?: FactoryAppInfo;
+    tested?: IpcResult<FactoryAppInfo>;
   } = {},
 ) {
   const calls: string[] = [];
@@ -97,7 +97,7 @@ export function fakeDesktop(
       },
       test: async (app: FactoryAppId) => {
         calls.push(`test:${app}`);
-        return init.tested ?? info(app, 'ok');
+        return init.tested ?? { ok: true, value: info(app, 'ok') };
       },
       remove: async (app: FactoryAppId) => void calls.push(`remove:${app}`),
       query: async (q: FactoryQuery) => {

@@ -99,15 +99,43 @@ describe("factory host", () => {
 		);
 	});
 
-	it("reconfigure_url_only_keeps_secrets", async () => {
+	it("reconfigure_same_origin_keeps_secrets", async () => {
 		const h = mk();
 		await h.configure("forgejo", "https://f.example", { token: SECRET });
-		const r = await h.configure("forgejo", "https://g.example", {});
+		const r = await h.configure("forgejo", "https://f.example/git/", {});
 		expect(r.ok).toBe(true);
 		expect(Fake.made.at(-1)?.config["token"]).toBe(SECRET);
-		expect(Fake.made.at(-1)?.config["baseUrl"]).toBe("https://g.example");
+		expect(Fake.made.at(-1)?.config["baseUrl"]).toBe("https://f.example/git");
 		const first = await mk().configure("forgejo", "https://f.example", {});
 		expect(first).toMatchObject({ ok: false, code: "bad_fields" });
+	});
+
+	it("reconfigure_new_origin_requires_secrets_again", async () => {
+		const h = mk();
+		await h.configure("forgejo", "https://f.example", {
+			token: SECRET,
+			ssoOrigin: "https://sso.example",
+		});
+		const made = Fake.made.length;
+		const r = await h.configure("forgejo", "https://evil.example", {});
+		expect(r).toMatchObject({ ok: false, code: "bad_fields" });
+		expect(!r.ok && r.message).toMatch(/Access token/);
+		// The old configuration stays in place; nothing was built for the new origin.
+		expect(h.appUrls("forgejo")?.url).toBe("https://f.example");
+		expect(Fake.made.length).toBe(made);
+		// http -> https on the same host is a different origin too.
+		expect((await h.configure("forgejo", "http://f.example", {})).ok).toBe(
+			false,
+		);
+		const ok = await h.configure("forgejo", "https://g.example", {
+			token: "new",
+		});
+		expect(ok.ok).toBe(true);
+		expect(Fake.made.at(-1)?.config["token"]).toBe("new");
+		// Non-secret fields are still carried over.
+		expect(ok.ok && ok.value.fields).toEqual({
+			ssoOrigin: "https://sso.example",
+		});
 	});
 
 	it("reconfigure_keeps_unretyped_non_secret_fields", async () => {

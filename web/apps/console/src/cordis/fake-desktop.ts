@@ -372,10 +372,12 @@ export function createFakeDesktop(): LoamsDesktopApi {
         };
         return { ok: true, value: previewInfo(def) };
       },
-      test: async (app) =>
-        previewInfo(
+      test: async (app) => ({
+        ok: true,
+        value: previewInfo(
           PREVIEW_FACTORY_APPS.find((a) => a.id === app) as (typeof PREVIEW_FACTORY_APPS)[number],
         ),
+      }),
       remove: async (app) => {
         delete PREVIEW_URLS[app];
       },

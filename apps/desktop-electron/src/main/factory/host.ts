@@ -46,6 +46,14 @@ export function redact(message: string, secrets: readonly string[]): string {
 	return out;
 }
 
+const originOf = (u: string): string => {
+	try {
+		return new URL(u).origin;
+	} catch {
+		return "";
+	}
+};
+
 type Code = "auth_failed" | "unreachable" | "upstream_error";
 
 export function classifyError(e: unknown): Code {
@@ -267,10 +275,14 @@ export class FactoryHost {
 		const clean: Record<string, string> = {};
 		for (const [k, v] of Object.entries(fields))
 			if (allowed.has(k) && typeof v === "string" && v.length > 0) clean[k] = v;
-		// Reconfiguring keeps a stored value for any field left blank.
+		// Reconfiguring keeps a stored value for any field left blank, except that a
+		// secret is never carried to a different origin: it must be entered again.
 		const stored = this.vault.get(app);
+		const sameOrigin =
+			stored !== undefined && originOf(stored.url) === originOf(url);
 		if (stored)
 			for (const f of def.credentialFields) {
+				if (f.secret && !sameOrigin) continue;
 				const kept = stored.fields[f.key]?.reveal();
 				if (!clean[f.key] && kept) clean[f.key] = kept;
 			}
@@ -279,7 +291,10 @@ export class FactoryHost {
 			return {
 				ok: false,
 				code: "bad_fields",
-				message: `${missing.label} is required`,
+				message:
+					stored && !sameOrigin
+						? `${missing.label} is required again: the URL points to a different origin`
+						: `${missing.label} is required`,
 			};
 		this.#dispose(app);
 		this.vault.set(app, url, clean);

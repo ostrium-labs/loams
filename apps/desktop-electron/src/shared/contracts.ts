@@ -134,7 +134,7 @@ export interface LoamsDesktopApi {
 			url: string,
 			fields: Record<string, string>,
 		): Promise<IpcResult<FactoryAppInfo>>;
-		test(app: FactoryAppId): Promise<FactoryAppInfo>;
+		test(app: FactoryAppId): Promise<IpcResult<FactoryAppInfo>>;
 		remove(app: FactoryAppId): Promise<void>;
 		query<T = unknown>(q: FactoryQuery): Promise<IpcResult<T>>;
 		openApp(app: FactoryAppId): Promise<IpcResult<void>>;
