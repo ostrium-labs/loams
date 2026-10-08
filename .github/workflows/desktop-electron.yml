@@ -9,6 +9,8 @@ on:
       - 'web/**'
       - 'plugins/core/**'
       - 'plugins/packages/**'
+      # The stacks (neon, wesql, tikv) are packaged from deploy/.
+      - 'deploy/**'
       - '.github/workflows/desktop-electron.yml'
   workflow_dispatch:
 
