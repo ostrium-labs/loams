@@ -5,9 +5,9 @@
 
 export type SqlDialect = "postgres" | "mysql";
 
-/** Words that change data or schema; a statement containing one needs a confirm. */
+/** Words that change data or schema, and row locks (FOR [NO KEY] UPDATE, FOR [KEY] SHARE). */
 const WRITE_WORDS =
-	/\b(insert|update|delete|merge|create|drop|alter|truncate|into|for\s+update|for\s+share)\b/gi;
+	/\b(insert|update|delete|merge|create|drop|alter|truncate|into|for\s+(?:no\s+key\s+)?update|for\s+(?:key\s+)?share)\b/gi;
 
 /** A write word used as a keyword: a qualified name (`t.update`, `update.x`) is a column, not one. */
 function hasWriteWord(s: string): boolean {
