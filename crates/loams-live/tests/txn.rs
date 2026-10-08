@@ -1028,6 +1028,57 @@ async fn system_functions_round_trip() {
     assert!(system::lookup("_system:nope").is_none());
 }
 
+/// `_system:tables` lists created tables with their implicit indexes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn system_tables_lists_created_tables() {
+    let Some(r) = open().await else {
+        return;
+    };
+    assert_eq!(
+        query_now(&r, &*sys(system::TABLES), obj(&[])).await,
+        LiveValue::Array(Vec::new())
+    );
+    insert(&r, "people", &[("name", s("ada"))]).await;
+    insert(&r, "notes", &[("body", s("x"))]).await;
+    let LiveValue::Array(tables) = query_now(&r, &*sys(system::TABLES), obj(&[])).await else {
+        panic!("an array")
+    };
+    let mut names = Vec::new();
+    for t in &tables {
+        let LiveValue::Object(o) = t else {
+            panic!("an object")
+        };
+        let LiveValue::Str(n) = &o["name"] else {
+            panic!("a name")
+        };
+        names.push(n.clone());
+        assert!(matches!(o["id"], LiveValue::I64(_)));
+        let LiveValue::Array(ix) = &o["indexes"] else {
+            panic!("indexes")
+        };
+        let LiveValue::Object(first) = &ix[0] else {
+            panic!()
+        };
+        assert_eq!(first["name"], s("by_id"));
+        let LiveValue::Object(second) = &ix[1] else {
+            panic!()
+        };
+        assert_eq!(second["name"], s("by_creation_time"));
+    }
+    names.sort();
+    assert_eq!(names, ["notes", "people"]);
+}
+
+/// `_system:tables` is read-only: `Mutate` refuses it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn system_tables_via_mutate_refused() {
+    let Some(r) = open().await else {
+        return;
+    };
+    let e = r.mutate(sys(system::TABLES), obj(&[]), None).await;
+    assert!(matches!(e, Err(LiveError::InvalidArgument(_))), "{e:?}");
+}
+
 /// Row T10-1 (owner ruling on T9-7): the shard count is per app, stored in
 /// its catalog, and changes only while the journal is empty.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

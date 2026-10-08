@@ -270,25 +270,47 @@ impl<'a> LiveTxn<'a> {
                 Ok(Some(table))
             }
             None => {
-                let counter = self.app.table_counter();
-                let next = match &mut self.access {
-                    Access::Mutation(txn) => txn.get(&counter).await?,
-                    Access::Query(snap) => snap.get(&counter).await?,
-                };
-                let next = match next {
-                    None => 1,
-                    Some(bytes) => {
-                        u32::from_be_bytes(bytes.as_slice().try_into().map_err(|_| {
-                            LiveError::Corrupt("the table counter is not 4 bytes".into())
-                        })?)
-                    }
-                };
-                self.read_set
-                    .ranges
-                    .push(self.app.tables_from(TableId(next)));
+                self.depend_on_new_tables().await?;
                 Ok(None)
             }
         }
+    }
+
+    /// Every table, by id, with its user indexes. The read set gains the
+    /// index entries of every table not created yet, so creating a table
+    /// invalidates the read (index changes of a deployed schema do not).
+    pub async fn tables(&mut self) -> Result<Vec<TableDef>, LiveError> {
+        let found = match &mut self.access {
+            Access::Mutation(txn) => catalog::list_tables(&mut **txn, self.app).await?,
+            Access::Query(snap) => catalog::list_tables(&mut **snap, self.app).await?,
+        };
+        for table in &found {
+            self.remember(table);
+        }
+        self.depend_on_new_tables().await?;
+        Ok(found)
+    }
+
+    /// Adds the index entries of every table not created yet to the read set.
+    async fn depend_on_new_tables(&mut self) -> Result<(), LiveError> {
+        let counter = self.app.table_counter();
+        let next = match &mut self.access {
+            Access::Mutation(txn) => txn.get(&counter).await?,
+            Access::Query(snap) => snap.get(&counter).await?,
+        };
+        let next = match next {
+            None => 1,
+            Some(bytes) => u32::from_be_bytes(
+                bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| LiveError::Corrupt("the table counter is not 4 bytes".into()))?,
+            ),
+        };
+        self.read_set
+            .ranges
+            .push(self.app.tables_from(TableId(next)));
+        Ok(())
     }
 
     /// Inserts a document into the table named `table` (created on first
