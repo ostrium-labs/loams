@@ -555,11 +555,20 @@ impl Handle {
 
     /// A read-only view at `at`. Refused with [`KvError::GcSafePoint`] when
     /// `at` is older than `now − (gc_life_time − 1 min)`, unless a
-    /// [`GcBarrier`] covers it, and whenever GC is past `at`. A view above
-    /// every timestamp issued moves the oracle past it, so later commits
-    /// stay invisible to it.
+    /// [`GcBarrier`] covers it, and whenever GC is past `at`. Refused with
+    /// [`KvError::TsAhead`] when `at` is more than a second past the later
+    /// of the last timestamp issued and the wall clock (row T21-14). A view
+    /// above every timestamp issued moves the oracle past it, so later
+    /// commits stay invisible to it.
     pub async fn snapshot(&self, at: Ts) -> Result<Snap, KvError> {
         let core = self.shared.core.clone();
+        let limit = core.oracle.read_limit();
+        if at > limit {
+            return Err(KvError::TsAhead {
+                at: at.0,
+                limit: limit.0,
+            });
+        }
         core.oracle.observe(at);
         if at >= core.oracle.durable() {
             let blocking = core.clone();

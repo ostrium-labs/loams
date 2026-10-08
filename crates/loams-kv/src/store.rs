@@ -27,6 +27,13 @@ pub enum KvError {
          (now − (gc life time − 1 min)) are refused, because GC may have dropped the versions"
     )]
     GcSafePoint { at: u64, safe_point: u64 },
+    /// An embedded read at a timestamp ahead of the store's clock: above
+    /// `limit`, one second past the later of the last timestamp issued and
+    /// the wall clock.
+    #[error(
+        "read at ts {at} is ahead of the store's clock: timestamps above ts {limit} are refused"
+    )]
+    TsAhead { at: u64, limit: u64 },
     /// An embedded GC barrier below the safe point (the TiKV backend's
     /// `BarrierBelowSafePoint`, its text unchanged).
     #[error(

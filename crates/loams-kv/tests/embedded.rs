@@ -80,7 +80,8 @@ async fn ts_monotonic_across_restart() {
             issued.push(store.now().await.expect("now"));
         }
         issued.push(put(&store, b"k", b"v").await);
-        let ahead = Ts::from_parts(issued[0].physical_ms() + 5_000, 7);
+        // Within the second a read may run ahead of the clock (row T21-14).
+        let ahead = Ts::from_parts(wall_ms() + 800, 7);
         drop(store.snapshot(ahead).await.expect("a snapshot ahead"));
         let after = store.now().await.expect("now");
         assert!(after > ahead, "the oracle moved past the snapshot");
@@ -93,6 +94,42 @@ async fn ts_monotonic_across_restart() {
     let max = issued.iter().max().copied().expect("issued");
     assert!(first > max, "{first} after a restart, {max} before");
     assert_eq!(get_at(&store, first, b"k").await, Some(b"v".to_vec()));
+}
+
+/// A client-supplied snapshot timestamp cannot move the oracle: one at
+/// `u64::MAX`, or years ahead, is refused with `TsAhead`, persists no mark,
+/// and the next timestamp is still on the wall clock (review fix 1).
+#[tokio::test]
+async fn snapshots_far_ahead_are_refused_and_leave_the_oracle_alone() {
+    let dir = tmp();
+    let store = open(&dir.path().join("store.redb"), "ahead").await;
+    let before = store.now().await.expect("now");
+    let writes = handle(&store).stats().write_transactions;
+    let years = Ts::from_parts(wall_ms() + 5 * 365 * 24 * 3_600_000, 0);
+    for at in [Ts(u64::MAX), years, Ts::from_parts(Ts::MAX_PHYSICAL_MS, 0)] {
+        match store.snapshot(at).await {
+            Err(KvError::TsAhead { at: a, limit }) => {
+                assert_eq!(a, at.0);
+                assert!(limit < at.0);
+            }
+            other => panic!("{at}: expected TsAhead, got {other:?}"),
+        }
+    }
+    assert_eq!(
+        handle(&store).stats().write_transactions,
+        writes,
+        "no mark was persisted"
+    );
+    let after = store.now().await.expect("now");
+    assert!(after > before);
+    assert!(
+        after.physical_ms() <= wall_ms() + 1_000,
+        "the oracle stayed on the clock: {after}"
+    );
+    // A read a little ahead (under the limit) is still fine.
+    let near = Ts::from_parts(wall_ms() + 500, 0);
+    drop(store.snapshot(near).await.expect("within the limit"));
+    assert!(store.now().await.expect("now") > near);
 }
 
 /// A barrier at `t` keeps a snapshot at `t` readable after GC; once it is

@@ -70,9 +70,27 @@ impl Oracle {
         Ts::from_parts(wall_ms(), 0).max(Ts(last.0.saturating_add(1)))
     }
 
-    /// The mark to persist before issuing `ts`.
+    /// The mark to persist before issuing `ts` (the largest timestamp when
+    /// `ts` is within a second of it).
     pub(crate) fn mark_for(ts: Ts) -> Ts {
-        Ts::from_parts(ts.physical_ms().saturating_add(RESERVE_MS), 0)
+        ts.physical_ms()
+            .checked_add(RESERVE_MS)
+            .and_then(|ms| Ts::checked_from_parts(ms, 0))
+            .unwrap_or(Ts(u64::MAX))
+    }
+
+    /// The latest timestamp a read may name: one reservation (1 s) past
+    /// the later of the last timestamp issued and the wall clock. A read
+    /// above it is refused, so a caller's timestamp cannot move the oracle
+    /// (and its persisted mark) far ahead.
+    pub(crate) fn read_limit(&self) -> Ts {
+        let last = self.lock().last;
+        Self::mark_for(last.max(Ts::from_parts(wall_ms(), 0)))
+    }
+
+    /// The last timestamp issued (or observed).
+    pub(crate) fn last(&self) -> Ts {
+        self.lock().last
     }
 
     /// A fresh timestamp, or `Err(next)` when `next` would reach the
@@ -99,8 +117,8 @@ impl Oracle {
         s.durable = s.durable.max(mark);
     }
 
-    /// A read at `at` was taken: later timestamps (commits included) are
-    /// above it.
+    /// A read at `at` (at most [`read_limit`](Self::read_limit)) was
+    /// taken: later timestamps (commits included) are above it.
     pub(crate) fn observe(&self, at: Ts) {
         let mut s = self.lock();
         s.last = s.last.max(at);
@@ -171,6 +189,18 @@ mod tests {
         let c = o.allocate_commit();
         assert!(c > last);
         o.finish_group(None);
+    }
+
+    #[test]
+    fn marks_never_wrap() {
+        assert_eq!(Oracle::mark_for(Ts(u64::MAX)), Ts(u64::MAX));
+        let near = Ts::from_parts(Ts::MAX_PHYSICAL_MS - 10, 0);
+        assert_eq!(Oracle::mark_for(near), Ts(u64::MAX));
+        let o = Oracle::new(Ts(0));
+        let limit = o.read_limit();
+        let wall = wall_ms();
+        assert!(limit.physical_ms() >= wall + RESERVE_MS - 5);
+        assert!(limit.physical_ms() <= wall + RESERVE_MS + 5_000);
     }
 
     #[test]
