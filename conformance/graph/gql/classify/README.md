@@ -16,5 +16,7 @@ rest is the statement, byte for byte (newlines included):
 - `#! refused=<reason>`: the gate refuses the statement before the engine runs it, with this
   `ErrorInfo.reason`.
 - `#! parse_error`: Grafeo's parser rejects it (the engine reports the syntax error).
-- `#! conservative`: the guard says more than the engine (for example Write for a read-only
-  `CALL`).
+- `#! conservative`: the guard says more than the engine. Since the security review (I1) a
+  `CALL` is Write to both, so no case needs this today; the tag stays for the next one.
+- A `CALL` is filed under `engine=write` even in `reads.gql`: a procedure may write, and the
+  engine classification says so.

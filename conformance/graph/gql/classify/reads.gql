@@ -35,10 +35,8 @@ MATCH p = (a:Person)-[:KNOWS*1..10]->(b) RETURN p
 #! engine=read
 EXPLAIN MATCH (n) RETURN n
 
-#! engine=read
-#! conservative
+#! engine=write
 CALL grafeo.pagerank()
 
-#! engine=read
-#! conservative
+#! engine=write
 CALL grafeo.labels()

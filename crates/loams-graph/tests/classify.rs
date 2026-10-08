@@ -142,7 +142,12 @@ fn read_session_refuses_every_corpus_write() {
         }
         let before = state(&graph);
         let result = graph.session_for(Access::Read).execute(&case.statement);
-        assert!(result.is_err(), "{case:?}: a ReadOnly session ran it");
+        // A built-in procedure that only reads is allowed by the ReadOnly role; the gate files
+        // every CALL as a write anyway (I1). It must still change nothing.
+        let read_only_procedure = case.statement.trim_start().starts_with("CALL grafeo.");
+        if !read_only_procedure {
+            assert!(result.is_err(), "{case:?}: a ReadOnly session ran it");
+        }
         assert_eq!(state(&graph), before, "{case:?}: it changed the graph");
         checked += 1;
     }
@@ -313,4 +318,39 @@ fn subquery_paths_are_bounded_too() {
             true,
         )
         .expect("a bounded subquery path runs");
+}
+
+/// Security review I1: a procedure call is at least a write to the gate, wherever it sits, and the
+/// guard reads a statement the way Grafeo's lexer does (`--` is an edge unless a space follows,
+/// strings take backslash escapes, keywords fold Unicode case). A read-only request refuses every
+/// payload.
+#[test]
+fn read_only_refuses_lexer_and_call_payloads() {
+    let engine = Engine::new();
+    let graph = Graph::open(&engine, "acme", "lexer", OpenSpec::default()).expect("open");
+    graph.execute("INSERT (:N {y: 0})", false).expect("seed");
+    for statement in [
+        "MATCH (a)--(b) CALL grafeo.labels() RETURN 1 AS x",
+        r"RETURN '\'' NEXT CALL grafeo.labels() /*'*/",
+        "MATCH (n) ſET n.y = 1 RETURN n",
+    ] {
+        let err = graph
+            .execute(statement, true)
+            .expect_err("a read-only request refuses it");
+        assert_eq!(err.reason(), "graph_read_only", "{statement}: {err}");
+        assert_ne!(
+            classify(statement, QueryLanguage::Gql),
+            Access::Read,
+            "{statement}"
+        );
+        if let Ok(engine) = engine_classify(statement) {
+            assert_ne!(engine, Access::Read, "{statement}");
+        }
+    }
+    let n = graph.execute("MATCH (n:N) RETURN n.y", true).expect("read");
+    assert_eq!(
+        n.rows[0].values[0],
+        grafeo::Value::Int64(0),
+        "nothing was written"
+    );
 }

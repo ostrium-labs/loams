@@ -72,8 +72,12 @@ pub fn engine_classify(statement: &str) -> Result<Access, GraphError> {
     match translated {
         GqlTranslationResult::Plan(plan) => {
             check_plan(&plan.root)?;
+            // A procedure can read or write, and nothing in the plan says which, so a call
+            // anywhere in it (subqueries included, through the plan's `Debug` rendering) is at
+            // least a write (security review I1).
+            let calls = format!("{:?}", plan.root).contains("CallProcedure(");
             // An EXPLAIN plans without running; a PROFILE runs.
-            if plan.root.has_mutations() && (plan.profile || !plan.explain) {
+            if (plan.root.has_mutations() || calls) && (plan.profile || !plan.explain) {
                 Ok(Access::Write)
             } else {
                 Ok(Access::Read)
@@ -295,46 +299,78 @@ fn writes_words(words: &[String]) -> bool {
     !reads || words.iter().any(|word| WRITES.contains(&word.as_str()))
 }
 
-/// A statement's bare words: uppercased, with strings, quoted identifiers and comments removed.
+/// A statement's bare words, read the way Grafeo 0.5.43's GQL lexer reads them
+/// (`grafeo-adapters` `query/gql/lexer.rs`, security review I1): uppercased with Unicode case
+/// folding (`to_uppercase`, so `ſET` is `SET`), with strings, quoted identifiers and comments
+/// removed.
 ///
-/// Comments are dropped because a comment is not a statement: `/* sync */ INSERT ...` writes, and a
-/// guard that read the comment as the first word would call it a read. Strings are dropped for the
-/// other reason: a value is data, not syntax.
+/// * A string (`'…'` or `"…"`) runs to its own closing quote, and a backslash escapes the next
+///   character, so `'\''` is one string.
+/// * A backquoted identifier runs to its closing backquote; a doubled backquote is a literal one.
+/// * `/* … */` is a comment. `--` is a line comment only when a space, tab or line break follows;
+///   a bare `--` is an undirected edge. `//` is not a comment in GQL.
+/// * A word starts with a letter or `_` and continues with letters, digits and `_` (Unicode).
+///
+/// Comments are dropped because a comment is not a statement, strings because a value is data.
+/// Neither step changes a byte of the statement.
 pub(crate) fn bare_words(statement: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut word = String::new();
-    let mut chars = statement.chars().peekable();
-    while let Some(c) = chars.next() {
+    let chars: Vec<char> = statement.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
         match c {
-            quote @ ('\'' | '"' | '`') => {
+            '\'' | '"' => {
                 push_word(&mut word, &mut words);
-                for c in chars.by_ref() {
-                    if c == quote {
+                i += 1;
+                while i < chars.len() && chars[i] != c {
+                    if chars[i] == '\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                i += 1;
+            }
+            '`' => {
+                push_word(&mut word, &mut words);
+                i += 1;
+                while i < chars.len() {
+                    if chars[i] == '`' {
+                        if chars.get(i + 1) == Some(&'`') {
+                            i += 2;
+                            continue;
+                        }
                         break;
                     }
+                    i += 1;
                 }
+                i += 1;
             }
-            '-' | '/' if matches!(chars.peek(), Some('-' | '/')) => {
+            '/' if chars.get(i + 1) == Some(&'*') => {
                 push_word(&mut word, &mut words);
-                for c in chars.by_ref() {
-                    if c == '\n' {
-                        break;
-                    }
+                i += 2;
+                while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                    i += 1;
                 }
+                i += 2;
             }
-            '/' if chars.peek() == Some(&'*') => {
+            '-' if chars.get(i + 1) == Some(&'-')
+                && matches!(chars.get(i + 2), Some(' ' | '\t' | '\n' | '\r')) =>
+            {
                 push_word(&mut word, &mut words);
-                chars.next();
-                let mut previous = '\0';
-                for c in chars.by_ref() {
-                    if previous == '*' && c == '/' {
-                        break;
-                    }
-                    previous = c;
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
                 }
             }
-            c if c.is_ascii_alphabetic() || c == '_' => word.push(c.to_ascii_uppercase()),
-            _ => push_word(&mut word, &mut words),
+            c if c.is_alphabetic() || c == '_' || (!word.is_empty() && c.is_alphanumeric()) => {
+                word.extend(c.to_uppercase());
+                i += 1;
+            }
+            _ => {
+                push_word(&mut word, &mut words);
+                i += 1;
+            }
         }
     }
     push_word(&mut word, &mut words);
