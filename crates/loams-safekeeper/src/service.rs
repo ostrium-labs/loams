@@ -56,9 +56,6 @@ pub struct WalServiceConfig {
     /// When set, clients must send this token as their password (walproposer:
     /// `NEON_AUTH_TOKEN`), and the HTTP API requires it as a bearer token.
     pub auth_token: Option<String>,
-    /// Feed committed WAL to this stock safekeeper, which serves the
-    /// pageserver (the interim path of [`crate::feeder`]).
-    pub feeder: Option<crate::feeder::FeederConfig>,
     /// Hand `START_WAL_PUSH` connections to the timeline's compio shard
     /// after the startup packet and authentication (§28 §7.2, D263).
     pub handoff: Option<Handoff>,
@@ -87,7 +84,6 @@ impl Default for WalServiceConfig {
             commit_flush_interval: Duration::from_secs(1),
             keepalive_interval: Duration::from_secs(1),
             poll_interval: Duration::from_millis(20),
-            feeder: None,
             auth_token: None,
             handoff: None,
             interpreter: None,
@@ -212,7 +208,6 @@ struct Registry {
     timelines: Mutex<HashMap<TimelineId, watch::Sender<Progress>>>,
     sessions: Mutex<HashMap<TimelineId, u32>>,
     tails: Mutex<HashMap<TimelineId, Tail>>,
-    fed: Mutex<std::collections::HashSet<TimelineId>>,
     /// Pageserver feedback per timeline, as it arrives on this instance's
     /// replication connections (every shard's), for the walproposers
     /// connected here (their `max_replication_*_lag` backpressure). Nothing
@@ -291,9 +286,6 @@ pub struct WalService<S> {
     store: Arc<S>,
     config: WalServiceConfig,
     registry: Registry,
-    /// The runtime the service was made on: tasks that outlive a call from a
-    /// compio shard thread (the feeder) are spawned here.
-    rt: Option<tokio::runtime::Handle>,
 }
 
 impl<S: WalStore> WalService<S> {
@@ -302,7 +294,6 @@ impl<S: WalStore> WalService<S> {
             store,
             config,
             registry: Registry::default(),
-            rt: tokio::runtime::Handle::try_current().ok(),
         })
     }
 
@@ -427,28 +418,6 @@ impl<S: WalStore> WalService<S> {
     #[cfg(feature = "compio")]
     pub(crate) fn tail_truncate(&self, tl: TimelineId, at: Lsn) {
         self.registry.tail(tl, |t| t.truncate(at));
-    }
-
-    /// Start the feeder for `tl`, once per process.
-    pub fn ensure_feeder(self: &Arc<Self>, tl: TimelineId) {
-        let Some(cfg) = self.config.feeder.clone() else {
-            return;
-        };
-        let mut fed = self.registry.fed.lock().unwrap_or_else(|p| p.into_inner());
-        if fed.insert(tl) {
-            let fut = crate::feeder::run(self.clone(), tl, cfg);
-            match tokio::runtime::Handle::try_current() {
-                Ok(h) => drop(h.spawn(fut)),
-                Err(_) => match &self.rt {
-                    Some(h) => drop(h.spawn(fut)),
-                    None => {
-                        // Let a later call, from tokio, start it.
-                        fed.remove(&tl);
-                        warn!(%tl, "no tokio runtime to run the feeder on");
-                    }
-                },
-            }
-        }
     }
 
     /// Accept connections until `shutdown` resolves.
@@ -714,7 +683,6 @@ impl<S: WalStore> WalService<S> {
             session = Some(tl);
             self.registry.session(tl, 1);
             self.registry.publish(tl, Progress::of(&acc.state()));
-            self.ensure_feeder(tl);
 
             let mut tick = tokio::time::interval(self.config.commit_flush_interval);
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -1375,47 +1343,5 @@ mod tests {
             r.tail(tl, |t| t.read(Lsn(10), 10)).is_none(),
             "stale after the last one"
         );
-    }
-
-    #[tokio::test]
-    async fn the_feeder_can_be_started_from_a_thread_outside_tokio() {
-        // A compio shard calls ensure_feeder from its own thread.
-        let svc = WalService::new(
-            Arc::new(crate::store::MemWalStore::new()),
-            WalServiceConfig {
-                feeder: Some(crate::feeder::FeederConfig {
-                    safekeeper: "127.0.0.1:1".into(),
-                    retry: Duration::from_secs(60),
-                    poll: Duration::from_secs(60),
-                }),
-                ..Default::default()
-            },
-        );
-        let s2 = svc.clone();
-        std::thread::spawn(move || s2.ensure_feeder(TimelineId::default()))
-            .join()
-            .expect("no panic off the tokio runtime");
-    }
-
-    #[test]
-    fn a_feeder_refused_for_want_of_a_runtime_can_start_later() {
-        let svc = WalService::new(
-            Arc::new(crate::store::MemWalStore::new()),
-            WalServiceConfig {
-                feeder: Some(crate::feeder::FeederConfig {
-                    safekeeper: "127.0.0.1:1".into(),
-                    retry: Duration::from_secs(60),
-                    poll: Duration::from_secs(60),
-                }),
-                ..Default::default()
-            },
-        );
-        // Made outside tokio: there is no runtime to fall back on.
-        let tl = TimelineId::default();
-        svc.ensure_feeder(tl);
-        assert!(!svc.registry.fed.lock().unwrap().contains(&tl));
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async { svc.ensure_feeder(tl) });
-        assert!(svc.registry.fed.lock().unwrap().contains(&tl));
     }
 }

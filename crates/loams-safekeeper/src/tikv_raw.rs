@@ -66,7 +66,7 @@ pub const DEFAULT_PIPELINE_DEPTH: usize = 8;
 
 const RAW_HEAD_VERSION: u8 = 2;
 /// Chunks per scan page: at most 3 MiB of values, under the gRPC client's
-/// 4 MiB decode limit (64 chunks = 8 MiB made a lagging reader, the feeder
+/// 4 MiB decode limit (64 chunks = 8 MiB made a lagging reader, a stream
 /// behind a bulk load, fail forever with "decoded message length too large").
 const SCAN_PAGE: u32 = 24;
 const _: () = assert!(SCAN_PAGE as usize * MAX_CHUNK < 4 * 1024 * 1024);

@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use loams_safekeeper::feeder::FeederConfig;
 use loams_safekeeper::pgwire::client;
 use loams_safekeeper::proto::{
     AcceptorMessage, AppendRequest, AppendRequestHeader, ProposerElected, ProposerGreeting,
@@ -24,21 +23,13 @@ const TENANT: &str = "cf0480929707ee75372337efaa5ecf96";
 const TIMELINE: &str = "112ded66422aa5e953e5440fa5427ac4";
 
 async fn start() -> (SocketAddr, SocketAddr, Arc<WalService<MemWalStore>>) {
-    start_with(None).await
-}
-
-async fn start_with(
-    feeder: Option<FeederConfig>,
-) -> (SocketAddr, SocketAddr, Arc<WalService<MemWalStore>>) {
-    start_cfg(feeder, None).await
+    start_cfg(None).await
 }
 
 async fn start_cfg(
-    feeder: Option<FeederConfig>,
     auth_token: Option<String>,
 ) -> (SocketAddr, SocketAddr, Arc<WalService<MemWalStore>>) {
     start_svc(WalServiceConfig {
-        feeder,
         auth_token,
         ..Default::default()
     })
@@ -422,45 +413,9 @@ async fn http_post(addr: SocketAddr, path: &str, body: &str) -> String {
     .await
 }
 
-/// The feeder copies exactly the committed WAL to a safekeeper: here a second
-/// WAL service standing in for Neon's.
-#[tokio::test]
-async fn feeder_copies_committed_wal_to_a_safekeeper() {
-    let (sk_pg, _, sk) = start().await;
-    let (pg, _, _svc) = start_with(Some(FeederConfig {
-        safekeeper: sk_pg.to_string(),
-        retry: Duration::from_millis(50),
-        poll: Duration::from_millis(5),
-    }))
-    .await;
-    let payload: Vec<u8> = (0..3000u32).map(|i| (i % 253) as u8).collect();
-    let _p = propose(pg, &payload).await;
-    let end = Lsn(START + payload.len() as u64);
-    let tl = loams_safekeeper::TimelineId::new(TENANT.parse().unwrap(), TIMELINE.parse().unwrap());
-    let mut got = Vec::new();
-    for _ in 0..400 {
-        if let Some(st) = sk.store().load(&tl).await.unwrap()
-            && st.flush_lsn == end
-            && st.commit_lsn == end
-        {
-            got = sk
-                .store()
-                .read(&tl, Lsn(START), usize::MAX)
-                .await
-                .unwrap()
-                .into_iter()
-                .flat_map(|(_, b)| b.to_vec())
-                .collect();
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert_eq!(got, payload);
-}
-
 #[tokio::test]
 async fn auth_token_is_required_on_both_listeners() {
-    let (pg, web, _svc) = start_cfg(None, Some("s3cret".into())).await;
+    let (pg, web, _svc) = start_cfg(Some("s3cret".into())).await;
     let options = format!("-c timeline_id={TIMELINE} tenant_id={TENANT}");
     let mut s = TcpStream::connect(pg).await.unwrap();
     let bad = client::startup(

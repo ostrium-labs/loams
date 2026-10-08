@@ -30,8 +30,17 @@ jobs:
     timeout-minutes: 720
     steps:
       - uses: actions/checkout@v7
-      - name: build loams-wal
-        run: cargo build --release --locked -p loams-safekeeper --features server,tikv --bin loams-wal
+      # loams-wal with the interpreted sender (PG2 Task 31): the pageserver
+      # reads WAL from it, found through the broker (Task 32); no feeder.
+      - name: build loams-wal-interpreted
+        env:
+          PG_HEADERS_IMAGE: ghcr.io/neondatabase/neon@sha256:ead56a7b33925ca4df9f1ee0d29f55fa25e165a3fee6a4f19055050c68e8cad0
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: |
+          scripts/pg2/pg-headers.sh "$PG_HEADERS_IMAGE" crates/loams-wal-decoder/pg_install
+          scripts/pg2/seed-neon-submodules.sh crates/loams-wal-decoder/Cargo.lock
+          cd crates/loams-wal-decoder
+          POSTGRES_INSTALL_DIR=$PWD/pg_install cargo build --release --locked --features tikv --bin loams-wal-interpreted
       - name: tiup components
         run: |
           command -v tiup || curl --proto '=https' --tlsv1.2 -sSf https://tiup-mirrors.pingcap.com/install.sh | sh

@@ -5,7 +5,7 @@
 #
 #   scripts/loams-pg-bench/run.sh --variant VARIANT [--replicas 1|3]
 #       [--duration S] [--warmup S] [--scale N] [--workloads "commit-1 ..."]
-#       [--label L] [--out DIR] [--disk-root DIR] [--feeder-root DIR]
+#       [--label L] [--out DIR] [--disk-root DIR]
 #       [--io-depth N] [--keep] [--force]
 #       [--store tikv-raw|tikv] [--depth N] [--kv-config FILE] [--no-place]
 #
@@ -29,10 +29,9 @@
 # stores, --kv-config, default deploy/loams-pg-bench/tikv.toml). With 3
 # stores, place-leaders.sh labels them z1..z3 and pins the loams_pgwal leaders
 # to z1, the compute's zone (--no-place skips it). The
-# pageserver still ingests through one stock safekeeper (--no-sync) that
-# loams-wal feeds with committed WAL off the commit path (crates/
-# loams-safekeeper feeder.rs), until the WAL service serves the interpreted
-# protocol itself (§28 Q112).
+# pageserver finds loams-wal through the storage broker (--broker-endpoint,
+# PG2 Task 32) and ingests from it over the interpreted protocol, in process
+# (PG2 Task 31). No stock safekeeper runs in the candidate.
 #
 # --disk-root puts every WAL tier's data (the safekeepers' volumes, the
 # acceptors' journals) under one directory, to compare filesystems (for
@@ -40,13 +39,13 @@
 # podman volumes and the acceptors' journals go to target/loams-pg-bench/nvme,
 # on the same filesystem as those volumes.
 #
-# The Arm A variants feed the pageserver through one stock --no-sync
-# safekeeper that acceptor 1 streams committed WAL to (feeder.rs, D271); its
-# data goes to --feeder-root, on another filesystem than the journals.
+# Every Arm A acceptor publishes to the broker too; the pageserver picks one.
 #
-# Needs: podman (or docker) with docker-compose, and the loams-wal binary:
-#   cargo build --release -p loams-safekeeper --features server,tikv,nvme \
-#     --bin loams-wal         (add compio for nvme-uring and nvme-sqpoll)
+# Needs: podman (or docker) with docker-compose, and loams-wal with the
+# interpreted sender (crates/loams-wal-decoder, its own workspace; see its
+# Cargo.toml for POSTGRES_INSTALL_DIR):
+#   cd crates/loams-wal-decoder && cargo build --release --features tikv,nvme \
+#     --bin loams-wal-interpreted     (add compio for nvme-uring and nvme-sqpoll)
 # The loams variant also needs tiup (scripts/tikv).
 set -euo pipefail
 
@@ -56,7 +55,7 @@ DEPLOY=$ROOT/deploy/loams-pg-bench
 variant= replicas=1 duration=60 warmup=10 scale=10 label= keep=0 force=0
 store=tikv-raw depth=8 kv_config= place=1
 workloads="commit-1 commit-16 tpcb-16 bulk bulk-burst"
-out=$ROOT/bench/results disk_root= feeder_root=
+out=$ROOT/bench/results disk_root=
 io_depth=4
 while [ $# -gt 0 ]; do
   case $1 in
@@ -69,7 +68,6 @@ while [ $# -gt 0 ]; do
     --label) label=$2; shift 2 ;;
     --out) out=$2; shift 2 ;;
     --disk-root) disk_root=$2; shift 2 ;;
-    --feeder-root) feeder_root=$2; shift 2 ;;
     --io-depth) io_depth=$2; shift 2 ;;
     --keep) keep=1; shift ;;
     --force) force=1; shift ;;
@@ -125,12 +123,11 @@ ENGINE=docker
 case ${DOCKER_HOST:-} in *podman*) ENGINE=podman ;; esac
 command -v "$ENGINE" >/dev/null || ENGINE=podman
 LOAMS_WAL=${LOAMS_WAL:-$(cargo metadata --format-version 1 --no-deps 2>/dev/null |
-  python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/release/loams-wal}
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/release/loams-wal-interpreted}
+BROKER=http://127.0.0.1:50051
 PD=127.0.0.1:19379
 TAG=loams-bench
 RUN_DIR=$ROOT/target/loams-pg-bench
-# The feeder's data, by default inside the repository's target directory.
-feeder_root=${feeder_root:-$RUN_DIR/feeder}
 mkdir -p "$RUN_DIR" "$out"
 log() { echo "run: $*" >&2; }
 
@@ -163,23 +160,18 @@ fresh_dir() {
   chmod 777 "$1"
 }
 
-# 1. Storage: RustFS, broker, pageserver; the baseline's safekeepers, or the
-#    candidate's feeder safekeeper. Only one variant's WAL tier runs at a time.
-ALL=(--profile sk --profile sk3 --profile loams)
-"${COMPOSE[@]}" "${ALL[@]}" rm -sf safekeeper1 safekeeper2 safekeeper3 feeder-safekeeper >/dev/null 2>&1 || true
+# 1. Storage: RustFS, broker, pageserver, and the baseline's safekeepers.
+#    Only one variant's WAL tier runs at a time.
+ALL=(--profile sk --profile sk3)
+"${COMPOSE[@]}" "${ALL[@]}" rm -sf safekeeper1 safekeeper2 safekeeper3 >/dev/null 2>&1 || true
 if [ -n "$disk_root" ]; then
   for n in 1 2 3; do fresh_dir "$disk_root/sk$n"; done
   export SK1_DATA=$disk_root/sk1 SK2_DATA=$disk_root/sk2 SK3_DATA=$disk_root/sk3
 fi
+wal_services=
 if [ "$variant" = safekeepers ]; then
   wal_services="safekeeper1"
   [ "$replicas" = 3 ] && wal_services="safekeeper1 safekeeper2 safekeeper3"
-else
-  wal_services="feeder-safekeeper"
-  if [ "$variant" != loams ]; then
-    fresh_dir "$feeder_root"
-    export SKF_DATA=$feeder_root
-  fi
 fi
 # shellcheck disable=SC2086
 "${COMPOSE[@]}" "${ALL[@]}" up -d rustfs create-bucket storage_broker pageserver $wal_services >/dev/null 2>&1
@@ -214,7 +206,7 @@ case $variant in
     RUST_LOG=${RUST_LOG:-info} setsid nohup "$LOAMS_WAL" --listen-pg 127.0.0.1:5460 \
       --listen-http 127.0.0.1:7690 --store "$store" --pipeline-depth "$depth" \
       --pd "$PD" --keyspace loams_pgwal \
-      --feed-safekeeper 127.0.0.1:5457 >"$RUN_DIR/loams-wal.log" 2>&1 </dev/null 9>&- &
+      --broker-endpoint "$BROKER" >"$RUN_DIR/loams-wal.log" 2>&1 </dev/null 9>&- &
     echo $! >"$RUN_DIR/loams-wal.pids"
     for _ in $(seq 1 30); do curl -sf localhost:7690/v1/status >/dev/null && break; sleep 1; done
     curl -sf localhost:7690/v1/status >/dev/null ||
@@ -228,11 +220,9 @@ case $variant in
     : >"$RUN_DIR/loams-wal.pids"
     for i in $(seq 1 "$replicas"); do
       fresh_dir "$wal_root/wal$i"
-      feed=()
-      [ "$i" = 1 ] && feed=(--feed-safekeeper 127.0.0.1:5457)
       RUST_LOG=${RUST_LOG:-info} setsid nohup "$LOAMS_WAL" --id "$i" \
         --listen-pg "127.0.0.1:$((5459 + i))" --listen-http "127.0.0.1:$((7689 + i))" \
-        --store nvme --data-dir "$wal_root/wal$i" "${nvme_args[@]}" "${feed[@]}" \
+        --store nvme --data-dir "$wal_root/wal$i" "${nvme_args[@]}" --broker-endpoint "$BROKER" \
         >"$RUN_DIR/loams-wal-$i.log" 2>&1 </dev/null 9>&- &
       echo $! >>"$RUN_DIR/loams-wal.pids"
       SAFEKEEPERS=${SAFEKEEPERS:+$SAFEKEEPERS,}127.0.0.1:$((5459 + i))
@@ -244,8 +234,7 @@ case $variant in
     ;;
 esac
 
-# The WAL tier's processes, for CPU time: the acceptors (and, for loams, TiKV)
-# and, separately, the feeder safekeeper that stands in for the decoder.
+# The WAL tier's processes, for CPU time: the acceptors (and, for loams, TiKV).
 wal_pids() {
   case $variant in
     safekeepers) pgrep -f 'safekeeper --listen-pg=127.0.0.1:545[456]' || true ;;
@@ -253,7 +242,6 @@ wal_pids() {
     nvme-*) cat "$RUN_DIR/loams-wal.pids" ;;
   esac
 }
-feeder_pids() { pgrep -f 'safekeeper --listen-pg=127.0.0.1:5457' || true; }
 # utime + stime of the given pids, in clock ticks.
 ticks() {
   local sum=0 p f
@@ -293,12 +281,11 @@ results=()
 for w in $workloads; do
   log "workload $w (${duration}s after ${warmup}s warm-up)"
   mapfile -t wp < <(wal_pids)
-  mapfile -t fp < <(feeder_pids)
-  w0=0 w1=0 f0=0 f1=0 seen=0
+  w0=0 w1=0 seen=0
   while IFS= read -r line; do
     case $line in
-      MEASURE_START) w0=$(ticks "${wp[@]}"); f0=$(ticks "${fp[@]}"); seen=$((seen | 1)) ;;
-      MEASURE_END) w1=$(ticks "${wp[@]}"); f1=$(ticks "${fp[@]}"); seen=$((seen | 2)) ;;
+      MEASURE_START) w0=$(ticks "${wp[@]}"); seen=$((seen | 1)) ;;
+      MEASURE_END) w1=$(ticks "${wp[@]}"); seen=$((seen | 2)) ;;
       *) echo "$line" >&2 ;;
     esac
   done < <(timeout "${WORKLOAD_TIMEOUT:-$((duration + warmup + 900))}" "$ENGINE" exec "$container" bash /bench/workload.sh "$w" "$duration" "$warmup" "$scale")
@@ -308,12 +295,12 @@ for w in $workloads; do
   rm -rf "$RUN_DIR/$w"
   "$ENGINE" cp "$container:/tmp/bench/$w" "$RUN_DIR/$w"
   r=$(python3 "$ROOT/scripts/loams-pg-bench/stats.py" "$RUN_DIR/$w" "$w")
-  r=$(W="$((w1 - w0))" F="$((f1 - f0))" HZ="$HZ" python3 -c '
+  r=$(W="$((w1 - w0))" HZ="$HZ" python3 -c '
 import json, os, sys
 r = json.loads(sys.argv[1])
 hz = int(os.environ["HZ"])
-wal, feed = int(os.environ["W"]) / hz, int(os.environ["F"]) / hz
-r["wal_cpu_s"], r["feeder_cpu_s"] = round(wal, 2), round(feed, 2)
+wal = int(os.environ["W"]) / hz
+r["wal_cpu_s"] = round(wal, 2)
 if r.get("n"):
     r["wal_cpu_us_per_tx"] = round(wal * 1e6 / r["n"], 1)
 if r.get("wal_bytes"):

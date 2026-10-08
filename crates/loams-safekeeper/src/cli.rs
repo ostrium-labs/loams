@@ -14,7 +14,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::feeder::FeederConfig;
 use crate::http;
 use crate::send::Interpreter;
 use crate::service::{WalService, WalServiceConfig};
@@ -120,11 +119,6 @@ struct Args {
     /// How often a heartbeat-only commit LSN is persisted, in ms.
     #[arg(long, default_value_t = 1000)]
     commit_flush_ms: u64,
-    /// Feed committed WAL to this stock safekeeper (`host:port`), which
-    /// serves the pageserver: the interim path until the WAL service speaks
-    /// the interpreted protocol itself.
-    #[arg(long)]
-    feed_safekeeper: Option<String>,
     /// Clients must send this as their password (walproposer's
     /// NEON_AUTH_TOKEN) and as the HTTP bearer token. Required unless both
     /// listeners are on loopback.
@@ -190,11 +184,6 @@ async fn run_with<S: WalStore>(
         WalServiceConfig {
             node_id: args.id,
             commit_flush_interval: Duration::from_millis(args.commit_flush_ms),
-            feeder: args.feed_safekeeper.clone().map(|safekeeper| FeederConfig {
-                safekeeper,
-                retry: Duration::from_secs(1),
-                poll: Duration::from_millis(5),
-            }),
             auth_token: args.auth_token.clone(),
             handoff,
             interpreter: args.interpreter.clone(),
@@ -229,6 +218,11 @@ async fn run_with<S: WalStore>(
     svc.serve(pg, shutdown).await?;
     http.abort();
     Ok(())
+}
+
+/// `loams-wal`'s command line, for tests and documentation.
+pub fn command() -> clap::Command {
+    <Args as clap::CommandFactory>::command()
 }
 
 /// Run `loams-wal` with the process's arguments. `interpreter` serves the

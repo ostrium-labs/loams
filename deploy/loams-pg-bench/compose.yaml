@@ -71,7 +71,7 @@ services:
         condition: service_completed_successfully
 
   # The baseline: stock safekeepers, each on its own volume (fsync on).
-  # SK1_DATA..SK3_DATA and SKF_DATA may name host directories instead, to
+  # SK1_DATA..SK3_DATA may name host directories instead, to
   # put every WAL tier on one chosen filesystem (run.sh --disk-root).
   safekeeper1:
     <<: *safekeeper
@@ -101,23 +101,9 @@ services:
         --broker-endpoint=http://127.0.0.1:50051 -D /data
         --remote-storage="{endpoint='http://127.0.0.1:9000', bucket_name='neon', bucket_region='us-east-1', prefix_in_bucket='/safekeeper/'}"
 
-  # The candidate's pageserver feed (crates/loams-safekeeper feeder.rs): a
-  # stock safekeeper that loams-wal streams committed WAL to, so that the
-  # unmodified pageserver can ingest it. It stands in for the interpreted
-  # sender the WAL service will link (§28 Q112), so it runs with --no-sync:
-  # durability comes from TiKV, and it is off the commit path.
-  feeder-safekeeper:
-    <<: *safekeeper
-    profiles: ["loams"]
-    volumes: ["${SKF_DATA:-skf-data}:/data"]
-    command:
-      - >
-        safekeeper --listen-pg=127.0.0.1:5457 --listen-http=127.0.0.1:7679 --id=9 --no-sync
-        --broker-endpoint=http://127.0.0.1:50051 -D /data
-        --remote-storage="{endpoint='http://127.0.0.1:9000', bucket_name='neon', bucket_region='us-east-1', prefix_in_bucket='/safekeeper/'}"
-
   # One compute; SAFEKEEPERS picks the variant (the safekeepers, or the Loams
-  # WAL service at 127.0.0.1:5460). pgbench runs inside it.
+  # WAL service at 127.0.0.1:5460, which the pageserver finds through the
+  # broker). pgbench runs inside it.
   compute:
     image: *compute-image
     network_mode: host
@@ -140,4 +126,3 @@ volumes:
   sk1-data:
   sk2-data:
   sk3-data:
-  skf-data:

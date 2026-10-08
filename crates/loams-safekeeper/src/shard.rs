@@ -17,7 +17,7 @@
 //!   authenticates, then hands a `START_WAL_PUSH` socket to the owning shard
 //!   ([`Shards::handoff`]); the shard runs the whole push there: reading
 //!   proposer messages, the acceptor, journal writes, durable acks. Readers
-//!   (the feeder, replication, the HTTP API) stay on tokio and reach the
+//!   (replication, the broker, the HTTP API) stay on tokio and reach the
 //!   shards' stores through [`ShardedStore`].
 
 use std::collections::{HashMap, VecDeque};
@@ -273,7 +273,7 @@ pub struct ShardStarter {
 impl ShardStarter {
     pub fn run(self, svc: Arc<WalService<ShardedStore>>) -> Result<(), Error> {
         // Shard threads run inside the caller's tokio context, so code they
-        // reach that needs a reactor or a spawner (the feeder) finds one.
+        // reach that needs a reactor or a spawner finds one.
         let tokio_rt = tokio::runtime::Handle::try_current().ok();
         let mut started = Vec::new();
         for (k, (store, mut rx)) in self.stores.into_iter().zip(self.rxs).enumerate() {
@@ -515,7 +515,6 @@ async fn push(
         session = true;
         svc.session(tl, 1);
         svc.publish(tl, &acc.state());
-        svc.ensure_feeder(tl);
         // Pageserver feedback goes out as it arrives, in a copy of the last
         // AppendResponse (the fork's `network_write`); other replies carry
         // none. A lagging receiver skips what it missed.
@@ -783,7 +782,7 @@ async fn answer(
 }
 
 /// The shards' stores behind one [`WalStore`], routed by timeline: what the
-/// tokio side (readers, the feeder, the HTTP API) uses.
+/// tokio side (readers, the broker, the HTTP API) uses.
 #[derive(Debug, Clone)]
 pub struct ShardedStore {
     stores: Vec<Arc<NvmeWalStore>>,
