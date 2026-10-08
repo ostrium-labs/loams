@@ -10,6 +10,13 @@ modules:
 lint:
   use:
     - STANDARD
+  ignore:
+    # Temporary, GR1 Task 1 only: `loams.graph.v1` moved here from
+    # `fabric/proto/` with its content unchanged (design §48, D741), and the
+    # as-built file uses `google.protobuf.Empty` and non-standard request and
+    # response names. GR1 Task 2 reworks the file (D746) and deletes this
+    # ignore; Task 2's test is `buf lint` clean without it.
+    - proto/loams/graph
   ignore_only:
     # Watch streams `Transition`, the protocol's unit (design §20 §7.1),
     # rather than a `WatchResponse` wrapper (plan row T7-4).

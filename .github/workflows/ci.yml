@@ -41,6 +41,7 @@ jobs:
       tikv: ${{ steps.filter.outputs.tikv }}
       durable: ${{ steps.filter.outputs.durable }}
       deny: ${{ steps.filter.outputs.deny }}
+      graph: ${{ steps.filter.outputs.graph }}
       protos: ${{ steps.filter.outputs.protos }}
       app-protos: ${{ steps.filter.outputs.app-protos }}
       sdk-typescript: ${{ steps.filter.outputs.sdk-typescript }}
@@ -155,6 +156,16 @@ jobs:
               - *toolchain
               - "crates/*/Cargo.toml"
               - "deny.toml"
+            # Loams Graph (GR1, design §48): the engine crate, its proto, the
+            # licence gate input it is checked against, and loams's manifest,
+            # whose default build must not link Grafeo.
+            graph:
+              - *toolchain
+              - "crates/loams-graph/**"
+              - "crates/loams-proto/**"
+              - "proto/loams/graph/**"
+              - "crates/loams/Cargo.toml"
+              - "connectors/licences.toml"
             # Shared pnpm tooling uses the root workspace and lockfile.
             pnpm-workspace: &pnpm-workspace
               - "package.json"
@@ -1352,6 +1363,34 @@ jobs:
             echo "the committed stubs are stale: regenerate with sdks/csharp/buf.gen.proto.yaml"; exit 1;
           }
 
+  # GR1 Task 1 (design §48, D741): Loams Graph's engine crate, and the rule
+  # that `loams` links Grafeo only with the `graph` feature (GR1 Global
+  # Constraints). `cargo test -p loams-graph` includes
+  # `licences_cover_every_grafeo_crate`, which fails when a grafeo* crate in a
+  # Cargo.lock has no connectors/licences.toml stanza.
+  graph:
+    name: Loams Graph (loams-graph, no grafeo by default)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.graph == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # loams_default_build_has_no_grafeo: `cargo build -p loams` without
+      # `graph` must not compile Grafeo.
+      - name: loams's default build has no grafeo
+        run: |
+          count=$(cargo tree -p loams -e normal --prefix none --locked | grep -c grafeo || true)
+          if [ "$count" != 0 ]; then
+            echo "loams's default features depend on grafeo ($count lines); it belongs behind the graph feature (GR1, D741)"
+            cargo tree -p loams -e normal --locked -i grafeo || true
+            exit 1
+          fi
+      - name: loams-graph tests
+        run: cargo test -p loams-graph --locked
+
   deny:
     name: licenses, advisories, sources
     needs: changes
@@ -1597,6 +1636,7 @@ jobs:
       - sdk-cpp
       - sdk-csharp
       - sdk-swift
+      - graph
       - deny
       - web
       - dapr-edge

@@ -244,13 +244,15 @@ kind = "library"
 used_by = ["kinesis"]
 source = "https://crates.io/crates/aws-sdk-kinesis"
 
-# Grafeo's five crates, one stanza each (D634; read from crates.io on 2026-10-04). All five are
+# Grafeo's six crates, one stanza each (D634; the first five read from crates.io on 2026-10-04,
+# `grafeo-storage` added by GR1 Task 1 on 2026-10-08). All six are
 # **Apache-2.0**, which is what admits them: D359 refuses an unclassified or non-SPDX id, and
 # `surrealdb` is excluded outright on exactly that ground (crates.io reports
 # `license = "non-standard"` for it, which is not an SPDX id). `kind = "library"` for all of
-# them because D634(b) embeds the engine: Loams links it into the Fabric process and calls it
-# in process, so these are compiled into loams-flow and are not loaded from a mounted directory
-# the way the JDBC drivers below are.
+# them because D634(b) embeds the engine: Loams links it into its own process and calls it in
+# process (since D741 and GR1 Task 1, `crates/loams-graph` in the engine workspace, linked by
+# `loams` behind the `graph` feature), so these are compiled in and are not loaded from a mounted
+# directory the way the JDBC drivers below are.
 #
 # They are named one per crate rather than as a single "grafeo" row because D359 asks for every
 # library a shipped connector loads, and because the split is where the risk is recorded: D634(f)
@@ -303,6 +305,20 @@ kind = "library"
 # than five (D634).
 used_by = ["grafeo"]
 source = "https://crates.io/crates/grafeo-common"
+
+[components.grafeo-storage]
+name = "grafeo-storage"
+spdx = "Apache-2.0"
+kind = "library"
+# The WAL and `.grafeo` file layer under `grafeo-engine`'s `wal` and `grafeo-file` features,
+# split out of the engine in 0.5.43 and missed by the five-crate list of 2026-10-04 (§48 §5
+# finding 12). `license = "Apache-2.0"` in its published Cargo.toml and on crates.io for
+# 0.5.42-0.5.44 (GR1 Task 0 R0.21); since GR1 Task 1 it is linked into `loams` behind the
+# `graph` feature, through `crates/loams-graph`. `licences_cover_every_grafeo_crate`
+# (crates/loams-graph/tests/licences.rs) fails when a `grafeo*` crate in a Cargo.lock has no
+# stanza here.
+used_by = ["grafeo"]
+source = "https://crates.io/crates/grafeo-storage"
 
 # ----------------------------------------------------------------------------------------
 # Drivers loaded, never compiled in

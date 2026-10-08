@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use connectrpc::{ConnectError, ErrorCode};
 use loams_graph::{BatchStatement, Engine, Graph, GraphError, OpenSpec, service};
-use loams_graph_proto as pb;
+use loams_proto::loams::graph::v1 as pb;
 
 /// A fresh engine with no graphs open.
 fn engine() -> Engine {

@@ -17,7 +17,7 @@ use buffa_types::google::protobuf::__buffa::oneof::value::Kind as PbKind;
 use buffa_types::google::protobuf::{ListValue, Struct, Value as PbValue};
 use connectrpc::{ConnectError, ErrorCode};
 use grafeo::Value;
-use loams_graph_proto as pb;
+use loams_proto::loams::graph::v1 as pb;
 
 use crate::engine::{BatchStatement, Engine, GraphError, GraphResult, OpenSpec};
 

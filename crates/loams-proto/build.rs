@@ -13,7 +13,7 @@
 //! and §8 put it. Task 4 adds the third — the search IR and its answer, i.e.
 //! §8's `Query` — and `page_token` on `ScrollDocumentsRequest`. Tasks 5–8
 //! append `loams.sql.v1`, `loams.link.v1`, `loams.admin.v1`, `loams.auth.v1`
-//! and `loams.internal.v1`.
+//! and `loams.internal.v1`. GR1 Task 1 adds `loams.graph.v1` (design §48).
 //!
 //! `loams.live.v1` is **not** here: R1's `loams-live-proto` already
 //! generates it, and a proto package's Rust types are generated exactly
@@ -29,6 +29,10 @@ const FILES: &[&str] = &[
     "loams/collection/v1/collection.proto",
     "loams/collection/v1/document.proto",
     "loams/collection/v1/query.proto",
+    // Loams Graph (design §48, D741). Moved from `fabric/proto/` by GR1
+    // Task 1 with its content unchanged; GR1 Task 2 reworks it (D746). Its
+    // Rust types used to come from `fabric/`'s `loams-graph-proto`.
+    "loams/graph/v1/graph.proto",
 ];
 
 fn main() {

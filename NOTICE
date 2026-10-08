@@ -72,6 +72,20 @@ docs/plans/r1-dependency-spike.md), pinned by revision in Cargo.toml. Its
 generated protobuf code comes from pingcap/kvproto (Apache License 2.0).
 Copyright TiKV Project Authors.
 
+Grafeo (https://github.com/GrafeoDB/grafeo), Apache License 2.0, Copyright
+2025-2026 S.T. Grond. crates/loams-graph links the grafeo, grafeo-engine,
+grafeo-core, grafeo-adapters, grafeo-common and grafeo-storage crates at
+version 0.5.43 (crates.io), compiled into loams only with the `graph` cargo
+feature. No Grafeo source is copied. The crate archives ship no NOTICE; the
+NOTICE below is the repository's at tag v0.5.43, reproduced as distributed:
+  Grafeo
+  Copyright 2025-2026 S.T. Grond
+
+  This product includes software developed at
+  https://github.com/GrafeoDB/grafeo
+
+  Licensed under the Apache License, Version 2.0.
+
 Neon (https://github.com/neondatabase/neon), Apache License 2.0, Copyright
 Neon Inc. crates/loams-safekeeper/ ports the safekeeper wire protocol (v3)
 and the acceptor state machine from Neon's safekeeper/src/safekeeper.rs,

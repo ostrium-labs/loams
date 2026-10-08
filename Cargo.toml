@@ -57,6 +57,28 @@ fail = "0.5"
 fnv = "1"
 foyer = "0.22"
 futures = "0.3"
+# Loams Graph's embedded engine (design §48, D741, D759; GR1 Task 0 rulings
+# R0.2 and R0.3). Pinned exactly to 0.5.43, which every Task 0 probe ran
+# against; it is 14 days old on 2026-10-11, so the commit adding it does not
+# merge before then (Q-T0-1). Apache-2.0, all six crates (connectors/licences.toml,
+# root NOTICE). `default-features = false`: grafeo's default `embedded` set
+# brings `ai` and `arrow-export`, i.e. arrow 60 beside the workspace's 58.
+# The features are the narrowest set that keeps LPG, GQL, WAL, CDC, spill,
+# algorithms, metrics and tracing (R0.2):
+#   * `grafeo-file` gates `backup_full`/`backup_incremental` (Task 13);
+#   * `parallel` (rayon) and `regex` (GQL `=~` with the full `regex` engine,
+#     not `regex-lite`) are kept on purpose;
+#   * no `mmap`: outside `compact-store`/`vector-index` it gates nothing.
+# NEVER enable `jemalloc` or `mimalloc-allocator`: each installs a
+# `#[global_allocator]` in grafeo's lib.rs and would replace the allocator of
+# the whole `loams` binary (R0.2).
+grafeo = { version = "=0.5.43", default-features = false, features = ["gql", "wal", "grafeo-file", "spill", "cdc", "algos", "metrics", "tracing", "parallel", "regex"] }
+# Named directly for its `lpg` feature: grafeo's own `lpg` also turns on
+# `cypher`, `gremlin` and `sql-pgq` (R0.2). Task 33's `graph-cypher` feature
+# adds `cypher` here; it costs code size and no package.
+grafeo-engine = { version = "=0.5.43", default-features = false, features = ["lpg"] }
+# `PropertyKey` and the value types the facade does not re-export.
+grafeo-common = { version = "=0.5.43", default-features = false }
 hex = "0.4"
 http = "1"
 http-body = "1"
@@ -175,6 +197,7 @@ loams-cloudevents = { path = "crates/loams-cloudevents", version = "0.0.1" }
 loams-common = { path = "crates/loams-common", version = "0.0.1" }
 loams-durable = { path = "crates/loams-durable", version = "0.0.1" }
 loams-es = { path = "crates/loams-es", version = "0.0.1" }
+loams-graph = { path = "crates/loams-graph", version = "0.0.1" }
 loams-hnsw = { path = "crates/loams-hnsw", version = "0.0.1" }
 loams-hot = { path = "crates/loams-hot", version = "0.0.1" }
 loams-link = { path = "crates/loams-link", version = "0.0.1" }

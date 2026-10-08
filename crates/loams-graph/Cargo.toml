@@ -1,0 +1,42 @@
+[package]
+name = "loams-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Loams's embedded graph engine: Grafeo behind loams.graph.v1, GQL over Connect-RPC (D634)"
+publish = false
+
+[dependencies]
+# The engine, embedded (D634 (b), D741). Version and features are the root workspace's, set by
+# GR1 Task 0 (R0.2, R0.3): `=0.5.43`, `default-features = false`, and the narrow set that keeps
+# LPG + GQL + WAL + CDC + spill + algorithms + metrics + tracing. Apache-2.0 across all six grafeo
+# crates (`connectors/licences.toml`, root `NOTICE`).
+grafeo.workspace = true
+# Named for its `lpg` feature only: grafeo's own `lpg` turns on `cypher`, `gremlin` and `sql-pgq`
+# too (R0.2), so the data model is switched on one crate down.
+grafeo-engine.workspace = true
+# Named because it is forced, not chosen. `grafeo::Value::Map` holds an
+# `Arc<BTreeMap<PropertyKey, Value>>`, and `PropertyKey` lives below the `grafeo` facade, which
+# does not re-export it -- so converting a protobuf Struct into an engine Map has to name the
+# sibling crate. It is already in the tree at the same version as `grafeo`.
+grafeo-common.workspace = true
+# The generated `loams.graph.v1` types, from the root `proto/` tree like every other public
+# package (design §44, D741). `fabric/`'s `loams-graph-proto` is gone (GR1 Task 1).
+loams-proto.workspace = true
+
+# `Row.values` is a `google.protobuf.Value` built through buffa's own oneof wrapper, so the type
+# has to be nameable to fill a row at all. Already in the tree through `loams-proto`.
+buffa-types = { version = "0.9.2", features = ["json"] }
+connectrpc.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+# `licences_cover_every_grafeo_crate` reads `Cargo.lock` and `connectors/licences.toml`.
+toml.workspace = true
+
+[lints]
+workspace = true

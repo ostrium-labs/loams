@@ -840,10 +840,13 @@ fn licence_gate_refuses_flagged() {
     // crates.io on 2026-10-04. They are on this side of the gate rather than in D359's
     // carve-out precisely because D634(b) **links** the engine into the Fabric, so a
     // `library` row is the honest kind and `check_components` really does licence-check them.
+    // GR1 Task 1 (D741) added the sixth, `grafeo-storage` (Apache-2.0), which 0.5.43 links and
+    // the 2026-10-04 reading missed; `crates/loams-graph/tests/licences.rs` now checks the
+    // Grafeo stanzas against the lockfiles.
     assert_eq!(
         components.len(),
-        47,
-        "D359 records 42 components after CN1 Task 15, plus D634's five Grafeo crates"
+        48,
+        "D359 records 42 components after CN1 Task 15, plus D634's six Grafeo crates"
     );
     gate.check_components(&text, "connectors/licences.toml")
         .unwrap_or_else(|error| panic!("no component may be refused: {error}"));
