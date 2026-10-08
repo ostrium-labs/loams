@@ -52,3 +52,29 @@ export function viewPermission(
 		webOrigin(requestingUrl) === webOrigin(appOrigin)
 	);
 }
+
+/**
+ * Navigation decision per frame. Subframes may stay on the app/IdP origin; any
+ * other target is blocked, never handed to the system browser.
+ */
+export function frameNavigation(
+	appOrigin: string,
+	to: string,
+	isMainFrame: boolean,
+	ssoOrigin?: string,
+): NavDecision {
+	const d = viewNavigation(appOrigin, to, ssoOrigin);
+	if (isMainFrame) return d;
+	return d === "allow" ? "allow" : "deny";
+}
+
+/** Downloads are allowed only from the app origin (or the configured IdP). */
+export function downloadDecision(
+	appOrigin: string,
+	url: string,
+	ssoOrigin?: string,
+): "allow" | "deny" {
+	return viewNavigation(appOrigin, url, ssoOrigin) === "allow"
+		? "allow"
+		: "deny";
+}

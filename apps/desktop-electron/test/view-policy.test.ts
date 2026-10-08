@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+	downloadDecision,
+	frameNavigation,
 	viewNavigation,
 	viewPermission,
 } from "../src/main/factory/view-policy";
@@ -64,4 +66,40 @@ describe("sso_origin_allowed_only_when_configured", () => {
 	});
 	it("a non-http sso value allows nothing", () =>
 		expect(viewNavigation(APP, "file:///x", "file:///x")).toBe("deny"));
+});
+
+describe("frame and download policy", () => {
+	it("subframe_foreign_origin_blocked", () => {
+		expect(frameNavigation(APP, "https://evil.io/", false)).toBe("deny");
+		expect(frameNavigation(APP, "file:///etc/passwd", false)).toBe("deny");
+	});
+	it("subframe_same_origin_allowed", () => {
+		expect(frameNavigation(APP, `${APP}/embed`, false)).toBe("allow");
+		expect(
+			frameNavigation(
+				APP,
+				"https://auth.example.com/x",
+				false,
+				"https://auth.example.com",
+			),
+		).toBe("allow");
+	});
+	it("subframe_external_never_opens_browser", () => {
+		for (const to of [
+			"https://example.com/",
+			"http://x.io/",
+			`${APP}@evil.io/`,
+		])
+			expect(frameNavigation(APP, to, false)).not.toBe("external");
+		expect(frameNavigation(APP, "https://example.com/", true)).toBe("external");
+	});
+	it("download_decision", () => {
+		expect(downloadDecision(APP, `${APP}/f.zip`)).toBe("allow");
+		expect(downloadDecision(APP, "https://evil.io/f.zip")).toBe("deny");
+		expect(downloadDecision(APP, "blob:https://evil.io/x")).toBe("deny");
+		expect(downloadDecision(APP, "file:///etc/passwd")).toBe("deny");
+		expect(
+			downloadDecision(APP, "https://a.example.com/f", "https://a.example.com"),
+		).toBe("allow");
+	});
 });

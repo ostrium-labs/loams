@@ -37,9 +37,14 @@ export function registerFactoryIpc(
 				fields === null
 			)
 				return bad();
+			const r = await host.configure(
+				app,
+				url,
+				fields as Record<string, string>,
+			);
 			// The window holds the old URL/SSO origin: close it so the next open is fresh.
-			views.close(app);
-			return host.configure(app, url, fields as Record<string, string>);
+			if (r.ok) views.close(app);
+			return r;
 		},
 	);
 	ipcMain.handle(CH.factoryTest, async (e, app: unknown) => {

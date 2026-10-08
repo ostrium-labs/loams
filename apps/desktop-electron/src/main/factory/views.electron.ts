@@ -9,7 +9,12 @@ import {
 	type WindowState,
 } from "../shell/window-state";
 import { FACTORY_APPS } from "./apps";
-import { viewNavigation, viewPermission, webOrigin } from "./view-policy";
+import {
+	downloadDecision,
+	frameNavigation,
+	viewPermission,
+	webOrigin,
+} from "./view-policy";
 
 interface UrlSource {
 	appUrls(app: FactoryAppId): { url: string; ssoOrigin?: string } | undefined;
@@ -23,6 +28,11 @@ interface UrlSource {
  */
 export class FactoryViews {
 	readonly #wins = new Map<FactoryAppId, BrowserWindow>();
+	readonly #downloadHooked = new Set<FactoryAppId>();
+	readonly #downloadCfg = new Map<
+		FactoryAppId,
+		{ appOrigin: string; ssoOrigin?: string }
+	>();
 
 	constructor(private readonly source: UrlSource) {}
 
@@ -72,25 +82,45 @@ export class FactoryViews {
 		});
 		this.#wins.set(app, win);
 		const wc = win.webContents;
-		const decide = (to: string) => viewNavigation(appOrigin, to, cfg.ssoOrigin);
-		const guard = (event: { preventDefault(): void }, url: string): void => {
-			const d = decide(url);
+		const guard = (
+			event: { preventDefault(): void },
+			url: string,
+			isMainFrame: boolean,
+		): void => {
+			const d = frameNavigation(appOrigin, url, isMainFrame, cfg.ssoOrigin);
 			if (d === "allow") return;
 			event.preventDefault();
 			if (d === "external") void shell.openExternal(url);
 		};
-		wc.on("will-navigate", (event, url) => guard(event, url));
-		wc.on("will-redirect", (event, url) => guard(event, url));
+		// will-frame-navigate covers the main frame and every subframe (will-navigate
+		// would double-fire for the main frame).
+		wc.on("will-frame-navigate", (e) => guard(e, e.url, e.isMainFrame));
+		wc.on("will-redirect", (e) => guard(e, e.url, e.isMainFrame));
 		wc.setWindowOpenHandler(({ url }) => {
-			if (decide(url) === "external") void shell.openExternal(url);
-			// Allowed same-origin popups also open in this window rather than a new one.
-			else if (decide(url) === "allow") void wc.loadURL(url);
+			const d = frameNavigation(appOrigin, url, true, cfg.ssoOrigin);
+			if (d === "external") void shell.openExternal(url);
+			// Allowed same-origin popups open in this window rather than a new one.
+			else if (d === "allow") void wc.loadURL(url);
 			return { action: "deny" };
 		});
 		wc.on("will-attach-webview", (event) => event.preventDefault());
 		// A page's own <title> must not replace the app label.
 		wc.on("page-title-updated", (event) => event.preventDefault());
 		const ses = wc.session;
+		// One will-download listener per partition session, even across reopen.
+		this.#downloadCfg.set(app, { appOrigin, ssoOrigin: cfg.ssoOrigin });
+		if (!this.#downloadHooked.has(app)) {
+			this.#downloadHooked.add(app);
+			ses.on("will-download", (event, item) => {
+				const c = this.#downloadCfg.get(app);
+				if (
+					!c ||
+					downloadDecision(c.appOrigin, item.getURL(), c.ssoOrigin) !== "allow"
+				)
+					event.preventDefault();
+				// Allowed: Electron's default save dialog (no setSavePath).
+			});
+		}
 		ses.setPermissionCheckHandler(
 			(_wc, permission, requestingOrigin, details) =>
 				details.isMainFrame !== false &&
