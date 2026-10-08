@@ -77,7 +77,7 @@ Grafeo (https://github.com/GrafeoDB/grafeo), Apache License 2.0, Copyright
 grafeo-core, grafeo-adapters, grafeo-common and grafeo-storage crates at
 version 0.5.43 (crates.io), compiled into loams only with the `graph` cargo
 feature. No Grafeo source is copied. The crate archives ship no NOTICE; the
-NOTICE below is the repository's at tag v0.5.43, reproduced as distributed:
+NOTICE below is the repository's at tag v0.5.43, reproduced verbatim (indented):
   Grafeo
   Copyright 2025-2026 S.T. Grond
 

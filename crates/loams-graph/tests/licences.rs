@@ -92,3 +92,15 @@ fn licences_cover_every_grafeo_crate() {
         );
     }
 }
+
+/// The root NOTICE carries Grafeo's attribution (Apache-2.0 section 4(d); R0.21, Q-T0-3).
+#[test]
+fn notice_carries_grafeo_attribution() {
+    let notice = std::fs::read_to_string(repo_root().join("NOTICE")).expect("the root NOTICE");
+    for needle in [
+        "Copyright 2025-2026 S.T. Grond",
+        "https://github.com/GrafeoDB/grafeo",
+    ] {
+        assert!(notice.contains(needle), "the root NOTICE lacks {needle:?}");
+    }
+}

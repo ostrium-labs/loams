@@ -166,6 +166,7 @@ jobs:
               - "proto/loams/graph/**"
               - "crates/loams/Cargo.toml"
               - "connectors/licences.toml"
+              - "fabric/Cargo.lock"
             # Shared pnpm tooling uses the root workspace and lockfile.
             pnpm-workspace: &pnpm-workspace
               - "package.json"
@@ -1382,7 +1383,14 @@ jobs:
       # `graph` must not compile Grafeo.
       - name: loams's default build has no grafeo
         run: |
-          count=$(cargo tree -p loams -e normal --prefix none --locked | grep -c grafeo || true)
+          set -euo pipefail
+          # Capture first: a failing `cargo tree` must fail the step, not
+          # read as "no grafeo".
+          tree=$(cargo tree -p loams -e normal --prefix none --locked)
+          if ! grep -q '^loams v' <<< "$tree"; then
+            echo "cargo tree -p loams printed no 'loams v' root line; the check cannot run"; exit 1
+          fi
+          count=$(grep -c grafeo <<< "$tree" || true)
           if [ "$count" != 0 ]; then
             echo "loams's default features depend on grafeo ($count lines); it belongs behind the graph feature (GR1, D741)"
             cargo tree -p loams -e normal --locked -i grafeo || true

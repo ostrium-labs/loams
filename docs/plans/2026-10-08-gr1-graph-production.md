@@ -243,6 +243,7 @@ Tests:
 - `graph_rpcs_answer_not_in_variant_without_feature`: every RPC of both services.
 - `connect_json_grpc_and_grpc_web_reach_execute`: one statement over each protocol on the main port.
 - `non_loopback_listen_without_authorizer_refused`: `loams serve` with `graph` on a non-loopback address and the `AllowAll` authorizer exits with a clear message (D750; until MT1).
+- `reflection_lists_only_served_or_stubbed_services`: every service `grpc.reflection.v1` lists (from `loams_proto::FILE_DESCRIPTOR_SET`) is either served or answered by a `not_in_variant` stub, with and without `graph` (Task 1 R1.1 made reflection list `GraphService` before it is mounted).
 
 Commit `feat(api): serve loams.graph.v1 behind the graph feature (D741)`.
 
@@ -926,6 +927,6 @@ Rulings:
 
 **R1.4 `connectors/registry/grafeo.yaml` keeps `runtime.ref: loams_flow::connectors::graph` (R0.22).** The ref names the Flow *connector* module (planned, not written), not the engine. After D741 the engine is in the engine workspace, which `fabric/`'s `loams-flow` cannot link, so a future Flow connector reaches Loams Graph over `loams.graph.v1`; pointing the ref at `loams_graph` would name a crate the connector can never depend on. Changing it would also mean changing `gen_registry.py`'s `LOAMS_OWNED_NATIVE` rule, `catalog.csv` and §33 for no gain. The manifest's prose about "embedded in the Fabric" is stale and is left for Task 38's docs pass.
 
-**R1.5 CI.** A `graph` job in `ci.yml` (filter: `crates/loams-graph/**`, `crates/loams-proto/**`, `proto/loams/graph/**`, `crates/loams/Cargo.toml`, `connectors/licences.toml`, plus the toolchain set) runs `loams_default_build_has_no_grafeo` (`cargo tree -p loams -e normal --prefix none --locked | grep -c grafeo` must be 0; it is 0 today) and `cargo test -p loams-graph --locked`, and is in `required`. `fabric.yml` names no graph path, so it is unchanged.
+**R1.5 CI.** A `graph` job in `ci.yml` (filter: `crates/loams-graph/**`, `crates/loams-proto/**`, `proto/loams/graph/**`, `crates/loams/Cargo.toml`, `connectors/licences.toml`, `fabric/Cargo.lock`, plus the toolchain set) runs `loams_default_build_has_no_grafeo` (the `cargo tree -p loams -e normal --prefix none --locked` output is captured under `pipefail`, must contain the `loams v` root line, and must have 0 `grafeo` lines; it has 0 today) and `cargo test -p loams-graph --locked`, and is in `required`. `fabric.yml` names no graph path, so it is unchanged.
 
 **R1.6 Lockfiles.** Root `Cargo.lock` gains nine packages: `grafeo`, `grafeo-adapters`, `grafeo-common`, `grafeo-core`, `grafeo-engine`, `grafeo-storage` (all 0.5.43), `arcstr` 1.2.0, `crossbeam` 0.8.5 and `fs2` 0.4.3; no `arrow*`. `fabric/Cargo.lock` drops every grafeo crate and arrow 60, which lets its arrow 59 entries lose their version qualifiers. `cargo deny check licenses bans sources` is clean in both workspaces; `advisories` was not run (no local advisory database, and this task fetches nothing).
