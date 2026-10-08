@@ -124,6 +124,8 @@ jobs:
             tikv:
               - *toolchain
               - "crates/loams-tikv/**"
+              - "crates/loams-kv/**"
+              - "crates/loams-tuple/**"
               - "crates/loams-meta-tikv/**"
               - "crates/loams-meta/**"
               - "crates/loams-meta-conformance/**"
@@ -686,7 +688,7 @@ jobs:
         # The TiKV crates that exist so far (later R1 tasks add the rest).
         run: |
           args=
-          for c in loams-tikv loams-meta-tikv loams-live loams-live-js; do
+          for c in loams-tikv loams-kv loams-meta-tikv loams-live loams-live-js; do
             if [ -d "crates/$c" ]; then args="$args -p $c"; fi
           done
           echo "args=$args" >> "$GITHUB_OUTPUT"
@@ -750,7 +752,7 @@ jobs:
         # The TiKV crates that exist so far (later R1 tasks add the rest).
         run: |
           args=
-          for c in loams-tikv loams-meta-tikv loams-live loams-live-js; do
+          for c in loams-tikv loams-kv loams-meta-tikv loams-live loams-live-js; do
             if [ -d "crates/$c" ]; then args="$args -p $c"; fi
           done
           echo "args=$args" >> "$GITHUB_OUTPUT"
