@@ -249,6 +249,18 @@ pub type AckHook = Arc<
 pub struct Counters {
     /// Reads that found their document swept and followed the pointer again.
     pub document_rereads: std::sync::atomic::AtomicU64,
+    /// Writes retried after losing a CAS or an unknown outcome.
+    pub cas_retries: std::sync::atomic::AtomicU64,
+}
+
+/// Jittered exponential backoff before retry `attempt` (1-based): up to 5 ms × 2^attempt,
+/// capped at 200 ms, scaled by a random factor in [0.5, 1) so racing writers spread out
+/// (review M4).
+fn backoff(attempt: usize) -> std::time::Duration {
+    let base_ms = (5u64 << attempt.min(6)).min(200);
+    let random = (u128::from(ulid::Ulid::generate()) & 0xffff) as u64;
+    let jittered_us = base_ms * 1000 / 2 + base_ms * 1000 * random / 2 / 0x1_0000;
+    std::time::Duration::from_micros(jittered_us)
 }
 
 impl std::fmt::Debug for GraphCatalog {
@@ -734,7 +746,13 @@ impl GraphCatalog {
         namespace: NamespaceId,
         change: impl Fn(&mut Document) -> Result<(Option<()>, T), CatalogError>,
     ) -> Result<T, CatalogError> {
-        for _ in 0..MAX_ATTEMPTS {
+        for attempt in 0..MAX_ATTEMPTS {
+            if attempt > 0 {
+                self.counters
+                    .cas_retries
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                tokio::time::sleep(backoff(attempt)).await;
+            }
             let mut loaded = self.load_ns(namespace).await?;
             let (write, out) = change(&mut loaded.doc)?;
             if write.is_none() {
@@ -891,5 +909,27 @@ fn decode_token(namespace: &str, token: &str) -> Result<String, CatalogError> {
     match (parts.next(), parts.next(), parts.next()) {
         (Some("g1"), Some(ns), Some(after)) if ns == namespace => Ok(after.to_string()),
         _ => Err(invalid()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::backoff;
+    use std::time::Duration;
+
+    /// Review M4: exponential, capped at 200 ms, jittered within [base / 2, base).
+    #[test]
+    fn backoff_is_jittered_exponential_and_capped() {
+        for attempt in 1..20 {
+            let base = Duration::from_millis((5u64 << attempt.min(6)).min(200));
+            let mut seen = std::collections::BTreeSet::new();
+            for _ in 0..50 {
+                let delay = backoff(attempt);
+                assert!(delay >= base / 2 && delay < base, "{attempt}: {delay:?} vs {base:?}");
+                seen.insert(delay);
+            }
+            assert!(seen.len() > 1, "jittered");
+        }
+        assert!(backoff(30) <= Duration::from_millis(200));
     }
 }
