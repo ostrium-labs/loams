@@ -1152,3 +1152,159 @@ Sources read for this subsection (2026-10-02): `ChromeDevTools/chrome-devtools-m
 ### 18.15 Sources
 
 Read on 2026-10-02. **Zeron** (`github.com/zeronsh/zeron`, `80b946b`, 2026-10-01): `README.md`, `ARCHITECTURE.md`, `CONTEXT.md`, `docs/mcp.md`, `docs/reference/{linux-browser,windows-development}.md`, `docs/PARITY.md`, `Cargo.toml`, `apps/zeron/src/{main,update_cli,auth_cli}.rs`, `crates/engine/src/{auth,registry,harness_updates}.rs`, `crates/harness/src/acp/{mod,normalize}.rs`, `crates/update/src/lib.rs`, `crates/ui/src/{lib,browser/mod,icons,pickers}.rs`, `crates/ui/Cargo.toml`, `.github/workflows/{release,windows,ui-tests}.yml`, `.github/actions/*`, `dist/`, `LICENSE`, `THIRD_PARTY_NOTICES.md`; GitHub metadata (stars, contributors, release and commit counts). **Loams:** §19, §30, §37 (this document), §38, §39 and its pending log (branch `software-factory-design`, PR #192), the AP0 branch's `proto/loams/{instance,errors}/v1` (commit `bc3e559`, not yet on `main`) and `loams-apps-mock`, `docs/open-core.md`. **Libraries:** connect-rust 0.9.1 (`connectrpc`, `connectrpc-codegen`), buffa 0.9.2, `keyring` 4.2.0, `gpui-wry` 0.7.0 (crates.io metadata only). **Protocols:** RFC 7636, RFC 8252, RFC 8693, A2A 1.0 as recorded in §39 §5.
+
+## 19. Loams Desktop on Electron (supersedes §18 for the shipping app)
+
+Status: **Approved** (owner, 2026-10-08). The owner's words: "use electron bro, make it a real cloud console and add all software factory apps … you are the product owner do the best". The owner named two references: `electron-vite` (electron-vite.org) for the build and **DeepSeek Harness Desktop** (`dataelement/dsh-desktop`, MIT, v0.1.1) for its shell code, with `geek-fun/dockit` (Apache-2.0) as a product reference. This section records the product owner's rulings made under that delegation (D652–D665). Plan: [AP1e](../plans/2026-10-08-ap1e-electron-desktop.md).
+
+### 19.1 Why Electron, and what happens to the zeron fork (D652)
+
+An audit on 2026-10-08 found the following about the zeron fork in `apps/desktop/native`:
+- It is about 368k lines of imported Rust.
+- Its GUI has never been launched from this repository, and its default build fails without WebKitGTK.
+- Its remote features still speak zeron's contracts (WorkOS, `/registry`, `/chat2`).
+- It is an agent workbench, not a console. The web console, by contrast, is React 19 on cordis and already composes editions from plugin sets (`startConsole({ platform, patches, extraModules })`).
+
+So:
+- **Loams Desktop ships on Electron with electron-vite.** Its renderer is the cordis console.
+- **AP1n is paused, not deleted.** `apps/desktop` stays as the research track for a native workbench. Its Nx targets keep running in CI. No release is cut from it until the owner reopens it.
+- The **"No Electron"** non-goal of §2.3 is withdrawn.
+
+### 19.2 Product: what Loams Desktop is (D653)
+
+One app with three areas, in one window and one cordis console:
+1. **Cloud console.** The full console (projects, environments, agents, access, teams, members, audit, settings, approvals) against any **server**: Loams Cloud, a BYOC control plane, a self-hosted control plane, or the apps mock in development. Servers are added by URL and switched from the shell header.
+2. **Local engine (Data Studio).** Loams on the user's machine. The app supervises `loams dev` with its data in the app's data directory. Data Studio covers:
+   - browsing namespaces, collections and documents;
+   - hybrid search (text, vector, filters) through `QueryService/Search`;
+   - running SQL;
+   - ingesting JSON or NDJSON files;
+   - creating namespaces and collections.
+
+   Data Studio also works against a remote server's data plane.
+3. **Software Factory.** Each §39 app appears twice: as **native panels** fed by the `plugins/` adapters, and as its **full web UI** in an isolated app view. The apps, all phase 1 and phase 2 of §39 plus the showcase's Matomo:
+
+   | App | Role |
+   |---|---|
+   | Forgejo | repos, PRs, CI |
+   | Zulip | streams, unread, threads |
+   | Plane, through the ItsAPlan adapter | issues |
+   | GlitchTip | unresolved errors |
+   | OpenPanel | product analytics |
+   | Matomo | web analytics |
+   | Langfuse | LLM traces and cost |
+   | OpenObserve | full UI only; no adapter yet |
+
+Out of scope for v0.1: Loams Bot chat (SF3; the window reserves its place in the nav), the factory loop (SF4), SystemOne, the Tauri web bridge (AP1b), and phone pairing.
+
+### 19.3 Code provenance (D654)
+
+- **From dsh-desktop:** only its generic main-process code, adapted and not vendored wholesale. That is:
+  - the sidecar supervisor pattern (`runtime/harness-runtime.ts`: loopback port reservation, readiness poll, log piping, TERM-then-KILL);
+  - the security policy (`security.ts`, `security-policy.ts`);
+  - the internal protocol, window state, atomic JSON storage, close-to-tray;
+  - the `electron-updater` policy;
+  - the electron-builder layout, with macOS notarization and the Windows Jsign hook.
+
+  Each adapted file keeps an `Adapted from dataelement/dsh-desktop (MIT)` header, and `NOTICE` carries dsh-desktop's copyright line.
+- **Not taken from dsh-desktop:** its preload DOM injection, Harness runtime, profile and plugin recovery, Office/PPT runtimes, brand assets and `patch-package` patches.
+- **From dockit:** product patterns only (connection manager, query editor with results grid). No code.
+
+### 19.4 Architecture (D655–D658)
+
+```
+Electron main (Node)                          Renderer (sandboxed, contextIsolation)
+├─ AppProtocol  loams-app://console/ui/…  ──► cordis console (cordis.html), desktop edition
+│    ├─ static: console dist (path-safe)       ├─ @loams/platform-electron  (platform, transport)
+│    ├─ proxy:  /api /v1 /loams.* /.well-known ├─ @loams/plugin-desktop-servers
+│    │          /health /ready → active server ├─ @loams/plugin-data-studio
+│    └─ local:  /api/v1/{instance,session}     ├─ @loams/plugin-factory
+│               shim when server = local       └─ classic console pages at /ui/ (same origin)
+├─ ServerRegistry (servers.json, atomic)
+├─ EngineSupervisor  → `loams dev` sidecar (127.0.0.1, free ports)
+├─ FactoryHost (cordis Context + plugins/ adapters, credentials via safeStorage)
+├─ FactoryViews (one WebContentsView per app, partition persist:factory-<id>)
+├─ Tray, menu, deep links (loams://, navigate only), single instance
+└─ Updater (electron-updater, signed-manifest check, off unless a feed is configured)
+          ▲  typed IPC via preload `window.loamsDesktop` (contracts in src/shared)
+```
+
+- **D655: one origin, proxied.** The console is served from the privileged standard scheme `loams-app://console`. `protocol.handle` serves the console build. It also forwards the API prefixes `/api/`, `/v1/`, `/loams.`, `/.well-known/`, `/health` and `/ready` to the **active server's** origin with `session.fetch`. The console therefore keeps its browser router, its `/ui/` base, same-origin cookies and CSRF unchanged. Neither console entry needs a fork.
+
+  Proxy rules:
+  - It forwards only those prefixes, and only to the active server's origin.
+  - It follows no redirect to another origin. A 3xx is returned to the renderer, and the navigation guard handles it.
+  - It strips `Set-Cookie` `Domain` attributes. The cookie jar lives in the main session and is keyed by the server's origin.
+- **D656: the local engine is a supervised sidecar, not embedded.** `loams dev --data-dir <userData>/engine --listen 127.0.0.1:<p0> --flight-sql-listen 127.0.0.1:<p1> --es-listen 127.0.0.1:<p2> --no-qdrant --no-durable`, with every port reserved free at start.
+  - Readiness is a 200 from `POST /loams.instance.v1.InstanceService/GetInstance`.
+  - Restart policy (from §37 §6.2, kept): backoff of 1 s doubling to 30 s, at most 5 restarts in 10 minutes, then the state is `failed`.
+  - Logs go to `<logs>/engine.log`, rotated at 10 MB × 5.
+  - Binary resolution, in order: the `LOAMS_BIN` environment variable in development; then `process.resourcesPath/bin/loams[.exe]`; then the Cargo target directory in development. Windows: the engine binary is built for `x86_64-pc-windows-msvc`. Whether the engine runs locally there is answered by Task 15's smoke test. Until then, a Windows build lists the local engine as "remote only" when the binary is absent (D488 is kept).
+- **D657: the local edition shim.** The engine serves the data plane, but not the console's REST contract (`/api/v1/*`, served today only by `loams-apps-mock` and the private control plane). When the active server is the local engine, the protocol answers these itself:
+  - `GET /api/v1/instance`: edition `oss`, `desktop: true`, and `features.local = true`.
+  - `GET /api/v1/session`: one local owner, no sign-in.
+  - Every other `/api/v1/*` call returns `404 {code:"not_in_local_edition"}`.
+
+  Pages that need a control plane hide themselves when `features.local` is set. Nothing about the local user leaves the machine.
+- **D658: the desktop edition is a catalog patch.** `catalog/desktop.yml` inserts the desktop plugins. Each desktop plugin's manifest declares `editions: [oss, cloud, byoc]` and **requires** the `desktop` service, which only `@loams/platform-electron` provides. A browser build therefore never starts them.
+
+### 19.5 Credentials and isolation (D659, carrying D489)
+
+- **No credential reaches the renderer.** Factory credentials are encrypted at rest with Electron `safeStorage` in `<userData>/factory/credentials.bin`. They are decrypted only inside the FactoryHost and are never part of an IPC reply.
+  - Where `safeStorage` reports no encryption backend (for example, Linux without a keyring), credentials are kept for the session only, and the UI says so (the same rule as §37 §6.5).
+- **IPC is an allowlist.** Factory IPC exposes `list`, `configure`, `test`, `remove` and `query(appId, op, params)`. `op` must be in the app's read-only allowlist (§19.6), and `params` are validated by a schema per op. **v0.1 has no write ops.** Writes arrive with SF2's agents and approvals.
+- **Full UIs are isolated.** Each factory app's full UI runs in its own `WebContentsView` with partition `persist:factory-<id>`, no preload, `sandbox: true`, and navigation locked to that app's origin. Other origins open in the system browser. Sign-in to the app happens inside that view against the app's own login (Authentik SSO where the app supports it, §39 §4). Its cookies never mix with the console's session.
+- **Deep links navigate only (D432 kept).** `loams://open/<area>[/<path>]`, where `area` ∈ {`console`, `data`, `factory`, `servers`}, is parsed against that allowlist. Anything else is dropped and logged. A second instance forwards its link to the first and exits.
+- **Renderer hardening:** `contextIsolation`, `sandbox`, no `nodeIntegration`, `webSecurity` on, `<webview>` refused, `window.open` denied except http(s) to the system browser, and permission requests denied except `clipboard-sanitized-write` and `notifications`.
+
+### 19.6 Factory panels in v0.1 (D660)
+
+Every panel is read-only and backed by an existing adapter method. "Op" is the IPC op name.
+
+| App | Ops (adapter method) | Panel |
+|---|---|---|
+| Forgejo | `repos` (`searchRepositories`), `issues` (`searchIssues`, type pulls/issues), `version` (`getVersion`) | Repositories, open pull requests, open issues |
+| Zulip | `streams`, `messages` (recent, by stream), `server` | Streams and the latest messages per stream |
+| Plane / ItsAPlan | `stats`, `issues` | Open issues by state |
+| GlitchTip | `organizations`, `issues` (unresolved) | Unresolved issues with counts |
+| OpenPanel | `insights` (visitors, sessions, top pages), `health` | Metric tiles |
+| Matomo | `visits` (`VisitsSummary.get`), `pages`, `health` | Metric tiles |
+| Langfuse | `traces` (recent), `daily` (`/metrics/daily`), `health` | Recent traces, daily cost and tokens |
+| OpenObserve | none | Full UI only |
+
+- Task 10's implementer fixes each op's exact adapter method and parameters by reading the adapter's `service.ts`, and records the table in `apps/desktop-electron/src/main/factory/ops.ts`.
+- Each app also has `health`. It is shown as the tile status: `unconfigured`, `ok`, `auth_failed` or `unreachable`.
+
+### 19.7 Updates and signing (D661, carrying D490)
+
+- **The updater is off unless a feed is configured.** The feed is `LOAMS_UPDATE_FEED` at build time, written into `app-update.yml`. There is no default host.
+- **A manifest needs a valid signature.** Before an update is downloaded, the feed's `latest*.yml` must carry a detached Ed25519 signature (`latest*.yml.sig`) that verifies against the public key compiled into the app (`src/main/update/pubkey.ts`). That key is separate from the CLI's release key (Q494). An unsigned manifest, or one signed by another key, is refused.
+- **Policy (from dsh-desktop):**
+  - the first check is 15 s after startup, plus jitter;
+  - then every 6 h, and after the system resumes;
+  - `autoDownload` is off, so the user clicks to download;
+  - the update installs on restart.
+- **Signing comes from owner secrets:**
+  - macOS: Developer ID, hardened runtime and notarization (Q420, Q491).
+  - Windows: Authenticode through Jsign (Q421).
+  - Linux: AppImage, `.deb`, `.rpm` and `.pkg.tar.zst`. The `.rpm` goes through the SignPath flow (D621), and the others are GPG-signed as in `docs/release/packaging.md`.
+- Without secrets, CI builds unsigned artifacts and labels them so.
+
+### 19.8 Platforms, telemetry, tests (D662–D665)
+
+- **D662: platforms.** Linux x86_64 and aarch64, macOS Apple silicon and x64, Windows x86_64 (D494 plus macOS x64, which costs nothing in Electron). Electron is pinned exactly in `apps/desktop-electron/package.json`. The pinned version is the newest stable release that is at least two weeks old on the day Task 1 runs.
+- **D663: no telemetry (D498 kept).** Crash reports are only written locally (`crashReporter` with `uploadToServer: false`). The About dialog has "Open logs folder". There is no remote crash endpoint until the owner names one.
+- **D664: tests.** Each layer has its own tests:
+  - Vitest for main-process units, which have no Electron import in their pure cores, and for the console plugins.
+  - A fake engine (a Node script that serves `GetInstance`) for the supervisor.
+  - Playwright's `_electron` for one smoke test per OS in CI: launch, the local engine is ready, the console loads, Data Studio lists collections, and the factory home shows unconfigured tiles.
+- **D665: location and tooling.** `apps/desktop-electron` joins the pnpm workspace as `@loams/desktop` and the Nx graph as project `loams-desktop-electron`. The root `build:desktop` script points at it. Biome, the pnpm and Nx pins, and the `tools/monorepo/check.py` rules apply unchanged.
+
+### 19.9 Open questions
+
+| ID | Question | Default until answered |
+|---|---|---|
+| Q621 | The update feed host for desktop releases | None; the updater stays off |
+| Q622 | Is ItsAPlan the Plane-compatible product the factory means, or is plane.so? | Ship the ItsAPlan adapter under the label "Plane (ItsAPlan)" |
+| Q623 | Should the desktop bundle the engine binary on Windows, or ship it remote-only (D488)? | Bundle it if Task 15's Windows smoke test is green, otherwise remote-only |
+| Q624 | A remote crash-report endpoint | None (D663) |
