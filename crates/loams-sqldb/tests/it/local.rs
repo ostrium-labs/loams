@@ -151,19 +151,34 @@ async fn wait_ready(rt: &LocalRuntime, b: &BranchId, want: usize, within: Durati
     }
 }
 
-/// root@localhost over the member's Unix socket (auth_socket, R2.10). Under
-/// rootless Podman the host user is the container's root.
-async fn root(rt: &LocalRuntime, b: &BranchId, index: u32) -> mysql_async::Conn {
-    let socket = rt
-        .socket_path(b, index)
-        .expect("state")
-        .expect("member has a port");
+/// The IT's own user, created by `extra_init_sql` at bootstrap: root cannot
+/// log in (secure-bootstrap with no socket, R2.10/R2.11). Loopback only, no
+/// password, test only.
+const IT_USER: &str = "loams_it";
+
+async fn connect(rt: &LocalRuntime, b: &BranchId, index: u32) -> mysql_async::Conn {
+    let st = rt.pool_status(b).await.expect("status").expect("pool");
+    let m = st
+        .members
+        .iter()
+        .find(|m| m.index == index)
+        .expect("member");
     let opts = mysql_async::OptsBuilder::default()
-        .socket(Some(socket.to_string_lossy().into_owned()))
-        .user(Some("root"));
-    mysql_async::Conn::new(opts)
-        .await
-        .expect("root over the socket")
+        .ip_or_hostname(m.mysql_addr.ip().to_string())
+        .tcp_port(m.mysql_addr.port())
+        .user(Some(IT_USER));
+    match mysql_async::Conn::new(opts).await {
+        Ok(c) => c,
+        Err(e) => {
+            let logs = engine_out(rt, &["logs", &m.name]);
+            let tail: Vec<&str> = logs.lines().rev().take(30).collect();
+            panic!(
+                "{IT_USER} at {}: {e}\n{}",
+                m.mysql_addr,
+                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+            );
+        }
+    }
 }
 
 async fn q(conn: &mut mysql_async::Conn, sql: &str) -> String {
@@ -217,6 +232,10 @@ async fn local_runtime_starts_and_stops_a_pool() {
     config.status_port_base = STATUS_PORT_BASE;
     // A first bootstrap at 0.25 vCPU takes minutes; memory stays enforced.
     config.cpu_limits = false;
+    config.extra_init_sql = vec![
+        format!("CREATE USER '{IT_USER}'@'127.0.0.1'"),
+        format!("GRANT ALL PRIVILEGES ON *.* TO '{IT_USER}'@'127.0.0.1'"),
+    ];
     let rt = LocalRuntime::new(config).expect("runtime");
 
     // One member: the keyspace's first bootstrap.
@@ -245,7 +264,7 @@ async fn local_runtime_starts_and_stops_a_pool() {
         "init.sql failed:\n{logs}"
     );
 
-    let mut c = root(&rt, &branch, 0).await;
+    let mut c = connect(&rt, &branch, 0).await;
     assert_eq!(q(&mut c, "SELECT CAST(1 AS CHAR)").await, "1");
     assert_eq!(
         q(&mut c, "SELECT @@version").await,
@@ -259,11 +278,11 @@ async fn local_runtime_starts_and_stops_a_pool() {
         q(&mut c, "SELECT CAST(@@global.tidb_mem_quota_query AS CHAR)").await,
         ((768u64 * 2 / 5) << 20).to_string()
     );
-    // SEM (R2.9): even root cannot see restricted variables.
+    // SEM (R2.9): ALL PRIVILEGES does not reach restricted variables.
     let hidden: Result<Option<String>, _> = c.query_first("SELECT @@global.tidb_redact_log").await;
     assert!(
         hidden.is_err(),
-        "SEM off: tidb_redact_log visible to root: {hidden:?}"
+        "SEM off: tidb_redact_log visible: {hidden:?}"
     );
     // A marker that a second bootstrap or a lost keyspace would not keep.
     c.query_drop("SET GLOBAL tidb_mem_quota_query = 123456789")
@@ -271,7 +290,7 @@ async fn local_runtime_starts_and_stops_a_pool() {
         .expect("set marker");
     c.disconnect().await.expect("disconnect");
 
-    // Root lockdown (R2.10): no root over TCP.
+    // Root lockdown (R2.10, R2.11): no root over TCP, and no socket.
     let tcp = mysql_async::OptsBuilder::default()
         .ip_or_hostname(m0.mysql_addr.ip().to_string())
         .tcp_port(m0.mysql_addr.port())
@@ -284,7 +303,7 @@ async fn local_runtime_starts_and_stops_a_pool() {
     // A second member: a warm start on the bootstrapped keyspace.
     rt.scale(&branch, 2).await.expect("scale 2");
     wait_ready(&rt, &branch, 2, Duration::from_secs(120)).await;
-    let mut c1 = root(&rt, &branch, 1).await;
+    let mut c1 = connect(&rt, &branch, 1).await;
     assert_eq!(q(&mut c1, "SELECT CAST(1 AS CHAR)").await, "1");
     c1.disconnect().await.expect("disconnect");
 
@@ -314,7 +333,7 @@ async fn local_runtime_starts_and_stops_a_pool() {
         "resume bootstrapped again:\n{logs}"
     );
     assert!(!logs.contains("executing -initialize-sql-file"), "{logs}");
-    let mut c = root(&rt, &branch, 0).await;
+    let mut c = connect(&rt, &branch, 0).await;
     assert_eq!(
         q(&mut c, "SELECT CAST(@@global.tidb_mem_quota_query AS CHAR)").await,
         "123456789"
@@ -350,7 +369,7 @@ async fn local_runtime_starts_and_stops_a_pool() {
         format!("{0} {0}", Class::S.memory_bytes()),
         "memory and swap limits"
     );
-    let mut c = root(&rt, &branch, 0).await;
+    let mut c = connect(&rt, &branch, 0).await;
     assert_eq!(q(&mut c, "SELECT CAST(1 AS CHAR)").await, "1");
     c.disconnect().await.expect("disconnect");
 

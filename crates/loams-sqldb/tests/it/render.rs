@@ -159,8 +159,10 @@ fn memory_limits_follow_the_class() {
     assert_eq!(Class::Xs.memory_mib(), 768, "R2.1: xs is 0.75 GiB");
 }
 
-/// R2.9, R2.10: Security Enhanced Mode is on, and the first bootstrap
-/// creates root as `auth_socket` on the pod-local socket only.
+/// R2.9, R2.10, R2.11: Security Enhanced Mode is on; the first bootstrap
+/// creates root as `auth_socket`, and no Unix socket is opened, so root
+/// cannot log in at all (v8.5.8 panics on a socket connection when the
+/// PROXY protocol is on, `pkg/server/server.go` startNetworkListener).
 #[test]
 fn sem_and_secure_bootstrap_are_on() {
     for endpoints in [desktop(), kubernetes()] {
@@ -178,11 +180,7 @@ fn sem_and_secure_bootstrap_are_on() {
                 Some(true)
             );
             assert_eq!(sec.get("skip-grant-table"), None);
-            // root@localhost (auth_socket) is reachable only through this socket.
-            assert_eq!(
-                t["socket"].as_str(),
-                Some(format!("{}/tidb-{{Port}}.sock", render::SOCKET_DIR).as_str())
-            );
+            assert_eq!(t["socket"].as_str(), Some(""), "no Unix socket listener");
         }
     }
 }

@@ -207,12 +207,10 @@ async fn member_arguments_limit_swap_and_keep_tls_labels() {
         run.contains(&tls),
         "TLS mount must be read-only, not relabelled: {run}"
     );
-    // TiDB's socket directory (R2.10), per pool.
-    let sock = format!(
-        "{}:/var/run/tidb:rw,z",
-        h.dir.join("pools").join(a.as_str()).join("run").display()
+    assert!(
+        !run.contains("/var/run/tidb"),
+        "no socket directory (R2.11): {run}"
     );
-    assert!(run.contains(&sock), "socket mount missing: {run}");
     assert!(
         run.contains(&Images::load().expect("pins").tidb().reference()),
         "{run}"
@@ -237,4 +235,23 @@ async fn run_job_replaces_a_stale_container() {
     };
     assert_eq!(h.rt.run_job(&spec).await.expect("job").exit_code, 3);
     assert_eq!(h.containers(), vec![]);
+}
+
+/// R2.10: bootstrap-only statements (Task 11's `ri_control`; tests' own
+/// users) are appended to the rendered init.sql, after the globals.
+#[tokio::test]
+async fn extra_init_sql_is_appended() {
+    let mut h = Harness::new("extra-sql", 46_700);
+    let mut config = h.rt.config().clone();
+    config.extra_init_sql = vec!["CREATE USER 'x'@'127.0.0.1'".into()];
+    h.rt = LocalRuntime::new(config).expect("runtime");
+    let a = br('g');
+    h.rt.ensure_pool(&a, Class::Xs, 1).await.expect("ensure");
+    let sql = std::fs::read_to_string(h.dir.join("pools").join(a.as_str()).join("init.sql"))
+        .expect("init.sql");
+    let expected = format!(
+        "{}CREATE USER 'x'@'127.0.0.1';\n",
+        loams_sqldb::render::tidb_init_sql(Class::Xs)
+    );
+    assert_eq!(sql, expected);
 }

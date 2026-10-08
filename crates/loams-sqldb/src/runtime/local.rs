@@ -4,8 +4,7 @@
 //!
 //! State lives in `state_dir/<branch>/`: `pool.json` (class, replicas, the
 //! ports given to each member index), the rendered `tidb.toml` and
-//! `init.sql`, mounted read-only into every member, and `run/`, TiDB's
-//! socket directory. Containers carry
+//! `init.sql`, mounted read-only into every member. Containers carry
 //! `io.loams.sqldb.*` labels; a member whose rendered config, image or class
 //! changed (its fingerprint label) is replaced.
 
@@ -110,6 +109,11 @@ pub struct LocalRuntimeConfig {
     pub cpu_limits: bool,
     /// Grace before a stopped member is killed.
     pub stop_timeout: Duration,
+    /// Statements appended to the rendered `init.sql`, run once at the
+    /// keyspace's first bootstrap: Task 11's `ri_control` (root cannot log
+    /// in, R2.10/R2.11) and tests' own users. Never a plaintext secret in
+    /// production: use `IDENTIFIED WITH tidb_auth_token` or a stored hash.
+    pub extra_init_sql: Vec<String>,
 }
 
 impl LocalRuntimeConfig {
@@ -137,6 +141,7 @@ impl LocalRuntimeConfig {
             port_span: 1_000,
             cpu_limits: true,
             stop_timeout: Duration::from_secs(10),
+            extra_init_sql: Vec::new(),
         }
     }
 }
@@ -206,24 +211,6 @@ impl LocalRuntime {
         })
     }
 
-    /// The host path of a member's Unix socket, once the member has a port.
-    /// Under rootless Podman the host user is the container's root, so this
-    /// socket authenticates as TiDB's `root@localhost` (`auth_socket`).
-    pub fn socket_path(
-        &self,
-        branch: &BranchId,
-        index: u32,
-    ) -> Result<Option<PathBuf>, RuntimeError> {
-        Ok(self
-            .load(branch)?
-            .and_then(|r| r.ports.get(&index).copied())
-            .map(|(port, _)| {
-                self.pool_dir(branch)
-                    .join("run")
-                    .join(format!("tidb-{port}.sock"))
-            }))
-    }
-
     /// The settings.
     pub fn config(&self) -> &LocalRuntimeConfig {
         &self.config
@@ -261,10 +248,13 @@ impl LocalRuntime {
     /// Writes `tidb.toml` and `init.sql`; returns the members' fingerprint.
     fn render(&self, branch: &BranchId, class: Class) -> Result<String, RuntimeError> {
         let dir = self.pool_dir(branch);
-        let run = dir.join("run");
-        std::fs::create_dir_all(&run).map_err(|e| io_state(&run, &e))?;
+        std::fs::create_dir_all(&dir).map_err(|e| io_state(&dir, &e))?;
         let toml = render::tidb(branch, class, &self.config.endpoints);
-        let sql = render::tidb_init_sql(class);
+        let mut sql = render::tidb_init_sql(class);
+        for stmt in &self.config.extra_init_sql {
+            sql.push_str(stmt.trim_end_matches(';'));
+            sql.push_str(";\n");
+        }
         write_atomic(&dir.join("tidb.toml"), toml.as_bytes())?;
         write_atomic(&dir.join("init.sql"), sql.as_bytes())?;
         let mut h = Fnv64::new();
@@ -456,11 +446,6 @@ impl LocalRuntime {
         a.extend(strings([
             "-v",
             &format!("{}:{}:ro", self.config.tls_dir.display(), render::TLS_DIR),
-        ]));
-        // TiDB's socket, the only way to root@localhost (auth_socket, R2.10).
-        a.extend(strings([
-            "-v",
-            &format!("{}:{}:rw,z", dir.join("run").display(), render::SOCKET_DIR),
         ]));
         if let (true, Some(d)) = (
             self.config.endpoints.cluster_tls(),

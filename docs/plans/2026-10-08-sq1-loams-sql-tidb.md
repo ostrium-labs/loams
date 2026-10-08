@@ -772,11 +772,14 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
     - `SYSTEM_VARIABLES_ADMIN`, `CREATE USER` and `GRANT OPTION` for the `ri_*` roles.
 
     The tenant roles get none of the `RESTRICTED_*` privileges.
-- **R2.10 Root lockdown (controller ruling, fix round 1).** `[security] secure-bootstrap = true`, so the first bootstrap creates `root@localhost` with `auth_socket` (OS user `root`) instead of an open `root@%`. `socket = "/var/run/tidb/tidb-{Port}.sock"`. The IT checks that root over TCP is refused.
-  - **Who creates `ri_control` (Tasks 9 and 11).** The create saga does, right after bootstrap, as root over that socket:
-    - **desktop:** `LocalRuntime` mounts `state_dir/<branch>/run` there and exposes `socket_path(branch, member)`. Under rootless Podman the host user is the container's root, so `auth_socket` accepts it. Under rootful Docker it would not, so the desktop needs Podman or an `exec`.
-    - **Kubernetes (Task 14):** an `exec` into the pod, or a sidecar sharing the socket `emptyDir`.
-
-    Task 11 may instead create `ri_control` in `init.sql` as `IDENTIFIED WITH tidb_auth_token`, with the JWKS public key mounted (`[security] auth-token-jwks`), which keeps every secret out of rendered config.
-  - **Tests owed.** Task 9 owes `root_is_unreachable_over_tcp`, and Task 11 owes `ri_control_created_over_socket_only`.
+- **R2.10 Root lockdown (controller ruling, fix round 1; amended by R2.11).** `[security] secure-bootstrap = true`, so the first bootstrap creates `root@localhost` with `auth_socket` (OS user `root`) instead of an open `root@%`. With no socket (R2.11), root cannot log in at all. The IT checks that root over TCP is refused.
+  - **Who creates `ri_control` (Tasks 9 and 11).** Root is unreachable, so `ri_control` must be created by the bootstrap SQL itself. `LocalRuntimeConfig::extra_init_sql`, and Task 14's equivalent, append statements to the rendered `init.sql`.
+    - **Preferred, Task 11:** `CREATE USER 'ri_control'@'%' IDENTIFIED WITH 'tidb_auth_token'`, with the control plane's JWKS public key mounted (`[security] auth-token-jwks`). The control plane then logs in over TLS with a short-lived signed JWT, and no secret is ever rendered.
+    - **The fallback** is a `caching_sha2_password` stored hash (`IDENTIFIED WITH … AS '<hash>'`) of a 32-byte random password. It is never a plaintext password.
+    - **The grants** are those of R2.9.
+  - **Tests owed.** Task 9 owes `root_is_unreachable_over_tcp` (the IT already checks this). Task 11 owes `ri_control_created_by_bootstrap_sql_only` and `rendered_init_sql_holds_no_plaintext_secret`.
+  - **In the IT,** `extra_init_sql` creates a test-only `loams_it@127.0.0.1` with no password, reachable on loopback only.
+- **R2.11 No Unix socket: `socket = ""`.** TiDB v8.5.8 panics, and the whole `tidb-server` exits, on any Unix-socket connection while the PROXY protocol is configured. `startNetworkListener` in `pkg/server/server.go` reflects on the PROXY wrapper's `Conn` field and gets a zero `Value` (`reflect: call of reflect.Value.Interface on zero Value`, reproduced in the IT).
+  - **The consequence.** A pod-local socket would be both a crash vector and unusable for root, so no socket listener is opened (`sem_and_secure_bootstrap_are_on` checks `socket = ""`).
+  - **Candidate patch.** A fix is a candidate upstream patch for the §47 §5.4 patch queue.
 - **R2.7 Deviation.** `docs/sqldb/licensing.md` and the crate's `build.rs` were added. `build.rs` turns `LOAMS_IT_SQLDB=1` into the cfg `loams_it_sqldb`, so container tests are `#[ignore]` unless it is set.

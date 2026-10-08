@@ -36,9 +36,6 @@ pub const INIT_SQL_PATH: &str = "/etc/tidb/init.sql";
 pub const TLS_DIR: &str = "/etc/tidb/tls";
 /// TiDB → PD/TiKV TLS, same file names, when [`Endpoints::cluster_tls`].
 pub const CLUSTER_TLS_DIR: &str = "/etc/tidb/cluster-tls";
-/// The pod-local directory of TiDB's Unix socket (`tidb-<port>.sock`). With
-/// `secure-bootstrap`, root is `auth_socket` and reachable only here (R2.10).
-pub const SOCKET_DIR: &str = "/var/run/tidb";
 
 /// Renders `tidb.toml` for one member of `branch`'s pool. Per-member values
 /// (listen host and ports) are command-line flags, not config.
@@ -59,8 +56,10 @@ keyspace-name = \"{branch}\"
 split-table = false
 server-version = \"{SERVER_VERSION}\"
 enable-global-kill = true
-# root@localhost is auth_socket (secure-bootstrap): only this socket reaches it.
-socket = \"{SOCKET_DIR}/tidb-{{Port}}.sock\"
+# No Unix socket. v8.5.8 panics on a socket connection while the PROXY
+# protocol is on (pkg/server/server.go, startNetworkListener), and without a
+# socket the auth_socket root of secure-bootstrap cannot log in at all (R2.11).
+socket = \"\"
 # Runs once, at the keyspace's first bootstrap: memory limits and log
 # redaction (global variables in v8.5.8, not config items).
 initialize-sql-file = \"{INIT_SQL_PATH}\"
@@ -88,7 +87,7 @@ tls-version = \"TLSv1.2\"
 # so tenant ADMIN roles cannot reach system internals (R2.9).
 enable-sem = true
 # The first bootstrap creates root@localhost as auth_socket, never an open
-# root@% (R2.10).
+# root@%; with no socket, root is locked out (R2.10, R2.11).
 secure-bootstrap = true
 ",
         vcpu = Vcpu(class.vcpu_millis()),

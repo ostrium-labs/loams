@@ -9,8 +9,10 @@ keyspace-name = "br_0123456789abcdef"
 split-table = false
 server-version = "8.0.11-TiDB-v8.5.8-Loams"
 enable-global-kill = true
-# root@localhost is auth_socket (secure-bootstrap): only this socket reaches it.
-socket = "/var/run/tidb/tidb-{Port}.sock"
+# No Unix socket. v8.5.8 panics on a socket connection while the PROXY
+# protocol is on (pkg/server/server.go, startNetworkListener), and without a
+# socket the auth_socket root of secure-bootstrap cannot log in at all (R2.11).
+socket = ""
 # Runs once, at the keyspace's first bootstrap: memory limits and log
 # redaction (global variables in v8.5.8, not config items).
 initialize-sql-file = "/etc/tidb/init.sql"
@@ -38,7 +40,7 @@ tls-version = "TLSv1.2"
 # so tenant ADMIN roles cannot reach system internals (R2.9).
 enable-sem = true
 # The first bootstrap creates root@localhost as auth_socket, never an open
-# root@% (R2.10).
+# root@%; with no socket, root is locked out (R2.10, R2.11).
 secure-bootstrap = true
 cluster-ssl-ca = "/etc/tidb/cluster-tls/ca.crt"
 cluster-ssl-cert = "/etc/tidb/cluster-tls/tls.crt"
