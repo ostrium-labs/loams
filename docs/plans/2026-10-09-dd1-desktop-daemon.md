@@ -1,0 +1,1140 @@
+# DD1 — Loams Desktop Agent Daemon Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, **test first**: write the named tests, run them and watch them fail, then implement until they pass. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact values (names, paths, methods, exit codes, defaults, reasons), use them verbatim. The code is not pre-written in this plan (M0.3 Ruling 1). Record every deviation in "Rulings made during execution" at the end of this file.
+>
+> **Status: Planned** (2026-10-09). **Track DD**, the desktop daemon (design [§50](../design/50-loams-desktop-daemon.md), D780–D799, Q700–Q714). It carries out the owner's five decisions of 2026-10-09: one agent system in a per-user Rust daemon, no edge, no GPUI, the chat and plugin UI from dsh-desktop, and Linux linger off by default. It has six milestones, DD1a–DD1f, run in order; inside DD1d and DD1e some tasks run in parallel (see "Milestones and order"). Branches `dd1<m>-t<N>` (for example `dd1b-t7`), stacked per milestone, based on `dev`; PRs target `dev`.
+
+**Goal:** Loams Desktop has one agent system, `loams-agentd`:
+- a headless per-user Rust daemon, built from the zeron fork's engine and harnesses (without edge, WorkOS, Cursor, self-update, push or GPUI) plus the Electron agent ported to Rust;
+- it supervises `loams dev` and the compose stacks, so the data plane runs while the window is closed;
+- its agent turns survive the UI closing and resume after a crash or reboot, through `loams-durable`;
+- it is installed as a per-user service only with the user's consent, and secured by a per-user token that never reaches the renderer;
+- Electron is its client, with a chat, sessions, terminal and diff UI adapted from dsh-desktop's DSH client UI;
+- every merge keeps the shipping app working, and the TypeScript agent path is removed only after the end-to-end durability gate passes.
+
+**Architecture:**
+- **The daemon** is `crates/loams-agentd` (binary and library) in the root Cargo workspace, with the moved fork crates `loams-agentd-{sessions,harness,proto,rpc,doc,store,mcp,link,preview}` and the new crates `loams-agentd-{llm,loop,tools,factory,supervisor}` (§50 §4.1).
+- **Wire.** ndjson over a loopback WebSocket on an ephemeral port, as the fork's `rpc` crate does, with a token checked before the upgrade, `Hello`, roles and a generated method table (§50 §5.4, §7).
+- **TypeScript** types and the method table are generated with ts-rs into `web/packages/agentd-client` (`@loams/agentd-client`); its Node client runs only in Electron main; the renderer goes through preload (§50 §8).
+- **The native loop** is `HarnessId::LoamsAgent` inside the sessions engine, so every agent shares one session model (§50 §10).
+- **Durability.** An embedded Resonate server (SQLite, no HTTP listener) runs each native turn as a durable function with checkpointed model and tool steps; harness turns resume through their native session ids (§50 §11).
+- **Electron** keeps the console protocol and proxy, the factory app views, the updater, the tray and deep links; it installs and talks to the daemon; feature flags `engine.owner` and `agent.runtime` switch each area over with a fallback until DD1f (§50 §16).
+
+**Tech Stack:**
+- **Rust:** 1.97.1, edition 2024, workspace lints (the fork's `rust-toolchain.toml` pin is the same).
+- **Moved Rust dependencies** (from `apps/desktop/native/Cargo.lock`; Task 0 checks each against the root lock and `deny.toml`): `loro` 1.13, `rusqlite` 0.32.1 (`bundled`, same `libsqlite3-sys` 0.30.1 as the root), `tokio-tungstenite` 0.24, `portable-pty`, `keyring` 4.2, `connectrpc` 0.9.1, `reqwest` 0.12, `notify`, `ignore`, `nucleo-matcher`, `similar`, `json5`, `deser-hjson`, `plist`.
+- **New Rust dependencies** (Task 0 checks versions at least 14 days old, licences and that they build together):
+  - `ts-rs` (MIT), features `serde-compat`, `serde-json-impl`, `uuid-impl`;
+  - `jsonschema` (MIT), JSON Schema 2020-12 for tool arguments;
+  - `tokio-postgres` (MIT OR Apache-2.0) with `tokio-postgres-rustls`, and `mysql_async` (MIT OR Apache-2.0), default features off and rustls on;
+  - `notify-rust` (MIT OR Apache-2.0), Linux and Windows only.
+- **Reused Rust:** `loams-durable` and the pinned Resonate crates, `loams-proto` (generated Connect clients), `tokio`, `serde`, `tracing`, `sha2`, `libc`, `windows-sys`, `tempfile`, `proptest`.
+- **TypeScript:** the workspace toolchain (TypeScript 5.9.3, Node ≥ 22, pnpm, Biome, Vitest 5, Playwright 1.63), Electron 44.4.5 (pinned by AP1e), React 19, `@loams/ui`, `@loams/slots`, `@loams/cordis`. New, pinned exactly and at least 14 days old: `ws` (MIT; the WHATWG `WebSocket` cannot send an `Authorization` header), `@xterm/xterm` and `@xterm/addon-fit` (MIT).
+- **Platforms:** Linux x86_64 and aarch64 (systemd user units), macOS arm64 and x64 (launchd), Windows x86_64 (HKCU Run entry). CI has Linux runners for every gate; the Windows and macOS jobs of `desktop-electron.yml` build and run the unit tests.
+
+**Spec:**
+- [§50](../design/50-loams-desktop-daemon.md): all of it.
+- [§37](../design/37-desktop-and-mobile-apps.md) §19 (D652–D679), §18 for the fork's history.
+- [§21](../design/21-durable-execution.md) for Resonate, D138 and D141.
+- [Decision log](../design/13-decision-log.md): D138, D141, D220, D426, D433, D485–D489, D497, D652–D679, D780–D799; Q420, Q620, Q700–Q714.
+- As built: [AP1e](2026-10-08-ap1e-electron-desktop.md) (Tasks 15, 22, 24, 28, 29 and its rulings), [AP1n](2026-10-02-ap1n-native-desktop-zeron.md), the fork's `apps/desktop/native/LOAMS.md`, [LV1](2026-10-08-lv1-live-production.md) rulings T0-10 to T0-14 (the desktop follow-ups the supervisor port inherits).
+- AP1e console conventions: `.superpowers/sdd/2026-10-08-ap1e-electron-desktop/page-plugin-conventions.md` in the main checkout.
+- dsh-desktop (`~/Documents/Ostriumlabs/dsh-desktop`, read-only, HEAD `51f9896`): `LICENSE`, `package-lock.json`, `docs/{architecture,patch-plugin-contract}.md`, `patches/`.
+
+## Global Constraints
+
+- **Worktree.** `~/Documents/Ostriumlabs/loams-wt/dd1-<milestone>` (for example `dd1b-process-model`). Never commit in the main checkout. `git commit -s` (DCO). Never `git stash`.
+- **Commit areas:** `agentd`, `durable`, `desktop`, `web`, `ci`, `docs`.
+- **The build machine.** One cargo build at a time, the shared target directory from `~/Documents/.cargo/config.toml`. Never set `CARGO_TARGET_DIR`, never pass `--target-dir`, never build in `/tmp`. Build and test with `-p <crate>`. The moved fork used `--target-dir target`; Task 1 removes every such use.
+- **The app works at every merge.** Each PR that touches `apps/desktop-electron` or `web/` runs `pnpm nx run-many -t test typecheck -p loams-desktop-electron @loams/console plugins`, `pnpm --filter @loams/console build`, and the Linux Playwright smoke (`test/e2e`). An area moves to the daemon only behind its flag (`engine.owner`, `agent.runtime`) with the TypeScript path as the fallback, until Task 35.
+- **The renderer never sees the token.** Only Electron main reads `agentd.token`. Preload forwards only methods whose generated spec has `renderer: true`.
+- **No secrets in logs, replies or agent environments.** Provider keys, factory credentials, the RPC token and scoped run tokens never reach a log line, a span, an error text, an RPC reply, the journal, a session doc or a child process's environment. The canary tests of Tasks 7, 19 and 22 enforce it.
+- **No network calls** from the daemon except to: model providers the user configured, the user's factory apps, the supervised engine and stacks on loopback, and harness installs the user started. No edge, no update feed, no telemetry (D663).
+- **Wire changes** go through `crates/loams-agentd-proto` and are followed by regenerating `web/packages/agentd-client/src/gen/` (`cargo test -p loams-agentd-proto export_bindings`). `ts_bindings_are_fresh` must pass.
+- **Platform code** for Windows and macOS is written in the same task as the Linux code, behind `cfg`, and compiles in the `desktop-electron.yml` Windows and macOS jobs. Linux carries the gates.
+- **dsh-desktop is read-only.** Code from the DSH client UI packages is taken only from the published tarballs verified against `dsh-desktop/package-lock.json`'s `integrity` hashes (Task 28), and every adapted file carries the header of §50 §14.1.
+- **AP1e's console rules hold** (page-plugin conventions): `@loams/ui` components first, Tailwind utilities with token colours only, `rounded-none`/`rounded-pill`, lucide icons, loading, error and empty states, no raw HTML, no remote images.
+
+## Rulings made while writing this plan
+
+| # | Ruling | Why | Cost if wrong |
+|---|---|---|---|
+| 1 | **The fork crates move with `git mv` in one commit per crate group, then are edited.** No history rewriting, no subtree split | `git log --follow` keeps working; review sees moves and edits apart | Larger first PR |
+| 2 | **The RPC framing stays the fork's ndjson** (`{id, method, params}`, `{id, ok|err|item|done}`), not Connect or gRPC | The engine, `mcp` and their tests already speak it; streams and cancellation are built; no codegen for Rust | A second wire beside Connect in the repository |
+| 3 | **Method names stay flat PascalCase** (`ResolveApproval`, `WatchEngine`), as the fork's `methods` module has them | One namespace, no renames of the 109 existing names that survive | Collisions are caught by the method table test |
+| 4 | **`agentd.json` and `agentd.token` live in the daemon's data directory, not `$XDG_RUNTIME_DIR`** | One place on every OS; the runtime dir disappears at logout, which breaks linger | The token file survives a reboot; it is regenerated at every start anyway |
+| 5 | **Electron copies the binaries into the runtime directory by calling the bundled binary**: `resources/bin/loams-agentd install-runtime --from <resources/bin> --to <userData>/agentd/runtime` | The copy, hash check, `current` switch and garbage collection are Rust and tested once for three OSes | Electron depends on the bundled binary being runnable before install |
+| 6 | **Native transcripts are a table in the session store** (`native_chats`), not Resonate step results | Steps hold one turn; the transcript spans the chat and must be read without replay | Two writes per step (store and checkpoint) |
+| 7 | **The native loop's events reuse `AgentEvent`**; only `ApprovalRequested` and `ApprovalResolved` are new variants | The UI renders one event type for every harness | Provider-specific detail (thinking signatures) stays out of events and in the transcript |
+| 8 | **Approvals resolve only through `ResolveApproval` with role `owner`**; scoped run tokens can never call it | A harness agent must not approve the native loop's writes through its MCP shim | None |
+| 9 | **`loams-durable` gains `DurableConfig.serve_http` (default `true`)** instead of the daemon running Resonate without the crate | One durable stack; `loams`'s behaviour is unchanged | A field the engine never sets |
+| 10 | **The TypeScript factory adapters are not ported; only the D660 read-only ops are**, with a request-parity suite | The adapters' full surface is used by the browser console, not by the desktop | Two implementations of about 20 read-only ops until the console moves to the daemon too |
+
+## Milestones and order
+
+| Milestone | Tasks | Scope | Runs |
+|---|---|---|---|
+| — | 0 | Reconcile with the code as built | First |
+| **DD1a** — headless daemon crates | 1–5 (5) | Move and rename the fork crates into the root workspace; delete GPUI and headed mode; strip the edge, WorkOS, Cursor, updates and push; the headless CI guard; notices | Second. Electron is untouched; nothing ships |
+| **DD1b** — process model and contract | 6–13 (8) | Lock, discovery, token, `Hello`; RPC security and roles; per-user services and linger; ts-rs types, method table and fixtures; the Electron client; the daemon ships alongside; consent, tray and stop; upgrades | Third. After Task 11 every build ships the daemon in child mode |
+| **DD1c** — supervision moves | 14–17 (4) | The Rust engine supervisor and stack manager; Electron behind `engine.owner`; the default flips | Fourth |
+| **DD1d** — the agent in Rust | 18–27 (10) | Providers, tool registry and scrubbing, engine tools, SQL tools, secrets and their import, factory ops, the loop as a harness with approvals, durable turns, chat import, Electron behind `agent.runtime` | Fifth. Tasks 18–23 run in parallel after Task 9; 24 needs 18–19; 25 needs 24; 26 needs 24; 27 needs 20–26 |
+| **DD1e** — the UI from dsh-desktop | 28–32 (5) | The DSH study and port map; the session store and chat components; sessions and reattach; terminal and diffs; plugin slots and Settings › Plugins | Task 28 may start any time after Task 0; 29–32 need Task 9 and a fake daemon, and land after Task 27 |
+| **DD1f** — switch, remove, review, release | 33–38 (6) | The end-to-end durability gate; the agent default flips; the TypeScript path is removed; security review; docs; exit report | Last, in order |
+
+39 tasks in all (0–38).
+
+## Review Focus
+
+1. **Local access control.** No client without the token reaches a method; a browser never does; the renderer reaches only `renderer: true` methods; a scoped run token reaches only its own session's MCP methods and never `ResolveApproval`. Tests: Task 7 (`upgrade_without_token_is_401`, `origin_header_is_403`, `foreign_host_is_403`, `scoped_token_cannot_resolve_approval`, `scoped_token_bound_to_session`), Task 10 (`client_sends_no_origin`), Task 11 (`preload_forwards_only_renderer_methods`).
+2. **Secrets.** No secret appears in a log, span, reply, journal, doc or child environment; keys stay bound to their origin; the migration deletes the old vault only after verification. Tests: Task 19 (`canary_never_leaves`), Task 22 (`key_is_origin_bound`, `configure_reply_has_no_key`, `import_then_verify_then_delete`), Task 14 (`engine_env_is_scrubbed`).
+3. **Durability semantics.** A write tool runs at most once across crashes; an approval survives a restart and cannot be settled from outside; budgets do not reset. Tests: Task 25 (`write_tool_runs_at_most_once_across_crash`, `pending_approval_survives_restart`, `durable_api_has_no_listener`, `budgets_continue_after_restart`), Task 33 (the e2e gate).
+4. **Behavioural parity of the ports.** The Rust supervisor, stack manager, providers, loop, SQL fences and factory ops behave as their TypeScript originals on the same inputs. Tests: Task 14 (the `engine.test.ts` cases), Task 15 (`stacks.test.ts` cases), Task 18 (`sse_fixtures_match_ts_events`), Task 21 (`sql_lex_corpus_agrees`), Task 23 (`factory_requests_match_ts_adapters`), Task 24 (`loop_scenarios_match_ts`).
+5. **Headless.** No GUI crate in the daemon's tree on any target. Test: Task 4 (`scripts/ci/agentd-deps.sh` in CI, with a negative self-test).
+6. **No big-bang switch.** Each flag has a working fallback and a test for it. Tests: Task 16 (`falls_back_to_ts_supervisor_when_daemon_absent`), Task 27 (`chat_api_unchanged_on_daemon_runtime`).
+
+## File structure
+
+```
+Cargo.toml                                        # + workspace deps: loro, keyring, portable-pty, ts-rs, jsonschema, tokio-postgres, mysql_async, notify-rust …
+deny.toml                                         # licences of the moved and new crates (Task 0, Task 4)
+crates/loams-agentd/                              # bin + lib (from apps/desktop/native/apps/loams-desktop, rewritten)
+  src/{main.rs,lib.rs,cli.rs,config.rs,paths.rs,lock.rs,discovery.rs,token.rs,hello.rs,server.rs,roles.rs,
+       drain.rs,notify.rs,runtime_install.rs,import.rs,durable.rs}
+  src/service/{mod.rs,systemd.rs,launchd.rs,windows.rs,linger.rs}
+  tests/{lock.rs,discovery.rs,security.rs,service.rs,drain.rs,import.rs,durable.rs,e2e_support.rs}
+  {LICENSE,NOTICE,THIRD_PARTY_NOTICES.md,SCOPED_NOTICE.md,import-provenance.json}
+crates/loams-agentd-proto/                        # from crates/proto (+ brand, ts-rs, rpc.rs, fixtures)
+  src/{lib.rs,agent.rs,entities.rs,view.rs,…,rpc.rs,daemon.rs,chat.rs,secrets.rs,factory.rs,engine.rs,stacks.rs,brand.rs}
+  fixtures/*.json   tests/{fixtures.rs,ts_contract.rs}
+crates/loams-agentd-sessions/                     # from crates/engine, remote parts removed
+crates/loams-agentd-harness/                      # from crates/harness, cursor removed
+crates/loams-agentd-rpc/                          # from crates/rpc, device_room removed, token + roles
+crates/loams-agentd-doc/  crates/loams-agentd-store/  crates/loams-agentd-mcp/
+crates/loams-agentd-link/  crates/loams-agentd-preview/
+crates/loams-agentd-llm/                          # new: anthropic.rs, openai.rs, sse.rs, presets.rs, fixtures/
+crates/loams-agentd-loop/                         # new: loop.rs, budgets.rs, registry.rs, scrub.rs, secret.rs, approvals.rs, harness.rs, transcript.rs, durable_turn.rs
+crates/loams-agentd-tools/                        # new: engine.rs, live.rs, durable.rs, connectors.rs, sql/{lex.rs,caps.rs,pg.rs,mysql.rs,neon.rs}
+crates/loams-agentd-factory/                      # new: ops.rs, apps.rs, health.rs, fixtures/
+crates/loams-agentd-supervisor/                   # new: engine.rs, binary.rs, ports.rs, log_rotate.rs, env.rs, stacks.rs, compose.rs, tests/bin/fake-engine.rs
+crates/loams-durable/src/{config.rs,embed.rs}     # serve_http (Task 25)
+apps/desktop/                                     # deleted (Task 1; provenance moves to crates/loams-agentd)
+apps/desktop-electron/
+  scripts/fetch-agentd.mjs                        # Task 11
+  electron-builder.config.cjs  NOTICE             # Tasks 11, 28, 37
+  src/main/agentd/{client.ts,discover.ts,runtime.ts,mode.ts,consent.ts,upgrade.ts,ipc.electron.ts,relay.ts,import-chats.ts,import-secrets.ts}
+  src/main/{index.ts,shell/{tray-model.ts,tray.electron.ts,quit.ts},engine/ipc.electron.ts,stacks/ipc.electron.ts,agent/ipc.electron.ts,factory/ipc.electron.ts,sql/ipc.electron.ts}
+  src/preload/index.ts  src/shared/{contracts.ts,deeplink.ts}
+  test/agentd-*.test.ts  test/e2e/{daemon.spec.ts,durability.spec.ts}
+web/packages/agentd-client/                       # new: @loams/agentd-client
+  src/{index.ts,types.ts,client.ts,frames.ts,reducer.ts,gen/**}  test/{fixtures.test.ts,client.test.ts,requests.test.ts}
+web/packages/slots/src/                           # slot contract fields (Task 32)
+web/plugins/agent/src/{session/*,chat/*,sessions/*,terminal/*,diffs/*,markdown.ts,index.tsx}
+web/plugins/desktop-settings/src/{plugins.tsx,background.tsx}
+web/apps/console/src/cordis/{desktop.ts,safe-mode.ts}
+scripts/ci/agentd-deps.sh
+.github/workflows/{ci.yml,monorepo.yml,desktop-electron.yml,desktop-electron-release.yml,desktop-agentd-e2e.yml}
+docs/design/{50-loams-desktop-daemon.md,37-desktop-and-mobile-apps.md,13-decision-log.md,README.md}
+docs/plans/{README.md,dd1-exit-report.md}  docs/security/agentd-threat-model.md  docs/guides/desktop/background-agents.md
+```
+
+## Shared contracts (all tasks use these names)
+
+- **Binary and subcommands:** `loams-agentd run [--service|--child|--worker] --config <path>`, `loams-agentd service install|uninstall|start|stop|status|enable-linger|disable-linger`, `loams-agentd install-runtime --from <dir> --to <dir>`, `loams-agentd mcp`, `loams-agentd status`, `loams-agentd version`.
+- **Exit codes:** `0` stopped; `3` already running; `4` invalid config; `70` internal error.
+- **Service names:** systemd `loams-agentd.service`; launchd label `dev.loams.agentd`; Windows Run value `LoamsAgentd`; keyring service `dev.loams.agentd`.
+- **Files in `<userData>/agentd/`:** `config.toml`, `agentd.json`, `agentd.token`, `agentd.lock`, `runtime/<version>/`, `runtime/current` (Windows `runtime/current.txt`), `store/`, `durable.db`, `logs/agentd.log`.
+- **Bundled files in `resources/bin/`:** `loams`, `loams-agentd` (`.exe` on Windows), `SHA256SUMS`, `VERSION`.
+- **Protocol:** `AGENTD_PROTOCOL: u32 = 1` (`loams_agentd_proto::rpc`).
+- **Environment:** `LOAMS_AGENTD_RUN_TOKEN`, `LOAMS_AGENTD_PORT`, `LOAMS_AGENTD_SESSION_ID` (set only for the injected MCP shim); `LOAMS_AGENTD_CONFIG` (development override of `--config`).
+- **Config (`config.toml`):**
+
+  ```toml
+  [paths]
+  engine_data = "<userData>/engine"
+  logs = "<logs>"
+  stacks_source = "<resources>/stacks"
+  stacks_run = "<userData>/stacks"
+  connectors = "<resources>/connectors.json"
+  [engine]
+  auto_start = true
+  [daemon]
+  mode = "child"            # child | service
+  notifications = true
+  ```
+
+- **Electron settings (`settings.json`):** `daemon.background` (`ask` | `on` | `off`, default `ask`), `daemon.linger` (default `false`), `daemon.notifications` (default `true`), `engine.owner` (`electron` | `daemon`), `agent.runtime` (`electron` | `daemon`), `plugins.disabled` (string array).
+- **Rust types** (`loams-agentd-proto`):
+
+  ```rust
+  pub struct MethodSpec { pub name: &'static str, pub kind: MethodKind, pub params: &'static str,
+                          pub result: &'static str, pub role: Role, pub renderer: bool }
+  pub enum MethodKind { Unary, Stream }
+  pub enum Role { Owner, Mcp }
+  pub struct Hello { pub client: ClientKind, pub client_version: String, pub protocol: u32 }
+  pub struct HelloReply { pub protocol: u32, pub version: String, pub build_sha: String, pub mode: DaemonMode,
+                          pub pid: u32, pub started_at_ms: i64, pub role: Role, pub features: Vec<String> }
+  pub enum DaemonMode { Service, Child }
+  pub enum ToolRisk { Read, Write }
+  pub enum ApprovalDecision { Once, Always, Deny }
+  // AgentEvent gains:
+  ApprovalRequested { call_id: String, tool: String, args: serde_json::Value, risk: ToolRisk },
+  ApprovalResolved  { call_id: String, decision: ApprovalDecision },
+  // HarnessId gains LoamsAgent (wire "loams-agent") and loses Cursor
+  pub enum EngineState { Stopped, Starting { attempt: u32 }, Ready { url, es_url, flight_url, durable_url, live_url: Option<String>, pid },
+                         Failed { reason: String, log_path: String } }
+  pub struct DaemonStatus { pub mode: DaemonMode, pub draining: bool, pub running_turns: u32,
+                            pub pending_approvals: u32, pub engine: EngineState, pub version: String }
+  ```
+
+- **New RPC methods** (with role and `renderer`): `Hello` (any, no), `DaemonStatus` (owner, yes), `WatchDaemonStatus` (owner, yes), `Drain` (owner, no), `Shutdown` (owner, no), `SetConfig` (owner, no), `EngineState` / `WatchEngine` / `StartEngine` / `StopEngine` (owner, yes), `SetLivePd` (owner, no), `EngineLogPath` (owner, yes), `StacksList` / `StackState` / `WatchStacks` / `StartStack` / `StopStack` / `StackLogPath` (owner, yes), `ListProviders` / `ConfigureProvider` / `TestProvider` (owner, yes), `ImportSecrets` (owner, no), `ImportChats` (owner, no), `ResolveApproval` (owner, yes), `WatchSession` (owner, yes), `FactoryList` / `FactoryConfigure` / `FactoryTest` / `FactoryRemove` / `FactoryQuery` (owner, yes), `PgTenants` / `PgTimelines` / `PgCreateBranch` / `PgWalStatus` / `PgConnection` / `PgRevealPassword` / `PgQuery` (owner, yes), `WesqlConnection` / `WesqlRevealPassword` / `WesqlSchemas` / `WesqlTables` / `WesqlQuery` (owner, yes). The fork's surviving methods keep their names; Task 9 sets their role and `renderer`.
+- **Error reasons** (`{err}` text prefix, also the TypeScript `code`): `unauthenticated`, `forbidden_role`, `protocol_mismatch`, `agentd_draining`, `unknown_method`, `bad_params`, `key_required`, `unknown_provider`, `invalid_url`, `tool_unavailable_remote_server`, `not_found`, `engine_not_ready`, `keyring_unavailable`.
+- **Resonate ids:** function `loams.agentd.turn`; promises `t<turnId>:llm:<n>`, `t<turnId>:approval:<callId>`, `t<turnId>:tool:<callId>:intent`, `t<turnId>:tool:<callId>`; group `loams-agentd`, process `agentd`.
+- **Preload API** (`LoamsDesktopApi.agentd`, `apps/desktop-electron/src/shared/contracts.ts`):
+
+  ```ts
+  agentd: {
+    status(): Promise<DaemonStatus | { unavailable: true; reason: string }>;
+    onStatus(cb: (s: DaemonStatus | { unavailable: true; reason: string }) => void): () => void;
+    call<M extends RendererMethod>(method: M, params: Params<M>): Promise<IpcResult<Result<M>>>;
+    subscribe<M extends RendererStream>(method: M, params: Params<M>, cb: (item: Item<M>) => void,
+                                        onEnd?: (err?: string) => void): () => void;
+    background: { get(): Promise<'ask' | 'on' | 'off'>; set(v: 'on' | 'off'): Promise<IpcResult<void>>;
+                  linger(on: boolean): Promise<IpcResult<void>>; stop(): Promise<void> };
+  };
+  ```
+
+---
+
+### Task 0: Reconcile with the code as built
+
+**Files:** read:
+- `apps/desktop/native/` (every crate, `Cargo.toml`, `Cargo.lock`, `LOAMS.md`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `SCOPED_NOTICE.md`), `apps/desktop/{project.json,import-provenance.json}`;
+- `apps/desktop-electron/src/main/**`, `src/shared/contracts.ts`, `src/preload/index.ts`, `test/**`, `electron-builder.config.cjs`, `scripts/fetch-engine.mjs`;
+- `crates/loams-durable/src/**`; root `Cargo.toml`, `Cargo.lock`, `deny.toml`;
+- `web/plugins/agent/`, `web/packages/{slots,platform-electron,console-host}/`, `web/apps/console/src/cordis/desktop.ts`;
+- `.github/workflows/{monorepo,ci,desktop-electron,desktop-electron-release,desktop-sign}.yml`;
+- `dsh-desktop/{package.json,package-lock.json}`.
+
+Write the reconciliation into this plan's "Rulings made during execution" (`T0-1`…).
+
+**Consumes:** §50 §2 (each row checked against `dev`; every difference is listed with its resolution).
+
+**Produces:** a findings note covering:
+1. **The fork's RPC surface.** Every name in `rpc/src/lib.rs::methods`, marked keep, delete (edge, WorkOS, updates, push, GPUI-only) or renamed, with the deletions matching §50 §4.2. The list becomes Task 9's input.
+2. **Edge and WorkOS reach.** Every module and function that touches `edge_url`, `EdgeConfig`, `Auth`, `LinkCache`, `HostRelay`, `chat2`, `/blob/`, `/preview/{org}/ws` or WorkOS; where removing it changes local behaviour (for example `WorkspaceHost` rows that only exist for sync).
+3. **"Push" as built.** What the fork means by push (edge nudge, device relay, any mobile push) and where each lives, so Task 3 removes all of it.
+4. **Dependency merge.** For every fork dependency: the root lock's version, whether one version satisfies both, `links` conflicts, and `deny.toml` verdicts. The new dependencies of the Tech Stack with versions at least 14 days old and their licences.
+5. **`loams-durable`'s embed.** Whether a server can run with no listener today; the exact Rust SDK API for durable functions, steps (`ctx.run`) and promises that Task 25 uses; how a task is redelivered after a crash.
+6. **Harness resume support.** For Claude Code, Codex, opencode, Pi and each ACP agent: how the driver resumes a native session today, if at all (input to Task 25 and Q706).
+7. **Electron's userData and logs paths** on each OS as `app-paths.ts` resolves them (input to `config.toml`), and whether any path contains characters a systemd `ExecStart` or a launchd plist must escape.
+8. **Platform facts flagged (verify) in §50:** SMAppService with an unsigned app; a logon-triggered scheduled task created by a standard user; polkit's default for `set-self-linger`; `notify-rust` on macOS from an unbundled binary; whether a systemd user manager can run in the CI container for Task 33. Each with its source.
+9. **The owner's answers to Q700–Q714,** if given. Otherwise §50's defaults stand.
+
+**Tests:** none (a reading task).
+
+**Steps:** read the files listed; build nothing beyond `cargo metadata` and `cargo tree`; write the findings as `T0-*` rows; for each difference from §50, say which task absorbs it; commit.
+
+**Commit:** `docs: DD1 task 0 findings`.
+
+---
+
+## DD1a — The headless daemon crates
+
+### Task 1: Move the fork's headless crates into the root workspace
+
+**Files:**
+- moved with `git mv` (Ruling 1): `apps/desktop/native/crates/{engine,harness,proto,rpc,doc,sync,mcp,loams-desktop-link,preview}` → `crates/loams-agentd-{sessions,harness,proto,rpc,doc,store,mcp,link,preview}`; `apps/desktop/native/apps/loams-desktop` → `crates/loams-agentd`; `apps/desktop/native/{LICENSE,NOTICE,THIRD_PARTY_NOTICES.md,SCOPED_NOTICE.md}` and `apps/desktop/import-provenance.json` → `crates/loams-agentd/`;
+- deleted: `apps/desktop/native/crates/{ui,voice,syntax,markdown,theme,loams-desktop-brand}` (brand strings move into `loams-agentd-proto/src/brand.rs`), `apps/desktop/native/{Cargo.toml,Cargo.lock,rust-toolchain.toml,README.md,LOAMS.md,dist,scripts}`, `apps/desktop/{project.json,README.md,VALIDATION.md,verify_import.py,test_verify_import.py}`;
+- changed: root `Cargo.toml` (workspace dependencies), every moved `Cargo.toml` (package names, `workspace = true` dependencies, `license = "MIT"` kept), `crates/loams-agentd/src/main.rs`, `pnpm-workspace.yaml` or `nx.json` if they name `apps/desktop`.
+
+**Consumes:** T0 items 1, 2 and 4.
+
+**Produces:**
+- packages `loams-agentd`, `loams-agentd-{sessions,harness,proto,rpc,doc,store,mcp,link,preview}`, all building in the root workspace;
+- `loams-agentd` with `clap` subcommands `run`, `mcp`, `status`, `version` (the others arrive in Tasks 6 and 8). `run` is the fork's `headless` path. There is no headed mode, no `appshot`, no `--noop-browser`, and no dependency on any deleted crate;
+- `sync` reduced to `loams-agentd-store` only as far as compiling requires in this task; its edge clients are deleted in Task 2.
+
+**Tests:**
+- Every moved crate's existing test suite passes under its new name, except tests of deleted features, each listed with its reason in the ruling row.
+- `loams_agentd_version_runs`: `loams-agentd version` prints the workspace version and exits 0.
+- `no_crate_named_loams_desktop`: a workspace test reads `cargo metadata` and fails if any package is named `loams-desktop*`.
+- `scripts/docs/check-decision-ids.sh` reports no dangling citation under `crates/loams-agentd*`. The fork's `loams-desktop-link` cites D467 and D468, which the decision log does not declare (checked 2026-10-09); Task 1 rewrites those comments to cite §37 §18 instead.
+
+**Steps:**
+1. Write the two new tests (they fail: no package).
+2. `git mv` each group in its own commit.
+3. Merge dependencies into the root `Cargo.toml` per T0-4; remove `--target-dir` from every script that moved.
+4. Delete the GUI crates and headed mode; fix imports until `cargo check -p loams-agentd` passes.
+5. Run `cargo test -p <crate>` for each moved crate, one at a time.
+6. Commit.
+
+**Commit:** `agentd: move the zeron fork's headless crates into the root workspace`; `agentd: delete GPUI, headed mode and the UI-only crates`.
+
+### Task 2: Strip the edge
+
+**Files:**
+- `crates/loams-agentd-rpc/src/{lib.rs,device_room.rs}` (deleted);
+- `crates/loams-agentd-store/src/*` (keep `store.rs`, `types.rs`; delete `chat_client*`, `registry*`, `socket*`, `dial.rs`, `wake.rs`, `net_path.rs`, `sync_jobs.rs`, `budget.rs`, `chat_frames.rs`);
+- `crates/loams-agentd-sessions/src/{lib.rs,doc_host.rs,workspace_host.rs,chat2_host.rs,diff_sync.rs,rpc.rs,sessions.rs}`;
+- `crates/loams-agentd-preview/src/{signaling.rs,peer.rs,mux.rs,login.rs}` (deleted), `lib.rs`, `service.rs`;
+- `crates/loams-agentd/src/main.rs` (`DEFAULT_EDGE_URL` and `edge_url_from_env` gone).
+
+**Consumes:** T0-1, T0-2.
+
+**Produces:**
+- `EngineConfig` without `edge_url`, `edge_token`, `org_id`; `DocHostConfig`, `WorkspaceHostConfig` and `CheckoutDiffSync::start` without `EdgeConfig`;
+- the local profile only (`EngineProfile::development` renamed `EngineProfile::local`);
+- `PreviewService` with local discovery and routing only;
+- the RPC methods T0-1 marked edge-only removed from `methods` and from `EngineRpc`.
+
+**Tests:**
+- `no_edge_symbols`: a test greps the `loams-agentd*` sources (excluding `tests/fixtures`) for `edge_url`, `EdgeConfig`, `device_room`, `chat2`, `HostRelay`, `LinkCache`, `/blob/`, `edge.loams.invalid` and fails on any hit.
+- `local_session_roundtrip` (sessions): a mock-harness run in a fresh data dir produces the same doc rows as before the strip (the fork's existing mock-run test, kept green).
+- `preview_local_routing_still_works`: the fork's local discovery test, kept green.
+
+**Steps:** write `no_edge_symbols` (fails); delete module by module, keeping `cargo test -p loams-agentd-sessions` green after each; run the preview and rpc tests; commit.
+
+**Commit:** `agentd: remove the edge sync, relay and preview signaling (D781)`.
+
+### Task 3: Strip WorkOS, Cursor, self-update and push
+
+**Files:**
+- `crates/loams-agentd-sessions/src/{auth.rs,local_import.rs}` (deleted), `profile.rs`, `lib.rs`, `harness_updates.rs`, `rpc.rs`;
+- `crates/loams-agentd/src/{auth_cli.rs,update_cli.rs}` (deleted), `main.rs`;
+- `crates/loams-agentd-harness/src/cursor/` (deleted), `lib.rs`, `catalog.rs`;
+- `crates/loams-agentd-proto/src/agent.rs` (`HarnessId::Cursor` removed);
+- the `update` crate's last references.
+
+**Consumes:** T0-1, T0-3.
+
+**Produces:**
+- no WorkOS client id, no `Auth`, no synced profile, no local-to-synced import;
+- `HarnessId` without `Cursor`; a stored `"cursor"` harness value deserializes to `HarnessId::Unknown(String)` (new variant) and such sessions open read-only with the notice "This agent is no longer supported";
+- `harness_updates.rs` without background polling (`start()` removed); the manual `UpdateHarness` method stays;
+- no `UpdateStatus`, `ApplyUpdate`, nudge, relay, `RetryDelivery`, `RelayCommand`, `FocusChat` or connectivity methods.
+
+**Tests:**
+- `no_remote_feature_symbols`: grep, as in Task 2, for `workos`, `WORKOS`, `cursor_sdk`, `@cursor/sdk`, `Updater`, `ApplyUpdate`, `Nudge`, `RelayCommand`.
+- `old_cursor_session_opens_read_only`: a doc fixture with harness `"cursor"` loads, and a send answers `harness_unsupported`.
+- `harness_updates_has_no_timer`: constructing the coordinator spawns no task (a test hook counts spawns).
+
+**Steps:** tests first; delete; keep `cargo test -p loams-agentd-sessions -p loams-agentd-harness -p loams-agentd-proto` green; commit.
+
+**Commit:** `agentd: remove WorkOS, the Cursor shim, self-update and push (D781)`.
+
+### Task 4: The headless guard and CI
+
+**Files:** `scripts/ci/agentd-deps.sh`, `scripts/ci/agentd-deps.test.sh`, `.github/workflows/{ci.yml,monorepo.yml}`, `deny.toml`.
+
+**Consumes:** Tasks 1–3.
+
+**Produces:**
+- `agentd-deps.sh` as in §50 §4.3; it prints the offending packages and their path (`cargo tree -i`);
+- a CI job `agentd` on changes to `crates/loams-agentd*/**`, `Cargo.lock`, `scripts/ci/agentd-*`: `agentd-deps.sh`, `cargo clippy -p 'loams-agentd*' -- -D warnings`, `cargo test` for each `loams-agentd*` crate;
+- the `monorepo.yml` steps for `apps/desktop/native` removed;
+- `deny.toml` updated for the moved crates' licences (MIT for zeron code) and any new licence T0-4 found.
+
+**Tests:**
+- `agentd-deps.test.sh`: runs the script's filter on a canned `cargo tree` output containing `wry v0.50.0` and expects exit 1, and on a clean list expects exit 0.
+- The `agentd` CI job is green on the PR.
+
+**Steps:** write the self-test (fails); write the script; wire CI; `cargo deny check licenses`; commit.
+
+**Commit:** `ci: guard loams-agentd against GUI dependencies (D782)`.
+
+### Task 5: Notices and provenance
+
+**Files:** `crates/loams-agentd/{NOTICE,README.md}`, `crates/loams-agentd/import-provenance.json`, root `NOTICE` (if the repository has one), `docs/design/37-desktop-and-mobile-apps.md` (a status line on §18 pointing at §50).
+
+**Consumes:** Task 1's moved notices.
+
+**Produces:**
+- `crates/loams-agentd/NOTICE`: zeron's MIT notice ("Copyright (c) 2026 Wing"), the statement that the `loams-agentd*` crates marked `license = "MIT"` derive from zeron at the commit in `import-provenance.json`, and that the other crates are Apache-2.0;
+- `README.md`: what the daemon is, how to run it from a checkout (`cargo run -p loams-agentd -- run --child --config <file>`), and a link to §50;
+- every moved crate's `Cargo.toml` keeps `license = "MIT"`; every new crate (Tasks 14–23) declares the workspace licence.
+
+**Tests:** `licence_fields_are_set`: a workspace test reads `cargo metadata` and checks each `loams-agentd*` package's `license` against the table in `crates/loams-agentd/README.md`.
+
+**Steps:** write `licence_fields_are_set` (fails until the table exists); write the NOTICE and README; set the fields; run `cargo test -p loams-agentd`; commit.
+
+**Commit:** `docs: notices and provenance for loams-agentd`.
+
+---
+
+## DD1b — The process model and the contract
+
+### Task 6: Data directory, single instance, discovery, token and `Hello`
+
+**Files:** `crates/loams-agentd/src/{config.rs,paths.rs,lock.rs,discovery.rs,token.rs,hello.rs,main.rs,cli.rs}`, `tests/{lock.rs,discovery.rs}`; `crates/loams-agentd-proto/src/{rpc.rs,daemon.rs}`.
+
+**Consumes:** the fork's `InstanceLock`; Shared contracts (files, exit codes, `Hello`).
+
+**Produces:**
+- `Config::load(path) -> Result<Config, ConfigError>` for `config.toml`; an invalid file exits 4 with the field named;
+- `Paths::new(data_dir)` creating `<data>/agentd` as 0700 (an owner-only DACL on Windows);
+- `lock::acquire(&Paths) -> Result<InstanceLock, AlreadyRunning>`;
+- `token::rotate(&Paths) -> Result<Token, io::Error>`: 32 random bytes, base64url, written 0600 (owner-only DACL), atomically;
+- `discovery::publish(&Paths, &Discovery)` (atomic, 0600) and `discovery::read(&Paths) -> Option<Discovery>`; removed on clean exit;
+- the listener bound to `127.0.0.1:0`;
+- `Hello` handling and `AGENTD_PROTOCOL = 1`;
+- a second `run` exits 3 after confirming the first with `Hello`.
+
+**Tests:**
+- `second_instance_exits_3`: start one daemon in a temp data dir (under the test's target-relative temp root, never `/tmp`), start a second; it exits 3 and prints the first pid.
+- `discovery_written_after_bind_and_removed_on_exit`.
+- `token_file_is_owner_only`: mode `0o600` on Unix; on Windows the DACL has exactly the owner and SYSTEM.
+- `token_rotates_every_start`.
+- `hello_reports_versions_and_mode`.
+- `protocol_mismatch_closes`: `Hello { protocol: 2 }` answers `protocol_mismatch` and the connection closes.
+- `stale_discovery_is_ignored`: a discovery file with a dead pid does not stop a new daemon.
+- `invalid_config_exits_4`.
+
+**Steps:** tests first (they fail); implement; `cargo test -p loams-agentd`; commit.
+
+**Commit:** `agentd: single instance, discovery, token and Hello (D787)`.
+
+### Task 7: RPC security and roles
+
+**Files:** `crates/loams-agentd-rpc/src/{server.rs,auth.rs,roles.rs,limits.rs}`, `crates/loams-agentd/src/{server.rs,roles.rs}`, `crates/loams-agentd-sessions/src/sessions.rs` (the MCP shim injection), `crates/loams-agentd-mcp/src/{lib.rs,loams_desktop.rs}`, `crates/loams-agentd/tests/security.rs`, `crates/loams-agentd-rpc/fuzz/` (target `frame`).
+
+**Consumes:** Task 6's token and listener; the fork's `serve_ws_socket` Origin check.
+
+**Produces:**
+- the upgrade callback checks, in order: `Host == 127.0.0.1:<port>` (403); no `Origin` (403); `Authorization: Bearer` matching the main token (role `Owner`) or a live scoped run token (role `Mcp`) in constant time (401); otherwise the upgrade proceeds;
+- `OPTIONS` and any non-upgrade request answer 403 with no `Access-Control-*` header;
+- dispatch checks each method's `Role` from `METHODS` (`forbidden_role`), and for `Mcp` that the call's `sessionId` equals the token's session;
+- `ScopedTokens::issue(session_id) -> RunToken` and `revoke(run_id)`; the MCP shim gets `LOAMS_AGENTD_RUN_TOKEN`, `LOAMS_AGENTD_PORT`, `LOAMS_AGENTD_SESSION_ID`, never the main token; `loams-agentd mcp` reads those;
+- limits: 16 MiB frames, 64 streams per connection, 8 owner connections, and 250 ms added after each failed upgrade;
+- a failed authentication is logged with the peer port only.
+
+**Tests:**
+- `upgrade_without_token_is_401`, `wrong_token_is_401`, `origin_header_is_403` (even with the right token), `foreign_host_is_403` (`Host: evil.example:port`), `options_is_403_without_cors_headers`.
+- `scoped_token_cannot_resolve_approval`, `scoped_token_bound_to_session`, `scoped_token_dies_with_run`.
+- `mcp_shim_env_has_no_main_token`: the injected `McpServer.env` holds only the three scoped keys.
+- `token_never_logged`: a `tracing` capture over the auth tests contains neither token.
+- `frame_limit_enforced`.
+- Fuzz target `frame` builds; CI runs it 60 s.
+
+**Steps:** tests first; implement; run `cargo test -p loams-agentd-rpc -p loams-agentd`; commit.
+
+**Commit:** `agentd: token, Origin, Host and role checks on the RPC (D788)`.
+
+### Task 8: Per-user services and linger
+
+**Files:** `crates/loams-agentd/src/service/{mod.rs,systemd.rs,launchd.rs,windows.rs,linger.rs}`, `src/runtime_install.rs`, `src/main.rs`, `tests/service.rs`.
+
+**Consumes:** Task 6's paths and exit codes; the fork's `daemon.rs` (plist and unit rendering, `exec_path_for`).
+
+**Produces:**
+- `service install|uninstall|start|stop|status`:
+  - Linux: renders `loams-agentd.service` exactly as §50 §5.1 (quoted `ExecStart` to `runtime/current/loams-agentd run --service --config "<config>"`, no `Environment=` lines), `daemon-reload`, `enable --now`;
+  - macOS: renders `dev.loams.agentd.plist` (`RunAtLoad`, `KeepAlive {SuccessfulExit=false, Crashed=true}`, `ThrottleInterval 10`, stdout and stderr to `logs/agentd.log`), `launchctl bootstrap gui/<uid>`;
+  - Windows: writes the Run value with the quoted command and starts it detached;
+- `run --service` on Windows: the parent spawns `run --worker` in a Job Object (kill on close) and restarts it on exit codes other than 0, 3 and 4 with backoff 1, 2, 4, 8, 16, 30 s, at most 5 in 10 minutes;
+- `service enable-linger|disable-linger` (Linux only; elsewhere `unsupported`), running `loginctl enable-linger|disable-linger "$USER"` and returning its error text;
+- `install-runtime --from <dir> --to <dir>` (Ruling 5): verifies `SHA256SUMS`, copies both binaries to `<to>/<VERSION>/`, switches `current` atomically (symlink rename; `current.txt` on Windows), and keeps the newest two versions;
+- the login-shell `PATH` resolved at start through the harness's `shell_env`.
+
+**Tests:**
+- `systemd_unit_golden`, `launchd_plist_golden`, `windows_run_value_golden`: rendering against golden files, with a `userData` path containing a space.
+- `unit_has_no_environment_lines`.
+- `install_runtime_checks_hashes`: a tampered copy fails and `current` does not move.
+- `install_runtime_keeps_two_versions`.
+- `windows_parent_restarts_worker` (Windows only; `#[cfg(windows)]`, runs in the Windows CI job): a worker that exits 70 is restarted; one that exits 4 is not.
+- `linger_unsupported_off_linux`.
+- `systemd_install_roundtrip` (Linux, skipped with `skipped: needs a systemd user manager` when `systemctl --user is-system-running` fails): install, status shows active, uninstall removes the unit.
+
+**Steps:** goldens first; implement per OS; commit.
+
+**Commit:** `agentd: per-user service install, the runtime directory and linger (D784, D786)`.
+
+### Task 9: Wire types, the method table and fixtures (ts-rs)
+
+**Files:**
+- `crates/loams-agentd-proto/src/{lib.rs,rpc.rs,daemon.rs,chat.rs,secrets.rs,factory.rs,engine.rs,stacks.rs}` and every existing type file (`#[derive(TS)]`);
+- `crates/loams-agentd-proto/{fixtures/*.json,tests/{fixtures.rs,ts_contract.rs}}`;
+- new package `web/packages/agentd-client/{package.json,tsconfig.json,vitest.config.ts,src/{index.ts,types.ts,gen/**,fixtures.gen.ts},test/{fixtures.test.ts,requests.test.ts}}`;
+- `pnpm-workspace.yaml` (if packages are listed), Nx project wiring.
+
+**Consumes:** T0-1's surviving method list; Shared contracts.
+
+**Produces:**
+- `#[derive(TS)] #[ts(export)]` on every wire type, with `export_to` the package's `src/gen/`;
+- `METHODS: &[MethodSpec]` covering every surviving and new method, each with `role` and `renderer`;
+- a test `export_bindings` that writes `src/gen/*.ts`, `src/gen/methods.ts` (the table and the `Methods` type map) and `src/fixtures.gen.ts`;
+- `@loams/agentd-client` exporting `./types` (generated types and the method map; no Node imports) and `./client` (Task 10);
+- canonical fixtures for every type in `fixtures/`, written by `write_fixtures` from typed constructors.
+
+**Tests:**
+- Rust: `fixtures_roundtrip` (deserialize, serialize, identical canonical JSON); `ts_bindings_are_fresh` (regenerate into a temp dir under the target directory and diff); `methods_unique_and_complete` (unique names; every `EngineRpc` dispatch arm has a spec and vice versa); `ts_requests_parse` (every entry of `web/packages/agentd-client/test/requests.json` parses into its method's params type).
+- TypeScript: `fixtures.test.ts` (`tsc` checks `fixtures.gen.ts`'s `satisfies` lines; every `AgentEvent` fixture passes through `reduceSession`, whose `switch` ends in `assertNever`); `requests.test.ts` (typed builders write `requests.json`; the test fails if the committed file differs).
+
+**Steps:** write the Rust tests and an empty package (they fail); add the derives and the table; generate; write the TypeScript tests; commit generated files with the source.
+
+**Commit:** `agentd: generated TypeScript wire types and method table with ts-rs (D789)`.
+
+### Task 10: The Node client for Electron main
+
+**Files:** `web/packages/agentd-client/src/{client.ts,frames.ts,discover.ts,errors.ts}`, `test/{client.test.ts,fake-daemon.ts}`; `apps/desktop-electron/src/main/agentd/{client.ts,discover.ts}`.
+
+**Consumes:** Task 9's types; Task 6's discovery and token files; Task 7's rules.
+
+**Produces:**
+
+```ts
+export class AgentdClient {
+  static async connect(opts: { dataDir: string; clientVersion: string; signal?: AbortSignal }): Promise<AgentdClient>;
+  readonly hello: HelloReply;
+  call<M extends UnaryMethod>(method: M, params: Params<M>, opts?: { signal?: AbortSignal; timeoutMs?: number }): Promise<Result<M>>;
+  subscribe<M extends StreamMethod>(method: M, params: Params<M>, onItem: (i: Item<M>) => void): Subscription; // { done: Promise<void>; cancel(): void }
+  on(event: 'disconnected' | 'reconnected', cb: () => void): () => void;
+  close(): Promise<void>;
+}
+```
+
+- `ws` with `headers: { authorization: 'Bearer …' }`, no `origin`;
+- reconnect with backoff 0.25, 0.5, 1, 2, 4 s (max 4 s), re-reading discovery and the token each time, and re-issuing open subscriptions;
+- `AgentdError { code, message }` from `{err}` frames (the Shared contracts reasons);
+- the token is held in a private field and never logged; `toJSON` and `inspect` show `[redacted]`.
+
+**Tests:** against `fake-daemon.ts` (a `ws` server implementing `Hello`, a unary echo, a stream and errors):
+- `client_sends_token_and_no_origin` (asserts the upgrade headers);
+- `hello_mismatch_rejects`;
+- `stream_items_then_done`, `cancel_sends_cancel_frame`;
+- `reconnect_reissues_subscriptions` (the fake daemon restarts on a new port and rotates its token);
+- `errors_carry_codes`;
+- `token_not_in_errors_or_inspect`.
+
+**Steps:** write the fake daemon and the six tests (they fail); implement `frames.ts`, `discover.ts`, then `client.ts`; wire `apps/desktop-electron/src/main/agentd/client.ts` as a thin factory; run `pnpm --filter @loams/agentd-client test` and the desktop typecheck; commit.
+
+**Commit:** `web: @loams/agentd-client, the Node client for Electron main`.
+
+### Task 11: The daemon ships alongside
+
+**Files:**
+- `apps/desktop-electron/scripts/fetch-agentd.mjs`, `electron-builder.config.cjs`, `package.json` (scripts `fetch-agentd`);
+- `apps/desktop-electron/src/main/agentd/{runtime.ts,mode.ts,ipc.electron.ts,relay.ts}`, `src/main/index.ts`, `src/preload/index.ts`, `src/shared/contracts.ts`, `src/main/shell/{tray-model.ts,tray.electron.ts}`;
+- `.github/workflows/{desktop-electron.yml,desktop-electron-release.yml}`, `desktop-sign.yml` and the SignPath artifact configuration;
+- `apps/desktop-electron/test/{agentd-runtime.test.ts,agentd-preload.test.ts,tray.test.ts}`, `test/e2e/daemon.spec.ts`.
+
+**Consumes:** Tasks 6, 8, 9, 10.
+
+**Produces:**
+- `fetch-agentd.mjs`: like `fetch-engine.mjs` (`LOAMS_AGENTD_BIN`, else `cargo metadata`'s target directory; strip on Unix; never `CARGO_TARGET_DIR`), then writes `resources/bin/SHA256SUMS` (both binaries) and `resources/bin/VERSION`;
+- at launch, Electron runs `install-runtime` when `runtime/<VERSION>` is missing, writes `config.toml` (Shared contracts) and starts `runtime/current/loams-agentd run --child` with stdout and stderr to `<logs>/agentd.log`; it connects with `AgentdClient` and logs the `Hello`;
+- in this task nothing else uses the daemon: `engine.owner` and `agent.runtime` stay `electron`;
+- preload's `agentd` namespace (Shared contracts) with `call`/`subscribe` forwarded only for `renderer: true` methods (the list generated from `methods.ts`), subscriptions owned per `webContents` and cancelled on navigation, reload or close;
+- the tray gains a line "Background agents: running" / "stopped" / "unavailable";
+- the release workflows build `cargo build --release -p loams-agentd` with the engine, run `fetch-agentd`, and include `loams-agentd.exe` in SignPath's Windows artifact set.
+
+**Tests:**
+- `runtime_installed_once_per_version`, `config_toml_written_with_paths` (Vitest, with a fake `execFile`).
+- `preload_forwards_only_renderer_methods`: calling `Drain` or `ImportSecrets` through the preload bridge is refused before main touches the client.
+- `subscriptions_cancelled_on_reload`.
+- `tray_shows_daemon_line`.
+- e2e `daemon.spec.ts` (Linux): the packaged app starts, the daemon answers `Hello`, quitting the app stops the child daemon (child mode).
+- The existing Playwright smoke stays green.
+
+**Steps:** write the Vitest tests and the e2e spec (they fail); write `fetch-agentd.mjs` and the builder entries; add the runtime install, config writer and child start to `index.ts` behind a `try` that logs and continues (the app must start even if the daemon cannot); add the preload bridge and relay; update the workflows; run the desktop tests, `pnpm run package --linux --dir` and the smoke; commit.
+
+**Commit:** `desktop: bundle loams-agentd and run it alongside in child mode`.
+
+### Task 12: Consent, background mode, tray and explicit stop
+
+**Files:** `apps/desktop-electron/src/main/agentd/{consent.ts,mode.ts}`, `src/main/shell/{tray-model.ts,quit.ts}`, `src/main/index.ts`, `src/shared/{contracts.ts,deeplink.ts}`, `web/plugins/desktop-settings/src/background.tsx`, `web/plugins/agent/src/consent.tsx`, `crates/loams-agentd/src/{notify.rs,drain.rs}`, tests in both.
+
+**Consumes:** Tasks 8, 11; §50 §5.5–§5.6.
+
+**Produces:**
+- **Consent:** the first agent action, or opening Settings › Background agents while `daemon.background = ask`, shows the dialog of §50 §5.5 with no pre-selected button. The choice is stored, never asked again, and changeable in Settings.
+- **`on`:** `service install`, then Electron reconnects to the service daemon; `off`: `service uninstall` if installed, child mode.
+- **Quit:** in child mode, `Drain` then `Shutdown`; in service mode, nothing is stopped. `quitSequence` gains a `releaseDaemon` step before `stopEngine`.
+- **Tray:** "Background agents: running · N turns · M approvals", "Stop background agents" (`Drain`, then `service stop`), "Quit Loams Desktop" with the hint "(agents keep running)" in service mode. The badge counts pending approvals from `WatchDaemonStatus`.
+- **Settings › Background agents** (`web/plugins/desktop-settings`): the mode, "Keep running after I log out (Linux)" (only Linux, only in service mode, calls `enable-linger`/`disable-linger`, shows their errors), notifications on or off, "Remove background service".
+- **Notifications** (daemon): with no `owner` client connected, a pending approval or question and a failed turn post an OS notification (Linux D-Bus, Windows toast; none on macOS in DD1) whose action opens `loams://open/agent/<sessionId>`; the deep-link allowlist gains `agent`.
+- **Drain** (daemon): §50 §6.2 steps 1, 5 and 6 (the turn steps arrive with Tasks 24–25).
+
+**Tests:**
+- `consent_asked_once_without_default`, `background_on_installs_service`, `background_off_uninstalls_service` (fake service runner).
+- `quit_child_mode_drains_then_shuts_down`, `quit_service_mode_leaves_daemon`.
+- `tray_model_counts_from_daemon`, `stop_background_agents_drains_first`.
+- `linger_toggle_hidden_off_linux`, `linger_errors_shown`.
+- `deeplink_agent_allowed`, `deeplink_agent_rejects_bad_id`.
+- Rust: `notifies_only_without_owner_client`, `notification_carries_deeplink` (a fake notifier).
+
+**Steps:** tests first in both languages; implement the consent model as a pure module (`consent.ts`) with an Electron wrapper; the tray model; the settings section; the daemon's notifier behind a trait with a fake; run the desktop tests, the plugin tests and `cargo test -p loams-agentd`; commit.
+
+**Commit:** `desktop: background consent, tray state and explicit stop (D785, D786)`.
+
+### Task 13: Upgrades
+
+**Files:** `apps/desktop-electron/src/main/agentd/upgrade.ts`, `src/main/update/updater.electron.ts`, `src/main/index.ts`, `crates/loams-agentd/src/drain.rs`, tests.
+
+**Consumes:** Tasks 8, 11, 12; §50 §5.3.
+
+**Produces:**
+- at launch and after each reconnect, `planUpgrade(bundled: string, hello: HelloReply) -> 'none' | 'replace'`; `replace` when the versions or the protocol differ (the bundle is authoritative, downgrades included);
+- `replace`: `install-runtime`, `Drain { reason: 'upgrade', timeoutMs: 60000 }`, then restart through the service manager (service mode) or a new child (child mode); a protocol mismatch skips `Drain` (the old daemon is told to `Shutdown` if it accepts the call, else its pid is terminated);
+- `prepareToInstall` no longer stops the engine when `engine.owner = daemon`;
+- the daemon's `Drain` replies when drained and then exits 0 in service mode (the manager restarts it with the new `current`).
+
+**Tests:**
+- `plan_upgrade_table` (same, newer, older, protocol mismatch).
+- `upgrade_drains_then_restarts` (fake client and service runner).
+- `protocol_mismatch_skips_drain`.
+- `prepare_to_install_keeps_daemon_engine`.
+- Rust: `drain_then_exit_zero_in_service_mode`.
+
+**Steps:** write the pure `planUpgrade` table test first; implement; wire into the launch path after Task 11's runtime install; adjust `prepareToInstall`; run the tests and a manual upgrade between two locally built versions (recorded in the PR); commit.
+
+**Commit:** `desktop: upgrade the daemon from the bundle after an app update (D798)`.
+
+---
+
+## DD1c — Supervision moves to the daemon
+
+### Task 14: The engine supervisor in Rust
+
+**Files:** new crate `crates/loams-agentd-supervisor/{Cargo.toml,src/{lib.rs,engine.rs,binary.rs,ports.rs,log_rotate.rs,env.rs},tests/{engine.rs,bin/fake-engine.rs}}`; `crates/loams-agentd/src/server.rs` (RPC wiring); `crates/loams-agentd-proto/src/engine.rs`.
+
+**Consumes:** `apps/desktop-electron/src/main/engine/{supervisor,binary,ports,log-rotate}.ts` and `test/engine.test.ts`; Task 6's config.
+
+**Produces:**
+
+```rust
+pub struct EngineSupervisor { /* … */ }
+impl EngineSupervisor {
+    pub fn new(cfg: EngineSupervisorConfig) -> Self;  // binary, data_dir, log_file, live_pd, grace, poll, timeouts
+    pub fn state(&self) -> EngineState;
+    pub fn watch(&self) -> tokio::sync::watch::Receiver<EngineState>;
+    pub fn start(&self);
+    pub async fn stop(&self);
+    pub async fn dispose(&self);
+    pub async fn set_live_pd(&self, pd: Option<String>);
+    pub async fn adopt_or_start(&self, record: Option<EngineRecord>); // §50 §9.1 adoption
+}
+pub fn engine_args(o: &EngineArgsOpts) -> Vec<String>;     // same flags and order as engineArgs
+pub fn help_supports_live(help: &str) -> bool;              // also matches --live-store (LV1 T0-14)
+pub fn scrub_env(env: impl Iterator<Item=(OsString, OsString)>) -> Vec<(OsString, OsString)>;
+```
+
+with every number of §50 §9.1, `PR_SET_PDEATHSIG` on Linux, a Job Object on Windows, and `store/engine.json` for adoption; RPC `EngineState`, `WatchEngine`, `StartEngine`, `StopEngine`, `SetLivePd`, `EngineLogPath`.
+
+**Tests** (`fake-engine` serves `GetInstance` and can crash, hang or exit on command):
+- the cases of `engine.test.ts`, one Rust test each: `ready_after_get_instance_200`, `backoff_sequence_1_2_4_8_16_30`, `gives_up_after_5_restarts_in_10_minutes`, `not_ready_within_timeout_kills_and_fails`, `stop_sends_term_then_kill_after_grace`, `live_flags_only_when_supported_and_pd_set`, `set_live_pd_restarts_running_engine`, `missing_binary_fails_with_hint`.
+- `engine_args_match_ts`: the argument vectors equal those recorded from `engineArgs` for four cases (fixtures written by a Vitest test in `apps/desktop-electron/test/engine-args-fixture.test.ts`).
+- `engine_env_is_scrubbed`: `LOAMS_X_TOKEN`, `FOO_SECRET`, `BAR_API_KEY` and `LOAMS_AGENTD_RUN_TOKEN` are absent from the child's environment (the fake engine echoes its environment names).
+- `log_rotates_at_10mb_keeps_5`.
+- `adopts_running_engine`, `replaces_foreign_pid`.
+- `engine_dies_with_daemon` (Linux).
+
+**Steps:** export the argument fixtures from TypeScript; write the fake engine and the Rust tests (they fail); port module by module (`binary`, `ports`, `log_rotate`, `env`, then `engine`); wire the RPC; run `cargo test -p loams-agentd-supervisor`; commit.
+
+**Commit:** `agentd: the engine supervisor, ported from Electron (D790)`.
+
+### Task 15: The stack manager in Rust
+
+**Files:** `crates/loams-agentd-supervisor/src/{stacks.rs,compose.rs}`, `tests/stacks.rs`; `crates/loams-agentd/src/server.rs`; `crates/loams-agentd-proto/src/stacks.rs`.
+
+**Consumes:** `apps/desktop-electron/src/main/stacks/{stacks,runtime,ipc.electron}.ts`, `test/stacks.test.ts`.
+
+**Produces:** `StackManager` with the `STACKS` table (postgres, wesql, tikv: directories, required services, ports), runtime detection, the per-user copy keyed by version, `start`/`stop`/`state`/`watch`, `tikv_ready`, the shared-port group, timeouts, logs, and `bind_live_to_tikv(&StackManager, &EngineSupervisor)`; RPC `StacksList`, `StackState`, `WatchStacks`, `StartStack`, `StopStack`, `StackLogPath`.
+
+**Tests:** the cases of `stacks.test.ts` against a fake compose runner (`compose_runtime_detection_order`, `copy_once_per_version`, `required_services_decide_running`, `tikv_ready_requires_health_and_up_store`, `shared_port_group_blocks_second_stack`, `command_timeout_5_minutes`, `live_pd_follows_tikv_state`).
+
+**Steps:** port the `stacks.test.ts` cases first against a fake compose runner; implement; wire the RPC and the Live binding; run `cargo test -p loams-agentd-supervisor`; commit.
+
+**Commit:** `agentd: the compose stack manager, ported from Electron (D790)`.
+
+### Task 16: Electron behind `engine.owner`
+
+**Files:** `apps/desktop-electron/src/main/{index.ts,engine/ipc.electron.ts,stacks/ipc.electron.ts,protocol/handler.electron.ts,servers/registry.ts,shell/tray.electron.ts}`, `src/main/agentd/owner.ts`, tests.
+
+**Consumes:** Tasks 11, 14, 15.
+
+**Produces:**
+- `engineOwner(settings, daemonUp) -> 'electron' | 'daemon'`;
+- with `daemon`: the engine and stacks IPC handlers call the daemon (same `IpcResult` shapes), `engineState()` for the protocol handler and `registry.setLocalUrl` follow `WatchEngine`, `bindLiveToTikv` is not started in Electron, and the TypeScript supervisor is not constructed;
+- if the daemon becomes unavailable while `engine.owner = daemon`, Electron constructs its own supervisor (as today) and the tray says "Engine: managed by the app (daemon unavailable)";
+- default stays `electron` in this task.
+
+**Tests:** `engine_ipc_routes_to_daemon`, `stacks_ipc_routes_to_daemon`, `falls_back_to_ts_supervisor_when_daemon_absent`, `local_url_follows_daemon_engine`, `no_double_supervision` (never both supervisors running).
+
+**Steps:** tests first with a fake client; implement `owner.ts` as a pure decision and switch each IPC handler behind it; run the desktop tests and the smoke with `engine.owner` set both ways; commit.
+
+**Commit:** `desktop: read the engine and stacks from the daemon behind engine.owner`.
+
+### Task 17: The engine default moves to the daemon
+
+**Files:** `apps/desktop-electron/src/main/settings.ts` (defaults), `test/e2e/daemon.spec.ts`, `docs/design/50-loams-desktop-daemon.md` (§9.3 as built).
+
+**Consumes:** Tasks 12, 16.
+
+**Produces:** `engine.owner` defaults to `daemon`; in service mode the engine keeps serving after Electron quits.
+
+**Tests:** e2e (Linux, service mode via the Task 8 harness or the self-supervisor when no systemd user manager exists): `engine_survives_app_quit` (after quit, `GetInstance` on the engine URL from `agentd.json`'s `EngineState` answers 200), `reopen_shows_ready_engine_without_restart` (same pid). The full smoke stays green.
+
+**Steps:** write the e2e tests (they fail with the old default); flip the default; run the e2e suite and the smoke; update §50 §9.3; commit.
+
+**Commit:** `desktop: the daemon supervises the engine by default`.
+
+---
+
+## DD1d — The agent in Rust
+
+### Task 18: Providers
+
+**Files:** new crate `crates/loams-agentd-llm/{src/{lib.rs,types.rs,sse.rs,anthropic.rs,openai.rs,presets.rs,errors.rs},fixtures/**,tests/{anthropic.rs,openai.rs,sse.rs}}`; `apps/desktop-electron/test/fixtures/agent-sse/**` (exported once from the TypeScript tests).
+
+**Consumes:** `apps/desktop-electron/src/main/agent/providers/*`, `test/agent-providers.test.ts`.
+
+**Produces:**
+
+```rust
+pub enum ProviderEvent { Text{index,text}, Thinking{index,text}, Signature{index,signature}, RedactedThinking{index,data},
+    ToolUse{index,id,name,input: Option<Value>,raw: String}, Fallback{index,from:Option<String>,to:Option<String>},
+    Model{model}, Usage{input_tokens,output_tokens}, Stop{reason: ProviderStop} }
+pub enum ProviderStop { EndTurn, ToolUse, MaxTokens, Refusal, Other }
+pub struct TurnRequest { pub model: String, pub system: String, pub messages: Vec<Msg>, pub tools: Vec<ProviderTool> }
+#[async_trait] pub trait Provider: Send + Sync {
+    fn id(&self) -> &str;
+    async fn stream_turn(&self, req: TurnRequest, cancel: CancellationToken) -> Result<BoxStream<'static, Result<ProviderEvent, ProviderError>>, ProviderError>;
+}
+pub fn anthropic(o: AnthropicOptions) -> Arc<dyn Provider>;   // base_url, api_key: Secret, fallback: bool, http
+pub fn openai_compatible(o: OpenAiOptions) -> Arc<dyn Provider>; // id, base_url, api_key: Option<Secret>, include_usage
+pub const PRESETS: &[Preset];                                   // anthropic, deepseek, openai, ollama
+pub fn check_base_url(raw: &str) -> Result<Url, &'static str>;  // same messages as checkBaseUrl
+```
+
+with §50 §10.2's caching, adaptive thinking, fallback and usage rules; `ProviderError { status, message }` with the server's message capped at 500 characters.
+
+**Tests:**
+- `sse_fixtures_match_ts_events`: each recorded SSE stream (exported from the TypeScript provider tests with their expected events) yields the same events in Rust.
+- `anthropic_request_golden`: the request body for a two-turn chat with tools (cache_control on system, last user block and top level for first-party; none for a proxy base URL).
+- `fallback_only_when_opted_in_and_supported` (header and body).
+- `adaptive_thinking_for_current_models`.
+- `openai_tool_call_deltas_assemble`, `openai_refusal_maps_to_refusal`, `include_usage_per_preset`.
+- `invalid_tool_json_kept_raw`.
+- `check_base_url_rules` (the TypeScript cases).
+- `error_body_capped_and_prefers_json_message`.
+
+**Steps:** export the SSE fixtures from the TypeScript provider tests; write the Rust tests (they fail); port `sse`, then `anthropic`, `openai`, `presets`; run `cargo test -p loams-agentd-llm`; commit.
+
+**Commit:** `agentd: Anthropic and OpenAI-compatible providers (D791)`.
+
+### Task 19: Tool registry, scrubbing and secrets in memory
+
+**Files:** new crate `crates/loams-agentd-loop/src/{lib.rs,registry.rs,scrub.rs,secret.rs}`, `tests/{registry.rs,scrub.rs,canary.rs}`.
+
+**Consumes:** `agent/tools.ts`, `loop.ts::scrub`, `factory/host.ts::secretForms`, `redact.ts`, their tests.
+
+**Produces:**
+
+```rust
+pub struct Secret(/* private */);          // Debug, Display, Serialize print "[redacted]"; reveal() -> &str
+pub fn secret_forms(secrets: &[&str], plain: &[&str]) -> Vec<String>;  // raw, URL, form, base64 (±padding), Basic pairs
+pub fn redact(text: &str, forms: &[String]) -> Cow<str>;
+pub fn scrub_value(v: &mut serde_json::Value, forms: &[String]);
+pub struct ToolDef { pub name: String, pub description: String, pub risk: ToolRisk, pub schema: Value, pub run: ToolFn }
+pub struct ToolRegistry;  // register (name rule, duplicates, schema compiles), get, check(name, args) -> Option<String>, list
+pub fn result_text(v: &ToolOutput, max: usize) -> String;  // 20 000 default, truncation note as truncate()
+```
+
+**Tests:** the TypeScript cases ported (`bad_name_rejected`, `duplicate_rejected`, `schema_errors_joined`, `truncate_note_exact`); `secret_forms_match_ts` (fixture from `redact.test.ts`); `canary_never_leaves`: a `Secret` canary passed through `Debug`, `Display`, `serde_json`, `tracing` fields, `anyhow` chains and `redact` never appears in output.
+
+**Steps:** export the `redact` fixtures; tests first; implement; run `cargo test -p loams-agentd-loop`; commit.
+
+**Commit:** `agentd: tool registry, secret type and scrubbing`.
+
+### Task 20: Loams tools on the local engine
+
+**Files:** new crate `crates/loams-agentd-tools/src/{lib.rs,engine.rs,live.rs,durable.rs,connectors.rs,remote.rs}`, `tests/{engine.rs,live.rs}` with an in-process fake engine.
+
+**Consumes:** `agent/builtin-tools.ts`, `agent-tools/live.ts`, `agent/sql-guard.ts`, their tests; Task 14's `EngineState` URLs; Task 19's registry.
+
+**Produces:** the read and write tools of §50 §10.4 except SQL-on-stacks and factory, with the same names, descriptions, JSON Schemas and risk tags (schemas copied from the TypeScript definitions into `schemas/*.json` and shared by a fixture test); `sql_query` with `read_only_violation` before the engine call; `connectors_search` over the bundled catalogue; every tool answers `tool_unavailable_remote_server` with a one-line explanation when Electron reports a remote active server (`SetConfig { activeServer: { kind } }`).
+
+**Tests:**
+- `tool_schemas_match_ts` (names, descriptions, risks, schemas equal to the exported TypeScript list).
+- One behaviour test per tool against the fake engine, including `sql_query_refuses_writes_and_explain_analyze`, `live_mutate_is_write`, `durable_promise_create_is_write`.
+- `remote_server_tools_explain`.
+- `tool_errors_are_scrubbed`.
+
+**Steps:** export the TypeScript tool list (names, descriptions, risks, schemas) to `schemas/`; write the fake engine and the tests; port the tools one by one; run `cargo test -p loams-agentd-tools`; commit.
+
+**Commit:** `agentd: Loams engine tools over the local engine (D792)`.
+
+### Task 21: SQL services and least-privilege tools
+
+**Files:** `crates/loams-agentd-tools/src/sql/{lex.rs,caps.rs,pg.rs,mysql.rs,neon.rs}`, `tests/sql.rs`, `fixtures/sql-lex-corpus.json` (exported from `sql-lex.test.ts`); `crates/loams-agentd/src/server.rs` (the `Pg*` and `Wesql*` methods).
+
+**Consumes:** `src/shared/sql-lex.ts`, `src/main/sql/{caps,pg,wesql,neon}.ts`, their tests.
+
+**Produces:** the lexer (`is_single_statement`, `is_write`, `strip_sql` for postgres and mysql dialects); `SqlSession` over `tokio-postgres` (extended protocol, one statement, cursor fetch to the row cap) and `mysql_async` (streamed rows, connection dropped at the cap); caps 1 000 rows and 30 s; the read-only wrapper (`BEGIN READ ONLY` … `ROLLBACK`, `SET TRANSACTION READ ONLY` for mysql); tools `pg_sql`, `wesql_sql` (read) and `pg_branch_create` (write); the page RPCs with the exact shapes of the current IPC handlers; passwords returned only by `PgRevealPassword`/`WesqlRevealPassword` (owner role, renderer allowed, as today's reveal button).
+
+**Tests:** `sql_lex_corpus_agrees` (every corpus case gives the TypeScript verdict); `pg_read_only_rolls_back` and `pg_single_statement_enforced` (against the neon stack when `LOAMS_TEST_PG` is set, else skipped with a message, as `sql-integration.test.ts`); `mysql_stream_stops_at_cap`; `timeout_maps_to_code`; `errors_redact_passwords`.
+
+**Steps:** export the lexer corpus; tests first; port `lex`, `caps`, then the pg and mysql sessions and the tools; wire the page RPCs; run `cargo test -p loams-agentd-tools` (and the live-database cases with `LOAMS_TEST_PG` when a stack is up); commit.
+
+**Commit:** `agentd: SQL services and least-privilege SQL tools`.
+
+### Task 22: Secrets in the keyring and their import
+
+**Files:** `crates/loams-agentd-loop/src/keys.rs`, `crates/loams-agentd/src/{secrets.rs,import.rs}`, `crates/loams-agentd/tests/secrets.rs`; `apps/desktop-electron/src/main/agentd/import-secrets.ts`, `test/agentd-import-secrets.test.ts`.
+
+**Consumes:** `agent/providers/presets.ts::ProviderConfigs`, `factory/vault.ts`; Task 18's presets; Task 19's `Secret`.
+
+**Produces:**
+- `SecretStore` over `keyring` (service `dev.loams.agentd`, accounts `agent:<provider>`, `factory:<app>:<field>`) with a memory fallback (`persistent: false`) when the keyring is unavailable;
+- `ProviderConfigs` (port): saved base URL, model and fallback in `store/providers.json`; the key bound to the origin it was entered for; `info`, `list`, `configure`, `create`;
+- RPC `ListProviders`, `ConfigureProvider`, `TestProvider` (one tiny request, 20 s timeout, scrubbed errors), `ImportSecrets { entries: [{ key, url, fields }] } -> { imported, failed: [key] }`;
+- Electron, on the first `agent.runtime = daemon` start (Task 27 calls it): decrypt the vault, `ImportSecrets`, verify `hasKey` per entry through `ListProviders` and `FactoryList`, then delete `credentials.bin`; on any failure keep the file and retry at the next start.
+
+**Tests:**
+- Rust: `key_is_origin_bound` (changing the base URL's origin without a key deletes it and answers `key_required`), `configure_reply_has_no_key`, `memory_fallback_when_no_keyring`, `import_is_idempotent`, `test_provider_errors_scrubbed`.
+- Electron: `import_then_verify_then_delete`, `partial_import_keeps_vault`, `import_not_reachable_from_renderer`.
+
+**Steps:** tests first in both languages; implement `SecretStore` with a fake keyring backend for tests; port `ProviderConfigs`; the RPC; the Electron importer; run `cargo test -p loams-agentd-loop -p loams-agentd` and the desktop tests; commit.
+
+**Commit:** `agentd: provider keys and factory credentials in the OS keyring (D794)`.
+
+### Task 23: Factory ops in the daemon
+
+**Files:** new crate `crates/loams-agentd-factory/src/{lib.rs,apps.rs,ops.rs,health.rs}`, `fixtures/requests/*.json`, `tests/{ops.rs,parity.rs}`; `apps/desktop-electron/test/factory-requests-fixture.test.ts` (records the TypeScript adapters' requests); `crates/loams-agentd/src/server.rs`.
+
+**Consumes:** `src/main/factory/{apps,ops,host}.ts`, `test/factory-{ops,host}.test.ts`; Task 22's `SecretStore`.
+
+**Produces:** `FactoryApps` with the D660 op table (op, parameter schema, the HTTP request it makes), `health` (`unconfigured`, `ok`, `auth_failed`, `unreachable`), `test`, a 15 s timeout, `classify_error`, scrubbed errors; RPC `FactoryList`, `FactoryConfigure`, `FactoryTest`, `FactoryRemove`, `FactoryQuery`; the `factory_query` tool (read) listing the ops per app in its description as `builtin-tools.ts` does.
+
+**Tests:** `factory_requests_match_ts_adapters` (each op's method, path, query and header names equal the recorded TypeScript request); `unknown_op_rejected`; `params_validated_per_op`; `health_states`; `credentials_never_in_replies_or_errors`; `openobserve_has_no_ops`.
+
+**Steps:** record the TypeScript adapters' requests with the fixture test; write the Rust parity and op tests; port the op table app by app; wire the RPC and the tool; run `cargo test -p loams-agentd-factory`; commit.
+
+**Commit:** `agentd: the factory vault and read-only ops move to the daemon (D795)`.
+
+### Task 24: The native loop as a harness, with approvals
+
+**Files:** `crates/loams-agentd-loop/src/{loop.rs,budgets.rs,approvals.rs,harness.rs,transcript.rs,prompt.rs}`, `tests/{loop.rs,scenarios.rs}`, `fixtures/scenarios/*.json` (exported from `agent-loop.test.ts`); `crates/loams-agentd-proto/src/agent.rs` (`LoamsAgent`, approval events); `crates/loams-agentd-sessions/src/{registry.rs,sessions.rs,rpc.rs}`; `crates/loams-agentd-store/src/store.rs` (`native_chats`).
+
+**Consumes:** `agent/{loop,service}.ts`, `test/agent-loop.test.ts`; Tasks 18–23.
+
+**Produces:**
+- `LoamsAgentHarness: Harness` registered as `HarnessId::LoamsAgent`, with `models()` from the configured providers, `deterministic_turn_end() = true`, steering at iteration boundaries, and `run()` driving `run_turn`;
+- `run_turn(transcript, user_text, deps) -> StopReason` with §50 §10.3's rules, emitting `AgentEvent`s and saving the provider-exact transcript to `native_chats`;
+- approvals: `ApprovalRequested` before a `write` call without "always"; `ResolveApproval { sessionId, callId, decision }` (owner only); `ApprovalResolved`; the wall clock pauses while waiting; "always" persists on the session;
+- `WatchSession { sessionId, afterSeq? }`: a snapshot (nodes, pending approvals and questions, running) then events, with `seq` on each.
+
+**Tests:**
+- `loop_scenarios_match_ts`: every scenario exported from `agent-loop.test.ts` (scripted provider events, tool results, approvals) yields the same stop reason, the same stored messages and the same event sequence.
+- `budgets_and_clock_pause`, `max_tokens_answers_calls_without_running`, `dangling_tool_use_answered_on_cancel`, `refusal_stops_with_llm_error`, `fallback_drops_non_text_blocks`.
+- `approval_roundtrip`, `always_allow_persists`, `deny_answers_denied`.
+- `watch_session_snapshot_then_events`, `watch_session_after_seq_resumes`.
+- `loams_agent_listed_with_other_harnesses`.
+
+**Steps:** export the loop scenarios from `agent-loop.test.ts`; write the Rust scenario runner and the approval and watch tests (they fail); port the loop; implement the harness, the approval events and `WatchSession`; run `cargo test -p loams-agentd-loop -p loams-agentd-sessions`; commit.
+
+**Commit:** `agentd: the native agent loop as the LoamsAgent harness, with approvals (D791)`.
+
+### Task 25: Durable turns
+
+**Files:** `crates/loams-durable/src/{config.rs,embed.rs}`, `crates/loams-durable/tests/no_listener.rs`; `crates/loams-agentd-loop/src/durable_turn.rs`; `crates/loams-agentd/src/durable.rs`, `tests/durable.rs`; `crates/loams-agentd-sessions/src/{sessions.rs,run_journal.rs}` (harness resume).
+
+**Consumes:** T0-5, T0-6; Task 24.
+
+**Produces:**
+- `DurableConfig.serve_http: bool` (default `true`); `DurableServer` binds nothing when it is `false`; `loams`'s behaviour is unchanged;
+- the daemon embeds the server on `durable.db` and a runtime in group `loams-agentd`;
+- `loams.agentd.turn` with the steps and ids of the Shared contracts and §50 §11.2–§11.3 (model calls checkpointed; write intent before a write; approvals as promises settled only by `ResolveApproval`; budgets carried in step records);
+- at start, unfinished turns resume; their docs get an `interrupted` mark on partial text and one "Resumed after a restart" divider;
+- harness turns: a durable record of the native session id; on recovery, resume with the steer of §50 §11.5 when the harness supports it (per T0-6) and `resumeOnRestart` is on, else `interrupted` with a Resume action;
+- `Drain` completes §50 §6.2 steps 2–4.
+
+**Tests** (crashes are injected by a test hook that aborts the runtime between named points, and by killing a child daemon process in `tests/durable.rs`):
+- `durable_api_has_no_listener` (no listening socket owned by the process except the RPC port).
+- `completed_steps_not_reissued` (the scripted provider counts calls).
+- `interrupted_model_call_reissued_once`.
+- `write_tool_runs_at_most_once_across_crash` (crash after intent, before result: the tool's side-effect counter is 1 and the model gets the "may or may not" result).
+- `pending_approval_survives_restart`, `approval_cannot_be_settled_without_owner_rpc`.
+- `budgets_continue_after_restart`.
+- `harness_turn_resumes_with_steer` (mock harness with resume), `harness_without_resume_marked_interrupted`.
+- `drain_checkpoints_running_turns`.
+- `loams` crate: its durable tests still pass with the default.
+
+**Steps:** write `no_listener.rs` in `loams-durable` and add `serve_http`; run `cargo test -p loams-durable`; commit that alone; then write the crash tests (they fail), implement the turn function and recovery, then harness resume; run `cargo test -p loams-agentd-loop -p loams-agentd`; commit.
+
+**Commit:** `durable: serve_http option`; `agentd: durable agent turns that resume after a crash (D793)`.
+
+### Task 26: Chat import
+
+**Files:** `crates/loams-agentd/src/import.rs`, `tests/import.rs`, `fixtures/chats/*.json`; `apps/desktop-electron/src/main/agentd/import-chats.ts`, `test/agentd-import-chats.test.ts`.
+
+**Consumes:** `agent/store.ts` (`ChatRecord`, `isChatId`); Task 24's `native_chats` and session docs.
+
+**Produces:** `ImportChats { chats: ChatRecord[] } -> { imported: string[], skipped: string[], invalid: string[] }` (owner, not renderer); the mapping of §50 §10.7; Electron's importer (batches of 20, rename to `chats.imported-<timestamp>` only when every file was imported or skipped).
+
+**Tests:** `import_maps_messages_and_always_allow`, `import_idempotent_by_id`, `imported_chat_is_idle`, `thinking_signatures_preserved`; Electron: `invalid_file_left_in_place`, `directory_renamed_after_success`.
+
+**Steps:** write the fixtures and tests first; implement the mapping and the RPC; the Electron importer; run the tests; commit.
+
+**Commit:** `agentd: import Electron chats into daemon sessions (D796)`.
+
+### Task 27: Electron behind `agent.runtime`
+
+**Files:** `apps/desktop-electron/src/main/{agent/ipc.electron.ts,factory/ipc.electron.ts,sql/ipc.electron.ts,index.ts,agentd/runtime-switch.ts}`, tests.
+
+**Consumes:** Tasks 20–26; Task 11's relay.
+
+**Produces:**
+- with `agent.runtime = daemon`: the existing `chat:*` IPC handlers call the daemon (`ListProviders`, `ConfigureProvider`, sessions for `list`/`get`/`create`/`send`/`cancel`/`remove`, `ResolveApproval`) and map `WatchSession` events back to today's `ChatEvent`s, so the current `@loams/plugin-agent` panel works unchanged; the `factory:*`, `pg:*` and `wesql:*` handlers call the daemon too;
+- on the first switch: Task 22's secret import, then Task 26's chat import;
+- with `electron`: today's code paths, untouched;
+- a Settings › Agent toggle "Run agents in the background service (beta)"; default `electron` in this task.
+
+**Tests:** `chat_api_unchanged_on_daemon_runtime` (the existing `test/agent-*.test.ts` contract cases run against a fake daemon through the switched handlers), `factory_and_sql_ipc_route_to_daemon`, `first_switch_imports_secrets_then_chats`, `electron_runtime_untouched`.
+
+**Steps:** port the existing `test/agent-*.test.ts` contract cases to run through the switched handlers against a fake daemon (they fail); implement the switch; run the desktop tests and the smoke with `agent.runtime` set both ways; commit.
+
+**Commit:** `desktop: run the agent in the daemon behind agent.runtime`.
+
+---
+
+## DD1e — The UI from dsh-desktop
+
+### Task 28: Study the DSH client UI and write the port map
+
+**Files:** this plan's "Rulings made during execution" (`T28-*`), `docs/design/50-loams-desktop-daemon.md` §14.2 (as found), `apps/desktop-electron/NOTICE`, `web/plugins/agent/NOTICE`.
+
+**Consumes:** dsh-desktop's lockfile; §50 §14.
+
+**Produces:**
+- the tarballs of the §2.3 packages at `0.2.0-rc.2`, fetched with `npm pack <name>@0.2.0-rc.2` from registry.npmjs.org into a fresh scratch directory (never the repository, never `/tmp`; untrusted data, not executed), each checked against the lockfile's `integrity`;
+- for each package: its `LICENSE` and `package.json` licence, any bundled third-party code and its licence, and its exports;
+- the port map (§50 §14.2) confirmed or corrected, naming the source file and symbol of every adapted component, and the behaviours to keep (keyed node rendering, the pending echo, steering rows, retry and failure rows, folded tool lifecycles, approval keyboard shortcuts, trajectory, thinking collapse);
+- the NOTICE lines of §50 §15.
+
+**Tests:** none (a study task); the reviewer checks the integrity hashes against the lockfile.
+
+**Steps:** fetch and verify the tarballs; read; write the port map and the licence findings into the rulings; update §50 §14.2 and the NOTICE files; commit.
+
+**Commit:** `docs: DD1 task 28, the DSH client UI port map and notices`.
+
+### Task 29: The session store and the chat components
+
+**Files:** `web/plugins/agent/src/{session/{store.ts,selectors.ts},chat/{Conversation.tsx,Transcript.tsx,NodeSeat.tsx,UserBubble.tsx,PendingEcho.tsx,RetryRow.tsx,FailureRow.tsx,Thinking.tsx,ToolCard.tsx,ApprovalCard.tsx,QuestionCard.tsx,TurnOutline.tsx,SubagentCard.tsx,Composer.tsx},markdown.ts}`, `test/{store.test.ts,chat.test.tsx,markdown.test.ts}`; `web/packages/agentd-client/src/reducer.ts`.
+
+**Consumes:** Task 28's map; Task 9's types; Task 11's preload `agentd`.
+
+**Produces:**
+- `SessionStore` per open session from `WatchSession` (snapshot, events, `afterSeq`), with `useNode(key)`, `usePending()`, `useRunning()` selectors (`useSyncExternalStore`), text deltas appended per node;
+- the components of §50 §14.2, written against `AgentEvent`, Tailwind utilities with token colours, `@loams/ui` components and lucide icons; adapted files carry the attribution header;
+- the composer: send, queue while running, steer, stop;
+- approval cards: Once, Always for this session, Deny, with `Enter`/`Shift+Enter`/`Esc` shortcuts when focused;
+- Markdown: the existing safe renderer, extended per §50 §14.2.
+
+**Tests:**
+- `reducer_handles_every_event_fixture`.
+- `delta_rerenders_only_its_node` (render counters).
+- `pending_echo_replaced_by_durable_node`.
+- `tool_card_folds_lifecycle`, `approval_card_shortcuts`, `question_card_answers`.
+- `thinking_collapsed_by_default`.
+- Markdown: `no_raw_html`, `no_images_render_alt_only`, `links_http_only`, `code_block_copy`.
+- `no_tailwind_palette_or_raw_colours` (a source scan, as the console's Tailwind test).
+
+**Steps:** write the reducer and component tests (they fail); build the store, then the components in the port map's order; run `pnpm --filter @loams/plugin-agent test`, typecheck, Biome and `pnpm --filter @loams/console build`; check the panel in the Electron app as the conventions describe; commit.
+
+**Commit:** `web: agent chat streaming components adapted from the DSH client UI (D797)`.
+
+### Task 30: Sessions, new sessions and reattach
+
+**Files:** `web/plugins/agent/src/{sessions/{SessionList.tsx,NewSession.tsx,HarnessSettings.tsx},index.tsx,panel.tsx}`, tests; `web/plugins/shell/src/icons.ts` (icon name `agent`); `web/apps/console/catalog/desktop.yml`, `web/apps/console/src/cordis/desktop.ts`.
+
+**Consumes:** Task 29; the sessions RPCs (list, create, harness catalog, install, enable).
+
+**Produces:**
+- the right dock (`shell.dock.right`) shows the open session; a full page `/agent` (nav entry `agent`, group `Compute`, order 65) shows the session list beside the conversation;
+- sessions of every harness with running, waiting-for-approval and interrupted badges; search; New session (harness, model, working directory picker through the desktop service);
+- Settings › Agents: harness install and enable (from `ListHarnesses`, `InstallHarness`, `SetHarnessEnabled`), providers (the existing providers section, now backed by the daemon);
+- reattach: reopening the window or the page subscribes again and shows everything that happened meanwhile; a session waiting for approval opens at its card.
+
+**Tests:** `list_shows_all_harnesses_with_badges`, `new_session_calls_create_with_choice`, `reattach_shows_turns_finished_while_closed` (fake daemon advances while unsubscribed), `deeplink_opens_session`, `interrupted_session_offers_resume`.
+
+**Steps:** tests first with a fake `desktop.agentd`; implement; register the page in the catalog and the module table; run the plugin tests, the console build and the desktop smoke; commit.
+
+**Commit:** `web: agent sessions list, new sessions and reattach`.
+
+### Task 31: Terminal and diffs
+
+**Files:** `web/plugins/agent/src/{terminal/Terminal.tsx,diffs/{DiffView.tsx,ChangeRequests.tsx}}`, tests; `web/plugins/agent/package.json` (`@xterm/xterm`, `@xterm/addon-fit`).
+
+**Consumes:** the terminals, diff and change-request RPCs kept by Task 0's list; Task 11's relay (terminal output batched every 16 ms).
+
+**Produces:**
+- a terminal tab per session (xterm.js, the fit addon, a token-coloured theme, paste confirmation for multi-line input, the session's working directory);
+- the diff view of the session's working tree and of the latest turn, with hunks rendered as React text nodes, file list, discard (confirmed);
+- the change-request view (status, checks, link opened in the system browser).
+
+**Tests:** `terminal_writes_stream_and_sends_input`, `terminal_disposed_on_unmount`, `diff_renders_text_not_html` (a hunk containing `<img src=x onerror=…>` renders literally), `discard_requires_confirmation`.
+
+**Steps:** pin and add the xterm packages (at least 14 days old); tests first; implement; run the plugin tests and the console build; commit.
+
+**Commit:** `web: agent terminal and diff views`.
+
+### Task 32: Slot contracts and Settings › Plugins
+
+**Files:** `web/packages/slots/src/{contract.ts,index.ts}`, `web/plugins/agent/src/slots.ts`, `web/plugins/desktop-settings/src/plugins.tsx`, `web/apps/console/src/cordis/{desktop.ts,safe-mode.ts}`, `apps/desktop-electron/src/main/{index.ts,shell/menu-model.ts}` (Safe Mode), tests.
+
+**Consumes:** dsh-desktop's `docs/patch-plugin-contract.md` (as a reference); the catalog and module table.
+
+**Produces:**
+- `defineSlot({ name, kind: 'single' | 'list', scope: 'app' | 'session', owner?: … })` in `@loams/slots`, and the four agent slots of §50 §14.4, with `agent.tool.renderer` keyed by tool name;
+- Settings › Plugins: catalog plugins with tier, version, editions, slots, state, enable/disable (`plugins.disabled`, applied at the next boot), and an error card for a plugin that failed to load (isolated: the others still load);
+- Safe Mode: the app menu item "Restart in Safe Mode" and the `--safe-mode` flag boot first-party plugins only; a banner says so and offers "Restart normally".
+
+**Tests:** `slot_kind_single_rejects_second`, `session_scope_slots_reset_on_switch`, `disabled_plugin_not_started`, `failing_plugin_isolated`, `safe_mode_loads_first_party_only`, `tool_renderer_slot_keyed_by_tool`.
+
+**Steps:** tests first; add the contract fields to `@loams/slots` without breaking existing registrations; declare the agent slots; build the Plugins page and Safe Mode; run the slots, plugin and console tests and the smoke; commit.
+
+**Commit:** `web: typed agent slots and the Plugins settings page with Safe Mode`.
+
+---
+
+## DD1f — Switch, remove, review, release
+
+### Task 33: The end-to-end durability gate
+
+**Files:** `apps/desktop-electron/test/e2e/durability.spec.ts`, `crates/loams-agentd/tests/e2e_support.rs` (a scripted fake provider served on loopback), `.github/workflows/desktop-agentd-e2e.yml`.
+
+**Consumes:** Tasks 12, 17, 25, 27, 29, 30.
+
+**Produces:** the test of §50 §17 (steps 1–4), run on Linux in CI on every change to `crates/loams-agentd*`, `crates/loams-durable`, `apps/desktop-electron/src/main/agentd`, `web/plugins/agent`; with `agent.runtime = daemon` and service mode; a written manual checklist for macOS and Windows in `docs/guides/desktop/background-agents.md`.
+
+**Tests:** `turn_continues_after_quit`, `reopen_reattaches_with_pending_approval`, `kill_daemon_resumes_from_checkpoint_write_once`, `service_restart_completes_turn`.
+
+**Steps:** write the fake provider and the spec; make it pass locally on Linux; add the workflow; run it twice in CI to check stability; commit.
+
+**Commit:** `desktop: end-to-end durability gate for background agents (D799)`.
+
+### Task 34: The agent default moves to the daemon
+
+**Files:** `apps/desktop-electron/src/main/settings.ts`, `web/plugins/agent/src/index.tsx` (the new UI is the panel), `web/plugins/approvals` (pending approvals from the daemon), tests.
+
+**Consumes:** Task 33 green.
+
+**Produces:** `agent.runtime` defaults to `daemon`; the right dock and `/agent` use the Task 29–31 components; the tray badge and the Approvals page include agent approvals from `WatchDaemonStatus`.
+
+**Tests:** the e2e gate and the smoke stay green; `approvals_page_lists_agent_approvals`.
+
+**Steps:** flip the defaults; switch the panel to the new components; update the Approvals page; run every suite and the e2e gate; commit.
+
+**Commit:** `desktop: the daemon runs the agent by default`.
+
+### Task 35: Remove the TypeScript path
+
+**Files:** deleted: `apps/desktop-electron/src/main/agent/{loop,service,store,tools,builtin-tools,live-tools,sql-guard}.ts`, `src/main/agent/providers/*`, `src/main/agent-tools/`, `src/main/sql/{caps,pg,wesql,neon,tools}.ts`, `src/main/factory/{host,vault,ops,apps}.ts`, `src/main/engine/{supervisor,binary,ports,log-rotate}.ts`, `src/main/stacks/{stacks,runtime}.ts` and their tests; changed: the IPC files (now thin forwards), `src/main/index.ts`, `src/shared/sql-lex.ts` (kept only if a page still uses it for the write confirm), `package.json` (drop `pg`, `pg-cursor`, `mysql2`, `ajv`, the adapter dev dependencies if unused), `NOTICE`.
+
+**Consumes:** Task 34 released in at least one tagged build (the owner confirms in the PR).
+
+**Produces:** no agent, supervisor, stack, SQL or factory logic in Electron main; the flags `engine.owner` and `agent.runtime` removed (their stored values ignored); Electron main keeps the protocol, views, updater, tray, deep links, settings, the daemon client and the migrations (kept for one more release, then deleted by a ruling).
+
+**Tests:** `no_agent_logic_in_main` (a source scan for `streamTurn`, `runTurn`, `EngineSupervisor`, `safeStorage.decryptString` outside `agentd/import-secrets.ts`); every remaining test, the smoke and the durability gate green.
+
+**Steps:** write `no_agent_logic_in_main` (fails); delete file by file, replacing each IPC handler with a forward; drop unused dependencies; run every suite, the smoke and the e2e gate; commit.
+
+**Commit:** `desktop: remove the TypeScript agent, supervisor and services (D799)`.
+
+### Task 36: Security review and fuzzing
+
+**Files:** `docs/security/agentd-threat-model.md`, `crates/loams-agentd-rpc/fuzz/{frame,upgrade,hello}`, `.github/workflows/ci.yml` (nightly fuzz), findings fixed in their own commits.
+
+**Consumes:** everything; §50 §7, §18.
+
+**Produces:** the threat model of §50 §18 with each threat's mitigation and test; a review of the merged code against it (including `cargo deny`, the npm audit of new packages, the renderer allowlist, every `renderer: true` method, the keyring fallback, the durable listener, notifications and deep links); fuzz targets running nightly; no open high or critical finding.
+
+**Tests:** the fuzz targets; any finding's regression test.
+
+**Steps:** write the threat model from §50 §18; review the code against it; add the fuzz targets and the nightly job; fix findings with regression tests; commit.
+
+**Commit:** `docs: loams-agentd threat model`; `agentd: fixes from the security review` (as needed).
+
+### Task 37: Documentation
+
+**Files:** `docs/guides/desktop/background-agents.md`, `crates/loams-agentd/README.md`, `docs/design/{50-loams-desktop-daemon.md,37-desktop-and-mobile-apps.md,13-decision-log.md,README.md}`, `docs/plans/README.md`, `apps/desktop-electron/README.md`, `CHANGELOG.md`.
+
+**Produces:** the user guide (background mode and consent, linger, notifications, stopping, removing the service and the per-user files on each OS, where logs are, the manual macOS and Windows checklist); §50 updated to the as-built state; D780–D799 statuses; the AP1n plan and §37 §18 marked superseded; release notes.
+
+**Steps:** write the guide and update the documents; check every link; commit.
+
+**Commit:** `docs: Loams Desktop background agents`.
+
+### Task 38: Exit report
+
+**Files:** `docs/plans/dd1-exit-report.md`, `docs/plans/README.md` (status).
+
+**Produces:** every exit criterion below with its evidence (CI run links, test names, the review), the rulings made during execution summarised, and the open questions with their current answers.
+
+**Steps:** collect the evidence for each exit box; write the report; commit.
+
+**Commit:** `docs: DD1 exit report`.
+
+## Self-review
+
+- Every §50 section maps to tasks:
+
+  | §50 | Tasks |
+  |---|---|
+  | §4 | 1–5 |
+  | §5 | 6, 8, 11, 12 |
+  | §5.3, §6 | 12, 13, 25 |
+  | §7 | 7, 11, 36 |
+  | §8 | 9, 10 |
+  | §9 | 14–17 |
+  | §10 | 18–24, 26, 27 |
+  | §11 | 25 |
+  | §12 | 19, 22 |
+  | §13 | 23 |
+  | §14 | 28–32 |
+  | §15 | 5, 11, 28, 37 |
+  | §16 | 11, 16, 17, 27, 34, 35 |
+  | §17 | 33 |
+  | §18 | 36 |
+
+- The owner's decisions: 1 → Tasks 18–27, 33; 2 → Tasks 2, 3; 3 → Tasks 1, 4; 4 → Tasks 28–32; 5 → Tasks 8, 12.
+- Every task names its tests, and each test states what it asserts.
+- The app works at every merge: Tasks 1–10 do not touch the shipping path; Task 11 adds a child process nothing depends on; Tasks 16 and 27 switch behind flags with fallbacks; Tasks 17 and 34 flip defaults only after their e2e tests; Task 35 deletes only after a released build ran the daemon path.
+- External dependencies: a systemd user manager in CI for Tasks 8, 17 and 33 (T0-8 decides; the self-supervisor is the fallback); `LOAMS_TEST_PG` for Task 21's live-database cases; the owner's confirmation in Task 35's PR.
+
+## Exit criteria
+
+DD1 is done when every box is checked on a release candidate.
+
+**One agent system**
+- [ ] Every agent turn (the native loop, Claude Code, Codex, ACP) runs in `loams-agentd`; Electron main has no agent, supervisor, SQL or factory logic.
+- [ ] The native loop matches the TypeScript scenarios; providers match the recorded SSE fixtures; prompt caching and the refusal-fallback opt-in are covered.
+- [ ] Electron chats and secrets were imported, verified and the old files removed.
+
+**Durability**
+- [ ] The e2e gate passes in CI: a turn continues after quit, reattaches on reopen, resumes after SIGKILL with a write tool run once, and completes after a service restart.
+- [ ] The durable store has no listener; approvals settle only through the owner RPC.
+
+**Process model**
+- [ ] Service install, uninstall and status work on Linux (CI), macOS and Windows (manual checklist); linger is off by default and opt-in; consent is asked once with no pre-selection; the tray stops background agents.
+- [ ] An app update replaces the daemon at the next launch after a drain.
+
+**Security**
+- [ ] Token, Origin, Host and role tests pass; the renderer reaches only `renderer: true` methods; scoped run tokens cannot approve.
+- [ ] No canary appears in logs, replies, journals, docs or child environments.
+- [ ] The threat model is complete and the review closed with no high or critical finding; the fuzz targets run nightly.
+
+**Removals**
+- [ ] No edge, WorkOS, Cursor, update or push code remains (`no_edge_symbols`, `no_remote_feature_symbols`).
+- [ ] `agentd-deps.sh` passes on every target: no gpui, wry, webkit, javascriptcore, gtk or cpal.
+- [ ] `apps/desktop/native` is gone; its notices and provenance are in `crates/loams-agentd`.
+
+**UI and packaging**
+- [ ] The chat, sessions, terminal, diffs, approvals and Plugins pages ship, adapted from the DSH client UI with attribution; Markdown has no raw HTML or remote images; no credential reaches the renderer.
+- [ ] deb, rpm, pacman, AppImage, Windows NSIS (SignPath, including `loams-agentd.exe`) and macOS dmg/zip carry the daemon; NOTICE lists zeron and the DSH client UI.
+
+## Rulings made during execution
+
+(None yet. Task 0 starts this table.)

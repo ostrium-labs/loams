@@ -64,6 +64,7 @@
 | 47 | [Loams SQL in production](47-loams-sql-production.md) | Serverless MySQL 8.4 (stock InnoDB) behind Vitess, with mywal (binlog in TiKV, archived to the bucket) for durability and PITR; control plane `loams.sqldb.v1`, gate for TLS/auth/wake, scale-to-zero, HA, conformance and gates; engine query SQL as a separate milestone (D720–D739) | **Proposed** |
 | 48 | [Loams Graph in production](48-loams-graph-production.md) | Grafeo-based graph served from the `loams` binary (feature `graph`), log-and-bucket durability, owned vs linked graphs, GraphRAG, `gql-1` profile, per-graph auth, ops, conformance and gates (D740–D759) | **Proposed** |
 | 49 | [Loams House in production](49-loams-house-production.md) | ClickHouse-compatible analytics on the bucket: sealed chDB workers, Iceberg-only storage with lake tables, `house-cache`, HTTP and native protocol, exactly-once ingest, governance, conformance and gates (D760–D779) | **Proposed** |
+| 50 | [Loams Desktop: the agent daemon](50-loams-desktop-daemon.md) | One agent system in a per-user headless Rust daemon, `loams-agentd`: the Electron agent ported to Rust and merged with the zeron fork's harnesses (Claude Code, Codex, ACP) under one session model; durable turns on `loams-durable`; engine and stack supervision; per-user services with consent and opt-in linger; a token-secured loopback RPC with ts-rs types; keyring secrets; the chat and plugin UI adapted from dsh-desktop; no edge, WorkOS or GPUI (D780–D799) | **Proposed** (owner decisions of 2026-10-09 approved) |
 
 ## Glossary
 

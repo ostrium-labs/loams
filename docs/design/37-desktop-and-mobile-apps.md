@@ -754,6 +754,8 @@ Read on 2026-10-01 and 2026-10-02.
 
 ## 18. Native desktop on a zeron fork (supersedes the Tauri desktop)
 
+> **Retired 2026-10-09** by the owner's decision "drop GPUI" ([§50](50-loams-desktop-daemon.md), D782, D783). The fork's headless crates move into the root workspace as `crates/loams-agentd*` and become the Loams Desktop agent daemon; GPUI, headed mode, the edge and WorkOS are deleted. This section is kept as history.
+
 Status: **Proposed** · 2026-10-02. The direction is the owner's, given on 2026-10-02: **"instead of Tauri go native for desktop apps also: https://github.com/zeronsh/zeron"**, with the product names **Loams Bot** and **Loams Software Factory**. This section turns that ruling into decisions **D480–D499** and open questions **Q480–Q499**, recorded in the [decision log](13-decision-log.md). Everything beyond the ruling is a **proposal** until the owner confirms it. The plan is [AP1n](../plans/2026-10-02-ap1n-native-desktop-zeron.md); the scaffold is the branch `loams-scaffold` of [`ostrium-labs/loams-desktop`](https://github.com/ostrium-labs/loams-desktop) (§18.12).
 
 Markers: **(verified 2026-10-02)** means read in zeron's tree at `80b946b` (2026-10-01) or on GitHub that day. **(verify)** means the plan task that builds it checks it first. **(estimate)** means computed, not measured.
@@ -1388,7 +1390,22 @@ The owner widened the scope the same day: "current console ui only focused on co
   - **Lifecycle.** The view is hidden when the route changes, kept alive per app for fast switching (at most 4 live views, least-recently-used ones are destroyed), and destroyed on remove, reconfigure or quit.
   - **Pop out.** "Pop out" moves the app to its own window (the Task 12 code).
   - **No iframes.** The apps' framing protections and third-party cookies make iframes unreliable and weaker.
-- **D679: the agent panel is Loams' own; DeepSeek Harness is not embedded.**
+- **D679: the agent panel is Loams' own; DeepSeek Harness is not embedded.** **Reversed 2026-10-09 by the owner (D797, [§50 §14](50-loams-desktop-daemon.md)):** the repository indeed holds no chat UI, but the published `@deepseek-ai/dsh-client-ui-*` packages it depends on do (MIT); DD1 adapts their chat streaming and plugin UI into Loams console plugins. The DSH runtime is still not embedded.
   - dsh-desktop contains no chat UI. It hosts the upstream DeepSeek Harness web frontend.
   - Loams Desktop's chat is the D675 panel (Tasks 28–29), which borrows only UX patterns from dsh-desktop and dockit.
   - Running DeepSeek Harness as an optional sidecar app is deferred. That needs a licence review of `@deepseek-ai/*` first.
+
+### 19.11 The agent daemon (amendment, 2026-10-09)
+
+The owner decided on 2026-10-09 to merge the desktop's agents into one per-user Rust daemon, drop the edge and GPUI, take the chat and plugin UI from dsh-desktop, and keep Linux linger off by default. The design is [§50](50-loams-desktop-daemon.md) (D780–D799, Q700–Q714) and the plan is [DD1](../plans/2026-10-09-dd1-desktop-daemon.md). What changes in this section:
+
+| §19 decision | Change | By |
+|---|---|---|
+| D652 | The zeron fork is retired, not paused; its headless crates become `loams-agentd` | D783 |
+| D654 | dsh-desktop also supplies the chat and plugin UI, adapted from its DSH client UI packages with MIT attribution | D797 |
+| D656, D667, D670 | The daemon supervises the engine and the stacks and sets the Live flags; Electron's supervisor is a fallback until DD1f | D790 |
+| D659 | Credentials move to the daemon's OS keyring; the views' isolation stands | D794, D795 |
+| D661, D676, D677 | Every package also carries `loams-agentd`; an app update replaces the daemon at the next launch | D798 |
+| D675 | The loop, providers, tools, approvals and budgets run in the daemon as `HarnessId::LoamsAgent`; chats are imported into daemon sessions | D780, D791, D796 |
+| D679 | Reversed by the owner | D797 |
+| §19.5 deep links | `agent` joins the allowlist (`loams://open/agent/<sessionId>`) | D785 |
