@@ -35,6 +35,18 @@ use pb::__buffa::oneof::value::Kind;
 use crate::engine::GraphError;
 
 const MICROS_PER_DAY: i64 = 86_400_000_000;
+/// The largest UTC offset ISO 8601 and GQL allow: 18 hours.
+const MAX_OFFSET_SECONDS: i32 = 18 * 3600;
+
+/// A UTC offset in GQL's range.
+fn offset(seconds: i32) -> Result<i32, GraphError> {
+    if seconds.unsigned_abs() > MAX_OFFSET_SECONDS.unsigned_abs() {
+        return Err(invalid(format!(
+            "a UTC offset of {seconds} seconds is outside ±18 hours"
+        )));
+    }
+    Ok(seconds)
+}
 
 /// The engine's reserved keys on a projected node or relationship map.
 const ID: &str = "_id";
@@ -75,7 +87,11 @@ pub fn to_proto(value: &Value) -> pb::Value {
         },
         Value::Timestamp(ts) => Kind::LocalDatetime(Box::new(datetime_to_proto(ts.as_micros()))),
         Value::ZonedDatetime(z) => {
-            let local = z.as_timestamp().as_micros() + i64::from(z.offset_seconds()) * 1_000_000;
+            // Saturating: an engine value at the edge of Grafeo's range is still answered.
+            let local = z
+                .as_timestamp()
+                .as_micros()
+                .saturating_add(i64::from(z.offset_seconds()) * 1_000_000);
             Kind::ZonedDatetime(Box::new(pb::ZonedDateTime {
                 local: datetime_to_proto(local).into(),
                 offset_seconds: z.offset_seconds(),
@@ -176,7 +192,7 @@ pub fn from_proto(value: &pb::Value) -> Result<Value, GraphError> {
                 .time
                 .as_option()
                 .ok_or_else(|| invalid("zoned_time has no time"))?;
-            Value::Time(time_from_proto(time)?.with_offset(z.offset_seconds))
+            Value::Time(time_from_proto(time)?.with_offset(offset(z.offset_seconds)?))
         }
         Kind::LocalDatetime(dt) => {
             Value::Timestamp(Timestamp::from_micros(datetime_from_proto(dt)?))
@@ -186,10 +202,13 @@ pub fn from_proto(value: &pb::Value) -> Result<Value, GraphError> {
                 .local
                 .as_option()
                 .ok_or_else(|| invalid("zoned_datetime has no local datetime"))?;
-            let utc = datetime_from_proto(local)? - i64::from(z.offset_seconds) * 1_000_000;
+            let offset_seconds = offset(z.offset_seconds)?;
+            let utc = datetime_from_proto(local)?
+                .checked_sub(i64::from(offset_seconds) * 1_000_000)
+                .ok_or_else(|| invalid("the zoned datetime is out of Grafeo's range"))?;
             Value::ZonedDatetime(ZonedDatetime::from_timestamp_offset(
                 Timestamp::from_micros(utc),
-                z.offset_seconds,
+                offset_seconds,
             ))
         }
         Kind::Duration(d) => Value::Duration(Duration::new(d.months, d.days, d.nanos)),
