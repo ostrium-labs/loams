@@ -86,10 +86,7 @@ const STATUS_TEXT: Record<Extract<Item, { kind: 'tool' }>['status'], string> = {
 export function ToolCard({ item }: { item: Extract<Item, { kind: 'tool' }> }) {
   const failed = item.status === 'error' || item.status === 'denied';
   return (
-    <details
-      className="border border-rule bg-surface text-xs"
-      open={item.status === 'awaiting' || undefined}
-    >
+    <details className="border border-rule bg-surface text-xs">
       <summary className="cursor-pointer px-2 py-1 flex items-center gap-2">
         <span className="font-mono font-medium">{item.tool}</span>
         {item.risk === 'write' && <span className="text-muted">write</span>}

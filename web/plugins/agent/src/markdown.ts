@@ -8,7 +8,7 @@
 //
 // Class names below are full literal strings so Tailwind generates them.
 
-import DOMPurify from 'dompurify';
+import createDOMPurify from 'dompurify';
 import { Marked, type Tokens } from 'marked';
 
 const ESCAPES: Record<string, string> = {
@@ -31,6 +31,9 @@ export function safeHref(href: string | null | undefined): string | undefined {
   }
 }
 
+// A private instance: its hooks and config never touch other plugins' DOMPurify.
+const DOMPurify = createDOMPurify(window);
+
 const marked = new Marked({
   async: false,
   gfm: true,
@@ -51,7 +54,7 @@ const marked = new Marked({
         '<div class="lc-code my-2 border border-rule bg-raised">' +
         '<div class="flex items-center justify-between px-2 py-1 border-b border-rule-soft text-xs text-muted">' +
         `<span class="font-mono">${escapeHtml(label)}</span>` +
-        '<button type="button" data-copy="" class="text-xs text-muted cursor-pointer">Copy</button>' +
+        '<button type="button" data-copy="" class="text-xs text-ink bg-surface border border-rule px-2 py-0.5 cursor-pointer">Copy</button>' +
         '</div>' +
         `<pre class="m-0 p-2 overflow-x-auto text-xs font-mono"><code>${escapeHtml(text)}</code></pre>` +
         '</div>'

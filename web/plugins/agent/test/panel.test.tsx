@@ -165,6 +165,8 @@ describe('agent panel', () => {
       risk: 'write',
       needsApproval: true,
     });
+    const tool = screen.getByRole('log').querySelector('details') as HTMLDetailsElement;
+    expect(tool.open).toBe(false);
     const card = screen.getByRole('group', { name: /approval needed for durable_promise_create/i });
     expect(card.textContent).toContain('"id": "p1"');
     fireEvent.click(within(card).getByRole('button', { name: 'Approve once' }));
@@ -415,6 +417,36 @@ describe('store model', () => {
     });
   });
 
+  it('answered-by note only when the serving model differs, same as live', () => {
+    const base = {
+      id: CID,
+      title: 't',
+      createdAt: 1,
+      updatedAt: 1,
+      provider: 'anthropic' as const,
+      model: 'm',
+      alwaysAllow: [],
+      running: false,
+      pending: [],
+    };
+    const msg = (model: string, fallbackFrom?: string) => ({
+      role: 'assistant' as const,
+      content: [{ type: 'text' as const, text: 'hi' }],
+      at: 1,
+      model,
+      ...(fallbackFrom ? { fallbackFrom } : {}),
+    });
+    expect(itemsFromView({ ...base, messages: [msg('m')] }).map((i) => i.kind)).toEqual(['text']);
+    expect(itemsFromView({ ...base, messages: [msg('other')] }).map((i) => i.kind)).toEqual([
+      'text',
+      'model',
+    ]);
+    expect(itemsFromView({ ...base, messages: [msg('m', 'x')] }).map((i) => i.kind)).toEqual([
+      'text',
+      'model',
+    ]);
+  });
+
   it('folds tool results into cards and marks denials', () => {
     const items = itemsFromView({
       id: CID,
@@ -465,6 +497,11 @@ describe('store model', () => {
     expect(contextHint({ path: '/postgres/branches' }, 'Postgres', 'prod')).toBe(
       'The user is viewing Postgres (route /postgres/branches). Active namespace: prod.',
     );
-    expect(contextHint({ path: '/' }, undefined, undefined)).toBe('The user is viewing (route /).');
+    expect(contextHint({ path: '/' }, undefined, undefined)).toBe(
+      'The user is on the page at route /.',
+    );
+    expect(contextHint({ path: '/live?token=abc#x' }, 'Live', undefined)).toBe(
+      'The user is viewing Live (route /live).',
+    );
   });
 });

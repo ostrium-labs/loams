@@ -48,6 +48,8 @@ describe('agent providers section', () => {
     expect(key.type).toBe('password');
     expect(key.value).toBe('');
     expect(key.placeholder).toBe('Saved — leave blank to keep');
+    // The hint does not repeat the placeholder.
+    expect(c.queryAllByText(/leave blank to keep/)).toHaveLength(0);
   });
 
   it('saves with the key only when typed, and clears the field', async () => {

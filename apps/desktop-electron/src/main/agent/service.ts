@@ -99,6 +99,7 @@ export class ChatService {
 		const timer = setTimeout(() => ctl.abort(), 20_000);
 		const started = this.deps.now();
 		try {
+			let answered = false;
 			for await (const e of provider.streamTurn({
 				model: info.model,
 				system: "Answer with one word.",
@@ -108,8 +109,21 @@ export class ChatService {
 				tools: [],
 				signal: ctl.signal,
 			})) {
-				if (e.type === "text" || e.type === "stop") break;
+				if (e.type === "text") {
+					answered = true;
+					break;
+				}
+				if (e.type === "stop") {
+					answered = e.reason === "end_turn";
+					break;
+				}
 			}
+			if (!answered)
+				return {
+					ok: false,
+					code: "test_failed",
+					message: "The provider answered without any text.",
+				};
 			return {
 				ok: true,
 				value: { model: info.model, ms: this.deps.now() - started },

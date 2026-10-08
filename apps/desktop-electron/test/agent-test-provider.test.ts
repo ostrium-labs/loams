@@ -39,22 +39,42 @@ const sse = (text: string) =>
 
 describe("chat.testProvider", () => {
 	it("test_provider_ok_stops_after_first_text", async () => {
-		let n = 0;
-		let aborted = false;
-		const { svc, configs } = setup(async (_u, init) => {
-			n++;
-			init.signal?.addEventListener("abort", () => {
-				aborted = true;
+		let pulls = 0;
+		let cancelled = false;
+		const enc = new TextEncoder();
+		const { svc, configs } = setup(async () => {
+			// An endless stream: the test only ends if the reader stops early.
+			const body = new ReadableStream<Uint8Array>({
+				pull(c) {
+					pulls++;
+					c.enqueue(enc.encode(sse(`w${pulls} `)));
+				},
+				cancel() {
+					cancelled = true;
+				},
 			});
-			return new Response(sse("ok") + sse(" more"), {
+			return new Response(body, {
 				headers: { "content-type": "text/event-stream" },
 			});
 		});
 		configs.configure("deepseek", { model: "deepseek-chat", apiKey: KEY });
 		const r = await svc.testProvider("deepseek");
 		expect(r.ok && r.value.model).toBe("deepseek-chat");
-		expect(n).toBe(1);
-		expect(aborted).toBe(true);
+		expect(cancelled).toBe(true);
+		expect(pulls).toBeLessThan(5);
+	});
+
+	it("test_provider_fails_when_no_text_arrives", async () => {
+		const { svc, configs } = setup(
+			async () =>
+				new Response(
+					`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "length" }] })}\n\ndata: [DONE]\n\n`,
+					{ headers: { "content-type": "text/event-stream" } },
+				),
+		);
+		configs.configure("deepseek", { model: "deepseek-chat", apiKey: KEY });
+		const r = await svc.testProvider("deepseek");
+		expect(!r.ok && r.code).toBe("test_failed");
 	});
 
 	it("test_provider_error_is_redacted", async () => {

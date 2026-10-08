@@ -21,7 +21,12 @@ export function contextHint(
   title: string | undefined,
   namespace: string | undefined,
 ): string {
-  const parts = [`The user is viewing ${title ? `${title} ` : ''}(route ${location.path}).`];
+  const path = location.path.split(/[?#]/)[0] || '/';
+  const parts = [
+    title
+      ? `The user is viewing ${title} (route ${path}).`
+      : `The user is on the page at route ${path}.`,
+  ];
   if (namespace) parts.push(`Active namespace: ${namespace}.`);
   return parts.join(' ');
 }
@@ -37,7 +42,9 @@ const plugin: PluginModule = {
     const store = new AgentStore({
       desktop,
       context: () => {
-        const title = document.title.replace(/\s*·\s*Loams$/, '').trim();
+        const title =
+          (router as { title?: () => string | undefined }).title?.() ??
+          document.title.replace(/\s*·\s*Loams$/, '').trim();
         return contextHint(
           router.current(),
           title && title !== 'Loams' ? title : undefined,

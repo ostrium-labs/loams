@@ -104,7 +104,7 @@ function ProviderCard({
   const keyHint = !provider.needsKey
     ? 'No key needed for a local server.'
     : provider.hasKey
-      ? 'Saved — leave blank to keep'
+      ? 'Kept on this computer and never shown again.'
       : 'Paste the key from your provider account.';
 
   return (

@@ -96,8 +96,13 @@ export function itemsFromView(view: ChatView): Item[] {
         items.push(t);
       }
     }
-    if (m.fallbackFrom && m.model) {
-      items.push({ kind: 'model', model: m.model, fallbackFrom: m.fallbackFrom });
+    // Same rule as the live event: only when the serving model differs or a fallback happened.
+    if (m.model && (m.fallbackFrom || m.model !== view.model)) {
+      items.push({
+        kind: 'model',
+        model: m.model,
+        ...(m.fallbackFrom ? { fallbackFrom: m.fallbackFrom } : {}),
+      });
     }
     if (m.stop && m.stop !== 'end_turn') items.push({ kind: 'stop', stop: m.stop });
   }
