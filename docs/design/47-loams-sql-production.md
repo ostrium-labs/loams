@@ -366,6 +366,7 @@ Mutations are `loams.operations.v1` operations run as Resonate sagas with determ
 | Stored procedures, triggers, events, UDFs | **Not supported** | The largest compatibility gap; ORMs rarely need them, but legacy apps do (Q661) |
 | DDL vs open transactions | Online, not blocked by open transactions | Different from MySQL's metadata locks; usually better |
 | Version and syntax | MySQL 5.7/8.0, advertises `8.0.11-TiDB-…` | Nothing specific to 8.4 (Q658) |
+| Error messages carry the offending values (`Duplicate entry 'x' for key …`) | Yes with `tidb_redact_log = OFF`. With `ON` or `MARKER`, TiDB redacts the error itself when it is created (pingcap/errors), so clients get `Duplicate entry '?'` | Loams renders `OFF` (SQ1 R2.8) to keep MySQL's error text. The trade-off is that literals reach TiDB's slow and general logs, so those logs stay on the pod and are not shipped by default (SQ1 Task 25) |
 
 **D735:** this table is the contract. The docs publish it, the conformance suite (§17) tests every row, and the gate never pretends otherwise.
 

@@ -9,7 +9,7 @@ keyspace-name = "br_0123456789abcdef"
 split-table = false
 server-version = "8.0.11-TiDB-v8.5.8-Loams"
 enable-global-kill = true
-# Runs once, at the keyspace's first bootstrap: class memory limits and log
+# Runs once, at the keyspace's first bootstrap: memory limits and log
 # redaction (global variables in v8.5.8, not config items).
 initialize-sql-file = "/etc/tidb/init.sql"
 
@@ -38,5 +38,5 @@ cluster-ssl-key = "/etc/tidb/cluster-tls/tls.key"
 
 [log]
 level = "info"
-# Statement literals are wrapped in redaction markers (tidb_redact_log =
-# MARKER, set in initialize-sql-file).
+# tidb_redact_log stays OFF (errors must keep MySQL's text). The slow and
+# general logs carry literals and are not shipped off the pod by default.

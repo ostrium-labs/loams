@@ -742,7 +742,7 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - **The constraint.** In v8.5.8, `tidb_server_memory_limit`, `tidb_mem_quota_query` and `tidb_redact_log` are global system variables. They are not config items, and `mem-quota-query` is a removed config item.
   - **How they are applied.** `render::tidb` sets `initialize-sql-file = "/etc/tidb/init.sql"`, and `render::tidb_init_sql(class)` writes `SET GLOBAL` for all three. TiDB runs that file once, at the keyspace's first bootstrap.
   - **Later changes.** The values live in the keyspace's `mysql.global_variables`. So a class change, or a copy branch whose class differs from its parent's, must re-apply `render::tidb_globals(class)` through `ri_control` (Tasks 7, 11 and 13).
-  - **Verified on the spike stack.** After bootstrap, `@@global.tidb_server_memory_limit = 614MB`, `tidb_redact_log = MARKER` and `tidb_mem_quota_query = 321912832`.
+  - **Verified on the spike stack.** After bootstrap, `@@global.tidb_server_memory_limit = 614MB`, `tidb_redact_log` as rendered, and `tidb_mem_quota_query = 321912832`.
 - **R2.3 `enable-global-kill` is a top-level key.** In v8.5.8 it is a top-level key, not one under `[security]` (`experimental.enable-global-kill` is a removed key). It is rendered at the top level. TiDB's own `--config-check --config-strict` accepts both golden configs (`rendered_config_passes_tidb_config_check`, `LOAMS_IT_SQLDB=1`).
 - **R2.4 Rendering details** that the task did not spell out:
   - **Kept in the config, not on the command line.** `store = "tikv"` and `path` live in the config. Per-member `--host`, `-P`, `--status-host`, `--status` and `--advertise-address` stay on the command line, so every member shares one file.
@@ -756,4 +756,8 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - **`LocalRuntime` state.** It keeps `state_dir/<branch>/{pool.json,tidb.toml,init.sql}`, with stable per-member port pairs from 24000+N and 25000+N. It labels containers `io.loams.sqldb.*` and replaces a member whose fingerprint changed (rendered config, image, class).
   - **CPU limits.** `LocalRuntime` passes `--cpus` by class unless `cpu_limits = false`. The IT turns it off, because a first bootstrap at 0.25 vCPU takes minutes. Memory is always limited.
   - **Bootstrap time.** The first bootstrap took about 8–45 s here, and it stays in `CreateDatabase` (R1.2). Task 7 should bootstrap at a larger class, or without a CPU limit.
+- **R2.8 Redaction is OFF (controller ruling, fix round 1; reverses the earlier ON ruling and Task 2's MARKER).**
+  - **Why not ON or MARKER.** TiDB redacts error messages when they are created (pingcap/errors), not only when it logs them. So clients would see `Duplicate entry '?'` instead of MySQL's text, which breaks the compatibility contract (D735, §47 §13.2).
+  - **What renders.** `tidb_redact_log = 'OFF'` is in `tidb_globals` and `init.sql` (`redaction_is_off_for_mysql_compatibility`).
+  - **How logs are protected instead.** The log pipeline does it: the slow and general logs, which carry statement literals, are not shipped off the pod by default. **Note for Task 25 (observability):** the log shipper's default excludes `tidb-slow.log` and the general log, and turning them on for a database is an explicit, audited choice.
 - **R2.7 Deviation.** `docs/sqldb/licensing.md` and the crate's `build.rs` were added. `build.rs` turns `LOAMS_IT_SQLDB=1` into the cfg `loams_it_sqldb`, so container tests are `#[ignore]` unless it is set.

@@ -6,8 +6,11 @@
 //! as SQL ([`tidb_init_sql`]), which TiDB runs once, at the keyspace's first
 //! bootstrap (`initialize-sql-file`):
 //! - `tidb_server_memory_limit` and `tidb_mem_quota_query` (by class);
-//! - `tidb_redact_log = MARKER`, which keeps statement literals out of the
-//!   slow and general logs unmarked.
+//! - `tidb_redact_log = OFF` (R2.8): TiDB redacts error messages when they
+//!   are created, so ON or MARKER would send clients `Duplicate entry '?'`
+//!   and break MySQL compatibility (D735). The log pipeline protects the
+//!   slow and general logs instead: they are not shipped off the pod by
+//!   default.
 //!
 //! A class change or a copy branch whose class differs from its parent's must
 //! apply [`tidb_globals`] again with `SET GLOBAL` (they live in the keyspace's
@@ -51,7 +54,7 @@ keyspace-name = \"{branch}\"
 split-table = false
 server-version = \"{SERVER_VERSION}\"
 enable-global-kill = true
-# Runs once, at the keyspace's first bootstrap: class memory limits and log
+# Runs once, at the keyspace's first bootstrap: memory limits and log
 # redaction (global variables in v8.5.8, not config items).
 initialize-sql-file = \"{INIT_SQL_PATH}\"
 
@@ -99,8 +102,8 @@ cluster-ssl-key = \"{CLUSTER_TLS_DIR}/tls.key\"
         "
 [log]
 level = \"info\"
-# Statement literals are wrapped in redaction markers (tidb_redact_log =
-# MARKER, set in initialize-sql-file).
+# tidb_redact_log stays OFF (errors must keep MySQL's text). The slow and
+# general logs carry literals and are not shipped off the pod by default.
 ",
     );
     s
@@ -119,7 +122,7 @@ pub fn tidb_globals(class: Class) -> Vec<(&'static str, String)> {
             "tidb_mem_quota_query",
             class.mem_quota_query_bytes().to_string(),
         ),
-        ("tidb_redact_log", "'MARKER'".to_owned()),
+        ("tidb_redact_log", "'OFF'".to_owned()),
     ]
 }
 

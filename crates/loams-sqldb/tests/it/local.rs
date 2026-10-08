@@ -230,7 +230,7 @@ async fn local_runtime_starts_and_stops_a_pool() {
     );
     assert_eq!(
         query_one(m0, "SELECT @@global.tidb_redact_log").await,
-        "MARKER"
+        "OFF"
     );
     assert_eq!(
         query_one(m0, "SELECT CAST(@@global.tidb_mem_quota_query AS CHAR)").await,

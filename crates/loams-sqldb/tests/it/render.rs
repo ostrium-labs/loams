@@ -141,11 +141,28 @@ fn memory_limits_follow_the_class() {
             sql.contains(&format!("tidb_mem_quota_query = {}", (mib * 2 / 5) << 20)),
             "{class}"
         );
-        assert!(sql.contains("tidb_redact_log = 'MARKER'"), "{class}");
         // TiDB clamps a limit under 512 MiB up to 512 MiB (varsutil.go).
         assert!(mib * 4 / 5 >= 512, "{class}");
     }
     assert_eq!(Class::Xs.memory_mib(), 768, "R2.1: xs is 0.75 GiB");
+}
+
+/// R2.8: redaction is OFF. TiDB redacts error messages when they are
+/// created (pingcap/errors), so ON or MARKER would send clients
+/// `Duplicate entry '?'` and break MySQL compatibility (D735). Logs are
+/// protected by the log pipeline instead.
+#[test]
+fn redaction_is_off_for_mysql_compatibility() {
+    for class in Class::ALL {
+        let sql = render::tidb_init_sql(class);
+        assert!(sql.contains("SET GLOBAL tidb_redact_log = 'OFF';"), "{sql}");
+        let globals = render::tidb_globals(class);
+        assert!(globals.contains(&("tidb_redact_log", "'OFF'".to_owned())), "{globals:?}");
+        for text in [sql, render::tidb(&branch(), class, &kubernetes())] {
+            assert!(!text.contains("MARKER"), "{text}");
+            assert!(!text.contains("tidb_redact_log = 'ON'"), "{text}");
+        }
+    }
 }
 
 #[test]
