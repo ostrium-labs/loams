@@ -59,9 +59,22 @@ jobs:
         run: |
           set -euo pipefail
           new="${TAG#desktop-v}"
-          cur=$(gh release download "$FEED_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'latest.yml' --output - 2>/dev/null \
-                | sed -nE 's/^version:[[:space:]]*["'"'"']?([^"'"'"'[:space:]#]+).*/\1/p' | head -1 || true)
-          if [ -z "$cur" ]; then echo "desktop-latest has no version yet; promoting $new"; exit 0; fi
+          # Fail closed: only a feed release that does not exist yet (HTTP 404) or that has no
+          # manifest counts as "nothing served". Any other error stops the promotion.
+          if ! rel=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$FEED_TAG" 2>&1); then
+            if grep -q 'HTTP 404' <<<"$rel"; then echo "desktop-latest does not exist yet; promoting $new"; exit 0; fi
+            echo "::error::cannot read $FEED_TAG: $rel"; exit 1
+          fi
+          manifests=$(jq -r '.assets[].name | select(test("^latest.*\\.yml$"))' <<<"$rel")
+          if [ -z "$manifests" ]; then echo "desktop-latest has no manifest yet; promoting $new"; exit 0; fi
+          cur=""
+          for m in $manifests; do
+            # set -e: a failed download fails the job instead of reading as "no version".
+            yml=$(gh release download "$FEED_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$m" --output -)
+            v=$(sed -nE 's/^version:[[:space:]]*["'"'"']?([^"'"'"'[:space:]#]+).*/\1/p' <<<"$yml" | head -1)
+            [ -n "$v" ] || { echo "::error::$m in $FEED_TAG has no readable version"; exit 1; }
+            cur=$(printf '%s\n%s\n' "$cur" "$v" | sed '/^$/d' | sort -V | tail -1)
+          done
           newest=$(printf '%s\n%s\n' "$cur" "$new" | sort -V | tail -1)
           if [ "$new" = "$cur" ] || [ "$newest" != "$new" ]; then
             if [ "$ALLOW_DOWNGRADE" = true ]; then
