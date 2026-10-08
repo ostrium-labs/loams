@@ -1331,3 +1331,39 @@ fn profile_refuses_a_write() {
         assert_eq!(reason(&err), "not_implemented");
     }
 }
+
+/// A user property named like one of the engine's reserved keys (`_id`, `_labels`, `_type`,
+/// `_source`, `_target`) never overrides the real field of a resolved path element (GR1 Task 2
+/// N3).
+#[test]
+fn reserved_property_names_do_not_override_path_elements() {
+    let engine = engine();
+    open(&engine, "acme", "reserved");
+    ok(
+        &engine,
+        "acme",
+        "reserved",
+        "INSERT (:A {_id: 999, _labels: 'fake'})-[:R {_id: 998, _type: 'FAKE', _source: 997, _target: 996}]->(:B {_id: 995})",
+    );
+    let read = ok(
+        &engine,
+        "acme",
+        "reserved",
+        "MATCH p = (a:A)-[r:R]->(b:B) RETURN p, id(a), id(r), id(b)",
+    );
+    let row = &rows(&read).rows[0];
+    let Some(Kind::Path(path)) = &row.values[0].kind else {
+        panic!("a path: {row:?}");
+    };
+    let id = |i: usize| match row.values[i].kind {
+        Some(Kind::Int64(n)) => n as u64,
+        ref other => panic!("{other:?}"),
+    };
+    assert_eq!(path.nodes[0].id, id(1), "{path:?}");
+    assert_eq!(path.nodes[0].labels, ["A"]);
+    assert_eq!(path.nodes[1].id, id(3));
+    let rel = &path.relationships[0];
+    assert_eq!(rel.id, id(2));
+    assert_eq!(rel.r#type, "R");
+    assert_eq!((rel.src, rel.dst), (id(1), id(3)));
+}

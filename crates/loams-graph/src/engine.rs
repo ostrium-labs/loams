@@ -431,7 +431,12 @@ impl Graph {
         else {
             return element.clone();
         };
+        // Properties first, then the real fields, so a property named like a reserved key never
+        // overrides them (GR1 Task 2 N3; the property is shadowed in the element, R2.4).
         let mut map = std::collections::BTreeMap::new();
+        for (key, value) in node.properties.iter() {
+            map.insert(key.clone(), value.clone());
+        }
         map.insert(PropertyKey::new("_id"), Value::Int64(*id));
         map.insert(
             PropertyKey::new("_labels"),
@@ -442,9 +447,6 @@ impl Graph {
                     .collect::<Vec<_>>(),
             )),
         );
-        for (key, value) in node.properties.iter() {
-            map.insert(key.clone(), value.clone());
-        }
         Value::Map(Arc::new(map))
     }
 
@@ -458,7 +460,11 @@ impl Graph {
         else {
             return element.clone();
         };
+        // As in `node_value`: properties first, then the real fields.
         let mut map = std::collections::BTreeMap::new();
+        for (key, value) in edge.properties.iter() {
+            map.insert(key.clone(), value.clone());
+        }
         map.insert(PropertyKey::new("_id"), Value::Int64(*id));
         map.insert(
             PropertyKey::new("_type"),
@@ -466,9 +472,6 @@ impl Graph {
         );
         map.insert(PropertyKey::new("_source"), Value::Int64(edge.src.0 as i64));
         map.insert(PropertyKey::new("_target"), Value::Int64(edge.dst.0 as i64));
-        for (key, value) in edge.properties.iter() {
-            map.insert(key.clone(), value.clone());
-        }
         Value::Map(Arc::new(map))
     }
 
