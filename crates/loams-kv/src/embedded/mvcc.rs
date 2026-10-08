@@ -152,8 +152,42 @@ fn bounds(ks: u32, root: &[u8], start: &[u8], end: Option<&[u8]>) -> (Vec<u8>, O
     (lo, hi)
 }
 
+fn borrowed(b: &Bound<Vec<u8>>) -> Bound<&[u8]> {
+    match b {
+        Bound::Included(k) => Bound::Included(k.as_slice()),
+        Bound::Excluded(k) => Bound::Excluded(k.as_slice()),
+        Bound::Unbounded => Bound::Unbounded,
+    }
+}
+
+/// The table key at one end of `(lower, upper)`: the first, or with
+/// `last` the last.
+fn edge<T>(
+    table: &T,
+    lower: &Bound<Vec<u8>>,
+    upper: &Bound<Vec<u8>>,
+    last: bool,
+) -> Result<Option<Vec<u8>>, StorageError>
+where
+    T: ReadableTable<&'static [u8], &'static [u8]>,
+{
+    let mut range = table.range::<&[u8]>((borrowed(lower), borrowed(upper)))?;
+    let entry = if last {
+        range.next_back()
+    } else {
+        range.next()
+    };
+    match entry {
+        Some(entry) => Ok(Some(entry?.0.value().to_vec())),
+        None => Ok(None),
+    }
+}
+
 /// Up to `limit` live pairs at `at` in a table range, in key order or its
-/// reverse; keys relative to a root of `root_len` bytes.
+/// reverse; keys relative to a root of `root_len` bytes. Per key it reads
+/// the key's first table entry in the scan's direction and its newest
+/// version at or below `at`, then re-seeks past the key's other versions
+/// (Task 23 prerequisite); `read` counts the entries read.
 fn scan_at<T>(
     table: &T,
     (lo, hi): (Vec<u8>, Option<Vec<u8>>),
@@ -161,6 +195,7 @@ fn scan_at<T>(
     limit: usize,
     reverse: bool,
     root_len: usize,
+    read: &mut u64,
 ) -> Result<Vec<Pair>, StorageError>
 where
     T: ReadableTable<&'static [u8], &'static [u8]>,
@@ -169,63 +204,33 @@ where
     if limit == 0 || hi.as_ref().is_some_and(|hi| lo >= *hi) {
         return Ok(out);
     }
-    let upper = match &hi {
-        Some(hi) => Bound::Excluded(hi.as_slice()),
-        None => Bound::Unbounded,
-    };
-    let range = table.range::<&[u8]>((Bound::Included(lo.as_slice()), upper))?;
-    if reverse {
-        // Oldest version first within a key: the last one at or below `at`
-        // is the newest visible.
-        // The key's prefix, and the newest value at or below `at` so far.
-        type Candidate = (Vec<u8>, Option<Option<Vec<u8>>>);
-        let mut current: Option<Candidate> = None;
-        for entry in range.rev() {
-            let (k, v) = entry?;
-            let Some((p, ts)) = split(k.value()) else {
-                continue;
-            };
-            if current.as_ref().is_none_or(|(cp, _)| cp.as_slice() != p) {
-                if let Some((cp, Some(Some(value)))) = current.take() {
-                    out.push((relative(&cp, root_len), value));
-                    if out.len() >= limit {
-                        return Ok(out);
-                    }
-                }
-                current = Some((p.to_vec(), None));
+    let mut lower = Bound::Included(lo);
+    let mut upper = hi.map_or(Bound::Unbounded, Bound::Excluded);
+    while out.len() < limit {
+        let Some(found) = edge(table, &lower, &upper, reverse)? else {
+            break;
+        };
+        *read += 1;
+        let Some((prefix, _)) = split(&found) else {
+            // Not a version key: step over it.
+            if reverse {
+                upper = Bound::Excluded(found);
+            } else {
+                lower = Bound::Excluded(found);
             }
-            if ts <= at
-                && let Some((_, seen)) = current.as_mut()
-            {
-                *seen = Some(decode(v.value()));
-            }
+            continue;
+        };
+        let prefix = prefix.to_vec();
+        *read += 1;
+        if let Some((_, Some(value))) = newest(table, &prefix, at)? {
+            out.push((relative(&prefix, root_len), value));
         }
-        if let Some((cp, Some(Some(value)))) = current {
-            out.push((relative(&cp, root_len), value));
-        }
-    } else {
-        // Newest version first within a key: the first one at or below `at`.
-        let mut current: Option<Vec<u8>> = None;
-        let mut decided = false;
-        for entry in range {
-            let (k, v) = entry?;
-            let Some((p, ts)) = split(k.value()) else {
-                continue;
-            };
-            if current.as_deref() != Some(p) {
-                current = Some(p.to_vec());
-                decided = false;
-            }
-            if decided || ts > at {
-                continue;
-            }
-            decided = true;
-            if let Some(value) = decode(v.value()) {
-                out.push((relative(p, root_len), value));
-                if out.len() >= limit {
-                    break;
-                }
-            }
+        // Past every version of the key: the newest sorts first, the
+        // oldest last.
+        if reverse {
+            upper = Bound::Excluded(version_key(&prefix, Ts(u64::MAX)));
+        } else {
+            lower = Bound::Excluded(version_key(&prefix, Ts(0)));
         }
     }
     Ok(out)
@@ -234,6 +239,10 @@ where
 fn storage(e: impl std::fmt::Display) -> TxnError {
     TxnError::Fatal(format!("embedded store: {e}"))
 }
+
+/// Scans of at most this many pairs run inline; larger ones on a blocking
+/// thread.
+const INLINE_SCAN: usize = 64;
 
 /// Reads of a store at one timestamp, through a fresh redb read
 /// transaction each.
@@ -258,7 +267,28 @@ impl Reader {
             .collect()
     }
 
-    fn scan(
+    /// A scan; one of more than [`INLINE_SCAN`] pairs runs on a blocking
+    /// thread rather than on the runtime's worker (row T21-12).
+    async fn scan(
+        &self,
+        start: &[u8],
+        end: Option<&[u8]>,
+        limit: usize,
+        reverse: bool,
+    ) -> Result<Vec<Pair>, TxnError> {
+        if limit <= INLINE_SCAN {
+            return self.scan_blocking(start, end, limit, reverse);
+        }
+        let reader = self.clone();
+        let (start, end) = (start.to_vec(), end.map(<[u8]>::to_vec));
+        tokio::task::spawn_blocking(move || {
+            reader.scan_blocking(&start, end.as_deref(), limit, reverse)
+        })
+        .await
+        .map_err(storage)?
+    }
+
+    fn scan_blocking(
         &self,
         start: &[u8],
         end: Option<&[u8]>,
@@ -269,7 +299,19 @@ impl Reader {
         let read = h.shared.core.db.begin_read().map_err(storage)?;
         let table = read.open_table(VERSIONS).map_err(storage)?;
         let range = bounds(h.ks_id, &h.root, start, end);
-        scan_at(&table, range, self.at, limit, reverse, h.root.len()).map_err(storage)
+        let mut read = 0;
+        let pairs = scan_at(
+            &table,
+            range,
+            self.at,
+            limit,
+            reverse,
+            h.root.len(),
+            &mut read,
+        )
+        .map_err(storage);
+        h.shared.core.counters.scan_entries.add(read);
+        pairs
     }
 }
 
@@ -420,7 +462,8 @@ impl Txn {
             .count();
         let fetched = self
             .reader
-            .scan(start, end, limit.saturating_add(hidden), reverse)?;
+            .scan(start, end, limit.saturating_add(hidden), reverse)
+            .await?;
         let mut merged: BTreeMap<Vec<u8>, Vec<u8>> = fetched.into_iter().collect();
         for (k, e) in in_range() {
             match e {
@@ -671,7 +714,7 @@ impl Snap {
         limit: usize,
     ) -> Result<Vec<Pair>, TxnError> {
         self.check_window()?;
-        self.reader.scan(start, end, limit, false)
+        self.reader.scan(start, end, limit, false).await
     }
 
     /// Like [`scan`](Self::scan), in descending key order.
@@ -682,7 +725,7 @@ impl Snap {
         limit: usize,
     ) -> Result<Vec<Pair>, TxnError> {
         self.check_window()?;
-        self.reader.scan(start, end, limit, true)
+        self.reader.scan(start, end, limit, true).await
     }
 }
 

@@ -108,6 +108,7 @@ struct Counters {
     gc_runs: Counter,
     versions_deleted: Counter,
     tokens_swept: Counter,
+    scan_entries: Counter,
 }
 
 /// The counters of a store file (all its handles).
@@ -130,6 +131,8 @@ pub struct EmbeddedStats {
     pub versions_deleted: u64,
     /// Expired commit tokens GC deleted.
     pub tokens_swept: u64,
+    /// Table entries scans read.
+    pub scan_entries: u64,
 }
 
 /// What every handle on a file and the committer thread share.
@@ -604,6 +607,7 @@ impl Handle {
             gc_runs: c.gc_runs.get(),
             versions_deleted: c.versions_deleted.get(),
             tokens_swept: c.tokens_swept.get(),
+            scan_entries: c.scan_entries.get(),
         }
     }
 

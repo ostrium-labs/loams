@@ -374,6 +374,54 @@ async fn gc_does_not_block_commits_for_a_whole_pass() {
     assert!(committed - started < Duration::from_millis(500));
 }
 
+/// A scan over keys with many versions reads each key's newest version
+/// visible at its timestamp, forward and in reverse, and re-seeks past a
+/// key's other versions instead of stepping through them (Task 23
+/// prerequisite): it reads a few table entries per key, not one per
+/// version.
+#[tokio::test]
+async fn scans_reseek_past_older_versions() {
+    let dir = tmp();
+    let store = open(&dir.path().join("store.redb"), "scan").await;
+    let h = handle(&store);
+    many_versions(&store, 20, 25).await;
+    let mid = store.now().await.expect("now");
+    many_versions(&store, 20, 25).await;
+    // Versions 25..49 are newer than `mid`: values 0..24 (the second run
+    // writes 0..24 again) are what `mid` sees, so its newest is 24.
+    let mut snap = store.snapshot(mid).await.expect("a snapshot");
+    for reverse in [false, true] {
+        let before = h.stats().scan_entries;
+        let pairs = if reverse {
+            snap.scan_reverse(&[], None, 100).await
+        } else {
+            snap.scan(&[], None, 100).await
+        }
+        .expect("scan");
+        let read = h.stats().scan_entries - before;
+        assert_eq!(pairs.len(), 20);
+        assert!(pairs.iter().all(|(_, v)| v == &[24]), "the newest at mid");
+        let keys: Vec<u16> = pairs
+            .iter()
+            .map(|(k, _)| u16::from_be_bytes([k[0], k[1]]))
+            .collect();
+        let mut sorted = keys.clone();
+        sorted.sort_unstable();
+        if reverse {
+            sorted.reverse();
+        }
+        assert_eq!(keys, sorted, "key order (reverse {reverse})");
+        assert!(
+            read <= 20 * 3,
+            "{read} entries read for 20 keys of 50 versions (reverse {reverse})"
+        );
+    }
+    // A limit stops early.
+    let before = h.stats().scan_entries;
+    assert_eq!(snap.scan(&[], None, 3).await.expect("scan").len(), 3);
+    assert!(h.stats().scan_entries - before <= 3 * 3);
+}
+
 /// 100 concurrent commits share redb write transactions (and fsyncs).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn group_commit_batches_fsyncs() {
