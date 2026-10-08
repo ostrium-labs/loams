@@ -1,0 +1,56 @@
+/*
+ * Tailwind v4 for the console, utilities only: no preflight (the console and
+ * @loams/ui already style their own elements, and a reset would change every
+ * existing page). Colours, fonts and the easing curve map onto the @loams/ui
+ * tokens (packages/ui/src/tokens.css) with `inline`, so a utility emits
+ * `var(--op-*)` directly and light/dark switching stays with the token sheet.
+ * Tailwind's default palette is cleared: colours come only from the tokens.
+ *
+ * Utilities sit in a cascade layer, so unlayered @loams/ui and console CSS
+ * wins over them. Use utilities for layout and spacing around components.
+ */
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@source "../../../plugins/*/src";
+@source "../../../packages/*/src";
+@source not "../../../**/node_modules";
+@source not "../../../**/dist";
+@source not "../../../**/test";
+@source not "../../../**/tests";
+@source not "../../../**/*.test.{ts,tsx}";
+
+@theme inline {
+  --color-*: initial;
+  --color-bg: var(--op-bg);
+  --color-surface: var(--op-surface);
+  --color-raised: var(--op-raised);
+  --color-rule: var(--op-rule);
+  --color-rule-soft: var(--op-rule-soft);
+  --color-ink: var(--op-ink);
+  --color-muted: var(--op-muted);
+  --color-faint: var(--op-faint);
+  --color-accent: var(--op-accent);
+  --color-accent-soft: var(--op-accent-soft);
+  --color-accent-ink: var(--op-accent-ink);
+  --color-grow: var(--op-grow);
+  --color-grow-soft: var(--op-grow-soft);
+  --color-grow-deep: var(--op-grow-deep);
+  --color-grow-on: var(--op-grow-on);
+  --color-info: var(--op-info);
+  --color-info-soft: var(--op-info-soft);
+  --color-danger: var(--op-danger);
+  --color-danger-soft: var(--op-danger-soft);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+
+  --font-sans: var(--loams-font-sans);
+  --font-mono: var(--loams-font-mono);
+  --ease-op: var(--op-ease);
+
+  /* Panels keep hard corners; anything you press is a pill. */
+  --radius-*: initial;
+  --radius-none: 0;
+  --radius-pill: 999px;
+}

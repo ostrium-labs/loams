@@ -1,6 +1,7 @@
 import '@fontsource-variable/archivo/standard.css';
 import '@fontsource-variable/martian-mono';
 import '@loams/ui/styles.css';
+import './tailwind.css';
 import './app.css';
 
 import { StrictMode } from 'react';

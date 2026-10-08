@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { configDefaults } from 'vitest/config';
@@ -74,7 +75,7 @@ function cspMeta(): Plugin {
 
 export default defineConfig({
   base: '/ui/',
-  plugins: [react(), sandboxAssets('/ui/'), cspMeta()],
+  plugins: [react(), tailwindcss(), sandboxAssets('/ui/'), cspMeta()],
   server: {
     port: 5173,
     proxy: {

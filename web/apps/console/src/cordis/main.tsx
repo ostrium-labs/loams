@@ -10,6 +10,7 @@
 import '@fontsource-variable/archivo/standard.css';
 import '@fontsource-variable/martian-mono';
 import '@loams/ui/styles.css';
+import '../tailwind.css';
 import './console.css';
 
 import { THIRD_PARTY_FLAG } from '@loams/console-host';
