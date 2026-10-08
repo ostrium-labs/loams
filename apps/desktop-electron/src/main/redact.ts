@@ -3,7 +3,8 @@ import type { Secret } from "./factory/vault";
 
 export const MASK = "[redacted]";
 
-const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRe = (s: string): string =>
+	s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Replaces every known secret value (longest first) with `mask`. With `credentials`, also
