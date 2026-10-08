@@ -8,7 +8,6 @@ import {
   Dialog,
   Empty,
   Field,
-  formatDate,
   Input,
   Notice,
   Select,
@@ -84,7 +83,7 @@ const Mono = ({ children }: { children: ReactNode }) => (
   <span className="font-mono text-xs">{children}</span>
 );
 
-const when = (ms: number | undefined) => (ms ? formatDate(new Date(ms).toISOString()) : '—');
+const when = (ms: number | undefined) => (ms ? new Date(ms).toLocaleString() : '—');
 
 function promiseTone(s: PromiseState) {
   if (s === 'resolved') return 'done';
@@ -566,6 +565,7 @@ function NewSchedule({
   const [cron, setCron] = useState('0 * * * *');
   const [promiseId, setPromiseId] = useState('{{.id}}-{{.timestamp}}');
   const [timeout, setTimeoutSecs] = useState('3600');
+  const [target, setTarget] = useState('poll://any@default');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const preview = describeCron(cron);
@@ -583,7 +583,7 @@ function NewSchedule({
         promiseId: promiseId.trim(),
         promiseTimeout: Math.round(secs * 1000),
         promiseParam: { headers: {}, data: '' },
-        promiseTags: {},
+        promiseTags: { 'resonate:target': target.trim() },
       });
       onCreated();
     } catch (err) {
@@ -606,7 +606,7 @@ function NewSchedule({
             variant="primary"
             type="submit"
             form="durable-new-schedule"
-            disabled={busy || !id.trim() || !cron.trim()}
+            disabled={busy || !id.trim() || !cron.trim() || !target.trim()}
           >
             Create schedule
           </Button>
@@ -644,6 +644,19 @@ function NewSchedule({
               className="font-mono"
               value={promiseId}
               onChange={(e) => setPromiseId(e.target.value)}
+            />
+          )}
+        </Field>
+        <Field
+          label="Target"
+          hint="Where the created promises are routed (the resonate:target tag). The server requires it."
+        >
+          {(p) => (
+            <Input
+              {...p}
+              className="font-mono"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
             />
           )}
         </Field>
