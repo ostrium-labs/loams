@@ -27,3 +27,7 @@
       name: '@loams/plugin-live'
     - id: agent
       name: '@loams/plugin-agent'
+    - id: postgres
+      name: '@loams/plugin-postgres'
+    - id: wesql
+      name: '@loams/plugin-wesql'
