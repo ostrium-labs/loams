@@ -40,7 +40,7 @@ const api: LoamsDesktopApi = {
 	},
 	shell: {
 		openExternal: (url) => invoke(CH.shellOpenExternal, url),
-		notify: (title, body) => invoke(CH.shellNotify, title, body),
+		notify: (title, body, route) => invoke(CH.shellNotify, title, body, route),
 		clipboardWrite: (text) => invoke(CH.shellClipboard, text),
 		onNavigate: (cb) => subscribe(CH.shellNavigate, cb),
 		takePendingNavigation: () => invoke(CH.shellPendingNav),

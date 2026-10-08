@@ -55,16 +55,30 @@ export function trayModel(
 	};
 }
 
+/** Console hash routes the tray opens; tests pin them to the plugins' registered paths. */
+export const TRAY_ROUTES = {
+	approvals: "/approvals",
+	servers: "/settings/servers",
+} as const;
+
+/** Default for `shell.closeToTray`: on for Windows only. */
+export function closeToTrayDefault(platform: string): boolean {
+	return platform === "win32";
+}
+
 export type CloseAction = "hide" | "close";
 
-/** Close-to-tray on Windows/Linux with a tray; hide on macOS; otherwise close. */
+/** Close-to-tray when a tray exists and the setting (default: Windows only) allows; hide on macOS; otherwise close. */
 export function closeAction(o: {
 	platform: string;
 	hasTray: boolean;
-	closeToTray: boolean;
+	/** The user's setting; undefined means the platform default. */
+	closeToTray: boolean | undefined;
 	quitting: boolean;
 }): CloseAction {
 	if (o.quitting) return "close";
 	if (o.platform === "darwin") return "hide";
-	return o.hasTray && o.closeToTray ? "hide" : "close";
+	return o.hasTray && (o.closeToTray ?? closeToTrayDefault(o.platform))
+		? "hide"
+		: "close";
 }

@@ -1,11 +1,16 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { menuModel } from "../src/main/shell/menu-model";
+import { reveal } from "../src/main/shell/reveal";
 import {
 	badgeLabel,
 	closeAction,
+	closeToTrayDefault,
+	TRAY_ROUTES,
 	trayModel,
 } from "../src/main/shell/tray-model";
 import type { EngineState, ServerEntry } from "../src/shared/contracts";
+import { isSafeRoute } from "../src/shared/deeplink";
 
 const server: ServerEntry = {
 	id: "local",
@@ -83,6 +88,80 @@ describe("tray-model", () => {
 		expect(closeAction({ ...base, platform: "darwin", hasTray: false })).toBe(
 			"hide",
 		);
+	});
+	it("linux_defaults_to_quit_on_close", () => {
+		const o = {
+			platform: "linux",
+			hasTray: true,
+			closeToTray: undefined,
+			quitting: false,
+		};
+		expect(closeToTrayDefault("linux")).toBe(false);
+		expect(closeAction(o)).toBe("close");
+		expect(closeAction({ ...o, closeToTray: true })).toBe("hide");
+	});
+	it("windows_defaults_to_tray", () => {
+		const o = {
+			platform: "win32",
+			hasTray: true,
+			closeToTray: undefined,
+			quitting: false,
+		};
+		expect(closeAction(o)).toBe("hide");
+		expect(closeAction({ ...o, closeToTray: false })).toBe("close");
+	});
+	it("empty_icon_means_no_tray", () => {
+		// tray.electron.ts returns undefined for an empty icon, so index passes hasTray: false.
+		const o = {
+			platform: "win32",
+			hasTray: false,
+			closeToTray: true,
+			quitting: false,
+		};
+		expect(closeAction(o)).toBe("close");
+		expect(closeAction({ ...o, platform: "linux" })).toBe("close");
+	});
+});
+
+describe("tray routes", () => {
+	it("tray_routes_match_registered_plugin_routes", () => {
+		const read = (p: string) =>
+			readFileSync(new URL(p, import.meta.url), "utf8");
+		const paths = (src: string) =>
+			[...src.matchAll(/path:\s*'([^']+)'/g)].map((m) => m[1]);
+		expect(
+			paths(read("../../../web/plugins/desktop-servers/src/index.tsx")),
+		).toContain(TRAY_ROUTES.servers);
+		expect(
+			paths(read("../../../web/plugins/approvals/src/index.tsx")),
+		).toContain(TRAY_ROUTES.approvals);
+	});
+	it("notify_route_validation", () => {
+		expect(isSafeRoute("/approvals")).toBe(true);
+		for (const bad of [
+			"approvals",
+			"/a/../b",
+			"//x",
+			"/a?b",
+			"/a#b",
+			"javascript:1",
+			5,
+			undefined,
+		])
+			expect(isSafeRoute(bad)).toBe(false);
+	});
+});
+
+describe("reveal", () => {
+	it("reveal_shows_hidden_and_restores_minimized", () => {
+		const calls: string[] = [];
+		reveal({
+			isMinimized: () => true,
+			restore: () => calls.push("restore"),
+			show: () => calls.push("show"),
+			focus: () => calls.push("focus"),
+		});
+		expect(calls).toEqual(["restore", "show", "focus"]);
 	});
 });
 

@@ -97,7 +97,8 @@ export interface LoamsDesktopApi {
 	};
 	shell: {
 		openExternal(url: string): Promise<IpcResult<void>>;
-		notify(title: string, body?: string): Promise<void>;
+		/** `route` (a console hash route) is opened when the notification is clicked. */
+		notify(title: string, body?: string, route?: string): Promise<void>;
 		clipboardWrite(text: string): Promise<void>;
 		onNavigate(cb: (path: string) => void): () => void; // deep links
 		/** Call once after subscribing with onNavigate; returns a link received before the page was ready. */

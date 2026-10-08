@@ -24,6 +24,7 @@ export function createTray(deps: TrayDeps): TrayHandle | undefined {
 		const icon = nativeImage
 			.createFromPath(join(dir, "tray-32.png"))
 			.resize({ width: 16, height: 16 });
+		if (icon.isEmpty()) throw new Error("tray icon missing or empty");
 		tray = new Tray(icon);
 	} catch (e) {
 		console.warn("tray unavailable:", (e as Error).message);

@@ -32,10 +32,11 @@ import { readSetting } from "./settings";
 import { getMainWindow, setMainWindow } from "./shell/main-window";
 import { installAppMenu } from "./shell/menu.electron";
 import { DOCS_URL } from "./shell/menu-model";
+import { reveal } from "./shell/reveal";
 import { registerShellIpc } from "./shell/shell-ipc.electron";
 import { initSingleInstance } from "./shell/single-instance.electron";
 import { createTray, type TrayHandle } from "./shell/tray.electron";
-import { closeAction } from "./shell/tray-model";
+import { closeAction, TRAY_ROUTES } from "./shell/tray-model";
 import {
 	loadWindowState,
 	MIN_HEIGHT,
@@ -64,18 +65,19 @@ function engineAutoStart(): boolean {
 	);
 }
 
-/** `shell.closeToTray` in settings.json; default true. */
-function closeToTray(): boolean {
-	return (
-		readSetting<unknown>(settingsFile(), "shell.closeToTray", true) !== false
+/** `shell.closeToTray` in settings.json; default: true on Windows, false elsewhere. */
+function closeToTray(): boolean | undefined {
+	const v = readSetting<unknown>(
+		settingsFile(),
+		"shell.closeToTray",
+		undefined,
 	);
+	return typeof v === "boolean" ? v : undefined;
 }
 
 function showMainWindow(create: () => BrowserWindow): void {
 	const win = getMainWindow() ?? create();
-	if (win.isMinimized()) win.restore();
-	win.show();
-	win.focus();
+	reveal(win);
 }
 
 function createWindow(): BrowserWindow {
@@ -199,7 +201,10 @@ const singleInstance = initSingleInstance({
 			};
 			registerShellIpc({
 				onBadge: (n) => tray?.setBadge(n),
-				onNotifyClick: () => showMainWindow(open),
+				onNotifyClick: (route) => {
+					showMainWindow(open);
+					if (route) singleInstance.navigate(route);
+				},
 			});
 			app.setAboutPanelOptions({
 				applicationName: "Loams Desktop",
@@ -226,10 +231,10 @@ const singleInstance = initSingleInstance({
 						void (eng.state().phase === "ready" ? eng.stop() : eng.start());
 					else if (id === "approvals") {
 						showMainWindow(open);
-						singleInstance.navigate("/approvals");
+						singleInstance.navigate(TRAY_ROUTES.approvals);
 					} else if (id === "servers") {
 						showMainWindow(open);
-						singleInstance.navigate("/servers");
+						singleInstance.navigate(TRAY_ROUTES.servers);
 					} else if (id === "quit") app.quit();
 				},
 			});

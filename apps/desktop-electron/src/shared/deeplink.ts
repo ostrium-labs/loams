@@ -34,3 +34,16 @@ export function parseDeepLink(raw: string): { path: string } | null {
 			return null;
 	}
 }
+
+const ROUTE = /^\/[A-Za-z0-9._/-]*$/;
+
+/** A console hash-route path safe to navigate to (no traversal, query or hash). */
+export function isSafeRoute(route: unknown): route is string {
+	return (
+		typeof route === "string" &&
+		route.length <= 200 &&
+		ROUTE.test(route) &&
+		!route.includes("//") &&
+		!route.split("/").some((s) => s === "." || s === "..")
+	);
+}

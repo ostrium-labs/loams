@@ -3,6 +3,7 @@ import { CH } from "../../shared/contracts";
 import { parseDeepLink } from "../../shared/deeplink";
 import { assertTrustedSender } from "../security/policy";
 import { NavQueue } from "./nav-queue";
+import { reveal } from "./reveal";
 
 export interface SingleInstanceDeps {
 	getWindow: () => BrowserWindow | undefined;
@@ -32,10 +33,7 @@ export function initSingleInstance(
 
 	const focus = (): BrowserWindow | undefined => {
 		const win = deps.getWindow();
-		if (win) {
-			if (win.isMinimized()) win.restore();
-			win.focus();
-		}
+		if (win) reveal(win);
 		return win;
 	};
 

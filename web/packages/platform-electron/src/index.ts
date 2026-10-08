@@ -85,8 +85,8 @@ export function createElectronPlatform(api: LoamsDesktopApi): PluginModule {
           const result = await api.shell.openExternal(url);
           if (!result.ok) throw new Error(result.message);
         },
-        async notify({ title, body }) {
-          await api.shell.notify(title, body);
+        async notify({ title, body, route }) {
+          await api.shell.notify(title, body, route);
         },
         clipboardWrite: (text) => api.shell.clipboardWrite(text),
       };
