@@ -1,5 +1,5 @@
 // The servers.* IPC handlers without Electron, so argument checks and the
-// activate sequence (I4: cookies cleared before the reload) are unit-tested.
+// activate sequence (I4: the departing session cleared before the reload) are unit-tested.
 import type { IpcResult, ServerEntry } from "../../shared/contracts";
 import { APP_ORIGIN } from "../security/policy";
 import type { ServerRegistry } from "./registry";
@@ -18,21 +18,58 @@ const isId = (v: unknown): v is string =>
 	typeof v === "string" && v.length > 0 && v.length <= MAX_ID;
 
 export interface CookieJarLike {
-	get(filter: {
-		url: string;
-	}): Promise<ReadonlyArray<{ name: string; path?: string }>>;
+	get(filter: Record<string, never>): Promise<
+		ReadonlyArray<{
+			name: string;
+			domain?: string;
+			path?: string;
+			secure?: boolean;
+		}>
+	>;
 	remove(url: string, name: string): Promise<void>;
 }
 
-/** Drops every cookie of the loams-app://console origin (they belong to the previous server). */
-export async function clearConsoleCookies(jar: CookieJarLike): Promise<void> {
-	const cookies = await jar.get({ url: `${APP_ORIGIN}/` });
-	for (const c of cookies)
-		await jar.remove(`${APP_ORIGIN}${c.path || "/"}`, c.name);
+const CONSOLE_HOST = new URL(APP_ORIGIN).hostname;
+
+/** True when a cookie for `domain` is sent to `host` (host-only, or a parent `.domain`). */
+function reaches(domain: string, host: string): boolean {
+	if (!domain.startsWith(".")) return domain === host;
+	return host === domain.slice(1) || host.endsWith(domain);
+}
+
+/**
+ * Drops the session of the server being left. Its cookies are not stored under
+ * loams-app://console (Chromium keeps no cookies for that scheme): the proxy's
+ * `session.fetch` stores them under the server's own host, and cookies ignore the
+ * port, so 127.0.0.1:8084's session would otherwise reach 127.0.0.1:<engine>.
+ * Any console cookie goes too. The jar is listed unfiltered and matched on domain: a
+ * `url` filter is path-matched and would miss a `Path=/api` cookie.
+ */
+export async function clearSessionCookies(
+	jar: CookieJarLike,
+	origin: string,
+): Promise<void> {
+	let server: URL | undefined;
+	try {
+		server = origin ? new URL(origin) : undefined;
+	} catch {
+		server = undefined;
+	}
+	for (const c of await jar.get({})) {
+		const domain = c.domain ?? "";
+		const bare = domain.replace(/^\./, "");
+		const path = c.path || "/";
+		if (bare === CONSOLE_HOST) await jar.remove(`${APP_ORIGIN}${path}`, c.name);
+		else if (server && reaches(domain, server.hostname)) {
+			const scheme = c.secure ? "https:" : server.protocol;
+			await jar.remove(`${scheme}//${bare}${path}`, c.name);
+		}
+	}
 }
 
 export interface ServerHandlerDeps {
-	clearCookies: () => Promise<void>;
+	/** Clears the session of the server at `origin` (the one being left). */
+	clearCookies: (origin: string) => Promise<void>;
 	reload: () => void;
 }
 
@@ -53,10 +90,12 @@ export function serverHandlers(registry: ServerRegistry, d: ServerHandlerDeps) {
 			isId(id) ? registry.remove(id) : bad("Invalid server id"),
 		activate: async (id: unknown): Promise<IpcResult<void>> => {
 			if (!isId(id)) return bad("Invalid server id");
+			const leaving = registry.active();
 			const r = registry.activate(id);
 			if (!r.ok) return r;
-			// Session cookies of the old server must not ride along to the new one.
-			await d.clearCookies().catch(() => undefined);
+			// The old server's session must not ride along to the new one.
+			if (leaving.id !== id)
+				await d.clearCookies(leaving.url).catch(() => undefined);
 			d.reload();
 			return r;
 		},

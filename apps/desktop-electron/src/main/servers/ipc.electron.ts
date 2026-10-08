@@ -2,12 +2,13 @@ import { ipcMain, session } from "electron";
 import { CH } from "../../shared/contracts";
 import { assertTrustedSender } from "../security/policy";
 import { getMainWindow } from "../shell/main-window";
-import { clearConsoleCookies, serverHandlers } from "./handlers";
+import { clearSessionCookies, serverHandlers } from "./handlers";
 import type { ServerRegistry } from "./registry";
 
 export function registerServerIpc(registry: ServerRegistry): void {
 	const h = serverHandlers(registry, {
-		clearCookies: () => clearConsoleCookies(session.defaultSession.cookies),
+		clearCookies: (origin) =>
+			clearSessionCookies(session.defaultSession.cookies, origin),
 		reload: () => getMainWindow()?.webContents.reloadIgnoringCache(),
 	});
 	ipcMain.handle(CH.serversList, (e) => {
