@@ -83,6 +83,20 @@ export class FactoryEmbed {
 		if (this.#win !== win) {
 			this.#ctl.destroyAll();
 			this.#win = win;
+			// A crashed or reloading console can no longer hide the view itself: do it here,
+			// so a native view never floats over a page that does not know about it.
+			const hideIfCurrent = () => {
+				if (this.#win === win) this.#ctl.hide();
+			};
+			const onGone = () => hideIfCurrent();
+			const onNav = (d: {
+				isMainFrame?: boolean;
+				isSameDocument?: boolean;
+			}) => {
+				if (d?.isMainFrame && !d.isSameDocument) hideIfCurrent();
+			};
+			win.webContents.on("render-process-gone", onGone);
+			win.webContents.on("did-start-navigation", onNav);
 			win.once("closed", () => {
 				if (this.#win === win) {
 					this.#ctl.destroyAll();

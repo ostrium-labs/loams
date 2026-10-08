@@ -35,9 +35,8 @@ export function parseDeepLink(raw: string): { path: string } | null {
 				? { path: `/factory${rest.map((s) => `/${s}`).join("")}` }
 				: null;
 		case "servers":
-			return {
-				path: `${TRAY_ROUTES.servers}${rest.map((s) => `/${s}`).join("")}`,
-			};
+			// The console has no per-server route (only /settings/:section): open the list.
+			return { path: TRAY_ROUTES.servers };
 		default:
 			return null;
 	}

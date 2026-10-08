@@ -10,7 +10,8 @@ describe("deeplink_allowlist", () => {
 		["loams://open/factory", "/factory"],
 		["loams://open/factory/forgejo", "/factory/forgejo"],
 		["loams://open/servers", "/settings/servers"],
-		["loams://open/servers/abc", "/settings/servers/abc"],
+		// No per-server route exists: a server id lands on the servers page.
+		["loams://open/servers/abc", "/settings/servers"],
 	])("accepts %s", (raw, path) => {
 		expect(parseDeepLink(raw)).toEqual({ path });
 	});
