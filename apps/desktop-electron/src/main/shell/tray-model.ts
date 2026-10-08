@@ -55,11 +55,7 @@ export function trayModel(
 	};
 }
 
-/** Console hash routes the tray opens; tests pin them to the plugins' registered paths. */
-export const TRAY_ROUTES = {
-	approvals: "/approvals",
-	servers: "/settings/servers",
-} as const;
+export { TRAY_ROUTES } from "../../shared/deeplink";
 
 /** Default for `shell.closeToTray`: on for Windows only. */
 export function closeToTrayDefault(platform: string): boolean {

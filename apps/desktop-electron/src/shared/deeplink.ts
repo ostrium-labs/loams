@@ -1,6 +1,12 @@
 // loams:// deep links. Pure parser; the result is a console hash-route path
 // (the cordis console uses a HashRouter, so `/servers` is `cordis.html#/servers`).
 
+/** Console hash routes shared by the tray and deep links, so they cannot drift. */
+export const TRAY_ROUTES = {
+	approvals: "/approvals",
+	servers: "/settings/servers",
+} as const;
+
 const SEG = /^[A-Za-z0-9._-]+$/;
 const LINK = /^loams:\/\/open((?:\/[^?#]*)?)$/i;
 
@@ -29,7 +35,9 @@ export function parseDeepLink(raw: string): { path: string } | null {
 				? { path: `/factory${rest.map((s) => `/${s}`).join("")}` }
 				: null;
 		case "servers":
-			return rest.length === 0 ? { path: "/servers" } : null;
+			return {
+				path: `${TRAY_ROUTES.servers}${rest.map((s) => `/${s}`).join("")}`,
+			};
 		default:
 			return null;
 	}

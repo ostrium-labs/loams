@@ -9,7 +9,8 @@ describe("deeplink_allowlist", () => {
 		["loams://open/data/ns.one/coll-2", "/data/ns.one/coll-2"],
 		["loams://open/factory", "/factory"],
 		["loams://open/factory/forgejo", "/factory/forgejo"],
-		["loams://open/servers", "/servers"],
+		["loams://open/servers", "/settings/servers"],
+		["loams://open/servers/abc", "/settings/servers/abc"],
 	])("accepts %s", (raw, path) => {
 		expect(parseDeepLink(raw)).toEqual({ path });
 	});
@@ -25,7 +26,6 @@ describe("deeplink_allowlist", () => {
 		"loams://open/console/",
 		"loams://open/data/",
 		"loams://open/data//x",
-		"loams://open/servers/x",
 		"loams://open/factory/a/b",
 		"loams://open/unknown",
 		"loams://open",
