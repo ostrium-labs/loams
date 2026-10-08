@@ -33,7 +33,16 @@ pub struct GraphAdmin {
     engine: Arc<Engine>,
     catalog: GraphCatalog,
     retention_hold: Duration,
+    /// `(namespace, name)` → the catalog id it was last read with, and when (review I4): an
+    /// open graph whose id matches a read younger than [`VALIDATION_TTL`] skips the catalog.
+    validated: Arc<
+        std::sync::Mutex<std::collections::HashMap<(String, String), (String, std::time::Instant)>>,
+    >,
 }
+
+/// How long a catalog read vouches for an open graph (review I4). A delete on this node clears
+/// it at once; one on another node is seen within this window (Task 12 makes it exact).
+pub const VALIDATION_TTL: Duration = Duration::from_secs(1);
 
 fn language_name(language: pb::QueryLanguage) -> &'static str {
     use pb::QueryLanguage as L;
@@ -109,6 +118,7 @@ impl GraphAdmin {
             engine,
             catalog,
             retention_hold: DEFAULT_RETENTION_HOLD,
+            validated: Arc::default(),
         }
     }
 
@@ -199,6 +209,9 @@ impl GraphAdmin {
     ///
     /// `NOT_FOUND`/`graph_not_found` when the catalog has no such graph, or the engine's error.
     pub async fn open(&self, namespace: &str, name: &str) -> Result<Arc<Graph>, ConnectError> {
+        if let Some(graph) = self.recently_validated(namespace, name) {
+            return self.engine.reopen_if_poisoned(graph).map_err(map_engine);
+        }
         let meta = self
             .catalog
             .get_by_name(namespace, name)
@@ -211,6 +224,7 @@ impl GraphAdmin {
             })
             .map_err(map_engine)?;
             if graph.id() == Some(id) {
+                self.remember(namespace, name, &meta.id);
                 return self.engine.reopen_if_poisoned(graph).map_err(map_engine);
             }
             // An older graph of this name is still open: close it and open this one.
@@ -224,6 +238,37 @@ impl GraphAdmin {
             "graph_reloading",
             format!("graph {namespace}/{name} is being replaced; retry"),
         ))
+    }
+
+    /// The open graph under `(namespace, name)` when a catalog read younger than
+    /// [`VALIDATION_TTL`] vouched for its id.
+    fn recently_validated(&self, namespace: &str, name: &str) -> Option<Arc<Graph>> {
+        let (id, at) = self
+            .validated
+            .lock()
+            .ok()?
+            .get(&(namespace.to_string(), name.to_string()))
+            .cloned()?;
+        if at.elapsed() >= VALIDATION_TTL {
+            return None;
+        }
+        self.open_graph(namespace, name)
+            .filter(|g| g.id().is_some_and(|gid| gid.to_string() == id))
+    }
+
+    fn remember(&self, namespace: &str, name: &str, id: &str) {
+        if let Ok(mut validated) = self.validated.lock() {
+            validated.insert(
+                (namespace.to_string(), name.to_string()),
+                (id.to_string(), std::time::Instant::now()),
+            );
+        }
+    }
+
+    fn forget(&self, namespace: &str, name: &str) {
+        if let Ok(mut validated) = self.validated.lock() {
+            validated.remove(&(namespace.to_string(), name.to_string()));
+        }
     }
 
     /// `GetEngineInfo`.
@@ -371,6 +416,7 @@ impl GraphAdmin {
         req: pb::DeleteGraphRequest,
     ) -> Result<ops::Operation, ConnectError> {
         let key = (!req.idempotency_key.is_empty()).then(|| req.idempotency_key.clone());
+        self.forget(&req.namespace, &req.name);
         let meta = self
             .catalog
             .mark_deleting(&req.namespace, &req.name, key)
@@ -386,6 +432,7 @@ impl GraphAdmin {
                 tracing::warn!(namespace = %req.namespace, name = %req.name, error = %err, "a deleted graph is still in use; it closes when released");
             }
         }
+        self.forget(&req.namespace, &req.name);
         let mut operation = ops::Operation {
             id: operation_id(),
             kind: "graph.delete".to_string(),

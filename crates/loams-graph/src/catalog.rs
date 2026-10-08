@@ -233,6 +233,9 @@ pub struct GraphCatalog {
     meta: Arc<dyn MetaStore>,
     store: Store,
     counters: Arc<Counters>,
+    /// The last document read per namespace, keyed by the pointer version it was read at
+    /// (review I4): a load whose pointer has not moved does not GET the document again.
+    cache: Arc<std::sync::Mutex<std::collections::HashMap<NamespaceId, (u64, Document)>>>,
     #[cfg(feature = "test-hooks")]
     ack_hook: Arc<std::sync::Mutex<Option<AckHook>>>,
 }
@@ -251,6 +254,10 @@ pub struct Counters {
     pub document_rereads: std::sync::atomic::AtomicU64,
     /// Writes retried after losing a CAS or an unknown outcome.
     pub cas_retries: std::sync::atomic::AtomicU64,
+    /// Namespace documents loaded (one pointer read each).
+    pub loads: std::sync::atomic::AtomicU64,
+    /// Documents fetched from the bucket (a load whose pointer version was not cached).
+    pub document_gets: std::sync::atomic::AtomicU64,
 }
 
 /// Jittered exponential backoff before retry `attempt` (1-based): up to 5 ms × 2^attempt,
@@ -292,6 +299,7 @@ impl GraphCatalog {
             meta,
             store,
             counters: Arc::default(),
+            cache: Arc::default(),
             #[cfg(feature = "test-hooks")]
             ack_hook: Arc::default(),
         }
@@ -657,6 +665,14 @@ impl GraphCatalog {
 
     // -----------------------------------------------------------------------------------------
 
+    fn cached(&self, namespace: NamespaceId, version: u64) -> Option<Document> {
+        let cache = self.cache.lock().ok()?;
+        cache
+            .get(&namespace)
+            .filter(|(at, _)| *at == version)
+            .map(|(_, doc)| doc.clone())
+    }
+
     async fn namespace_id(&self, namespace: &str) -> Result<Option<NamespaceId>, CatalogError> {
         Ok(self
             .meta
@@ -684,6 +700,9 @@ impl GraphCatalog {
     }
 
     async fn load_ns(&self, namespace: NamespaceId) -> Result<Loaded, CatalogError> {
+        self.counters
+            .loads
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let pointer = self
             .meta
             .pointer(Consistency::Linearizable, namespace, CATALOG_POINTER)
@@ -696,13 +715,26 @@ impl GraphCatalog {
                 doc: Document::default(),
             });
         };
+        if let Some(doc) = self.cached(namespace, pointer.version) {
+            return Ok(Loaded {
+                namespace,
+                version: Some(pointer.version),
+                doc,
+            });
+        }
         let mut pointer = pointer;
         for _ in 0..MAX_ATTEMPTS {
+            self.counters
+                .document_gets
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             match self.store.get(&pointer.value).await {
                 Ok((bytes, _)) => {
                     let doc: Document = serde_json::from_slice(&bytes).map_err(|err| {
                         CatalogError::Corrupt(format!("{}: {err}", pointer.value))
                     })?;
+                    if let Ok(mut cache) = self.cache.lock() {
+                        cache.insert(namespace, (pointer.version, doc.clone()));
+                    }
                     return Ok(Loaded {
                         namespace,
                         version: Some(pointer.version),

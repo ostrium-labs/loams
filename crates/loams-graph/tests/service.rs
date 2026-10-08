@@ -967,8 +967,10 @@ mod admin {
         fixture
             .faulty
             .inject(Op::Get, Fault::Delay(Duration::from_millis(300)));
+        // A fresh admin, so the reader has no cached document (review I4) and must GET.
+        let reader_admin = fixture.admin();
         let reader = {
-            let admin = admin.clone();
+            let admin = reader_admin.clone();
             tokio::spawn(async move { admin.get_graph(get("acme", "a")).await })
         };
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -982,7 +984,7 @@ mod admin {
             .expect("task")
             .expect("the reader re-read the pointer instead of failing");
         assert!(
-            admin
+            reader_admin
                 .catalog()
                 .counters()
                 .document_rereads
@@ -1095,6 +1097,66 @@ mod admin {
         let page = catalog.list("acme", 0, "").await.expect("list");
         let names: Vec<_> = page.graphs.iter().map(|g| g.name.as_str()).collect();
         assert_eq!(names, ["intruder", "late"]);
+    }
+
+    /// Review I4: a namespace document is fetched again only when its pointer moves, and an open
+    /// graph a recent catalog read vouched for runs statements without reading the catalog.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn catalog_reads_are_cached() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        admin
+            .create_graph(create("acme", "kg", "k"))
+            .await
+            .expect("create");
+        let counters = admin.catalog().counters();
+
+        admin.get_graph(get("acme", "kg")).await.expect("get");
+        let gets = counters.document_gets.load(Relaxed);
+        admin.get_graph(get("acme", "kg")).await.expect("get");
+        assert_eq!(counters.document_gets.load(Relaxed), gets, "cached");
+
+        admin
+            .execute(execute("acme", "kg", "RETURN 1 AS x"))
+            .await
+            .expect("first statement");
+        let loads = counters.loads.load(Relaxed);
+        for _ in 0..5 {
+            admin
+                .execute(execute("acme", "kg", "RETURN 1 AS x"))
+                .await
+                .expect("statement");
+        }
+        assert_eq!(
+            counters.loads.load(Relaxed),
+            loads,
+            "no catalog read for a vouched-for graph"
+        );
+
+        // A write moves the pointer: the next read fetches the new document.
+        admin
+            .create_graph(create("acme", "other", "o"))
+            .await
+            .expect("create");
+        let gets = counters.document_gets.load(Relaxed);
+        admin.get_graph(get("acme", "other")).await.expect("get");
+        assert!(counters.document_gets.load(Relaxed) <= gets + 1);
+
+        // A delete is seen at once on this node.
+        admin
+            .delete_graph(pb::DeleteGraphRequest {
+                namespace: "acme".to_string(),
+                name: "kg".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("delete");
+        let err = admin
+            .execute(execute("acme", "kg", "RETURN 1 AS x"))
+            .await
+            .expect_err("deleted");
+        assert_eq!(err.code, ErrorCode::NotFound);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
