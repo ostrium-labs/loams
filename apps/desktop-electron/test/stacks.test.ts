@@ -19,6 +19,7 @@ import {
 	StackManager,
 	syncStackDir,
 	TIKV_PD_ADDR,
+	tikvReady,
 } from "../src/main/stacks/stacks";
 import type { StackState } from "../src/shared/contracts";
 
@@ -436,5 +437,65 @@ describe("stack directory copy (I7)", () => {
 			expect(f).toBe(join(runDir, "tikv", "compose.yaml"));
 			expect(f.startsWith(resources)).toBe(false);
 		}
+	});
+});
+
+describe("tikv readiness", () => {
+	const json = (v: unknown, status = 200) =>
+		new Response(JSON.stringify(v), { status });
+	const pdFetch =
+		(health: unknown, stores: unknown) =>
+		async (url: string): Promise<Response> => {
+			if (url.endsWith("/pd/api/v1/health")) return json(health);
+			if (url.endsWith("/pd/api/v1/stores")) return json(stores);
+			return json({}, 404);
+		};
+	const healthy = [{ name: "pd", health: true }];
+	const upStore = { count: 1, stores: [{ store: { state_name: "Up" } }] };
+
+	it("ready_only_with_healthy_pd_and_an_up_store", async () => {
+		expect(await tikvReady(pdFetch(healthy, upStore))).toBe(true);
+		expect(
+			await tikvReady(pdFetch([{ name: "pd", health: false }], upStore)),
+		).toBe(false);
+		expect(await tikvReady(pdFetch(healthy, { count: 0, stores: [] }))).toBe(
+			false,
+		);
+		expect(
+			await tikvReady(
+				pdFetch(healthy, {
+					count: 1,
+					stores: [{ store: { state_name: "Offline" } }],
+				}),
+			),
+		).toBe(false);
+		expect(
+			await tikvReady(async () => {
+				throw new Error("ECONNREFUSED");
+			}),
+		).toBe(false);
+	});
+
+	it("probes_the_pd_client_address", async () => {
+		const urls: string[] = [];
+		await tikvReady(async (u) => {
+			urls.push(u);
+			return json([]);
+		});
+		expect(urls[0]).toBe(`http://${TIKV_PD_ADDR}/pd/api/v1/health`);
+	});
+
+	it("containers_running_is_starting_until_the_probe_passes", async () => {
+		let ready = false;
+		const m = new StackManager({
+			runtime: { bin: "docker", args: ["compose"] },
+			stacksDir: "/r",
+			logsDir: LOGS(),
+			run: async () => ({ code: 0, stdout: DOCKER_NDJSON }),
+			ready: async (id) => id !== "tikv" || ready,
+		});
+		expect(await m.state("tikv")).toEqual({ phase: "starting" });
+		ready = true;
+		expect(await m.state("tikv")).toMatchObject({ phase: "running" });
 	});
 });

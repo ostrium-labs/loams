@@ -8,9 +8,11 @@ import { getMainWindow } from "../shell/main-window";
 import { type ComposeRuntime, detectRuntime } from "./runtime";
 import {
 	POLL_MS,
+	PROBE_TIMEOUT_MS,
 	STACK_IDS,
 	StackManager,
 	type StackManagerDeps,
+	tikvReady,
 } from "./stacks";
 
 /** Looks a binary up on PATH (with .exe/.cmd handling on Windows) without a shell. */
@@ -63,6 +65,11 @@ export function createStackManager(
 	return new StackManager({
 		...deps,
 		runtime: () => resolveRuntime(whichBin, composeWorks),
+		ready: async (id) =>
+			id !== "tikv" ||
+			tikvReady((url) =>
+				fetch(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) }),
+			),
 	});
 }
 

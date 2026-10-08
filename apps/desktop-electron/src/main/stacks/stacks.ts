@@ -61,6 +61,36 @@ export const TIKV_PD_ADDR = `127.0.0.1:${STACKS.tikv.ports.pd}`;
 const SHARED_PORT_GROUP: StackId[] = ["postgres", "wesql"];
 
 export const COMMAND_TIMEOUT_MS = 5 * 60 * 1000;
+export const PROBE_TIMEOUT_MS = 3000;
+
+/**
+ * Running containers are not a usable TiKV: PD must report every member healthy and
+ * at least one store must be Up, or the engine's `--live-pd` would fail on a cold start.
+ */
+export async function tikvReady(
+	fetchFn: (url: string) => Promise<Response>,
+): Promise<boolean> {
+	const get = async (path: string): Promise<unknown> => {
+		const r = await fetchFn(`http://${TIKV_PD_ADDR}${path}`);
+		if (!r.ok) throw new Error(`status ${r.status}`);
+		return r.json();
+	};
+	try {
+		const health = await get("/pd/api/v1/health");
+		if (
+			!Array.isArray(health) ||
+			health.length === 0 ||
+			!health.every((m) => (m as { health?: unknown })?.health === true)
+		)
+			return false;
+		const stores = (await get("/pd/api/v1/stores")) as {
+			stores?: { store?: { state_name?: unknown } }[];
+		};
+		return (stores?.stores ?? []).some((s) => s?.store?.state_name === "Up");
+	} catch {
+		return false;
+	}
+}
 export const POLL_MS = 5000;
 
 export function composeArgs(
@@ -250,6 +280,8 @@ export interface StackManagerDeps {
 	version?: string;
 	/** Re-copy on every launch (dev: the sources change without a version bump). */
 	alwaysCopy?: boolean;
+	/** Service-level readiness once every container runs (tikv: PD health and a store Up). */
+	ready?: (id: StackId) => Promise<boolean>;
 	logsDir: string;
 	run?: RunFn;
 	timeoutMs?: number;
@@ -361,6 +393,13 @@ export class StackManager extends EventEmitter {
 					message: `unreadable ps output: ${(e as Error).message}`,
 				};
 			}
+			// Running containers are reported as starting until the service answers.
+			if (
+				s.phase === "running" &&
+				this.deps.ready &&
+				!(await this.deps.ready(id).catch(() => false))
+			)
+				s = { phase: "starting" };
 		}
 		if (this.failed.has(id) && s.phase === "stopped") s = this.cur.get(id) ?? s;
 		else this.failed.delete(id);
