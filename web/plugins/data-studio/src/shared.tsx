@@ -2,61 +2,20 @@
 // the page header and the collection tabs.
 
 import { ConnectError } from '@connectrpc/connect';
+import { type Loaded, useLoad as useSharedLoad } from '@loams/desktop-ui';
 import { Notice } from '@loams/ui';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
 export function errorText(e: unknown): string {
   if (e instanceof ConnectError) return e.rawMessage || e.message;
   return e instanceof Error ? e.message : String(e);
 }
 
-export type Loaded<T> =
-  | { state: 'loading' }
-  | { state: 'error'; message: string }
-  | { state: 'ready'; data: T };
+export type { Loaded } from '@loams/desktop-ui';
+export { PageHead } from '@loams/desktop-ui';
 
 /** Runs `load` on mount and whenever `deps` change; `reload` runs it again. */
 export function useLoad<T>(load: () => Promise<T>, deps: unknown[]): [Loaded<T>, () => void] {
-  const [value, setValue] = useState<Loaded<T>>({ state: 'loading' });
-  const [tick, setTick] = useState(0);
-  const loadRef = useRef(load);
-  loadRef.current = load;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deps are the caller's
-  useEffect(() => {
-    let live = true;
-    setValue({ state: 'loading' });
-    loadRef
-      .current()
-      .then((data) => live && setValue({ state: 'ready', data }))
-      .catch((e) => live && setValue({ state: 'error', message: errorText(e) }));
-    return () => {
-      live = false;
-    };
-  }, [...deps, tick]);
-  return [value, useCallback(() => setTick((t) => t + 1), [])];
-}
-
-export function PageHead({
-  title,
-  subtitle,
-  actions,
-  crumbs,
-}: {
-  title: ReactNode;
-  subtitle?: ReactNode;
-  actions?: ReactNode;
-  crumbs?: ReactNode;
-}) {
-  return (
-    <header className="ds-head">
-      <div>
-        {crumbs && <nav className="ds-crumbs">{crumbs}</nav>}
-        <h1>{title}</h1>
-        {subtitle && <p className="lc-muted">{subtitle}</p>}
-      </div>
-      {actions && <div className="ds-head-actions">{actions}</div>}
-    </header>
-  );
+  return useSharedLoad(load, deps, { errorText });
 }
 
 export function ErrorNotice({ title, message }: { title: string; message: string }) {

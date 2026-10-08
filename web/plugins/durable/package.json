@@ -46,6 +46,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@loams/desktop-ui": "workspace:*",
     "@loams/console-host": "workspace:*",
     "@loams/cordis": "workspace:*",
     "@loams/durable-client": "workspace:*",

@@ -173,25 +173,7 @@ export function QueryCard<T>({
 
 export const infoOf = (apps: FactoryAppInfo[], app: FactoryAppId) => apps.find((a) => a.id === app);
 
-export function PageHead({
-  title,
-  subtitle,
-  actions,
-}: {
-  title: ReactNode;
-  subtitle?: ReactNode;
-  actions?: ReactNode;
-}) {
-  return (
-    <header className="lc-page-head flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h1>{title}</h1>
-        {subtitle && <p>{subtitle}</p>}
-      </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
-    </header>
-  );
-}
+export { PageHead } from '@loams/desktop-ui';
 
 export const ago = (iso: string | undefined, fmt: (s: string) => string) => {
   if (!iso) return '';

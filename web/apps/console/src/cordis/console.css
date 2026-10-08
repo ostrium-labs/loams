@@ -484,11 +484,13 @@ body {
   margin-bottom: 4px;
 }
 .ds-crumbs a,
+.lc-crumbs a,
 .ds-link {
   color: inherit;
   text-decoration: none;
 }
 .ds-crumbs a:hover,
+.lc-crumbs a:hover,
 .ds-link:hover {
   text-decoration: underline;
 }

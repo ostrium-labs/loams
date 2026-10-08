@@ -1190,6 +1190,9 @@ importers:
       '@loams/cordis':
         specifier: workspace:*
         version: link:../../packages/cordis
+      '@loams/desktop-ui':
+        specifier: workspace:*
+        version: link:../../packages/desktop-ui
       '@loams/slots':
         specifier: workspace:*
         version: link:../../packages/slots
@@ -1251,6 +1254,9 @@ importers:
       '@loams/cordis':
         specifier: workspace:*
         version: link:../../packages/cordis
+      '@loams/desktop-ui':
+        specifier: workspace:*
+        version: link:../../packages/desktop-ui
       '@loams/proto':
         specifier: workspace:*
         version: link:../../packages/proto
@@ -1398,6 +1404,9 @@ importers:
       '@loams/cordis':
         specifier: workspace:*
         version: link:../../packages/cordis
+      '@loams/desktop-ui':
+        specifier: workspace:*
+        version: link:../../packages/desktop-ui
       '@loams/durable-client':
         specifier: workspace:*
         version: link:../../packages/durable-client
@@ -1450,6 +1459,9 @@ importers:
       '@loams/cordis':
         specifier: workspace:*
         version: link:../../packages/cordis
+      '@loams/desktop-ui':
+        specifier: workspace:*
+        version: link:../../packages/desktop-ui
       '@loams/slots':
         specifier: workspace:*
         version: link:../../packages/slots
@@ -1973,6 +1985,9 @@ importers:
       '@loams/cordis':
         specifier: workspace:*
         version: link:../../packages/cordis
+      '@loams/desktop-ui':
+        specifier: workspace:*
+        version: link:../../packages/desktop-ui
       '@loams/slots':
         specifier: workspace:*
         version: link:../../packages/slots

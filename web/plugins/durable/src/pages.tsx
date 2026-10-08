@@ -1,6 +1,7 @@
 // The durable execution page: promises, schedules, tasks and runs of the
 // local engine's Resonate server, through the envelope client.
 
+import { type Loaded, useLoad as useSharedLoad } from '@loams/desktop-ui';
 import {
   Badge,
   Button,
@@ -42,29 +43,8 @@ export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-type Loaded<T> =
-  | { state: 'loading' }
-  | { state: 'error'; message: string }
-  | { state: 'ready'; data: T };
-
 function useLoad<T>(load: () => Promise<T>, deps: unknown[]): [Loaded<T>, () => void] {
-  const [value, setValue] = useState<Loaded<T>>({ state: 'loading' });
-  const [tick, setTick] = useState(0);
-  const loadRef = useRef(load);
-  loadRef.current = load;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deps are the caller's
-  useEffect(() => {
-    let live = true;
-    setValue({ state: 'loading' });
-    loadRef
-      .current()
-      .then((data) => live && setValue({ state: 'ready', data }))
-      .catch((e) => live && setValue({ state: 'error', message: errorText(e) }));
-    return () => {
-      live = false;
-    };
-  }, [...deps, tick]);
-  return [value, useCallback(() => setTick((t) => t + 1), [])];
+  return useSharedLoad(load, deps, { errorText });
 }
 
 function ErrorNotice({ title, message }: { title: string; message: string }) {

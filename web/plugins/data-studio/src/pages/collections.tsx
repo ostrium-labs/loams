@@ -1,5 +1,9 @@
 import type { JsonObject } from '@bufbuild/protobuf';
 import {
+  rememberNamespace as rememberShared,
+  NamespacePicker as SharedPicker,
+} from '@loams/desktop-ui';
+import {
   Badge,
   Button,
   Card,
@@ -17,51 +21,18 @@ import { ErrorNotice, errorText, PageHead, Tabs, useLoad } from '../shared.js';
 
 const RECENT_KEY = 'loams.data.namespaces';
 
-function recentNamespaces(): string[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
-    return Array.isArray(raw) ? raw.filter((s): s is string => typeof s === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
 export function rememberNamespace(ns: string): void {
-  try {
-    const next = [ns, ...recentNamespaces().filter((n) => n !== ns)].slice(0, 12);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    // storage is a convenience only
-  }
+  rememberShared(RECENT_KEY, ns);
 }
 
 export function NamespacePicker({ ns, navigate }: { ns: string; navigate: (to: string) => void }) {
-  const [draft, setDraft] = useState(ns);
-  const go = (e: FormEvent) => {
-    e.preventDefault();
-    const next = draft.trim();
-    if (next) navigate(`/data/${encodeURIComponent(next)}`);
-  };
-  const options = [...new Set(['default', ns, ...recentNamespaces()])];
   return (
-    <form className="ds-ns" onSubmit={go}>
-      <label htmlFor="ds-ns-input">Namespace</label>
-      <Input
-        id="ds-ns-input"
-        list="ds-ns-options"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        spellCheck={false}
-      />
-      <datalist id="ds-ns-options">
-        {options.map((o) => (
-          <option key={o} value={o} />
-        ))}
-      </datalist>
-      <Button type="submit" size="sm">
-        Open
-      </Button>
-    </form>
+    <SharedPicker
+      ns={ns}
+      onOpen={(next) => navigate(`/data/${encodeURIComponent(next)}`)}
+      storageKey={RECENT_KEY}
+      idPrefix="ds"
+    />
   );
 }
 
