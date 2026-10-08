@@ -1,3 +1,5 @@
+import { Readable } from "node:stream";
+
 export const MAX_MANIFEST_BYTES = 256 * 1024;
 
 /** Read a response body, refusing more than `max` bytes (content-length and streamed). */
@@ -107,4 +109,94 @@ export async function fetchFeedFiles(
 		get(`${file}.sig`).catch(() => new Uint8Array()),
 	]);
 	return { yml, sig };
+}
+
+export const REQUEST_TIMEOUT_MS = 30_000;
+const NULL_BODY = new Set([204, 205, 304]);
+
+/** The parts of Electron's ClientRequest / IncomingMessage that manualGet uses. */
+export interface NetRequestLike {
+	on(
+		ev: "redirect",
+		cb: (status: number, method: string, location: string) => void,
+	): unknown;
+	on(ev: "response", cb: (res: NetResponseLike) => void): unknown;
+	on(ev: "error", cb: (e: Error) => void): unknown;
+	abort(): void;
+	end(): void;
+}
+export type NetResponseLike = NodeJS.ReadableStream & {
+	statusCode: number;
+	headers: Record<string, string | string[]>;
+};
+
+/**
+ * One GET that surfaces a 3xx as a Response instead of following it (Electron's
+ * `net.fetch({redirect:"manual"})` rejects with "Redirect was cancelled" instead).
+ * fetchFollowing decides which hops are allowed. The whole exchange, body included,
+ * is aborted after `timeoutMs`.
+ */
+export function manualGet(
+	open: () => NetRequestLike,
+	timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+	return new Promise((resolve, reject) => {
+		const req = open();
+		let settled = false;
+		const timer = setTimeout(() => {
+			req.abort();
+			if (!settled) {
+				settled = true;
+				reject(new Error("timeout"));
+			}
+		}, timeoutMs);
+		timer.unref?.();
+		const done = (): void => clearTimeout(timer);
+		const fail = (e: unknown): void => {
+			done();
+			req.abort();
+			if (settled) return;
+			settled = true;
+			reject(e instanceof Error ? e : new Error(String(e)));
+		};
+		const ok = (r: Response): void => {
+			if (settled) return;
+			settled = true;
+			resolve(r);
+		};
+		req.on("redirect", (status, _method, location) => {
+			try {
+				done();
+				ok(new Response(null, { status, headers: { location } }));
+				req.abort();
+			} catch (e) {
+				fail(e);
+			}
+		});
+		req.on("response", (res) => {
+			try {
+				const status = res.statusCode;
+				if (!Number.isInteger(status) || status < 200 || status > 599)
+					throw new Error(`unexpected status ${status}`);
+				const headers = new Headers();
+				for (const [k, v] of Object.entries(res.headers))
+					headers.set(k, Array.isArray(v) ? v.join(", ") : v);
+				if (NULL_BODY.has(status)) {
+					done();
+					ok(new Response(null, { status, headers }));
+					return;
+				}
+				res.on("end", done);
+				res.on("error", done);
+				const body = Readable.toWeb(
+					res as unknown as Readable,
+				) as unknown as ReadableStream<Uint8Array>;
+				ok(new Response(body, { status, headers }));
+			} catch (e) {
+				fail(e);
+			}
+		});
+		req.on("error", fail);
+		req.end();
+	});
 }

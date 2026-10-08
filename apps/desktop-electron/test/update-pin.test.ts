@@ -1,9 +1,11 @@
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import {
 	createController,
 	type UpdaterLike,
 } from "../src/main/update/controller";
-import { fetchFeedFiles, readCapped } from "../src/main/update/feed";
+import { fetchFeedFiles, manualGet, readCapped } from "../src/main/update/feed";
 import {
 	downloadedFileMatches,
 	matchesPinned,
@@ -382,5 +384,81 @@ describe("controller", () => {
 		expect(h.calls.download).toBe(0);
 		await ctl.install();
 		expect(h.calls.quit).toBe(0);
+	});
+});
+
+describe("manualGet (net.request adapter)", () => {
+	class FakeReq extends EventEmitter {
+		aborted = false;
+		ended = false;
+		abort() {
+			this.aborted = true;
+		}
+		end() {
+			this.ended = true;
+		}
+	}
+	const res = (statusCode: number, body = "") => {
+		const r = Object.assign(new PassThrough(), {
+			statusCode,
+			headers: { "content-type": "text/plain", "set-cookie": ["a", "b"] },
+		});
+		r.end(body);
+		return r;
+	};
+
+	it("returns_body_and_headers", async () => {
+		const req = new FakeReq();
+		const p = manualGet(() => req);
+		req.emit("response", res(200, "hello"));
+		const r = await p;
+		expect(r.status).toBe(200);
+		expect(r.headers.get("set-cookie")).toBe("a, b");
+		expect(await r.text()).toBe("hello");
+		expect(req.ended).toBe(true);
+	});
+
+	it("redirect_becomes_a_3xx_and_aborts", async () => {
+		const req = new FakeReq();
+		const p = manualGet(() => req);
+		req.emit("redirect", 302, "GET", "https://x.githubusercontent.com/a");
+		const r = await p;
+		expect(r.status).toBe(302);
+		expect(r.headers.get("location")).toBe("https://x.githubusercontent.com/a");
+		expect(req.aborted).toBe(true);
+	});
+
+	it("null_body_statuses_have_no_body", async () => {
+		for (const s of [204, 205, 304]) {
+			const req = new FakeReq();
+			const p = manualGet(() => req);
+			req.emit("response", res(s));
+			const r = await p;
+			expect(r.status).toBe(s);
+			expect(r.body).toBeNull();
+		}
+	});
+
+	it("out_of_range_status_rejects", async () => {
+		for (const s of [0, 101, 600]) {
+			const req = new FakeReq();
+			const p = manualGet(() => req);
+			req.emit("response", res(s));
+			await expect(p).rejects.toThrow(/status/);
+			expect(req.aborted).toBe(true);
+		}
+	});
+
+	it("times_out_and_aborts", async () => {
+		const req = new FakeReq();
+		await expect(manualGet(() => req, 20)).rejects.toThrow("timeout");
+		expect(req.aborted).toBe(true);
+	});
+
+	it("request_error_rejects", async () => {
+		const req = new FakeReq();
+		const p = manualGet(() => req);
+		req.emit("error", new Error("net::ERR_NAME_NOT_RESOLVED"));
+		await expect(p).rejects.toThrow("ERR_NAME_NOT_RESOLVED");
 	});
 });
