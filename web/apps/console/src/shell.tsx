@@ -8,6 +8,7 @@ import {
   Lock,
   LogOut,
   Menu,
+  Monitor,
   Moon,
   ScrollText,
   Settings,
@@ -160,6 +161,11 @@ export function Shell() {
           </nav>
 
           <div className="side-foot">
+            {window.loamsDesktop && (
+              <a href="/ui/cordis.html">
+                <Monitor size={16} aria-hidden="true" /> Desktop
+              </a>
+            )}
             <a href="https://loams.dev/docs" target="_blank" rel="noreferrer">
               <BookOpen size={16} aria-hidden="true" /> Documentation
             </a>

@@ -20,6 +20,7 @@
     "@loams/console-host": "workspace:*",
     "@loams/cordis": "workspace:*",
     "@loams/example-plugin-hello": "workspace:*",
+    "@loams/platform-electron": "workspace:*",
     "@loams/platform-web": "workspace:*",
     "@loams/plugin-approvals": "workspace:*",
     "@loams/plugin-identity": "workspace:*",

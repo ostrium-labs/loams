@@ -50,9 +50,23 @@ export type IpcResult<T> =
 	| { ok: true; value: T }
 	| { ok: false; code: string; message: string };
 
+/** `NodeJS.Platform`, spelled out so the web packages can import this file without @types/node. */
+export type DesktopPlatform =
+	| "aix"
+	| "android"
+	| "darwin"
+	| "freebsd"
+	| "haiku"
+	| "linux"
+	| "openbsd"
+	| "sunos"
+	| "win32"
+	| "cygwin"
+	| "netbsd";
+
 export interface LoamsDesktopApi {
 	version: string;
-	platform: NodeJS.Platform;
+	platform: DesktopPlatform;
 	servers: {
 		list(): Promise<{ servers: ServerEntry[]; activeId: string }>;
 		add(e: Omit<ServerEntry, "id">): Promise<IpcResult<ServerEntry>>;

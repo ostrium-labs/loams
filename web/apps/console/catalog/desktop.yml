@@ -1,0 +1,10 @@
+# The desktop edition's catalog patch (AP1e), applied after base.yml by
+# src/cordis/desktop.ts. Each desktop plugin task appends its own row here
+# and its module to src/cordis/desktop.ts. Desktop plugins declare
+# `editions: ['desktop']` and `inject: ['desktop']`, so a browser build never
+# loads them.
+#
+#   - insert:
+#       - id: desktop-servers
+#         name: '@loams/plugin-desktop-servers'
+[]

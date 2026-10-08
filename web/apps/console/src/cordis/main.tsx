@@ -16,6 +16,7 @@ import { THIRD_PARTY_FLAG } from '@loams/console-host';
 import { createMockTransport } from '@loams/console-host/testing';
 import { createWebPlatform } from '@loams/platform-web';
 import { loadRuntimeConfig } from '../runtime-config.js';
+import { startDesktop } from './desktop.js';
 import { startConsole } from './start.js';
 
 const appsUrl = import.meta.env.DEV
@@ -28,6 +29,9 @@ const root = document.getElementById('root');
 if (root) {
   loadRuntimeConfig(import.meta.env.BASE_URL)
     .then((config) => {
+      // The Electron shell exposes `loamsDesktop` (preload); everything else is the web path.
+      if (globalThis.loamsDesktop) return startDesktop(globalThis.loamsDesktop, root);
+
       const platform = createWebPlatform(
         demo
           ? { transport: createMockTransport({ features: { [THIRD_PARTY_FLAG]: true } }) }
