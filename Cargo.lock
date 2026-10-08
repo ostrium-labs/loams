@@ -6710,7 +6710,9 @@ dependencies = [
  "buffa",
  "buffa-types",
  "connectrpc",
+ "fail 0.5.1",
  "grafeo",
+ "grafeo-adapters",
  "grafeo-common",
  "grafeo-engine",
  "loams-proto",
@@ -6720,6 +6722,7 @@ dependencies = [
  "thiserror 2.0.21",
  "toml 0.8.23",
  "tracing",
+ "ulid 3.0.0",
 ]
 
 [[package]]

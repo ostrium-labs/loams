@@ -20,10 +20,13 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use grafeo::{Error as GrafeoError, GrafeoDB, QueryResult, Value};
+use loams_proto::loams::graph::v1::QueryLanguage;
+
+use crate::classify::{Access, gate};
 use grafeo_common::types::PropertyKey;
 
 /// What this crate can be wrong about, all of it recoverable by the caller.
@@ -70,16 +73,109 @@ pub enum GraphError {
         /// The parameter the statement named.
         name: String,
     },
+    /// `START TRANSACTION`, `COMMIT`, `ROLLBACK` or a savepoint statement: the RPC owns the
+    /// transaction (§48 §7.3).
+    #[error(
+        "GQL's transaction statements are not served: one RPC is one transaction (use ExecuteBatch with atomic for several statements)"
+    )]
+    TransactionStatement,
+    /// A statement no caller may run: file access (R0.11) or graph management (R0.10 (b)).
+    #[error("the statement is not allowed: {what}")]
+    StatementNotAllowed {
+        /// File access (`PERMISSION_DENIED`) rather than graph management (`FAILED_PRECONDITION`).
+        file_access: bool,
+        /// What was refused.
+        what: String,
+    },
+    /// A variable-length pattern with no upper bound, or one above the limit (R0.8 (b)).
+    #[error(
+        "a variable-length pattern must have an upper bound of at most {max_hops} hops, for example *1..{max_hops}"
+    )]
+    UnboundedPath {
+        /// The largest upper bound allowed.
+        max_hops: u32,
+    },
+    /// The engine panicked inside this call. The graph is poisoned and reopens on its next call
+    /// (R0.13).
+    #[error("the graph engine failed inside this call; the graph is being reloaded")]
+    EnginePanic,
+    /// The graph is poisoned by an earlier panic and has not been reopened yet.
+    #[error("the graph is reloading after an engine failure; retry")]
+    Reloading,
+}
+
+impl GraphError {
+    /// The `loams.errors.v1.ErrorInfo.reason` this error is answered with (§48 §8.3).
+    #[must_use]
+    pub fn reason(&self) -> &'static str {
+        match self {
+            Self::Engine(text) if text.contains("syntax error") => "gql_syntax_error",
+            Self::Engine(_)
+            | Self::EmptyStatement
+            | Self::UnboundParameter { .. }
+            | Self::InvalidValue(_) => "invalid_argument",
+            Self::Conflict { .. } => "already_exists",
+            Self::ReadOnly => "graph_read_only",
+            Self::LanguageUnavailable(_) => "graph_language_disabled",
+            Self::TransactionStatement => "graph_transaction_statement",
+            Self::StatementNotAllowed { .. } => "graph_statement_not_allowed",
+            Self::UnboundedPath { .. } => "graph_unbounded_path",
+            Self::EnginePanic => "graph_engine_panic",
+            Self::Reloading => "graph_reloading",
+        }
+    }
 }
 
 /// How to open a graph.
-#[derive(Debug, Clone, Default)]
+///
+/// Storage is either in memory (tests, and an engine with no data directory) or
+/// `<data_dir>/graphs/<graph_id>/` (GR1 Task 3): there is no other way to name it, so no caller,
+/// and no RPC field, can point a graph at a path of its choosing (Review Focus 4).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OpenSpec {
-    /// Where the graph's storage lives. Empty means in memory, and the graph is then ephemeral: it
-    /// dies with this process.
-    pub database_path: PathBuf,
+    /// The graph's storage directory, `None` for in memory.
+    dir: Option<PathBuf>,
     /// Open read-only: every writing statement is refused before it reaches the engine.
     pub read_only: bool,
+}
+
+impl OpenSpec {
+    /// An in-memory graph: it dies with this process.
+    #[must_use]
+    pub fn in_memory() -> Self {
+        Self::default()
+    }
+
+    /// A persistent graph under the engine's data directory, at `graphs/<id>/`. `None` when the
+    /// engine has no data directory.
+    #[must_use]
+    pub fn persistent(engine: &Engine, id: crate::GraphId) -> Option<Self> {
+        let data_dir = engine.data_dir.as_ref()?;
+        Some(Self {
+            dir: Some(data_dir.join("graphs").join(id.to_string())),
+            read_only: false,
+        })
+    }
+
+    /// The same spec, read-only.
+    #[must_use]
+    pub fn read_only(mut self) -> Self {
+        self.read_only = true;
+        self
+    }
+
+    fn database_file(&self) -> Option<PathBuf> {
+        self.dir.as_ref().map(|dir| dir.join("graph.grafeo"))
+    }
+}
+
+/// Whether a graph is serving.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphState {
+    /// Serving.
+    Ready,
+    /// An engine call panicked; the graph reopens on its next call.
+    Poisoned,
 }
 
 /// One row of a result. Values positionally aligned with the result's column names, because a graph
@@ -156,11 +252,14 @@ pub struct Graph {
     namespace: String,
     name: String,
     db: GrafeoDB,
-    /// The path this graph was opened with, kept because `GrafeoDB` does not expose it back and
-    /// `open` has to compare it to decide whether a reopen agrees.
-    path: Option<PathBuf>,
+    /// The spec this graph was opened with: `open` compares it to decide whether a reopen agrees,
+    /// and a poisoned graph is reopened from it.
+    spec: OpenSpec,
     read_only: bool,
     persistent: bool,
+    /// Set when an engine call panicked (R0.13): the graph's in-memory state is whatever the
+    /// panicking call left, so it is not served again until it is reopened.
+    poisoned: AtomicBool,
     /// A counter rather than a plain field because `execute` takes `&self`: several statements can
     /// be in flight against one graph, and a lost update here would be a wrong number on the wire.
     statements_executed: AtomicU64,
@@ -179,6 +278,8 @@ impl fmt::Debug for Graph {
             .field("name", &self.name)
             .field("read_only", &self.read_only)
             .field("persistent", &self.persistent)
+            .field("storage", &self.spec.dir)
+            .field("poisoned", &self.is_poisoned())
             .field("statements_executed", &self.statements_executed())
             .finish_non_exhaustive()
     }
@@ -202,9 +303,7 @@ impl Graph {
             .map_err(|_| poisoned("the graph registry is poisoned"))?;
 
         if let Some(existing) = graphs.get(&key) {
-            if existing.read_only != spec.read_only
-                || existing.db_path() != spec.database_path.as_path()
-            {
+            if existing.spec != spec {
                 return Err(GraphError::Conflict {
                     namespace: namespace.to_string(),
                     name: name.to_string(),
@@ -212,33 +311,7 @@ impl Graph {
             }
             return Ok(Arc::clone(existing));
         }
-
-        // An embedded engine, so this is a path and never a URL: there is no connection to make and
-        // nothing to authenticate (D634 (b)). The engine is opened while the registry lock is held
-        // so that two callers racing on one key cannot both create a store; opening a file is
-        // bounded by the filesystem, and the alternative is two engines for one name.
-        let in_memory = spec.database_path.as_os_str().is_empty();
-        let db = match (&spec.database_path, spec.read_only) {
-            // `open_read_only` is the engine's own read-only mode: it takes a shared lock and skips
-            // WAL replay, so a read-only graph cannot be made to write even by a statement this
-            // crate's guard mis-classifies. Grafeo requires an existing `.grafeo` file for it, so
-            // an in-memory read-only graph falls through to the guarded path below.
-            (path, true) if !path.as_os_str().is_empty() => {
-                GrafeoDB::open_read_only(path).map_err(as_engine_error)?
-            }
-            (path, _) if path.as_os_str().is_empty() => GrafeoDB::new_in_memory(),
-            (path, _) => GrafeoDB::open(path).map_err(as_engine_error)?,
-        };
-
-        let graph = Arc::new(Graph {
-            namespace: namespace.to_string(),
-            name: name.to_string(),
-            db,
-            path: (!in_memory).then(|| spec.database_path.clone()),
-            read_only: spec.read_only,
-            persistent: !in_memory,
-            statements_executed: AtomicU64::new(0),
-        });
+        let graph = Arc::new(Graph::open_db(namespace, name, spec)?);
         graphs.insert(key, Arc::clone(&graph));
         tracing::debug!(
             namespace = %graph.namespace,
@@ -250,10 +323,106 @@ impl Graph {
         Ok(graph)
     }
 
-    fn db_path(&self) -> &Path {
-        // `GrafeoDB` does not expose its path, so it is kept alongside rather than read back. An
-        // empty OpenSpec path means in-memory, which is what the comparison in `open` needs.
-        self.path.as_deref().unwrap_or(Path::new(""))
+    /// Opens the engine for a spec. An embedded engine, so this is a directory and never a URL:
+    /// there is no connection to make and nothing to authenticate (D634 (b)).
+    fn open_db(namespace: &str, name: &str, spec: OpenSpec) -> Result<Graph, GraphError> {
+        let db = match spec.database_file() {
+            None => GrafeoDB::new_in_memory(),
+            // `open_read_only` is the engine's own read-only mode: a shared lock and no WAL
+            // replay, so a read-only graph cannot be made to write even by a statement the gate
+            // mis-classifies. Grafeo requires an existing `.grafeo` file for it.
+            Some(file) if spec.read_only => {
+                GrafeoDB::open_read_only(&file).map_err(as_engine_error)?
+            }
+            Some(file) => {
+                if let Some(dir) = &spec.dir {
+                    std::fs::create_dir_all(dir).map_err(|err| {
+                        GraphError::Engine(format!("creating the graph's storage: {err}"))
+                    })?;
+                }
+                GrafeoDB::open(&file).map_err(as_engine_error)?
+            }
+        };
+        Ok(Graph {
+            namespace: namespace.to_string(),
+            name: name.to_string(),
+            db,
+            read_only: spec.read_only,
+            persistent: spec.dir.is_some(),
+            spec,
+            poisoned: AtomicBool::new(false),
+            statements_executed: AtomicU64::new(0),
+        })
+    }
+
+    /// The graph's storage directory, `<data_dir>/graphs/<graph_id>/`, or `None` in memory.
+    pub fn storage_dir(&self) -> Option<&Path> {
+        self.spec.dir.as_deref()
+    }
+
+    /// Whether the graph is serving or waiting to be reopened.
+    pub fn state(&self) -> GraphState {
+        if self.is_poisoned() {
+            GraphState::Poisoned
+        } else {
+            GraphState::Ready
+        }
+    }
+
+    fn is_poisoned(&self) -> bool {
+        self.poisoned.load(Ordering::Acquire)
+    }
+
+    /// The engine's current epoch.
+    pub fn current_epoch(&self) -> grafeo_common::types::EpochId {
+        self.db.current_epoch()
+    }
+
+    /// A Grafeo session with the role an access needs (R0.10): `ReadOnly` for a read,
+    /// `ReadWrite` for a write, `Admin` for schema DDL. The engine refuses anything the role does
+    /// not allow, whatever the gate concluded.
+    pub fn session_for(&self, access: Access) -> grafeo::Session {
+        let role = match access {
+            Access::Read => grafeo_engine::auth::Role::ReadOnly,
+            Access::Write => grafeo_engine::auth::Role::ReadWrite,
+            Access::Admin => grafeo_engine::auth::Role::Admin,
+        };
+        self.db.session_with_role(role)
+    }
+
+    /// Runs one engine call with panic containment (R0.13): a panic poisons this graph and
+    /// answers [`GraphError::EnginePanic`]; other graphs are untouched. A poisoned graph answers
+    /// [`GraphError::Reloading`] until it is reopened ([`Engine::reopen_if_poisoned`]).
+    fn call<T>(&self, f: impl FnOnce() -> Result<T, GraphError>) -> Result<T, GraphError> {
+        if self.is_poisoned() {
+            return Err(GraphError::Reloading);
+        }
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(feature = "failpoints")]
+            fail::fail_point!("loams_graph::engine_call");
+            f()
+        }));
+        match outcome {
+            Ok(result) => result,
+            Err(_) => {
+                self.poisoned.store(true, Ordering::Release);
+                tracing::error!(
+                    namespace = %self.namespace,
+                    name = %self.name,
+                    "the graph engine panicked; the graph is poisoned and reopens on its next call"
+                );
+                Err(GraphError::EnginePanic)
+            }
+        }
+    }
+
+    /// The access a statement needs, refusing it on a read-only request or graph.
+    fn admit(&self, statement: &str, read_only: bool) -> Result<Access, GraphError> {
+        let access = gate(statement, QueryLanguage::Gql)?;
+        if (read_only || self.read_only) && access != Access::Read {
+            return Err(GraphError::ReadOnly);
+        }
+        Ok(access)
     }
 
     /// This graph's namespace.
@@ -288,26 +457,25 @@ impl Graph {
     /// error, and the check is a few words long. A persistent graph opened read-only is *also*
     /// read-only inside the engine, which is the belt to this braces.
     pub fn execute(&self, statement: &str, read_only: bool) -> Result<GraphResult, GraphError> {
-        Self::check(statement, read_only || self.read_only)?;
-        self.run(statement)
+        self.execute_with_params(statement, HashMap::new(), read_only)
     }
 
     /// Runs one statement with `$name` parameters bound by the engine, as its own transaction.
     ///
-    /// The statement reaches the engine unchanged and a value is never interpolated into it; the
-    /// read-only guard is the same one [`Graph::execute`] applies.
+    /// The statement is gated ([`gate`]) and then run, unchanged, on a session whose role matches
+    /// what it needs; a value is never interpolated into it.
     pub fn execute_with_params(
         &self,
         statement: &str,
         parameters: HashMap<String, Value>,
         read_only: bool,
     ) -> Result<GraphResult, GraphError> {
-        Self::check(statement, read_only || self.read_only)?;
-        let result = self
-            .db
-            .session()
-            .execute_with_params(statement, parameters)
-            .map_err(as_engine_error)?;
+        let access = self.admit(statement, read_only)?;
+        let result = self.call(|| {
+            self.session_for(access)
+                .execute_with_params(statement, parameters)
+                .map_err(as_engine_error)
+        })?;
         self.statements_executed.fetch_add(1, Ordering::Relaxed);
         Ok(self.resolved(GraphResult::from(result)))
     }
@@ -327,36 +495,37 @@ impl Graph {
         &self,
         statements: &[BatchStatement],
     ) -> Result<Vec<GraphResult>, GraphError> {
-        let mut session = self.db.session();
-        session.begin_transaction().map_err(as_engine_error)?;
-        let mut out = Vec::with_capacity(statements.len());
+        // Every statement is gated before any runs, so a refused one leaves nothing half-applied.
+        let mut access = Access::Read;
         for statement in statements {
-            // Checked before the statement runs, so a read-only batch is refused whole rather than
-            // half-applied: `Self::check` is the same guard `execute` uses.
-            if let Err(err) = Self::check(&statement.text, self.read_only) {
+            access = access.max(self.admit(&statement.text, false)?);
+        }
+        let out = self.call(|| {
+            let mut session = self.session_for(access);
+            session.begin_transaction().map_err(as_engine_error)?;
+            let mut out = Vec::with_capacity(statements.len());
+            for statement in statements {
+                // `execute_with_params` takes the bindings by value, hence the copy.
+                let bound = statement.parameters.clone();
+                match session.execute_with_params(&statement.text, bound) {
+                    Ok(result) => {
+                        self.statements_executed.fetch_add(1, Ordering::Relaxed);
+                        out.push(GraphResult::from(result));
+                    }
+                    Err(err) => {
+                        // Nothing before the failure becomes durable, so a retry of the whole
+                        // batch is safe; a partial batch would not be.
+                        let _ = self.rollback(&mut session);
+                        return Err(as_engine_error(err));
+                    }
+                }
+            }
+            if let Err(err) = session.commit() {
                 let _ = self.rollback(&mut session);
-                return Err(err);
+                return Err(as_engine_error(err));
             }
-            // `execute_with_params` takes the bindings by value, hence the copy. An empty map is the
-            // same call as `execute`, so a statement without parameters takes no special path.
-            let bound = statement.parameters.clone();
-            match session.execute_with_params(&statement.text, bound) {
-                Ok(result) => {
-                    self.statements_executed.fetch_add(1, Ordering::Relaxed);
-                    out.push(GraphResult::from(result));
-                }
-                Err(err) => {
-                    // Nothing before the failure becomes durable, so a retry of the whole batch is
-                    // safe; a partial batch would not be.
-                    let _ = self.rollback(&mut session);
-                    return Err(as_engine_error(err));
-                }
-            }
-        }
-        if let Err(err) = session.commit() {
-            let _ = self.rollback(&mut session);
-            return Err(as_engine_error(err));
-        }
+            Ok(out)
+        })?;
         Ok(out
             .into_iter()
             .map(|result| self.resolved(result))
@@ -474,24 +643,6 @@ impl Graph {
         map.insert(PropertyKey::new("_target"), Value::Int64(edge.dst.0 as i64));
         Value::Map(Arc::new(map))
     }
-
-    /// The checks every statement path shares.
-    fn check(statement: &str, read_only: bool) -> Result<(), GraphError> {
-        if statement.trim().is_empty() {
-            return Err(GraphError::EmptyStatement);
-        }
-        if read_only && writes(statement) {
-            return Err(GraphError::ReadOnly);
-        }
-        Ok(())
-    }
-
-    /// Hands one statement to the engine and counts it.
-    fn run(&self, statement: &str) -> Result<GraphResult, GraphError> {
-        self.statements_executed.fetch_add(1, Ordering::Relaxed);
-        let result = self.db.execute(statement).map_err(as_engine_error)?;
-        Ok(self.resolved(GraphResult::from(result)))
-    }
 }
 
 /// The engine: the open graphs of one Loams process.
@@ -501,6 +652,9 @@ impl Graph {
 #[derive(Debug)]
 pub struct Engine {
     graphs: Mutex<HashMap<String, Arc<Graph>>>,
+    /// Where persistent graphs live: `<data_dir>/graphs/<graph_id>/`. `None` keeps every graph in
+    /// memory.
+    data_dir: Option<PathBuf>,
     /// The GQL standard this engine's surface targets, reported over the wire.
     pub standard: &'static str,
     /// Grafeo's own version.
@@ -519,9 +673,69 @@ impl Engine {
     pub fn new() -> Self {
         Self {
             graphs: Mutex::new(HashMap::new()),
+            data_dir: None,
             standard: crate::GQL_STANDARD,
             engine_version: crate::ENGINE_VERSION,
         }
+    }
+
+    /// An engine whose persistent graphs live under `data_dir/graphs/`.
+    #[must_use]
+    pub fn with_data_dir(data_dir: impl AsRef<Path>) -> Self {
+        Self {
+            data_dir: Some(data_dir.as_ref().to_path_buf()),
+            ..Self::new()
+        }
+    }
+
+    /// The data directory, if persistent graphs have one.
+    pub fn data_dir(&self) -> Option<&Path> {
+        self.data_dir.as_deref()
+    }
+
+    /// Reopens a graph an engine panic poisoned (R0.13), from its own spec: a persistent graph
+    /// comes back with everything it committed, an in-memory one comes back empty. A graph that
+    /// is not poisoned is answered as it is.
+    ///
+    /// # Errors
+    ///
+    /// [`GraphError::Reloading`] while another caller still holds the poisoned handle (its file
+    /// lock is not released yet), or the engine's error opening the storage.
+    pub fn reopen_if_poisoned(&self, graph: Arc<Graph>) -> Result<Arc<Graph>, GraphError> {
+        if !graph.is_poisoned() {
+            return Ok(graph);
+        }
+        let key = format!("{}/{}", graph.namespace, graph.name);
+        let mut graphs = self
+            .graphs
+            .lock()
+            .map_err(|_| poisoned("the graph registry is poisoned"))?;
+        // Someone may have reopened it already.
+        if let Some(current) = graphs.get(&key)
+            && !current.is_poisoned()
+        {
+            return Ok(Arc::clone(current));
+        }
+        let Some(old) = graphs.remove(&key) else {
+            return Err(GraphError::Reloading);
+        };
+        drop(graph);
+        if Arc::strong_count(&old) > 1 {
+            graphs.insert(key, old);
+            return Err(GraphError::Reloading);
+        }
+        let spec = old.spec.clone();
+        let (namespace, name) = (old.namespace.clone(), old.name.clone());
+        // Best effort: the panicking call may have left the engine unable to close cleanly; the
+        // drop that follows releases its file lock either way.
+        if let Err(err) = old.db.close() {
+            tracing::warn!(%namespace, %name, error = %err, "closing a poisoned graph failed");
+        }
+        drop(old);
+        let fresh = Arc::new(Graph::open_db(&namespace, &name, spec)?);
+        graphs.insert(key, Arc::clone(&fresh));
+        tracing::info!(%namespace, %name, "reopened a poisoned graph");
+        Ok(fresh)
     }
 
     /// The open graphs, for `ListGraphs`.
@@ -573,108 +787,6 @@ impl Engine {
 /// A poisoned registry lock. Named so the message does not carry a `PoisonError`'s debug form.
 fn poisoned(what: &str) -> GraphError {
     GraphError::Engine(what.to_string())
-}
-
-/// Whether a statement writes, judged by its bare words.
-///
-/// A keyword test rather than a parse, deliberately. The two failure modes are not symmetric: a read
-/// refused as a write costs a caller one retry, while a write let through as a read corrupts a graph
-/// under a promise that it would not. So both tests default to "writes".
-///
-/// Two tests, because one is not enough — measured against Grafeo 0.5.43, not assumed:
-///
-/// * **The leading keyword.** Anything that is not a reading keyword is a write, so a keyword this
-///   crate has never heard of, a statement starting with punctuation, and a statement that is only a
-///   comment are all writes.
-/// * **Any writing word anywhere.** A GQL query expression writes from a *clause*, not only from its
-///   first word: `MATCH (d:Doc) SET d.body = 'x'` begins with `MATCH` and is a write. A
-///   first-keyword-only guard lets that through, so the guard also scans for a writing keyword
-///   outside any string or comment.
-///
-/// The words come from [`bare_words`], which skips string literals, quoted identifiers and comments.
-/// That is what makes a statement that merely *mentions* a writing keyword a read:
-/// `MATCH (n) WHERE n.name = 'INSERT' RETURN n` has no `INSERT` word in it. The cost of skipping is
-/// that an unquoted word which merely contains a keyword is refused — `RETURN n.insert_time` reads as
-/// `INSERT` — which is the conservative direction the first paragraph is about.
-///
-/// This is not a parser and does not try to be: it reads a statement, never modifies it, and the
-/// bytes the engine sees are the bytes the caller sent (D634's no-rewriting rule).
-pub(crate) fn writes(statement: &str) -> bool {
-    /// Leading keywords that cannot write. GQL's read shapes: a query expression with its optional
-    /// `MATCH`, `FILTER`/`WHERE`, `RETURN`, `LET`/`FOR` and `ORDER BY`/`SKIP`/`LIMIT` clauses, plus
-    /// `EXPLAIN` and `PROFILE`, which plan a statement without running it.
-    const READS: [&str; 12] = [
-        "MATCH", "RETURN", "FILTER", "WHERE", "FOR", "LET", "QUERY", "ORDER", "SKIP", "LIMIT",
-        "EXPLAIN", "PROFILE",
-    ];
-    /// Words that write wherever they appear. `CALL` is here rather than in `READS` because a
-    /// procedure can read or write, and a guard cannot tell which without running it.
-    const WRITES: [&str; 12] = [
-        "INSERT", "CREATE", "DELETE", "MERGE", "SET", "REMOVE", "DROP", "ALTER", "CALL", "LOAD",
-        "UPSERT", "GRANT",
-    ];
-    let words = bare_words(statement);
-    // No words at all means punctuation or a comment, which is not a statement anyone can read.
-    let reads = words
-        .first()
-        .is_some_and(|first| READS.contains(&first.as_str()));
-    !reads || words.iter().any(|word| WRITES.contains(&word.as_str()))
-}
-
-/// A statement's bare words: uppercased, with strings, quoted identifiers and comments removed.
-///
-/// Comments are dropped because a comment is not a statement: `/* sync */ INSERT ...` writes, and a
-/// guard that read the comment as the first word would call it a read. Strings are dropped for the
-/// other reason: a value is data, not syntax. Neither step changes a byte of the statement — they
-/// only decide which side of the guard it falls on.
-fn bare_words(statement: &str) -> Vec<String> {
-    let mut words = Vec::new();
-    let mut word = String::new();
-    let mut chars = statement.chars().peekable();
-    while let Some(c) = chars.next() {
-        match c {
-            // A quoted string, or a backquoted identifier, runs to its own closing quote.
-            quote @ ('\'' | '"' | '`') => {
-                push_word(&mut word, &mut words);
-                for c in chars.by_ref() {
-                    if c == quote {
-                        break;
-                    }
-                }
-            }
-            // `--` and `//` run to the end of the line; `/* */` to its own terminator.
-            '-' | '/' if matches!(chars.peek(), Some('-' | '/')) => {
-                push_word(&mut word, &mut words);
-                for c in chars.by_ref() {
-                    if c == '\n' {
-                        break;
-                    }
-                }
-            }
-            '/' if chars.peek() == Some(&'*') => {
-                push_word(&mut word, &mut words);
-                chars.next();
-                let mut previous = '\0';
-                for c in chars.by_ref() {
-                    if previous == '*' && c == '/' {
-                        break;
-                    }
-                    previous = c;
-                }
-            }
-            c if c.is_ascii_alphabetic() => word.push(c.to_ascii_uppercase()),
-            _ => push_word(&mut word, &mut words),
-        }
-    }
-    push_word(&mut word, &mut words);
-    words
-}
-
-/// Completes the word being built, if there is one.
-fn push_word(word: &mut String, words: &mut Vec<String>) {
-    if !word.is_empty() {
-        words.push(std::mem::take(word));
-    }
 }
 
 /// Wraps the engine's error, keeping its text whole.

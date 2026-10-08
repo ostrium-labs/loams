@@ -1,0 +1,8 @@
+#! engine=admin
+CREATE NODE TYPE T2 (id INT64)
+
+#! engine=admin
+CREATE INDEX idx2 FOR (n:Person) ON (n.name)
+
+#! engine=admin
+DROP NODE TYPE T2

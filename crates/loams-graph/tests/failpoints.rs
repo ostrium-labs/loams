@@ -1,0 +1,98 @@
+//! Panic containment (GR1 Task 3; R0.13; Review Focus 5). Needs the `failpoints` feature:
+//! `cargo test -p loams-graph --features failpoints --test failpoints`.
+#![cfg(feature = "failpoints")]
+
+use connectrpc::ErrorCode;
+use loams_graph::{Engine, service};
+use loams_proto::loams::graph::v1 as pb;
+
+fn create(engine: &Engine, name: &str) {
+    service::create_graph(
+        engine,
+        pb::CreateGraphRequest {
+            namespace: "acme".to_string(),
+            name: name.to_string(),
+            ..Default::default()
+        },
+    )
+    .expect("create");
+}
+
+fn execute(
+    engine: &Engine,
+    graph: &str,
+    statement: &str,
+) -> Result<pb::ExecuteResponse, connectrpc::ConnectError> {
+    service::execute(
+        engine,
+        pb::ExecuteRequest {
+            namespace: "acme".to_string(),
+            graph: graph.to_string(),
+            statement: statement.to_string(),
+            ..Default::default()
+        },
+    )
+}
+
+fn reason(err: &connectrpc::ConnectError) -> String {
+    use base64::Engine as _;
+    use buffa::Message as _;
+    let detail = err
+        .details
+        .iter()
+        .find(|d| d.type_url == "loams.errors.v1.ErrorInfo")
+        .unwrap_or_else(|| panic!("no ErrorInfo in {err:?}"));
+    let bytes = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(detail.value.as_deref().unwrap_or_default())
+        .expect("base64");
+    loams_proto::loams::errors::v1::ErrorInfo::decode_from_slice(&bytes)
+        .expect("ErrorInfo")
+        .reason
+}
+
+#[test]
+fn engine_panic_poisons_one_graph() {
+    let scenario = fail::FailScenario::setup();
+    let data_dir = std::env::temp_dir().join(format!("loams-graph-panic-{}", std::process::id()));
+    let engine = Engine::with_data_dir(&data_dir);
+    create(&engine, "one");
+    create(&engine, "two");
+    execute(&engine, "one", "INSERT (:Kept {v: 1})").expect("seed one");
+    execute(&engine, "two", "INSERT (:Kept {v: 2})").expect("seed two");
+
+    // The next engine call panics, whichever graph makes it.
+    fail::cfg("loams_graph::engine_call", "1*panic(injected)").expect("cfg");
+    let err = execute(&engine, "one", "MATCH (k:Kept) RETURN k.v").expect_err("the call panicked");
+    assert_eq!(err.code, ErrorCode::Internal, "{err:?}");
+    assert_eq!(reason(&err), "graph_engine_panic");
+    let poisoned = service::get_graph(
+        &engine,
+        pb::GetGraphRequest {
+            namespace: "acme".to_string(),
+            name: "one".to_string(),
+            ..Default::default()
+        },
+    )
+    .expect("still listed");
+    assert_eq!(poisoned.state.as_known(), Some(pb::GraphState::Reloading));
+
+    // The other graph keeps answering.
+    execute(&engine, "two", "MATCH (k:Kept) RETURN k.v").expect("two answers");
+
+    // The first reopens on its next call, from its own storage, with its data.
+    let response = execute(&engine, "one", "MATCH (k:Kept) RETURN k.v").expect("one reopened");
+    let rows = response.rows.as_option().expect("rows");
+    assert_eq!(rows.rows.len(), 1, "the committed node survived the reopen");
+    let ready = service::get_graph(
+        &engine,
+        pb::GetGraphRequest {
+            namespace: "acme".to_string(),
+            name: "one".to_string(),
+            ..Default::default()
+        },
+    )
+    .expect("listed");
+    assert_eq!(ready.state.as_known(), Some(pb::GraphState::Ready));
+    scenario.teardown();
+    std::fs::remove_dir_all(&data_dir).ok();
+}

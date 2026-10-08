@@ -1427,6 +1427,9 @@ jobs:
           fi
       - name: loams-graph tests
         run: cargo test -p loams-graph --locked
+      # GR1 Task 3: panic containment (`engine_panic_poisons_one_graph`) behind a failpoint.
+      - name: loams-graph with failpoints
+        run: cargo test -p loams-graph --features failpoints --locked --test failpoints
 
   deny:
     name: licenses, advisories, sources

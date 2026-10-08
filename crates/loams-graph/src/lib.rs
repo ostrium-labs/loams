@@ -22,11 +22,13 @@
 
 #![deny(missing_docs)]
 
+pub mod classify;
 pub mod engine;
 pub mod service;
 pub mod value;
 
-pub use engine::{BatchStatement, Engine, Graph, GraphError, GraphRow, OpenSpec};
+pub use classify::Access;
+pub use engine::{BatchStatement, Engine, Graph, GraphError, GraphRow, GraphState, OpenSpec};
 pub use service::GraphServiceImpl;
 
 /// The GQL standard this crate's surface targets: ISO/IEC 39075.
@@ -37,3 +39,38 @@ pub const GQL_STANDARD: &str = "ISO/IEC 39075";
 /// Taken from the dependency rather than written down, so the number here cannot drift from the one
 /// linked into the binary; `EngineInfo` reports it over the wire as well.
 pub const ENGINE_VERSION: &str = grafeo::VERSION;
+
+/// A graph's id: `gr_<ULID>` on the wire (shared contract; design §48 §8.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct GraphId(pub ulid::Ulid);
+
+impl GraphId {
+    /// A new id.
+    #[must_use]
+    pub fn new() -> Self {
+        Self(ulid::Ulid::generate())
+    }
+}
+
+impl Default for GraphId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for GraphId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "gr_{}", self.0)
+    }
+}
+
+impl std::str::FromStr for GraphId {
+    type Err = GraphError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        text.strip_prefix("gr_")
+            .and_then(|ulid| ulid.parse().ok())
+            .map(Self)
+            .ok_or_else(|| GraphError::InvalidValue(format!("{text:?} is not a gr_<ULID> id")))
+    }
+}

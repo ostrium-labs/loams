@@ -22,6 +22,8 @@ grafeo-engine.workspace = true
 # which does not re-export them, and `value.rs` and the path resolution in `engine.rs` build and
 # read them. Already in the tree at the same version as `grafeo`.
 grafeo-common.workspace = true
+# The GQL AST's `SessionCommand`, for statement classification (`classify.rs`, R0.10).
+grafeo-adapters.workspace = true
 # The generated `loams.graph.v1` types, from the root `proto/` tree like every other public
 # package (design §44, D741). `fabric/`'s `loams-graph-proto` is gone (GR1 Task 1).
 loams-proto.workspace = true
@@ -32,9 +34,18 @@ buffa-types = { version = "0.9.2", features = ["json"] }
 # The generated map fields are buffa's own `HashMap`; `value.rs` names the type.
 buffa.workspace = true
 connectrpc.workspace = true
+# Named failpoints for the panic-containment test (GR1 Task 3). Off by default: without the
+# `failpoints` feature they compile to nothing.
+fail = { workspace = true, optional = true }
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+# `gr_<ULID>` graph ids (shared contract `GraphId`).
+ulid.workspace = true
+
+[features]
+# `engine_panic_poisons_one_graph`: `cargo test -p loams-graph --features failpoints`.
+failpoints = ["dep:fail", "fail/failpoints"]
 
 [dev-dependencies]
 # The tests decode the `loams.errors.v1.ErrorInfo` a refusal carries (unpadded base64).

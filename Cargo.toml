@@ -83,6 +83,10 @@ grafeo = { version = "=0.5.43", default-features = false, features = ["gql", "wa
 grafeo-engine = { version = "=0.5.43", default-features = false, features = ["lpg"] }
 # `PropertyKey` and the value types the facade does not re-export.
 grafeo-common = { version = "=0.5.43", default-features = false }
+# Named for the GQL AST's `SessionCommand`, which `translate_full` returns and
+# statement classification matches on (GR1 Task 3, R0.10). Already in the tree
+# under grafeo-engine with the features above; this adds none.
+grafeo-adapters = { version = "=0.5.43", default-features = false }
 hex = "0.4"
 http = "1"
 http-body = "1"

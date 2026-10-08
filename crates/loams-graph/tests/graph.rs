@@ -86,18 +86,16 @@ fn message(err: &ConnectError) -> &str {
     err.message.as_deref().unwrap_or_default()
 }
 
-/// A temporary `.grafeo` path that no other run of this binary will use.
-fn scratch_path(label: &str) -> PathBuf {
+/// A temporary data directory that no other run of this binary will use.
+fn scratch_dir(label: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("the clock is after 1970")
         .as_nanos();
-    std::env::temp_dir()
-        .join(format!(
-            "loams-graph-{label}-{}-{nanos}",
-            std::process::id()
-        ))
-        .join("graph.grafeo")
+    std::env::temp_dir().join(format!(
+        "loams-graph-{label}-{}-{nanos}",
+        std::process::id()
+    ))
 }
 
 #[test]
@@ -293,59 +291,41 @@ fn open_is_idempotent_and_conflict_is_refused() {
     // Reopening with a different read-only flag, or a different path, is a conflict rather than a
     // second opinion about one graph's storage. The service takes no path or flag from a client
     // (Review Focus 4), so the conflict is the engine's, and it is refused before anything opens.
-    let err = Graph::open(
-        &engine,
-        "acme",
-        "orders",
-        OpenSpec {
-            database_path: PathBuf::new(),
-            read_only: true,
-        },
-    )
-    .expect_err("read_only disagrees with the open graph");
+    let err = Graph::open(&engine, "acme", "orders", OpenSpec::in_memory().read_only())
+        .expect_err("read_only disagrees with the open graph");
     assert!(matches!(err, GraphError::Conflict { .. }), "{err:?}");
     assert!(err.to_string().contains("acme/orders"), "{err:?}");
 
+    let data_dir = scratch_dir("conflict");
+    let stored = Engine::with_data_dir(&data_dir);
+    let id = loams_graph::GraphId::new();
+    let spec = OpenSpec::persistent(&stored, id).expect("a data dir");
+    Graph::open(&stored, "acme", "orders", spec).expect("open persistent");
+    let err = Graph::open(&stored, "acme", "orders", OpenSpec::in_memory())
+        .expect_err("different storage is a different graph");
+    assert!(matches!(err, GraphError::Conflict { .. }), "{err:?}");
     let err = Graph::open(
-        &engine,
+        &stored,
         "acme",
         "orders",
-        OpenSpec {
-            database_path: scratch_path("conflict"),
-            read_only: false,
-        },
+        OpenSpec::persistent(&stored, loams_graph::GraphId::new()).expect("a data dir"),
     )
-    .expect_err("a different path is a different graph");
+    .expect_err("another id is another graph's storage");
     assert!(matches!(err, GraphError::Conflict { .. }), "{err:?}");
 
-    // And a persistent graph opened in the engine is a conflict for a service create of the same
-    // name, which would open it in memory.
-    let path = scratch_path("service-conflict");
-    let held = Graph::open(
-        &engine,
-        "acme",
-        "stored",
-        OpenSpec {
-            database_path: path.clone(),
-            read_only: false,
-        },
-    )
-    .expect("open persistent");
-    let err = service::create_graph(
-        &engine,
+    // `CreateGraph` of a name that is already open answers that graph, persistent or not.
+    let created = service::create_graph(
+        &stored,
         pb::CreateGraphRequest {
             namespace: "acme".to_string(),
-            name: "stored".to_string(),
+            name: "orders".to_string(),
             ..Default::default()
         },
     )
-    .expect_err("an in-memory create disagrees with the persistent graph");
-    assert_eq!(err.code, ErrorCode::AlreadyExists, "{err:?}");
-    drop(held);
-    assert_eq!(engine.close("acme", "stored"), Ok(true));
-    if let Some(directory) = path.parent() {
-        std::fs::remove_dir_all(directory).ok();
-    }
+    .expect("idempotent by name");
+    assert_eq!(created.id, id.to_string());
+    assert_eq!(stored.close("acme", "orders"), Ok(true));
+    std::fs::remove_dir_all(&data_dir).ok();
 
     // A different name in the same namespace is a different graph, and shares nothing.
     open(&engine, "acme", "returns");
@@ -365,21 +345,13 @@ fn open_is_idempotent_and_conflict_is_refused() {
 
 #[test]
 fn a_persistent_graph_survives_a_close_and_a_reopen() {
-    let path = scratch_path("persistent");
-    let directory = path
-        .parent()
-        .expect("scratch_path has a parent")
-        .to_path_buf();
-    let spec = OpenSpec {
-        database_path: path.clone(),
-        read_only: false,
-    };
-
-    let engine = engine();
+    let directory = scratch_dir("persistent");
+    let engine = Engine::with_data_dir(&directory);
+    let spec = OpenSpec::persistent(&engine, loams_graph::GraphId::new()).expect("a data dir");
     let graph = Graph::open(&engine, "acme", "durable", spec.clone()).expect("open a new graph");
     assert!(
         graph.is_persistent(),
-        "a database_path means the storage outlives the process"
+        "a data directory means the storage outlives the process"
     );
     graph
         .execute("INSERT (:Note {body: 'durable'})", false)
@@ -392,10 +364,10 @@ fn a_persistent_graph_survives_a_close_and_a_reopen() {
     );
 
     // A second process would see this; a second engine in this process sees the same thing.
-    let reopened = Engine::new();
+    let reopened = Engine::with_data_dir(&directory);
     let read;
     {
-        let graph = Graph::open(&reopened, "acme", "durable", spec).expect("reopen");
+        let graph = Graph::open(&reopened, "acme", "durable", spec.clone()).expect("reopen");
         assert!(graph.is_persistent());
         read = graph
             .execute("MATCH (n:Note) RETURN n.body", false)
@@ -413,17 +385,9 @@ fn a_persistent_graph_survives_a_close_and_a_reopen() {
     // `read_only` on a persistent graph is Grafeo's own read-only mode, which takes a shared file
     // lock. That is the belt to this crate's braces: the guard below can be defeated by a
     // mis-classified keyword, and the engine still refuses the write.
-    let readonly = Engine::new();
-    let graph = Graph::open(
-        &readonly,
-        "acme",
-        "durable",
-        OpenSpec {
-            database_path: path,
-            read_only: true,
-        },
-    )
-    .expect("open read-only");
+    let readonly = Engine::with_data_dir(&directory);
+    let graph =
+        Graph::open(&readonly, "acme", "durable", spec.read_only()).expect("open read-only");
     assert!(graph.is_read_only());
     assert!(
         graph.execute("MATCH (n:Note) RETURN n.body", false).is_ok(),
@@ -471,7 +435,6 @@ fn read_only_refuses_a_write() {
         // the guard scans every bare word and not just the leading one.
         "MATCH (d:Doc) SET d.body = 'edited' RETURN d",
         "MATCH (d:Doc) REMOVE d.body RETURN d",
-        "DROP GRAPH guard",
         // `CALL` is ambiguous -- a procedure can read or write -- so it counts as a write.
         "CALL db.labels()",
         // A comment must not smuggle a write past the guard: the guard reads past leading comments
@@ -508,16 +471,8 @@ fn read_only_refuses_a_write() {
     assert_eq!(number(&count, 0), 1, "only the first insert landed");
 
     // A graph opened read-only refuses a write even when the request forgot to ask for it.
-    let readonly = Graph::open(
-        &engine,
-        "acme",
-        "sealed",
-        OpenSpec {
-            database_path: PathBuf::new(),
-            read_only: true,
-        },
-    )
-    .expect("open read-only in memory");
+    let readonly = Graph::open(&engine, "acme", "sealed", OpenSpec::in_memory().read_only())
+        .expect("open read-only in memory");
     let sealed_write = "MATCH (d:Doc) SET d.body = 'edited' RETURN d";
     assert_eq!(
         readonly.execute(sealed_write, false),
@@ -926,16 +881,8 @@ fn list_and_delete_manage_the_registry() {
 
     // A close while a caller still holds the handle is refused, because dropping the registry's own
     // reference says nothing about whether a statement is in flight.
-    let held = Graph::open(
-        &engine,
-        "acme",
-        "one",
-        OpenSpec {
-            database_path: PathBuf::new(),
-            read_only: false,
-        },
-    )
-    .expect("the same spec returns the open graph");
+    let held = Graph::open(&engine, "acme", "one", OpenSpec::in_memory())
+        .expect("the same spec returns the open graph");
     let err = service::delete_graph(
         &engine,
         pb::DeleteGraphRequest {
@@ -1012,17 +959,15 @@ fn list_and_delete_manage_the_registry() {
 }
 
 #[test]
-fn sessions_do_not_share_state_but_the_current_graph_survives_a_call() {
+fn sessions_do_not_share_state_and_no_graph_can_be_switched_to() {
     let engine = engine();
     open(&engine, "acme", "sessions");
 
-    // Measured, not assumed. `GrafeoDB::execute` builds a **fresh one-shot session per call**
-    // (`grafeo_engine::database::query::with_session`), so there is no session for two statements to
-    // share: a committed write is visible to the next call, and a call cannot see a half-finished
-    // one. The single exception is the current graph, which that helper deliberately writes back to
-    // the database after every call so `USE GRAPH` survives. This test pins both halves, because the
-    // first is what makes Loams's stateless `Execute` safe and the second is a leak a caller must
-    // know about.
+    // Every call runs on a fresh session with the role it needs (GR1 Task 3), so there is no
+    // session for two statements to share: a committed write is visible to the next call, and a
+    // call cannot see a half-finished one. The fabric-era leak — `GrafeoDB::execute` wrote the
+    // current graph back so `USE GRAPH` survived a call — is closed by refusing graph management
+    // outright (R0.10 (b)): one Loams graph is one engine graph.
 
     ok(&engine, "acme", "sessions", "INSERT (:P {name: 'one'})");
     let count = ok(
@@ -1037,24 +982,32 @@ fn sessions_do_not_share_state_but_the_current_graph_survives_a_call() {
         "a committed write is visible to the next statement: there is no session affinity"
     );
 
-    // The one piece of state that does cross a call boundary.
-    ok(&engine, "acme", "sessions", "CREATE GRAPH scratch");
-    ok(&engine, "acme", "sessions", "USE GRAPH scratch");
-    let in_scratch = ok(
-        &engine,
-        "acme",
-        "sessions",
-        "MATCH (n) RETURN count(n) AS c",
-    );
-    assert_eq!(
-        number(&in_scratch, 0),
-        0,
-        "USE GRAPH routed the next statement, which is a fresh session reading state the previous \
-         call left behind"
-    );
-    ok(&engine, "acme", "sessions", "INSERT (:P {name: 'two'})");
-    let back = ok(&engine, "acme", "sessions", "SESSION RESET GRAPH");
-    assert!(rows(&back).rows.is_empty());
+    for statement in [
+        "CREATE GRAPH scratch",
+        "USE GRAPH scratch",
+        "SESSION SET GRAPH scratch",
+    ] {
+        let err = execute(&engine, "acme", "sessions", statement).expect_err("refused");
+        assert_eq!(
+            err.code,
+            ErrorCode::FailedPrecondition,
+            "{statement}: {err:?}"
+        );
+        assert_eq!(reason(&err), "graph_statement_not_allowed");
+    }
+    // Nor is any other session command: each call is its own session.
+    for statement in [
+        "SESSION RESET GRAPH",
+        "SESSION SET TIME ZONE 'UTC'",
+        "SESSION CLOSE",
+    ] {
+        let err = execute(&engine, "acme", "sessions", statement).expect_err("refused");
+        assert_eq!(
+            reason(&err),
+            "graph_statement_not_allowed",
+            "{statement}: {err:?}"
+        );
+    }
     let restored = ok(
         &engine,
         "acme",
@@ -1064,21 +1017,13 @@ fn sessions_do_not_share_state_but_the_current_graph_survives_a_call() {
     assert_eq!(
         number(&restored, 0),
         1,
-        "and the default graph still holds only its own node, so the two graphs never shared a store"
+        "the default graph is the only graph"
     );
 
     // A write inside an open transaction is invisible to another session -- which is the property
     // `batch_is_one_transaction` leans on, asserted here from the read side as well.
-    let graph = Graph::open(
-        &engine,
-        "acme",
-        "sessions",
-        OpenSpec {
-            database_path: PathBuf::new(),
-            read_only: false,
-        },
-    )
-    .expect("the open graph");
+    let graph =
+        Graph::open(&engine, "acme", "sessions", OpenSpec::in_memory()).expect("the open graph");
     let failed = graph.execute_batch(&[
         BatchStatement::text("INSERT (:P {name: 'rolled back'})"),
         BatchStatement::text("MATCH (n RETURN n"),
@@ -1217,7 +1162,7 @@ fn non_atomic_batch_reports_the_failed_statement() {
     assert!(error.message.contains("Expected RParen"), "{error:?}");
     assert_eq!(
         error.info.as_option().map(|info| info.reason.as_str()),
-        Some("invalid_argument")
+        Some("gql_syntax_error")
     );
     let count = ok(
         &engine,

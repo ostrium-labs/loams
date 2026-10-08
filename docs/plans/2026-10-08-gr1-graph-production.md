@@ -982,3 +982,29 @@ Rulings:
 - `ExplainRequest` gains `timeout_ms` and `consistency`. `service::explain` refuses a writing PROFILE with `graph_read_only`; the plan itself is still Task 6's (`profile_refuses_a_write`).
 - Every refusal from `service.rs` now carries an `ErrorInfo` reason.
 - `proto_has_no_path_fields` uses substring matching over every file of the package, with the six-field allowlist named in the proto header. This replaces R2.7.
+
+### Task 3 (2026-10-08, on `backend/gr1`)
+
+**R3.1 The gate (`src/classify.rs`).** Every execution path calls `gate(statement, language)` before the engine runs anything: `Execute`, both kinds of batch (an atomic batch gates every statement before the first runs), and `Explain`. The gate:
+- refuses an empty statement;
+- refuses file access by a **keyword backstop** that reads every alphabetic word, including those inside strings and comments: `LOAD` followed by `DATA`/`CSV`/`GRAPH`/`JSON`/`JSONL`/`PARQUET`/`FROM`. The cost is a refusal for a statement that merely mentions "load data" in a string. In exchange the backstop cannot be walked around by a comment syntax Loams and Grafeo disagree on (`//`), and it also blocks a `CREATE PROCEDURE` whose body loads a file;
+- runs `engine_classify` (Grafeo's `translate_full`). The plan walk refuses `LoadData`/`LoadGraph` (file access → `PERMISSION_DENIED`/`graph_statement_not_allowed`, R0.11); `CreateGraph`/`DropGraph`/`CopyGraph`/`MoveGraph`/`AddGraph`/`ClearGraph`/`CreatePropertyGraph` (→ `FAILED_PRECONDITION`/`graph_statement_not_allowed`, R0.10 (b)); and an `Expand` with no `max_hops` or one above `MAX_PATH_HOPS` = 10 (→ `INVALID_ARGUMENT`/`graph_unbounded_path`, R0.8 (b); Task 6 makes the limit per graph);
+- refuses session commands: the transaction ones with `graph_transaction_statement`, and every other one (`USE GRAPH`, `SESSION SET …`, `SESSION RESET`, projections, `CREATE`/`DROP GRAPH`) with `graph_statement_not_allowed`. Measured: Grafeo's parameterised path refuses session commands anyway ("Session commands cannot be executed as queries");
+- answers `max(guard, engine)`. When the translator cannot parse a statement, the guard's answer stands, and the engine then reports the syntax error.
+
+**R3.2 Engine roles.** `Graph::session_for(Access)` gives `ReadOnly`, `ReadWrite` or `Admin`, and every statement runs on the session for its gated access. A read-only request or graph refuses any access above Read (`graph_read_only`). `read_session_refuses_every_corpus_write` pins that the `ReadOnly` role refuses every Write and Admin corpus case and changes nothing. Statements no longer run through `GrafeoDB::execute`, whose one-shot session wrote `USE GRAPH` back to the database.
+
+**R3.3 `engine_classify(stmt)` takes no database.** The plan says `engine_classify(db, stmt)`. Grafeo's translator needs no database (R0.10), so the parameter is dropped.
+
+**R3.4 The guard (`classify`)** is the fabric-era keyword guard, moved here. It now treats `_` as part of a word, so `n.insert_time` is no longer read as `INSERT`. It answers Admin for `CREATE|DROP|ALTER` followed by `NODE|EDGE|INDEX|CONSTRAINT|TYPE|PROCEDURE|SCHEMA`. The corpus `conformance/graph/gql/classify/*.gql` has 52 cases in four files, in the README's format. The only conservative disagreements are read-only `CALL`s (guard Write, engine Read).
+
+**R3.5 Storage** is `OpenSpec::in_memory()` or `OpenSpec::persistent(engine, GraphId)`, which is `<data_dir>/graphs/gr_<ULID>/graph.grafeo`. `OpenSpec` has no path field, so nothing can name another location. `Engine::with_data_dir` sets the data directory. `CreateGraph` creates a persistent graph when the engine has a data directory and an in-memory one otherwise; it answers an already-open name idempotently and reports `Graph.id` from the directory. Task 4's catalog persists the id.
+
+**R3.6 Panic containment.**
+- Every engine call runs inside `catch_unwind`. A panic sets the graph's `poisoned` flag and answers `INTERNAL`/`graph_engine_panic`; the graph's state is `GraphState::Poisoned` (wire `RELOADING`). A direct call on a poisoned graph answers `UNAVAILABLE`/`graph_reloading`.
+- The service's next statement on the graph runs `Engine::reopen_if_poisoned`: it closes the poisoned engine and reopens it from the same spec. A persistent graph comes back with what it committed, and an in-memory one comes back empty.
+- The test-only failpoint is `loams_graph::engine_call`, behind the `failpoints` feature (the `fail` crate, as `loams-log` uses), in `tests/failpoints.rs`. CI's `graph` job runs it.
+
+**R3.7 Reasons.** `GraphError::reason()` gives the `ErrorInfo.reason`: an engine error whose text contains "syntax error" is `gql_syntax_error`, and the rest are as listed in `graph.proto`'s header. New `GraphError` variants: `TransactionStatement`, `StatementNotAllowed { file_access, what }`, `UnboundedPath`, `EnginePanic` and `Reloading`.
+
+**R3.8 Files.** `service.rs` is split into `service/{mod.rs, data.rs, errors.rs}`; admin handlers stay in `mod.rs` until Task 4's `admin.rs`. New tests are `tests/classify.rs` (corpus, LOAD DATA, management, unbounded paths, storage) and `tests/failpoints.rs`, beside the planned `tests/service.rs` and `tests/graph.rs`. `grafeo-adapters` (=0.5.43, no features) is named for the AST's `SessionCommand`.
