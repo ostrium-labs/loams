@@ -29,6 +29,8 @@
 
 pub mod acceptor;
 #[cfg(feature = "server")]
+pub mod broker;
+#[cfg(feature = "server")]
 pub mod cli;
 #[cfg(feature = "server")]
 pub mod feeder;

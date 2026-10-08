@@ -103,7 +103,11 @@ plus one commit of Loams' (branch loams/decoder-trim,
 leave out the storage clients and pprof), and Neon's rust-postgres fork
 through https://github.com/ostrium-labs/rust-postgres;
 its golden fixtures were recorded from Neon's safekeeper (revision
-77e22e4b above).
+77e22e4b above). crates/loams-safekeeper/proto/storage_broker/broker.proto is
+Neon's storage_broker/proto/broker.proto, vendored unchanged from the fork
+at 1218fb7a6a37e1b4c268bad5c2952c238d81d368, and
+crates/loams-safekeeper/src/broker.rs follows Neon's
+safekeeper/src/broker.rs (publication every second, discovery answers).
 
 cordis (https://github.com/cordiverse/cordis), MIT License, Copyright (c)
 Shigma and the cordis contributors. The cordis console (web/packages/cordis and the

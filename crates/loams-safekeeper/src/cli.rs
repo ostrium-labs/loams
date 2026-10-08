@@ -135,6 +135,21 @@ struct Args {
     /// cleartext on its own connections.
     #[arg(long)]
     trusted_network: bool,
+    /// Publish served timelines to this storage broker and answer its
+    /// discovery requests (`http://host:port`), so that the pageserver finds
+    /// this WAL service (PG2 Task 32).
+    #[arg(long)]
+    broker_endpoint: Option<String>,
+    /// The Postgres address published to the broker (default: --listen-pg);
+    /// a pool advertises its Service.
+    #[arg(long)]
+    advertise_pg: Option<String>,
+    /// The HTTP address published to the broker (default: --listen-http).
+    #[arg(long)]
+    advertise_http: Option<String>,
+    /// The availability zone published to the broker.
+    #[arg(long)]
+    availability_zone: Option<String>,
     /// Set by the caller of [`main`], not on the command line.
     #[arg(skip)]
     interpreter: Option<Interpreter>,
@@ -186,6 +201,20 @@ async fn run_with<S: WalStore>(
             ..WalServiceConfig::default()
         },
     );
+    if let Some(endpoint) = &args.broker_endpoint {
+        let mut cfg = crate::broker::BrokerConfig::new(
+            endpoint.clone(),
+            args.id,
+            args.advertise_pg
+                .clone()
+                .unwrap_or_else(|| args.listen_pg.to_string()),
+            args.advertise_http
+                .clone()
+                .unwrap_or_else(|| args.listen_http.to_string()),
+        );
+        cfg.availability_zone = args.availability_zone.clone();
+        drop(crate::broker::spawn(svc.clone(), cfg));
+    }
     if let Some(f) = on_start {
         f(svc.clone())?;
     }

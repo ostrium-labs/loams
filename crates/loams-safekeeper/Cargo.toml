@@ -23,7 +23,18 @@ nvme = ["dep:rustix", "dep:crc32c"]
 # io_uring journal engine.
 compio = ["nvme", "server", "dep:compio", "dep:futures"]
 # The network service, its HTTP API and the loams-wal binary.
-server = ["dep:axum", "dep:clap", "dep:serde_json", "dep:tracing-subscriber"]
+server = [
+    "dep:axum",
+    "dep:clap",
+    "dep:serde_json",
+    "dep:tracing-subscriber",
+    # The storage broker client (PG2 Task 32).
+    "dep:prost",
+    "dep:tokio-stream",
+    "dep:tonic",
+    "dep:tonic-prost",
+    "dep:tonic-prost-build",
+]
 
 [[bin]]
 name = "loams-wal"
@@ -45,13 +56,20 @@ futures = { workspace = true, optional = true }
 hex.workspace = true
 loams-tikv = { workspace = true, optional = true }
 postcard.workspace = true
+prost = { workspace = true, optional = true }
 rustix = { workspace = true, optional = true, features = ["fs"] }
 serde.workspace = true
 serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
+tokio-stream = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
+tonic-prost = { workspace = true, optional = true }
 tracing.workspace = true
 tracing-subscriber = { workspace = true, optional = true }
+
+[build-dependencies]
+tonic-prost-build = { workspace = true, optional = true }
 
 [dev-dependencies]
 postcard.workspace = true

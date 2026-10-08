@@ -7104,6 +7104,7 @@ dependencies = [
  "loams-tikv",
  "postcard",
  "proptest",
+ "prost 0.14.4",
  "rustix 1.1.5",
  "serde",
  "serde_json",
@@ -7111,6 +7112,10 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-stream",
+ "tonic 0.14.6",
+ "tonic-prost",
+ "tonic-prost-build",
  "tracing",
  "tracing-subscriber",
 ]

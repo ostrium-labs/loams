@@ -383,6 +383,22 @@ impl<S: WalStore> WalService<S> {
         )
     }
 
+    /// The timelines this instance has seen: pushed to, read from, or asked
+    /// about through the broker (§46 §9.2's publication set).
+    pub fn known_timelines(&self) -> Vec<TimelineId> {
+        let m = self
+            .registry
+            .timelines
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        m.keys().copied().collect()
+    }
+
+    /// Remember `tl`, so that it is published to the broker.
+    pub fn note_timeline(&self, tl: TimelineId) {
+        self.registry.sender(tl);
+    }
+
     /// Wakes on every change of this instance's view of `tl`.
     pub fn subscribe(&self, tl: TimelineId) -> watch::Receiver<Progress> {
         self.registry.sender(tl).subscribe()
