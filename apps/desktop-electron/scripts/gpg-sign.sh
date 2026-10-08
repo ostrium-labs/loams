@@ -31,8 +31,12 @@ if [[ -n "${LOAMS_GPG_PASSPHRASE:-}" ]]; then
 	pass_args+=(--passphrase-file "$home/pass")
 fi
 
-printf '%s\n' "$LOAMS_GPG_PRIVATE_KEY" | gpg "${pass_args[@]}" --import 2>/dev/null \
-	|| { echo "gpg-sign.sh: LOAMS_GPG_PRIVATE_KEY could not be imported (is it an armored secret key?)" >&2; exit 1; }
+# Status lines go to a file and are printed only on failure; they never include key material.
+if ! printf '%s\n' "$LOAMS_GPG_PRIVATE_KEY" | gpg "${pass_args[@]}" --status-fd 3 --import 3>"$home/import.status" 2>/dev/null; then
+	echo "gpg-sign.sh: LOAMS_GPG_PRIVATE_KEY could not be imported (is it an armored secret key?)" >&2
+	grep '^\[GNUPG:\]' "$home/import.status" >&2 || true
+	exit 1
+fi
 
 key_args=()
 [[ -n "${LOAMS_GPG_KEY_ID:-}" ]] && key_args=(--local-user "$LOAMS_GPG_KEY_ID")

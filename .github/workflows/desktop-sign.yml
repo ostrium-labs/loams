@@ -9,9 +9,15 @@ name: Desktop signing (SignPath, called)
 #
 #   kind: rpm      one .rpm, signed with the GPG-certificate policy (`<rpm-sign>`), config
 #                  signpath/artifact-configuration.rpm.xml (variable SIGNPATH_ARTIFACT_CONFIGURATION_SLUG).
-#   kind: windows  a directory of PE files (the unpacked app, or the NSIS installer), Authenticode
-#                  policy, config signpath/artifact-configuration.desktop-windows.xml
-#                  (variable SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG).
+#   kind: windows            the unpacked app (a ZIP of PE files), Authenticode policy, config
+#                            signpath/artifact-configuration.desktop-windows.xml
+#                            (variable SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG).
+#   kind: windows-installer  the NSIS installer, same policy, config
+#                            signpath/artifact-configuration.desktop-windows-installer.xml
+#                            (variable SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG).
+#
+# The job runs in the protected `desktop-release` environment (required reviewers, tag rule:
+# docs/release/desktop.md), so the signing token is only reachable after approval.
 #
 # Not configured: with require_signing false it warns and outputs signed=false (the release then
 # names the files "unsigned"); with require_signing true it fails and names what is missing.
@@ -24,7 +30,7 @@ on:
         required: true
         type: string
       kind:
-        description: 'rpm or windows'
+        description: 'rpm, windows or windows-installer'
         required: true
         type: string
       require_signing:
@@ -46,6 +52,7 @@ permissions:
 jobs:
   sign:
     name: SignPath (${{ inputs.kind }}, ${{ inputs.artifact_name }})
+    environment: desktop-release
     runs-on: ubuntu-latest # SignPath's OSS connector needs GitHub-hosted runners (signpath/pipeline-policy.md)
     timeout-minutes: 60
     outputs:
@@ -64,12 +71,14 @@ jobs:
           WIN_POLICY: ${{ vars.SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG }}
           RPM_CONFIG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
           WIN_CONFIG: ${{ vars.SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG }}
+          WIN_INSTALLER_CONFIG: ${{ vars.SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
         run: |
           set -euo pipefail
           case "$KIND" in
             rpm) policy="$RPM_POLICY"; config="$RPM_CONFIG"; policy_name=SIGNPATH_SIGNING_POLICY_SLUG; config_name=SIGNPATH_ARTIFACT_CONFIGURATION_SLUG ;;
             windows) policy="$WIN_POLICY"; config="$WIN_CONFIG"; policy_name=SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG; config_name=SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG ;;
-            *) echo "::error::kind must be rpm or windows, got '$KIND'"; exit 1 ;;
+            windows-installer) policy="$WIN_POLICY"; config="$WIN_INSTALLER_CONFIG"; policy_name=SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG; config_name=SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG ;;
+            *) echo "::error::kind must be rpm, windows or windows-installer, got '$KIND'"; exit 1 ;;
           esac
           missing=()
           [[ -n "${SIGNPATH_API_TOKEN:-}" ]] || missing+=("secret SIGNPATH_API_TOKEN")
@@ -107,7 +116,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ci/signpath-artifacts.py --self-test
-          scope=linux; [ "$KIND" = windows ] && scope=desktop-windows
+          scope=desktop-windows; [ "$KIND" = rpm ] && scope=linux
           python3 scripts/ci/signpath-artifacts.py --scope "$scope" "$RUNNER_TEMP/unsigned" | tee "$RUNNER_TEMP/scope.txt"
           if [ "$KIND" = rpm ]; then
             [ "$(grep -c '^rpm-sign' "$RUNNER_TEMP/scope.txt")" -eq "$(grep -c . "$RUNNER_TEMP/scope.txt")" ] \
@@ -126,6 +135,7 @@ jobs:
           archive: ${{ inputs.kind != 'rpm' }}
           if-no-files-found: error
           retention-days: 7
+          overwrite: true
 
       - if: steps.decide.outputs.signed == 'true'
         name: submit for signing and wait for the approver
@@ -153,6 +163,7 @@ jobs:
           path: ${{ runner.temp }}/signed
           if-no-files-found: error
           retention-days: 7
+          overwrite: true
 
       - if: steps.decide.outputs.signed == 'true'
         name: what was signed

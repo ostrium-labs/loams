@@ -1,36 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Loams Desktop (Electron) Windows artifact configuration for SignPath (AP1e Task 31, D677).
+  Loams Desktop (Electron) Windows artifact configuration for SignPath, UNPACKED APP (AP1e Task 31, D677).
 
-  Paste this into SignPath as a second artifact configuration of the project, with its own
-  slug, and set the repository variable SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG
-  to that slug. docs/release/desktop.md has the whole setup.
+  Paste this into SignPath as an artifact configuration of the project and set the repository
+  variable SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG to its slug. The NSIS installer has
+  its own configuration, artifact-configuration.desktop-windows-installer.xml. docs/release/desktop.md
+  has the whole setup.
 
-  One configuration serves BOTH submissions the release workflow makes, because both are a ZIP of
-  PE files:
+  The submission is a ZIP of dist/win-unpacked, sent BEFORE the installer is built so the installer
+  packages signed executables. "Loams Desktop.exe" is required (min-matches defaults to 1, so a
+  ZIP without it fails). resources/bin/loams.exe, the bundled engine, is optional because the Windows
+  build ships without it when it does not build. The Electron DLLs and any .node files are signed
+  when present.
 
-    1. the unpacked app (dist/win-unpacked: Loams Desktop.exe, the Electron DLLs, and the bundled
-       engine resources/bin/loams.exe), submitted BEFORE the installer is built so the installer
-       packages signed executables;
-    2. the NSIS installer (a ZIP holding the one loams-desktop-*-win-x64.exe at its root),
-       submitted after it is built.
+  The certificate and signing policy are set SignPath-side (SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG) and
+  must be an Authenticode certificate, not the GPG key the rpm policy uses. The workflow then
+  checks every signature with Get-AuthenticodeSignature; it does not trust the submission.
 
-  Every PE file in the ZIP is Authenticode-signed. The certificate and the signing policy are
-  set on the SignPath side (SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG), and have to be an
-  Authenticode certificate, not the GPG key the RPM policy uses.
-
-  The product-name restriction is the SignPath Foundation requirement for signed binaries
-  (docs/release/signing.md); it applies to the two executables Loams itself names.
+  The product-name restriction is the SignPath Foundation requirement (docs/release/signing.md).
   UNVERIFIED: the `product-name` attribute spelling follows SignPath's file-metadata-restrictions
-  reference; if SignPath rejects the pasted configuration, that attribute is the first thing to
-  check. The NSIS uninstaller embedded in the installer is not separately signed.
+  reference; if SignPath rejects the pasted configuration, check that first.
 -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <zip-file>
-    <pe-file path="Loams Desktop.exe" product-name="Loams Desktop" min-matches="0">
-      <authenticode-sign />
-    </pe-file>
-    <pe-file path="loams-desktop-*-win-x64*.exe" product-name="Loams Desktop" min-matches="0">
+    <pe-file path="Loams Desktop.exe" product-name="Loams Desktop">
       <authenticode-sign />
     </pe-file>
     <pe-file-set>

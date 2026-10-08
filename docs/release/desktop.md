@@ -4,7 +4,9 @@ Status: **pipeline present, nothing published**. This page is what the owner rea
 secrets and variables, and to cut a release. The workflows are
 [`desktop-electron-release.yml`](../../.github/workflows/desktop-electron-release.yml) (the release)
 and [`desktop-sign.yml`](../../.github/workflows/desktop-sign.yml) (SignPath, called by it). The CI
-build and test matrix, which never signs, is `desktop-electron.yml`.
+build and test matrix, which never signs, is `desktop-electron.yml`. A third,
+[`desktop-promote.yml`](../../.github/workflows/desktop-promote.yml), moves a published release onto the
+update feed.
 
 ## What each platform gets
 
@@ -36,7 +38,8 @@ yet" engine state. The engine is always built with `--features live,durable`.
 
 ## What the owner must add
 
-Repository **secrets** (Settings > Secrets and variables > Actions):
+Put the **secrets** in the protected environment `desktop-release` (below), not at repository level.
+Environment secrets (Settings > Environments > `desktop-release`):
 
 | Secret | What | If absent |
 |---|---|---|
@@ -53,10 +56,24 @@ Repository **variables**:
 | `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG` | The same values `release-sign.yml` uses. |
 | `SIGNPATH_SIGNING_POLICY_SLUG`, `SIGNPATH_ARTIFACT_CONFIGURATION_SLUG` | Existing: the rpm (GPG certificate) policy and the configuration from `signpath/artifact-configuration.rpm.xml`. |
 | `SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG` | New: a policy with an **Authenticode** certificate. |
-| `SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG` | New: slug of the configuration pasted from `signpath/artifact-configuration.desktop-windows.xml`. |
+| `SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG` | New: slug of the configuration pasted from `signpath/artifact-configuration.desktop-windows.xml` (the unpacked app; `Loams Desktop.exe` is required in it). |
+| `SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG` | New: slug of the configuration pasted from `signpath/artifact-configuration.desktop-windows-installer.xml` (the installer, required in it). |
 | `LOAMS_UPDATE_PUBKEY` | 64 hex chars, the public half of `LOAMS_UPDATE_SIGNING_KEY`. Baked into the app at build time. |
-| `LOAMS_UPDATE_FEED` | Optional. Defaults to `https://github.com/<owner>/<repo>/releases/latest/download`. |
+| `LOAMS_UPDATE_FEED` | Optional. Defaults to `https://github.com/<owner>/<repo>/releases/download/desktop-latest`. |
 | `DESKTOP_REQUIRE_SIGNING` | `true` makes a release without every signature above fail. Default unset (false). |
+
+### The `desktop-release` environment
+
+Create it under Settings > Environments and configure:
+
+- **Required reviewers**: at least one maintainer who is not the person pushing the tag. The plan job,
+  each SignPath call and the release job run in this environment, so expect one approval prompt
+  for each of those jobs. The SignPath token and GPG key are only readable after approval.
+- **Deployment branches and tags**: a rule allowing only tags matching `desktop-v*` (and no branches).
+- Put `SIGNPATH_API_TOKEN`, `LOAMS_GPG_PRIVATE_KEY`, `LOAMS_GPG_KEY_ID`, `LOAMS_GPG_PASSPHRASE` and
+  `LOAMS_UPDATE_SIGNING_KEY` here. The signing workflow `desktop-sign.yml` declares the environment itself
+  and is also passed `SIGNPATH_API_TOKEN` explicitly. Unverified: that a called workflow's job reads an
+  environment secret that way; if the token arrives empty, also set it as a repository secret.
 
 SignPath setup (project, policies, GitHub App, approvers) is in [signing.md](signing.md); the policy
 file is [`signpath/pipeline-policy.md`](../../signpath/pipeline-policy.md). The Windows policy is a second
@@ -65,23 +82,31 @@ SignPath by pasting the XML. Its `product-name` attribute spelling is unverified
 reference; if SignPath rejects the paste, that is the first thing to check. The NSIS uninstaller
 embedded in the installer is not separately signed.
 
+The workflow does not trust SignPath's output: after the unpacked app comes back it checks
+`Loams Desktop.exe` and `resources/bin/loams.exe` (when bundled), and after the installer comes back it
+checks the installer, all with `Get-AuthenticodeSignature` (status must be `Valid`). If a check fails,
+the run fails when `DESKTOP_REQUIRE_SIGNING` is `true`; otherwise the installer is released named
+`-unsigned` and the notes say so.
+
 ## The update feed
 
 The app reads `<LOAMS_UPDATE_FEED>/latest.yml` (Windows), `latest-linux.yml` or
 `latest-linux-arm64.yml` (AppImage), `latest-mac.yml` (macOS, version probe only), and the matching
-`.yml.sig`. For GitHub releases the feed is the latest-download URL:
+`.yml.sig`. The default feed is a rolling release of this repository:
 
 ```
-https://github.com/<owner>/<repo>/releases/latest/download
+https://github.com/<owner>/<repo>/releases/download/desktop-latest
 ```
 
-GitHub redirects `releases/latest/download/<file>` to the newest **published, non-draft,
-non-prerelease** release, so:
+`desktop-latest` is a fixed-name prerelease (so it never becomes GitHub's "latest release", and the
+engine's own releases cannot be mistaken for it). It holds the manifests, their `.sig` files and the
+payload files they name (the Windows installer, the AppImages), and **only
+`desktop-promote.yml` writes to it**. It runs when a `desktop-v*` release is **published**, or on
+demand: Actions > Desktop update feed (promote) > Run workflow, with the tag. It refuses a draft, and
+skips a prerelease tag, so a client is never pointed at a draft or an unfinished version. Assets of
+earlier versions are removed after the new ones upload.
 
-- the draft must be published before anyone is offered the update, and ticked **Set as latest release**;
-- if the same repository also publishes other releases (the engine's `vX.Y.Z`), "latest" can resolve to
-  the wrong one. In that case host the desktop files at a stable URL of your own and set
-  `LOAMS_UPDATE_FEED` to it. The feed is a build-time constant, so set it before tagging.
+The feed is a build-time constant, so set `LOAMS_UPDATE_FEED` (if you override it) before tagging.
 
 ## Cutting a release
 
@@ -95,6 +120,13 @@ non-prerelease** release, so:
    SignPath (it can wait for a human approver, up to 50 minutes per request), and creates a **draft**
    release holding every file, `SHA256SUMS`, and the signatures.
 5. Open the draft, read the notes (they state exactly what is and is not signed), then publish it.
+   Publishing triggers `desktop-promote.yml`, which copies the manifests onto `desktop-latest`; check
+   its run, or dispatch it by hand with the tag. Re-running the release for a tag whose draft still exists
+   reuses that draft (files replaced, notes refreshed); a tag that is already published is refused.
+
+`SHA256SUMS` covers the release files only. The manifest `latest*.yml.sig` files are outside it by
+design: they sign the manifest, which is what the app verifies, and a signature file cannot sit in the
+list of files it signs.
 
 Verify a download:
 

@@ -1,0 +1,78 @@
+name: Desktop update feed (promote)
+
+# Copies the update manifests of a PUBLISHED desktop-vX.Y.Z release onto the rolling `desktop-latest`
+# release, which is what LOAMS_UPDATE_FEED points at
+# (https://github.com/<owner>/<repo>/releases/download/desktop-latest). Clients are never pointed at a
+# draft: the release must be published (not draft, not prerelease) before anything is copied.
+# docs/release/desktop.md: publish the draft, and this runs (or dispatch it with the tag).
+#
+# The manifests name their payload files relatively (`url: loams-desktop-1.2.3-win-x64.exe`), so the
+# files they reference are copied too, and assets of earlier versions are removed afterwards.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published release tag to promote, desktop-vX.Y.Z.'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: promote to desktop-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'desktop-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      FEED_TAG: desktop-latest
+    steps:
+      - name: the release is published
+        id: check
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^desktop-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "::error::$TAG is not a desktop-vX.Y.Z tag"; exit 1; }
+          read -r draft pre < <(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease -q '"\(.isDraft) \(.isPrerelease)"')
+          [ "$draft" = false ] || { echo "::error::$TAG is still a draft; publish it first (clients are never pointed at a draft)"; exit 1; }
+          if [ "$pre" = true ]; then
+            echo "::notice::$TAG is a prerelease; the rolling feed follows stable releases only"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: copy the manifests and their payloads
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/feed"; mkdir -p "$d"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$d" --pattern 'latest*.yml' --pattern 'latest*.yml.sig'
+          shopt -s nullglob
+          ymls=("$d"/latest*.yml)
+          [ ${#ymls[@]} -gt 0 ] || { echo "::error::$TAG has no latest*.yml; nothing to promote"; exit 1; }
+          for y in "${ymls[@]}"; do
+            [ -e "$y.sig" ] || echo "::warning::$(basename "$y") has no .sig; clients refuse an unsigned manifest"
+            # payload files named by the manifest (files[].url and path)
+            for f in $(sed -nE 's/^[[:space:]]*(-[[:space:]]+)?(url|path):[[:space:]]*//p' "$y" | tr -d "'\""); do
+              [ -e "$d/$f" ] || gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$d" --pattern "$f"
+            done
+          done
+          ls -l "$d"
+          if ! gh release view "$FEED_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # prerelease keeps the rolling feed out of GitHub's "latest release"
+            gh release create "$FEED_TAG" --repo "$GITHUB_REPOSITORY" --prerelease --title "Desktop update feed" \
+              --notes "Rolling update feed for Loams Desktop. Managed by desktop-promote.yml; do not edit by hand." \
+              --target "$GITHUB_SHA"
+          fi
+          gh release upload "$FEED_TAG" "$d"/* --clobber --repo "$GITHUB_REPOSITORY"
+          # drop assets left over from earlier versions
+          keep=$(cd "$d" && ls)
+          for a in $(gh release view "$FEED_TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name'); do
+            grep -qxF "$a" <<<"$keep" || gh release delete-asset "$FEED_TAG" "$a" --yes --repo "$GITHUB_REPOSITORY"
+          done
+          echo "desktop-latest now serves $TAG" >> "$GITHUB_STEP_SUMMARY"

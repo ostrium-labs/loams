@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Loams Desktop (Electron) Windows artifact configuration for SignPath, NSIS INSTALLER (AP1e Task 31, D677).
+
+  A second artifact configuration of the same project; set the repository variable
+  SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG to its slug. It uses the same
+  Authenticode signing policy as artifact-configuration.desktop-windows.xml.
+
+  The submission is a ZIP holding exactly one loams-desktop-<version>-win-x64[-unsigned].exe at its
+  root. The installer is required (min-matches defaults to 1). The NSIS uninstaller embedded in
+  it is not separately signed. The `product-name` attribute is UNVERIFIED, as in the other file.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="loams-desktop-*-win-x64*.exe" product-name="Loams Desktop">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

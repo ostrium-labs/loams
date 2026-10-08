@@ -230,6 +230,14 @@ describe.skipIf(!hasGpg)("gpg-sign.sh dry run with a throwaway key", () => {
 		expect(bad.status).not.toBe(0);
 	});
 
+	it("fails clearly when the key cannot be imported", () => {
+		const d = fresh("gpg-badkey");
+		writeFileSync(join(d, "SHA256SUMS"), "s");
+		const r = run(d, { LOAMS_GPG_PRIVATE_KEY: "not a key" });
+		expect(r.status).toBe(1);
+		expect(r.stderr).toContain("could not be imported");
+	});
+
 	it("fails when a key is set but SHA256SUMS is missing", () => {
 		const d = fresh("gpg-nosums");
 		const r = run(d, { LOAMS_GPG_PRIVATE_KEY: "x" });
