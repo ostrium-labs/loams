@@ -1311,3 +1311,20 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
   - A sharded interpreted request with `shard_stripe_size` 0 is refused again: the decoder would divide by zero.
   - Vanilla keepalives set `request_reply`, as the fork's `send_wal.rs` does (controller ruling).
 
+
+### Task 32 rulings (2026-10-09)
+
+- **R32.1 What is published.**
+  - A timeline is published every second while a proposer streams to this instance, and afterwards while its pageserver still has WAL to persist (`remote_consistent_lsn < commit_lsn`). This mirrors the fork's broker-active set.
+  - The values come from the proposer's live view when there is one, and from the store's head otherwise. `commit_lsn` is never above `flush_lsn`.
+  - Any instance answers a `SafekeeperDiscoveryRequest` for a timeline its store holds, and publishes that timeline from then on. This covers a pageserver whose timeline this instance has not seen, for example after a restart, or in a pool where the WAL was written through another instance.
+  - `safekeeper_id` is `--id`: the acceptor's id for Arm A, and the pool's logical id for a TiKV pool, all of whose instances advertise the pool's address (`--advertise-pg`, `--advertise-http`).
+  - The client is tonic, generated from the vendored `broker.proto` (unchanged, from the fork at `1218fb7a`, tag `loams-decoder-trim-1`) under the existing `server` feature. Every CI job that builds it already installs `protoc`.
+- **R32.2 The pageserver end-to-end test passes; it is not in CI yet.**
+  - `scripts/pg2/it-pageserver-loams-wal.sh` and the ignored wrapper `it_pageserver_discovers_loams_wal_via_broker` (`crates/loams-wal-decoder/tests/it_pageserver.rs`) use `deploy/loams-pg-bench` with no safekeeper and no feeder. A compute writes 400k rows (more than its `shared_buffers`) through `loams-wal-interpreted`; the pageserver's `last_record_lsn` passes the flush LSN within about 3 s; a fresh compute (basebackup from the pageserver) reads the rows back.
+  - It passed three times on 2026-10-09: before and after the feeder's deletion, and with a `tikv`-feature binary. In the first run the pageserver found `loams-wal` through discovery before the first publication arrived, so both paths ran.
+  - It is not in CI, because the bench's Neon images are still `latest`, not pinned by digest (Task 2). It goes to `pg2-e2e.yml` when they are pinned.
+- **R32.3 Task 31's open items.**
+  - The compose end-to-end test passes (R32.2), so the feeder is deleted (owner's condition, R31.11), with `no_feeder_flag_exists`.
+  - `run.sh` and the benchmark workflow now run `loams-wal-interpreted` with `--broker-endpoint`, and the result JSON no longer has `feeder_cpu_s`.
+  - Task 31 now waits only on R31.1's before/after measurement on the `loam-bench` runner. The "before" side has to be an older build (dev before `3a91c0dc`), since the feeder no longer exists at head.
