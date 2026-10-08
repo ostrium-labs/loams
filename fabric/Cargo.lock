@@ -1269,13 +1269,20 @@ dependencies = [
 name = "loams-house"
 version = "0.0.1"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
+ "flate2",
+ "httparse",
  "loams-chdb-sys",
  "loams-house-ipc",
  "loams-house-worker",
  "nix",
+ "sha2",
+ "tempfile",
  "thiserror",
  "tokio",
+ "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -1296,13 +1303,16 @@ version = "0.0.1"
 dependencies = [
  "arrow",
  "bytes",
+ "flate2",
  "loams-chdb",
  "loams-chdb-sys",
  "loams-house",
  "loams-house-ipc",
  "nix",
  "parquet",
+ "serde_json",
  "tokio",
+ "zstd",
 ]
 
 [[package]]

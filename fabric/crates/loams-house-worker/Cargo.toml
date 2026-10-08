@@ -45,6 +45,11 @@ loams-house = { path = "../loams-house", features = ["test-hooks"] }
 # `Frame::Abort` for `crash_does_not_reach_the_front`. A dev-dependency feature
 # reaches the binary only in a test build, never in `cargo build`.
 loams-house-ipc = { path = "../loams-house-ipc", features = ["test-hooks"] }
+# `tests/http.rs`: the summary and progress headers are JSON, and bodies are
+# compressed both ways.
+flate2.workspace = true
+serde_json.workspace = true
+zstd.workspace = true
 # `fd3.rs` starts the worker with a wrong fd 3, which needs `posix_spawn`.
 nix.workspace = true
 parquet.workspace = true

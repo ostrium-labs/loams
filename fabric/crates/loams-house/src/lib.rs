@@ -2,6 +2,13 @@
 //! [§32](../../../design/32-loams-flow-fabric-house.md) §8, served over the
 //! ClickHouse HTTP interface.
 //!
+//! # The HTTP interface (HS1 Task 3)
+//!
+//! [`http::serve`] answers ClickHouse's HTTP protocol on loopback (FL2 Task 2's
+//! contract) and runs every statement on the [`WorkerPool`]: [`auth`] for the
+//! development users, [`compress`] for request and response bodies, [`config`]
+//! for the knobs.
+//!
 //! # The front links no libchdb (HS1 Task 2, D761)
 //!
 //! chDB runs in `loams-house-worker` processes. This crate supervises them —
@@ -54,11 +61,17 @@
 //! Names: Loams, `loams-*` (owner rulings, 2026-10-01).
 
 pub mod admission;
+pub mod auth;
+pub mod compress;
+pub mod config;
 pub mod errors;
+pub mod http;
 pub mod watchdog;
 
 pub use admission::{Collected, Event, Outcome, PoolConfig, PoolStats, WorkerLease, WorkerPool};
+pub use config::{HouseConfig, UserMap};
 pub use errors::{CODES, ChError, HouseError, MidStreamBody};
+pub use http::{HouseHandle, serve};
 #[cfg(feature = "inproc-worker")]
 pub use watchdog::InprocWorker;
 pub use watchdog::{ExitReason, KillHandle, Launcher, ProcessLauncher};

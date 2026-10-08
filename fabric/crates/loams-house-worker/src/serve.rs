@@ -40,7 +40,14 @@ use crate::config::{self, WorkerArgs};
 pub const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 
 /// The query-level arguments of every user connection (HS1 R1.9).
-pub const USER_CONNECTION_ARGS: &[&str] = &["--readonly=2"];
+///
+/// `session_timezone=UTC` because the House answers `X-ClickHouse-Timezone: UTC`
+/// (FL2 Task 2) and chDB takes its *server* timezone from the host: an empty
+/// environment leaves it on `/etc/localtime`, and neither `<timezone>` in the
+/// config file nor `--timezone=UTC` changes it (measured, HS1 Task 3). The session
+/// setting is what `timezone()` and every DateTime conversion use, and a user may
+/// still `SET` it, as in ClickHouse.
+pub const USER_CONNECTION_ARGS: &[&str] = &["--readonly=2", "--session_timezone=UTC"];
 
 /// Where the serve loop runs, which decides what the end of the socket does.
 #[derive(Clone, Debug, PartialEq, Eq)]

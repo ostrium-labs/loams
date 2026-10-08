@@ -3,6 +3,8 @@
 
 #![allow(dead_code)]
 
+pub mod http;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;

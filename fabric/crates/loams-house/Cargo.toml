@@ -31,6 +31,16 @@ nix.workspace = true
 # `HouseError`'s `Display`/`Error`, which the HTTP layer surfaces to the
 # per-request error handler. Apache-2.0 OR MIT.
 thiserror.workspace = true
+# The HTTP interface (HS1 Task 3): request heads, Basic credentials, the dev
+# users' password digests, request and response compression, query ids and the
+# `wait_end_of_query` spool.
+base64.workspace = true
+flate2.workspace = true
+httparse.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+uuid.workspace = true
+zstd.workspace = true
 # The pool is async: the worker sockets are tokio Unix streams, and the deadline,
 # the reaper and the warm-up are tasks.
 tokio = { workspace = true, features = ["io-util", "net", "rt", "sync", "time"] }
