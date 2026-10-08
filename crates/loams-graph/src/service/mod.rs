@@ -111,11 +111,10 @@ pub fn create_graph(
         check_language(language.as_known(), language)?;
     }
     crate::engine::validate_names(&req.namespace, &req.name).map_err(map_engine)?;
-    if let Ok(existing) = find(engine, &req.namespace, &req.name) {
-        return Ok(graph_message(&existing));
-    }
-    let spec = OpenSpec::persistent(engine, GraphId::new()).unwrap_or_else(OpenSpec::in_memory);
-    let graph = Graph::open(engine, &req.namespace, &req.name, spec).map_err(map_engine)?;
+    let graph = Graph::open_or_existing(engine, &req.namespace, &req.name, || {
+        OpenSpec::persistent(engine, GraphId::new()).unwrap_or_else(OpenSpec::in_memory)
+    })
+    .map_err(map_engine)?;
     Ok(graph_message(&graph))
 }
 

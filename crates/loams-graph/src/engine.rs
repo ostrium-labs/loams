@@ -445,6 +445,30 @@ impl Graph {
         Ok(access)
     }
 
+    /// Answers the graph open under `(namespace, name)`, or opens it with `spec` when there is
+    /// none, as one step under the registry lock, so concurrent callers all get the same graph
+    /// (security review M6). Unlike [`Graph::open`], an existing graph is answered whatever its
+    /// spec: this is `CreateGraph`'s idempotency by name.
+    pub fn open_or_existing(
+        engine: &Engine,
+        namespace: &str,
+        name: &str,
+        spec: impl FnOnce() -> OpenSpec,
+    ) -> Result<Arc<Graph>, GraphError> {
+        validate_names(namespace, name)?;
+        let key = (namespace.to_string(), name.to_string());
+        let mut graphs = engine
+            .graphs
+            .lock()
+            .map_err(|_| poisoned("the graph registry is poisoned"))?;
+        if let Some(existing) = graphs.get(&key) {
+            return Ok(Arc::clone(existing));
+        }
+        let graph = Arc::new(Graph::open_db(namespace, name, spec())?);
+        graphs.insert(key, Arc::clone(&graph));
+        Ok(graph)
+    }
+
     /// This graph's namespace.
     pub fn namespace(&self) -> &str {
         &self.namespace

@@ -308,3 +308,33 @@ fn names_are_validated_and_cannot_collide() {
         .expect("valid");
     }
 }
+
+/// Security review M6: concurrent `CreateGraph` of one name all answer the same graph.
+#[test]
+fn concurrent_create_is_idempotent() {
+    let data_dir = std::env::temp_dir().join(format!("loams-graph-m6-{}", std::process::id()));
+    let engine = std::sync::Arc::new(Engine::with_data_dir(&data_dir));
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let (engine, barrier) = (engine.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                service::create_graph(
+                    &engine,
+                    pb::CreateGraphRequest {
+                        namespace: "acme".to_string(),
+                        name: "race".to_string(),
+                        ..Default::default()
+                    },
+                )
+            })
+        })
+        .collect();
+    let ids: std::collections::BTreeSet<String> = handles
+        .into_iter()
+        .map(|h| h.join().expect("thread").expect("every create succeeds").id)
+        .collect();
+    assert_eq!(ids.len(), 1, "one graph: {ids:?}");
+    std::fs::remove_dir_all(&data_dir).ok();
+}
