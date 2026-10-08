@@ -734,9 +734,10 @@ impl Handle {
         self.gc_once_at(oracle::wall_ms()).await
     }
 
-    /// Runs a GC round as if the wall clock read `now_ms` (for tests: a
-    /// time ahead moves the safe point ahead, after which reads below it
-    /// are refused).
+    /// Runs a GC round as if the wall clock read `now_ms`. For tests only:
+    /// a time ahead moves the safe point up to the last timestamp issued
+    /// (never past it), after which reads below it are refused.
+    #[doc(hidden)]
     pub async fn gc_once_at(&self, now_ms: u64) -> Result<GcReport, KvError> {
         let shared = self.shared.clone();
         tokio::task::spawn_blocking(move || shared.gc_blocking(now_ms))

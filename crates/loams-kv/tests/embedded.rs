@@ -184,10 +184,18 @@ async fn gc_respects_barrier() {
     assert_eq!(get_at(&store, at, b"k").await, Some(b"v1".to_vec()));
 
     barrier.delete().await.expect("deleted");
+    let (last, _) = h.oracle_marks();
     let report = h.gc_once_at(far).await.expect("a GC round");
-    let life = u64::try_from(embedded::DEFAULT_GC_LIFE_TIME.as_millis()).expect("fits");
-    assert_eq!(report.safe_point, Ts::from_parts(far - life, 0));
+    // An hour ahead, the safe point stops at the last timestamp issued
+    // (review fix 5), not at `far − gc_life_time`.
+    assert_eq!(report.safe_point, last);
     assert_eq!(report.versions_deleted, 1, "v1 went");
+    let now = store.now().await.expect("now");
+    assert_eq!(
+        get_at(&store, now, b"k").await,
+        Some(b"v2".to_vec()),
+        "reads at the clock still work after a GC ahead of it"
+    );
     match store.snapshot(at).await {
         Err(KvError::GcSafePoint { at: a, safe_point }) => {
             assert_eq!(a, at.0);

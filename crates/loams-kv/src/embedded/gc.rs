@@ -1,8 +1,9 @@
 //! GC of the embedded store (LV1 plan Task 21): barriers, open snapshots,
 //! the safe point and the GC thread.
 //!
-//! A GC round computes `safe_point = min(now − gc_life_time, oldest open
-//! snapshot or transaction, live barriers)`, never moving it back, persists
+//! A GC round computes `safe_point = min(now − gc_life_time, the last
+//! timestamp issued, oldest open snapshot or transaction, live barriers)`,
+//! never moving it back, persists
 //! it (`oracle.gc_safe_point`), and deletes every version older than the
 //! newest version at or below it (that version too when it is a
 //! tombstone). It also deletes expired commit tokens and fences, as the
@@ -146,7 +147,9 @@ impl Shared {
         let core = &self.core;
         let tokens_swept = self.sweep_tokens(now_ms)?;
         let life = u64::try_from(self.gc_life_time().as_millis()).unwrap_or(u64::MAX);
-        let candidate = Ts::from_parts(now_ms.saturating_sub(life), 0);
+        // Never past a timestamp the oracle issued, whatever `now_ms` says
+        // (review fix 5): reads at the clock stay possible.
+        let candidate = Ts::from_parts(now_ms.saturating_sub(life), 0).min(core.oracle.last());
         let safe_point = core.gc_state().advance(candidate);
         let versions_deleted = collect(core, safe_point).map_err(super::storage)?;
         core.counters.gc_runs.inc();
