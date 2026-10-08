@@ -1,0 +1,101 @@
+name: Desktop (Electron) packaging
+
+# Builds the unsigned Loams Desktop installers for each platform (plan AP1e Task 15).
+# Signing is a separate release step (SignPath for Windows, Apple credentials for macOS: D676, D677).
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop-electron/**'
+      - 'web/**'
+      - 'plugins/core/**'
+      - 'plugins/packages/**'
+      - '.github/workflows/desktop-electron.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-electron-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  NX_DAEMON: 'false'
+  NX_NO_CLOUD: 'true'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: package (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    # macOS and Windows installers are best-effort until their signing is set up.
+    continue-on-error: ${{ matrix.experimental }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, runner: ubuntu-24.04, target: package-linux, experimental: false }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm, target: package-linux, experimental: false }
+          - { name: windows-x64, runner: windows-2025, target: package-windows, experimental: true }
+          - { name: macos-arm64, runner: macos-15, target: package-macos, experimental: true }
+          - { name: macos-x64, runner: macos-15-intel, target: package-macos, experimental: true }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      - name: unit tests and typecheck
+        run: pnpm nx run-many -t test typecheck -p loams-desktop-electron @loams/console plugins --outputStyle=static
+
+      # The engine build.rs scripts need protoc (see release-package.yml).
+      - name: protoc (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev rpm libarchive-tools fakeroot
+      - name: protoc (macos)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - name: protoc and NASM (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install --no-progress -y protobuf
+          choco install --no-progress -y nasm
+          "$env:ChocolateyInstall\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: desktop-${{ matrix.name }}
+
+      # The desktop engine needs the live and durable cargo features; the default build lacks them.
+      - name: engine
+        run: cargo build --release -p loams --features live,durable
+
+      - name: package (unsigned)
+        run: pnpm nx run loams-desktop-electron:${{ matrix.target }} --outputStyle=static
+
+      - name: smoke test (Playwright, Task 16)
+        if: runner.os == 'Linux' && hashFiles('apps/desktop-electron/playwright.config.ts') != ''
+        run: xvfb-run -a pnpm --filter @loams/desktop test:e2e
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: loams-desktop-unsigned-${{ matrix.name }}
+          path: |
+            apps/desktop-electron/dist/*.AppImage
+            apps/desktop-electron/dist/*.deb
+            apps/desktop-electron/dist/*.rpm
+            apps/desktop-electron/dist/*.pacman
+            apps/desktop-electron/dist/*.exe
+            apps/desktop-electron/dist/*.dmg
+            apps/desktop-electron/dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
