@@ -21,6 +21,7 @@ module.exports = {
 		{ from: "../../deploy/neon", to: "stacks/neon" },
 		{ from: "../../deploy/wesql", to: "stacks/wesql" },
 		{ from: "../../deploy/tikv", to: "stacks/tikv" },
+		{ from: "resources/connectors.json", to: "connectors.json" },
 	],
 	artifactName: "loams-desktop-${version}-${os}-${arch}.${ext}",
 	linux: {

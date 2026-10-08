@@ -6,8 +6,9 @@
 	"license": "Apache-2.0",
 	"main": "out/main/index.js",
 	"scripts": {
-		"dev": "electron-vite dev",
-		"build": "electron-vite build",
+		"dev": "node scripts/connectors-catalog.mjs && electron-vite dev",
+		"catalog": "node scripts/connectors-catalog.mjs",
+		"build": "node scripts/connectors-catalog.mjs && electron-vite build",
 		"test": "vitest run",
 		"test:e2e": "playwright test",
 		"typecheck": "tsc --noEmit -p tsconfig.node.json",
@@ -16,6 +17,7 @@
 	},
 	"dependencies": {
 		"@noble/ed25519": "3.2.0",
+		"ajv": "8.20.0",
 		"electron-updater": "6.8.9",
 		"js-yaml": "4.3.2"
 	},
@@ -36,10 +38,12 @@
 		"typescript": "5.9.3",
 		"vite": "7.3.7",
 		"vitest": "5.0.3",
+		"yaml": "2.9.1",
 		"zod": "3.25.76"
 	},
 	"exports": {
-		"./contracts": "./src/shared/contracts.ts"
+		"./contracts": "./src/shared/contracts.ts",
+		"./validate": "./src/shared/validate.ts"
 	},
 	"author": {
 		"name": "Loams",

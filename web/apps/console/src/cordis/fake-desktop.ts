@@ -9,6 +9,8 @@
 // return empty or "unconfigured" results.
 
 import type {
+  ConnectorDetail,
+  ConnectorSummary,
   EngineState,
   FactoryAppId,
   FactoryAppInfo,
@@ -17,6 +19,30 @@ import type {
   LoamsDesktopApi,
   ServerEntry,
 } from '@loams/desktop/contracts';
+import { validateConfig } from '@loams/desktop/validate';
+
+// The generated connector catalog (apps/desktop-electron/scripts/connectors-catalog.mjs), the same
+// JSON the desktop app serves. Loaded lazily and only here, so it never reaches a production bundle.
+const catalogFiles = import.meta.glob(
+  '../../../../../apps/desktop-electron/resources/connectors.json',
+  {
+    import: 'default',
+  },
+) as Record<
+  string,
+  () => Promise<{ connectors: ConnectorSummary[]; details: Record<string, ConnectorDetail> }>
+>;
+let catalogJson: ReturnType<(typeof catalogFiles)[string]> | undefined;
+function previewCatalog() {
+  const load = Object.values(catalogFiles)[0];
+  if (!load) {
+    return Promise.reject(
+      new Error('connectors.json is missing: run `pnpm --filter @loams/desktop catalog`.'),
+    );
+  }
+  catalogJson ??= load();
+  return catalogJson;
+}
 
 const STORE = 'loams.fake-desktop.servers';
 const ok: IpcResult<void> = { ok: true, value: undefined };
@@ -378,6 +404,23 @@ export function createFakeDesktop(): LoamsDesktopApi {
       onNavigate: () => () => undefined,
       takePendingNavigation: async () => null,
       setBadge: async () => undefined,
+    },
+    connectors: {
+      catalog: async () => (await previewCatalog()).connectors,
+      get: async (id) => {
+        const d = Object.hasOwn((await previewCatalog()).details, id)
+          ? (await previewCatalog()).details[id]
+          : undefined;
+        return d
+          ? { ok: true, value: d }
+          : { ok: false, code: 'not_found', message: `No connector "${id}".` };
+      },
+      validate: async (id, config) => {
+        const d = (await previewCatalog()).details[id];
+        return d
+          ? { ok: true, value: validateConfig(d.schema, config) }
+          : { ok: false, code: 'not_found', message: `No connector "${id}".` };
+      },
     },
     update: {
       state: async () => ({ phase: 'disabled' }),

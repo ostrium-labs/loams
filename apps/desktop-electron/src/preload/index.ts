@@ -73,6 +73,11 @@ const api: LoamsDesktopApi = {
 			};
 		},
 	},
+	connectors: {
+		catalog: () => invoke(CH.connectorsCatalog),
+		get: (id) => invoke(CH.connectorsGet, id),
+		validate: (id, config) => invoke(CH.connectorsValidate, id, config),
+	},
 };
 
 contextBridge.exposeInMainWorld("loamsDesktop", api);

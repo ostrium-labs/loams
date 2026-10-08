@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,6 +13,8 @@ import {
 } from "electron";
 import type { EngineState } from "../shared/contracts";
 import { appPaths } from "./app-paths";
+import { ConnectorCatalog, catalogPath } from "./connectors/catalog";
+import { registerConnectorsIpc } from "./connectors/ipc.electron";
 import { findEngineBinary, probeLiveSupport } from "./engine/binary";
 import { registerEngineIpc } from "./engine/ipc.electron";
 import { EngineSupervisor } from "./engine/supervisor";
@@ -170,6 +172,14 @@ const singleInstance = initSingleInstance({
 				{ devDemo: !app.isPackaged },
 			);
 			registerServerIpc(registry);
+			const connectorsFile = catalogPath({
+				isPackaged: app.isPackaged,
+				resourcesPath: process.resourcesPath,
+				appRoot: app.getAppPath(),
+			});
+			registerConnectorsIpc(
+				new ConnectorCatalog(() => readFileSync(connectorsFile, "utf8")),
+			);
 			factory = new FactoryHost(
 				new Vault(join(app.getPath("userData"), "factory", "credentials.bin"), {
 					// On Linux, basic_text means no keyring: the "encryption" is a fixed key.

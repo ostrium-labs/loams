@@ -13,3 +13,7 @@
       name: '@loams/plugin-factory'
     - id: durable
       name: '@loams/plugin-durable'
+    - id: connectors
+      name: '@loams/plugin-connectors'
+    - id: graph
+      name: '@loams/plugin-graph'
