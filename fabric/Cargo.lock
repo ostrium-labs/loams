@@ -1232,6 +1232,7 @@ dependencies = [
  "arrow",
  "bindgen",
  "flate2",
+ "libc",
  "sha2",
  "tar",
  "ureq",
@@ -1299,6 +1300,7 @@ dependencies = [
  "loams-chdb-sys",
  "loams-house",
  "loams-house-ipc",
+ "nix",
  "parquet",
  "tokio",
 ]

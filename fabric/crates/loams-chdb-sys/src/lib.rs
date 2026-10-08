@@ -1069,54 +1069,69 @@ pub mod ffi {
     }
 }
 
-/// Taking ownership of a file descriptor the process inherited (HS1 Task 2).
+/// Taking ownership of the socket the House worker inherits (HS1 Task 2).
 ///
-/// The House worker finds its `hsw1` socket on fd 3, put there by the front's
+/// The worker finds its `hsw1` socket on fd 3, put there by the front's
 /// `posix_spawn`. Turning a raw fd into an `OwnedFd` is `unsafe` in Rust (the
 /// caller asserts that nothing else owns it), and the workspace forbids `unsafe`
-/// outside this crate (FL2 Ruling 8), so the one call lives here, guarded so that
-/// it can hand out each fd at most once per process.
+/// outside this crate (FL2 Ruling 8), so the call lives here. It takes no fd
+/// argument: there is exactly one fd it may adopt, and at most once per process.
 pub mod inherited {
     use std::io;
+    use std::mem::MaybeUninit;
     use std::os::fd::{FromRawFd, OwnedFd, RawFd};
-    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    /// The fds already taken, so a second call cannot create a second owner.
-    static TAKEN: Mutex<Vec<RawFd>> = Mutex::new(Vec::new());
+    /// The fd the worker's socket is on (`loams_house_ipc::WORKER_SOCKET_FD`).
+    pub const WORKER_SOCKET_FD: RawFd = 3;
 
-    /// Takes ownership of inherited fd `fd`, which must be open and a socket.
+    /// Whether [`take_worker_socket`] has run, successfully or not.
+    static TAKEN: AtomicBool = AtomicBool::new(false);
+
+    fn refuse(kind: io::ErrorKind, why: impl Into<String>) -> io::Error {
+        io::Error::new(kind, format!("fd {WORKER_SOCKET_FD}: {}", why.into()))
+    }
+
+    /// Takes ownership of fd 3, once.
     ///
-    /// Fails if `fd` is one of the standard streams, is not open, is not a socket,
-    /// or was already taken.
-    pub fn take_socket(fd: RawFd) -> io::Result<OwnedFd> {
-        if fd <= 2 {
-            return Err(io::Error::new(
+    /// It must be open, **inherited** (close-on-exec clear: an fd this process
+    /// opened itself, as everything Rust and libchdb open is, has it set) and a
+    /// socket (`fstat`, `S_ISSOCK`). A second call fails, whatever the first did.
+    pub fn take_worker_socket() -> io::Result<OwnedFd> {
+        if TAKEN.swap(true, Ordering::SeqCst) {
+            return Err(refuse(io::ErrorKind::AlreadyExists, "already taken"));
+        }
+        let fd = WORKER_SOCKET_FD;
+        // SAFETY: `fcntl(F_GETFD)` reads the fd's flags and touches no memory; on
+        // a closed fd it answers -1 with EBADF.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+        if flags < 0 {
+            let err = io::Error::last_os_error();
+            return Err(refuse(err.kind(), format!("not open: {err}")));
+        }
+        if flags & libc::FD_CLOEXEC != 0 {
+            return Err(refuse(
                 io::ErrorKind::InvalidInput,
-                format!("fd {fd} is a standard stream, which std already owns"),
+                "close-on-exec is set, so this process opened it; it was not inherited",
             ));
         }
-        let mut taken = TAKEN
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if taken.contains(&fd) {
-            return Err(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                format!("fd {fd} was already taken"),
-            ));
+        let mut stat = MaybeUninit::<libc::stat>::uninit();
+        // SAFETY: `stat` is a properly sized, writable buffer for the call.
+        if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } < 0 {
+            let err = io::Error::last_os_error();
+            return Err(refuse(err.kind(), format!("fstat failed: {err}")));
         }
-        // Linux: the link names what the fd is, and does not exist when it is closed.
-        let target = std::fs::read_link(format!("/proc/self/fd/{fd}"))
-            .map_err(|err| io::Error::new(err.kind(), format!("fd {fd} is not open: {err}")))?;
-        if !target.to_string_lossy().starts_with("socket:") {
-            return Err(io::Error::new(
+        // SAFETY: `fstat` returned 0, so it filled the buffer.
+        let mode = unsafe { stat.assume_init() }.st_mode;
+        if mode & libc::S_IFMT != libc::S_IFSOCK {
+            return Err(refuse(
                 io::ErrorKind::InvalidInput,
-                format!("fd {fd} is {}, not a socket", target.display()),
+                format!("not a socket (mode {mode:o})"),
             ));
         }
-        taken.push(fd);
-        // SAFETY: `fd` is open (checked above), above the standard streams, and was
-        // inherited across `exec`, so no Rust object in this process owns it; the
-        // `TAKEN` list makes this the only `OwnedFd` ever made from it here.
+        // SAFETY: fd 3 is open, inherited across `exec` (close-on-exec clear), so
+        // no Rust object in this process owns it, and `TAKEN` makes this the only
+        // `OwnedFd` ever made from it here.
         Ok(unsafe { OwnedFd::from_raw_fd(fd) })
     }
 }

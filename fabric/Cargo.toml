@@ -65,6 +65,10 @@ sha2 = "0.10"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The raw `fcntl`, `fstat` and `_exit` calls `loams-chdb-sys` makes for the House
+# worker (HS1 Task 2 review I3, I4); already in the graph through tokio. MIT OR
+# Apache-2.0.
+libc = "0.2"
 # The `hsw1` frame bodies between the House front and its workers (HS1 Task 2,
 # §49 §4.2): a compact, schema-less serde format whose encoding of an enum is
 # its variant index, so both ends must be built from the same `Frame`. 1.1.3

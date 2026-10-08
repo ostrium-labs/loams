@@ -4,7 +4,7 @@
 use std::os::unix::net::UnixStream;
 use std::time::Instant;
 
-use loams_house_ipc::{EXIT_PROTOCOL, Frame, FrameCodec, WORKER_SOCKET_FD};
+use loams_house_ipc::{EXIT_PROTOCOL, Frame, FrameCodec};
 use loams_house_worker::{End, Worker, WorkerArgs};
 
 /// `EX_USAGE`: bad arguments.
@@ -23,7 +23,7 @@ fn main() {
             std::process::exit(EXIT_USAGE);
         }
     };
-    let socket = match loams_chdb_sys::inherited::take_socket(WORKER_SOCKET_FD) {
+    let socket = match loams_chdb_sys::inherited::take_worker_socket() {
         Ok(fd) => UnixStream::from(fd),
         Err(err) => {
             eprintln!(

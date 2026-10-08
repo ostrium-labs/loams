@@ -45,6 +45,8 @@ loams-house = { path = "../loams-house", features = ["test-hooks"] }
 # `Frame::Abort` for `crash_does_not_reach_the_front`. A dev-dependency feature
 # reaches the binary only in a test build, never in `cargo build`.
 loams-house-ipc = { path = "../loams-house-ipc", features = ["test-hooks"] }
+# `fd3.rs` starts the worker with a wrong fd 3, which needs `posix_spawn`.
+nix.workspace = true
 parquet.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
 

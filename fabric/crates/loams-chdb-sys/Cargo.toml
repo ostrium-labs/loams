@@ -29,6 +29,10 @@ publish = false
 # the caller would have to hold the `unsafe` itself. Apache-2.0.
 arrow.workspace = true
 
+# `fcntl`, `fstat` and `_exit` for `inherited` and `process` (HS1 Task 2): the
+# worker's only `unsafe` needs, kept in this crate (FL2 Ruling 8).
+libc.workspace = true
+
 [build-dependencies]
 bindgen.workspace = true
 flate2.workspace = true
