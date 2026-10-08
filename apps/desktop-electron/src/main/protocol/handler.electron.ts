@@ -1,9 +1,10 @@
 import { readFile, stat } from "node:fs/promises";
+import { basename } from "node:path";
 import { protocol, type Session } from "electron";
 import type { EngineState, ServerEntry } from "../../shared/contracts";
 import { isProxied, proxyRequest } from "./proxy";
 import { routeRequest } from "./route";
-import { resolveStatic } from "./static";
+import { ensureCspMeta, resolveStatic } from "./static";
 
 export const APP_SCHEME = "loams-app";
 
@@ -40,12 +41,22 @@ const text = (status: number, body: string) =>
 		headers: { "content-type": "text/plain; charset=utf-8" },
 	});
 
+/** The console entry pages; each carries the console CSP as a `<meta>`. */
+const CONSOLE_PAGES = new Set(["index.html", "cordis.html"]);
+
 async function serveFile(file: string, mime: string): Promise<Response> {
 	try {
 		if (!(await stat(file)).isFile()) return text(404, "not found");
-		return new Response(new Uint8Array(await readFile(file)), {
-			headers: { "content-type": mime, "cache-control": "no-cache" },
-		});
+		const headers = {
+			"content-type": mime,
+			"cache-control": "no-cache",
+			"x-content-type-options": "nosniff",
+		};
+		if (CONSOLE_PAGES.has(basename(file)))
+			return new Response(ensureCspMeta(await readFile(file, "utf8")), {
+				headers,
+			});
+		return new Response(new Uint8Array(await readFile(file)), { headers });
 	} catch {
 		return text(404, "not found");
 	}

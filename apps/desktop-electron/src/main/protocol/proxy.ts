@@ -17,10 +17,48 @@ export function isProxied(pathname: string): boolean {
 	);
 }
 
+/** Hop-by-hop headers (RFC 9110 §7.6.1) never forwarded by a proxy. */
+const HOP_BY_HOP = [
+	"connection",
+	"keep-alive",
+	"proxy-authenticate",
+	"proxy-authorization",
+	"proxy-connection",
+	"te",
+	"trailer",
+	"upgrade",
+];
+
+/**
+ * `session.fetch` hands back a decoded body, so the upstream framing headers
+ * (content-encoding/-length, transfer-encoding) would describe bytes we no
+ * longer serve. Drop them with the hop-by-hop set, and whatever `Connection` names.
+ */
+function stripFraming(h: Headers): void {
+	const named = (h.get("connection") ?? "")
+		.split(",")
+		.map((x) => x.trim().toLowerCase())
+		.filter(Boolean);
+	for (const k of [
+		"content-encoding",
+		"content-length",
+		"transfer-encoding",
+		...HOP_BY_HOP,
+		...named,
+	])
+		h.delete(k);
+	for (const k of [...h.keys()]) if (k.startsWith("proxy-")) h.delete(k);
+}
+
+const isHtml = (ct: string | null): boolean =>
+	/^\s*(text\/html|application\/xhtml\+xml)\b/i.test(ct ?? "");
+
 /**
  * Forwards a loams-app://console request to the active server's origin.
  * Redirects are returned as-is (never followed), cookie Domain attributes are
- * dropped so cookies bind to the loams-app host, and the API CSP is removed.
+ * dropped so cookies bind to the loams-app host. The upstream CSP is kept; an
+ * HTML response also gets `sandbox` (it would otherwise run in the console origin),
+ * and every response gets `nosniff`.
  */
 export async function proxyRequest(
 	req: Request,
@@ -48,7 +86,10 @@ export async function proxyRequest(
 	);
 	const res = await fetchImpl(out);
 	const rh = new Headers(res.headers);
-	rh.delete("content-security-policy");
+	stripFraming(rh);
+	if (isHtml(rh.get("content-type")))
+		rh.append("content-security-policy", "sandbox");
+	rh.set("x-content-type-options", "nosniff");
 	const cookies = res.headers.getSetCookie();
 	if (cookies.length > 0) {
 		rh.delete("set-cookie");

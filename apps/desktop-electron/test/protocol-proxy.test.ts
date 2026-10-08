@@ -1,3 +1,6 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { gzipSync } from "node:zlib";
 import { describe, expect, it, vi } from "vitest";
 import { isProxied, proxyRequest } from "../src/main/protocol/proxy";
 
@@ -72,7 +75,9 @@ describe("proxyRequest", () => {
 			"a=1; Path=/; HttpOnly",
 			"b=2; Secure",
 		]);
-		expect(res.headers.get("content-security-policy")).toBeNull();
+		expect(res.headers.get("content-security-policy")).toBe(
+			"default-src 'none'",
+		);
 	});
 
 	it("strips_cookie_domain_on_redirect", async () => {
@@ -92,7 +97,109 @@ describe("proxyRequest", () => {
 		expect(res.status).toBe(302);
 		expect(res.headers.get("location")).toBe("https://idp.example/cb");
 		expect(res.headers.getSetCookie()).toEqual(["s=1; Path=/"]);
-		expect(res.headers.get("content-security-policy")).toBeNull();
+		expect(res.headers.get("content-security-policy")).toBe(
+			"default-src 'none'",
+		);
 		expect(fetchImpl).toHaveBeenCalledTimes(1);
+	});
+
+	it("drops_encoding_length_and_hop_by_hop_headers", async () => {
+		const h = new Headers({
+			"content-type": "application/json",
+			"content-encoding": "gzip",
+			"content-length": "999",
+			"transfer-encoding": "chunked",
+			connection: "keep-alive, x-custom",
+			"keep-alive": "timeout=5",
+			"proxy-authenticate": "Basic",
+			"proxy-connection": "keep-alive",
+			te: "trailers",
+			trailer: "x-t",
+			upgrade: "h2c",
+			"x-keep": "1",
+		});
+		const res = await proxyRequest(
+			new Request("loams-app://console/api/v1/x"),
+			"http://h",
+			(async () => new Response("{}", { headers: h })) as never,
+		);
+		for (const k of [
+			"content-encoding",
+			"content-length",
+			"transfer-encoding",
+			"connection",
+			"keep-alive",
+			"proxy-authenticate",
+			"proxy-connection",
+			"te",
+			"trailer",
+			"upgrade",
+		])
+			expect(res.headers.get(k), k).toBeNull();
+		expect(res.headers.get("x-keep")).toBe("1");
+		expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+	});
+
+	it("gzip_upstream_body_is_served_decoded_without_encoding_header", async () => {
+		const body = JSON.stringify({ hello: "world".repeat(50) });
+		const srv = createServer((_req, out) => {
+			const gz = gzipSync(body);
+			out.writeHead(200, {
+				"content-type": "application/json",
+				"content-encoding": "gzip",
+				"content-length": String(gz.length),
+			});
+			out.end(gz);
+		});
+		await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
+		try {
+			const port = (srv.address() as AddressInfo).port;
+			const res = await proxyRequest(
+				new Request("loams-app://console/api/v1/x"),
+				`http://127.0.0.1:${port}`,
+				fetch,
+			);
+			expect(res.headers.get("content-encoding")).toBeNull();
+			expect(res.headers.get("content-length")).toBeNull();
+			expect(await res.text()).toBe(body);
+		} finally {
+			srv.close();
+		}
+	});
+
+	it("html_responses_are_sandboxed_and_nosniff", async () => {
+		const res = await proxyRequest(
+			new Request("loams-app://console/api/v1/page"),
+			"http://h",
+			(async () =>
+				new Response("<script>alert(1)</script>", {
+					headers: {
+						"content-type": "text/html; charset=utf-8",
+						"content-security-policy": "default-src 'self'",
+					},
+				})) as never,
+		);
+		expect(res.headers.get("content-security-policy")).toBe(
+			"default-src 'self', sandbox",
+		);
+		expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+		const plain = await proxyRequest(
+			new Request("loams-app://console/api/v1/page"),
+			"http://h",
+			(async () =>
+				new Response("<p>", {
+					headers: { "content-type": "application/xhtml+xml" },
+				})) as never,
+		);
+		expect(plain.headers.get("content-security-policy")).toBe("sandbox");
+		const json = await proxyRequest(
+			new Request("loams-app://console/api/v1/x"),
+			"http://h",
+			(async () =>
+				new Response("{}", {
+					headers: { "content-type": "application/json" },
+				})) as never,
+		);
+		expect(json.headers.get("content-security-policy")).toBeNull();
 	});
 });
