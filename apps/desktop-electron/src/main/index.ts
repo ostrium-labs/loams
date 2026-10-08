@@ -1,6 +1,12 @@
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, screen, session } from "electron";
+import type { EngineState } from "../shared/contracts";
 import { appPaths } from "./app-paths";
+import { findEngineBinary, probeLiveSupport } from "./engine/binary";
+import { registerEngineIpc } from "./engine/ipc.electron";
+import { EngineSupervisor } from "./engine/supervisor";
 import {
 	installAppProtocol,
 	registerAppScheme,
@@ -21,6 +27,19 @@ import {
 registerAppScheme();
 
 let registry: ServerRegistry;
+let engine: EngineSupervisor | undefined;
+
+/** `engine.autoStart` in userData/settings.json; default true. */
+function engineAutoStart(): boolean {
+	try {
+		const raw = JSON.parse(
+			readFileSync(join(app.getPath("userData"), "settings.json"), "utf8"),
+		) as Record<string, unknown>;
+		return raw["engine.autoStart"] !== false;
+	} catch {
+		return true;
+	}
+}
 
 function createWindow(): BrowserWindow {
 	const stateFile = join(app.getPath("userData"), "window-state.json");
@@ -87,8 +106,25 @@ const singleInstance = initSingleInstance({
 				{ devDemo: !app.isPackaged },
 			);
 			registerServerIpc(registry);
+			const paths = await appPaths();
+			const logFile = join(paths.logs, "engine.log");
+			engine = new EngineSupervisor({
+				spawn,
+				binary: () => findEngineBinary(paths.engineBin, existsSync),
+				dataDir: paths.engineData,
+				logFile,
+				fetch,
+				now: Date.now,
+				sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+				liveSupported: probeLiveSupport,
+			});
+			engine.on("state", (st: EngineState) =>
+				registry.setLocalUrl(st.phase === "ready" ? st.url : ""),
+			);
+			registerEngineIpc(engine, logFile);
+			if (engineAutoStart()) engine.start();
 			installAppProtocol(session.defaultSession, {
-				distRoot: (await appPaths()).consoleDist,
+				distRoot: paths.consoleDist,
 				activeServer: () => registry.active(),
 				localShim: () => null, // Task 6
 			});
@@ -96,6 +132,16 @@ const singleInstance = initSingleInstance({
 			app.on("activate", () => {
 				if (!getMainWindow()) singleInstance.watchMainWindow(createWindow());
 			});
+		});
+		let quitting = false;
+		app.on("before-quit", (e) => {
+			if (quitting || !engine) return;
+			e.preventDefault();
+			quitting = true;
+			void Promise.race([
+				engine.stop(),
+				new Promise((r) => setTimeout(r, 6000)),
+			]).finally(() => app.quit());
 		});
 		app.on("window-all-closed", () => {
 			if (process.platform !== "darwin") app.quit();

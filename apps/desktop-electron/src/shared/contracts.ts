@@ -13,6 +13,8 @@ export type EngineState =
 			url: string;
 			esUrl: string;
 			flightUrl: string;
+			durableUrl: string;
+			liveUrl?: string;
 			pid: number;
 	  }
 	| { phase: "failed"; reason: string; logPath: string };
