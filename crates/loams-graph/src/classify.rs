@@ -67,8 +67,10 @@ pub fn classify(statement: &str, _language: QueryLanguage) -> Access {
 /// * [`GraphError::UnboundedPath`] for a variable-length pattern with no upper bound or one above
 ///   [`MAX_PATH_HOPS`] (R0.8 (b)).
 pub fn engine_classify(statement: &str) -> Result<Access, GraphError> {
-    let translated =
-        translate_full(statement).map_err(|err| GraphError::Engine(err.to_string()))?;
+    // On a large stack: the parser recurses per operator-chain link (re-review 2c).
+    let translated = on_big_stack(|| translate_full(statement))
+        .map_err(|_| GraphError::Engine("the statement could not be parsed".to_string()))?
+        .map_err(|err| GraphError::Engine(err.to_string()))?;
     match translated {
         GqlTranslationResult::Plan(plan) => {
             // Rendered once, for both the plan check and the procedure-call test.
@@ -105,6 +107,14 @@ pub fn engine_classify(statement: &str) -> Result<Access, GraphError> {
 pub fn gate(statement: &str, language: QueryLanguage) -> Result<Access, GraphError> {
     if statement.trim().is_empty() {
         return Err(GraphError::EmptyStatement);
+    }
+    // Before anything parses it: a chain long enough to overflow the parser's stack is refused.
+    let links = nesting_estimate(statement);
+    if links > MAX_CHAIN_TOKENS {
+        return Err(GraphError::TooComplex {
+            links,
+            limit: MAX_CHAIN_TOKENS,
+        });
     }
     if names_file_access(&all_words(statement)) {
         return Err(GraphError::StatementNotAllowed {
@@ -334,6 +344,13 @@ fn writes_words(words: &[String]) -> bool {
 /// Comments are dropped because a comment is not a statement, strings because a value is data.
 /// Neither step changes a byte of the statement.
 pub(crate) fn bare_words(statement: &str) -> Vec<String> {
+    lex(statement).0
+}
+
+/// [`bare_words`], and the number of operator characters outside strings and comments
+/// (`+ - * / % ^ < > = | [`), for [`nesting_estimate`].
+fn lex(statement: &str) -> (Vec<String>, usize) {
+    let mut operators = 0;
     let mut words = Vec::new();
     let mut word = String::new();
     let chars: Vec<char> = statement.chars().collect();
@@ -390,13 +407,76 @@ pub(crate) fn bare_words(statement: &str) -> Vec<String> {
                 i += 1;
             }
             _ => {
+                if matches!(
+                    c,
+                    '+' | '-' | '*' | '/' | '%' | '^' | '<' | '>' | '=' | '|' | '['
+                ) {
+                    operators += 1;
+                }
                 push_word(&mut word, &mut words);
                 i += 1;
             }
         }
     }
     push_word(&mut word, &mut words);
-    words
+    (words, operators)
+}
+
+/// The most chained operators a statement may hold (re-review 2c). Grafeo's GQL parser recurses
+/// once per link of an operator chain (`NOT NOT …`, `a AND b AND …`, `1 + 1 + …`, `x[0][0]…`,
+/// `… NEXT … NEXT`), with no limit of its own, and overflowing the stack aborts the whole process.
+/// Bracket nesting it caps itself at 128. Measured on 0.5.43 (debug build): about 27 KiB of stack
+/// per chain link and 90 KiB per bracket level, so on [`PARSE_STACK_BYTES`] this limit leaves
+/// more than a 2x margin; a release build uses about a fifth of that.
+pub const MAX_CHAIN_TOKENS: usize = 4000;
+
+/// The stack every parse and every engine call runs on (re-review 2c): see [`MAX_CHAIN_TOKENS`].
+/// Reserved virtual memory, touched only as deep as a statement nests.
+pub const PARSE_STACK_BYTES: usize = 256 << 20;
+
+/// A conservative count of the operator-chain links in a statement: every operator character
+/// and every chaining keyword, outside strings and comments, whether or not they share one
+/// expression. It over-counts (an arrow's `-` and `>` count too), never under-counts.
+fn nesting_estimate(statement: &str) -> usize {
+    let (words, operators) = lex(statement);
+    operators
+        + words
+            .iter()
+            .filter(|w| {
+                matches!(
+                    w.as_str(),
+                    "NOT"
+                        | "AND"
+                        | "OR"
+                        | "XOR"
+                        | "NEXT"
+                        | "UNION"
+                        | "EXCEPT"
+                        | "INTERSECT"
+                        | "OTHERWISE"
+                )
+            })
+            .count()
+}
+
+/// Runs `f` on a thread with [`PARSE_STACK_BYTES`] of stack and answers its result, or
+/// `Err(panic payload)` when it panicked.
+pub(crate) fn on_big_stack<T: Send>(
+    f: impl FnOnce() -> T + Send,
+) -> Result<T, Box<dyn std::any::Any + Send + 'static>> {
+    std::thread::scope(|scope| {
+        match std::thread::Builder::new()
+            .name("loams-graph-stmt".to_string())
+            .stack_size(PARSE_STACK_BYTES)
+            .spawn_scoped(scope, f)
+        {
+            Ok(handle) => handle.join(),
+            Err(err) => Err(
+                Box::new(format!("could not start a statement thread: {err}"))
+                    as Box<dyn std::any::Any + Send>,
+            ),
+        }
+    })
 }
 
 fn push_word(word: &mut String, words: &mut Vec<String>) {

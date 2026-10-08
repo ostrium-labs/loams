@@ -250,6 +250,8 @@ Commit `feat(api): serve loams.graph.v1 behind the graph feature (D741)`.
 
 ### Task 6: Limits v1, streaming and redaction
 
+> **From Task 3 re-review (2c):** every parse and engine call now runs on a freshly spawned 256 MiB-stack thread (`classify::on_big_stack`), and `gate` refuses a statement with more than `MAX_CHAIN_TOKENS` = 4000 operator-chain links before anything parses. Task 6 replaces the per-statement spawn with its blocking pool, sized with the same stack, and moves the limit into `StatementLimits`.
+
 > **From Task 3 review (M2):** shortest-path searches (`ANY`/`ALL SHORTEST`, `shortestPath`, `allShortestPaths`, and a `ShortestPath` operator anywhere in the plan) are refused with `graph_unbounded_path`, because Grafeo's `ShortestPathOp` has no hop bound. Task 6 adds a bound and serves them within `StatementLimits`. The `MAX_PATH_HOPS = 10` constant in `classify.rs` also becomes `StatementLimits.max_path_hops`.
 
 **Files:** `src/limits.rs`, `src/redact.rs`, `src/service/stream.rs`, `tests/limits.rs`.
@@ -559,6 +561,8 @@ Tests: `helm_template_renders_graph_role` (helm unittest or the repo's chart tes
 Commit `feat(deploy): graph role, dashboards, alerts and runbook`.
 
 ### Task 31: Security hardening
+
+> **From Task 3 re-review (2c):** Grafeo's GQL parser recurses once per operator-chain link with no limit of its own, and a stack overflow aborts the process. Task 31's `cargo-fuzz` targets include the gate and `translate_full` on adversarial nesting (chains, brackets, `CASE`, subqueries, `NEXT`), run on the production stack size. The upstream ask (Q679) is a depth limit for chains, like the 128 it already applies to brackets.
 
 > **From Task 3 review:** (1) **Id forging via `RETURN n` (security note, from Task 2 N3).** Grafeo's own projection of a bare node or relationship inserts properties after the reserved keys, so a node with a property `_id` or `_labels` is answered on the wire with the forged id or labels. Path elements are safe (resolved by Loams, real fields win). Task 31 either refuses writes of `_`-prefixed reserved property names or rebuilds projected elements from the store. (2) **M1:** see Task 24 on DDL.
 
@@ -1029,4 +1033,15 @@ Rulings:
 - **M6:** `Graph::open_or_existing` makes `CreateGraph` idempotent under concurrency.
 - **M7:** quantifier and held-handle tests.
 - **M1, M4 and the N3 id-forging note** are recorded under Tasks 24, 26 and 31.
+
+**R3.10 Task 3 re-review** (one commit each):
+- **2a:** to the guard, `<--` and `---` are edges, not comments (Grafeo's lexer reads them as arrows).
+- **2b:** `grafeo_debug_format_canary` pins the `Debug` names the plan check reads (`ExistsSubquery(`, `max_hops: None`/`Some(n)`, `CallProcedure(`, `LoadData(`), and fails with "Grafeo Debug format changed; re-verify the classifier (D759)". The plan's `Debug` text is now rendered once.
+- **2c (fixed, not deferred):** measured on 0.5.43 in a debug build:
+  - Grafeo's parser recurses once per chain link (`NOT`, `AND`/`OR`, `+`, `||`, `[i]`, `NEXT`/`UNION`). That costs about 27 KiB of stack per link (about 70 links on a 2 MiB thread), with no limit.
+  - Bracket, `CASE` and subquery nesting costs about 90 KiB per level, and Grafeo caps it at 128 ("Maximum nesting depth of 128 exceeded").
+  - Fix: `gate` refuses more than 4000 chain links (a conservative count of operator characters and chaining keywords outside strings and comments: `INVALID_ARGUMENT`/`invalid_argument`, `GraphError::TooComplex`). `translate_full` and every engine call (which re-parses) run on a 256 MiB-stack thread. That stack is virtual and touched only as deep as a statement goes.
+  - The panic containment is now that thread's join (it replaces `catch_unwind`).
+  - Test: `deep_operator_chains_do_not_crash_the_process`. 2000 chained `NOT`s, 2000 `+ 1`s, 1300 `AND`s and 127 nested parentheses run; 5000-link chains are refused; 500 nested parentheses are Grafeo's own syntax error.
+  - Task 6 (pool) and Task 31 (fuzzing) carry the rest.
 

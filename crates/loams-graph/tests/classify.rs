@@ -443,3 +443,53 @@ fn grafeo_debug_format_canary() {
         "{CHANGED}: no `LoadData(` in {load}"
     );
 }
+
+/// Re-review 2c: Grafeo's parser recurses once per operator-chain link and a stack overflow
+/// aborts the whole process. Every parse runs on a large stack, and a chain past the limit is
+/// refused before anything parses. Running this test at all (on the test harness's 2 MiB thread,
+/// in a debug build, where about 70 links used to abort) is the assertion that nothing crashes.
+#[test]
+fn deep_operator_chains_do_not_crash_the_process() {
+    let engine = Engine::new();
+    let graph = Graph::open(&engine, "acme", "deep", OpenSpec::default()).expect("open");
+    let nots = format!("RETURN {}true AS x", "NOT ".repeat(2000));
+    let result = graph
+        .execute(&nots, true)
+        .expect("2000 chained NOTs parse and run");
+    assert_eq!(result.rows[0].values[0], grafeo::Value::Bool(true));
+    for statement in [
+        format!("RETURN 1{} AS x", " + 1".repeat(2000)),
+        format!(
+            "MATCH (a) WHERE a.x = 1{} RETURN a",
+            " AND a.x = 1".repeat(1300)
+        ),
+    ] {
+        graph
+            .execute(&statement, true)
+            .expect("a long chain under the limit runs");
+        engine_classify(&statement).expect("and classifies");
+    }
+    // A long NEXT chain reaches the engine, which answers (here, a semantic error) rather than
+    // crashing.
+    let next = format!("RETURN 1 AS x{}", " NEXT RETURN 1 AS x".repeat(1500));
+    let _ = graph.execute(&next, true);
+    // Past the limit: refused before any parse, on every path.
+    for statement in [
+        format!("RETURN {}true AS x", "NOT ".repeat(5000)),
+        format!("RETURN 1{} AS x", " + 1".repeat(5000)),
+        format!("RETURN 1{} AS x", "[0]".repeat(5000)),
+    ] {
+        let err = gate(&statement, QueryLanguage::Gql).expect_err("too long a chain");
+        assert!(matches!(err, GraphError::TooComplex { .. }), "{err:?}");
+        assert_eq!(err.reason(), "invalid_argument");
+        let err = graph.execute(&statement, true).expect_err("refused");
+        assert!(matches!(err, GraphError::TooComplex { .. }), "{err:?}");
+    }
+    // Bracket nesting Grafeo caps itself (128); deeper is its syntax error, not a crash.
+    let parens = format!("RETURN {}1{} AS x", "(".repeat(127), ")".repeat(127));
+    graph
+        .execute(&parens, true)
+        .expect("127 nested parentheses run");
+    let parens = format!("RETURN {}1{} AS x", "(".repeat(500), ")".repeat(500));
+    assert!(graph.execute(&parens, true).is_err());
+}

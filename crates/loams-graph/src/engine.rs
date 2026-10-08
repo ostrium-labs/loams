@@ -99,6 +99,16 @@ pub enum GraphError {
     /// (R0.13).
     #[error("the graph engine failed inside this call; the graph is being reloaded")]
     EnginePanic,
+    /// A statement chains more operators than the parser can safely take (re-review 2c).
+    #[error(
+        "the statement chains {links} operators and keywords; at most {limit} are accepted (split it, or bind values as parameters)"
+    )]
+    TooComplex {
+        /// What the statement holds.
+        links: usize,
+        /// The limit.
+        limit: usize,
+    },
     /// The graph is poisoned by an earlier panic and has not been reopened yet.
     #[error("the graph is reloading after an engine failure; retry")]
     Reloading,
@@ -120,7 +130,8 @@ impl GraphError {
             Self::Engine(_)
             | Self::EmptyStatement
             | Self::UnboundParameter { .. }
-            | Self::InvalidValue(_) => "invalid_argument",
+            | Self::InvalidValue(_)
+            | Self::TooComplex { .. } => "invalid_argument",
             Self::Conflict { .. } => "already_exists",
             Self::ReadOnly => "graph_read_only",
             Self::LanguageUnavailable(_) => "graph_language_disabled",
@@ -408,18 +419,23 @@ impl Graph {
     /// Runs one engine call with panic containment (R0.13): a panic poisons this graph and
     /// answers [`GraphError::EnginePanic`]; other graphs are untouched. A poisoned graph answers
     /// [`GraphError::Reloading`] until it is reopened ([`Engine::reopen_if_poisoned`]).
-    fn call<T>(&self, f: impl FnOnce() -> Result<T, GraphError>) -> Result<T, GraphError> {
+    fn call<T: Send>(
+        &self,
+        f: impl FnOnce() -> Result<T, GraphError> + Send,
+    ) -> Result<T, GraphError> {
         if self.failed.load(Ordering::Acquire) {
             return Err(GraphError::Failed);
         }
         if self.is_poisoned() {
             return Err(GraphError::Reloading);
         }
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // On a large stack (the engine re-parses the statement; re-review 2c), with the panic
+        // contained: a panic on that thread comes back as `Err` from its join.
+        let outcome = crate::classify::on_big_stack(|| {
             #[cfg(feature = "failpoints")]
             fail::fail_point!("loams_graph::engine_call");
             f()
-        }));
+        });
         match outcome {
             Ok(result) => result,
             Err(_) => {

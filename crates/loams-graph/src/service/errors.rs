@@ -33,7 +33,8 @@ pub(crate) fn code_of(err: &GraphError) -> ErrorCode {
         | GraphError::UnboundParameter { .. }
         | GraphError::InvalidValue(_)
         | GraphError::TransactionStatement
-        | GraphError::UnboundedPath { .. } => ErrorCode::InvalidArgument,
+        | GraphError::UnboundedPath { .. }
+        | GraphError::TooComplex { .. } => ErrorCode::InvalidArgument,
         GraphError::ReadOnly
         | GraphError::StatementNotAllowed {
             file_access: true, ..
