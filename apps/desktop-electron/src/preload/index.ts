@@ -68,6 +68,7 @@ const api: LoamsDesktopApi = {
 		state: (id) => invoke(CH.stacksState, id),
 		start: (id) => invoke(CH.stacksStart, id),
 		stop: (id) => invoke(CH.stacksStop, id),
+		openLogs: (id) => invoke(CH.stacksOpenLogs, id),
 		onState: (cb) => {
 			const listener = (_e: unknown, id: StackId, s: StackState) => cb(id, s);
 			ipcRenderer.on(CH.stacksEvent, listener);
@@ -95,6 +96,22 @@ const api: LoamsDesktopApi = {
 			invoke(CH.chatApprove, chatId, callId, decision),
 		remove: (chatId) => invoke(CH.chatRemove, chatId),
 		onEvent: (cb) => subscribe(CH.chatEvent, cb),
+	},
+	pg: {
+		tenants: () => invoke(CH.pgTenants),
+		timelines: (t) => invoke(CH.pgTimelines, t),
+		createBranch: (t, b) => invoke(CH.pgCreateBranch, t, b),
+		walStatus: (t, tl) => invoke(CH.pgWalStatus, t, tl),
+		connection: () => invoke(CH.pgConnection),
+		revealPassword: () => invoke(CH.pgRevealPassword),
+		query: (sql) => invoke(CH.pgQuery, sql),
+	},
+	wesql: {
+		connection: () => invoke(CH.wesqlConnection),
+		revealPassword: () => invoke(CH.wesqlRevealPassword),
+		schemas: () => invoke(CH.wesqlSchemas),
+		tables: (schema) => invoke(CH.wesqlTables, schema),
+		query: (sql) => invoke(CH.wesqlQuery, sql),
 	},
 };
 

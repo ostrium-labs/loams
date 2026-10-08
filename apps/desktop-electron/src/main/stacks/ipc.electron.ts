@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { ipcMain } from "electron";
+import { ipcMain, shell } from "electron";
 import { CH, type StackId, type StackState } from "../../shared/contracts";
 import { assertTrustedSender } from "../security/policy";
 import { getMainWindow } from "../shell/main-window";
@@ -67,7 +67,7 @@ function isStackId(v: unknown): v is StackId {
 	return typeof v === "string" && (STACK_IDS as string[]).includes(v);
 }
 
-export function registerStacksIpc(manager: StackManager): void {
+export function registerStacksIpc(manager: StackManager, logsDir?: string): void {
 	const bad = () => ({
 		ok: false as const,
 		code: "invalid",
@@ -85,6 +85,17 @@ export function registerStacksIpc(manager: StackManager): void {
 	ipcMain.handle(CH.stacksStop, async (e, id: unknown) => {
 		assertTrustedSender(e);
 		return isStackId(id) ? manager.stop(id) : bad();
+	});
+	ipcMain.handle(CH.stacksOpenLogs, async (e, id: unknown) => {
+		assertTrustedSender(e);
+		if (!isStackId(id) || !logsDir) return bad();
+		const file = join(logsDir, "stacks", `${id}.log`);
+		if (!existsSync(file))
+			return { ok: false as const, code: "no_log", message: "no log yet" };
+		const err = await shell.openPath(file);
+		return err
+			? { ok: false as const, code: "open_failed", message: err }
+			: { ok: true as const, value: undefined };
 	});
 	manager.on("state", (id: StackId, s: StackState) => {
 		getMainWindow()?.webContents.send(CH.stacksEvent, id, s);

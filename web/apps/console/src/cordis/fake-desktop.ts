@@ -448,6 +448,91 @@ export function createFakeDesktop(): LoamsDesktopApi {
     update: previewUpdate(),
     stacks: previewStacks(),
     chat: createFakeChat(),
+    // FAKE sample data for previews; no database is contacted.
+    pg: {
+      tenants: async () => ({ ok: true, value: ['f4k3'.repeat(8)] }),
+      timelines: async () => ({
+        ok: true,
+        value: [
+          {
+            timelineId: 'a1b2'.repeat(8),
+            name: 'main (fake)',
+            lastRecordLsn: '0/1A2B3C4',
+            state: 'Active',
+          },
+          {
+            timelineId: 'c3d4'.repeat(8),
+            name: 'feature-x (fake)',
+            ancestorTimelineId: 'a1b2'.repeat(8),
+            ancestorLsn: '0/16B3748',
+            lastRecordLsn: '0/16B4000',
+            state: 'Active',
+          },
+        ],
+      }),
+      createBranch: async (_t, b) => ({
+        ok: true,
+        value: {
+          timelineId: 'e5f6'.repeat(8),
+          name: b.name,
+          ancestorTimelineId: b.ancestorTimelineId,
+          lastRecordLsn: '0/16B4000',
+          state: 'Active',
+        },
+      }),
+      walStatus: async (_t, tl) => ({ ok: true, value: { timelineId: tl, flushLsn: '0/1A2B3C4', commitLsn: '0/1A2B3C4' } }),
+      connection: async () => ({
+        host: '127.0.0.1',
+        port: 55433,
+        database: 'postgres',
+        user: 'cloud_admin',
+        passwordRef: 'fake-pg-ref',
+      }),
+      revealPassword: async () => 'fake-password',
+      query: async () => ({
+        ok: true,
+        value: {
+          columns: ['id', 'name'],
+          rows: [
+            [1, 'sample row (fake)'],
+            [2, 'another row (fake)'],
+          ],
+          rowCount: 2,
+          truncated: false,
+          elapsedMs: 3,
+        },
+      }),
+    },
+    wesql: {
+      connection: async () => ({
+        host: '127.0.0.1',
+        port: 13306,
+        database: '',
+        user: 'root',
+        passwordRef: 'fake-wesql-ref',
+      }),
+      revealPassword: async () => 'fake-password',
+      schemas: async () => ({ ok: true, value: [{ name: 'information_schema' }, { name: 'shop (fake)' }] }),
+      tables: async () => ({
+        ok: true,
+        value: [
+          { name: 'orders', engine: 'InnoDB', rows: 2 },
+          { name: 'order_totals', engine: '', rows: 0 },
+        ],
+      }),
+      query: async () => ({
+        ok: true,
+        value: {
+          columns: ['id', 'total'],
+          rows: [
+            [1, '19.90'],
+            [2, '5.00'],
+          ],
+          rowCount: 2,
+          truncated: false,
+          elapsedMs: 4,
+        },
+      }),
   };
 }
 
@@ -493,6 +578,7 @@ function previewStacks(): LoamsDesktopApi['stacks'] {
       listeners.add(cb);
       return () => void listeners.delete(cb);
     },
+    openLogs: async () => ok,
   };
 }
 

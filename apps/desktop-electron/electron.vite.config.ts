@@ -19,6 +19,9 @@ export default defineConfig({
 					"zod",
 					"@loams-core/http",
 					"@loams-core/host",
+					// SQL drivers: bundled so the packaged app needs no node_modules.
+					"pg",
+					"mysql2",
 					...[
 						"forgejo",
 						"zulip",

@@ -186,14 +186,22 @@ export interface LoamsDesktopApi {
 		start(id: StackId): Promise<IpcResult<void>>;
 		stop(id: StackId): Promise<IpcResult<void>>;
 		onState(cb: (id: StackId, s: StackState) => void): () => void;
+		/** Opens <logs>/stacks/<id>.log in the OS default app. */
+		openLogs(id: StackId): Promise<IpcResult<void>>;
 	};
 	connectors: {
 		catalog(): Promise<ConnectorSummary[]>;
 		get(id: string): Promise<IpcResult<ConnectorDetail>>;
 		/** Validate an instance config (secrets as `${secret:name}` placeholders) against the connector's schema. */
-		validate(id: string, config: unknown): Promise<IpcResult<ConnectorValidation>>;
+		validate(
+			id: string,
+			config: unknown,
+		): Promise<IpcResult<ConnectorValidation>>;
 		/** Save an exported YAML through the main process's save dialog; `saved` is false when cancelled. */
-		saveYaml(name: string, text: string): Promise<IpcResult<{ saved: boolean }>>;
+		saveYaml(
+			name: string,
+			text: string,
+		): Promise<IpcResult<{ saved: boolean }>>;
 	};
 	/** D675: the agent panel. The loop runs in main; keys never cross IPC. */
 	chat: {
@@ -272,6 +280,7 @@ export const CH = {
 	stacksStart: "stacks:start",
 	stacksStop: "stacks:stop",
 	stacksEvent: "stacks:event",
+	stacksOpenLogs: "stacks:open-logs",
 	connectorsCatalog: "connectors:catalog",
 	connectorsGet: "connectors:get",
 	connectorsValidate: "connectors:validate",
@@ -287,6 +296,18 @@ export const CH = {
 	chatRemove: "chat:remove",
 	chatEvent: "chat:event",
 	chatTestProvider: "chat:test-provider",
+	pgTenants: "pg:tenants",
+	pgTimelines: "pg:timelines",
+	pgCreateBranch: "pg:create-branch",
+	pgWalStatus: "pg:wal-status",
+	pgConnection: "pg:connection",
+	pgRevealPassword: "pg:reveal-password",
+	pgQuery: "pg:query",
+	wesqlConnection: "wesql:connection",
+	wesqlRevealPassword: "wesql:reveal-password",
+	wesqlSchemas: "wesql:schemas",
+	wesqlTables: "wesql:tables",
+	wesqlQuery: "wesql:query",
 } as const;
 
 // ---- D675: the agent panel ----
@@ -393,4 +414,68 @@ export interface ChatSendOptions {
 	model?: string;
 	/** A short hint added to the system prompt, e.g. "The user is viewing Postgres › Branches." */
 	context?: string;
+}
+
+export interface SqlResult {
+	columns: string[];
+	rows: unknown[][];
+	rowCount: number;
+	truncated: boolean;
+	elapsedMs: number;
+}
+export interface SqlConnection {
+	host: string;
+	port: number;
+	database: string;
+	user: string;
+	/** Opaque id; not the password. */
+	passwordRef: string;
+}
+export interface PgTimeline {
+	timelineId: string;
+	/** User-given name from <userData>/postgres/branches.json. */
+	name?: string;
+	ancestorTimelineId?: string;
+	/** LSNs are 'X/Y' hex strings. */
+	ancestorLsn?: string;
+	lastRecordLsn: string;
+	state?: string;
+}
+export interface PgWalStatus {
+	timelineId: string;
+	flushLsn: string;
+	commitLsn: string;
+}
+export interface WesqlSchema {
+	name: string;
+}
+export interface WesqlTable {
+	name: string;
+	engine: string;
+	rows: number;
+}
+
+/** Task 22: local Postgres and WeSQL (merged into LoamsDesktopApi). Every call but connection/revealPassword returns an IpcResult. */
+export interface LoamsDesktopApi {
+	pg: {
+		tenants(): Promise<IpcResult<string[]>>;
+		timelines(tenant: string): Promise<IpcResult<PgTimeline[]>>;
+		createBranch(
+			tenant: string,
+			b: { name: string; ancestorTimelineId: string; ancestorStartLsn?: string },
+		): Promise<IpcResult<PgTimeline>>;
+		walStatus(tenant: string, timeline: string): Promise<IpcResult<PgWalStatus>>;
+		connection(): Promise<SqlConnection>;
+		/** The password, on an explicit click only; `connection()` carries an opaque `passwordRef`. */
+		revealPassword(): Promise<string>;
+		/** Plain reads run read-only; anything else asks for confirmation in a native dialog first (code `cancelled` if declined). */
+		query(sql: string): Promise<IpcResult<SqlResult>>;
+	};
+	wesql: {
+		connection(): Promise<SqlConnection>;
+		revealPassword(): Promise<string>;
+		schemas(): Promise<IpcResult<WesqlSchema[]>>;
+		tables(schema: string): Promise<IpcResult<WesqlTable[]>>;
+		query(sql: string): Promise<IpcResult<SqlResult>>;
+	};
 }

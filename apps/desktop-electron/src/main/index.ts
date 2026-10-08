@@ -51,6 +51,7 @@ import {
 	saveWindowState,
 	type WindowState,
 } from "./shell/window-state";
+import { createSqlServices, registerSqlIpc } from "./sql/ipc.electron";
 import { createStackManager, registerStacksIpc } from "./stacks/ipc.electron";
 import { bindLiveToTikv } from "./stacks/stacks";
 import { startUpdater, type UpdaterHandle } from "./update/updater.electron";
@@ -234,7 +235,8 @@ const singleInstance = initSingleInstance({
 			bindLiveToTikv(stacks, engine, (e) =>
 				console.error("[stacks] setLivePd failed:", e),
 			);
-			registerStacksIpc(stacks);
+			registerStacksIpc(stacks, paths.logs);
+			registerSqlIpc(createSqlServices(app.getPath("userData")));
 			// A tikv stack left running from last time starts the engine with Live directly,
 			// but a slow or absent runtime must not hold the engine back for long.
 			await Promise.race([
