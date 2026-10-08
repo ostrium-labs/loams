@@ -283,12 +283,19 @@ pub fn execute_batch(
     engine: &Engine,
     req: pb::ExecuteBatchRequest,
 ) -> Result<pb::ExecuteBatchResponse, ConnectError> {
-    check_language(req.language.as_known(), req.language)?;
-    // A statement's own language overrides the batch's (`Statement.language`).
+    // A statement's own language wins over the batch's (`Statement.language`); the batch's
+    // applies to a statement that names none, and is checked when no statement names one (an
+    // empty batch included) so a batch in a language this build lacks is still refused.
+    let mut batch_language_used = req.statements.is_empty();
     for statement in &req.statements {
-        if statement.language.as_known() != Some(pb::QueryLanguage::Unspecified) {
+        if statement.language.as_known() == Some(pb::QueryLanguage::Unspecified) {
+            batch_language_used = true;
+        } else {
             check_language(statement.language.as_known(), statement.language)?;
         }
+    }
+    if batch_language_used {
+        check_language(req.language.as_known(), req.language)?;
     }
     let graph = find(engine, &req.namespace, &req.graph)?;
     let statements = req

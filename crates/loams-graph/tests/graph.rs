@@ -1367,3 +1367,53 @@ fn reserved_property_names_do_not_override_path_elements() {
     assert_eq!(rel.r#type, "R");
     assert_eq!((rel.src, rel.dst), (id(1), id(3)));
 }
+
+/// A statement's own language wins over the batch's (GR1 Task 2 N4): a batch that names Cypher
+/// runs when every statement names GQL, and the batch's language applies only to statements that
+/// name none.
+#[test]
+fn statement_language_wins_over_the_batch() {
+    let engine = engine();
+    open(&engine, "acme", "override");
+    let gql = |text: &str| pb::Statement {
+        statement: text.to_string(),
+        language: pb::QueryLanguage::Gql.into(),
+        ..Default::default()
+    };
+    for atomic in [true, false] {
+        let response = service::execute_batch(
+            &engine,
+            pb::ExecuteBatchRequest {
+                namespace: "acme".to_string(),
+                graph: "override".to_string(),
+                language: pb::QueryLanguage::Cypher.into(),
+                statements: vec![gql("INSERT (:O)"), gql("RETURN 1 AS one")],
+                atomic,
+                ..Default::default()
+            },
+        )
+        .expect("every statement names GQL");
+        assert_eq!(response.committed_through, 2);
+    }
+    // One statement that names nothing takes the batch's Cypher, which this build lacks.
+    let err = service::execute_batch(
+        &engine,
+        pb::ExecuteBatchRequest {
+            namespace: "acme".to_string(),
+            graph: "override".to_string(),
+            language: pb::QueryLanguage::Cypher.into(),
+            statements: vec![
+                gql("INSERT (:O)"),
+                pb::Statement {
+                    statement: "RETURN 1 AS one".to_string(),
+                    ..Default::default()
+                },
+            ],
+            atomic: true,
+            ..Default::default()
+        },
+    )
+    .expect_err("the second statement is Cypher");
+    assert_eq!(err.code, ErrorCode::Unimplemented);
+    assert_eq!(reason(&err), "graph_language_disabled");
+}
