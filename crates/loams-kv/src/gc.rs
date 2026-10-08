@@ -6,15 +6,16 @@ use crate::{KvError, Ts, embedded};
 /// A GC barrier from [`Store::barrier`](crate::Store::barrier): while it
 /// lives (until its TTL passes or [`delete`](Self::delete)), GC keeps the
 /// versions a snapshot at its timestamp reads, and the store's snapshots may
-/// read there.
-#[derive(Debug, Clone)]
+/// read there. Not `Clone`: [`delete`](Self::delete) consumes it, so it runs
+/// once.
+#[derive(Debug)]
 pub struct GcBarrier {
     pub(crate) service_id: String,
     pub(crate) at: Ts,
     pub(crate) inner: Inner,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) enum Inner {
     // Constructed once the embedded backend exists (Task 21).
     #[allow(dead_code)]
