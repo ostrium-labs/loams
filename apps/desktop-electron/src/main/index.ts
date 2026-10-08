@@ -46,6 +46,8 @@ import {
 	saveWindowState,
 	type WindowState,
 } from "./shell/window-state";
+import { createStackManager, registerStacksIpc } from "./stacks/ipc.electron";
+import { bindLiveToTikv } from "./stacks/stacks";
 import { startUpdater, type UpdaterHandle } from "./update/updater.electron";
 
 // Test hook (unpackaged builds only): the e2e smoke runs against a scratch profile, which
@@ -201,6 +203,12 @@ const singleInstance = initSingleInstance({
 				tray?.refresh();
 			});
 			registerEngineIpc(engine, logFile);
+			const stacks = createStackManager({
+				stacksDir: paths.stacksDir,
+				logsDir: paths.logs,
+			});
+			bindLiveToTikv(stacks, engine);
+			registerStacksIpc(stacks);
 			if (engineAutoStart()) engine.start();
 			installAppProtocol(session.defaultSession, {
 				distRoot: paths.consoleDist,

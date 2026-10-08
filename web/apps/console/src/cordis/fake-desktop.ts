@@ -385,5 +385,19 @@ export function createFakeDesktop(): LoamsDesktopApi {
       download: async () => undefined,
       installAndRestart: async () => undefined,
     },
+    stacks: {
+      state: async () => ({ phase: 'unavailable', reason: 'no_container_runtime' }),
+      start: async () => ({
+        ok: false,
+        code: 'unavailable',
+        message: 'no_container_runtime',
+      }),
+      stop: async () => ({
+        ok: false,
+        code: 'unavailable',
+        message: 'no_container_runtime',
+      }),
+      onState: () => () => undefined,
+    },
   };
 }

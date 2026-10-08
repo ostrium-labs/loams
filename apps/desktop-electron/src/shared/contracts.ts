@@ -73,6 +73,17 @@ export type DesktopPlatform =
 	| "cygwin"
 	| "netbsd";
 
+export type StackId = "postgres" | "wesql" | "tikv";
+export type StackState =
+	| { phase: "unavailable"; reason: "no_container_runtime" }
+	| { phase: "stopped" }
+	| { phase: "starting" }
+	| {
+			phase: "running";
+			services: { name: string; state: string; ports: string[] }[];
+	  }
+	| { phase: "error"; message: string };
+
 export interface LoamsDesktopApi {
 	version: string;
 	platform: DesktopPlatform;
@@ -143,6 +154,12 @@ export interface LoamsDesktopApi {
 		download(): Promise<void>;
 		installAndRestart(): Promise<void>;
 	};
+	stacks: {
+		state(id: StackId): Promise<StackState>;
+		start(id: StackId): Promise<IpcResult<void>>;
+		stop(id: StackId): Promise<IpcResult<void>>;
+		onState(cb: (id: StackId, s: StackState) => void): () => void;
+	};
 }
 export const CH = {
 	serversList: "servers:list",
@@ -175,4 +192,8 @@ export const CH = {
 	updateCheck: "update:check",
 	updateDownload: "update:download",
 	updateInstall: "update:install",
+	stacksState: "stacks:state",
+	stacksStart: "stacks:start",
+	stacksStop: "stacks:stop",
+	stacksEvent: "stacks:event",
 } as const;

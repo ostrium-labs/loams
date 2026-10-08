@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { CH, type LoamsDesktopApi } from "../shared/contracts";
+import {
+	CH,
+	type LoamsDesktopApi,
+	type StackId,
+	type StackState,
+} from "../shared/contracts";
 
 const invoke = <T>(ch: string, ...args: unknown[]): Promise<T> =>
 	ipcRenderer.invoke(ch, ...args) as Promise<T>;
@@ -55,6 +60,18 @@ const api: LoamsDesktopApi = {
 		check: () => invoke(CH.updateCheck),
 		download: () => invoke(CH.updateDownload),
 		installAndRestart: () => invoke(CH.updateInstall),
+	},
+	stacks: {
+		state: (id) => invoke(CH.stacksState, id),
+		start: (id) => invoke(CH.stacksStart, id),
+		stop: (id) => invoke(CH.stacksStop, id),
+		onState: (cb) => {
+			const listener = (_e: unknown, id: StackId, s: StackState) => cb(id, s);
+			ipcRenderer.on(CH.stacksEvent, listener);
+			return () => {
+				ipcRenderer.removeListener(CH.stacksEvent, listener);
+			};
+		},
 	},
 };
 

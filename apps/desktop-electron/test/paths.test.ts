@@ -18,11 +18,13 @@ describe("resolvePaths", () => {
 		expect(p.factoryDir).toBe("/home/u/.config/Loams/factory");
 		expect(p.serversFile).toBe("/home/u/.config/Loams/servers.json");
 		expect(p.logs).toBe(base.logs);
+		expect(p.stacksDir).toBe("/opt/Loams/resources/stacks");
 	});
 
 	it("dev_paths_use_repo_dist", () => {
 		const p = resolvePaths(base);
 		expect(p.consoleDist).toBe("/repo/web/apps/console/dist");
+		expect(p.stacksDir).toBe("/repo/deploy");
 	});
 
 	it("engine_bin_candidates_order", () => {

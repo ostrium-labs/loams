@@ -23,6 +23,8 @@ export interface ResolvedPaths {
 	engineBin: string[];
 	factoryDir: string;
 	serversFile: string;
+	/** Holds neon/, wesql/ and tikv/ (each with a compose.yaml). */
+	stacksDir: string;
 }
 
 export function resolvePaths(env: PathsEnv): ResolvedPaths {
@@ -53,5 +55,8 @@ export function resolvePaths(env: PathsEnv): ResolvedPaths {
 		engineBin,
 		factoryDir: join(env.userData, "factory"),
 		serversFile: join(env.userData, "servers.json"),
+		stacksDir: env.isPackaged
+			? join(env.resourcesPath, "stacks")
+			: join(repoRoot, "deploy"),
 	};
 }

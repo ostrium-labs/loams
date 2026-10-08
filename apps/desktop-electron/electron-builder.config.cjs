@@ -14,10 +14,13 @@ module.exports = {
 	// build/tray-*.png are read at runtime from app.getAppPath()/build (src/main/shell/tray.electron.ts),
 	// so they ship inside the asar. App icons in build/ are consumed by electron-builder itself.
 	files: ["out/**", "package.json", "build/tray-*.png"],
-	// Later tasks add: stacks/ (Task 21) and connectors.json (Task 27) as further entries here.
+	// Later tasks add: connectors.json (Task 27) as further entries here.
 	extraResources: [
 		{ from: "../../web/apps/console/dist", to: "console" },
 		{ from: "resources/bin", to: "bin" },
+		{ from: "../../deploy/neon", to: "stacks/neon" },
+		{ from: "../../deploy/wesql", to: "stacks/wesql" },
+		{ from: "../../deploy/tikv", to: "stacks/tikv" },
 	],
 	artifactName: "loams-desktop-${version}-${os}-${arch}.${ext}",
 	linux: {

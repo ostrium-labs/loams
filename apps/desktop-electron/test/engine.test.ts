@@ -172,6 +172,37 @@ describe("engine", () => {
 		expect(seen[2]?.join(" ")).not.toMatch(/live/);
 	});
 
+	it("set_live_pd_restarts_engine", async () => {
+		const seen: string[][] = [];
+		const sup = new EngineSupervisor(
+			deps({
+				spawn: asSpawn((_c: string, a: string[]) => {
+					seen.push(a);
+					return new FakeChild();
+				}),
+				fetch: (async () => ({ ok: true })) as unknown as typeof fetch,
+				liveSupported: async () => true,
+			}),
+		);
+		sup.start();
+		await until(() => sup.state().phase === "ready");
+		expect(seen).toHaveLength(1);
+		expect(seen[0]).toContain("--no-live");
+		await sup.setLivePd("127.0.0.1:19379");
+		await until(() => seen.length === 2 && sup.state().phase === "ready");
+		expect(seen[1]).toContain("--live-pd");
+		expect(seen[1]).toContain("127.0.0.1:19379");
+		await sup.setLivePd("127.0.0.1:19379"); // unchanged: no restart
+		expect(seen).toHaveLength(2);
+		await sup.setLivePd(null);
+		await until(() => seen.length === 3 && sup.state().phase === "ready");
+		expect(seen[2]).toContain("--no-live");
+		await sup.stop();
+		await sup.setLivePd("pd:1"); // stopped engine stays stopped
+		expect(sup.state().phase).toBe("stopped");
+		expect(seen).toHaveLength(3);
+	});
+
 	it("missing_binary_is_failed_not_thrown", async () => {
 		const sup = new EngineSupervisor(deps({ binary: () => null }));
 		sup.start();
