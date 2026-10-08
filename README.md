@@ -245,7 +245,8 @@ Each gateway documents where it differs from the original in its crate's module 
 | [`loams-meta`](crates/loams-meta) | The embedded metastore on Raft: namespaces, streams, the sequencer, leases and pointers |
 | [`loams-meta-tikv`](crates/loams-meta-tikv) | The metastore on TiKV |
 | [`loams-meta-conformance`](crates/loams-meta-conformance) | A backend-agnostic conformance suite for the metastore (test only) |
-| [`loams-tikv`](crates/loams-tikv) | The TiKV client layer: transactions, the tuple codec, the timestamp oracle and keyspace bootstrap |
+| [`loams-tikv`](crates/loams-tikv) | The TiKV client layer: transactions, the timestamp oracle, keyspace bootstrap and the cluster GC loop |
+| [`loams-tuple`](crates/loams-tuple) | The order-preserving tuple codec of index keys, shared by `loams-kv` and `loams-tikv` |
 | [`loams-log`](crates/loams-log) | The internal log: WAL objects, segments, the write and fetch paths, and retention |
 | [`loams-worker`](crates/loams-worker) | Lease-fenced background tasks with priorities and fair share |
 | [`loams-link`](crates/loams-link) | Links: exactly-once apply of streams into targets |
@@ -259,6 +260,7 @@ Each gateway documents where it differs from the original in its crate's module 
 | [`loams-qdrant`](crates/loams-qdrant) | The Qdrant-compatible REST and gRPC gateway |
 | [`loams-es`](crates/loams-es) | The Elasticsearch-compatible REST gateway |
 | [`loams-durable`](crates/loams-durable) | Loams Durable: the Resonate server embedded in process |
+| [`loams-kv`](crates/loams-kv) | Loams Live's store seam: transactions, snapshots and timestamps over an embedded backend or TiKV |
 | [`loams-live`](crates/loams-live) | Loams Live: the reactive document database on TiKV |
 | [`loams-live-proto`](crates/loams-live-proto) | Loams Live's `loams.live.v1` protos and generated service code |
 | [`loams-sim`](crates/loams-sim) | Seeded cluster simulation and a linearizability checker (test only) |
