@@ -702,4 +702,25 @@ Operations
 
 ## Rulings made during execution
 
-(none yet)
+Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (one PD, one TiKV and keyspace-mode TiDB v8.5.8 under Podman on a shared 15 GiB desktop host; images pre-pulled).
+
+- **R1.1 Image pins (§47 §4): confirmed.** `release/sqldb-images.toml` holds the five v8.5.8 digests of §47 §4 unchanged. Docker Hub's `v8.5.8` tags still resolve to them (2026-10-08), each is a linux/amd64 + linux/arm64 index, and the pulled `tidb`, `pd` and `tikv` binaries report v8.5.8.
+- **R1.2 Cold start (§47 §5.2): the estimate is confirmed, with margin; bootstrap is too slow for the connect path.**
+  - A warm restart (start the process, connect to PD and TiKV, load the schema, open the port, answer `SELECT 1`) took a median of **0.6–0.8 s** and a p95 of **1.2–1.8 s**, for 0, 100 and 1 000 tables alike. About 0.25–0.3 s of that is `podman run` itself. Schema load is not visible at 1 000 tables.
+  - The connect-to-first-result targets (p50 ≤ 2 s, p95 ≤ 5 s) stay as they are. What remains open is Kubernetes pod scheduling and the gate's own wake path, which Tasks 5 and 24 measure.
+  - **A fresh keyspace's first start (bootstrap) took a median of 11–17 s and a p95 of up to 21 s** (single runs reached 65 s under host load). This confirms §5.1: bootstrap runs once in `CreateDatabase` and is never on the connect path. `CreateDatabase` needs a timeout of at least 120 s.
+- **R1.3 `force-init-stats = false` (§47 §5.1): kept.** Up to 1 000 analyzed tables of 20 rows each, `true` and `false` gave the same warm start (medians within noise). The spike could not reproduce the slow-init-stats case, which needs large statistics. Loams still renders `false`, because it costs nothing and guards against that case per the source and the forum report. Task 24 retests it with large analyzed tables.
+- **R1.4 Regions per empty database (§47 §6.3): replaced.**
+  - With `split-table = true`, a bootstrapped empty database has **61 txn regions** (its `mysql` schema holds 59 tables).
+  - With `split-table = false` it has **1 txn region**. Keyspace creation adds 1 raw region (`r|id`), so each database costs **2 regions**, measured exactly as the marginal cost over 100 keyspaces.
+  - So 10 000 small databases are about 20 000 regions, not 600 000.
+  - Up to 100 bootstrapped keyspaces (337 regions), every peer was hibernated, TiKV → PD heartbeats stayed at about 1 per second, and PD (about 115 MiB) and TiKV (about 340 MiB) RSS stayed flat.
+  - **The 1 000 and 10 000 keyspace points of §6.3 were not run.** At about 12 s per bootstrap that is hours, and the host is shared. They stay a gate for Task 24 on the reference topology, before §15's density targets are set.
+- **R1.5 TiDB memory (§47 §5.2): 224 MiB idle, 306 MiB after 60 s of load, and a 493 MiB peak (VmHWM)** under 8 clients. That is close to the 0.5 GiB `xs` class. Task 2's `xs` rendering must set `tidb_server_memory_limit` below the pod limit, or `xs` moves to 0.75 GiB. This is flagged for the owner, not decided here.
+- **R1.6 PD keyspace API.** `POST /pd/api/v2/keyspaces` took a median of 131 ms and a p95 of 166 ms (PD waits for the region split). State changes to `DISABLED` and `ARCHIVED` took a median of about 20 ms and a p95 of about 31 ms. `ARCHIVED → TOMBSTONE` is accepted through the same API (HTTP 200).
+- **R1.7 Deviations in Task 1.**
+  - Added `scripts/sqldb/spike/lib.sh`, the helpers shared by the scripts.
+  - TiDB containers are started by the scripts (`podman run`, label `io.loams.spike`) rather than as compose services, so each run can be timed.
+  - sysbench was not installed, so the RSS load used the `mysql`-loop fallback the task allows.
+  - `shellcheck` was not installed and was not fetched, so `bash -n` passes, but the "shellcheck clean" exit item is **still open**.
+  - `bootstrap_ms` in `regions.jsonl` includes TiDB's graceful stop.

@@ -69,3 +69,7 @@ sdks/fixtures/results/
 vendor/
 .phpunit.result.cache
 
+
+# SQ1 Task 1 spike measurements and throwaway files
+/target-spike/
+/scratch/
