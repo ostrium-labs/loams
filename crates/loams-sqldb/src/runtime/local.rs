@@ -454,10 +454,20 @@ impl LocalRuntime {
             &format!("--status-host={host}"),
             &format!("--status={status_port}"),
         ]));
-        self.engine(&a).await.map(drop)
+        if let Err(e) = self.engine(&a).await {
+            // A failed `run` can leave the container `created`; remove it so
+            // the next reconcile starts clean.
+            let _ = self
+                .engine(&strings(["rm", "-f", &self.member_name(branch, index)]))
+                .await;
+            return Err(e);
+        }
+        Ok(())
     }
 
-    /// Brings the containers of `branch` to `record`.
+    /// Brings the containers of `branch` to `record`. Under the branch lock
+    /// no `run` of ours is in flight, so a member that is not `running`
+    /// (`created`, `configured`, `initialized`, `exited`) is dead and replaced.
     async fn reconcile(
         &self,
         branch: &BranchId,
@@ -467,7 +477,7 @@ impl LocalRuntime {
         let mut have = Vec::new();
         for c in self.containers(branch).await? {
             let keep =
-                c.index < record.replicas && c.fingerprint == fingerprint && is_live(&c.status);
+                c.index < record.replicas && c.fingerprint == fingerprint && c.status == "running";
             if keep {
                 have.push(c.index);
             } else {

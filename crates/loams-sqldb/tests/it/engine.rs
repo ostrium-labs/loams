@@ -128,3 +128,47 @@ async fn wake_on_b_is_not_blocked_by_stop_on_a() {
         h.calls()
     );
 }
+
+/// Fix 4: a failed `run` does not leave a `created` container behind, and a
+/// `created` container found later is replaced.
+#[tokio::test]
+async fn failed_run_leaves_no_created_container() {
+    let h = Harness::new("failed-run", 46_200);
+    let a = br('c');
+    h.switch("fail-run", "");
+    assert!(h.rt.ensure_pool(&a, Class::Xs, 1).await.is_err());
+    assert_eq!(h.containers(), vec![], "the created container was removed");
+    std::fs::remove_file(h.dir.join("engine-state/fail-run")).expect("clear switch");
+    h.rt.ensure_pool(&a, Class::Xs, 1).await.expect("retry");
+    assert_eq!(
+        h.containers(),
+        vec![(format!("loams-sqldb-unit-{a}-0"), "running".to_owned())]
+    );
+}
+
+#[tokio::test]
+async fn created_container_is_replaced_on_reconcile() {
+    let h = Harness::new("created", 46_300);
+    let a = br('d');
+    h.rt.ensure_pool(&a, Class::Xs, 1).await.expect("ensure");
+    let name = format!("loams-sqldb-unit-{a}-0");
+    // As if a crash interrupted `run` after create and before start.
+    std::fs::write(
+        h.dir.join("engine-state/c").join(&name).join("status"),
+        "created",
+    )
+    .expect("status");
+    h.rt.scale(&a, 1).await.expect("reconcile");
+    assert_eq!(h.containers(), vec![(name.clone(), "running".to_owned())]);
+    assert_eq!(
+        h.calls().lines().filter(|l| l.starts_with("run ")).count(),
+        2,
+        "{}",
+        h.calls()
+    );
+    assert!(
+        h.calls().contains(&format!("rm -f {name}")),
+        "{}",
+        h.calls()
+    );
+}
