@@ -8,14 +8,17 @@ import {
   type LoamsDesktopApi,
   wireDeepLinks,
 } from '@loams/platform-electron';
+import desktopServersPkg from '@loams/plugin-desktop-servers/package.json';
 import desktopYml from '../../catalog/desktop.yml?raw';
 import type { modules } from './modules.js';
 import { startConsole } from './start.js';
 
 /** Desktop-only bundled plugins, by package name; each plugin task adds its own. */
-export const desktopModules: typeof modules = {};
+export const desktopModules: typeof modules = {
+  '@loams/plugin-desktop-servers': () => import('@loams/plugin-desktop-servers'),
+};
 /** Their package.json manifests. */
-export const desktopManifests: unknown[] = [];
+export const desktopManifests: unknown[] = [desktopServersPkg];
 
 export async function startDesktop(
   api: LoamsDesktopApi,

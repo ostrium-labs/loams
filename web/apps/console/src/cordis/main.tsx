@@ -29,6 +29,12 @@ const root = document.getElementById('root');
 if (root) {
   loadRuntimeConfig(import.meta.env.BASE_URL)
     .then((config) => {
+      // Dev preview of the desktop edition in a browser (`?desktop`): a fake
+      // bridge from a dev-only module. `import.meta.env.DEV` is false in a
+      // production build, so the branch and the dynamic import are dropped.
+      if (import.meta.env.DEV && new URLSearchParams(globalThis.location.search).has('desktop')) {
+        return import('./fake-desktop.js').then((m) => startDesktop(m.createFakeDesktop(), root));
+      }
       // The Electron shell exposes `loamsDesktop` (preload); everything else is the web path.
       if (globalThis.loamsDesktop) return startDesktop(globalThis.loamsDesktop, root);
 

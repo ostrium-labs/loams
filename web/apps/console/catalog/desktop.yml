@@ -4,7 +4,6 @@
 # `editions: ['desktop']` and `inject: ['desktop']`, so a browser build never
 # loads them.
 #
-#   - insert:
-#       - id: desktop-servers
-#         name: '@loams/plugin-desktop-servers'
-[]
+- insert:
+    - id: desktop-servers
+      name: '@loams/plugin-desktop-servers'

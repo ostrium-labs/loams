@@ -5,9 +5,9 @@
     "console": ["default", "{workspaceRoot}/api/console/**/*"]
   },
   "targets": {
-    "build": {"inputs": ["console", "^default"]},
-    "typecheck": {"inputs": ["console", "^default"]},
-    "test": {"inputs": ["console", "^default"]},
-    "test:browser": {"cache": false}
+    "build": { "inputs": ["console", "^default"] },
+    "typecheck": { "inputs": ["console", "^default"] },
+    "test": { "inputs": ["console", "^default"] },
+    "test:browser": { "cache": false }
   }
 }

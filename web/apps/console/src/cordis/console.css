@@ -354,3 +354,102 @@ body {
     max-width: 100vw;
   }
 }
+
+/* Desktop: server switcher, servers page, engine card (plugin-desktop-servers). */
+.lc-server-switch {
+  position: relative;
+}
+.lc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--op-muted);
+}
+.lc-dot-ok {
+  background: var(--op-grow);
+}
+.lc-dot-warn {
+  background: var(--op-warn, #c8921f);
+}
+.lc-dot-bad {
+  background: var(--op-danger);
+}
+.lc-server-menu {
+  position: absolute;
+  top: 38px;
+  left: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 280px;
+  padding: 4px;
+  border: 1px solid var(--op-rule);
+  border-radius: 8px;
+  background: var(--op-bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+}
+.lc-server-menu hr {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--op-rule-soft);
+}
+.lc-server-menu button {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--op-ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.lc-server-menu button:hover,
+.lc-server-menu button:focus-visible {
+  background: var(--op-surface);
+}
+.lc-server-menu button[aria-current="true"] span {
+  font-weight: 600;
+}
+.lc-server-menu code {
+  color: var(--op-muted);
+  font-size: 11px;
+}
+.lc-server-form {
+  display: grid;
+  gap: 12px;
+  max-width: 480px;
+}
+.lc-row-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.lc-engine-urls {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.lc-engine-urls > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+}
+.lc-engine-urls dt {
+  color: var(--op-muted);
+  font-size: 13px;
+}
+.lc-engine-urls dd {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin: 0;
+  min-width: 0;
+}
+.lc-engine-urls code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
