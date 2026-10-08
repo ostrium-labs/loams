@@ -46,8 +46,12 @@ ulid.workspace = true
 [features]
 # `engine_panic_poisons_one_graph`: `cargo test -p loams-graph --features failpoints`.
 failpoints = ["dep:fail", "fail/failpoints"]
+# `Graph::execute_forced`, a gate bypass for tests (security review I4). Enabled for this crate's
+# own tests by the self dev-dependency below; never by a server build.
+test-hooks = []
 
 [dev-dependencies]
+loams-graph = { path = ".", features = ["test-hooks"] }
 # The tests decode the `loams.errors.v1.ErrorInfo` a refusal carries (unpadded base64).
 base64.workspace = true
 # `licences_cover_every_grafeo_crate` reads `Cargo.lock` and `connectors/licences.toml`.

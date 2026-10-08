@@ -6715,6 +6715,7 @@ dependencies = [
  "grafeo-adapters",
  "grafeo-common",
  "grafeo-engine",
+ "loams-graph",
  "loams-proto",
  "prost 0.14.4",
  "prost-types",

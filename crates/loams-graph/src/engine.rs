@@ -489,6 +489,17 @@ impl Graph {
         read_only: bool,
     ) -> Result<GraphResult, GraphError> {
         let access = self.admit(statement, read_only)?;
+        self.run_as(access, statement, parameters)
+    }
+
+    /// Runs one admitted statement on the session for `access`: the one path every single
+    /// statement takes into the engine.
+    fn run_as(
+        &self,
+        access: Access,
+        statement: &str,
+        parameters: HashMap<String, Value>,
+    ) -> Result<GraphResult, GraphError> {
         let result = self.call(|| {
             self.session_for(access)
                 .execute_with_params(statement, parameters)
@@ -496,6 +507,20 @@ impl Graph {
         })?;
         self.statements_executed.fetch_add(1, Ordering::Relaxed);
         Ok(self.resolved(GraphResult::from(result)))
+    }
+
+    /// **Tests only** (feature `test-hooks`): runs a statement on Loams's own execution path with
+    /// its access forced, skipping the gate, so a test can show the engine role alone refuses what
+    /// the gate would have (security review I4). Never compiled into a server build.
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn execute_forced(
+        &self,
+        access: Access,
+        statement: &str,
+        parameters: HashMap<String, Value>,
+    ) -> Result<GraphResult, GraphError> {
+        self.run_as(access, statement, parameters)
     }
 
     /// Runs statements as one engine transaction, so a write batch lands whole or not at all.

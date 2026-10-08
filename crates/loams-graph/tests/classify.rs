@@ -141,7 +141,13 @@ fn read_session_refuses_every_corpus_write() {
             continue;
         }
         let before = state(&graph);
-        let result = graph.session_for(Access::Read).execute(&case.statement);
+        // Loams's own execution path, with the access forced to Read so the gate is skipped and
+        // only the engine role stands between the statement and the graph (I4).
+        let result = graph.execute_forced(
+            Access::Read,
+            &case.statement,
+            std::collections::HashMap::new(),
+        );
         // A built-in procedure that only reads is allowed by the ReadOnly role; the gate files
         // every CALL as a write anyway (I1). It must still change nothing.
         let read_only_procedure = case.statement.trim_start().starts_with("CALL grafeo.");
