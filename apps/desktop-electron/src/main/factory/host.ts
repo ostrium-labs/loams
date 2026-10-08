@@ -6,6 +6,7 @@ import type {
 	FactoryQuery,
 	IpcResult,
 } from "../../shared/contracts";
+import { redact as redactSecrets } from "../redact";
 import { type Adapter, FACTORY_APPS, type FactoryAppDef } from "./apps";
 import { OPS, ParamError, UnsupportedError } from "./ops";
 import type { Vault } from "./vault";
@@ -37,13 +38,9 @@ export function secretForms(
 	return [...forms];
 }
 
+/** Factory errors and agent text: every secret form becomes `[redacted]` (see ../redact). */
 export function redact(message: string, secrets: readonly string[]): string {
-	let out = message;
-	const all = secrets
-		.filter((s) => s.length > 0)
-		.sort((a, b) => b.length - a.length);
-	for (const s of all) out = out.split(s).join("[redacted]");
-	return out;
+	return redactSecrets(message, secrets);
 }
 
 const originOf = (u: string): string => {

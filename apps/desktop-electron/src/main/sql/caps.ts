@@ -7,6 +7,7 @@ import {
 	type SqlDialect,
 } from "../../shared/sql-lex";
 import type { Secret } from "../factory/vault";
+import { redact as redactSecrets } from "../redact";
 
 export type Dialect = "pg" | "mysql";
 
@@ -193,22 +194,7 @@ export function redact(
 	text: string,
 	secrets: (string | Secret)[] = [],
 ): string {
-	let out = text
-		.replace(/\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]*):[^\s@/]*@/gi, "$1:***@")
-		.replace(/(password\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&]+)/gi, "$1***");
-	for (const sec of secrets) {
-		const v = typeof sec === "string" ? sec : sec.reveal();
-		if (!v) continue;
-		// `user:***@` keeps the user name even when it equals the password.
-		out = out.replace(
-			new RegExp(
-				`${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?!:\\*\\*\\*@)`,
-				"g",
-			),
-			"***",
-		);
-	}
-	return out;
+	return redactSecrets(text, secrets, { mask: "***", credentials: true });
 }
 
 /** Wraps a handler body as an IpcResult; thrown errors become `{code, message}` (redacted). */
