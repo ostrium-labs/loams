@@ -165,11 +165,28 @@ export function isPermissionMiss(e: unknown): boolean {
 	return (e as { code?: unknown })?.code === "42501";
 }
 
+/**
+ * A denial on a system object (pg_catalog, pg_toast, information_schema, a pg_* table or
+ * function) that no grant run will ever fix: loams_ro is meant not to read those.
+ */
+export function isSystemObjectDenial(message: string): boolean {
+	return /permission denied for \w+ "?(pg_\w+|information_schema)\b/i.test(
+		message,
+	);
+}
+
+/** At most one grant refresh per window, per server (one backend per server). */
+export const REGRANT_MIN_INTERVAL_MS = 10_000;
+
 export function createPgBackend(deps: {
 	neon: NeonClient;
 	connect?: PgConnect;
+	now?: () => number;
 }): PostgresBackend {
 	const connect = deps.connect ?? connectPg;
+	const now = deps.now ?? Date.now;
+	/** When a 42501 last triggered a grant refresh. */
+	let lastRefresh = Number.NEGATIVE_INFINITY;
 	const ref = newPasswordRef();
 	// Per app run, in memory only; reset on every run via ALTER ROLE.
 	const roPassword = new Secret(randomBytes(24).toString("base64url"));
@@ -273,7 +290,13 @@ export function createPgBackend(deps: {
 				// Login refused: the stack was recreated since the role was made. Denied: a schema
 				// or table appeared since the last grant. Either way refresh, then retry once.
 				if (isLoginFailure(e)) provisioned = false;
-				else if (!isPermissionMiss(e)) throw toSqlError(e, secrets);
+				else if (
+					!isPermissionMiss(e) ||
+					isSystemObjectDenial(String((e as Error)?.message)) ||
+					now() - lastRefresh < REGRANT_MIN_INTERVAL_MS
+				)
+					throw toSqlError(e, secrets);
+				else lastRefresh = now();
 				granted.clear();
 				await ensureReadOnlyRole();
 				return run(login);

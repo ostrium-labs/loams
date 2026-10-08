@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { NeonClient } from "../src/main/sql/neon";
-import { createPgBackend, type PgLogin } from "../src/main/sql/pg";
+import {
+	createPgBackend,
+	isSystemObjectDenial,
+	type PgLogin,
+} from "../src/main/sql/pg";
 
 const neon = new NeonClient({ branchesFile: "/nonexistent/b.json" });
 
@@ -17,6 +21,7 @@ function fakePg(
 		schemas?: string[];
 		/** Holds every admin connect until released. */
 		gate?: Promise<void>;
+		denyMessage?: string;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -44,9 +49,12 @@ function fakePg(
 				log.push(`${who}: ${sql}`);
 				if (as && /^SELECT \d/.test(sql) && state.deny > 0) {
 					state.deny--;
-					throw Object.assign(new Error("permission denied for table t"), {
-						code: "42501",
-					});
+					throw Object.assign(
+						new Error(opts.denyMessage ?? "permission denied for table t"),
+						{
+							code: "42501",
+						},
+					);
 				}
 				if (sql.startsWith("SELECT 1 FROM pg_roles"))
 					return { columns: ["?column?"], rows: [] };
@@ -133,6 +141,58 @@ describe("postgres agent reads", () => {
 		const n = log.length;
 		await pg.query("SELECT 3", { agent: true });
 		expect(adminLines(log.slice(n))).toEqual([]);
+	});
+
+	it("a_denial_on_a_system_object_does_not_regrant", async () => {
+		const sys = fakePg({
+			denyMessage: "permission denied for table pg_authid",
+		});
+		const pg = createPgBackend({ neon, connect: sys.connect });
+		await pg.query("SELECT 1", { agent: true });
+		const n = grants(sys.log).length;
+		sys.state.deny = 1;
+		await expect(pg.query("SELECT 2", { agent: true })).rejects.toMatchObject({
+			code: "42501",
+		});
+		expect(grants(sys.log).length).toBe(n);
+		for (const m of [
+			"permission denied for table pg_authid",
+			"permission denied for schema pg_toast",
+			"permission denied for schema information_schema",
+			'permission denied for view "pg_shadow"',
+			"permission denied for function pg_read_file",
+		])
+			expect(isSystemObjectDenial(m), m).toBe(true);
+		for (const m of [
+			"permission denied for table orders",
+			"permission denied for schema sales",
+			"permission denied for table page_views",
+		])
+			expect(isSystemObjectDenial(m), m).toBe(false);
+	});
+
+	it("regrants_at_most_once_per_10s", async () => {
+		let t = 1_000_000;
+		const { connect, log, state } = fakePg();
+		const pg = createPgBackend({ neon, connect, now: () => t });
+		await pg.query("SELECT 1", { agent: true });
+		state.deny = 1;
+		await pg.query("SELECT 2", { agent: true });
+		const after = grants(log).length;
+		// A second miss within 10 s is returned, not re-granted.
+		t += 5_000;
+		state.deny = 1;
+		await expect(pg.query("SELECT 3", { agent: true })).rejects.toMatchObject({
+			code: "42501",
+		});
+		expect(grants(log).length).toBe(after);
+		// After 10 s it refreshes again.
+		t += 6_000;
+		state.deny = 1;
+		await expect(pg.query("SELECT 4", { agent: true })).resolves.toMatchObject({
+			rowCount: 1,
+		});
+		expect(grants(log).length).toBeGreaterThan(after);
 	});
 
 	it("a_second_miss_is_returned_not_looped", async () => {
