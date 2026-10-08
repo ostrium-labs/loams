@@ -493,6 +493,30 @@ Commit `feat(plugins): software factory home and panels`.
 
 Tests: `factory_view_navigation_policy` (a table), `sso_origin_allowed_only_when_configured`. Commit `feat(desktop): factory app windows`.
 
+
+### Task 12b: Factory apps embedded in the main window (D678)
+
+**Files:** `apps/desktop-electron/src/main/factory/embed.electron.ts`, `src/main/factory/embed-model.ts` (pure: LRU of 4, bounds validation), `test/embed-model.test.ts`; contracts gain `factory.showEmbedded(app, rect: {x,y,width,height}) / hideEmbedded() / popOut(app)` plus CH channels and preload bindings; `web/plugins/factory` gains route `/factory/:app/app` (a toolbar with the app label, Reload, Pop out, Open in browser, and a placeholder `<div>` whose `getBoundingClientRect()` is sent on mount, resize and route change, using a ResizeObserver throttled to one animation frame). The fake desktop's `showEmbedded` renders a "Embedded view appears in the desktop app" placeholder.
+
+**Rules:**
+- **Isolation:** the view reuses the Task 12 policy functions unchanged (frameNavigation, downloadDecision, viewPermission) and the same partition.
+- **Bounds:** main clamps the bounds to the window's content size and rejects non-finite or negative values.
+- **Hiding:** `hideEmbedded` runs on unmount, on route change, and when the dock or a modal overlaps the area. In that last case the renderer sends hide, then show.
+- **Lifecycle:** views survive hide. LRU eviction applies at 4 live views. A view is destroyed on remove, reconfigure or quit. Pop out destroys the embedded view and opens the Task 12 window.
+- **Keyboard and focus:** `Ctrl/Cmd+L` (focus console) moves focus back to the console. The app view never receives the console's keyboard shortcuts.
+- **Entry points:** "Open app" on the factory home now opens the embedded route. A secondary menu offers "Open in new window".
+
+**Tests:**
+- `bounds_clamped_and_validated`
+- `lru_evicts_least_recent_at_four`
+- `reconfigure_destroys_view`
+- `popout_moves_to_window`
+- the renderer test `embedded_route_reports_rect_and_hides_on_unmount`
+
+**Manual check:** with the Task 12 static server: embedded navigation works, an external link opens the system browser, and resizing the window keeps the view aligned.
+
+Commit `feat(desktop): factory apps embedded in the main window`.
+
 ### Task 13: Tray, menu, window state, notifications
 
 **Files:** `src/main/shell/{tray.electron.ts,menu.electron.ts}`, `src/main/shell/tray-model.ts`, `test/tray-model.test.ts`; adapt dsh `close-to-tray.ts`.

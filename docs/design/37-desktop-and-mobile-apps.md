@@ -1380,3 +1380,13 @@ The owner widened the scope the same day: "current console ui only focused on co
   - **Windows:** NSIS x64. The installer and the app executables are Authenticode-signed through the SignPath Foundation flow, using a new artifact configuration for the desktop alongside the rpm one (D621). Q421 is answered by SignPath.
   - **macOS:** `dmg` and `zip` for arm64 and x64. They are **unsigned and not notarized**, and are labelled so in the release notes, with instructions for removing quarantine (`xattr -dr com.apple.quarantine "/Applications/Loams Desktop.app"`). The updater does not auto-install on macOS, because electron-updater requires a signed app there. On macOS it offers a download link instead.
   - **The engine on Windows:** it is bundled when the Windows CI build and smoke test are green (Q623). Otherwise the Windows release is remote-only, and the local engine pages show "local engine not available on Windows yet".
+- **D678: factory apps embedded in the main window** (owner, 2026-10-08: "can you include the ui of the apps in the same electron app").
+  - **Embedded by default.** Each factory app's full UI is shown inside the main window. It is a `WebContentsView` attached to the main `BrowserWindow`, sized to the console's content area. The renderer reports the content rectangle (route `/factory/:app/app`) through IPC, and main positions the view.
+  - **Same isolation as D659.** The view uses partition `persist:factory-<id>`, has no preload, runs sandboxed, and applies the Task 12 frame, redirect, download and permission policy.
+  - **Lifecycle.** The view is hidden when the route changes, kept alive per app for fast switching (at most 4 live views, least-recently-used ones are destroyed), and destroyed on remove, reconfigure or quit.
+  - **Pop out.** "Pop out" moves the app to its own window (the Task 12 code).
+  - **No iframes.** The apps' framing protections and third-party cookies make iframes unreliable and weaker.
+- **D679: the agent panel is Loams' own; DeepSeek Harness is not embedded.**
+  - dsh-desktop contains no chat UI. It hosts the upstream DeepSeek Harness web frontend.
+  - Loams Desktop's chat is the D675 panel (Tasks 28–29), which borrows only UX patterns from dsh-desktop and dockit.
+  - Running DeepSeek Harness as an optional sidecar app is deferred. That needs a licence review of `@deepseek-ai/*` first.
