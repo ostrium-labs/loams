@@ -379,3 +379,23 @@ fn shortest_path_searches_are_refused() {
         assert_eq!(err.reason(), "graph_unbounded_path", "{statement}: {err}");
     }
 }
+
+/// Security review M7: GQL's own quantifier spellings are held to the same bound.
+#[test]
+fn gql_quantifiers_are_bounded() {
+    let engine = Engine::new();
+    let graph = Graph::open(&engine, "acme", "quant", OpenSpec::default()).expect("open");
+    for statement in [
+        "MATCH p = (a)-[:N]->{1,}(b) RETURN count(p)",
+        "MATCH p = (a)-[:N]->+(b) RETURN count(p)",
+        "MATCH p = (a)-[:N]->*(b) RETURN count(p)",
+        "MATCH p = (a)-[:N]->{1,11}(b) RETURN count(p)",
+        "MATCH p = ((a)-[:N]->(b)){1,} RETURN count(p)",
+    ] {
+        let err = graph.execute(statement, true).expect_err("refused");
+        assert_eq!(err.reason(), "graph_unbounded_path", "{statement}: {err}");
+    }
+    graph
+        .execute("MATCH p = (a)-[:N]->{1,10}(b) RETURN count(p)", true)
+        .expect("a bounded quantifier runs");
+}

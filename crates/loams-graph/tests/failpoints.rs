@@ -159,3 +159,30 @@ fn panics_in_the_gate_and_row_building_are_contained() {
     scenario.teardown();
     std::fs::remove_dir_all(&data_dir).ok();
 }
+
+/// Security review M7: while another caller still holds a poisoned graph's handle, it is not
+/// reopened (its file lock is held); statements answer `graph_reloading` until the handle goes.
+#[test]
+fn a_held_poisoned_graph_answers_reloading_until_released() {
+    let scenario = fail::FailScenario::setup();
+    let data_dir = std::env::temp_dir().join(format!("loams-graph-m7-{}", std::process::id()));
+    let engine = Engine::with_data_dir(&data_dir);
+    create(&engine, "held");
+    execute(&engine, "held", "INSERT (:Kept)").expect("seed");
+    let handle = loams_graph::Graph::open_or_existing(&engine, "acme", "held", || {
+        unreachable!("the graph is open")
+    })
+    .expect("the open graph");
+    fail::cfg("loams_graph::engine_call", "1*panic(injected)").expect("cfg");
+    execute(&engine, "held", "MATCH (k:Kept) RETURN k").expect_err("panicked");
+    for _ in 0..2 {
+        let err = execute(&engine, "held", "MATCH (k:Kept) RETURN k").expect_err("still held");
+        assert_eq!(err.code, ErrorCode::Unavailable, "{err:?}");
+        assert_eq!(reason(&err), "graph_reloading");
+    }
+    drop(handle);
+    let response = execute(&engine, "held", "MATCH (k:Kept) RETURN k").expect("reopened");
+    assert_eq!(response.rows.as_option().expect("rows").rows.len(), 1);
+    scenario.teardown();
+    std::fs::remove_dir_all(&data_dir).ok();
+}
