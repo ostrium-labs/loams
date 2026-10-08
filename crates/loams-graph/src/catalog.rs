@@ -925,7 +925,10 @@ mod tests {
             let mut seen = std::collections::BTreeSet::new();
             for _ in 0..50 {
                 let delay = backoff(attempt);
-                assert!(delay >= base / 2 && delay < base, "{attempt}: {delay:?} vs {base:?}");
+                assert!(
+                    delay >= base / 2 && delay < base,
+                    "{attempt}: {delay:?} vs {base:?}"
+                );
                 seen.insert(delay);
             }
             assert!(seen.len() > 1, "jittered");

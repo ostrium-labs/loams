@@ -354,7 +354,7 @@ mod admin {
     use loams_graph::service::admin::GraphAdmin;
     use loams_meta::{MetaClient, MetaClientConfig, MetaConfig, MetaNode, Router, SystemClock};
     use loams_proto::loams::graph::v1 as pb;
-    use loams_store::{Fault, FaultyStore, Op, Store};
+    use loams_store::{Fault, FaultRates, FaultyStore, Op, Store};
     use tempfile::TempDir;
 
     use super::reason;
@@ -732,6 +732,12 @@ mod admin {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn concurrent_catalog_writes_all_land() {
         let fixture = Fixture::start().await;
+        // Every bucket call may wait up to 20 ms, which holds read-modify-write windows open.
+        fixture.faulty.set_rates(FaultRates {
+            delay: 1.0,
+            max_delay: Duration::from_millis(20),
+            ..FaultRates::none()
+        });
         let admin = Arc::new(fixture.admin());
         let tasks: Vec<_> = (0..8)
             .map(|i| {
@@ -754,6 +760,163 @@ mod admin {
             .await
             .expect("list");
         assert_eq!(all.graphs.len(), 8);
+        assert!(
+            admin
+                .catalog()
+                .counters()
+                .cas_retries
+                .load(std::sync::atomic::Ordering::Relaxed)
+                > 0,
+            "the writers really did race (review I3)"
+        );
+    }
+
+    /// Review I3: creates, deletes and `expected_version` updates race each other while
+    /// readers run `GetGraph` and `Execute`; the final document is exactly the sum of the
+    /// writes, every reader answers, and the race is real (CAS retries happened).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn mixed_concurrent_writes_and_reads_end_exactly() {
+        let fixture = Fixture::start().await;
+        let admin = Arc::new(fixture.admin());
+        let mut versions = std::collections::BTreeMap::new();
+        for i in 0..6 {
+            let g = admin
+                .create_graph(create("acme", &format!("g{i}"), &format!("seed{i}")))
+                .await
+                .expect("seed");
+            versions.insert(format!("g{i}"), g.version);
+        }
+        admin
+            .execute(execute("acme", "g3", "INSERT (:R {v: 1})"))
+            .await
+            .expect("seed data");
+        fixture.faulty.set_rates(FaultRates {
+            delay: 1.0,
+            max_delay: Duration::from_millis(15),
+            ..FaultRates::none()
+        });
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut writers = Vec::new();
+        for i in 0..4 {
+            let admin = admin.clone();
+            writers.push(tokio::spawn(async move {
+                admin
+                    .create_graph(create("acme", &format!("n{i}"), &format!("new{i}")))
+                    .await
+                    .map(|_| ())
+            }));
+        }
+        for i in 0..2 {
+            let admin = admin.clone();
+            writers.push(tokio::spawn(async move {
+                admin
+                    .delete_graph(pb::DeleteGraphRequest {
+                        namespace: "acme".to_string(),
+                        name: format!("g{i}"),
+                        idempotency_key: format!("del{i}"),
+                        ..Default::default()
+                    })
+                    .await
+                    .map(|_| ())
+            }));
+        }
+        for i in 2..6 {
+            let admin = admin.clone();
+            let version = versions[&format!("g{i}")];
+            writers.push(tokio::spawn(async move {
+                admin
+                    .update_graph(pb::UpdateGraphRequest {
+                        graph: pb::Graph {
+                            namespace: "acme".to_string(),
+                            name: format!("g{i}"),
+                            replicas: i,
+                            ..Default::default()
+                        }
+                        .into(),
+                        update_mask: buffa_types::google::protobuf::FieldMask {
+                            paths: vec!["replicas".to_string()],
+                            ..Default::default()
+                        }
+                        .into(),
+                        expected_version: Some(version),
+                        ..Default::default()
+                    })
+                    .await
+                    .map(|_| ())
+            }));
+        }
+        let mut readers = Vec::new();
+        for _ in 0..2 {
+            let (admin, stop) = (admin.clone(), stop.clone());
+            readers.push(tokio::spawn(async move {
+                let mut reads = 0u32;
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    admin
+                        .get_graph(get("acme", "g4"))
+                        .await
+                        .expect("a reader of a stable graph");
+                    let rows = admin
+                        .execute(execute("acme", "g3", "MATCH (r:R) RETURN count(r) AS c"))
+                        .await
+                        .expect("a statement on a stable graph");
+                    assert_eq!(rows.rows.as_option().expect("rows").rows.len(), 1);
+                    reads += 1;
+                }
+                reads
+            }));
+        }
+        for writer in writers {
+            writer.await.expect("task").expect("every write lands");
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        for reader in readers {
+            assert!(reader.await.expect("reader") > 0);
+        }
+        fixture.faulty.set_rates(FaultRates::none());
+
+        // The exact final document.
+        let all = admin
+            .list_graphs(pb::ListGraphsRequest {
+                namespace: "acme".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("list");
+        let summary: Vec<(String, u64, u32)> = all
+            .graphs
+            .iter()
+            .map(|g| (g.name.clone(), g.version, g.replicas))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("g2".to_string(), 2, 2),
+                ("g3".to_string(), 2, 3),
+                ("g4".to_string(), 2, 4),
+                ("g5".to_string(), 2, 5),
+                ("n0".to_string(), 1, 0),
+                ("n1".to_string(), 1, 0),
+                ("n2".to_string(), 1, 0),
+                ("n3".to_string(), 1, 0),
+            ]
+        );
+        let deleting = admin
+            .catalog()
+            .deleting("acme", u64::MAX)
+            .await
+            .expect("deleting");
+        let mut deleted: Vec<_> = deleting.iter().map(|g| g.name.clone()).collect();
+        deleted.sort();
+        assert_eq!(deleted, ["g0", "g1"]);
+        assert!(
+            admin
+                .catalog()
+                .counters()
+                .cas_retries
+                .load(std::sync::atomic::Ordering::Relaxed)
+                > 0,
+            "the writers really did race"
+        );
     }
 
     /// Review I1: a superseded document is never deleted at once; the sweep keeps the pointer's
