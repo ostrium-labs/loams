@@ -2,3 +2,4 @@ out/
 dist/
 resources/
 test-results
+.scratch/

@@ -10,6 +10,16 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repo = resolve(root, "..", "..");
+
+// Windows builds set this when the engine did not build or pass its smoke test: ship no engine, and
+// the app shows the "not available on Windows yet" state. resources/bin stays an empty directory.
+if (process.env.LOAMS_DESKTOP_NO_LOCAL_ENGINE === "1") {
+	const out = join(root, "resources", "bin");
+	rmSync(out, { recursive: true, force: true });
+	mkdirSync(out, { recursive: true });
+	console.warn("LOAMS_DESKTOP_NO_LOCAL_ENGINE=1: not bundling the local engine");
+	process.exit(0);
+}
 const exe = process.platform === "win32" ? "loams.exe" : "loams";
 
 if (process.env.LOAMS_BUILD_ENGINE === "1") {

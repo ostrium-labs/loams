@@ -79,6 +79,10 @@ EM_AARCH64 = 183
 EM_386 = 3
 # An RPM lead: 0xed 0xab 0xee 0xdb.
 RPM_MAGIC = b"\xed\xab\xee\xdb"
+# `--scope desktop-windows` (D677): the Loams Desktop Windows build. The unpacked app and the NSIS
+# installer are submitted as Authenticode (PE) files; every other file in the directory is skipped.
+PE_MAGIC = b"MZ"
+PE_SUFFIXES = (".exe", ".dll", ".node")
 
 
 class Rejected(Exception):
@@ -113,13 +117,28 @@ def read_elf_machine(data):
     return machine
 
 
-def classify(path):
+def classify_pe(path):
+    """Scope `desktop-windows`: a PE file (.exe/.dll/.node) is signed with Authenticode."""
+    if _suffix(path) not in PE_SUFFIXES:
+        raise Rejected(f"not a Windows PE file ({_suffix(path) or 'no extension'}); only .exe/.dll/.node are signed here")
+    try:
+        head = path.read_bytes()[:2]
+    except OSError as error:
+        raise Rejected(f"unreadable: {error}") from error
+    if head != PE_MAGIC:
+        raise Rejected(f"named {_suffix(path)} but starts with {head.hex(' ')}, not the PE magic 'MZ'")
+    return "pe-sign"
+
+
+def classify(path, scope="linux"):
     """Return the signing method an artifact needs, or raise Rejected.
 
     The method is what the workflow asserts the SignPath artifact
     configuration has to match, so a configuration that signs RPMs is never
     quietly pointed at an ELF file.
     """
+    if scope == "desktop-windows":
+        return classify_pe(path)
     suffix = _suffix(path)
     if suffix in WINDOWS_SUFFIXES:
         raise Rejected(
@@ -157,7 +176,7 @@ def classify(path):
         "an .rpm or a Linux ELF executable, and nothing else this repository builds")
 
 
-def scan(directories):
+def scan(directories, scope="linux"):
     """Classify every file under `directories`. Returns (accepted, rejected)."""
     accepted = []
     rejected = []
@@ -170,7 +189,7 @@ def scan(directories):
             if not path.is_file() or path.is_symlink():
                 continue
             try:
-                method = classify(path)
+                method = classify(path, scope)
             except Rejected as reason:
                 rejected.append((path, reason))
             else:
@@ -227,6 +246,25 @@ def self_test():
         if failure:
             failures.append(failure)
 
+    # Scope desktop-windows: PE files by magic, nothing else.
+    for label, name, payload, ok in [
+        ("pe-exe", "Loams Desktop.exe", b"MZ" + b"\0" * 62, True),
+        ("pe-dll", "ffmpeg.dll", b"MZ\x90\x00", True),
+        ("pe-bad-magic", "fake.exe", b"\x7fELF", False),
+        ("pe-pak", "resources.pak", b"MZ", False),
+        ("pe-rpm", "x.rpm", rpm_header, False),
+    ]:
+        with tempfile.TemporaryDirectory(prefix="signpath-fixture-") as scratch:
+            path = Path(scratch) / name
+            path.write_bytes(payload)
+            try:
+                classify(path, "desktop-windows")
+                got = True
+            except Rejected:
+                got = False
+            if got != ok:
+                failures.append(f"fixture {label}: desktop-windows scope {'rejected' if ok else 'accepted'} {name}")
+
     # The directory-level rules: a mixed directory keeps the Linux files and
     # reports the rest, and `--strict` is what turns a non-Linux file into a
     # failure. Exercised through main() so the argument handling is covered too.
@@ -277,6 +315,12 @@ def main(argv):
         action="store_true",
         help="also fail when anything was rejected, not only when nothing was accepted",
     )
+    parser.add_argument(
+        "--scope",
+        choices=["linux", "desktop-windows"],
+        default="linux",
+        help="linux (default): .rpm and Linux ELF; desktop-windows: PE files of the Loams Desktop build",
+    )
     parser.add_argument("--self-test", action="store_true", help="run the fixtures and exit")
     args = parser.parse_args(argv)
 
@@ -291,7 +335,7 @@ def main(argv):
         print("signpath-artifacts: no artifact directory given", file=sys.stderr)
         return 1
 
-    accepted, rejected = scan(args.directories)
+    accepted, rejected = scan(args.directories, args.scope)
     for path, method in accepted:
         print(f"{method}\t{path}")
     for path, reason in rejected:
@@ -310,7 +354,7 @@ def main(argv):
         )
         return 1
     print(
-        f"signpath-artifacts: {len(accepted)} Linux artifact(s) accepted for signing"
+        f"signpath-artifacts: {len(accepted)} {args.scope} artifact(s) accepted for signing"
         + (f", {len(rejected)} outside scope and skipped" if rejected else ""),
         file=sys.stderr,
     )

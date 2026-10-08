@@ -52,6 +52,15 @@
 				"command": "node scripts/fetch-engine.mjs && pnpm run package --mac --publish never"
 			}
 		},
+		"package-windows-unpacked": {
+			"executor": "nx:run-commands",
+			"cache": false,
+			"dependsOn": ["build", "@loams/console:build"],
+			"options": {
+				"cwd": "apps/desktop-electron",
+				"command": "node scripts/fetch-engine.mjs && pnpm run package --win --dir --x64 --publish never"
+			}
+		},
 		"package-windows": {
 			"executor": "nx:run-commands",
 			"cache": false,

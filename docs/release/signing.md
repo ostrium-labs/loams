@@ -10,6 +10,11 @@ This page supersedes nothing else: the crates.io half of the release path is
 
 ## What is signed, and what is not
 
+> **Loams Desktop (Electron) differs, per D677:** its Windows installer is signed through SignPath
+> and its Linux packages through SignPath (rpm) and GPG; its macOS build stays unsigned. That
+> pipeline, its secrets and its variables are in [`desktop.md`](desktop.md). The table below is
+> about the engine release.
+
 The owner ruled on 2026-10-03, and it is not the split issue #253 assumed:
 
 | Platform | State | What that means for a user |

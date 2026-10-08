@@ -9,6 +9,11 @@ Verified 2026-10-03 against <https://docs.signpath.io/trusted-build-systems/gith
 for the policy keys and against <https://signpath.org/terms> for what the
 Foundation requires of the project.
 
+> Loams Desktop (AP1e, D677) signs Windows too, through
+> `.github/workflows/desktop-sign.yml` (also on `ubuntu-latest`) with a second signing policy that
+> carries an Authenticode certificate and `signpath/artifact-configuration.desktop-windows.xml`.
+> The pipeline policies below apply to it unchanged. See `docs/release/desktop.md`.
+
 ## `github-build-policies`
 
 GitHub-hosted runners are not a preference here. The GitHub connector runs this

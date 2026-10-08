@@ -2,6 +2,11 @@
 // Run through `pnpm run package --linux|--mac|--win`; scripts/fetch-engine.mjs must have run first.
 const feed = process.env.LOAMS_UPDATE_FEED;
 const hasWindowsSigning = Boolean(process.env.WINDOWS_SIGN_KEYSTORE);
+// The release workflow (desktop-electron-release.yml) sets these to "-unsigned" when the matching
+// signing secrets are absent, so an unsigned file never carries a signed-looking name. Empty otherwise.
+// The suffix is part of the file name that latest*.yml records, so manifests stay consistent.
+const sfx = (name) => process.env[name] ?? "";
+const named = (suffix) => `loams-desktop-\${version}-\${os}-\${arch}${suffix}.\${ext}`;
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
@@ -35,7 +40,9 @@ module.exports = {
 		},
 		maintainer: "Loams <hello@loams.dev>",
 	},
+	appImage: { artifactName: named(sfx("LOAMS_SUFFIX_GPG")) },
 	deb: {
+		artifactName: named(sfx("LOAMS_SUFFIX_GPG")),
 		packageName: "loams-desktop", depends: ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0"] },
 	mac: {
 		target: ["dmg", "zip"],
@@ -52,9 +59,16 @@ module.exports = {
 		icon: "build/icon.ico",
 		...(hasWindowsSigning ? { sign: "scripts/windows-sign.cjs" } : {}),
 	},
-	rpm: { packageName: "loams-desktop" },
-	pacman: { packageName: "loams-desktop" },
-	nsis: { oneClick: false, allowToChangeInstallationDirectory: true },
+	rpm: { packageName: "loams-desktop", artifactName: named(sfx("LOAMS_SUFFIX_RPM")) },
+	pacman: { packageName: "loams-desktop", artifactName: named(sfx("LOAMS_SUFFIX_GPG")) },
+	// differentialPackage off: SignPath rewrites the installer after the build, which would leave a stale
+	// .blockmap; without one electron-updater downloads the full installer.
+	nsis: {
+		oneClick: false,
+		allowToChangeInstallationDirectory: true,
+		differentialPackage: false,
+		artifactName: named(sfx("LOAMS_SUFFIX_WIN")),
+	},
 	// The runtime feed is set by setFeedURL from the build-time LOAMS_UPDATE_FEED constant;
 	// this publish block only emits latest*.yml next to the artifacts when a feed is configured.
 	publish: feed ? [{ provider: "generic", url: feed }] : null,

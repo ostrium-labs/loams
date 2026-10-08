@@ -1,0 +1,486 @@
+name: Desktop (Electron) release
+
+# Cuts a draft GitHub Release of Loams Desktop from a `desktop-vX.Y.Z` tag (plan AP1e Task 31;
+# D676 Linux, D677 Windows through SignPath and macOS unsigned). docs/release/desktop.md is the page a
+# maintainer reads: every secret and variable below, and how to cut a release.
+#
+#   Linux    AppImage, deb, rpm, pacman for x64 and arm64. The rpm goes to SignPath (desktop-sign.yml);
+#            AppImage, deb, pacman and SHA256SUMS get detached GPG signatures (gpg-sign.sh).
+#   Windows  NSIS x64. The unpacked app is signed by SignPath BEFORE the installer is built from it,
+#            then the installer is signed too (signpath/artifact-configuration.desktop-windows.xml).
+#   macOS    dmg and zip for arm64 and x64, unsigned and not notarized; the notes carry the xattr step.
+#
+# Nothing here pretends to sign. A file whose signing secrets are absent is built with "-unsigned" in
+# its name, the release says so, and with the repository variable DESKTOP_REQUIRE_SIGNING = true the
+# `plan` job fails instead.
+on:
+  push:
+    tags: ['desktop-v*']
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CI: 'true'
+  NX_DAEMON: 'false'
+  NX_NO_CLOUD: 'true'
+  CARGO_TERM_COLOR: always
+  # Build-time constants of the updater (src/main/update/pubkey.ts). Public values, hence variables.
+  LOAMS_UPDATE_PUBKEY: ${{ vars.LOAMS_UPDATE_PUBKEY }}
+  # The generic provider appends latest*.yml, so this resolves to the newest published release.
+  LOAMS_UPDATE_FEED: ${{ vars.LOAMS_UPDATE_FEED || format('https://github.com/{0}/releases/latest/download', github.repository) }}
+
+jobs:
+  # The tag must be desktop-vX.Y.Z, match apps/desktop-electron/package.json, and sit on the default
+  # branch. Then decide, once, what this run can sign: every later job reads these outputs, so the
+  # file names, the signing calls and the release notes cannot disagree.
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+      sign_rpm: ${{ steps.plan.outputs.sign_rpm }}
+      sign_win: ${{ steps.plan.outputs.sign_win }}
+      gpg: ${{ steps.plan.outputs.gpg }}
+      update_key: ${{ steps.plan.outputs.update_key }}
+      sfx_gpg: ${{ steps.plan.outputs.sfx_gpg }}
+      sfx_rpm: ${{ steps.plan.outputs.sfx_rpm }}
+      sfx_win: ${{ steps.plan.outputs.sfx_win }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: validate the tag and decide what is signed
+        id: plan
+        env:
+          TAG: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          REQUIRE: ${{ vars.DESKTOP_REQUIRE_SIGNING }}
+          GPG_KEY: ${{ secrets.LOAMS_GPG_PRIVATE_KEY }}
+          UPDATE_KEY: ${{ secrets.LOAMS_UPDATE_SIGNING_KEY }}
+          SP_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          SP_ORG: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          SP_PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          SP_RPM_POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          SP_RPM_CONFIG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          SP_WIN_POLICY: ${{ vars.SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG }}
+          SP_WIN_CONFIG: ${{ vars.SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG }}
+          UPDATE_PUBKEY: ${{ vars.LOAMS_UPDATE_PUBKEY }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^desktop-v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?)$ ]]; then
+            echo "::error::$TAG is not a desktop-vX.Y.Z(-pre) tag"; exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          pkg=$(node -p 'require("./apps/desktop-electron/package.json").version')
+          [ "$pkg" = "$version" ] || { echo "::error::$TAG, but apps/desktop-electron/package.json is $pkg"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH" \
+            || { echo "::error::$TAG is not on $DEFAULT_BRANCH; refusing to release it"; exit 1; }
+
+          sp_common=true
+          [[ -n "$SP_TOKEN" && -n "$SP_ORG" && -n "$SP_PROJECT" ]] || sp_common=false
+          sign_rpm=false; [[ $sp_common = true && -n "$SP_RPM_POLICY" && -n "$SP_RPM_CONFIG" ]] && sign_rpm=true
+          sign_win=false; [[ $sp_common = true && -n "$SP_WIN_POLICY" && -n "$SP_WIN_CONFIG" ]] && sign_win=true
+          gpg=false; [[ -n "$GPG_KEY" ]] && gpg=true
+          update_key=false; [[ -n "$UPDATE_KEY" && -n "$UPDATE_PUBKEY" ]] && update_key=true
+
+          if [ "$REQUIRE" = true ]; then
+            missing=()
+            [ $sign_rpm = true ] || missing+=("SignPath rpm (SIGNPATH_API_TOKEN, SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG, SIGNPATH_ARTIFACT_CONFIGURATION_SLUG)")
+            [ $sign_win = true ] || missing+=("SignPath Windows (the same three plus SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG, SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG)")
+            [ $gpg = true ] || missing+=("LOAMS_GPG_PRIVATE_KEY")
+            [ $update_key = true ] || missing+=("LOAMS_UPDATE_SIGNING_KEY and variable LOAMS_UPDATE_PUBKEY")
+            if [ ${#missing[@]} -gt 0 ]; then
+              echo "::error::DESKTOP_REQUIRE_SIGNING is true and this release would ship unsigned. Missing: ${missing[*]}"
+              exit 1
+            fi
+          fi
+          [ $sign_rpm = true ] || echo "::warning::rpm will NOT be signed (SignPath not configured); it is named -unsigned"
+          [ $sign_win = true ] || echo "::warning::Windows installer will NOT be signed (SignPath not configured); it is named -unsigned"
+          [ $gpg = true ] || echo "::warning::no GPG signatures (LOAMS_GPG_PRIVATE_KEY unset); AppImage, deb, pacman are named -unsigned"
+          [ $update_key = true ] || echo "::warning::update manifests are not signed (LOAMS_UPDATE_SIGNING_KEY or LOAMS_UPDATE_PUBKEY unset); the in-app updater stays disabled"
+
+          unsigned() { [ "$1" = true ] && echo "" || echo "-unsigned"; }
+          {
+            echo "version=$version"
+            echo "prerelease=$([[ "$version" == *-* ]] && echo true || echo false)"
+            echo "sign_rpm=$sign_rpm"; echo "sign_win=$sign_win"; echo "gpg=$gpg"; echo "update_key=$update_key"
+            echo "sfx_gpg=$(unsigned $gpg)"; echo "sfx_rpm=$(unsigned $sign_rpm)"; echo "sfx_win=$(unsigned $sign_win)"
+          } >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: linux (${{ matrix.arch }})
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { arch: x64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    env:
+      LOAMS_SUFFIX_GPG: ${{ needs.plan.outputs.sfx_gpg }}
+      LOAMS_SUFFIX_RPM: ${{ needs.plan.outputs.sfx_rpm }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: build tools
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev rpm libarchive-tools fakeroot
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: desktop-release-linux-${{ matrix.arch }}
+      - name: engine (live and durable)
+        run: cargo build --release -p loams --features live,durable
+      - name: package
+        run: pnpm nx run loams-desktop-electron:package-linux --outputStyle=static
+      - name: split the rpm (SignPath) from the rest
+        run: |
+          set -euo pipefail
+          cd apps/desktop-electron/dist
+          mkdir -p ../out-rpm ../out-rest
+          mv ./*.rpm ../out-rpm/
+          mv ./*.AppImage ./*.deb ./*.pacman ../out-rest/
+          for y in latest*.yml; do [ -e "$y" ] && mv "$y" ../out-rest/; done
+          ls -l ../out-rpm ../out-rest
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-linux-${{ matrix.arch }}
+          path: apps/desktop-electron/out-rest/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rpm-${{ matrix.arch }}-in
+          path: apps/desktop-electron/out-rpm/*
+          if-no-files-found: error
+          retention-days: 14
+
+  sign-rpm:
+    name: sign rpm (${{ matrix.arch }})
+    needs: [plan, linux]
+    if: needs.plan.outputs.sign_rpm == 'true'
+    strategy:
+      matrix:
+        arch: [x64, arm64]
+    uses: ./.github/workflows/desktop-sign.yml
+    with:
+      artifact_name: rpm-${{ matrix.arch }}-in
+      kind: rpm
+      require_signing: true
+    secrets: inherit
+
+  windows-unpacked:
+    name: windows (unpacked app)
+    needs: plan
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: protoc and NASM
+        shell: pwsh
+        run: |
+          choco install --no-progress -y protobuf
+          choco install --no-progress -y nasm
+          "$env:ChocolateyInstall\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: desktop-release-windows
+      # The Windows engine is bundled only if it builds and starts. Otherwise the app ships without it
+      # (LOAMS_DESKTOP_NO_LOCAL_ENGINE=1, read by fetch-engine.mjs) and shows "not available on Windows yet".
+      - name: engine (bundled only if it builds and passes the smoke test)
+        id: engine
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          rustup target add x86_64-pc-windows-msvc
+          cargo build --release -p loams --features live,durable --target x86_64-pc-windows-msvc
+          exe=target/x86_64-pc-windows-msvc/release/loams.exe
+          # smoke test: the binary starts and reports its version
+          "$exe" --version
+          echo "LOAMS_BIN=$PWD/$exe" >> "$GITHUB_ENV"
+      - name: no Windows engine
+        if: steps.engine.outcome != 'success'
+        shell: bash
+        run: |
+          echo "::warning::the Windows engine did not build or pass its smoke test; shipping without it"
+          echo "LOAMS_DESKTOP_NO_LOCAL_ENGINE=1" >> "$GITHUB_ENV"
+      - name: unpacked app (unsigned)
+        run: pnpm nx run loams-desktop-electron:package-windows-unpacked --outputStyle=static
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-unpacked-in
+          path: apps/desktop-electron/dist/win-unpacked/
+          if-no-files-found: error
+          retention-days: 14
+
+  sign-win-unpacked:
+    name: sign Windows app
+    needs: [plan, windows-unpacked]
+    if: needs.plan.outputs.sign_win == 'true'
+    uses: ./.github/workflows/desktop-sign.yml
+    with:
+      artifact_name: win-unpacked-in
+      kind: windows
+      require_signing: true
+    secrets: inherit
+
+  # The installer is built from the (signed) unpacked app, so it packages signed executables.
+  windows-installer:
+    name: windows (NSIS installer)
+    needs: [plan, windows-unpacked, sign-win-unpacked]
+    if: ${{ !cancelled() && needs.windows-unpacked.result == 'success' && (needs.sign-win-unpacked.result == 'success' || needs.sign-win-unpacked.result == 'skipped') }}
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      LOAMS_SUFFIX_WIN: ${{ needs.plan.outputs.sfx_win }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.plan.outputs.sign_win == 'true' && 'win-unpacked-in-signed' || 'win-unpacked-in' }}
+          path: apps/desktop-electron/dist/win-unpacked
+      - name: NSIS installer from the unpacked app
+        shell: bash
+        run: pnpm --filter @loams/desktop run package --win nsis --x64 --prepackaged dist/win-unpacked --publish never
+      - name: split the installer (SignPath) from the manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/desktop-electron/dist
+          mkdir -p ../out-exe ../out-meta
+          mv ./*.exe ../out-exe/
+          mv latest.yml ../out-meta/ 2>/dev/null || echo "::warning::no latest.yml (LOAMS_UPDATE_FEED unset?)"
+          ls -l ../out-exe ../out-meta
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-installer-in
+          path: apps/desktop-electron/out-exe/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-win-meta
+          path: apps/desktop-electron/out-meta/*
+          if-no-files-found: ignore
+          retention-days: 14
+
+  sign-win-installer:
+    name: sign Windows installer
+    needs: [plan, windows-installer]
+    if: needs.plan.outputs.sign_win == 'true'
+    uses: ./.github/workflows/desktop-sign.yml
+    with:
+      artifact_name: win-installer-in
+      kind: windows
+      require_signing: true
+    secrets: inherit
+
+  macos:
+    name: macos (${{ matrix.arch }})
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { arch: arm64, runner: macos-15 }
+          - { arch: x64, runner: macos-15-intel }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: brew install protobuf
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: desktop-release-macos-${{ matrix.arch }}
+      - name: engine (live and durable)
+        run: cargo build --release -p loams --features live,durable
+      # identity: null in electron-builder.config.cjs: no signing, no notarization (D677).
+      - name: package (unsigned)
+        run: pnpm nx run loams-desktop-electron:package-macos --outputStyle=static
+      # Both runners write latest-mac.yml; keep the arm64 one under that name (the updater's version
+      # probe) and the x64 one beside it.
+      - name: keep the two manifests apart
+        if: matrix.arch == 'x64'
+        run: |
+          cd apps/desktop-electron/dist
+          [ -e latest-mac.yml ] && mv latest-mac.yml latest-mac-x64.yml || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-macos-${{ matrix.arch }}
+          path: |
+            apps/desktop-electron/dist/*.dmg
+            apps/desktop-electron/dist/*.zip
+            apps/desktop-electron/dist/latest-mac*.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: draft release
+    needs: [plan, linux, sign-rpm, windows-installer, sign-win-installer, macos]
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    env:
+      PLAN_SIGN_RPM: ${{ needs.plan.outputs.sign_rpm }}
+      PLAN_SIGN_WIN: ${{ needs.plan.outputs.sign_win }}
+      PLAN_GPG: ${{ needs.plan.outputs.gpg }}
+      PLAN_UPDATE_KEY: ${{ needs.plan.outputs.update_key }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --filter @loams/desktop
+
+      - name: gather the artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: desktop-*
+          path: ${{ runner.temp }}/release
+          merge-multiple: true
+      - name: unsigned rpms
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: rpm-*-in
+          path: ${{ runner.temp }}/release
+          merge-multiple: true
+      - name: SignPath-signed rpms replace them
+        if: env.PLAN_SIGN_RPM == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: rpm-*-in-signed
+          path: ${{ runner.temp }}/release
+          merge-multiple: true
+      - name: Windows installer
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ env.PLAN_SIGN_WIN == 'true' && 'win-installer-in-signed' || 'win-installer-in' }}
+          path: ${{ runner.temp }}/release
+
+      - name: the manifest follows the signed installer
+        if: env.PLAN_SIGN_WIN == 'true'
+        run: |
+          set -euo pipefail
+          rel="$RUNNER_TEMP/release"
+          if [ -e "$rel/latest.yml" ]; then
+            node apps/desktop-electron/scripts/refresh-manifest.mjs "$rel/latest.yml" "$rel"
+          fi
+
+      - name: sign the update manifests (Ed25519)
+        if: env.PLAN_UPDATE_KEY == 'true'
+        env:
+          LOAMS_UPDATE_SIGNING_KEY: ${{ secrets.LOAMS_UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for y in "$RUNNER_TEMP"/release/latest*.yml; do
+            node apps/desktop-electron/scripts/sign-manifest.mjs "$y"
+          done
+
+      - name: checksums
+        run: node apps/desktop-electron/scripts/checksums.mjs "$RUNNER_TEMP/release"
+
+      - name: GPG signatures
+        env:
+          LOAMS_GPG_PRIVATE_KEY: ${{ secrets.LOAMS_GPG_PRIVATE_KEY }}
+          LOAMS_GPG_KEY_ID: ${{ secrets.LOAMS_GPG_KEY_ID }}
+          LOAMS_GPG_PASSPHRASE: ${{ secrets.LOAMS_GPG_PASSPHRASE }}
+        run: bash apps/desktop-electron/scripts/gpg-sign.sh "$RUNNER_TEMP/release"
+
+      - name: release notes
+        run: |
+          set -euo pipefail
+          yn() { [ "$1" = true ] && echo "$2" || echo "$3"; }
+          {
+            echo "Loams Desktop $VERSION."
+            echo
+            echo "| Platform | Files | Signing |"
+            echo "|---|---|---|"
+            echo "| Linux x64, arm64 | AppImage, deb, rpm, pacman | rpm: $(yn "$PLAN_SIGN_RPM" 'SignPath (GPG)' '**unsigned**'); AppImage, deb, pacman: $(yn "$PLAN_GPG" 'detached GPG .sig files' '**unsigned**') |"
+            echo "| Windows x64 | NSIS installer | $(yn "$PLAN_SIGN_WIN" 'Authenticode, signed through SignPath' '**unsigned** (expect a SmartScreen warning)') |"
+            echo "| macOS arm64, x64 | dmg, zip | **unsigned and not notarized** |"
+            echo
+            echo "Verify downloads with \`SHA256SUMS\`$(yn "$PLAN_GPG" ' and SHA256SUMS.asc (detached GPG signature)' '; this release has no GPG signature')."
+            echo
+            echo "### macOS: first launch"
+            echo
+            echo "The app is not signed or notarized, so macOS quarantines the download. After copying it to /Applications, run:"
+            echo
+            echo '```sh'
+            echo 'xattr -dr com.apple.quarantine "/Applications/Loams Desktop.app"'
+            echo '```'
+            echo
+            echo "or right-click the app, choose Open, and confirm. macOS does not self-update: the app offers \"Download v...\" when a newer release exists."
+            echo
+            echo "### Updates"
+            echo
+            echo "Windows and the Linux AppImage update in place when the update manifest is signed$(yn "$PLAN_UPDATE_KEY" ' (it is, for this release)' ' (it is NOT for this release, so the in-app updater stays off)'). deb, rpm and pacman installs, and macOS, show \"Download v...\" instead."
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+
+      - name: create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/release"
+          ls -l
+          flags=(--draft --verify-tag --title "Loams Desktop $VERSION" --notes-file "$RUNNER_TEMP/notes.md")
+          [ "$PRERELEASE" = true ] && flags+=(--prerelease)
+          gh release create "$TAG" ./* "${flags[@]}" --repo "$GITHUB_REPOSITORY"
