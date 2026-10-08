@@ -128,21 +128,20 @@ fn rendered_config_parses_with_the_required_keys() {
 
 #[test]
 fn memory_limits_follow_the_class() {
-    // R2.1: tidb_server_memory_limit is 80 % of the pod memory, per-query
-    // quota 40 %; both in whole MiB, rounded down.
+    // R2.1/R2.2: tidb_server_memory_limit is '80%' of the memory TiDB sees
+    // (the container or pod limit, through cgroups), so it follows a class
+    // change by itself; the per-query quota is 40 % in bytes, by class.
     for class in Class::ALL {
         let sql = render::tidb_init_sql(class);
         let mib = class.memory_mib();
-        assert!(
-            sql.contains(&format!("tidb_server_memory_limit = '{}MB'", mib * 4 / 5)),
-            "{class}"
-        );
-        assert!(
-            sql.contains(&format!("tidb_mem_quota_query = {}", (mib * 2 / 5) << 20)),
-            "{class}"
-        );
+        assert!(sql.contains("SET GLOBAL tidb_server_memory_limit = '80%';"), "{class}: {sql}");
+        assert!(!sql.contains("MB'"), "no fixed size: {sql}");
+        assert!(sql.contains(&format!("tidb_mem_quota_query = {};", (mib * 2 / 5) << 20)), "{class}");
+        let globals = render::tidb_globals(class);
+        let names: Vec<&str> = globals.iter().map(|(n, _)| *n).collect();
+        assert_eq!(names, ["tidb_server_memory_limit", "tidb_mem_quota_query", "tidb_redact_log"]);
         // TiDB clamps a limit under 512 MiB up to 512 MiB (varsutil.go).
-        assert!(mib * 4 / 5 >= 512, "{class}");
+        assert!(class.server_memory_limit_mib() >= 512, "{class}");
     }
     assert_eq!(Class::Xs.memory_mib(), 768, "R2.1: xs is 0.75 GiB");
 }

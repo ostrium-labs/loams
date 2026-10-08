@@ -738,11 +738,15 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
     | `l` | 2 | 4 GiB | 3 276 MiB | 1 638 MiB | 1 000 | 0–2 |
     | `xl` | 4 | 8 GiB | 6 553 MiB | 3 276 MiB | 2 000 | 1–4 |
     | `2xl` | 8 | 16 GiB | 13 107 MiB | 6 553 MiB | 4 000 | 1–8 |
-- **R2.2 Memory limits and log redaction are bootstrap SQL, not `tidb.toml`.**
+- **R2.2 Memory limits and log redaction are bootstrap SQL, not `tidb.toml`** (amended in fix round 1).
   - **The constraint.** In v8.5.8, `tidb_server_memory_limit`, `tidb_mem_quota_query` and `tidb_redact_log` are global system variables. They are not config items, and `mem-quota-query` is a removed config item.
-  - **How they are applied.** `render::tidb` sets `initialize-sql-file = "/etc/tidb/init.sql"`, and `render::tidb_init_sql(class)` writes `SET GLOBAL` for all three. TiDB runs that file once, at the keyspace's first bootstrap.
-  - **Later changes.** The values live in the keyspace's `mysql.global_variables`. So a class change, or a copy branch whose class differs from its parent's, must re-apply `render::tidb_globals(class)` through `ri_control` (Tasks 7, 11 and 13).
-  - **Verified on the spike stack.** After bootstrap, `@@global.tidb_server_memory_limit = 614MB`, `tidb_redact_log` as rendered, and `tidb_mem_quota_query = 321912832`.
+  - **How they are applied.** `render::tidb` sets `initialize-sql-file = "/etc/tidb/init.sql"`. `render::tidb_init_sql(class)` writes `SET GLOBAL` for all three, and TiDB runs that file once, at the keyspace's first bootstrap.
+  - **The values.**
+    - `tidb_server_memory_limit = '80%'`, not a fixed size. TiDB resolves the percentage against the memory it sees (its cgroup limit, the class's container or pod limit) each time it starts, so the limit follows a class change by itself. The class table in R2.1 gives what 80 % comes to.
+    - `tidb_mem_quota_query` is 40 % of the class memory, in bytes, from `tidb_globals(class)`.
+    - `tidb_redact_log = 'OFF'` (R2.8).
+  - **Re-applying them is unconditional.** The values live in the keyspace's `mysql.global_variables`. A statement that fails in `initialize-sql-file` is only logged as a warning (`InitializeSQLFile error`, `pkg/session/bootstrap.go`). So the control plane re-applies `render::tidb_globals(class)` through `ri_control` after every bootstrap (Task 9), every copy (Task 13) and every class change. The `SET GLOBAL` statements are idempotent.
+  - **Task 9 checks them after bootstrap.** It reads the three values back and fails `CreateDatabase` if any differs. The `LOAMS_IT_SQLDB` test reads them back too, and checks that the member's log has no `InitializeSQLFile error`.
 - **R2.3 `enable-global-kill` is a top-level key.** In v8.5.8 it is a top-level key, not one under `[security]` (`experimental.enable-global-kill` is a removed key). It is rendered at the top level. TiDB's own `--config-check --config-strict` accepts both golden configs (`rendered_config_passes_tidb_config_check`, `LOAMS_IT_SQLDB=1`).
 - **R2.4 Rendering details** that the task did not spell out:
   - **Kept in the config, not on the command line.** `store = "tikv"` and `path` live in the config. Per-member `--host`, `-P`, `--status-host`, `--status` and `--advertise-address` stay on the command line, so every member shares one file.

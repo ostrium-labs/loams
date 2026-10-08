@@ -226,7 +226,7 @@ async fn local_runtime_starts_and_stops_a_pool() {
     // init.sql ran at bootstrap: R2.1's class memory and log redaction.
     assert_eq!(
         query_one(m0, "SELECT @@global.tidb_server_memory_limit").await,
-        "614MB"
+        "80%"
     );
     assert_eq!(
         query_one(m0, "SELECT @@global.tidb_redact_log").await,

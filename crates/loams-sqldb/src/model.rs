@@ -98,8 +98,8 @@ impl Class {
         self.memory_mib() << 20
     }
 
-    /// `tidb_server_memory_limit`: 80 % of the memory limit, whole MiB,
-    /// rounded down (R2.1).
+    /// What `tidb_server_memory_limit = '80%'` comes to, whole MiB rounded
+    /// down (R2.1; the class table). TiDB computes it from its cgroup limit.
     pub fn server_memory_limit_mib(self) -> u64 {
         self.memory_mib() * 4 / 5
     }

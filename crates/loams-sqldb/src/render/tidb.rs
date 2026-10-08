@@ -5,16 +5,18 @@
 //! global system variables in v8.5.8, not config items, so they are rendered
 //! as SQL ([`tidb_init_sql`]), which TiDB runs once, at the keyspace's first
 //! bootstrap (`initialize-sql-file`):
-//! - `tidb_server_memory_limit` and `tidb_mem_quota_query` (by class);
+//! - `tidb_server_memory_limit = '80%'` of the container or pod limit, and
+//!   `tidb_mem_quota_query` (40 % of the class memory, in bytes);
 //! - `tidb_redact_log = OFF` (R2.8): TiDB redacts error messages when they
 //!   are created, so ON or MARKER would send clients `Duplicate entry '?'`
 //!   and break MySQL compatibility (D735). The log pipeline protects the
 //!   slow and general logs instead: they are not shipped off the pod by
 //!   default.
 //!
-//! A class change or a copy branch whose class differs from its parent's must
-//! apply [`tidb_globals`] again with `SET GLOBAL` (they live in the keyspace's
-//! `mysql.global_variables`).
+//! The control plane re-applies [`tidb_globals`] with `SET GLOBAL`
+//! unconditionally after every bootstrap, copy and class change; the
+//! statements are idempotent. That also covers TiDB treating a failed
+//! `initialize-sql-file` statement as a warning only (R2.2).
 //!
 //! Nothing rendered here is a secret: TLS material is referenced by path.
 
@@ -110,14 +112,13 @@ level = \"info\"
 }
 
 /// The global variables a pool of `class` needs, as `(name, SQL literal)`.
-/// Applied by [`tidb_init_sql`] at bootstrap, and again with `SET GLOBAL`
-/// after a class change.
+/// Applied by [`tidb_init_sql`] at bootstrap, and re-applied with `SET
+/// GLOBAL` (idempotently) after every bootstrap, copy and class change.
 pub fn tidb_globals(class: Class) -> Vec<(&'static str, String)> {
     vec![
-        (
-            "tidb_server_memory_limit",
-            format!("'{}MB'", class.server_memory_limit_mib()),
-        ),
+        // A percentage of the memory TiDB sees (its cgroup limit), so it
+        // follows the class of whichever pod reads it (R2.2).
+        ("tidb_server_memory_limit", "'80%'".to_owned()),
         (
             "tidb_mem_quota_query",
             class.mem_quota_query_bytes().to_string(),
