@@ -1,25 +1,23 @@
 {
-    "user": {
-        "id": "usr_01",
-        "name": "Priya Raman",
-        "email": "priya@acme.dev",
-        "avatar_url": null,
-        "two_factor": true,
-        "sso": null,
-        "created_at": "2026-06-10T07:00:38Z",
-        "last_seen_at": "2026-10-08T06:58:38Z"
-    },
-    "org": {
-        "id": "org_acme",
-        "name": "Acme Robotics",
-        "slug": "acme",
-        "created_at": "2026-06-10T07:00:38Z",
-        "require_two_factor": false,
-        "allowed_domains": [
-            "acme.dev"
-        ]
-    },
-    "role": "owner",
-    "csrf_token": "csrf_mock_2d5b7c",
-    "expires_at": "2026-10-08T19:00:38Z"
+	"user": {
+		"id": "usr_01",
+		"name": "Priya Raman",
+		"email": "priya@acme.dev",
+		"avatar_url": null,
+		"two_factor": true,
+		"sso": null,
+		"created_at": "2026-06-10T07:00:38Z",
+		"last_seen_at": "2026-10-08T06:58:38Z"
+	},
+	"org": {
+		"id": "org_acme",
+		"name": "Acme Robotics",
+		"slug": "acme",
+		"created_at": "2026-06-10T07:00:38Z",
+		"require_two_factor": false,
+		"allowed_domains": ["acme.dev"]
+	},
+	"role": "owner",
+	"csrf_token": "csrf_mock_2d5b7c",
+	"expires_at": "2026-10-08T19:00:38Z"
 }

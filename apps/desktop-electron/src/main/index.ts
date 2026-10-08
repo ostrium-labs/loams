@@ -6,6 +6,8 @@ import {
 	installAppProtocol,
 	registerAppScheme,
 } from "./protocol/handler.electron";
+import { secureWindow } from "./security/install.electron";
+import { initSingleInstance } from "./shell/single-instance.electron";
 
 registerAppScheme();
 
@@ -34,34 +36,29 @@ function createWindow(): BrowserWindow {
 			webviewTag: false,
 		},
 	});
+	secureWindow(win);
 	win.once("ready-to-show", () => win.show());
 	void win.loadURL("loams-app://console/ui/cordis.html");
 	return win;
 }
 
-if (!app.requestSingleInstanceLock()) {
-	app.quit();
-} else {
-	app.on("second-instance", () => {
-		const [win] = BrowserWindow.getAllWindows();
-		if (win) {
-			if (win.isMinimized()) win.restore();
-			win.focus();
-		}
-	});
-	void app.whenReady().then(async () => {
-		app.setAppUserModelId("dev.loams.desktop");
-		installAppProtocol(session.defaultSession, {
-			distRoot: (await appPaths()).consoleDist,
-			activeServer,
-			localShim: () => null, // Task 6
+initSingleInstance({
+	getWindow: () => BrowserWindow.getAllWindows()[0],
+	onPrimary: () => {
+		void app.whenReady().then(async () => {
+			app.setAppUserModelId("dev.loams.desktop");
+			installAppProtocol(session.defaultSession, {
+				distRoot: (await appPaths()).consoleDist,
+				activeServer,
+				localShim: () => null, // Task 6
+			});
+			createWindow();
+			app.on("activate", () => {
+				if (BrowserWindow.getAllWindows().length === 0) createWindow();
+			});
 		});
-		createWindow();
-		app.on("activate", () => {
-			if (BrowserWindow.getAllWindows().length === 0) createWindow();
+		app.on("window-all-closed", () => {
+			if (process.platform !== "darwin") app.quit();
 		});
-	});
-	app.on("window-all-closed", () => {
-		if (process.platform !== "darwin") app.quit();
-	});
-}
+	},
+});
