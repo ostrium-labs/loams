@@ -92,6 +92,7 @@ async fn kill_is_the_cancel() {
     let pool = pool("cancel", small(2)).await;
     let mut lease = pool.acquire("ns-cancel").await.expect("a worker");
     let pid = lease.pid();
+    let spawned_before = pool.stats().spawned_total;
 
     lease
         .start(statement("SELECT count() FROM numbers(1e12)", "TSV"))
@@ -135,6 +136,14 @@ async fn kill_is_the_cancel() {
     assert!(
         eventually(Duration::from_secs(20), || pool.stats().idle_unbound >= 1).await,
         "the pool is replenished: {:?}",
+        pool.stats()
+    );
+    assert!(
+        eventually(Duration::from_secs(20), || {
+            pool.stats().spawned_total > spawned_before
+        })
+        .await,
+        "a worker was started after the kill: {:?}",
         pool.stats()
     );
     let mut next = pool.acquire("ns-cancel").await.expect("another worker");
