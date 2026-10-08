@@ -43,6 +43,8 @@ export class EngineSupervisor extends EventEmitter {
 	private livePd: string | null;
 	private readonly log: RotatingLog;
 	private stopping: Promise<void> | null = null;
+	/** Set by dispose() (app quit): start and restarts are ignored from then on. */
+	private disposed = false;
 
 	constructor(private readonly deps: SupervisorDeps) {
 		super();
@@ -65,6 +67,7 @@ export class EngineSupervisor extends EventEmitter {
 	}
 
 	start(): void {
+		if (this.disposed) return;
 		if (this.cur.phase === "starting" || this.cur.phase === "ready") return;
 		this.restarts = [];
 		const gen = ++this.generation;
@@ -100,9 +103,15 @@ export class EngineSupervisor extends EventEmitter {
 		this.set({ phase: "stopped" });
 	}
 
+	/** Stops the engine for good (app quit): later start/setLivePd calls do nothing. */
+	async dispose(): Promise<void> {
+		this.disposed = true;
+		await this.stop();
+	}
+
 	/** Changes the live PD endpoint; restarts a running engine so the flags take effect. */
 	async setLivePd(pd: string | null): Promise<void> {
-		if (pd === this.livePd) return;
+		if (this.disposed || pd === this.livePd) return;
 		this.livePd = pd;
 		if (this.cur.phase === "starting" || this.cur.phase === "ready") {
 			await this.stop();

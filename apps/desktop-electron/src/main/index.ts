@@ -14,8 +14,8 @@ import {
 import type { EngineState } from "../shared/contracts";
 import { VERSION_ARG } from "../shared/version";
 import { registerChatIpc } from "./agent/ipc.electron";
-import { registerTools } from "./agent/tools";
 import type { ChatService } from "./agent/service";
+import { registerTools } from "./agent/tools";
 import { appPaths } from "./app-paths";
 import { ConnectorCatalog, catalogPath } from "./connectors/catalog";
 import { registerConnectorsIpc } from "./connectors/ipc.electron";
@@ -40,6 +40,7 @@ import { readSetting } from "./settings";
 import { getMainWindow, setMainWindow } from "./shell/main-window";
 import { installAppMenu } from "./shell/menu.electron";
 import { DOCS_URL } from "./shell/menu-model";
+import { quitSequence } from "./shell/quit";
 import { reveal } from "./shell/reveal";
 import { registerShellIpc } from "./shell/shell-ipc.electron";
 import { initSingleInstance } from "./shell/single-instance.electron";
@@ -70,7 +71,6 @@ crashReporter.start({ uploadToServer: false });
 let registry: ServerRegistry;
 let engine: EngineSupervisor | undefined;
 let updater: UpdaterHandle | undefined;
-let installingOnQuit = false;
 let factory: FactoryHost | undefined;
 let factoryViews: FactoryViews | undefined;
 let factoryEmbed: FactoryEmbed | undefined;
@@ -318,28 +318,27 @@ const singleInstance = initSingleInstance({
 			app.on("activate", () => showMainWindow(open));
 		});
 		let quitting = false;
-		let chatStopping: Promise<void> | undefined;
+		let quitDone = false;
 		app.on("before-quit", (e) => {
 			isQuitting = true;
-			// Stop running agent turns and let their chat files land, bounded (below).
-			chatStopping ??= chat?.dispose().catch(() => undefined);
+			if (quitDone) return;
+			e.preventDefault();
+			if (quitting) return;
+			quitting = true;
 			tray?.destroy();
 			factoryEmbed?.closeAll();
 			factoryViews?.closeAll();
-			// Quit-time install of a hash-verified download (D661); runs prepareToInstall first.
-			if (updater?.hasVerifiedDownload() && !installingOnQuit) {
-				installingOnQuit = true;
-				e.preventDefault();
-				void updater.installOnQuit().finally(() => app.quit());
-				return;
-			}
-			if (quitting || (!engine && !chatStopping)) return;
-			e.preventDefault();
-			quitting = true;
-			void Promise.race([
-				Promise.all([engine?.stop(), chatStopping]),
-				new Promise((r) => setTimeout(r, 6000)),
-			]).finally(() => app.quit());
+			// State first (agent turns stopped, chat files written), then the quit-time install of
+			// a hash-verified download (D661; it stops the engine itself) or a plain engine stop.
+			void quitSequence({
+				flush: async () => chat?.dispose(),
+				stopEngine: async () => engine?.dispose(),
+				hasVerifiedDownload: () => updater?.hasVerifiedDownload() === true,
+				installOnQuit: () => updater?.installOnQuit() ?? Promise.resolve(false),
+			}).finally(() => {
+				quitDone = true;
+				app.quit();
+			});
 		});
 		app.on("window-all-closed", () => {
 			if (process.platform !== "darwin") app.quit();

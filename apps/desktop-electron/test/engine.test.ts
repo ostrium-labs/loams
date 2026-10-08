@@ -203,6 +203,32 @@ describe("engine", () => {
 		expect(seen).toHaveLength(3);
 	});
 
+	it("disposed_supervisor_ignores_start_and_restart", async () => {
+		const seen: string[][] = [];
+		const sup = new EngineSupervisor(
+			deps({
+				spawn: asSpawn((_c: string, a: string[]) => {
+					seen.push(a);
+					return new FakeChild();
+				}),
+				fetch: (async () => ({ ok: true })) as unknown as typeof fetch,
+				liveSupported: async () => true,
+			}),
+		);
+		sup.start();
+		await until(() => sup.state().phase === "ready");
+		// A tikv state change during quit must not bring the engine back.
+		const disposing = sup.dispose();
+		const restart = sup.setLivePd("127.0.0.1:19379");
+		await disposing;
+		await restart;
+		sup.start();
+		await new Promise((r) => setTimeout(r, 30));
+		expect(sup.state().phase).toBe("stopped");
+		expect(seen).toHaveLength(1);
+		await sup.dispose(); // idempotent
+	});
+
 	it("missing_binary_is_failed_not_thrown", async () => {
 		const sup = new EngineSupervisor(deps({ binary: () => null }));
 		sup.start();
