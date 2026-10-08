@@ -27,7 +27,24 @@ export interface LiveTool {
 	run(input: unknown, ctx: LiveToolContext): Promise<Json>;
 }
 
-/** A plain JSON value as a proto3-JSON `loams.live.v1.Value`. */
+const I64_MIN = -(2n ** 63n);
+const I64_MAX = 2n ** 63n - 1n;
+
+/** The single string of a `{ "<key>": "<string>" }` wrapper, else undefined. */
+function wrapper(x: object, key: string): string | undefined {
+	const keys = Object.keys(x);
+	const v = (x as Record<string, unknown>)[key];
+	return keys.length === 1 && keys[0] === key && typeof v === "string"
+		? v
+		: undefined;
+}
+
+/**
+ * A plain JSON value as a proto3-JSON `loams.live.v1.Value`. The canonical JSON
+ * form is shared with the Live page (web/plugins/live/src/value.ts):
+ * `{"$int64":"<decimal>"}` is an int64 (use it beyond 2^53) and
+ * `{"$bytes":"<base64>"}` is bytes.
+ */
 export function toValueJson(x: unknown): Json {
 	if (x === null || x === undefined) return { nullValue: {} };
 	if (typeof x === "boolean") return { boolValue: x };
@@ -37,7 +54,18 @@ export function toValueJson(x: unknown): Json {
 			? { int64Value: String(x) }
 			: { doubleValue: x };
 	if (Array.isArray(x)) return { arrayValue: { values: x.map(toValueJson) } };
-	if (typeof x === "object")
+	if (typeof x === "object") {
+		const big = wrapper(x, "$int64");
+		if (big !== undefined) {
+			if (!/^-?\d+$/.test(big))
+				throw new Error(`$int64 takes a decimal integer, not "${big}"`);
+			const n = BigInt(big);
+			if (n < I64_MIN || n > I64_MAX)
+				throw new Error(`${big} is outside the int64 range`);
+			return { int64Value: n.toString() };
+		}
+		const bytes = wrapper(x, "$bytes");
+		if (bytes !== undefined) return { bytesValue: bytes };
 		return {
 			objectValue: {
 				fields: Object.fromEntries(
@@ -45,16 +73,21 @@ export function toValueJson(x: unknown): Json {
 				),
 			},
 		};
+	}
 	throw new Error(`cannot encode a ${typeof x} as a Live value`);
 }
 
-/** The inverse of `toValueJson`. An int64 outside the safe range stays a string. */
+/** The inverse of `toValueJson`: an int64 beyond 2^53 is `{"$int64":"<decimal>"}`. */
 export function fromValueJson(v: unknown): Json {
 	if (!v || typeof v !== "object") return null;
 	const o = v as Record<string, unknown>;
 	if ("int64Value" in o) {
-		const n = Number(o.int64Value);
-		return Number.isSafeInteger(n) ? n : String(o.int64Value);
+		const text = String(o.int64Value);
+		const n = BigInt(text);
+		return n >= BigInt(Number.MIN_SAFE_INTEGER) &&
+			n <= BigInt(Number.MAX_SAFE_INTEGER)
+			? Number(n)
+			: { $int64: n.toString() };
 	}
 	for (const k of ["doubleValue", "boolValue", "stringValue"])
 		if (k in o) return o[k] as Json;
@@ -139,7 +172,7 @@ export const liveTools: LiveTool[] = [
 	{
 		name: "live_query",
 		description:
-			"Read documents of a Loams Live table, optionally through an index with an equality prefix (`eq`), newest or oldest first.",
+			'Read documents of a Loams Live table, optionally through an index with an equality prefix (`eq`), newest or oldest first. Integers beyond 2^53 come back as {"$int64":"<decimal>"} and bytes as {"$bytes":"<base64>"}.',
 		access: "read",
 		inputSchema: {
 			type: "object",
@@ -171,7 +204,7 @@ export const liveTools: LiveTool[] = [
 	{
 		name: "live_mutate",
 		description:
-			"Insert, patch or delete one Loams Live document. Always sent with an idempotency key, so a retry does not apply twice. Changes data: needs approval.",
+			'Insert, patch or delete one Loams Live document. Always sent with an idempotency key, so a retry does not apply twice. Changes data: needs approval. In `fields`, an integer beyond 2^53 is written {"$int64":"<decimal>"} and bytes as {"$bytes":"<base64>"}; documents read back use the same forms.',
 		access: "write",
 		inputSchema: {
 			type: "object",

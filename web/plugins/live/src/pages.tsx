@@ -19,7 +19,7 @@ import {
 } from '@loams/ui';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import type { Doc, LiveApi, QueryArgs, TableInfo } from './client.js';
-import type { Json } from './value.js';
+import { type Json, parseJson } from './value.js';
 
 const PAGE = 50;
 export const DEPLOY_TIP = 'Not yet available (R1 Task 13)';
@@ -28,8 +28,15 @@ export function errorText(e: unknown): string {
   return e instanceof ConnectError ? e.rawMessage : e instanceof Error ? e.message : String(e);
 }
 
-/** Live is not running in this engine (the protocol proxy answers 503). */
-const isNotRunning = (e: unknown) => e instanceof ConnectError && e.code === Code.Unavailable;
+/**
+ * Live is not running in the local engine: the protocol proxy answers 503 with
+ * `{code: 'live_not_running', message}` (protocol/route.ts). Connect does not know that
+ * code, so the error arrives as Unavailable with the proxy's message; the message is
+ * what tells it from any other Unavailable (an engine or network fault).
+ */
+export const LIVE_NOT_RUNNING = 'Loams Live is not running in the local engine.';
+const isNotRunning = (e: unknown) =>
+  e instanceof ConnectError && e.code === Code.Unavailable && e.rawMessage === LIVE_NOT_RUNNING;
 const isUnserved = (e: unknown) => e instanceof ConnectError && e.code === Code.Unimplemented;
 
 const Mono = ({ children }: { children: ReactNode }) => (
@@ -147,7 +154,7 @@ interface Sel {
 function parseEq(text: string): { eq?: Json[]; error?: string } {
   if (!text.trim()) return {};
   try {
-    const v = JSON.parse(text) as Json;
+    const v = parseJson(text);
     return Array.isArray(v) ? { eq: v } : { error: 'The filter is a JSON array, like ["alice"].' };
   } catch {
     return { error: 'The filter is not valid JSON.' };
@@ -232,7 +239,7 @@ function queryArgs(sel: Sel, limit?: number): QueryArgs | undefined {
 
 // ---- documents ------------------------------------------------------------------
 
-export function DocumentsTab({ api, tables, sel, onSel }: TabProps) {
+export function DocumentsTab({ api, tables, sel, onSel, onGone }: TabProps) {
   const [limit, setLimit] = useState(PAGE);
   const [rows, setRows] = useState<Doc[]>();
   const [error, setError] = useState<string>();
@@ -247,9 +254,13 @@ export function DocumentsTab({ api, tables, sel, onSel }: TabProps) {
     api
       .query(args, ctl.signal)
       .then(setRows)
-      .catch((e) => !ctl.signal.aborted && setError(errorText(e)));
+      .catch((e) => {
+        if (ctl.signal.aborted) return;
+        if (isNotRunning(e)) onGone();
+        else setError(errorText(e));
+      });
     return () => ctl.abort();
-  }, [api, key, tick]);
+  }, [api, key, tick, onGone]);
   return (
     <div className="flex flex-col gap-4">
       <Controls
@@ -281,11 +292,12 @@ export function DocumentsTab({ api, tables, sel, onSel }: TabProps) {
 
 // ---- live query ---------------------------------------------------------------
 
-export function WatchTab({ api, tables, sel, onSel }: TabProps) {
+export function WatchTab({ api, tables, sel, onSel, onGone }: TabProps) {
   const [rows, setRows] = useState<Doc[]>([]);
   const [transitions, setTransitions] = useState(0);
   const [live, setLive] = useState(false);
   const [error, setError] = useState<string>();
+  const [ended, setEnded] = useState(false);
   const ctl = useRef<AbortController | undefined>(undefined);
 
   const stop = useCallback(() => {
@@ -303,6 +315,7 @@ export function WatchTab({ api, tables, sel, onSel }: TabProps) {
     const c = new AbortController();
     ctl.current = c;
     setError(undefined);
+    setEnded(false);
     setTransitions(0);
     setRows([]);
     setLive(true);
@@ -313,8 +326,13 @@ export function WatchTab({ api, tables, sel, onSel }: TabProps) {
         if (ev.error) setError(ev.error);
         else setRows(ev.rows ?? []);
       }
+      // The server closed the stream (an engine restart, a dropped connection).
+      if (!c.signal.aborted) setEnded(true);
     } catch (e) {
-      if (!c.signal.aborted) setError(errorText(e));
+      if (!c.signal.aborted) {
+        if (isNotRunning(e)) onGone();
+        else setError(errorText(e));
+      }
     } finally {
       if (ctl.current === c) {
         ctl.current = undefined;
@@ -330,6 +348,10 @@ export function WatchTab({ api, tables, sel, onSel }: TabProps) {
         sel={sel}
         onChange={(s) => {
           stop();
+          setRows([]);
+          setTransitions(0);
+          setError(undefined);
+          setEnded(false);
           onSel(s);
         }}
       >
@@ -352,6 +374,11 @@ export function WatchTab({ api, tables, sel, onSel }: TabProps) {
         </span>
       </div>
       {error && <Err title="The watch reported an error" message={error} />}
+      {ended && !live && (
+        <Notice tone="info" title="The watch ended">
+          The server closed the stream. Press Watch to start it again.
+        </Notice>
+      )}
       {(live || transitions > 0) && <DocTable rows={rows} caption="Live documents" />}
       {!live && transitions === 0 && !error && (
         <Empty title="Not watching">
@@ -372,7 +399,7 @@ interface Pending {
 
 function parseObject(text: string): { value?: { [k: string]: Json }; error?: string } {
   try {
-    const v = JSON.parse(text) as Json;
+    const v = parseJson(text);
     if (v && typeof v === 'object' && !Array.isArray(v)) return { value: v };
     return { error: 'The fields are a JSON object.' };
   } catch {
@@ -380,7 +407,7 @@ function parseObject(text: string): { value?: { [k: string]: Json }; error?: str
   }
 }
 
-export function MutateTab({ api, tables, sel }: TabProps) {
+export function MutateTab({ api, tables, sel, onGone }: TabProps) {
   const [insertTable, setInsertTable] = useState(sel.table || tables[0]?.name || '');
   const [insertFields, setInsertFields] = useState('{\n  "name": "example"\n}');
   const [patchId, setPatchId] = useState('');
@@ -418,7 +445,10 @@ export function MutateTab({ api, tables, sel }: TabProps) {
       );
       setPending(undefined);
     } catch (e) {
-      setError(errorText(e));
+      if (isNotRunning(e)) {
+        setPending(undefined);
+        onGone();
+      } else setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -576,6 +606,8 @@ export interface TabProps {
   tables: TableInfo[];
   sel: Sel;
   onSel: (s: Sel) => void;
+  /** Live went away under the view: go back to the needs-TiKV state. */
+  onGone: () => void;
 }
 
 const TABS = [
@@ -605,6 +637,7 @@ export function LivePage({
   const [sel, setSel] = useState<Sel>({ table: '', index: '', eq: '' });
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' });
   const [tick, setTick] = useState(0);
+  const gone = useCallback(() => setLoaded({ state: 'needs-tikv' }), []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is the reload trigger
   useEffect(() => {
@@ -729,13 +762,13 @@ export function LivePage({
             ))}
           </div>
           {tab === 'documents' && (
-            <DocumentsTab api={api} tables={loaded.tables} sel={sel} onSel={setSel} />
+            <DocumentsTab api={api} tables={loaded.tables} sel={sel} onSel={setSel} onGone={gone} />
           )}
           {tab === 'watch' && (
-            <WatchTab api={api} tables={loaded.tables} sel={sel} onSel={setSel} />
+            <WatchTab api={api} tables={loaded.tables} sel={sel} onSel={setSel} onGone={gone} />
           )}
           {tab === 'mutate' && (
-            <MutateTab api={api} tables={loaded.tables} sel={sel} onSel={setSel} />
+            <MutateTab api={api} tables={loaded.tables} sel={sel} onSel={setSel} onGone={gone} />
           )}
         </>
       )}

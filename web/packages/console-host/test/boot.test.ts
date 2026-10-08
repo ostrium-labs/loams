@@ -100,8 +100,10 @@ describe('boot instance refresh', () => {
     const warm = createMockControl().transport;
     let ready = false;
     const transport = {
-      unary: (...a: Parameters<Transport['unary']>) => (ready ? warm : cold).unary(...a),
-      stream: (...a: Parameters<Transport['stream']>) => (ready ? warm : cold).stream(...a),
+      unary: (...a: Parameters<Transport['unary']>) =>
+        (ready ? warm : cold).unary(...a),
+      stream: (...a: Parameters<Transport['stream']>) =>
+        (ready ? warm : cold).stream(...a),
     } as Transport;
     let stale: () => void = () => {};
     const platform: PluginModule = {

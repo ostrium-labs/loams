@@ -33,6 +33,25 @@ describe("live agent tools", () => {
 		expect(fromValueJson(toValueJson(v))).toEqual(v);
 		expect(toValueJson(3)).toEqual({ int64Value: "3" });
 	});
+	it("keeps big ints and bytes exact in the canonical forms", () => {
+		for (const text of [
+			"9223372036854775807",
+			"-9223372036854775808",
+			"9007199254740993",
+		]) {
+			const wire = toValueJson({ $int64: text });
+			expect(wire).toEqual({ int64Value: text });
+			expect(fromValueJson(wire)).toEqual({ $int64: text });
+		}
+		expect(fromValueJson({ int64Value: "5" })).toBe(5);
+		expect(toValueJson({ $bytes: "AQID" })).toEqual({ bytesValue: "AQID" });
+		expect(fromValueJson({ bytesValue: "AQID" })).toEqual({ $bytes: "AQID" });
+		expect(() => toValueJson({ $int64: "9223372036854775808" })).toThrow(
+			/int64 range/,
+		);
+		expect(() => toValueJson({ $int64: "1.5" })).toThrow(/decimal/);
+		expect(tool("live_mutate").description).toContain("$int64");
+	});
 	it("live_tables queries _system:tables", async () => {
 		const { calls, ctx } = fake({
 			ts: "5",

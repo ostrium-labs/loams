@@ -1,3 +1,4 @@
+import { fromBinary, toBinary } from '@bufbuild/protobuf';
 import { Code, ConnectError, createRouterTransport } from '@connectrpc/connect';
 import { validateManifest } from '@loams/console-host';
 import { live, liveValue } from '@loams/proto';
@@ -5,9 +6,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import pkg from '../package.json';
 import { createLiveApi } from '../src/client.js';
-import { LivePage } from '../src/pages.js';
+import { LIVE_NOT_RUNNING, LivePage } from '../src/pages.js';
 import { liveTransport } from '../src/transport.js';
-import { fromJs, type Json, toJs } from '../src/value.js';
+import { fromJs, type Json, parseJson, toJs } from '../src/value.js';
 
 afterEach(cleanup);
 
@@ -66,6 +67,8 @@ interface Server {
   queryRows?: Json[];
   mutate?: (req: live.MutateRequest) => void;
   tablesError?: ConnectError;
+  queryError?: ConnectError;
+  endWatch?: boolean;
   watchSeen?: { aborted: boolean; started: number };
   feed?: ReturnType<typeof channel<unknown>>;
 }
@@ -78,6 +81,7 @@ function apiWith(s: Server = {}) {
           if (s.tablesError) throw s.tablesError;
           return { ts: 1n, result: fromJs(TABLES) };
         }
+        if (s.queryError) throw s.queryError;
         return { ts: 1n, result: fromJs(s.queryRows ?? []) };
       },
       mutate(req) {
@@ -91,7 +95,7 @@ function apiWith(s: Server = {}) {
           s.feed?.cancel();
         });
         const feed = s.feed;
-        if (!feed) return;
+        if (!feed || s.endWatch) return;
         for await (const t of feed.drain(ctx.signal)) yield t as never;
       },
     });
@@ -211,7 +215,7 @@ describe('live page', () => {
 
   it('needs_tikv_state', async () => {
     const { desktop, start } = stacksFake();
-    const tablesError = new ConnectError('Loams Live is not running', Code.Unavailable);
+    const tablesError = new ConnectError(LIVE_NOT_RUNNING, Code.Unavailable);
     render(<LivePage api={apiWith({ tablesError })} desktop={desktop} retryMs={60_000} />);
     expect(await screen.findByText('Live needs the TiKV stack')).toBeTruthy();
     expect(screen.getByText('TiKV stack')).toBeTruthy();
@@ -220,7 +224,7 @@ describe('live page', () => {
   });
 
   it('leaves_the_needs_state_once_live_answers', async () => {
-    const s: Server = { tablesError: new ConnectError('off', Code.Unavailable) };
+    const s: Server = { tablesError: new ConnectError(LIVE_NOT_RUNNING, Code.Unavailable) };
     render(<LivePage api={apiWith(s)} desktop={stacksFake().desktop} retryMs={30} />);
     await screen.findByText('Live needs the TiKV stack');
     s.tablesError = undefined;
@@ -235,14 +239,121 @@ describe('live page', () => {
   });
 });
 
+describe('live page behaviour', () => {
+  it('failed_mutate_then_confirm_reuses_the_key', async () => {
+    const seen: live.MutateRequest[] = [];
+    let n = 0;
+    const api = apiWith({
+      mutate: (r) => {
+        seen.push(r);
+        if (++n === 1) throw new ConnectError('boom', Code.Internal);
+      },
+    });
+    render(<LivePage api={api} desktop={stacksFake().desktop} />);
+    await screen.findByRole('table', { name: 'Tables' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Mutate' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    const dialog = await screen.findByRole('dialog', { hidden: true });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    expect(await screen.findByText('boom')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(seen).toHaveLength(2));
+    expect(seen[1]?.idempotencyKey).toBe(seen[0]?.idempotencyKey);
+    expect(seen[0]?.idempotencyKey).toBeTruthy();
+  });
+
+  it('mutate_keeps_big_integers_exact', async () => {
+    const seen: live.MutateRequest[] = [];
+    render(
+      <LivePage api={apiWith({ mutate: (r) => seen.push(r) })} desktop={stacksFake().desktop} />,
+    );
+    await screen.findByRole('table', { name: 'Tables' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Mutate' }));
+    fireEvent.change(screen.getByLabelText('Fields (JSON)'), {
+      target: { value: '{"n": 9223372036854775807}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    const dialog = await screen.findByRole('dialog', { hidden: true });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(seen).toHaveLength(1));
+    expect(toJs(seen[0]?.args)).toEqual({
+      table: 'messages',
+      fields: { n: { $int64: '9223372036854775807' } },
+    });
+  });
+
+  it('other_unavailable_is_a_generic_error_with_retry', async () => {
+    const tablesError = new ConnectError('connection refused', Code.Unavailable);
+    render(<LivePage api={apiWith({ tablesError })} desktop={stacksFake().desktop} retryMs={20} />);
+    expect(await screen.findByText('Could not load tables')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+    expect(screen.queryByText('Live needs the TiKV stack')).toBeNull();
+  });
+
+  it('live_going_away_on_the_ready_view_returns_to_needs_state', async () => {
+    const s: Server = {};
+    render(<LivePage api={apiWith(s)} desktop={stacksFake().desktop} retryMs={60_000} />);
+    await screen.findByRole('table', { name: 'Tables' });
+    s.queryError = new ConnectError(LIVE_NOT_RUNNING, Code.Unavailable);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('Live needs the TiKV stack')).toBeTruthy();
+  });
+
+  it('watch_clears_on_table_change_and_reports_a_closed_stream', async () => {
+    const feed = channel<unknown>();
+    const s: Server = { feed };
+    render(<LivePage api={apiWith(s)} desktop={stacksFake().desktop} />);
+    await screen.findByRole('table', { name: 'Tables' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Live query' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
+    feed.push(transition([doc('a1')]));
+    expect(await screen.findByText('a1')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Table'), { target: { value: 'users' } });
+    await waitFor(() => expect(screen.queryByText('a1')).toBeNull());
+    expect(screen.getByText('0', { selector: 'span.font-mono' })).toBeTruthy();
+    // The server ending the stream is reported.
+    s.endWatch = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Watch' }));
+    expect(await screen.findByText('The watch ended')).toBeTruthy();
+  });
+});
+
 describe('values', () => {
+  const BIG = ['9223372036854775807', '-9223372036854775808', '9007199254740993'];
+
   it('roundtrips_plain_json', () => {
     const v = { a: 1, b: 1.5, c: 'x', d: [true, null], e: { f: 2 } };
     expect(toJs(fromJs(v))).toEqual(v);
     expect(fromJs(1).kind.case).toBe('int64Value');
     expect(fromJs(1.5).kind.case).toBe('doubleValue');
-    const big = liveValue.ValueSchema;
-    expect(big.typeName).toBe('loams.live.v1.Value');
+    // Big integers and bytes: exact through JS and through the wire encoding.
+    for (const n of BIG) {
+      const js = { $int64: n };
+      const value = fromJs(js);
+      expect(value.kind).toEqual({ case: 'int64Value', value: BigInt(n) });
+      expect(toJs(value)).toEqual(js);
+      const wire = fromBinary(liveValue.ValueSchema, toBinary(liveValue.ValueSchema, value));
+      expect(toJs(wire)).toEqual(js);
+    }
+    const bytes = { $bytes: 'AQID' };
+    const bv = fromJs(bytes);
+    expect(bv.kind).toEqual({ case: 'bytesValue', value: new Uint8Array([1, 2, 3]) });
+    expect(toJs(bv)).toEqual(bytes);
+    // The display form is pasteable back.
+    const doc = { n: { $int64: BIG[0] }, b: bytes, ok: 7 };
+    expect(toJs(fromJs(doc))).toEqual(doc);
+    expect(() => fromJs({ $int64: '9223372036854775808' })).toThrow(/int64 range/);
+  });
+
+  it('parseJson_keeps_big_integers_exact', () => {
+    expect(
+      parseJson('{"a": 9223372036854775807, "b": [-9223372036854775808, 9007199254740993]}'),
+    ).toEqual({
+      a: { $int64: '9223372036854775807' },
+      b: [{ $int64: '-9223372036854775808' }, { $int64: '9007199254740993' }],
+    });
+    expect(parseJson('{"a": 12, "b": 1.5, "c": 1e30}')).toEqual({ a: 12, b: 1.5, c: 1e30 });
+    expect(() => parseJson('{"a": 9223372036854775808}')).toThrow(/int64 range/);
   });
 });
 
