@@ -409,4 +409,28 @@ describe("factory host", () => {
 			value: { health: "ok" },
 		});
 	});
+
+	it("stale_configure_does_not_overwrite_health", async () => {
+		let release: () => void = () => undefined;
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		let n = 0;
+		const apps = fakeApps();
+		apps.forgejo.adapter = async () => {
+			if (n++ === 0) await gate;
+			return Fake as unknown as AdapterCtor;
+		};
+		const h = new FactoryHost(mkVault(), new Context(), apps);
+		const first = h.configure("forgejo", "https://f.example", { token: "one" });
+		await new Promise((r) => setTimeout(r, 5));
+		const second = await h.configure("forgejo", "https://f.example", {
+			token: "two",
+		});
+		expect(second).toMatchObject({ ok: true, value: { health: "ok" } });
+		release();
+		const stale = await first;
+		expect(stale).toMatchObject({ ok: true, value: { health: "ok" } });
+		expect((await h.list()).find((a) => a.id === "forgejo")?.health).toBe("ok");
+	});
 });

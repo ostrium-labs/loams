@@ -291,6 +291,8 @@ export class FactoryHost {
 			this.#health.set(app, "ok");
 			return this.#info(app);
 		}
+		const gen = this.#gen.get(app) ?? 0;
+		let health: FactoryHealth = "ok";
 		try {
 			const live = await this.#adapter(app);
 			await this.#timed(
@@ -298,13 +300,12 @@ export class FactoryHost {
 					fields: this.#plainFields(app),
 				}),
 			);
-			this.#health.set(app, "ok");
 		} catch (e) {
-			this.#health.set(
-				app,
-				classifyError(e) === "auth_failed" ? "auth_failed" : "unreachable",
-			);
+			health =
+				classifyError(e) === "auth_failed" ? "auth_failed" : "unreachable";
 		}
+		// A newer configure/remove superseded this probe: do not write its result.
+		if ((this.#gen.get(app) ?? 0) === gen) this.#health.set(app, health);
 		return this.#info(app);
 	}
 

@@ -19,7 +19,7 @@ function sections(): Record<string, string> {
 	return out;
 }
 const names = (text: string) =>
-	[...text.matchAll(/call\(a, "([A-Za-z]+)"/g)].map((m) => m[1] ?? "");
+	[...text.matchAll(/call\(\s*a,\s*"([A-Za-z]+)"/g)].map((m) => m[1] ?? "");
 
 describe("ops", () => {
 	it("ops_are_read_only_names", () => {
@@ -41,6 +41,11 @@ describe("ops", () => {
 				/^(create|delete|update|set|post|put|patch|send)/i.test(m),
 			),
 		).toBe(false);
+	});
+
+	it("every_call_has_a_literal_method_name", () => {
+		const body = src.slice(src.indexOf("export const OPS"));
+		expect((body.match(/\bcall\(/g) ?? []).length).toBe(names(body).length);
 	});
 
 	it("ops_invoke_adapters_only_through_call", () => {
