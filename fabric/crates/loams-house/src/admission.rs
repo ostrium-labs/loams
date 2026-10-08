@@ -103,7 +103,7 @@ pub struct PoolStats {
     pub idle_bound: usize,
     /// Workers lent out.
     pub leased: usize,
-    /// Workers starting.
+    /// Workers starting, or being bound for an `acquire`.
     pub booting: usize,
     /// Workers started since the pool began.
     pub spawned_total: u64,
@@ -144,8 +144,10 @@ struct State {
     idle: Vec<Worker>,
     /// Lent workers' namespaces, by worker id.
     leased: BTreeMap<String, String>,
-    /// Workers starting for an `acquire` (already counted against the node).
-    booting_for_acquire: usize,
+    /// Workers an `acquire` holds outside `idle` and `leased`: starting or being
+    /// bound. Counted against the node through a [`Reservation`], so a dropped
+    /// `acquire` future gives the slot back (review I2).
+    in_hand: usize,
     /// Workers starting to refill the warm pool.
     warming: usize,
     spawned_total: u64,
@@ -155,7 +157,7 @@ struct State {
 
 impl State {
     fn total(&self) -> usize {
-        self.idle.len() + self.leased.len() + self.booting_for_acquire + self.warming
+        self.idle.len() + self.leased.len() + self.in_hand + self.warming
     }
 
     fn for_namespace(&self, ns: &str) -> usize {
@@ -250,6 +252,9 @@ impl PoolInner {
         let id = self.next_id();
         let launched = self.launcher.launch(&id)?;
         let shared = WorkerShared::new(id, launched.control);
+        // Until `Ready` makes it a `Worker` (whose drop kills it), a boot that is
+        // abandoned — a cancelled `acquire`, a timeout — kills it here (review I2).
+        let abandoned = KillOnDrop(Some(Arc::clone(&shared)));
         launched
             .socket
             .set_nonblocking(true)
@@ -266,6 +271,7 @@ impl PoolInner {
         .await;
         let failure = match first {
             Ok(Ok(Some(Frame::Ready(ready)))) if ready.protocol == PROTOCOL_VERSION => {
+                abandoned.disarm();
                 return Ok(Worker {
                     shared,
                     reader,
@@ -362,6 +368,74 @@ impl PoolInner {
 /// statement with before the process goes down.
 const ABORTED: i32 = 236;
 
+/// Kills a booting worker unless disarmed.
+struct KillOnDrop(Option<Arc<WorkerShared>>);
+
+impl KillOnDrop {
+    fn disarm(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        if let Some(shared) = self.0.take() {
+            shared.kill(ExitReason::Cancel);
+        }
+    }
+}
+
+/// One `in_hand` slot. Dropping it gives the slot back and wakes waiters, which is
+/// what makes [`WorkerPool::acquire`] cancel-safe (review I2): a caller that gives
+/// up while a worker is being started or bound no longer shrinks the pool.
+struct Reservation {
+    inner: Arc<PoolInner>,
+    held: bool,
+}
+
+impl Reservation {
+    /// Takes a slot the caller already counted under the state lock.
+    fn counted(inner: &Arc<PoolInner>) -> Self {
+        Self {
+            inner: Arc::clone(inner),
+            held: true,
+        }
+    }
+
+    /// Turns the slot into a lease, under one lock, so the node's total never
+    /// dips between the two.
+    fn into_lease(mut self, id: String, namespace: &str) {
+        let mut state = self.inner.state();
+        state.in_hand -= 1;
+        state.leased.insert(id, namespace.to_string());
+        self.held = false;
+    }
+}
+
+impl Drop for Reservation {
+    fn drop(&mut self) {
+        if self.held {
+            self.inner.state().in_hand -= 1;
+            self.inner.changed.notify_waiters();
+        }
+    }
+}
+
+impl Drop for Worker {
+    fn drop(&mut self) {
+        // A worker the pool lets go of is never left running: a cancelled
+        // `acquire` dropping it mid-`Bind`, a shutdown, or a retirement (which has
+        // already killed it; a second `SIGKILL` is a no-op).
+        self.shared.kill(ExitReason::Cancel);
+    }
+}
+
+fn too_many(namespace: &str, waited: Duration) -> HouseError {
+    HouseError::from(ChError::too_many_simultaneous_queries(format!(
+        "No House worker for namespace {namespace} became free in {waited:?}"
+    )))
+}
+
 fn network(message: String) -> HouseError {
     HouseError::from(ChError::network_error(message))
 }
@@ -421,12 +495,7 @@ impl WorkerPool {
         let deadline = Instant::now() + inner.config.acquire_timeout;
         loop {
             if Instant::now() >= deadline {
-                return Err(HouseError::from(ChError::too_many_simultaneous_queries(
-                    format!(
-                        "No House worker for namespace {namespace} became free in {:?}",
-                        inner.config.acquire_timeout
-                    ),
-                )));
+                return Err(too_many(namespace, inner.config.acquire_timeout));
             }
             let notified = inner.changed.notified();
             tokio::pin!(notified);
@@ -450,9 +519,10 @@ impl WorkerPool {
                     .iter()
                     .position(|w| w.namespace.is_none() && !w.shared.has_exited())
                 {
+                    state.in_hand += 1;
                     Step::Bind(state.idle.swap_remove(at))
                 } else if state.total() < inner.config.max_workers {
-                    state.booting_for_acquire += 1;
+                    state.in_hand += 1;
                     Step::Spawn
                 } else if let Some(at) = state
                     .idle
@@ -461,45 +531,49 @@ impl WorkerPool {
                 {
                     // The node is full and another namespace has an idle worker:
                     // it gives up its slot.
-                    state.booting_for_acquire += 1;
+                    state.in_hand += 1;
                     Step::ReplaceThenSpawn(state.idle.swap_remove(at))
                 } else {
                     Step::Wait
                 }
             };
 
+            // Every step but `Ready` and `Wait` counted a slot under the lock; the
+            // guard owns it from here, across every `.await` below.
+            let reservation = match &step {
+                Step::Bind(_) | Step::Spawn | Step::ReplaceThenSpawn(_) => {
+                    Some(Reservation::counted(inner))
+                }
+                Step::Ready(_) | Step::Wait => None,
+            };
             let worker = match step {
                 Step::Ready(worker) => worker,
-                Step::Bind(worker) => match self.bind(worker, namespace).await {
-                    Ok(worker) => worker,
-                    Err(_) => continue,
-                },
+                Step::Bind(worker) => {
+                    match tokio::time::timeout_at(deadline, self.bind(worker, namespace)).await {
+                        Ok(Ok(worker)) => worker,
+                        // The worker refused and was retired: try again.
+                        Ok(Err(_)) => continue,
+                        Err(_) => return Err(too_many(namespace, inner.config.acquire_timeout)),
+                    }
+                }
                 Step::Spawn | Step::ReplaceThenSpawn(_) => {
                     if let Step::ReplaceThenSpawn(old) = step {
                         inner.retire(old, ExitReason::Idle);
                     }
-                    let booted = inner.boot().await;
-                    inner.state().booting_for_acquire -= 1;
-                    let worker = match booted {
-                        Ok(worker) => worker,
-                        Err(err) => {
-                            inner.changed.notify_waiters();
-                            return Err(err);
-                        }
+                    let worker = match tokio::time::timeout_at(deadline, inner.boot()).await {
+                        Ok(Ok(worker)) => worker,
+                        Ok(Err(err)) => return Err(err),
+                        Err(_) => return Err(too_many(namespace, inner.config.acquire_timeout)),
                     };
-                    match self.bind(worker, namespace).await {
-                        Ok(worker) => worker,
-                        Err(err) => return Err(err),
+                    match tokio::time::timeout_at(deadline, self.bind(worker, namespace)).await {
+                        Ok(Ok(worker)) => worker,
+                        Ok(Err(err)) => return Err(err),
+                        Err(_) => return Err(too_many(namespace, inner.config.acquire_timeout)),
                     }
                 }
                 Step::Wait => {
                     if tokio::time::timeout_at(deadline, notified).await.is_err() {
-                        return Err(HouseError::from(ChError::too_many_simultaneous_queries(
-                            format!(
-                                "No House worker for namespace {namespace} became free in {:?}",
-                                inner.config.acquire_timeout
-                            ),
-                        )));
+                        return Err(too_many(namespace, inner.config.acquire_timeout));
                     }
                     continue;
                 }
@@ -508,7 +582,12 @@ impl WorkerPool {
             let id = worker.shared.id().to_string();
             // A new lease: handles from earlier leases of this worker go stale.
             worker.shared.bump_epoch();
-            inner.state().leased.insert(id, namespace.to_string());
+            match reservation {
+                Some(reservation) => reservation.into_lease(id, namespace),
+                None => {
+                    inner.state().leased.insert(id, namespace.to_string());
+                }
+            }
             inner.top_up();
             return Ok(WorkerLease {
                 pool: Arc::downgrade(inner),
@@ -621,7 +700,7 @@ impl WorkerPool {
             idle_unbound: state.unbound_idle(),
             idle_bound: state.idle.len() - state.unbound_idle(),
             leased: state.leased.len(),
-            booting: state.booting_for_acquire + state.warming,
+            booting: state.in_hand + state.warming,
             spawned_total: state.spawned_total,
             kills: state.kills.clone(),
             bound,

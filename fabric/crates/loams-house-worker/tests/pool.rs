@@ -740,3 +740,98 @@ async fn stale_kill_handle_cannot_kill_a_later_query() {
         pool.stats()
     );
 }
+
+/// A launcher whose workers, while `hang` is set, never send `Ready`: an
+/// `acquire` that has to start one sits in boot for as long as it is awaited.
+#[derive(Debug)]
+struct HangingLauncher {
+    real: ProcessLauncher,
+    hang: std::sync::atomic::AtomicBool,
+    held: std::sync::Mutex<Vec<UnixStream>>,
+}
+
+#[derive(Debug)]
+struct NeverReady {
+    exit: tokio::sync::watch::Sender<Option<String>>,
+}
+
+impl loams_house::watchdog::WorkerControl for NeverReady {
+    fn pid(&self) -> u32 {
+        0
+    }
+    fn terminate(&self) {
+        self.exit.send_replace(Some("terminated".to_string()));
+    }
+    fn exit(&self) -> tokio::sync::watch::Receiver<Option<String>> {
+        self.exit.subscribe()
+    }
+}
+
+impl Launcher for HangingLauncher {
+    fn launch(&self, id: &str) -> Result<loams_house::watchdog::Launched, loams_house::HouseError> {
+        if !self.hang.load(std::sync::atomic::Ordering::SeqCst) {
+            return self.real.launch(id);
+        }
+        let (front, worker) = UnixStream::pair().expect("pair");
+        self.held.lock().expect("lock").push(worker);
+        let (exit, _) = tokio::sync::watch::channel(None);
+        Ok(loams_house::watchdog::Launched {
+            socket: front,
+            control: std::sync::Arc::new(NeverReady { exit }),
+        })
+    }
+}
+
+/// HS1 Task 2 review I2: dropping an `acquire` future while it boots a worker
+/// gives the slot back. Before the fix the node stayed one worker short forever.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn dropped_acquire_during_boot_keeps_capacity() {
+    let launcher = std::sync::Arc::new(HangingLauncher {
+        real: ProcessLauncher::new(common::WORKER, tmp_root("cancel-safe")),
+        hang: std::sync::atomic::AtomicBool::new(false),
+        held: std::sync::Mutex::new(Vec::new()),
+    });
+    let config = PoolConfig {
+        min_idle_workers: 0,
+        max_workers: 2,
+        max_workers_per_namespace: 2,
+        acquire_timeout: Duration::from_secs(5),
+        ..small(2)
+    };
+    let pool = loams_house::WorkerPool::start(config, launcher.clone())
+        .await
+        .expect("pool");
+    let held = pool.acquire("ns-a").await.expect("the booted worker");
+
+    launcher
+        .hang
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let pool2 = pool.clone();
+    let stuck = tokio::spawn(async move { pool2.acquire("ns-b").await.map(|l| l.pid()) });
+    assert!(
+        eventually(Duration::from_secs(2), || pool.stats().booting == 1).await,
+        "the second acquire is booting: {:?}",
+        pool.stats()
+    );
+    stuck.abort();
+    assert!(stuck.await.is_err(), "cancelled");
+    assert!(
+        eventually(Duration::from_secs(1), || pool.stats().booting == 0).await,
+        "the dropped acquire gave its slot back: {:?}",
+        pool.stats()
+    );
+
+    launcher
+        .hang
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    let mut b = pool.acquire("ns-b").await.expect("capacity is intact");
+    assert_eq!(
+        b.run(statement("SELECT 1", "TSV"))
+            .await
+            .expect("runs")
+            .bytes,
+        b"1\n"
+    );
+    pool.release(b, Outcome::Completed);
+    pool.release(held, Outcome::Completed);
+}
