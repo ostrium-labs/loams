@@ -24,9 +24,25 @@ interface DesktopGlobal {
 	};
 }
 
-async function settle(page: Page): Promise<void> {
-	await page.waitForTimeout(500);
-	await page.waitForLoadState("domcontentloaded");
+/**
+ * page.evaluate that survives the reload an activate triggers ("Execution context was
+ * destroyed"). Re-running activate for the same server is a no-op, so a retry is safe.
+ */
+async function ev<T>(
+	page: Page,
+	fn: (a: string) => T | Promise<T>,
+	arg: string,
+): Promise<T> {
+	for (let i = 0; ; i++) {
+		try {
+			await page.waitForLoadState("domcontentloaded");
+			return await page.evaluate(fn, arg);
+		} catch (e) {
+			if (i >= 4 || !/context was destroyed|navigation/i.test(String(e)))
+				throw e;
+			await page.waitForTimeout(200);
+		}
+	}
 }
 
 // I4: leaving a server drops its session, including path-scoped (`Path=/api`) and Secure
@@ -76,8 +92,9 @@ test("leaving a server clears its path-scoped and secure cookies", async () => {
 				value: "1",
 			}),
 		);
-		const added = await page.evaluate(
-			(url) =>
+		const added = await ev(
+			page,
+			(url: string) =>
 				(globalThis as unknown as DesktopGlobal).loamsDesktop.servers.add({
 					name: "probe",
 					kind: "remote",
@@ -86,16 +103,19 @@ test("leaving a server clears its path-scoped and secure cookies", async () => {
 			`http://127.0.0.1:${port}`,
 		);
 		expect(added.ok).toBe(true);
-		await page.evaluate(
-			(id) =>
-				(globalThis as unknown as DesktopGlobal).loamsDesktop.servers.activate(
-					id,
-				),
-			added.value.id,
-		);
-		await settle(page);
-		await page.evaluate(async () => {
-			await fetch("loams-app://console/api/v1/x", { credentials: "include" });
+		const activate = (id: string) =>
+			ev(
+				page,
+				(sid: string) =>
+					(
+						globalThis as unknown as DesktopGlobal
+					).loamsDesktop.servers.activate(sid),
+				id,
+			);
+		await activate(added.value.id);
+		// Through the app protocol and its proxy, from main: no renderer navigation to race.
+		await app.evaluate(async ({ session }) => {
+			await session.defaultSession.fetch("loams-app://console/api/v1/x");
 		});
 		await expect
 			.poll(jar)
@@ -105,11 +125,7 @@ test("leaving a server clears its path-scoped and secure cookies", async () => {
 				"other.example/ keep",
 			]);
 
-		await page.evaluate(() =>
-			(globalThis as unknown as DesktopGlobal).loamsDesktop.servers.activate(
-				"demo",
-			),
-		);
+		await activate("demo");
 		await expect.poll(jar).toEqual(["other.example/ keep"]);
 	} finally {
 		await app.close().catch(() => undefined);
