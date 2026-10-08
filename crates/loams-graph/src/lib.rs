@@ -22,13 +22,16 @@
 
 #![deny(missing_docs)]
 
+pub mod catalog;
 pub mod classify;
 pub mod engine;
 pub mod service;
 pub mod value;
 
 pub use classify::Access;
-pub use engine::{BatchStatement, Engine, Graph, GraphError, GraphRow, GraphState, OpenSpec};
+pub use engine::{
+    BatchStatement, Engine, Graph, GraphError, GraphRow, GraphState, OpenSpec, SchemaSummary,
+};
 pub use service::GraphServiceImpl;
 
 /// The GQL standard this crate's surface targets: ISO/IEC 39075.

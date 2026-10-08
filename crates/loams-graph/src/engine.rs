@@ -151,6 +151,8 @@ impl GraphError {
 /// and no RPC field, can point a graph at a path of its choosing (Review Focus 4).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OpenSpec {
+    /// The catalog id the graph is opened for, when there is one (Task 4).
+    id: Option<crate::GraphId>,
     /// The graph's storage directory, `None` for in memory.
     dir: Option<PathBuf>,
     /// Open read-only: every writing statement is refused before it reaches the engine.
@@ -170,9 +172,26 @@ impl OpenSpec {
     pub fn persistent(engine: &Engine, id: crate::GraphId) -> Option<Self> {
         let data_dir = engine.data_dir.as_ref()?;
         Some(Self {
+            id: Some(id),
             dir: Some(data_dir.join("graphs").join(id.to_string())),
             read_only: false,
         })
+    }
+
+    /// An in-memory graph for a catalog id: what an engine with no data directory opens (dev).
+    #[must_use]
+    pub fn in_memory_for(id: crate::GraphId) -> Self {
+        Self {
+            id: Some(id),
+            ..Self::default()
+        }
+    }
+
+    /// The spec a catalog graph opens with: persistent under the engine's data directory, or in
+    /// memory when the engine has none.
+    #[must_use]
+    pub fn for_catalog(engine: &Engine, id: crate::GraphId) -> Self {
+        Self::persistent(engine, id).unwrap_or_else(|| Self::in_memory_for(id))
     }
 
     /// The same spec, read-only.
@@ -185,6 +204,19 @@ impl OpenSpec {
     fn database_file(&self) -> Option<PathBuf> {
         self.dir.as_ref().map(|dir| dir.join("graph.grafeo"))
     }
+}
+
+/// A graph's shape, for `GetSchema`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SchemaSummary {
+    /// `(label, node count)`, by label.
+    pub labels: Vec<(String, u64)>,
+    /// `(edge type, edge count)`, by type.
+    pub edge_types: Vec<(String, u64)>,
+    /// Every property key, sorted.
+    pub property_keys: Vec<String>,
+    /// `(name, target, kind)`, by name.
+    pub indexes: Vec<(String, String, String)>,
 }
 
 /// Whether a graph is serving.
@@ -376,6 +408,51 @@ impl Graph {
             poisoned: AtomicBool::new(false),
             failed: AtomicBool::new(false),
             statements_executed: AtomicU64::new(0),
+        })
+    }
+
+    /// The catalog id this graph was opened for, if any.
+    pub fn id(&self) -> Option<crate::GraphId> {
+        self.spec.id
+    }
+
+    /// Node and edge counts.
+    pub fn counts(&self) -> (u64, u64) {
+        (self.db.node_count() as u64, self.db.edge_count() as u64)
+    }
+
+    /// Labels, edge types (each with its count), property keys and indexes, sorted (GetSchema).
+    ///
+    /// # Errors
+    ///
+    /// What [`Graph::call`] answers for a poisoned or panicking engine.
+    pub fn schema(&self) -> Result<SchemaSummary, GraphError> {
+        self.call(|| {
+            let mut summary = SchemaSummary::default();
+            if let grafeo_engine::admin::SchemaInfo::Lpg(info) = self.db.schema() {
+                summary.labels = info
+                    .labels
+                    .into_iter()
+                    .map(|l| (l.name, l.count as u64))
+                    .collect();
+                summary.edge_types = info
+                    .edge_types
+                    .into_iter()
+                    .map(|t| (t.name, t.count as u64))
+                    .collect();
+                summary.property_keys = info.property_keys;
+            }
+            summary.indexes = self
+                .db
+                .list_indexes()
+                .into_iter()
+                .map(|i| (i.name, i.target, i.index_type))
+                .collect();
+            summary.labels.sort();
+            summary.edge_types.sort();
+            summary.property_keys.sort();
+            summary.indexes.sort();
+            Ok(summary)
         })
     }
 

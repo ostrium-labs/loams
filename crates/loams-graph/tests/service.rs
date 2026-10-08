@@ -338,3 +338,491 @@ fn concurrent_create_is_idempotent() {
     assert_eq!(ids.len(), 1, "one graph: {ids:?}");
     std::fs::remove_dir_all(&data_dir).ok();
 }
+
+// ---------------------------------------------------------------------------------------------
+// The graph catalog and GraphAdminService (GR1 Task 4)
+// ---------------------------------------------------------------------------------------------
+
+mod admin {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use connectrpc::ErrorCode;
+    use loams_common::meta::MetaStore;
+    use loams_graph::Engine;
+    use loams_graph::catalog::GraphCatalog;
+    use loams_graph::service::admin::GraphAdmin;
+    use loams_meta::{MetaClient, MetaClientConfig, MetaConfig, MetaNode, Router, SystemClock};
+    use loams_proto::loams::graph::v1 as pb;
+    use loams_store::Store;
+    use tempfile::TempDir;
+
+    use super::reason;
+
+    /// A single-node metastore and a bucket, kept for the life of a test so a second catalog
+    /// and engine can be started over the same state (`graphs_survive_restart`).
+    struct Fixture {
+        _node: MetaNode,
+        meta: Arc<dyn MetaStore>,
+        store: Store,
+        data_dir: TempDir,
+        _meta_dir: TempDir,
+    }
+
+    impl Fixture {
+        async fn start() -> Self {
+            let meta_dir = TempDir::new().expect("temp dir");
+            let clock = Arc::new(SystemClock);
+            let mut config = MetaConfig::new(1, meta_dir.path(), Store::in_memory());
+            config.clock = clock.clone();
+            let node = MetaNode::start(config, &Router::new())
+                .await
+                .expect("start meta");
+            node.initialize([1]).await.expect("initialize");
+            node.wait_for_leader(Duration::from_secs(30))
+                .await
+                .expect("leader");
+            let client = MetaClient::new(node.clone(), vec![], clock, MetaClientConfig::default());
+            Self {
+                _node: node,
+                meta: Arc::new(client),
+                store: Store::in_memory(),
+                data_dir: TempDir::new().expect("data dir"),
+                _meta_dir: meta_dir,
+            }
+        }
+
+        /// A fresh engine and catalog over the fixture's metastore, bucket and data dir: what a
+        /// restarted server has.
+        fn admin(&self) -> GraphAdmin {
+            GraphAdmin::new(
+                Arc::new(Engine::with_data_dir(self.data_dir.path())),
+                GraphCatalog::new(self.meta.clone(), self.store.clone()),
+            )
+        }
+    }
+
+    fn create(ns: &str, name: &str, key: &str) -> pb::CreateGraphRequest {
+        pb::CreateGraphRequest {
+            namespace: ns.to_string(),
+            name: name.to_string(),
+            idempotency_key: key.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn get(ns: &str, name: &str) -> pb::GetGraphRequest {
+        pb::GetGraphRequest {
+            namespace: ns.to_string(),
+            name: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn execute(ns: &str, graph: &str, statement: &str) -> pb::ExecuteRequest {
+        pb::ExecuteRequest {
+            namespace: ns.to_string(),
+            graph: graph.to_string(),
+            statement: statement.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn create_is_idempotent_by_key() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        let first = admin
+            .create_graph(create("acme", "kg", "k1"))
+            .await
+            .expect("create");
+        assert!(first.id.starts_with("gr_"), "{first:?}");
+        assert_eq!(first.version, 1);
+        assert_eq!(first.state.as_known(), Some(pb::GraphState::Ready));
+        let again = admin
+            .create_graph(create("acme", "kg", "k1"))
+            .await
+            .expect("a retry");
+        assert_eq!(again.id, first.id, "the same key answers the same graph");
+        assert_eq!(again.version, first.version);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn create_duplicate_name_already_exists() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        admin
+            .create_graph(create("acme", "kg", "k1"))
+            .await
+            .expect("create");
+        for key in ["k2", ""] {
+            let err = admin
+                .create_graph(create("acme", "kg", key))
+                .await
+                .expect_err("taken");
+            assert_eq!(err.code, ErrorCode::AlreadyExists, "{err:?}");
+            assert_eq!(reason(&err), "already_exists");
+        }
+        // The same name in another namespace is another graph.
+        admin
+            .create_graph(create("globex", "kg", "k1"))
+            .await
+            .expect("another namespace");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn list_paginates_aip158() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        for name in ["c", "a", "e", "b", "d"] {
+            admin
+                .create_graph(create("acme", name, name))
+                .await
+                .expect("create");
+        }
+        let page = |token: &str| pb::ListGraphsRequest {
+            namespace: "acme".to_string(),
+            page_size: 2,
+            page_token: token.to_string(),
+            ..Default::default()
+        };
+        let first = admin.list_graphs(page("")).await.expect("page 1");
+        let names = |r: &pb::ListGraphsResponse| {
+            r.graphs.iter().map(|g| g.name.clone()).collect::<Vec<_>>()
+        };
+        assert_eq!(names(&first), ["a", "b"]);
+        assert!(!first.next_page_token.is_empty());
+        // Inserts before and after the cursor do not shift the next page.
+        admin
+            .create_graph(create("acme", "aa", "aa"))
+            .await
+            .expect("insert before");
+        admin
+            .create_graph(create("acme", "f", "f"))
+            .await
+            .expect("insert after");
+        let second = admin
+            .list_graphs(page(&first.next_page_token))
+            .await
+            .expect("page 2");
+        assert_eq!(names(&second), ["c", "d"]);
+        let third = admin
+            .list_graphs(page(&second.next_page_token))
+            .await
+            .expect("page 3");
+        assert_eq!(names(&third), ["e", "f"]);
+        assert!(
+            third.next_page_token.is_empty(),
+            "the last page has no token: {third:?}"
+        );
+        // A token is opaque and bound to its namespace.
+        let err = admin
+            .list_graphs(pb::ListGraphsRequest {
+                namespace: "globex".to_string(),
+                page_size: 2,
+                page_token: first.next_page_token.clone(),
+                ..Default::default()
+            })
+            .await
+            .expect_err("another namespace's token");
+        assert_eq!(err.code, ErrorCode::InvalidArgument);
+        let err = admin
+            .list_graphs(page("garbage!"))
+            .await
+            .expect_err("a bad token");
+        assert_eq!(err.code, ErrorCode::InvalidArgument);
+        // Page size 0 is the default, which covers all of these.
+        let all = admin.list_graphs(page("")).await.map(|_| ());
+        assert!(all.is_ok());
+        let all = admin
+            .list_graphs(pb::ListGraphsRequest {
+                namespace: "acme".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("default page");
+        assert_eq!(names(&all), ["a", "aa", "b", "c", "d", "e", "f"]);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn update_cas_conflict_aborted() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        let graph = admin
+            .create_graph(create("acme", "kg", "k"))
+            .await
+            .expect("create");
+        let update = |version: Option<u64>, replicas: u32| pb::UpdateGraphRequest {
+            graph: pb::Graph {
+                namespace: "acme".to_string(),
+                name: "kg".to_string(),
+                replicas,
+                ..Default::default()
+            }
+            .into(),
+            update_mask: buffa_types::google::protobuf::FieldMask {
+                paths: vec!["replicas".to_string()],
+                ..Default::default()
+            }
+            .into(),
+            expected_version: version,
+            ..Default::default()
+        };
+        let updated = admin
+            .update_graph(update(Some(graph.version), 2))
+            .await
+            .expect("at version");
+        assert_eq!(updated.replicas, 2);
+        assert_eq!(updated.version, graph.version + 1);
+        let err = admin
+            .update_graph(update(Some(graph.version), 3))
+            .await
+            .expect_err("stale version");
+        assert_eq!(err.code, ErrorCode::Aborted, "{err:?}");
+        assert_eq!(reason(&err), "graph_catalog_version_mismatch");
+        // No expected version: last writer wins.
+        let latest = admin
+            .update_graph(update(None, 1))
+            .await
+            .expect("unconditional");
+        assert_eq!(latest.replicas, 1);
+        // A field outside the mask, or an unknown path, is refused.
+        let mut bad = update(None, 1);
+        bad.update_mask = buffa_types::google::protobuf::FieldMask {
+            paths: vec!["name".to_string()],
+            ..Default::default()
+        }
+        .into();
+        let err = admin
+            .update_graph(bad)
+            .await
+            .expect_err("name is not updatable");
+        assert_eq!(err.code, ErrorCode::InvalidArgument);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn delete_then_get_not_found() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        let deleted_id = admin
+            .create_graph(create("acme", "kg", "k"))
+            .await
+            .expect("create")
+            .id;
+        admin
+            .execute(execute("acme", "kg", "INSERT (:X)"))
+            .await
+            .expect("write");
+        let operation = admin
+            .delete_graph(pb::DeleteGraphRequest {
+                namespace: "acme".to_string(),
+                name: "kg".to_string(),
+                idempotency_key: "d1".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("delete");
+        assert_eq!(operation.kind, "graph.delete");
+        // A retry with the same key answers again; another key finds nothing to delete.
+        for (key, ok) in [("d1", true), ("d2", false)] {
+            let again = admin
+                .delete_graph(pb::DeleteGraphRequest {
+                    namespace: "acme".to_string(),
+                    name: "kg".to_string(),
+                    idempotency_key: key.to_string(),
+                    ..Default::default()
+                })
+                .await;
+            assert_eq!(again.is_ok(), ok, "{key}: {again:?}");
+        }
+        assert!(operation.id.starts_with("op-"), "{operation:?}");
+        let err = admin.get_graph(get("acme", "kg")).await.expect_err("gone");
+        assert_eq!(err.code, ErrorCode::NotFound);
+        assert_eq!(reason(&err), "graph_not_found");
+        let err = admin
+            .execute(execute("acme", "kg", "RETURN 1 AS x"))
+            .await
+            .expect_err("gone");
+        assert_eq!(err.code, ErrorCode::NotFound);
+        // Not listed, and the name can be reused for a new graph.
+        let listed = admin
+            .list_graphs(pb::ListGraphsRequest {
+                namespace: "acme".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("list");
+        assert!(listed.graphs.is_empty());
+        let again = admin
+            .create_graph(create("acme", "kg", "k2"))
+            .await
+            .expect("recreate");
+        let fresh = admin
+            .execute(execute("acme", "kg", "MATCH (x:X) RETURN count(x) AS c"))
+            .await
+            .expect("read");
+        assert_eq!(
+            format!(
+                "{:?}",
+                fresh.rows.as_option().expect("rows").rows[0].values[0].kind
+            ),
+            "Some(Int64(0))",
+            "a recreated graph does not see the deleted one's data ({again:?})"
+        );
+        // Storage of the deleted graph is purged once its retention hold has passed.
+        let deleted_dir = fixture.data_dir.path().join("graphs").join(&deleted_id);
+        assert!(deleted_dir.exists(), "kept through the retention hold");
+        assert_eq!(
+            admin
+                .purge_expired(Duration::from_secs(3600))
+                .await
+                .expect("purge"),
+            0
+        );
+        let purged = admin.purge_expired(Duration::ZERO).await.expect("purge");
+        assert_eq!(purged, 1);
+        assert!(!deleted_dir.exists(), "storage purged");
+        assert!(
+            fixture
+                .data_dir
+                .path()
+                .join("graphs")
+                .join(&again.id)
+                .exists(),
+            "the recreated graph's storage is untouched"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn graphs_survive_restart() {
+        let fixture = Fixture::start().await;
+        let id = {
+            let admin = fixture.admin();
+            let graph = admin
+                .create_graph(create("acme", "kg", "k"))
+                .await
+                .expect("create");
+            admin
+                .execute(execute("acme", "kg", "INSERT (:Kept {v: 1})"))
+                .await
+                .expect("write");
+            admin.shutdown().await;
+            graph.id
+        };
+        // A new engine and a new catalog over the same metastore, bucket and data dir.
+        let admin = fixture.admin();
+        let graph = admin
+            .get_graph(get("acme", "kg"))
+            .await
+            .expect("the catalog reloads");
+        assert_eq!(graph.id, id);
+        let read = admin
+            .execute(execute("acme", "kg", "MATCH (k:Kept) RETURN k.v"))
+            .await
+            .expect("the engine reopens lazily");
+        assert_eq!(read.rows.as_option().expect("rows").rows.len(), 1);
+    }
+
+    /// Concurrent writers of one namespace's catalog all land: each CAS that loses retries on
+    /// the winner's document.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_catalog_writes_all_land() {
+        let fixture = Fixture::start().await;
+        let admin = Arc::new(fixture.admin());
+        let tasks: Vec<_> = (0..8)
+            .map(|i| {
+                let admin = admin.clone();
+                tokio::spawn(async move {
+                    admin
+                        .create_graph(create("acme", &format!("g{i}"), &format!("k{i}")))
+                        .await
+                })
+            })
+            .collect();
+        for task in tasks {
+            task.await.expect("task").expect("create");
+        }
+        let all = admin
+            .list_graphs(pb::ListGraphsRequest {
+                namespace: "acme".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("list");
+        assert_eq!(all.graphs.len(), 8);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn invalid_names_refused() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        for (ns, name) in [
+            ("acme", "Kg"),
+            ("acme", "1kg"),
+            ("acme", "k/g"),
+            ("a/b", "kg"),
+            ("", "kg"),
+            ("acme", ""),
+        ] {
+            let err = admin
+                .create_graph(create(ns, name, "k"))
+                .await
+                .expect_err("invalid");
+            assert_eq!(
+                err.code,
+                ErrorCode::InvalidArgument,
+                "{ns:?}/{name:?}: {err:?}"
+            );
+            let err = admin.get_graph(get(ns, name)).await.expect_err("invalid");
+            assert_eq!(err.code, ErrorCode::InvalidArgument, "{ns:?}/{name:?}");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn get_schema_reports_labels_types_counts() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        admin
+            .create_graph(create("acme", "kg", "k"))
+            .await
+            .expect("create");
+        admin
+            .execute(execute(
+                "acme",
+                "kg",
+                "INSERT (:Person {name: 'a'})-[:KNOWS {since: 1}]->(:Person {name: 'b'})-[:KNOWS]->(:City {name: 'c'})",
+            ))
+            .await
+            .expect("write");
+        let schema = admin
+            .get_schema(pb::GetSchemaRequest {
+                namespace: "acme".to_string(),
+                name: "kg".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("schema");
+        let labels: Vec<(String, u64)> = schema
+            .labels
+            .iter()
+            .map(|l| (l.label.clone(), l.count))
+            .collect();
+        assert_eq!(labels, [("City".to_string(), 1), ("Person".to_string(), 2)]);
+        let types: Vec<(String, u64)> = schema
+            .edge_types
+            .iter()
+            .map(|t| (t.r#type.clone(), t.count))
+            .collect();
+        assert_eq!(types, [("KNOWS".to_string(), 2)]);
+        assert_eq!(schema.property_keys, ["name", "since"]);
+        let err = admin
+            .get_schema(pb::GetSchemaRequest {
+                namespace: "acme".to_string(),
+                name: "nope".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect_err("missing");
+        assert_eq!(err.code, ErrorCode::NotFound);
+    }
+}

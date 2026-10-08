@@ -59,3 +59,17 @@ pub(crate) fn map_engine(err: GraphError) -> ConnectError {
 pub(crate) fn internal(err: GraphError) -> ConnectError {
     refuse(ErrorCode::Internal, "internal", err.to_string())
 }
+
+/// Maps a catalog failure onto a Connect-RPC error.
+pub(crate) fn map_catalog(err: crate::catalog::CatalogError) -> ConnectError {
+    use crate::catalog::CatalogError as E;
+    let (code, reason) = match &err {
+        E::Invalid(_) => (ErrorCode::InvalidArgument, "invalid_argument"),
+        E::NotFound { .. } => (ErrorCode::NotFound, "graph_not_found"),
+        E::AlreadyExists { .. } => (ErrorCode::AlreadyExists, "already_exists"),
+        E::VersionMismatch { .. } => (ErrorCode::Aborted, "graph_catalog_version_mismatch"),
+        E::Unavailable(_) => (ErrorCode::Unavailable, "unavailable"),
+        E::Corrupt(_) => (ErrorCode::Internal, "internal"),
+    };
+    refuse(code, reason, err.to_string())
+}

@@ -1045,3 +1045,33 @@ Rulings:
   - Test: `deep_operator_chains_do_not_crash_the_process`. 2000 chained `NOT`s, 2000 `+ 1`s, 1300 `AND`s and 127 nested parentheses run; 5000-link chains are refused; 500 nested parentheses are Grafeo's own syntax error.
   - Task 6 (pool) and Task 31 (fuzzing) carry the rest.
 
+
+### Task 4 (2026-10-09, on `backend/gr1`)
+
+**R4.1 Where the catalog lives (deviation).** The plan keyed `graphs/<ns>/<name>` → `GraphMeta` in the metastore's generic object API. That API is its pointers. A pointer value is at most 1 KiB (`MAX_KEY_LEN`, enforced in `loams-meta` `validate_key`), and pointers can be neither listed nor deleted, so per-graph pointers could hold neither a LINKED graph's mapping nor answer `ListGraphs`. The catalog therefore uses the manifest idiom of §03 §3.3:
+- each namespace has one document, `{ name → GraphMeta }`, written to the bucket as an immutable object `graphs/<namespace_id>/catalog/<ULID>.json`;
+- it is committed by CAS of the namespace's metastore pointer `graph-catalog` to that key;
+- a write that loses the CAS retries on the winner's document (up to 32 times);
+- a lost acknowledgement is recognised by the pointer already naming the write's own object;
+- superseded documents are deleted best effort.
+
+This needs no new metastore type and works on every `MetaStore` backend, TiKV included. Creating a graph creates its namespace when it is absent, as creating a collection does. If a namespace ever needs thousands of graphs, a typed metastore table would replace the single document; Task 25's quota (100 graphs per namespace) keeps the document small.
+
+**R4.2 Records.**
+- `GraphMeta` holds `id` (`gr_<ULID>`), `namespace`, `name`, `mode`, `languages` (wire names), `limits`, `replicas`, `state` (`ready` | `deleting {since_ms}`), `created_at_ms`, `version` (CAS; 1 at creation, +1 per update), and the create and delete idempotency keys.
+- `CreateGraph` is idempotent by `idempotency_key`. A different key, or none, on a taken name is `ALREADY_EXISTS`.
+- `UpdateGraph` takes `languages`, `limits` and `replicas` by `update_mask` (an empty mask means all three; any other path is `INVALID_ARGUMENT`). `optional expected_version` mismatch is `ABORTED`/`graph_catalog_version_mismatch`.
+- Name rules are R3.9 I3's (`validate_names`).
+
+**R4.3 Listing.** `ListGraphs` requires a namespace. Pages are by name. `page_size` 0 means 50, the cap is 1000, and a negative size is `INVALID_ARGUMENT`. The token is opaque (`base64url("g1\n<ns>\n<last name>")`), bound to its namespace, and names the last graph returned, so inserts and deletes never shift a page. The last page has no token.
+
+**R4.4 Delete and purge.**
+- `DeleteGraph` moves the record to `deleting`, under its id, so the name is free at once and the graph leaves `GetGraph`/`ListGraphs`/`Execute`. It closes the engine (a held handle closes when released) and answers a `SUCCEEDED` operation `op-<26 hex>` whose target is `{graph, graph_id}`.
+- A retry with the same `idempotency_key` answers again.
+- `GraphAdmin::purge_expired(hold)` removes `<data_dir>/graphs/<id>/` and the record once `hold` (default 24 h) has passed. Task 5 runs it periodically.
+
+**R4.5 Lazy opening.** `GraphAdmin::open` reads the catalog and opens the graph through `Graph::open_or_existing` with `OpenSpec::for_catalog(engine, id)`: persistent under the data directory, or in memory for an engine without one (dev). An engine graph of the same name but another id (a deleted graph a holder kept open) is closed and replaced. `GraphAdmin::{execute, execute_batch, explain, get_schema}` open lazily; the sync `service::data` functions stay the engine-level path. A listed graph that is not open reports `READY`, since it opens on its next statement; `EVICTED` is left for Task 14.
+
+**R4.6 GetSchema** reads Grafeo's `schema()` and `list_indexes()` inside the panic and big-stack containment. Labels, edge types, keys and indexes are sorted.
+
+**R4.7 Kept sync helpers.** `service::{create_graph, get_graph, list_graphs, delete_graph}` remain as engine-registry helpers (tests, the mock). The RPC surface is `service::admin::GraphAdmin`, which Task 5 mounts.

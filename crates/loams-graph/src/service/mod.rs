@@ -20,6 +20,7 @@
 //! generated server traits will call one for one (Task 5), and a test can call them without a
 //! router.
 
+pub mod admin;
 pub mod data;
 pub(crate) mod errors;
 

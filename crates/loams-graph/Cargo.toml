@@ -40,6 +40,13 @@ fail = { workspace = true, optional = true }
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+# The graph catalog (GR1 Task 4): a document per namespace in the bucket, committed by a metastore
+# pointer CAS.
+loams-common.workspace = true
+loams-store.workspace = true
+serde.workspace = true
+base64.workspace = true
+bytes.workspace = true
 # `gr_<ULID>` graph ids (shared contract `GraphId`).
 ulid.workspace = true
 
@@ -51,9 +58,11 @@ failpoints = ["dep:fail", "fail/failpoints"]
 test-hooks = []
 
 [dev-dependencies]
+# A single-node metastore for the catalog tests (GR1 Task 4).
+loams-meta.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 loams-graph = { path = ".", features = ["test-hooks"] }
-# The tests decode the `loams.errors.v1.ErrorInfo` a refusal carries (unpadded base64).
-base64.workspace = true
 # `licences_cover_every_grafeo_crate` reads `Cargo.lock` and `connectors/licences.toml`.
 toml.workspace = true
 # `proto_has_no_path_fields` walks `loams_proto::FILE_DESCRIPTOR_SET`.
