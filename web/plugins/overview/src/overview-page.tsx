@@ -93,9 +93,9 @@ export function OverviewPage({
   // Re-read when the engine changes phase, the user hits Refresh, or the server changes.
   const key = `${engine?.phase}:${active?.id}:${tick}`;
   const live = where.known && !where.down;
-  const data = useLoad(() => loadData(transport), key, live);
-  const durable = useLoad(() => loadDurable(net), key, live);
-  const streams = useLoad(() => loadStreams(net), key, live);
+  const data = useLoad(() => loadData(transport), key, live, active?.id);
+  const durable = useLoad(() => loadDurable(net), key, live, active?.id);
+  const streams = useLoad(() => loadStreams(net), key, live, active?.id);
   const connectors = useLoad(() => loadConnectors(desktop), tick);
   const factory = useLoad(() => desktop.factory.list(), tick);
   const postgres = useStack(desktop, 'postgres', tick);

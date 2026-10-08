@@ -5,7 +5,7 @@ import { createClient, type Transport } from '@connectrpc/connect';
 import type { LoamsDesktopApi } from '@loams/desktop/contracts';
 import { createDurableApi, envelope } from '@loams/durable-client';
 import { collection } from '@loams/proto';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /** The namespace the cards read: the engine's default (Data Studio's default too). */
 export const NAMESPACE = 'default';
@@ -22,14 +22,23 @@ export type Load<T> =
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Runs `fn` when `key` changes; a later run (or unmount) discards an earlier answer. */
-export function useLoad<T>(fn: () => Promise<T>, key: unknown, enabled = true): Load<T> {
+export function useLoad<T>(
+  fn: () => Promise<T>,
+  key: unknown,
+  enabled = true,
+  /** Data belongs to one scope (the active server): a new scope drops the old data. */
+  scope: unknown = undefined,
+): Load<T> {
   const [v, setV] = useState<Load<T>>({ state: 'loading' });
+  const scopeRef = useRef(scope);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for everything `fn` closes over
   useEffect(() => {
     if (!enabled) return;
     let live = true;
     // Refreshing keeps the data on screen; only a first or failed load shows Loading.
-    setV((cur) => (cur.state === 'ok' ? cur : { state: 'loading' }));
+    const sameScope = scopeRef.current === scope;
+    scopeRef.current = scope;
+    setV((cur) => (cur.state === 'ok' && sameScope ? cur : { state: 'loading' }));
     fn().then(
       (data) => live && setV({ state: 'ok', data }),
       (e) => live && setV({ state: 'error', message: message(e) }),
@@ -37,7 +46,7 @@ export function useLoad<T>(fn: () => Promise<T>, key: unknown, enabled = true): 
     return () => {
       live = false;
     };
-  }, [key, enabled]);
+  }, [key, enabled, scope]);
   return v;
 }
 

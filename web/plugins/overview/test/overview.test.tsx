@@ -2,7 +2,7 @@ import { createRouterTransport } from '@connectrpc/connect';
 import type { EngineState, FactoryAppInfo, StackState } from '@loams/desktop/contracts';
 import { collection } from '@loams/proto';
 import { SlotProvider, SlotRegistry } from '@loams/slots';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ConnectorsCard,
@@ -14,7 +14,7 @@ import {
   StackCard,
   StreamsCard,
 } from '../src/cards.js';
-import { loadDurable, loadStreams, type Net } from '../src/load.js';
+import { loadDurable, loadStreams, type Net, useLoad } from '../src/load.js';
 import { OverviewPage } from '../src/overview-page.js';
 import { fakeDesktop } from './fake.js';
 
@@ -286,5 +286,27 @@ describe('overview page', () => {
     }
     // The server-backed cards still read from the remote server.
     await waitFor(() => expect(within(card('data')).getByText('2')).toBeTruthy());
+  });
+});
+
+describe('useLoad', () => {
+  it('keeps_data_for_the_same_scope_and_drops_it_when_the_server_changes', async () => {
+    let release: (v: string) => void = () => undefined;
+    const fn = () =>
+      new Promise<string>((r) => {
+        release = r;
+      });
+    const Probe = ({ k, scope }: { k: number; scope: string }) => {
+      const v = useLoad(fn, k, true, scope);
+      return <p data-testid="v">{v.state === 'ok' ? v.data : v.state}</p>;
+    };
+    const { rerender } = render(<Probe k={1} scope="a" />);
+    await act(async () => release('from-a'));
+    expect(screen.getByTestId('v').textContent).toBe('from-a');
+    rerender(<Probe k={2} scope="a" />); // refresh, same server
+    expect(screen.getByTestId('v').textContent).toBe('from-a');
+    await act(async () => release('from-a-2'));
+    rerender(<Probe k={3} scope="b" />); // another server
+    expect(screen.getByTestId('v').textContent).toBe('loading');
   });
 });
