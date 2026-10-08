@@ -427,7 +427,9 @@ message ExecuteStreamRequest {
 
 message ExecuteResponse {
   RowSet rows = 1;
-  // More rows existed than `max_rows`; `ExecuteStream` reads them all.
+  // More rows existed than `max_rows` allowed. `ExecuteStream` returns more
+  // rows than one unary answer may carry (its own `max_rows` caps the whole
+  // stream).
   bool truncated = 2;
   Counters counters = 3;
   // Read at least this state on a later request (`Consistency.at_least`).
