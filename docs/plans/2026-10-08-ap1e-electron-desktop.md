@@ -608,3 +608,136 @@ Commit `docs(ap1e): desktop docs and status`.
 ## Rulings made during execution
 
 (Task 0 and later tasks append here.)
+
+### Task 0 rulings (reconciled with the code, 2026-10-08)
+
+**R0.1. What `boot()` needs from `PlatformService`.** `boot()` (`web/packages/console-host/src/boot.ts`) never reads `PlatformService` itself. It takes `options.platform: PluginModule` and runs `ctx.plugin({name: platform.name ?? 'platform', apply})` once. That plugin must `ctx.provide('platform', PlatformService)` and `ctx.provide('transport', Transport)`. `flagsPlugin` injects `transport` and calls `InstanceService.getInstance`; `@loams/plugin-rpc` also injects `transport` and `flags`. The contract is `PlatformService` in `web/packages/console-host/src/services.ts`: `kind: 'web' | 'desktop'`, `fetch`, `baseUrl`, `openExternal(url)`, `notify({title, body, route?})`, `clipboardWrite(text)`. The reference is `web/packages/platform-web/src/index.ts`: it uses `credentials: 'include'`, `createConnectTransport({baseUrl, useBinaryFormat: true, fetch})`, and `openExternal` refuses anything but http(s). `@loams/platform-electron` copies that shape, sets `kind: 'desktop'`, uses `baseUrl = location.origin` (`loams-app://console`) and routes the three side-effect methods over IPC. `startConsole({platform, root, patches, extraModules, extraManifests, base, grant})` is in `web/apps/console/src/cordis/start.ts`. Three consequences:
+- (a) The manifest `requires` block accepts only `console` and `api` (`manifest.ts` rejects other keys). D658's "requires the `desktop` service" must therefore be expressed as `inject: ['desktop']` (the plugin stays `pending` until a service is provided). `platform-electron` must `provide('desktop', ...)` itself: a non-core plugin may only provide `<plugin-id>.*` services (`guard.ts`), and the platform plugin gets the raw context. Add `desktop: DesktopService` to `Services` by declaration merging (`declare module '@loams/console-host'`), because `service()` is typed on `keyof Services`.
+- (b) A manifest's `editions` is `oss | desktop | cloud` (`manifest.ts` `EDITIONS`), not the `[oss, cloud, byoc]` that D658 shows. Desktop plugins declare `editions: ['desktop']`, and the existing first-party plugins already list `desktop`.
+- (c) A manifest's `slots` is a gate. The desktop plugins list `console.page` and `console.nav`, plus `console.settings.section` if used.
+
+**R0.2. How `info.features` reaches plugins.** The path is `flagsPlugin` -> `GetInstance` over the Connect transport -> `ctx.provide('flags', FlagsService)`. `FlagsService` is `{edition, instanceName, serverVersion, features: Record<string, boolean>, apiVersions, has(api)}`, filled from `info.features` (proto `map<string,bool> features = 6`). A plugin reads it with `inject: ['flags']` and `service(ctx, 'flags').features['local']`. `stack-status` and `rpc` already do this. `flags` is read once at boot and is not reactive. A server switch reloads the window, so that is fine.
+
+Two findings that change D657:
+- (i) The local engine's `GetInstance` leaves `features` empty (`crates/loams/src/api/connect.rs`, `Instance::get_instance`, `..Default::default()`). It returns edition `OSS` and `api_versions` of only `loams.instance.v1` and `loams.collection.v1`. The `/api/v1/instance` REST shim therefore does NOT feed the cordis console's flags. Only the classic console (`web/apps/console/src/session.tsx`) uses `/api/v1/instance`.
+- (ii) Ruling: `@loams/platform-electron` builds the transport with a Connect **interceptor** that, when the active server's kind is `local`, sets `res.message.features.local = true` on the `InstanceService/GetInstance` response. This is decoded client-side, so the main process never re-encodes protobuf. The `/api/v1/*` shim in the protocol handler still exists for the classic pages.
+- `identity` calls `rpc.instance.whoAmI`. The engine answers it `not_implemented`, which `identity` swallows into an empty session. A local session therefore has no principal and no environments, and `namespaces` shows its "No environments" empty state. Pages that need a control plane hide on `flags.features.local`.
+
+**R0.3. `@loams/proto` does not generate `loams.collection.v1`.** `buf.gen.apps.yaml` lists only `options`, `instance`, `devices`, `approvals`, `operations`, `notifications` and `errors`. `web/packages/proto/src/gen/loams/` has the same seven directories. The source exists in `proto/loams/collection/v1/{collection,document,query}.proto`. It imports `google/protobuf/{empty,struct}.proto`, `loams/collection/v1/document.proto` and `loams/options/v1/options.proto`, all of which are already available (the Google types come from `@bufbuild/protobuf`'s wkt). The engine serves `NamespaceService`, `CollectionService`, `DocumentService` and `QueryService` (`crates/loams/src/api/connect.rs` `CATALOGUE`). Task 9 therefore adds `- proto/loams/collection/v1` to `inputs.paths` and runs `pnpm --filter @loams/proto generate`. That script is `cd ../../.. && buf generate --template buf.gen.apps.yaml` (buf 1.73.0). The generation is `clean: true` and is checked in CI for drift. Task 9 must also update the `proto/src/index.ts` namespace exports (a `collection` namespace like `instance`) and the package.json description.
+
+**R0.4. Console linking.** The two entries do not link to each other. The classic console is `web/apps/console/index.html` -> `src/main.tsx`, a `createBrowserRouter(..., {basename: '/ui'})`, so a classic page is a real path such as `/ui/projects/x`. The cordis console is `web/apps/console/cordis.html` -> `src/cordis/main.tsx`, built into the same `dist` (`vite.config.ts`: `base: '/ui/'`, inputs `{main, cordis}`). Its router is a **hash router** (`web/plugins/shell/src/router.ts`, `HashRouter`, the comment names `#/approvals/apr_1`). A plugin route `/servers` is therefore reached at:
+
+    loams-app://console/ui/cordis.html#/servers
+
+(over http in dev: `http://127.0.0.1:5173/ui/cordis.html#/servers`). The nav renders `<a href="#/servers">`, and a parameterized route (`/approvals/:id`) gets no nav entry. A deep link `loams://open/console/<path>` navigates to `#/<path>`. Rulings:
+- The desktop window loads `loams-app://console/ui/cordis.html`, and `onNavigate(path)` sets `location.hash = path` (or calls `router.navigate(path)`).
+- Shell nav entries are hash links only (`<a href="#/path">`), so "Classic console" (`/ui/`, a real path, not a hash route) cannot go through `router.page`. Task 7 adds it as a plain anchor or button in a `console.settings.section` or a `shell.overlay` slot entry that calls `location.assign('/ui/')`; the nav slot's `meta.href` is always rendered as `#<href>`.
+- The cordis page needs the CSP meta from `vite.config.ts` (`cspMeta`, production builds only: `script-src 'self'`, `connect-src 'self'`, `frame-src 'self'`). A `loams-app://` page counts as `'self'` only if the scheme is registered `standard`+`secure`+`supportFetchAPI`. This is the same constraint as D655.
+- `public/config.json` is `{}`, and `loadRuntimeConfig(base)` fetches `<base>config.json`, so the protocol handler must serve it. `config.server` unset means same-origin, which is what D655 wants.
+
+**R0.5. Catalog patch syntax** (`web/packages/console-host/src/catalog.ts`). The base is `web/apps/console/catalog/base.yml`: a YAML list of rows `{id, name, config?, disabled?, inject?}`, with `id` matching `[a-z][a-z0-9-]*`, `name` the package name, and **no YAML tags** (`!!js` etc. are rejected). A patch is also a list (`parsePatch`). A `- id:` row replaces a row's `config`/`disabled`/`inject` (the whole `config`, not a merge), and an `- insert:` row appends rows, the only key allowed beside it being none. `catalog/desktop.yml` is therefore:
+
+```yaml
+- insert:
+    - id: desktop-servers
+      name: '@loams/plugin-desktop-servers'
+    - id: data-studio
+      name: '@loams/plugin-data-studio'
+    - id: factory
+      name: '@loams/plugin-factory'
+- id: hello
+  disabled: true   # optional: the sandboxed sample is not shipped on desktop
+```
+
+The desktop edition passes `patches: [parsePatch(desktopYml)]` and `extraModules`/`extraManifests` to `startConsole`. A row's `inject` may only narrow its manifest's list. A patch naming an unknown `id` throws `CatalogError`. `base.yml` is imported with Vite's `?raw`, so `desktop.yml` must be imported the same way from the desktop entry.
+
+**R0.6. How plugins register routes, nav items and slots.** A plugin is `{name, inject, apply(ctx, config)}` with the default export (`web/plugins/namespaces/src/index.tsx`):
+
+```tsx
+const plugin: PluginModule = {
+  name: 'namespaces', inject: ['session', 'router'],
+  apply(ctx: Context) {
+    const router = service(ctx, 'router');
+    ctx.effect(() => router.page(
+      { id: 'namespaces', path: '/namespaces', title: 'Namespaces', plugin: 'namespaces',
+        nav: { group: 'Instance', order: 10 } },
+      () => <NamespacesPage .../>));
+  },
+};
+```
+
+`router.page(spec, Component)` returns a disposer, so it is always wrapped in `ctx.effect`. It registers a keyed `console.page` slot (key = `spec.id`) and, when `spec.nav` is set and the path has no `:param`, a `console.nav` entry (`meta: {label, href: path, group}`). A page component gets `{params, environment}`. For other slots, use `slots.register({name, plugin, key?, order?, meta?}, Component)`; the slot names are in `web/packages/slots/src/types.ts` (`root` single, `console.nav` list, `console.page` keyed, `console.settings.section` list, `environment.overview.card` list, `approval.renderer` keyed, `shell.overlay` list). The package.json manifest is `"loams": {"plugin": {kind: 'console', entry: '.', tier: 'first-party', inject, provides, slots, permissions, requires: {console, api: [...]}, editions}}`. Registration is gated by the manifest `slots`, `inject` and `permissions` (the guard proxy throws on a service that was not injected). Nav groups come from `nav.group`. Pages register synchronously in `apply`. The sidebar groups by `meta.group` and sorts by `order`.
+
+**R0.7. Adapters (under `plugins/packages/plugin-*-adapter/src/service.ts`).** Every adapter is a cordis `Service` subclass (`import { Context, Service } from 'cordis'`) with `static inject = []` and `constructor(ctx: Context, config)`; `super(ctx, '<name>')` registers `ctx.<name>`. They need no plugins server: the package tests do `new ForgejoAdapterService(new Context(), {baseUrl, token})`. A bare `new Context()` from `cordis` works, because `loggerFrom(ctx)` tolerates a missing `ctx.logger`. They call the global `fetch` through `@loams-plugins/plugin-upstream-http` (`UpstreamClient`, `UpstreamError{status, body, url, method}`). The only runtime dependencies are `cordis ^4.0.0-rc.10` and `plugin-upstream-http`; `@loams-plugins/core` is imported with `import type` only. Note the **two different workspaces**: the adapters are in the pnpm workspace under `plugins/packages/*` (names `@loams-plugins/plugin-*-adapter`, `main: src/index.ts`, raw TypeScript), while the web console's cordis is `@loams/cordis` (`web/packages/cordis`). The FactoryHost uses the plugins `cordis` and one `new Context()` per app, with the adapter built from a TypeScript path (bundle it into the main process with electron-vite, or alias the package). Constructor and config keys:
+
+| App | Class (package export) | Config | Notes |
+|---|---|---|---|
+| Forgejo | `ForgejoAdapterService` | `{baseUrl, token, timeoutMs?, concurrency?(4), cacheTtlMs?, limit?}` | PAT sent as `Authorization: token <pat>`; `/api/v1` appended |
+| Zulip | `ZulipAdapterService` | `{baseUrl, email (delivery email), apiKey, timeoutMs?, rateLimitFloor?(10), maxPages?(50)}` | `/api/v1` appended |
+| ItsAPlan | `ItsAPlanAdapterService` | `{baseUrl, apiKey ('itp_...'), timeoutMs?}` | header `x-api-key`; no `/api/v1` in baseUrl |
+| GlitchTip | `GlitchtipAdapterService` (lower-case t) | `{baseUrl, token, timeoutMs?}` | Bearer; `/api/0/` appended |
+| OpenPanel | `OpenPanelAdapterService` | `{baseUrl, clientId (UUIDv4-shaped), clientSecret, apiPrefix?('/api'), funnelStepEncoding?, timeoutMs?}` | rate throttles built in |
+| Matomo | `MatomoAdapterService` | `{baseUrl, apiToken, timeoutMs?, defaultRowLimit?, defaultPeriod?, defaultDate?}` | Bearer `token_auth` |
+| Langfuse | `LangfuseAdapterService` | `{baseUrl, publicKey, secretKey, timeoutMs?}` | HTTP Basic; `/api/public` appended |
+
+OpenObserve has no adapter (full UI only), and there is no `plane` adapter: Plane is served through the ItsAPlan adapter (Task 10 maps `plane` to ItsAPlan). A bad config throws in the constructor for some adapters (OpenPanel validates `clientId`). `forgejo.detach()` releases the cache, and the others hold no timers except OpenPanel's throttles. Each adapter also exports `<x>Manifest`, `<x>Loader` and `*_SKILLS`, which the FactoryHost does not use.
+
+**R0.8. Proposed op -> method mapping for §19.6** (Task 10 fixes it in `ops.ts`; every listed method exists today and is a GET). Defaults noted are the adapter's, and `limit` is clamped to <= 50 for every op:
+- Forgejo
+  - `repos`: `searchRepositories(q ?? '', {page, limit})` -> `{ok, data: ForgejoRepository[]}`
+  - `issues`: `searchIssues(q ?? '', {page, limit})`, which sends `type=issues` (Forgejo's default state is open). Pull requests are NOT in this search, so `issues` with `type: 'pulls'` is `listPullRequests(owner, repo, {state: 'open', page, limit})`, with `owner` and `repo` required in `params` for that variant.
+  - `version`: `getVersion()`
+  - `health`: `getVersion()` succeeding.
+- Zulip
+  - `streams`: `listStreams()`
+  - `messages`: `fetchMessages({narrow: [{operator:'channel', operand: <name>}], anchor:'newest', num_before: n, num_after: 0})` returns `{messages, ...}`. `channel` is a valid `ZulipNarrowOperator` in the adapter.
+  - `server`: `getSelf()` (there is no realm-settings method; `/users/me` proves auth and returns identity)
+  - `health`: `getSelf()`.
+- ItsAPlan
+  - `stats`: `getStats(projectKey)`
+  - `issues`: `listIssues(projectKey, {limit})`
+  - `health`: `health()` plus `me()` (to separate `auth_failed`).
+  - **Gap:** there is no project-listing method, so `projectKey` is an extra credential field or a required op param. Add the credential field `projectKey` (not secret) for Plane.
+- GlitchTip
+  - `organizations`: `listOrganizations()` -> `GlitchtipListPage` (it has `.data`)
+  - `issues`: `listIssues(orgSlug, {query: 'is:unresolved', limit, sort?})`. The adapter has no `status` param (see `GlitchtipIssuesQuery`), so "unresolved" is the Sentry-style `query` string. Task 10 verifies it against the GlitchTip fixtures, and falls back to filtering `issue.status === 'unresolved'` client-side.
+  - `health`: `root()` or `getCurrentUser()`.
+- OpenPanel
+  - `insights`: `overview(projectId, {range, interval})` for visitors and sessions, plus `topPages(projectId, {range, limit})`. `activeUsers(projectId)` and `live(projectId)` are available for extra tiles.
+  - `health`: `health()` (unauthenticated `/healthcheck`) and `status()` (never throws). **Gap:** `projectId` is required for the insights, and `manageProjects()` needs a `root` client. Make `projectId` a credential field.
+- Matomo
+  - `visits`: `getVisitsSummary({idSite, period, date})` (`VisitsSummary.get`)
+  - `pages`: `getPageUrls({idSite, period, date, rowLimit})`
+  - `health`: `getVersion()`
+  - **Gap:** `idSite` required (credential field `idSite`, or pick the first of `listSites()`).
+- Langfuse
+  - `traces`: there is NO trace-list method. Use `listObservations({isRootObservation: true, limit, fromStartTime?})` (the v2 observations feed, root observations = trace roots).
+  - `daily`: `metricsDaily()` (the adapter flags `/metrics/daily` as undocumented, so a 404 is expected on some versions and the panel must show "unavailable")
+  - `health`: `status()` (never throws).
+- Health mapping: `UpstreamError.status` 401 or 403 -> `auth_failed`, any other HTTP error or a thrown fetch error -> `unreachable`, no credentials -> `unconfigured`.
+- All adapters return upstream JSON as-is, so `ops.ts` must project each reply to a small fixed DTO before it crosses IPC, and a per-op zod-style param schema must reject anything else (§19.5).
+
+**R0.9. `loams-apps-mock` and the `/api/v1/session` shape.** The prebuilt `/mnt/Projects/rust-cache/target/debug/loams-apps-mock` dated 2026-10-07 was STALE: it answered `/api/v1/*` with `404 {"code":"unimplemented"}`. It predates commit `26c6877e` (unified console routes), so run `cargo build -p loams-apps-mock` first (40 s incremental). Options: `--listen <addr>` (default `127.0.0.1:8084`), `--heartbeat-secs`, `--signed-out` (makes `GET /api/v1/session` answer 401), `--public-url` and `--ui-dir` (serves a console build at `/ui/`, default `web/apps/console/dist` if built). `GET /api/v1/instance` and `GET /api/v1/session` need **no auth or cookie** and answer 200. The fixtures are in `apps/desktop-electron/test/fixtures/apps-mock-instance.json` and `apps-mock-session.json` (the timestamps are relative to "now"). The schemas are in `api/console/openapi.json` (`Instance`, `Session`, both `additionalProperties: false`, so the shim's `desktop: true` and `features.local` are extensions that the typed generated client (`web/apps/console/src/api/schema.d.ts`) does not declare; `openapi-fetch` does not validate at runtime, so they pass through). Required fields:
+- `Instance`: `{name, edition ('oss'|'cloud'|'byoc'), version, setup_required, sign_in: {password, totp, passkeys, oidc: [{id, name, kind}]}, features: {billing, multi_org, passkeys}}`.
+- `Session`: `{user: {id, name, email, avatar_url, two_factor, sso, created_at, last_seen_at}, org: {id, name, slug, created_at, require_two_factor, allowed_domains}, role ('owner'...), csrf_token, expires_at}`. The classic console stores `csrf_token` and sends it as `X-CSRF-Token` on non-GET requests (`api/client.ts`).
+- The local shim answers `instance` with edition `oss`, `setup_required: false`, `sign_in: {password: false, totp: false, passkeys: false, oidc: []}`, `features: {billing: false, multi_org: false, passkeys: false, local: true}`, plus `desktop: true`, and `session` with one fixed owner (`role: 'owner'`, `csrf_token: 'local'`, `expires_at` far in the future, the org `Local`).
+- Error body: the engine's REST errors are `{"error": <code>, "message": ...}` (`crates/loams/src/api/errors.rs`) while the mock's are `{"code", "message"}`. D657's `404 {code:"not_in_local_edition"}` follows the mock/OpenAPI `Error` shape, so keep `code` and add `message`.
+- The mock also serves the Connect/gRPC app protos on the same port (`/loams.instance.v1.InstanceService/GetInstance` etc.), plus `/health`, `/ready` and seeded `/v1/namespaces/{ns}/collections`. For Task 6's UI, the dev bearer is `mock-access-usr_omar` (`VITE_LOAMS_DEV_BEARER`) for the Connect calls (cordis console in dev mode), though the REST routes ignore auth.
+
+**R0.10. SQL REST endpoint** (`crates/loams/src/api/sql.rs`, route in `api/mod.rs:240`). `POST /v1/namespaces/{ns}/sql`, content-type JSON. Request: `{"query": string, "consistency"?: ReadConsistency}`; unknown fields are rejected (`deny_unknown_fields`). `ReadConsistency` is serde snake_case: `"strong"` (the default), `"eventual"`, `{"at_least": <token>}` or `{"pinned": {"manifest_version": n, ...}}`. A `Loams-Consistency-Token` header may also be sent. One **read-only** statement only (`run_read_only`). Response 200: `{"columns": [{"name": string, "type": string}], "rows": [[...], ...], "truncated": boolean}`, where `type` is Arrow's display string for the type (for example `Utf8`, `Int64`), `rows` are arrays in column order, floats that are not finite become `null`, and many types are serialised as Arrow display strings. `truncated: true` means the row limit (`collections.config().sql`) cut the result. Errors: `{"error": <code>, "message": ...}` with a 4xx/5xx and a `Retry-After` on 429/503. The Connect services under `loams.collection.v1` are the alternative, and the CATALOGUE comment says `loams.sql.v1` is future. Data Studio therefore uses the REST SQL route (through the proxy, `/v1/`) for the SQL tab.
+
+**R0.11. Pinned tool versions** (newest stable at least 14 days old, so published on or before 2026-09-24; from `npm view <pkg> time --json`; today is 2026-10-08):
+
+| Package | Pin | Published | Newer (too new or other major) |
+|---|---|---|---|
+| electron | **44.4.5** | 2026-09-23 | 44.7.0 (2026-10-07), 44.6.0 (2026-10-06) are < 14 days |
+| electron-vite | **5.0.0** | 2025-12-07 | none |
+| electron-builder | **26.16.1** | 2026-09-07 | 26.17.0 (2026-09-26) is < 14 days |
+| electron-updater | **6.8.9** | 2026-06-05 | 6.8.10 (2026-09-26) is < 14 days |
+| @playwright/test | **1.63.0** | 2026-09-04 | 1.64.0 (2026-10-07) is < 14 days |
+| @noble/ed25519 | **3.2.0** | 2026-08-27 | none (ESM only, node >= 20) |
+
+- Electron 44.4.5 bundles **Node 24.21.0**, Chromium 152.0.7977.130 and V8 15.2 (from `electronjs.org/headers/index.json`; 44.7.0 has the same). The main process therefore has Node 24 APIs and a global `fetch`. The repo's own `engines.node` is `>=22`, so the dev Node and Electron's Node differ, and the Vitest unit tests must not assume Electron's.
+- **electron-vite 5.0.0 declares `peerDependencies: vite ^5 || ^6 || ^7`** (+ optional `@swc/core`) and `engines.node ^20.19 || >=22.12`, while `web/apps/console` pins **vite 8.3.1**. The desktop package must pin its own `vite` 7.x (newest 7 is 7.3.7) beside electron-vite. pnpm resolves per package, but the monorepo `pnpm-workspace.yaml` overrides only touch `vite-plus`, so there should be no clash; the console is built by its own package (the renderer is the console's `dist`, copied in) and electron-vite then builds only `main` and `preload`.
+- electron-updater 6.8.9 depends on `builder-util-runtime 9.7.0`, and electron-builder 26.16.1 should be pinned with the matching `app-builder-lib`. `@noble/ed25519` 3.x is async-first, with sync only after setting `etc.sha512Sync`. For the Ed25519 manifest check in main, Node's `crypto.verify(null, data, publicKeyObject, sig)` is the zero-dependency alternative, since the main process runs Node 24. Task 14 decides, and `@noble/ed25519` can stay as the pinned fallback.
+- dsh-desktop is cloned at `~/Documents/Ostriumlabs/dsh-desktop` (HEAD `51f9896`) with `src/main/runtime/harness-runtime.ts`, `src/main/security.ts`, `src/main/security-policy.ts`, `electron-builder.dev.cjs` and `scripts/electron-builder-windows.mjs` for Tasks 3, 5 and 15.

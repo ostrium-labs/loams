@@ -1,0 +1,23 @@
+{
+    "name": "Acme Loams",
+    "edition": "oss",
+    "version": "0.1.0-dev",
+    "setup_required": false,
+    "sign_in": {
+        "password": true,
+        "totp": true,
+        "passkeys": false,
+        "oidc": [
+            {
+                "id": "keycloak",
+                "name": "Acme SSO",
+                "kind": "keycloak"
+            }
+        ]
+    },
+    "features": {
+        "billing": false,
+        "multi_org": false,
+        "passkeys": false
+    }
+}
