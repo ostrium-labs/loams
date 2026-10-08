@@ -19,9 +19,19 @@ function fakePg(opts: { failLoginOnce?: boolean } = {}) {
 			dialect: "pg" as const,
 			query: async (sql: string) => {
 				log.push(`${who}: ${sql}`);
-				return sql.startsWith("SELECT 1 FROM pg_roles")
-					? { columns: ["?column?"], rows: [] }
-					: { columns: ["n"], rows: [[1]] };
+				if (sql.startsWith("SELECT 1 FROM pg_roles"))
+					return { columns: ["?column?"], rows: [] };
+				if (sql.includes("FROM pg_auth_members"))
+					return {
+						columns: ["f"],
+						rows: [["REVOKE pg_read_all_data FROM loams_ro"]],
+					};
+				if (sql.includes("FROM pg_namespace"))
+					return {
+						columns: ["f"],
+						rows: [['GRANT USAGE ON SCHEMA "shop" TO loams_ro']],
+					};
+				return { columns: ["n"], rows: [[1]] };
 			},
 			close: async () => {},
 		};
@@ -41,8 +51,18 @@ describe("postgres agent reads", () => {
 		expect(admin[1]).toMatch(
 			/^CREATE ROLE loams_ro LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '[\w-]{32}'$/,
 		);
-		expect(admin[2]).toBe("GRANT pg_read_all_data TO loams_ro");
-		expect(admin).toHaveLength(3); // provisioned once
+		// No membership is ever granted; existing ones are revoked, and grants are refreshed per read.
+		expect(admin.some((l) => /GRANT pg_read_all_data/.test(l))).toBe(false);
+		expect(admin.filter((l) => l.startsWith("CREATE ROLE"))).toHaveLength(1);
+		expect(
+			admin.filter((l) => l.startsWith("REVOKE pg_read_all_data")),
+		).toHaveLength(2);
+		expect(
+			admin.filter((l) => l.startsWith("GRANT USAGE ON SCHEMA")),
+		).toHaveLength(2);
+		expect(admin.find((l) => l.includes("FROM pg_namespace"))).toContain(
+			"NOT LIKE 'pg\\_%'",
+		);
 		expect(
 			log
 				.filter((l) => l.startsWith("loams_ro:"))

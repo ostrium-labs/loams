@@ -166,18 +166,21 @@ export function createPgBackend(deps: {
 	let roReady: Promise<void> | undefined;
 
 	/**
-	 * Creates (or refreshes) the agent's login on first use. The session user of an agent read is
-	 * this role, never the admin: a superuser session could `set_config('role', ...)` its way back.
+	 * Creates (or refreshes) the agent's login on first use, then on every agent read refreshes its
+	 * grants. The session user of an agent read is this role, never the admin: a superuser session
+	 * could `set_config('role', ...)` its way back. It holds no role membership (so no
+	 * pg_read_all_data and no path to pg_authid) and SELECT only on non-system schemas, re-granted
+	 * each read so new schemas and tables become readable.
 	 */
 	async function ensureReadOnlyRole(): Promise<void> {
-		roReady ??= (async () => {
-			let s: OpenSession;
-			try {
-				s = await connect();
-			} catch (e) {
-				throw toSqlError(e, [PG_PASSWORD]);
-			}
-			try {
+		let s: OpenSession;
+		try {
+			s = await connect();
+		} catch (e) {
+			throw toSqlError(e, [PG_PASSWORD]);
+		}
+		try {
+			roReady ??= (async () => {
 				const pw = roPassword.reveal();
 				const exists = await s.query(
 					`SELECT 1 FROM pg_roles WHERE rolname = '${PG_RO_USER}'`,
@@ -187,15 +190,22 @@ export function createPgBackend(deps: {
 				await s.query(
 					`${exists.rows.length ? "ALTER" : "CREATE"} ROLE ${PG_RO_USER} ${attrs} PASSWORD '${pw}'`,
 				);
-				await s.query(`GRANT pg_read_all_data TO ${PG_RO_USER}`);
-			} finally {
-				await s.close();
-			}
-		})().catch((e) => {
-			roReady = undefined;
-			throw e;
-		});
-		return roReady;
+			})().catch((e) => {
+				roReady = undefined;
+				throw e;
+			});
+			await roReady;
+			// Statements are built server-side with %I / regrole so identifiers are always quoted.
+			const stmts = [
+				`SELECT format('REVOKE %s FROM ${PG_RO_USER}', roleid::regrole) FROM pg_auth_members WHERE member = '${PG_RO_USER}'::regrole`,
+				`SELECT format('GRANT USAGE ON SCHEMA %1$I TO ${PG_RO_USER}; GRANT SELECT ON ALL TABLES IN SCHEMA %1$I TO ${PG_RO_USER}; GRANT SELECT ON ALL SEQUENCES IN SCHEMA %1$I TO ${PG_RO_USER}', nspname) FROM pg_namespace WHERE nspname <> 'information_schema' AND nspname NOT LIKE 'pg\\_%'`,
+			];
+			for (const q of stmts)
+				for (const row of (await s.query(q)).rows)
+					await s.query(String(row[0]));
+		} finally {
+			await s.close();
+		}
 	}
 
 	return {

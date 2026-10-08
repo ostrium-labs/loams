@@ -44,6 +44,26 @@ describe.skipIf(!process.env.LOAMS_IT_PG)("postgres stack", () => {
 		// The same query through the agent tool never succeeds either (lexer or database).
 		const tool = pgTools.find((t) => t.name === "pg_sql");
 		await expect(tool?.run({ pg }, { sql: bypass })).rejects.toBeTruthy();
+		// Account hashes are out of reach, while tables in a schema created later are readable.
+		for (const q of [
+			"SELECT rolpassword FROM pg_authid",
+			"SELECT passwd FROM pg_shadow",
+		])
+			await expect(pg.query(q, { agent: true }), q).rejects.toMatchObject({
+				message: expect.stringMatching(/permission denied/i),
+			});
+		await pg.query("DROP SCHEMA IF EXISTS it_new CASCADE");
+		await pg.query("CREATE SCHEMA it_new");
+		await pg.query("CREATE TABLE it_new.t (a int)");
+		await pg.query("INSERT INTO it_new.t VALUES (42)");
+		expect(
+			(await pg.query("SELECT a FROM it_new.t", { agent: true })).rows,
+		).toEqual([[42]]);
+		expect(
+			(await pg.query("SELECT rolname FROM pg_roles LIMIT 1", { agent: true }))
+				.rowCount,
+		).toBe(1);
+		await pg.query("DROP SCHEMA it_new CASCADE");
 		const big = await pg.query(
 			"SELECT g FROM generate_series(1, 200000000) g",
 			{ agent: true },
