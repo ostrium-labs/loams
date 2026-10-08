@@ -2,7 +2,16 @@
 //! [§32](../../../design/32-loams-flow-fabric-house.md) §8, served over the
 //! ClickHouse HTTP interface.
 //!
-//! **Task 3 owns errors only.** [`errors`] is the whole crate so far: the error
+//! # The front links no libchdb (HS1 Task 2, D761)
+//!
+//! chDB runs in `loams-house-worker` processes. This crate supervises them —
+//! [`watchdog`] starts, kills and watches one; [`admission`] keeps the
+//! [`WorkerPool`] — and talks to them in `hsw1` frames (`loams-house-ipc`). Engine
+//! errors arrive already taken apart, as `loams_house_ipc::EngineError`. Only the
+//! `inproc-worker` feature (development, the desktop) brings libchdb into this
+//! crate's graph; `no_libchdb_in_front` checks the default one.
+//!
+//! **FL2 Task 3 owned errors only.** [`errors`] was the whole crate then: the error
 //! a client sees — ClickHouse's code, its name, its HTTP status and its own
 //! rendering of the exception text — plus the two rules that make an error look
 //! like a ClickHouse error to a driver. The HTTP layer (`http.rs`, `auth.rs`,
@@ -27,8 +36,9 @@
 //! A statement chDB ran fails with **chDB's** code and name, not one of
 //! [`errors::CODES`]'s: §32 §8.8's "errors from chDB pass through unchanged". The
 //! House parses nothing twice — `loams_chdb::ChdbError` already takes the pinned
-//! library's exception text apart (that parser is measured, with the real captured
-//! strings, in `loams-chdb/src/error.rs`) and this crate only renders the parts.
+//! library's exception text apart in the worker (that parser is measured, with the
+//! real captured strings, in `loams-chdb/src/error.rs`), the `hsw1` `Error` frame
+//! carries the parts, and this crate only renders them.
 //! [`errors::HouseError`] is the union of the two origins, so the transport answers
 //! one type and never has to know which raised it.
 //!
@@ -43,6 +53,12 @@
 //!
 //! Names: Loams, `loams-*` (owner rulings, 2026-10-01).
 
+pub mod admission;
 pub mod errors;
+pub mod watchdog;
 
+pub use admission::{Collected, Event, Outcome, PoolConfig, PoolStats, WorkerLease, WorkerPool};
 pub use errors::{CODES, ChError, HouseError, MidStreamBody};
+#[cfg(feature = "inproc-worker")]
+pub use watchdog::InprocWorker;
+pub use watchdog::{ExitReason, KillHandle, Launcher, ProcessLauncher};

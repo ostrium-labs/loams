@@ -87,7 +87,7 @@
 //! reference server, which is Task 10's `codes_match_reference`, and until then the
 //! House's text is the engine's text plus the version it promises.
 
-use loams_chdb::ChdbError;
+use loams_house_ipc::EngineError;
 
 /// The codes Loams raises itself, with the name ClickHouse gives each and the HTTP
 /// status ClickHouse answers it with (§32 §8.8).
@@ -187,7 +187,7 @@ pub fn status_for(code: i32) -> u16 {
 /// hand-written name.
 ///
 /// A code that is *not* in [`CODES`] is not this type: an error the engine raised is a
-/// [`ChdbError`], which carries its own name as a `String`, and reaches the transport
+/// `loams_chdb::ChdbError` (as an `hsw1` [`EngineError`]), which carries its own name as a `String`, and reaches the transport
 /// as [`HouseError::Engine`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChError {
@@ -205,7 +205,7 @@ impl ChError {
     /// The shape is ClickHouse's own: `getExceptionMessageAndPattern` in
     /// `src/Common/Exception.cpp` writes `"Code: " << code << ". " << displayText`
     /// and then a `.` **only if the text does not already end in one**, then
-    /// `" (" << name << ")"`. [`loams_chdb::ChdbError`] drops the one trailing `.` when
+    /// `" (" << name << ")"`. `loams_chdb::ChdbError` drops the one trailing `.` when
     /// it parses the library's text, so this puts one back; a message that arrived with
     /// its own period keeps that one and does not get a second.
     pub fn text(&self) -> String {
@@ -469,9 +469,11 @@ impl std::error::Error for ChError {}
 pub enum HouseError {
     /// Raised by Loams: a [`ChError`], whose code is in [`CODES`].
     Raised(#[from] ChError),
-    /// Passed through from chDB with its own code and name, as
-    /// `loams_chdb::ChdbError` parsed them out of the library's exception text.
-    Engine(ChdbError),
+    /// Passed through from chDB with its own code and name, as the worker's
+    /// `loams_chdb::ChdbError` parsed them out of the library's exception text and
+    /// an `hsw1` `Error` frame carried them to the front (HS1 Task 2: the front
+    /// links no libchdb, so it holds the parts, not the parser).
+    Engine(EngineError),
 }
 
 impl HouseError {
@@ -532,16 +534,16 @@ impl std::fmt::Display for HouseError {
     }
 }
 
-impl From<ChdbError> for HouseError {
+impl From<EngineError> for HouseError {
     /// A chDB failure becomes [`HouseError::Engine`], keeping its code and name.
     ///
     /// An engine message with no `Code:` line in it — `chdb_stream_cancel_query`'s
     /// "No active streaming query", which is what Ruling 11 measured — has code 0
-    /// ([`loams_chdb::ChdbError::LOAMS_CODE`]) and a name of Loams' own making.
+    /// (`loams_chdb::ChdbError::LOAMS_CODE`) and a name of Loams' own making.
     /// Code 0 is not a ClickHouse code, so [`status_for`] answers 500 for it, which
     /// is the same answer ClickHouse gives code 0 `OK`'s absence: an error it cannot
     /// classify.
-    fn from(err: ChdbError) -> Self {
+    fn from(err: EngineError) -> Self {
         Self::Engine(err)
     }
 }

@@ -1,33 +1,48 @@
 [package]
 name = "loams-house"
-description = "Loams's ClickHouse HTTP surface over the Fabric's Fluss tables: errors rendered as ClickHouse renders them, code for code (FL2 Task 3)."
+description = "The Loams House front's library: ClickHouse errors rendered code for code (FL2 Task 3) and the supervisor of the chDB worker processes (HS1 Task 2). Links no libchdb."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-# Not published: the crate links the digest-pinned `libchdb.so` through
-# `loams-chdb-sys` (FL2 Ruling 2), so the Fabric is built from the repository.
+# The rpath for this package's test binaries when `inproc-worker` links libchdb;
+# see the file.
+build = "build.rs"
 publish = false
 
+[features]
+# `InprocWorker`: the worker's serve loop on a thread of the front, chDB in the
+# front's process (`--workers=inproc`, §49 §4.1, Q686). It brings libchdb into the
+# front, which is exactly what D761 forbids in a release image, so it is off by
+# default and `no_libchdb_in_front` checks the default graph.
+inproc-worker = ["dep:loams-house-worker", "dep:loams-chdb-sys"]
+# `WorkerLease::abort_for_test`, which sends the test-only `Frame::Abort`.
+test-hooks = ["loams-house-ipc/test-hooks"]
+
 [dependencies]
-# The House's engine. Task 3 raises errors *through* chDB's own exception text
-# (`ChdbError`), so the code, name and message of a failed statement are that
-# crate's parse of the pinned library's `Code: … DB::Exception: … (NAME)` string
-# and are never re-derived here.
-loams-chdb = { path = "../loams-chdb" }
-# The `links = "chdb"` package, for one reason: its build script publishes the
-# directory it resolved `libchdb.so` into as `DEP_CHDB_LIB_DIR`, and this package's
-# own `build.rs` needs it to re-emit Ruling 2's rpath for this package's test
-# binaries. No Rust code here uses it, and that is deliberate: `cargo:rustc-link-arg`
-# is per-package, so the only way a House test binary finds `libchdb.so` is to read
-# the metadata the `-sys` package publishes. The dependency is on the `-sys` crate
-# rather than on `loams-chdb` because only an immediate dependent of a `links`
-# package is handed its metadata.
-loams-chdb-sys = { path = "../loams-chdb-sys" }
-# `HouseError`'s `Display`/`Error`, which the HTTP layer (Task 2) surfaces to the
+# HS1 Task 2: the House front links no libchdb (D761). Engine errors arrive in
+# `hsw1` `Error` frames as `loams_house_ipc::EngineError`, already taken apart by
+# the worker, so this crate renders them without depending on `loams-chdb`.
+loams-house-ipc = { path = "../loams-house-ipc" }
+# `posix_spawn` of workers with their socket on fd 3 and an empty environment,
+# `SIGKILL`, and `waitid` without reaping, all without `unsafe` here.
+nix.workspace = true
+# `HouseError`'s `Display`/`Error`, which the HTTP layer surfaces to the
 # per-request error handler. Apache-2.0 OR MIT.
 thiserror.workspace = true
+# The pool is async: the worker sockets are tokio Unix streams, and the deadline,
+# the reaper and the warm-up are tasks.
+tokio = { workspace = true, features = ["io-util", "net", "rt", "sync", "time"] }
+bytes.workspace = true
+
+# Only with `inproc-worker`: the worker's serve loop, and the `links = "chdb"`
+# package whose `DEP_CHDB_LIB_DIR` this package's `build.rs` turns into an rpath.
+loams-house-worker = { path = "../loams-house-worker", optional = true, features = ["inproc-worker"] }
+loams-chdb-sys = { path = "../loams-chdb-sys", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["io-util", "net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
 
 [lints]
 workspace = true

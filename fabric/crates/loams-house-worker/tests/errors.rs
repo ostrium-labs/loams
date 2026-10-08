@@ -1,6 +1,11 @@
 //! Errors: the code, the name, the HTTP status and the rendering, checked against
 //! ClickHouse rather than against the House's own opinion of them (FL2 Task 3).
 //!
+//! Moved here from `loams-house/tests` by HS1 Task 2: the front no longer links
+//! libchdb (D761), so the tests that run statements on the pinned library live
+//! with the worker, the one package that does, and reach `loams-house` the way the
+//! front does — through `loams_house_ipc::EngineError`.
+//!
 //! # What "the reference" is here, and what it is not
 //!
 //! The plan asks each test to compare a Loams-raised error with the reference's own
@@ -35,6 +40,13 @@
 
 use loams_chdb::{ChdbError, Engine, EngineConfig, Session, SessionId, Settings};
 use loams_house::{CODES, ChError, HouseError, MidStreamBody};
+use loams_house_worker::engine_error;
+
+/// A chDB failure as the front receives it: taken apart in the worker, carried in
+/// an `hsw1` `Error` frame (HS1 Task 2), and turned into a [`HouseError`].
+fn to_house(err: ChdbError) -> HouseError {
+    HouseError::from(engine_error(&err))
+}
 
 /// The ClickHouse version the pinned `libchdb.so` v26.9.0 reports through the C ABI:
 /// `SELECT version()` answers this (`loams-chdb`'s `tests/engine.rs` pins it against
@@ -451,7 +463,7 @@ fn codes_match_reference() {
         // The House's answer: the engine's code and name pass through, and the status is
         // ClickHouse's for that code — not a status from the House's own table, which
         // does not contain the engine's codes.
-        let house = HouseError::from(engine_err.clone());
+        let house = to_house(engine_err.clone());
         assert_eq!(
             house.code(),
             case.code,
@@ -498,7 +510,7 @@ fn codes_match_reference() {
         "code 46 must not be in CODES: Loams raises §32 §8.8's list, and everything else is \
          the engine's"
     );
-    let pass_through = HouseError::from(unknown_function);
+    let pass_through = to_house(unknown_function);
     assert_eq!(
         pass_through.http_status(),
         loams_house::errors::status_for(46),
@@ -616,7 +628,7 @@ fn render_format_is_exact() {
     )
     .unwrap_or_else(|| panic!("the text is a ClickHouse exception"));
     assert_eq!(
-        HouseError::from(engine_err).render("26.9.4.3.1"),
+        to_house(engine_err).render("26.9.4.3.1"),
         "Code: 46. DB::Exception: Function with name `loams_no_such_function` does not exist. In scope SELECT loams_no_such_function(1). (UNKNOWN_FUNCTION) (version 26.9.4.3.1)\n",
         "the pass-through rendering"
     );
@@ -667,7 +679,7 @@ fn mid_stream_error_matches_reference() {
     let result_bytes = body.result_bytes();
     assert!(result_bytes > 0, "the client read rows before the failure");
 
-    body.fail(HouseError::from(failure.clone()), CLICKHOUSE_VERSION);
+    body.fail(to_house(failure.clone()), CLICKHOUSE_VERSION);
 
     // The rows stay, and the exception text lands after them: the body is not a
     // truncated success and it is not replaced by the error either.
@@ -738,7 +750,7 @@ fn mid_stream_error_matches_reference() {
     // status and the exception-code header, and no body to append to.
     let mut unsent = MidStreamBody::new();
     unsent.fail(
-        HouseError::from(
+        to_house(
             run("mid-stream-unsent", "SELECT * FROM nope_loams")
                 .err()
                 .unwrap_or_else(|| panic!("the statement fails")),
