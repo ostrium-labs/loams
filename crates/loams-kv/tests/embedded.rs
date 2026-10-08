@@ -321,6 +321,48 @@ async fn group_commit_batches_fsyncs() {
     );
 }
 
+/// Eight transactions write one key, all started before any commits, and
+/// their commits apply as one group (one write transaction): exactly one
+/// commits and the others conflict with it inside the group.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn one_group_of_writers_to_one_key_commits_exactly_one() {
+    let dir = tmp();
+    let store = open(&dir.path().join("store.redb"), "group").await;
+    let h = handle(&store);
+    put(&store, b"warm", b"up").await;
+    let mut txns = Vec::new();
+    for i in 0..8u8 {
+        let mut txn = h.begin().await.expect("begin");
+        txn.put(b"k", vec![i]).await.expect("put");
+        txns.push(txn);
+    }
+    let before = h.stats().write_transactions;
+    let hold = h.hold_committer();
+    let commits: Vec<_> = txns
+        .into_iter()
+        .map(|txn| tokio::spawn(txn.commit()))
+        .collect();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    drop(hold);
+    let mut won = Vec::new();
+    for (i, c) in commits.into_iter().enumerate() {
+        match c.await.expect("joined") {
+            Ok(_) => won.push(i),
+            Err(TxnError::Conflict) => {}
+            Err(e) => panic!("writer {i}: {e:?}"),
+        }
+    }
+    assert_eq!(won.len(), 1, "exactly one commits: {won:?}");
+    assert_eq!(
+        h.stats().write_transactions - before,
+        1,
+        "the eight commits were one group"
+    );
+    let now = store.now().await.expect("now");
+    let winner = u8::try_from(won[0]).expect("small");
+    assert_eq!(get_at(&store, now, b"k").await, Some(vec![winner]));
+}
+
 /// Handles on one path share one database (redb locks its file); each
 /// keyspace has its own id, so equal roots in two keyspaces never meet.
 #[tokio::test]
@@ -565,7 +607,11 @@ fn runtime() -> &'static tokio::runtime::Runtime {
 /// Runs `txns` (each a list of steps), interleaved by `order` (each entry
 /// picks which unfinished transaction moves next: its begin, a step or its
 /// commit), on the store and on the model; returns both traces.
-async fn run_schedule(txns: &[Vec<Step>], order: &[usize]) -> (Vec<Seen>, Vec<Seen>) {
+async fn run_schedule(
+    txns: &[Vec<Step>],
+    order: &[usize],
+    batch: &[bool],
+) -> (Vec<Seen>, Vec<Seen>) {
     let config = EmbeddedConfig {
         root: loams_kv::testing::random_root(),
         ..EmbeddedConfig::new(model_path().clone(), "model")
@@ -579,6 +625,7 @@ async fn run_schedule(txns: &[Vec<Step>], order: &[usize]) -> (Vec<Seen>, Vec<Se
     let mut reference: Vec<Option<ModelTxn>> = (0..n).map(|_| None).collect();
     let (mut got, mut want) = (Vec::new(), Vec::new());
     let mut picks = order.iter().cycle();
+    let mut batches = batch.iter().cycle();
     loop {
         let open: Vec<usize> = (0..n).filter(|&i| at[i] <= txns[i].len() + 1).collect();
         if open.is_empty() {
@@ -595,13 +642,38 @@ async fn run_schedule(txns: &[Vec<Step>], order: &[usize]) -> (Vec<Seen>, Vec<Se
             got.push(real_step(txn, step).await);
             want.push(model.step(reference[i].as_mut().expect("begun"), step));
         } else {
-            let txn = real[i].take().expect("begun");
-            got.push(match txn.commit().await {
-                Ok(_) => Seen::Committed,
-                Err(TxnError::Conflict) => Seen::Conflict,
-                Err(e) => panic!("commit: {e:?}"),
-            });
-            want.push(model.commit(reference[i].take().expect("begun")));
+            // Commit `i` alone, or with every other transaction ready to
+            // commit, as one group of the committer, sent in index order.
+            let group: Vec<usize> = if batches.next().copied().unwrap_or(false) {
+                (0..n).filter(|&j| at[j] == txns[j].len() + 1).collect()
+            } else {
+                vec![i]
+            };
+            let hold = h.hold_committer();
+            let commits = futures::future::join_all(
+                group
+                    .iter()
+                    .map(|&j| real[j].take().expect("begun").commit()),
+            );
+            tokio::pin!(commits);
+            // The first poll sends every commit, in order, to the held
+            // committer.
+            let polled = futures::poll!(&mut commits);
+            drop(hold);
+            let outcomes = match polled {
+                std::task::Poll::Ready(outcomes) => outcomes,
+                std::task::Poll::Pending => commits.await,
+            };
+            for (&j, outcome) in group.iter().zip(outcomes) {
+                got.push(match outcome {
+                    Ok(_) => Seen::Committed,
+                    Err(TxnError::Conflict) => Seen::Conflict,
+                    Err(e) => panic!("commit: {e:?}"),
+                });
+                want.push(model.commit(reference[j].take().expect("begun")));
+                at[j] += 1;
+            }
+            continue;
         }
         at[i] += 1;
     }
@@ -627,13 +699,15 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(256))]
 
     /// Random interleavings of up to four transactions give the reference
-    /// model's reads, scans, and commit and conflict outcomes.
+    /// model's reads, scans, and commit and conflict outcomes; commits ready
+    /// together often apply as one group of the committer.
     #[test]
     fn model_check_against_reference(
         txns in proptest::collection::vec(proptest::collection::vec(step(), 0..6), 1..5),
         order in proptest::collection::vec(0usize..4, 1..40),
+        batch in proptest::collection::vec(any::<bool>(), 1..8),
     ) {
-        let (got, want) = runtime().block_on(run_schedule(&txns, &order));
+        let (got, want) = runtime().block_on(run_schedule(&txns, &order, &batch));
         prop_assert_eq!(got, want);
     }
 }

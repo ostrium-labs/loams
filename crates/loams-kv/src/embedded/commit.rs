@@ -89,6 +89,8 @@ const MAX_GROUP: usize = 1_024;
 /// The committer thread: applies groups until every sender is gone.
 pub(crate) fn committer(core: Arc<Core>, requests: Receiver<Request>) {
     while let Ok(first) = requests.recv() {
+        #[cfg(feature = "faults")]
+        core.io_faults.wait_released();
         let mut group = vec![first];
         while group.len() < MAX_GROUP {
             match requests.try_recv() {

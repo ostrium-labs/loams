@@ -804,9 +804,34 @@ impl Handle {
         self.shared.core.io_faults.panic_next_group();
     }
 
+    /// Holds the committer before it drains its next group, until the
+    /// returned hold is dropped: the commits sent meanwhile apply as one
+    /// group.
+    pub fn hold_committer(&self) -> CommitterHold {
+        self.shared.core.io_faults.hold();
+        CommitterHold {
+            core: self.shared.core.clone(),
+        }
+    }
+
     /// The oracle's last timestamp issued and its persisted mark.
     pub fn oracle_marks(&self) -> (Ts, Ts) {
         let oracle = &self.shared.core.oracle;
         (oracle.last(), oracle.durable())
+    }
+}
+
+/// A hold on a store file's committer, from [`Handle::hold_committer`]
+/// (feature `faults`); dropping it releases the committer.
+#[cfg(feature = "faults")]
+#[derive(Debug)]
+pub struct CommitterHold {
+    core: Arc<Core>,
+}
+
+#[cfg(feature = "faults")]
+impl Drop for CommitterHold {
+    fn drop(&mut self) {
+        self.core.io_faults.release();
     }
 }

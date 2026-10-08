@@ -7,8 +7,8 @@ use std::fs::OpenOptions;
 use std::io;
 use std::ops::Bound;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 
 use redb::backends::FileBackend;
 use redb::{BackendError, Database, DatabaseError, StorageBackend, StorageError};
@@ -18,9 +18,30 @@ use redb::{BackendError, Database, DatabaseError, StorageBackend, StorageError};
 pub(crate) struct Switch {
     fail_syncs: AtomicU32,
     panic_next_group: AtomicBool,
+    held: Mutex<bool>,
+    released: Condvar,
 }
 
 impl Switch {
+    /// Holds the committer before it drains its next group.
+    pub(crate) fn hold(&self) {
+        *self.held.lock().unwrap_or_else(|e| e.into_inner()) = true;
+    }
+
+    /// Lets the committer go on.
+    pub(crate) fn release(&self) {
+        *self.held.lock().unwrap_or_else(|e| e.into_inner()) = false;
+        self.released.notify_all();
+    }
+
+    /// Waits while the committer is held.
+    pub(crate) fn wait_released(&self) {
+        let mut held = self.held.lock().unwrap_or_else(|e| e.into_inner());
+        while *held {
+            held = self.released.wait(held).unwrap_or_else(|e| e.into_inner());
+        }
+    }
+
     /// Makes the committer panic in its next group, after it allocates a
     /// commit timestamp.
     pub(crate) fn panic_next_group(&self) {

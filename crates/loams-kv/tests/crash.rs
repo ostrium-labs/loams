@@ -1,7 +1,8 @@
 //! Crash atomicity of the embedded store (LV1 plan Task 21): a child process
 //! commits multi-key transactions and is `SIGKILL`ed at a random point;
 //! after reopening, every transaction is either fully visible or absent,
-//! and every one the child saw commit is visible.
+//! every one the child saw commit is visible, and the oracle starts above
+//! every commit timestamp the child saw.
 
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -31,7 +32,8 @@ async fn open(path: &Path) -> Store {
 }
 
 /// The child: commits [`TXNS`] transactions of [`KEYS_PER_TXN`] keys each,
-/// printing `committed <i>` after each. Does nothing outside the crash test.
+/// printing `committed <i> <commit_ts>` after each. Does nothing outside the
+/// crash test.
 #[tokio::test]
 async fn crash_child() {
     let Some(path) = std::env::var_os(CHILD_ENV) else {
@@ -39,7 +41,7 @@ async fn crash_child() {
     };
     let store = open(Path::new(&path)).await;
     for i in 0..TXNS {
-        store
+        let c = store
             .run(TxnOptions::new("kv.crash"), move |txn| {
                 Box::pin(async move {
                     for k in 0..KEYS_PER_TXN {
@@ -50,7 +52,7 @@ async fn crash_child() {
             })
             .await
             .expect("committed");
-        println!("committed {i}");
+        println!("committed {i} {}", c.commit_ts.0);
     }
 }
 
@@ -72,9 +74,13 @@ async fn crash_mid_commit_is_atomic() {
     let (acks, acked) = mpsc::channel();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if let Some(i) = line.strip_prefix("committed ")
-                && let Ok(i) = i.trim().parse::<u32>()
-                && acks.send(i).is_err()
+            let mut words = line.split_whitespace();
+            if words.next() == Some("committed")
+                && let (Some(Ok(i)), Some(Ok(ts))) = (
+                    words.next().map(str::parse::<u32>),
+                    words.next().map(str::parse::<u64>),
+                )
+                && acks.send((i, ts)).is_err()
             {
                 return;
             }
@@ -82,25 +88,32 @@ async fn crash_mid_commit_is_atomic() {
     });
     let target = rand::random_range(20..TXNS - 100);
     let mut last = None;
+    let mut max_ts = 0;
     while last.is_none_or(|l| l < target) {
         match acked.recv_timeout(Duration::from_secs(60)) {
-            Ok(i) => last = Some(i),
+            Ok((i, ts)) => {
+                last = Some(i);
+                max_ts = max_ts.max(ts);
+            }
             Err(e) => panic!("the child stopped acknowledging ({e}) after {last:?}"),
         }
     }
     child.kill().expect("SIGKILL");
     child.wait().expect("reaped");
     // Acknowledgements printed before the kill.
-    while let Ok(i) = acked.try_recv() {
+    while let Ok((i, ts)) = acked.try_recv() {
         last = Some(i);
+        max_ts = max_ts.max(ts);
     }
     let last = last.expect("acknowledged");
 
     let store = open(&path).await;
-    let mut snap = store
-        .snapshot(store.now().await.expect("now"))
-        .await
-        .expect("a snapshot");
+    let now = store.now().await.expect("now");
+    assert!(
+        now.0 > max_ts,
+        "after the crash the oracle starts at {now}, at or below commit ts {max_ts} the child saw"
+    );
+    let mut snap = store.snapshot(now).await.expect("a snapshot");
     let mut visible = 0;
     for i in 0..TXNS {
         let keys: Vec<Vec<u8>> = (0..KEYS_PER_TXN).map(|k| key(i, k)).collect();
