@@ -1458,8 +1458,9 @@ jobs:
     runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     steps:
       - uses: actions/checkout@v7
+      # A dated nightly (14+ days old when pinned, 2026-10-09), not a floating one.
       - name: nightly toolchain (libFuzzer instrumentation)
-        run: rustup toolchain install nightly --profile minimal
+        run: rustup toolchain install nightly-2026-09-24 --profile minimal
       - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
         with:
           tool: cargo-fuzz
@@ -1469,7 +1470,7 @@ jobs:
           set -euo pipefail
           for t in handshake_response packet_framing; do
             mkdir -p "fuzz/corpus/$t"
-            cargo +nightly fuzz run "$t" "fuzz/corpus/$t" -- -max_total_time=60 -rss_limit_mb=2048
+            cargo +nightly-2026-09-24 fuzz run "$t" "fuzz/corpus/$t" -- -max_total_time=60 -rss_limit_mb=2048
           done
 
   deny:
