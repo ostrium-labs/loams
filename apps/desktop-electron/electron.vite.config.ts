@@ -21,6 +21,7 @@ export default defineConfig({
 					"@loams-core/host",
 					// SQL drivers: bundled so the packaged app needs no node_modules.
 					"pg",
+					"pg-cursor",
 					"mysql2",
 					...[
 						"forgejo",

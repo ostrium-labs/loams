@@ -1,12 +1,9 @@
 // Client for the Neon pageserver management API and the safekeeper HTTP API of the dev stack
 // (deploy/neon). Routes checked against deploy/neon/README.md; see docs in the Task 22 report.
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type {
-	PgTimeline,
-	PgWalStatus,
-} from "../../shared/contracts";
+import type { PgTimeline, PgWalStatus } from "../../shared/contracts";
 import { SqlError } from "./caps";
 
 export interface PgBranchInput {
@@ -100,10 +97,18 @@ export class NeonClient {
 		}
 	}
 
-	private saveName(id: string, name: string): void {
-		const all = { ...this.names(), [id]: name };
-		mkdirSync(dirname(this.o.branchesFile), { recursive: true });
-		writeFileSync(this.o.branchesFile, `${JSON.stringify(all, null, 2)}\n`);
+	/** Writes are serialised (read-modify-write under one chain) and atomic (temp file + rename). */
+	private writeChain: Promise<void> = Promise.resolve();
+	private saveName(id: string, name: string): Promise<void> {
+		const next = this.writeChain.then(() => {
+			const all = { ...this.names(), [id]: name };
+			mkdirSync(dirname(this.o.branchesFile), { recursive: true });
+			const tmp = `${this.o.branchesFile}.${process.pid}.tmp`;
+			writeFileSync(tmp, `${JSON.stringify(all, null, 2)}\n`);
+			renameSync(tmp, this.o.branchesFile);
+		});
+		this.writeChain = next.catch(() => {});
+		return next;
 	}
 
 	/** GET /v1/tenant */
@@ -153,7 +158,7 @@ export class NeonClient {
 			method: "POST",
 			body,
 		})) as Obj;
-		this.saveName(id, name);
+		await this.saveName(id, name);
 		return this.timeline(
 			{ ...info, timeline_id: info?.timeline_id ?? id },
 			this.names(),

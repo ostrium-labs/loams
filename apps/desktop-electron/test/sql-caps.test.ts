@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Secret } from "../src/main/factory/vault";
 import {
 	isPlainRead,
 	type RawResult,
@@ -9,7 +10,7 @@ import {
 	toResult,
 } from "../src/main/sql/caps";
 import { pgTools } from "../src/main/sql/pg";
-import { wesqlTools } from "../src/main/sql/wesql";
+import { createWesqlBackend, wesqlTools } from "../src/main/sql/wesql";
 
 function fake(
 	dialect: "pg" | "mysql",
@@ -128,10 +129,13 @@ describe("sql caps", () => {
 	});
 
 	it("agent_tools_refuse_writes_and_run_read_only", async () => {
-		const calls: { sql: string; ro?: boolean }[] = [];
+		const calls: { sql: string; ro?: boolean; agent?: boolean }[] = [];
 		const be = {
-			query: async (sql: string, o?: { readOnly?: boolean }) => {
-				calls.push({ sql, ro: o?.readOnly });
+			query: async (
+				sql: string,
+				o?: { readOnly?: boolean; agent?: boolean },
+			) => {
+				calls.push({ sql, ro: o?.readOnly, agent: o?.agent });
 				return {
 					columns: [],
 					rows: [],
@@ -148,7 +152,7 @@ describe("sql caps", () => {
 			["pg_branch_create", "write"],
 		]);
 		await pgSql?.run({ pg: be } as never, { sql: "select 1" });
-		expect(calls[0]).toEqual({ sql: "select 1", ro: true });
+		expect(calls[0]).toEqual({ sql: "select 1", ro: undefined, agent: true });
 		await expect(
 			pgSql?.run({ pg: be } as never, { sql: "drop table t" }),
 		).rejects.toMatchObject({ code: "read_only" });
@@ -166,7 +170,8 @@ describe("sql caps", () => {
 			"WITH c AS (SELECT 1) SELECT * FROM c",
 			"SELECT 'insert; drop' -- delete",
 		])
-			expect(isPlainRead(q), q).toBe(true);
+			expect(isPlainRead(q, "pg"), q).toBe(true);
+		expect(isPlainRead("SELECT 1 # c\n", "mysql")).toBe(true);
 		for (const q of [
 			"INSERT INTO t VALUES (1)",
 			"EXPLAIN ANALYZE DELETE FROM t",
@@ -176,8 +181,17 @@ describe("sql caps", () => {
 			"SELECT * FROM t FOR UPDATE",
 			"SET x = 1",
 			"",
+			"SELECT set_config('role','none',true)",
+			"SELECT E'a\\'' INTO OUTFILE '/x'",
 		])
-			expect(isPlainRead(q), q).toBe(false);
+			expect(isPlainRead(q, "pg"), q).toBe(false);
+		// MySQL: executable comments and `--` without whitespace are ambiguous, so they count as writes.
+		for (const q of [
+			"SELECT 1 /*!80000 INTO OUTFILE '/tmp/x' */",
+			"SELECT a --1 INTO OUTFILE '/tmp/x' FROM t",
+			"SELECT 'a\\' INTO OUTFILE '/x'",
+		])
+			expect(isPlainRead(q, "mysql"), q).toBe(false);
 	});
 
 	it("errors_redact_password", async () => {
@@ -191,6 +205,12 @@ describe("sql caps", () => {
 		expect(redact("auth failed for loams-dev", ["loams-dev"])).toBe(
 			"auth failed for ***",
 		);
+		// The user name survives even when it equals the password.
+		expect(
+			redact("failed postgres://cloud_admin:cloud_admin@h/d", [
+				new Secret("cloud_admin"),
+			]),
+		).toBe("failed postgres://cloud_admin:***@h/d");
 		const r = await toResult(async () => {
 			throw Object.assign(
 				new Error("password authentication failed: postgres://u:pw9@h/d"),
@@ -204,5 +224,77 @@ describe("sql caps", () => {
 		});
 		expect(JSON.stringify(r)).not.toContain("pw9");
 		expect(new SqlError("x", "y").code).toBe("x");
+	});
+
+	it("agent_role_sequence_and_early_stop", async () => {
+		const seen: { sql: string; limit?: number }[] = [];
+		const s: SqlSession = {
+			dialect: "pg",
+			async query(sql, o) {
+				seen.push({ sql, limit: o?.limit });
+				if (!sql.startsWith("SELECT")) return { columns: [], rows: [] };
+				// Behaves like the real sessions: never returns more than `limit` rows.
+				const n = Math.min(o?.limit ?? Infinity, 5_000_000);
+				return {
+					columns: ["n"],
+					rows: Array.from({ length: n }, (_, i) => [i]),
+				};
+			},
+		};
+		const r = await runCapped(s, "SELECT n FROM big", {
+			readOnly: true,
+			role: "pg_read_all_data",
+		});
+		expect(seen.map((x) => x.sql)).toEqual([
+			"BEGIN READ ONLY",
+			"SET LOCAL ROLE pg_read_all_data",
+			"SET LOCAL statement_timeout = 30000",
+			"SELECT n FROM big",
+			"ROLLBACK",
+		]);
+		// The row bound reaches the session as maxRows + 1, so it can stop reading there.
+		expect(seen[3]?.limit).toBe(1001);
+		expect(r.rowCount).toBe(1000);
+		expect(r.truncated).toBe(true);
+		await expect(
+			runCapped(fake("pg").s, "SELECT 1", { readOnly: true, role: "x; DROP" }),
+		).rejects.toMatchObject({ code: "invalid" });
+	});
+
+	it("mysql_agent_reads_as_the_select_only_user", async () => {
+		const logins: (string | undefined)[] = [];
+		const log: string[] = [];
+		const connect = async (as?: { user: string; password: Secret }) => {
+			logins.push(as?.user);
+			return {
+				dialect: "mysql" as const,
+				query: async (sql: string) => {
+					log.push(`${as?.user ?? "root"}: ${sql}`);
+					return { columns: ["1"], rows: [[1]] };
+				},
+				params: async () => ({ columns: [], rows: [] }),
+				close: async () => {},
+			};
+		};
+		const be = createWesqlBackend({ connect });
+		await be.query("SELECT 1", { agent: true });
+		await be.query("SELECT 2", { agent: true });
+		expect(logins).toEqual([undefined, "loams_ro", "loams_ro"]);
+		const admin = log.filter((l) => l.startsWith("root:"));
+		expect(admin).toHaveLength(5); // provisioned once, not per query
+		expect(admin[0]).toMatch(
+			/CREATE USER IF NOT EXISTS 'loams_ro'@'%' IDENTIFIED BY '[\w-]{32}'/,
+		);
+		expect(admin[3]).toBe("root: GRANT SELECT ON *.* TO 'loams_ro'@'%'");
+		expect(
+			log
+				.filter((l) => l.startsWith("loams_ro:"))
+				.slice(0, 3)
+				.map((l) => l.slice(10)),
+		).toEqual([
+			"SET SESSION MAX_EXECUTION_TIME = 30000",
+			"START TRANSACTION READ ONLY",
+			"SELECT 1",
+		]);
 	});
 });

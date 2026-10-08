@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type FetchFn, NeonClient } from "../src/main/sql/neon";
-import { createPgBackend, PG_DEV } from "../src/main/sql/pg";
+import { createPgBackend } from "../src/main/sql/pg";
 import { createWesqlBackend, wesqlDev } from "../src/main/sql/wesql";
 
 const T = "a".repeat(32);
@@ -107,6 +107,33 @@ describe("neon", () => {
 	});
 });
 
+describe("branches.json", () => {
+	it("concurrent_creates_keep_every_name", async () => {
+		let n = 0;
+		const dir = mkdtempSync(join(tmpdir(), "neon-conc-"));
+		const file = join(dir, "postgres", "branches.json");
+		const fetch: FetchFn = async () => ({
+			ok: true,
+			status: 200,
+			text: async () => "{}",
+		});
+		const neon = new NeonClient({
+			fetch,
+			branchesFile: file,
+			newId: () => String(++n).padStart(32, "0"),
+		});
+		await Promise.all(
+			["a", "b", "c", "d", "e"].map((name) =>
+				neon.createBranch(T, { name, ancestorTimelineId: ANC }),
+			),
+		);
+		expect(
+			Object.values(JSON.parse(readFileSync(file, "utf8"))).sort(),
+		).toEqual(["a", "b", "c", "d", "e"]);
+		expect(readdirSync(join(dir, "postgres"))).toEqual(["branches.json"]);
+	});
+});
+
 describe("backends", () => {
 	it("connection_never_carries_the_password", () => {
 		const neon = setup(() => ({})).neon;
@@ -119,7 +146,10 @@ describe("backends", () => {
 			"port",
 			"user",
 		]);
-		expect(c.passwordRef).not.toBe(PG_DEV.password);
+		expect(c.passwordRef).not.toContain("cloud_admin");
+		expect(createPgBackend({ neon }).connection().passwordRef).not.toBe(
+			c.passwordRef,
+		);
 		expect(c).toMatchObject({
 			host: "127.0.0.1",
 			port: 55433,
@@ -128,8 +158,9 @@ describe("backends", () => {
 		const w = createWesqlBackend({ env: { WESQL_ROOT_PASSWORD: "pw-xyz" } });
 		expect(JSON.stringify(w.connection())).not.toContain("pw-xyz");
 		expect(w.connection().port).toBe(13306);
-		expect(w.password()).toBe("pw-xyz");
-		expect(wesqlDev({}).password).toBe("loams-dev");
+		expect(w.password().reveal()).toBe("pw-xyz");
+		expect(JSON.stringify(w.password())).toBe('"[redacted]"');
+		expect(wesqlDev({}).password.reveal()).toBe("loams-dev");
 	});
 
 	it("query_closes_the_session_and_redacts_connect_errors", async () => {
@@ -157,7 +188,7 @@ describe("backends", () => {
 		});
 		await expect(bad.query("SELECT 1")).rejects.toMatchObject({
 			code: "ECONNREFUSED",
-			message: "failed postgres://***:***@127.0.0.1/x",
+			message: "failed postgres://cloud_admin:***@127.0.0.1/x",
 		});
 	});
 });

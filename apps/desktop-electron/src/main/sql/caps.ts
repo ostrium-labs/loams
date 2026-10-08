@@ -1,6 +1,12 @@
 // Shared SQL plumbing for the pg and mysql backends: row/time caps, the read-only wrapper,
 // statement classification, error mapping and secret redaction. Pure: no driver or electron imports.
 import type { IpcResult, SqlResult } from "../../shared/contracts";
+import {
+	isSingleStatement,
+	isWrite,
+	type SqlDialect,
+} from "../../shared/sql-lex";
+import type { Secret } from "../factory/vault";
 
 export type Dialect = "pg" | "mysql";
 
@@ -15,8 +21,13 @@ export interface SqlSession {
 	/**
 	 * `single` asks the driver to accept exactly one statement (pg: extended protocol), which is
 	 * what keeps `COMMIT; INSERT ...` from escaping a read-only transaction.
+	 * `limit` is a memory bound: the session must stop reading after `limit` rows (pg: cursor
+	 * fetch; mysql: stream, then destroy the connection) rather than buffer the whole result.
 	 */
-	query(sql: string, opts?: { single?: boolean }): Promise<RawResult>;
+	query(
+		sql: string,
+		opts?: { single?: boolean; limit?: number },
+	): Promise<RawResult>;
 }
 
 export interface CapOpts {
@@ -24,6 +35,8 @@ export interface CapOpts {
 	timeoutMs: number;
 	/** Run inside a READ ONLY transaction that is always rolled back. */
 	readOnly?: boolean;
+	/** pg only: `SET LOCAL ROLE` to this (e.g. pg_read_all_data) inside the read-only transaction. */
+	role?: string;
 }
 
 export const DEFAULT_CAPS = { maxRows: 1000, timeoutMs: 30_000 } as const;
@@ -84,13 +97,22 @@ export async function runCapped(
 	const ro = opts.readOnly === true;
 	const t0 = Date.now();
 	const pg = exec.dialect === "pg";
-	if (ro) assertSingleStatement(sql);
+	if (ro && !isSingleStatement(sql, lexDialect(exec.dialect)))
+		throw new SqlError(
+			"multi_statement",
+			"read-only queries must be a single statement with unambiguous quoting",
+		);
 	let inTx = false;
 	try {
 		if (pg) {
 			if (ro) {
 				await exec.query("BEGIN READ ONLY");
 				inTx = true;
+				if (opts.role) {
+					if (!/^[a-z_][a-z0-9_]*$/.test(opts.role))
+						throw new SqlError("invalid", "bad role name");
+					await exec.query(`SET LOCAL ROLE ${opts.role}`);
+				}
 				await exec.query(`SET LOCAL statement_timeout = ${timeoutMs | 0}`);
 			} else {
 				await exec.query(`SET statement_timeout = ${timeoutMs | 0}`);
@@ -102,7 +124,7 @@ export async function runCapped(
 				inTx = true;
 			}
 		}
-		const raw = await exec.query(sql, { single: ro });
+		const raw = await exec.query(sql, { single: ro, limit: maxRows + 1 });
 		const truncated = raw.rows.length > maxRows;
 		const rows = (truncated ? raw.rows.slice(0, maxRows) : raw.rows).map((r) =>
 			r.map(normalizeCell),
@@ -127,7 +149,36 @@ export async function runCapped(
 	}
 }
 
-export function toSqlError(e: unknown, secrets: string[] = []): SqlError {
+/**
+ * Client-side deadline for one statement: when the server-side timeout does not fire (hung network,
+ * stuck handshake), `kill` drops the connection and the call rejects with code `timeout`.
+ */
+export function withDeadline<T>(
+	p: Promise<T>,
+	ms: number,
+	kill: () => void,
+): Promise<T> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const t = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => {
+			try {
+				kill();
+			} catch {
+				// already closed
+			}
+			reject(new SqlError("timeout", `no answer within ${ms} ms`));
+		}, ms);
+	});
+	return Promise.race([p, t]).finally(() => clearTimeout(timer));
+}
+
+/** Client deadline = server timeout plus grace, so the server's own error wins when it works. */
+export const CLIENT_GRACE_MS = 5000;
+
+export function toSqlError(
+	e: unknown,
+	secrets: (string | Secret)[] = [],
+): SqlError {
 	if (e instanceof SqlError) return e;
 	const o = (e ?? {}) as { code?: unknown; errno?: unknown; message?: unknown };
 	const message = redact(
@@ -145,18 +196,32 @@ export function toSqlError(e: unknown, secrets: string[] = []): SqlError {
 }
 
 /** Strips passwords from connection strings, `password=` pairs and any known secret value. */
-export function redact(text: string, secrets: string[] = []): string {
+export function redact(
+	text: string,
+	secrets: (string | Secret)[] = [],
+): string {
 	let out = text
 		.replace(/\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]*):[^\s@/]*@/gi, "$1:***@")
 		.replace(/(password\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&]+)/gi, "$1***");
-	for (const s of secrets) if (s) out = out.split(s).join("***");
+	for (const sec of secrets) {
+		const v = typeof sec === "string" ? sec : sec.reveal();
+		if (!v) continue;
+		// `user:***@` keeps the user name even when it equals the password.
+		out = out.replace(
+			new RegExp(
+				`${v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?!:\\*\\*\\*@)`,
+				"g",
+			),
+			"***",
+		);
+	}
 	return out;
 }
 
 /** Wraps a handler body as an IpcResult; thrown errors become `{code, message}` (redacted). */
 export async function toResult<T>(
 	fn: () => Promise<T>,
-	secrets: string[] = [],
+	secrets: (string | Secret)[] = [],
 ): Promise<IpcResult<T>> {
 	try {
 		return { ok: true, value: await fn() };
@@ -166,85 +231,12 @@ export async function toResult<T>(
 	}
 }
 
-/** Replaces comments and quoted literals with spaces so keyword scans see only code. */
-export function stripLiterals(sql: string): string {
-	let out = "";
-	let i = 0;
-	while (i < sql.length) {
-		const c = sql[i];
-		const n = sql[i + 1];
-		if (c === "-" && n === "-") {
-			while (i < sql.length && sql[i] !== "\n") i++;
-			out += " ";
-		} else if (c === "#") {
-			while (i < sql.length && sql[i] !== "\n") i++;
-			out += " ";
-		} else if (c === "/" && n === "*") {
-			const end = sql.indexOf("*/", i + 2);
-			i = end < 0 ? sql.length : end + 2;
-			out += " ";
-		} else if (c === "'" || c === '"' || c === "`") {
-			i++;
-			// '' and "" are escaped quotes; a backslash escapes in mysql strings. Treating a
-			// backslash as an escape can only hide more text, never expose a `;` that is a literal.
-			while (i < sql.length) {
-				if (sql[i] === "\\" && c !== "`") i += 2;
-				else if (sql[i] === c) {
-					if (sql[i + 1] === c) i += 2;
-					else break;
-				} else i++;
-			}
-			i++;
-			out += " ";
-		} else if (c === "$") {
-			const m = /^\$[A-Za-z_]*\$/.exec(sql.slice(i));
-			if (m) {
-				const end = sql.indexOf(m[0], i + m[0].length);
-				i = end < 0 ? sql.length : end + m[0].length;
-				out += " ";
-			} else {
-				out += c;
-				i++;
-			}
-		} else {
-			out += c;
-			i++;
-		}
-	}
-	return out;
-}
+const lexDialect = (d: Dialect): SqlDialect =>
+	d === "pg" ? "postgres" : "mysql";
 
-function assertSingleStatement(sql: string): void {
-	const code = stripLiterals(sql)
-		.trim()
-		.replace(/;+\s*$/, "");
-	if (code.includes(";"))
-		throw new SqlError(
-			"multi_statement",
-			"read-only queries must be a single statement",
-		);
-}
-
-const WRITE_WORDS =
-	/\b(insert|update|delete|merge|replace(?!\s*\()|into|create|drop|alter|truncate|grant|revoke|call|do|copy|analyze|analyse|vacuum|reindex|cluster|refresh|lock|set|load|handler|prepare|execute|begin|commit|rollback|start)\b/i;
-
-/**
- * True for a single plain SELECT, SHOW, EXPLAIN (without ANALYZE) or WITH ... SELECT. Anything else,
- * including data-modifying CTEs, SELECT INTO, FOR UPDATE and multi-statement text, needs the confirm
- * dialog in the UI console. Conservative: a false "not plain" only costs one click.
- */
-export function isPlainRead(sql: string): boolean {
-	const code = stripLiterals(sql)
-		.trim()
-		.replace(/;+\s*$/, "");
-	if (!code || code.includes(";")) return false;
-	const first = /^[(\s]*([a-z]+)/i.exec(code)?.[1]?.toLowerCase();
-	if (
-		!first ||
-		!["select", "show", "explain", "with", "values", "table"].includes(first)
-	)
-		return false;
-	return !WRITE_WORDS.test(code);
+/** True for a single plain SELECT, SHOW, EXPLAIN or WITH-SELECT without known side effects (see shared/sql-lex). */
+export function isPlainRead(sql: string, dialect: Dialect): boolean {
+	return sql.trim() !== "" && !isWrite(sql, lexDialect(dialect));
 }
 
 export type ToolRisk = "read" | "write";

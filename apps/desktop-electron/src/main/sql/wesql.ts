@@ -3,9 +3,17 @@
 // SEAM: the UI and agent only see `MySqlBackend`. The production backend (docs/design/47: MySQL 8.4
 // + mywal + Vitess, `loams.sqldb.v1`) is a second implementation backed by the active server's
 // control plane, selected where `createWesqlBackend` is called.
+import { randomBytes } from "node:crypto";
 import { createConnection } from "mysql2/promise";
-import type { SqlConnection, WesqlSchema, WesqlTable } from "../../shared/contracts";
+import type {
+	SqlConnection,
+	WesqlSchema,
+	WesqlTable,
+} from "../../shared/contracts";
+import { Secret } from "../factory/vault";
 import {
+	CLIENT_GRACE_MS,
+	DEFAULT_CAPS,
 	isPlainRead,
 	type RawResult,
 	runCapped,
@@ -13,8 +21,9 @@ import {
 	type SqlSession,
 	type ToolDef,
 	toSqlError,
+	withDeadline,
 } from "./caps";
-import { passwordRef, type SqlBackend } from "./pg";
+import { newPasswordRef, type SqlBackend } from "./pg";
 
 /** Compose constants (deploy/wesql/compose.yaml). The root password is the compose default unless overridden the same way. */
 export function wesqlDev(env: NodeJS.ProcessEnv = process.env) {
@@ -23,9 +32,12 @@ export function wesqlDev(env: NodeJS.ProcessEnv = process.env) {
 		port: 13306,
 		database: "",
 		user: "root",
-		password: env.WESQL_ROOT_PASSWORD || "loams-dev",
+		password: new Secret(env.WESQL_ROOT_PASSWORD || "loams-dev"),
 	};
 }
+
+/** The dedicated SELECT-only account used by agent reads. */
+export const RO_USER = "loams_ro";
 
 export interface MySqlBackend extends SqlBackend {
 	schemas(): Promise<WesqlSchema[]>;
@@ -36,39 +48,95 @@ export type MySqlSession = SqlSession & {
 	params(sql: string, params: unknown[]): Promise<RawResult>;
 	close(): Promise<void>;
 };
-export type MySqlConnect = () => Promise<MySqlSession>;
+export interface MySqlLogin {
+	user: string;
+	password: Secret;
+}
+export type MySqlConnect = (as?: MySqlLogin) => Promise<MySqlSession>;
 
 export function connectMySql(
 	env: NodeJS.ProcessEnv = process.env,
 ): MySqlConnect {
-	return async () => {
+	return async (as) => {
 		const d = wesqlDev(env);
 		const c = await createConnection({
 			host: d.host,
 			port: d.port,
-			user: d.user,
-			password: d.password,
+			user: as?.user ?? d.user,
+			password: (as?.password ?? d.password).reveal(),
 			connectTimeout: 5000,
 			rowsAsArray: true,
 			supportBigNumbers: true,
-			dateStrings: false,
+			multipleStatements: false,
 		});
 		c.on("error", () => {});
-		const run = async (sql: string, params?: unknown[]): Promise<RawResult> => {
+		let dead = false;
+		const kill = () => {
+			dead = true;
+			c.destroy();
+		};
+		// Streams rows and, at `limit`, drops the connection: a huge result never reaches memory.
+		const streamed = (sql: string, limit: number) =>
+			new Promise<RawResult>((resolve, reject) => {
+				const rows: unknown[][] = [];
+				let columns: string[] = [];
+				let settled = false;
+				const q = (
+					c as unknown as { connection: { query(o: never): unknown } }
+				).connection.query({
+					sql,
+					rowsAsArray: true,
+				} as never) as unknown as {
+					on(ev: string, cb: (...a: never[]) => void): void;
+				};
+				const finish = () => {
+					if (settled) return;
+					settled = true;
+					resolve({ columns, rows });
+				};
+				q.on("fields", ((f: { name: string }[]) => {
+					columns = f.map((x) => x.name);
+				}) as never);
+				q.on("result", ((row: unknown) => {
+					if (settled || !Array.isArray(row)) return; // OK packet from a write
+					rows.push(row);
+					if (rows.length >= limit) {
+						kill();
+						finish();
+					}
+				}) as never);
+				q.on("error", ((e: Error) => {
+					if (settled) return;
+					settled = true;
+					reject(e);
+				}) as never);
+				q.on("end", finish as never);
+			});
+		const plain = async (
+			sql: string,
+			params?: unknown[],
+		): Promise<RawResult> => {
 			const [rows, fields] = params
 				? await c.execute({ sql, rowsAsArray: true }, params as never[])
 				: await c.query({ sql, rowsAsArray: true });
-			if (!Array.isArray(fields)) return { columns: [], rows: [] }; // OK packet from a write
+			if (!Array.isArray(fields)) return { columns: [], rows: [] };
 			return {
 				columns: fields.map((f) => f.name),
 				rows: rows as unknown as unknown[][],
 			};
 		};
+		const deadline = <T>(p: Promise<T>) =>
+			withDeadline(p, DEFAULT_CAPS.timeoutMs + CLIENT_GRACE_MS, kill);
 		return {
 			dialect: "mysql",
-			query: (sql) => run(sql),
-			params: run,
-			close: () => c.end().catch(() => {}),
+			query: (sql, opts) => {
+				if (dead) return Promise.resolve({ columns: [], rows: [] });
+				return deadline(
+					opts?.limit === undefined ? plain(sql) : streamed(sql, opts.limit),
+				);
+			},
+			params: (sql, params) => deadline(plain(sql, params)),
+			close: () => c.end().catch(() => c.destroy()),
 		};
 	};
 }
@@ -78,13 +146,42 @@ export function createWesqlBackend(
 ): MySqlBackend {
 	const dev = wesqlDev(deps.env);
 	const connect = deps.connect ?? connectMySql(deps.env);
-	const secrets = [dev.password];
+	const ref = newPasswordRef();
+	// Per app run, in memory only; reset on every run via ALTER USER.
+	const roPassword = new Secret(randomBytes(24).toString("base64url"));
+	let roReady: Promise<void> | undefined;
+	const secrets = [dev.password, roPassword];
+
+	/** Creates (or refreshes) the SELECT-only account on first agent read. */
+	async function ensureReadOnlyUser(): Promise<void> {
+		roReady ??= (async () => {
+			const s = await connect();
+			try {
+				const pw = roPassword.reveal();
+				const u = `'${RO_USER}'@'%'`;
+				await s.query(`CREATE USER IF NOT EXISTS ${u} IDENTIFIED BY '${pw}'`);
+				await s.query(`ALTER USER ${u} IDENTIFIED BY '${pw}'`);
+				await s.query(`REVOKE ALL PRIVILEGES, GRANT OPTION FROM ${u}`);
+				await s.query(`GRANT SELECT ON *.* TO ${u}`);
+				// Best effort: only works with partial_revokes=ON; keeps account hashes out of reach when it does.
+				await s.query(`REVOKE SELECT ON mysql.* FROM ${u}`).catch(() => {});
+			} finally {
+				await s.close();
+			}
+		})().catch((e) => {
+			roReady = undefined;
+			throw e;
+		});
+		return roReady;
+	}
+
 	async function withSession<T>(
 		fn: (s: MySqlSession) => Promise<T>,
+		as?: MySqlLogin,
 	): Promise<T> {
 		let s: MySqlSession;
 		try {
-			s = await connect();
+			s = await connect(as);
 		} catch (e) {
 			throw toSqlError(e, secrets);
 		}
@@ -102,11 +199,25 @@ export function createWesqlBackend(
 			port: dev.port,
 			database: dev.database,
 			user: dev.user,
-			passwordRef: passwordRef("wesql", dev.password),
+			passwordRef: ref,
 		}),
 		password: () => dev.password,
-		query: (sql, opts) =>
-			withSession((s) => runCapped(s, sql, { readOnly: opts?.readOnly })),
+		async query(sql, opts) {
+			if (opts?.agent) {
+				try {
+					await ensureReadOnlyUser();
+				} catch (e) {
+					throw toSqlError(e, secrets);
+				}
+				return withSession((s) => runCapped(s, sql, { readOnly: true }), {
+					user: RO_USER,
+					password: roPassword,
+				});
+			}
+			return withSession((s) =>
+				runCapped(s, sql, { readOnly: opts?.readOnly }),
+			);
+		},
 		schemas: () =>
 			withSession(async (s) => {
 				const r = await s.query(
@@ -135,12 +246,12 @@ export interface WesqlToolCtx {
 	wesql: MySqlBackend;
 }
 
-/** Pure tool definitions for the agent registry (Tasks 28/29). SQL runs read-only, always. */
+/** Pure tool definitions for the agent registry (Tasks 28/29). SQL runs read-only, as a SELECT-only user. */
 export const wesqlTools: ToolDef<WesqlToolCtx>[] = [
 	{
 		name: "wesql_sql",
 		description:
-			"Run one read-only SQL statement (SELECT, SHOW, EXPLAIN, WITH ... SELECT) on the local WeSQL. Runs in START TRANSACTION READ ONLY, 30 s timeout, at most 1000 rows.",
+			"Run one read-only SQL statement (SELECT, SHOW, EXPLAIN, WITH ... SELECT) on the local WeSQL. Runs as a SELECT-only user in START TRANSACTION READ ONLY, 30 s timeout, at most 1000 rows.",
 		risk: "read",
 		schema: {
 			type: "object",
@@ -152,12 +263,12 @@ export const wesqlTools: ToolDef<WesqlToolCtx>[] = [
 			const sql = (args as { sql?: unknown })?.sql;
 			if (typeof sql !== "string" || !sql)
 				throw new SqlError("invalid", "sql is required");
-			if (!isPlainRead(sql))
+			if (!isPlainRead(sql, "mysql"))
 				throw new SqlError(
 					"read_only",
 					"wesql_sql only runs a single SELECT, SHOW, EXPLAIN or WITH ... SELECT",
 				);
-			return ctx.wesql.query(sql, { readOnly: true });
+			return ctx.wesql.query(sql, { agent: true });
 		},
 	},
 ];

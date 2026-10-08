@@ -53,6 +53,8 @@ services:
       WESQL_OBJECTSTORE_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
       WESQL_OBJECTSTORE_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
       MYSQL_ROOT_PASSWORD: ${WESQL_ROOT_PASSWORD:-loams-dev}
+    # File import/export is disabled whatever a SQL account is granted (INTO OUTFILE, LOAD_FILE).
+    command: ["mysqld", "--secure-file-priv=NULL"]
     # Keep the local data volume. In the spike, commits made after the last object-store snapshot
     # were lost when the container was replaced without it (§23 §9.2), although their binlog
     # slices had been archived to the bucket.

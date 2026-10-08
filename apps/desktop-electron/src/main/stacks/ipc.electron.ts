@@ -67,7 +67,10 @@ function isStackId(v: unknown): v is StackId {
 	return typeof v === "string" && (STACK_IDS as string[]).includes(v);
 }
 
-export function registerStacksIpc(manager: StackManager, logsDir?: string): void {
+export function registerStacksIpc(
+	manager: StackManager,
+	logsDir: string,
+): void {
 	const bad = () => ({
 		ok: false as const,
 		code: "invalid",
@@ -88,7 +91,7 @@ export function registerStacksIpc(manager: StackManager, logsDir?: string): void
 	});
 	ipcMain.handle(CH.stacksOpenLogs, async (e, id: unknown) => {
 		assertTrustedSender(e);
-		if (!isStackId(id) || !logsDir) return bad();
+		if (!isStackId(id)) return bad();
 		const file = join(logsDir, "stacks", `${id}.log`);
 		if (!existsSync(file))
 			return { ok: false as const, code: "no_log", message: "no log yet" };

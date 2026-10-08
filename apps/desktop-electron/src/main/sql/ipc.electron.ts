@@ -1,8 +1,9 @@
 import { dialog, ipcMain } from "electron";
 import { CH, type LoamsDesktopApi } from "../../shared/contracts";
+import type { Secret } from "../factory/vault";
 import { assertTrustedSender } from "../security/policy";
 import { getMainWindow } from "../shell/main-window";
-import { isPlainRead, SqlError, toResult } from "./caps";
+import { type Dialect, isPlainRead, SqlError, toResult } from "./caps";
 import { branchesFile, NeonClient } from "./neon";
 import { createPgBackend, type PostgresBackend, type SqlBackend } from "./pg";
 import { createWesqlBackend, type MySqlBackend } from "./wesql";
@@ -17,6 +18,9 @@ export function createSqlServices(userData: string): SqlServices {
 	return { pg: createPgBackend({ neon }), wesql: createWesqlBackend() };
 }
 
+/** The dialog shows the whole statement or the statement is refused, never a silent truncation. */
+export const CONFIRM_MAX_CHARS = 1200;
+
 async function confirmWrite(label: string, sql: string): Promise<boolean> {
 	const opts = {
 		type: "warning" as const,
@@ -25,7 +29,7 @@ async function confirmWrite(label: string, sql: string): Promise<boolean> {
 		cancelId: 0,
 		title: `Run on ${label}?`,
 		message: `This statement is not a plain read and may change data in ${label}.`,
-		detail: sql.length > 1200 ? `${sql.slice(0, 1200)}...` : sql,
+		detail: sql,
 	};
 	const w = getMainWindow();
 	const r =
@@ -41,7 +45,9 @@ const arg = (v: unknown, name: string): string => {
 	return v;
 };
 
-function branchInput(v: unknown): Parameters<LoamsDesktopApi["pg"]["createBranch"]>[1] {
+function branchInput(
+	v: unknown,
+): Parameters<LoamsDesktopApi["pg"]["createBranch"]>[1] {
 	const o = (v ?? {}) as Record<string, unknown>;
 	return {
 		name: arg(o.name, "name"),
@@ -58,7 +64,7 @@ export function registerSqlIpc(
 	const h = <A extends unknown[], T>(
 		ch: string,
 		fn: (...a: A) => Promise<T>,
-		secrets: () => string[] = () => [],
+		secrets: () => (string | Secret)[] = () => [],
 	) =>
 		ipcMain.handle(ch, async (e, ...a: unknown[]) => {
 			assertTrustedSender(e);
@@ -70,13 +76,19 @@ export function registerSqlIpc(
 			assertTrustedSender(e);
 			return fn();
 		});
-	const query = (label: string, b: SqlBackend) => async (sql: unknown) => {
-		const text = arg(sql, "sql");
-		if (isPlainRead(text)) return b.query(text, { readOnly: true });
-		if (!(await confirm(label, text)))
-			throw new SqlError("cancelled", "cancelled");
-		return b.query(text, { readOnly: false });
-	};
+	const query =
+		(label: string, b: SqlBackend, d: Dialect) => async (sql: unknown) => {
+			const text = arg(sql, "sql");
+			if (isPlainRead(text, d)) return b.query(text, { readOnly: true });
+			if (text.length > CONFIRM_MAX_CHARS)
+				throw new SqlError(
+					"too_long",
+					`this statement is not a plain read and is too long to confirm (${text.length} > ${CONFIRM_MAX_CHARS} characters); split it into smaller statements`,
+				);
+			if (!(await confirm(label, text)))
+				throw new SqlError("cancelled", "cancelled");
+			return b.query(text, { readOnly: false });
+		};
 
 	h(CH.pgTenants, () => svc.pg.tenants());
 	h(CH.pgTimelines, (t: unknown) => svc.pg.timelines(arg(t, "tenant")));
@@ -88,11 +100,13 @@ export function registerSqlIpc(
 	);
 	// Plan contract: connection() and revealPassword() resolve to the bare value (no IpcResult).
 	raw(CH.pgConnection, () => svc.pg.connection());
-	raw(CH.pgRevealPassword, () => svc.pg.password());
-	h(CH.pgQuery, query("Postgres", svc.pg), () => [svc.pg.password()]);
+	raw(CH.pgRevealPassword, () => svc.pg.password().reveal());
+	h(CH.pgQuery, query("Postgres", svc.pg, "pg"), () => [svc.pg.password()]);
 	raw(CH.wesqlConnection, () => svc.wesql.connection());
-	raw(CH.wesqlRevealPassword, () => svc.wesql.password());
+	raw(CH.wesqlRevealPassword, () => svc.wesql.password().reveal());
 	h(CH.wesqlSchemas, () => svc.wesql.schemas());
 	h(CH.wesqlTables, (s: unknown) => svc.wesql.tables(arg(s, "schema")));
-	h(CH.wesqlQuery, query("WeSQL", svc.wesql), () => [svc.wesql.password()]);
+	h(CH.wesqlQuery, query("WeSQL", svc.wesql, "mysql"), () => [
+		svc.wesql.password(),
+	]);
 }

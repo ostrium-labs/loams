@@ -17,6 +17,30 @@ describe.skipIf(!process.env.LOAMS_IT_PG)("postgres stack", () => {
 		const r = await pg.query("SELECT 1 AS one", { readOnly: true });
 		expect(r.rows).toEqual([[1]]);
 	});
+	it("agent reads are least-privilege and memory-bounded", async () => {
+		const r = await pg.query("SELECT current_user, session_user", {
+			agent: true,
+		});
+		expect(r.rows[0]?.[0]).toBe("pg_read_all_data");
+		for (const q of [
+			"SELECT pg_reload_conf()",
+			"SELECT pg_terminate_backend(pg_backend_pid())",
+			"SELECT pg_rotate_logfile()",
+		])
+			await expect(pg.query(q, { agent: true }), q).rejects.toBeTruthy();
+		const big = await pg.query(
+			"SELECT g FROM generate_series(1, 200000000) g",
+			{ agent: true },
+		);
+		expect(big.rowCount).toBe(1000);
+		expect(big.truncated).toBe(true);
+		await expect(
+			pg.query("CREATE TABLE it_x(a int)", { agent: true }),
+		).rejects.toBeTruthy();
+		await expect(
+			pg.query("SELECT pg_sleep(60)", { agent: true }),
+		).rejects.toMatchObject({ code: "timeout" });
+	}, 60_000);
 	it("lists tenants and creates a branch", async () => {
 		const tenant = process.env.LOAMS_IT_TENANT as string;
 		const timeline = process.env.LOAMS_IT_TIMELINE as string;
@@ -38,6 +62,27 @@ describe.skipIf(!process.env.LOAMS_IT_WESQL)("wesql stack", () => {
 		expect((await w.query("SELECT 1 AS one", { readOnly: true })).rows).toEqual(
 			[[1]],
 		);
-		expect((await w.schemas()).map((s) => s.name)).toContain("information_schema");
+		expect(
+			Number((await w.query("SELECT 1 + 1", { agent: true })).rows[0]?.[0]),
+		).toBe(2);
+		expect(
+			(await w.query("SELECT CURRENT_USER()", { agent: true })).rows[0]?.[0],
+		).toBe("loams_ro@%");
+		expect(
+			(await w.query("SELECT @@secure_file_priv", { agent: true }))
+				.rows[0]?.[0],
+		).toBe("NULL");
+		await expect(
+			w.query("CREATE TABLE test.it_x (a int)", { agent: true }),
+		).rejects.toBeTruthy();
+		const big = await w.query(
+			"SELECT a.ORDINAL_POSITION FROM information_schema.COLUMNS a CROSS JOIN information_schema.COLUMNS b",
+			{ agent: true },
+		);
+		expect(big.rowCount).toBe(1000);
+		expect(big.truncated).toBe(true);
+		expect((await w.schemas()).map((s) => s.name)).toContain(
+			"information_schema",
+		);
 	});
 });
