@@ -1108,3 +1108,226 @@ fn graph_service_impl_serves_one_engine() {
     assert_eq!(info.engine_version, loams_graph::ENGINE_VERSION);
     assert_eq!(engine.standard, loams_graph::GQL_STANDARD);
 }
+
+/// The `loams.errors.v1.ErrorInfo` reason a refusal carries.
+fn reason(err: &ConnectError) -> String {
+    use base64::Engine as _;
+    use buffa::Message as _;
+    let detail = err
+        .details
+        .iter()
+        .find(|d| d.type_url == "loams.errors.v1.ErrorInfo")
+        .unwrap_or_else(|| panic!("no ErrorInfo in {err:?}"));
+    let bytes = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(detail.value.as_deref().unwrap_or_default())
+        .expect("unpadded base64");
+    loams_proto::loams::errors::v1::ErrorInfo::decode_from_slice(&bytes)
+        .expect("an ErrorInfo")
+        .reason
+}
+
+/// Grafeo builds a path of element ids; the server answers full elements, in the path's order,
+/// with each relationship's stored direction (GR1 Task 2 review).
+#[test]
+fn path_elements_are_full_and_keep_direction() {
+    let engine = engine();
+    open(&engine, "acme", "paths");
+    ok(
+        &engine,
+        "acme",
+        "paths",
+        "INSERT (:A {name: 'a'})-[:R {w: 2}]->(:B {name: 'b'})",
+    );
+    // Walked against the edge: b first, then a.
+    let read = ok(
+        &engine,
+        "acme",
+        "paths",
+        "MATCH p = (b:B)<-[r:R]-(a:A) RETURN p, a, b",
+    );
+    let row = &rows(&read).rows[0];
+    let (Some(Kind::Path(path)), Some(Kind::Node(a)), Some(Kind::Node(b))) = (
+        &row.values[0].kind,
+        &row.values[1].kind,
+        &row.values[2].kind,
+    ) else {
+        panic!("a path and two nodes: {row:?}");
+    };
+    assert_eq!(path.nodes.len(), 2);
+    assert_eq!(path.relationships.len(), 1);
+    // The path's own order.
+    assert_eq!(path.nodes[0].id, b.id);
+    assert_eq!(path.nodes[1].id, a.id);
+    // Full elements.
+    assert_eq!(path.nodes[0].labels, ["B"]);
+    assert_eq!(path.nodes[1].labels, ["A"]);
+    assert!(matches!(
+        path.nodes[1].properties.get("name").and_then(|v| v.kind.as_ref()),
+        Some(Kind::String(name)) if name == "a"
+    ));
+    let rel = &path.relationships[0];
+    assert_eq!(rel.r#type, "R");
+    assert!(matches!(
+        rel.properties.get("w").and_then(|v| v.kind.as_ref()),
+        Some(Kind::Int64(2))
+    ));
+    // The stored direction, not the walk's: a -> b.
+    assert_eq!(rel.src, a.id, "{rel:?}");
+    assert_eq!(rel.dst, b.id, "{rel:?}");
+}
+
+/// A non-atomic batch stops at the first failing statement and still answers: the committed
+/// results, `committed_through` and the failed statement's error (GR1 Task 2 review).
+#[test]
+fn non_atomic_batch_reports_the_failed_statement() {
+    let engine = engine();
+    open(&engine, "acme", "partial");
+    let statements = [
+        "INSERT (:Line {sku: 'a'})",
+        "MATCH (n RETURN n",
+        "INSERT (:Line {sku: 'c'})",
+    ]
+    .into_iter()
+    .map(|statement| pb::Statement {
+        statement: statement.to_string(),
+        ..Default::default()
+    })
+    .collect();
+    let response = service::execute_batch(
+        &engine,
+        pb::ExecuteBatchRequest {
+            namespace: "acme".to_string(),
+            graph: "partial".to_string(),
+            statements,
+            atomic: false,
+            ..Default::default()
+        },
+    )
+    .expect("a non-atomic batch answers even when a statement fails");
+    assert!(!response.committed);
+    assert_eq!(
+        response.results.len(),
+        1,
+        "the statement before the failure"
+    );
+    assert_eq!(response.committed_through, 1);
+    let error = response.error.as_option().expect("the failed statement");
+    assert_eq!(error.index, 1);
+    assert_eq!(error.code, "invalid_argument");
+    assert!(error.message.contains("Expected RParen"), "{error:?}");
+    assert_eq!(
+        error.info.as_option().map(|info| info.reason.as_str()),
+        Some("invalid_argument")
+    );
+    let count = ok(
+        &engine,
+        "acme",
+        "partial",
+        "MATCH (l:Line) RETURN count(l) AS c",
+    );
+    assert_eq!(
+        number(&count, 0),
+        1,
+        "the statement after the failure did not run"
+    );
+
+    // A batch with no failure has no error.
+    let response = service::execute_batch(
+        &engine,
+        pb::ExecuteBatchRequest {
+            namespace: "acme".to_string(),
+            graph: "partial".to_string(),
+            statements: vec![pb::Statement {
+                statement: "INSERT (:Line {sku: 'd'})".to_string(),
+                ..Default::default()
+            }],
+            atomic: false,
+            ..Default::default()
+        },
+    )
+    .expect("runs");
+    assert!(response.error.as_option().is_none());
+    assert_eq!(response.committed_through, 1);
+}
+
+/// `Statement.language` is checked, not just the batch's.
+#[test]
+fn batch_checks_each_statements_language() {
+    let engine = engine();
+    open(&engine, "acme", "langs");
+    for atomic in [true, false] {
+        let err = service::execute_batch(
+            &engine,
+            pb::ExecuteBatchRequest {
+                namespace: "acme".to_string(),
+                graph: "langs".to_string(),
+                statements: vec![
+                    pb::Statement {
+                        statement: "INSERT (:X)".to_string(),
+                        ..Default::default()
+                    },
+                    pb::Statement {
+                        statement: "CREATE (:X)".to_string(),
+                        language: pb::QueryLanguage::Cypher.into(),
+                        ..Default::default()
+                    },
+                ],
+                atomic,
+                ..Default::default()
+            },
+        )
+        .expect_err("a Cypher statement is refused in a GQL-only build");
+        assert_eq!(err.code, ErrorCode::Unimplemented, "{err:?}");
+        assert_eq!(reason(&err), "graph_language_disabled");
+    }
+    let count = ok(&engine, "acme", "langs", "MATCH (x:X) RETURN count(x) AS c");
+    assert_eq!(number(&count, 0), 0, "nothing ran");
+}
+
+/// PROFILE runs the statement, so a writing statement is refused with `graph_read_only`
+/// (GR1 Task 2 review).
+#[test]
+fn profile_refuses_a_write() {
+    let engine = engine();
+    open(&engine, "acme", "explain");
+    let explain = |statement: &str, profile: bool| {
+        service::explain(
+            &engine,
+            pb::ExplainRequest {
+                namespace: "acme".to_string(),
+                graph: "explain".to_string(),
+                statement: statement.to_string(),
+                profile,
+                timeout_ms: 1000,
+                ..Default::default()
+            },
+        )
+    };
+    for statement in [
+        "INSERT (:Doc {body: 'x'})",
+        "MATCH (d:Doc) SET d.body = 'y'",
+        "/* hidden */ MERGE (:Doc)",
+    ] {
+        let err = explain(statement, true).expect_err("a writing PROFILE is refused");
+        assert_eq!(
+            err.code,
+            ErrorCode::PermissionDenied,
+            "{statement}: {err:?}"
+        );
+        assert_eq!(reason(&err), "graph_read_only", "{statement}");
+    }
+    let count = ok(
+        &engine,
+        "acme",
+        "explain",
+        "MATCH (d:Doc) RETURN count(d) AS c",
+    );
+    assert_eq!(number(&count, 0), 0, "nothing was written");
+
+    // EXPLAIN of a write, and PROFILE of a read, pass the guard (the plan itself is Task 6's).
+    for (statement, profile) in [("INSERT (:Doc)", false), ("MATCH (d:Doc) RETURN d", true)] {
+        let err = explain(statement, profile).expect_err("not implemented yet");
+        assert_eq!(err.code, ErrorCode::Unimplemented, "{err:?}");
+        assert_eq!(reason(&err), "not_implemented");
+    }
+}

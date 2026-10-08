@@ -17,17 +17,17 @@ grafeo.workspace = true
 # Named for its `lpg` feature only: grafeo's own `lpg` turns on `cypher`, `gremlin` and `sql-pgq`
 # too (R0.2), so the data model is switched on one crate down.
 grafeo-engine.workspace = true
-# Named because it is forced, not chosen. `grafeo::Value::Map` holds an
-# `Arc<BTreeMap<PropertyKey, Value>>`, and `PropertyKey` lives below the `grafeo` facade, which
-# does not re-export it -- so converting a protobuf Struct into an engine Map has to name the
-# sibling crate. It is already in the tree at the same version as `grafeo`.
+# Named because it is forced, not chosen: `PropertyKey`, the temporal types (`Date`, `Time`,
+# `Timestamp`, `ZonedDatetime`, `Duration`) and `NodeId`/`EdgeId` live below the `grafeo` facade,
+# which does not re-export them, and `value.rs` and the path resolution in `engine.rs` build and
+# read them. Already in the tree at the same version as `grafeo`.
 grafeo-common.workspace = true
 # The generated `loams.graph.v1` types, from the root `proto/` tree like every other public
 # package (design §44, D741). `fabric/`'s `loams-graph-proto` is gone (GR1 Task 1).
 loams-proto.workspace = true
 
-# `Row.values` is a `google.protobuf.Value` built through buffa's own oneof wrapper, so the type
-# has to be nameable to fill a row at all. Already in the tree through `loams-proto`.
+# `google.protobuf.NullValue`, the type of `loams.graph.v1.Value.null`. Already in the tree through
+# `loams-proto`.
 buffa-types = { version = "0.9.2", features = ["json"] }
 # The generated map fields are buffa's own `HashMap`; `value.rs` names the type.
 buffa.workspace = true
@@ -37,6 +37,8 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+# The tests decode the `loams.errors.v1.ErrorInfo` a refusal carries (unpadded base64).
+base64.workspace = true
 # `licences_cover_every_grafeo_crate` reads `Cargo.lock` and `connectors/licences.toml`.
 toml.workspace = true
 # `proto_has_no_path_fields` walks `loams_proto::FILE_DESCRIPTOR_SET`.

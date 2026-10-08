@@ -57,6 +57,7 @@ plugins:
       - Mloams/live/v1/journal.proto=loams.dev/go/gen/loams/live/v1;livev1
       - Mloams/live/v1/live.proto=loams.dev/go/gen/loams/live/v1;livev1
       - Mloams/live/v1/value.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/graph/v1/graph.proto=loams.dev/go/gen/loams/graph/v1;graphv1
   - remote: buf.build/connectrpc/go:v1.19.2
     out: sdks/go
     opt:
@@ -73,4 +74,5 @@ plugins:
       - Mloams/live/v1/journal.proto=loams.dev/go/gen/loams/live/v1;livev1
       - Mloams/live/v1/live.proto=loams.dev/go/gen/loams/live/v1;livev1
       - Mloams/live/v1/value.proto=loams.dev/go/gen/loams/live/v1;livev1
+      - Mloams/graph/v1/graph.proto=loams.dev/go/gen/loams/graph/v1;graphv1
 clean: false

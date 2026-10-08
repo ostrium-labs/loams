@@ -19,8 +19,12 @@
 // - **No client-chosen path or URL.** No field names a file, a directory or a
 //   URL. Import and export take an object key (prefix) under the namespace's
 //   own import/export prefix; the server resolves it. The test
-//   `proto_has_no_path_fields` walks this file's descriptor and fails on any
-//   field named like a path outside those two.
+//   `proto_has_no_path_fields` walks the package's descriptors and fails on
+//   any field whose name contains `path`, `url`, `dir` or `file`, except
+//   `ImportGraphRequest.object_key`, `ExportGraphRequest.object_prefix` and
+//   four that name no filesystem object: `ExplainRequest.profile` and
+//   `EngineInfo.gql_profile` (GQL's PROFILE), `Value.path` (the GQL PATH
+//   type) and `GraphLimits.max_path_hops`.
 // - **Typed values.** `Value` carries every type Grafeo has without loss: a
 //   64-bit integer is `int64` (a decimal string in proto3 JSON, so it stays
 //   exact in JavaScript), temporal values keep their parts, and nodes,
@@ -28,7 +32,16 @@
 //   `google.protobuf.Value` turned every number into a double.
 // - **Errors** carry one `loams.errors.v1.ErrorInfo` whose `reason` is one of
 //   §48 §8.3's, with `gqlstatus` (and `line`, `column`, `length` for a syntax
-//   error) in `metadata`.
+//   error) in `metadata`: `gql_syntax_error`, `gql_feature_unsupported`,
+//   `graph_not_found`, `graph_is_linked`, `graph_read_only`,
+//   `graph_write_conflict`, `graph_version_mismatch`,
+//   `graph_catalog_version_mismatch`, `graph_statement_timeout`,
+//   `graph_memory_limit`, `graph_result_too_large`,
+//   `graph_transaction_statement`, `graph_language_disabled`,
+//   `graph_statement_not_allowed`, `graph_unbounded_path`,
+//   `graph_reloading`, `graph_engine_panic`, `consistency_wait_timeout` and
+//   `feature_not_in_variant`, plus the generic `invalid_argument`,
+//   `not_found`, `already_exists` and `not_implemented`.
 //
 // buf lint: RPC_RESPONSE_STANDARD_NAME and RPC_REQUEST_RESPONSE_UNIQUE are
 // excepted for this file in buf.yaml. §48 §8.2 answers a graph's own
@@ -43,10 +56,9 @@ package loams.graph.v1;
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "loams/errors/v1/errors.proto";
 import "loams/operations/v1/operations.proto";
 import "loams/options/v1/options.proto";
-
-option go_package = "loams.dev/go/gen/loams/graph/v1;graphv1";
 
 // The graph catalog and the operations on a whole graph.
 service GraphAdminService {
@@ -279,9 +291,9 @@ message UpdateGraphRequest {
   Graph graph = 1;
   // `languages`, `limits` and `replicas` only.
   google.protobuf.FieldMask update_mask = 2;
-  // When set, the update applies only at this `Graph.version`
-  // (`aborted`).
-  uint64 expected_version = 3;
+  // When set, the update applies only at this `Graph.version`; otherwise
+  // `ABORTED` with the reason `graph_catalog_version_mismatch`.
+  optional uint64 expected_version = 3;
   string idempotency_key = 4;
 }
 
@@ -489,18 +501,47 @@ message Statement {
   QueryLanguage language = 3;
 }
 
+// The answer to a batch.
+//
+// Atomic: every statement ran in one transaction. A failure of any statement
+// fails the RPC itself and nothing is written; on success `committed` is set,
+// `results` has one entry per statement and `commit_epoch` is the
+// transaction's.
+//
+// Non-atomic: each statement is its own transaction, run in order. The batch
+// stops at the first statement that fails, and the RPC still succeeds:
+// `results` holds the statements before it (all committed),
+// `committed_through` is their count, and `error` describes the failed one.
+// Statements after it did not run. A batch with no `error` ran every
+// statement.
 message ExecuteBatchResponse {
-  // One per statement that ran, in order.
+  // One per statement that committed, in order.
   repeated ExecuteResponse results = 1;
-  // Whether the batch committed (`atomic`).
+  // Atomic: whether the transaction committed.
   bool committed = 2;
-  // Non-atomic: how many statements committed before the first failure.
+  // How many statements, from the first, committed.
   uint32 committed_through = 3;
   string consistency_token = 4;
+  // Non-atomic only: the statement that failed and stopped the batch.
+  StatementError error = 5;
+  // Atomic: the engine epoch the transaction committed at.
+  uint64 commit_epoch = 6;
 }
 
-// One piece of a streamed result. The first chunk carries the columns, the
-// last carries the counters and the token.
+// Why one statement of a non-atomic batch failed.
+message StatementError {
+  // The statement's position in `ExecuteBatchRequest.statements`.
+  uint32 index = 1;
+  // The Connect code the statement would have failed `Execute` with, in
+  // its wire spelling (`invalid_argument`).
+  string code = 2;
+  string message = 3;
+  loams.errors.v1.ErrorInfo info = 4;
+}
+
+// One piece of a streamed result. The first chunk carries the columns; the
+// last (`last` set) carries what `ExecuteResponse` carries besides rows:
+// counters, the token, the commit epoch, `truncated` and notifications.
 message ResultChunk {
   repeated string columns = 1;
   repeated string column_types = 2;
@@ -509,6 +550,10 @@ message ResultChunk {
   Counters counters = 5;
   string consistency_token = 6;
   uint64 elapsed_nanos = 7;
+  // More rows existed than `max_rows` allowed.
+  bool truncated = 8;
+  uint64 commit_epoch = 9;
+  repeated Notification notifications = 10;
 }
 
 message ExplainRequest {
@@ -517,8 +562,14 @@ message ExplainRequest {
   string statement = 3;
   QueryLanguage language = 4;
   map<string, Value> parameters = 5;
-  // PROFILE: run the statement and report what each operator did.
+  // PROFILE: run the statement and report what each operator did. A
+  // PROFILE runs the statement, so a statement that writes is refused with
+  // `graph_read_only`; use EXPLAIN for a write's plan.
   bool profile = 6;
+  // PROFILE only, as `ExecuteRequest.timeout_ms`.
+  uint32 timeout_ms = 7;
+  // PROFILE only, as `ExecuteRequest.consistency`.
+  Consistency consistency = 8;
 }
 
 // A statement's plan, as a tree of operators.
@@ -595,20 +646,24 @@ message LocalTime {
   uint32 nanosecond = 4;
 }
 
-// A time of day at a UTC offset.
+// A time of day at a UTC offset. `|offset_seconds|` is at most 64800.
 message ZonedTime {
   LocalTime time = 1;
   int32 offset_seconds = 2;
 }
 
-// A date and time with no offset. Microsecond precision: a nanosecond part
-// that is not a whole number of microseconds is refused.
+// A date and time with no offset. Grafeo's TIMESTAMP (what `datetime()` and
+// `localdatetime()` produce) is microseconds since the Unix epoch, and is
+// answered as its **UTC** wall clock. Microsecond precision: a nanosecond
+// part that is not a whole number of microseconds is refused.
 message LocalDateTime {
   Date date = 1;
   LocalTime time = 2;
 }
 
-// A wall-clock date and time at a UTC offset. Microsecond precision.
+// A wall-clock date and time at a UTC offset: `local` is the clock at the
+// offset, so the instant is `local - offset_seconds`. Microsecond precision;
+// `|offset_seconds|` is at most 64800 (18 hours).
 message ZonedDateTime {
   LocalDateTime local = 1;
   int32 offset_seconds = 2;
@@ -647,9 +702,15 @@ message Relationship {
 }
 
 // Alternating nodes and relationships: `relationships[i]` joins `nodes[i]`
-// and `nodes[i + 1]`. Grafeo 0.5.43 builds a path of element ids, so each
-// element carries only its `id`; return the elements as well, or
-// `nodes(p)`/`relationships(p)`, for their labels and properties.
+// and `nodes[i + 1]`, in the path's own order, and keeps its stored
+// direction (`src` and `dst`), so a path walked against an edge has
+// `relationships[i].dst == nodes[i].id`. Every element is full: labels,
+// type, endpoints and properties. Grafeo 0.5.43 builds a path of element
+// ids, and the server resolves each id when it builds the row. Until the
+// durable read path (GR1 Task 11) pins a read's epoch, an element's labels
+// and properties are those current when the row is built, which a write
+// committed between the statement and the row can change; an element
+// deleted in that window is answered with its `id` only.
 message Path {
   repeated Node nodes = 1;
   repeated Relationship relationships = 2;

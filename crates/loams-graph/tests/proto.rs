@@ -49,45 +49,39 @@ fn proto(kind: Kind) -> pb::Value {
 // The descriptor
 // ---------------------------------------------------------------------------------------------
 
-/// Review Focus 4: no RPC field can name a server path or a URL. The two fields that name an
-/// object are keys under the namespace's own prefix, which the server resolves.
+/// Review Focus 4: no RPC field can name a server path or a URL.
 ///
-/// A field is suspect when one of the words of its name (split on `_`) is a path, URL, directory
-/// or file word. Words rather than substrings, because `profile` (GQL's PROFILE) contains `file`;
-/// and two fields are graph paths, not filesystem paths: `Value.path` (the GQL PATH type) and
-/// `GraphLimits.max_path_hops`.
+/// Every field of every file in `loams.graph.v1` whose name contains `path`, `url`, `dir` or
+/// `file` fails, except the two object keys (resolved under the namespace's own prefix) and four
+/// that name no filesystem object: GQL's PROFILE (`ExplainRequest.profile`,
+/// `EngineInfo.gql_profile`), the GQL PATH type (`Value.path`) and `GraphLimits.max_path_hops`.
 #[test]
 fn proto_has_no_path_fields() {
     const ALLOWED: &[&str] = &[
         "loams.graph.v1.ImportGraphRequest.object_key",
         "loams.graph.v1.ExportGraphRequest.object_prefix",
+        "loams.graph.v1.ExplainRequest.profile",
+        "loams.graph.v1.EngineInfo.gql_profile",
         "loams.graph.v1.Value.path",
         "loams.graph.v1.GraphLimits.max_path_hops",
     ];
-    const SUSPECT: &[&str] = &[
-        "path",
-        "paths",
-        "filepath",
-        "url",
-        "urls",
-        "uri",
-        "uris",
-        "dir",
-        "dirs",
-        "directory",
-        "file",
-        "files",
-        "filename",
-        "folder",
-        "location",
-    ];
+    const SUSPECT: &[&str] = &["path", "url", "dir", "file"];
+    fn suspect(field: &str) -> bool {
+        let leaf = field.rsplit('.').next().unwrap_or_default().to_lowercase();
+        SUSPECT.iter().any(|bad| leaf.contains(bad))
+    }
+
     let set = prost_types::FileDescriptorSet::decode(loams_proto::FILE_DESCRIPTOR_SET)
         .expect("loams-proto's descriptor set decodes");
-    let file = set
+    let files: Vec<_> = set
         .file
         .iter()
-        .find(|f| f.package() == "loams.graph.v1")
-        .expect("loams.graph.v1 is in loams-proto's descriptor set");
+        .filter(|f| f.package() == "loams.graph.v1")
+        .collect();
+    assert!(
+        !files.is_empty(),
+        "loams.graph.v1 is in loams-proto's descriptor set"
+    );
 
     fn walk(prefix: &str, message: &prost_types::DescriptorProto, out: &mut Vec<String>) {
         let name = format!("{prefix}.{}", message.name());
@@ -99,8 +93,10 @@ fn proto_has_no_path_fields() {
         }
     }
     let mut fields = Vec::new();
-    for message in &file.message_type {
-        walk("loams.graph.v1", message, &mut fields);
+    for file in &files {
+        for message in &file.message_type {
+            walk("loams.graph.v1", message, &mut fields);
+        }
     }
     assert!(
         fields.len() > 100,
@@ -110,19 +106,13 @@ fn proto_has_no_path_fields() {
     for allowed in ALLOWED {
         assert!(fields.iter().any(|f| f == allowed), "{allowed} is missing");
     }
-    // The fabric-era field this rule exists for would be caught.
-    assert!(
-        "database_path"
-            .split('_')
-            .any(|word| SUSPECT.contains(&word))
-    );
+    // The rule catches the fabric-era field it exists for, and a URL.
+    assert!(suspect("loams.graph.v1.OpenRequest.database_path"));
+    assert!(suspect("loams.graph.v1.X.source_url"));
     let offending: Vec<&String> = fields
         .iter()
         .filter(|f| !ALLOWED.contains(&f.as_str()))
-        .filter(|f| {
-            let leaf = f.rsplit('.').next().unwrap_or_default();
-            leaf.split('_').any(|word| SUSPECT.contains(&word))
-        })
+        .filter(|f| suspect(f))
         .collect();
     assert!(
         offending.is_empty(),
@@ -366,6 +356,81 @@ fn nested_list_map_round_trip() {
     assert!(from_proto(&decimal).is_err());
 }
 
+/// A UTC offset survives the round trip as itself, and one outside ±18 hours is refused.
+#[test]
+fn offsets_round_trip_and_are_bounded() {
+    let ts = Timestamp::from_micros(1_791_504_000_000_000);
+    for offset in [0, 1, -1, 19_800, -34_200, 64_800, -64_800] {
+        let zoned = Value::ZonedDatetime(ZonedDatetime::from_timestamp_offset(ts, offset));
+        let wire = to_proto(&zoned);
+        let Some(Kind::ZonedDatetime(z)) = &wire.kind else {
+            panic!("{wire:?}");
+        };
+        assert_eq!(z.offset_seconds, offset);
+        match from_proto(&wire).expect("decodes") {
+            Value::ZonedDatetime(back) => {
+                assert_eq!(back.offset_seconds(), offset);
+                assert_eq!(back.as_timestamp(), ts, "the instant is unchanged");
+            }
+            other => panic!("{other:?}"),
+        }
+        let time = Value::Time(Time::from_hms(12, 0, 0).expect("time").with_offset(offset));
+        match from_proto(&to_proto(&time)).expect("decodes") {
+            Value::Time(back) => assert_eq!(back.offset_seconds(), Some(offset)),
+            other => panic!("{other:?}"),
+        }
+    }
+    for offset in [64_801, -64_801, i32::MAX, i32::MIN] {
+        let mut zoned = to_proto(&Value::ZonedDatetime(ZonedDatetime::from_timestamp_offset(
+            ts, 0,
+        )));
+        if let Some(Kind::ZonedDatetime(z)) = zoned.kind.as_mut() {
+            z.offset_seconds = offset;
+        }
+        assert!(from_proto(&zoned).is_err(), "{offset}");
+        let mut time = to_proto(&Value::Time(
+            Time::from_hms(1, 0, 0).expect("t").with_offset(0),
+        ));
+        if let Some(Kind::ZonedTime(z)) = time.kind.as_mut() {
+            z.offset_seconds = offset;
+        }
+        assert!(from_proto(&time).is_err(), "{offset}");
+    }
+    // At the edge of Grafeo's range an offset that would overflow is refused, not a panic.
+    let mut edge = to_proto(&Value::ZonedDatetime(ZonedDatetime::from_timestamp_offset(
+        Timestamp::from_micros(i64::MAX - 1_000_000),
+        0,
+    )));
+    if let Some(Kind::ZonedDatetime(z)) = edge.kind.as_mut() {
+        z.offset_seconds = -3600;
+    }
+    assert!(from_proto(&edge).is_err());
+}
+
+/// R2.4's ambiguity: a map with exactly a projected node's shape is answered as a `Node`. It still
+/// decodes to the same map, so nothing is lost, but a client sees a node.
+#[test]
+fn a_map_shaped_like_a_node_is_answered_as_one() {
+    let lookalike = map(&[
+        ("_id", Value::Int64(5)),
+        ("_labels", list(vec![s("X")])),
+        ("k", Value::Int64(1)),
+    ]);
+    assert!(matches!(to_proto(&lookalike).kind, Some(Kind::Node(_))));
+    assert_eq!(round_trip(&lookalike), lookalike);
+    let edge_lookalike = map(&[
+        ("_id", Value::Int64(5)),
+        ("_type", s("T")),
+        ("_source", Value::Int64(1)),
+        ("_target", Value::Int64(2)),
+    ]);
+    assert!(matches!(
+        to_proto(&edge_lookalike).kind,
+        Some(Kind::Relationship(_))
+    ));
+    assert_eq!(round_trip(&edge_lookalike), edge_lookalike);
+}
+
 // ---------------------------------------------------------------------------------------------
 // The JSON golden the desktop Graph page reads (Task 7)
 // ---------------------------------------------------------------------------------------------
@@ -377,8 +442,13 @@ fn golden_cases() -> Vec<(&'static str, Value)> {
         ("_labels", list(vec![s("Person")])),
         ("name", s("Ada")),
     ]);
+    let other = map(&[
+        ("_id", Value::Int64(2)),
+        ("_labels", list(vec![s("Person")])),
+        ("name", s("Charles")),
+    ]);
     let edge = map(&[
-        ("_id", Value::Int64(0)),
+        ("_id", Value::Int64(7)),
         ("_type", s("KNOWS")),
         ("_source", Value::Int64(1)),
         ("_target", Value::Int64(2)),
@@ -423,11 +493,19 @@ fn golden_cases() -> Vec<(&'static str, Value)> {
         ),
         ("list", list(vec![Value::Int64(1), s("two"), Value::Null])),
         ("map", map(&[("a", Value::Int64(1)), ("b", list(vec![]))])),
-        ("node", node),
-        ("relationship", edge),
+        ("node", node.clone()),
+        ("relationship", edge.clone()),
         (
-            // As Grafeo 0.5.43 builds one: element ids.
+            // As the server answers one: full elements (GR1 Task 2 review).
             "path",
+            Value::Path {
+                nodes: Arc::from(vec![node.clone(), other]),
+                edges: Arc::from(vec![edge.clone()]),
+            },
+        ),
+        (
+            // An element deleted between the statement and the row stays an id.
+            "path_ids_only",
             Value::Path {
                 nodes: Arc::from(vec![Value::Int64(1), Value::Int64(2)]),
                 edges: Arc::from(vec![Value::Int64(7)]),

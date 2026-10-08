@@ -24,6 +24,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use grafeo::{Error as GrafeoError, GrafeoDB, QueryResult, Value};
+use grafeo_common::types::PropertyKey;
 
 /// What this crate can be wrong about, all of it recoverable by the caller.
 ///
@@ -308,7 +309,7 @@ impl Graph {
             .execute_with_params(statement, parameters)
             .map_err(as_engine_error)?;
         self.statements_executed.fetch_add(1, Ordering::Relaxed);
-        Ok(GraphResult::from(result))
+        Ok(self.resolved(GraphResult::from(result)))
     }
 
     /// Runs statements as one engine transaction, so a write batch lands whole or not at all.
@@ -356,7 +357,10 @@ impl Graph {
             let _ = self.rollback(&mut session);
             return Err(as_engine_error(err));
         }
-        Ok(out)
+        Ok(out
+            .into_iter()
+            .map(|result| self.resolved(result))
+            .collect())
     }
 
     /// Rolls a failed batch back, saying so if the rollback itself fails.
@@ -375,6 +379,99 @@ impl Graph {
         })
     }
 
+    /// Resolves every path in a result to full elements (GR1 Task 2 review).
+    ///
+    /// Grafeo 0.5.43 builds `Value::Path` from element **ids**; the contract promises full nodes
+    /// and relationships. Each id is looked up here and replaced by the same map the engine's own
+    /// projection builds for a node (`_id`, `_labels`, properties) or a relationship (`_id`,
+    /// `_type`, `_source`, `_target`, properties), which [`crate::value::to_proto`] then answers
+    /// as a `Node` or `Relationship`. The lookup reads the current state: until Task 11 pins a
+    /// read's epoch, a write committed between the statement and this lookup is visible here, and
+    /// an element deleted in that window stays an id.
+    fn resolved(&self, mut result: GraphResult) -> GraphResult {
+        for row in &mut result.rows {
+            for value in &mut row.values {
+                self.resolve(value);
+            }
+        }
+        result
+    }
+
+    fn resolve(&self, value: &mut Value) {
+        match value {
+            Value::Path { nodes, edges } => {
+                let nodes: Vec<Value> = nodes.iter().map(|n| self.node_value(n)).collect();
+                let edges: Vec<Value> = edges.iter().map(|e| self.edge_value(e)).collect();
+                *value = Value::Path {
+                    nodes: Arc::from(nodes),
+                    edges: Arc::from(edges),
+                };
+            }
+            Value::List(items) => {
+                let mut items = items.to_vec();
+                items.iter_mut().for_each(|item| self.resolve(item));
+                *value = Value::List(Arc::from(items));
+            }
+            Value::Map(map) => {
+                let mut map = (**map).clone();
+                map.values_mut().for_each(|item| self.resolve(item));
+                *value = Value::Map(Arc::new(map));
+            }
+            _ => {}
+        }
+    }
+
+    fn node_value(&self, element: &Value) -> Value {
+        let Value::Int64(id) = element else {
+            return element.clone();
+        };
+        let Some(node) = self
+            .db
+            .get_node(grafeo_common::types::NodeId::new(*id as u64))
+        else {
+            return element.clone();
+        };
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(PropertyKey::new("_id"), Value::Int64(*id));
+        map.insert(
+            PropertyKey::new("_labels"),
+            Value::List(Arc::from(
+                node.labels
+                    .iter()
+                    .map(|label| Value::String(label.clone()))
+                    .collect::<Vec<_>>(),
+            )),
+        );
+        for (key, value) in node.properties.iter() {
+            map.insert(key.clone(), value.clone());
+        }
+        Value::Map(Arc::new(map))
+    }
+
+    fn edge_value(&self, element: &Value) -> Value {
+        let Value::Int64(id) = element else {
+            return element.clone();
+        };
+        let Some(edge) = self
+            .db
+            .get_edge(grafeo_common::types::EdgeId::new(*id as u64))
+        else {
+            return element.clone();
+        };
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(PropertyKey::new("_id"), Value::Int64(*id));
+        map.insert(
+            PropertyKey::new("_type"),
+            Value::String(edge.edge_type.clone()),
+        );
+        map.insert(PropertyKey::new("_source"), Value::Int64(edge.src.0 as i64));
+        map.insert(PropertyKey::new("_target"), Value::Int64(edge.dst.0 as i64));
+        for (key, value) in edge.properties.iter() {
+            map.insert(key.clone(), value.clone());
+        }
+        Value::Map(Arc::new(map))
+    }
+
     /// The checks every statement path shares.
     fn check(statement: &str, read_only: bool) -> Result<(), GraphError> {
         if statement.trim().is_empty() {
@@ -390,7 +487,7 @@ impl Graph {
     fn run(&self, statement: &str) -> Result<GraphResult, GraphError> {
         self.statements_executed.fetch_add(1, Ordering::Relaxed);
         let result = self.db.execute(statement).map_err(as_engine_error)?;
-        Ok(GraphResult::from(result))
+        Ok(self.resolved(GraphResult::from(result)))
     }
 }
 
@@ -499,7 +596,7 @@ fn poisoned(what: &str) -> GraphError {
 ///
 /// This is not a parser and does not try to be: it reads a statement, never modifies it, and the
 /// bytes the engine sees are the bytes the caller sent (D634's no-rewriting rule).
-fn writes(statement: &str) -> bool {
+pub(crate) fn writes(statement: &str) -> bool {
     /// Leading keywords that cannot write. GQL's read shapes: a query expression with its optional
     /// `MATCH`, `FILTER`/`WHERE`, `RETURN`, `LET`/`FOR` and `ORDER BY`/`SKIP`/`LIMIT` clauses, plus
     /// `EXPLAIN` and `PROFILE`, which plan a statement without running it.

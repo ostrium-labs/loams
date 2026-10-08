@@ -184,6 +184,7 @@
       "value": {
         "relationship": {
           "dst": "2",
+          "id": "7",
           "properties": {
             "since": {
               "int64": "1833"
@@ -196,6 +197,50 @@
     },
     {
       "name": "path",
+      "value": {
+        "path": {
+          "nodes": [
+            {
+              "id": "1",
+              "labels": [
+                "Person"
+              ],
+              "properties": {
+                "name": {
+                  "string": "Ada"
+                }
+              }
+            },
+            {
+              "id": "2",
+              "labels": [
+                "Person"
+              ],
+              "properties": {
+                "name": {
+                  "string": "Charles"
+                }
+              }
+            }
+          ],
+          "relationships": [
+            {
+              "dst": "2",
+              "id": "7",
+              "properties": {
+                "since": {
+                  "int64": "1833"
+                }
+              },
+              "src": "1",
+              "type": "KNOWS"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "path_ids_only",
       "value": {
         "path": {
           "nodes": [

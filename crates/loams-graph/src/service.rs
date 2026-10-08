@@ -13,7 +13,8 @@
 //!   every graph in one page, and `DeleteGraph` closes the in-memory graph and answers a finished
 //!   operation with no id;
 //! * statement classification, engine roles and per-statement language checks: Task 3;
-//! * limits, `truncated`, `ExecuteStream` and `Explain`: Task 6;
+//! * limits, `truncated`, `ExecuteStream` and `Explain`'s plan: Task 6 (`explain` already refuses a
+//!   writing PROFILE);
 //! * consistency tokens, commit epochs, counters and idempotency: Tasks 11 and 15;
 //! * LINKED graphs: Task 17. Restore, export and import: Task 29.
 //!
@@ -27,7 +28,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use connectrpc::{ConnectError, ErrorCode};
+use connectrpc::{ConnectError, ErrorCode, ErrorDetail};
+use loams_proto::loams::errors::v1::ErrorInfo;
 use loams_proto::loams::graph::v1 as pb;
 use loams_proto::loams::operations::v1 as ops;
 
@@ -59,30 +61,47 @@ impl GraphServiceImpl {
     }
 }
 
-/// Maps an engine failure onto a Connect-RPC error.
+/// A failed RPC: the Connect code and one `loams.errors.v1.ErrorInfo` carrying `reason`.
+fn refuse(code: ErrorCode, reason: &str, message: impl Into<String>) -> ConnectError {
+    ConnectError::new(code, message).with_detail(ErrorDetail::from_message(
+        "loams.errors.v1.ErrorInfo",
+        &error_info(reason),
+    ))
+}
+
+fn error_info(reason: &str) -> ErrorInfo {
+    ErrorInfo {
+        reason: reason.to_owned(),
+        ..Default::default()
+    }
+}
+
+/// The Connect code and reason of an engine failure.
 ///
 /// A statement the engine refused is `InvalidArgument`, because that is what it is: the caller's
 /// text was wrong. The engine's own message is kept whole — its syntax span and hint are what make
-/// a GQL mistake fixable. (Task 3 adds `ErrorInfo` reasons.)
-fn map_engine(err: GraphError) -> ConnectError {
+/// a GQL mistake fixable. (Task 3 refines the reasons: `gql_syntax_error`, `gqlstatus`.)
+fn classify_error(err: &GraphError) -> (ErrorCode, &'static str) {
     match err {
         GraphError::Engine(_)
         | GraphError::EmptyStatement
         | GraphError::UnboundParameter { .. }
-        | GraphError::InvalidValue(_) => {
-            ConnectError::new(ErrorCode::InvalidArgument, err.to_string())
-        }
-        GraphError::ReadOnly => ConnectError::new(ErrorCode::PermissionDenied, err.to_string()),
-        GraphError::LanguageUnavailable(_) => {
-            ConnectError::new(ErrorCode::Unimplemented, err.to_string())
-        }
-        GraphError::Conflict { .. } => ConnectError::new(ErrorCode::AlreadyExists, err.to_string()),
+        | GraphError::InvalidValue(_) => (ErrorCode::InvalidArgument, "invalid_argument"),
+        GraphError::ReadOnly => (ErrorCode::PermissionDenied, "graph_read_only"),
+        GraphError::LanguageUnavailable(_) => (ErrorCode::Unimplemented, "graph_language_disabled"),
+        GraphError::Conflict { .. } => (ErrorCode::AlreadyExists, "already_exists"),
     }
+}
+
+/// Maps an engine failure onto a Connect-RPC error.
+fn map_engine(err: GraphError) -> ConnectError {
+    let (code, reason) = classify_error(&err);
+    refuse(code, reason, err.to_string())
 }
 
 /// Maps an internal failure onto a Connect-RPC error, never `InvalidArgument`.
 fn internal(err: GraphError) -> ConnectError {
-    ConnectError::new(ErrorCode::Internal, err.to_string())
+    refuse(ErrorCode::Internal, "internal", err.to_string())
 }
 
 /// Refuses a query language this build does not have.
@@ -98,8 +117,9 @@ fn check_language(
     use pb::QueryLanguage as L;
     match language {
         Some(L::Unspecified) | Some(L::Gql) => Ok(()),
-        _ => Err(ConnectError::new(
+        _ => Err(refuse(
             ErrorCode::Unimplemented,
+            "graph_language_disabled",
             format!(
                 "query language {wire_value} is not available in this build; Loams Graph serves \
                  GQL, ISO/IEC 39075 (D634 (a))"
@@ -145,8 +165,9 @@ fn to_parameters(
             from_proto(value)
                 .map(|value| (name.clone(), value))
                 .map_err(|err| {
-                    ConnectError::new(
+                    refuse(
                         ErrorCode::InvalidArgument,
+                        "invalid_argument",
                         format!("parameter ${name}: {err}"),
                     )
                 })
@@ -181,8 +202,9 @@ pub fn create_graph(
     req: pb::CreateGraphRequest,
 ) -> Result<pb::Graph, ConnectError> {
     if req.mode.as_known() == Some(pb::GraphMode::Linked) {
-        return Err(ConnectError::new(
+        return Err(refuse(
             ErrorCode::Unimplemented,
+            "not_implemented",
             "LINKED graphs are not served yet (GR1 Task 17)",
         ));
     }
@@ -253,11 +275,21 @@ pub fn execute(
 }
 
 /// `ExecuteBatch`: runs statements as one transaction (`atomic`) or one transaction each.
+///
+/// The contract is `ExecuteBatchResponse`'s: an atomic batch fails as a whole; a non-atomic one
+/// stops at the first failing statement and answers the committed results, `committed_through`
+/// and a `StatementError` for the failed one.
 pub fn execute_batch(
     engine: &Engine,
     req: pb::ExecuteBatchRequest,
 ) -> Result<pb::ExecuteBatchResponse, ConnectError> {
     check_language(req.language.as_known(), req.language)?;
+    // A statement's own language overrides the batch's (`Statement.language`).
+    for statement in &req.statements {
+        if statement.language.as_known() != Some(pb::QueryLanguage::Unspecified) {
+            check_language(statement.language.as_known(), statement.language)?;
+        }
+    }
     let graph = find(engine, &req.namespace, &req.graph)?;
     let statements = req
         .statements
@@ -270,7 +302,8 @@ pub fn execute_batch(
         })
         .collect::<Result<Vec<_>, ConnectError>>()?;
     if req.atomic {
-        // Grafeo's own transaction, not a Loams-side emulation.
+        // Grafeo's own transaction, not a Loams-side emulation. `commit_epoch` comes with the
+        // write lane (Task 11, R0.5).
         let results = graph.execute_batch(&statements).map_err(map_engine)?;
         Ok(pb::ExecuteBatchResponse {
             results: results.iter().map(to_pb_response).collect(),
@@ -279,20 +312,60 @@ pub fn execute_batch(
             ..Default::default()
         })
     } else {
-        // Each statement is its own transaction; a failure part-way leaves its predecessors
-        // committed. Parameters of a non-atomic batch are bound from Task 3
+        // Each statement is its own transaction; a failure stops the batch and leaves its
+        // predecessors committed. Parameters of a non-atomic batch are bound from Task 3
         // (`non_atomic_batch_binds_parameters`).
         let mut results = Vec::with_capacity(statements.len());
-        for statement in &statements {
-            results.push(graph.execute(&statement.text, false).map_err(map_engine)?);
+        let mut error = None;
+        for (index, statement) in statements.iter().enumerate() {
+            match graph.execute(&statement.text, false) {
+                Ok(result) => results.push(to_pb_response(&result)),
+                Err(err) => {
+                    let (code, reason) = classify_error(&err);
+                    error = Some(pb::StatementError {
+                        index: u32::try_from(index).unwrap_or(u32::MAX),
+                        code: code.as_str().to_string(),
+                        message: err.to_string(),
+                        info: error_info(reason).into(),
+                        ..Default::default()
+                    });
+                    break;
+                }
+            }
         }
         Ok(pb::ExecuteBatchResponse {
-            results: results.iter().map(to_pb_response).collect(),
-            committed: false,
             committed_through: u32::try_from(results.len()).unwrap_or(u32::MAX),
+            results,
+            committed: false,
+            error: error.into(),
             ..Default::default()
         })
     }
+}
+
+/// `Explain`: the plan of a statement, or its profile.
+///
+/// A PROFILE runs the statement, so a statement the guard reads as a write is refused with
+/// `graph_read_only` before anything runs. The plan itself is Task 6's; until then a statement
+/// that passes the guard is answered `not_implemented`.
+pub fn explain(engine: &Engine, req: pb::ExplainRequest) -> Result<pb::Plan, ConnectError> {
+    check_language(req.language.as_known(), req.language)?;
+    find(engine, &req.namespace, &req.graph)?;
+    if req.statement.trim().is_empty() {
+        return Err(map_engine(GraphError::EmptyStatement));
+    }
+    if req.profile && crate::engine::writes(&req.statement) {
+        return Err(refuse(
+            ErrorCode::PermissionDenied,
+            "graph_read_only",
+            "PROFILE runs the statement, and this statement writes; use EXPLAIN for its plan",
+        ));
+    }
+    Err(refuse(
+        ErrorCode::Unimplemented,
+        "not_implemented",
+        "loams.graph.v1.GraphService/Explain is not implemented yet (GR1 Task 6)",
+    ))
 }
 
 /// Finds an open graph, or answers `NotFound`.
@@ -307,8 +380,9 @@ fn find(
         .into_iter()
         .find(|g| g.name() == name)
         .ok_or_else(|| {
-            ConnectError::new(
+            refuse(
                 ErrorCode::NotFound,
+                "graph_not_found",
                 format!("no graph {namespace}/{name} is open"),
             )
         })
