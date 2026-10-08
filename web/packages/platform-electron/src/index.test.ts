@@ -53,6 +53,43 @@ async function provided(api: LoamsDesktopApi) {
 
 const settle = () => new Promise((r) => setTimeout(r, 30));
 
+describe('platform-electron instance refresh', () => {
+  const withEngine = (kind: Kind) => {
+    const api = fakeApi(kind);
+    let emit: (s: { phase: string }) => void = () => {};
+    (api as unknown as { engine: unknown }).engine = {
+      onState: (cb: typeof emit) => {
+        emit = cb;
+        return () => {};
+      },
+    };
+    return { api, emit: (s: { phase: string }) => emit(s) };
+  };
+
+  it('stale_fires_when_the_local_engine_becomes_ready', async () => {
+    const { api, emit } = withEngine('local');
+    const { platform } = await provided(api);
+    const cb = vi.fn();
+    platform.onInstanceStale?.(cb);
+    emit({ phase: 'starting' });
+    await settle();
+    expect(cb).not.toHaveBeenCalled();
+    emit({ phase: 'ready' });
+    await settle();
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it('no_stale_when_remote_active', async () => {
+    const { api, emit } = withEngine('remote');
+    const { platform } = await provided(api);
+    const cb = vi.fn();
+    platform.onInstanceStale?.(cb);
+    emit({ phase: 'ready' });
+    await settle();
+    expect(cb).not.toHaveBeenCalled();
+  });
+});
+
 describe('platform-electron', () => {
   it('platform_electron_provides_platform_transport_desktop', async () => {
     const api = fakeApi();
@@ -70,7 +107,7 @@ describe('platform-electron', () => {
     await platform.notify({ title: 't', body: 'b' });
     await platform.clipboardWrite('c');
     expect(api.calls).toEqual(['open:https://loams.dev']);
-    expect(api.shell.notify).toHaveBeenCalledWith('t', 'b');
+    expect(api.shell.notify).toHaveBeenCalledWith('t', 'b', undefined);
     expect(api.shell.clipboardWrite).toHaveBeenCalledWith('c');
   });
 

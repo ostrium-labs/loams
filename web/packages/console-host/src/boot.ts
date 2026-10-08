@@ -21,7 +21,7 @@ import { type CatalogEntry, CatalogError } from './catalog.js';
 import { guard } from './guard.js';
 import { type PluginManifest, type Tier, validateManifest } from './manifest.js';
 import type { Permission } from './permissions.js';
-import type { FlagsService } from './services.js';
+import type { FlagsService, PlatformService } from './services.js';
 import { type PluginSource, tierOf } from './tiers.js';
 
 /** What a plugin module exports (its default export, or the module itself). */
@@ -107,30 +107,44 @@ export const flagsPlugin: PluginModule = {
   async apply(ctx) {
     const transport = (ctx as unknown as { transport: Transport }).transport;
     const client = createClient(instance.InstanceService, transport);
-    let flags: FlagsService;
-    try {
-      const info = await client.getInstance({});
-      const editions = { 1: 'oss', 2: 'cloud', 3: 'byoc' } as const;
-      flags = {
-        edition: editions[info.edition as 1 | 2 | 3] ?? 'unknown',
-        instanceName: info.name,
-        serverVersion: info.serverVersion,
-        features: { ...info.features },
-        apiVersions: [...info.apiVersions],
-        has: (api) => info.apiVersions.includes(api),
-      };
-    } catch (error) {
-      console.warn('loams console: GetInstance failed; no API is available', error);
-      flags = {
-        edition: 'unknown',
-        instanceName: '',
-        serverVersion: '',
-        features: {},
-        apiVersions: [],
-        has: () => false,
-      };
-    }
-    ctx.provide('flags', flags);
+    const read = async (): Promise<FlagsService> => {
+      try {
+        const info = await client.getInstance({});
+        const editions = { 1: 'oss', 2: 'cloud', 3: 'byoc' } as const;
+        return {
+          edition: editions[info.edition as 1 | 2 | 3] ?? 'unknown',
+          instanceName: info.name,
+          serverVersion: info.serverVersion,
+          features: { ...info.features },
+          apiVersions: [...info.apiVersions],
+          has: (api) => info.apiVersions.includes(api),
+        };
+      } catch (error) {
+        console.warn('loams console: GetInstance failed; no API is available', error);
+        return {
+          edition: 'unknown',
+          instanceName: '',
+          serverVersion: '',
+          features: {},
+          apiVersions: [],
+          has: () => false,
+        };
+      }
+    };
+    let release = ctx.provide('flags', await read());
+    // A platform may say the instance changed (the desktop engine came up): re-read,
+    // and re-provide only when the answer differs, so dependent plugins restart once.
+    const platform = ctx.get('platform', true) as PlatformService | undefined;
+    const off = platform?.onInstanceStale?.(() => {
+      void read().then((next) => {
+        const cur = ctx.get('flags', true) as FlagsService | undefined;
+        if (cur && JSON.stringify(cur.apiVersions) === JSON.stringify(next.apiVersions)) return;
+        // Dropping the service restarts the plugins that inject it; they read the new one.
+        release();
+        release = ctx.provide('flags', next);
+      });
+    });
+    if (off) ctx.effect(() => off);
   },
 };
 

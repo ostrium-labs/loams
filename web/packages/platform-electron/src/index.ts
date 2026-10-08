@@ -89,6 +89,13 @@ export function createElectronPlatform(api: LoamsDesktopApi): PluginModule {
           await api.shell.notify(title, body, route);
         },
         clipboardWrite: (text) => api.shell.clipboardWrite(text),
+        // The local engine coming up changes GetInstance (it failed with 503 before).
+        onInstanceStale(callback) {
+          return api.engine.onState((s) => {
+            if (s.phase !== 'ready') return;
+            void kind().then((k) => k === 'local' && callback());
+          });
+        },
       };
       ctx.provide('platform', platform);
       ctx.provide(

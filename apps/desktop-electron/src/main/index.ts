@@ -66,9 +66,6 @@ let factoryViews: FactoryViews | undefined;
 let factoryEmbed: FactoryEmbed | undefined;
 let tray: TrayHandle | undefined;
 let isQuitting = false;
-// The console reads GetInstance once at boot. A page that booted while the local engine
-// was still starting has no data plane, so it is reloaded once the engine is ready.
-let bootedBeforeEngineReady = false;
 const settingsFile = (): string =>
 	join(app.getPath("userData"), "settings.json");
 
@@ -157,7 +154,6 @@ function createWindow(): BrowserWindow {
 		}
 	});
 	win.once("ready-to-show", () => win.show());
-	bootedBeforeEngineReady = engine?.state().phase !== "ready";
 	void win.loadURL("loams-app://console/ui/cordis.html");
 	return win;
 }
@@ -202,11 +198,6 @@ const singleInstance = initSingleInstance({
 			});
 			engine.on("state", (st: EngineState) => {
 				registry.setLocalUrl(st.phase === "ready" ? st.url : "");
-				if (st.phase === "ready" && bootedBeforeEngineReady) {
-					bootedBeforeEngineReady = false;
-					const w = getMainWindow();
-					if (w && !w.isDestroyed()) w.webContents.reload();
-				}
 				tray?.refresh();
 			});
 			registerEngineIpc(engine, logFile);

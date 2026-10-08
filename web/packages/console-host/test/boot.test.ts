@@ -93,6 +93,49 @@ const catalog = [
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
 
+describe('boot instance refresh', () => {
+  it('flags_are_re_read_when_the_platform_says_the_instance_is_stale', async () => {
+    log.length = 0;
+    const cold = createMockControl({ apiVersions: ['loams.instance.v1'] }).transport;
+    const warm = createMockControl().transport;
+    let ready = false;
+    const transport = {
+      unary: (...a: Parameters<Transport['unary']>) =>
+        (ready ? warm : cold).unary(...a),
+      stream: (...a: Parameters<Transport['stream']>) =>
+        (ready ? warm : cold).stream(...a),
+    } as Transport;
+    let stale: () => void = () => {};
+    const platform: PluginModule = {
+      name: 'platform-test',
+      apply(ctx: Context) {
+        ctx.provide('platform', {
+          kind: 'desktop',
+          fetch: globalThis.fetch,
+          baseUrl: 'mock:',
+          openExternal: async () => {},
+          notify: async () => {},
+          clipboardWrite: async () => {},
+          onInstanceStale: (cb: () => void) => {
+            stale = cb;
+            return () => {};
+          },
+        });
+        ctx.provide('transport', transport);
+      },
+    };
+    const handle = await boot({ catalog, manifests, modules, platform });
+    await settle();
+    expect(log).not.toContain('consumer active');
+    ready = true;
+    stale();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(log).toContain('consumer active');
+    expect(handle.plugins().find((p) => p.id === 'consumer')?.status).toBe('active');
+    await handle.dispose();
+  });
+});
+
 describe('boot', () => {
   it('boot_loads_rows_in_dependency_order and gates rpc on api_versions', async () => {
     log.length = 0;

@@ -20,32 +20,42 @@ import {
 const appRoot = resolve(__dirname, "../..");
 const fakeEngine = join(appRoot, "test/fixtures/fake-engine.mjs");
 
-/** The real engine: LOAMS_BIN, else the release build under cargo's target dir. */
-function realEngine(): string | undefined {
-	if (process.env.LOAMS_E2E_ENGINE === "fake") return undefined;
+/**
+ * Which engine to run. LOAMS_E2E_ENGINE: `real` (a missing binary fails), `fake`, or `auto`
+ * (default: the real engine when it exists, else the fake). A LOAMS_BIN that is set but
+ * missing always throws, so CI cannot fall back to the fake by accident.
+ */
+function resolveEngine(): string | undefined {
+	const mode = process.env.LOAMS_E2E_ENGINE ?? "auto";
+	if (!["real", "fake", "auto"].includes(mode))
+		throw new Error(`LOAMS_E2E_ENGINE must be real, fake or auto, got ${mode}`);
+	if (mode === "fake") return undefined;
 	const exe = process.platform === "win32" ? "loams.exe" : "loams";
-	if (process.env.LOAMS_BIN) {
-		return existsSync(process.env.LOAMS_BIN)
-			? process.env.LOAMS_BIN
-			: undefined;
+	const explicit = process.env.LOAMS_BIN;
+	if (explicit) {
+		if (!existsSync(explicit))
+			throw new Error(`LOAMS_BIN is set but missing: ${explicit}`);
+		return explicit;
 	}
+	let found: string | undefined;
 	try {
 		const meta = JSON.parse(
 			execFileSync(
 				"cargo",
 				["metadata", "--format-version", "1", "--no-deps"],
-				{
-					cwd: appRoot,
-					encoding: "utf8",
-					maxBuffer: 64 * 1024 * 1024,
-				},
+				{ cwd: appRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
 			),
 		) as { target_directory: string };
 		const bin = join(meta.target_directory, "release", exe);
-		return existsSync(bin) ? bin : undefined;
+		if (existsSync(bin)) found = bin;
 	} catch {
-		return undefined;
+		// no cargo: handled below
 	}
+	if (!found && mode === "real")
+		throw new Error(
+			"LOAMS_E2E_ENGINE=real but no release `loams` was found (build with --features live,durable or set LOAMS_BIN)",
+		);
+	return found;
 }
 
 /** An executable that runs the fake engine; `dev --help` answers at once (the live probe). */
@@ -66,9 +76,6 @@ function fakeEngineWrapper(dir: string): string {
 	chmodSync(f, 0o755);
 	return f;
 }
-
-const real = realEngine();
-const useReal = real !== undefined;
 
 function alive(pid: number): boolean {
 	try {
@@ -100,8 +107,21 @@ interface PageGlobal {
 }
 // page.evaluate callbacks are serialised, so each one casts globalThis (the window) inline.
 
+/** page.evaluate that survives a navigation in flight ("Execution context was destroyed"). */
+async function ev<T>(page: Page, fn: () => T | Promise<T>): Promise<T> {
+	for (let i = 0; ; i++) {
+		try {
+			await page.waitForLoadState("domcontentloaded");
+			return await page.evaluate(fn);
+		} catch (e) {
+			if (i >= 4 || !/context was destroyed|navigation/i.test(String(e)))
+				throw e;
+		}
+	}
+}
+
 const hash = (page: Page): Promise<string> =>
-	page.evaluate(() => (globalThis as unknown as PageGlobal).location.hash);
+	ev(page, () => (globalThis as unknown as PageGlobal).location.hash);
 
 /** A Connect unary JSON call through the app protocol (and so the main-process proxy). */
 async function rpc(
@@ -130,7 +150,13 @@ async function rpc(
 	);
 }
 
-test(`electron smoke (${useReal ? "real engine" : "fake engine"})`, async () => {
+test("electron smoke", async () => {
+	const real = resolveEngine();
+	const useReal = real !== undefined;
+	test.info().annotations.push({
+		type: "engine",
+		description: useReal ? "real" : "fake",
+	});
 	const work = mkdtempSync(join(tmpdir(), "loams-e2e-"));
 	const userData = join(work, "user-data");
 	mkdirSync(userData);
@@ -172,7 +198,7 @@ test(`electron smoke (${useReal ? "real engine" : "fake engine"})`, async () => 
 			timeout: 60_000,
 		});
 		timings.engineReady = Date.now() - t0;
-		const engine = await page.evaluate(() =>
+		const engine = await ev(page, () =>
 			(() => {
 				const d = (globalThis as unknown as PageGlobal).loamsDesktop;
 				if (!d) throw new Error("no desktop api");
@@ -188,7 +214,7 @@ test(`electron smoke (${useReal ? "real engine" : "fake engine"})`, async () => 
 		// Updater (built main bundle): a dev build has no feed, so the update state
 		// IPC answers "disabled". That proves the updater module and the externalized
 		// @noble/ed25519 (ESM) loaded in main.
-		const upd = await page.evaluate(() =>
+		const upd = await ev(page, () =>
 			(() => {
 				const d = (globalThis as unknown as PageGlobal).loamsDesktop;
 				if (!d) throw new Error("no desktop api");
@@ -198,7 +224,7 @@ test(`electron smoke (${useReal ? "real engine" : "fake engine"})`, async () => 
 		expect(upd.phase).toBe("disabled");
 
 		// 3. Data page.
-		await page.evaluate(() => {
+		await ev(page, () => {
 			(globalThis as unknown as PageGlobal).location.hash = "#/data";
 		});
 		// The fake engine reports no APIs, so the page only has a data plane with the real one.
@@ -277,7 +303,7 @@ test(`electron smoke (${useReal ? "real engine" : "fake engine"})`, async () => 
 		}
 
 		// 4. Software Factory: all eight apps start unconfigured.
-		await page.evaluate(() => {
+		await ev(page, () => {
 			(globalThis as unknown as PageGlobal).location.hash = "#/factory";
 		});
 		const tiles = page.locator("article", { hasText: "Not configured" });
@@ -305,12 +331,10 @@ test(`electron smoke (${useReal ? "real engine" : "fake engine"})`, async () => 
 		app = undefined;
 	} finally {
 		if (app) await app.close().catch(() => undefined);
-		for (const pid of [enginePid]) {
-			if (pid && alive(pid)) {
-				try {
-					process.kill(pid, "SIGKILL");
-				} catch {}
-			}
+		if (enginePid && alive(enginePid)) {
+			try {
+				process.kill(enginePid, "SIGKILL");
+			} catch {}
 		}
 		rmSync(work, { recursive: true, force: true });
 		console.log(

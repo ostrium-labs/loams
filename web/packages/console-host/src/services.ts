@@ -25,6 +25,11 @@ export interface PlatformService {
   openExternal(url: string): Promise<void>;
   notify(n: { title: string; body: string; route?: string }): Promise<void>;
   clipboardWrite(text: string): Promise<void>;
+  /**
+   * Optional: the platform calls back when GetInstance may now answer differently
+   * (the desktop's local engine became ready). The host re-reads `flags` then.
+   */
+  onInstanceStale?(callback: () => void): () => void;
 }
 
 /** `GetInstance`'s answer, as plugins gate on it (AP1a Ruling 6). */

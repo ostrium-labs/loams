@@ -84,6 +84,11 @@ jobs:
 
       - name: smoke test (Playwright, Task 16)
         if: runner.os == 'Linux' && hashFiles('apps/desktop-electron/playwright.config.ts') != ''
+        env:
+          # The engine step above built target/release/loams; a missing binary must fail, not fall back to the fake.
+          LOAMS_E2E_ENGINE: real
+          # Ubuntu 24.04 restricts unprivileged user namespaces, so Chromium's sandbox cannot start.
+          LOAMS_E2E_ELECTRON_ARGS: --no-sandbox
         run: xvfb-run -a pnpm --filter @loams/desktop test:e2e
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
