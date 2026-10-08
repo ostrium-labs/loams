@@ -354,7 +354,7 @@ mod admin {
     use loams_graph::service::admin::GraphAdmin;
     use loams_meta::{MetaClient, MetaClientConfig, MetaConfig, MetaNode, Router, SystemClock};
     use loams_proto::loams::graph::v1 as pb;
-    use loams_store::Store;
+    use loams_store::{Fault, FaultyStore, Op, Store};
     use tempfile::TempDir;
 
     use super::reason;
@@ -365,6 +365,8 @@ mod admin {
         _node: MetaNode,
         meta: Arc<dyn MetaStore>,
         store: Store,
+        /// The bucket under `store`, for injected delays and call counts.
+        faulty: Arc<FaultyStore>,
         data_dir: TempDir,
         _meta_dir: TempDir,
     }
@@ -383,10 +385,12 @@ mod admin {
                 .await
                 .expect("leader");
             let client = MetaClient::new(node.clone(), vec![], clock, MetaClientConfig::default());
+            let faulty = Arc::new(FaultyStore::new(Store::in_memory().inner().clone()));
             Self {
                 _node: node,
                 meta: Arc::new(client),
-                store: Store::in_memory(),
+                store: Store::new(faulty.clone()),
+                faulty,
                 data_dir: TempDir::new().expect("data dir"),
                 _meta_dir: meta_dir,
             }
@@ -750,6 +754,79 @@ mod admin {
             .await
             .expect("list");
         assert_eq!(all.graphs.len(), 8);
+    }
+
+    /// Review I1: a superseded document is never deleted at once; the sweep keeps the pointer's
+    /// target and anything inside the grace window, and a reader whose document was swept
+    /// between its pointer read and its GET follows the pointer again.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn superseded_documents_stay_readable_and_are_swept_after_grace() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        for name in ["a", "b", "c"] {
+            admin
+                .create_graph(create("acme", name, name))
+                .await
+                .expect("create");
+        }
+        let documents = || async {
+            fixture
+                .store
+                .list("graphs/")
+                .await
+                .expect("list")
+                .into_iter()
+                .filter(|o| o.path.contains("/catalog/"))
+                .count()
+        };
+        assert_eq!(documents().await, 3, "every superseded document is kept");
+        assert_eq!(
+            admin
+                .sweep_documents(Duration::from_secs(600))
+                .await
+                .expect("sweep"),
+            0,
+            "all inside the grace window"
+        );
+        assert_eq!(
+            admin.sweep_documents(Duration::ZERO).await.expect("sweep"),
+            2
+        );
+        assert_eq!(documents().await, 1, "the pointer's target is kept");
+        admin
+            .get_graph(get("acme", "c"))
+            .await
+            .expect("still readable");
+
+        // A reader reads the pointer, then its GET is held for 300 ms; meanwhile a writer moves
+        // the pointer and a sweep with no grace deletes the document the reader was about to
+        // read. The reader follows the pointer and answers.
+        fixture
+            .faulty
+            .inject(Op::Get, Fault::Delay(Duration::from_millis(300)));
+        let reader = {
+            let admin = admin.clone();
+            tokio::spawn(async move { admin.get_graph(get("acme", "a")).await })
+        };
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        admin
+            .create_graph(create("acme", "d", "d"))
+            .await
+            .expect("a writer");
+        admin.sweep_documents(Duration::ZERO).await.expect("sweep");
+        reader
+            .await
+            .expect("task")
+            .expect("the reader re-read the pointer instead of failing");
+        assert!(
+            admin
+                .catalog()
+                .counters()
+                .document_rereads
+                .load(std::sync::atomic::Ordering::Relaxed)
+                > 0,
+            "the reader really did hit a swept document"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

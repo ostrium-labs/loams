@@ -36,6 +36,9 @@ pub const DEFAULT_PAGE_SIZE: usize = 50;
 /// The largest `ListGraphs` page.
 pub const MAX_PAGE_SIZE: usize = 1000;
 
+/// How long a superseded catalog document is kept before the sweep may delete it (review I1).
+pub const DOCUMENT_GRACE: std::time::Duration = std::time::Duration::from_secs(600);
+
 /// How many times a write retries a CAS that lost to a concurrent writer.
 const MAX_ATTEMPTS: usize = 32;
 
@@ -193,8 +196,6 @@ struct Loaded {
     namespace: NamespaceId,
     /// The pointer's version, `None` when the namespace has no catalog yet.
     version: Option<u64>,
-    /// The current document's object key.
-    object: Option<String>,
     doc: Document,
 }
 
@@ -212,6 +213,14 @@ pub struct Page {
 pub struct GraphCatalog {
     meta: Arc<dyn MetaStore>,
     store: Store,
+    counters: Arc<Counters>,
+}
+
+/// What the catalog counts, for tests and (Task 27) metrics.
+#[derive(Debug, Default)]
+pub struct Counters {
+    /// Reads that found their document swept and followed the pointer again.
+    pub document_rereads: std::sync::atomic::AtomicU64,
 }
 
 impl std::fmt::Debug for GraphCatalog {
@@ -239,7 +248,17 @@ impl GraphCatalog {
     /// A catalog over `meta` and `store`.
     #[must_use]
     pub fn new(meta: Arc<dyn MetaStore>, store: Store) -> Self {
-        Self { meta, store }
+        Self {
+            meta,
+            store,
+            counters: Arc::default(),
+        }
+    }
+
+    /// The catalog's counters.
+    #[must_use]
+    pub fn counters(&self) -> &Counters {
+        &self.counters
     }
 
     /// The metastore clock, in milliseconds.
@@ -592,19 +611,50 @@ impl GraphCatalog {
             return Ok(Loaded {
                 namespace,
                 version: None,
-                object: None,
                 doc: Document::default(),
             });
         };
-        let (bytes, _) = self.store.get(&pointer.value).await.map_err(unavailable)?;
-        let doc: Document = serde_json::from_slice(&bytes)
-            .map_err(|err| CatalogError::Corrupt(format!("{}: {err}", pointer.value)))?;
-        Ok(Loaded {
-            namespace,
-            version: Some(pointer.version),
-            object: Some(pointer.value),
-            doc,
-        })
+        let mut pointer = pointer;
+        for _ in 0..MAX_ATTEMPTS {
+            match self.store.get(&pointer.value).await {
+                Ok((bytes, _)) => {
+                    let doc: Document = serde_json::from_slice(&bytes).map_err(|err| {
+                        CatalogError::Corrupt(format!("{}: {err}", pointer.value))
+                    })?;
+                    return Ok(Loaded {
+                        namespace,
+                        version: Some(pointer.version),
+                        doc,
+                    });
+                }
+                // The document this pointer named was superseded and swept between the pointer
+                // read and the GET (review I1): read the pointer again and follow it.
+                Err(loams_store::StoreError::NotFound { .. }) => {
+                    self.counters
+                        .document_rereads
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    match self
+                        .meta
+                        .pointer(Consistency::Linearizable, namespace, CATALOG_POINTER)
+                        .await
+                        .map_err(unavailable)?
+                    {
+                        Some(next) if next.value != pointer.value => pointer = next,
+                        // The pointer still names a document that is gone: nothing a retry fixes.
+                        _ => {
+                            return Err(CatalogError::Corrupt(format!(
+                                "the current catalog document {} is missing",
+                                pointer.value
+                            )));
+                        }
+                    }
+                }
+                Err(err) => return Err(unavailable(err)),
+            }
+        }
+        Err(CatalogError::Unavailable(
+            "the catalog kept moving under this read; retry".to_string(),
+        ))
     }
 
     /// Reads the document, applies `change` and commits it. `change` answers `(None, out)` to
@@ -643,22 +693,15 @@ impl GraphCatalog {
                 })
                 .await;
             match cas.result {
-                Ok(_) => {
-                    self.retire(loaded.object).await;
-                    return Ok(out);
-                }
+                Ok(_) => return Ok(out),
                 // A lost acknowledgement of this very write: the pointer names its object.
                 Err(MetaError::Rejected(ApplyError::VersionMismatch {
                     current: Some(current),
-                })) if current.value == object => {
-                    self.retire(loaded.object).await;
-                    return Ok(out);
-                }
-                // A concurrent writer won: drop this attempt's object and redo the change on
-                // the new document.
-                Err(MetaError::Rejected(ApplyError::VersionMismatch { .. })) => {
-                    let _ = self.store.delete(&object).await;
-                }
+                })) if current.value == object => return Ok(out),
+                // A concurrent writer won: redo the change on the new document. This attempt's
+                // object is left for the sweep: nothing is ever deleted at once, because a CAS
+                // reported as lost may have committed and been read (review I1).
+                Err(MetaError::Rejected(ApplyError::VersionMismatch { .. })) => {}
                 Err(err) => return Err(unavailable(err)),
             }
         }
@@ -667,13 +710,80 @@ impl GraphCatalog {
         ))
     }
 
-    /// Deletes a superseded document, best effort: a leftover is garbage, never read again.
-    async fn retire(&self, object: Option<String>) {
-        if let Some(object) = object
-            && let Err(err) = self.store.delete(&object).await
-        {
-            tracing::debug!(%object, error = %err, "could not delete a superseded graph catalog document");
+    /// Deletes catalog documents no reader can still need (review I1, M2): in every namespace,
+    /// every object under `graphs/<namespace_id>/catalog/` except the pointer's current target
+    /// and any object written within `grace`. That covers superseded documents and the orphans
+    /// of CAS attempts that lost. Answers how many were deleted.
+    ///
+    /// A reader that read the pointer before a sweep and GETs a swept document re-reads the
+    /// pointer ([`GraphCatalog::load_ns`]), so `grace` only bounds how often that happens.
+    ///
+    /// # Errors
+    ///
+    /// [`CatalogError::Unavailable`] when the namespaces cannot be listed; a failure in one
+    /// namespace is logged and the sweep goes on.
+    pub async fn sweep_documents(&self, grace: std::time::Duration) -> Result<usize, CatalogError> {
+        let now_ms = u64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX);
+        let cutoff = now_ms.saturating_sub(u64::try_from(grace.as_millis()).unwrap_or(u64::MAX));
+        let namespaces = self
+            .meta
+            .namespaces(Consistency::Linearizable)
+            .await
+            .map_err(unavailable)?;
+        let mut deleted = 0;
+        for ns in namespaces {
+            match self.sweep_namespace(ns.id, cutoff).await {
+                Ok(n) => deleted += n,
+                Err(err) => {
+                    tracing::warn!(namespace = %ns.name, error = %err, "sweeping a graph catalog failed");
+                }
+            }
         }
+        Ok(deleted)
+    }
+
+    async fn sweep_namespace(
+        &self,
+        namespace: NamespaceId,
+        cutoff_ms: u64,
+    ) -> Result<usize, CatalogError> {
+        let objects = self
+            .store
+            .list(&format!("graphs/{namespace}/catalog/"))
+            .await
+            .map_err(unavailable)?;
+        if objects.is_empty() {
+            return Ok(0);
+        }
+        // Read the pointer after listing: a document written after this read is newer than the
+        // cutoff anyway, and one the pointer moved to before it is kept.
+        let current = self
+            .meta
+            .pointer(Consistency::Linearizable, namespace, CATALOG_POINTER)
+            .await
+            .map_err(unavailable)?
+            .map(|p| p.value);
+        let mut deleted = 0;
+        for object in objects {
+            if current.as_deref() == Some(object.path.as_str())
+                || object.last_modified_ms > cutoff_ms
+            {
+                continue;
+            }
+            match self.store.delete(&object.path).await {
+                Ok(()) | Err(loams_store::StoreError::NotFound { .. }) => deleted += 1,
+                Err(err) => {
+                    tracing::debug!(object = %object.path, error = %err, "could not sweep a graph catalog document");
+                }
+            }
+        }
+        Ok(deleted)
     }
 }
 

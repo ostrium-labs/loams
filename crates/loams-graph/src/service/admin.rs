@@ -528,6 +528,20 @@ impl GraphAdmin {
         Ok(purged)
     }
 
+    /// Deletes catalog documents older than `grace` that no reader still needs (the catalog's
+    /// [`GraphCatalog::sweep_documents`]); run with [`crate::catalog::DOCUMENT_GRACE`] beside
+    /// [`GraphAdmin::purge_expired`].
+    ///
+    /// # Errors
+    ///
+    /// `UNAVAILABLE` when the catalog is.
+    pub async fn sweep_documents(&self, grace: Duration) -> Result<usize, ConnectError> {
+        self.catalog
+            .sweep_documents(grace)
+            .await
+            .map_err(map_catalog)
+    }
+
     /// The retention hold this admin purges with.
     #[must_use]
     pub fn retention_hold(&self) -> Duration {
