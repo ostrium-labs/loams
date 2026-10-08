@@ -75,7 +75,10 @@ struct Args {
     /// The HTTP API.
     #[arg(long, default_value = "127.0.0.1:7676")]
     listen_http: SocketAddr,
-    /// The node id walproposer sees.
+    /// The node id walproposer sees, also published to the storage broker
+    /// as `safekeeper_id`. An Arm A acceptor has its own; every instance of
+    /// a stateless TiKV pool uses the pool's one logical id (and the same
+    /// --advertise-pg), so the pageserver sees one safekeeper.
     #[arg(long, default_value_t = 1)]
     id: u64,
     #[arg(long, value_enum, default_value = "mem")]
@@ -134,8 +137,9 @@ struct Args {
     /// this WAL service (PG2 Task 32).
     #[arg(long)]
     broker_endpoint: Option<String>,
-    /// The Postgres address published to the broker (default: --listen-pg);
-    /// a pool advertises its Service.
+    /// The Postgres address published to the broker (default: --listen-pg).
+    /// Every instance of a TiKV pool advertises the pool's Service address,
+    /// with the pool's --id; an Arm A acceptor advertises its own.
     #[arg(long)]
     advertise_pg: Option<String>,
     /// The HTTP address published to the broker (default: --listen-http).
