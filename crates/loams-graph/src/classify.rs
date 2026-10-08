@@ -71,7 +71,7 @@ pub fn engine_classify(statement: &str) -> Result<Access, GraphError> {
         translate_full(statement).map_err(|err| GraphError::Engine(err.to_string()))?;
     match translated {
         GqlTranslationResult::Plan(plan) => {
-            check_operator(&plan.root)?;
+            check_plan(&plan.root)?;
             // An EXPLAIN plans without running; a PROFILE runs.
             if plan.root.has_mutations() && (plan.profile || !plan.explain) {
                 Ok(Access::Write)
@@ -144,7 +144,59 @@ fn session_command(command: &SessionCommand) -> Result<Access, GraphError> {
     }
 }
 
-/// Walks a plan for operators no caller may run.
+/// Checks a whole plan, subqueries included.
+///
+/// Two passes. [`check_operator`] walks the operator tree. That walk does not see operators
+/// *inside expressions* (`EXISTS { … }`, `COUNT { … }`, `VALUE { … }`, pattern comprehensions),
+/// and walking every expression of every operator by hand cannot be shown complete against a
+/// `#[non_exhaustive]` plan type (security review C1). So the second pass reads the plan's
+/// **derived `Debug` rendering**, which by construction prints every field of every operator and
+/// expression, nested plans included, and checks every occurrence it finds. It fails closed: a
+/// string literal that happens to contain an operator's name only adds a refusal, and cannot hide
+/// a real operator.
+fn check_plan(root: &LogicalOperator) -> Result<(), GraphError> {
+    check_operator(root)?;
+    let text = format!("{root:?}");
+    if text.contains("LoadData(") || text.contains("LoadGraph(") {
+        return Err(GraphError::StatementNotAllowed {
+            file_access: true,
+            what: "the statement reads a server file".to_string(),
+        });
+    }
+    for operator in [
+        "CreateGraph(",
+        "DropGraph(",
+        "CopyGraph(",
+        "MoveGraph(",
+        "AddGraph(",
+        "ClearGraph(",
+        "CreatePropertyGraph(",
+    ] {
+        if text.contains(operator) {
+            return Err(GraphError::StatementNotAllowed {
+                file_access: false,
+                what: "graph management is not served".to_string(),
+            });
+        }
+    }
+    // Every `ExpandOp` prints `max_hops: None` or `max_hops: Some(<n>)`.
+    for (at, _) in text.match_indices("max_hops: ") {
+        let rest = &text[at + "max_hops: ".len()..];
+        let bounded = rest
+            .strip_prefix("Some(")
+            .and_then(|tail| tail.split(')').next())
+            .and_then(|n| n.trim().parse::<u32>().ok())
+            .is_some_and(|max| max <= MAX_PATH_HOPS);
+        if !bounded {
+            return Err(GraphError::UnboundedPath {
+                max_hops: MAX_PATH_HOPS,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Walks a plan's operator tree for operators no caller may run.
 fn check_operator(operator: &LogicalOperator) -> Result<(), GraphError> {
     match operator {
         LogicalOperator::LoadData(_) | LogicalOperator::LoadGraph(_) => {

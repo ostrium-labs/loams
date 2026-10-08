@@ -290,3 +290,27 @@ fn storage_path_derives_from_data_dir_and_graph_id() {
     assert!(OpenSpec::persistent(&Engine::new(), id).is_none());
     std::fs::remove_dir_all(&data_dir).ok();
 }
+
+/// Security review C1: a variable-length pattern inside an EXISTS, COUNT or VALUE subquery is
+/// held to the same bound as one in the main pattern.
+#[test]
+fn subquery_paths_are_bounded_too() {
+    let engine = Engine::new();
+    let graph = Graph::open(&engine, "acme", "subq", OpenSpec::default()).expect("open");
+    for statement in [
+        "MATCH (a) WHERE a.v = 1 AND EXISTS { MATCH (a)-[*]->(b:Nope) } RETURN count(a)",
+        "MATCH (x) WHERE COUNT { MATCH (x)-[*]->(y:Nope) } > 0 RETURN x",
+        "MATCH (a) RETURN COUNT { MATCH (a)-[*]->(b) } AS c",
+        "RETURN VALUE { MATCH (a)-[*1..50]->(b) RETURN count(b) }",
+    ] {
+        let err = graph.execute(statement, true).expect_err("refused");
+        assert_eq!(err.reason(), "graph_unbounded_path", "{statement}: {err}");
+    }
+    // A bounded one inside a subquery is fine.
+    graph
+        .execute(
+            "MATCH (a) WHERE EXISTS { MATCH (a)-[*1..3]->(b) } RETURN count(a) AS c",
+            true,
+        )
+        .expect("a bounded subquery path runs");
+}

@@ -49,3 +49,15 @@ MATCH p = (a)-[:KNOWS*1..20]->(b) RETURN p
 #! parse_error
 // a line comment GQL 0.5.43 does not parse
 INSERT (:X)
+
+#! refused=graph_unbounded_path
+MATCH (a) WHERE a.v = 1 AND EXISTS { MATCH (a)-[*]->(b:Nope) } RETURN count(a)
+
+#! refused=graph_unbounded_path
+MATCH (x) WHERE COUNT { MATCH (x)-[*]->(y:Nope) } > 0 RETURN x
+
+#! refused=graph_unbounded_path
+MATCH (a) RETURN COUNT { MATCH (a)-[*]->(b) } AS c
+
+#! refused=graph_unbounded_path
+RETURN VALUE { MATCH (a)-[*1..50]->(b) RETURN count(b) }
