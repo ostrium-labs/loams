@@ -10,6 +10,7 @@ import {
 } from '@loams/platform-electron';
 import dataStudioPkg from '@loams/plugin-data-studio/package.json';
 import desktopServersPkg from '@loams/plugin-desktop-servers/package.json';
+import durablePkg from '@loams/plugin-durable/package.json';
 import factoryPkg from '@loams/plugin-factory/package.json';
 import desktopYml from '../../catalog/desktop.yml?raw';
 import type { modules } from './modules.js';
@@ -20,9 +21,15 @@ export const desktopModules: typeof modules = {
   '@loams/plugin-data-studio': () => import('@loams/plugin-data-studio'),
   '@loams/plugin-desktop-servers': () => import('@loams/plugin-desktop-servers'),
   '@loams/plugin-factory': () => import('@loams/plugin-factory'),
+  '@loams/plugin-durable': () => import('@loams/plugin-durable'),
 };
 /** Their package.json manifests. */
-export const desktopManifests: unknown[] = [desktopServersPkg, dataStudioPkg, factoryPkg];
+export const desktopManifests: unknown[] = [
+  desktopServersPkg,
+  dataStudioPkg,
+  factoryPkg,
+  durablePkg,
+];
 
 export async function startDesktop(
   api: LoamsDesktopApi,

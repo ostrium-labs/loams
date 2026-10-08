@@ -25,6 +25,7 @@
     "@loams/platform-web": "workspace:*",
     "@loams/plugin-approvals": "workspace:*",
     "@loams/plugin-data-studio": "workspace:*",
+    "@loams/plugin-durable": "workspace:*",
     "@loams/plugin-desktop-servers": "workspace:*",
     "@loams/plugin-factory": "workspace:*",
     "@loams/plugin-identity": "workspace:*",

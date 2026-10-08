@@ -11,3 +11,5 @@
       name: '@loams/plugin-data-studio'
     - id: factory
       name: '@loams/plugin-factory'
+    - id: durable
+      name: '@loams/plugin-durable'
