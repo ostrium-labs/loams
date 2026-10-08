@@ -12,7 +12,7 @@ import {
   Table,
   Textarea,
 } from '@loams/ui';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import {
   isInternal,
   type LinkStatus,
@@ -191,7 +191,9 @@ function parseOptions(text: string): Record<string, string> {
   }
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(parsed)) {
-    out[k] = typeof v === 'string' ? v : JSON.stringify(v);
+    if (typeof v === 'string') out[k] = v;
+    else if (typeof v === 'number' || typeof v === 'boolean') out[k] = String(v);
+    else throw new Error(`Option "${k}" must be a string, number or boolean.`);
   }
   return out;
 }
@@ -218,7 +220,8 @@ function NewLink({
   const [options, setOptions] = useState('');
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const chosen = source || streams[0] || '';
+  // A previously picked source that is no longer offered (internal streams got hidden) falls back to the first.
+  const chosen = streams.includes(source) ? source : (streams[0] ?? '');
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -315,7 +318,10 @@ export function ListPage({
   const [links, reloadLinks] = useLoad(() => client.listLinks(ns), [client, ns]);
   const [showInternal, setShowInternal] = useState(false);
   const [creating, setCreating] = useState(false);
-  if (streams.state === 'ready') rememberNamespace(ns);
+  const streamsReady = streams.state === 'ready';
+  useEffect(() => {
+    if (streamsReady) rememberNamespace(ns);
+  }, [streamsReady, ns]);
 
   const visibleStreams =
     streams.state === 'ready'

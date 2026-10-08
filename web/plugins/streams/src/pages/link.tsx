@@ -4,9 +4,10 @@ import { ErrorNotice, PageHead, useLoad } from '../shared.js';
 import { StatusBadge } from './list.js';
 
 /** Lag per partition as inline SVG bars; the tallest bar fills the chart. */
-export function LagChart({ lag }: { lag: { partition: number; records: number }[] }) {
+export function LagChart({ lag }: { lag: { partition: number; records: string }[] }) {
   if (lag.length === 0) return <p className="lc-muted">No partitions.</p>;
-  const max = Math.max(1, ...lag.map((l) => l.records));
+  const big = lag.map((l) => ({ ...l, n: BigInt(l.records) }));
+  const max = big.reduce((m, l) => (l.n > m ? l.n : m), 1n);
   const H = 120;
   const slot = 56;
   const width = lag.length * slot + 8;
@@ -19,8 +20,8 @@ export function LagChart({ lag }: { lag: { partition: number; records: number }[
       viewBox={`0 0 ${width} ${H + 36}`}
       className="max-w-full"
     >
-      {lag.map((l, i) => {
-        const h = l.records === 0 ? 1 : Math.max(2, Math.round((l.records / max) * H));
+      {big.map((l, i) => {
+        const h = l.n === 0n ? 1 : Math.max(2, Number((l.n * BigInt(H)) / max));
         const x = 8 + i * slot;
         return (
           <g key={l.partition} data-testid={`lag-bar-${l.partition}`}>
@@ -31,7 +32,7 @@ export function LagChart({ lag }: { lag: { partition: number; records: number }[
               width={slot - 14}
               height={h}
               data-records={l.records}
-              className={l.records === 0 ? 'fill-grow' : 'fill-accent'}
+              className={l.n === 0n ? 'fill-grow' : 'fill-accent'}
             />
             <text
               x={x + (slot - 14) / 2}
@@ -130,7 +131,7 @@ export function LinkPage({
             <LagChart lag={link.data.lag} />
           </Card>
           <Card title="Applied offsets" flush>
-            <Table<{ partition: number; offset: number }>
+            <Table<{ partition: number; offset: string }>
               caption="Applied offsets"
               rows={link.data.applied ?? []}
               rowKey={(a) => String(a.partition)}

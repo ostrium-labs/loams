@@ -1,10 +1,17 @@
 import { Badge, Button, Card, Empty, Field, Input, Select, Table, Textarea } from '@loams/ui';
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import type { StreamDetail, StreamsClient, TailRecord } from '../client.js';
+import {
+  ApiError,
+  OFFSET_OUT_OF_RANGE,
+  type StreamDetail,
+  type StreamsClient,
+  type TailRecord,
+} from '../client.js';
 import { ErrorNotice, errorText, PageHead, useLoad } from '../shared.js';
 
 export const TAIL_LIMIT = 500;
 export const TAIL_POLL_MS = 2000;
+export const TAIL_MAX_BACKOFF_MS = 30000;
 
 /** Appends `incoming` to `kept`, keeping only the newest `limit`. */
 export function capRecords(kept: TailRecord[], incoming: TailRecord[], limit = TAIL_LIMIT) {
@@ -14,6 +21,11 @@ export function capRecords(kept: TailRecord[], incoming: TailRecord[], limit = T
 
 function preview(text: string): string {
   return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+}
+
+/** The wait before the next poll: the base interval, doubled per consecutive failure, at most 30 s. */
+export function backoffDelay(base: number, failures: number): number {
+  return Math.min(TAIL_MAX_BACKOFF_MS, base * 2 ** Math.min(failures, 16));
 }
 
 /** Tails one partition from its high watermark: polls fetch, pausable, newest 500 kept. */
@@ -33,37 +45,44 @@ export function TailPanel({
   const [records, setRecords] = useState<TailRecord[]>([]);
   const [paused, setPaused] = useState(false);
   const [error, setError] = useState<string>();
-  const next = useRef<number | undefined>(undefined);
-
-  // A new partition starts a new tail, from its high watermark.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: restart only on target change
-  useEffect(() => {
-    next.current = undefined;
-    setRecords([]);
-  }, [client, ns, stream, partition]);
+  // The cursor outlives a pause, but belongs to one target: it is replaced, never mutated across targets.
+  const cursorRef = useRef<{ key: string; offset?: string }>({ key: '' });
 
   useEffect(() => {
     if (paused) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
+    const key = `${ns}/${stream}/${partition}`;
+    if (cursorRef.current.key !== key) {
+      cursorRef.current = { key };
+      setRecords([]);
+      setError(undefined);
+    }
+    const cursor = cursorRef.current;
     const tick = async () => {
       try {
-        if (next.current === undefined) {
+        if (cursor.offset === undefined) {
           const d = await client.describeStream(ns, stream);
-          next.current = d.partitions.find((p) => p.partition === partition)?.high_watermark ?? 0;
+          if (!live) return;
+          cursor.offset =
+            d.partitions.find((p) => p.partition === partition)?.high_watermark ?? '0';
         }
-        const page = await client.fetch(ns, stream, partition, next.current);
+        const page = await client.fetch(ns, stream, partition, cursor.offset);
         if (!live) return;
-        next.current = page.nextOffset;
+        cursor.offset = page.nextOffset;
+        failures = 0;
         setError(undefined);
         if (page.records.length > 0) setRecords((prev) => capRecords(prev, page.records));
       } catch (e) {
         if (!live) return;
-        // An offset out of range (the log was trimmed): start again from the watermark.
-        next.current = undefined;
+        failures += 1;
+        // Only an offset outside the log (trimmed) restarts at the watermark; a transient
+        // failure keeps the cursor, so records produced meanwhile still arrive.
+        if (e instanceof ApiError && e.code === OFFSET_OUT_OF_RANGE) cursor.offset = undefined;
         setError(errorText(e));
       }
-      if (live) timer = setTimeout(tick, pollMs);
+      if (live) timer = setTimeout(tick, backoffDelay(pollMs, failures));
     };
     void tick();
     return () => {
@@ -113,6 +132,26 @@ export function TailPanel({
 
 type Mode = 'json' | 'cloudevent';
 
+const REQUIRED_EVENT_FIELDS = ['specversion', 'id', 'source', 'type'] as const;
+
+/** Field-level problems of a structured CloudEvent, before it is posted. */
+export function validateCloudEvent(event: unknown): string[] {
+  if (typeof event !== 'object' || event === null || Array.isArray(event)) {
+    return ['A CloudEvent must be a JSON object.'];
+  }
+  const e = event as Record<string, unknown>;
+  const problems: string[] = [];
+  for (const f of REQUIRED_EVENT_FIELDS) {
+    if (typeof e[f] !== 'string' || (e[f] as string).trim() === '') {
+      problems.push(`"${f}" is required and must be a non-empty string.`);
+    }
+  }
+  if (typeof e.specversion === 'string' && e.specversion.trim() !== '' && e.specversion !== '1.0') {
+    problems.push('"specversion" must be "1.0".');
+  }
+  return problems;
+}
+
 function ProduceCard({
   client,
   ns,
@@ -132,11 +171,15 @@ function ProduceCard({
   const [body, setBody] = useState('{"hello": "world"}');
   const [result, setResult] = useState<string>();
   const [error, setError] = useState<string>();
+  const [problems, setProblems] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  // The stream may have fewer partitions than the last pick.
+  const part = Math.min(partition, Math.max(0, partitions - 1));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(undefined);
+    setProblems([]);
     setResult(undefined);
     setBusy(true);
     try {
@@ -147,27 +190,27 @@ function ProduceCard({
         throw new Error('The body must be valid JSON.');
       }
       if (mode === 'json') {
-        const ack = await client.produce(ns, stream, partition, {
+        const ack = await client.produce(ns, stream, part, {
           key,
           value: JSON.stringify(parsed),
         });
         setResult(`Produced at offset ${ack.base_offset}.`);
       } else {
-        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-          throw new Error('A CloudEvent must be a JSON object.');
+        const found = validateCloudEvent(parsed);
+        if (found.length > 0) {
+          setProblems(found);
+          return;
         }
-        const res = await client.produceEvent(
-          ns,
-          stream,
-          partition,
-          parsed as Record<string, unknown>,
-        );
+        const res = await client.produceEvent(ns, stream, part, parsed as Record<string, unknown>);
         const first = res.events[0];
-        setResult(
-          first?.offset === undefined
-            ? `Event ${first?.status ?? 'sent'}.`
-            : `Event ${first.status} at offset ${first.offset}.`,
-        );
+        if (first?.status !== 'appended') {
+          throw new Error(
+            first
+              ? `The event was not appended (status: ${first.status}).`
+              : 'The server acknowledged no event.',
+          );
+        }
+        setResult(`Event appended at offset ${first.offset ?? '?'}.`);
       }
       onProduced();
     } catch (err) {
@@ -213,7 +256,7 @@ function ProduceCard({
             {(p) => (
               <Select
                 {...p}
-                value={String(partition)}
+                value={String(part)}
                 onChange={(e) => setPartition(Number(e.target.value))}
               >
                 {Array.from({ length: partitions }, (_, i) => `p${i}`).map((id, i) => (
@@ -247,6 +290,9 @@ function ProduceCard({
           </Button>
           {result && <span className="text-sm text-muted">{result}</span>}
         </div>
+        {problems.length > 0 && (
+          <ErrorNotice title="The CloudEvent is not valid" message={problems.join(' ')} />
+        )}
         {error && <ErrorNotice title="Could not produce the record" message={error} />}
       </form>
     </Card>
@@ -318,7 +364,9 @@ export function StreamPage({
                   key: 'n',
                   header: 'Records',
                   numeric: true,
-                  cell: (p) => <Badge>{String(p.high_watermark - p.log_start_offset)}</Badge>,
+                  cell: (p) => (
+                    <Badge>{String(BigInt(p.high_watermark) - BigInt(p.log_start_offset))}</Badge>
+                  ),
                 },
               ]}
             />

@@ -7,10 +7,11 @@ export interface StreamSummary {
   retention?: { max_age_ms?: number | null; max_bytes?: number | null };
 }
 
+/** Offsets are decimal strings: a u64 offset can exceed 2^53. Do arithmetic with BigInt. */
 export interface PartitionBounds {
   partition: number;
-  log_start_offset: number;
-  high_watermark: number;
+  log_start_offset: string;
+  high_watermark: string;
 }
 
 export interface StreamDetail {
@@ -37,12 +38,12 @@ export interface LinkDetail {
   options: Record<string, string>;
   status: LinkStatus;
   version?: number;
-  applied?: { partition: number; offset: number }[];
-  lag: { partition: number; records: number }[];
+  applied?: { partition: number; offset: string }[];
+  lag: { partition: number; records: string }[];
 }
 
 export interface TailRecord {
-  offset: number;
+  offset: string;
   key: string | null;
   value: string;
   timestamp_ms: number;
@@ -50,9 +51,12 @@ export interface TailRecord {
 
 export interface FetchPage {
   records: TailRecord[];
-  nextOffset: number;
-  highWatermark: number;
+  nextOffset: string;
+  highWatermark: string;
 }
+
+/** The engine's code for a fetch offset outside the log's bounds (HTTP 416). */
+export const OFFSET_OUT_OF_RANGE = 'offset_out_of_range';
 
 /** An error from a route, `{error, message}`. */
 export class ApiError extends Error {
@@ -64,6 +68,32 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** The JSON number fields that hold a u64: kept as their exact decimal text. */
+const U64_KEYS = new Set([
+  'offset',
+  'next_offset',
+  'high_watermark',
+  'log_start_offset',
+  'base_offset',
+  'last_offset',
+  'records',
+]);
+
+/** Parses JSON, turning the u64 fields into exact decimal strings (no precision loss past 2^53). */
+export function parseJsonU64(text: string): unknown {
+  return JSON.parse(text, function (
+    this: unknown,
+    key: string,
+    value: unknown,
+    ctx?: { source?: string },
+  ) {
+    if (typeof value === 'number' && U64_KEYS.has(key)) {
+      return ctx?.source !== undefined ? ctx.source : String(value);
+    }
+    return value;
+  } as Parameters<typeof JSON.parse>[1]);
 }
 
 export const isInternal = (name: string | null | undefined) => (name ?? '').startsWith('_');
@@ -91,7 +121,13 @@ export function createStreamsClient(fetchFn: typeof globalThis.fetch, baseUrl = 
 
   async function call<T>(url: string, init?: RequestInit): Promise<T> {
     const res = await fetchFn(url, { ...init, credentials: 'include' });
-    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    const text = await res.text().catch(() => '');
+    let body: Record<string, unknown> = {};
+    try {
+      body = parseJsonU64(text) as Record<string, unknown>;
+    } catch {
+      // a non-JSON body: the status text stands in
+    }
     if (!res.ok) {
       throw new ApiError(
         String(body.error ?? body.code ?? 'error'),
@@ -131,7 +167,7 @@ export function createStreamsClient(fetchFn: typeof globalThis.fetch, baseUrl = 
       stream: string,
       partition: number,
       rec: { key?: string; value: string },
-    ): Promise<{ base_offset: number; last_offset: number }> {
+    ): Promise<{ base_offset: string; last_offset: string }> {
       return post(`${root(ns)}/streams/${enc(stream)}/partitions/${partition}/records`, {
         records: [
           {
@@ -147,23 +183,24 @@ export function createStreamsClient(fetchFn: typeof globalThis.fetch, baseUrl = 
       stream: string,
       partition: number,
       event: Record<string, unknown>,
-    ): Promise<{ events: { status: string; partition?: number; offset?: number }[] }> {
+    ): Promise<{ events: { status: string; partition?: number; offset?: string }[] }> {
       return post(
         `${root(ns)}/streams/${enc(stream)}/events?partition=${partition}`,
         event,
         'application/cloudevents+json',
       );
     },
-    async fetch(ns: string, stream: string, partition: number, offset: number): Promise<FetchPage> {
+    async fetch(ns: string, stream: string, partition: number, offset: string): Promise<FetchPage> {
+      if (!/^\d+$/.test(offset)) throw new Error(`Bad offset ${offset}.`);
       const res = await call<{
         records: {
-          offset: number;
+          offset: string;
           key: string | null;
           value: string | null;
           timestamp_ms: number;
         }[];
-        next_offset: number;
-        high_watermark: number;
+        next_offset: string;
+        high_watermark: string;
       }>(
         `${root(ns)}/streams/${enc(stream)}/partitions/${partition}/records?offset=${offset}&max_bytes=262144`,
       );

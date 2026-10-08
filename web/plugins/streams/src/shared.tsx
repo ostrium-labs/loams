@@ -18,11 +18,14 @@ export type Loaded<T> =
 export function useLoad<T>(load: () => Promise<T>, deps: unknown[]): [Loaded<T>, () => void] {
   const [value, setValue] = useState<Loaded<T>>({ state: 'loading' });
   const [tick, setTick] = useState(0);
+  const lastTick = useRef(0);
   const loadRef = useRef(load);
   loadRef.current = load;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deps are the caller's
   useEffect(() => {
     let live = true;
+    // A dependency change shows the loading state again; a plain reload keeps the old data in view.
+    if (lastTick.current === tick) setValue({ state: 'loading' });
+    lastTick.current = tick;
     loadRef
       .current()
       .then((data) => live && setValue({ state: 'ready', data }))
