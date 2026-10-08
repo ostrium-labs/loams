@@ -934,7 +934,7 @@ async fn user_caused_errors_do_not_poison_the_worker() {
         b"1\n"
     );
     pool.release(lease, Outcome::Completed);
-    let mut again = pool.acquire("ns").await.expect("worker");
+    let again = pool.acquire("ns").await.expect("worker");
     assert_eq!(again.pid(), pid, "the same worker, not retired as poisoned");
     pool.release(again, Outcome::Completed);
     assert_eq!(
