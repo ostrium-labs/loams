@@ -16,6 +16,11 @@ on:
       tag:
         description: 'Published release tag to promote, desktop-vX.Y.Z.'
         required: true
+      allow_downgrade:
+        description: 'Promote even if this version is not newer than the one in desktop-latest.'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -28,12 +33,15 @@ jobs:
   promote:
     name: promote to desktop-latest
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'desktop-v')
+    # Same protected environment as the release: a reviewer approves what clients are offered.
+    environment: desktop-release
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.tag || github.event.release.tag_name }}
       FEED_TAG: desktop-latest
+      ALLOW_DOWNGRADE: ${{ inputs.allow_downgrade == true }}
     steps:
       - name: the release is published
         id: check
@@ -45,6 +53,23 @@ jobs:
           if [ "$pre" = true ]; then
             echo "::notice::$TAG is a prerelease; the rolling feed follows stable releases only"
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: not older than what clients are offered now
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          new="${TAG#desktop-v}"
+          cur=$(gh release download "$FEED_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'latest.yml' --output - 2>/dev/null \
+                | sed -nE 's/^version:[[:space:]]*["'"'"']?([^"'"'"'[:space:]#]+).*/\1/p' | head -1 || true)
+          if [ -z "$cur" ]; then echo "desktop-latest has no version yet; promoting $new"; exit 0; fi
+          newest=$(printf '%s\n%s\n' "$cur" "$new" | sort -V | tail -1)
+          if [ "$new" = "$cur" ] || [ "$newest" != "$new" ]; then
+            if [ "$ALLOW_DOWNGRADE" = true ]; then
+              echo "::warning::promoting $new over $cur (allow_downgrade)"
+            else
+              echo "::error::$new is not newer than $cur, which desktop-latest serves now. Dispatch with allow_downgrade to force it."
+              exit 1
+            fi
           fi
       - name: copy the manifests and their payloads
         if: steps.check.outputs.skip != 'true'
@@ -69,7 +94,19 @@ jobs:
               --notes "Rolling update feed for Loams Desktop. Managed by desktop-promote.yml; do not edit by hand." \
               --target "$GITHUB_SHA"
           fi
-          gh release upload "$FEED_TAG" "$d"/* --clobber --repo "$GITHUB_REPOSITORY"
+          # Order matters: payloads, then signatures, then manifests last, so a client that sees a
+          # manifest always finds its payload and signature.
+          payloads=(); sigs=(); manifests=()
+          for f in "$d"/*; do
+            case "$(basename "$f")" in
+              latest*.yml.sig) sigs+=("$f") ;;
+              latest*.yml) manifests+=("$f") ;;
+              *) payloads+=("$f") ;;
+            esac
+          done
+          [ ${#payloads[@]} -eq 0 ] || gh release upload "$FEED_TAG" "${payloads[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          [ ${#sigs[@]} -eq 0 ] || gh release upload "$FEED_TAG" "${sigs[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$FEED_TAG" "${manifests[@]}" --clobber --repo "$GITHUB_REPOSITORY"
           # drop assets left over from earlier versions
           keep=$(cd "$d" && ls)
           for a in $(gh release view "$FEED_TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name'); do

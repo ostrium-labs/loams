@@ -71,9 +71,15 @@ Create it under Settings > Environments and configure:
   for each of those jobs. The SignPath token and GPG key are only readable after approval.
 - **Deployment branches and tags**: a rule allowing only tags matching `desktop-v*` (and no branches).
 - Put `SIGNPATH_API_TOKEN`, `LOAMS_GPG_PRIVATE_KEY`, `LOAMS_GPG_KEY_ID`, `LOAMS_GPG_PASSPHRASE` and
-  `LOAMS_UPDATE_SIGNING_KEY` here. The signing workflow `desktop-sign.yml` declares the environment itself
-  and is also passed `SIGNPATH_API_TOKEN` explicitly. Unverified: that a called workflow's job reads an
-  environment secret that way; if the token arrives empty, also set it as a repository secret.
+  `LOAMS_UPDATE_SIGNING_KEY` here **as environment secrets**, and nowhere else. Do not also set them as
+  repository secrets: that would let any workflow run read them without approval.
+- The SignPath jobs (`desktop-sign.yml`) declare the environment themselves and read
+  `SIGNPATH_API_TOKEN` from it; the callers pass no secrets, because a job that calls a reusable workflow
+  cannot declare an environment. **Unverified until the first real run:** confirm in that run's `plan`
+  and SignPath jobs that the token resolves (a "SignPath is not configured" warning with the token
+  set means it did not).
+- `desktop-promote.yml` also runs in this environment, so publishing a release needs a reviewer's
+  approval before clients are offered it.
 
 SignPath setup (project, policies, GitHub App, approvers) is in [signing.md](signing.md); the policy
 file is [`signpath/pipeline-policy.md`](../../signpath/pipeline-policy.md). The Windows policy is a second
@@ -103,8 +109,8 @@ engine's own releases cannot be mistaken for it). It holds the manifests, their 
 payload files they name (the Windows installer, the AppImages), and **only
 `desktop-promote.yml` writes to it**. It runs when a `desktop-v*` release is **published**, or on
 demand: Actions > Desktop update feed (promote) > Run workflow, with the tag. It refuses a draft, and
-skips a prerelease tag, so a client is never pointed at a draft or an unfinished version. Assets of
-earlier versions are removed after the new ones upload.
+skips a prerelease tag, and refuses a version that is not newer than the one in the feed unless dispatched with `allow_downgrade`, so a client is never pointed at a draft or an unfinished version. Files upload in order (payloads, then `.sig` files, then manifests last), so a client never sees a
+manifest without its payload and signature. Assets of earlier versions are removed afterwards.
 
 The feed is a build-time constant, so set `LOAMS_UPDATE_FEED` (if you override it) before tagging.
 

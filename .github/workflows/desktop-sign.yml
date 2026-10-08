@@ -17,7 +17,9 @@ name: Desktop signing (SignPath, called)
 #                            (variable SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG).
 #
 # The job runs in the protected `desktop-release` environment (required reviewers, tag rule:
-# docs/release/desktop.md), so the signing token is only reachable after approval.
+# docs/release/desktop.md), and SIGNPATH_API_TOKEN is read here as an environment secret of it. The
+# callers pass no secrets: a `uses:` job cannot declare an environment, so a caller-side
+# `secrets.SIGNPATH_API_TOKEN` would be empty. The first real run must confirm the token resolves.
 #
 # Not configured: with require_signing false it warns and outputs signed=false (the release then
 # names the files "unsigned"); with require_signing true it fails and names what is missing.
@@ -37,9 +39,6 @@ on:
         required: false
         type: boolean
         default: false
-    secrets:
-      SIGNPATH_API_TOKEN:
-        required: false
     outputs:
       signed:
         description: 'true when SignPath signed the files; they are in the artifact `<artifact_name>-signed`.'
@@ -56,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest # SignPath's OSS connector needs GitHub-hosted runners (signpath/pipeline-policy.md)
     timeout-minutes: 60
     outputs:
-      signed: ${{ steps.decide.outputs.signed }}
+      signed: ${{ steps.final.outputs.signed }}
     env:
       KIND: ${{ inputs.kind }}
       SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -140,6 +139,8 @@ jobs:
       - if: steps.decide.outputs.signed == 'true'
         name: submit for signing and wait for the approver
         id: submit
+        # Required: a rejection fails the run. Not required: the files stay unsigned and are released as -unsigned.
+        continue-on-error: ${{ !inputs.require_signing }}
         uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -155,7 +156,20 @@ jobs:
           # rpm: keep the signed file's own name. windows: unzip, so the tree can be re-uploaded.
           skip-decompress: ${{ inputs.kind == 'rpm' }}
 
-      - if: steps.decide.outputs.signed == 'true'
+      - name: did SignPath sign
+        id: final
+        env:
+          PLANNED: ${{ steps.decide.outputs.signed }}
+          OUTCOME: ${{ steps.submit.outcome }}
+        run: |
+          if [ "$PLANNED" = true ] && [ "$OUTCOME" = success ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            [ "$PLANNED" != true ] || echo "::warning title=SignPath did not sign $KIND::the request failed or was rejected; the files are released unsigned"
+          fi
+
+      - if: steps.final.outputs.signed == 'true'
         name: store the signed files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -165,7 +179,7 @@ jobs:
           retention-days: 7
           overwrite: true
 
-      - if: steps.decide.outputs.signed == 'true'
+      - if: steps.final.outputs.signed == 'true'
         name: what was signed
         env:
           REQUEST_URL: ${{ steps.submit.outputs.signing-request-web-url }}

@@ -172,12 +172,14 @@ jobs:
           path: apps/desktop-electron/out-rest/*
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: rpm-${{ matrix.arch }}-in
           path: apps/desktop-electron/out-rpm/*
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
 
   sign-rpm:
     name: sign rpm (${{ matrix.arch }})
@@ -190,9 +192,7 @@ jobs:
     with:
       artifact_name: rpm-${{ matrix.arch }}-in
       kind: rpm
-      require_signing: true
-    secrets:
-      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      require_signing: ${{ vars.DESKTOP_REQUIRE_SIGNING == 'true' }}
 
   windows-unpacked:
     name: windows (unpacked app)
@@ -247,6 +247,7 @@ jobs:
           path: apps/desktop-electron/dist/win-unpacked/
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
 
   sign-win-unpacked:
     name: sign Windows app
@@ -256,9 +257,7 @@ jobs:
     with:
       artifact_name: win-unpacked-in
       kind: windows
-      require_signing: true
-    secrets:
-      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      require_signing: ${{ vars.DESKTOP_REQUIRE_SIGNING == 'true' }}
 
   # The installer is built from the (signed) unpacked app, so it packages signed executables.
   windows-installer:
@@ -282,7 +281,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ${{ needs.plan.outputs.sign_win == 'true' && 'win-unpacked-in-signed' || 'win-unpacked-in' }}
+          name: ${{ needs.sign-win-unpacked.outputs.signed == 'true' && 'win-unpacked-in-signed' || 'win-unpacked-in' }}
           path: apps/desktop-electron/dist/win-unpacked
       # Do not trust the SignPath submission: check the Authenticode signatures on the files that went in.
       # Not signed (or not planned): fail when DESKTOP_REQUIRE_SIGNING, else the installer is built and
@@ -291,7 +290,7 @@ jobs:
         id: verify
         shell: pwsh
         env:
-          PLAN_SIGN_WIN: ${{ needs.plan.outputs.sign_win }}
+          PLAN_SIGN_WIN: ${{ needs.sign-win-unpacked.outputs.signed }}
           REQUIRE: ${{ vars.DESKTOP_REQUIRE_SIGNING }}
         run: |
           $signed = $false
@@ -330,12 +329,14 @@ jobs:
           path: apps/desktop-electron/out-exe/*
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: desktop-win-meta
           path: apps/desktop-electron/out-meta/*
           if-no-files-found: ignore
           retention-days: 14
+          overwrite: true
 
   sign-win-installer:
     name: sign Windows installer
@@ -345,14 +346,12 @@ jobs:
     with:
       artifact_name: win-installer-in
       kind: windows-installer
-      require_signing: true
-    secrets:
-      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      require_signing: ${{ vars.DESKTOP_REQUIRE_SIGNING == 'true' }}
 
   verify-win-installer:
     name: verify the signed installer
     needs: [plan, sign-win-installer]
-    if: needs.sign-win-installer.result == 'success'
+    if: needs.sign-win-installer.outputs.signed == 'true'
     runs-on: windows-2025
     timeout-minutes: 10
     outputs:
@@ -426,6 +425,7 @@ jobs:
             apps/desktop-electron/dist/latest-mac*.yml
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
 
   release:
     name: draft release
@@ -469,13 +469,25 @@ jobs:
           pattern: rpm-*-in
           path: ${{ runner.temp }}/release
           merge-multiple: true
-      - name: SignPath-signed rpms replace them
+      - name: SignPath-signed rpms
         if: env.PLAN_SIGN_RPM == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: rpm-*-in-signed
-          path: ${{ runner.temp }}/release
+          path: ${{ runner.temp }}/rpm-signed
           merge-multiple: true
+      # A signed rpm replaces its unsigned twin. A planned rpm with no signed twin (SignPath rejected it,
+      # DESKTOP_REQUIRE_SIGNING off) was built without the suffix, so label it unsigned.
+      - name: replace signed rpms, label the rest
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          rel="$RUNNER_TEMP/release"; sg="$RUNNER_TEMP/rpm-signed"
+          for f in "$rel"/*.rpm; do
+            b=$(basename "$f")
+            if [ -e "$sg/$b" ]; then cp "$sg/$b" "$f"; echo "signed: $b"
+            elif [[ "$b" != *-unsigned.rpm ]]; then mv "$f" "$rel/${b%.rpm}-unsigned.rpm"; echo "labelled unsigned: $b"; echo "PLAN_SIGN_RPM=false" >> "$GITHUB_ENV"; fi
+          done
       - name: Windows installer
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
