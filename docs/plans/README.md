@@ -112,7 +112,7 @@ Design reference: [47 Loams SQL in production](../design/47-loams-sql-production
 
 | Plan | Scope | Depends on | Status |
 |---|---|---|---|
-| [SQ1: Loams SQL to production](2026-10-08-sq1-loams-sql-production.md) | Task 0 done (the TiDB direction study); the task list is superseded. The revised outline in §47 §19: **SQ1a** reconcile and measure; **SQ1b** control plane and compute lifecycle; **SQ1c** the gate; **SQ1d** GC, branches, PITR and backup; **SQ1e** the desktop; **SQ1f** CDC, observability and quotas; **SQ1g** conformance and performance evidence; **SQ1h** engine query SQL; **SQ1s** the gated S3 tier | Q661, Q667 (blocking); MT1 for token auth | Being rewritten |
+| [SQ1: Loams SQL to production (TiDB)](2026-10-08-sq1-loams-sql-tidb.md) | Supersedes the [MySQL 8.4 + mywal + Vitess plan](2026-10-08-sq1-loams-sql-production.md), whose Task 0 rewrote §47. **SQ1a** (Tasks 1–6): compute baselines and pins, `tidb.toml` rendering and the runtime, the gate codec and server, the `Lifecycle` machine with scale-to-zero and wake on connect, idle-session migration. **SQ1b** (7–14): `loams.sqldb.v1`, records, keyspace lifecycle and bootstrap, the GC loop honouring TiDB, roles, handlers, full-copy branches, the Kubernetes driver. **SQ1c** (15–17): BR snapshot and log backup, PITR restore into new keyspaces, window and drills. **SQ1d** (18–19): CDC ruling and `loams-sqlcdc`. **SQ1e** (20–21): desktop. **SQ1f** (22–26): contract, ORMs, performance, observability, security and GA. **SQ1g** (27–30): engine query SQL. **SQ1s** (31–32): the gated S3 spike | MT1 for token auth; AP1e owner for Tasks 20–21, 28 | Planned |
 
 ## Track CLI: the `loams` CLI, installer and agent bootstrap (parallel to M1)
 

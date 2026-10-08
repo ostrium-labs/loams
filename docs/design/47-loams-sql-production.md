@@ -1,10 +1,10 @@
 # 47 — Loams SQL in Production: Neon-like MySQL on TiDB Compute and the Loams TiKV
 
-Status: **Draft for the owner** · 2026-10-08. Rewritten the same day for the owner's third directive, which replaces both earlier drafts (stock MySQL 8.4 with mywal and Vitess, then the PolarDB-X study):
+Status: **Proposed; owner answers recorded** · 2026-10-08. The owner answered Q658, Q661, Q662 and Q667 the same day (§22). The source questions are answered from read-only clones of the upstream repositories (§23). The implementation plan is [SQ1 (TiDB)](../plans/2026-10-08-sq1-loams-sql-tidb.md). Rewritten the same day for the owner's third directive, which replaces both earlier drafts (stock MySQL 8.4 with mywal and Vitess, then the PolarDB-X study):
 
 > Loams SQL = "Neon-like MySQL" built on TiDB's code, adapted, on our TiKV, with Rust for everything Loams builds.
 
-Decisions keep the numbers **D720–D739** and questions keep **Q655–Q669**; their content changes, and the [decision log](13-decision-log.md) rows change with it. Every entry is still "Proposed". The two earlier designs are summarised in Appendix A, "Alternatives considered". Plan: [SQ1](../plans/2026-10-08-sq1-loams-sql-production.md), to be rewritten from §19's outline. **This document writes no code.**
+Decisions keep the numbers **D720–D739** and questions keep **Q655–Q669**; their content changes, and the [decision log](13-decision-log.md) rows change with it. Every entry is still "Proposed". The two earlier designs are summarised in Appendix A, "Alternatives considered". Plan: [SQ1 (TiDB)](../plans/2026-10-08-sq1-loams-sql-tidb.md), which supersedes [the earlier SQ1 plan](../plans/2026-10-08-sq1-loams-sql-production.md). **This document writes no code.**
 
 Markers, as in §20, §28 and §31:
 
@@ -52,9 +52,9 @@ How Neon-like this is, honestly:
 | D733 | **Serverless lifecycle**: suspend stops the compute pool, and resume starts it. No data moves |
 | D734 | **Compute classes** (tidb-server CPU and memory, connections, memory quotas); storage quotas per database |
 | D735 | **The compatibility contract is TiDB's**: MySQL 8.0 protocol and syntax, snapshot-isolation RR, pessimistic locking, no stored procedures or triggers. Documented and tested, not hidden |
-| D736 | **Kubernetes**: Loams' controller (`kube-rs`) owns the compute pods; PD, TiKV and TiCDC come from MT3's GitOps manifests |
+| D736 | **Kubernetes**: Loams' controller (`kube-rs`) owns the compute pods; PD and TiKV come from MT3's GitOps manifests |
 | D737 | **Desktop single-node**: `tidb-server` on the desktop's existing local TiKV stack; unistore only in unit tests |
-| D738 | **Observability, quotas, isolation, hardening and CDC** (TiCDC into Loams streams) |
+| D738 | **Observability, quotas, isolation, hardening and CDC** (a Rust consumer of TiKV's CDC stream into Loams streams; classic TiCDC cannot read keyspaces, §10) |
 | D739 | **The GA bar is evidence**; engine query SQL keeps its own milestone (SQ1f) |
 
 ## 2. What Loams SQL is, and what it is not (D720, D721)
@@ -107,14 +107,14 @@ What it costs (§13):
 
 ```
  MySQL clients ─TLS─► loams-sqlgate ×N (Rust) ───────► tidb-server pool of branch B (Go, stateless, 0..n pods)
-                      auth · SNI/user → branch               keyspace-name = k_<db>_<branch>
+                      auth · SNI/user → branch               keyspace-name = <branch_id>    
                       wake (EnsureRunning) · caps                    │ client-go: TSO, 2PC, coprocessor
                       activity accounting                            ▼
                                                     PD (TSO, keyspace meta) ── TiKV cluster (shared; Raft ×3)
                                                                                      │  keyspace per branch
                                     Loams GC loop (Rust, cluster GC worker) ─────────┤
                                     branch copier (Rust, snapshot at ts) ────────────┤
-                                    TiCDC (keyspace changefeed) ─► Kafka sink ─► Loams streams
+                                    loams-sqlcdc (Rust, TiKV CDC stream) ─► Loams streams
                                     BR: snapshot + log backup ─► bucket sqlbackup/<ns>/<db>/<branch>/…
  Loams control plane (`loams`, feature `sqldb`): loams.sqldb.v1 · metastore records · Resonate sagas ·
  loams-sqlrouter machines · runtime drivers (kubernetes | local) · keyspace lifecycle via PD's HTTP API
@@ -140,13 +140,14 @@ What it costs (§13):
 | Foreign keys | Since v6.6.0, **GA in v8.5.0**; `CASCADE` and `SET NULL` supported; not on partitioned tables or `BLOB`/`TEXT` | docs: foreign-key |
 | Savepoints | Since v6.2.0. `ROLLBACK TO SAVEPOINT` does not release locks taken after the savepoint | docs: sql-statement-savepoint |
 | Desktop images | Same v8.5.8 digests. `deploy/tikv/compose.yaml` moves from v8.5.0 to v8.5.8 | — |
+| Source findings | See §23: GC registrations, BR keyspace rewrite, TiCDC classic, `cloud-engine`, config defaults | Owner's clones, 2026-10-08 |
 
 ## 5. Compute: a `tidb-server` pool per branch (D722)
 
 ### 5.1 Shape
-- **One pool per branch** of 0–n `tidb-server` pods (a Deployment in Kubernetes, a container on the desktop). Each pod has `keyspace-name = k_<db_id>_<branch_id>` and `--path` set to the shared PD.
+- **One pool per branch** of 0–n `tidb-server` pods (a Deployment in Kubernetes, a container on the desktop). Each pod has `keyspace-name = <branch_id>` and `--path` set to the shared PD.
 - **Rendered `tidb.toml`:**
-  - `split-table = false` (§6.3), `performance.force-init-stats = false` and `lite-init-stats = true` for fast start (verify the defaults on v8.5.8);
+  - `split-table = false` (§6.3); `performance.force-init-stats = false`, because the v8.5.8 default is **`true`**, which blocks the port until statistics load (`pkg/config/config.go` at v8.5.8); `lite-init-stats = true` (already the default);
   - `server-version` advertised as `8.0.11-TiDB-v8.5.8-Loams` (Q658);
   - `proxy-protocol.networks` set to the gate's CIDR, so TiDB sees client addresses (verify);
   - `security.ssl-*` for gate → TiDB TLS;
@@ -168,7 +169,7 @@ TiDB pods of one keyspace coordinate through PD (DDL owner, global kill, auto-ID
 
 ### 5.4 Allowed TiDB patches ("lightly patched")
 These are Go, kept as a patch queue on `ostrium-labs/tidb` against v8.5.x tags, each offered upstream:
-1. **None for v1, if Task 2 confirms** that `keyspace-name`, PROXY protocol and the session-state statements behave as documented.
+1. **None for v1, if Task 1 confirms** that `keyspace-name`, PROXY protocol and the session-state statements behave as documented.
 2. **Candidates if the spike shows a need:**
    - (a) registering the minimum start ts in a place Loams' GC loop reads, if keyspace-mode TiDB publishes it under a path the loop cannot see (§7.2, source);
    - (b) refusing `SET GLOBAL` of variables that must stay Loams-managed;
@@ -177,7 +178,7 @@ These are Go, kept as a patch queue on `ostrium-labs/tidb` against v8.5.x tags, 
 ## 6. Storage: the shared TiKV, a keyspace per branch (D723)
 
 ### 6.1 Keyspaces
-- **Naming.** Keyspace `k_<db_id>_<branch_id>`, created through PD's keyspace HTTP API by the control plane before the first TiDB start. PD's keyspace ids are 24-bit, about 16 M per cluster (verify).
+- **Naming.** The keyspace name is the branch id (`br_` + 16 base32 = 19 characters). Branch ids are globally unique, and PD master limits names to `^[-A-Za-z0-9_]{1,20}$` (`pkg/keyspace/util.go`), where v8.5.8 has no length limit. The keyspace is created through PD's keyspace HTTP API (`POST /pd/api/v2/keyspaces`, `PUT …/{name}/state`) by the control plane before the first TiDB start. PD's keyspace ids are 24-bit, about 16 M per cluster (verify).
 - **Lifecycle.** The states are `ENABLED`, `DISABLED`, `ARCHIVED` and `TOMBSTONE`. Deleting a branch disables the keyspace, then archives it, and then Loams' GC loop destroys its key ranges (`UnsafeDestroyRange`). Whether PD or TiKV removes archived data by itself is **(source)**.
 - **Isolation.** A TiDB in keyspace mode encodes every key under its keyspace prefix (`x` + 3-byte id) **(spike)**. A tenant cannot name another tenant's data from SQL, which is a stronger boundary than the earlier draft's table ACLs.
 
@@ -202,7 +203,11 @@ All keyspaces share PD's TSO. PD can serve TSO through keyspace groups in its mi
 - Loams' GC loop in `loams-tikv` is the cluster's GC worker (§20 §9.3). TiDB in keyspace mode does only its own delete-ranges (dropped tables and indexes), driven by the safe point it reads (`gc_worker.go` at v8.5.8, quoted in the spike).
 
 ### 7.2 Consequences for SQL
-1. **Long transactions.** A long SQL transaction must hold the safe point. Otherwise TiDB fails it with "GC life time is shorter than transaction duration" (TiDB's behaviour, verify). In classic TiDB the GC worker reads every TiDB's registered minimum start ts. **Loams' loop must read the same registrations** for every keyspace's TiDBs, which requires knowing where keyspace-mode TiDB publishes them (**source**: `pkg/domain/infosync`, `pkg/store/gcworker` at v8.5.8).
+1. **Long transactions (answered from source, §23).** Every TiDB v8.5.8 server, in keyspace mode too, writes its minimum active start ts to the **unprefixed** PD etcd key `/tidb/server/minstartts/<server-uuid>` under a session lease (`infosync.storeMinStartTS` always uses `unprefixedEtcdCli`). A cluster GC worker caps the safe point at `min(all) - 1` (`calcSafePointByMinStartTS`) and stores it at client-go's `GcSavedSafePoint` key (`saveSafePoint`), where TiDB's reads check visibility. **Loams' GC loop must do the same two things:**
+   - read `/tidb/server/minstartts/` through PD's etcd API and cap the target;
+   - write the saved safe point.
+
+   Today it does neither (`crates/loams-tikv/src/gc.rs`). Values older than `GCMaxWaitTime` (24 h) are ignored by TiDB itself.
 2. **One safe point for everyone.** It is the cluster minimum, so one tenant's long transaction, a branch copy or a BR backup delays GC for every tenant. Mitigations:
    - the gate and TiDB cap transaction duration by class (`tidb_gc_life_time` for SQL keyspaces, default 10 min);
    - the branch copier runs within that window, or splits its snapshot into windows (§9.1);
@@ -222,7 +227,7 @@ All keyspaces share PD's TSO. PD can serve TSO through keyspace groups in its mi
 | **BR snapshot backup** (`br backup full`, S3/GCS/Azure) | Consistent full backups of a cluster or (master, verify on v8.5.8) a keyspace | Copies data; restore is O(size) |
 | **BR log backup + PITR** (TiKV `backup-stream`) | Continuous change logs to object storage; restore to any ts in the window. Mandatory for every Live cluster already (§20 §10.4) | RPO = the flush interval (minutes by default; verify); restore is O(size) |
 | **TiDB X** (object storage as the truth) | Exactly the bottomless shape | **Closed**; open source "by the end of 2026" (stated plan) |
-| **`tikv/tikv` `cloud-engine` branch** (2022, Apache-2.0, Rust) | `kvengine` (LSM over a DFS/S3), `rfengine`/`rfstore` (Raft log and store for shared storage), `cloud_server` | Four years stale, 2 046 commits behind master, built against an old kvproto and TiDB. Its compatibility with TiDB v8.5 is **(source)** |
+| **`tikv/tikv` `cloud-engine` branch** (2022, Apache-2.0, Rust) | `kvengine` (a Badger-style LSM with `dfs/s3.rs`, memtable, sstable, L0 tables, change-set apply; 410 KiB), `rfengine` (111 KiB), `rfstore` (481 KiB), `cloud_server` (294 KiB), `kvenginepb`: about 1.4 MiB of Rust | Forked from master at `1fb8980cc` (2022-05-19, v6.1 era) and merged up to 6.1.1. Tip `f219e75cb` (2022-09-26); 418 commits ahead, while master has 2 046 commits since the fork. Mostly two authors. It speaks v6.1's kvproto, so a port to v8.5 is substantial (§23) |
 | TiFlash disaggregated mode on S3 | Columnar replicas on S3 | Columnar only, C++, not the row store |
 | `rocksdb-cloud` (Rockset) | RocksDB with SSTs on S3 and cloning | C++, GPL-2.0 per GitHub's licence API, last pushed 2025-09-22: excluded |
 
@@ -231,11 +236,11 @@ TiKV keeps its row data on NVMe with three replicas. For every SQL keyspace, BR 
 
 ### 8.3 The Rust work: an S3-tiered TiKV fork
 - **Fork, not plug-in.** TiKV has no runtime storage-engine plug-in API. `engine_traits` is an internal trait set, chosen at compile time (`engine_rocks`, and `kvengine` in `cloud-engine`). An S3 tier is therefore a fork, `ostrium-labs/tikv` (Apache-2.0, Rust), rebased on v8.5.x tags and kept as a patch queue. Its compatibility contract is the kvproto that TiDB v8.5.x speaks.
-- **Two candidate designs**, chosen by a spike (Task 30) and the owner (Q662):
+- **Two candidate designs**, chosen by a spike (SQ1s, Task 31) and the owner (Q662):
 
 | | **S-A: tiered SSTs under RocksDB** (smallest) | **S-B: shared-storage engine** (TiDB X's shape; port `cloud-engine`'s `kvengine` + `rfengine`) |
 |---|---|---|
-| Change | A Rust `Env`/`FileSystem` layer in TiKV's RocksDB (through `tikv/rust-rocksdb`'s env hooks, which TiKV already uses for encryption and I/O rate limiting; verify) that uploads every sealed SST to S3, keeps a local LRU file and block cache, evicts cold SSTs and fetches on miss. MANIFEST and WAL stay local | A new engine: one copy of immutable SSTs per region on S3 shared by all replicas; the Raft log on local disk with WAL chunks uploaded; followers apply by referencing files; compaction by one replica (or a separate pool) |
+| Change | An S3 tier under TiKV's RocksDB that uploads every sealed SST, keeps a local LRU file and block cache, evicts cold SSTs and fetches on miss. MANIFEST and WAL stay local. `tikv/rust-rocksdb` exposes only a byte-accounting `FileSystemInspector` and an encrypted env, not a pluggable `FileSystem`, so S-A needs a **small C++ `FileSystemWrapper` shim** in `crocksdb` that calls Rust callbacks (the pattern `FileSystemInspector` already uses). The tier logic is Rust | A new engine: one copy of immutable SSTs per region on S3 shared by all replicas; the Raft log on local disk with WAL chunks uploaded; followers apply by referencing files; compaction by one replica (or a separate pool) |
 | Bottomless | Yes (capacity = S3; local disk = cache) | Yes |
 | S3 copies | One per replica (3×), since replicas compact independently | One |
 | Node replacement | Still a Raft snapshot transfer | Load metadata from S3; data on demand |
@@ -243,7 +248,7 @@ TiKV keeps its row data on NVMe with three replicas. For every SQL keyspace, BR 
 | Size | Months (estimate) | A year or more (estimate), or less if TiDB X's source lands and is usable |
 | Risk | Read latency on cache misses; RocksDB compaction reading from S3 | Everything in TiKV's storage path; long-term divergence |
 
-- **D726 ruling.** GA ships §8.2 only. Task 30 is a two-week source spike (the owner clones the repositories of §23) that sizes S-A and S-B and checks the state of TiDB X's open-source release. Q662 then chooses between S-A, S-B and waiting for TiDB X. **No storage-engine code is written before that choice.**
+- **D726 ruling.** GA ships §8.2 only. Task 31 is a two-week spike over the owner's clones (§23) that sizes S-A and S-B and checks the state of TiDB X's open-source release. Q662 then chooses between S-A, S-B and waiting for TiDB X. **No storage-engine code is written before that choice.**
 
 ### 8.4 Where "our WAL" fits (D725)
 TiKV's Raft log (`raft-engine`) **is** the write-ahead log, replicated and fenced by Raft. Therefore:
@@ -255,8 +260,8 @@ TiKV's Raft log (`raft-engine`) **is** the write-ahead log, replicated and fence
 
 ### 9.1 v1: copy branches (no fork)
 - **`CreateBranch(parent, point)`.** The point is `latest`, a timestamp, or a TSO.
-  - If the point is **inside the GC window**, the Rust **branch copier** (`loams-sqldb`, over `loams-tikv`) creates keyspace `k_<db>_<child>`. It reads the parent's whole keyspace at ts = point (a snapshot read; TiKV resolves locks) and writes the keys into the child keyspace in 1PC batches with fresh commit ts. TiDB's meta keys (`m…`) come along, so the child sees the same schema, table ids and system tables and needs no bootstrap.
-  - If the point is **beyond the GC window**, the source is BR: restore the snapshot at or before the point, then the log backup, into the new keyspace. Whether BR v8.5.8 can restore *into a different keyspace* (key rewrite) is **(verify)**. The fallback is restoring into a scratch keyspace and copying from it.
+  - If the point is **inside the GC window**, the Rust **branch copier** (`loams-sqldb`, over `loams-tikv`) creates the child's keyspace (named by its branch id). It reads the parent's whole keyspace at ts = point (a snapshot read; TiKV resolves locks) and writes the keys into the child keyspace in 1PC batches with fresh commit ts. TiDB's meta keys (`m…`) come along, so the child sees the same schema, table ids and system tables and needs no bootstrap.
+  - If the point is **beyond the GC window**, the source is BR: restore the snapshot at or before the point, then the log backup, into the new keyspace. **BR v8.5.8 can restore into a different keyspace** (from source; to be confirmed by test). Snapshot restore decodes the backup's keyspace from a file key and rewrites every rule from the old keyspace prefix to the target TiDB's codec (`br/pkg/task/restore.go`, "keyspace rewrite mode"). Log restore applies the same old and new keyspace through `RewriteModeKeyspace` (`log_client/client.go`). The fallback, restoring into a scratch keyspace and copying from it, stays the plan B.
 - **Cost.** O(size) in time and storage. Task 1 measures the copier's throughput; an estimate is 50–200 MB/s per copier over a LAN.
 - **GC.** The copy holds a service safe point at the point for its duration. Copies of databases larger than the window can sustain (for example 10 GB at 100 MB/s ≈ 100 s, comfortably inside 10 min) are refused or go through BR.
 - **Restore** is `CreateBranch(parent, point)` followed by an optional rename. It never overwrites (as before).
@@ -283,11 +288,15 @@ TiKV's Raft log (`raft-engine`) **is** the write-ahead log, replicated and fence
 - **BR log backup** serves the rest of the PITR window: 7 days by default, 1–35 (Q665).
 
 ## 10. CDC into Loams streams (D738)
-- **TiCDC v8.5.8** (Apache-2.0, the new-architecture repository `pingcap/ticdc`) runs one changefeed per database branch in keyspace mode. §20 §10.3 found the keyspace field in `ticdc/pkg/config/changefeed.go`; that it works on v8.5.8 classic is (verify).
-- **Sink.** The changefeed uses the Kafka sink with canal-json or simple encoding, pointed at Loams' Kafka-protocol gateway (§34), which writes into a Loams stream per table. The alternative is a storage sink into the bucket, tailed by a Rust ingester.
-- **No Go is added to Loams.** TiCDC runs as an image, and everything Loams writes for this (gateway and ingester) is Rust.
-- **Later.** A Rust consumer of TiKV's own CDC gRPC (`cdcpb.ChangeData`) plus TiDB row-codec decoding could replace TiCDC. It is not planned.
-
+- **Classic TiCDC cannot read keyspaces (answered from source).** In `pingcap/ticdc`, `keyspace_manager.LoadKeyspace` returns the default keyspace whenever `kerneltype.IsClassic()`. `CreateTiStore` adds `keyspaceName` only for next-gen. The changefeed's `KeyspaceID` "in classic mode … will always be 0" (`pkg/config/changefeed.go`, master and v8.5.8). A next-gen TiCDC build expects next-gen TiKV and PD, so it is not an option on classic v8.5.8 **(estimate; the SQ1d spike confirms)**.
+- **Design: `loams-sqlcdc`, a Rust consumer of TiKV's own CDC stream.**
+  - **Upstream.** TiKV's `cdc` component accepts `kv_api = TiDb` on API v2 (`components/cdc/src/service.rs`, `validate_kv_api`), and subscriptions are per region and key range. The keyspace's `x`-prefixed txn range is therefore subscribable. The `cdcpb` bindings already exist in Loams' `client-rust` fork (`src/generated/cdcpb.rs`).
+  - **What the consumer does:**
+    - tracks the regions of the branch's keyspace;
+    - merges the resolved ts;
+    - decodes TiDB's row format (row codec v2 and the record and index keys of `t<table_id>_r…`), using table schemas read from the keyspace's meta keys at each schema version;
+    - writes one Loams stream per table, in order, at commit-ts granularity.
+- **Rust only.** No Go runs for CDC.
 ## 11. The control plane API: `loams.sqldb.v1` (D728)
 The services and RPCs stay as in the earlier draft, with these changes:
 - `ShardingService` is dropped, because TiKV splits regions automatically.
@@ -379,7 +388,7 @@ Mutations are `loams.operations.v1` operations run as Resonate sagas with determ
 | `xl` | 4 | 8 GiB | 2 000 | 1–4 | 6.4 GiB |
 | `2xl` | 8 | 16 GiB | 4 000 | 1–8 | 13 GiB |
 
-(Estimates; Task 31 tunes them.)
+(Estimates; Task 24 tunes them.)
 - **Storage.** It is metered per keyspace (PD region sizes, verify) and capped by a quota, not a volume. Above the quota the database turns read-only.
 - **Density.** The target is ≥ 10 000 databases per TiKV cluster at the `xs`/`s` mix, after §6.3's measurement (Q660).
 
@@ -388,7 +397,7 @@ Mutations are `loams.operations.v1` operations run as Resonate sagas with determ
   - the compute Deployment;
   - its Service, Secret (TLS) and NetworkPolicy (the gate → TiDB → PD and TiKV only);
   - the BR log-backup task.
-- **GitOps.** PD, TiKV (with placement rules), TiCDC and the gate pool come from MT3's GitOps manifests. tidb-operator v2 may manage PD and TiKV only (no `TiDBGroup`), as D179 already does (Q664).
+- **GitOps.** PD, TiKV (with placement rules) and the gate pool come from MT3's GitOps manifests. tidb-operator v2 may manage PD and TiKV only (no `TiDBGroup`), as D179 already does (Q664).
 - **Images** are pinned by digest (§4) and pre-pulled.
 
 ## 17. Conformance (D739)
@@ -409,19 +418,18 @@ Every number here is an estimate until Task 1. Measurements run on the reference
 | Copy branch throughput | ≥ 100 MB/s |
 | Density | ≥ 10 000 idle databases per cluster without PD or TiKV saturation |
 
-## 19. Revised SQ1 milestone outline (replaces the plan's Tasks 0–50)
+## 19. SQ1 milestone outline (the plan: [SQ1 (TiDB)](../plans/2026-10-08-sq1-loams-sql-tidb.md))
 
 | Milestone | Scope | Exit |
 |---|---|---|
-| **SQ1a — Reconcile and measure** | T0 (this study). T1: spike on the desktop and reference clusters, covering cold-start breakdown, regions and PD load per empty keyspace at 1 k and 10 k, TSO ceiling, copier throughput, TiDB vs MySQL 8.4 baselines. T2: source reading of §23's list (GC registrations, delete-ranges, session states, BR keyspace restore, TiCDC keyspace, `cloud-engine` status). T3: image pins (`release/sqldb-images.toml`) and `deploy/tikv` to v8.5.8 | Measured numbers replace §5.2, §6.3 and §18; Q660 answered |
-| **SQ1b — Control plane and compute lifecycle** | `loams.sqldb.v1` protos (Q655); records under `m/` and the store; keyspace lifecycle through PD; `tidb.toml` rendering; bootstrap at create; the `Lifecycle` machine (TLA+ and trace validation, D311) and sagas (create, suspend, resume, delete) with crash-at-every-step tests; `LocalRuntime` (containers) and `KubernetesRuntime` (`kube-rs`) | `loams dev --features sqldb` creates, suspends and resumes a database in ≤ 5 s p95 |
-| **SQ1c — The gate** | `loams-sqlgate`: codec and fuzzers, TLS/SNI, `caching_sha2_password` with Argon2id, wake, caps, accounting, PROXY protocol, session migration; MT1-dependent token auth later | Clients connect only through the gate; idle databases suspend and wake on connect |
-| **SQ1d — GC, branches, PITR, backup** | The GC loop reads TiDB's min-start-ts registrations for all keyspaces; the delete-range strategy; the Rust branch copier (`BranchCopy` machine); BR log and snapshot backup per branch; restore-into-branch beyond the GC window | Branch at any point in the PITR window; checksum equality; GC never breaks a running transaction under its class cap |
-| **SQ1e — Desktop** | `deploy/tikv` + `tidb-server` per branch in `loams dev`; the AP1e page moves to `loams.sqldb.v1` (renamed Loams SQL), with ephemeral credentials only | The desktop page runs on the API; the WeSQL compose path is deleted |
-| **SQ1f — CDC, observability, quotas, hardening** | TiCDC keyspace changefeeds into Loams streams; metrics, logs and audit; quotas (storage, branches, connections, transaction length); NetworkPolicies | Changes from a SQL table appear in a Loams stream; alerts in place |
-| **SQ1g — Conformance and performance evidence** | §17 and §18 in CI and nightly; nemesis runs; security review | The GA checklist is ticked (D739) |
-| **SQ1h — Engine query SQL** (unchanged scope) | `loams.sql.v1`, the Data Studio SQL tab, removal of the engine's `mysql-wire` listener (Q663), RPC limits | Independent of SQ1a–g |
-| **SQ1s — S3 tier (gated)** | Task 30's spike (S-A vs S-B vs waiting for TiDB X), then only the choice made under Q662: the `ostrium-labs/tikv` fork, keyspace-level GC if needed, CoW branches with S-B | Owner decision; not on the GA path |
+| **SQ1a — Gate and compute lifecycle** | Baselines and pins (Task 1); `loams-sqlgate` codec and server; `SqlRuntime` with the local driver and `tidb.toml` rendering; the `Lifecycle` machine; suspend and resume sagas; wake on connect; idle-session migration | A database scales to zero and wakes on connect through the gate, p95 ≤ 5 s on the desktop stack |
+| **SQ1b — Control plane, API, keyspaces, copy branches** | `loams.sqldb.v1`; records under `m/`; keyspace lifecycle and bootstrap; the GC loop reading TiDB's registrations; roles and credentials; handlers; the Rust branch copier; the Kubernetes driver | `CreateDatabase`/`CreateBranch` serve a branch whose checksum equals the parent's at `point_ts` |
+| **SQ1c — BR backup and PITR to S3** | BR snapshot and log backup per branch; restore into a new keyspace; the restore window | A branch restored at a point outside the GC window matches its recorded checksum |
+| **SQ1d — CDC to Loams streams** | Spike (next-gen TiCDC vs Rust); `loams-sqlcdc` | Committed rows appear in Loams streams in commit order |
+| **SQ1e — Desktop single-node** | `loams dev --features sqldb` on the local TiKV stack; the AP1e page on `loams.sqldb.v1` | The desktop page runs on the API; WeSQL compose deleted |
+| **SQ1f — Conformance and performance gates** | §13.2 contract tests; ORM suites; perf and density gates; nemesis; observability; security review; GA | GA checklist ticked |
+| **SQ1g — Engine query SQL** | Carried over unchanged from the superseded plan | Independent |
+| **SQ1s — S3 spike (gated)** | S-A vs S-B prototypes and the TiDB X check; a report to the owner | Owner's decision (Q662); no production code |
 
 ## 20. Observability, quotas, isolation and hardening (D738)
 - **Metrics:**
@@ -461,31 +469,36 @@ Every number here is an estimate until Task 1. Measurements run on the reference
 | # | Question | Needed by |
 |---|---|---|
 | Q655 | Package `loams.sqldb.v1` (proposed) or reassign `loams.sql.v1` to Loams SQL | SQ1b |
-| Q656 | Accept measured resume times (Task 1), or fund pre-warmed compute pools | SQ1a report |
+| Q656 | Accept measured resume times (Task 1), or fund pre-warmed compute pools | SQ1a, Task 1 report |
 | Q657 | Retire WeSQL (§29) and the MySQL 8.4 + mywal design entirely (proposed), keeping §29 only as history | Founder, now |
-| Q658 | **MySQL 8.4 syntax**: accept TiDB's MySQL 8.0 level (advertise `8.0.11-TiDB-…`, proposed), or advertise `8.4.x` for drivers that gate features on the version, or fund upstream TiDB work for 8.4 syntax | Founder, before SQ1b |
-| Q659 | Loams tokens only through the password field (proposed) | SQ1c |
+| Q658 | ~~MySQL 8.4 syntax~~ **Answered 2026-10-08 by the owner: accept TiDB's MySQL 8.0-level dialect**; advertise `8.0.11-TiDB-v8.5.x`; document and test it | Answered |
+| Q659 | Loams tokens only through the password field (proposed) | SQ1a (after MT1) |
 | Q660 | Accept §18's targets and the density target after Task 1 | SQ1a report |
-| Q661 | **Accept TiDB's transaction semantics as "InnoDB-like"** (§13.2: SI-RR, no gap locks, no SERIALIZABLE, no stored procedures, triggers or XA), or require work on any row | Founder, now (blocking) |
-| Q662 | **The S3 path**: S-A (tiered SSTs, a TiKV fork), S-B (shared-storage engine, port `cloud-engine`), or wait for TiDB X's announced open-source release; decided after Task 30's spike | Founder, after SQ1a |
-| Q663 | Remove the engine's read-only `mysql-wire` listener (proposed; answers Q260 "no") | SQ1h |
+| Q661 | ~~Accept TiDB's transaction semantics as "InnoDB-like"~~ **Answered 2026-10-08 by the owner: accept** snapshot-isolation RR, no gap locks, no SERIALIZABLE, no stored procedures, triggers or XA; document §13.2 and test it against the ORM suites | Answered |
+| Q662 | **The S3 path. Partly answered 2026-10-08 by the owner: spike first, then decide.** Compare S-A (SSTs on S3 with a local cache, in a TiKV fork) with S-B (revived `cloud-engine`), and record TiDB X's announced open-source release as the wait option. The choice itself is made after SQ1s's report | Founder, after SQ1s |
+| Q663 | Remove the engine's read-only `mysql-wire` listener (proposed; answers Q260 "no") | SQ1g |
 | Q664 | tidb-operator v2 for the shared PD/TiKV (as D179), or plain manifests | SQ1b |
-| Q665 | PITR window default (7 days) and maximum (35); S3 Object Lock on the backup prefix | SQ1d |
-| Q666 | **Keyspace-level GC**: carry TiKV `#16808`-style work in our fork before S-B, or accept cluster-wide GC with class caps until the S3 engine (proposed) | Founder, after Task 2 |
-| Q667 | Is GA acceptable **without bottomless storage and CoW branches** (data on TiKV NVMe + BR to S3; copy branches), as proposed | Founder, now (blocking) |
+| Q665 | PITR window default (7 days) and maximum (35); S3 Object Lock on the backup prefix | SQ1c |
+| Q666 | **Keyspace-level GC.** Source reading shows it is impossible on v8.5.8 without a TiKV change (§23): TiKV reads only the cluster safe point, and master has no keyspace-level GC either. Carry a TiKV patch in the fork before S-B, or accept cluster-wide GC with class caps until the S3 engine (proposed) | Founder, with Q662 |
+| Q667 | ~~GA without bottomless storage~~ **Answered 2026-10-08 by the owner: yes.** GA ships on TiKV disks with BR snapshots and log backup (PITR) to S3 and full-copy branches; bottomless storage comes later | Answered |
 | Q668 | Desktop: `tidb-server` on the local TiKV stack (proposed) vs unistore (tests only) | SQ1e |
 | Q669 | ~~MySQL 8.4 from day one~~ Superseded 2026-10-08 by the owner's TiDB direction (D721); the 8.4 *syntax* question moves to Q658 | Resolved |
 
-## 23. Source reading the owner is asked to clone (no clone was made)
+## 23. Source findings (read-only clones under `~/Documents/Ostriumlabs/`, 2026-10-08)
 
-| Repository (tag/branch) | What to read | Why |
+The clones are partial (`blob:none`) and sit at their default branches (tidb, tikv, pd and ticdc at master; tiproxy at main). Version-specific files were read at the v8.5.8 tag from GitHub's raw file server, so the clones were not changed. One `git log -L` on the tidb clone fetched some blobs lazily before it was stopped. Every later command ran with `GIT_NO_LAZY_FETCH=1`.
+
+| Question | Finding | Evidence |
 |---|---|---|
-| https://github.com/pingcap/tidb (`v8.5.8`) | `pkg/domain/infosync` (min-start-ts registration under keyspace mode), `pkg/store/gcworker` (keyspace mode, delete-range table), `pkg/session` bootstrap, `pkg/server` session states, `br/` (`--keyspace-name`, rewrite rules) | §7.2, §9.1, §12 |
-| https://github.com/tikv/tikv (`v8.5.8`, branch `cloud-engine`, PR #16808) | `components/engine_traits`, `engine_rocks` env setup, `src/server/gc_worker`, `components/sst_importer` rewrite; on `cloud-engine`: `kvengine`, `rfengine`, `rfstore`, `cloud_server` | §8.3, §9.2 |
-| https://github.com/tikv/pd (`v8.5.8` and master) | keyspace lifecycle (archive, tombstone, range cleanup), `pkg/gc/gc_state_manager.go`, keyspace groups TSO | §6.1, §7.3, §6.4 |
-| https://github.com/tikv/rust-rocksdb | `Env`/`FileSystem` hooks used by TiKV | §8.3 S-A |
-| https://github.com/pingcap/ticdc (`v8.5.8`) | keyspace changefeeds | §10 |
-| https://github.com/pingcap/tiproxy | session migration protocol | §12 |
+| How does GC see TiDB's active transactions? | Each TiDB publishes its minimum start ts (sessions, cursors, internal sessions, recent schema reads; lower-bounded by `GCMaxWaitTime`) to **unprefixed** PD etcd `/tidb/server/minstartts/<uuid>` under a lease, keyspace mode included. The cluster GC worker caps the safe point at `min - 1`, sets service safe point `gc_worker`, resolves locks, and saves the safe point at client-go's `GcSavedSafePoint`. Keyspace-mode TiDBs run only their own delete-ranges, using PD's GC safe point | tidb v8.5.8 `pkg/domain/infosync/info.go` `storeMinStartTS`; `pkg/store/gcworker/gc_worker.go` `leaderTick`, `calcGlobalMinStartTS`, `calcSafePointByMinStartTS`, `saveSafePoint`, `runKeyspaceDeleteRange` |
+| Can GC be per keyspace on v8.5.8 (keyspace config or service safe points)? | **No.** The v8.5.8 GC worker has no keyspace-level path. TiKV calls only `get_gc_safe_point` (cluster), and **TiKV master has no keyspace-level GC either**. Service safe points are cluster-wide. TiDB **master** and PD master have the keyspace-level design (`IsKeyspaceUsingKeyspaceLevelGC`, GC barriers, `AdvanceTxnSafePoint`, PD `gc_state_manager.go`, which still honours TiDB min-start-ts), but no release ships it and TiKV does not consume it | v8.5.8 `gc_worker.go`; tikv master `components/pd_client`; tidb master `gc_worker.go`; pd master `pkg/gc/gc_state_manager.go` |
+| Can BR restore into a different keyspace? | **Yes, from source:** snapshot restore rewrites old to new keyspace prefixes (it requires the cluster's keyspace rewrite mode), and log restore uses `RewriteModeKeyspace`. Backup takes `--keyspace-name`. Per-keyspace GC barriers for BR are master-only (`#65483`). On v8.5.8, BR holds a cluster-wide service safe point | tidb v8.5.8 `br/pkg/task/restore.go` (keyspace rewrite), `br/pkg/restore/log_client/client.go`; master `br/pkg/task/backup*.go` |
+| `cloud-engine`: state, size, divergence | Fork point `1fb8980cc` (2022-05-19, v6.1.0-alpha+102), merged to 6.1.1, tip 2022-09-26; 418 commits (2021-07-28 to 2022-09-26), mostly two authors. About 1.4 MiB of Rust in `kvengine`, `rfengine`, `rfstore`, `cloud_server` and `kvenginepb`, plus changes across `raftstore`, `src/storage`, `backup-stream` and the coprocessor. Master has 2 046 commits since the fork | tikv clone, `origin/cloud-engine`; GitHub tree API sizes |
+| TiCDC with keyspaces on classic | **Not supported** (§10) | ticdc `pkg/keyspace/keyspace_manager.go`, `pkg/upstream/upstream.go`, `pkg/config/changefeed.go` |
+| Session migration for the gate | TiDB parses `SHOW SESSION_STATES` / `SET SESSION_STATES`; TiProxy migrates with exactly those statements | tidb `pkg/parser/misc.go`, `ast/misc.go`; tiproxy `pkg/proxy/backend/backend_conn_mgr.go` |
+| Config defaults (v8.5.8) | `split-table = true`, `lite-init-stats = true`, **`force-init-stats = true`**; `keyspace-name` or env `KEYSPACE_NAME`; `proxy-protocol` section present | tidb v8.5.8 `pkg/config/config.go` |
+| Bootstrap size | About 59 `CREATE TABLE IF NOT EXISTS` system tables in `pkg/session` (master) | tidb clone |
+| S-A hooks | `tikv/rust-rocksdb` offers `FileSystemInspector` (byte accounting) and an encrypted env, not a pluggable `FileSystem` | rust-rocksdb `src/file_system.rs`, `librocksdb_sys/crocksdb/c.cc` |
 
 ## 24. Contradictions with earlier decisions, and how they are resolved
 
