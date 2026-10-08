@@ -41,7 +41,8 @@
 //   `graph_statement_not_allowed`, `graph_unbounded_path`,
 //   `graph_reloading`, `graph_engine_panic`, `consistency_wait_timeout` and
 //   `feature_not_in_variant`, plus the generic `invalid_argument`,
-//   `not_found`, `already_exists` and `not_implemented`.
+//   `not_found`, `already_exists`, `not_implemented` and `internal` (a
+//   server fault that is not an engine panic).
 //
 // buf lint: RPC_RESPONSE_STANDARD_NAME and RPC_REQUEST_RESPONSE_UNIQUE are
 // excepted for this file in buf.yaml. §48 §8.2 answers a graph's own
