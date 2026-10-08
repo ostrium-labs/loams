@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact code, use it. Where it gives a contract and named tests, write the code to that contract, and record any deviation in "Rulings made during execution" at the end of this file.
 >
-> **Status: In progress** (2026-10-08). This plan replaces AP1n as the shipping desktop (D652). AP1n is paused.
+> **Status: In progress** (2026-10-08). Part 2 (Tasks 18–31) added the same day for the full cloud console, the agent panel and Linux-only releases (§37 §19.10, D666–D676). This plan replaces AP1n as the shipping desktop (D652). AP1n is paused.
 
 **Goal:** Loams Desktop v0.1, an Electron app built with electron-vite. It runs the cordis console as a real cloud console against any Loams server. It also supervises a local `loams dev` engine with a Data Studio, and shows every Software Factory app as native read-only panels plus its full web UI. It is packaged for Linux, macOS and Windows.
 
@@ -586,6 +586,357 @@ Commit `docs(ap1e): desktop docs and status`.
 
 ---
 
+
+---
+
+## Part 2: the full cloud console, the agent panel, Linux releases (§37 §19.10, D666–D676)
+
+**Execution order:**
+1. Tasks 0–16.
+2. Then 18–31.
+3. Task 17 (docs) last. It also covers Part 2.
+
+**Amendments to Part 1** (§19.10 D676):
+- **Task 15** builds Linux artifacts (AppImage, deb, rpm, pacman; x64 and arm64), and those are what get published.
+- The macOS and Windows CI jobs build unsigned, publish nothing, and run with `continue-on-error: true`.
+- Release publishing is Task 31.
+- **Task 5's engine args change:** keep durable on a free loopback port (`--durable-listen 127.0.0.1:<p3>`), and add `--no-live` unless Task 22 supplies `livePd`. `EngineState.ready` gains `durableUrl: string` and `liveUrl?: string`.
+
+New shared contracts, added to `src/shared/contracts.ts` by the first task that needs them:
+
+```ts
+export type StackId = 'postgres' | 'wesql' | 'tikv';
+export type StackState =
+  | { phase: 'unavailable'; reason: 'no_container_runtime' }
+  | { phase: 'stopped' } | { phase: 'starting' } | { phase: 'running'; services: { name: string; state: string; ports: string[] }[] }
+  | { phase: 'error'; message: string };
+export interface SqlResult { columns: string[]; rows: unknown[][]; rowCount: number; truncated: boolean; elapsedMs: number }
+export type ChatEvent =
+  | { kind: 'delta'; chatId: string; text: string }
+  | { kind: 'thinking'; chatId: string; text: string }
+  | { kind: 'tool_call'; chatId: string; callId: string; tool: string; args: unknown; risk: 'read' | 'write'; needsApproval: boolean }
+  | { kind: 'tool_result'; chatId: string; callId: string; ok: boolean; text: string }
+  | { kind: 'done'; chatId: string; stop: 'end_turn' | 'iteration_cap' | 'wall_clock_budget' | 'token_budget' | 'llm_error' | 'cancelled'; usage: { inputTokens: number; outputTokens: number } }
+  | { kind: 'error'; chatId: string; message: string };
+// LoamsDesktopApi gains:
+//   stacks: { state(id: StackId): Promise<StackState>; start(id): Promise<IpcResult<void>>; stop(id): Promise<IpcResult<void>>; onState(cb:(id: StackId, s: StackState)=>void): ()=>void }
+//   pg:    { tenants(); timelines(tenant); createBranch(tenant, {name; ancestorTimelineId; ancestorStartLsn?}); walStatus(tenant, timeline); connection(): Promise<{host;port;database;user; passwordRef: string}>; revealPassword(): Promise<string>; query(sql: string): Promise<IpcResult<SqlResult>> }
+//   wesql: { connection(); revealPassword(); schemas(); tables(schema); query(sql: string): Promise<IpcResult<SqlResult>> }
+//   chat:  { providers(); configureProvider(id, {baseUrl?; model; apiKey?}); list(); get(chatId); create(); send(chatId, text); cancel(chatId); approve(chatId, callId, decision: 'once'|'always'|'deny'); remove(chatId); onEvent(cb:(e: ChatEvent)=>void): ()=>void }
+//   connectors: { catalog(): Promise<ConnectorSummary[]>; get(id): Promise<{manifest: unknown; schema: unknown; stub: boolean}> }
+```
+
+### Task 18: Shell layout for a cloud console
+
+**Files:** `web/plugins/shell` (modify): add the slots `shell.nav.section` (a list of `{id, label, icon, path, order, group}`) and `shell.dock.right` (single) and a header toggle for the right dock. Also `web/plugins/shell/src/*.test.tsx`.
+
+**Behaviour** (D666):
+- The left nav renders sections grouped as **Data** (Overview, Data, Postgres, WeSQL, Live), **Compute** (Durable, Streams & Links), **Integrate** (Connectors, Graph, Software Factory) and **Organisation** (Cloud, Settings), sorted by `order`. It collapses to icons under 1100 px.
+- The header holds the server switcher slot, the agent toggle (`Ctrl/Cmd+J`) and the user menu.
+- The right dock is resizable between 320 and 720 px. Its open state and width persist in `localStorage` (try/catch).
+- Existing plugins keep working. Their current nav entries map to sections.
+
+Tests:
+- `nav_groups_and_orders_sections`
+- `dock_toggle_and_shortcut`
+- `dock_width_clamped_and_persisted`
+- `existing_routes_still_render`
+
+Commit `feat(console): cloud console shell layout`.
+
+### Task 19: Backend B1: list streams and links, link lag and status (Rust)
+
+**Files:**
+- `crates/loams/src/api/mod.rs` (routes) and the streams and links handlers.
+- The metastore trait list method if it is missing (`crates/loams-common` `MetaStore`, with implementations in `loams-meta` and `loams-meta-tikv`).
+- Tests under `crates/loams/tests/`.
+- `docs/api/route-map.md`.
+
+**Contract:**
+- `GET /v1/namespaces/{ns}/streams` returns `{"streams":[{"name","partitions","retention"?}]}`, sorted by name.
+- `GET /v1/namespaces/{ns}/links` returns `{"links":[{"name","source","target":{"kind","name"},"status"}]}`.
+- Link describe gains `"lag":[{"partition":p,"records":high_watermark-applied}]` and `"status":"running"|"unregistered"`, where `unregistered` comes from `LinkApplySource::unregistered()`.
+- Unknown namespace returns 404 with the existing error shape.
+
+Tests:
+- `list_streams_sorted`
+- `list_links_with_status`
+- `link_describe_has_lag`
+- `unknown_namespace_404`
+- the conformance suite for the metastore trait, if a method is added (`loams-meta-conformance`)
+
+Run `cargo test -p loams --test <file>` and `cargo test -p loams-meta-conformance`. Commit `feat(api): list streams and links, link lag`.
+
+### Task 20: Backend B2: `_system:tables` for Live (Rust)
+
+**Files:** `crates/loams-live/src/system.rs` (or wherever `system::lookup` is), `catalog.rs`, and tests.
+
+**Contract:** `Query{function:"_system:tables", args:{}}` returns `[{name, id, indexes:[{name, fields:[...]}]}]`, including the implicit `by_id` and `by_creation_time` indexes. It is read-only, and an attempt to call it through `Mutate` is refused.
+
+Tests: `system_tables_lists_created_tables` (using the crate's existing TiKV test harness, or its in-memory catalog if the crate has one; follow how existing `_system:*` tests run), `system_tables_via_mutate_refused`. Commit `feat(live): _system:tables`.
+
+### Task 21: Local stacks manager
+
+**Files:** `apps/desktop-electron/src/main/stacks/{runtime.ts,stacks.ts,ipc.electron.ts}`, `test/stacks.test.ts`. `extraResources` copies `deploy/neon`, `deploy/wesql` and `deploy/tikv` into `resources/stacks/`.
+
+**Interfaces:**
+- `detectRuntime(which: (bin)=>string|null): {bin: string; args: string[]} | null`. It tries `docker compose` first, then `podman compose`, then `docker-compose`.
+- `class StackManager extends EventEmitter { state(id); start(id); stop(id) }`.
+  - It runs `<rt> -p loams-desktop-<id> -f <resources>/stacks/<dir>/compose.yaml up -d` and `down`.
+  - State comes from `ps --format json`, polled every 5 s while a page is open and on demand.
+  - Commands are passed as an argument array (never a shell string), with a 5-minute timeout. Their output goes to `<logs>/stacks/<id>.log`.
+  - Stack directories: postgres → `neon`, wesql → `wesql`, tikv → `tikv`. Read each `compose.yaml` and record the real port mappings in `stacks.ts` as constants.
+- When the tikv stack reaches `running`, the main process restarts the engine with `livePd` set to the PD port (Task 5 amendment). When the stack stops, the engine restarts without it.
+
+Tests:
+- `detect_runtime_order`
+- `compose_args_exact`
+- `parses_ps_json` (with fixtures for docker and podman output)
+- `unavailable_without_runtime`
+- `tikv_running_restarts_engine_with_live`
+
+Commit `feat(desktop): local stacks manager`.
+
+### Task 22: Postgres and WeSQL in the main process
+
+**Files:** `apps/desktop-electron/src/main/sql/{pg.ts,wesql.ts,neon.ts,caps.ts,ipc.electron.ts}`, `test/sql-*.test.ts`. Dependencies: `pg` and `mysql2` (exact pins, at least 14 days old).
+
+**Interfaces:**
+- `runCapped(exec, sql, {maxRows: 1000, timeoutMs: 30000}): Promise<SqlResult>`. For pg it sets `statement_timeout`; for mysql2 it sets `MAX_EXECUTION_TIME`. Rows beyond 1000 are dropped and `truncated` is set to true.
+- `readOnly(sql)`: the agent's `pg_sql` and `wesql_sql` tools run inside `BEGIN READ ONLY … ROLLBACK` (pg) or `START TRANSACTION READ ONLY` (mysql). The UI console allows writes after a confirm dialog when the statement is not a plain SELECT, SHOW, EXPLAIN or WITH-SELECT.
+- `neon.ts`, against the pageserver at `http://127.0.0.1:9898`:
+  - `tenants()` → `GET /v1/tenant`;
+  - `timelines(t)` → `GET /v1/tenant/{t}/timeline`;
+  - `createBranch(t, {name, ancestorTimelineId, ancestorStartLsn?})` → `POST /v1/tenant/{t}/timeline` with `{new_timeline_id: random 32-hex, ancestor_timeline_id, ancestor_start_lsn}`. Branch names are kept in `<userData>/postgres/branches.json` (timeline id → name).
+  - `walStatus(t, tl)` → the safekeeper on 7676.
+  - Verify each route against `deploy/neon/README.md` and record deviations.
+- `connection()` comes from the compose file constants. The password stays in main, `revealPassword()` returns it only on an explicit click, and `passwordRef` is an opaque id.
+- Every handler returns `IpcResult`. Errors from `pg` and `mysql2` carry `code` and `message`, never a connection string with a password (redact).
+
+Tests:
+- `caps_truncate_and_flag`
+- `timeout_maps_to_error`
+- `read_only_wrapper_blocks_insert` (against a fake client asserting the SQL sequence)
+- `neon_create_branch_body`
+- `errors_redact_password`
+
+Integration test (skipped unless `LOAMS_IT_PG=1`): bring up the postgres stack, `SELECT 1`. Commit `feat(desktop): postgres and wesql backends`.
+
+### Task 23: Postgres and WeSQL pages
+
+**Files:** `web/plugins/postgres/` and `web/plugins/wesql/` (`@loams/plugin-postgres`, `@loams/plugin-wesql`), plus tests. Both are added to `desktop.yml` and `modules.ts`, with nav sections from Task 18.
+
+**Behaviour:**
+- **Stack card** (shared component in `@loams/ui` or a small `web/packages/desktop-ui`): phase, Start/Stop and Open logs. When no container runtime is found it shows install guidance with links to docs.docker.com and podman.io (through `openExternal`).
+- **Postgres** has three tabs:
+  - **Branches:** a tree of timelines by ancestor, with name, id, LSNs, WAL heads and "Create branch from here".
+  - **Connect:** host, port, db, user, a hidden password with reveal and copy, and a `psql` command line.
+  - **SQL:** editor, Run (Ctrl/Cmd+Enter), result grid, "truncated at 1,000 rows" notice, error panel, and a confirm dialog for writes.
+- **WeSQL** has three tabs:
+  - **Schemas:** schema list, then tables (with engine and rows).
+  - **Connect.**
+  - **SQL.**
+- Both pages say "Local stack" in the header and include the note "a Loams control plane will manage this on remote servers".
+
+Tests:
+- `stack_card_each_phase`
+- `no_runtime_guidance`
+- `branch_tree_from_timelines`
+- `password_hidden_until_reveal`
+- `write_requires_confirm`
+- `truncated_notice`
+
+Commit `feat(plugins): postgres and wesql pages`.
+
+### Task 24: Live page
+
+**Files:** `web/plugins/live/` (`@loams/plugin-live`), tests. Connect clients for `loams.live.v1` come from `@loams/proto` (add `loams/live/v1` to `buf.gen.apps.yaml` if absent, then regenerate). The protocol proxy forwards `/loams.live.v1.` to `liveUrl` (extend Task 2's `isProxied` routing with a per-prefix target map: `{'/loams.live.v1.': engine.liveUrl, '/durable/': engine.durableUrl, default: active server}`).
+
+**Behaviour:**
+- When Live is not running, the page shows "Live needs the TiKV stack" with the TiKV stack card and Start.
+- **Tables:** from `_system:tables`.
+- **Documents:** paged with `_system:query`.
+- **Live query:** pick a table and an optional index filter, then a `Watch` stream with the rows updating in place. Each Transition increments a counter, and the panel shows a "live" pill. It unsubscribes on unmount.
+- **Mutate:** insert (JSON), patch and delete row, each with a confirm dialog and an `idempotency_key`.
+- **Deploy:** disabled, with the tooltip "Not yet available (R1 Task 13)".
+
+Tests:
+- `tables_listed`
+- `watch_updates_rows` (using `createRouterTransport` with a server stream)
+- `unsubscribes_on_unmount`
+- `mutate_confirms_and_sends_idempotency_key`
+- `needs_tikv_state`
+
+Commit `feat(plugins): live page`.
+
+### Task 25: Durable page
+
+**Files:** `web/plugins/durable/` (`@loams/plugin-durable`), `src/envelope.ts`, tests.
+
+**Interfaces:** `envelope(fetch)(kind, data) → Promise<data>`. It POSTs `/durable/` with `{kind, head:{corrId: crypto.randomUUID(), version:'2026-04-01'}, data}`. Errors come from `head.status >= 400`, as `{status, message}`.
+
+**Behaviour** (D671):
+- **Promises:** filter by state (pending, resolved, rejected, rejected_canceled, rejected_timedout), tags (`k=v` chips) and cursor paging. Detail shows id, state, times, tags, and `param` and `value` decoded (JSON when valid, otherwise base64 with a toggle). Create (id, timeout, param JSON, tags) and Cancel (confirm, then `promise.settle` with `rejected_canceled`).
+- **Schedules:** list; create (id, cron with a human-readable preview from `cronstrue` (exact pin) or a 10-line formatter, promise id template, timeout); delete with confirm.
+- **Tasks:** list by state; detail.
+- **Runs:** a tree view built from promises sharing the `resonate:root` tag, with children via `resonate:parent`. Verify the tag names in the pinned resonate checkout `~/.cargo/git/checkouts/resonate-*/e360669` and record them.
+
+Tests:
+- `envelope_shape_and_error`
+- `promise_filters_and_paging`
+- `param_decoding_json_or_base64`
+- `cancel_requires_confirm_and_sends_rejected_canceled`
+- `runs_tree_from_tags`
+
+Commit `feat(plugins): durable execution page`.
+
+### Task 26: Streams & Links page
+
+**Files:** `web/plugins/streams/` (`@loams/plugin-streams`), tests. Uses the B1 routes (Task 19) and the existing create, describe, produce and fetch routes through `platform.fetch`.
+
+**Behaviour:**
+- **Streams:** list, create (name, partitions, retention), and a detail view with per-partition offsets.
+- **Produce a test record:** JSON or a CloudEvent.
+- **Tail:** poll fetch every 2 s from the high watermark. Pause and resume; at most 500 records kept.
+- **Links:** list with status, create (source stream, target kind and name, options JSON), and a detail view with a lag chart (inline SVG bars per partition, no chart library) and applied offsets.
+
+Tests:
+- `streams_list_and_create`
+- `tail_caps_at_500`
+- `link_lag_bars`
+- `unregistered_status_badge`
+
+Commit `feat(plugins): streams and links page`.
+
+### Task 27: Connectors catalog and Graph empty state
+
+**Files:**
+- `apps/desktop-electron/scripts/connectors-catalog.mjs` (YAML via `yaml`, already in the workspace if present, else exact pin);
+- `src/main/connectors/{catalog.ts,ipc.electron.ts}`;
+- `web/plugins/connectors/` (`@loams/plugin-connectors`) and `web/plugins/graph/` (`@loams/plugin-graph`), with tests.
+
+**Behaviour** (D673, D674):
+- The catalog script emits `resources/connectors.json`: `[{id, name, category, status, runtime, source, sink, modes, auth, licence, stub}]` plus a per-id map of manifest and schema. A schema counts as a stub when it has no `properties`, or when it is marked as a stub by `gen_registry.py` (check its marker).
+- **Connectors page:** search, filter chips, and a card grid. The detail view shows capabilities, auth, licence and runtime. The **Configure** form is generated from the JSON Schema (string, number, boolean, enum, object and array of primitives; `secret` fields as password inputs and stored nowhere). Validate with `ajv` (exact pin, 2020-12) and export the instance YAML (copy or save file). The Run button is disabled with "Connector runtime not yet available (CN1)".
+- **Graph page:** an empty state explaining GQL over `loams.graph.v1` and that it arrives with `loams-fabric`. It links to the docs.
+
+Tests:
+- `catalog_script_counts_match_registry`
+- `stub_flagged`
+- `form_renders_kafka_schema_required_fields`
+- `secret_fields_password_type`
+- `export_yaml_valid`
+- `graph_empty_state`
+
+Commit `feat(plugins): connectors catalog and graph`.
+
+### Task 28: Agent loop in the main process
+
+**Files:** `apps/desktop-electron/src/main/agent/{providers/anthropic.ts,providers/openai.ts,providers/types.ts,loop.ts,tools.ts,store.ts,ipc.electron.ts}`, tests `test/agent-*.test.ts`. Provider HTTP uses `fetch` with SSE parsing (no SDK dependency).
+
+**Interfaces:**
+- `interface Provider { id; streamTurn(req: {model; system; messages: Msg[]; tools: ToolDef[]; signal}): AsyncIterable<ProviderEvent> }`, where `ProviderEvent = text | thinking | tool_use{id,name,input} | usage | stop{reason}`.
+- Anthropic: `POST {baseUrl ?? 'https://api.anthropic.com'}/v1/messages` with `stream:true`, `anthropic-version: 2023-06-01`, and model default `claude-sonnet-5-5`.
+- OpenAI-compatible: `POST {baseUrl}/chat/completions` with `stream:true` and tools in function format. Presets:
+  - deepseek (`https://api.deepseek.com/v1`, `deepseek-chat`);
+  - openai (`https://api.openai.com/v1`);
+  - ollama (`http://127.0.0.1:11434/v1`, no key).
+- `tools.ts`: `TOOLS: ToolSpec[]`, with `{name, description, risk: 'read'|'write', schema (JSON Schema), run(ctx, args)}` for the D675 list. Each tool calls the same main-process services the pages use (data plane via `session.fetch` against the active server; pg, wesql, durable, streams, connectors, factory). SQL tools force read-only.
+- `loop.ts`: `runTurn(chat, userText, deps)`.
+  - It streams events to the renderer (`CH.chatEvent`). On a write tool without an "always" rule it pauses, emitting `tool_call` with `needsApproval: true`, until `approve`.
+  - Deny returns the tool result "The user denied this action."
+  - Budgets: 25 iterations, 10 min, 200k tokens. `cancel` aborts the provider stream and pending tools.
+  - Tool results are truncated to 20k characters before they are sent to the model.
+- `store.ts`: one chat per file `<userData>/chats/<id>.json` (atomic write), plus the list sorted by updated time. The provider key lives in the D659 vault under `agent:<provider>`.
+
+Tests:
+- `anthropic_sse_parsing` (fixtures)
+- `openai_sse_tool_call_assembly` (arguments split over chunks)
+- `write_tool_waits_for_approval`
+- `always_allow_scoped_to_chat_and_tool`
+- `deny_returns_denial_result`
+- `iteration_cap_stops`
+- `cancel_aborts`
+- `sql_tools_read_only`
+- `key_never_in_events_or_store`
+
+Commit `feat(desktop): agent loop with approvals`.
+
+### Task 29: Agent panel plugin
+
+**Files:** `web/plugins/agent/` (`@loams/plugin-agent`), tests. It fills the `shell.dock.right` slot.
+
+**Behaviour:**
+- **Chat list:** new chat, rename (first message), delete.
+- **Messages:** markdown rendered with a safe renderer (`marked` plus DOMPurify, exact pins; no raw HTML from the model). Code blocks get a copy button. Tool calls render as collapsible cards with name, args and result.
+- **Approval card for write calls:** shows the tool and args, with Approve once, Always for this chat, and Deny.
+- **Composer:** Enter to send, Shift+Enter for a newline, and Stop while a turn runs. A provider and model picker sits in the composer footer. A provider that is not configured links to the Settings section.
+- **Context hint:** the current page route and the active namespace are added to the system prompt. Example: "The user is viewing Postgres › Branches."
+- **Stop reasons** render as a footer note, for example "Stopped: iteration cap (25)".
+
+Tests:
+- `streams_deltas_into_message`
+- `approval_card_actions`
+- `stop_button_cancels`
+- `no_raw_html_rendered`
+- `unconfigured_provider_cta`
+
+Commit `feat(plugins): agent panel`.
+
+### Task 30: Overview and Settings pages
+
+**Files:** `web/plugins/overview/` (`@loams/plugin-overview`), with Settings additions in `desktop-servers` (or `@loams/plugin-desktop-settings`), and tests.
+
+**Behaviour:**
+- **Overview:** a grid of status cards. Each card links to its page and shows "not running" honestly.
+
+  | Card | Shows |
+  |---|---|
+  | Engine | phase, URLs |
+  | Data | namespaces and collections count |
+  | Postgres | stack phase, branches count |
+  | WeSQL | stack phase |
+  | Live | running or not, tables |
+  | Durable | pending promises count |
+  | Streams | count, max link lag |
+  | Connectors | preview/planned counts |
+  | Factory | health per app |
+- **Settings sections:**
+  - **Servers** (Task 8).
+  - **Agent providers:** keys as password fields, never shown back; "Test" sends a one-token request.
+  - **Local stacks:** the container runtime found.
+  - **Updates:** state, check now.
+  - **About:** version, licences (NOTICE), Open logs folder.
+
+Tests: `overview_cards_each_state`, `provider_key_never_prefilled`, `test_provider_reports_result`. Commit `feat(plugins): overview and settings`.
+
+### Task 31: Linux release pipeline
+
+**Files:**
+- `.github/workflows/desktop-electron-release.yml`;
+- `apps/desktop-electron/scripts/{gpg-sign.sh,checksums.mjs}`;
+- `signpath/artifact-configuration.desktop-rpm.xml` (or extend the existing rpm config);
+- `docs/release/desktop.md`.
+
+**Behaviour** (D676):
+- Triggers on a tag `desktop-v*`.
+- Matrix: `ubuntu-24.04` (x64) and `ubuntu-24.04-arm` (arm64).
+  1. Build the engine (`cargo build --release -p loams`).
+  2. Run `fetch-engine`, then `electron-builder --linux AppImage deb rpm pacman --publish never`.
+  3. Write `SHA256SUMS`.
+  4. Submit the `.rpm` to SignPath (reuse `release-sign.yml` as a called workflow, `require_signing` taken from repository variable `DESKTOP_REQUIRE_SIGNING`, default false).
+  5. GPG-sign the `.deb` (`dpkg-sig` or detached `.sig`), the `.pkg.tar.zst` (detached `.sig`, the pacman convention), the AppImage (detached `.sig`) and `SHA256SUMS` (`SHA256SUMS.asc`). The key comes from `LOAMS_GPG_PRIVATE_KEY`; when it is absent, skip with a warning and label the release "unsigned".
+  6. Create the GitHub Release (draft) with every artifact through `gh release create --draft`.
+- `latest-linux.yml` is signed with the update key (Task 14) when `LOAMS_UPDATE_SIGNING_KEY` is present, and uploaded beside the artifacts. The feed URL is the GitHub release download URL for `LOAMS_UPDATE_FEED`.
+- `docs/release/desktop.md` documents the secrets the owner must add (`LOAMS_GPG_PRIVATE_KEY`, `LOAMS_GPG_KEY_ID`, the SignPath values, `LOAMS_UPDATE_SIGNING_KEY` and `LOAMS_UPDATE_PUBKEY`) and how to cut a release.
+
+Tests:
+- `actionlint` on the workflow (if available locally; otherwise `python3 -c 'import yaml; yaml.safe_load(...)'`).
+- A dry run of `gpg-sign.sh` with a throwaway key generated in the test into the scratch directory, then `gpg --verify`.
+- `checksums.mjs` unit test.
+
+Commit `ci(desktop): linux release pipeline`.
+
 ## Self-review
 
 - **Spec coverage.** Each §19 rule maps to a task:
@@ -741,3 +1092,10 @@ OpenObserve has no adapter (full UI only), and there is no `plane` adapter: Plan
 - **electron-vite 5.0.0 declares `peerDependencies: vite ^5 || ^6 || ^7`** (+ optional `@swc/core`) and `engines.node ^20.19 || >=22.12`, while `web/apps/console` pins **vite 8.3.1**. The desktop package must pin its own `vite` 7.x (newest 7 is 7.3.7) beside electron-vite. pnpm resolves per package, but the monorepo `pnpm-workspace.yaml` overrides only touch `vite-plus`, so there should be no clash; the console is built by its own package (the renderer is the console's `dist`, copied in) and electron-vite then builds only `main` and `preload`.
 - electron-updater 6.8.9 depends on `builder-util-runtime 9.7.0`, and electron-builder 26.16.1 should be pinned with the matching `app-builder-lib`. `@noble/ed25519` 3.x is async-first, with sync only after setting `etc.sha512Sync`. For the Ed25519 manifest check in main, Node's `crypto.verify(null, data, publicKeyObject, sig)` is the zero-dependency alternative, since the main process runs Node 24. Task 14 decides, and `@noble/ed25519` can stay as the pinned fallback.
 - dsh-desktop is cloned at `~/Documents/Ostriumlabs/dsh-desktop` (HEAD `51f9896`) with `src/main/runtime/harness-runtime.ts`, `src/main/security.ts`, `src/main/security-policy.ts`, `electron-builder.dev.cjs` and `scripts/electron-builder-windows.mjs` for Tasks 3, 5 and 15.
+
+### Controller rulings on Task 0 (2026-10-08)
+
+- **C0.1** `features.local` and `features.desktop` reach cordis plugins through a Connect interceptor in `@loams/platform-electron`. The interceptor merges them into `GetInstance` responses when the active server is local, using `desktop.servers.list()`. The `/api/v1/*` shim (Task 6) serves only the classic console. Cost if wrong: one interceptor to move into main.
+- **C0.2** Desktop plugins declare `editions: ['desktop']` (an edition console-host already knows) **and** `inject: ['desktop']`. That replaces D658's "requires the desktop service" wording, which is the same intent. Cost if wrong: none; a browser build never loads them twice over.
+- **C0.3** `apps/desktop-electron` builds only main and preload, so it pins its own Vite 7 dev dependency for electron-vite 5.0.0. The console keeps Vite 8. Cost if wrong: a second Vite in the lockfile.
+- **C0.4** Factory credential fields add `projectKey` (ItsAPlan), `projectId` (OpenPanel) and `idSite` (Matomo) as non-secret fields. Langfuse "traces" maps to `listObservations`. Cost if wrong: panel ops adjust in Task 10.

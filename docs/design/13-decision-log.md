@@ -629,6 +629,17 @@ Living document. Newest decisions at the bottom of each table.
 | D663 | 2026-10-08 | **No telemetry: crash dumps are only written locally (`uploadToServer: false`) (§37 §19.8).** Carries D498. | D284, D498 | Approved (product owner, delegated) |
 | D664 | 2026-10-08 | **Desktop tests: Vitest for pure main-process cores and plugins, a fake engine for the supervisor, and one Playwright `_electron` smoke per OS in CI (§37 §19.8).** | Fast units; one real launch per platform | Approved (product owner, delegated) |
 | D665 | 2026-10-08 | **`apps/desktop-electron` is the pnpm package `@loams/desktop` and the Nx project `loams-desktop-electron`; the root `build:desktop` points at it (§37 §19.8).** | One workspace, shared `@loams/*` packages | Approved (product owner, delegated) |
+| D666 | 2026-10-08 | **Loams Desktop takes a cloud-console layout: product navigation on the left, the agent panel docked on the right, and one cordis plugin per product page (§37 §19.10).** | Owner: "it is a cloud ui with agent chat on side" | Approved (owner) |
+| D667 | 2026-10-08 | **Postgres (Neon), WeSQL and TiKV run as the repository's compose stacks, managed by the desktop through docker or podman compose (§37 §19.10).** | No control plane exists yet; the dev stacks are what runs today | Approved (product owner, delegated) |
+| D668 | 2026-10-08 | **The desktop is the local Postgres control plane: tenants, timelines and branches via the pageserver API, WAL heads, connection strings and a capped SQL console (§37 §19.10).** | §28 P2b is unbuilt; the pageserver API is enough for branches | Approved (product owner, delegated) |
+| D669 | 2026-10-08 | **WeSQL page: container state, connection string, schemas and tables, and a capped SQL console (§37 §19.10).** | WS1–WS4 are not planned; the dev container is what exists | Approved (product owner, delegated) |
+| D670 | 2026-10-08 | **The engine runs with `--no-live` unless the TiKV stack is up. The Live page offers tables, documents, a live Watch and confirmed Mutate. A new built-in `_system:tables` function lists tables (§37 §19.10).** | Live needs PD to start; tables had no listing | Approved (product owner, delegated) |
+| D671 | 2026-10-08 | **Durable page over the Resonate envelope through the `/durable/` proxy: promises, schedules, tasks, and runs grouped by tag (§37 §19.10).** | The worker endpoint is the only mounted surface | Approved (product owner, delegated) |
+| D672 | 2026-10-08 | **The engine gains list routes for streams and links, plus link lag and status; a Streams & Links page uses them (§37 §19.10).** | Create and describe existed without list or lag | Approved (product owner, delegated) |
+| D673 | 2026-10-08 | **The connector catalog is a build-time JSON bundled with the desktop, with config forms generated from JSON Schema; running a connector is deferred to CN1 Task 3 (§37 §19.10).** | No connector runtime or server exists | Approved (product owner, delegated) |
+| D674 | 2026-10-08 | **The Graph page is an empty state until a binary serves `loams.graph.v1` (§37 §19.10).** | No server links `loams-graph` | Approved (product owner, delegated) |
+| D675 | 2026-10-08 | **Agent panel: the loop runs in the main process; Anthropic and OpenAI-compatible providers (DeepSeek preset); desktop tools tagged read or write; every write waits for approval; budgets; chats stored locally (§37 §19.10).** | dockit's proven pattern; keys stay out of the renderer; SF3 is unbuilt | Approved (product owner, delegated) |
+| D676 | 2026-10-08 | **Linux-only desktop releases: AppImage, deb, rpm and pacman packages for x86_64 and aarch64 on GitHub Releases; the rpm signed through SignPath, the others GPG-signed; macOS and Windows built unsigned in CI and not published (§37 §19.10).** Amends D661 and D662. | The owner has no Apple or Windows accounts | Approved (owner) |
 ## Open questions
 
 | # | Question | Owner | Needed by |
@@ -1004,7 +1015,7 @@ Living document. Newest decisions at the bottom of each table.
 | Q619 | The `crates-io` GitHub environment does not exist, so `release-crates.yml` cannot publish; who creates it, and with which required reviewers? | Owner action | Before the first crates.io publish |
 | Q620 | Windows and macOS build-from-source was written without either platform in CI. `ci.yml` has no Windows or macOS runner, so nothing on either page is exercised automatically. Add `macos-latest` and `windows-latest` jobs that run `cargo build -p loams --locked` once the first release makes that worth the minutes? | Founder | The first Windows or macOS release |
 | Q621 | The update feed host for Loams Desktop (Electron) releases (§37 §19.7) | Owner | Before the first desktop release |
-| Q622 | Is ItsAPlan the Plane-compatible product the factory means, or is plane.so? Default: ship the ItsAPlan adapter as "Plane (ItsAPlan)" (§37 §19.9) | Owner | SF1 |
+| Q622 | Is ItsAPlan the Plane-compatible product the factory means, or is plane.so? Default: ship the ItsAPlan adapter as "Plane (ItsAPlan)" (§37 §19.9) | Owner | Resolved 2026-10-08: ItsAPlan (D676) |
 | Q623 | Bundle the engine on Windows, or keep Windows remote-only (D488)? Default: bundle it if the AP1e Windows smoke test is green (§37 §19.9) | Eng | AP1e Task 15 |
 | Q624 | A remote crash-report endpoint for the desktop (D663) | Owner | Before 1.0 |
 

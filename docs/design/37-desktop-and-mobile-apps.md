@@ -1308,3 +1308,71 @@ Every panel is read-only and backed by an existing adapter method. "Op" is the I
 | Q622 | Is ItsAPlan the Plane-compatible product the factory means, or is plane.so? | Ship the ItsAPlan adapter under the label "Plane (ItsAPlan)" |
 | Q623 | Should the desktop bundle the engine binary on Windows, or ship it remote-only (D488)? | Bundle it if Task 15's Windows smoke test is green, otherwise remote-only |
 | Q624 | A remote crash-report endpoint | None (D663) |
+
+### 19.10 The full cloud console, the agent panel and Linux-only releases (amendment, 2026-10-08)
+
+The owner widened the scope the same day: "current console ui only focused on collection search, but i have serverless postgres, wesql, loam live, resonate durable execution, fabric, connector, i want ui for all that, it is a cloud ui with agent chat on side … publish linux packages, signpath … itsaplan is what i meant". Rulings D666–D675:
+
+- **D666: a cloud-console layout.** The window takes the shape of a cloud console: a product navigation on the left, a header with the server switcher and the agent toggle, the page in the middle, and the **agent panel docked on the right**. Product navigation, in order:
+  - Overview;
+  - Data (collections, search, SQL, ingest);
+  - Postgres;
+  - WeSQL;
+  - Live;
+  - Durable;
+  - Streams & Links;
+  - Connectors;
+  - Graph;
+  - Software Factory;
+  - Cloud (projects, environments, agents, access, teams, members, audit, the classic pages);
+  - Settings.
+
+  The shell plugin gains a `shell.dock.right` slot and a `shell.nav.section` list slot. Each product page is its own cordis plugin.
+- **D667: local stacks.** Postgres (Neon), WeSQL and TiKV run as the repository's dev compose stacks (`deploy/neon`, `deploy/wesql`, `deploy/tikv`). The desktop's main process manages them through `docker compose` (or `podman compose`, whichever is found first) with project names `loams-desktop-<stack>`. Pages show a stack's state and offer **Start** and **Stop**.
+  - When Docker and Podman are both absent, a stack page explains what to install.
+  - When a remote server advertises a control plane for the product, its page uses that instead. Until one exists, Postgres and WeSQL are local-only.
+- **D668: the desktop is the local control plane for Postgres.**
+  - Tenants, timelines and branches are read and created through the pageserver management API (`http://127.0.0.1:9898/v1/tenant…`).
+  - WAL heads come from `loams-wal`'s or the safekeeper's `GET /v1/tenant/{t}/timeline/{tl}`.
+  - The connection string comes from the compose file's compute endpoint. The password is never shown by default; there's a reveal button with a copy action.
+  - A SQL console runs queries through `pg` in the main process. Results are capped at 1,000 rows, and a statement timeout of 30 s applies.
+  - Branch creation takes `{ancestor_timeline_id, ancestor_start_lsn?}`.
+  - Compute start and stop stay out of scope until the control plane exists (§28 P2b).
+- **D669: WeSQL** shows the container state, the connection string, and the schemas and tables (`information_schema`). It has a SQL console through `mysql2` in the main process, with the same caps as D668.
+- **D670: Live.**
+  - The engine runs with `--no-live` unless the TiKV stack is up. When it is up, the engine is restarted with `--live-listen 127.0.0.1:<free> --live-pd 127.0.0.1:<pd>`.
+  - The Live page offers a table list, a document browser (`_system:query`), a **live query** that watches changes through `Watch`, and insert, patch and delete through `Mutate`. Each mutation is confirmed by the user first.
+  - The engine gains a built-in `_system:tables` function that returns the catalog's tables and indexes (backend task B2).
+  - `Deploy` is shown as "not yet available" (R1 Task 13).
+- **D671: Durable.** The durable listener runs on a free loopback port. The protocol proxy forwards `/durable/` to it, posting the Resonate envelope (`POST /` with `{kind, head:{corrId, version:"2026-04-01"}, data}`). The page has three tabs:
+  - **Promises:** search by state and tags with cursor paging, a detail view with param and value decoded as JSON or base64, create, and cancel (`promise.settle` with `rejected_canceled`, after confirmation).
+  - **Schedules:** list, create with a cron preview, delete.
+  - **Tasks:** list and detail.
+
+  A **Runs** view groups promises by their `resonate:root` and `resonate:parent` tags into a tree.
+- **D672: Streams & Links.** The engine gains three routes (backend task B1):
+  - `GET /v1/namespaces/{ns}/streams`;
+  - `GET /v1/namespaces/{ns}/links`;
+  - per-partition `lag` and a `status` field in link describe.
+
+  The page lists, creates and describes streams and links, produces a test record, tails a partition, and shows link lag.
+- **D673: Connectors.** The catalog is built at desktop build time, not served: `scripts/connectors-catalog.mjs` turns `connectors/registry/*.yaml` and `connectors/schemas/*.config.json` into `connectors.json`, which is bundled as a resource. The page offers:
+  - a catalog with search and filters (category, status, runtime, source or sink);
+  - a detail view (capabilities, auth, licence);
+  - a config form generated from the JSON Schema, which can be validated and exported as an instance YAML. Running a connector says "runtime not yet available" (CN1 Task 3).
+  - Stub schemas are labelled "schema not written yet".
+- **D674: Graph** is a page with an honest empty state. It will gain a GQL editor once a binary serves `loams.graph.v1.GraphService` (D343 `loams-fabric`). Building that binary is not in AP1e.
+- **D675: the agent panel.**
+  - The loop runs in the main process. Providers are Anthropic Messages and any OpenAI-compatible endpoint, with presets for DeepSeek, OpenAI and Ollama. Keys are kept in the D659 vault.
+  - **Tools** are the desktop's own operations, each tagged `read` or `write`:
+    - Read: `collections_list`, `search`, `sql_query` (read-only), `pg_sql` (read-only), `wesql_sql` (read-only), `durable_promises_search`, `streams_list`, `links_list`, `connectors_search`, `factory_query`.
+    - Write: `durable_promise_create`, `live_mutate`, `pg_branch_create`.
+  - **Every write tool call waits for the user's approval in the panel.** "Always allow for this chat" is per chat and per tool.
+  - **Budgets:** 25 iterations, 10 minutes and 200k tokens per turn. Stop reasons follow dockit (`iteration_cap`, `wall_clock_budget`, `token_budget`, `llm_error`).
+  - Tool results are rendered as text, never as HTML. Chats are stored locally (`<userData>/chats/*.json`) and are never uploaded.
+  - When SF3's `loams.bot.v1` exists, the panel gains a "Loams Bot" provider, and this loop stays as the local fallback.
+- **D676: Linux-only releases for now** (amends D661 and D662). The owner has no Apple or Windows signing accounts.
+  - A tagged release publishes AppImage, `.deb`, `.rpm` and `.pkg.tar.zst` for x86_64 and aarch64 to GitHub Releases.
+  - The `.rpm` is signed through SignPath (D621, `release-sign.yml`). `.deb` and `.pkg.tar.zst` are GPG-signed with `LOAMS_GPG_PRIVATE_KEY` (D630 handoff). The AppImage carries a detached `.sig` from the same GPG key.
+  - macOS and Windows stay buildable in CI (unsigned, not published). Q420, Q421 and Q623 are moot until the owner reopens them.
+  - Q622 is answered: ItsAPlan.
