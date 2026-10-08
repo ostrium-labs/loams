@@ -77,6 +77,7 @@ const api: LoamsDesktopApi = {
 		catalog: () => invoke(CH.connectorsCatalog),
 		get: (id) => invoke(CH.connectorsGet, id),
 		validate: (id, config) => invoke(CH.connectorsValidate, id, config),
+		saveYaml: (name, text) => invoke(CH.connectorsSaveYaml, name, text),
 	},
 };
 

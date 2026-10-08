@@ -415,10 +415,23 @@ export function createFakeDesktop(): LoamsDesktopApi {
           ? { ok: true, value: d }
           : { ok: false, code: 'not_found', message: `No connector "${id}".` };
       },
+      saveYaml: async (name, text) => {
+        // The preview has no save dialog: download the file instead.
+        const url = URL.createObjectURL(new Blob([text], { type: 'text/yaml' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${name}.yaml`;
+        a.click();
+        URL.revokeObjectURL(url);
+        return { ok: true, value: { saved: true } };
+      },
       validate: async (id, config) => {
-        const d = (await previewCatalog()).details[id];
+        const all = (await previewCatalog()).details;
+        const d = Object.hasOwn(all, id) ? all[id] : undefined;
+        const secrets =
+          d && Array.isArray(d.manifest.secrets) ? (d.manifest.secrets as string[]) : [];
         return d
-          ? { ok: true, value: validateConfig(d.schema, config) }
+          ? { ok: true, value: validateConfig(d.schema, config, secrets) }
           : { ok: false, code: 'not_found', message: `No connector "${id}".` };
       },
     },

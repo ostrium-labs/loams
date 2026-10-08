@@ -29,9 +29,13 @@ export function load(id: string): { summary: ConnectorSummary; detail: Connector
   };
 }
 
-export function fakeDesktop(ids: string[]) {
+export function fakeDesktop(
+  ids: string[],
+  save: () => unknown = () => ({ ok: true, value: { saved: true } }),
+) {
   const all = ids.map(load);
   const clipboard: string[] = [];
+  const saved: { name: string; text: string }[] = [];
   const api = {
     connectors: {
       catalog: async () => all.map((a) => a.summary),
@@ -41,10 +45,21 @@ export function fakeDesktop(ids: string[]) {
           ? { ok: true as const, value: f.detail }
           : { ok: false as const, code: 'not_found', message: `No connector "${id}".` };
       },
+      saveYaml: async (name: string, text: string) => {
+        saved.push({ name, text });
+        return save();
+      },
       validate: async (id: string, config: unknown) => {
         const f = all.find((a) => a.summary.id === id);
         return f
-          ? { ok: true as const, value: validateConfig(f.detail.schema, config) }
+          ? {
+              ok: true as const,
+              value: validateConfig(
+                f.detail.schema,
+                config,
+                (f.detail.manifest.secrets as string[]) ?? [],
+              ),
+            }
           : { ok: false as const, code: 'not_found', message: 'nope' };
       },
     },
@@ -53,5 +68,5 @@ export function fakeDesktop(ids: string[]) {
       openExternal: async () => ({ ok: true as const, value: undefined }),
     },
   } as unknown as LoamsDesktopApi;
-  return { api, clipboard, all };
+  return { api, clipboard, saved, all };
 }

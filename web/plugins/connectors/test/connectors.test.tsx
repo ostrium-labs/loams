@@ -16,11 +16,11 @@ globalThis.ResizeObserver ??= class {
 
 const yamlText = () => (screen.getByLabelText('Instance YAML') as HTMLElement).textContent ?? '';
 
-async function openDetail(id: string, ids = [id]) {
-  const { api, clipboard } = fakeDesktop(ids);
+async function openDetail(id: string, ids = [id], save?: () => unknown) {
+  const { api, clipboard, saved } = fakeDesktop(ids, save);
   render(<DetailPage desktop={api} id={id} navigate={() => undefined} />);
   await screen.findByRole('form', { name: /configure/i });
-  return { api, clipboard };
+  return { api, clipboard, saved };
 }
 
 describe('connectors catalog page', () => {
@@ -115,6 +115,38 @@ describe('connector detail and configure form', () => {
     render(<DetailPage desktop={api} id="adyen" navigate={() => undefined} />);
     expect(await screen.findByText('No configuration fields yet')).toBeTruthy();
     expect(screen.queryByRole('form')).toBeNull();
+  });
+});
+
+describe('save YAML file', () => {
+  const fill = () => {
+    const set = (re: RegExp, value: string) =>
+      fireEvent.change(screen.getByLabelText(re), { target: { value } });
+    set(/^brokers/, 'b1:9092');
+    set(/^topics/, 'orders');
+    set(/^group_id_prefix/, 'loams-dev');
+  };
+
+  it('reports success only when the main process saved', async () => {
+    const { saved } = await openDetail('kafka');
+    fill();
+    await waitFor(() => expect(screen.getByText('Valid')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Save YAML file' }));
+    expect(await screen.findByText('YAML saved.')).toBeTruthy();
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.text).not.toContain('hunter2');
+  });
+
+  it('reports a cancelled dialog and a write error', async () => {
+    let result: unknown = { ok: true, value: { saved: false } };
+    await openDetail('kafka', ['kafka'], () => result);
+    fill();
+    await waitFor(() => expect(screen.getByText('Valid')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Save YAML file' }));
+    expect(await screen.findByText('Save cancelled.')).toBeTruthy();
+    result = { ok: false, code: 'write_failed', message: 'EACCES' };
+    fireEvent.click(screen.getByRole('button', { name: 'Save YAML file' }));
+    expect(await screen.findByText('Could not save the YAML: EACCES')).toBeTruthy();
   });
 });
 

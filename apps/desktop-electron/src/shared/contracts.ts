@@ -192,6 +192,8 @@ export interface LoamsDesktopApi {
 		get(id: string): Promise<IpcResult<ConnectorDetail>>;
 		/** Validate an instance config (secrets as `${secret:name}` placeholders) against the connector's schema. */
 		validate(id: string, config: unknown): Promise<IpcResult<ConnectorValidation>>;
+		/** Save an exported YAML through the main process's save dialog; `saved` is false when cancelled. */
+		saveYaml(name: string, text: string): Promise<IpcResult<{ saved: boolean }>>;
 	};
 }
 export const CH = {
@@ -232,4 +234,5 @@ export const CH = {
 	connectorsCatalog: "connectors:catalog",
 	connectorsGet: "connectors:get",
 	connectorsValidate: "connectors:validate",
+	connectorsSaveYaml: "connectors:save-yaml",
 } as const;

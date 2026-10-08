@@ -46,6 +46,19 @@ function FieldInput({
   return (
     <Field label={label} hint={hint} error={error}>
       {(a) => {
+        if (f.secret) {
+          return (
+            <Input
+              {...a}
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              required={f.required}
+              value={value}
+              onChange={(e) => set(f.id, e.target.value)}
+            />
+          );
+        }
         if (f.kind === 'enum' || f.kind === 'boolean') {
           const opts = f.kind === 'boolean' ? ['true', 'false'] : (f.enum ?? []).map(String);
           return (
@@ -71,19 +84,6 @@ function FieldInput({
               required={f.required}
               rows={3}
               placeholder="One per line"
-              value={value}
-              onChange={(e) => set(f.id, e.target.value)}
-            />
-          );
-        }
-        if (f.secret) {
-          return (
-            <Input
-              {...a}
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              required={f.required}
               value={value}
               onChange={(e) => set(f.id, e.target.value)}
             />
@@ -219,15 +219,15 @@ export function ConfigureForm({
     await desktop.shell.clipboardWrite(yaml);
     setNote('YAML copied.');
   };
-  const save = () => {
+  const save = async () => {
     if (!ready()) return;
-    const url = URL.createObjectURL(new Blob([yaml], { type: 'text/yaml' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${name.trim() || summary.id}.yaml`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setNote('YAML saved.');
+    try {
+      const r = await desktop.connectors.saveYaml(name.trim() || summary.id, yaml);
+      if (!r.ok) setNote(`Could not save the YAML: ${r.message}`);
+      else setNote(r.value.saved ? 'YAML saved.' : 'Save cancelled.');
+    } catch (e) {
+      setNote(`Could not save the YAML: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   return (
@@ -238,7 +238,7 @@ export function ConfigureForm({
           <Button size="sm" onClick={() => void copy()}>
             Copy YAML
           </Button>
-          <Button size="sm" variant="primary" onClick={save}>
+          <Button size="sm" variant="primary" onClick={() => void save()}>
             Save YAML file
           </Button>
         </div>

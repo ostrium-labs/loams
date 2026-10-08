@@ -1,11 +1,11 @@
 import { join } from "node:path";
-import { validateConfig } from "../../shared/validate";
 import type {
 	ConnectorDetail,
 	ConnectorSummary,
 	ConnectorValidation,
 	IpcResult,
 } from "../../shared/contracts";
+import { validateConfig } from "../../shared/validate";
 
 interface CatalogFile {
 	version: number;
@@ -22,6 +22,39 @@ export function catalogPath(env: {
 	return env.isPackaged
 		? join(env.resourcesPath, "connectors.json")
 		: join(env.appRoot, "resources", "connectors.json");
+}
+
+export const MAX_CONFIG_BYTES = 256 * 1024;
+export const MAX_CONFIG_DEPTH = 32;
+
+function depthOf(v: unknown, d = 1): number {
+	if (typeof v !== "object" || v === null) return d;
+	let max = d;
+	for (const c of Object.values(v)) {
+		max = Math.max(max, depthOf(c, d + 1));
+		if (max > MAX_CONFIG_DEPTH) break;
+	}
+	return max;
+}
+
+/** An error message when `config` is not a plain object, or is too big or too deep; else undefined. */
+export function checkConfig(config: unknown): string | undefined {
+	if (typeof config !== "object" || config === null || Array.isArray(config))
+		return "The config must be an object.";
+	const proto = Object.getPrototypeOf(config);
+	if (proto !== Object.prototype && proto !== null)
+		return "The config must be a plain object.";
+	if (depthOf(config) > MAX_CONFIG_DEPTH)
+		return `The config is nested deeper than ${MAX_CONFIG_DEPTH} levels.`;
+	let json: string | undefined;
+	try {
+		json = JSON.stringify(config);
+	} catch {
+		return "The config is not JSON.";
+	}
+	if (json === undefined || json.length > MAX_CONFIG_BYTES)
+		return "The config is larger than 256 KiB.";
+	return undefined;
 }
 
 /** The connector catalog, read once from the generated JSON. */
@@ -61,6 +94,15 @@ export class ConnectorCatalog {
 	validate(id: unknown, config: unknown): IpcResult<ConnectorValidation> {
 		const d = this.get(id);
 		if (!d.ok) return d;
-		return { ok: true, value: validateConfig(d.value.schema, config) };
+		const bad = checkConfig(config);
+		if (bad) return { ok: false, code: "bad_request", message: bad };
+		const s = d.value.manifest.secrets;
+		const secrets = Array.isArray(s)
+			? s.filter((x): x is string => typeof x === "string")
+			: [];
+		return {
+			ok: true,
+			value: validateConfig(d.value.schema, config, secrets),
+		};
 	}
 }
