@@ -55,6 +55,8 @@ tracing-subscriber = { workspace = true, optional = true }
 
 [dev-dependencies]
 postcard.workspace = true
+# The fixture recorder (examples/record_interpreted.rs).
+sha2.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 

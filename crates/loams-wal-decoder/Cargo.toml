@@ -1,0 +1,72 @@
+[package]
+name = "loams-wal-decoder"
+description = "loams-wal with the in-process interpreted sender: the Neon fork's wal_decoder behind loams-safekeeper's WalInterpreter (PG2 Task 31, Q112)."
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.97"
+license = "Apache-2.0"
+authors = ["The Loams Authors"]
+publish = false
+
+# A workspace of its own (PG2 ruling R31.3, owner ruling 2026-10-08): the
+# fork's crates bring Neon's dependency tree and git sources, which stay out
+# of the main workspace's Cargo.lock and licence check. The main workspace
+# lists this directory in `exclude`.
+#
+# Building needs POSTGRES_INSTALL_DIR with v14..v17/include/postgresql/server
+# (scripts/pg2/pg-headers.sh, from the pinned `neon` image).
+[workspace]
+members = ["."]
+
+[lib]
+path = "src/lib.rs"
+
+# Not `loams-wal`: both workspaces build into the one shared target dir, and
+# scripts/loams-pg-bench/run.sh takes <target>/release/loams-wal.
+[[bin]]
+name = "loams-wal-interpreted"
+path = "src/bin/loams-wal-interpreted.rs"
+
+[features]
+# loams-wal's stores, passed through to loams-safekeeper.
+tikv = ["loams-safekeeper/tikv"]
+nvme = ["loams-safekeeper/nvme"]
+compio = ["loams-safekeeper/compio"]
+
+[dependencies]
+anyhow = "=1.0.104"
+async-trait = "=0.1.92"
+bytes = "=1.12.1"
+loams-safekeeper = { path = "../loams-safekeeper", features = ["server"] }
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread"] }
+# The fork: the Task 0 commit (fa504217) plus one commit on the branch
+# loams/decoder-trim that lets wal_decoder's consumers leave out the storage
+# clients and pprof (PG2 ruling R31.12). pageserver_api without its default
+# features (storage-clients).
+pageserver_api = { git = "https://github.com/ostrium-labs/neon", rev = "1218fb7a6a37e1b4c268bad5c2952c238d81d368", default-features = false }
+postgres_ffi = { git = "https://github.com/ostrium-labs/neon", rev = "1218fb7a6a37e1b4c268bad5c2952c238d81d368" }
+utils = { git = "https://github.com/ostrium-labs/neon", rev = "1218fb7a6a37e1b4c268bad5c2952c238d81d368" }
+wal_decoder = { git = "https://github.com/ostrium-labs/neon", rev = "1218fb7a6a37e1b4c268bad5c2952c238d81d368" }
+
+[dev-dependencies]
+serde_json = "=1.0.151"
+sha2 = "=0.10.8"
+# The fork's zstd (see Cargo.lock), for the compressed WAL fixture.
+zstd = "=0.13.0"
+
+# Neon's `workspace_hack` (cargo-hakari) unifies features across Neon's whole
+# workspace; an empty stand-in keeps that tree out of this build.
+[patch."https://github.com/ostrium-labs/neon"]
+workspace_hack = { path = "workspace-hack-stub" }
+
+# Neon's rust-postgres fork, from Loams' copy of it (owner ruling
+# 2026-10-08): the `neon` branch head, pinned by rev. The first entry is
+# Neon's own [patch.crates-io]; the second redirects the fork's
+# `branch = "neon"` dependencies.
+[patch.crates-io]
+tokio-postgres = { git = "https://github.com/ostrium-labs/rust-postgres", rev = "f3cf448febde5fd298071d54d568a9c875a7a62b" }
+
+[patch."https://github.com/neondatabase/rust-postgres.git"]
+postgres-protocol = { git = "https://github.com/ostrium-labs/rust-postgres", rev = "f3cf448febde5fd298071d54d568a9c875a7a62b" }
+postgres-types = { git = "https://github.com/ostrium-labs/rust-postgres", rev = "f3cf448febde5fd298071d54d568a9c875a7a62b" }
+tokio-postgres = { git = "https://github.com/ostrium-labs/rust-postgres", rev = "f3cf448febde5fd298071d54d568a9c875a7a62b" }

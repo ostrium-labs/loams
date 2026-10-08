@@ -1,0 +1,94 @@
+# PG2 (docs/plans/2026-10-08-pg2-postgres-production.md): loams-wal's
+# in-process interpreted sender (Task 31). crates/loams-wal-decoder is a
+# workspace of its own that links the Neon fork's crates; their
+# postgres_ffi generates bindings from the Postgres 14..17 server headers,
+# which are extracted from a `neon` image pinned by digest and cached per
+# digest. Its golden tests compare loams-wal's stream with the fork's
+# safekeeper's (tests/fixtures).
+name: PG2 loams-wal decoder
+
+on:
+  workflow_dispatch:
+  # On dev too, so that the caches pull requests restore are warm.
+  push:
+    branches: [dev]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "crates/loams-safekeeper/**"
+      - "crates/loams-tikv/**"
+      - "crates/loams-wal-decoder/**"
+      - "scripts/pg2/**"
+      - ".github/workflows/pg2.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "crates/loams-safekeeper/**"
+      - "crates/loams-tikv/**"
+      - "crates/loams-wal-decoder/**"
+      - "scripts/pg2/**"
+      - ".github/workflows/pg2.yml"
+
+permissions:
+  contents: read
+
+env:
+  # The headers' source: Neon at 77e22e4b (the image the golden fixtures'
+  # safekeeper came from; no header changes up to the fork's fa504217).
+  # Task 2 replaces it with the fork's own image when it pins one.
+  PG_HEADERS_IMAGE: ghcr.io/neondatabase/neon@sha256:ead56a7b33925ca4df9f1ee0d29f55fa25e165a3fee6a4f19055050c68e8cad0
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+jobs:
+  wal-decoder:
+    name: loams-wal-decoder (golden tests against the fork's sender)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+      - name: the Neon fork stays out of the main workspace
+        run: python3 scripts/pg2/check-decoder-deny.py .
+      - name: header cache
+        id: headers
+        uses: actions/cache@v6
+        with:
+          path: crates/loams-wal-decoder/pg_install
+          key: pg-server-headers-${{ env.PG_HEADERS_IMAGE }}
+      - name: extract the server headers
+        if: steps.headers.outputs.cache-hit != 'true'
+        run: scripts/pg2/pg-headers.sh "$PG_HEADERS_IMAGE" crates/loams-wal-decoder/pg_install
+      - name: build tools (protoc, libclang for bindgen)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev libclang-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates/loams-wal-decoder
+          cache-directories: ~/.cargo/git/db
+      # One commit per Postgres submodule instead of the full history: the
+      # build reads the headers from POSTGRES_INSTALL_DIR, never the sources.
+      - name: seed the fork's Postgres submodules (shallow)
+        run: scripts/pg2/seed-neon-submodules.sh crates/loams-wal-decoder/Cargo.lock
+      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # the pin fabric.yml uses (2026-10-02)
+        with:
+          tool: cargo-deny
+      - name: licences, advisories, bans, sources (the decoder's own policy)
+        working-directory: crates/loams-wal-decoder
+        run: cargo deny check
+      - name: test
+        working-directory: crates/loams-wal-decoder
+        run: |
+          export POSTGRES_INSTALL_DIR="$GITHUB_WORKSPACE/crates/loams-wal-decoder/pg_install"
+          cargo test --locked
+      - name: build loams-wal-interpreted (nvme)
+        working-directory: crates/loams-wal-decoder
+        run: |
+          export POSTGRES_INSTALL_DIR="$GITHUB_WORKSPACE/crates/loams-wal-decoder/pg_install"
+          cargo build --locked --bin loams-wal-interpreted --features nvme
+      - name: build loams-wal-interpreted (tikv)
+        working-directory: crates/loams-wal-decoder
+        run: |
+          export POSTGRES_INSTALL_DIR="$GITHUB_WORKSPACE/crates/loams-wal-decoder/pg_install"
+          cargo build --locked --bin loams-wal-interpreted --features tikv

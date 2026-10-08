@@ -18,7 +18,7 @@
 
 **Tech Stack:**
 - As RT1. New: the CommunityModules `Json` (already pinned in RT1); no new Rust dependency is expected (Task 0 confirms; a pgoutput decoder is written in Task 8 over `bytes`).
-- PgDog v0.1.60 with `two_phase_commit`; `postgres:17.11` with `max_prepared_transactions = 64`, `wal_level = logical`; Loams Postgres computes from `deploy/neon` (fork `dina-kar/neon`).
+- PgDog v0.1.60 with `two_phase_commit`; `postgres:17.11` with `max_prepared_transactions = 64`, `wal_level = logical`; Loams Postgres computes from `deploy/neon` (fork `ostrium-labs/neon`).
 
 **Spec:**
 - [`docs/design/31-loams-router-and-verification.md`](../design/31-loams-router-and-verification.md): §6.4–§6.5, §8, §10, §11.2 (`CrossShardCommit`), §12, §13.3–§13.4, §14.2.

@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use loams_safekeeper::feeder::FeederConfig;
 use loams_safekeeper::pgwire::client;
 use loams_safekeeper::proto::{
@@ -37,13 +37,22 @@ async fn start_cfg(
     feeder: Option<FeederConfig>,
     auth_token: Option<String>,
 ) -> (SocketAddr, SocketAddr, Arc<WalService<MemWalStore>>) {
+    start_svc(WalServiceConfig {
+        feeder,
+        auth_token,
+        ..Default::default()
+    })
+    .await
+}
+
+async fn start_svc(
+    cfg: WalServiceConfig,
+) -> (SocketAddr, SocketAddr, Arc<WalService<MemWalStore>>) {
     let svc = WalService::new(
         Arc::new(MemWalStore::new()),
         WalServiceConfig {
             poll_interval: Duration::from_millis(5),
-            feeder,
-            auth_token,
-            ..Default::default()
+            ..cfg
         },
     );
     let pg = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -57,8 +66,13 @@ async fn start_cfg(
 }
 
 async fn connect(addr: SocketAddr) -> TcpStream {
+    connect_with(addr, "").await
+}
+
+/// Connect with more startup options after the timeline's.
+async fn connect_with(addr: SocketAddr, extra: &str) -> TcpStream {
     let mut s = TcpStream::connect(addr).await.unwrap();
-    let options = format!("-c timeline_id={TIMELINE} tenant_id={TENANT}");
+    let options = format!("-c timeline_id={TIMELINE} tenant_id={TENANT} {extra}");
     client::startup(
         &mut s,
         &[
@@ -473,4 +487,699 @@ async fn auth_token_is_required_on_both_listeners() {
     )
     .await;
     assert!(ok.starts_with("HTTP/1.1 200"), "{ok}");
+}
+
+// ---- The interpreted sender (Task 31), with a stand-in for Neon's decoder.
+
+use loams_safekeeper::send::{
+    Compression, InterpretedProtocol, Interpreter, ShardDecoder, ShardSpec, WalInterpreter,
+    WireFormat,
+};
+
+/// What the pageserver puts in its startup options (`wal_receiver_protocol`
+/// at its default: protobuf, zstd level 1).
+const INTERPRETED: &str = r#"protocol={"type":"interpreted","args":{"format":"protobuf","compression":{"zstd":{"level":1}}}}"#;
+
+/// A decoder stand-in: every WAL byte is a "record" whose shard is
+/// `byte % shard_count`; a shard's batch is its records, in order.
+#[derive(Debug, Default)]
+struct ByteShards {
+    opened: std::sync::Mutex<Vec<(Lsn, u32, InterpretedProtocol, ShardSpec)>>,
+}
+
+struct ByteDecoder {
+    shard: ShardSpec,
+    at: Lsn,
+}
+
+impl WalInterpreter for ByteShards {
+    fn decoder(
+        &self,
+        start: Lsn,
+        pg_version: u32,
+        protocol: InterpretedProtocol,
+        shard: ShardSpec,
+    ) -> Result<Box<dyn ShardDecoder>, loams_safekeeper::Error> {
+        self.opened
+            .lock()
+            .unwrap()
+            .push((start, pg_version, protocol, shard));
+        Ok(Box::new(ByteDecoder { shard, at: start }))
+    }
+}
+
+#[async_trait::async_trait]
+impl ShardDecoder for ByteDecoder {
+    async fn decode(
+        &mut self,
+        start: Lsn,
+        wal: Bytes,
+    ) -> Result<Option<Bytes>, loams_safekeeper::Error> {
+        assert_eq!(start, self.at, "WAL fed out of order");
+        self.at = Lsn(start.0 + wal.len() as u64);
+        let count = u32::from(self.shard.count.max(1));
+        let mine = u32::from(self.shard.number);
+        Ok(Some(
+            wal.iter()
+                .copied()
+                .filter(|b| u32::from(*b) % count == mine)
+                .collect::<Vec<u8>>()
+                .into(),
+        ))
+    }
+}
+
+/// One interpreted message: `'0'`, `streaming_lsn`, `commit_lsn`, the batch.
+fn interpreted_message(mut m: Bytes) -> Option<(Lsn, Lsn, Bytes)> {
+    match m.get_u8() {
+        b'0' => {
+            let streaming = Lsn(m.get_u64());
+            let commit = Lsn(m.get_u64());
+            Some((streaming, commit, m))
+        }
+        b'k' => None,
+        t => panic!("unexpected {}", t as char),
+    }
+}
+
+/// Read interpreted batches until `streaming_lsn` reaches `end`.
+async fn read_batches(r: &mut TcpStream, end: Lsn) -> (Vec<u8>, Vec<(Lsn, Lsn)>) {
+    let mut data = Vec::new();
+    let mut lsns = Vec::new();
+    loop {
+        let m = tokio::time::timeout(Duration::from_secs(5), client::recv_copy_data(r))
+            .await
+            .expect("a batch within 5 s")
+            .unwrap()
+            .unwrap();
+        if let Some((streaming, commit, batch)) = interpreted_message(m) {
+            data.extend_from_slice(&batch);
+            lsns.push((streaming, commit));
+            if streaming >= end {
+                return (data, lsns);
+            }
+        }
+    }
+}
+
+async fn start_interpreted(interp: Arc<ByteShards>) -> (SocketAddr, Arc<WalService<MemWalStore>>) {
+    let (pg, _, svc) = start_svc(WalServiceConfig {
+        interpreter: Some(Interpreter(interp)),
+        ..Default::default()
+    })
+    .await;
+    (pg, svc)
+}
+
+/// The pageserver's request is served in process: committed WAL from its
+/// start LSN, decoded, framed as the fork's sender frames it.
+#[tokio::test]
+async fn interpreted_replication_streams_decoded_committed_wal() {
+    let interp = Arc::new(ByteShards::default());
+    let (pg, _svc) = start_interpreted(interp.clone()).await;
+    // More than one MAX_SEND_SIZE chunk.
+    let payload: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+    let _p = propose(pg, &payload).await;
+    let end = Lsn(START + payload.len() as u64);
+
+    let mut r = connect_with(pg, &format!("{INTERPRETED} {UNSHARDED}")).await;
+    client::query(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START + 10)),
+    )
+    .await
+    .unwrap();
+    client::expect_copy_both(&mut r).await.unwrap();
+    let (data, lsns) = read_batches(&mut r, end).await;
+    assert_eq!(data, &payload[10..]);
+    // Each batch ends a read of at most MAX_SEND_SIZE; commit_lsn is the
+    // readable end.
+    let mut prev = Lsn(START + 10);
+    for (streaming, commit) in &lsns {
+        assert!(*streaming > prev);
+        assert!(streaming.0 - prev.0 <= loams_safekeeper::proto::MAX_SEND_SIZE as u64);
+        assert_eq!(*commit, end);
+        prev = *streaming;
+    }
+    assert!(lsns.len() >= 3, "{lsns:?}");
+    let opened = interp.opened.lock().unwrap().clone();
+    assert_eq!(
+        opened,
+        vec![(
+            Lsn(START + 10),
+            160_009,
+            InterpretedProtocol {
+                format: WireFormat::Protobuf,
+                compression: Some(Compression::Zstd { level: 1 }),
+            },
+            ShardSpec {
+                number: 0,
+                count: 0,
+                stripe_size: 2048
+            },
+        )]
+    );
+}
+
+/// Each shard's connection gets a decoder for its own shard, and only that
+/// shard's records.
+#[tokio::test]
+async fn shard_filter_routes_records() {
+    let interp = Arc::new(ByteShards::default());
+    let (pg, _svc) = start_interpreted(interp.clone()).await;
+    let payload: Vec<u8> = (0..5000u32).map(|i| (i % 251) as u8).collect();
+    let _p = propose(pg, &payload).await;
+    let end = Lsn(START + payload.len() as u64);
+
+    let mut readers = Vec::new();
+    for n in 0..2u8 {
+        let opts = format!("{INTERPRETED} shard_count=2 shard_number={n} shard_stripe_size=2048");
+        let mut r = connect_with(pg, &opts).await;
+        client::query(
+            &mut r,
+            &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+        )
+        .await
+        .unwrap();
+        client::expect_copy_both(&mut r).await.unwrap();
+        readers.push(r);
+    }
+    for (n, r) in readers.iter_mut().enumerate() {
+        let (data, lsns) = read_batches(r, end).await;
+        let want: Vec<u8> = payload
+            .iter()
+            .copied()
+            .filter(|b| usize::from(*b) % 2 == n)
+            .collect();
+        assert_eq!(data, want, "shard {n}");
+        // Every shard advances to the end, records or not.
+        assert_eq!(lsns.last().map(|l| l.0), Some(end));
+    }
+    let mut shards: Vec<ShardSpec> = interp.opened.lock().unwrap().iter().map(|o| o.3).collect();
+    shards.sort_by_key(|s| s.number);
+    assert_eq!(
+        shards,
+        vec![
+            ShardSpec {
+                number: 0,
+                count: 2,
+                stripe_size: 2048
+            },
+            ShardSpec {
+                number: 1,
+                count: 2,
+                stripe_size: 2048
+            },
+        ]
+    );
+}
+
+/// The pageserver's `'z'` feedback on an interpreted stream reaches the head
+/// (coalesced to one write a second, while the stream stays open).
+#[tokio::test]
+async fn interpreted_stream_records_pageserver_feedback() {
+    let (pg, svc) = start_interpreted(Arc::new(ByteShards::default())).await;
+    let payload = vec![7u8; 1000];
+    let _p = propose(pg, &payload).await;
+    let mut r = connect_with(pg, &format!("{INTERPRETED} {UNSHARDED}")).await;
+    client::query(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+    )
+    .await
+    .unwrap();
+    client::expect_copy_both(&mut r).await.unwrap();
+    let mut body = BytesMut::new();
+    body.put_u8(b'z');
+    body.put_u64(0);
+    loams_safekeeper::types::PageserverFeedback {
+        remote_consistent_lsn: Lsn(START + 500),
+        ..Default::default()
+    }
+    .serialize(&mut body);
+    client::send_copy_data(&mut r, &body).await.unwrap();
+    let tl = loams_safekeeper::TimelineId::new(TENANT.parse().unwrap(), TIMELINE.parse().unwrap());
+    for _ in 0..300 {
+        if svc
+            .store()
+            .load(&tl)
+            .await
+            .unwrap()
+            .unwrap()
+            .remote_consistent_lsn
+            == Lsn(START + 500)
+        {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("remote_consistent_lsn not recorded");
+}
+
+/// Without an interpreter (a build without the decoder) the interpreted
+/// protocol is refused with a reason; vanilla replication still works.
+#[tokio::test]
+async fn interpreted_refused_without_an_interpreter() {
+    let (pg, _, _svc) = start().await;
+    let _p = propose(pg, b"0123456789").await;
+    let mut r = connect_with(pg, INTERPRETED).await;
+    let rows = client::query_rows(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+    )
+    .await;
+    let err = rows.unwrap_err().to_string();
+    assert!(err.contains("interpreted"), "{err}");
+}
+
+/// A malformed `protocol` option is an error, not a vanilla stream.
+#[tokio::test]
+async fn malformed_protocol_option_is_refused() {
+    let (pg, _svc) = start_interpreted(Arc::new(ByteShards::default())).await;
+    let _p = propose(pg, b"0123456789").await;
+    let mut r = connect_with(pg, r#"protocol={"type":"telepathy"}"#).await;
+    let rows = client::query_rows(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+    )
+    .await;
+    assert!(rows.is_err());
+}
+
+/// Shard options for an unsharded tenant, as the pageserver sends them.
+const UNSHARDED: &str = "shard_count=0 shard_number=0 shard_stripe_size=2048";
+
+/// A `'z'` CopyData body with `remote_consistent_lsn` = `lsn`.
+fn ps_feedback(lsn: Lsn) -> BytesMut {
+    let mut body = BytesMut::new();
+    body.put_u8(b'z');
+    body.put_u64(0);
+    loams_safekeeper::types::PageserverFeedback {
+        last_received_lsn: lsn,
+        disk_consistent_lsn: lsn,
+        remote_consistent_lsn: lsn,
+        ..Default::default()
+    }
+    .serialize(&mut body);
+    body
+}
+
+/// A reader far behind, which writes feedback in the same loop it reads in
+/// (the pageserver's walreceiver), floods feedback during the catch-up: the
+/// stream must not deadlock, and the feedback must reach the head.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn catch_up_with_a_feedback_flood_completes() {
+    let (pg, svc) = start_interpreted(Arc::new(ByteShards::default())).await;
+    let tl = loams_safekeeper::TimelineId::new(TENANT.parse().unwrap(), TIMELINE.parse().unwrap());
+    // 32 MiB of committed WAL: far more than the socket buffers hold.
+    let range = loams_safekeeper::propose::WalRange {
+        start: Lsn(START),
+        pg_version: 160_009,
+        system_id: 99,
+        wal: (0..32u32 << 20)
+            .map(|i| (i % 251) as u8)
+            .collect::<Vec<u8>>()
+            .into(),
+    };
+    let end = range.end();
+    let _p = loams_safekeeper::propose::push_committed(&pg.to_string(), tl, &range)
+        .await
+        .unwrap();
+    let mut r = connect_with(pg, &format!("{INTERPRETED} {UNSHARDED}")).await;
+    client::query(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+    )
+    .await
+    .unwrap();
+    client::expect_copy_both(&mut r).await.unwrap();
+    let last_fb = Lsn(START + 4096);
+    let flood = async {
+        // 1024 feedback messages (about 130 KiB) per batch read, in one
+        // task: a reader that stops reading the socket while its writes are
+        // blocked, with more feedback than the socket buffers hold.
+        loop {
+            for _ in 0..1024 {
+                client::send_copy_data(&mut r, &ps_feedback(last_fb))
+                    .await
+                    .unwrap();
+            }
+            let m = client::recv_copy_data(&mut r).await.unwrap().unwrap();
+            if let Some((streaming, _, _)) = interpreted_message(m)
+                && streaming >= end
+            {
+                return;
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(60), flood)
+        .await
+        .expect("the catch-up stream completes under a feedback flood");
+    for _ in 0..500 {
+        if svc
+            .store()
+            .load(&tl)
+            .await
+            .unwrap()
+            .unwrap()
+            .remote_consistent_lsn
+            == last_fb
+        {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("remote_consistent_lsn not recorded");
+}
+
+/// The pageserver's feedback reaches walproposer: an `AppendResponse` that
+/// carries all three LSNs (write, flush, apply) for its backpressure.
+#[tokio::test]
+async fn pageserver_feedback_reaches_the_append_response() {
+    let (pg, _svc) = start_interpreted(Arc::new(ByteShards::default())).await;
+    let payload = vec![3u8; 1000];
+    let mut p = propose(pg, &payload).await;
+    let mut r = connect_with(pg, &format!("{INTERPRETED} {UNSHARDED}")).await;
+    client::query(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+    )
+    .await
+    .unwrap();
+    client::expect_copy_both(&mut r).await.unwrap();
+    let mut body = BytesMut::new();
+    body.put_u8(b'z');
+    body.put_u64(0);
+    let fb = loams_safekeeper::types::PageserverFeedback {
+        current_timeline_size: 1 << 20,
+        last_received_lsn: Lsn(START + 900),
+        disk_consistent_lsn: Lsn(START + 800),
+        remote_consistent_lsn: Lsn(START + 700),
+        replytime_us: 42,
+        ..Default::default()
+    };
+    fb.serialize(&mut body);
+    client::send_copy_data(&mut r, &body).await.unwrap();
+    let got = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let AcceptorMessage::AppendResponse(a) = recv(&mut p).await
+                && let Some(f) = a.pageserver_feedback
+            {
+                return f;
+            }
+        }
+    })
+    .await
+    .expect("an AppendResponse with the pageserver's feedback");
+    assert_eq!(got.last_received_lsn, fb.last_received_lsn);
+    assert_eq!(got.disk_consistent_lsn, fb.disk_consistent_lsn);
+    assert_eq!(got.remote_consistent_lsn, fb.remote_consistent_lsn);
+}
+
+/// Interpreted keepalives ask for a reply, as the fork's do.
+#[tokio::test]
+async fn interpreted_keepalives_request_a_reply() {
+    let (pg, _svc) = start_interpreted(Arc::new(ByteShards::default())).await;
+    let _p = propose(pg, b"0123456789").await;
+    let mut r = connect_with(pg, &format!("{INTERPRETED} {UNSHARDED}")).await;
+    client::query(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+    )
+    .await
+    .unwrap();
+    client::expect_copy_both(&mut r).await.unwrap();
+    let k = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let m = client::recv_copy_data(&mut r).await.unwrap().unwrap();
+            if m[0] == b'k' {
+                return m;
+            }
+        }
+    })
+    .await
+    .expect("a keepalive");
+    assert_eq!(k.len(), 18);
+    assert_eq!(k[17], 1, "request_reply");
+}
+
+/// Shard options follow the fork's handler: all three for the interpreted
+/// protocol, none for vanilla.
+#[tokio::test]
+async fn shard_options_are_checked_per_protocol() {
+    let (pg, _svc) = start_interpreted(Arc::new(ByteShards::default())).await;
+    let _p = propose(pg, b"0123456789").await;
+    for opts in [
+        INTERPRETED.to_string(),
+        format!("{INTERPRETED} shard_count=2 shard_number=1"),
+        UNSHARDED.to_string(),
+    ] {
+        let mut r = connect_with(pg, &opts).await;
+        let res = tokio::time::timeout(
+            Duration::from_secs(5),
+            client::query_rows(
+                &mut r,
+                &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+            ),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("{opts}: refused, not streamed"));
+        assert!(res.is_err(), "{opts}");
+    }
+}
+
+/// The vanilla stream has the same shape: a catch-up under a feedback flood
+/// completes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn vanilla_catch_up_with_a_feedback_flood_completes() {
+    let (pg, _, svc) = start().await;
+    let tl = loams_safekeeper::TimelineId::new(TENANT.parse().unwrap(), TIMELINE.parse().unwrap());
+    let range = loams_safekeeper::propose::WalRange {
+        start: Lsn(START),
+        pg_version: 160_009,
+        system_id: 99,
+        wal: (0..32u32 << 20)
+            .map(|i| (i % 251) as u8)
+            .collect::<Vec<u8>>()
+            .into(),
+    };
+    let end = range.end();
+    let _p = loams_safekeeper::propose::push_committed(&pg.to_string(), tl, &range)
+        .await
+        .unwrap();
+    let mut r = connect(pg).await;
+    client::query(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+    )
+    .await
+    .unwrap();
+    client::expect_copy_both(&mut r).await.unwrap();
+    let last_fb = Lsn(START + 4096);
+    let flood = async {
+        loop {
+            for _ in 0..1024 {
+                client::send_copy_data(&mut r, &ps_feedback(last_fb))
+                    .await
+                    .unwrap();
+            }
+            let mut m = client::recv_copy_data(&mut r).await.unwrap().unwrap();
+            if m.get_u8() == b'w' {
+                let start = m.get_u64();
+                let _ = m.get_u64();
+                let _ = m.get_i64();
+                if start + m.len() as u64 >= end.0 {
+                    return;
+                }
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(60), flood)
+        .await
+        .expect("the vanilla catch-up completes under a feedback flood");
+    for _ in 0..500 {
+        if svc
+            .store()
+            .load(&tl)
+            .await
+            .unwrap()
+            .unwrap()
+            .remote_consistent_lsn
+            == last_fb
+        {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("remote_consistent_lsn not recorded");
+}
+
+/// A WAL service with the stand-in interpreter over `store` (instances
+/// sharing a store are a pool).
+async fn serve_on(store: Arc<MemWalStore>) -> SocketAddr {
+    let svc = WalService::new(
+        store,
+        WalServiceConfig {
+            poll_interval: Duration::from_millis(5),
+            interpreter: Some(Interpreter(Arc::new(ByteShards::default()))),
+            ..Default::default()
+        },
+    );
+    let pg = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = pg.local_addr().unwrap();
+    tokio::spawn(svc.serve(pg, std::future::pending()));
+    addr
+}
+
+/// Start an interpreted reader on `addr` with `shard` options.
+async fn pageserver(addr: SocketAddr, shard: &str) -> TcpStream {
+    let mut r = connect_with(addr, &format!("{INTERPRETED} {shard}")).await;
+    client::query(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+    )
+    .await
+    .unwrap();
+    client::expect_copy_both(&mut r).await.unwrap();
+    r
+}
+
+/// A `'z'` body with the given shard number and LSNs.
+fn shard_feedback(shard: u32, lsn: Lsn) -> BytesMut {
+    let mut body = BytesMut::new();
+    body.put_u8(b'z');
+    body.put_u64(0);
+    loams_safekeeper::types::PageserverFeedback {
+        last_received_lsn: lsn,
+        disk_consistent_lsn: lsn,
+        remote_consistent_lsn: lsn,
+        shard_number: shard,
+        ..Default::default()
+    }
+    .serialize(&mut body);
+    body
+}
+
+/// Send a heartbeat at `end` and collect the proposer's AppendResponses for
+/// `wait`.
+async fn responses(
+    p: &mut TcpStream,
+    end: u64,
+    wait: Duration,
+) -> Vec<loams_safekeeper::proto::AppendResponse> {
+    send(p, append(1, end, b"", end)).await;
+    let mut out = Vec::new();
+    let deadline = tokio::time::Instant::now() + wait;
+    while let Ok(m) = tokio::time::timeout_at(deadline, recv(p)).await {
+        if let AcceptorMessage::AppendResponse(r) = m {
+            out.push(r);
+        }
+    }
+    out
+}
+
+/// Feedback is per instance and per connection: a pageserver on another
+/// instance of the pool sends this walproposer nothing, one on its own
+/// instance does, and once that pageserver's connection closes the
+/// walproposer gets no more feedback (nothing stale is replayed into later
+/// responses, as the fork's safekeeper does).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn feedback_is_per_instance_and_stops_with_its_connection() {
+    let store = Arc::new(MemWalStore::new());
+    let (pg1, pg2) = (serve_on(store.clone()).await, serve_on(store).await);
+    let payload = vec![5u8; 1000];
+    let mut p = propose(pg1, &payload).await;
+    let end = START + payload.len() as u64;
+
+    // A pageserver on the other instance.
+    let mut r2 = pageserver(pg2, UNSHARDED).await;
+    client::send_copy_data(&mut r2, &shard_feedback(0, Lsn(START + 100)))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let rs = responses(&mut p, end, Duration::from_millis(500)).await;
+    assert!(!rs.is_empty());
+    assert!(rs.iter().all(|r| r.pageserver_feedback.is_none()), "{rs:?}");
+
+    // One on this instance.
+    let mut r1 = pageserver(pg1, UNSHARDED).await;
+    client::send_copy_data(&mut r1, &shard_feedback(0, Lsn(START + 200)))
+        .await
+        .unwrap();
+    let got = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let AcceptorMessage::AppendResponse(a) = recv(&mut p).await
+                && let Some(f) = a.pageserver_feedback
+            {
+                return f;
+            }
+        }
+    })
+    .await
+    .expect("feedback from this instance's pageserver");
+    assert_eq!(got.remote_consistent_lsn, Lsn(START + 200));
+
+    // It goes away: no feedback after that, in any response.
+    drop(r1);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let rs = responses(&mut p, end, Duration::from_millis(500)).await;
+    assert!(!rs.is_empty());
+    assert!(rs.iter().all(|r| r.pageserver_feedback.is_none()), "{rs:?}");
+    drop(r2);
+}
+
+/// Feedback from several shards that arrives together is not collapsed:
+/// walproposer gets every shard's. Both arrive in one TCP segment, so the
+/// server reads them back to back before the push loop can run (a "latest
+/// value" relay keeps only the second).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn feedback_from_every_shard_reaches_walproposer() {
+    use tokio::io::AsyncWriteExt;
+    let pg = serve_on(Arc::new(MemWalStore::new())).await;
+    let payload = vec![6u8; 1000];
+    let mut p = propose(pg, &payload).await;
+    let mut r = pageserver(pg, "shard_count=2 shard_number=0 shard_stripe_size=2048").await;
+    let mut both = BytesMut::new();
+    loams_safekeeper::pgwire::put_copy_data(&mut both, &shard_feedback(0, Lsn(START + 10)));
+    loams_safekeeper::pgwire::put_copy_data(&mut both, &shard_feedback(1, Lsn(START + 20)));
+    r.write_all(&both).await.unwrap();
+    let mut shards = std::collections::BTreeSet::new();
+    let _ = tokio::time::timeout(Duration::from_secs(5), async {
+        while shards.len() < 2 {
+            if let AcceptorMessage::AppendResponse(a) = recv(&mut p).await
+                && let Some(f) = a.pageserver_feedback
+            {
+                shards.insert(f.shard_number);
+            }
+        }
+    })
+    .await;
+    assert_eq!(shards.into_iter().collect::<Vec<_>>(), vec![0, 1]);
+}
+
+/// Vanilla keepalives ask for a reply too (the fork's `send_wal.rs`).
+#[tokio::test]
+async fn vanilla_keepalives_request_a_reply() {
+    let (pg, _, _svc) = start().await;
+    let _p = propose(pg, b"0123456789").await;
+    let mut r = connect(pg).await;
+    client::query(
+        &mut r,
+        &format!("START_REPLICATION PHYSICAL {}", Lsn(START)),
+    )
+    .await
+    .unwrap();
+    client::expect_copy_both(&mut r).await.unwrap();
+    let k = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let m = client::recv_copy_data(&mut r).await.unwrap().unwrap();
+            if m[0] == b'k' {
+                return m;
+            }
+        }
+    })
+    .await
+    .expect("a keepalive");
+    assert_eq!(k.len(), 18);
+    assert_eq!(k[17], 1, "request_reply");
 }

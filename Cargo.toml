@@ -1,6 +1,10 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# loams-wal-decoder is a workspace of its own: it links the Neon fork's
+# crates, whose dependency tree stays out of this lockfile and licence check
+# (PG2 ruling R31.3, owner ruling 2026-10-08).
+exclude = ["crates/loams-wal-decoder"]
 
 [workspace.package]
 version = "0.0.1"

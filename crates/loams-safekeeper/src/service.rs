@@ -9,7 +9,8 @@
 //!   or up to `flush_lsn` within a term for walproposer's recovery reader,
 //!   and records the pageserver's `remote_consistent_lsn` from its feedback.
 //!   The pageserver's *interpreted* protocol (decoded, sharded records) is
-//!   refused for now: it needs Neon's `wal_decoder` (Q112).
+//!   served by [`crate::send`] when the service has an interpreter
+//!   (Neon's `wal_decoder`, Q112), and refused otherwise.
 //! - `IDENTIFY_SYSTEM`, `TIMELINE_STATUS`.
 //!
 //! The service is stateless: every instance can serve any timeline, and the
@@ -25,12 +26,12 @@ use std::time::Duration;
 use bytes::{BufMut, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{debug, info, warn};
 
 use crate::acceptor::{Acceptor, Appends, PendingAppends};
 use crate::pgwire::{self, Startup};
-use crate::proto::{AcceptorMessage, Command, PROTO_VERSION, ProposerMessage};
+use crate::proto::{AcceptorMessage, AppendResponse, Command, PROTO_VERSION, ProposerMessage};
 use crate::store::WalStore;
 use crate::types::{Id, Lsn, NodeId, PageserverFeedback, Term, TimelineId};
 use crate::{AcceptorState, Error};
@@ -61,6 +62,9 @@ pub struct WalServiceConfig {
     /// Hand `START_WAL_PUSH` connections to the timeline's compio shard
     /// after the startup packet and authentication (§28 §7.2, D263).
     pub handoff: Option<Handoff>,
+    /// Serve the pageserver's interpreted protocol with this decoder
+    /// ([`crate::send`]); without one the protocol is refused.
+    pub interpreter: Option<crate::send::Interpreter>,
 }
 
 /// Takes a connection whose next message is `START_WAL_PUSH` for the
@@ -86,6 +90,7 @@ impl Default for WalServiceConfig {
             feeder: None,
             auth_token: None,
             handoff: None,
+            interpreter: None,
         }
     }
 }
@@ -208,6 +213,11 @@ struct Registry {
     sessions: Mutex<HashMap<TimelineId, u32>>,
     tails: Mutex<HashMap<TimelineId, Tail>>,
     fed: Mutex<std::collections::HashSet<TimelineId>>,
+    /// Pageserver feedback per timeline, as it arrives on this instance's
+    /// replication connections (every shard's), for the walproposers
+    /// connected here (their `max_replication_*_lag` backpressure). Nothing
+    /// is kept: when the pageserver's connection closes, feedback stops.
+    feedback: Mutex<HashMap<TimelineId, broadcast::Sender<PageserverFeedback>>>,
 }
 
 impl Registry {
@@ -260,6 +270,13 @@ impl Registry {
             cur.active = active;
             changed
         });
+    }
+
+    fn feedback(&self, tl: TimelineId) -> broadcast::Sender<PageserverFeedback> {
+        let mut m = self.feedback.lock().unwrap_or_else(|p| p.into_inner());
+        m.entry(tl)
+            .or_insert_with(|| broadcast::channel(FEEDBACK_CAPACITY).0)
+            .clone()
     }
 
     fn tail<T>(&self, tl: TimelineId, f: impl FnOnce(&mut Tail) -> T) -> T {
@@ -335,6 +352,35 @@ impl<S: WalStore> WalService<S> {
             active: false,
             ..Progress::of(&st)
         })
+    }
+
+    /// Pageserver feedback for `tl` as it arrives on this instance, from
+    /// now on.
+    pub fn subscribe_feedback(&self, tl: TimelineId) -> broadcast::Receiver<PageserverFeedback> {
+        self.registry.feedback(tl).subscribe()
+    }
+
+    /// Start reading a replication client's feedback: it never blocks (the
+    /// latest value wins), so a client that writes feedback while it waits
+    /// to read cannot stall the stream.
+    pub(crate) fn feedback_reader<R>(
+        &self,
+        tl: TimelineId,
+        rd: R,
+    ) -> (tokio::task::JoinHandle<()>, Feedback)
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+    {
+        let (conn, rx) = watch::channel(None);
+        let task = tokio::spawn(read_feedback(rd, conn, self.registry.feedback(tl)));
+        (
+            task,
+            Feedback {
+                rx,
+                pending: None,
+                last_write: tokio::time::Instant::now(),
+            },
+        )
     }
 
     /// Wakes on every change of this instance's view of `tl`.
@@ -496,16 +542,24 @@ impl<S: WalStore> WalService<S> {
                 }
                 Command::StartReplication { start_lsn, term } => {
                     let tl = tl.ok_or_else(|| Error::Protocol("no timeline_id".into()))?;
-                    let protocol = startup.options().get("protocol").cloned();
-                    if protocol
-                        .as_deref()
-                        .is_some_and(|p| p.contains("interpreted"))
-                    {
-                        Err(Error::Protocol(
-                            "the interpreted WAL protocol is not served yet (§28 Q112)".into(),
-                        ))
-                    } else {
-                        return self.replicate(tl, start_lsn, term, rd, wr).await;
+                    match self.replication_protocol(&startup) {
+                        Err(e) => Err(e),
+                        Ok(None) => return self.replicate(tl, start_lsn, term, rd, wr).await,
+                        Ok(Some((interp, protocol, shard))) => {
+                            // Takes over the connection, as the vanilla
+                            // stream does.
+                            return crate::send::stream(
+                                self.clone(),
+                                &*interp.0,
+                                tl,
+                                start_lsn,
+                                protocol,
+                                shard,
+                                rd,
+                                wr,
+                            )
+                            .await;
+                        }
                     }
                 }
             };
@@ -514,6 +568,40 @@ impl<S: WalStore> WalService<S> {
             }
             pgwire::put_ready(&mut buf);
             send(&mut wr, &mut buf).await?;
+        }
+    }
+
+    /// The replication protocol the client's startup options ask for:
+    /// `None` for vanilla, else the interpreter, its arguments and the shard.
+    #[allow(clippy::type_complexity)]
+    fn replication_protocol(
+        &self,
+        startup: &Startup,
+    ) -> Result<
+        Option<(
+            crate::send::Interpreter,
+            crate::send::InterpretedProtocol,
+            crate::send::ShardSpec,
+        )>,
+        Error,
+    > {
+        use crate::send::{ClientProtocol, ShardSpec};
+        let opts = startup.options();
+        match ClientProtocol::from_option(opts.get("protocol").map(String::as_str))? {
+            ClientProtocol::Vanilla => {
+                ShardSpec::refuse_on_vanilla(&opts)?;
+                Ok(None)
+            }
+            ClientProtocol::Interpreted(protocol) => {
+                let interp = self.config.interpreter.clone().ok_or_else(|| {
+                    Error::Protocol(
+                        "this loams-wal has no interpreted WAL sender (run \
+                         loams-wal-interpreted, crates/loams-wal-decoder; §28 Q112)"
+                            .into(),
+                    )
+                })?;
+                Ok(Some((interp, protocol, ShardSpec::from_options(&opts)?)))
+            }
         }
     }
 
@@ -614,6 +702,11 @@ impl<S: WalStore> WalService<S> {
 
             let mut tick = tokio::time::interval(self.config.commit_flush_interval);
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // Pageserver feedback goes out as it arrives, in a copy of the
+            // last AppendResponse (the fork's `network_write`); other replies
+            // carry none.
+            let mut feedback = self.subscribe_feedback(tl);
+            let mut last_resp: Option<AppendResponse> = None;
             let mut pending: Option<ProposerMessage> = None;
             let mut stats = PushStats::default();
             // Appends in flight, oldest first: they are issued in LSN order
@@ -631,7 +724,7 @@ impl<S: WalStore> WalService<S> {
                 };
                 if must_land {
                     let (f, res) = land(&mut flights).await;
-                    self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats)
+                    self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats, &mut last_resp)
                         .await?;
                     continue;
                 }
@@ -643,11 +736,12 @@ impl<S: WalStore> WalService<S> {
                             landed = land(&mut flights), if !flights.is_empty() => Event::Landed(Box::new(landed)),
                             m = rx.recv(), if flights.len() < depth => Event::Msg(m),
                             _ = tick.tick() => Event::Tick,
+                            fb = feedback.recv() => Event::Feedback(fb),
                         };
                         match ev {
                             Event::Landed(landed) => {
                                 let (f, res) = *landed;
-                                self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats)
+                                self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats, &mut last_resp)
                                     .await?;
                                 continue;
                             }
@@ -656,6 +750,17 @@ impl<S: WalStore> WalService<S> {
                             Event::Tick => {
                                 acc.refresh().await?;
                                 acc.persist_commit_lsn().await?;
+                                continue;
+                            }
+                            Event::Feedback(fb) => {
+                                // A lagging receiver skips what it missed (the
+                                // fork's broadcast does the same).
+                                if let (Some(resp), Ok(fb)) = (&last_resp, fb) {
+                                    let mut r = resp.clone();
+                                    r.pageserver_feedback = Some(fb);
+                                    reply_to(&mut wr, &mut buf, &AcceptorMessage::AppendResponse(r))
+                                        .await?;
+                                }
                                 continue;
                             }
                         }
@@ -700,9 +805,10 @@ impl<S: WalStore> WalService<S> {
                                 // Answers stay in order: after the writes in flight.
                                 while !flights.is_empty() {
                                     let (f, res) = land(&mut flights).await;
-                                    self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats)
+                                    self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats, &mut last_resp)
                                         .await?;
                                 }
+                                remember_response(&r, &mut last_resp);
                                 reply_to(&mut wr, &mut buf, &r).await?;
                             }
                             Appends::Pending(p) => {
@@ -725,7 +831,7 @@ impl<S: WalStore> WalService<S> {
             }
             while !flights.is_empty() {
                 let (f, res) = land(&mut flights).await;
-                self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats)
+                self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats, &mut last_resp)
                     .await?;
             }
             acc.persist_commit_lsn().await?;
@@ -756,9 +862,11 @@ impl<S: WalStore> WalService<S> {
         wr: &mut W,
         buf: &mut BytesMut,
         stats: &mut PushStats,
+        last_resp: &mut Option<AppendResponse>,
     ) -> Result<(), Error> {
         let term = f.pending.term();
         let r = acc.finish_appends(f.pending, res).await?;
+        remember_response(&r, last_resp);
         if let AcceptorMessage::AppendResponse(resp) = &r
             && resp.term == term
         {
@@ -800,13 +908,10 @@ impl<S: WalStore> WalService<S> {
         send(&mut wr, &mut buf).await?;
         info!(%tl, start = %start_lsn, ?term, "replication started");
 
-        let (fb_tx, mut fb_rx) = mpsc::channel::<Lsn>(16);
-        let reader = tokio::spawn(read_feedback(rd, fb_tx));
+        let (reader, mut fb) = self.feedback_reader(tl, rd);
         let mut watch = self.registry.sender(tl).subscribe();
         let mut keepalive = tokio::time::interval(self.config.keepalive_interval);
         let mut at = start_lsn;
-        let mut last_fb_write = tokio::time::Instant::now();
-        let mut pending_fb: Option<Lsn> = None;
 
         let res: Result<(), Error> = async {
             loop {
@@ -835,6 +940,11 @@ impl<S: WalStore> WalService<S> {
                         at = Lsn(lsn.0 + take as u64);
                     }
                     send(&mut wr, &mut buf).await?;
+                    // Feedback is taken during a catch-up too.
+                    if fb.fold() {
+                        return Ok(()); // the reader hung up
+                    }
+                    fb.persist_if_due(&*self.store, tl).await?;
                     continue;
                 }
                 tokio::select! {
@@ -845,30 +955,21 @@ impl<S: WalStore> WalService<S> {
                         msg.put_u8(b'k');
                         msg.put_u64(end.0);
                         msg.put_i64(pgwire::pg_now_us());
-                        msg.put_u8(0);
+                        // request_reply, as the fork's send_wal.rs sets it.
+                        msg.put_u8(1);
                         pgwire::put_copy_data(&mut buf, &msg);
                         send(&mut wr, &mut buf).await?;
                     }
-                    fb = fb_rx.recv() => match fb {
-                        Some(lsn) => pending_fb = Some(pending_fb.map_or(lsn, |p| p.max(lsn))),
-                        None => return Ok(()), // the reader hung up
+                    closed = fb.changed() => if closed {
+                        return Ok(()); // the reader hung up
                     },
                 }
-                // remote_consistent_lsn, coalesced to one write a second.
-                if let Some(lsn) = pending_fb
-                    && last_fb_write.elapsed() >= Duration::from_secs(1)
-                {
-                    self.store.record_remote_consistent_lsn(&tl, lsn).await?;
-                    pending_fb = None;
-                    last_fb_write = tokio::time::Instant::now();
-                }
+                fb.persist_if_due(&*self.store, tl).await?;
             }
         }
         .await;
         reader.abort();
-        if let Some(lsn) = pending_fb {
-            let _ = self.store.record_remote_consistent_lsn(&tl, lsn).await;
-        }
+        fb.finish(&*self.store, tl).await;
         res
     }
 }
@@ -891,6 +992,18 @@ enum Event {
     Landed(Box<(Flight, Option<StoreAppend>)>),
     Msg(Option<ProposerMessage>),
     Tick,
+    Feedback(Result<PageserverFeedback, broadcast::error::RecvError>),
+}
+
+/// Pageserver feedback events queued per walproposer before the oldest are
+/// dropped (a receiver that lags skips them).
+const FEEDBACK_CAPACITY: usize = 64;
+
+/// Keep the last `AppendResponse` sent, which feedback is sent in.
+pub(crate) fn remember_response(msg: &AcceptorMessage, last: &mut Option<AppendResponse>) {
+    if let AcceptorMessage::AppendResponse(r) = msg {
+        *last = Some(r.clone());
+    }
 }
 
 /// Waits for the oldest append in flight and takes it off the queue.
@@ -948,7 +1061,10 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-async fn send<W: AsyncWrite + Unpin>(wr: &mut W, buf: &mut BytesMut) -> Result<(), Error> {
+pub(crate) async fn send<W: AsyncWrite + Unpin>(
+    wr: &mut W,
+    buf: &mut BytesMut,
+) -> Result<(), Error> {
     wr.write_all(buf)
         .await
         .map_err(|e| Error::Io(e.to_string()))?;
@@ -998,16 +1114,23 @@ async fn read_proposer<R: AsyncRead + Unpin>(mut rd: R, tx: mpsc::Sender<Propose
 }
 
 /// Replication feedback: `'r'` standby status, `'h'` hot standby, and the
-/// pageserver's `'z'` status update, whose `remote_consistent_lsn` is sent on.
-async fn read_feedback<R: AsyncRead + Unpin>(mut rd: R, tx: mpsc::Sender<Lsn>) {
+/// pageserver's `'z'` status update, which is published to this connection
+/// (`conn`, the latest value wins) and broadcast to the walproposers on this
+/// instance (`shared`, every update; a lagging receiver skips). Publishing
+/// never waits.
+async fn read_feedback<R: AsyncRead + Unpin>(
+    mut rd: R,
+    conn: watch::Sender<Option<PageserverFeedback>>,
+    shared: broadcast::Sender<PageserverFeedback>,
+) {
     loop {
         match pgwire::read_message(&mut rd).await {
             Ok(Some((b'd', body))) => match body.first() {
                 Some(b'z') if body.len() > 9 => {
-                    if let Ok(fb) = PageserverFeedback::parse(body.slice(9..))
-                        && tx.send(fb.remote_consistent_lsn).await.is_err()
-                    {
-                        return;
+                    if let Ok(fb) = PageserverFeedback::parse(body.slice(9..)) {
+                        conn.send_replace(Some(fb));
+                        // No walproposer here is not an error.
+                        let _ = shared.send(fb);
                     }
                 }
                 Some(b'r') | Some(b'h') => {}
@@ -1015,6 +1138,78 @@ async fn read_feedback<R: AsyncRead + Unpin>(mut rd: R, tx: mpsc::Sender<Lsn>) {
             },
             Ok(Some((b'c', _))) | Ok(Some((b'X', _))) | Ok(None) | Err(_) => return,
             Ok(Some(_)) => {}
+        }
+    }
+}
+
+/// One replication connection's feedback, as the stream loop sees it:
+/// `remote_consistent_lsn` is written to the store at most once a second.
+#[derive(Debug)]
+pub(crate) struct Feedback {
+    rx: watch::Receiver<Option<PageserverFeedback>>,
+    pending: Option<Lsn>,
+    last_write: tokio::time::Instant,
+}
+
+impl Feedback {
+    fn take(&mut self) {
+        if let Some(fb) = *self.rx.borrow_and_update() {
+            let lsn = fb.remote_consistent_lsn;
+            self.pending = Some(self.pending.map_or(lsn, |p| p.max(lsn)));
+        }
+    }
+
+    /// Take the latest feedback without waiting; `true` once the client's
+    /// side has closed and everything it sent has been taken.
+    pub(crate) fn fold(&mut self) -> bool {
+        match self.rx.has_changed() {
+            Ok(true) => {
+                self.take();
+                false
+            }
+            Ok(false) => false,
+            Err(_) => {
+                self.take();
+                true
+            }
+        }
+    }
+
+    /// Wait for new feedback; `true` when the client's side has closed.
+    pub(crate) async fn changed(&mut self) -> bool {
+        match self.rx.changed().await {
+            Ok(()) => {
+                self.take();
+                false
+            }
+            Err(_) => {
+                self.take();
+                true
+            }
+        }
+    }
+
+    /// Write the pending `remote_consistent_lsn` if a second has passed.
+    pub(crate) async fn persist_if_due<S: WalStore + ?Sized>(
+        &mut self,
+        store: &S,
+        tl: TimelineId,
+    ) -> Result<(), Error> {
+        if let Some(lsn) = self.pending
+            && self.last_write.elapsed() >= Duration::from_secs(1)
+        {
+            store.record_remote_consistent_lsn(&tl, lsn).await?;
+            self.pending = None;
+            self.last_write = tokio::time::Instant::now();
+        }
+        Ok(())
+    }
+
+    /// The stream ends: write what is pending.
+    pub(crate) async fn finish<S: WalStore + ?Sized>(&mut self, store: &S, tl: TimelineId) {
+        self.fold();
+        if let Some(lsn) = self.pending.take() {
+            let _ = store.record_remote_consistent_lsn(&tl, lsn).await;
         }
     }
 }

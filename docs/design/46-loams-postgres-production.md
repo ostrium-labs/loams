@@ -676,5 +676,5 @@ Nothing else in the desktop changes. The work is PG2 Task 58, scheduled after AP
 ## 23. Sources
 
 - Loams: §19, §23, §28 (all), §31 §6–§8, §37 §19.10, §38 §4, §41, §44; `crates/loams-safekeeper` (`src/bin/loams-wal.rs`, `src/http.rs`, `src/service.rs`); `crates/loams-meta-tikv/src/keys.rs`; `deploy/neon/{compose.yaml,README.md}`; `deploy/loams-pg-bench/`; `scripts/loams-pg-bench/`; `bench/results/gate-*.md`; `conformance/router/README.md`; `proto/loams/operations/v1/operations.proto`; `proto/loams/devices/v1/devices.proto`; `.github/workflows/loams-pg-bench.yml`; `docs/plans/2026-10-01-rt1-postgres-slice-and-sim.md`; `docs/plans/2026-10-02-mt4-byoc-control-plane.md`; `docs/plans/2026-10-08-ap1e-electron-desktop.md`. Read on 2026-10-08.
-- Neon (fork `dina-kar/neon` at `fa504217c`, as §28 §15): `libs/compute_api`, `compute_tools`, `storage_controller`, `proxy/src/control_plane`. The items marked (verify) were not re-read for this addendum.
+- Neon (fork `ostrium-labs/neon` at `fa504217c`, as §28 §15): `libs/compute_api`, `compute_tools`, `storage_controller`, `proxy/src/control_plane`. The items marked (verify) were not re-read for this addendum.
 - PgDog: §28 §8's verification of 2026-09-29 (licence, features, configuration). Queueing, ban, admin and auth behaviour are (verify) and are checked in PG2 Task 18.

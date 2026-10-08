@@ -9,7 +9,7 @@ Markers, as in §28 and §29:
 - **(verify)** means not checked against a primary source, or checked only by reading code that was not run. The task that depends on it checks it first.
 - **(estimate)** means computed or reasoned, not measured.
 - **(source)** means read in the source on 2026-10-01, at the revisions below.
-- Paths of the form `pgdog/…` point into `pgdogdev/pgdog` at `80d6059d` (`v0.1.60-30`, 2026-10-01), read as a reference only (AGPL-3.0, D236). `vitess/…` points into `vitessio/vitess` `main` read through the GitHub API on 2026-10-01 (latest release v24.0.4, 2026-10-01). `neon/…` points into `neondatabase/neon` at `fa504217c`, the base of `dina-kar/neon` (§28). `wesql/…` points into `ostrium-labs/wesql` branch `8.0` at `eef34f452` (§29).
+- Paths of the form `pgdog/…` point into `pgdogdev/pgdog` at `80d6059d` (`v0.1.60-30`, 2026-10-01), read as a reference only (AGPL-3.0, D236). `vitess/…` points into `vitessio/vitess` `main` read through the GitHub API on 2026-10-01 (latest release v24.0.4, 2026-10-01). `neon/…` points into `neondatabase/neon` at `fa504217c`, the base of `ostrium-labs/neon` (§28). `wesql/…` points into `ostrium-labs/wesql` branch `8.0` at `eef34f452` (§29).
 
 ---
 
@@ -126,7 +126,7 @@ Each claim of the chat dump that the current design or the sources change, check
 | PgDog | `pgdogdev/pgdog` v0.1.60 (2026-09-24), image by digest | **AGPL-3.0** | Postgres router (D236). Unmodified service |
 | Vitess vtgate, vttablet, vtctld | `vitessio/vitess` v24.0.4 (2026-10-01) | Apache-2.0 | MySQL router (D302) |
 | etcd | `etcd-io/etcd` v3.7.2 (latest release as of 2026-10-01) | Apache-2.0 | Vitess topology store (Q301) |
-| Loams Postgres | `dina-kar/neon` (§28) | Apache-2.0 | Postgres shards |
+| Loams Postgres | `ostrium-labs/neon` (§28) | Apache-2.0 | Postgres shards |
 | WeSQL | `ostrium-labs/wesql` (§29) | GPL-2.0-only | MySQL shards. Separate process (D148) |
 | `loams-sqlrouter` | new crate, sans-I/O | Apache-2.0 | Kernels and machines (§7.1) |
 | `loams-sqlrouter-io` | new crate | Apache-2.0 | Adapters (§7.2) |

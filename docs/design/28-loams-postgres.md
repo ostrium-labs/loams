@@ -24,7 +24,7 @@ Markers:
 - **(spike)** means measured on 2026-09-29 on the development machine. That machine is a 14-core, 15 GB laptop with consumer NVMe and btrfs, and other sessions' builds were running, with a load average between 1.5 and 24. The notes are in `.superpowers/research/loams-postgres-spike.md`, local and not committed. Spike numbers compare paths *on the same hardware*. They are not production figures.
 - **(verify)** means not checked against a primary source.
 - **(estimate)** means computed, not measured.
-- Paths of the form `neon/…` point into `dina-kar/neon` at `fa504217c` (2026-08-31, identical to upstream `main`).
+- Paths of the form `neon/…` point into `ostrium-labs/neon` at `fa504217c` (2026-08-31, identical to upstream `main`).
 
 ---
 
@@ -33,7 +33,7 @@ Markers:
 | # | Decision | Status |
 |---|---|---|
 | D230 | **The showcase apps run on CloudNativePG** (Apache-2.0, v1.30.1) with plain **Postgres 17** (17.11). Backups and PITR go to RustFS through the **Barman Cloud CNPG-I plugin** (v0.15.0), not the in-tree `barmanObjectStore`, which is deprecated and removed in 1.31. **Replaces D149** | Approved (owner, 2026-09-29) |
-| D231 | **Loams Postgres is a fork of Neon**, `dina-kar/neon` (created 2026-09-29 as a GitHub fork of `neondatabase/neon`, Apache-2.0). Loams owns its releases, its Postgres patch rebases and its images. Nothing is posted upstream. **Replaces D151** | Approved (owner, 2026-09-29) |
+| D231 | **Loams Postgres is a fork of Neon**, `ostrium-labs/neon` (created 2026-09-29 as a GitHub fork of `neondatabase/neon`, Apache-2.0). Loams owns its releases, its Postgres patch rebases and its images. Nothing is posted upstream. **Replaces D151** | Approved (owner, 2026-09-29) |
 | D232 | **Loams’ control plane is Loams Postgres' primary control plane.** It replaces Neon's closed one: tenant, timeline and branch lifecycle; compute specs and compute start; the storage controller's hooks; the proxy's auth API when the proxy is used (§5). **Amends D150** | Approved (owner, 2026-09-29) |
 | D233 | **Loams’ WAL replaces Neon's safekeepers**, behind a feature, and becomes the default only when the pgbench gate passes: p99 commit latency no worse than the safekeeper baseline, and throughput no worse (§6, §7) | Approved direction (owner, 2026-09-29), gated on benchmarks |
 | D234 | **Option A with TiKV as the quorum hot tier.** A Postgres WAL record is acknowledged once it is durable in TiKV (Raft quorum). Loams’ log then group-commits it to the bucket. TiKV's copy is trimmed after the bucket upload *and* the pageserver's `remote_consistent_lsn` pass it. The target is single-digit-ms commit acks | Approved (owner, 2026-09-29) |
@@ -108,8 +108,8 @@ Markers:
 |---|---|---|---|
 | CloudNativePG operator | `cloudnative-pg/cloudnative-pg` v1.30.1 (2026-09-23) | Apache-2.0 | The showcase's Postgres (P1) and the storage controller's database (P2) |
 | Barman Cloud plugin | `cloudnative-pg/plugin-barman-cloud` v0.15.0 (2026-09-03) | Apache-2.0 | WAL archiving and base backups to RustFS; PITR |
-| Loams Postgres | `dina-kar/neon` (fork of `neondatabase/neon` at `fa504217c`) | Apache-2.0 | Pageserver, storage broker, storage controller, `compute_ctl`, compute images, and stock safekeepers until P4c |
-| Loams Postgres' Postgres | `dina-kar/postgres` (to fork from `neondatabase/postgres` in P2, Q110) | PostgreSQL License | The `vendor/postgres-v1x` submodules |
+| Loams Postgres | `ostrium-labs/neon` (fork of `neondatabase/neon` at `fa504217c`) | Apache-2.0 | Pageserver, storage broker, storage controller, `compute_ctl`, compute images, and stock safekeepers until P4c |
+| Loams Postgres' Postgres | `ostrium-labs/postgres` (to fork from `neondatabase/postgres` in P2, Q110) | PostgreSQL License | The `vendor/postgres-v1x` submodules |
 | Loams control plane | `loams`, extending §23's `loams-neon` | Apache-2.0 | §5 |
 | Loams WAL service | `loams-safekeeper` (new, P4a) | Apache-2.0 | §6 |
 | PgDog | `pgdogdev/pgdog` v0.1.60 (2026-09-24), image pinned by digest | **AGPL-3.0** | §8. Unmodified, separate process |
@@ -812,7 +812,7 @@ Each item below is proposed. P5 plans each one separately, after P4.
 
 | Fact | Evidence |
 |---|---|
-| `dina-kar/neon` created as a GitHub fork. Upstream `main` is at `fa504217c` (2026-08-31, a typo fix). About 6 commits since October 2025, against 100+ a month through July 2025 | `gh repo fork`; `gh api repos/neondatabase/neon/commits` |
+| `ostrium-labs/neon` created as a GitHub fork. Upstream `main` is at `fa504217c` (2026-08-31, a typo fix). About 6 commits since October 2025, against 100+ a month through July 2025 | `gh repo fork`; `gh api repos/neondatabase/neon/commits` |
 | Neon's staff: "our engineering team is currently 100% focused on unifying Neon and Lakebase on Databricks infrastructure … This is happening outside of the open source repos" (Discord, 2025-09-03, quoted in Discussion #12835). No open-source roadmap since | `neondatabase/neon` Discussion #12835 |
 | Neon `main` pins its Postgres at **16.9 / 17.5** (May 2025) and has no `vendor/postgres-v18` | `neon/vendor/revisions.json`, `.gitmodules` |
 | `neondatabase/postgres` has moved on: `REL_16_STABLE_neon`, `REL_17_STABLE_neon` and **`REL_18_STABLE_neon`**, last committed 2026-04-08/09, based on **16.12 / 17.8 / 18.2** | `gh api repos/neondatabase/postgres/branches/…` |
@@ -821,7 +821,7 @@ Each item below is proposed. P5 plans each one separately, after P4.
 | Upstream today: **18.6 / 17.11 / 16.15** (2026-08-13, fixing 28 CVEs). 18.5 was never shipped. Next minors on 2026-11-12, 2027-02-11 and 2027-05-13. PG 14 reaches EOL on 2026-11-12. PG 18 GA was 2025-09-25 | postgresql.org/support/versioning, /developer/roadmap, the 2026-08-13 release note |
 | So Neon's shipped compute is **6 minors behind on 17** (17.5 → 17.11). Even Neon's newest branches are 3 minors behind, and miss the May and August 2026 CVE fixes (at least 39) | the above |
 
-**The `.gitmodules` URLs are relative** (`../postgres.git`), so `dina-kar/neon`'s submodules resolve to `dina-kar/postgres`, which P2 must create as a fork of `neondatabase/postgres` (Q110).
+**The `.gitmodules` URLs are relative** (`../postgres.git`), so `ostrium-labs/neon`'s submodules resolve to `ostrium-labs/postgres`, which P2 must create as a fork of `neondatabase/postgres` (Q110).
 
 **Plan.**
 
@@ -854,7 +854,7 @@ Each phase is small stacked PRs. The P4 phases are behind the feature `loams-wal
 | Phase | Scope | Depends on | Done when |
 |---|---|---|---|
 | **P1** | CNPG for the showcase: `deploy/cnpg/` (kind or k3d, operator 1.30.1, Barman Cloud plugin 0.15.0, `ObjectStore` on RustFS), the `commons-pg` Cluster, a PITR test; §22's compose keeps plain `postgres:17.11` | — | PITR restores to a timestamp between two writes; OpenFGA's and GlitchTip's migrations run |
-| **P2a** | Fork upkeep: `dina-kar/postgres`, submodule move, 16.15/17.11 merge, fork CI and images (§10 step 1) | Q110 | The fork's compute images pass `pg_regress` and `deploy/neon`'s smoke |
+| **P2a** | Fork upkeep: `ostrium-labs/postgres`, submodule move, 16.15/17.11 merge, fork CI and images (§10 step 1) | Q110 | The fork's compute images pass `pg_regress` and `deploy/neon`'s smoke |
 | **P2b** | The Loams control plane (§5) driving stock safekeepers: the spec endpoint, `notify-attach` and `notify-safekeepers`, the `C/` records, the storage controller with its database on CNPG | P2a; §23 N1–N2 | A compute started by Loams serves a branch; a pageserver migration pushes a new spec |
 | **P3** | PgDog routing: config rendering, `RELOAD`, the branch-name scheme, `deploy/pgdog/` with the license rules | P2b | psql, psycopg 3, node-postgres and JDBC reach `main` and a branch through PgDog; transaction pooling holds |
 | **P4a** | `loams-safekeeper`: codecs, acceptor, `WalStore`, the TiKV backend, readers and the interpreted sender, broker publishing; protocol tests from Neon's safekeeper tests and TLA+ traces; fault tests (instance kill mid-append, TiKV leader kill, term bump race) | P2b; Q112 | A compute runs against the WAL service in `deploy/neon`; the pageserver ingests; no acknowledged commit is lost under the fault set |
@@ -881,7 +881,7 @@ Each phase is small stacked PRs. The P4 phases are behind the feature `loams-wal
 
 | # | Question | Needed by |
 |---|---|---|
-| Q110 | Fork `neondatabase/postgres` as `dina-kar/postgres` (required by the fork's relative submodule URLs), and base the catch-up on the `REL_1x_STABLE_neon` heads (16.12/17.8, which may need unpublished extension changes) or on `main`'s pins (16.9/17.5)? | P2a |
+| Q110 | Fork `neondatabase/postgres` as `ostrium-labs/postgres` (required by the fork's relative submodule URLs), and base the catch-up on the `REL_1x_STABLE_neon` heads (16.12/17.8, which may need unpublished extension changes) or on `main`'s pins (16.9/17.5)? | P2a |
 | Q111 | PGroonga for Zulip on CNPG: a custom image on `17.11-standard-trixie`, or a separate Cluster with an image that has it? | P1 |
 | Q112 | Where the interpreted sender builds: in Loams behind a feature, with the fork's Postgres headers in CI, or as a small binary crate inside the fork's workspace that links `loams-safekeeper`'s `WalStore`? *P4a:* interim answer is the feeder (§6.7); the published `neon` image ships Postgres 14–17 server headers under `/usr/local/v1x/include`, so CI can extract them for `postgres_ffi` | P4a plan |
 | Q113 | Scale-to-zero: run Neon's proxy (with Loams’ `wake_compute`) in front of PgDog, or accept always-on computes for Loams Postgres in the first release? (Supersedes Q47) | P3 plan |
@@ -910,7 +910,7 @@ Each phase is small stacked PRs. The P4 phases are behind the feature `loams-wal
 
 Read on 2026-09-29.
 
-- **Neon (fork `dina-kar/neon` at `fa504217c`):**
+- **Neon (fork `ostrium-labs/neon` at `fa504217c`):**
   - `pgxn/neon/walproposer.c`, `walproposer.h`, `walproposer_pg.c`, `neon_walreader.c`;
   - `safekeeper/src/{safekeeper.rs, receive_wal.rs, wal_storage.rs, control_file.rs, send_wal.rs, send_interpreted_wal.rs, wal_backup.rs, wal_backup_partial.rs, remove_wal.rs, timeline_manager.rs, broker.rs, handler.rs, http/routes.rs}`, and `safekeeper/spec/*.tla`;
   - `storage_broker/proto/broker.proto`;

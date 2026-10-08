@@ -18,14 +18,18 @@
 //!   pipelined appends, and acceptor metadata off the commit path.
 //! - [`pgwire`]: the slice of the Postgres protocol a safekeeper speaks.
 //! - `service`, `http` (feature `server`): the listener walproposer connects
-//!   to, the control plane's HTTP API, and the `loams-wal` binary; `feeder`,
-//!   the interim path that hands committed WAL to a stock safekeeper for the
-//!   pageserver (until the interpreted sender lands, Q112).
+//!   to, the control plane's HTTP API, and the `loams-wal` binary; `send`,
+//!   the pageserver's interpreted replication, served in process through a
+//!   `WalInterpreter` (Neon's `wal_decoder`, Q112); and `feeder`, the
+//!   interim path that hands committed WAL to a stock safekeeper for the
+//!   pageserver, until the decoder is linked (PG2 ruling R31.5).
 //!
 //! Neon's code is Apache-2.0; the ported parts keep its structure and name
 //! their sources.
 
 pub mod acceptor;
+#[cfg(feature = "server")]
+pub mod cli;
 #[cfg(feature = "server")]
 pub mod feeder;
 #[cfg(feature = "server")]
@@ -37,7 +41,11 @@ pub mod meta;
 #[cfg(feature = "nvme")]
 pub mod nvme;
 pub mod pgwire;
+#[cfg(feature = "server")]
+pub mod propose;
 pub mod proto;
+#[cfg(feature = "server")]
+pub mod send;
 #[cfg(feature = "server")]
 pub mod service;
 #[cfg(feature = "compio")]

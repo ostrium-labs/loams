@@ -1,4 +1,8 @@
-# cargo-deny policy. See CONTRIBUTING.md "Dependency licenses".
+# cargo-deny policy of crates/loams-wal-decoder (PG2 Task 31): the root
+# deny.toml, plus the git sources of the Neon fork that only this workspace
+# links. scripts/pg2/check-decoder-deny.py keeps it a superset of the root
+# policy (same licences, bans and advisory rules; extra git sources only
+# under github.com/ostrium-labs).
 [graph]
 all-features = true
 
@@ -56,7 +60,12 @@ unknown-git = "deny"
 # tikv-client is pinned by rev to Loams's fork, branch `loam` (R1 plan rows R4
 # and F1). Resonate is pinned by rev to the fork's loam/0.10.1 (D1 plan Task
 # 1, D140).
-# The Neon fork is not allowed here: only crates/loams-wal-decoder, a
-# workspace of its own with its own deny.toml, may use it, and
-# scripts/pg2/check-decoder-deny.py fails if this lockfile names it.
-allow-git = ["https://github.com/ostrium-labs/client-rust", "https://github.com/ostrium-labs/resonate"]
+# Decoder-only: Loams' forks of Neon (pinned to the loams/decoder-trim
+# commit) and of Neon's rust-postgres (the `neon` branch head, through
+# [patch] in Cargo.toml). Both Apache-2.0 / MIT.
+allow-git = [
+    "https://github.com/ostrium-labs/client-rust",
+    "https://github.com/ostrium-labs/resonate",
+    "https://github.com/ostrium-labs/neon",
+    "https://github.com/ostrium-labs/rust-postgres",
+]
