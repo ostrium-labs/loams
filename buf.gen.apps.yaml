@@ -19,6 +19,8 @@ inputs:
       - proto/loams/operations/v1
       - proto/loams/notifications/v1
       - proto/loams/errors/v1
+      # Data Studio (AP1e): the collection data plane clients.
+      - proto/loams/collection/v1
 plugins:
   - local: web/packages/proto/node_modules/.bin/protoc-gen-es
     out: web/packages/proto/src/gen

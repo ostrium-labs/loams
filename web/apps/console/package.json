@@ -24,6 +24,7 @@
     "@loams/platform-electron": "workspace:*",
     "@loams/platform-web": "workspace:*",
     "@loams/plugin-approvals": "workspace:*",
+    "@loams/plugin-data-studio": "workspace:*",
     "@loams/plugin-desktop-servers": "workspace:*",
     "@loams/plugin-identity": "workspace:*",
     "@loams/plugin-namespaces": "workspace:*",

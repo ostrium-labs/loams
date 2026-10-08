@@ -453,3 +453,200 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Data Studio (plugin-data-studio). */
+.ds-page {
+  max-width: 1180px;
+}
+.ds-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ds-head h1 {
+  margin: 0;
+}
+.ds-head-actions {
+  display: flex;
+  gap: 8px;
+}
+.ds-crumbs {
+  font-size: 13px;
+  color: var(--op-muted);
+  margin-bottom: 4px;
+}
+.ds-crumbs a,
+.ds-link {
+  color: inherit;
+  text-decoration: none;
+}
+.ds-crumbs a:hover,
+.ds-link:hover {
+  text-decoration: underline;
+}
+.ds-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--op-rule);
+}
+.ds-ns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+.ds-ns label {
+  font-size: 13px;
+  color: var(--op-muted);
+}
+.ds-ns input {
+  width: 200px;
+  font-family: var(--loams-font-mono);
+}
+.ds-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--op-rule);
+}
+.ds-toolbar .ds-tabs {
+  border-bottom: 0;
+}
+.ds-tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 8px 12px;
+  color: var(--op-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.ds-tab:hover {
+  color: var(--op-ink);
+}
+.ds-tab[aria-selected="true"] {
+  color: var(--op-ink);
+  border-bottom-color: var(--op-accent);
+}
+.ds-pad {
+  padding: 16px;
+}
+.ds-stack,
+.ds-form {
+  display: grid;
+  gap: 16px;
+}
+.ds-form {
+  gap: 12px;
+}
+.ds-field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.ds-fields {
+  border: 1px solid var(--op-rule);
+  border-radius: 6px;
+  padding: 8px 12px 12px;
+  display: grid;
+  gap: 8px;
+}
+.ds-fields .ds-field-row {
+  grid-template-columns: 1fr 140px auto;
+}
+.ds-mono,
+.ds-editor,
+.ds-json {
+  font-family: var(--loams-font-mono);
+  font-size: 13px;
+}
+.ds-editor {
+  width: 100%;
+  resize: vertical;
+}
+.ds-json {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  max-height: 60vh;
+  background: var(--op-surface);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ds-cell {
+  display: inline-block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+.ds-cell-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+.ds-split {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.ds-split-open {
+  grid-template-columns: minmax(0, 1fr) 380px;
+}
+.ds-panel {
+  border: 1px solid var(--op-rule);
+  border-radius: 8px;
+  background: var(--op-bg);
+  overflow: hidden;
+  align-self: start;
+}
+.ds-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--op-rule);
+}
+.ds-pager {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--op-rule);
+}
+.ds-pager .lc-muted {
+  margin: 0 auto 0 0;
+}
+@media (max-width: 900px) {
+  .ds-split-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.ds-form,
+.ds-form .loams-field,
+.ds-field-row > * {
+  min-width: 0;
+}
+.ds-form .loams-input,
+.ds-fields .loams-input,
+.ds-editor {
+  box-sizing: border-box;
+  width: 100%;
+}
+.ds-field-row {
+  align-items: start;
+}
+.ds-fields .ds-field-row {
+  align-items: center;
+}
