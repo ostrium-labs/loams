@@ -229,7 +229,7 @@ The embedded variant is a stub in this task: `open` returns `KvError::Unsupporte
 
 ### Task 21: The embedded MVCC backend on redb
 
-**Files:** `crates/loams-kv/src/embedded/{mod.rs,oracle.rs,mvcc.rs,commit.rs,gc.rs}`, `src/conformance.rs`, `tests/{embedded.rs,crash.rs,conformance.rs}`.
+**Files:** `crates/loams-kv/src/embedded/{mod.rs,oracle.rs,mvcc.rs,commit.rs,gc.rs}`, `src/conformance.rs`, `tests/{embedded.rs,crash.rs,conformance.rs}`; and, moved from Task 23 by ruling T20-9, `crates/loams-live/src/{config.rs,service.rs}`, `crates/loams-live/tests/{service.rs,session.rs}`, `crates/loams/src/{main.rs,server.rs}` and `crates/loams/tests/live.rs` (every builder of a `LiveConfig`).
 
 **Consumes:** Task 20's enums; `redb` 4.
 
@@ -242,6 +242,7 @@ The embedded variant is a stub in this task: `open` returns `KvError::Unsupporte
 - **Commit:** buffered writes and lock keys. Under the store's commit mutex, conflict if any written or locked key has a version with `commit_ts > start_ts`. Group commit drains the waiting commits into one redb write transaction (one fsync).
 - **GC:** deletes versions older than the newest version ≤ `safe_point`, where `safe_point = min(now − gc_life_time, oldest open snapshot, barriers)`. It runs every `gc_interval` (60 s).
 - `loams_kv::conformance::kv_conformance!`, a macro that expands one `#[tokio::test]` per case for a `Store` factory.
+- **(T20-9, from Task 23)** `LiveConfig.store: StoreConfig` replaces `LiveConfig.tikv`; `LiveConfig::with_store(app, StoreConfig)` beside `LiveConfig::with_tikv(app, TikvConfig)` (kept, it wraps `StoreConfig::Tikv`). `LiveServer::start` opens whatever store the config names, and `crates/loams` starts its cluster GC loop only for a TiKV store (`Store::as_tikv`). The CLI flags stay as they are until Task 23.
 
 **Tests** (`kv_conformance!` cases run on both backends):
 - `snapshot_ignores_later_commits`: a write committed after a snapshot's ts is invisible to it.
@@ -280,7 +281,7 @@ Embedded-only tests:
 
 ### Task 23: `--live-store`, the feature split and dev defaults
 
-**Files:** `crates/loams/{Cargo.toml,src/main.rs,src/server.rs}`, `crates/loams/tests/live_dev.rs`, `crates/loams-live/src/config.rs`, `docs/build-from-source/` (the feature list), `CHANGELOG.md`.
+**Files:** `crates/loams/{Cargo.toml,src/main.rs,src/server.rs}`, `crates/loams/tests/live_dev.rs`, `crates/loams-live/src/config.rs` (only the default store and the naming fixes: `LiveConfig.store` arrives in Task 21, ruling T20-9), `docs/build-from-source/` (the feature list), `CHANGELOG.md`.
 
 **Consumes:** `LiveArgs`, `LiveRuntime`, `ServerError::Live*`.
 
@@ -288,7 +289,7 @@ Embedded-only tests:
 - Cargo features: `live = ["dep:loams-live", "loams-kv/embedded"]`, **in `default`**; `live-tikv = ["live", "tikv", "loams-kv/tikv"]`. The `full` variant enables `live-tikv`.
 - The flag `--live-store <embedded | tikv://<pd>[,<pd>]/<keyspace>>`, default `embedded`, stored under `<data_dir>/live/`. `--live-pd` and `--live-keyspace` stay one release as aliases that imply `tikv://` and print a deprecation line.
 - `--no-live` unchanged.
-- `LiveConfig.store: StoreConfig`.
+- `LiveConfig.store` (from Task 21, T20-9) defaults to `StoreConfig::Embedded` under `<data_dir>/live/store.redb`.
 - The naming fixes of Task 0 item 6.
 - **Desktop follow-up** (recorded, not done here): AP1e's engine args can drop the TiKV-gated `--no-live` (D692 amends D670).
 
@@ -1297,7 +1298,8 @@ Task 20 (the `loams-kv` seam, 2026-10-08).
 | T20-2 | **`loams-tikv` gains `Tikv::run_as::<W, T, E, F>` and the trait `RunTxn`** (additive; `Tikv::run` keeps its signature and calls `run_as::<Txn, _, TxnError, _>`). The body works on `W: RunTxn`, which owns the attempt's `Txn`, and fails with any `E: Into<TxnError>`. `loams_kv::Txn` implements `RunTxn`, so `Store::run` hands its body straight to the TiKV runner. | `loams_kv::Txn` has no lifetime parameter (the plan's `pub enum Txn`), so it must own the attempt's `loams_tikv::Txn`; converting the body's error by rewrapping its future would force `T: 'static` | None: retries, tokens, faults and error classes are `run`'s own code |
 | T20-3 | **Features of `loams-kv`:** `tikv = ["dep:loams-tikv"]` and `faults = ["loams-tikv?/faults"]`. `Store::with_faults` exists only with `faults` (as `Tikv::with_faults` does). No `embedded` feature yet (Task 21 or 23 adds it if the embedded backend's dependencies must be optional). `loams-live` depends on `loams-kv` with `tikv` until Task 23; its dev-dependency adds `faults`. | Mirrors `loams-tikv`'s fault gating; keeps fault hooks out of release builds | Task 23 reshapes the feature list anyway |
 | T20-4 | **The embedded stub is uninhabited**: `embedded::{Handle, Txn, Snap}` each hold a `std::convert::Infallible`, so every embedded match arm is statically unreachable (no panics). `Store::open(StoreConfig::Embedded(_))` returns `KvError::Unsupported("embedded backend arrives in Task 21")`. `testing::stores(name)` yields only the TiKV store until Task 21. `loams_kv::testing` also re-exports `loams_tikv::testing`'s cluster harness (`cluster`, `TestCluster`, `TEST_LIVE`, …) and adds `testing::tikv()` (a TiKV store on `TEST_LIVE` under a fresh root), so `loams-live`'s tests need no `loams-tikv` dependency. | No placeholder behaviour to remove later; Task 21 replaces the three types | None |
-| T20-5 | **`LiveConfig.tikv: TikvConfig` stays** (re-exported as `loams_kv::TikvConfig`); Task 23 replaces it with `store: StoreConfig`. `LiveServer::start` opens `Store::open(StoreConfig::Tikv(config.tikv))`. `Runner::tikv()` and `LiveHandle::tikv()` became `store()`. `crates/loams/src/server.rs` (outside the task's file list) reaches the TiKV handle for its cluster GC loop and sweep list through the new `Store::as_tikv() -> Option<&Tikv>` (feature `tikv`); an embedded store needs no cluster GC. | Keeps `crates/loams/src/main.rs`, `crates/loams/tests/live.rs` and the CLI unchanged until Task 23 | None |
+| T20-5 | **`LiveConfig.tikv: TikvConfig` stays** (re-exported as `loams_kv::TikvConfig`); Task 21 replaces it with `store: StoreConfig` (T20-9; Task 23 in the original plan). `LiveServer::start` opens `Store::open(StoreConfig::Tikv(config.tikv))`. `Runner::tikv()` and `LiveHandle::tikv()` became `store()`. `crates/loams/src/server.rs` (outside the task's file list) reaches the TiKV handle for its cluster GC loop and sweep list through the new `Store::as_tikv() -> Option<&Tikv>` (feature `tikv`); an embedded store needs no cluster GC. | Keeps `crates/loams/src/main.rs`, `crates/loams/tests/live.rs` and the CLI unchanged until Task 23 | None |
 | T20-6 | **`Store::barrier(name, at, ttl)` uses the service id `loams/<name>`**, `name` being `<purpose>/<id>`. `loams_kv::GcBarrier` has `service_id()`, `ts()` and `delete(self)`. | `loams_tikv::GcBarrier` requires the `loams/` prefix; one name argument as the plan's signature has | None until Task 29 uses it |
 | T20-7 | **`Ts` extras:** `Ts::logical()`, `Display` (the decimal version) and `Default`; `from_parts` masks `logical` to 18 bits. tikv-client converts versions through `i64`, so `Ts` and `Timestamp` agree for physical parts below 2^45 ms (year 3084). `Snap::ts()` returns `Ts` by value. `KvError` is `Unsupported(&'static str)` or `Tikv(TikvError)` with the TiKV text unchanged (`#[error(transparent)]`), so Live's error messages are byte-identical. | Needed by `lagged` and its test; keeps error texts stable | None |
 | T20-8 | **Test environment:** the machine's test cluster runs at another port offset than the plan's 17000, so `loams-tikv`'s `gc::safe_point_advances_cluster_wide` needs `LOAMS_TEST_TIKV_STATUS=127.0.0.1:20280` beside `LOAMS_TEST_PD=127.0.0.1:23790`. Not a code change. | It reads TiKV's status port, default `127.0.0.1:37180` | None |
+| T20-9 | **`LiveConfig.store: StoreConfig` (replacing `LiveConfig.tikv`) and a `LiveServer` that starts on any `Store` move from Task 23 into Task 21** (controller ruling, review of Task 20). Task 21's and Task 23's file lists are amended; Task 23 keeps the CLI flag, the feature split and the embedded default. Not implemented in Task 20. | Task 22 can then run the `service` and `session` suites, which start a `LiveServer`, on the embedded backend | Task 21 grows by the config change and its callers in `crates/loams` |
