@@ -113,8 +113,12 @@ const singleInstance = initSingleInstance({
 			);
 			registerServerIpc(registry);
 			factory = new FactoryHost(
-				new Vault(join(app.getPath("userData"), "factory-vault.json"), {
-					available: () => safeStorage.isEncryptionAvailable(),
+				new Vault(join(app.getPath("userData"), "factory", "credentials.bin"), {
+					// On Linux, basic_text means no keyring: the "encryption" is a fixed key.
+					available: () =>
+						safeStorage.isEncryptionAvailable() &&
+						(process.platform !== "linux" ||
+							safeStorage.getSelectedStorageBackend() !== "basic_text"),
 					encrypt: (v) => safeStorage.encryptString(v),
 					decrypt: (b) => safeStorage.decryptString(b),
 				}),

@@ -37,6 +37,16 @@ const numbers = (x: unknown): Record<string, number> => {
 	return out;
 };
 
+/** The only way ops invoke an adapter method; a missing method is `unsupported`. */
+// biome-ignore lint/suspicious/noExplicitAny: adapter replies are projected immediately.
+function call(a: Adapter, name: string, ...args: unknown[]): Promise<any> {
+	const fn = a[name];
+	if (typeof fn !== "function")
+		throw new UnsupportedError(`${name} is not supported by this adapter`);
+	return fn.apply(a, args);
+}
+export class UnsupportedError extends Error {}
+
 /** Thrown for a missing non-secret field; mapped to `bad_params` by the host. */
 export class ParamError extends Error {}
 const need = (v: string | undefined, name: string): string => {
@@ -81,7 +91,7 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 			run: async (a, p: { q?: string; page?: number; limit?: number }) =>
 				arr(
 					rec(
-						await a["searchRepositories"]?.(p.q ?? "", {
+						await call(a, "searchRepositories", p.q ?? "", {
 							page: p.page,
 							limit: clamp(p.limit),
 						}),
@@ -124,27 +134,27 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 				const opts = { page: p.page, limit: clamp(p.limit) };
 				const res =
 					p.type === "pulls"
-						? await a["listPullRequests"]?.(p.owner, p.repo, {
+						? await call(a, "listPullRequests", p.owner, p.repo, {
 								state: "open",
 								...opts,
 							})
-						: await a["searchIssues"]?.(p.q ?? "", opts);
+						: await call(a, "searchIssues", p.q ?? "", opts);
 				return arr(rec(res)["items"]).map(issueDto);
 			},
 		},
 		version: {
 			params: none,
 			run: async (a) => ({
-				version: str(rec(await a["getVersion"]?.())["version"]),
+				version: str(rec(await call(a, "getVersion"))["version"]),
 			}),
 		},
-		health: health((a) => a["getVersion"]?.() as Promise<unknown>),
+		health: health((a) => call(a, "getVersion")),
 	},
 	zulip: {
 		streams: {
 			params: none,
 			run: async (a) =>
-				arr(await a["listStreams"]?.())
+				arr(await call(a, "listStreams"))
 					.slice(0, 200)
 					.map((s) => ({
 						id: num(s["stream_id"]),
@@ -158,7 +168,7 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 			run: async (a, p: { channel: string; limit?: number }) =>
 				arr(
 					rec(
-						await a["fetchMessages"]?.({
+						await call(a, "fetchMessages", {
 							narrow: [{ operator: "channel", operand: p.channel }],
 							anchor: "newest",
 							num_before: clamp(p.limit),
@@ -176,11 +186,11 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 		server: {
 			params: none,
 			run: async (a) => {
-				const me = rec(await a["getSelf"]?.());
+				const me = rec(await call(a, "getSelf"));
 				return { name: str(me["full_name"]), email: str(me["email"]) };
 			},
 		},
-		health: health((a) => a["getSelf"]?.() as Promise<unknown>),
+		health: health((a) => call(a, "getSelf")),
 	},
 	plane: {
 		stats: {
@@ -189,7 +199,9 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 				.strict(),
 			run: async (a, p: { projectKey?: string }, c) =>
 				numbers(
-					await a["getStats"]?.(
+					await call(
+						a,
+						"getStats",
 						need(p.projectKey ?? c.fields["projectKey"], "projectKey"),
 					),
 				),
@@ -200,7 +212,9 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 				.strict(),
 			run: async (a, p: { projectKey?: string; limit?: number }, c) =>
 				arr(
-					await a["listIssues"]?.(
+					await call(
+						a,
+						"listIssues",
 						need(p.projectKey ?? c.fields["projectKey"], "projectKey"),
 						{ limit: clamp(p.limit) },
 					),
@@ -212,8 +226,8 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 				})),
 		},
 		health: health(async (a) => {
-			await a["health"]?.();
-			const me = rec(await a["me"]?.());
+			await call(a, "health");
+			const me = rec(await call(a, "me"));
 			if (me["authenticated"] === false)
 				throw Object.assign(new Error("not authenticated"), { status: 401 });
 		}),
@@ -222,7 +236,7 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 		organizations: {
 			params: none,
 			run: async (a) =>
-				arr(rec(await a["listOrganizations"]?.())["data"]).map((o) => ({
+				arr(rec(await call(a, "listOrganizations"))["data"]).map((o) => ({
 					slug: str(o["slug"]),
 					name: str(o["name"]),
 				})),
@@ -238,7 +252,7 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 			run: async (a, p: { orgSlug: string; limit?: number; sort?: string }) =>
 				arr(
 					rec(
-						await a["listIssues"]?.(p.orgSlug, {
+						await call(a, "listIssues", p.orgSlug, {
 							query: "is:unresolved",
 							limit: clamp(p.limit),
 							sort: p.sort,
@@ -257,7 +271,11 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 						permalink: str(i["permalink"]),
 					})),
 		},
-		health: health((a) => a["root"]?.() as Promise<unknown>),
+		health: health(async (a) => {
+			// `auth` is null when the route answered without a usable token.
+			if (rec(await call(a, "root"))["auth"] == null)
+				throw Object.assign(new Error("not authenticated"), { status: 401 });
+		}),
 	},
 	openpanel: {
 		insights: {
@@ -283,8 +301,11 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 			) => {
 				const id = need(p.projectId ?? c.fields["projectId"], "projectId");
 				const [ov, pages] = await Promise.all([
-					a["overview"]?.(id, { range: p.range, interval: p.interval }),
-					a["topPages"]?.(id, { range: p.range, limit: clamp(p.limit, 10) }),
+					call(a, "overview", id, { range: p.range, interval: p.interval }),
+					call(a, "topPages", id, {
+						range: p.range,
+						limit: clamp(p.limit, 10),
+					}),
 				]);
 				const o = rec(ov);
 				return {
@@ -307,9 +328,9 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 			},
 		},
 		health: health(async (a, c) => {
-			await a["health"]?.();
+			await call(a, "health");
 			const id = c.fields["projectId"];
-			if (id) await a["live"]?.(id);
+			if (id) await call(a, "live", id);
 		}),
 	},
 	matomo: {
@@ -332,7 +353,7 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 				c,
 			) => {
 				const r = rec(
-					await a["getVisitsSummary"]?.({
+					await call(a, "getVisitsSummary", {
 						idSite: need(p.idSite ?? c.fields["idSite"], "idSite"),
 						period: p.period ?? "day",
 						date: p.date ?? "last7",
@@ -362,7 +383,7 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 				c,
 			) => {
 				const r = rec(
-					await a["getPageUrls"]?.({
+					await call(a, "getPageUrls", {
 						idSite: need(p.idSite ?? c.fields["idSite"], "idSite"),
 						period: p.period ?? "day",
 						date: p.date ?? "today",
@@ -376,7 +397,7 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 				}));
 			},
 		},
-		health: health((a) => a["getVersion"]?.() as Promise<unknown>),
+		health: health((a) => call(a, "getVersion")),
 	},
 	langfuse: {
 		traces: {
@@ -386,7 +407,7 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 			run: async (a, p: { limit?: number; fromStartTime?: string }) =>
 				arr(
 					rec(
-						await a["listObservations"]?.({
+						await call(a, "listObservations", {
 							isRootObservation: true,
 							limit: clamp(p.limit),
 							fromStartTime: p.fromStartTime,
@@ -405,7 +426,7 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 			params: none,
 			run: async (a) => {
 				try {
-					const r = rec(await a["metricsDaily"]?.());
+					const r = rec(await call(a, "metricsDaily"));
 					return {
 						available: true,
 						days: arr(r["data"])
@@ -420,9 +441,9 @@ export const OPS: Record<FactoryAppId, Record<string, Op>> = {
 			},
 		},
 		health: health(async (a) => {
-			assertStatusOk(await a["status"]?.());
+			assertStatusOk(await call(a, "status"));
 			try {
-				await a["listObservations"]?.({ limit: 1 });
+				await call(a, "listObservations", { limit: 1 });
 			} catch (e) {
 				if (rec(e)["status"] !== 404) throw e;
 			}

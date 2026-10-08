@@ -7,16 +7,40 @@ import type {
 	IpcResult,
 } from "../../shared/contracts";
 import { type Adapter, FACTORY_APPS, type FactoryAppDef } from "./apps";
-import { OPS, ParamError } from "./ops";
+import { OPS, ParamError, UnsupportedError } from "./ops";
 import type { Vault } from "./vault";
 
 export const QUERY_TIMEOUT_MS = 15_000;
+
+const b64 = (s: string): string[] => {
+	const full = Buffer.from(s).toString("base64");
+	return [full, full.replace(/=+$/, "")];
+};
+
+/** Every form a credential can take in a message: raw, URL-encoded, form-encoded, Basic. */
+export function secretForms(
+	secrets: readonly string[],
+	plain: readonly string[] = [],
+): string[] {
+	const forms = new Set<string>();
+	for (const s of secrets.filter((x) => x.length > 0)) {
+		forms.add(s);
+		forms.add(encodeURIComponent(s));
+		forms.add(new URLSearchParams({ k: s }).toString().slice(2));
+		for (const f of b64(s)) forms.add(f);
+		// HTTP Basic: base64(user:pass) with any configured field as the user.
+		for (const u of [...plain, ...secrets]) {
+			if (!u || u === s) continue;
+			for (const f of [...b64(`${u}:${s}`), ...b64(`${s}:${u}`)]) forms.add(f);
+		}
+	}
+	return [...forms];
+}
 
 export function redact(message: string, secrets: readonly string[]): string {
 	let out = message;
 	const all = secrets
 		.filter((s) => s.length > 0)
-		.flatMap((s) => [s, encodeURIComponent(s)])
 		.sort((a, b) => b.length - a.length);
 	for (const s of all) out = out.split(s).join("[redacted]");
 	return out;
@@ -34,8 +58,18 @@ export function classifyError(e: unknown): Code {
 	const status = typeof err.status === "number" ? err.status : undefined;
 	if (status === 401 || status === 403) return "auth_failed";
 	if (status === 0) return "unreachable";
-	if (status !== undefined) return "upstream_error";
 	const msg = typeof err.message === "string" ? err.message : "";
+	if (
+		status !== undefined &&
+		!(err.name === "MatomoApiError" && status === 200)
+	)
+		return "upstream_error";
+	// Matomo reports a bad token as an error inside a 200 body.
+	if (
+		err.name === "MatomoApiError" &&
+		/token|auth|permission|access|credential/i.test(msg)
+	)
+		return "auth_failed";
 	if (/invalid api key|unauthorized|forbidden/i.test(msg)) return "auth_failed";
 	if (
 		err.name === "TypeError" ||
@@ -50,6 +84,8 @@ export function classifyError(e: unknown): Code {
 
 interface Live {
 	adapter: Adapter;
+	/** Every form of the secrets this adapter was built with (survives reconfigure). */
+	secrets: string[];
 	dispose(): void;
 }
 
@@ -57,6 +93,8 @@ type CredField = FactoryAppInfo["credentialFields"][number];
 
 export class FactoryHost {
 	readonly #live = new Map<FactoryAppId, Live>();
+	readonly #building = new Map<FactoryAppId, Promise<Live>>();
+	readonly #gen = new Map<FactoryAppId, number>();
 	readonly #health = new Map<FactoryAppId, FactoryHealth>();
 
 	constructor(
@@ -96,10 +134,12 @@ export class FactoryHost {
 	#secrets(app: FactoryAppId): string[] {
 		const e = this.vault.get(app);
 		if (!e) return [];
-		return this.apps[app].credentialFields
+		const secret = this.apps[app].credentialFields
 			.filter((f) => f.secret)
 			.map((f) => e.fields[f.key]?.reveal() ?? "")
 			.filter(Boolean);
+		const plain = Object.values(this.#plainFields(app));
+		return secretForms(secret, plain);
 	}
 
 	#plainFields(app: FactoryAppId): Record<string, string> {
@@ -112,30 +152,74 @@ export class FactoryHost {
 		return out;
 	}
 
-	#fail(app: FactoryAppId, e: unknown): { code: string; message: string } {
+	#fail(secrets: string[], e: unknown): { code: string; message: string } {
 		const raw = e instanceof Error ? e.message : String(e);
-		const code = e instanceof ParamError ? "bad_params" : classifyError(e);
-		return { code, message: redact(raw, this.#secrets(app)) };
+		const code =
+			e instanceof ParamError
+				? "bad_params"
+				: e instanceof UnsupportedError
+					? "unsupported"
+					: classifyError(e);
+		return { code, message: redact(raw, secrets) };
 	}
 
 	#dispose(app: FactoryAppId): void {
+		this.#gen.set(app, (this.#gen.get(app) ?? 0) + 1);
+		const building = this.#building.get(app);
+		this.#building.delete(app);
+		const closeLive = (live: Live) => {
+			try {
+				(live.adapter as { detach?: () => void }).detach?.();
+			} catch {
+				// best effort
+			}
+			live.dispose();
+		};
 		const live = this.#live.get(app);
 		this.#live.delete(app);
-		if (!live) return;
-		try {
-			(live.adapter as { detach?: () => void }).detach?.();
-		} catch {
-			// best effort
-		}
-		live.dispose();
+		if (live) closeLive(live);
+		// A build still in flight is discarded by its generation check.
+		void building?.then(
+			(l) => {
+				if (this.#live.get(app) !== l) closeLive(l);
+			},
+			() => undefined,
+		);
 	}
 
-	async #adapter(app: FactoryAppId): Promise<Adapter> {
+	/** Single-flight: concurrent callers share one build; a stale build is discarded. */
+	#adapter(app: FactoryAppId): Promise<Live> {
 		const existing = this.#live.get(app);
-		if (existing) return existing.adapter;
+		if (existing) return Promise.resolve(existing);
+		const inflight = this.#building.get(app);
+		if (inflight) return inflight;
+		const gen = this.#gen.get(app) ?? 0;
+		const p = this.#build(app).then(async (live) => {
+			if ((this.#gen.get(app) ?? 0) !== gen) {
+				try {
+					(live.adapter as { detach?: () => void }).detach?.();
+				} catch {
+					// best effort
+				}
+				live.dispose();
+				throw new Error("configuration changed while connecting");
+			}
+			this.#live.set(app, live);
+			this.#building.delete(app);
+			return live;
+		});
+		this.#building.set(app, p);
+		p.catch(() => {
+			if (this.#building.get(app) === p) this.#building.delete(app);
+		});
+		return p;
+	}
+
+	async #build(app: FactoryAppId): Promise<Live> {
 		const def = this.apps[app];
 		const entry = this.vault.get(app);
 		if (!entry || !def.adapter) throw new Error("not configured");
+		const secrets = this.#secrets(app);
 		const Ctor = await def.adapter();
 		const raw: Record<string, string> = {};
 		for (const [k, s] of Object.entries(entry.fields)) raw[k] = s.reveal();
@@ -152,8 +236,7 @@ export class FactoryHost {
 			throw e;
 		}
 		if (!adapter) throw new Error("adapter failed to start");
-		this.#live.set(app, { adapter, dispose: () => scope.dispose() });
-		return adapter;
+		return { adapter, secrets, dispose: () => scope.dispose() };
 	}
 
 	async configure(
@@ -166,8 +249,18 @@ export class FactoryHost {
 		try {
 			const u = new URL(url);
 			if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error();
+			if (u.username || u.password)
+				return {
+					ok: false,
+					code: "invalid_url",
+					message: "Put credentials in the credential fields, not in the URL",
+				};
 		} catch {
-			return { ok: false, code: "bad_url", message: "Enter an http(s) URL" };
+			return {
+				ok: false,
+				code: "invalid_url",
+				message: "Enter an http(s) URL",
+			};
 		}
 		const allowed = new Set(def.credentialFields.map((f) => f.key));
 		const clean: Record<string, string> = {};
@@ -199,9 +292,9 @@ export class FactoryHost {
 			return this.#info(app);
 		}
 		try {
-			const adapter = await this.#adapter(app);
+			const live = await this.#adapter(app);
 			await this.#timed(
-				OPS[app]["health"]?.run(adapter, undefined as never, {
+				OPS[app]["health"]?.run(live.adapter, undefined as never, {
 					fields: this.#plainFields(app),
 				}),
 			);
@@ -273,16 +366,19 @@ export class FactoryHost {
 				code: "unconfigured",
 				message: "This app is not configured yet",
 			};
+		// Snapshot before any await: a reconfigure mid-flight must not change
+		// which secrets this query's error message is scrubbed of.
+		const secrets = this.#secrets(q.app);
+		const fields = this.#plainFields(q.app);
 		try {
-			const adapter = await this.#adapter(q.app);
+			const live = await this.#adapter(q.app);
+			secrets.push(...live.secrets);
 			const value = await this.#timed(
-				op.run(adapter, parsed.data as never, {
-					fields: this.#plainFields(q.app),
-				}),
+				op.run(live.adapter, parsed.data as never, { fields }),
 			);
 			return { ok: true, value };
 		} catch (e) {
-			return { ok: false, ...this.#fail(q.app, e) };
+			return { ok: false, ...this.#fail(secrets, e) };
 		}
 	}
 }

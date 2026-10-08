@@ -17,7 +17,11 @@ const mkVault = () =>
 
 class Fake {
 	static made: Fake[] = [];
-	static behaviour: { search?: () => unknown; version?: () => unknown } = {};
+	static behaviour: {
+		search?: () => unknown;
+		searchAsync?: () => Promise<unknown>;
+		version?: () => unknown;
+	} = {};
 	detached = false;
 	constructor(
 		_ctx: unknown,
@@ -32,6 +36,7 @@ class Fake {
 		return (Fake.behaviour.version?.() as object) ?? { version: "1.0" };
 	}
 	async searchRepositories() {
+		if (Fake.behaviour.searchAsync) return Fake.behaviour.searchAsync();
 		return (
 			(Fake.behaviour.search?.() as object) ?? {
 				ok: true,
@@ -235,9 +240,173 @@ describe("factory host", () => {
 		const h = mk();
 		expect(
 			await h.configure("forgejo", "javascript:alert(1)", { token: "t" }),
-		).toMatchObject({ code: "bad_url" });
+		).toMatchObject({ code: "invalid_url" });
 		expect(await h.configure("forgejo", "https://f.example", {})).toMatchObject(
 			{ code: "bad_fields" },
 		);
+	});
+
+	it("reconfigure_during_query_still_redacts_old_secret", async () => {
+		const h = mk();
+		await h.configure("forgejo", "https://f.example", {
+			token: "AAAA-old-secret",
+		});
+		let fail: (e: Error) => void = () => undefined;
+		Fake.behaviour.searchAsync = () =>
+			new Promise((_, rej) => {
+				fail = rej;
+			});
+		const inflight = h.query({ app: "forgejo", op: "repos", params: {} });
+		await new Promise((r) => setTimeout(r, 5));
+		Fake.behaviour.searchAsync = undefined;
+		await h.configure("forgejo", "https://f.example", {
+			token: "BBBB-new-secret",
+		});
+		fail(new Error("upstream said AAAA-old-secret is bad"));
+		const r = await inflight;
+		expect(JSON.stringify(r)).not.toContain("AAAA-old-secret");
+		expect(r).toMatchObject({ ok: false });
+	});
+
+	it("redacts_basic_and_form_encoded_forms", async () => {
+		const h = mk();
+		await h.configure("forgejo", "https://f.example", { token: "p@ss w/rd" });
+		const forms = [
+			"p%40ss%20w%2Frd",
+			"p%40ss+w%2Frd",
+			Buffer.from("p@ss w/rd").toString("base64"),
+		];
+		Fake.behaviour.search = () => {
+			throw new Error(forms.join(" | "));
+		};
+		const r = JSON.stringify(
+			await h.query({ app: "forgejo", op: "repos", params: {} }),
+		);
+		for (const f of forms) expect(r).not.toContain(f);
+	});
+
+	it("concurrent_first_queries_build_one_adapter", async () => {
+		const h = mk(Fake);
+		await h.configure("forgejo", "https://f.example", { token: "t" });
+		await h.remove("forgejo");
+		Fake.made = [];
+		let loads = 0;
+		const apps = fakeApps();
+		apps.forgejo.adapter = async () => {
+			loads++;
+			await new Promise((r) => setTimeout(r, 10));
+			return Fake as unknown as AdapterCtor;
+		};
+		const v2 = mkVault();
+		v2.set("forgejo", "https://f.example", { token: "t" });
+		const h2 = new FactoryHost(v2, new Context(), apps);
+		const rs = await Promise.all(
+			[1, 2, 3].map(() =>
+				h2.query({ app: "forgejo", op: "version", params: {} }),
+			),
+		);
+		expect(rs.every((r) => r.ok)).toBe(true);
+		expect(Fake.made).toHaveLength(1);
+		expect(loads).toBe(1);
+	});
+
+	it("configure_during_build_discards_stale_adapter", async () => {
+		let release: () => void = () => undefined;
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		const apps = fakeApps();
+		apps.forgejo.adapter = async () => {
+			await gate;
+			return Fake as unknown as AdapterCtor;
+		};
+		const h = new FactoryHost(mkVault(), new Context(), apps);
+		const first = h.configure("forgejo", "https://f.example", { token: "one" });
+		await new Promise((r) => setTimeout(r, 5));
+		const second = h.configure("forgejo", "https://f.example", {
+			token: "two",
+		});
+		release();
+		await Promise.all([first, second]);
+		expect(Fake.made).toHaveLength(2);
+		expect(Fake.made[0]?.config).toMatchObject({ token: "one" });
+		expect(Fake.made[0]?.detached).toBe(true);
+		expect(Fake.made[1]?.detached).toBe(false);
+		const r = await h.query({ app: "forgejo", op: "version", params: {} });
+		expect(r.ok).toBe(true);
+		expect(Fake.made).toHaveLength(2);
+	});
+
+	it("configure_rejects_credentials_in_url", async () => {
+		expect(
+			await mk().configure("forgejo", "https://u:p@f.example", { token: "t" }),
+		).toMatchObject({ ok: false, code: "invalid_url" });
+	});
+
+	it("missing_adapter_method_is_unsupported", async () => {
+		class Bare {
+			constructor(
+				_c: unknown,
+				public config: unknown,
+			) {}
+		}
+		const h = mk(Bare);
+		await h.configure("forgejo", "https://f.example", { token: "t" });
+		expect(
+			await h.query({ app: "forgejo", op: "version", params: {} }),
+		).toMatchObject({
+			ok: false,
+			code: "unsupported",
+		});
+	});
+
+	it("health_maps_matomo_and_glitchtip_auth", async () => {
+		const h = new FactoryHost(mkVault(), new Context());
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				Response.json({
+					result: "error",
+					message: "token_auth is not valid, unable to authenticate",
+				}),
+			),
+		);
+		const m = await h.configure("matomo", "https://m.example", {
+			apiToken: "bad",
+		});
+		expect(m).toMatchObject({ ok: true, value: { health: "auth_failed" } });
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => Response.json("5.1.0")),
+		);
+		await h.remove("matomo");
+		expect(
+			await h.configure("matomo", "https://m.example", { apiToken: "ok" }),
+		).toMatchObject({
+			value: { health: "ok" },
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				Response.json({ version: "1", user: null, auth: null }),
+			),
+		);
+		expect(
+			await h.configure("glitchtip", "https://g.example", { token: "x" }),
+		).toMatchObject({
+			value: { health: "auth_failed" },
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				Response.json({ version: "1", user: {}, auth: { id: 1 } }),
+			),
+		);
+		await h.remove("glitchtip");
+		expect(
+			await h.configure("glitchtip", "https://g.example", { token: "x" }),
+		).toMatchObject({
+			value: { health: "ok" },
+		});
 	});
 });
