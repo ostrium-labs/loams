@@ -1376,3 +1376,7 @@ The owner widened the scope the same day: "current console ui only focused on co
   - The `.rpm` is signed through SignPath (D621, `release-sign.yml`). `.deb` and `.pkg.tar.zst` are GPG-signed with `LOAMS_GPG_PRIVATE_KEY` (D630 handoff). The AppImage carries a detached `.sig` from the same GPG key.
   - macOS and Windows stay buildable in CI (unsigned, not published). Q420, Q421 and Q623 are moot until the owner reopens them.
   - Q622 is answered: ItsAPlan.
+- **D677: Windows signed through SignPath and macOS unsigned** (owner, 2026-10-08: "also ship for windows using signpath and ship unsigned for mac"; amends D676). A tagged release also publishes:
+  - **Windows:** NSIS x64. The installer and the app executables are Authenticode-signed through the SignPath Foundation flow, using a new artifact configuration for the desktop alongside the rpm one (D621). Q421 is answered by SignPath.
+  - **macOS:** `dmg` and `zip` for arm64 and x64. They are **unsigned and not notarized**, and are labelled so in the release notes, with instructions for removing quarantine (`xattr -dr com.apple.quarantine "/Applications/Loams Desktop.app"`). The updater does not auto-install on macOS, because electron-updater requires a signed app there. On macOS it offers a download link instead.
+  - **The engine on Windows:** it is bundled when the Windows CI build and smoke test are green (Q623). Otherwise the Windows release is remote-only, and the local engine pages show "local engine not available on Windows yet".

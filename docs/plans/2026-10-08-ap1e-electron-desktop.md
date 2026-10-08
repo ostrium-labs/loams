@@ -910,7 +910,15 @@ Commit `feat(plugins): agent panel`.
 
 Tests: `overview_cards_each_state`, `provider_key_never_prefilled`, `test_provider_reports_result`. Commit `feat(plugins): overview and settings`.
 
-### Task 31: Linux release pipeline
+### Task 31: Release pipeline: Linux, Windows (SignPath), macOS (unsigned)
+
+> **Amended by D677 (2026-10-08).**
+> - The matrix adds `windows-2025` (NSIS x64) and `macos-15` (dmg and zip for arm64 and x64).
+> - **Windows:** submit the unpacked app executables and the NSIS installer to SignPath. Add `signpath/artifact-configuration.desktop-windows.xml` and its policy, reusing `release-sign.yml` as a called workflow. Unsigned artifacts are refused when `DESKTOP_REQUIRE_SIGNING` is true. The Windows engine is bundled only if `cargo build --release -p loams --target x86_64-pc-windows-msvc` and the Windows smoke test pass. Otherwise the build sets `LOAMS_DESKTOP_NO_LOCAL_ENGINE=1`, and the engine pages show the "not available on Windows yet" state.
+> - **macOS:** set `identity: null` (no signing) and skip notarization. Release notes carry the `xattr` instructions. The updater's macOS path shows "Download vX" (`openExternal` to the release page) instead of `downloadUpdate`.
+> - Rename the workflow to `desktop-electron-release.yml` (unchanged), and cover all three operating systems in `docs/release/desktop.md`.
+
+(original title: Linux release pipeline)
 
 **Files:**
 - `.github/workflows/desktop-electron-release.yml`;

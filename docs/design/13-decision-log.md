@@ -640,6 +640,7 @@ Living document. Newest decisions at the bottom of each table.
 | D674 | 2026-10-08 | **The Graph page is an empty state until a binary serves `loams.graph.v1` (§37 §19.10).** | No server links `loams-graph` | Approved (product owner, delegated) |
 | D675 | 2026-10-08 | **Agent panel: the loop runs in the main process; Anthropic and OpenAI-compatible providers (DeepSeek preset); desktop tools tagged read or write; every write waits for approval; budgets; chats stored locally (§37 §19.10).** | dockit's proven pattern; keys stay out of the renderer; SF3 is unbuilt | Approved (product owner, delegated) |
 | D676 | 2026-10-08 | **Linux-only desktop releases: AppImage, deb, rpm and pacman packages for x86_64 and aarch64 on GitHub Releases; the rpm signed through SignPath, the others GPG-signed; macOS and Windows built unsigned in CI and not published (§37 §19.10).** Amends D661 and D662. | The owner has no Apple or Windows accounts | Approved (owner) |
+| D677 | 2026-10-08 | **Desktop releases also ship Windows NSIS x64, Authenticode-signed through SignPath, and macOS dmg/zip for arm64 and x64, unsigned and not notarized. On macOS the updater offers a download instead of installing (§37 §19.10).** Amends D676. | Owner: "also ship for windows using signpath and ship unsigned for mac" | Approved (owner) |
 ## Open questions
 
 | # | Question | Owner | Needed by |
