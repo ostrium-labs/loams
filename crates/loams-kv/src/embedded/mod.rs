@@ -64,9 +64,12 @@ const ORACLE: TableDefinition<&str, u64> = TableDefinition::new("oracle");
 const HIGH_WATER: &str = "high_water";
 const GC_SAFE_POINT: &str = "gc_safe_point";
 
-/// How long opening waits for this process's previous handle on the file to
-/// close it.
-const REOPEN_WAIT: Duration = Duration::from_secs(2);
+/// How long opening waits for this process's previous database on the file
+/// to close (its last reads, mark writes or GC round finishing).
+const CLOSE_WAIT: Duration = Duration::from_secs(30);
+/// How long opening retries a file still locked by this process's previous
+/// database, which closed a moment ago.
+const UNLOCK_WAIT: Duration = Duration::from_millis(500);
 
 fn storage(e: impl std::fmt::Display) -> KvError {
     KvError::Embedded(e.to_string())
@@ -236,16 +239,29 @@ impl Drop for Shared {
     }
 }
 
+/// A store file this process opened: its handles' shared state, and the
+/// database itself, which outlives the last handle by a moment while its
+/// last users (a mark write, a GC round) finish.
+struct Opened {
+    shared: Weak<Shared>,
+    core: Weak<Core>,
+}
+
 /// The open store files of this process, by canonical path.
-static REGISTRY: LazyLock<Mutex<HashMap<PathBuf, Weak<Shared>>>> =
+static REGISTRY: LazyLock<Mutex<HashMap<PathBuf, Opened>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn registry() -> MutexGuard<'static, HashMap<PathBuf, Weak<Shared>>> {
+fn registry() -> MutexGuard<'static, HashMap<PathBuf, Opened>> {
     REGISTRY.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// The registry key of `path`: its canonical directory and file name.
+/// The registry key of `path`: the canonical path of the file when it
+/// exists (a symlinked file is the file it names, review fix 8), else its
+/// canonical directory and file name.
 fn canonical(path: &Path) -> std::io::Result<PathBuf> {
+    if let Ok(file) = path.canonicalize() {
+        return Ok(file);
+    }
     let name = path.file_name().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -261,7 +277,11 @@ fn canonical(path: &Path) -> std::io::Result<PathBuf> {
 
 /// Whether this process has the store file at `path` open.
 pub fn is_open(path: &Path) -> bool {
-    canonical(path).is_ok_and(|key| registry().get(&key).is_some_and(|w| w.strong_count() > 0))
+    canonical(path).is_ok_and(|key| {
+        registry()
+            .get(&key)
+            .is_some_and(|o| o.shared.strong_count() > 0)
+    })
 }
 
 /// Opens the redb file; with the `faults` feature through a backend whose
@@ -276,11 +296,28 @@ fn create_db(
     Database::create(path)
 }
 
+/// Opens the file; `closing` is this process's previous database on it,
+/// which is waited for (up to [`CLOSE_WAIT`]) rather than reported as
+/// another process's lock.
 fn create(
     path: &Path,
+    closing: Option<Weak<Core>>,
     #[cfg(feature = "faults")] io_faults: &Arc<faulty::Switch>,
 ) -> Result<Database, KvError> {
-    let give_up = Instant::now() + REOPEN_WAIT;
+    let ours = closing.is_some();
+    if let Some(core) = closing {
+        let give_up = Instant::now() + CLOSE_WAIT;
+        while core.strong_count() > 0 {
+            if Instant::now() >= give_up {
+                return Err(KvError::Embedded(format!(
+                    "the store file {} is still closing in this process after {CLOSE_WAIT:?}",
+                    path.display()
+                )));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+    let give_up = Instant::now() + UNLOCK_WAIT;
     loop {
         match create_db(
             path,
@@ -288,8 +325,9 @@ fn create(
             io_faults,
         ) {
             Ok(db) => return Ok(db),
-            // This process's last handle may still be closing the file.
-            Err(DatabaseError::DatabaseAlreadyOpen) if Instant::now() < give_up => {
+            // This process's previous database released its last reference
+            // a moment ago and is unlocking the file.
+            Err(DatabaseError::DatabaseAlreadyOpen) if ours && Instant::now() < give_up => {
                 std::thread::sleep(Duration::from_millis(20));
             }
             Err(DatabaseError::DatabaseAlreadyOpen) => {
@@ -321,16 +359,23 @@ impl Shared {
         let key = canonical(&config.path)
             .map_err(|e| KvError::Embedded(format!("{}: {e}", config.path.display())))?;
         let mut open = registry();
-        if let Some(shared) = open.get(&key).and_then(Weak::upgrade) {
-            if let Some(dir) = owned {
-                shared.owned_dirs().push(dir);
+        let closing = match open.get(&key) {
+            Some(o) => {
+                if let Some(shared) = o.shared.upgrade() {
+                    if let Some(dir) = owned {
+                        shared.owned_dirs().push(dir);
+                    }
+                    return Ok(shared);
+                }
+                Some(o.core.clone())
             }
-            return Ok(shared);
-        }
+            None => None,
+        };
         #[cfg(feature = "faults")]
         let io_faults = Arc::new(faulty::Switch::default());
         let db = create(
             &key,
+            closing,
             #[cfg(feature = "faults")]
             &io_faults,
         )?;
@@ -375,8 +420,14 @@ impl Shared {
             owned: Mutex::new(owned.into_iter().collect()),
         });
         gc::spawn(Arc::downgrade(&shared), config.gc_interval);
-        open.retain(|_, w| w.strong_count() > 0);
-        open.insert(key, Arc::downgrade(&shared));
+        open.retain(|_, o| o.shared.strong_count() > 0 || o.core.strong_count() > 0);
+        open.insert(
+            key,
+            Opened {
+                shared: Arc::downgrade(&shared),
+                core: Arc::downgrade(&shared.core),
+            },
+        );
         Ok(shared)
     }
 

@@ -324,6 +324,42 @@ async fn one_database_per_path_and_keyspaces_are_isolated() {
     assert_eq!(get_at(&b, now, b"k").await, Some(b"b".to_vec()));
 }
 
+/// A symlinked store file is the file it names: both paths share one
+/// database instead of tripping over redb's file lock (review fix 8). A
+/// file reopened at once after its last handle drops opens cleanly, again
+/// and again.
+#[tokio::test]
+async fn a_symlinked_file_shares_the_database_and_reopens_are_clean() {
+    let dir = tmp();
+    let real = dir.path().join("real.redb");
+    let link = dir.path().join("link.redb");
+    let a = open(&real, "ks").await;
+    std::os::unix::fs::symlink(&real, &link).expect("a symlink");
+    let b = Store::open(StoreConfig::Embedded(config(&link, "ks")))
+        .await
+        .expect("the symlink opens the same database");
+    assert!(embedded::is_open(&link));
+    put(&a, b"k", b"through a").await;
+    let now = b.now().await.expect("now");
+    assert_eq!(get_at(&b, now, b"k").await, Some(b"through a".to_vec()));
+    drop((a, b));
+    assert!(!embedded::is_open(&real));
+    for i in 0..20u8 {
+        let store = open(if i % 2 == 0 { &real } else { &link }, "ks").await;
+        store
+            .run(TxnOptions::new("kv.embedded.reopen"), move |txn| {
+                Box::pin(async move { txn.put(b"n", vec![i]).await })
+            })
+            .await
+            .expect("committed");
+        drop(store);
+        assert!(!embedded::is_open(&real), "closed after round {i}");
+    }
+    let store = open(&real, "ks").await;
+    let now = store.now().await.expect("now");
+    assert_eq!(get_at(&store, now, b"n").await, Some(vec![19]));
+}
+
 /// A config the store cannot honour is refused.
 #[tokio::test]
 async fn bad_configs_are_refused() {
