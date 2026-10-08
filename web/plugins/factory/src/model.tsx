@@ -38,7 +38,12 @@ export const HEALTH: Record<FactoryHealth, { status: Status; label: string }> = 
   auth_failed: { status: 'failed', label: 'Auth failed' },
   unreachable: { status: 'failed', label: 'Unreachable' },
   unconfigured: { status: 'neutral', label: 'Not configured' },
+  locked: { status: 'failed', label: 'Locked' },
 };
+
+/** Credentials stored and readable: the app can be opened and queried. */
+export const isConfigured = (health: FactoryHealth): boolean =>
+  health !== 'unconfigured' && health !== 'locked';
 
 export function HealthPill({ health }: { health: FactoryHealth }) {
   return <StatusTag status={HEALTH[health].status}>{HEALTH[health].label}</StatusTag>;

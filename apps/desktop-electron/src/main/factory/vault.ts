@@ -44,6 +44,8 @@ export interface VaultEntry {
 export class Vault {
 	readonly persistent: boolean;
 	readonly #entries = new Map<string, VaultEntry>();
+	/** Entries this keychain cannot open: kept verbatim (base64 ciphertext) until replaced. */
+	readonly #locked = new Map<string, string>();
 
 	constructor(
 		private readonly file: string,
@@ -57,15 +59,22 @@ export class Vault {
 		return this.#entries.get(app);
 	}
 
+	/** True when the entry exists on disk but could not be decrypted (keychain changed). */
+	isLocked(app: VaultKey): boolean {
+		return this.#locked.has(app);
+	}
+
 	set(app: VaultKey, url: string, fields: Record<string, string>): void {
 		const wrapped: Record<string, Secret> = {};
 		for (const [k, v] of Object.entries(fields)) wrapped[k] = new Secret(v);
+		this.#locked.delete(app);
 		this.#entries.set(app, { url, fields: wrapped });
 		this.#save();
 	}
 
 	remove(app: VaultKey): void {
-		if (this.#entries.delete(app)) this.#save();
+		const had = this.#entries.delete(app);
+		if (this.#locked.delete(app) || had) this.#save();
 	}
 
 	#load(): void {
@@ -79,6 +88,7 @@ export class Vault {
 			return;
 		}
 		for (const [app, b64] of Object.entries(map)) {
+			if (typeof b64 !== "string") continue;
 			try {
 				const raw = JSON.parse(
 					this.crypto.decrypt(Buffer.from(b64, "base64")),
@@ -88,14 +98,16 @@ export class Vault {
 					fields[k] = new Secret(v);
 				this.#entries.set(app, { url: raw.url, fields });
 			} catch {
-				// An undecryptable entry (changed keychain) is dropped, not fatal.
+				// An undecryptable entry (changed keychain) is kept as-is and reported
+				// locked: the old keychain may come back, and saving must not lose it.
+				this.#locked.set(app, b64);
 			}
 		}
 	}
 
 	#save(): void {
 		if (!this.persistent) return;
-		const map: Record<string, string> = {};
+		const map: Record<string, string> = Object.fromEntries(this.#locked);
 		for (const [app, e] of this.#entries) {
 			const plain: Record<string, string> = {};
 			for (const [k, s] of Object.entries(e.fields)) plain[k] = s.reveal();

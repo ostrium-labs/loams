@@ -62,7 +62,8 @@ export function info(
   return {
     id,
     label: d.label,
-    url: health === 'unconfigured' ? undefined : `https://${id}.example.test`,
+    url:
+      health === 'unconfigured' || health === 'locked' ? undefined : `https://${id}.example.test`,
     health,
     hasPanels: id !== 'openobserve',
     credentialFields: [...d.fields.map(([key, label, secret]) => ({ key, label, secret })), SSO],

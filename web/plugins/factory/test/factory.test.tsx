@@ -38,6 +38,30 @@ describe('factory home', () => {
     expect(screen.getByText('Plane (ItsAPlan)')).toBeTruthy();
   });
 
+  it('locked_app_shows_locked_and_asks_to_configure', async () => {
+    const apps = IDS.map((id) => info(id, id === 'forgejo' ? 'locked' : 'unconfigured'));
+    const { api } = fakeDesktop({ apps });
+    render(<FactoryHome desktop={api} navigate={nav().navigate} />);
+    const tiles = await screen.findAllByRole('article');
+    expect(within(tiles[0] as HTMLElement).getByText('Locked')).toBeTruthy();
+    expect(
+      (
+        within(tiles[0] as HTMLElement).getByRole('button', {
+          name: 'Open app',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it('configure_locked_app_explains_and_does_not_offer_keep', async () => {
+    const apps = IDS.map((id) => info(id, id === 'forgejo' ? 'locked' : 'unconfigured'));
+    const { api } = fakeDesktop({ apps });
+    render(<ConfigurePage desktop={api} app="forgejo" navigate={nav().navigate} />);
+    const token = (await screen.findByLabelText('Access token')) as HTMLInputElement;
+    expect(token.placeholder).toBe('');
+    expect(screen.getByText(/cannot be decrypted/)).toBeTruthy();
+  });
+
   it('session_only_banner', async () => {
     const apps = IDS.map((id) => info(id, 'unconfigured', false));
     const { api } = fakeDesktop({ apps });

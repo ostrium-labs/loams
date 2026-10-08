@@ -120,7 +120,9 @@ export class FactoryHost {
 			...(entry ? { url: entry.url } : {}),
 			health: entry
 				? (this.#health.get(app) ?? "unconfigured")
-				: "unconfigured",
+				: this.vault.isLocked(app)
+					? "locked"
+					: "unconfigured",
 			hasPanels: def.hasPanels,
 			credentialFields: def.credentialFields.map((f: CredField) => ({ ...f })),
 			...(entry ? { fields: this.#plainFields(app) } : {}),

@@ -6,7 +6,7 @@ import type { FactoryAppId, FactoryAppInfo, LoamsDesktopApi } from '@loams/deskt
 import { Button, Empty, Notice } from '@loams/ui';
 import { ExternalLink, RefreshCw, SquareArrowOutUpRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { APP_LABELS, HealthPill } from './model.js';
+import { APP_LABELS, HealthPill, isConfigured } from './model.js';
 
 /** A popover or modal that would be drawn under the native view. */
 const OVERLAY = '[data-overlay-open], dialog[open]';
@@ -41,7 +41,7 @@ export function EmbeddedApp({
     };
   }, [desktop, app]);
 
-  const configured = !!info && info.health !== 'unconfigured';
+  const configured = !!info && isConfigured(info.health);
   useEffect(() => {
     const el = slot.current;
     if (!el || !configured) return;

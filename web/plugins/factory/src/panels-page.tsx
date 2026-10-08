@@ -2,7 +2,7 @@ import type { FactoryAppId, LoamsDesktopApi } from '@loams/desktop/contracts';
 import { Button, Empty } from '@loams/ui';
 import { type ReactNode, useState } from 'react';
 import { useApps } from './home.js';
-import { configureHref, HealthPill, PageHead, ROLES } from './model.js';
+import { configureHref, HealthPill, isConfigured, PageHead, ROLES } from './model.js';
 import { ForgejoPanel } from './panels/forgejo.js';
 import { GlitchtipPanel } from './panels/glitchtip.js';
 import { LangfusePanel } from './panels/langfuse.js';
@@ -61,7 +61,7 @@ export function PanelsPage({
     }
   };
   const Panel = PANELS[app];
-  const configured = info.health !== 'unconfigured';
+  const configured = isConfigured(info.health);
   return (
     <div className="lc-page">
       <PageHead

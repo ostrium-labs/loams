@@ -2,7 +2,7 @@ import type { FactoryAppInfo, LoamsDesktopApi } from '@loams/desktop/contracts';
 import { Button, Card, Empty, Notice } from '@loams/ui';
 import { RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { HealthPill, PageHead, ROLES } from './model.js';
+import { HealthPill, isConfigured, PageHead, ROLES } from './model.js';
 
 function Tile({
   desktop,
@@ -14,7 +14,7 @@ function Tile({
   navigate: (to: string) => void;
 }) {
   const [error, setError] = useState<string>();
-  const configured = app.health !== 'unconfigured';
+  const configured = isConfigured(app.health);
   const open = async () => {
     setError(undefined);
     try {

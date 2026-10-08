@@ -259,6 +259,7 @@ const HEALTH: Record<FactoryHealth, { tone: Tone; label: string }> = {
   unconfigured: { tone: 'planned', label: 'Not configured' },
   auth_failed: { tone: 'failed', label: 'Sign-in failed' },
   unreachable: { tone: 'failed', label: 'Unreachable' },
+  locked: { tone: 'failed', label: 'Locked' },
 };
 
 export function FactoryCard({ load }: { load: Load<FactoryAppInfo[]> }) {

@@ -31,7 +31,9 @@ export type FactoryHealth =
 	| "unconfigured"
 	| "ok"
 	| "auth_failed"
-	| "unreachable";
+	| "unreachable"
+	/** Stored credentials this computer's keychain cannot decrypt; kept until re-entered. */
+	| "locked";
 export interface FactoryAppInfo {
 	id: FactoryAppId;
 	label: string;
@@ -193,9 +195,15 @@ export interface LoamsDesktopApi {
 		catalog(): Promise<ConnectorSummary[]>;
 		get(id: string): Promise<IpcResult<ConnectorDetail>>;
 		/** Validate an instance config (secrets as `${secret:name}` placeholders) against the connector's schema. */
-		validate(id: string, config: unknown): Promise<IpcResult<ConnectorValidation>>;
+		validate(
+			id: string,
+			config: unknown,
+		): Promise<IpcResult<ConnectorValidation>>;
 		/** Save an exported YAML through the main process's save dialog; `saved` is false when cancelled. */
-		saveYaml(name: string, text: string): Promise<IpcResult<{ saved: boolean }>>;
+		saveYaml(
+			name: string,
+			text: string,
+		): Promise<IpcResult<{ saved: boolean }>>;
 	};
 	/** D675: the agent panel. The loop runs in main; keys never cross IPC. */
 	chat: {

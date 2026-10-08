@@ -99,6 +99,37 @@ describe("factory host", () => {
 		);
 	});
 
+	it("locked_vault_entry_reports_locked", async () => {
+		const file = join(mkdtempSync(join(tmpdir(), "fh-")), "v.json");
+		new Vault(file, crypto).set("forgejo", "https://f.example", {
+			token: SECRET,
+		});
+		const broken = {
+			...crypto,
+			decrypt: () => {
+				throw new Error("keychain changed");
+			},
+		};
+		const h = new FactoryHost(
+			new Vault(file, broken),
+			new Context(),
+			fakeApps(),
+		);
+		const f = (await h.list()).find((a) => a.id === "forgejo");
+		expect(f?.health).toBe("locked");
+		expect(f?.url).toBeUndefined();
+		expect(
+			await h.query({ app: "forgejo", op: "searchRepositories" } as never),
+		).toMatchObject({
+			ok: false,
+		});
+		// Re-entering the credentials unlocks it.
+		const r = await h.configure("forgejo", "https://f.example", {
+			token: "t2",
+		});
+		expect(r.ok && r.value.health).toBe("ok");
+	});
+
 	it("reconfigure_same_origin_keeps_secrets", async () => {
 		const h = mk();
 		await h.configure("forgejo", "https://f.example", { token: SECRET });

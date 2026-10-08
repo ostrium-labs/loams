@@ -1,7 +1,7 @@
 import type { FactoryAppId, FactoryAppInfo, LoamsDesktopApi } from '@loams/desktop/contracts';
 import { Button, Card, Field, Input, Notice } from '@loams/ui';
 import { useEffect, useState } from 'react';
-import { HealthPill, PageHead } from './model.js';
+import { HealthPill, isConfigured, PageHead } from './model.js';
 
 const originOf = (u: string): string => {
   try {
@@ -92,7 +92,7 @@ export function ConfigurePage({
       setBusy(false);
     }
   };
-  const configured = info.health !== 'unconfigured';
+  const configured = isConfigured(info.health);
   // A stored secret is never sent to a different origin: main requires it again.
   const originChanged = configured && !!info.url && originOf(url.trim()) !== originOf(info.url);
 
@@ -158,6 +158,12 @@ export function ConfigurePage({
                 )}
               </Field>
             ))}
+            {info.health === 'locked' && (
+              <Notice
+                tone="danger"
+                title="The stored credentials cannot be decrypted on this computer (the system keychain changed). Enter them again."
+              />
+            )}
             {error && <Notice tone="danger" title={error} />}
             {result && (
               <Notice
