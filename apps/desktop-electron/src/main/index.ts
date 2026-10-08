@@ -46,7 +46,7 @@ import {
 	saveWindowState,
 	type WindowState,
 } from "./shell/window-state";
-import { startUpdater } from "./update/updater.electron";
+import { startUpdater, type UpdaterHandle } from "./update/updater.electron";
 
 registerAppScheme();
 // D663: crash dumps stay on this machine (userData/Crashpad); nothing is uploaded.
@@ -54,6 +54,8 @@ crashReporter.start({ uploadToServer: false });
 
 let registry: ServerRegistry;
 let engine: EngineSupervisor | undefined;
+let updater: UpdaterHandle | undefined;
+let installingOnQuit = false;
 let factory: FactoryHost | undefined;
 let factoryViews: FactoryViews | undefined;
 let factoryEmbed: FactoryEmbed | undefined;
@@ -213,7 +215,7 @@ const singleInstance = initSingleInstance({
 					if (route) singleInstance.navigate(route);
 				},
 			});
-			startUpdater({
+			updater = startUpdater({
 				prepareToInstall: async () => {
 					await engine?.stop();
 				},
@@ -262,6 +264,13 @@ const singleInstance = initSingleInstance({
 			tray?.destroy();
 			factoryEmbed?.closeAll();
 			factoryViews?.closeAll();
+			// Quit-time install of a hash-verified download (D661); runs prepareToInstall first.
+			if (updater?.hasVerifiedDownload() && !installingOnQuit) {
+				installingOnQuit = true;
+				e.preventDefault();
+				void updater.installOnQuit().finally(() => app.quit());
+				return;
+			}
 			if (quitting || !engine) return;
 			e.preventDefault();
 			quitting = true;

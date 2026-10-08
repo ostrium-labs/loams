@@ -43,13 +43,22 @@ export interface ControllerDeps {
 	restartEngine?: () => Promise<void>;
 	onState: (s: State) => void;
 	log?: (...a: unknown[]) => void;
+	/** Injectable timer for the install watchdog. */
+	schedule?: (fn: () => void, ms: number) => () => void;
 }
+
+/** quitAndInstall in electron-updater 6.8.9 never throws: it emits "error" and returns. */
+export const INSTALL_WATCHDOG_MS = 10_000;
 
 export interface Controller {
 	state(): State;
 	check(): Promise<void>;
 	download(): Promise<void>;
 	install(): Promise<void>;
+	/** True once a downloaded file passed the pinned-hash check and is waiting to be installed. */
+	hasVerifiedDownload(): boolean;
+	/** Quit-time install (silent, no relaunch). Resolves true when quitAndInstall was invoked. */
+	installOnQuit(): Promise<boolean>;
 }
 
 export function createController(d: ControllerDeps): Controller {
@@ -58,6 +67,22 @@ export function createController(d: ControllerDeps): Controller {
 	let pinned: Pinned | null = null;
 	let verifiedDownload = false;
 	let checking = false;
+	let installing = false;
+	const schedule =
+		d.schedule ??
+		((fn, ms) => {
+			const t = setTimeout(fn, ms);
+			t.unref?.();
+			return () => clearTimeout(t);
+		});
+
+	const installFailed = async (detail?: unknown): Promise<void> => {
+		if (!installing) return;
+		installing = false;
+		verifiedDownload = false;
+		await d.restartEngine?.().catch(() => undefined);
+		fail("update_failed", detail);
+	};
 
 	const set = (s: State): void => {
 		state = d.mode === "disabled" ? s : { ...s, mode: d.mode };
@@ -71,9 +96,10 @@ export function createController(d: ControllerDeps): Controller {
 	if (d.mode === "self") {
 		d.updater.autoDownload = false;
 		d.updater.autoInstallOnAppQuit = false;
-		d.updater.on("download-progress", (p) =>
-			set({ phase: "downloading", version: state.version, percent: p.percent }),
-		);
+		d.updater.on("download-progress", (p) => {
+			if (state.phase !== "downloading") return;
+			set({ phase: "downloading", version: state.version, percent: p.percent });
+		});
 		d.updater.on("update-downloaded", (ev) => {
 			void (async () => {
 				const ok =
@@ -87,12 +113,16 @@ export function createController(d: ControllerDeps): Controller {
 					fail("download_hash_mismatch");
 					return;
 				}
+				// autoInstallOnAppQuit stays false: electron-updater registers its quit
+				// handler synchronously, before this hash finishes. We install on quit ourselves.
 				verifiedDownload = true;
-				d.updater.autoInstallOnAppQuit = true;
 				set({ phase: "ready", version: ev.version });
 			})();
 		});
-		d.updater.on("error", (e) => fail("update_failed", e));
+		d.updater.on("error", (e) => {
+			if (installing) void installFailed(e);
+			else fail("update_failed", e);
+		});
 	}
 
 	return {
@@ -154,6 +184,7 @@ export function createController(d: ControllerDeps): Controller {
 				return;
 			}
 			verifiedDownload = false;
+			d.updater.autoInstallOnAppQuit = false;
 			set({ phase: "downloading", version, percent: 0 });
 			try {
 				await d.updater.downloadUpdate();
@@ -161,21 +192,40 @@ export function createController(d: ControllerDeps): Controller {
 				fail("update_failed", e);
 			}
 		},
+		hasVerifiedDownload: () => verifiedDownload && state.phase === "ready",
 		async install() {
-			if (d.mode !== "self" || state.phase !== "ready" || !verifiedDownload)
-				return;
-			try {
-				await d.prepareToInstall?.();
-			} catch (e) {
-				fail("update_failed", e);
-				return;
-			}
-			try {
-				d.updater.quitAndInstall(false, true);
-			} catch (e) {
-				await d.restartEngine?.().catch(() => undefined);
-				fail("update_failed", e);
-			}
+			await runInstall(false, true);
 		},
+		installOnQuit: () => runInstall(true, false),
 	};
+
+	async function runInstall(
+		silent: boolean,
+		runAfter: boolean,
+	): Promise<boolean> {
+		if (
+			d.mode !== "self" ||
+			state.phase !== "ready" ||
+			!verifiedDownload ||
+			installing
+		)
+			return false;
+		installing = true;
+		try {
+			await d.prepareToInstall?.();
+		} catch (e) {
+			installing = false;
+			fail("update_failed", e);
+			return false;
+		}
+		// If the app has not quit shortly after, the install did not start.
+		schedule(() => void installFailed("install watchdog"), INSTALL_WATCHDOG_MS);
+		try {
+			d.updater.quitAndInstall(silent, runAfter);
+		} catch (e) {
+			await installFailed(e);
+			return false;
+		}
+		return true;
+	}
 }

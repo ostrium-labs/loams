@@ -96,7 +96,7 @@ function harness(
 ) {
 	const handlers: Record<string, (e: never) => void> = {};
 	const calls = { download: 0, quit: 0, deleted: [] as string[], restart: 0 };
-	let quitThrows = false;
+	let quitFails = false;
 	const updater = {
 		autoDownload: true,
 		autoInstallOnAppQuit: true,
@@ -109,13 +109,15 @@ function harness(
 		},
 		quitAndInstall: () => {
 			calls.quit++;
-			if (quitThrows) throw new Error("boom");
+			// electron-updater 6.8.9 does not throw: it dispatches "error" and returns.
+			if (quitFails) handlers.error?.(new Error("boom") as never);
 		},
 		on: (ev: string, cb: (e: never) => void) => {
 			handlers[ev] = cb;
 		},
 	} as unknown as UpdaterLike;
 	const states: string[] = [];
+	const timers: Array<() => void> = [];
 	const ctl = createController({
 		mode: "self",
 		appVersion: "1.0.0",
@@ -129,6 +131,10 @@ function harness(
 		openRelease: async () => undefined,
 		restartEngine: async () => {
 			calls.restart++;
+		},
+		schedule: (fn) => {
+			timers.push(fn);
+			return () => undefined;
 		},
 		onState: (s) => states.push(s.phase + (s.message ? `:${s.message}` : "")),
 	});
@@ -145,7 +151,9 @@ function harness(
 		calls,
 		states,
 		downloaded,
-		setQuitThrows: () => (quitThrows = true),
+		setQuitFails: () => (quitFails = true),
+		timers,
+		handlers,
 	};
 }
 
@@ -159,7 +167,7 @@ describe("controller", () => {
 		expect(h.calls.download).toBe(1);
 		await h.downloaded();
 		expect(h.ctl.state().phase).toBe("ready");
-		expect(h.updater.autoInstallOnAppQuit).toBe(true);
+		expect(h.updater.autoInstallOnAppQuit).toBe(false);
 		await h.ctl.install();
 		expect(h.calls.quit).toBe(1);
 	});
@@ -218,15 +226,71 @@ describe("controller", () => {
 			mode: "self",
 		});
 	});
-	it("restarts_engine_when_quit_and_install_throws", async () => {
+	it("failed_install_restarts_engine", async () => {
 		const h = harness();
 		await h.ctl.check();
 		await h.ctl.download();
 		await h.downloaded();
-		h.setQuitThrows();
+		h.setQuitFails();
 		await h.ctl.install();
+		await new Promise((r) => setTimeout(r, 0));
+		expect(h.calls.restart).toBe(1);
+		expect(h.ctl.state()).toMatchObject({
+			phase: "error",
+			message: "update_failed",
+		});
+	});
+	it("install_watchdog_restarts_engine_when_app_does_not_quit", async () => {
+		const h = harness();
+		await h.ctl.check();
+		await h.ctl.download();
+		await h.downloaded();
+		await h.ctl.install();
+		expect(h.calls.restart).toBe(0);
+		h.timers[0]?.();
+		await new Promise((r) => setTimeout(r, 0));
 		expect(h.calls.restart).toBe(1);
 		expect(h.ctl.state().phase).toBe("error");
+	});
+	it("verified_download_installs_on_quit", async () => {
+		const h = harness();
+		await h.ctl.check();
+		await h.ctl.download();
+		await h.downloaded();
+		expect(h.ctl.hasVerifiedDownload()).toBe(true);
+		expect(await h.ctl.installOnQuit()).toBe(true);
+		expect(h.calls.quit).toBe(1);
+	});
+	it("unverified_download_does_not_install_on_quit", async () => {
+		const h = harness({ hash: "WRONG" });
+		await h.ctl.check();
+		await h.ctl.download();
+		await h.downloaded();
+		expect(h.ctl.hasVerifiedDownload()).toBe(false);
+		expect(await h.ctl.installOnQuit()).toBe(false);
+		expect(h.calls.quit).toBe(0);
+	});
+	it("download_resets_verification", async () => {
+		const h = harness();
+		await h.ctl.check();
+		await h.ctl.download();
+		await h.downloaded();
+		h.setQuitFails();
+		await h.ctl.install(); // fails, back to error
+		await new Promise((r) => setTimeout(r, 0));
+		h.updater.autoInstallOnAppQuit = true; // simulate a stray flag
+		await h.ctl.check();
+		await h.ctl.download();
+		expect(h.updater.autoInstallOnAppQuit).toBe(false);
+		expect(h.ctl.hasVerifiedDownload()).toBe(false);
+	});
+	it("progress_does_not_overwrite_error_or_ready", async () => {
+		const h = harness();
+		await h.ctl.check();
+		await h.ctl.download();
+		await h.downloaded();
+		h.handlers["download-progress"]?.({ percent: 50 } as never);
+		expect(h.ctl.state().phase).toBe("ready");
 	});
 	it("manual_mode_never_touches_updater", async () => {
 		const h = harness();

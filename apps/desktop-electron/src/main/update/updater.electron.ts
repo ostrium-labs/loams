@@ -28,6 +28,8 @@ import { UPDATE_FEED, UPDATE_PUBKEY_HEX } from "./pubkey";
 
 export interface UpdaterHandle {
 	state(): State;
+	hasVerifiedDownload(): boolean;
+	installOnQuit(): Promise<boolean>;
 	stop(): void;
 }
 
@@ -105,6 +107,8 @@ export function startUpdater(opts: {
 	}
 	return {
 		state: () => ctl.state(),
+		hasVerifiedDownload: () => ctl.hasVerifiedDownload(),
+		installOnQuit: () => ctl.installOnQuit(),
 		stop: () => {
 			for (const t of timers) {
 				clearTimeout(t);
