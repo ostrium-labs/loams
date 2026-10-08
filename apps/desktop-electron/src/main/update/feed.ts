@@ -32,7 +32,7 @@ export async function readCapped(
 
 export type FetchLike = (
 	url: string,
-	init: { redirect: "error" },
+	init: { redirect: "manual" },
 ) => Promise<Response>;
 
 export interface FeedFiles {
@@ -40,7 +40,51 @@ export interface FeedFiles {
 	sig: Uint8Array;
 }
 
-/** Fetch `<feed>/<file>` and `.sig`; no redirects, cache-busted. Throws on any transport problem. */
+export const MAX_REDIRECTS = 5;
+
+/**
+ * Redirect targets we follow: https only, and either the feed's own host,
+ * github.com, or a *.githubusercontent.com asset host (GitHub release downloads
+ * 302 to release-assets/objects.githubusercontent.com). The bytes are still
+ * Ed25519-verified, so this only limits who we talk to.
+ */
+export function redirectAllowed(target: URL, feedHost: string): boolean {
+	if (target.protocol !== "https:") return false;
+	if (target.username || target.password) return false;
+	const h = target.hostname.toLowerCase();
+	return (
+		h === feedHost.toLowerCase() ||
+		h === "github.com" ||
+		h.endsWith(".githubusercontent.com")
+	);
+}
+
+/** GET `url`, following at most MAX_REDIRECTS allowed redirects by hand. */
+export async function fetchFollowing(
+	url: string,
+	fetchFn: FetchLike,
+	feedHost: string,
+): Promise<Response> {
+	let current = url;
+	for (let hop = 0; ; hop++) {
+		const res = await fetchFn(current, { redirect: "manual" });
+		if (res.status < 300 || res.status >= 400 || res.status === 304) return res;
+		await res.body?.cancel().catch(() => undefined);
+		if (hop >= MAX_REDIRECTS) throw new Error("too_many_redirects");
+		const loc = res.headers.get("location");
+		let next: URL;
+		try {
+			if (!loc) throw new Error("no location");
+			next = new URL(loc, current);
+		} catch {
+			throw new Error("redirect_refused");
+		}
+		if (!redirectAllowed(next, feedHost)) throw new Error("redirect_refused");
+		current = next.toString();
+	}
+}
+
+/** Fetch `<feed>/<file>` and `.sig`; allow-listed redirects only, cache-busted. Throws on any transport problem. */
 export async function fetchFeedFiles(
 	feed: string,
 	file: string,
@@ -48,10 +92,13 @@ export async function fetchFeedFiles(
 	nonce: () => string = () => String(Date.now()),
 ): Promise<FeedFiles> {
 	const base = feed.replace(/\/+$/, "");
+	const feedHost = new URL(base).hostname;
 	const get = async (name: string): Promise<Uint8Array> => {
-		const res = await fetchFn(`${base}/${name}?noCache=${nonce()}`, {
-			redirect: "error",
-		});
+		const res = await fetchFollowing(
+			`${base}/${name}?noCache=${nonce()}`,
+			fetchFn,
+			feedHost,
+		);
 		if (!res.ok) throw new Error(`status_${res.status}`);
 		return readCapped(res);
 	};

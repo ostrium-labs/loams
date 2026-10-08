@@ -67,14 +67,14 @@ describe("feed", () => {
 		);
 		expect((await readCapped(new Response("abc"), 50)).length).toBe(3);
 	});
-	it("no_redirects_and_cache_bust", async () => {
+	it("manual_redirects_and_cache_bust", async () => {
 		const seen: string[] = [];
 		const out = await fetchFeedFiles(
 			"https://f.example/x/",
 			"latest.yml",
 			async (u, init) => {
 				seen.push(u);
-				expect(init.redirect).toBe("error");
+				expect(init.redirect).toBe("manual");
 				return new Response("v");
 			},
 			() => "N",
@@ -84,6 +84,74 @@ describe("feed", () => {
 			"https://f.example/x/latest.yml?noCache=N",
 		]);
 		expect(out.yml.length).toBe(1);
+	});
+	const redirectTo = (loc: string) =>
+		new Response(null, { status: 302, headers: { location: loc } });
+	it("follows_github_release_redirect_to_allowed_host", async () => {
+		const seen: string[] = [];
+		const out = await fetchFeedFiles(
+			"https://github.com/o/r/releases/download/desktop-latest",
+			"latest.yml",
+			async (u) => {
+				seen.push(u);
+				if (u.startsWith("https://github.com/"))
+					return redirectTo(
+						`https://release-assets.githubusercontent.com/a/${u.includes(".sig") ? "sig" : "yml"}?x=1`,
+					);
+				return new Response(u.endsWith("sig?x=1") ? "S" : "YML");
+			},
+			() => "N",
+		);
+		expect(new TextDecoder().decode(out.yml)).toBe("YML");
+		expect(new TextDecoder().decode(out.sig)).toBe("S");
+		expect(seen).toContain(
+			"https://release-assets.githubusercontent.com/a/yml?x=1",
+		);
+	});
+	it("follows_relative_redirect_on_feed_host", async () => {
+		const out = await fetchFeedFiles(
+			"https://f.example/x",
+			"latest.yml",
+			async (u) =>
+				u.includes("/x/") ? redirectTo("/y/latest.yml") : new Response("ok"),
+		);
+		expect(new TextDecoder().decode(out.yml)).toBe("ok");
+	});
+	it("rejects_redirect_to_other_host_or_http", async () => {
+		for (const loc of [
+			"https://evil.example/latest.yml",
+			"http://objects.githubusercontent.com/latest.yml",
+			"https://githubusercontent.com.evil.example/x",
+			"file:///etc/passwd",
+		]) {
+			await expect(
+				fetchFeedFiles("https://github.com/o/r", "latest.yml", async (u) =>
+					u.startsWith("https://github.com/")
+						? redirectTo(loc)
+						: new Response("bad"),
+				),
+			).rejects.toThrow("redirect_refused");
+		}
+	});
+	it("caps_redirect_loops", async () => {
+		let n = 0;
+		await expect(
+			fetchFeedFiles("https://github.com/o/r", "latest.yml", async () => {
+				n++;
+				return redirectTo("https://github.com/o/r/again");
+			}),
+		).rejects.toThrow("too_many_redirects");
+		// yml: 1 + 5 redirects; sig is swallowed but also capped.
+		expect(n).toBeLessThanOrEqual(12);
+	});
+	it("redirect_without_location_fails", async () => {
+		await expect(
+			fetchFeedFiles(
+				"https://github.com/o/r",
+				"latest.yml",
+				async () => new Response(null, { status: 302 }),
+			),
+		).rejects.toThrow("redirect_refused");
 	});
 });
 

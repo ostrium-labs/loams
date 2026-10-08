@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { rm } from "node:fs/promises";
+import { Readable } from "node:stream";
 import {
 	app,
 	BrowserWindow,
@@ -31,6 +32,39 @@ export interface UpdaterHandle {
 	hasVerifiedDownload(): boolean;
 	installOnQuit(): Promise<boolean>;
 	stop(): void;
+}
+
+/**
+ * One GET that surfaces a 3xx as a Response instead of following it.
+ * `net.fetch({redirect:"manual"})` rejects ("Redirect was cancelled") rather than
+ * returning the redirect, so this uses net.request and stops at the redirect event;
+ * fetchFollowing decides which hops are allowed.
+ */
+function netGetManual(url: string): Promise<Response> {
+	return new Promise((resolve, reject) => {
+		const req = net.request({
+			url,
+			method: "GET",
+			redirect: "manual",
+			credentials: "omit",
+			useSessionCookies: false,
+		});
+		req.on("redirect", (status, _method, location) => {
+			resolve(new Response(null, { status, headers: { location } }));
+			req.abort();
+		});
+		req.on("response", (res) => {
+			const headers = new Headers();
+			for (const [k, v] of Object.entries(res.headers))
+				headers.set(k, Array.isArray(v) ? v.join(", ") : v);
+			const body = Readable.toWeb(
+				res as unknown as Readable,
+			) as unknown as ReadableStream<Uint8Array>;
+			resolve(new Response(body, { status: res.statusCode, headers }));
+		});
+		req.on("error", reject);
+		req.end();
+	});
 }
 
 async function sha512Base64(file: string): Promise<string> {
@@ -64,7 +98,7 @@ export function startUpdater(opts: {
 			fetchFeedFiles(
 				UPDATE_FEED,
 				channelFile(process.platform, process.arch),
-				(url, init) => net.fetch(url, init),
+				(url) => netGetManual(url),
 			),
 		verify: (yml, sig) => verifyManifest(yml, sig, UPDATE_PUBKEY_HEX),
 		hashFile: sha512Base64,
