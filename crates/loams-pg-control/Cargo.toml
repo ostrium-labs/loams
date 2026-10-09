@@ -38,5 +38,9 @@ proptest.workspace = true
 name = "store_tikv"
 required-features = ["tikv"]
 
+[[test]]
+name = "service_tikv"
+required-features = ["tikv"]
+
 [lints]
 workspace = true

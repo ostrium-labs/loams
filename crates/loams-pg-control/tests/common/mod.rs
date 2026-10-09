@@ -1,5 +1,6 @@
-//! What `tests/projects.rs` and `tests/branches.rs` share: a fake
-//! [`NeonApi`], a local store and a service on a hand-driven clock.
+//! What the service cases (`tests/service/`) share: a fake [`NeonApi`], a
+//! store of the test binary's backend (`crate::factory()`), and a service
+//! on a hand-driven clock.
 
 #![allow(dead_code)]
 
@@ -9,8 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use loams_pg_control::model::{BranchKey, BranchRec, BranchState};
 use loams_pg_control::neon::{LsnAtTime, NeonApi, NeonApiError, TimelineView, WalHeads};
-use loams_pg_control::service::{Caller, Clock, PgService, ServiceConfig};
-use loams_pg_control::store::conformance::local_factory;
+use loams_pg_control::service::{BeforeCommit, Caller, Clock, PgService, ServiceConfig};
 use loams_pg_control::{KvControlStore, PgControlStore, StoreOptions};
 
 /// 2026-10-09T00:00:00Z.
@@ -143,25 +143,75 @@ pub fn new_clock() -> TestClock {
     TestClock(Arc::new(AtomicU64::new(T0_MS)))
 }
 
-/// A fresh local store, and a service on it.
-pub async fn harness() -> Harness {
-    let store = local_factory(env!("CARGO_TARGET_TMPDIR"))
-        .store(options())
-        .await
-        .expect("a local store");
-    harness_on(store)
+/// A fresh store of the binary's backend, and a service on it; `None` when
+/// the backend is unavailable (TiKV without `LOAMS_TEST_PD`).
+pub async fn harness() -> Option<Harness> {
+    Some(harness_on(fresh_store().await?))
 }
 
+/// A fresh store of the binary's backend.
+pub async fn fresh_store() -> Option<KvControlStore> {
+    crate::factory().store(options()).await
+}
+
+/// The service on `store`, with a new clock and fake.
 pub fn harness_on(store: KvControlStore) -> Harness {
+    harness_with(store, None)
+}
+
+/// As [`harness_on`], with a hook before each commit.
+pub fn harness_with(store: KvControlStore, before_commit: Option<BeforeCommit>) -> Harness {
     let neon = FakeNeon::default();
     let clock = new_clock();
-    let service = PgService::new(store.clone(), neon.clone(), config(&clock));
+    let config = ServiceConfig {
+        before_commit,
+        ..config(&clock)
+    };
+    let service = PgService::new(store.clone(), neon.clone(), config);
     Harness {
         service,
         store,
         neon,
         clock,
     }
+}
+
+/// A service on `store` with no hook, its own fake and a clock at
+/// [`T0_MS`]: what a hook uses to commit a competing write.
+pub fn plain_service(store: &KvControlStore, neon: &FakeNeon) -> PgService<FakeNeon> {
+    PgService::new(store.clone(), neon.clone(), config(&new_clock()))
+}
+
+/// A hook that runs `f` once, the first time `rpc` is about to commit.
+pub fn once_before<F, Fut>(rpc: &'static str, f: F) -> BeforeCommit
+where
+    F: Fn() -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let f = Arc::new(f);
+    Arc::new(move |at: &'static str| {
+        let run = at == rpc && !fired.swap(true, Ordering::SeqCst);
+        let f = f.clone();
+        Box::pin(async move {
+            if run {
+                f().await;
+            }
+        })
+    })
+}
+
+/// `let h = harness!();`: the harness, or return (skipped).
+macro_rules! harness {
+    () => {
+        match crate::common::harness().await {
+            Some(h) => h,
+            None => {
+                eprintln!("skipped: no store (LOAMS_TEST_PD unset?)");
+                return;
+            }
+        }
+    };
 }
 
 pub fn user() -> Caller {

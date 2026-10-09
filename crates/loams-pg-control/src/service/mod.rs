@@ -36,6 +36,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use futures::future::BoxFuture;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -93,7 +94,7 @@ impl fmt::Debug for Clock {
 }
 
 /// The service's defaults and limits.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ServiceConfig {
     /// The Postgres major a create without one gets (Task 0 ruling 7: 17).
     pub default_pg_version: u32,
@@ -108,6 +109,27 @@ pub struct ServiceConfig {
     /// takes it from the namespace's limits record).
     pub max_history_retention: Duration,
     pub clock: Clock,
+    /// A test seam: awaited with the RPC's name after a mutation has read
+    /// what it needs and before its batch commits, so a test can commit a
+    /// competing write at exactly that point. `None` in production.
+    pub before_commit: Option<BeforeCommit>,
+}
+
+/// See [`ServiceConfig::before_commit`].
+pub type BeforeCommit = Arc<dyn Fn(&'static str) -> BoxFuture<'static, ()> + Send + Sync>;
+
+impl fmt::Debug for ServiceConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ServiceConfig")
+            .field("default_pg_version", &self.default_pg_version)
+            .field("pg_versions", &self.pg_versions)
+            .field("default_region", &self.default_region)
+            .field("default_wal_pool", &self.default_wal_pool)
+            .field("default_history_retention", &self.default_history_retention)
+            .field("max_history_retention", &self.max_history_retention)
+            .field("before_commit", &self.before_commit.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for ServiceConfig {
@@ -120,6 +142,7 @@ impl Default for ServiceConfig {
             default_history_retention: Duration::from_secs(7 * 24 * 3600),
             max_history_retention: Duration::from_secs(30 * 24 * 3600),
             clock: Clock::system(),
+            before_commit: None,
         }
     }
 }
@@ -364,6 +387,7 @@ impl<N: NeonApi> PgService<N> {
     /// Commits `mutation` with the ledger entry of `claim`, and answers.
     async fn apply<T>(
         &self,
+        rpc: &'static str,
         claim: Option<&Claim>,
         mutation: Mutation<T>,
     ) -> Result<Applied<T>, ServiceError>
@@ -380,6 +404,9 @@ impl<N: NeonApi> PgService<N> {
             let answer = answer.clone();
             self.ledger
                 .record(&mut batch, claim, now, move |out| answer(out))?;
+        }
+        if let Some(hook) = &self.config.before_commit {
+            hook(rpc).await;
         }
         match self.writer.commit(batch).await {
             Ok(out) => Ok(Applied::Done(answer(&out))),

@@ -381,7 +381,9 @@ impl<N: NeonApi> PgService<N> {
                 },
             })
             .conflict_means(name_at, taken);
-            if let Applied::Done(created) = self.apply(claim.as_ref(), mutation).await? {
+            if let Applied::Done(created) =
+                self.apply("CreateBranch", claim.as_ref(), mutation).await?
+            {
                 return Ok(created);
             }
         }
@@ -541,7 +543,9 @@ impl<N: NeonApi> PgService<N> {
                     ),
                 );
             }
-            if let Applied::Done(updated) = self.apply(claim.as_ref(), mutation).await? {
+            if let Applied::Done(updated) =
+                self.apply("UpdateBranch", claim.as_ref(), mutation).await?
+            {
                 return Ok(updated);
             }
         }
@@ -624,7 +628,7 @@ impl<N: NeonApi> PgService<N> {
             )?;
             batch.put(&operation, None)?;
             let mutation = Mutation::new(batch, move |_| operation.clone());
-            if let Applied::Done(op) = self.apply(claim.as_ref(), mutation).await? {
+            if let Applied::Done(op) = self.apply("DeleteBranch", claim.as_ref(), mutation).await? {
                 return Ok(op);
             }
         }
@@ -676,7 +680,10 @@ impl<N: NeonApi> PgService<N> {
                 record: project.clone(),
                 version: out[project_at].unwrap_or_default(),
             });
-            if let Applied::Done(updated) = self.apply(claim.as_ref(), mutation).await? {
+            if let Applied::Done(updated) = self
+                .apply("SetDefaultBranch", claim.as_ref(), mutation)
+                .await?
+            {
                 return Ok(updated);
             }
         }

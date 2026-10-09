@@ -1,11 +1,9 @@
 //! The branch RPCs of `pg-control` (PG2 Task 5) on the local store and a
 //! fake Neon.
 
-mod common;
-
 use std::time::Duration;
 
-use common::{Harness, T0_MS, admin, harness, mark_branch_ready, user};
+use crate::common::{Harness, T0_MS, admin, mark_branch_ready, user};
 use loams_pg_control::ids::{BranchId, ProjectId, tenant_id, timeline_id};
 use loams_pg_control::model::{BranchState, ProjectRec};
 use loams_pg_control::neon::{Lsn, LsnAtTime, TimelineView, WalHeads};
@@ -59,9 +57,9 @@ fn timeline(min_readable: u64, last_record: u64) -> TimelineView {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn create_branch_defaults_to_the_default_branch_at_its_head() {
-    let h = harness().await;
+    let h = harness!();
     let (p, main) = project(&h).await;
     let out = h
         .service
@@ -88,9 +86,9 @@ async fn create_branch_defaults_to_the_default_branch_at_its_head() {
     assert!(h.neon.calls().is_empty(), "{:?}", h.neon.calls());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn create_branch_replay_returns_same_operation() {
-    let h = harness().await;
+    let h = harness!();
     let (p, _) = project(&h).await;
     let first = h
         .service
@@ -105,9 +103,9 @@ async fn create_branch_replay_returns_same_operation() {
     assert_eq!(again, first);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn create_branch_same_name_other_key_is_already_exists() {
-    let h = harness().await;
+    let h = harness!();
     let (p, _) = project(&h).await;
     h.service
         .create_branch(&user(), branch(&p.id, "dev", "b1"))
@@ -134,9 +132,9 @@ async fn create_branch_same_name_other_key_is_already_exists() {
     assert_eq!(all.len(), 2);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn create_branch_at_timestamp_resolves_lsn() {
-    let h = harness().await;
+    let h = harness!();
     let (p, main) = project(&h).await;
     mark_branch_ready(&h.store, &p.id, &main).await;
     let (t, tl) = ids(&p, &main);
@@ -195,9 +193,9 @@ async fn create_branch_at_timestamp_resolves_lsn() {
     assert_eq!(out.branch.branch.record.ancestor_lsn, Some(0x0200_0000));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn lsn_out_of_retention_refused() {
-    let h = harness().await;
+    let h = harness!();
     let (p, main) = project(&h).await;
     mark_branch_ready(&h.store, &p.id, &main).await;
     let (t, tl) = ids(&p, &main);
@@ -290,9 +288,9 @@ async fn lsn_out_of_retention_refused() {
     assert_eq!(all.len(), 1, "nothing was created");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_point_needs_a_ready_parent() {
-    let h = harness().await;
+    let h = harness!();
     let (p, _) = project(&h).await;
     let e = h
         .service
@@ -308,9 +306,9 @@ async fn a_point_needs_a_ready_parent() {
     assert_eq!(e.reason, Reason::FailedPrecondition);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delete_branch_with_children_refused() {
-    let h = harness().await;
+    let h = harness!();
     let (p, _) = project(&h).await;
     let dev = h
         .service
@@ -404,9 +402,9 @@ async fn delete_branch_with_children_refused() {
     assert_eq!(e.reason, Reason::FailedPrecondition);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn protected_branch_delete_needs_admin() {
-    let h = harness().await;
+    let h = harness!();
     let (p, _) = project(&h).await;
     let out = h
         .service
@@ -459,9 +457,9 @@ async fn protected_branch_delete_needs_admin() {
         .expect("an admin may");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_default_branch_cannot_be_deleted() {
-    let h = harness().await;
+    let h = harness!();
     let (p, main) = project(&h).await;
     let e = h
         .service
@@ -480,9 +478,9 @@ async fn the_default_branch_cannot_be_deleted() {
     assert_eq!(e.reason, Reason::FailedPrecondition);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn set_default_branch_moves_the_default() {
-    let h = harness().await;
+    let h = harness!();
     let (p, main) = project(&h).await;
     let dev = h
         .service
@@ -543,9 +541,9 @@ async fn set_default_branch_moves_the_default() {
     let _ = main;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn list_branches_paginates() {
-    let h = harness().await;
+    let h = harness!();
     let (p, _) = project(&h).await;
     for i in 0..6 {
         h.service
@@ -587,9 +585,9 @@ async fn list_branches_paginates() {
     assert_eq!(e.reason, Reason::ProjectNotFound);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn get_branch_reports_wal_heads() {
-    let h = harness().await;
+    let h = harness!();
     let (p, main) = project(&h).await;
     // While creating there is no timeline to ask about.
     let got = h
@@ -644,9 +642,9 @@ async fn get_branch_reports_wal_heads() {
     assert_eq!(e.reason, Reason::NotFound);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn update_branch_renames_and_sets_a_ttl() {
-    let h = harness().await;
+    let h = harness!();
     let (p, _) = project(&h).await;
     let out = h
         .service

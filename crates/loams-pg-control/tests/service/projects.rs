@@ -1,11 +1,9 @@
 //! The project RPCs of `pg-control` (PG2 Task 5) on the local store and a
 //! fake Neon.
 
-mod common;
-
 use std::time::Duration;
 
-use common::{T0_MS, admin, harness, harness_on, user};
+use crate::common::{T0_MS, admin, harness_on, user};
 use loams_pg_control::ids::{ProjectId, tenant_id};
 use loams_pg_control::model::{
     BranchKey, BranchRec, BranchState, OperationRec, ProjectNameKey, ProjectNameRec, ProjectRec,
@@ -26,7 +24,7 @@ fn create(name: &str, key: &str) -> CreateProject {
     }
 }
 
-async fn all_projects(h: &common::Harness) -> Vec<Versioned<ProjectRec>> {
+async fn all_projects(h: &crate::common::Harness) -> Vec<Versioned<ProjectRec>> {
     let (page, next) = h
         .service
         .list_projects("acme", 0, "")
@@ -36,9 +34,9 @@ async fn all_projects(h: &common::Harness) -> Vec<Versioned<ProjectRec>> {
     page
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn create_project_writes_creating_records_and_an_operation() {
-    let h = harness().await;
+    let h = harness!();
     let out = h
         .service
         .create_project(&user(), create("shop", "k1"))
@@ -104,9 +102,9 @@ async fn create_project_writes_creating_records_and_an_operation() {
     assert_eq!(&stored, op);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn create_project_replay_returns_same_operation() {
-    let h = harness().await;
+    let h = harness!();
     let first = h
         .service
         .create_project(&user(), create("shop", "k1"))
@@ -122,9 +120,9 @@ async fn create_project_replay_returns_same_operation() {
     assert_eq!(all_projects(&h).await.len(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn create_project_same_name_other_key_is_already_exists() {
-    let h = harness().await;
+    let h = harness!();
     h.service
         .create_project(&user(), create("shop", "k1"))
         .await
@@ -139,9 +137,9 @@ async fn create_project_same_name_other_key_is_already_exists() {
     assert_eq!(all_projects(&h).await.len(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn same_key_for_another_request_is_invalid_argument() {
-    let h = harness().await;
+    let h = harness!();
     h.service
         .create_project(&user(), create("shop", "k1"))
         .await
@@ -167,9 +165,9 @@ async fn same_key_for_another_request_is_invalid_argument() {
         .expect("bob's own key");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_ledger_forgets_after_its_ttl() {
-    let h = harness().await;
+    let h = harness!();
     let first = h
         .service
         .create_project(&user(), create("shop", "k1"))
@@ -196,9 +194,9 @@ async fn the_ledger_forgets_after_its_ttl() {
     assert_eq!(h.service.ledger().prune(h.clock.now_ms()).await, Ok(0));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_empty_key_is_never_replayed() {
-    let h = harness().await;
+    let h = harness!();
     h.service
         .create_project(&user(), create("shop", ""))
         .await
@@ -211,9 +209,9 @@ async fn an_empty_key_is_never_replayed() {
     assert_eq!(e.reason, Reason::AlreadyExists);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn bad_names_and_settings_are_invalid_argument() {
-    let h = harness().await;
+    let h = harness!();
     for (req, field) in [
         (create("Shop", "k1"), "name"),
         (create("a__b", "k2"), "name"),
@@ -244,9 +242,9 @@ async fn bad_names_and_settings_are_invalid_argument() {
     assert!(all_projects(&h).await.is_empty());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn history_retention_is_clamped() {
-    let h = harness().await;
+    let h = harness!();
     let out = h
         .service
         .create_project(
@@ -261,9 +259,9 @@ async fn history_retention_is_clamped() {
     assert_eq!(out.project.record.history_retention_s, 30 * 24 * 3600);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn get_project_in_another_namespace_is_project_not_found() {
-    let h = harness().await;
+    let h = harness!();
     let out = h
         .service
         .create_project(&user(), create("shop", "k1"))
@@ -290,9 +288,9 @@ async fn get_project_in_another_namespace_is_project_not_found() {
     assert_eq!(e.reason, Reason::InvalidArgument);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn list_projects_paginates() {
-    let h = harness().await;
+    let h = harness!();
     for i in 0..5 {
         h.service
             .create_project(&user(), create(&format!("p{i}"), &format!("k{i}")))
@@ -324,9 +322,9 @@ async fn list_projects_paginates() {
     assert_eq!(e.reason, Reason::InvalidArgument);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn update_project_renames_and_frees_the_old_name() {
-    let h = harness().await;
+    let h = harness!();
     let out = h
         .service
         .create_project(&user(), create("shop", "k1"))
@@ -398,9 +396,9 @@ async fn update_project_renames_and_frees_the_old_name() {
     assert_eq!(e.reason, Reason::AlreadyExists);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delete_project_marks_it_deleting_and_returns_an_operation() {
-    let h = harness().await;
+    let h = harness!();
     let out = h
         .service
         .create_project(&user(), create("shop", "k1"))
@@ -445,9 +443,9 @@ async fn delete_project_marks_it_deleting_and_returns_an_operation() {
     assert_eq!(e.reason, Reason::FailedPrecondition);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delete_project_with_a_protected_branch_needs_admin() {
-    let h = harness().await;
+    let h = harness!();
     let out = h
         .service
         .create_project(&user(), create("shop", "k1"))
@@ -489,24 +487,25 @@ async fn delete_project_with_a_protected_branch_needs_admin() {
 
 /// R3.14: a create whose write came back `Undetermined` is answered, on a
 /// retry with the same key, with the first call's operation, never
-/// `already_exists`, and makes one project.
-#[tokio::test]
+/// `already_exists`, and makes one project. After the commit the first call
+/// itself finds its ledger entry and answers; before it, the first call is
+/// `unavailable` and the retry creates.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn create_project_undetermined_then_retry_returns_same_operation() {
     use std::sync::Arc;
 
     use loams_kv::FaultPoint;
     use loams_pg_control::KvControlStore;
-    use loams_pg_control::store::conformance::local_factory;
 
     for point in [FaultPoint::AfterCommit, FaultPoint::BeforeCommit] {
-        let kv = local_factory(env!("CARGO_TARGET_TMPDIR"))
-            .kv()
-            .await
-            .expect("a local store");
+        let Some(kv) = crate::factory().kv().await else {
+            eprintln!("skipped: no store");
+            return;
+        };
         // No commit tokens, so the lost acknowledgement stays unresolved.
         let untokened = loams_pg_control::StoreOptions {
             commit_tokens: false,
-            ..common::options()
+            ..crate::common::options()
         };
         let faulty = KvControlStore::new(
             kv.clone().with_faults(Arc::new(FirstBatch { point })),
@@ -516,77 +515,64 @@ async fn create_project_undetermined_then_retry_returns_same_operation() {
             .service
             .create_project(&user(), create("shop", "k1"))
             .await;
-        let h = harness_on(KvControlStore::new(kv, common::options()));
+        let h = harness_on(KvControlStore::new(kv, crate::common::options()));
         let retry = h
             .service
             .create_project(&user(), create("shop", "k1"))
             .await
             .unwrap_or_else(|e| panic!("{point:?}: the retry: {e}"));
-        match first {
-            Ok(first) => assert_eq!(retry.operation.id, first.operation.id, "{point:?}"),
-            Err(e) => assert_eq!(e.reason, Reason::Unavailable, "{point:?}: {e}"),
+        match point {
+            FaultPoint::AfterCommit => {
+                let first = first.expect("resolved through the ledger");
+                assert_eq!(retry, first, "the retry answers the first response");
+            }
+            _ => {
+                let e = first.expect_err("nothing applied: unknown to the caller");
+                assert_eq!(e.reason, Reason::Unavailable, "{e}");
+            }
         }
-        if point == FaultPoint::AfterCommit {
-            // The write applied, so the first call's answer is the record's.
-            let names = all_projects(&h).await;
-            assert_eq!(names[0].record.id, retry.project.record.id);
-        }
-        assert_eq!(all_projects(&h).await.len(), 1, "{point:?}");
+        let all = all_projects(&h).await;
+        assert_eq!(all.len(), 1, "{point:?}");
+        assert_eq!(all[0].record.id, retry.project.record.id);
     }
 }
 
-/// The literal R3.14 path: two calls under one key both miss the ledger, the
-/// second's write meets the first's at the store (`Conflict` on the ledger
-/// entry), and it answers the first's operation.
+/// The literal R3.14 path, without timing: a hook commits a second call
+/// under the same key after the first has read the ledger (empty) and
+/// before its batch commits. The first's batch then conflicts at the store,
+/// and it answers the second's operation.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_conflict_on_the_ledger_answers_the_winner() {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, Mutex};
 
-    use loams_kv::{Fault, FaultPlan, FaultPoint};
-    use loams_pg_control::KvControlStore;
-    use loams_pg_control::store::conformance::local_factory;
+    use crate::common::{FakeNeon, fresh_store, harness_with, once_before, plain_service};
 
-    /// Delays the first batch's first commit, so the second call commits
-    /// first.
-    #[derive(Debug, Default)]
-    struct SlowFirst(AtomicU32);
-    impl FaultPlan for SlowFirst {
-        fn at(&self, op: &str, point: FaultPoint, attempt: u32) -> Option<Fault> {
-            (op == "pg.batch"
-                && point == FaultPoint::BeforeCommit
-                && attempt == 1
-                && self.0.fetch_add(1, Ordering::SeqCst) == 0)
-                .then_some(Fault::Delay(Duration::from_millis(400)))
-        }
-    }
-
-    let kv = local_factory(env!("CARGO_TARGET_TMPDIR"))
-        .kv()
-        .await
-        .expect("a local store");
-    let store = KvControlStore::new(
-        kv.with_faults(Arc::new(SlowFirst::default())),
-        common::options(),
-    );
-    let h = Arc::new(harness_on(store));
-    let slow = {
-        let h = h.clone();
-        tokio::spawn(async move {
-            h.service
-                .create_project(&user(), create("shop", "k1"))
-                .await
+    let Some(store) = fresh_store().await else {
+        eprintln!("skipped: no store");
+        return;
+    };
+    let winner = Arc::new(Mutex::new(None));
+    let hook = {
+        let (winner, store) = (winner.clone(), store.clone());
+        once_before("CreateProject", move || {
+            let (winner, other) = (winner.clone(), plain_service(&store, &FakeNeon::default()));
+            async move {
+                let won = other
+                    .create_project(&user(), create("shop", "k1"))
+                    .await
+                    .expect("the second call");
+                *winner.lock().expect("lock") = Some(won);
+            }
         })
     };
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let fast = h
+    let h = harness_with(store, Some(hook));
+    let first = h
         .service
         .create_project(&user(), create("shop", "k1"))
         .await
-        .expect("the fast call");
-    let slow = slow.await.expect("join").expect("the slow call");
-    assert_eq!(slow.operation.id, fast.operation.id);
-    assert_eq!(slow.project, fast.project);
+        .expect("the first call");
+    let won = winner.lock().expect("lock").clone().expect("the hook ran");
+    assert_eq!(first, won, "the loser answers the winner's response");
     assert_eq!(all_projects(&h).await.len(), 1);
 }
 
