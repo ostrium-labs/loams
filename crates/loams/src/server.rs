@@ -301,7 +301,8 @@ pub struct GraphConfig {
     pub retention_hold: Duration,
     /// How long a superseded catalog document is kept (floor 5 minutes outside tests).
     pub sweep_grace: Duration,
-    /// How often the purge and the catalog sweep run.
+    /// How often the purge and the catalog sweep run (config only, no flag; default 10 min;
+    /// must be greater than zero).
     pub maintenance_every: Duration,
     /// The cap on graph statements running at once in this process (`--graph-statement-slots`;
     /// default twice the cores, at most 32). Past it a statement is refused with
@@ -467,10 +468,6 @@ impl ServerConfig {
         Ok(())
     }
 
-    /// Task 15 rule 8: the byte budget at most half the live tail (so a
-    /// backlog at the budget fits the tail and strong reads need no range
-    /// tail), non-zero budgets, `override_factor >= 1` and
-    /// `min_retry_after <= max_retry_after`.
     /// Loams Graph (GR1 Task 5): graphs need a data directory unless they are explicitly
     /// ephemeral, and with no authorizer before MT1 (D750) graph RPCs are served on a loopback
     /// address only.
@@ -485,6 +482,11 @@ impl ServerConfig {
         }
         if !self.listen.ip().is_loopback() {
             return Err(ServerError::GraphListenNotLoopback { addr: self.listen });
+        }
+        if self.graph.maintenance_every.is_zero() {
+            return Err(ServerError::Config(
+                "graph.maintenance_every must be greater than zero".to_string(),
+            ));
         }
         let max_slots = loams_graph::service::admin::MAX_STATEMENT_SLOTS;
         if !(1..=max_slots).contains(&self.graph.statement_slots) {
@@ -502,6 +504,10 @@ impl ServerConfig {
         Ok(())
     }
 
+    /// Task 15 rule 8: the byte budget at most half the live tail (so a
+    /// backlog at the budget fits the tail and strong reads need no range
+    /// tail), non-zero budgets, `override_factor >= 1` and
+    /// `min_retry_after <= max_retry_after`.
     fn validate_backpressure(&self) -> Result<(), ServerError> {
         let b = &self.query.backpressure;
         let config = |message: String| Err(ServerError::Config(message));
@@ -547,8 +553,6 @@ pub enum ServerError {
     #[cfg(feature = "tikv")]
     #[error("TiKV: {0}")]
     Tikv(#[from] loams_tikv::TikvError),
-    /// `--live-listen` is not a loopback address (D111, design §20 §7.1):
-    /// the Live API has no authentication in R1.
     /// Loams Graph has no data directory and graphs are not explicitly ephemeral (GR1 Task 5).
     #[cfg(feature = "graph")]
     #[error(
@@ -564,6 +568,8 @@ pub enum ServerError {
          unified auth plan (D750, MT1); listen on a loopback address or pass --no-graph"
     )]
     GraphListenNotLoopback { addr: SocketAddr },
+    /// `--live-listen` is not a loopback address (D111, design §20 §7.1):
+    /// the Live API has no authentication in R1.
     #[cfg(feature = "live")]
     #[error(
         "--live-listen {addr} is not a loopback address; the Live API has no authentication \
