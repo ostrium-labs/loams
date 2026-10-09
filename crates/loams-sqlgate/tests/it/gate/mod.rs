@@ -64,6 +64,7 @@ impl loams_sqlgate::server::Acceptor for Flaky {
 }
 
 pub struct Harness {
+    pub serving: tokio::task::JoinHandle<()>,
     pub pki: Pki,
     pub gate: Arc<Gate>,
     pub addr: SocketAddr,
@@ -87,6 +88,7 @@ pub struct Options {
     pub auth_failure_burst: u32,
     pub auth_failure_rate_per_sec: u32,
     pub idle_timeout: Duration,
+    pub drain_timeout: Duration,
 }
 
 impl Default for Options {
@@ -104,6 +106,7 @@ impl Default for Options {
             auth_failure_burst: 200,
             auth_failure_rate_per_sec: 20,
             idle_timeout: Duration::from_secs(3600),
+            drain_timeout: Duration::from_secs(10),
         }
     }
 }
@@ -167,6 +170,7 @@ pub async fn harness(opts: Options) -> Harness {
     config.auth_failure_burst = opts.auth_failure_burst;
     config.auth_failure_rate_per_sec = opts.auth_failure_rate_per_sec;
     config.idle_timeout = opts.idle_timeout;
+    config.drain_timeout = opts.drain_timeout;
     let deps = GateDeps {
         users: Arc::new(users),
         credentials: Arc::new(Creds),
@@ -182,8 +186,9 @@ pub async fn harness(opts: Options) -> Harness {
         failures: opts.accept_failures,
         listener,
     };
-    tokio::spawn(gate.clone().serve(flaky));
+    let serving = tokio::spawn(gate.clone().serve(flaky));
     Harness {
+        serving,
         pki,
         gate,
         addr,

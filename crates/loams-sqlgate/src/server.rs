@@ -112,6 +112,10 @@ impl ResolvesServerCert for SniResolver {
     }
 }
 
+/// The ALPN protocol id the gate accepts (MySQL has no registered id; no
+/// MySQL client sends ALPN today).
+pub const MYSQL_ALPN: &[u8] = b"mysql";
+
 /// A TLS 1.2+ server config choosing the certificate by SNI.
 pub fn sni_server_config(certs: Vec<SniCert>) -> Result<Arc<rustls::ServerConfig>, rustls::Error> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
@@ -126,10 +130,14 @@ pub fn sni_server_config(certs: Vec<SniCert>) -> Result<Arc<rustls::ServerConfig
         default.get_or_insert(ck);
     }
     let default = default.ok_or(rustls::Error::General("no certificate".into()))?;
-    let config = rustls::ServerConfig::builder_with_provider(provider)
+    let mut config = rustls::ServerConfig::builder_with_provider(provider)
         .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])?
         .with_no_client_auth()
         .with_cert_resolver(Arc::new(SniResolver { by_name, default }));
+    // Strict ALPN where clients send it (fix round 1, M9): MySQL clients
+    // send none and are served; a client that offers only other protocols
+    // (an HTTP client sent here, a cross-protocol attack) is refused.
+    config.alpn_protocols = vec![MYSQL_ALPN.to_vec()];
     Ok(Arc::new(config))
 }
 
@@ -176,6 +184,9 @@ pub struct GateConfig {
     /// A session with no bytes either way for this long is closed (MySQL's
     /// default `wait_timeout`, 8 h).
     pub idle_timeout: Duration,
+    /// After [`Gate::shutdown`], how long sessions get to go quiet before
+    /// they are closed.
+    pub drain_timeout: Duration,
 }
 
 impl GateConfig {
@@ -202,6 +213,7 @@ impl GateConfig {
             auth_failure_rate_per_sec: 20,
             auth_failure_burst: 200,
             idle_timeout: Duration::from_secs(8 * 3600),
+            drain_timeout: Duration::from_secs(10),
         }
     }
 }
@@ -393,25 +405,52 @@ impl Gate {
         }
     }
 
-    /// Serves clients from `listener`. Accept errors (out of file
-    /// descriptors, a connection reset before accept) are transient: they
-    /// are logged and retried with a backoff of up to 1 s.
+    /// Serves clients from `listener` until [`Gate::shutdown`]. Accept
+    /// errors (out of file descriptors, a connection reset before accept)
+    /// are transient: they are logged and retried with a backoff of up to
+    /// 1 s. After shutdown it stops accepting, lets sessions end (each
+    /// closes once quiet), and after `drain_timeout` ends the rest.
     pub async fn serve(self: Arc<Self>, mut listener: impl Acceptor) {
+        let mut stop = self.shutdown.subscribe();
+        let stopped = async move {
+            let _ = stop.wait_for(|stopped| *stopped).await;
+        };
+        tokio::pin!(stopped);
+        let mut sessions = tokio::task::JoinSet::new();
         let mut backoff = ACCEPT_BACKOFF_MIN;
         loop {
-            match listener.accept().await {
-                Ok((tcp, peer)) => {
-                    backoff = ACCEPT_BACKOFF_MIN;
-                    let gate = self.clone();
-                    tokio::spawn(async move { gate.handle(tcp, peer).await });
-                }
-                Err(err) => {
-                    tracing::warn!(%err, ?backoff, "accept failed; retrying");
-                    tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(ACCEPT_BACKOFF_MAX);
-                }
+            tokio::select! {
+                accepted = listener.accept() => match accepted {
+                    Ok((tcp, peer)) => {
+                        backoff = ACCEPT_BACKOFF_MIN;
+                        let gate = self.clone();
+                        sessions.spawn(async move { gate.handle(tcp, peer).await });
+                    }
+                    Err(err) => {
+                        tracing::warn!(%err, ?backoff, "accept failed; retrying");
+                        tokio::time::sleep(backoff).await;
+                        backoff = (backoff * 2).min(ACCEPT_BACKOFF_MAX);
+                    }
+                },
+                Some(_) = sessions.join_next(), if !sessions.is_empty() => {}
+                () = &mut stopped => break,
             }
         }
+        drop(listener);
+        let drained = tokio::time::timeout(self.config.drain_timeout, async {
+            while sessions.join_next().await.is_some() {}
+        })
+        .await;
+        if drained.is_err() {
+            tracing::info!(left = sessions.len(), "drain deadline: closing sessions");
+            sessions.shutdown().await;
+        }
+    }
+
+    /// Stops the gate: [`Gate::serve`] stops accepting and returns once its
+    /// sessions are drained (at most `drain_timeout`).
+    pub fn shutdown(&self) {
+        self.shutdown.send_replace(true);
     }
 
     async fn handle(self: Arc<Self>, mut tcp: TcpStream, peer: SocketAddr) {

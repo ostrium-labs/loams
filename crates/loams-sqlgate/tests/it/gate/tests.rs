@@ -724,3 +724,76 @@ fn handshake_response_is_encoded_in_one_allocation() {
     assert!(bytes.len() <= r.encoded_len_bound());
     assert_eq!(bytes.capacity(), r.encoded_len_bound(), "never grew");
 }
+
+/// M10: shutdown stops accepting and ends live sessions: a quiet one at
+/// once, a busy one at the drain deadline; serve() then returns.
+#[tokio::test]
+async fn shutdown_ends_live_sessions_within_the_drain() {
+    let h = harness(Options {
+        drain_timeout: Duration::from_millis(800),
+        ..Options::default()
+    })
+    .await;
+    let mut quiet = h.tls("u_a", b"pa").await.expect("quiet");
+    let mut busy = h.tls("u_b", b"pb").await.expect("busy");
+    let started = Instant::now();
+    h.gate.shutdown();
+    // The busy session keeps talking; the quiet one is closed.
+    let talker = tokio::spawn(async move {
+        let mut until_closed = Duration::ZERO;
+        let t = Instant::now();
+        while busy.command(b"\x03SELECT 1").await.is_some() {
+            until_closed = t.elapsed();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        until_closed
+    });
+    assert_eq!(quiet.wire.read().await, None, "quiet session closed");
+    assert!(started.elapsed() < Duration::from_millis(700));
+    let busy_for = talker.await.unwrap();
+    assert!(
+        busy_for >= Duration::from_millis(500),
+        "busy until the deadline: {busy_for:?}"
+    );
+    tokio::time::timeout(Duration::from_secs(3), h.serving)
+        .await
+        .expect("serve returned")
+        .unwrap();
+    assert!(
+        tokio::net::TcpStream::connect(h.addr).await.is_err(),
+        "no longer accepting"
+    );
+}
+
+/// M9: strict ALPN. A client offering only another protocol is refused;
+/// one offering `mysql`, or none (every MySQL client today), is served.
+#[tokio::test]
+async fn alpn_is_strict_when_offered() {
+    use loams_sqlgate::codec::handshake::{Capabilities as C, SslRequest};
+    let h = harness(Options::default()).await;
+    let tls_with = |alpn: Vec<Vec<u8>>| {
+        let mut config = (*h.pki.client_config()).clone();
+        config.alpn_protocols = alpn;
+        std::sync::Arc::new(config)
+    };
+    for (alpn, ok) in [
+        (vec![b"http/1.1".to_vec()], false),
+        (vec![b"mysql".to_vec()], true),
+        (vec![], true),
+    ] {
+        let tcp = tokio::net::TcpStream::connect(h.addr).await.unwrap();
+        let mut w = super::wire::Wire::new(tcp);
+        w.read().await.expect("greeting");
+        let ssl = SslRequest {
+            capabilities: super::client::CAPS | C::SSL,
+            max_packet: 1 << 24,
+            charset: 0xff,
+        };
+        w.write(1, &ssl.encode()).await;
+        let name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
+        let r = tokio_rustls::TlsConnector::from(tls_with(alpn.clone()))
+            .connect(name, w.into_inner())
+            .await;
+        assert_eq!(r.is_ok(), ok, "{alpn:?}: {:?}", r.err());
+    }
+}

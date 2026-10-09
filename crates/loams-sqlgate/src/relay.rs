@@ -28,6 +28,9 @@ use crate::limits::{ActivitySink, Slot};
 use crate::upstream::Upstream;
 use crate::wire::{ClientStream, zero};
 
+/// After shutdown, a session this quiet is closed.
+const QUIET: Duration = Duration::from_millis(250);
+
 /// `COM_QUERY` and `COM_STMT_PREPARE`: checked for `KILL`.
 const QUERY: u8 = 0x03;
 const PREPARE: u8 = 0x16;
@@ -78,12 +81,20 @@ pub(crate) async fn relay(client: ClientStream, upstream: Upstream, mut r: Relay
             tokio::time::sleep(left).await;
         }
     };
+    // On shutdown a session closes once quiet (no bytes either way for
+    // QUIET): between commands, never mid-result. The gate's drain
+    // deadline ends the others.
     let stop = async {
-        while !*r.shutdown.borrow_and_update() {
-            if r.shutdown.changed().await.is_err() {
-                // The gate is gone: nothing will ask us to stop.
-                std::future::pending::<()>().await;
+        if r.shutdown.wait_for(|stopped| *stopped).await.is_err() {
+            // The gate is gone: nothing will ask us to stop.
+            std::future::pending::<()>().await;
+        }
+        loop {
+            let left = QUIET.saturating_sub(clock.idle_for());
+            if left.is_zero() {
+                return;
             }
+            tokio::time::sleep(left).await;
         }
     };
     tokio::select! {

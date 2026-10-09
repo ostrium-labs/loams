@@ -37,16 +37,25 @@ pub struct SqlgateConfig {
 pub struct SqlgateHandle {
     /// The bound address.
     pub addr: SocketAddr,
+    gate: Arc<Gate>,
     task: JoinHandle<()>,
 }
 
 impl SqlgateHandle {
-    /// Stops accepting; open connections are dropped with the runtime.
-    pub async fn stop(self) {
-        self.task.abort();
-        let _ = self.task.await;
+    /// Stops accepting and ends live sessions: quiet ones at once, the
+    /// rest after the gate's drain deadline (10 s).
+    pub async fn stop(mut self) {
+        self.gate.shutdown();
+        let bound = DRAIN + std::time::Duration::from_secs(2);
+        if tokio::time::timeout(bound, &mut self.task).await.is_err() {
+            self.task.abort();
+            let _ = self.task.await;
+        }
     }
 }
+
+/// The gate's drain deadline on stop.
+const DRAIN: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Binds the listener (before any task starts, like the other listeners).
 pub async fn listen(config: &SqlgateConfig) -> std::io::Result<(TcpListener, SocketAddr)> {
@@ -73,8 +82,9 @@ pub fn start(
     };
     let mut gate_config = GateConfig::new(tls, upstream);
     gate_config.plaintext = config.plaintext;
+    gate_config.drain_timeout = DRAIN;
     let gate = Gate::new(gate_config, deps);
-    let task = tokio::spawn(gate.serve(listener));
+    let task = tokio::spawn(gate.clone().serve(listener));
     tracing::info!(%addr, "Loams SQL gate listening");
-    Ok(SqlgateHandle { addr, task })
+    Ok(SqlgateHandle { addr, gate, task })
 }
