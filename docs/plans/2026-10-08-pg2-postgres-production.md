@@ -369,6 +369,15 @@ Commit `feat(pg): roles, databases, secret store`.
 - Project: attach the tenant, set `pitr_interval`, create the `main` timeline, set `state = ready`.
 - Branch: create the timeline, then `ready`. Delete: delete the timeline after its endpoints are gone.
 - Each step is idempotent: a 409 or an existing timeline counts as done.
+- *(Task 5 fix round 1, R5.10–R5.12.)*
+  - The reconciler talks to Neon through `NeonWrite` (and `NeonRead`) over `neon::NeonClients`.
+  - It moves each operation from `Pending` through `Running` to `Succeeded` or `Failed`, and sets the operation's progress.
+  - When it removes a branch, one fenced batch does all of this:
+    - deletes the `BranchRec`, its name index and its guard;
+    - decrements the parent's guard (`children - 1`);
+    - stamps `updated_at_ms`.
+  - It removes a project's records and indexes the same way.
+  - This needs a fenced `Batch` on `PgControlStore`.
 
 Tests:
 - `project_reaches_ready`
@@ -1048,6 +1057,8 @@ Commit `feat(pg): observability`.
 
 **Files:** the limits record (MT4's `Limits` gains the §46 §14 fields; if MT4 has not landed, add a `PgLimits` record read from the deployment config and record the ruling), and `src/quota.rs`.
 
+*(Task 5 fix round 1, R5.13.)* Also limits branches per project (`pg_branches_per_project`) and branch nesting depth: `CreateBranch` refuses past either with `quota_exceeded`. Nesting depth is read from the parent's chain, or kept in the branch guard.
+
 Tests:
 - `projects_quota_refuses_with_reason`
 - `total_cu_quota_blocks_start_and_caps_autoscale`
@@ -1600,3 +1611,47 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
   - `RestoreBranch` belongs to Task 44.
   - Agents' approvals for protected branches belong to Task 9.
   - The reconciler's own steps (`ready`, the operation's end, removing the records and the name indexes on delete) belong to Task 7.
+
+#### Task 5 fix round 1 (2026-10-09, controller ruling: change the records now, while none exist outside tests)
+
+- **R5.9 Branch points are bounded by `loams-wal`'s `commit_lsn`.** This overrides R5.6's upper bound.
+  - The pageserver's `last_record_lsn` lags what `loams-wal` has acknowledged. So a point must lie in `[parent.ancestor_lsn, commit_lsn]` and must not be below the pageserver's `min_readable_lsn`.
+  - A point below the parent's start is `invalid_argument`, with `oldest_lsn` set to the start. A point past `commit_lsn` is `invalid_argument`.
+  - A head branch of a `ready` parent records the parent's `commit_lsn` as `ancestor_lsn`. A head branch of a parent that is still `creating` records none, and the reconciler branches at the head.
+  - A time the pageserver answers `Future` for is the head.
+  - Tests: `a_branch_right_after_a_commit_is_accepted`, `a_head_branch_records_an_lsn`, `a_point_before_the_parent_starts_is_refused`.
+- **R5.10 The branch guard replaces R5.4's rewrite of the parent.**
+  - `BranchGuardRec` at `X/<prj>/g/<branch_id>` holds `{children, deleting}`. It is created with the branch, and `main`'s with the project.
+  - `CreateBranch` CAS-puts the parent's guard with `children + 1`, and is refused while the guard says `deleting`.
+  - `DeleteBranch` CAS-puts its own guard with `deleting`, and is refused while `children > 0`. `branch_has_children` is now an O(1) read.
+  - Both write the guard, so the races conflict on both backends.
+  - The parent's `BranchRec` and its version no longer change when a child is created.
+  - Task 7 decrements `children` in the fenced batch that removes a child. Its text is amended.
+  - `DeleteBranch` also accepts a `Failed` branch.
+- **R5.11 Timestamps, and replays that survive record changes.**
+  - `BranchRec` gains `parent_time_ms` and `updated_at_ms`, and `ProjectRec` gains `updated_at_ms`. `FORMAT` stays 1, by the controller's ruling.
+  - Ledger answers are a tag (`ANSWER_JSON` = 1) followed by JSON, no longer postcard. A record that gains a field marked `serde(default)` still replays (`a_replay_survives_a_record_gaining_a_field`).
+  - A change JSON cannot absorb takes a new tag, and the old tag's decoder is kept for 24 h. An unknown tag answers `failed_precondition` ("retry with a new key").
+- **R5.12 Operations are indexed, and gain `AwaitingApproval`.**
+  - `OperationIdRec` (`Q/i/<op_id>`) serves `GetOperation`, which names only the id. `NamespaceOperationRec` (`Q/n/<ns>/<op_id>`) serves `ListOperations` and `WatchOperations`, in creation order.
+  - Both are written in the operation's batch.
+  - The tag is `Q`, because `o` is the metastore's. `TAGS` is now `xXECRDOQI`.
+  - The `AwaitingApproval` state is for Task 9's approvals.
+- **R5.5 superseded: `NeonRead` and `NeonWrite`.**
+  - `NeonApi` splits into `NeonRead` (the service's reads) and `NeonWrite` (Task 7's changes). Both use `loams-postgres`'s typed `TenantId`, `TimelineId` and `Lsn`, and a typed `Reason` with a `Component`.
+  - `neon::NeonClients` implements both over `NeonClient` and `WalClient`. It lives in `pg-control`, so the dependency runs one way: `loams-pg-control` depends on `loams-postgres`.
+  - `NeonClient::lsn_by_timestamp` gains `with_lease`, which sends `&with_lease=true` (the fork's `get_lsn_by_timestamp_handler`), and `LsnByTimestamp` gains `valid_until`. The adapter always asks for the lease.
+  - The lease response body in the test is a stand-in from the fork's source. A capture from `deploy/loams-postgres-dev` is still to do (Task 7's end-to-end).
+- **Other review fixes.**
+  - Every try of a mutation asks the ledger again, so an expired entry is replaced, and then replayed.
+  - A non-admin's `DeleteProject` checks, in its batch, every branch it read.
+  - `UpdateBranch` refuses while the project is deleting, and refuses an expiry that is not in the future. An expiry on a protected branch or the default branch needs `admin`.
+  - A mutation with an empty principal is `unauthenticated`.
+- **Tests.**
+  - The service cases are in `tests/service/` and run in `service_local`, and in `service_tikv` (feature `tikv`, `LOAMS_TEST_PD`; CI's TiKV suites job runs it).
+  - The races are deterministic, through `ServiceConfig::before_commit`, a hook that commits a competing write between a mutation's reads and its commit.
+  - The R3.14 test asserts each fault point's exact outcome.
+  - The conformance suite gains `concurrent_batches_lose_no_update`.
+- **R5.13 Recorded for later tasks.**
+  - Limits on branches per project and on nesting depth: Task 47, whose text is amended.
+  - Operations: Task 7 sets progress and the end states. Collecting finished operations and their indexes (and the ledger's prune timer) belongs to Task 9's wiring, and their retention to Task 46's runbook.
