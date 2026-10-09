@@ -477,3 +477,136 @@ async fn values_round_trip_between_rust_and_javascript(store: TestStore) {
     }
 }
 live_test!(values_round_trip_between_rust_and_javascript);
+
+const FAULTS: &str = r#"
+import { query, mutation } from "loams:server";
+
+export const faults = {
+  swallow: mutation(async (ctx, { id }) => {
+    try {
+      await ctx.db.get(id);
+    } catch (e) {
+      console.log("caught");
+      await ctx.db.insert("swallowed", { message: String(e) });
+      return "swallowed";
+    }
+    await ctx.db.insert("kept", { x: 1n });
+    return "ok";
+  }),
+  swallowQuery: query(async (ctx) => {
+    try {
+      return await ctx.db.query("kept").collect();
+    } catch (e) {
+      console.log("caught");
+      return "swallowed";
+    }
+  }),
+};
+"#;
+
+/// Injects a storage error into the first store call of the first attempt
+/// it runs, and keeps what that attempt returned.
+struct FaultOnce {
+    inner: Arc<dyn Function>,
+    injected: AtomicBool,
+    first: std::sync::Mutex<Option<Result<LiveValue, LiveError>>>,
+    /// The console lines of the attempt with the fault.
+    lines: std::sync::Mutex<Vec<String>>,
+}
+
+impl Function for FaultOnce {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn kind(&self) -> FnKind {
+        self.inner.kind()
+    }
+
+    fn call<'a>(
+        &'a self,
+        txn: &'a mut LiveTxn<'_>,
+        args: LiveValue,
+    ) -> BoxFuture<'a, Result<LiveValue, LiveError>> {
+        Box::pin(async move {
+            let first = !self.injected.swap(true, Ordering::SeqCst);
+            if first {
+                txn.fail_next_store_call(loams_kv::TxnError::Conflict);
+            }
+            let result = self.inner.call(txn, args).await;
+            if first {
+                *self.first.lock().expect("lock") = Some(result.clone());
+                *self.lines.lock().expect("lock") =
+                    txn.output().logs.iter().map(|l| l.line.clone()).collect();
+            }
+            result
+        })
+    }
+}
+
+/// I3: a storage error inside a host call (here an injected conflict) is
+/// never swallowed by the handler's `try`: the call fails with the storage
+/// error, and the runner reruns the mutation from scratch.
+async fn storage_errors_in_host_calls_are_never_swallowed(store: TestStore) {
+    let r = runner(&store).await;
+    let bundle = load(FAULTS);
+    let insert = system::lookup(system::INSERT).expect("insert");
+    let id = mutate(
+        &r,
+        &insert,
+        obj(&[("table", s("kept")), ("fields", obj(&[("x", LiveValue::I64(0))]))]),
+    )
+    .await
+    .expect("insert")
+    .result;
+    let f = Arc::new(FaultOnce {
+        inner: function(&bundle, "faults:swallow"),
+        injected: AtomicBool::new(false),
+        first: std::sync::Mutex::new(None),
+        lines: std::sync::Mutex::new(Vec::new()),
+    });
+    let m = r
+        .mutate(f.clone(), obj(&[("id", id)]), None)
+        .await
+        .expect("the rerun commits");
+    assert_eq!(m.result, s("ok"));
+    assert_eq!(m.attempts, 2, "the conflict reran the mutation");
+    match f.first.lock().expect("lock").take() {
+        Some(Err(LiveError::Txn(loams_kv::TxnError::Conflict))) => {}
+        other => panic!("the first attempt failed with the conflict, not {other:?}"),
+    }
+    assert!(
+        f.lines.lock().expect("lock").is_empty(),
+        "the handler's catch never ran"
+    );
+    let all = system::lookup(system::QUERY).expect("query");
+    let swallowed = query(&r, &all, obj(&[("table", s("swallowed"))]))
+        .await
+        .expect("swallowed");
+    assert!(items(&swallowed.result).is_empty(), "the catch never ran");
+    let kept = query(&r, &all, obj(&[("table", s("kept"))]))
+        .await
+        .expect("kept");
+    assert_eq!(items(&kept.result).len(), 2);
+
+    // A query: the storage error is the call's.
+    let q = FaultOnce {
+        inner: function(&bundle, "faults:swallowQuery"),
+        injected: AtomicBool::new(false),
+        first: std::sync::Mutex::new(None),
+        lines: std::sync::Mutex::new(Vec::new()),
+    };
+    let at = r.store().now().await.expect("now");
+    match r.query(&q, unit(), at).await {
+        Err(LiveError::Txn(loams_kv::TxnError::Conflict)) => {}
+        other => panic!("the conflict, not {other:?}"),
+    }
+    assert!(
+        q.lines.lock().expect("lock").is_empty(),
+        "the handler's catch never ran"
+    );
+    // The slot serves the next call.
+    let again = r.query(&q, unit(), at).await.expect("no fault this time");
+    assert_eq!(items(&again.result).len(), 2);
+}
+live_test!(storage_errors_in_host_calls_are_never_swallowed);

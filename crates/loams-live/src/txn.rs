@@ -165,6 +165,8 @@ pub struct LiveTxn<'a> {
     usage: Usage,
     request_id: String,
     output: CallOutput,
+    /// A storage error the next store call returns (tests only).
+    fault: Option<TxnError>,
 }
 
 impl fmt::Debug for LiveTxn<'_> {
@@ -203,6 +205,25 @@ impl<'a> LiveTxn<'a> {
             usage: Usage::default(),
             request_id: String::new(),
             output: CallOutput::default(),
+            fault: None,
+        }
+    }
+
+    /// Testing: the next store call (`get`, `query`, `table`, `insert`,
+    /// `patch`, `replace` or `delete`) fails with `error` instead of
+    /// reaching the store, as a conflict or a lost region would. The
+    /// function runtimes' suites use it to check that a storage error
+    /// inside a host call is never swallowed (LV1 plan Task 3, I3).
+    #[doc(hidden)]
+    pub fn fail_next_store_call(&mut self, error: TxnError) {
+        self.fault = Some(error);
+    }
+
+    /// The injected storage error, once.
+    fn injected(&mut self) -> Result<(), LiveError> {
+        match self.fault.take() {
+            Some(e) => Err(LiveError::Txn(e)),
+            None => Ok(()),
         }
     }
 
@@ -257,6 +278,7 @@ impl<'a> LiveTxn<'a> {
     /// The document `id`, or `None`. In a mutation the document key is
     /// locked (§20 §5.2): a concurrent write to it makes one side rerun.
     pub async fn get(&mut self, id: DocId) -> Result<Option<Doc>, LiveError> {
+        self.injected()?;
         self.count_scanned(1)?;
         let key = self.app.document(&id);
         let doc = match &mut self.access {
@@ -276,6 +298,7 @@ impl<'a> LiveTxn<'a> {
     /// depends on the range (its id may be created later); a user index of
     /// a missing table is [`LiveError::NotFound`].
     pub async fn query(&mut self, range: IndexRange) -> Result<Vec<Doc>, LiveError> {
+        self.injected()?;
         self.usage.index_ranges += 1;
         if self.usage.index_ranges > self.limits.max_index_ranges {
             return Err(LiveError::limit(
@@ -319,6 +342,7 @@ impl<'a> LiveTxn<'a> {
     /// set gains the index entries of every table not created yet, so the
     /// insert that creates it invalidates the read.
     pub async fn table(&mut self, name: &str) -> Result<Option<TableDef>, LiveError> {
+        self.injected()?;
         if let Some(id) = self.names.get(name) {
             return Ok(self.tables.get(id).cloned().flatten());
         }
@@ -382,6 +406,7 @@ impl<'a> LiveTxn<'a> {
         table: &str,
         fields: BTreeMap<String, LiveValue>,
     ) -> Result<DocId, LiveError> {
+        self.injected()?;
         let Access::Mutation(txn) = &mut self.access else {
             return Err(query_write("insert"));
         };
@@ -399,6 +424,7 @@ impl<'a> LiveTxn<'a> {
         id: DocId,
         fields: BTreeMap<String, LiveValue>,
     ) -> Result<(), LiveError> {
+        self.injected()?;
         self.rewrite(id, fields, true).await
     }
 
@@ -408,11 +434,13 @@ impl<'a> LiveTxn<'a> {
         id: DocId,
         fields: BTreeMap<String, LiveValue>,
     ) -> Result<(), LiveError> {
+        self.injected()?;
         self.rewrite(id, fields, false).await
     }
 
     /// Deletes document `id`; a missing document is [`LiveError::NotFound`].
     pub async fn delete(&mut self, id: DocId) -> Result<(), LiveError> {
+        self.injected()?;
         if !self.is_mutation() {
             return Err(query_write("delete"));
         }
