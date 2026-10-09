@@ -1529,3 +1529,8 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
   - A mismatch is `InvalidArgument`: a reconciler bug, not a retryable condition.
   - Role and database records name only a branch, so any project's fence may write them. If Task 6 needs the same guard there, it adds `project_id` to those records, with a new format byte.
   - Test: `fence_covers_only_its_project`.
+- **R3.12 `renew_lease(fence, ttl)` (review).**
+  - A holder keeps its fence with `renew_lease`, which follows the metastore's renew rule. If the lease is still at the fence's epoch, held by the fence's holder and not expired against the store's clock, it extends the lease and returns the same fence. Otherwise it returns the new error `StoreError::LeaseLost`, and the holder must stop acting.
+  - `acquire_lease` keeps the metastore's acquire rule: it extends a lease its holder still holds, at the same epoch, and gives an expired or released lease the next epoch, even to the same holder. A holder that lost its lease therefore never gets its old fence back.
+  - Task 7's reconciler renews with `renew_lease` and acquires only at start, or after `LeaseLost`.
+  - `lease_fences_old_holder` is rewritten so that no deadline can pass early. `Held` and the renewal run under a 60 s TTL. Then holder A renews with 200 ms, sleeps 600 ms and gets `LeaseLost`. B takes the lease at epoch 2, and A's put and delete are `Fenced`.

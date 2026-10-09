@@ -309,43 +309,64 @@ pub async fn list_pages_in_key_order(factory: Factory) {
     }
 }
 
-/// A takeover of an expired lease fences every write of the old holder;
-/// a held lease is refused to another holder and renewed for its own.
+/// A held lease is refused to another holder and renewed for its own; once
+/// it expires, `renew_lease` reports it lost, and a takeover fences every
+/// write of the old holder. The only wait sleeps past a 200 ms renewal, so
+/// a slow store can only lengthen it, never break the case.
 pub async fn lease_fences_old_holder(factory: Factory) {
     let Some(store) = factory.store(options()).await else {
         return;
     };
     let scope = project_lease("prj-1");
-    // Long enough that the calls before the expiry never outlast it on a
-    // loaded TiKV (600 ms did, once in a parallel run).
-    let ttl = Duration::from_secs(3);
+    let long = Duration::from_secs(60);
     let a = store
-        .acquire_lease(&scope, "pg-control-a", ttl)
+        .acquire_lease(&scope, "pg-control-a", long)
         .await
         .expect("a takes the lease");
-    assert_eq!(a.epoch(), 1);
-    let held = store.acquire_lease(&scope, "pg-control-b", ttl).await;
+    assert_eq!(
+        (a.scope(), a.holder(), a.epoch()),
+        (scope.as_str(), "pg-control-a", 1)
+    );
+    let held = store.acquire_lease(&scope, "pg-control-b", long).await;
     assert!(
         matches!(&held, Err(StoreError::Held { holder, .. }) if holder == "pg-control-a"),
         "{held:?}"
     );
     assert_eq!(
-        store.acquire_lease(&scope, "pg-control-a", ttl).await,
+        store.acquire_lease(&scope, "pg-control-a", long).await,
         Ok(a.clone()),
-        "a renewal keeps the epoch"
+        "acquiring a held lease again keeps the epoch"
     );
+    assert_eq!(store.renew_lease(&a, long).await, Ok(a.clone()));
     let key = bkey("prj-1", "br-1");
     let v1 = store
         .put(&branch("prj-1", "br-1", "main"), None, &a)
         .await
         .expect("a writes under its fence");
 
-    tokio::time::sleep(ttl + Duration::from_millis(500)).await;
+    // Shorten a's lease, and wait past it.
+    let short = Duration::from_millis(200);
+    assert_eq!(store.renew_lease(&a, short).await, Ok(a.clone()));
+    tokio::time::sleep(short * 3).await;
+    assert_eq!(
+        store.renew_lease(&a, long).await,
+        Err(StoreError::LeaseLost)
+    );
+
     let b = store
-        .acquire_lease(&scope, "pg-control-b", ttl)
+        .acquire_lease(&scope, "pg-control-b", long)
         .await
         .expect("b takes the expired lease");
     assert_eq!(b.epoch(), 2);
+    assert_eq!(
+        store.renew_lease(&a, long).await,
+        Err(StoreError::LeaseLost)
+    );
+    let back = store.acquire_lease(&scope, "pg-control-a", long).await;
+    assert!(
+        matches!(&back, Err(StoreError::Held { holder, .. }) if holder == "pg-control-b"),
+        "{back:?}"
+    );
 
     let mut late = branch("prj-1", "br-1", "main");
     late.state = BranchState::Failed;
@@ -363,16 +384,26 @@ pub async fn lease_fences_old_holder(factory: Factory) {
         .await
         .expect("b writes under its fence");
 
-    // Scopes are checked.
+    // Scopes and TTLs are checked.
     for bad in ["e/m/node", "pg/prj-1", "e/pg/"] {
-        let r = store.acquire_lease(bad, "x", ttl).await;
+        let r = store.acquire_lease(bad, "x", long).await;
         assert!(
             matches!(r, Err(StoreError::InvalidArgument(_))),
             "{bad}: {r:?}"
         );
     }
-    let r = store.acquire_lease(&scope, "b", Duration::ZERO).await;
-    assert!(matches!(r, Err(StoreError::InvalidArgument(_))), "{r:?}");
+    for ttl in [Duration::ZERO, Duration::from_secs(601)] {
+        let r = store.acquire_lease(&scope, "b", ttl).await;
+        assert!(
+            matches!(r, Err(StoreError::InvalidArgument(_))),
+            "{ttl:?}: {r:?}"
+        );
+        let r = store.renew_lease(&b, ttl).await;
+        assert!(
+            matches!(r, Err(StoreError::InvalidArgument(_))),
+            "{ttl:?}: {r:?}"
+        );
+    }
 }
 
 fn project(id: &str) -> ProjectRec {

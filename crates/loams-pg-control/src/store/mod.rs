@@ -75,6 +75,10 @@ pub enum StoreError {
     /// clock).
     #[error("lease held by {holder} until {deadline_ms}")]
     Held { holder: String, deadline_ms: u64 },
+    /// [`renew_lease`](PgControlStore::renew_lease) found the lease expired,
+    /// released or at another epoch.
+    #[error("lease lost")]
+    LeaseLost,
     /// A bad key part, page token, lease scope or TTL.
     #[error("invalid argument: {0}")]
     InvalidArgument(String),
@@ -122,8 +126,8 @@ impl Page {
 }
 
 /// A lease epoch a write is fenced by: the lease `scope`, its `holder`, at
-/// `epoch`. Only [`acquire_lease`](PgControlStore::acquire_lease) (and, from
-/// fix round 1, `renew_lease`) make one, so every write through
+/// `epoch`. Only [`acquire_lease`](PgControlStore::acquire_lease) and
+/// [`renew_lease`](PgControlStore::renew_lease) make one, so every write through
 /// [`PgControlStore`] is fenced by a lease the writer took (R3.10). The API
 /// service's unfenced writes go through [`ApiWriter`] instead, which the
 /// trait cannot hand out.
@@ -238,13 +242,27 @@ pub trait PgControlStore: Send + Sync + 'static {
     ) -> impl Future<Output = Result<(Vec<Versioned<R>>, Option<String>), StoreError>> + Send;
 
     /// Takes the lease `scope` (under [`LEASE_SCOPE`]) for `holder` for
-    /// `ttl`, or renews it if `holder` holds it. A new holder (the lease
-    /// free, expired or released) gets the next epoch, which fences every
-    /// write of the earlier one.
+    /// `ttl`. While `holder` holds it, this extends it at the same epoch.
+    /// Otherwise (the lease free, expired or released) the holder gets the
+    /// next epoch, which fences every write of the earlier one, its own
+    /// earlier fences included: a holder that let its lease expire gets a
+    /// new fence here, never its old one back. To keep a fence, use
+    /// [`renew_lease`](Self::renew_lease).
     fn acquire_lease(
         &self,
         scope: &str,
         holder: &str,
+        ttl: Duration,
+    ) -> impl Future<Output = Result<Fence, StoreError>> + Send;
+
+    /// Extends `fence`'s lease by `ttl` from now and returns the same fence,
+    /// if the lease is still at its epoch, held by its holder and not
+    /// expired (the metastore's `renew_lease`). Otherwise
+    /// [`StoreError::LeaseLost`]: the holder must stop acting and acquire
+    /// again (R3.12).
+    fn renew_lease(
+        &self,
+        fence: &Fence,
         ttl: Duration,
     ) -> impl Future<Output = Result<Fence, StoreError>> + Send;
 

@@ -377,13 +377,7 @@ impl PgControlStore for KvControlStore {
                 "a lease holder is empty".into(),
             ));
         }
-        if ttl.is_zero() || ttl > MAX_LEASE_TTL {
-            return Err(StoreError::InvalidArgument(format!(
-                "a lease ttl is above zero and at most {} s",
-                MAX_LEASE_TTL.as_secs()
-            )));
-        }
-        let ttl_ms = u64::try_from(ttl.as_millis()).unwrap_or(u64::MAX);
+        let ttl_ms = check_ttl(ttl)?;
         let (scope, holder) = (scope.to_string(), holder.to_string());
         self.write(OP_LEASE, move |txn| {
             let (scope, holder) = (scope.clone(), holder.clone());
@@ -419,6 +413,39 @@ impl PgControlStore for KvControlStore {
                 };
                 txn.put(scope.as_bytes(), encode_lease(&lease)).await?;
                 Ok(Ok(Fence::new(scope, holder_out, epoch)))
+            })
+        })
+        .await
+    }
+
+    async fn renew_lease(&self, fence: &Fence, ttl: Duration) -> Result<Fence, StoreError> {
+        check_scope(fence.scope())?;
+        let ttl_ms = check_ttl(ttl)?;
+        let fence = fence.clone();
+        self.write(OP_LEASE, move |txn| {
+            let fence = fence.clone();
+            Box::pin(async move {
+                let now = txn.start_ts().physical_ms();
+                let key = fence.scope().as_bytes();
+                let current = match txn.get(key).await? {
+                    Some(v) => match decode_lease(&v) {
+                        Ok(lease) => lease,
+                        Err(e) => return Ok(Err(e)),
+                    },
+                    None => return Ok(Err(StoreError::LeaseLost)),
+                };
+                if current.epoch != fence.epoch()
+                    || current.owner.as_deref() != Some(fence.holder())
+                    || now >= current.deadline_ms
+                {
+                    return Ok(Err(StoreError::LeaseLost));
+                }
+                let lease = LeaseRec {
+                    deadline_ms: now.saturating_add(ttl_ms),
+                    ..current
+                };
+                txn.put(key, encode_lease(&lease)).await?;
+                Ok(Ok(fence))
             })
         })
         .await
@@ -526,6 +553,17 @@ async fn check_fence(
         Ok(Some(lease)) if lease.epoch == fence.epoch() && lease.owner.is_some() => Ok(()),
         Ok(_) => Err(StoreError::Fenced),
     })
+}
+
+/// A TTL in milliseconds: above zero, at most [`MAX_LEASE_TTL`].
+fn check_ttl(ttl: Duration) -> Result<u64, StoreError> {
+    if ttl.is_zero() || ttl > MAX_LEASE_TTL {
+        return Err(StoreError::InvalidArgument(format!(
+            "a lease ttl is above zero and at most {} s",
+            MAX_LEASE_TTL.as_secs()
+        )));
+    }
+    Ok(u64::try_from(ttl.as_millis()).unwrap_or(u64::MAX))
 }
 
 /// A fenced write of `rec` needs its project's lease (R3.11): a fence for
