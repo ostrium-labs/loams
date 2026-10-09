@@ -592,7 +592,8 @@ impl<N: NeonApi> PgService<N> {
     ///
     /// `branch_has_children` (children still deleting count);
     /// `branch_protected` without `admin`; `failed_precondition` for the
-    /// default branch or one already deleting; `aborted`; `not_found`.
+    /// default branch or one already deleting (a `failed` one may be
+    /// deleted); `aborted`; `not_found`.
     pub async fn delete_branch(
         &self,
         caller: &Caller,
@@ -619,9 +620,10 @@ impl<N: NeonApi> PgService<N> {
             if current.record.protected && !caller.admin {
                 return Err(protected(&req.branch_id));
             }
-            if !live(current.record.state) {
+            // A failed branch may be deleted; a deleting one is already.
+            if current.record.state == BranchState::Deleting {
                 return Err(ServiceError::failed_precondition(
-                    "the branch is already being deleted or has failed",
+                    "the branch is already being deleted",
                 ));
             }
             let (mut guard, guard_version) = self.guard(&req.project_id, &req.branch_id).await?;

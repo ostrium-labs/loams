@@ -853,3 +853,41 @@ async fn a_parent_deleted_during_a_child_create_conflicts() {
         .expect("list");
     assert_eq!(all.len(), 2, "main and dev only");
 }
+
+/// A branch whose create failed can be deleted.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_branch_can_be_deleted() {
+    let h = harness!();
+    let (p, _) = project(&h).await;
+    let dev = h
+        .service
+        .create_branch(&user(), branch(&p.id, "dev", "b1"))
+        .await
+        .expect("dev")
+        .branch
+        .branch
+        .record
+        .id;
+    crate::common::set_branch_state(&h.store, &p.id, &dev, BranchState::Failed).await;
+    let op = h
+        .service
+        .delete_branch(
+            &user(),
+            DeleteBranch {
+                namespace: "acme".into(),
+                project_id: p.id.clone(),
+                branch_id: dev.clone(),
+                expected_version: None,
+                idempotency_key: "d1".into(),
+            },
+        )
+        .await
+        .expect("delete a failed branch");
+    assert_eq!(op.kind, OperationKind::BranchDelete);
+    let got = h
+        .service
+        .get_branch("acme", &p.id, &dev)
+        .await
+        .expect("get");
+    assert_eq!(got.branch.record.state, BranchState::Deleting);
+}

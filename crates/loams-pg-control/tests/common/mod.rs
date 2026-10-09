@@ -230,6 +230,16 @@ pub fn admin() -> Caller {
 
 /// Moves a branch to `ready`, as the reconciler (Task 7) would.
 pub async fn mark_branch_ready(store: &KvControlStore, project_id: &str, branch_id: &str) {
+    set_branch_state(store, project_id, branch_id, BranchState::Ready).await;
+}
+
+/// Moves a branch to `state`, as the reconciler (Task 7) would.
+pub async fn set_branch_state(
+    store: &KvControlStore,
+    project_id: &str,
+    branch_id: &str,
+    state: BranchState,
+) {
     let key = BranchKey {
         project_id: project_id.into(),
         id: branch_id.into(),
@@ -240,7 +250,7 @@ pub async fn mark_branch_ready(store: &KvControlStore, project_id: &str, branch_
         .expect("get")
         .expect("the branch");
     let mut rec = got.record;
-    rec.state = BranchState::Ready;
+    rec.state = state;
     store
         .api_writer()
         .put(&rec, Some(got.version))
