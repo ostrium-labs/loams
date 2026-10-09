@@ -218,6 +218,11 @@ impl<'a> LiveTxn<'a> {
         self.request_id = request_id.into();
     }
 
+    /// The limits of the call's app.
+    pub fn limits(&self) -> &Limits {
+        self.limits
+    }
+
     /// The call's output so far; a function appends its `console.*` lines.
     pub fn output_mut(&mut self) -> &mut CallOutput {
         &mut self.output

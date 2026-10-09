@@ -98,3 +98,47 @@ pub async fn query_as(
 pub fn unit() -> LiveValue {
     obj(&[])
 }
+
+/// The variable that marks a child test process, holding the id of the
+/// test it runs.
+const CHILD_ENV: &str = "LOAMS_LIVE_JS_CHILD";
+
+/// Whether this process is the child [`run_child`] started for `test`.
+pub fn is_child(test: &str) -> bool {
+    std::env::var(CHILD_ENV).is_ok_and(|v| v == test)
+}
+
+/// Runs the test `test` (its full path in this test binary) in a child
+/// process with `envs` set, and returns its output. A test that could
+/// abort the process or allocate without bound runs its body this way, so
+/// a regression fails the test instead of killing the runner. Panics,
+/// with the child's output, unless exactly that test ran and passed.
+pub fn run_child(test: &str, envs: &[(&str, &str)]) -> String {
+    let exe = std::env::current_exe().expect("the test binary");
+    let out = std::process::Command::new(exe)
+        .args([test, "--exact", "--test-threads=1", "--nocapture"])
+        .env(CHILD_ENV, test)
+        .envs(envs.iter().copied())
+        .output()
+        .expect("the child test runs");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.status.success() && text.contains("1 passed"),
+        "the child {test} ({envs:?}) failed: {}\n{text}",
+        out.status
+    );
+    text
+}
+
+/// The `live_test!` variant name of `store`'s backend.
+pub fn variant(store: &TestStore) -> &'static str {
+    match store.backend() {
+        loams_kv::Backend::Embedded => "embedded",
+        #[allow(unreachable_patterns)]
+        _ => "tikv",
+    }
+}

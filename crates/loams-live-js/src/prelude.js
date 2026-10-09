@@ -36,6 +36,7 @@
   const isArray = Array.isArray;
   const stringify = JSON.stringify;
   const fromCharCode = String.fromCharCode;
+  const join = Array.prototype.join;
   const method = (value) => ({ value, writable: true, enumerable: false, configurable: true });
 
   // ---- 1. Determinism ----
@@ -263,15 +264,24 @@
 
   function bytesToLatin1(buffer) {
     const bytes = new Uint8Array(buffer);
-    let out = "";
+    const parts = [];
     for (let i = 0; i < bytes.length; i += 8192) {
-      out += apply(fromCharCode, null, bytes.subarray(i, i + 8192));
+      parts.push(apply(fromCharCode, null, bytes.subarray(i, i + 8192)));
     }
-    return out;
+    return apply(join, parts, [""]);
   }
 
+  // The helpers the host converts values with: an ArrayBuffer's bytes, and
+  // the size of a string or ArrayBuffer, which the host charges against
+  // the conversion's budget before converting it.
+  const byteLength = getOwnPropertyDescriptor(ArrayBuffer.prototype, "byteLength").get;
+  const values = freeze({
+    bytes: bytesToLatin1,
+    size: (value) => (typeof value === "string" ? value.length : apply(byteLength, value, [])),
+  });
+
   function call(op, args) {
-    const reply = host(op, args, bytesToLatin1);
+    const reply = host(op, args, values);
     if ("ok" in reply) {
       return reply.ok;
     }
@@ -652,6 +662,6 @@
       const index = hostErrors.get(error);
       return index === undefined ? -1 : index;
     },
-    bytesToLatin1,
+    values,
   });
 });

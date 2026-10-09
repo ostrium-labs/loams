@@ -37,6 +37,9 @@ pub struct Limits {
     pub max_scanned_docs: usize,
     /// Index ranges one function reads (4 096).
     pub max_index_ranges: usize,
+    /// The value one function call returns (8 MiB, D682), as the function
+    /// runtime counts it while converting the value (LV1 plan Task 3).
+    pub max_result_bytes: usize,
     /// JavaScript CPU time of one function call (1 s).
     pub max_js_cpu: Duration,
     /// The wall-clock deadline of one mutation (10 s).
@@ -58,6 +61,7 @@ impl Default for Limits {
             max_written_docs: 16_000,
             max_scanned_docs: 32_000,
             max_index_ranges: 4096,
+            max_result_bytes: 8 * 1024 * 1024,
             max_js_cpu: Duration::from_secs(1),
             mutation_deadline: Duration::from_secs(10),
         }

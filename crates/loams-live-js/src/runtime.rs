@@ -26,6 +26,11 @@
 //! `Object.prototype` or `null`) map element-wise; `undefined` is `Null`,
 //! except as an object field, which is left out. Anything else (functions,
 //! symbols, class instances, `Date`, typed arrays, proxies) is refused.
+//! Converting from JavaScript has a byte budget, charged before anything
+//! is allocated and for every reference to a shared value:
+//! `Limits::max_result_bytes` for a result (`RESOURCE_EXHAUSTED`), four
+//! times `Limits::max_document_bytes` for a `ctx.db` call's arguments (a
+//! catchable error).
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -319,11 +324,14 @@ impl Function for JsFunction {
             let (events, mut rx) = tmpsc::unbounded_channel();
             let (reply, replies) = mpsc::channel();
             let ts = txn.start_ts();
+            let limits = txn.limits();
             let job = Job {
                 path: self.meta.path.clone(),
                 args,
                 start_ms: ts.physical_ms(),
                 seed: seed(ts.0, txn.request_id()),
+                result_bytes: limits.max_result_bytes,
+                host_bytes: limits.max_document_bytes.saturating_mul(HOST_BUDGET_FACTOR),
                 events,
                 replies,
             };
@@ -487,6 +495,10 @@ struct Job {
     args: LiveValue,
     start_ms: u64,
     seed: [u8; 32],
+    /// The conversion budget of the result (`Limits::max_result_bytes`).
+    result_bytes: usize,
+    /// The conversion budget of each `ctx.db` call's arguments.
+    host_bytes: usize,
     events: tmpsc::UnboundedSender<Event>,
     replies: mpsc::Receiver<Result<LiveValue, LiveError>>,
 }
@@ -593,6 +605,8 @@ struct SlotState {
     console: RefCell<Console>,
     link: RefCell<Option<Link>>,
     host_errors: RefCell<Vec<LiveError>>,
+    /// The conversion budget of each `ctx.db` call's arguments.
+    host_bytes: Cell<usize>,
     config: JsConfig,
 }
 
@@ -609,6 +623,7 @@ impl SlotState {
             )),
             link: RefCell::new(None),
             host_errors: RefCell::new(Vec::new()),
+            host_bytes: Cell::new(0),
             config: config.clone(),
         }
     }
@@ -802,9 +817,10 @@ impl Engine {
                 move |ctx: Ctx<'js>,
                       op: String,
                       args: Value<'js>,
-                      bytes: rquickjs::Function<'js>|
+                      values: Object<'js>|
                       -> rquickjs::Result<Object<'js>> {
-                    host_call(&s, &ctx, &op, args, &bytes)
+                    let helpers = Helpers::from(&values)?;
+                    host_call(&s, &ctx, &op, args, &helpers)
                 },
             )?,
         )?;
@@ -819,6 +835,8 @@ impl Engine {
             args,
             start_ms,
             seed,
+            result_bytes,
+            host_bytes,
             events,
             replies,
         } = job;
@@ -827,6 +845,7 @@ impl Engine {
             replies,
         };
         self.state.begin(Some((start_ms, seed, link)));
+        self.state.host_bytes.set(host_bytes);
         let Prepared { internals, ctx, .. } = prepared;
         let result = ctx.with(|ctx| {
             let internals = match internals.restore(&ctx) {
@@ -842,15 +861,31 @@ impl Engine {
             let phase = Phase::Call(&path);
             match call() {
                 Ok(value) => {
-                    let bytes: rquickjs::Function = match internals.get("bytesToLatin1") {
-                        Ok(f) => f,
+                    let helpers = match internals
+                        .get::<_, Object>("values")
+                        .and_then(|v| Helpers::from(&v))
+                    {
+                        Ok(h) => h,
                         Err(e) => return Err(self.classify(&ctx, e, phase, Some(&internals))),
                     };
-                    match to_live(&ctx, value, &bytes, 0) {
+                    let mut budget = Budget::new(result_bytes, &self.state.meter);
+                    match to_live(&ctx, value, &helpers, &mut budget, 0, false) {
                         Ok(v) => Ok(v),
                         Err(Conv::Js(e)) => Err(self.classify(&ctx, e, phase, Some(&internals))),
                         Err(Conv::Invalid(m)) => Err(self.stopped(phase).unwrap_or_else(|| {
                             LiveError::FunctionError(format!("{path} returned {m}"))
+                        })),
+                        Err(Conv::Stopped) => Err(self.stopped(phase).unwrap_or_else(|| {
+                            LiveError::Internal("a conversion stopped".into())
+                        })),
+                        Err(Conv::Over) => Err(self.stopped(phase).unwrap_or_else(|| {
+                            LiveError::LimitExceeded {
+                                limit: "max_result_bytes",
+                                message: format!(
+                                    "{path} returned a value larger than {result_bytes} bytes \
+                                     (every reference to a shared value counts)"
+                                ),
+                            }
                         })),
                     }
                 }
@@ -990,15 +1025,15 @@ fn describe<'js>(ctx: &Ctx<'js>, thrown: &Value<'js>) -> (String, bool) {
     }
 }
 
-/// `natives.host(op, args, bytesToLatin1)`: one `ctx.db` operation. The
-/// reply is `{ ok }`, `{ error, index }` (a catchable error the host keeps
-/// as `index`) or `{ abort: true }`.
+/// `natives.host(op, args, values)`: one `ctx.db` operation. The reply is
+/// `{ ok }`, `{ error, index }` (a catchable error the host keeps as
+/// `index`) or `{ abort: true }`.
 fn host_call<'js>(
     s: &SlotState,
     ctx: &Ctx<'js>,
     op: &str,
     args: Value<'js>,
-    bytes: &rquickjs::Function<'js>,
+    helpers: &Helpers<'js>,
 ) -> rquickjs::Result<Object<'js>> {
     let reply = Object::new(ctx.clone())?;
     if s.abort.get() {
@@ -1012,18 +1047,37 @@ fn host_call<'js>(
         errors.push(e);
         Ok(())
     };
-    let Some(op) = HostOp::parse(op) else {
+    let Some(host_op) = HostOp::parse(op) else {
         refuse(
             &reply,
             LiveError::Internal(format!("no host operation {op}")),
         )?;
         return Ok(reply);
     };
-    let args = match to_live(ctx, args, bytes, 0) {
+    let max = s.host_bytes.get();
+    let mut budget = Budget::new(max, &s.meter);
+    let args = match to_live(ctx, args, helpers, &mut budget, 0, false) {
         Ok(v) => v,
         Err(Conv::Js(e)) => return Err(e),
         Err(Conv::Invalid(m)) => {
             refuse(&reply, LiveError::InvalidArgument(format!("db: {m}")))?;
+            return Ok(reply);
+        }
+        Err(Conv::Stopped) => {
+            // Past the CPU limit: the interrupt handler stops the call at
+            // its next poll, uncatchably.
+            reply.set("abort", true)?;
+            return Ok(reply);
+        }
+        Err(Conv::Over) => {
+            let e = LiveError::LimitExceeded {
+                limit: "max_document_bytes",
+                message: format!(
+                    "ctx.db.{op}: the arguments are larger than {max} bytes, four times \
+                     max_document_bytes (every reference to a shared value counts)"
+                ),
+            };
+            refuse(&reply, e)?;
             return Ok(reply);
         }
     };
@@ -1037,7 +1091,7 @@ fn host_call<'js>(
             return Ok(reply);
         };
         s.meter.pause();
-        let answer = match link.events.send(Event::Host { op, args }) {
+        let answer = match link.events.send(Event::Host { op: host_op, args }) {
             Ok(()) => link.replies.recv().ok(),
             Err(_) => None,
         };
@@ -1078,12 +1132,26 @@ fn meta(row: Vec<String>) -> Result<FunctionMeta, LiveError> {
 
 // ---- values ----
 
+/// What converting a JavaScript value charges per array element, object
+/// field and scalar, besides the bytes of strings, keys and buffers.
+const NODE_BYTES: usize = 8;
+
+/// A `ctx.db` call's arguments may cost this many times
+/// `Limits::max_document_bytes`: the conversion charges at most four times
+/// a value's encoded size, so every document the store would accept fits,
+/// and the store checks the exact size.
+const HOST_BUDGET_FACTOR: usize = 4;
+
 /// Why a JavaScript value did not convert.
 enum Conv {
     /// JavaScript threw (an interrupt, out of memory, a throwing getter).
     Js(rquickjs::Error),
     /// The value is not a Loams value.
     Invalid(String),
+    /// The value is larger than the conversion's budget.
+    Over,
+    /// The call ran past its CPU limit while converting.
+    Stopped,
 }
 
 impl From<rquickjs::Error> for Conv {
@@ -1092,12 +1160,79 @@ impl From<rquickjs::Error> for Conv {
     }
 }
 
+/// The bytes one conversion may still charge (C2). Every node is charged
+/// before anything is allocated for it, and every reference to a shared
+/// value is charged again, so a sparse array, a string shared many times
+/// or a DAG of shared arrays runs out of budget instead of memory.
+/// The conversion also checks the call's CPU meter every so many nodes:
+/// it runs in Rust, where the interrupt handler is not polled.
+struct Budget<'m> {
+    left: usize,
+    nodes: u32,
+    meter: &'m CpuMeter,
+}
+
+impl<'m> Budget<'m> {
+    fn new(bytes: usize, meter: &'m CpuMeter) -> Self {
+        Budget {
+            left: bytes,
+            nodes: 0,
+            meter,
+        }
+    }
+
+    fn charge(&mut self, bytes: usize) -> Result<(), Conv> {
+        self.left = self.left.checked_sub(bytes).ok_or(Conv::Over)?;
+        Ok(())
+    }
+
+    /// Counts a node; every 1 024 nodes, stops a call past its CPU limit.
+    fn tick(&mut self) -> Result<(), Conv> {
+        self.nodes = self.nodes.wrapping_add(1);
+        if self.nodes % 1024 == 0 && self.meter.check() {
+            return Err(Conv::Stopped);
+        }
+        Ok(())
+    }
+}
+
+/// The prelude's value helpers: `bytes(buffer)` (an `ArrayBuffer` as a
+/// Latin-1 string) and `size(value)` (a string's length in UTF-16 units,
+/// an `ArrayBuffer`'s byte length).
+struct Helpers<'js> {
+    bytes: rquickjs::Function<'js>,
+    size: rquickjs::Function<'js>,
+}
+
+impl<'js> Helpers<'js> {
+    fn from(values: &Object<'js>) -> rquickjs::Result<Self> {
+        Ok(Helpers {
+            bytes: values.get("bytes")?,
+            size: values.get("size")?,
+        })
+    }
+
+    fn size(&self, value: &Value<'js>) -> Result<usize, Conv> {
+        let n: f64 = self.size.call((value.clone(),))?;
+        // A length is an integer below 2^53; anything else is refused.
+        if !(0.0..9_007_199_254_740_992.0).contains(&n) {
+            return Err(Conv::Over);
+        }
+        Ok(n as usize)
+    }
+}
+
+/// Converts `value`. `prepaid` says the caller already charged the node
+/// itself (an array element or an object field).
 fn to_live<'js>(
     ctx: &Ctx<'js>,
     value: Value<'js>,
-    bytes: &rquickjs::Function<'js>,
+    helpers: &Helpers<'js>,
+    budget: &mut Budget<'_>,
     depth: usize,
+    prepaid: bool,
 ) -> Result<LiveValue, Conv> {
+    budget.tick()?;
     if depth > MAX_VALUE_DEPTH {
         return Err(Conv::Invalid(format!(
             "a value nested deeper than {MAX_VALUE_DEPTH} (or a cycle)"
@@ -1106,16 +1241,25 @@ fn to_live<'js>(
     if value.is_proxy() {
         return Err(Conv::Invalid("a Proxy, which is not a Loams value".into()));
     }
+    if !prepaid {
+        budget.charge(NODE_BYTES)?;
+    }
     Ok(match value.type_of() {
         Type::Uninitialized | Type::Undefined | Type::Null => LiveValue::Null,
         Type::Bool => LiveValue::Bool(value.as_bool().unwrap_or_default()),
         Type::Int => LiveValue::F64(f64::from(value.as_int().unwrap_or_default())),
         Type::Float => LiveValue::F64(value.as_float().unwrap_or_default()),
         Type::String => {
+            // UTF-8 takes at least one byte per UTF-16 unit: charge that
+            // before converting, and the rest after.
+            let units = helpers.size(&value)?;
+            budget.charge(units)?;
             let s = value
                 .as_string()
-                .ok_or_else(|| Conv::Invalid("a string".into()))?;
-            LiveValue::Str(s.to_string()?)
+                .ok_or_else(|| Conv::Invalid("a string".into()))?
+                .to_string()?;
+            budget.charge(s.len().saturating_sub(units))?;
+            LiveValue::Str(s)
         }
         Type::BigInt => {
             let text: Coerced<String> = value.get()?;
@@ -1129,9 +1273,17 @@ fn to_live<'js>(
             let array = value
                 .as_array()
                 .ok_or_else(|| Conv::Invalid("an array".into()))?;
-            let mut items = Vec::with_capacity(array.len());
-            for i in 0..array.len() {
-                items.push(to_live(ctx, array.get::<Value>(i)?, bytes, depth + 1)?);
+            // Read as a number: rquickjs's `Array::len` panics past 2^31.
+            let length: f64 = array.as_object().get("length")?;
+            if !(0.0..=f64::from(u32::MAX)).contains(&length) {
+                return Err(Conv::Invalid(format!("an array of length {length}")));
+            }
+            let length = length as u32;
+            budget.charge((length as usize).saturating_mul(NODE_BYTES))?;
+            let mut items = Vec::new();
+            for i in 0..length {
+                let item = array.get::<Value>(i as usize)?;
+                items.push(to_live(ctx, item, helpers, budget, depth + 1, true)?);
             }
             LiveValue::Array(items)
         }
@@ -1141,16 +1293,15 @@ fn to_live<'js>(
                 .ok_or_else(|| Conv::Invalid("an object".into()))?
                 .clone();
             if ArrayBuffer::from_object(object.clone()).is_some() {
-                let latin1: rquickjs::String = bytes.call((object,))?;
-                let latin1 = latin1.to_string()?;
-                let mut out = Vec::with_capacity(latin1.len());
-                for c in latin1.chars() {
-                    out.push(
-                        u8::try_from(u32::from(c))
-                            .map_err(|_| Conv::Invalid("an unreadable ArrayBuffer".into()))?,
-                    );
-                }
-                return Ok(LiveValue::Bytes(out));
+                budget.charge(helpers.size(&value)?)?;
+                let latin1: rquickjs::String = helpers.bytes.call((object,))?;
+                let bytes = latin1
+                    .to_string()?
+                    .chars()
+                    .map(|c| u8::try_from(u32::from(c)))
+                    .collect::<Result<Vec<u8>, _>>()
+                    .map_err(|_| Conv::Invalid("an unreadable ArrayBuffer".into()))?;
+                return Ok(LiveValue::Bytes(bytes));
             }
             let plain = match object.get_prototype() {
                 None => true,
@@ -1173,7 +1324,8 @@ fn to_live<'js>(
                 if item.is_undefined() {
                     continue;
                 }
-                fields.insert(key, to_live(ctx, item, bytes, depth + 1)?);
+                budget.charge(NODE_BYTES.saturating_add(key.len()))?;
+                fields.insert(key, to_live(ctx, item, helpers, budget, depth + 1, true)?);
             }
             LiveValue::Object(fields)
         }

@@ -324,3 +324,138 @@ async fn uninterruptible_array_methods_refuse_huge_arrays(store: TestStore) {
     );
 }
 live_test!(uninterruptible_array_methods_refuse_huge_arrays);
+
+const VALUES: &str = r#"
+import { query, mutation } from "loams:server";
+
+function sparse(n) { const a = []; a.length = n; return a; }
+function shared() {
+  const s = "x".repeat(1 << 20);
+  return Array.from({ length: 256 }, () => s);
+}
+function sharedObject() {
+  const s = "x".repeat(1 << 20);
+  const o = {};
+  for (let i = 0; i < 256; i++) o["k" + i] = s;
+  return o;
+}
+function sharedBuffer() {
+  const b = new ArrayBuffer(1 << 20);
+  return Array.from({ length: 256 }, () => b);
+}
+function dag(levels) {
+  let o = [];
+  for (let i = 0; i < levels; i++) o = [o, o];
+  return o;
+}
+const VALUES = {
+  sparse30: () => sparse(2 ** 30),
+  sparse32: () => sparse(2 ** 32 - 1),
+  shared,
+  sharedObject,
+  sharedBuffer,
+  dag: () => dag(40),
+};
+
+async function insert(ctx, { value }) {
+  try {
+    await ctx.db.insert("big", { value: VALUES[value]() });
+    return "inserted";
+  } catch (e) {
+    return String(e);
+  }
+}
+
+export const values = {
+  returned: query(async (ctx, { value }) => VALUES[value]()),
+  inserted: mutation(insert),
+  insertedByQuery: query(async (ctx, { value }) => {
+    try {
+      await ctx.db.get(VALUES[value]());
+      return "read";
+    } catch (e) {
+      return String(e);
+    }
+  }),
+  large: query(async () => "x".repeat(4 << 20)),
+  ok: query(async () => "fine"),
+};
+"#;
+
+/// C2: converting a JavaScript value to a Loams value has a budget
+/// (`Limits::max_result_bytes` for a result, four times
+/// `Limits::max_document_bytes` for a `ctx.db` call's arguments), charged
+/// before anything is allocated and for every shared reference, so a huge
+/// sparse array, a string shared 256 times or a DAG of shared arrays is a
+/// typed error, not an abort or an allocation of gigabytes.
+async fn value_conversion_is_budgeted(store: TestStore) {
+    let test = format!("value_conversion_is_budgeted::{}", variant(&store));
+    if !is_child(&test) {
+        run_child(&test, &[]);
+        return;
+    }
+    let r = runner(&store).await;
+    // CPU to spare: the budget, not the CPU limit, stops these.
+    let bundle = load_with(
+        VALUES,
+        JsConfig {
+            cpu_limit: Duration::from_secs(10),
+            ..config()
+        },
+    );
+    let returned = function(&bundle, "values:returned");
+    let inserted = function(&bundle, "values:inserted");
+    let read = function(&bundle, "values:insertedByQuery");
+    let ok = function(&bundle, "values:ok");
+    for value in [
+        "sparse30",
+        "sparse32",
+        "shared",
+        "sharedObject",
+        "sharedBuffer",
+        "dag",
+    ] {
+        let args = obj(&[("value", s(value))]);
+        let started = Instant::now();
+        match query(&r, &returned, args.clone()).await {
+            Err(LiveError::LimitExceeded { limit, .. }) => {
+                assert_eq!(limit, "max_result_bytes", "{value}");
+            }
+            other => panic!("{value}: max_result_bytes, not {other:?}"),
+        }
+        // Bounded by the budget (8 MiB of conversion), not by the value's
+        // apparent size (gigabytes, or 2^40 nodes for the DAG).
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "{value}: refused within the budget's work: {:?}",
+            started.elapsed()
+        );
+        for (what, f) in [("insert", &inserted), ("get", &read)] {
+            let got = if what == "insert" {
+                mutate(&r, f, args.clone()).await.map(|m| m.result)
+            } else {
+                query(&r, f, args.clone()).await.map(|q| q.result)
+            };
+            match got {
+                Ok(LiveValue::Str(m)) => assert!(
+                    m.contains("max_document_bytes") && m.contains("ctx.db"),
+                    "{what} {value}: {m}"
+                ),
+                other => panic!("{what} {value}: a catchable limit error, not {other:?}"),
+            }
+        }
+        // The slot is fine afterwards.
+        assert_eq!(query(&r, &ok, unit()).await.expect("ok").result, s("fine"));
+    }
+    let all = loams_live::system::lookup(loams_live::system::QUERY).expect("query");
+    let big = query(&r, &all, obj(&[("table", s("big"))]))
+        .await
+        .expect("big");
+    assert!(items(&big.result).is_empty());
+    // A large result within the budget converts.
+    let large = query(&r, &function(&bundle, "values:large"), unit())
+        .await
+        .expect("4 MiB is within max_result_bytes");
+    assert!(matches!(large.result, LiveValue::Str(ref s) if s.len() == 4 << 20));
+}
+live_test!(value_conversion_is_budgeted);
