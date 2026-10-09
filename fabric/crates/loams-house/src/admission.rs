@@ -52,6 +52,9 @@ pub struct PoolConfig {
     pub max_workers: usize,
     /// Workers per namespace (default 8).
     pub max_workers_per_namespace: usize,
+    /// Workers a namespace's sessions may pin for their temporary tables (§49
+    /// §10.3, default 2); past it, `CREATE TEMPORARY TABLE` answers `202`.
+    pub max_pinned_workers_per_namespace: usize,
     /// Statements before a worker is retired (default 500).
     pub max_queries_per_worker: u32,
     /// How long a bound worker may sit idle (default 60 s).
@@ -77,6 +80,7 @@ impl Default for PoolConfig {
             min_idle_workers: 2,
             max_workers: (cores / 2).max(1),
             max_workers_per_namespace: 8,
+            max_pinned_workers_per_namespace: 2,
             max_queries_per_worker: 500,
             idle_unbind_after: Duration::from_secs(60),
             worker_rss_ceiling: 6 * 1024 * 1024 * 1024,
@@ -115,6 +119,8 @@ pub struct PoolStats {
     pub spawned_total: u64,
     /// Leases handed out since the pool began.
     pub acquired_total: u64,
+    /// Workers pinned to sessions.
+    pub pinned: usize,
     /// Workers retired, by reason (`loams_house_worker_kills_total{reason}`).
     pub kills: BTreeMap<ExitReason, u64>,
     /// Workers (idle or lent) per bound namespace.
@@ -160,6 +166,8 @@ struct State {
     warming: usize,
     spawned_total: u64,
     acquired_total: u64,
+    /// Workers pinned to a session, by worker id, with their namespace.
+    pinned: BTreeMap<String, String>,
     kills: BTreeMap<ExitReason, u64>,
     closed: bool,
 }
@@ -251,6 +259,7 @@ impl PoolInner {
     /// caller retires it with afterwards.
     fn retire(&self, worker: Worker, reason: ExitReason) {
         let reason = worker.shared.kill(reason);
+        self.state().pinned.remove(worker.shared.id());
         *self.state().kills.entry(reason).or_insert(0) += 1;
         drop(worker);
         self.changed.notify_waiters();
@@ -350,10 +359,12 @@ impl PoolInner {
         {
             let mut state = self.state();
             let mut keep = Vec::with_capacity(state.idle.len());
-            for worker in state.idle.drain(..) {
+            let idle = std::mem::take(&mut state.idle);
+            for worker in idle {
                 if worker.shared.has_exited() {
                     retired.push((worker, ExitReason::Crash));
                 } else if worker.namespace.is_some()
+                    && !state.pinned.contains_key(worker.shared.id())
                     && now.duration_since(worker.idle_since) >= self.config.idle_unbind_after
                 {
                     retired.push((worker, ExitReason::Idle));
@@ -522,7 +533,9 @@ impl WorkerPool {
                     ));
                 }
                 if let Some(at) = state.idle.iter().position(|w| {
-                    w.namespace.as_deref() == Some(namespace) && !w.shared.has_exited()
+                    w.namespace.as_deref() == Some(namespace)
+                        && !w.shared.has_exited()
+                        && !state.pinned.contains_key(w.shared.id())
                 }) {
                     Step::Ready(state.idle.swap_remove(at))
                 } else if state.for_namespace(namespace) >= inner.config.max_workers_per_namespace {
@@ -537,11 +550,10 @@ impl WorkerPool {
                 } else if state.total() < inner.config.max_workers {
                     state.in_hand += 1;
                     Step::Spawn
-                } else if let Some(at) = state
-                    .idle
-                    .iter()
-                    .position(|w| w.namespace.as_deref() != Some(namespace))
-                {
+                } else if let Some(at) = state.idle.iter().position(|w| {
+                    w.namespace.as_deref() != Some(namespace)
+                        && !state.pinned.contains_key(w.shared.id())
+                }) {
                     // The node is full and another namespace has an idle worker:
                     // it gives up its slot.
                     state.in_hand += 1;
@@ -646,6 +658,107 @@ impl WorkerPool {
         }
     }
 
+    /// A worker for `namespace`, pinned to the caller's session (its temporary
+    /// tables live on it): only [`WorkerPool::acquire_pinned`] lends it again, and
+    /// neither the query budget nor the idle reaper retires it, until
+    /// [`WorkerPool::unpin`]. At most `max_pinned_workers_per_namespace` per
+    /// namespace; past it, `202` (§49 §10.3, Q690).
+    pub async fn acquire_and_pin(&self, namespace: &str) -> Result<WorkerLease, HouseError> {
+        let full = |inner: &PoolInner| {
+            inner
+                .state()
+                .pinned
+                .values()
+                .filter(|ns| ns.as_str() == namespace)
+                .count()
+                >= inner.config.max_pinned_workers_per_namespace
+        };
+        let too_many = || {
+            HouseError::from(ChError::too_many_simultaneous_queries(format!(
+                "Too many sessions of namespace {namespace} hold temporary tables (at most {}); \
+                 end one, or run the query without a temporary table",
+                self.inner.config.max_pinned_workers_per_namespace
+            )))
+        };
+        if full(&self.inner) {
+            return Err(too_many());
+        }
+        let lease = self.acquire(namespace).await?;
+        let id = lease.worker_id().to_string();
+        let mut state = self.inner.state();
+        if state
+            .pinned
+            .values()
+            .filter(|ns| ns.as_str() == namespace)
+            .count()
+            >= self.inner.config.max_pinned_workers_per_namespace
+        {
+            drop(state);
+            self.release(lease, Outcome::Completed);
+            return Err(too_many());
+        }
+        state.pinned.insert(id, namespace.to_string());
+        Ok(lease)
+    }
+
+    /// The worker pinned as `worker_id`, for its session; `Ok(None)` when it is no
+    /// longer there (it died or was retired: its temporary tables are gone).
+    pub async fn acquire_pinned(
+        &self,
+        namespace: &str,
+        worker_id: &str,
+    ) -> Result<Option<WorkerLease>, HouseError> {
+        let inner = &self.inner;
+        let deadline = Instant::now() + inner.config.acquire_timeout;
+        loop {
+            let notified = inner.changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let taken = {
+                let mut state = inner.state();
+                if !state.pinned.contains_key(worker_id) {
+                    return Ok(None);
+                }
+                state
+                    .idle
+                    .iter()
+                    .position(|w| w.shared.id() == worker_id)
+                    .map(|at| state.idle.swap_remove(at))
+            };
+            if let Some(worker) = taken {
+                if worker.shared.has_exited() {
+                    inner.retire(worker, ExitReason::Crash);
+                    inner.top_up();
+                    return Ok(None);
+                }
+                worker.shared.bump_epoch();
+                {
+                    let mut state = inner.state();
+                    state
+                        .leased
+                        .insert(worker_id.to_string(), namespace.to_string());
+                    state.acquired_total += 1;
+                }
+                return Ok(Some(WorkerLease {
+                    pool: Arc::downgrade(inner),
+                    worker: Some(worker),
+                    namespace: namespace.to_string(),
+                    query_id: String::new(),
+                }));
+            }
+            // Lent out (a statement of the same session still finishing): wait.
+            if tokio::time::timeout_at(deadline, notified).await.is_err() {
+                return Err(too_many(namespace, inner.config.acquire_timeout));
+            }
+        }
+    }
+
+    /// Releases a pin: the worker is an ordinary worker of its namespace again.
+    pub fn unpin(&self, worker_id: &str) {
+        self.inner.state().pinned.remove(worker_id);
+        self.inner.changed.notify_waiters();
+    }
+
     /// Returns a lease. The worker goes back to its namespace's idle list unless a
     /// recycle rule retires it.
     pub fn release(&self, mut lease: WorkerLease, outcome: Outcome) {
@@ -663,7 +776,9 @@ impl WorkerPool {
             Some(ExitReason::Cancel)
         } else if worker.poisoned || outcome == Outcome::Poisoned {
             Some(ExitReason::Poisoned)
-        } else if worker.queries >= inner.config.max_queries_per_worker {
+        } else if worker.queries >= inner.config.max_queries_per_worker
+            && !inner.state().pinned.contains_key(worker.shared.id())
+        {
             Some(ExitReason::Budget)
         } else if worker.last_rss > inner.config.worker_rss_ceiling {
             Some(ExitReason::Rss)
@@ -717,6 +832,7 @@ impl WorkerPool {
             booting: state.in_hand + state.warming,
             spawned_total: state.spawned_total,
             acquired_total: state.acquired_total,
+            pinned: state.pinned.len(),
             kills: state.kills.clone(),
             bound,
         }

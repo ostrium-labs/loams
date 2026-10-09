@@ -1375,3 +1375,65 @@ async fn session_restore_retire_and_timer() {
     assert_eq!(after, before - 1, "the idle session went on the timer");
     pool.release(lease, Outcome::Completed);
 }
+
+/// Task 4: a worker pinned to a session (it holds temporary tables) is only ever
+/// lent back to that session, outlives the query budget, and is capped per
+/// namespace; a pin to a dead worker is reported lost.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pinned_workers_are_reserved_capped_and_lost_on_death() {
+    let config = PoolConfig {
+        max_queries_per_worker: 2,
+        max_pinned_workers_per_namespace: 2,
+        ..small(4)
+    };
+    let pool = pool("pinning", config).await;
+    let mut a = pool.acquire_and_pin("ns").await.expect("pin a");
+    let a_id = a.worker_id().to_string();
+    let a_pid = a.pid();
+    a.run(statement("SELECT 1", "TSV")).await.expect("runs");
+    pool.release(a, Outcome::Completed);
+
+    // Not lent to anyone else, while the session's own acquire gets it back.
+    let other = pool.acquire("ns").await.expect("another");
+    assert_ne!(other.pid(), a_pid, "a pinned worker is reserved");
+    pool.release(other, Outcome::Completed);
+    for _ in 0..3 {
+        let mut again = pool
+            .acquire_pinned("ns", &a_id)
+            .await
+            .expect("ok")
+            .expect("still pinned");
+        assert_eq!(again.pid(), a_pid);
+        again.run(statement("SELECT 1", "TSV")).await.expect("runs");
+        pool.release(again, Outcome::Completed);
+    }
+    assert_eq!(
+        pool.stats().kills_for(ExitReason::Budget),
+        0,
+        "a pinned worker outlives the budget"
+    );
+    assert_eq!(pool.stats().pinned, 1);
+
+    // The cap.
+    let b = pool.acquire_and_pin("ns").await.expect("pin b");
+    let err = pool.acquire_and_pin("ns").await.expect_err("a third pin");
+    assert_eq!(err.code(), 202, "{err}");
+    pool.release(b, Outcome::Completed);
+
+    // Unpinned, it is an ordinary worker again: the budget applies.
+    pool.unpin(&a_id);
+    assert_eq!(pool.stats().pinned, 1);
+
+    // A pinned worker that dies is a lost pin.
+    let c = pool.acquire_and_pin("ns").await.expect("pin c (b and c)");
+    let c_id = c.worker_id().to_string();
+    pool.kill(c, ExitReason::Cancel);
+    assert!(
+        pool.acquire_pinned("ns", &c_id)
+            .await
+            .expect("ok")
+            .is_none(),
+        "lost"
+    );
+    assert_eq!(pool.stats().pinned, 1);
+}
