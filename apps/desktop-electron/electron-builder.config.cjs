@@ -23,7 +23,7 @@ module.exports = {
 	extraResources: [
 		{ from: "../../web/apps/console/dist", to: "console" },
 		{ from: "resources/bin", to: "bin" },
-		{ from: "../../deploy/neon", to: "stacks/neon" },
+		{ from: "../../deploy/loams-postgres-dev", to: "stacks/loams-postgres-dev" },
 		{ from: "../../deploy/wesql", to: "stacks/wesql" },
 		{ from: "../../deploy/tikv", to: "stacks/tikv" },
 		{ from: "resources/connectors.json", to: "connectors.json" },

@@ -1,15 +1,15 @@
-# loams-neon fixtures (PG2 Task 2)
+# loams-postgres fixtures (PG2 Task 2)
 
-Recorded on 2026-10-09 from `deploy/neon` at its pinned digests:
+Recorded on 2026-10-09 from `deploy/loams-postgres-dev` at its pinned digests:
 - `ghcr.io/neondatabase/neon@sha256:7a4f1249…` (Neon `77e22e4b`);
 - `compute-node-v17@sha256:13ab146d…`;
 - `loams-wal` from this repository.
 
-The fork `ostrium-labs/neon` publishes no images yet (PG2 ruling R2.1). For these APIs the pinned build is the fork's code: none of the 12 commits from `77e22e4b` to the fork's tag `loams-decoder-trim-1` (`1218fb7a`) touches `libs/pageserver_api/src/{models,controller_api}.rs`, `pageserver/src/http/routes.rs`, `storage_controller/src/http.rs`, `libs/compute_api`, `compute_tools/src/http`, `libs/http-utils/src/error.rs` or `safekeeper/src/http` (`git log 77e22e4b..loams-decoder-trim-1 -- <those paths>` is empty; checked 2026-10-09). The pinned `pageserver --version` reports `git-env:77e22e4bf09d88b70b4a83a38c2f6de6301816b4`.
+The fork `ostrium-labs/loams-postgres` publishes no images yet (PG2 ruling R2.1). For these APIs the pinned build is the fork's code: none of the 12 commits from `77e22e4b` to the fork's tag `loams-decoder-trim-1` (`1218fb7a`) touches `libs/pageserver_api/src/{models,controller_api}.rs`, `pageserver/src/http/routes.rs`, `storage_controller/src/http.rs`, `libs/compute_api`, `compute_tools/src/http`, `libs/http-utils/src/error.rs` or `safekeeper/src/http` (`git log 77e22e4b..loams-decoder-trim-1 -- <those paths>` is empty; checked 2026-10-09). The pinned `pageserver --version` reports `git-env:77e22e4bf09d88b70b4a83a38c2f6de6301816b4`.
 
 ## Files
 
-- **`*.request.json`** are what `loams-neon` sends. `capture.sh` sends them as written, so a request the component refuses fails the capture. `tests/client.rs` checks that the client produces them byte for byte after canonical JSON (keys sorted).
+- **`*.request.json`** are what `loams-postgres` sends. `capture.sh` sends them as written, so a request the component refuses fails the capture. `tests/client.rs` checks that the client produces them byte for byte after canonical JSON (keys sorted).
 - **`*.response.json`** are the components' answers. `statuses.txt` has the method, the path and the HTTP status of each.
 - **`src_*.response.json`** are hand-written from the fork's source, for answers the capture cannot provoke on one pageserver without a storage controller or a replica. Each is the exact text the source formats:
   - `src_branch_gc_cutoff`: `pageserver/src/tenant.rs` ("invalid branch start lsn: less than latest GC cutoff {}"), answered as 406 by `routes.rs` `timeline_create_handler` (`{err:#}`);
@@ -31,9 +31,9 @@ The fork `ostrium-labs/neon` publishes no images yet (PG2 ruling R2.1). For thes
 | `conflict.response.json`, `not_found.response.json` | `libs/http-utils/src/error.rs` `HttpErrorBody` |
 | `wal_*` | `crates/loams-safekeeper/src/http.rs` (this repository) |
 | `branch_below_ancestor.*`, `delete_with_children`, `delete_tenant_missing` | `routes.rs` `timeline_create_handler` (406), `From<DeleteTimelineError>` and `timeline_delete_handler` (412) |
-| `compute_status`, `compute_unauthorized`, `prewarm_state`, `promote_primary` | `compute_api/src/responses.rs` (`ComputeStatusResponse`, `GenericAPIError`, `LfcPrewarmState`, `PromoteState`); recorded from `deploy/neon`'s `compute1` |
+| `compute_status`, `compute_unauthorized`, `prewarm_state`, `promote_primary` | `compute_api/src/responses.rs` (`ComputeStatusResponse`, `GenericAPIError`, `LfcPrewarmState`, `PromoteState`); recorded from `deploy/loams-postgres-dev`'s `compute1` |
 | `spec_main.json` | `libs/compute_api/src/spec.rs` `ComputeSpec` |
-| (no fixture: no controller in `deploy/neon`) `NeonClient` through the storage controller | `controller_api.rs` `TenantCreateRequest`; `storage_controller/src/http.rs` routes |
+| (no fixture: no controller in `deploy/loams-postgres-dev`) `NeonClient` through the storage controller | `controller_api.rs` `TenantCreateRequest`; `storage_controller/src/http.rs` routes |
 | (no fixture) `ComputeCtlClient` | `compute_api/src/{requests,responses}.rs` (`ConfigurationRequest`, `PromoteConfig`, `PromoteState`, `ComputeStatusResponse`, `GenericAPIError`); `compute_tools/src/http/server.rs` routes |
 
 ## Re-recording
@@ -43,23 +43,23 @@ From the repository root, on a fresh stack:
 ```sh
 SP=$(mktemp -d)   # any scratch directory
 export DOCKER_HOST=unix:///run/user/$UID/podman/podman.sock   # with Podman
-(cd deploy/neon && docker compose up -d rustfs create-bucket storage_broker pageserver safekeeper1)
+(cd deploy/loams-postgres-dev && docker compose up -d rustfs create-bucket storage_broker pageserver safekeeper1)
 target/debug/loams-wal --listen-pg 127.0.0.1:55701 --listen-http 127.0.0.1:57701 &
 # compute_ctl with a key of the capture's own: compute-jwt.py adds it to the
 # compute config and prints a token for compute id compute-capture.
-export COMPUTE_JWT=$(python3 -I crates/loams-neon/tests/fixtures/compute-jwt.py deploy/neon/compute/config.json "$SP")
+export COMPUTE_JWT=$(python3 -I crates/loams-postgres/tests/fixtures/compute-jwt.py deploy/loams-postgres-dev/compute/config.json "$SP")
 export CAPTURE_CONFIG=$SP/config.json
-crates/loams-neon/tests/fixtures/capture.sh http://127.0.0.1:9898 http://127.0.0.1:57701 http://127.0.0.1:3080
+crates/loams-postgres/tests/fixtures/capture.sh http://127.0.0.1:9898 http://127.0.0.1:57701 http://127.0.0.1:3080
 ```
 
 The capture creates the tenant and timeline `compute1` attaches to, then says "waiting for compute_ctl" and waits up to 4 minutes. Start `compute1` then, from a second shell with the same `CAPTURE_CONFIG`:
 
 ```sh
-(cd deploy/neon && TENANT_ID=4c6f616d734e656f6e54656e616e7431 TIMELINE_ID=4c6f616d734e656f6e54696d656c6e31 \
-  docker compose -f compose.yaml -f ../../crates/loams-neon/tests/fixtures/compose.capture.yaml up -d compute1)
+(cd deploy/loams-postgres-dev && TENANT_ID=4c6f616d734e656f6e54656e616e7431 TIMELINE_ID=4c6f616d734e656f6e54696d656c6e31 \
+  docker compose -f compose.yaml -f ../../crates/loams-postgres/tests/fixtures/compose.capture.yaml up -d compute1)
 ```
 
-Afterwards: `kill %1` and `(cd deploy/neon && docker compose -f compose.yaml -f ../../crates/loams-neon/tests/fixtures/compose.capture.yaml down -v)`.
+Afterwards: `kill %1` and `(cd deploy/loams-postgres-dev && docker compose -f compose.yaml -f ../../crates/loams-postgres/tests/fixtures/compose.capture.yaml down -v)`.
 
 The ids are fixed ("LoamsNeonTenant1", "LoamsNeonTimeln1", "LoamsNeonBranch1" and "LoamsNeonBranch2" in hex). Start from a fresh stack (`down -v`), because a second capture against the same pageserver records the existing tenant's answers.
 

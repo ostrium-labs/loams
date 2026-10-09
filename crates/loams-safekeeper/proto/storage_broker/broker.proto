@@ -1,6 +1,6 @@
 // Vendored from Neon (https://github.com/neondatabase/neon), Apache License
 // 2.0, Copyright Neon Inc.: storage_broker/proto/broker.proto at the fork
-// https://github.com/ostrium-labs/neon, commit 1218fb7a6a37e1b4c268bad5c2952c238d81d368
+// https://github.com/ostrium-labs/loams-postgres, commit 1218fb7a6a37e1b4c268bad5c2952c238d81d368
 // (tag loams-decoder-trim-1), unchanged below this header. loams-wal
 // publishes SafekeeperTimelineInfo and answers SafekeeperDiscoveryRequest
 // with it (PG2 Task 32). See the repository's NOTICE.

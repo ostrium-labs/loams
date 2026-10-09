@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The benchmark compute's entrypoint: deploy/neon/compute/start.sh on host
+# The benchmark compute's entrypoint: deploy/loams-postgres-dev/compute/start.sh on host
 # networking, with the safekeeper list, shared_buffers and fsync filled in.
 set -euo pipefail
 : "${TENANT_ID:?set TENANT_ID}" "${TIMELINE_ID:?set TIMELINE_ID}" "${SAFEKEEPERS:?set SAFEKEEPERS}"

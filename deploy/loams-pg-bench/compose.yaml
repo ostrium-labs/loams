@@ -1,5 +1,5 @@
 # Loams WAL vs stock safekeepers: the P4b benchmark topology on one host
-# (docs/design/28-loams-postgres.md §7). Derived from deploy/neon (Apache-2.0,
+# (docs/design/28-loams-postgres.md §7). Derived from deploy/loams-postgres-dev (Apache-2.0,
 # from neondatabase/neon docker-compose/).
 #
 # Everything runs on host networking so that the compute reaches both the
@@ -9,7 +9,7 @@
 name: loams-pg-bench
 
 # Pinned by digest (PG2 Task 2): Neon's last public build, 2025-08-26, git
-# 77e22e4b (the fork ostrium-labs/neon publishes no images yet; ruling R2.1).
+# 77e22e4b (the fork ostrium-labs/loams-postgres publishes no images yet; ruling R2.1).
 # Multi-arch index digests; NEON_IMAGE and COMPUTE_IMAGE override them.
 x-neon-image: &neon-image ${NEON_IMAGE:-ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f}
 x-compute-image: &compute-image ${COMPUTE_IMAGE:-ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3}

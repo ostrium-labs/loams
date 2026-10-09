@@ -11,7 +11,7 @@ WAL replaces the safekeepers only if, for every workload:
   noise), and
 - its throughput is no worse.
 
-Derived from [`deploy/neon`](../neon) (Apache-2.0, from `neondatabase/neon` `docker-compose/`).
+Derived from [`deploy/loams-postgres-dev`](../loams-postgres-dev) (Apache-2.0, from `neondatabase/neon` `docker-compose/`).
 
 ## Topology
 

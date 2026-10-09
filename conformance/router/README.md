@@ -59,7 +59,7 @@ are recorded, not gating.
 **Pins:** `postgres:17.11`; PgDog v0.1.60 (`ghcr.io/pgdogdev/pgdog@sha256:25d19088…2f266`, source checkout at tag
 `v0.1.60`, commit `0d040f92`); `pg_dump`/`psql` 18.6 on the host for the schema dumps and replication commands.
 
-**Target:** the Loams Postgres compute from `deploy/neon` is not runnable (P2b has not merged), so every row is
+**Target:** the Loams Postgres compute from `deploy/loams-postgres-dev` is not runnable (P2b has not merged), so every row is
 `pending-target` (Ruling 7) and the reference result is recorded. RT1 Task 0 re-runs it with
 `pg-replay.sh <capture-dir> postgres://…` once P2b is merged.
 

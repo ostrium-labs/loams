@@ -1,5 +1,5 @@
 // Client for the Neon pageserver management API and the safekeeper HTTP API of the dev stack
-// (deploy/neon). Routes checked against deploy/neon/README.md; see docs in the Task 22 report.
+// (deploy/loams-postgres-dev). Routes checked against deploy/loams-postgres-dev/README.md; see docs in the Task 22 report.
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

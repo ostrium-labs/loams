@@ -1,6 +1,6 @@
 [package]
-name = "loams-neon"
-description = "Loams Postgres's client of Neon's components (design §46 §6): the pageserver and storage controller, loams-wal, compute_ctl and the compute spec. A plain HTTP client; no Neon code."
+name = "loams-postgres"
+description = "Loams Postgres's client of the storage and compute components (design §46 §6): the pageserver and storage controller, loams-wal, compute_ctl and the compute spec. A plain HTTP client; no Neon code."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

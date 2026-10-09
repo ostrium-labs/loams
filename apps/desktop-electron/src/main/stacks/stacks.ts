@@ -20,7 +20,12 @@ import { RotatingLog } from "../engine/log-rotate";
 import type { ComposeRuntime } from "./runtime";
 
 export interface StackDef {
-	/** Directory under the stacks dir (deploy/ in dev, resources/stacks when packaged). */
+	/** The shipped stack: a directory under deploy/ in dev, under resources/stacks when packaged. */
+	source: string;
+	/**
+	 * The per-user copy under the stacks run dir (userData/stacks). Kept when `source`
+	 * is renamed, so users keep their copied files (postgres: still "neon", D823).
+	 */
 	dir: string;
 	/** Compose services that must all be running for the stack to count as running. */
 	required: string[];
@@ -28,9 +33,10 @@ export interface StackDef {
 	ports: Record<string, number>;
 }
 
-/** Ports and services read from deploy/{neon,wesql,tikv}/compose.yaml. */
+/** Ports and services read from deploy/{loams-postgres-dev,wesql,tikv}/compose.yaml. */
 export const STACKS: Record<StackId, StackDef> = {
 	postgres: {
+		source: "loams-postgres-dev",
 		dir: "neon",
 		required: [
 			"rustfs",
@@ -47,11 +53,13 @@ export const STACKS: Record<StackId, StackDef> = {
 		},
 	},
 	wesql: {
+		source: "wesql",
 		dir: "wesql",
 		required: ["rustfs", "wesql"],
 		ports: { rustfs: 9000, wesql: 13306 },
 	},
 	tikv: {
+		source: "tikv",
 		dir: "tikv",
 		required: ["pd", "tikv"],
 		ports: { pd: 19379, tikv: 20160 },
@@ -59,6 +67,11 @@ export const STACKS: Record<StackId, StackDef> = {
 };
 
 export const STACK_IDS = Object.keys(STACKS) as StackId[];
+
+/** Where a stack ships: `sourceDir` is deploy/ in dev and resources/stacks when packaged. */
+export function stackSource(sourceDir: string, id: StackId): string {
+	return join(sourceDir, STACKS[id].source);
+}
 
 /** PD client address of the tikv stack; the engine's `--live-pd` while it runs. */
 export const TIKV_PD_ADDR = `127.0.0.1:${STACKS.tikv.ports.pd}`;
@@ -98,7 +111,7 @@ export async function tikvReady(
 	}
 }
 /**
- * The Postgres major version the postgres stack runs: deploy/neon pins
+ * The Postgres major version the postgres stack runs: deploy/loams-postgres-dev pins
  * compute-node-v17 (PG2 Task 2, R2.2).
  */
 export const PG_MAJOR = 17;
@@ -409,10 +422,9 @@ export class StackManager extends EventEmitter {
 	private prepare(id: StackId): void {
 		const src = this.deps.sourceDir;
 		if (!src || this.synced.has(id)) return;
-		const dir = STACKS[id].dir;
 		syncStackDir(
-			join(src, dir),
-			join(this.deps.stacksDir, dir),
+			stackSource(src, id),
+			join(this.deps.stacksDir, STACKS[id].dir),
 			this.deps.version ?? "0",
 			this.deps.alwaysCopy === true,
 		);

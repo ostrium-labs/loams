@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Re-record loams-neon's fixtures (PG2 Task 2) against deploy/neon at its pinned
-# digests. Request fixtures (*.request.json) are what loams-neon sends; this
+# Re-record loams-postgres's fixtures (PG2 Task 2) against deploy/loams-postgres-dev at its pinned
+# digests. Request fixtures (*.request.json) are what loams-postgres sends; this
 # script sends them as they are, so a fixture the pageserver refuses fails here.
 # Responses go to *.response.json and their HTTP statuses to statuses.txt.
 #
-#   (cd deploy/neon && docker compose up -d rustfs create-bucket storage_broker pageserver)
-#   crates/loams-neon/tests/fixtures/capture.sh [pageserver URL] [loams-wal URL] [compute_ctl URL]
+#   (cd deploy/loams-postgres-dev && docker compose up -d rustfs create-bucket storage_broker pageserver)
+#   crates/loams-postgres/tests/fixtures/capture.sh [pageserver URL] [loams-wal URL] [compute_ctl URL]
 #
 # With a compute_ctl URL and COMPUTE_JWT (README.md: compute-jwt.py and
 # compose.capture.yaml), compute_ctl's /status is recorded too, with and
@@ -14,7 +14,7 @@
 # With a loams-wal HTTP URL (for example a `loams-wal --listen-http
 # 127.0.0.1:57701` started for the purpose), WalClient's fixtures are
 # recorded too (wal_*).
-#   (cd deploy/neon && docker compose down -v)
+#   (cd deploy/loams-postgres-dev && docker compose down -v)
 #
 # The ids are fixed ("LoamsNeonTenant1", "LoamsNeonTimeln1", "LoamsNeonBranch1"
 # in hex), so the request fixtures do not change between captures; the branch

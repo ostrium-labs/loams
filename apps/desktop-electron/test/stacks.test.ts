@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { resolvePaths } from "../src/main/paths";
 import {
 	LIVE_STORE_KEY,
 	readLiveStore,
@@ -28,7 +29,9 @@ import {
 	postgresReady,
 	RESET_POSTGRES_LABEL,
 	type RunFn,
+	STACKS,
 	StackManager,
+	stackSource,
 	syncStackDir,
 	TIKV_PD_ADDR,
 	tikvReady,
@@ -509,6 +512,51 @@ describe("stack directory copy (I7)", () => {
 			expect(f).toBe(join(runDir, "tikv", "compose.yaml"));
 			expect(f.startsWith(resources)).toBe(false);
 		}
+	});
+
+	it("copied_stack_dir_unchanged", async () => {
+		// D823: the shipped stack is deploy/loams-postgres-dev, but the per-user copy
+		// keeps its old name, so existing users keep their copied files.
+		expect(STACKS.postgres.dir).toBe("neon");
+		expect(STACKS.postgres.source).toBe("loams-postgres-dev");
+		const env = {
+			userData: "/home/u/.config/Loams",
+			logs: "/home/u/.config/Loams/logs",
+			resourcesPath: "/opt/Loams/resources",
+			appRoot: "/repo/apps/desktop-electron",
+			platform: "linux" as NodeJS.Platform,
+		};
+		const dev = resolvePaths({ ...env, isPackaged: false });
+		expect(stackSource(dev.stacksDir, "postgres")).toBe(
+			"/repo/deploy/loams-postgres-dev",
+		);
+		const packaged = resolvePaths({ ...env, isPackaged: true });
+		expect(stackSource(packaged.stacksDir, "postgres")).toBe(
+			"/opt/Loams/resources/stacks/loams-postgres-dev",
+		);
+
+		const resources = mkdtempSync(join(tmpdir(), "stack-src-"));
+		mkdirSync(join(resources, "loams-postgres-dev"));
+		writeFileSync(join(resources, "loams-postgres-dev", "compose.yaml"), "v1");
+		const runDir = join(mkdtempSync(join(tmpdir(), "stack-run-")), "stacks");
+		const files: string[] = [];
+		const m = new StackManager({
+			runtime: { bin: "docker", args: ["compose"] },
+			sourceDir: resources,
+			stacksDir: runDir,
+			version: "1.0.0",
+			logsDir: LOGS(),
+			run: async (_bin, args) => {
+				files.push(args[args.indexOf("-f") + 1] as string);
+				return { code: 0, stdout: "" };
+			},
+		});
+		await m.start("postgres");
+		expect(files.length).toBeGreaterThan(0);
+		for (const f of files) expect(f).toBe(join(runDir, "neon", "compose.yaml"));
+		expect(readFileSync(join(runDir, "neon", "compose.yaml"), "utf8")).toBe(
+			"v1",
+		);
 	});
 });
 

@@ -7,6 +7,8 @@ Status: **Approved direction** · 2026-09-29. On 2026-09-29 the owner amended §
 - PgDog does the routing, and only as an unmodified separate service.
 - Loams’ own WAL replaces Neon's safekeepers.
 
+**Names after the hard fork (D823; NF1 Task 1b).** This document predates the rename and keeps the old names: read `ostrium-labs/neon` as `ostrium-labs/loams-postgres`, `crates/loams-neon` (package `loams-neon`) as `crates/loams-postgres` (package `loams-postgres`), and `deploy/neon` as `deploy/loams-postgres-dev` (the compose project `loams-neon` and the desktop's copied `stacks/neon` keep their names).
+
 The owner then chose the WAL design:
 
 - **Option A.** TiKV is the quorum hot tier, and Loams’ log group-commits to the bucket behind it.

@@ -14,7 +14,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-NEON_SOURCES = ("ostrium-labs/neon", "neondatabase/neon", "rust-postgres", "azure-sdk-for-rust")
+NEON_SOURCES = ("ostrium-labs/loams-postgres", "ostrium-labs/neon", "neondatabase/neon", "rust-postgres", "azure-sdk-for-rust")
 
 
 def main(root: Path) -> int:

@@ -2,6 +2,8 @@
 
 Status: **Approved** (owner defaults, 2026-10-02: "do suggested for all") · 2026-10-01. This document folds the chat-dump plan "Loams SQL, Loams Postgres, and Loams Router: Build and Verification Plan" (`chatdump.md`, lines 54–322, owner request of 2026-10-01) into Loams’ design, and reconciles it with what has been decided since that plan was written: D260 (no TiDB), D236 (PgDog, unmodified), §28 (Loams Postgres, Arm A) and the pending §29 (WeSQL as the MySQL OLTP engine, PR #172, D273–D280). Decisions are **D300–D322** and open questions **Q300–Q314**, all approved or answered by the owner on 2026-10-02 ("do suggested for all"). It changes no code; the work is track **RT** (RT0–RT5, §17), with plans [RT0](../plans/2026-10-01-rt0-foundations-and-specs.md), [RT1](../plans/2026-10-01-rt1-postgres-slice-and-sim.md) and [RT2](../plans/2026-10-01-rt2-scatter-oracle-2pc.md).
 
+**Names after the hard fork (D823; NF1 Task 1b).** This document predates the rename and keeps the old names: read `ostrium-labs/neon` as `ostrium-labs/loams-postgres`, `crates/loams-neon` (package `loams-neon`) as `crates/loams-postgres` (package `loams-postgres`), and `deploy/neon` as `deploy/loams-postgres-dev` (the compose project `loams-neon` and the desktop's copied `stacks/neon` keep their names).
+
 The chat dump's own milestones M0–M5 are renamed **RT0–RT5**, so they do not clash with Loams’ M0–M6 (D319).
 
 Markers, as in §28 and §29:

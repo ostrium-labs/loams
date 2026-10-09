@@ -10,8 +10,8 @@
 # digest. Its golden tests compare loams-wal's stream with the fork's
 # safekeeper's (tests/fixtures).
 #
-# neon-client (Task 2): loams-neon's fixture tests (the request bodies and
-# answers recorded from deploy/neon at its pinned digests).
+# neon-client (Task 2): loams-postgres's fixture tests (the request bodies and
+# answers recorded from deploy/loams-postgres-dev at its pinned digests).
 #
 # pg-control (Task 3 onward): loams-pg-control's tests on the local store, and
 # clippy on the default and the tikv build. Its TiKV conformance runs in
@@ -30,7 +30,7 @@ on:
       - "crates/loams-safekeeper/**"
       - "crates/loams-tikv/**"
       - "crates/loams-wal-decoder/**"
-      - "crates/loams-neon/**"
+      - "crates/loams-postgres/**"
       - "crates/loams-pg-control/**"
       - "crates/loams-kv/**"
       - "scripts/pg2/**"
@@ -49,7 +49,7 @@ on:
       - "crates/loams-safekeeper/**"
       - "crates/loams-tikv/**"
       - "crates/loams-wal-decoder/**"
-      - "crates/loams-neon/**"
+      - "crates/loams-postgres/**"
       - "crates/loams-pg-control/**"
       - "crates/loams-kv/**"
       - "scripts/pg2/**"
@@ -65,7 +65,7 @@ permissions:
   contents: read
 
 env:
-  # The headers' source: the `neon` image deploy/neon and deploy/loams-pg-bench
+  # The headers' source: the `neon` image deploy/loams-postgres-dev and deploy/loams-pg-bench
   # pin (Neon 77e22e4b, the build the golden fixtures' safekeeper came from; no
   # header changes up to the fork's tag loams-decoder-trim-1). The fork
   # publishes no image yet (PG2 Task 2, R2.1); this is its multi-arch index.
@@ -105,7 +105,7 @@ jobs:
         run: cargo test -p loams-proto --test postgres --locked
 
   neon-client:
-    name: loams-neon (fixture tests)
+    name: loams-postgres (fixture tests)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -114,12 +114,12 @@ jobs:
       # Shared with pg2-e2e.yml's neon-deploy, which only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: pg2-loams-neon
+          shared-key: pg2-loams-postgres
           save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: test
-        run: cargo test -p loams-neon --locked
+        run: cargo test -p loams-postgres --locked
       - name: clippy
-        run: cargo clippy -p loams-neon --all-targets --locked -- -D warnings
+        run: cargo clippy -p loams-postgres --all-targets --locked -- -D warnings
 
   wal-decoder:
     name: loams-wal-decoder (golden tests against the fork's sender)

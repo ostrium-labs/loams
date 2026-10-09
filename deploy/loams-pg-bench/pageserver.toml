@@ -1,4 +1,4 @@
-# The benchmark's pageserver: deploy/neon/pageserver.toml on host networking.
+# The benchmark's pageserver: deploy/loams-postgres-dev/pageserver.toml on host networking.
 broker_endpoint='http://127.0.0.1:50051'
 pg_distrib_dir='/usr/local/'
 listen_pg_addr='127.0.0.1:6400'

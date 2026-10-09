@@ -1,4 +1,4 @@
-// Postgres backend for the desktop. v0.1 talks to the dev compose (deploy/neon): pageserver HTTP
+// Postgres backend for the desktop. v0.1 talks to the dev compose (deploy/loams-postgres-dev): pageserver HTTP
 // for tenants/timelines/branches and the compute (55433) for SQL.
 //
 // SEAM: everything the UI and agent use goes through `PostgresBackend`. The production backend
@@ -29,7 +29,7 @@ import {
 } from "./caps";
 import type { NeonClient, PgBranchInput } from "./neon";
 
-/** Compose constants (deploy/neon/compose.yaml, compute/config.json). */
+/** Compose constants (deploy/loams-postgres-dev/compose.yaml, compute/config.json). */
 export const PG_DEV = {
 	host: "127.0.0.1",
 	port: 55433,

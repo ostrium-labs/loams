@@ -23,7 +23,7 @@ export interface ResolvedPaths {
 	engineBin: string[];
 	factoryDir: string;
 	serversFile: string;
-	/** The shipped stacks: neon/, wesql/ and tikv/ (each with a compose.yaml). Read-only. */
+	/** The shipped stacks: loams-postgres-dev/, wesql/ and tikv/ (each with a compose.yaml). Read-only. */
 	stacksDir: string;
 	/** Writable copies of the stacks that compose runs from (userData/stacks). */
 	stacksRunDir: string;

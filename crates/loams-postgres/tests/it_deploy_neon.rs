@@ -1,10 +1,10 @@
-//! `loams-neon` against `deploy/neon` at its pinned digests (PG2 Task 2):
+//! `loams-postgres` against `deploy/loams-postgres-dev` at its pinned digests (PG2 Task 2):
 //! attach a tenant, create a timeline, branch it, list both, delete them.
 //! Ignored by default; `pg2-e2e.yml` runs it with the stack up:
 //!
 //! ```text
-//! (cd deploy/neon && docker compose up -d rustfs create-bucket storage_broker pageserver)
-//! cargo test -p loams-neon --test it_deploy_neon -- --ignored
+//! (cd deploy/loams-postgres-dev && docker compose up -d rustfs create-bucket storage_broker pageserver)
+//! cargo test -p loams-postgres --test it_deploy_neon -- --ignored
 //! ```
 //!
 //! `NEON_PAGESERVER` overrides the pageserver URL (default
@@ -13,8 +13,8 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use loams_neon::pageserver::{NeonClient, NeonEndpoints, TenantConfig, TimelineCreate};
-use loams_neon::{TenantId, TimelineId};
+use loams_postgres::pageserver::{NeonClient, NeonEndpoints, TenantConfig, TimelineCreate};
+use loams_postgres::{TenantId, TimelineId};
 
 /// A fresh 16-byte id per run: the time and a tag, so runs never collide.
 fn fresh(tag: u8) -> [u8; 16] {
@@ -29,7 +29,7 @@ fn fresh(tag: u8) -> [u8; 16] {
 }
 
 #[tokio::test]
-#[ignore = "needs deploy/neon running"]
+#[ignore = "needs deploy/loams-postgres-dev running"]
 async fn it_deploy_neon_tenant_timeline_branch() {
     let url = std::env::var("NEON_PAGESERVER").unwrap_or_else(|_| "http://127.0.0.1:9898".into());
     let client = NeonClient::new(

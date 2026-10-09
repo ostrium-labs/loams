@@ -19,13 +19,13 @@ lock=${1:?usage: seed-neon-submodules.sh <Cargo.lock>}
 db=${CARGO_HOME:-$HOME/.cargo}/git/db/postgres-3118924c31a8989c
 url=https://github.com/ostrium-labs/postgres.git
 
-rev=$(sed -n 's#^source = "git+https://github.com/ostrium-labs/neon?rev=\([0-9a-f]\{40\}\)\#.*#\1#p' "$lock" | head -1)
-[ -n "$rev" ] || { echo "seed: no ostrium-labs/neon rev in $lock" >&2; exit 1; }
+rev=$(sed -n 's#^source = "git+https://github.com/ostrium-labs/loams-postgres?rev=\([0-9a-f]\{40\}\)\#.*#\1#p' "$lock" | head -1)
+[ -n "$rev" ] || { echo "seed: no ostrium-labs/loams-postgres rev in $lock" >&2; exit 1; }
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 git init -q --bare "$tmp/neon"
-git -C "$tmp/neon" fetch -q --depth=1 --filter=blob:none https://github.com/ostrium-labs/neon "$rev"
+git -C "$tmp/neon" fetch -q --depth=1 --filter=blob:none https://github.com/ostrium-labs/loams-postgres "$rev"
 mapfile -t subs < <(git -C "$tmp/neon" ls-tree "$rev" vendor/ | awk '$2 == "commit" { print $3 }')
 [ "${#subs[@]}" -gt 0 ] || { echo "seed: no submodules at $rev" >&2; exit 1; }
 

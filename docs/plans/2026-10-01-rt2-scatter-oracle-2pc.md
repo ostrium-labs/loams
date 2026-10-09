@@ -3,6 +3,8 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact values (names, paths, flags, constants), use them verbatim. The code is not pre-written in this plan (M0.3 Ruling 1).
 
 > **Status: Planned** (2026-10-01). Track RT, phase RT2 (design [§31](../design/31-loams-router-and-verification.md) §17). Branches `rt2-t<N>`, stacked; PRs target `main`. Depends on [RT1](2026-10-01-rt1-postgres-slice-and-sim.md) (the stack, adapters, models, `loams-detsim`). Tasks 4 and the Loams Postgres rows of Tasks 8–9 need §28's P2b (Loams computes started by Loams’ control plane, `deploy/neon`); without it they run on `postgres:17.11` and their Loams Postgres rows stay open, which the exit report says. RT2 changes no M-track code path.
+>
+> **Names after the hard fork (D823; NF1 Task 1b).** This document predates the rename and keeps the old names: read `ostrium-labs/neon` as `ostrium-labs/loams-postgres`, `crates/loams-neon` (package `loams-neon`) as `crates/loams-postgres` (package `loams-postgres`), and `deploy/neon` as `deploy/loams-postgres-dev` (the compose project `loams-neon` and the desktop's copied `stacks/neon` keep their names).
 
 **Goal:** The chat dump's M2, as reconciled in §31:
 - **The Lean kernels for cross-shard results** (k-way merge, `LIMIT`/`OFFSET` pushdown, aggregate decomposition) proved, compiled into the oracle, and mirrored in Rust (D312, §31 §12);

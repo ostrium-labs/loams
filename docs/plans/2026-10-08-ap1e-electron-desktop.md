@@ -3,6 +3,8 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact code, use it. Where it gives a contract and named tests, write the code to that contract, and record any deviation in "Rulings made during execution" at the end of this file.
 >
 > **Status: In progress** (2026-10-08). Part 2 (Tasks 18–31) added the same day for the full cloud console, the agent panel and Linux-only releases (§37 §19.10, D666–D676). This plan replaces AP1n as the shipping desktop (D652). AP1n is paused.
+>
+> **Names after the hard fork (D823; NF1 Task 1b).** This document predates the rename and keeps the old names: read `ostrium-labs/neon` as `ostrium-labs/loams-postgres`, `crates/loams-neon` (package `loams-neon`) as `crates/loams-postgres` (package `loams-postgres`), and `deploy/neon` as `deploy/loams-postgres-dev` (the compose project `loams-neon` and the desktop's copied `stacks/neon` keep their names).
 
 **Goal:** Loams Desktop v0.1, an Electron app built with electron-vite. It runs the cordis console as a real cloud console against any Loams server. It also supervises a local `loams dev` engine with a Data Studio, and shows every Software Factory app as native read-only panels plus its full web UI. It is packaged for Linux, macOS and Windows.
 

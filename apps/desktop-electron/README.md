@@ -32,7 +32,7 @@ Main-process pieces:
 - **Engine supervisor** (`src/main/engine`). Runs `loams dev` on free loopback ports, waits for `GetInstance`, restarts with
   backoff (at most 5 in 10 minutes), and logs to `engine.log`. The binary comes from `LOAMS_BIN`, the packaged
   `resources/bin`, or the Cargo target directory (dev only). Live flags are passed only if the binary supports them.
-- **Local stacks** (`src/main/stacks`). Postgres (`deploy/neon`), WeSQL (`deploy/wesql`) and TiKV (`deploy/tikv`) run through
+- **Local stacks** (`src/main/stacks`). Postgres (`deploy/loams-postgres-dev`), WeSQL (`deploy/wesql`) and TiKV (`deploy/tikv`) run through
   `podman compose` or `docker compose`, whichever is found first, with project names `loams-desktop-<stack>`.
   The Postgres and WeSQL pages and SQL consoles live in `src/main/sql`.
 - **Factory host and vault** (`src/main/factory`). A cordis context runs the `plugins/` adapters. Credentials are encrypted

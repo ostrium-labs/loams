@@ -1,6 +1,9 @@
 ![Loams — Your data. Your bucket.](../../docs/assets/loams-banner.svg)
 
-# Neon on RustFS (development)
+# Loams Postgres on RustFS (development)
+
+This directory was the `neon` stack under `deploy/` until NF1 Task 1b (D823). The compose project is
+still named `loams-neon`, because Docker names users' volumes after it.
 
 The stack from the Neon + WeSQL spike ([§23](../../docs/design/23-neon-and-wesql.md)). It runs
 Neon's storage (storage broker, one pageserver, one safekeeper) on a RustFS bucket and starts
@@ -15,7 +18,7 @@ the caller.
 Not a production layout: no storage controller, no Neon proxy, no TLS, default credentials,
 `fsync = off` in the compute spec, and the safekeeper keeps WAL in its container filesystem.
 Images are pinned by digest (PG2 Task 2): Neon's last public build, 2025-08-26, git
-`77e22e4b`. The fork `ostrium-labs/neon` publishes no images yet (PG2 ruling R2.1);
+`77e22e4b`. The fork `ostrium-labs/loams-postgres` publishes no images yet (PG2 ruling R2.1);
 `NEON_IMAGE` and `COMPUTE_IMAGE` override the pins.
 
 | Image | Digest (multi-arch index) | amd64 manifest |

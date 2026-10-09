@@ -1,4 +1,4 @@
-// LOAMS_IT_PG=1: needs a running postgres stack (podman/docker compose up of deploy/neon) with one tenant
+// LOAMS_IT_PG=1: needs a running postgres stack (podman/docker compose up of deploy/loams-postgres-dev) with one tenant
 // and timeline, and LOAMS_IT_TENANT / LOAMS_IT_TIMELINE set. Optional LOAMS_IT_WESQL=1 for the wesql stack.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";

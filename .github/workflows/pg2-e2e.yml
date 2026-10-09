@@ -1,6 +1,6 @@
 # PG2 end-to-end tests on compose stacks (docs/plans/2026-10-08-pg2-postgres-production.md).
 #
-# neon-deploy (Task 2): loams-neon against deploy/neon at its pinned digests
+# neon-deploy (Task 2): loams-postgres against deploy/loams-postgres-dev at its pinned digests
 # (it_deploy_neon_tenant_timeline_branch: attach, timeline, branch, list,
 # delete).
 #
@@ -20,11 +20,11 @@ on:
   push:
     branches: [dev]
     paths:
-      # loams-neon and what it builds on
+      # loams-postgres and what it builds on
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
-      - "crates/loams-neon/**"
+      - "crates/loams-postgres/**"
       - "crates/loams-proto/**"
       - "proto/**"
       # loams-wal-interpreted and what it builds on (its own workspace)
@@ -33,17 +33,17 @@ on:
       - "crates/loams-tikv/**"
       - "crates/loams-tuple/**"
       # the stacks and the scripts that drive them
-      - "deploy/neon/**"
+      - "deploy/loams-postgres-dev/**"
       - "deploy/loams-pg-bench/**"
       - "scripts/pg2/**"
       - ".github/workflows/pg2-e2e.yml"
   pull_request:
     paths:
-      # loams-neon and what it builds on
+      # loams-postgres and what it builds on
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
-      - "crates/loams-neon/**"
+      - "crates/loams-postgres/**"
       - "crates/loams-proto/**"
       - "proto/**"
       # loams-wal-interpreted and what it builds on (its own workspace)
@@ -52,7 +52,7 @@ on:
       - "crates/loams-tikv/**"
       - "crates/loams-tuple/**"
       # the stacks and the scripts that drive them
-      - "deploy/neon/**"
+      - "deploy/loams-postgres-dev/**"
       - "deploy/loams-pg-bench/**"
       - "scripts/pg2/**"
       - ".github/workflows/pg2-e2e.yml"
@@ -72,7 +72,7 @@ env:
 
 jobs:
   neon-deploy:
-    name: loams-neon against deploy/neon (it_deploy_neon)
+    name: loams-postgres against deploy/loams-postgres-dev (it_deploy_neon)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -82,34 +82,34 @@ jobs:
       # The cache pg2.yml's neon-client job saves (on dev); this job only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          shared-key: pg2-loams-neon
+          shared-key: pg2-loams-postgres
           save-if: false
       - name: build the test
-        run: cargo test -p loams-neon --locked --test it_deploy_neon --no-run
+        run: cargo test -p loams-postgres --locked --test it_deploy_neon --no-run
       # Pulled on their own, with retries, so a registry hiccup is not a test failure.
       - name: pull the pinned images
-        working-directory: deploy/neon
+        working-directory: deploy/loams-postgres-dev
         run: |
           for i in 1 2 3; do
             docker compose pull rustfs create-bucket storage_broker pageserver && exit 0
             sleep $((i * 15))
           done
           exit 1
-      - name: deploy/neon storage
-        working-directory: deploy/neon
+      - name: deploy/loams-postgres-dev storage
+        working-directory: deploy/loams-postgres-dev
         run: |
           docker compose up -d --pull never rustfs create-bucket storage_broker pageserver
           for _ in $(seq 1 120); do curl -sf localhost:9898/v1/status && break; sleep 1; done
           curl -sf localhost:9898/v1/status
       - name: it_deploy_neon_tenant_timeline_branch
-        run: cargo test -p loams-neon --locked --test it_deploy_neon -- --ignored
+        run: cargo test -p loams-postgres --locked --test it_deploy_neon -- --ignored
       - name: logs
         if: failure()
-        working-directory: deploy/neon
+        working-directory: deploy/loams-postgres-dev
         run: docker compose logs --tail 200
       - name: teardown
         if: always()
-        working-directory: deploy/neon
+        working-directory: deploy/loams-postgres-dev
         run: docker compose down -v
 
   pageserver-loams-wal:

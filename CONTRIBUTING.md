@@ -78,7 +78,7 @@ Some library crates also have a `failpoints` feature (`loams-log`, `loams-link`,
 
 ### Forked dependencies
 
-A few dependencies come from pinned forks under [ostrium-labs](https://github.com/ostrium-labs), because Loams needs patches that upstream has not released yet: [resonate](https://github.com/ostrium-labs/resonate) (the embedded durable-execution server), [client-rust](https://github.com/ostrium-labs/client-rust) (`tikv-client`), [neon](https://github.com/ostrium-labs/neon) and [sqlx](https://github.com/ostrium-labs/sqlx). Fixes to those go to the fork first and upstream where possible; bumping a pin is a PR of its own that updates `Cargo.toml`, `deny.toml` and [NOTICE](NOTICE) together.
+A few dependencies come from pinned forks under [ostrium-labs](https://github.com/ostrium-labs), because Loams needs patches that upstream has not released yet: [resonate](https://github.com/ostrium-labs/resonate) (the embedded durable-execution server), [client-rust](https://github.com/ostrium-labs/client-rust) (`tikv-client`), [loams-postgres](https://github.com/ostrium-labs/loams-postgres) (Loams Postgres, a hard fork of Neon) and [sqlx](https://github.com/ostrium-labs/sqlx). Fixes to those go to the fork first and upstream where possible; bumping a pin is a PR of its own that updates `Cargo.toml`, `deny.toml` and [NOTICE](NOTICE) together.
 
 ## Running the checks
 

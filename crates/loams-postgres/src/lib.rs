@@ -2,7 +2,7 @@
 //! the pageserver and the storage controller ([`pageserver`]), `loams-wal`
 //! ([`wal`]), `compute_ctl` ([`compute_ctl`]) and the compute spec
 //! ([`spec`]). A plain HTTP client with no Neon code dependency: every
-//! shape it copies is the fork's (`ostrium-labs/neon`, tag
+//! shape it copies is the fork's (`ostrium-labs/loams-postgres`, tag
 //! `loams-decoder-trim-1`), and the module docs name the source file.
 //! `tests/fixtures/` holds requests the pinned images accepted and the
 //! answers they gave.

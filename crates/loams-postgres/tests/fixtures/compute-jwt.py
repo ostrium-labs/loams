@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Re-recording helper for loams-neon's compute_ctl fixtures (PG2 Task 2).
+"""Re-recording helper for loams-postgres's compute_ctl fixtures (PG2 Task 2).
 
-Writes OUT/config.json: deploy/neon's compute config with one more Ed25519
+Writes OUT/config.json: deploy/loams-postgres-dev's compute config with one more Ed25519
 key in compute_ctl_config.jwks. Prints a token signed with it, for the
 compute id `compute-capture` (compose.capture.yaml sets that hostname), as
 pg-control signs per-compute tokens (claims: compute_id, exp).
 
-    python3 -I compute-jwt.py <deploy/neon/compute/config.json> <OUT dir>
+    python3 -I compute-jwt.py <deploy/loams-postgres-dev/compute/config.json> <OUT dir>
 """
 import base64
 import json

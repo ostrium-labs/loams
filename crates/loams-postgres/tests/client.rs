@@ -1,4 +1,4 @@
-//! `loams-neon` against recorded fixtures (PG2 Task 2): the request bodies
+//! `loams-postgres` against recorded fixtures (PG2 Task 2): the request bodies
 //! are the ones the pinned pageserver and `loams-wal` accepted, byte for byte
 //! after canonical JSON, and the responses are theirs
 //! (`tests/fixtures/README.md`, `capture.sh`).
@@ -14,11 +14,13 @@ use axum::body::Bytes;
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use loams_neon::compute_ctl::{ComputeCtlClient, ComputeCtlConfig, ComputeStatus, TerminateMode};
-use loams_neon::pageserver::{NeonClient, NeonEndpoints, TenantConfig, TimelineCreate};
-use loams_neon::spec::{ComputeMode, ComputeSpecBuilder, DatabaseRec, RoleRec, Setting};
-use loams_neon::wal::{WalClient, WalTimelineCreate};
-use loams_neon::{Component, Lsn, Op, Secret, TenantId, TimelineId};
+use loams_postgres::compute_ctl::{
+    ComputeCtlClient, ComputeCtlConfig, ComputeStatus, TerminateMode,
+};
+use loams_postgres::pageserver::{NeonClient, NeonEndpoints, TenantConfig, TimelineCreate};
+use loams_postgres::spec::{ComputeMode, ComputeSpecBuilder, DatabaseRec, RoleRec, Setting};
+use loams_postgres::wal::{WalClient, WalTimelineCreate};
+use loams_postgres::{Component, Lsn, Op, Secret, TenantId, TimelineId};
 use serde_json::Value;
 
 const T: &str = "4c6f616d734e656f6e54656e616e7431";

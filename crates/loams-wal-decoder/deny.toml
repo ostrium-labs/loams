@@ -66,6 +66,6 @@ unknown-git = "deny"
 allow-git = [
     "https://github.com/ostrium-labs/client-rust",
     "https://github.com/ostrium-labs/resonate",
-    "https://github.com/ostrium-labs/neon",
+    "https://github.com/ostrium-labs/loams-postgres",
     "https://github.com/ostrium-labs/rust-postgres",
 ]
