@@ -1,7 +1,0 @@
-[package]
-name = "loams-desktop-brand"
-description = "Loams identity strings (product, app id, client id) with no dependencies, so any crate in the fork can read them without pulling in the Loams integration."
-version.workspace = true
-edition.workspace = true
-license = "Apache-2.0"
-publish.workspace = true
