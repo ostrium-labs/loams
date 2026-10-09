@@ -23,13 +23,16 @@ hex.workspace = true
 loams-kv.workspace = true
 postcard.workspace = true
 serde.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+ulid.workspace = true
 
 [dev-dependencies]
 # The conformance suite injects faults (feature `faults`).
 loams-pg-control = { path = ".", features = ["faults"] }
+proptest.workspace = true
 
 [[test]]
 name = "store_tikv"
