@@ -6852,6 +6852,7 @@ dependencies = [
  "loams-live-proto",
  "proptest",
  "rand 0.9.5",
+ "rand_chacha 0.9.0",
  "sha2 0.11.0",
  "thiserror 2.0.21",
  "tokio",

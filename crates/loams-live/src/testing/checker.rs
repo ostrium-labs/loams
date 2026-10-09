@@ -28,6 +28,13 @@
 //! - **resumed sessions converge**: a session disconnected mid-run resumes
 //!   from its last version and its later states pass the same checks.
 //!
+//! **What a seed reproduces.** The seed fixes the op mix: each session's
+//! queries and each writer's sequence of ops (kind, table, value), drawn
+//! from a ChaCha8 stream per writer. It does not fix the interleaving: which
+//! op number a writer takes, when ticks fall and when sessions read depend
+//! on scheduling. A failing run's [`Report::dump`] holds what is needed to
+//! study it: every writer's op log and every session's records.
+//!
 //! The subscription manager runs with its safety rerun off, so a missed
 //! invalidation stays visible instead of being repaired. The report counts,
 //! per session, the update-carrying Transitions that arrived while the
@@ -41,8 +48,8 @@ use std::time::{Duration, Instant};
 
 use buffa::MessageField;
 use loams_kv::{CommitMode, EmbeddedConfig, Store, StoreConfig, Ts, TxnError, TxnOptions};
-use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -57,6 +64,8 @@ use crate::{AppKeys, Function, LiveConfig, LiveError, LiveValue, Runner, deploy,
 /// What the checker saw.
 #[derive(Debug, Clone, Default)]
 pub struct Report {
+    /// The workload's seed.
+    pub seed: u64,
     /// Complete Transitions applied, over every session.
     pub transitions: usize,
     /// Query results compared with a fresh evaluation.
@@ -71,7 +80,102 @@ pub struct Report {
     pub live_updates: Vec<usize>,
     /// The subscription manager's counters at the end of the run.
     pub subs: SubsStats,
+    /// Every committed op of the writers, by op number.
+    pub ops: Vec<OpRecord>,
+    /// Every session's queries and records.
+    pub sessions: Vec<SessionTrace>,
     pub violations: Vec<Violation>,
+}
+
+impl Report {
+    /// The run in text: the violations, every writer's op log and every
+    /// session's records (for a failing run; it can be large).
+    pub fn dump(&self) -> String {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        let _ = writeln!(
+            out,
+            "reactive checker, seed {}: {} transitions, {} checks, {} ticks, {} resumes; {:?}",
+            self.seed, self.transitions, self.checked, self.ticks, self.resumes, self.subs
+        );
+        let _ = writeln!(out, "violations ({}):", self.violations.len());
+        for v in &self.violations {
+            let _ = writeln!(out, "  {v:?}");
+        }
+        let writers = self.ops.iter().map(|o| o.writer + 1).max().unwrap_or(0);
+        for writer in 0..writers {
+            let _ = writeln!(out, "writer {writer}:");
+            for o in self.ops.iter().filter(|o| o.writer == writer) {
+                let _ = writeln!(
+                    out,
+                    "  op {}: {:?} t{} n={} target={:?}{} -> {:?} at ts {}{}",
+                    o.op,
+                    o.kind,
+                    o.table,
+                    o.n,
+                    o.target,
+                    if o.seeded { " (seeded)" } else { "" },
+                    o.result,
+                    o.commit_ts,
+                    if o.replayed { " (replayed)" } else { "" },
+                );
+            }
+        }
+        for session in &self.sessions {
+            let _ = writeln!(out, "session {}:", session.index);
+            for q in &session.queries {
+                let _ = writeln!(out, "  query {q}");
+            }
+            for r in &session.records {
+                let _ = writeln!(
+                    out,
+                    "  {:?}{}{}: {:?}",
+                    r.end,
+                    if r.updates { " updates" } else { "" },
+                    if r.resent { " resent" } else { "" },
+                    r.results
+                );
+            }
+        }
+        out
+    }
+}
+
+/// What a writer's op did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpKind {
+    Insert,
+    Patch,
+    Delete,
+}
+
+/// One committed op of a writer.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OpRecord {
+    pub writer: usize,
+    /// The op number (from the writers' shared counter).
+    pub op: usize,
+    pub kind: OpKind,
+    pub table: usize,
+    /// The value of `n` written (unused by a delete).
+    pub n: i64,
+    /// The patched or deleted document.
+    pub target: Option<LiveValue>,
+    /// The target is a seeded document.
+    pub seeded: bool,
+    /// What the mutation returned (an insert's id).
+    pub result: LiveValue,
+    pub commit_ts: u64,
+    /// The result came from the op's idempotency record.
+    pub replayed: bool,
+}
+
+/// One session's queries and the client's state after each Transition.
+#[derive(Debug, Clone)]
+pub struct SessionTrace {
+    pub index: usize,
+    pub queries: Vec<String>,
+    pub records: Vec<Record>,
 }
 
 /// Which guarantee broke.
@@ -144,15 +248,15 @@ struct Query {
 
 /// A client's state at the end of one Transition.
 #[derive(Debug, Clone)]
-struct Record {
-    end: Version,
-    results: BTreeMap<u32, QueryResult>,
+pub struct Record {
+    pub end: Version,
+    pub results: BTreeMap<u32, QueryResult>,
     /// When the consumer applied it.
-    arrived: Instant,
+    pub arrived: Instant,
     /// It carried updates.
-    updates: bool,
+    pub updates: bool,
     /// A resumed session's first Transition, re-sending its results.
-    resent: bool,
+    pub resent: bool,
 }
 
 /// When a session's Transition arrived, as the first-tick check needs it.
@@ -331,6 +435,7 @@ fn table_name(t: usize) -> String {
 
 #[allow(clippy::too_many_lines)]
 async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), String> {
+    report.seed = w.seed;
     let mut disturb: Vec<Disturbance> = Vec::new();
     for &d in &w.disturb {
         match unwired(d) {
@@ -360,7 +465,7 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
     for t in 0..tables {
         define(&store, &table_name(t)).await?;
     }
-    let mut rng = StdRng::seed_from_u64(w.seed);
+    let mut rng = ChaCha8Rng::seed_from_u64(w.seed);
     let insert = sys(INSERT)?;
     let mut seeded: Vec<Vec<LiveValue>> = vec![Vec::new(); tables];
     for (t, ids) in seeded.iter_mut().enumerate() {
@@ -462,17 +567,25 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
     let next = Arc::new(AtomicUsize::new(0));
     let newest = Arc::new(AtomicU64::new(0));
     let failures = Arc::new(Mutex::new(Vec::<String>::new()));
+    let op_log = Arc::new(Mutex::new(Vec::<OpRecord>::new()));
     let mut writers = Vec::new();
     for wid in 0..WRITERS {
-        let (runner, next, newest, failures) = (
+        let (runner, next, newest, failures, op_log) = (
             runner.clone(),
             next.clone(),
             newest.clone(),
             failures.clone(),
+            op_log.clone(),
         );
         let (ops, seed) = (w.ops, w.seed);
         writers.push(tokio::spawn(async move {
-            if let Err(e) = write(&runner, seed, wid, tables, ops, &next, &newest).await {
+            let mut log = Vec::new();
+            let result = write(&runner, seed, wid, tables, ops, &next, &newest, &mut log).await;
+            op_log
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend(log);
+            if let Err(e) = result {
                 failures
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -504,6 +617,12 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
         writer.await.map_err(|e| format!("a writer: {e}"))?;
     }
     let writers_done = Instant::now();
+    report.ops = std::mem::take(
+        &mut *op_log
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+    report.ops.sort_by_key(|o| o.op);
     for e in failures
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -652,6 +771,15 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
             }
         }
 
+        report.sessions.push(SessionTrace {
+            index: watcher.index,
+            queries: watcher
+                .queries
+                .iter()
+                .map(|q| format!("{}: {} {:?}", q.id, q.function, q.args))
+                .collect(),
+            records: Vec::new(),
+        });
         report.live_updates.push(
             log.records
                 .iter()
@@ -659,6 +787,9 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
                 .filter(|r| r.updates && !r.resent && r.arrived < writers_done)
                 .count(),
         );
+        if let Some(trace) = report.sessions.last_mut() {
+            trace.records = log.records;
+        }
     }
     Ok(())
 }
@@ -707,7 +838,7 @@ async fn define(store: &Store, name: &str) -> Result<(), String> {
 /// A session's queries, each bounded: ranges and equalities on `by_n` with
 /// a limit, the top of the index, a seeded document by id, and the newest
 /// documents.
-fn queries(rng: &mut StdRng, tables: usize, seeded: &[Vec<LiveValue>]) -> Vec<Query> {
+fn queries(rng: &mut ChaCha8Rng, tables: usize, seeded: &[Vec<LiveValue>]) -> Vec<Query> {
     (1..=QUERIES)
         .map(|id| {
             let t = rng.random_range(0..tables);
@@ -798,9 +929,10 @@ async fn mutate(
 }
 
 /// One writer of the workload seeded `seed`: takes ops from `next` until
-/// `ops`, inserting into, patching and deleting its own documents; `newest`
-/// keeps the latest commit. Op `op` carries the idempotency key
-/// `chk-{seed}-{wid}-{op}`.
+/// `ops`, inserting into, patching and deleting its own documents, logging
+/// each committed op in `log`; `newest` keeps the latest commit. Op `op`
+/// carries the idempotency key `chk-{seed}-{wid}-{op}`.
+#[allow(clippy::too_many_arguments)]
 async fn write(
     runner: &Runner,
     seed: u64,
@@ -809,8 +941,9 @@ async fn write(
     ops: usize,
     next: &AtomicUsize,
     newest: &AtomicU64,
+    log: &mut Vec<OpRecord>,
 ) -> Result<(), String> {
-    let mut rng = StdRng::seed_from_u64(seed.wrapping_mul(1_000).wrapping_add(wid as u64));
+    let mut rng = ChaCha8Rng::seed_from_u64(seed.wrapping_mul(1_000).wrapping_add(wid as u64));
     let (insert, patch, delete) = (sys(INSERT)?, sys(PATCH)?, sys(DELETE)?);
     let mut own: Vec<Vec<LiveValue>> = vec![Vec::new(); tables];
     loop {
@@ -820,35 +953,54 @@ async fn write(
         }
         let t = rng.random_range(0..tables);
         let roll = rng.random_range(0..10);
-        let value = n(rng.random_range(0..N_VALUES));
-        let (f, args, inserted) = if roll < 5 || own[t].is_empty() {
+        let value = rng.random_range(0..N_VALUES);
+        let (f, args, kind, target) = if roll < 5 || own[t].is_empty() {
             (
                 insert.clone(),
                 obj(&[
                     ("table", s(&table_name(t))),
-                    ("fields", obj(&[("n", value), ("w", n(wid as i64))])),
+                    ("fields", obj(&[("n", n(value)), ("w", n(wid as i64))])),
                 ]),
-                true,
+                OpKind::Insert,
+                None,
             )
         } else if roll < 8 {
             let id = own[t][rng.random_range(0..own[t].len())].clone();
             (
                 patch.clone(),
-                obj(&[("id", id), ("fields", obj(&[("n", value)]))]),
-                false,
+                obj(&[("id", id.clone()), ("fields", obj(&[("n", n(value))]))]),
+                OpKind::Patch,
+                Some(id),
             )
         } else {
             let at = rng.random_range(0..own[t].len());
             let id = own[t].swap_remove(at);
-            (delete.clone(), obj(&[("id", id)]), false)
+            (
+                delete.clone(),
+                obj(&[("id", id.clone())]),
+                OpKind::Delete,
+                Some(id),
+            )
         };
         let m = mutate(runner, &f, &args, format!("chk-{seed}-{wid}-{op}"))
             .await
             .map_err(|e| format!("writer {wid}, op {op}: {e}"))?;
-        if inserted {
-            own[t].push(m.result);
+        if kind == OpKind::Insert {
+            own[t].push(m.result.clone());
         }
         newest.fetch_max(m.commit_ts.0, Ordering::SeqCst);
+        log.push(OpRecord {
+            writer: wid,
+            op,
+            kind,
+            table: t,
+            n: value,
+            target,
+            seeded: false,
+            result: m.result,
+            commit_ts: m.commit_ts.0,
+            replayed: m.replayed,
+        });
     }
 }
 

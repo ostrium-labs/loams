@@ -26,6 +26,9 @@ loams-live-proto.workspace = true
 loams-kv.workspace = true
 # The OS random source for document ids (rand's OsRng).
 rand.workspace = true
+# The reactive checker's seeded streams (testing::checker): ChaCha8, stable
+# across platforms and rand releases.
+rand_chacha.workspace = true
 # The idempotency key hash (design §20 §4.3).
 sha2.workspace = true
 thiserror.workspace = true

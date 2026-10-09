@@ -10,14 +10,32 @@ use loams_live::testing::checker::{Report, SEED_DOCS, ViolationKind, run_reactiv
 use loams_live::testing::workload::{Disturbance, Sizes, Workload};
 use loams_live::{AppKeys, live_test};
 
+/// The first violations, and where the run's dump (the writers' op logs
+/// and every session's records) was written. Called only on a failure.
 fn first(report: &Report) -> String {
-    report
+    let violations = report
         .violations
         .iter()
         .take(5)
         .map(|v| format!("{v:?}"))
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("reactive-checker");
+    let path = dir.join(format!(
+        "seed-{}-{}-{}.log",
+        report.seed,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    ));
+    let written = std::fs::create_dir_all(&dir)
+        .and_then(|()| std::fs::write(&path, report.dump()))
+        .map_or_else(
+            |e| format!("(no dump: {e})"),
+            |()| format!("dump: {}", path.display()),
+        );
+    format!("{violations}\n{written}")
 }
 
 /// Ticks were recorded, and every session got several Transitions with
@@ -208,3 +226,46 @@ async fn reactive_checker_mutations_carry_idempotency_keys(store: TestStore) {
     assert_eq!(records, ops + tables * SEED_DOCS, "one record per mutation");
 }
 live_test!(reactive_checker_mutations_carry_idempotency_keys);
+
+/// A seed reproduces the op mix: each writer's sequence of ops (kind,
+/// table, value) is the same in two runs, up to the shorter run (which
+/// writer takes how many ops depends on the interleaving, which a seed
+/// does not fix). The dump names every op and every session's records.
+async fn reactive_checker_seed_reproduces_the_op_mix(store: TestStore) {
+    let w = Workload {
+        seed: 11,
+        sessions: 2,
+        tables: 2,
+        ops: 200,
+        disturb: Vec::new(),
+    };
+    let a = run_reactive_checker(store.fresh_root().await.store(), w.clone()).await;
+    let b = run_reactive_checker(store.fresh_root().await.store(), w).await;
+    assert!(a.violations.is_empty(), "{}", first(&a));
+    assert!(b.violations.is_empty(), "{}", first(&b));
+    assert_eq!(a.ops.len(), 200);
+    let mix = |r: &Report, writer: usize| -> Vec<String> {
+        r.ops
+            .iter()
+            .filter(|o| o.writer == writer)
+            .map(|o| format!("{:?} t{} n={}", o.kind, o.table, o.n))
+            .collect()
+    };
+    for writer in 0..8 {
+        let (x, y) = (mix(&a, writer), mix(&b, writer));
+        let common = x.len().min(y.len());
+        assert_eq!(x[..common], y[..common], "writer {writer}");
+    }
+    let dump = a.dump();
+    assert!(
+        dump.contains("writer 0"),
+        "{}",
+        &dump[..dump.len().min(400)]
+    );
+    assert!(
+        dump.contains("session 1"),
+        "{}",
+        &dump[..dump.len().min(400)]
+    );
+}
+live_test!(reactive_checker_seed_reproduces_the_op_mix);

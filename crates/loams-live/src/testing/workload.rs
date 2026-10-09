@@ -60,6 +60,8 @@ impl Sizes {
 
 /// A seeded workload: `sessions` sessions watching queries over `tables`
 /// tables while `ops` mutations run, with `disturb` happening on the way.
+/// `seed` reproduces the op mix (the sessions' queries and each writer's
+/// sequence of ops), not the interleaving of writers, ticks and sessions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workload {
     pub seed: u64,
