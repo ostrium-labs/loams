@@ -438,6 +438,7 @@ async fn connection_caps_hold() {
 async fn unknown_user_flood_is_bounded() {
     let h = harness(Options {
         verify_concurrency: 2,
+        source_failure_burst: 100,
         handshake_timeout: Duration::from_secs(60),
         ..Options::default()
     })
@@ -481,9 +482,10 @@ async fn unknown_user_flood_is_bounded() {
         .expect("full login after the flood");
 }
 
-/// I1: 1040 never tells a known user from an unknown one. The database's
-/// rate is charged only after a successful login, and the gate-wide
-/// failure bucket is charged alike for wrong passwords and unknown users.
+/// I1, R4.2: 1040 never tells a known user from an unknown one. The
+/// database's rate is charged only after a successful login; the failure
+/// buckets (per source, per name as sent) are charged alike for wrong
+/// passwords and unknown users, and refuse with one text.
 #[tokio::test]
 async fn no_user_enumeration_through_1040() {
     let h = harness(Options {
@@ -492,25 +494,110 @@ async fn no_user_enumeration_through_1040() {
             connect_rate_per_sec: 0,
             connect_burst: 1,
         },
-        auth_failure_burst: 2,
-        auth_failure_rate_per_sec: 0,
+        source_failure_burst: 3,
+        user_failure_burst: 2,
         ..Options::default()
     })
     .await;
-    h.tls("u_a", b"pa").await.expect("takes br_a's one token");
+    let refused = |r: Result<super::client::Client, super::client::Refused>| r.err().unwrap();
+    h.tls_from("127.0.0.10", "u_a", b"pa")
+        .await
+        .expect("takes br_a's one token");
     // br_a is out of tokens, but a failed login still says 1045.
-    assert_eq!(h.tls("u_a", b"nope").await.err().unwrap().code, 1045);
-    assert_eq!(h.tls("u_nobody", b"x").await.err().unwrap().code, 1045);
+    assert_eq!(
+        refused(h.tls_from("127.0.0.11", "u_a", b"nope").await).code,
+        1045
+    );
+    assert_eq!(
+        refused(h.tls_from("127.0.0.12", "u_nobody", b"x").await).code,
+        1045
+    );
     // A right password meets the database's rate only after login.
-    assert_eq!(h.tls("u_a", b"pa").await.err().unwrap().code, 1040);
-    // Two failures spent the gate-wide bucket: every full check now gets
-    // the same 1040, known user, unknown user or right password.
-    let known = h.tls("u_a", b"nope").await.err().unwrap();
-    let unknown = h.tls("u_nobody", b"x").await.err().unwrap();
-    let right = h.tls("u_b", b"pb").await.err().unwrap();
-    assert_eq!((known.code, unknown.code, right.code), (1040, 1040, 1040));
+    assert_eq!(
+        refused(h.tls_from("127.0.0.13", "u_a", b"pa").await).code,
+        1040
+    );
+
+    // Per name: a second failure empties both names' buckets; known and
+    // unknown names then get the same 1040, other names still log in.
+    assert_eq!(
+        refused(h.tls_from("127.0.0.14", "u_a", b"nope").await).code,
+        1045
+    );
+    assert_eq!(
+        refused(h.tls_from("127.0.0.15", "u_nobody", b"x").await).code,
+        1045
+    );
+    let known = refused(h.tls_from("127.0.0.16", "u_a", b"nope").await);
+    let unknown = refused(h.tls_from("127.0.0.17", "u_nobody", b"x").await);
+    assert_eq!((known.code, unknown.code), (1040, 1040));
     assert_eq!(known.message, unknown.message);
-    assert_eq!(known.message, right.message);
+    h.tls_from("127.0.0.18", "u_b", b"pb")
+        .await
+        .expect("another name");
+
+    // Per source: three failures from one source, then everything from it
+    // gets the same 1040 (a right password included); others are served.
+    for name in ["u_x", "u_y", "u_z"] {
+        assert_eq!(
+            refused(h.tls_from("127.0.0.20", name, b"x").await).code,
+            1045
+        );
+    }
+    let unknown = refused(h.tls_from("127.0.0.20", "u_w", b"x").await);
+    let right = refused(h.tls_from("127.0.0.20", "u_b", b"pb").await);
+    assert_eq!((unknown.code, right.code), (1040, 1040));
+    assert_eq!(unknown.message, known.message);
+    assert_eq!(right.message, known.message);
+    // Another source is still checked (1045, not the refusal).
+    assert_eq!(
+        refused(h.tls_from("127.0.0.21", "u_q", b"x").await).code,
+        1045
+    );
+}
+
+/// R4.2: one source failing at its maximum rate never locks out a fresh
+/// login from another source.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn one_failing_source_does_not_lock_out_others() {
+    let h = harness(Options::default()).await;
+    let attacker = {
+        let (addr, config) = (h.addr, h.pki.client_config());
+        tokio::spawn(async move {
+            let mut codes = Vec::new();
+            for i in 0..30 {
+                let e = super::client::connect_from(
+                    Some("127.0.0.66".parse().unwrap()),
+                    addr,
+                    &format!("guess{i}"),
+                    b"guess",
+                    Some((config.clone(), "localhost")),
+                    None,
+                )
+                .await
+                .err()
+                .expect("refused");
+                codes.push(e.code);
+            }
+            codes
+        })
+    };
+    let mut fresh = h
+        .tls_from("127.0.0.77", "u_b", b"pb")
+        .await
+        .expect("fresh full login");
+    assert_eq!(fresh.query_info("SELECT 1").await, "tidb-b");
+    let codes = attacker.await.unwrap();
+    // Ten failures, then 1040 (a slow run may earn a refill, one per 10 s).
+    assert!(codes[..10].iter().all(|&c| c == 1045), "{codes:?}");
+    assert!(
+        codes.iter().filter(|&&c| c == 1045).count() <= 13,
+        "{codes:?}"
+    );
+    assert_eq!(codes.last(), Some(&1040), "{codes:?}");
+    h.tls_from("127.0.0.78", "u_a", b"pa")
+        .await
+        .expect("and after it");
 }
 
 /// Waits until br_a has no open connection (the slot is freed).
@@ -890,4 +977,40 @@ fn sources_are_keyed_by_ipv4_or_ipv6_64() {
     );
     drop((held, other, v4));
     assert_eq!(limiter.open(ip("2001:db8:1:2::5")), 0);
+}
+
+/// R4.2: the failure maps are bounded; full buckets go first, then the
+/// least-penalised keys, and an emptied key stays refused.
+#[tokio::test]
+async fn failure_maps_are_bounded() {
+    use loams_sqlgate::limits::{FailureBuckets, FailureLimit};
+    let slow = FailureBuckets::new(
+        FailureLimit {
+            burst: 2,
+            refill_every: Duration::from_secs(3600),
+        },
+        3,
+    );
+    slow.charge("a");
+    slow.charge("a");
+    assert!(!slow.allows(&"a"), "two failures empty a");
+    slow.charge("b");
+    slow.charge("c");
+    slow.charge("d");
+    assert_eq!(slow.len(), 3, "capped");
+    assert!(!slow.allows(&"a"), "the most-penalised key is kept");
+
+    let fast = FailureBuckets::new(
+        FailureLimit {
+            burst: 2,
+            refill_every: Duration::from_millis(10),
+        },
+        3,
+    );
+    for k in ["a", "b", "c"] {
+        fast.charge(k);
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    fast.charge("d");
+    assert_eq!(fast.len(), 1, "refilled buckets are forgotten first");
 }

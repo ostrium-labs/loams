@@ -30,7 +30,8 @@ use crate::codec::connection::{ConnectionPhase, PhaseError, Step};
 use crate::codec::handshake::{Capabilities, HandshakeV10, Limits, Nonce, TIDB_V8_5_8, advertise};
 use crate::codec::packet::{HEADER_LEN, encode};
 use crate::limits::{
-    ActivitySink, LimitError, Limiter, LimitsConfig, PreAuth, PreAuthConfig, TokenBucket,
+    ActivitySink, FailureBuckets, FailureLimit, LimitError, Limiter, LimitsConfig, PreAuth,
+    PreAuthConfig, source_key,
 };
 use crate::upstream::{
     ClientContext, CredentialStore, PoolResolver, Upstream, UpstreamError, connect,
@@ -172,15 +173,18 @@ pub struct GateConfig {
     /// Argon2id parameters of the decoy hash (those of the control plane's
     /// user hashes, so unknown users cost what known ones do).
     pub argon2: argon2::Params,
-    /// Argon2id checks at once (default: the core count).
+    /// Argon2id checks at once (default: half the cores, at least 1); the
+    /// semaphore is FIFO.
     pub verify_concurrency: usize,
     /// How long a check waits for its turn before the client gets 1040.
     pub verify_wait: Duration,
-    /// Failed verifications per second, gate-wide, sustained; beyond the
-    /// bucket every full check gets 1040, known user or not.
-    pub auth_failure_rate_per_sec: u32,
-    /// Failed verifications allowed in a burst.
-    pub auth_failure_burst: u32,
+    /// Failed logins per client source ([`source_key`]): 10, then one per
+    /// 10 s (R4.2). An empty bucket gets 1040 before any lookup.
+    pub source_failures: FailureLimit,
+    /// Failed logins per user name as sent: 10, then one per 60 s.
+    pub user_failures: FailureLimit,
+    /// Keys each failure map holds at most.
+    pub failure_map_cap: usize,
     /// A session with no bytes either way for this long is closed (MySQL's
     /// default `wait_timeout`, 8 h).
     pub idle_timeout: Duration,
@@ -208,10 +212,20 @@ impl GateConfig {
             fast_auth_cache: 100_000,
             fast_auth_ttl: Duration::from_secs(3600),
             argon2: argon2::Params::default(),
-            verify_concurrency: std::thread::available_parallelism().map_or(4, |n| n.get()),
+            verify_concurrency: std::thread::available_parallelism()
+                .map_or(2, |n| n.get())
+                .div_ceil(2)
+                .max(1),
             verify_wait: Duration::from_secs(2),
-            auth_failure_rate_per_sec: 20,
-            auth_failure_burst: 200,
+            source_failures: FailureLimit {
+                burst: 10,
+                refill_every: Duration::from_secs(10),
+            },
+            user_failures: FailureLimit {
+                burst: 10,
+                refill_every: Duration::from_secs(60),
+            },
+            failure_map_cap: 100_000,
             idle_timeout: Duration::from_secs(8 * 3600),
             drain_timeout: Duration::from_secs(10),
         }
@@ -260,7 +274,8 @@ pub struct Gate {
     pre_auth: Arc<PreAuth>,
     connections: Arc<Semaphore>,
     verifier: Verifier,
-    auth_failures: std::sync::Mutex<TokenBucket>,
+    source_failures: FailureBuckets<IpAddr>,
+    user_failures: FailureBuckets<String>,
     shutdown: tokio::sync::watch::Sender<bool>,
     next_id: AtomicU32,
     full_auths: AtomicU64,
@@ -377,10 +392,8 @@ impl Gate {
                 config.verify_wait,
             ),
             shutdown: tokio::sync::watch::Sender::new(false),
-            auth_failures: std::sync::Mutex::new(TokenBucket::new(
-                config.auth_failure_rate_per_sec,
-                config.auth_failure_burst,
-            )),
+            source_failures: FailureBuckets::new(config.source_failures, config.failure_map_cap),
+            user_failures: FailureBuckets::new(config.user_failures, config.failure_map_cap),
             config,
             deps,
             next_id: AtomicU32::new(1),
@@ -611,6 +624,7 @@ impl Gate {
             auth_plugin: crate::codec::auth::CACHING_SHA2.into(),
         };
         let plaintext = self.config.plaintext.allows(peer.ip());
+        let source = source_key(peer.ip());
         let (mut phase, hello) = ConnectionPhase::new(greeting, plaintext, Limits::default());
         let mut io = ClientStream::Plain(tcp);
         io.write_all(&hello).await.ok()?;
@@ -664,6 +678,12 @@ impl Gate {
                 }
                 Step::Write(bytes) => io.write_all(&bytes).await.ok()?,
                 Step::CheckFast { user, scramble } => {
+                    if !self.source_failures.allows(&source) {
+                        let _ = io
+                            .write_all(&phase.refuse(&err_limit(LimitError::Rate)))
+                            .await;
+                        return None;
+                    }
                     let r = self.resolve(&mut resolved, &user).await;
                     let hit = r.as_ref().is_some_and(|r| {
                         self.cache
@@ -675,9 +695,10 @@ impl Gate {
                     pending = Some(phase.fast_result(hit));
                 }
                 Step::CheckFull { user, password } => {
-                    // The failure bucket is the same for every user, known
-                    // or not, so 1040 never tells them apart (I1).
-                    if !self.failure_token() {
+                    // Per source and per name as sent, before the lookup and
+                    // Argon2id; charged alike for unknown users and wrong
+                    // passwords, so 1040 never tells them apart (R4.2).
+                    if !self.source_failures.allows(&source) || !self.user_failures.allows(&user) {
                         let _ = io
                             .write_all(&phase.refuse(&err_limit(LimitError::Rate)))
                             .await;
@@ -703,7 +724,8 @@ impl Gate {
                         self.cache.remember(&user, &hash, &password);
                         self.full_auths.fetch_add(1, Ordering::Relaxed);
                     } else {
-                        self.charge_failure();
+                        self.source_failures.charge(source);
+                        self.user_failures.charge(user.clone());
                     }
                     pending = Some(phase.full_result(ok).map_err(|e| match e {
                         PhaseError::Auth(_) => {
@@ -733,24 +755,6 @@ impl Gate {
                 }
             }
         }
-    }
-
-    /// Whether the gate-wide failed-verification bucket allows another
-    /// Argon2id check.
-    fn failure_token(&self) -> bool {
-        self.auth_failures
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .has_token()
-    }
-
-    /// Charges one failed verification (an unknown user or a wrong
-    /// password alike).
-    fn charge_failure(&self) {
-        self.auth_failures
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .charge();
     }
 }
 

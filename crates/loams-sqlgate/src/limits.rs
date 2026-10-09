@@ -2,8 +2,10 @@
 //! (`ReportActivity`, idle detection in Task 5).
 
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use tokio::time::Instant;
 
@@ -72,11 +74,26 @@ impl TokenBucket {
         true
     }
 
-    /// Takes one token even if none is left (the balance goes negative,
-    /// down to `-burst`): a charge after the fact.
+    /// A full bucket of `burst` tokens, refilled one per `every`.
+    pub fn with_refill(burst: u32, every: Duration) -> Self {
+        Self {
+            rate: 1.0 / every.as_secs_f64().max(f64::MIN_POSITIVE),
+            burst: f64::from(burst),
+            tokens: f64::from(burst),
+            refilled: Instant::now(),
+        }
+    }
+
+    /// Takes one token if any is left (a charge after the fact; the
+    /// balance never goes below zero).
     pub fn charge(&mut self) {
         self.refill();
-        self.tokens = (self.tokens - 1.0).max(-self.burst);
+        self.tokens = (self.tokens - 1.0).max(0.0);
+    }
+
+    fn tokens(&mut self) -> f64 {
+        self.refill();
+        self.tokens
     }
 
     fn is_full(&mut self) -> bool {
@@ -297,6 +314,87 @@ impl Drop for PreAuthSlot {
         if let Some(s) = self.limiter.lock().get_mut(&self.ip) {
             s.open = s.open.saturating_sub(1);
         }
+    }
+}
+
+/// A failure budget: `burst` failures, refilled one per `refill_every`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FailureLimit {
+    /// Failures allowed in a burst.
+    pub burst: u32,
+    /// One more failure allowed per this interval.
+    pub refill_every: Duration,
+}
+
+/// Failed-login budgets by key (R4.2): by client source
+/// ([`source_key`]) and by user name as sent. A key with an empty bucket
+/// is refused before the user lookup and Argon2id. Only failures create
+/// entries; the map holds at most `cap` keys, and on overflow forgets
+/// full buckets first, then the tenth with the most tokens left.
+#[derive(Debug)]
+pub struct FailureBuckets<K> {
+    limit: FailureLimit,
+    cap: usize,
+    map: Mutex<HashMap<K, TokenBucket>>,
+}
+
+impl<K: Hash + Eq + Clone> FailureBuckets<K> {
+    /// Empty, with `limit` per key and at most `cap` keys.
+    pub fn new(limit: FailureLimit, cap: usize) -> Self {
+        Self {
+            limit,
+            cap: cap.max(1),
+            map: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, HashMap<K, TokenBucket>> {
+        self.map
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Whether `key` may try again.
+    pub fn allows(&self, key: &K) -> bool {
+        self.lock().get_mut(key).is_none_or(TokenBucket::has_token)
+    }
+
+    /// Charges one failure to `key`.
+    pub fn charge(&self, key: K) {
+        let mut map = self.lock();
+        if !map.contains_key(&key) && map.len() >= self.cap {
+            map.retain(|_, b| !b.is_full());
+            if map.len() >= self.cap {
+                let mut tokens: Vec<f64> = map.values_mut().map(TokenBucket::tokens).collect();
+                let drop = (tokens.len() / 10).max(1);
+                let at = tokens.len() - drop;
+                tokens.select_nth_unstable_by(at, f64::total_cmp);
+                let cutoff = tokens[at];
+                let mut left = drop;
+                map.retain(|_, b| {
+                    if left > 0 && b.tokens() >= cutoff {
+                        left -= 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+        }
+        let limit = self.limit;
+        map.entry(key)
+            .or_insert_with(|| TokenBucket::with_refill(limit.burst, limit.refill_every))
+            .charge();
+    }
+
+    /// Keys held.
+    pub fn len(&self) -> usize {
+        self.lock().len()
+    }
+
+    /// Whether no key is held.
+    pub fn is_empty(&self) -> bool {
+        self.lock().is_empty()
     }
 }
 

@@ -85,8 +85,8 @@ pub struct Options {
     /// Accept calls that fail with EMFILE before the listener works.
     pub accept_failures: usize,
     pub verify_concurrency: usize,
-    pub auth_failure_burst: u32,
-    pub auth_failure_rate_per_sec: u32,
+    pub source_failure_burst: u32,
+    pub user_failure_burst: u32,
     pub idle_timeout: Duration,
     pub drain_timeout: Duration,
     /// The name the gate checks TiDB's certificate against.
@@ -108,8 +108,8 @@ impl Default for Options {
             max_connections: 10_000,
             accept_failures: 0,
             verify_concurrency: 4,
-            auth_failure_burst: 200,
-            auth_failure_rate_per_sec: 20,
+            source_failure_burst: 10,
+            user_failure_burst: 10,
             idle_timeout: Duration::from_secs(3600),
             drain_timeout: Duration::from_secs(10),
             upstream_name: "tidb.test",
@@ -179,8 +179,8 @@ pub async fn harness(opts: Options) -> Harness {
     config.max_connections = opts.max_connections;
     config.verify_concurrency = opts.verify_concurrency;
     config.verify_wait = Duration::from_secs(30);
-    config.auth_failure_burst = opts.auth_failure_burst;
-    config.auth_failure_rate_per_sec = opts.auth_failure_rate_per_sec;
+    config.source_failures.burst = opts.source_failure_burst;
+    config.user_failures.burst = opts.user_failure_burst;
     config.idle_timeout = opts.idle_timeout;
     config.drain_timeout = opts.drain_timeout;
     let deps = GateDeps {
@@ -213,6 +213,23 @@ pub async fn harness(opts: Options) -> Harness {
 impl Harness {
     pub async fn tls(&self, user: &str, pw: &[u8]) -> Result<client::Client, client::Refused> {
         client::connect(
+            self.addr,
+            user,
+            pw,
+            Some((self.pki.client_config(), "localhost")),
+            None,
+        )
+        .await
+    }
+
+    pub async fn tls_from(
+        &self,
+        source: &str,
+        user: &str,
+        pw: &[u8],
+    ) -> Result<client::Client, client::Refused> {
+        client::connect_from(
+            Some(source.parse().expect("ip")),
             self.addr,
             user,
             pw,
