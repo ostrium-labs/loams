@@ -1505,4 +1505,88 @@ mod admin {
             .expect_err("missing");
         assert_eq!(err.code, ErrorCode::NotFound);
     }
+
+    /// A graph `kg` in `acme` with `nodes` nodes `(:T {i})`.
+    async fn graph_with_nodes(admin: &GraphAdmin, nodes: u32) {
+        admin
+            .create_graph(create("acme", "kg", "k"))
+            .await
+            .expect("create");
+        admin
+            .execute(execute(
+                "acme",
+                "kg",
+                &format!("UNWIND range(1, {nodes}) AS i INSERT (:T {{i: i}})"),
+            ))
+            .await
+            .expect("insert");
+    }
+
+    /// A cartesian aggregate Grafeo's `query_timeout` cannot stop (R0.8): one long operator.
+    const LONG: &str = "MATCH (a:T), (b:T), (c:T) WHERE a.i + b.i + c.i < 0 RETURN count(*)";
+
+    /// GR1 Task 5 fix round 1 (I1): statements beyond the process-wide cap are refused with
+    /// `RESOURCE_EXHAUSTED`, not queued, and the slot frees when the statement ends.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn statements_beyond_the_cap_are_resource_exhausted() {
+        let fixture = Fixture::start().await;
+        let admin = Arc::new(fixture.admin().with_statement_slots(1));
+        graph_with_nodes(&admin, 70).await;
+        assert_eq!(admin.statements_in_flight(), 0);
+        let running = {
+            let admin = admin.clone();
+            tokio::spawn(async move { admin.execute(execute("acme", "kg", LONG)).await })
+        };
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while admin.statements_in_flight() == 0 {
+            assert!(tokio::time::Instant::now() < deadline, "never started");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let err = admin
+            .execute(execute("acme", "kg", "MATCH (n) RETURN count(n)"))
+            .await
+            .expect_err("over the cap");
+        assert_eq!(err.code, ErrorCode::ResourceExhausted, "{err:?}");
+        assert_eq!(reason(&err), "resource_exhausted");
+        running
+            .await
+            .expect("task")
+            .expect("the long statement ends");
+        assert_eq!(admin.statements_in_flight(), 0);
+        admin
+            .execute(execute("acme", "kg", "MATCH (n) RETURN count(n)"))
+            .await
+            .expect("a slot is free again");
+    }
+
+    /// GR1 Task 5 fix round 1 (I1): the engine's own `query_timeout` is set as a backstop
+    /// (R0.8 (a)), and a statement past it fails with `graph_statement_timeout` rather than
+    /// running on.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_statement_over_the_engine_timeout_fails_without_hanging() {
+        let fixture = Fixture::start().await;
+        let admin = GraphAdmin::new(
+            Arc::new(
+                Engine::with_data_dir(fixture.data_dir.path())
+                    .with_query_timeout(Some(Duration::from_millis(200))),
+            ),
+            GraphCatalog::new(fixture.meta.clone(), fixture.store.clone()),
+        );
+        graph_with_nodes(&admin, 300).await;
+        // 27 million rows, streamed: the deadline is checked between chunks.
+        let err = tokio::time::timeout(
+            Duration::from_secs(20),
+            admin.execute(execute(
+                "acme",
+                "kg",
+                "MATCH (a:T), (b:T), (c:T) RETURN a.i, b.i, c.i",
+            )),
+        )
+        .await
+        .expect("answered, not hung")
+        .expect_err("past the time limit");
+        assert_eq!(err.code, ErrorCode::DeadlineExceeded, "{err:?}");
+        assert_eq!(reason(&err), "graph_statement_timeout");
+        assert_eq!(admin.statements_in_flight(), 0);
+    }
 }

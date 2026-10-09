@@ -280,6 +280,10 @@ pub struct ServerConfig {
     pub graph: GraphConfig,
 }
 
+/// The largest engine statement time limit (§48 §13.1's maximum statement timeout).
+#[cfg(feature = "graph")]
+const MAX_GRAPH_QUERY_TIMEOUT: Duration = Duration::from_secs(300);
+
 /// Loams Graph's server settings (GR1 Task 5).
 #[cfg(feature = "graph")]
 #[derive(Clone, Debug)]
@@ -299,6 +303,14 @@ pub struct GraphConfig {
     pub sweep_grace: Duration,
     /// How often the purge and the catalog sweep run.
     pub maintenance_every: Duration,
+    /// The cap on graph statements running at once in this process (`--graph-statement-slots`;
+    /// default twice the cores, at most 32). Past it a statement is refused with
+    /// `RESOURCE_EXHAUSTED` (an interim cap until Task 6's per-graph pool).
+    pub statement_slots: usize,
+    /// Grafeo's own statement time limit (`--graph-query-timeout-ms`; default 30 s, at most
+    /// 300 s). A backstop only: Grafeo checks it between pipeline chunks of a statement without
+    /// parameters, so a statement inside one long operator runs on (R0.8).
+    pub query_timeout: Duration,
 }
 
 #[cfg(feature = "graph")]
@@ -312,6 +324,8 @@ impl GraphConfig {
             retention_hold: loams_graph::service::admin::DEFAULT_RETENTION_HOLD,
             sweep_grace: loams_graph::catalog::DOCUMENT_GRACE,
             maintenance_every: Duration::from_secs(600),
+            statement_slots: loams_graph::service::admin::default_statement_slots(),
+            query_timeout: loams_graph::engine::DEFAULT_QUERY_TIMEOUT,
         }
     }
 }
@@ -465,6 +479,18 @@ impl ServerConfig {
         }
         if !self.listen.ip().is_loopback() {
             return Err(ServerError::GraphListenNotLoopback { addr: self.listen });
+        }
+        if self.graph.statement_slots == 0 {
+            return Err(ServerError::Config(
+                "--graph-statement-slots must be at least 1".to_string(),
+            ));
+        }
+        if self.graph.query_timeout.is_zero() || self.graph.query_timeout > MAX_GRAPH_QUERY_TIMEOUT
+        {
+            return Err(ServerError::Config(format!(
+                "--graph-query-timeout-ms must be between 1 and {} ms",
+                MAX_GRAPH_QUERY_TIMEOUT.as_millis()
+            )));
         }
         Ok(())
     }
@@ -950,10 +976,12 @@ impl GraphRuntime {
         let engine = match (&config.data_dir, config.ephemeral) {
             (Some(dir), _) => Engine::with_data_dir(dir),
             (None, _) => Engine::new(),
-        };
+        }
+        .with_query_timeout(Some(config.query_timeout));
         let admin = Arc::new(
             GraphAdmin::new(Arc::new(engine), GraphCatalog::new(meta, store))
-                .with_retention_hold(config.retention_hold),
+                .with_retention_hold(config.retention_hold)
+                .with_statement_slots(config.statement_slots),
         );
         let stop = CancellationToken::new();
         let maintenance = {

@@ -71,6 +71,11 @@ pub struct GraphAdmin {
     engine: Arc<Engine>,
     catalog: GraphCatalog,
     retention_hold: Duration,
+    /// The process-wide cap on graph statements running at once (review fix 1, I1; an interim
+    /// cap until Task 6's per-graph pool). A permit is taken before the blocking work starts and
+    /// released when it ends, so a statement whose client went away still holds its slot.
+    statements: Arc<tokio::sync::Semaphore>,
+    statement_slots: usize,
     #[cfg(feature = "test-hooks")]
     after_open_hook: Arc<std::sync::Mutex<Option<crate::catalog::AckHook>>>,
 }
@@ -81,6 +86,7 @@ impl std::fmt::Debug for GraphAdmin {
             .field("engine", &self.engine)
             .field("catalog", &self.catalog)
             .field("retention_hold", &self.retention_hold)
+            .field("statement_slots", &self.statement_slots)
             .finish_non_exhaustive()
     }
 }
@@ -163,6 +169,15 @@ async fn blocking<T: Send + 'static>(
         })
 }
 
+/// The default cap on graph statements running at once: twice the cores, at most 32.
+#[must_use]
+pub fn default_statement_slots() -> usize {
+    std::thread::available_parallelism()
+        .map_or(4, std::num::NonZeroUsize::get)
+        .saturating_mul(2)
+        .min(32)
+}
+
 /// A short operation id: `op-` and 26 hex characters (D146).
 fn operation_id() -> String {
     let hex = format!("{:032x}", u128::from(ulid::Ulid::generate()));
@@ -173,10 +188,13 @@ impl GraphAdmin {
     /// Admin over `engine` and `catalog`, with the default retention hold.
     #[must_use]
     pub fn new(engine: Arc<Engine>, catalog: GraphCatalog) -> Self {
+        let statement_slots = default_statement_slots();
         Self {
             engine,
             catalog,
             retention_hold: DEFAULT_RETENTION_HOLD,
+            statements: Arc::new(tokio::sync::Semaphore::new(statement_slots)),
+            statement_slots,
             #[cfg(feature = "test-hooks")]
             after_open_hook: Arc::default(),
         }
@@ -187,6 +205,70 @@ impl GraphAdmin {
     pub fn with_retention_hold(mut self, hold: Duration) -> Self {
         self.retention_hold = hold;
         self
+    }
+
+    /// The same admin with another cap on statements running at once (at least 1).
+    #[must_use]
+    pub fn with_statement_slots(mut self, slots: usize) -> Self {
+        let slots = slots.max(1);
+        self.statements = Arc::new(tokio::sync::Semaphore::new(slots));
+        self.statement_slots = slots;
+        self
+    }
+
+    /// The cap on statements running at once.
+    #[must_use]
+    pub fn statement_slots(&self) -> usize {
+        self.statement_slots
+    }
+
+    /// Statements running now, including any whose client has gone away.
+    #[must_use]
+    pub fn statements_in_flight(&self) -> usize {
+        self.statement_slots
+            .saturating_sub(self.statements.available_permits())
+    }
+
+    /// A statement slot, or `RESOURCE_EXHAUSTED` when every one is taken: the caller retries,
+    /// rather than queueing behind work that may never end (R0.8).
+    fn statement_slot(&self) -> Result<tokio::sync::OwnedSemaphorePermit, ConnectError> {
+        Arc::clone(&self.statements)
+            .try_acquire_owned()
+            .map_err(|err| match err {
+                tokio::sync::TryAcquireError::NoPermits => refuse(
+                    ErrorCode::ResourceExhausted,
+                    "resource_exhausted",
+                    format!(
+                        "all {} graph statement slots on this server are busy; retry",
+                        self.statement_slots
+                    ),
+                ),
+                tokio::sync::TryAcquireError::Closed => refuse(
+                    ErrorCode::Unavailable,
+                    "unavailable",
+                    "the graph service is shutting down",
+                ),
+            })
+    }
+
+    /// Runs `work` on a catalog graph holding a statement slot: the slot is taken before the
+    /// graph opens and the blocking work starts, and released only when that work ends, after
+    /// the graph handle is dropped.
+    async fn on_graph<T: Send + 'static>(
+        &self,
+        namespace: &str,
+        name: &str,
+        work: impl FnOnce(&Graph) -> Result<T, ConnectError> + Send + 'static,
+    ) -> Result<T, ConnectError> {
+        let slot = self.statement_slot()?;
+        let graph = self.open(namespace, name).await?;
+        blocking(move || {
+            let result = work(&graph);
+            drop(graph);
+            drop(slot);
+            result
+        })
+        .await
     }
 
     /// The engine.
@@ -572,8 +654,11 @@ impl GraphAdmin {
         &self,
         req: pb::GetSchemaRequest,
     ) -> Result<pb::GraphSchema, ConnectError> {
-        let graph = self.open(&req.namespace, &req.name).await?;
-        let summary = blocking(move || graph.schema().map_err(map_engine)).await?;
+        let summary = self
+            .on_graph(&req.namespace, &req.name, |graph| {
+                graph.schema().map_err(map_engine)
+            })
+            .await?;
         Ok(pb::GraphSchema {
             labels: summary
                 .labels
@@ -617,8 +702,9 @@ impl GraphAdmin {
         &self,
         req: pb::ExecuteRequest,
     ) -> Result<pb::ExecuteResponse, ConnectError> {
-        let graph = self.open(&req.namespace, &req.graph).await?;
-        blocking(move || data::execute_on(&graph, req)).await
+        let (namespace, name) = (req.namespace.clone(), req.graph.clone());
+        self.on_graph(&namespace, &name, move |graph| data::execute_on(graph, req))
+            .await
     }
 
     /// `ExecuteBatch` on a catalog graph, opening it lazily.
@@ -630,8 +716,11 @@ impl GraphAdmin {
         &self,
         req: pb::ExecuteBatchRequest,
     ) -> Result<pb::ExecuteBatchResponse, ConnectError> {
-        let graph = self.open(&req.namespace, &req.graph).await?;
-        blocking(move || data::execute_batch_on(&graph, req)).await
+        let (namespace, name) = (req.namespace.clone(), req.graph.clone());
+        self.on_graph(&namespace, &name, move |graph| {
+            data::execute_batch_on(graph, req)
+        })
+        .await
     }
 
     /// `Explain` on a catalog graph.
@@ -640,8 +729,9 @@ impl GraphAdmin {
     ///
     /// As [`data::explain`].
     pub async fn explain(&self, req: pb::ExplainRequest) -> Result<pb::Plan, ConnectError> {
-        let graph = self.open(&req.namespace, &req.graph).await?;
-        blocking(move || data::explain_on(&graph, req)).await
+        let (namespace, name) = (req.namespace.clone(), req.graph.clone());
+        self.on_graph(&namespace, &name, move |graph| data::explain_on(graph, req))
+            .await
     }
 
     /// Purges every deleted graph whose retention hold (`hold`, or the admin's own when `None`)

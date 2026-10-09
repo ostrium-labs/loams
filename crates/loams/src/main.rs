@@ -230,6 +230,16 @@ struct Native {
     /// Serve no Loams Graph API (its RPCs answer feature_not_in_variant).
     #[arg(long)]
     no_graph: bool,
+    /// Loams Graph: graph statements that may run at once in this process;
+    /// past it a statement is refused with RESOURCE_EXHAUSTED [default: twice
+    /// the cores, at most 32].
+    #[arg(long)]
+    graph_statement_slots: Option<usize>,
+    /// Loams Graph: the engine's own statement time limit, a backstop (it
+    /// does not stop a statement inside one long operator) [default: 30000;
+    /// at most 300000].
+    #[arg(long)]
+    graph_query_timeout_ms: Option<u64>,
     /// Address of the Arrow Flight SQL listener [default: 127.0.0.1:8082
     /// for dev, 0.0.0.0:8082 for standalone].
     #[arg(long, conflicts_with = "no_flight_sql")]
@@ -489,6 +499,12 @@ impl Native {
         {
             config.graph.enabled = !self.no_graph;
             config.graph.ephemeral = self.graph_ephemeral;
+            if let Some(slots) = self.graph_statement_slots {
+                config.graph.statement_slots = slots;
+            }
+            if let Some(ms) = self.graph_query_timeout_ms {
+                config.graph.query_timeout = Duration::from_millis(ms);
+            }
             if let Some(dir) = &self.graph_data_dir {
                 config.graph.data_dir = Some(dir.clone());
             } else if !dev || self.graph_ephemeral {
@@ -498,7 +514,11 @@ impl Native {
         #[cfg(not(feature = "graph"))]
         {
             let _ = (config, dev);
-            if self.graph_data_dir.is_some() || self.graph_ephemeral {
+            if self.graph_data_dir.is_some()
+                || self.graph_ephemeral
+                || self.graph_statement_slots.is_some()
+                || self.graph_query_timeout_ms.is_some()
+            {
                 tracing::warn!("this build has no Loams Graph (the graph feature is off)");
             }
         }
@@ -1378,6 +1398,29 @@ mod tests {
         assert!(ephemeral.graph.ephemeral && ephemeral.graph.data_dir.is_none());
         let off = parse(&["--no-graph"]);
         assert!(!off.graph.enabled);
+        let capped = parse(&[
+            "--graph-ephemeral",
+            "--graph-statement-slots",
+            "3",
+            "--graph-query-timeout-ms",
+            "1500",
+        ]);
+        assert_eq!(capped.graph.statement_slots, 3);
+        assert_eq!(
+            capped.graph.query_timeout,
+            std::time::Duration::from_millis(1500)
+        );
+        assert!(capped.validate().is_ok());
+        assert!(
+            parse(&["--graph-ephemeral", "--graph-statement-slots", "0"])
+                .validate()
+                .is_err()
+        );
+        assert!(
+            parse(&["--graph-ephemeral", "--graph-query-timeout-ms", "0"])
+                .validate()
+                .is_err()
+        );
     }
 
     /// Q603's proposed default: `loams dev` publishes the Connect schema on

@@ -22,6 +22,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use grafeo::{Error as GrafeoError, GrafeoDB, QueryResult, Value};
 use loams_proto::loams::graph::v1::QueryLanguage;
@@ -112,6 +113,9 @@ pub enum GraphError {
     /// The graph is poisoned by an earlier panic and has not been reopened yet.
     #[error("the graph is reloading after an engine failure; retry")]
     Reloading,
+    /// The engine's own `query_timeout` stopped the statement (the backstop, R0.8 (a)).
+    #[error("the statement ran past the graph engine's time limit")]
+    StatementTimeout,
     /// An engine panic lost the graph and it cannot be reopened from storage (an in-memory graph,
     /// or a poisoned engine that would not close cleanly). It is never served again empty, so an
     /// acknowledged write is never silently lost (security review I2).
@@ -140,6 +144,7 @@ impl GraphError {
             Self::UnboundedPath { .. } => "graph_unbounded_path",
             Self::EnginePanic | Self::Failed => "graph_engine_panic",
             Self::Reloading => "graph_reloading",
+            Self::StatementTimeout => "graph_statement_timeout",
         }
     }
 }
@@ -404,7 +409,12 @@ impl Graph {
         }
         #[cfg(feature = "test-hooks")]
         engine.open_hook.call(OpenPoint::BeforeOpen, name);
-        let fresh = Arc::new(Graph::open_db(namespace, name, spec())?);
+        let fresh = Arc::new(Graph::open_db(
+            namespace,
+            name,
+            spec(),
+            engine.query_timeout,
+        )?);
         let graph = {
             let mut graphs = engine
                 .graphs
@@ -438,24 +448,36 @@ impl Graph {
 
     /// Opens the engine for a spec. An embedded engine, so this is a directory and never a URL:
     /// there is no connection to make and nothing to authenticate (D634 (b)).
-    fn open_db(namespace: &str, name: &str, spec: OpenSpec) -> Result<Graph, GraphError> {
-        let db = match spec.database_file() {
-            None => GrafeoDB::new_in_memory(),
-            // `open_read_only` is the engine's own read-only mode: a shared lock and no WAL
+    ///
+    /// `query_timeout` is the engine's own statement time limit: a backstop only, because Grafeo
+    /// checks it between pipeline chunks, so it stops a statement that streams rows but not one
+    /// stuck in a single operator (a cartesian aggregate, an expand), which runs on (R0.8).
+    fn open_db(
+        namespace: &str,
+        name: &str,
+        spec: OpenSpec,
+        query_timeout: Option<Duration>,
+    ) -> Result<Graph, GraphError> {
+        let config = match spec.database_file() {
+            None => grafeo::Config::in_memory(),
+            // `read_only` is the engine's own read-only mode: a shared lock and no WAL
             // replay, so a read-only graph cannot be made to write even by a statement the gate
             // mis-classifies. Grafeo requires an existing `.grafeo` file for it.
-            Some(file) if spec.read_only => {
-                GrafeoDB::open_read_only(&file).map_err(as_engine_error)?
-            }
+            Some(file) if spec.read_only => grafeo::Config::read_only(file),
             Some(file) => {
                 if let Some(dir) = &spec.dir {
                     std::fs::create_dir_all(dir).map_err(|err| {
                         GraphError::Engine(format!("creating the graph's storage: {err}"))
                     })?;
                 }
-                GrafeoDB::open(&file).map_err(as_engine_error)?
+                grafeo::Config::persistent(file)
             }
         };
+        let config = match query_timeout {
+            Some(limit) => config.with_query_timeout(limit),
+            None => config.without_query_timeout(),
+        };
+        let db = GrafeoDB::with_config(config).map_err(as_engine_error)?;
         Ok(Graph {
             namespace: namespace.to_string(),
             name: name.to_string(),
@@ -675,9 +697,7 @@ impl Graph {
         statement: &str,
         parameters: HashMap<String, Value>,
     ) -> Result<GraphResult, GraphError> {
-        let result = self
-            .session_for(access)
-            .execute_with_params(statement, parameters)
+        let result = run_on_session(&self.session_for(access), statement, parameters)
             .map_err(as_engine_error)?;
         self.statements_executed.fetch_add(1, Ordering::Relaxed);
         Ok(self.resolved(GraphResult::from(result)))
@@ -724,9 +744,9 @@ impl Graph {
             session.begin_transaction().map_err(as_engine_error)?;
             let mut out = Vec::with_capacity(statements.len());
             for statement in statements {
-                // `execute_with_params` takes the bindings by value, hence the copy.
+                // The engine takes the bindings by value, hence the copy.
                 let bound = statement.parameters.clone();
-                match session.execute_with_params(&statement.text, bound) {
+                match run_on_session(&session, &statement.text, bound) {
                     Ok(result) => {
                         self.statements_executed.fetch_add(1, Ordering::Relaxed);
                         out.push(GraphResult::from(result));
@@ -865,6 +885,12 @@ impl Graph {
     }
 }
 
+/// The engine's own statement time limit (Grafeo's `query_timeout`), set on every graph as a
+/// backstop (R0.8 (a); §48 §13.1's 30 s default). Grafeo checks it between pipeline chunks only,
+/// so it ends a statement that streams rows but not one inside a single long operator; Task 6's
+/// Loams-side deadline answers the client either way.
+pub const DEFAULT_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// A per-graph opening latch.
 type Latch = Arc<Mutex<()>>;
 
@@ -948,6 +974,8 @@ pub struct Engine {
     graphs: Mutex<HashMap<(String, String), Arc<Graph>>>,
     /// Per-graph latches held while a graph opens outside the registry lock (review M8).
     opening: Mutex<HashMap<(String, String), Latch>>,
+    /// The engine's own statement time limit for every graph it opens (R0.8 (a)), or `None`.
+    query_timeout: Option<Duration>,
     #[cfg(feature = "test-hooks")]
     open_hook: OpenHookSlot,
     /// Where persistent graphs live: `<data_dir>/graphs/<graph_id>/`. `None` keeps every graph in
@@ -972,6 +1000,7 @@ impl Engine {
         Self {
             graphs: Mutex::new(HashMap::new()),
             opening: Mutex::new(HashMap::new()),
+            query_timeout: Some(DEFAULT_QUERY_TIMEOUT),
             #[cfg(feature = "test-hooks")]
             open_hook: OpenHookSlot::default(),
             data_dir: None,
@@ -1019,6 +1048,20 @@ impl Engine {
             data_dir: Some(data_dir.as_ref().to_path_buf()),
             ..Self::new()
         }
+    }
+
+    /// The same engine with another statement time limit for the graphs it opens from now on
+    /// (`None`: none). A backstop, not a deadline: see [`DEFAULT_QUERY_TIMEOUT`].
+    #[must_use]
+    pub fn with_query_timeout(mut self, limit: Option<Duration>) -> Self {
+        self.query_timeout = limit;
+        self
+    }
+
+    /// The statement time limit graphs are opened with.
+    #[must_use]
+    pub fn query_timeout(&self) -> Option<Duration> {
+        self.query_timeout
     }
 
     /// The data directory, if persistent graphs have one.
@@ -1082,7 +1125,7 @@ impl Engine {
             return Err(GraphError::Failed);
         }
         drop(old);
-        let fresh = Arc::new(Graph::open_db(&namespace, &name, spec)?);
+        let fresh = Arc::new(Graph::open_db(&namespace, &name, spec, self.query_timeout)?);
         graphs.insert(key, Arc::clone(&fresh));
         tracing::info!(%namespace, %name, "reopened a poisoned graph");
         Ok(fresh)
@@ -1181,6 +1224,26 @@ fn poisoned(what: &str) -> GraphError {
     GraphError::Engine(what.to_string())
 }
 
+/// Runs one GQL statement on a session, the way Grafeo's own `execute_language` routes it:
+/// `execute` when there are no parameters, `execute_with_params` otherwise.
+///
+/// The split matters for the time limit (review fix 1, I1): `execute_with_params` runs through
+/// the query processor with no deadline, so Grafeo's `query_timeout` never applies to it; only
+/// `execute` honours it. A statement with parameters therefore has no engine backstop until
+/// Grafeo threads the deadline through (upstream ask, R0.8; Task 6's Loams-side deadline still
+/// answers the client). Both paths enforce the session's role.
+fn run_on_session(
+    session: &grafeo::Session,
+    statement: &str,
+    parameters: HashMap<String, Value>,
+) -> Result<QueryResult, GrafeoError> {
+    if parameters.is_empty() {
+        session.execute(statement)
+    } else {
+        session.execute_with_params(statement, parameters)
+    }
+}
+
 /// Wraps the engine's error, keeping its text whole.
 ///
 /// One case is translated: the engine reports a statement's unbound `$parameter` as an *internal*
@@ -1190,6 +1253,9 @@ fn poisoned(what: &str) -> GraphError {
 /// on it. If Grafeo ever rewords the message the case degrades to `Internal`, which loses the
 /// classification but never the diagnostic.
 fn as_engine_error(err: GrafeoError) -> GraphError {
+    if err.error_code() == grafeo_common::utils::error::ErrorCode::QueryTimeout {
+        return GraphError::StatementTimeout;
+    }
     const MISSING: &str = "Missing parameter: $";
     let text = err.to_string();
     match text.split_once(MISSING) {
