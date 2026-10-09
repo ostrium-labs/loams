@@ -40,6 +40,10 @@ pub enum UpstreamError {
     /// TiDB did not offer TLS: the gate never logs in without it (R3.16).
     #[error("upstream does not offer TLS")]
     TlsUnavailable,
+    /// TiDB's greeting lacks a flag of the static profile the connection
+    /// needs (a TiDB upgrade without a re-captured profile).
+    #[error("upstream greeting does not match the static profile")]
+    ProfileMismatch,
     /// No internal credential for the role.
     #[error("no internal credential")]
     NoCredential,
@@ -152,8 +156,13 @@ pub async fn connect(
     if client.database.is_none() {
         caps = caps.without(Capabilities::CONNECT_WITH_DB);
     }
-    // Only what TiDB offered (SSL is required above).
-    caps = caps.intersect(greeting.capabilities);
+    // The static profile is authoritative (R3.6): the client was greeted
+    // with it before this TiDB was known. A TiDB that lacks a flag the gate
+    // needs (framing flags agreed with the client among them) is refused,
+    // never silently narrowed: the byte relay needs both legs to match.
+    if caps.intersect(greeting.capabilities) != caps {
+        return Err(UpstreamError::ProfileMismatch);
+    }
     let ssl = SslRequest {
         capabilities: caps,
         max_packet: 1 << 24,
@@ -186,9 +195,10 @@ pub async fn connect(
         attributes: vec![(b"_client_name".to_vec(), b"loams-sqlgate".to_vec())],
         zstd_level: None,
     };
-    io.write(&response.encode().map_err(protocol)?)
-        .await
-        .map_err(protocol)?;
+    // The encoded response carries the scramble: zeroed on drop (R3.12).
+    let encoded = Password::new(response.encode().map_err(protocol)?);
+    io.write(encoded.expose()).await.map_err(protocol)?;
+    drop(encoded);
     loop {
         let p = io.read().await.map_err(protocol)?;
         match p.first() {

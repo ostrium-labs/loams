@@ -1,6 +1,7 @@
 //! Async packet I/O for the gate: framed reads through the codec's
 //! `Assembler`, and the client stream (plain TCP or server TLS).
 
+use std::fmt;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -9,6 +10,108 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::TcpStream;
 
 use crate::codec::packet::{Assembler, encode};
+
+/// Fills `bytes` with zeros in a way the optimiser keeps.
+pub(crate) fn zero(bytes: &mut [u8]) {
+    bytes.fill(0);
+    std::hint::black_box(&bytes);
+}
+
+/// A read buffer for bytes that may hold secrets (the client handshake:
+/// scrambles and full-auth cleartext passwords, R3.12). Consumed bytes are
+/// zeroed at once, storage it grows out of is zeroed before it is freed,
+/// and everything is zeroed on drop. Its storage is always initialised.
+pub struct SecretBuf {
+    store: Box<[u8]>,
+    start: usize,
+    end: usize,
+}
+
+impl fmt::Debug for SecretBuf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecretBuf")
+            .field("len", &(self.end - self.start))
+            .finish_non_exhaustive()
+    }
+}
+
+impl SecretBuf {
+    /// An empty buffer of `capacity` bytes.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            store: vec![0; capacity].into_boxed_slice(),
+            start: 0,
+            end: 0,
+        }
+    }
+
+    /// The unconsumed bytes.
+    pub fn as_slice(&self) -> &[u8] {
+        &self.store[self.start..self.end]
+    }
+
+    /// The whole storage, live bytes and zeros (for tests).
+    #[doc(hidden)]
+    pub fn storage(&self) -> &[u8] {
+        &self.store
+    }
+
+    /// Drops the first `n` unconsumed bytes, zeroing them.
+    pub fn consume(&mut self, n: usize) {
+        let n = n.min(self.end - self.start);
+        zero(&mut self.store[self.start..self.start + n]);
+        self.start += n;
+        if self.start == self.end {
+            self.start = 0;
+            self.end = 0;
+        }
+    }
+
+    /// At least `n` writable bytes after the unconsumed ones: compacts, and
+    /// grows (zeroing the old storage) when compacting is not enough.
+    pub fn read_space(&mut self, n: usize) -> &mut [u8] {
+        let live = self.end - self.start;
+        if self.store.len() - self.end < n {
+            if self.store.len() - live >= n {
+                self.store.copy_within(self.start..self.end, 0);
+                zero(&mut self.store[live..]);
+            } else {
+                let mut grown = vec![0; (2 * self.store.len()).max(live + n)].into_boxed_slice();
+                grown[..live].copy_from_slice(&self.store[self.start..self.end]);
+                zero(&mut self.store);
+                self.store = grown;
+            }
+            self.start = 0;
+            self.end = live;
+        }
+        &mut self.store[self.end..self.end + n]
+    }
+
+    /// Marks `n` bytes written into [`Self::read_space`] as unconsumed.
+    pub fn advance(&mut self, n: usize) {
+        self.end = (self.end + n).min(self.store.len());
+    }
+
+    /// Appends `bytes`.
+    pub fn extend_from_slice(&mut self, bytes: &[u8]) {
+        self.read_space(bytes.len()).copy_from_slice(bytes);
+        self.advance(bytes.len());
+    }
+
+    /// The unconsumed bytes, moved out (the buffer is left empty and zeroed).
+    pub fn take(&mut self) -> Vec<u8> {
+        let out = self.as_slice().to_vec();
+        let n = self.end - self.start;
+        self.consume(n);
+        out
+    }
+}
+
+impl Drop for SecretBuf {
+    fn drop(&mut self) {
+        zero(&mut self.store);
+    }
+}
 
 /// A TCP stream that first yields bytes already read from it (a client
 /// sends its TLS ClientHello right behind the SSLRequest).
@@ -165,7 +268,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> PacketIo<S> {
     pub(crate) async fn write(&mut self, payload: &[u8]) -> io::Result<()> {
         let mut out = Vec::with_capacity(payload.len() + 4);
         encode(payload, &mut self.next_seq, &mut out);
-        self.io.write_all(&out).await?;
+        let written = self.io.write_all(&out).await;
+        // The payload may be a login secret (R3.12).
+        zero(&mut out);
+        written?;
         self.io.flush().await
     }
 

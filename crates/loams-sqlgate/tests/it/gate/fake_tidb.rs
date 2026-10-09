@@ -34,6 +34,9 @@ pub struct FakeTidb {
 pub struct FakeOpts {
     pub name: &'static str,
     pub ssl: bool,
+    /// Flags left out of the greeting (a TiDB that drifted from the
+    /// static profile).
+    pub drop: C,
     pub user: &'static str,
     pub password: &'static [u8],
 }
@@ -100,7 +103,8 @@ async fn serve(
         TIDB_V8_5_8
     } else {
         TIDB_V8_5_8.without(C::SSL)
-    };
+    }
+    .without(opts.drop);
     let greeting = HandshakeV10 {
         server_version: "8.0.11-TiDB-v8.5.8-Loams".into(),
         connection_id: 1,

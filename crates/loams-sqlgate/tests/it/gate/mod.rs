@@ -60,6 +60,8 @@ pub struct Options {
     pub handshake_timeout: Duration,
     pub limits: LimitsConfig,
     pub upstream_ssl: bool,
+    /// Flags the fake TiDBs leave out of their greeting.
+    pub upstream_drop: loams_sqlgate::codec::handshake::Capabilities,
 }
 
 impl Default for Options {
@@ -69,6 +71,7 @@ impl Default for Options {
             handshake_timeout: Duration::from_secs(10),
             limits: LimitsConfig::default(),
             upstream_ssl: true,
+            upstream_drop: loams_sqlgate::codec::handshake::Capabilities(0),
         }
     }
 }
@@ -78,6 +81,7 @@ pub async fn harness(opts: Options) -> Harness {
     let fake = |name, ssl| FakeOpts {
         name,
         ssl,
+        drop: opts.upstream_drop,
         user: "ri_writer",
         password: INTERNAL_PW,
     };

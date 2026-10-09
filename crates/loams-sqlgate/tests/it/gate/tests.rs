@@ -245,6 +245,25 @@ async fn upstream_login_refused_without_tls() {
     assert!(seen.logins.is_empty());
 }
 
+/// The upstream leg follows the static profile (R3.6, R3.7). A TiDB whose
+/// greeting lacks a flag the gate agreed with the client (here
+/// `CLIENT_DEPRECATE_EOF`, which changes result framing) is refused before
+/// any login: relaying across mismatched framing would corrupt results.
+#[tokio::test]
+async fn upstream_profile_drift_is_refused() {
+    use loams_sqlgate::codec::handshake::Capabilities as C;
+    let h = harness(Options {
+        upstream_drop: C::DEPRECATE_EOF,
+        ..Options::default()
+    })
+    .await;
+    let e = h.tls("u_a", b"pa").await.err().expect("profile drift");
+    assert_eq!(e.code, 1040);
+    let seen = h.a.seen.lock().unwrap().clone();
+    assert!(seen.logins.is_empty(), "no login on a drifted TiDB");
+    assert_eq!(seen.plaintext_credentials, 0);
+}
+
 #[tokio::test]
 async fn users_are_routed_to_their_own_branch() {
     let h = harness(Options::default()).await;
@@ -307,4 +326,38 @@ async fn pem_files_configure_tls() {
     upstream_tls_from_ca_pem(&dir.join("ca.pem")).expect("ca");
     assert!(upstream_tls_from_ca_pem(&dir.join("missing.pem")).is_err());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// R3.12: the gate zeroes its own socket buffers. The client handshake
+/// buffer keeps only unconsumed bytes; consumed bytes (a cleartext
+/// password among them) and grown-out storage are zeroed.
+#[test]
+fn handshake_buffer_zeroes_consumed_bytes() {
+    use loams_sqlgate::wire::SecretBuf;
+    let mut b = SecretBuf::with_capacity(8);
+    b.extend_from_slice(b"secret!!");
+    b.consume(6);
+    assert_eq!(b.as_slice(), b"!!");
+    assert_eq!(b.storage(), b"\0\0\0\0\0\0!!", "consumed bytes are zeroed");
+    // Reading more compacts, then grows: no stale copy is left behind.
+    let tail = b.read_space(10);
+    tail.copy_from_slice(b"password\0x");
+    b.advance(10);
+    assert_eq!(b.as_slice(), b"!!password\0x");
+    assert!(b.storage().len() >= 12);
+    assert!(b.storage()[12..].iter().all(|&x| x == 0));
+    b.consume(12);
+    assert!(
+        b.storage().iter().all(|&x| x == 0),
+        "all consumed: all zero"
+    );
+    // Short reads: only `advance`d bytes count.
+    let space = b.read_space(4);
+    space[..2].copy_from_slice(b"ab");
+    b.advance(2);
+    assert_eq!(b.as_slice(), b"ab");
+    let taken = b.take();
+    assert_eq!(taken, b"ab");
+    assert!(b.as_slice().is_empty());
+    assert!(b.storage().iter().all(|&x| x == 0), "take zeroes");
 }

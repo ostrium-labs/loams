@@ -31,7 +31,7 @@ use crate::codec::handshake::{Capabilities, HandshakeV10, Limits, Nonce, TIDB_V8
 use crate::codec::packet::{HEADER_LEN, MAX_FRAME, encode};
 use crate::limits::{ActivitySink, LimitError, Limiter, LimitsConfig, Slot};
 use crate::upstream::{ClientContext, CredentialStore, PoolResolver, Upstream, connect};
-use crate::wire::{ClientStream, Prefixed};
+use crate::wire::{ClientStream, Prefixed, SecretBuf};
 
 /// The version the gate advertises (Q658, as TiDB's rendered config).
 pub const SERVER_VERSION: &str = "8.0.11-TiDB-v8.5.8-Loams";
@@ -404,16 +404,18 @@ impl Gate {
         let (mut phase, hello) = ConnectionPhase::new(greeting, plaintext, Limits::default());
         let mut io = ClientStream::Plain(tcp);
         io.write_all(&hello).await.ok()?;
-        let mut buf: Vec<u8> = Vec::new();
+        // Holds scrambles and full-auth passwords: zeroed as consumed
+        // (R3.12). Handshake messages are capped at 96 KiB.
+        let mut buf = SecretBuf::with_capacity(16 * 1024);
         let mut resolved: Option<Option<ResolvedUser>> = None;
         let mut admitted = false;
         let mut pending: Option<Result<Step, PhaseError>> = None;
         loop {
             let step = match pending.take() {
                 Some(s) => s,
-                None => match phase.on_bytes(&buf) {
+                None => match phase.on_bytes(buf.as_slice()) {
                     Ok((used, step)) => {
-                        buf.drain(..used);
+                        buf.consume(used);
                         Ok(step)
                     }
                     Err(e) => Err(e),
@@ -428,12 +430,11 @@ impl Gate {
             };
             match step {
                 Step::NeedMore => {
-                    let mut chunk = [0u8; 8192];
-                    let n = io.read(&mut chunk).await.ok()?;
+                    let n = io.read(buf.read_space(8192)).await.ok()?;
                     if n == 0 {
                         return None;
                     }
-                    buf.extend_from_slice(&chunk[..n]);
+                    buf.advance(n);
                 }
                 Step::StartTls => {
                     // Bytes after the SSLRequest are the client's TLS
@@ -441,7 +442,7 @@ impl Gate {
                     let ClientStream::Plain(tcp) = io else {
                         return None;
                     };
-                    let prefixed = Prefixed::new(std::mem::take(&mut buf), tcp);
+                    let prefixed = Prefixed::new(buf.take(), tcp);
                     let tls = TlsAcceptor::from(self.config.tls.clone())
                         .accept(prefixed)
                         .await

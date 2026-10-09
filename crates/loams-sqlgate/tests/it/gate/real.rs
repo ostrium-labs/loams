@@ -71,12 +71,18 @@ fn keyspace(name: &str) {
     panic!("keyspace {name}");
 }
 
-struct Members(HashMap<String, std::net::SocketAddr>);
+#[derive(Default)]
+struct Members(std::sync::Mutex<HashMap<String, std::net::SocketAddr>>);
 
 #[async_trait]
 impl PoolResolver for Members {
     async fn members(&self, branch: &str) -> Result<Vec<UpstreamMember>, UpstreamError> {
-        let addr = *self.0.get(branch).ok_or(UpstreamError::Unavailable)?;
+        let addr = *self
+            .0
+            .lock()
+            .expect("members")
+            .get(branch)
+            .ok_or(UpstreamError::Unavailable)?;
         Ok(vec![UpstreamMember {
             addr,
             server_name: ServerName::IpAddress(addr.ip().into()),
@@ -144,33 +150,41 @@ async fn user_of_db_a_cannot_reach_db_b() {
         "GRANT ALL PRIVILEGES ON *.* TO 'ri_writer'@'%'".into(),
     ];
     let rt = Arc::new(LocalRuntime::new(config).expect("runtime"));
-    // One first bootstrap at a time: two concurrent first bootstraps on the
-    // spike stack left one TiDB waiting on its schema version (R4.3).
-    let mut members = HashMap::new();
-    for branch in [&br_a, &br_b] {
-        rt.ensure_pool(branch, Class::Xs, 1).await.expect("pool");
-        let deadline = Instant::now() + Duration::from_secs(300);
-        loop {
-            let st = rt.pool_status(branch).await.expect("status").expect("pool");
-            if st.ready() == 1 {
-                members.insert(branch.to_string(), st.members[0].mysql_addr);
-                break;
+    // One keyspace's TiDB at a time for bootstrap and DDL. On this stack
+    // (one PD, v8.5.8), with another keyspace's TiDB up, a first bootstrap
+    // stalled, and DDL on a resumed TiDB never ran: its DDL owner was never
+    // elected and the stopped instance's schema-version key stayed in etcd
+    // (a Task 5 finding, task-4-report.md). So A takes its DDL alone, is
+    // suspended for B's bootstrap, and is read again after its warm resume.
+    let ready = |branch: BranchId| {
+        let rt = rt.clone();
+        async move {
+            let deadline = Instant::now() + Duration::from_secs(300);
+            loop {
+                let st = rt
+                    .pool_status(&branch)
+                    .await
+                    .expect("status")
+                    .expect("pool");
+                if st.ready() == 1 {
+                    return st.members[0].mysql_addr;
+                }
+                if Instant::now() >= deadline {
+                    let logs = Command::new("podman")
+                        .args(["logs", "--tail", "20", &st.members[0].name])
+                        .output();
+                    let logs = logs
+                        .map(|o| {
+                            String::from_utf8_lossy(&o.stderr).into_owned()
+                                + &String::from_utf8_lossy(&o.stdout)
+                        })
+                        .unwrap_or_default();
+                    panic!("{branch} not ready: {st:?}\n{logs}");
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
-            if Instant::now() >= deadline {
-                let logs = Command::new("podman")
-                    .args(["logs", "--tail", "40", &st.members[0].name])
-                    .output();
-                let logs = logs
-                    .map(|o| {
-                        String::from_utf8_lossy(&o.stderr).into_owned()
-                            + &String::from_utf8_lossy(&o.stdout)
-                    })
-                    .unwrap_or_default();
-                panic!("{branch} not ready: {st:?}\n{logs}");
-            }
-            tokio::time::sleep(Duration::from_millis(500)).await;
         }
-    }
+    };
 
     let users = StaticUsers::new(vec![
         (
@@ -196,12 +210,13 @@ async fn user_of_db_a_cannot_reach_db_b() {
         key: pki.gate_key.clone_key(),
     }])
     .expect("tls");
+    let members = Arc::new(Members::default());
     let gate = Gate::new(
         GateConfig::new(server_tls, pki.client_config()),
         GateDeps {
             users: Arc::new(users),
             credentials: Arc::new(Creds(internal)),
-            pools: Arc::new(Members(members)),
+            pools: members.clone(),
             activity: Arc::new(ActivityCounter::default()),
         },
     );
@@ -210,6 +225,13 @@ async fn user_of_db_a_cannot_reach_db_b() {
         .expect("bind");
     let addr = listener.local_addr().expect("addr");
     tokio::spawn(gate.serve(listener));
+    let set = |branch: &BranchId, member: std::net::SocketAddr| {
+        members
+            .0
+            .lock()
+            .expect("members")
+            .insert(branch.to_string(), member);
+    };
 
     let ca_path = tls.join("ca.crt");
     let opts = |user: &str, pw: &str| {
@@ -222,6 +244,10 @@ async fn user_of_db_a_cannot_reach_db_b() {
                 mysql_async::SslOpts::default().with_root_certs(vec![ca_path.clone().into()]),
             ))
     };
+
+    // A alone: DDL and a row through the gate.
+    rt.ensure_pool(&br_a, Class::Xs, 1).await.expect("pool a");
+    set(&br_a, ready(br_a.clone()).await);
     let mut a = mysql_async::Conn::new(opts("u_a", "pa"))
         .await
         .expect("u_a over TLS");
@@ -234,29 +260,6 @@ async fn user_of_db_a_cannot_reach_db_b() {
     a.query_drop("INSERT INTO only_a.t VALUES (7)")
         .await
         .expect("insert");
-    let x: Option<i64> = a
-        .query_first("SELECT x FROM only_a.t")
-        .await
-        .expect("select");
-    assert_eq!(x, Some(7));
-
-    let mut b = mysql_async::Conn::new(opts("u_b", "pb"))
-        .await
-        .expect("u_b over TLS");
-    let dbs: Vec<String> = b.query("SHOW DATABASES").await.expect("show");
-    assert!(
-        !dbs.iter().any(|d| d == "only_a"),
-        "u_b sees A's database: {dbs:?}"
-    );
-    assert!(
-        b.query_drop("SELECT x FROM only_a.t").await.is_err(),
-        "u_b reads A's table"
-    );
-    let e = mysql_async::Conn::new(opts("u_b", "pa"))
-        .await
-        .expect_err("A's password does not open B");
-    assert!(e.to_string().contains("1045"), "{e}");
-
     // TiDB sees the client's address through PROXY v2, not the gate's.
     let mut raw = client::connect(
         addr,
@@ -275,8 +278,47 @@ async fn user_of_db_a_cannot_reach_db_b() {
         Some(raw.local.to_string().as_str()),
         "processlist host"
     );
+    drop(raw);
+    let _ = a.disconnect().await;
+    rt.scale(&br_a, 0).await.expect("suspend a");
 
-    drop((a, b, raw));
+    // B: its own keyspace sees nothing of A's.
+    rt.ensure_pool(&br_b, Class::Xs, 1).await.expect("pool b");
+    set(&br_b, ready(br_b.clone()).await);
+    let mut b = mysql_async::Conn::new(opts("u_b", "pb"))
+        .await
+        .expect("u_b over TLS");
+    let dbs: Vec<String> = b.query("SHOW DATABASES").await.expect("show");
+    assert!(
+        !dbs.iter().any(|d| d == "only_a"),
+        "u_b sees A's database: {dbs:?}"
+    );
+    assert!(
+        b.query_drop("SELECT x FROM only_a.t").await.is_err(),
+        "u_b reads A's table"
+    );
+    let e = mysql_async::Conn::new(opts("u_b", "pa"))
+        .await
+        .expect_err("A's password does not open B");
+    assert!(e.to_string().contains("1045"), "{e}");
+
+    // A resumed next to B: u_a reads its row, u_b still cannot.
+    rt.scale(&br_a, 1).await.expect("resume a");
+    set(&br_a, ready(br_a.clone()).await);
+    let mut a = mysql_async::Conn::new(opts("u_a", "pa"))
+        .await
+        .expect("u_a after resume");
+    let x: Option<i64> = a
+        .query_first("SELECT x FROM only_a.t")
+        .await
+        .expect("select");
+    assert_eq!(x, Some(7));
+    assert!(
+        b.query_drop("SELECT x FROM only_a.t").await.is_err(),
+        "u_b reads A's table while A runs"
+    );
+
+    drop((a, b));
     rt.delete_pool(&br_a).await.expect("delete a");
     rt.delete_pool(&br_b).await.expect("delete b");
     let _ = std::fs::remove_dir_all(&dir);
