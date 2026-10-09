@@ -131,6 +131,8 @@ fn branch(project: &str, id: &str, name: &str) -> BranchRec {
         shards: Vec::new(),
         state: BranchState::Creating,
         created_at_ms: 1,
+        parent_time_ms: None,
+        updated_at_ms: 1,
     }
 }
 
@@ -424,6 +426,7 @@ fn project(id: &str) -> ProjectRec {
         settings: std::collections::BTreeMap::new(),
         state: ProjectState::Creating,
         created_at_ms: 1,
+        updated_at_ms: 1,
     }
 }
 

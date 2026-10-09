@@ -166,6 +166,7 @@ async fn create_branch_at_timestamp_resolves_lsn() {
         .await
         .expect("create at a time");
     assert_eq!(out.branch.branch.record.ancestor_lsn, Some(0x0169_AD58));
+    assert_eq!(out.branch.branch.record.parent_time_ms, Some(at));
     assert!(
         h.neon.calls().contains(&format!("lsn_by_timestamp {at}")),
         "{:?}",
@@ -690,6 +691,8 @@ async fn update_branch_renames_and_sets_a_ttl() {
         .await
         .expect("update");
     assert_eq!(updated.branch.record.name, "staging");
+    assert_eq!(updated.branch.record.updated_at_ms, T0_MS);
+    assert_eq!(b.record.parent_time_ms, None);
     assert_eq!(updated.branch.record.expires_at_ms, None);
     // The old name is free; the new one taken.
     h.service

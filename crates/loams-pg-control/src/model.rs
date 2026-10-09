@@ -178,6 +178,11 @@ pub struct ProjectRec {
     pub settings: BTreeMap<String, String>,
     pub state: ProjectState,
     pub created_at_ms: u64,
+    /// When the API or a reconciler last wrote the record (Task 5 fix
+    /// round 1). `serde(default)` keeps answers recorded before it
+    /// readable (the ledger's answers are JSON).
+    #[serde(default)]
+    pub updated_at_ms: u64,
 }
 
 /// `(namespace, project_id)`.
@@ -291,6 +296,12 @@ pub struct BranchRec {
     pub shards: Vec<ShardAttachment>,
     pub state: BranchState,
     pub created_at_ms: u64,
+    /// The time the branch point was asked for, when it was a time.
+    #[serde(default)]
+    pub parent_time_ms: Option<u64>,
+    /// When the API or a reconciler last wrote the record.
+    #[serde(default)]
+    pub updated_at_ms: u64,
 }
 
 /// `(project_id, branch_id)`.
@@ -742,7 +753,8 @@ pub struct IdempotencyRec {
     /// SHA-256 of the request, so a key reused for another request is told
     /// apart from a replay.
     pub fingerprint: [u8; 32],
-    /// The first answer, postcard-encoded by the service.
+    /// The first answer: a format tag (`service::ANSWER_JSON`) and its
+    /// JSON, which a record gaining a field still decodes.
     pub answer: Vec<u8>,
     pub created_at_ms: u64,
     pub expires_at_ms: u64,

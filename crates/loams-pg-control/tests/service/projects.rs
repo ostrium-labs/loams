@@ -588,3 +588,114 @@ impl loams_kv::FaultPlan for FirstBatch {
             .then_some(loams_kv::Fault::LoseAck)
     }
 }
+
+/// Records carry when they were created and last written.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn records_carry_their_update_time() {
+    let h = harness!();
+    let out = h
+        .service
+        .create_project(&user(), create("shop", "k1"))
+        .await
+        .expect("create");
+    assert_eq!(out.project.record.created_at_ms, T0_MS);
+    assert_eq!(out.project.record.updated_at_ms, T0_MS);
+    h.clock.advance_ms(5_000);
+    let updated = h
+        .service
+        .update_project(
+            &user(),
+            UpdateProject {
+                namespace: "acme".into(),
+                project_id: out.project.record.id.clone(),
+                name: Some("store".into()),
+                idempotency_key: "u1".into(),
+                ..UpdateProject::default()
+            },
+        )
+        .await
+        .expect("update");
+    assert_eq!(updated.record.created_at_ms, T0_MS);
+    assert_eq!(updated.record.updated_at_ms, T0_MS + 5_000);
+}
+
+/// The ledger's entry for `(user, rpc, key)`, as stored.
+async fn ledger_entry(
+    h: &crate::common::Harness,
+) -> Versioned<loams_pg_control::model::IdempotencyRec> {
+    use loams_pg_control::Page;
+    use loams_pg_control::model::{AllIdempotency, IdempotencyRec};
+    let (all, _) = h
+        .store
+        .list::<IdempotencyRec>(&AllIdempotency, Page::default())
+        .await
+        .expect("the ledger");
+    assert_eq!(all.len(), 1);
+    all.into_iter().next().expect("an entry")
+}
+
+/// A replay survives a record gaining a field: the answer is JSON, and the
+/// new field (here `updated_at_ms`, as if recorded before it existed)
+/// takes its default.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_replay_survives_a_record_gaining_a_field() {
+    use loams_pg_control::service::ANSWER_JSON;
+
+    let h = harness!();
+    let first = h
+        .service
+        .create_project(&user(), create("shop", "k1"))
+        .await
+        .expect("create");
+    let entry = ledger_entry(&h).await;
+    assert_eq!(entry.record.answer[0], ANSWER_JSON);
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&entry.record.answer[1..]).expect("JSON");
+    let record = json["project"]["record"]
+        .as_object_mut()
+        .expect("the project");
+    assert!(record.remove("updated_at_ms").is_some());
+    let mut older = entry.record.clone();
+    older.answer = vec![ANSWER_JSON];
+    older
+        .answer
+        .extend(serde_json::to_vec(&json).expect("JSON"));
+    h.store
+        .api_writer()
+        .put(&older, Some(entry.version))
+        .await
+        .expect("rewrite the entry");
+    let replay = h
+        .service
+        .create_project(&user(), create("shop", "k1"))
+        .await
+        .expect("replay");
+    assert_eq!(replay.operation, first.operation);
+    assert_eq!(replay.project.record.updated_at_ms, 0);
+    assert_eq!(replay.project.record.id, first.project.record.id);
+}
+
+/// An answer under a format tag this build does not know is refused
+/// plainly, never misread.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_answer_in_an_unknown_format_is_failed_precondition() {
+    let h = harness!();
+    h.service
+        .create_project(&user(), create("shop", "k1"))
+        .await
+        .expect("create");
+    let entry = ledger_entry(&h).await;
+    let mut other = entry.record.clone();
+    other.answer[0] = 9;
+    h.store
+        .api_writer()
+        .put(&other, Some(entry.version))
+        .await
+        .expect("rewrite the entry");
+    let e = h
+        .service
+        .create_project(&user(), create("shop", "k1"))
+        .await
+        .expect_err("an unknown format");
+    assert_eq!(e.reason, Reason::FailedPrecondition);
+}

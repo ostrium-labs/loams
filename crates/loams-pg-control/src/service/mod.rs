@@ -40,7 +40,7 @@ use futures::future::BoxFuture;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-pub use idempotency::{IdempotencyLedger, LEDGER_TTL};
+pub use idempotency::{ANSWER_JSON, IdempotencyLedger, LEDGER_TTL};
 
 use crate::neon::NeonRead;
 use crate::store::{

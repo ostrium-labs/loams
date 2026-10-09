@@ -10,6 +10,14 @@
 //! another request (another fingerprint) is `invalid_argument`, as
 //! `connect_idempotency.rs` rules. An empty key is never recorded.
 //!
+//! **Answers are format-tagged JSON** ([`ANSWER_JSON`] then the JSON
+//! body), not postcard: JSON names its fields, so a record that gains a
+//! field (with `serde(default)`) still decodes the answers recorded before
+//! it, for the 24 h they live. A change JSON cannot absorb takes a new tag,
+//! with a decoder for the old one kept for 24 h; an entry under a tag this
+//! build does not know answers `failed_precondition` (use a new key), never
+//! a wrong answer.
+//!
 //! Nothing here may hold a secret (R1.10): Task 5's answers carry none, and
 //! the secret-issuing RPCs (Task 6) record only that a secret was issued.
 
@@ -22,6 +30,9 @@ use sha2::{Digest, Sha256};
 use super::{Caller, ServiceError};
 use crate::model::{AllIdempotency, IdempotencyKey, IdempotencyRec, Record};
 use crate::store::{Batch, KvControlStore, MAX_PAGE_SIZE, Page, PgControlStore, StoreError};
+
+/// The tag of a JSON answer.
+pub const ANSWER_JSON: u8 = 1;
 
 /// How long a replay answers the first response (AP0; the proto header).
 pub const LEDGER_TTL: Duration = Duration::from_secs(24 * 3600);
@@ -128,11 +139,7 @@ impl IdempotencyLedger {
                 "this idempotency_key was used for another request in the last 24 h",
             ));
         }
-        postcard::from_bytes(&rec.answer)
-            .map(Found::Answer)
-            .map_err(|e| {
-                StoreError::Corrupt(format!("an idempotency answer does not decode: {e}")).into()
-            })
+        decode_answer(&rec.answer).map(Found::Answer)
     }
 
     /// Adds `claim`'s entry to `batch`, its answer made (in the
@@ -154,10 +161,7 @@ impl IdempotencyLedger {
                     rpc: claim.rpc.to_string(),
                     key: claim.key.clone(),
                     fingerprint: claim.fingerprint,
-                    // An answer that does not encode is recorded empty, which a
-                    // replay reports as corrupt; the service's answers always
-                    // encode.
-                    answer: postcard::to_stdvec(&answer(out)).unwrap_or_default(),
+                    answer: encode_answer(&answer(out)),
                     created_at_ms: now_ms,
                     expires_at_ms: now_ms.saturating_add(ttl_ms),
                 }
@@ -200,6 +204,29 @@ impl IdempotencyLedger {
                 None => return Ok(pruned),
             }
         }
+    }
+}
+
+/// [`ANSWER_JSON`] and the answer's JSON. An answer that does not encode
+/// is recorded as the bare tag, which a replay reports as corrupt; the
+/// service's answers always encode.
+fn encode_answer<T: Serialize>(answer: &T) -> Vec<u8> {
+    let mut out = vec![ANSWER_JSON];
+    if let Err(e) = serde_json::to_writer(&mut out, answer) {
+        tracing::error!(error = %e, "an idempotency answer does not encode");
+    }
+    out
+}
+
+fn decode_answer<T: DeserializeOwned>(answer: &[u8]) -> Result<T, ServiceError> {
+    match answer.split_first() {
+        Some((&ANSWER_JSON, body)) => serde_json::from_slice(body).map_err(|e| {
+            StoreError::Corrupt(format!("an idempotency answer does not decode: {e}")).into()
+        }),
+        _ => Err(ServiceError::failed_precondition(
+            "the first answer under this idempotency_key was recorded in a format this \
+             server does not read; retry with a new key",
+        )),
     }
 }
 

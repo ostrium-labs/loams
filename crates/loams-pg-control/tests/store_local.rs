@@ -27,6 +27,8 @@ async fn local_store_survives_a_reopen() {
         shards: Vec::new(),
         state: BranchState::Ready,
         created_at_ms: 1,
+        parent_time_ms: None,
+        updated_at_ms: 1,
     };
     let v = {
         let store = local::open(&path, StoreOptions::default())

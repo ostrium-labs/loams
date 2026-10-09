@@ -172,6 +172,7 @@ impl<N: NeonRead> PgService<N> {
                 settings: Default::default(),
                 state: ProjectState::Creating,
                 created_at_ms: now,
+                updated_at_ms: now,
             };
             let main = BranchRec {
                 project_id: project.id.clone(),
@@ -186,6 +187,8 @@ impl<N: NeonRead> PgService<N> {
                 shards: Vec::new(),
                 state: BranchState::Creating,
                 created_at_ms: now,
+                parent_time_ms: None,
+                updated_at_ms: now,
             };
             let operation = pending(
                 OperationKind::ProjectCreate,
@@ -342,6 +345,7 @@ impl<N: NeonRead> PgService<N> {
             if let Some(r) = retention_s {
                 project.history_retention_s = r;
             }
+            project.updated_at_ms = self.now_ms();
             let project_at = batch.put(&project, Some(current.version))?;
             let mut mutation = Mutation::new(batch, move |out| Versioned {
                 record: project.clone(),
@@ -405,6 +409,7 @@ impl<N: NeonRead> PgService<N> {
             }
             let mut project = current.record;
             project.state = ProjectState::Deleting;
+            project.updated_at_ms = self.now_ms();
             let operation = pending(
                 OperationKind::ProjectDelete,
                 &req.namespace,

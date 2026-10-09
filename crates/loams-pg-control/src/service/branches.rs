@@ -408,6 +408,11 @@ impl<N: NeonRead> PgService<N> {
                 shards: Vec::new(),
                 state: BranchState::Creating,
                 created_at_ms: now,
+                parent_time_ms: match req.point {
+                    BranchPoint::Time(at_ms) => Some(at_ms),
+                    _ => None,
+                },
+                updated_at_ms: now,
             };
             let operation = pending(
                 OperationKind::BranchCreate,
@@ -599,6 +604,7 @@ impl<N: NeonRead> PgService<N> {
             if let Some(p) = req.protected {
                 branch.protected = p;
             }
+            branch.updated_at_ms = self.now_ms();
             let branch_at = batch.put(&branch, Some(current.version))?;
             let project_rec = project.record;
             let mut mutation = Mutation::new(batch, move |out| {
@@ -689,6 +695,7 @@ impl<N: NeonRead> PgService<N> {
             }
             let mut branch = current.record;
             branch.state = BranchState::Deleting;
+            branch.updated_at_ms = self.now_ms();
             let operation = pending(
                 OperationKind::BranchDelete,
                 &req.namespace,
@@ -755,6 +762,7 @@ impl<N: NeonRead> PgService<N> {
             }
             let mut project = current.record;
             project.default_branch_id = Some(req.branch_id.clone());
+            project.updated_at_ms = self.now_ms();
             let mut batch = Batch::new();
             let project_at = batch.put(&project, Some(current.version))?;
             batch.check::<BranchRec>(&branch.record.key(), Some(branch.version))?;
