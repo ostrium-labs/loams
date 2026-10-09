@@ -1670,4 +1670,71 @@ mod admin {
             "no graph stays open"
         );
     }
+
+    /// An `ExecuteRequest` with one `Int64` parameter.
+    fn execute_with(
+        ns: &str,
+        graph: &str,
+        statement: &str,
+        name: &str,
+        n: i64,
+    ) -> pb::ExecuteRequest {
+        pb::ExecuteRequest {
+            parameters: super::params(&[(name, super::Kind::Int64(n))]),
+            ..execute(ns, graph, statement)
+        }
+    }
+
+    /// GR1 Task 5 fix round 2: schema DDL is refused before it reaches the engine. Grafeo's
+    /// `Session::execute` (the path of a statement without parameters) would run it with no
+    /// Loams authorisation and outside CDC; the parameterised path is refused the same way.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn schema_ddl_is_refused_with_and_without_parameters() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        admin
+            .create_graph(create("acme", "kg", "k"))
+            .await
+            .expect("create");
+        let ddl = [
+            "CREATE NODE TYPE T (id INT64)",
+            "CREATE PROCEDURE p(x INT64) RETURNS (y INT64) AS { RETURN $x AS y }",
+        ];
+        for statement in ddl {
+            for request in [
+                execute("acme", "kg", statement),
+                execute_with("acme", "kg", statement, "x", 1),
+            ] {
+                let bound = !request.parameters.is_empty();
+                let err = admin.execute(request).await.expect_err(statement);
+                assert_eq!(
+                    err.code,
+                    ErrorCode::FailedPrecondition,
+                    "{statement} ({bound}): {err:?}"
+                );
+                assert_eq!(
+                    reason(&err),
+                    "graph_statement_not_allowed",
+                    "{statement} ({bound})"
+                );
+                assert!(
+                    err.message
+                        .as_deref()
+                        .unwrap_or_default()
+                        .contains("Task 24"),
+                    "{err:?}"
+                );
+            }
+        }
+        // Nothing reached the engine's schema.
+        let schema = admin
+            .get_schema(pb::GetSchemaRequest {
+                namespace: "acme".to_string(),
+                name: "kg".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("schema");
+        assert!(schema.labels.is_empty(), "{schema:?}");
+    }
 }

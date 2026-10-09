@@ -612,11 +612,24 @@ impl Graph {
         }
     }
 
-    /// The access a statement needs, refusing it on a read-only request or graph.
+    /// The access a statement needs, refusing it on a read-only request or graph, and refusing
+    /// schema DDL outright.
+    ///
+    /// Schema DDL (`Access::Admin`: node, edge and graph types, indexes, constraints, schemas,
+    /// procedures) is not served until Task 24 (fix round 2). Grafeo's `Session::execute`, which
+    /// a statement without parameters takes for the engine's time limit, runs it directly, with
+    /// no Loams authorisation and outside CDC; the parameterised path is refused the same way so
+    /// the answer does not depend on the bindings.
     fn admit(&self, statement: &str, read_only: bool) -> Result<Access, GraphError> {
         #[cfg(feature = "failpoints")]
         fail::fail_point!("loams_graph::gate");
         let access = gate(statement, QueryLanguage::Gql)?;
+        if access == Access::Admin {
+            return Err(GraphError::StatementNotAllowed {
+                file_access: false,
+                what: "schema DDL is not served until Task 24".to_string(),
+            });
+        }
         if (read_only || self.read_only) && access != Access::Read {
             return Err(GraphError::ReadOnly);
         }
