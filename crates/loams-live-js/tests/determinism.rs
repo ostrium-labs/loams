@@ -35,7 +35,7 @@ export const state = {
 
 async fn module_state_does_not_leak_between_calls(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(STATE);
+    let bundle = load(STATE).await;
     let bump = function(&bundle, "state:bump");
     for _ in 0..6 {
         let q = query(&r, &bump, unit()).await.expect("bump");
@@ -93,7 +93,7 @@ export const crypto_ = {
 
 async fn crypto_random_throws_in_queries_and_mutations(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(CRYPTO);
+    let bundle = load(CRYPTO).await;
     let expected = "DeterminismError: crypto randomness is not available in queries and mutations; use an action";
     let q = query(&r, &function(&bundle, "crypto_:inQuery"), unit())
         .await
@@ -150,7 +150,7 @@ export const clock = {
 
 async fn date_now_is_start_ts(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(CLOCK);
+    let bundle = load(CLOCK).await;
     let at = r.store().now().await.expect("now");
     let ms = at.physical_ms() as f64;
     let got = r
@@ -215,7 +215,7 @@ fn draws(v: &LiveValue) -> Vec<f64> {
 
 async fn random_is_repeatable_for_same_ts_and_request(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(RANDOM);
+    let bundle = load(RANDOM).await;
     let draw = function(&bundle, "random:draw");
     let at = r.store().now().await.expect("now");
     let a1 = draws(&query_as(&r, &draw, unit(), at, "req-a").await.expect("a1"));
@@ -312,7 +312,7 @@ export const globals = {
 
 async fn no_fetch_no_timers(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(GLOBALS);
+    let bundle = load(GLOBALS).await;
     let absent = query(&r, &function(&bundle, "globals:absent"), unit())
         .await
         .expect("absent");
@@ -353,7 +353,7 @@ live_test!(no_fetch_no_timers);
 
 async fn globals_are_frozen_but_overridable_by_own_properties(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(GLOBALS);
+    let bundle = load(GLOBALS).await;
     let frozen = query(&r, &function(&bundle, "globals:frozen"), unit())
         .await
         .expect("frozen")
@@ -433,7 +433,7 @@ async fn leftover_jobs_never_run_in_the_next_call(store: TestStore) {
             contexts: 1,
             ..loams_live_js::JsConfig::default()
         },
-    );
+    ).await;
     let leave = function(&bundle, "floating:leave");
     let ok = function(&bundle, "floating:okMutation");
     for _ in 0..3 {
@@ -490,7 +490,7 @@ let settled = 0;
 Promise.resolve().then(() => { settled += 1; }).then(() => { settled += 1; });
 export const top = { settled: query(async () => settled) };
 "#;
-    let bundle = load(finite);
+    let bundle = load(finite).await;
     let store = TestStore::embedded(option_env!("CARGO_TARGET_TMPDIR")).await;
     let r = runner(&store).await;
     let got = query(&r, &function(&bundle, "top:settled"), unit())
@@ -507,7 +507,7 @@ export const top = {};
         contexts: 1,
         ..loams_live_js::JsConfig::default()
     };
-    match loams_live_js::Bundle::load(forever, config) {
+    match loams_live_js::Bundle::load(forever, config).await {
         Err(LiveError::FunctionTimeout { function, .. }) => assert_eq!(function, "<bundle>"),
         Err(e) => panic!("a timeout, not {e}"),
         Ok(_) => panic!("a bundle that never stops queueing jobs loads"),
@@ -588,7 +588,7 @@ async fn local_time_methods_are_utc() {
     }
     let store = TestStore::embedded(option_env!("CARGO_TARGET_TMPDIR")).await;
     let r = runner(&store).await;
-    let bundle = load(ZONES);
+    let bundle = load(ZONES).await;
     let got = query(&r, &function(&bundle, "zones:read"), unit())
         .await
         .expect("read")

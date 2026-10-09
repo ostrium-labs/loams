@@ -38,12 +38,12 @@ pub fn items(v: &LiveValue) -> Vec<LiveValue> {
     }
 }
 
-pub fn load(source: &str) -> Bundle {
-    load_with(source, JsConfig::default())
+pub async fn load(source: &str) -> Bundle {
+    load_with(source, JsConfig::default()).await
 }
 
-pub fn load_with(source: &str, config: JsConfig) -> Bundle {
-    match Bundle::load(source, config) {
+pub async fn load_with(source: &str, config: JsConfig) -> Bundle {
+    match Bundle::load(source, config).await {
         Ok(b) => b,
         Err(e) => panic!("the bundle loads: {e}"),
     }

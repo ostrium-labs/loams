@@ -250,6 +250,8 @@ Queries and mutations must return the same result from the same snapshot:
 - `Date.now()` returns the transaction's start timestamp in ms; `Math.random()` is a deterministic PRNG seeded from the start timestamp and the request id, and is documented as not suitable for secrets. **`crypto.getRandomValues()` and `crypto.randomUUID()` are never seeded**: in queries and mutations they throw (`DeterminismError: crypto randomness is not available in queries and mutations; use an action`), and in actions (R2) they draw from the OS CSPRNG. A deterministic value can then never be mistaken for a cryptographic one. Document ids are drawn by the host from the OS CSPRNG (§4.1), outside the function's view.
 - No timers, no `fetch`, no network, no filesystem.
 - Host calls (`db.get`, `db.query`, `db.insert`, `db.patch`, `db.replace`, `db.delete`) are the only I/O. Each read call adds to the read set.
+- Local time is UTC on every node: the local-time `Date` methods are their UTC twins and a date string without a zone is read as UTC (LV1 row T3-5).
+- **Known limit: `Math` uses the host's libm.** QuickJS computes `Math.sin`, `Math.exp`, `Math.pow` and the other transcendental functions with the C library of the platform it was built for, and ECMAScript lets their last bit vary. Nodes built for different platforms or C libraries could disagree in the last bit of such a result; nodes of one release on one platform agree. Arithmetic, `Math.sqrt`, rounding and the integer functions are exact everywhere.
 
 ### 6.3 The sandbox (D120, Q35)
 

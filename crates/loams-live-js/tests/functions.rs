@@ -46,9 +46,9 @@ fn id_of(v: &LiveValue) -> DocId {
     }
 }
 
-#[test]
-fn bundle_lists_its_functions() {
-    let bundle = load(MESSAGES);
+#[tokio::test]
+async fn bundle_lists_its_functions() {
+    let bundle = load(MESSAGES).await;
     let mut metas = bundle.functions();
     metas.sort_by(|a, b| a.path.cmp(&b.path));
     let listed: Vec<(&str, FnKind, Visibility)> = metas
@@ -74,7 +74,7 @@ fn bundle_lists_its_functions() {
 
 async fn query_and_mutation_run_and_record_read_sets(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(MESSAGES);
+    let bundle = load(MESSAGES).await;
     let send = function(&bundle, "messages:send");
     let m = mutate(
         &r,
@@ -206,7 +206,7 @@ async fn mutation_rerun_on_conflict_is_invisible_to_the_caller(store: TestStore)
     .expect("the counter is created");
     let id = id_of(&created.result);
 
-    let bundle = load(COUNTERS);
+    let bundle = load(COUNTERS).await;
     let f = Arc::new(Interfere {
         inner: function(&bundle, "counters:bump"),
         ran: Notify::new(),
@@ -249,9 +249,9 @@ async fn mutation_rerun_on_conflict_is_invisible_to_the_caller(store: TestStore)
 }
 live_test!(mutation_rerun_on_conflict_is_invisible_to_the_caller);
 
-#[test]
-fn unknown_function_is_not_found() {
-    let bundle = load(MESSAGES);
+#[tokio::test]
+async fn unknown_function_is_not_found() {
+    let bundle = load(MESSAGES).await;
     for path in [
         "messages:nope",
         "messages",
@@ -267,9 +267,9 @@ fn unknown_function_is_not_found() {
     }
 }
 
-#[test]
-fn bundle_load_refuses_bad_bundles() {
-    let bad = |source: &str| match Bundle::load(source, JsConfig::default()) {
+#[tokio::test]
+async fn bundle_load_refuses_bad_bundles() {
+    let bad = async |source: &str| match Bundle::load(source, JsConfig::default()).await {
         Ok(_) => panic!("the bundle loads: {source}"),
         Err(e) => e,
     };
@@ -297,7 +297,7 @@ fn bundle_load_refuses_bad_bundles() {
             "handler",
         ),
     ] {
-        let e = bad(source);
+        let e = bad(source).await;
         assert_eq!(
             e.code(),
             pb::ErrorCode::ERROR_CODE_INVALID_ARGUMENT,
@@ -307,7 +307,7 @@ fn bundle_load_refuses_bad_bundles() {
     }
     let huge = format!("// {}", "x".repeat(loams_live_js::MAX_BUNDLE_BYTES));
     assert!(matches!(
-        bad(&huge),
+        bad(&huge).await,
         LiveError::LimitExceeded {
             limit: "max_bundle_bytes",
             ..
@@ -318,7 +318,7 @@ fn bundle_load_refuses_bad_bundles() {
         .collect();
     let many = format!("import {{ query }} from 'loams:server'; export const m = {{ {many} }};");
     assert!(matches!(
-        bad(&many),
+        bad(&many).await,
         LiveError::LimitExceeded {
             limit: "max_exports",
             ..
@@ -355,7 +355,7 @@ export const errors = {
 
 async fn function_errors_map_to_live_errors(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(ERRORS);
+    let bundle = load(ERRORS).await;
     let run = |path: &'static str| {
         let (r, f) = (r.clone(), function(&bundle, path));
         async move { query(&r, &f, unit()).await }
@@ -421,7 +421,7 @@ export const values = {
 
 async fn values_round_trip_between_rust_and_javascript(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(VALUES);
+    let bundle = load(VALUES).await;
     let args = obj(&[
         ("i", LiveValue::I64(i64::MIN)),
         ("f", LiveValue::F64(-0.25)),
@@ -549,7 +549,7 @@ impl Function for FaultOnce {
 /// error, and the runner reruns the mutation from scratch.
 async fn storage_errors_in_host_calls_are_never_swallowed(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load(FAULTS);
+    let bundle = load(FAULTS).await;
     let insert = system::lookup(system::INSERT).expect("insert");
     let id = mutate(
         &r,
@@ -610,3 +610,44 @@ async fn storage_errors_in_host_calls_are_never_swallowed(store: TestStore) {
     assert_eq!(items(&again.result).len(), 2);
 }
 live_test!(storage_errors_in_host_calls_are_never_swallowed);
+
+const PATCHES: &str = r#"
+import { mutation } from "loams:server";
+
+export const patches = {
+  unset: mutation(async (ctx) => {
+    const id = await ctx.db.insert("notes", { title: "a", body: "b" });
+    let refused;
+    try {
+      await ctx.db.patch(id, { body: undefined });
+    } catch (e) {
+      refused = String(e);
+    }
+    await ctx.db.patch(id, { title: "c" });
+    const doc = await ctx.db.get(id);
+    return { refused, title: doc.title, body: doc.body };
+  }),
+};
+"#;
+
+/// Fix round 1 (minor): R1 cannot remove a field by patching (row T8-9),
+/// while Convex's `patch` removes a field set to `undefined`. Rather than
+/// silently keep the field, `ctx.db.patch` refuses an `undefined` field
+/// and names `replace`.
+async fn patch_with_an_undefined_field_is_refused(store: TestStore) {
+    let r = runner(&store).await;
+    let bundle = load(PATCHES).await;
+    let m = mutate(&r, &function(&bundle, "patches:unset"), unit())
+        .await
+        .expect("unset");
+    let LiveValue::Str(refused) = field(&m.result, "refused") else {
+        panic!("the patch is refused: {:?}", m.result)
+    };
+    assert!(
+        refused.starts_with("TypeError") && refused.contains("body") && refused.contains("replace"),
+        "{refused}"
+    );
+    assert_eq!(field(&m.result, "title"), s("c"));
+    assert_eq!(field(&m.result, "body"), s("b"));
+}
+live_test!(patch_with_an_undefined_field_is_refused);

@@ -1116,6 +1116,19 @@
     if (writable) {
       db.insert = async (table, doc) => call("insert", { table, fields: doc });
       db.patch = async (id, fields) => {
+        // R1 cannot remove a field by patching (row T8-9); Convex removes
+        // a field patched to `undefined`, so refuse it rather than keep the
+        // field silently.
+        if (fields !== null && typeof fields === "object") {
+          for (const key of keys(fields)) {
+            if (fields[key] === undefined) {
+              throw new TypeError(
+                `ctx.db.patch: field "${key}" is undefined; a patch cannot remove a field ` +
+                  "yet, use ctx.db.replace with the document without it",
+              );
+            }
+          }
+        }
         call("patch", { id, fields });
       };
       db.replace = async (id, doc) => {

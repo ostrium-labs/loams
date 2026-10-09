@@ -236,9 +236,9 @@ impl fmt::Debug for Bundle {
 
 impl Bundle {
     /// Validates `source` (size, evaluation within the limits, exports)
-    /// and starts its slots. Evaluation runs on a thread of its own, so the
-    /// caller blocks for at most about `config.cpu_limit`.
-    pub fn load(source: &str, config: JsConfig) -> Result<Self, LiveError> {
+    /// and starts its slots. Evaluation runs on a thread of its own, off
+    /// the async executor, for at most about `config.cpu_limit`.
+    pub async fn load(source: &str, config: JsConfig) -> Result<Self, LiveError> {
         if source.len() > MAX_BUNDLE_BYTES {
             return Err(LiveError::LimitExceeded {
                 limit: "max_bundle_bytes",
@@ -254,7 +254,7 @@ impl Bundle {
             ));
         }
         let source: Arc<str> = Arc::from(source);
-        let metas = validate(&source, &config)?;
+        let metas = validate(source.clone(), config.clone()).await?;
         if metas.len() > MAX_EXPORTS {
             return Err(LiveError::LimitExceeded {
                 limit: "max_exports",
@@ -287,22 +287,27 @@ impl Bundle {
 }
 
 /// Evaluates the bundle once on a scratch runtime and returns its
-/// functions.
-fn validate(source: &Arc<str>, config: &JsConfig) -> Result<Vec<FunctionMeta>, LiveError> {
-    std::thread::scope(|scope| {
-        let handle = std::thread::Builder::new()
-            .name("loams-js-load".into())
-            .stack_size(SLOT_STACK_BYTES)
-            .spawn_scoped(scope, || {
-                let engine = Engine::new(config)?;
-                let prepared = engine.prepare(source)?;
+/// functions. The evaluation runs on a thread of its own (the slots' stack
+/// size), and the caller awaits it without blocking its executor.
+async fn validate(source: Arc<str>, config: JsConfig) -> Result<Vec<FunctionMeta>, LiveError> {
+    let (done, result) = tokio::sync::oneshot::channel();
+    std::thread::Builder::new()
+        .name("loams-js-load".into())
+        .stack_size(SLOT_STACK_BYTES)
+        .spawn(move || {
+            let checked = catch_unwind(AssertUnwindSafe(|| {
+                let engine = Engine::new(&config)?;
+                let prepared = engine.prepare(&source)?;
                 Ok(prepared.metas.clone())
-            })
-            .map_err(|e| LiveError::Internal(format!("starting the bundle check: {e}")))?;
-        handle
-            .join()
-            .map_err(|_| LiveError::Internal("the bundle check panicked".into()))?
-    })
+            }))
+            .unwrap_or_else(|_| Err(LiveError::Internal("the bundle check panicked".into())));
+            // The caller may have stopped waiting.
+            let _ = done.send(checked);
+        })
+        .map_err(|e| LiveError::Internal(format!("starting the bundle check: {e}")))?;
+    result
+        .await
+        .map_err(|_| LiveError::Internal("the bundle check stopped".into()))?
 }
 
 /// A function of a bundle.
@@ -531,11 +536,37 @@ impl Pool {
     }
 }
 
+/// How long a slot waits before restarting after its `restarts`-th panic
+/// in a row: 10 ms, doubling, at most 5 s.
+fn restart_delay(restarts: u32) -> Duration {
+    let ms = 10u64.saturating_mul(1u64 << restarts.saturating_sub(1).min(16));
+    Duration::from_millis(ms.min(5_000))
+}
+
+/// A slot that panicked after this long counts as healthy again.
+const SLOT_HEALTHY_AFTER: Duration = Duration::from_secs(60);
+
 fn slot_main(source: &str, config: &JsConfig, queue: &Mutex<mpsc::Receiver<Job>>) {
+    let mut restarts = 0u32;
     loop {
+        let started = std::time::Instant::now();
         match catch_unwind(AssertUnwindSafe(|| slot_loop(source, config, queue))) {
             Ok(()) => return,
-            Err(_) => tracing::error!("a Loams Live JavaScript slot panicked; restarting it"),
+            Err(_) => {
+                restarts = if started.elapsed() > SLOT_HEALTHY_AFTER {
+                    1
+                } else {
+                    restarts.saturating_add(1)
+                };
+                let wait = restart_delay(restarts);
+                tracing::error!(
+                    restarts,
+                    ?wait,
+                    "a Loams Live JavaScript slot panicked; restarting it"
+                );
+                // A slot that panics at once must not spin.
+                std::thread::sleep(wait);
+            }
         }
     }
 }
@@ -1089,7 +1120,7 @@ fn host_call<'js>(
     }
     let refuse = |reply: &Object<'js>, e: LiveError| -> rquickjs::Result<()> {
         let mut errors = s.host_errors.borrow_mut();
-        reply.set("error", e.to_string())?;
+        reply.set("error", js_message(&e))?;
         reply.set("index", errors.len())?;
         errors.push(e);
         Ok(())
@@ -1154,6 +1185,19 @@ fn host_call<'js>(
         Some(Err(e)) => refuse(&reply, e)?,
     }
     Ok(reply)
+}
+
+/// The text of a host error as JavaScript sees it. An internal or
+/// corrupt-data error's detail (keys, paths, the store's own text) stays
+/// on the host: JavaScript gets the kind only, and the detail is logged.
+fn js_message(e: &LiveError) -> String {
+    match e {
+        LiveError::Internal(_) | LiveError::Corrupt(_) => {
+            tracing::warn!(error = %e, "a host call failed inside the store");
+            "internal error (the details are in the host's log)".to_string()
+        }
+        other => other.to_string(),
+    }
 }
 
 fn meta(row: Vec<String>) -> Result<FunctionMeta, LiveError> {
@@ -1427,6 +1471,29 @@ mod tests {
         assert_eq!(seed(1, "a"), seed(1, "a"));
         assert_ne!(seed(1, "a"), seed(2, "a"));
         assert_ne!(seed(1, "a"), seed(1, "b"));
+    }
+
+    #[test]
+    fn javascript_never_sees_internal_detail() {
+        for e in [
+            LiveError::Internal("key 0xdeadbeef in /var/lib/loams".into()),
+            LiveError::Corrupt("record 0xdeadbeef".into()),
+        ] {
+            let m = js_message(&e);
+            assert!(!m.contains("deadbeef"), "{m}");
+            assert!(m.starts_with("internal error"), "{m}");
+        }
+        let m = js_message(&LiveError::NotFound("table t".into()));
+        assert!(m.contains("table t"), "{m}");
+    }
+
+    #[test]
+    fn slot_restarts_back_off() {
+        assert_eq!(restart_delay(1), Duration::from_millis(10));
+        assert_eq!(restart_delay(2), Duration::from_millis(20));
+        assert_eq!(restart_delay(5), Duration::from_millis(160));
+        assert_eq!(restart_delay(20), Duration::from_secs(5));
+        assert_eq!(restart_delay(u32::MAX), Duration::from_secs(5));
     }
 
     #[test]

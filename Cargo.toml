@@ -123,7 +123,11 @@ redb = "4"
 # loader (for "loams:server"), ArrayBuffer and property definitions. The
 # runtime is driven synchronously on its own threads, so no `futures` or
 # `macro` (LV1 row T3-1).
-rquickjs = { version = "0.14.0", default-features = false, features = ["std", "loader", "array-buffer", "properties"] }
+rquickjs = { version = "=0.14.0", default-features = false, features = ["std", "loader", "array-buffer", "properties"] }
+# Held at 2.0.1 for rquickjs's loader (LV1 row T3-1): 2.0.2 was two days old
+# when rquickjs was added (14-day rule). loams-live-js names it only to pin it;
+# drop the pin after 2026-10-21.
+relative-path = "=2.0.1"
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 # Resonate, embedded by loams-durable (D1, D140): the fork ostrium-labs/resonate,

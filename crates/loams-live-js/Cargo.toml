@@ -19,6 +19,8 @@ loams-live-js-alloc.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
 rquickjs.workspace = true
+# Not used directly: pins rquickjs's loader dependency (LV1 row T3-1).
+relative-path.workspace = true
 # The seed of Math.random: SHA-256 of the start timestamp and the request id.
 sha2.workspace = true
 tokio.workspace = true

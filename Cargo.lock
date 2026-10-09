@@ -7618,6 +7618,7 @@ dependencies = [
  "loams-live-js-alloc",
  "rand 0.9.5",
  "rand_chacha 0.9.0",
+ "relative-path",
  "rquickjs",
  "sha2 0.11.0",
  "tokio",

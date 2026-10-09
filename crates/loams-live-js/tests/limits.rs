@@ -110,7 +110,7 @@ async fn expect_timeout(r: &loams_live::Runner, bundle: &Bundle, path: &str) {
 
 async fn busy_loop_times_out(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load_with(HOGS, config());
+    let bundle = load_with(HOGS, config()).await;
     for path in [
         "hogs:spin",
         "hogs:spinCaught",
@@ -131,7 +131,7 @@ live_test!(busy_loop_times_out);
 
 async fn allocation_bomb_hits_memory_limit(store: TestStore) {
     let r = runner(&store).await;
-    let bundle = load_with(HOGS, config());
+    let bundle = load_with(HOGS, config()).await;
     match query(&r, &function(&bundle, "hogs:bomb"), unit()).await {
         Err(e @ LiveError::FunctionOutOfMemory { .. }) => {
             assert_eq!(e.code(), pb::ErrorCode::ERROR_CODE_FUNCTION_OUT_OF_MEMORY);
@@ -178,7 +178,7 @@ live_test!(allocation_bomb_hits_memory_limit);
 async fn context_recovers_after_timeout(store: TestStore) {
     let r = runner(&store).await;
     // One context: every call runs on the same runtime.
-    let bundle = load_with(HOGS, config());
+    let bundle = load_with(HOGS, config()).await;
     let ok = function(&bundle, "hogs:ok");
     for hog in ["hogs:spin", "hogs:bomb", "hogs:recurse", "hogs:spin"] {
         let failed = query(&r, &function(&bundle, hog), unit()).await;
@@ -210,7 +210,7 @@ async fn console_output_truncated_at_limits(store: TestStore) {
             console_line_bytes: 8,
             ..config()
         },
-    );
+    ).await;
     let log = function(&bundle, "hogs:log");
     let q = query(&r, &log, obj(&[("lines", LiveValue::F64(10.0))]))
         .await
@@ -234,7 +234,7 @@ async fn console_output_truncated_at_limits(store: TestStore) {
     assert_eq!(logs[3].line, "line 0");
 
     // The defaults: 64 lines of 4 KiB.
-    let defaults = load(HOGS);
+    let defaults = load(HOGS).await;
     let q = query(
         &r,
         &function(&defaults, "hogs:log"),
@@ -251,16 +251,16 @@ async fn console_output_truncated_at_limits(store: TestStore) {
 }
 live_test!(console_output_truncated_at_limits);
 
-#[test]
-fn bundle_top_level_is_limited_too() {
+#[tokio::test]
+async fn bundle_top_level_is_limited_too() {
     let spin = "for (;;) {}";
-    match Bundle::load(spin, config()) {
+    match Bundle::load(spin, config()).await {
         Err(LiveError::FunctionTimeout { .. }) => {}
         Err(e) => panic!("a timeout, not {e}"),
         Ok(_) => panic!("a spinning bundle loads"),
     }
     let bomb = "const keep = []; for (let i = 0; ; i++) keep.push('x'.repeat(1 << 16) + i);";
-    match Bundle::load(bomb, config()) {
+    match Bundle::load(bomb, config()).await {
         Err(LiveError::FunctionOutOfMemory { .. }) => {}
         Err(e) => panic!("out of memory, not {e}"),
         Ok(_) => panic!("a bomb loads"),
@@ -409,7 +409,7 @@ async fn uninterruptible_array_methods_refuse_huge_arrays(store: TestStore) {
         "sparse:flatLengthenedLater",
     ] {
         // A bundle per case: a regression wedges its slot, not the others.
-        let bundle = load_with(SPARSE, config());
+        let bundle = load_with(SPARSE, config()).await;
         let started = Instant::now();
         let ran = tokio::time::timeout(
             Duration::from_secs(5),
@@ -429,7 +429,7 @@ async fn uninterruptible_array_methods_refuse_huge_arrays(store: TestStore) {
         }
         assert!(started.elapsed() < CPU, "{path}: refused at once");
     }
-    let bundle = load_with(SPARSE, config());
+    let bundle = load_with(SPARSE, config()).await;
     let dense = query(&r, &function(&bundle, "sparse:dense"), unit())
         .await
         .expect("dense arrays work")
@@ -532,7 +532,7 @@ async fn value_conversion_is_budgeted(store: TestStore) {
             cpu_limit: Duration::from_secs(10),
             ..config()
         },
-    );
+    ).await;
     let returned = function(&bundle, "values:returned");
     let inserted = function(&bundle, "values:inserted");
     let read = function(&bundle, "values:insertedByQuery");
