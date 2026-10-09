@@ -253,46 +253,49 @@ async fn auth_header_basic_and_params() {
     .await;
     assert_eq!(params.status, 200, "{}", params.text());
 
-    // The order is headers, then Basic, then parameters: the first source wins.
+    // A mix of sources is refused, as ClickHouse refuses it (Task 3 review M8;
+    // FL2 Task 2 had the first source win).
     let wrong_params = target(&[
         ("query", "SELECT 1"),
         ("user", "alice"),
-        ("password", "wrong"),
+        ("password", "secret"),
     ]);
-    let header_wins = call(
-        addr,
-        "GET",
-        wrong_params.clone(),
+    for headers in [
         vec![
-            ("X-ClickHouse-User", "alice".into()),
-            ("X-ClickHouse-Key", "secret".into()),
+            ("X-ClickHouse-User", "alice".to_string()),
+            ("X-ClickHouse-Key", "secret".to_string()),
         ],
-        Vec::new(),
-    )
-    .await;
-    assert_eq!(header_wins.status, 200, "{}", header_wins.text());
-    let basic_wins = call(
-        addr,
-        "GET",
-        wrong_params,
-        vec![("Authorization", BASIC_ALICE.into())],
-        Vec::new(),
-    )
-    .await;
-    assert_eq!(basic_wins.status, 200, "{}", basic_wins.text());
-    let basic_loses_to_header = call(
+        vec![("Authorization", BASIC_ALICE.to_string())],
+    ] {
+        let mixed = call(addr, "GET", wrong_params.clone(), headers, Vec::new()).await;
+        assert_eq!(
+            mixed.header("X-ClickHouse-Exception-Code"),
+            Some("516"),
+            "{}",
+            mixed.text()
+        );
+        assert!(
+            mixed.text().contains("Invalid authentication"),
+            "{}",
+            mixed.text()
+        );
+    }
+    let headers_and_basic = call(
         addr,
         "GET",
         select,
         vec![
             ("X-ClickHouse-User", "alice".into()),
             ("X-ClickHouse-Key", "secret".into()),
-            ("Authorization", BASIC_ALICE_WRONG.into()),
+            ("Authorization", BASIC_ALICE.into()),
         ],
         Vec::new(),
     )
     .await;
-    assert_eq!(basic_loses_to_header.status, 200);
+    assert_eq!(
+        headers_and_basic.header("X-ClickHouse-Exception-Code"),
+        Some("516")
+    );
 
     // No credentials at all is the `default` user.
     assert_eq!(get(addr, &[("query", "SELECT 1")]).await.status, 200);

@@ -1,11 +1,14 @@
 //! Who is asking (FL2 Task 2; HS1 Task 20 replaces the development users with
 //! Loams identities and the MT1 verifier).
 //!
-//! Credentials come from, **in this order**, the first that is present:
-//! `X-ClickHouse-User`/`X-ClickHouse-Key`, HTTP Basic, the `user`/`password`
-//! parameters; with none, the user is `default` with an empty password, as in
-//! ClickHouse. An unknown user and a wrong password are the same answer, `516
-//! AUTHENTICATION_FAILED`, with ClickHouse's own words, so neither leaks which.
+//! Credentials come from exactly one of: `X-ClickHouse-User`/`X-ClickHouse-Key`,
+//! HTTP Basic, or the `user`/`password` parameters. A request that mixes them is
+//! refused with `516`, as ClickHouse refuses it (Task 3 review M8; this replaces
+//! FL2 Task 2's "first one wins"). With none, the user is `default` with an empty
+//! password. An empty `X-ClickHouse-User` counts as absent. An unknown user and a
+//! wrong password are the same answer, `516 AUTHENTICATION_FAILED`, with ClickHouse's
+//! own words and the same work (a digest is compared either way), so neither the
+//! text nor the timing says which.
 
 use std::fmt;
 
@@ -68,21 +71,37 @@ fn param<'a>(params: &'a [(String, String)], name: &str) -> Option<&'a str> {
         .map(|(_, v)| v.as_str())
 }
 
-/// The request's credentials, from the first source that has them.
+/// The request's credentials, from the one source that has them.
 pub fn credentials(
     headers: &[(String, String)],
     params: &[(String, String)],
 ) -> Result<Credentials, HouseError> {
-    if let Some(user) = header(headers, "X-ClickHouse-User") {
+    let header_user = header(headers, "X-ClickHouse-User").filter(|u| !u.is_empty());
+    let header_key = header(headers, "X-ClickHouse-Key");
+    let by_headers = header_user.is_some() || header_key.is_some();
+    let basic = header(headers, "Authorization");
+    let by_params = param(params, "user").is_some() || param(params, "password").is_some();
+
+    if by_headers && (basic.is_some() || by_params) {
+        return Err(invalid(
+            "it is not allowed to use X-ClickHouse HTTP headers and other authentication \
+             methods simultaneously",
+        ));
+    }
+    if basic.is_some() && by_params {
+        return Err(invalid(
+            "it is not allowed to use Authorization HTTP header and authentication via \
+             parameters simultaneously",
+        ));
+    }
+    if by_headers {
         return Ok(Credentials {
-            user: user.to_string(),
-            password: header(headers, "X-ClickHouse-Key")
-                .unwrap_or("")
-                .to_string(),
+            user: header_user.unwrap_or("default").to_string(),
+            password: header_key.unwrap_or("").to_string(),
             source: Source::Headers,
         });
     }
-    if let Some(auth) = header(headers, "Authorization") {
+    if let Some(auth) = basic {
         let encoded = auth
             .strip_prefix("Basic ")
             .or_else(|| auth.strip_prefix("basic "))
@@ -94,14 +113,17 @@ pub fn credentials(
             .ok_or_else(|| failed("", "the Basic credentials are not base64 text"))?;
         let (user, password) = decoded.split_once(':').unwrap_or((decoded.as_str(), ""));
         return Ok(Credentials {
-            user: user.to_string(),
+            user: if user.is_empty() { "default" } else { user }.to_string(),
             password: password.to_string(),
             source: Source::Basic,
         });
     }
-    if let Some(user) = param(params, "user") {
+    if by_params {
         return Ok(Credentials {
-            user: user.to_string(),
+            user: param(params, "user")
+                .filter(|u| !u.is_empty())
+                .unwrap_or("default")
+                .to_string(),
             password: param(params, "password").unwrap_or("").to_string(),
             source: Source::Params,
         });
@@ -118,15 +140,23 @@ pub fn authenticate<'a>(
     users: &'a [UserMap],
     credentials: &Credentials,
 ) -> Result<&'a UserMap, HouseError> {
-    users
-        .iter()
-        .find(|u| u.user == credentials.user && u.verifies(credentials.password()))
-        .ok_or_else(|| {
-            failed(
-                &credentials.user,
-                "password is incorrect, or there is no user with such name",
-            )
-        })
+    let found = users.iter().find(|u| u.user == credentials.user);
+    // An unknown user is compared against a dummy, so it costs what a known one does.
+    let dummy = UserMap::dev("", "\u{0}loams-no-such-user", 0, true);
+    let verified = found.unwrap_or(&dummy).verifies(credentials.password());
+    found.filter(|_| verified).ok_or_else(|| {
+        failed(
+            &credentials.user,
+            "password is incorrect, or there is no user with such name",
+        )
+    })
+}
+
+/// ClickHouse's `516` for mixed credential sources.
+fn invalid(why: &str) -> HouseError {
+    HouseError::from(ChError::authentication_failed(format!(
+        "Invalid authentication: {why}"
+    )))
 }
 
 /// ClickHouse's `516` text: `<user>: Authentication failed: <why>.`
@@ -147,34 +177,61 @@ mod tests {
     }
 
     #[test]
-    fn first_source_wins() {
-        let headers = pairs(&[
-            ("x-clickhouse-user", "h"),
-            ("X-ClickHouse-Key", "hk"),
-            ("Authorization", "Basic Yjpiaw=="),
-        ]);
-        let params = pairs(&[("user", "p"), ("password", "pk")]);
-        let c = credentials(&headers, &params).expect("credentials");
+    fn each_source_alone() {
+        let c = credentials(
+            &pairs(&[("x-clickhouse-user", "h"), ("X-ClickHouse-Key", "hk")]),
+            &[],
+        )
+        .expect("headers");
         assert_eq!(
             (c.user.as_str(), c.password(), c.source),
             ("h", "hk", Source::Headers)
         );
-        let c = credentials(&headers[2..], &params).expect("credentials");
+        let c = credentials(&pairs(&[("Authorization", "Basic Yjpiaw==")]), &[]).expect("basic");
         assert_eq!(
             (c.user.as_str(), c.password(), c.source),
             ("b", "bk", Source::Basic)
         );
-        let c = credentials(&[], &params).expect("credentials");
+        let c = credentials(&[], &pairs(&[("user", "p"), ("password", "pk")])).expect("params");
         assert_eq!(
             (c.user.as_str(), c.password(), c.source),
             ("p", "pk", Source::Params)
         );
-        let c = credentials(&[], &[]).expect("credentials");
+        let c = credentials(&[], &[]).expect("none");
         assert_eq!(
             (c.user.as_str(), c.password(), c.source),
             ("default", "", Source::Default)
         );
         assert!(!format!("{c:?}").contains("pk"));
+        // An empty X-ClickHouse-User is absent: Basic alone is then fine.
+        let c = credentials(
+            &pairs(&[
+                ("X-ClickHouse-User", ""),
+                ("Authorization", "Basic Yjpiaw=="),
+            ]),
+            &[],
+        )
+        .expect("empty header user is absent");
+        assert_eq!(c.source, Source::Basic);
+    }
+
+    #[test]
+    fn mixed_sources_are_516() {
+        let headers = pairs(&[("X-ClickHouse-User", "h")]);
+        let basic = pairs(&[("Authorization", "Basic Yjpiaw==")]);
+        let both = pairs(&[
+            ("X-ClickHouse-Key", "k"),
+            ("Authorization", "Basic Yjpiaw=="),
+        ]);
+        let params = pairs(&[("user", "p")]);
+        for (h, p) in [(&headers, &params), (&basic, &params), (&both, &Vec::new())] {
+            let err = credentials(h, p).expect_err("mixed");
+            assert_eq!(err.code(), 516);
+            assert!(
+                err.message().starts_with("Invalid authentication:"),
+                "{err}"
+            );
+        }
     }
 
     #[test]
