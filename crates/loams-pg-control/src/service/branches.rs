@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use super::operations::{OperationKind, OperationRec, pending};
 use super::projects::check_version;
 use super::{
-    Applied, Begin, Caller, Mutation, NeonApi, PgService, Reason, ServiceError, list_error, page,
+    Applied, Begin, Caller, Mutation, NeonRead, PgService, Reason, ServiceError, list_error, page,
     seconds,
 };
 use crate::ids::{BranchId, timeline_id};
@@ -31,7 +31,7 @@ use crate::model::{
     BranchRec, BranchState, ProjectKey, ProjectRec, ProjectState, Record,
 };
 use crate::names::validate_name;
-use crate::neon::{Lsn, LsnAtTime, TimelineView, WalHeads};
+use crate::neon::{Lsn, LsnAtTime, TenantId, TimelineId, TimelineView, WalHeads};
 use crate::store::{Batch, MAX_PAGE_SIZE, Page, PgControlStore, Versioned};
 
 /// Where in its parent's history a branch starts.
@@ -158,7 +158,7 @@ fn view(branch: Versioned<BranchRec>, project: &ProjectRec) -> BranchView {
     }
 }
 
-impl<N: NeonApi> PgService<N> {
+impl<N: NeonRead> PgService<N> {
     /// The branch `branch_id` of `project_id`.
     async fn branch(
         &self,
@@ -228,7 +228,7 @@ impl<N: NeonApi> PgService<N> {
             )));
         }
         self.neon
-            .timeline(project.tenant_id, parent.timeline_id)
+            .timeline(TenantId(project.tenant_id), TimelineId(parent.timeline_id))
             .await
             .map_err(|e| ServiceError::neon(&e))
     }
@@ -262,7 +262,11 @@ impl<N: NeonApi> PgService<N> {
                 }
                 let at = self
                     .neon
-                    .lsn_by_timestamp(project.tenant_id, parent.timeline_id, *at_ms)
+                    .lsn_by_timestamp(
+                        TenantId(project.tenant_id),
+                        TimelineId(parent.timeline_id),
+                        *at_ms,
+                    )
                     .await
                     .map_err(|e| ServiceError::neon(&e))?;
                 match at {
@@ -440,7 +444,10 @@ impl<N: NeonApi> PgService<N> {
         let branch = self.branch(project_id, branch_id, "branch_id").await?;
         let mut out = view(branch, &project.record);
         if out.branch.record.state == BranchState::Ready {
-            let (t, tl) = (project.record.tenant_id, out.branch.record.timeline_id);
+            let (t, tl) = (
+                TenantId(project.record.tenant_id),
+                TimelineId(out.branch.record.timeline_id),
+            );
             match self.neon.wal_heads(t, tl).await {
                 Ok(heads) => out.wal = Some(heads),
                 Err(e) => tracing::warn!(branch = branch_id, error = %e, "no WAL heads"),

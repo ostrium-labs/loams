@@ -6,7 +6,7 @@
 //! ids ([`ids`]), and names and PgDog's routed-name grammar ([`names`])
 //! (Task 4); the project and branch RPCs ([`service`]) with their
 //! operations and idempotency ledger, and the seam to Neon's components
-//! they read through ([`neon::NeonApi`]) (Task 5). Reached only through `loams`'s
+//! they read through ([`neon::NeonRead`]) (Task 5). Reached only through `loams`'s
 //! feature `postgres` (Task 9).
 
 pub mod ids;

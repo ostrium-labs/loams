@@ -6,7 +6,7 @@
 //! delete marks the record `deleting` with one; the project's reconciler
 //! (Task 7) does the Neon calls under its lease and moves both on. The
 //! service holds the store's [`ApiWriter`], the only unfenced writer (R3.10),
-//! and reads Neon's components through [`NeonApi`] only to resolve a branch
+//! and reads Neon's components through [`NeonRead`] only to resolve a branch
 //! point and to report WAL heads.
 //!
 //! **One transaction per mutation.** Every mutation's records, its operation
@@ -42,7 +42,7 @@ use serde::de::DeserializeOwned;
 
 pub use idempotency::{IdempotencyLedger, LEDGER_TTL};
 
-use crate::neon::NeonApi;
+use crate::neon::NeonRead;
 use crate::store::{
     ApiWriter, Batch, BatchError, DEFAULT_PAGE_SIZE, KvControlStore, Page, StoreError,
 };
@@ -160,7 +160,9 @@ pub enum Reason {
     NotFound,
     AlreadyExists,
     PermissionDenied,
+    Unauthenticated,
     FailedPrecondition,
+    ResourceExhausted,
     Aborted,
     Unavailable,
     Internal,
@@ -179,7 +181,9 @@ impl Reason {
             Reason::NotFound => "not_found",
             Reason::AlreadyExists => "already_exists",
             Reason::PermissionDenied => "permission_denied",
+            Reason::Unauthenticated => "unauthenticated",
             Reason::FailedPrecondition => "failed_precondition",
+            Reason::ResourceExhausted => "resource_exhausted",
             Reason::Aborted => "aborted",
             Reason::Unavailable => "unavailable",
             Reason::Internal => "internal",
@@ -198,21 +202,35 @@ impl Reason {
             Reason::InvalidArgument => "invalid_argument",
             Reason::AlreadyExists => "already_exists",
             Reason::PermissionDenied => "permission_denied",
+            Reason::Unauthenticated => "unauthenticated",
+            Reason::ResourceExhausted => "resource_exhausted",
             Reason::Aborted => "aborted",
             Reason::Internal => "internal",
         }
     }
 
-    /// The reason a Neon component's error was mapped to, or `internal`.
-    fn from_neon(reason: &str) -> Reason {
-        match reason {
-            "storage_unavailable" => Reason::StorageUnavailable,
-            "not_found" => Reason::NotFound,
-            "invalid_argument" => Reason::InvalidArgument,
-            "failed_precondition" => Reason::FailedPrecondition,
-            "unavailable" => Reason::Unavailable,
-            _ => Reason::Internal,
-        }
+    /// The reason registered as `name`, or `internal` for a name this
+    /// service does not raise.
+    pub fn from_name(name: &str) -> Reason {
+        [
+            Reason::ProjectNotFound,
+            Reason::BranchHasChildren,
+            Reason::BranchProtected,
+            Reason::LsnOutOfRetention,
+            Reason::StorageUnavailable,
+            Reason::InvalidArgument,
+            Reason::NotFound,
+            Reason::AlreadyExists,
+            Reason::PermissionDenied,
+            Reason::Unauthenticated,
+            Reason::FailedPrecondition,
+            Reason::ResourceExhausted,
+            Reason::Aborted,
+            Reason::Unavailable,
+        ]
+        .into_iter()
+        .find(|r| r.as_str() == name)
+        .unwrap_or(Reason::Internal)
     }
 }
 
@@ -267,10 +285,9 @@ impl ServiceError {
     }
 
     fn neon(e: &crate::neon::NeonApiError) -> Self {
-        tracing::warn!(reason = %e.reason, component = ?e.component, error = %e.message, "a Neon component refused");
-        let reason = Reason::from_neon(&e.reason);
-        let out = ServiceError::new(reason, format!("storage answered {}", e.reason));
-        match (&e.component, reason) {
+        tracing::warn!(reason = e.reason.as_str(), component = ?e.component, error = %e.message, "a Neon component refused");
+        let out = ServiceError::new(e.reason, format!("storage answered {}", e.reason.as_str()));
+        match (e.component, e.reason) {
             (Some(c), Reason::StorageUnavailable) => out.with("component", c.as_str()),
             _ => out,
         }
@@ -347,7 +364,7 @@ pub struct PgService<N> {
     config: ServiceConfig,
 }
 
-impl<N: NeonApi> PgService<N> {
+impl<N: NeonRead> PgService<N> {
     pub fn new(store: KvControlStore, neon: N, config: ServiceConfig) -> Self {
         PgService {
             writer: store.api_writer(),

@@ -9,7 +9,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use loams_pg_control::model::{BranchKey, BranchRec, BranchState};
-use loams_pg_control::neon::{LsnAtTime, NeonApi, NeonApiError, TimelineView, WalHeads};
+use loams_pg_control::neon::{
+    Component, LsnAtTime, NeonApiError, NeonRead, TenantId, TimelineId, TimelineView, WalHeads,
+};
+use loams_pg_control::service::Reason;
 use loams_pg_control::service::{BeforeCommit, Caller, Clock, PgService, ServiceConfig};
 use loams_pg_control::{KvControlStore, PgControlStore, StoreOptions};
 
@@ -56,48 +59,48 @@ impl FakeNeon {
 
 fn missing(what: &str) -> NeonApiError {
     NeonApiError {
-        reason: "not_found".into(),
-        component: Some("pageserver".into()),
+        reason: Reason::NotFound,
+        component: Some(Component::Pageserver),
         message: format!("no {what}"),
     }
 }
 
-impl NeonApi for FakeNeon {
-    async fn timeline(&self, t: [u8; 16], tl: [u8; 16]) -> Result<TimelineView, NeonApiError> {
+impl NeonRead for FakeNeon {
+    async fn timeline(&self, t: TenantId, tl: TimelineId) -> Result<TimelineView, NeonApiError> {
         let mut inner = self.lock();
         inner.calls.push("timeline".into());
         inner
             .timelines
-            .get(&(t, tl))
+            .get(&(t.0, tl.0))
             .cloned()
             .ok_or_else(|| missing("timeline"))
     }
 
     async fn lsn_by_timestamp(
         &self,
-        t: [u8; 16],
-        tl: [u8; 16],
+        t: TenantId,
+        tl: TimelineId,
         at_ms: u64,
     ) -> Result<LsnAtTime, NeonApiError> {
         let mut inner = self.lock();
         inner.calls.push(format!("lsn_by_timestamp {at_ms}"));
         inner
             .by_time
-            .get(&(t, tl))
+            .get(&(t.0, tl.0))
             .cloned()
             .ok_or_else(|| missing("timeline"))
     }
 
-    async fn wal_heads(&self, t: [u8; 16], tl: [u8; 16]) -> Result<WalHeads, NeonApiError> {
+    async fn wal_heads(&self, t: TenantId, tl: TimelineId) -> Result<WalHeads, NeonApiError> {
         let mut inner = self.lock();
         inner.calls.push("wal_heads".into());
         inner
             .wal
-            .get(&(t, tl))
+            .get(&(t.0, tl.0))
             .cloned()
             .ok_or_else(|| NeonApiError {
-                reason: "storage_unavailable".into(),
-                component: Some("loams_wal".into()),
+                reason: Reason::StorageUnavailable,
+                component: Some(Component::Wal),
                 message: "no such timeline".into(),
             })
     }

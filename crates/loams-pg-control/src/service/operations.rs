@@ -11,7 +11,7 @@ use ulid::Ulid;
 
 pub use crate::model::{OperationError, OperationKind, OperationRec, OperationState};
 
-use super::{NeonApi, PgService, ServiceError, check_namespace};
+use super::{NeonRead, PgService, ServiceError, check_namespace};
 use crate::model::OperationKey;
 use crate::store::PgControlStore;
 
@@ -43,7 +43,7 @@ pub(crate) fn pending(
     }
 }
 
-impl<N: NeonApi> PgService<N> {
+impl<N: NeonRead> PgService<N> {
     /// An operation of a project in `namespace`.
     ///
     /// # Errors

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use super::operations::{OperationKind, OperationRec, pending};
 use super::{
-    Applied, Begin, Caller, Mutation, NeonApi, PgService, Reason, ServiceError, check_namespace,
+    Applied, Begin, Caller, Mutation, NeonRead, PgService, Reason, ServiceError, check_namespace,
     list_error, page,
 };
 use crate::ids::{BranchId, ProjectId, tenant_id, timeline_id};
@@ -81,7 +81,7 @@ pub(crate) fn check_version(expected: Option<u64>, current: u64) -> Result<(), S
     }
 }
 
-impl<N: NeonApi> PgService<N> {
+impl<N: NeonRead> PgService<N> {
     /// The project `project_id` of `namespace`.
     pub(crate) async fn project(
         &self,

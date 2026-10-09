@@ -21,10 +21,14 @@ faults = ["loams-kv/faults"]
 futures.workspace = true
 hex.workspace = true
 loams-kv.workspace = true
+# The clients NeonClients adapts (src/neon.rs); loams-postgres never
+# depends on this crate.
+loams-postgres.workspace = true
 postcard.workspace = true
 serde.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+time.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 ulid.workspace = true
@@ -33,6 +37,9 @@ ulid.workspace = true
 # The conformance suite injects faults (feature `faults`).
 loams-pg-control = { path = ".", features = ["faults"] }
 proptest.workspace = true
+# The stand-in Neon components of tests/neon_clients.rs.
+axum.workspace = true
+url.workspace = true
 
 [[test]]
 name = "store_tikv"

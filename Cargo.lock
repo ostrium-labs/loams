@@ -7644,18 +7644,22 @@ dependencies = [
 name = "loams-pg-control"
 version = "0.0.1"
 dependencies = [
+ "axum 0.8.9",
  "futures",
  "hex",
  "loams-kv",
  "loams-pg-control",
+ "loams-postgres",
  "postcard",
  "proptest",
  "serde",
  "sha2 0.11.0",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tracing",
  "ulid 3.0.0",
+ "url",
 ]
 
 [[package]]

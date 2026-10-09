@@ -145,11 +145,16 @@ pub struct TimelineInfo {
 }
 
 /// The LSN for a time (`get_lsn_by_timestamp`): `kind` is "present",
-/// "future", "past" or "nodata".
+/// "future", "past" or "nodata". With `with_lease`, `valid_until` is when
+/// the pageserver's lease on `lsn` ends (RFC 3339, ms), when it granted one
+/// (`pageserver/src/http/routes.rs`, `get_lsn_by_timestamp_handler`, the
+/// flattened `LsnLease`).
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct LsnByTimestamp {
     pub lsn: Lsn,
     pub kind: String,
+    #[serde(default)]
+    pub valid_until: Option<String>,
 }
 
 /// `LocationConfig` for an attached tenant.
@@ -265,12 +270,15 @@ impl NeonClient {
     }
 
     /// `GET .../get_lsn_by_timestamp?timestamp=<RFC 3339>`: the LSN of a
-    /// time, for branching or restoring at a time.
+    /// time, for branching or restoring at a time. With `with_lease`, the
+    /// pageserver also leases the LSN (`&with_lease=true`), so GC keeps it
+    /// until the branch is created.
     pub async fn lsn_by_timestamp(
         &self,
         t: TenantId,
         tl: TimelineId,
         at: time::OffsetDateTime,
+        with_lease: bool,
     ) -> Result<LsnByTimestamp, NeonError> {
         let op = Op::LsnByTimestamp;
         let ts = at
@@ -287,6 +295,11 @@ impl NeonClient {
             .http
             .request(Method::GET, &path, DEFAULT_TIMEOUT)
             .query(&[("timestamp", ts)]);
+        let req = if with_lease {
+            req.query(&[("with_lease", "true")])
+        } else {
+            req
+        };
         self.http.send(op, req).await
     }
 

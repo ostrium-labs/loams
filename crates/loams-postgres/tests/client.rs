@@ -258,7 +258,7 @@ async fn timeline_info_parses_fixture() {
 
     fake.answer(200, &fixture("lsn_by_timestamp.response.json"));
     let at = time::OffsetDateTime::from_unix_timestamp(1_791_513_706).unwrap();
-    let found = client.lsn_by_timestamp(t(), tl(), at).await.unwrap();
+    let found = client.lsn_by_timestamp(t(), tl(), at, false).await.unwrap();
     assert_eq!(
         fake.last().path_and_query,
         format!(
@@ -267,6 +267,28 @@ async fn timeline_info_parses_fixture() {
     );
     assert_eq!(found.lsn, "0/14E8F20".parse().unwrap());
     assert_eq!(found.kind, "nodata");
+    assert_eq!(found.valid_until, None);
+
+    // With a lease. The body is a stand-in from the fork's handler
+    // (`get_lsn_by_timestamp_handler`: `LsnLease` flattened, `valid_until`
+    // in RFC 3339 ms); `deploy/loams-postgres-dev` has not been captured
+    // with a lease yet.
+    fake.answer(
+        200,
+        r#"{"lsn":"0/169AD58","kind":"present","valid_until":"2026-10-09T03:41:46.000Z"}"#,
+    );
+    let leased = client.lsn_by_timestamp(t(), tl(), at, true).await.unwrap();
+    assert_eq!(
+        fake.last().path_and_query,
+        format!(
+            "/v1/tenant/{T}/timeline/{TL}/get_lsn_by_timestamp?timestamp=2026-10-09T02%3A41%3A46Z&with_lease=true"
+        )
+    );
+    assert_eq!(leased.kind, "present");
+    assert_eq!(
+        leased.valid_until.as_deref(),
+        Some("2026-10-09T03:41:46.000Z")
+    );
 
     fake.answer(202, &fixture("delete_branch.response.json"));
     client.delete_timeline(t(), br()).await.unwrap();
