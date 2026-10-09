@@ -1256,3 +1256,122 @@ async fn a_set_inside_the_statement_survives_its_url_setting() {
     assert_ne!(after.bytes, b"1234\n");
     pool.release(lease, Outcome::Completed);
 }
+
+/// Task 4: the worker classifies with ClickHouse's parser on request.
+#[test]
+fn worker_answers_classify() {
+    let launcher = ProcessLauncher::new(common::WORKER, tmp_root("classify"));
+    let launched = launcher.launch("classify").expect("launch");
+    let mut socket = launched.socket;
+    let ready = match FrameCodec::read(&mut socket).expect("frame") {
+        Some(Frame::Ready(ready)) => ready,
+        other => panic!("{other:?}"),
+    };
+    assert!(
+        ready.settings.iter().any(|s| s == "max_threads"),
+        "Ready lists the settings"
+    );
+    assert!(ready.settings.len() > 500, "{}", ready.settings.len());
+    FrameCodec::write(&mut socket, &bind("ns")).expect("Bind");
+    assert_eq!(
+        FrameCodec::read(&mut socket).expect("frame"),
+        Some(Frame::Done)
+    );
+    for (sql, class) in [
+        ("SELECT 1", loams_house_ipc::QueryClass::ReadOnly),
+        (
+            "SYSTEM DROP DNS CACHE",
+            loams_house_ipc::QueryClass::Control,
+        ),
+        ("SELEC 1", loams_house_ipc::QueryClass::Unknown),
+    ] {
+        FrameCodec::write(&mut socket, &Frame::Classify(sql.to_string())).expect("Classify");
+        match FrameCodec::read(&mut socket).expect("frame") {
+            Some(Frame::Classified(c)) => assert_eq!(c.class, class, "{sql}"),
+            other => panic!("{sql}: {other:?}"),
+        }
+    }
+    launched.control.terminate();
+}
+
+/// Task 4 (N9's untested paths): a URL setting on a session with a temporary table
+/// is put back without retiring the session (even `max_threads`, whose shown value
+/// is `'auto(N)'`); a restore that fails retires it; idle sessions go on a timer.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn session_restore_retire_and_timer() {
+    let pool = pool("restore-retire", small(1)).await;
+    let mut lease = pool.acquire("ns").await.expect("worker");
+    let create = |key: &str, timeout_ms| {
+        in_session(
+            "CREATE TEMPORARY TABLE t (n UInt8) ENGINE = Memory",
+            key,
+            timeout_ms,
+            false,
+        )
+    };
+    let count = |key: &str| in_session("SELECT count() FROM t", key, 60_000, false);
+
+    lease.run(create("keep", 60_000)).await.expect("create");
+    for (name, value) in [
+        ("max_threads", "3"),
+        ("max_block_size", "100"),
+        ("session_timezone", "Asia/Tokyo"),
+    ] {
+        let mut with = in_session("SELECT 1", "keep", 60_000, false);
+        with.settings = vec![(name.to_string(), value.to_string())];
+        lease
+            .run(with)
+            .await
+            .unwrap_or_else(|err| panic!("{name}: {err}"));
+        assert_eq!(
+            lease
+                .run(count("keep"))
+                .await
+                .unwrap_or_else(|err| panic!("{name}: the session was retired: {err}"))
+                .bytes,
+            b"0\n",
+            "{name}"
+        );
+    }
+    let threads = lease
+        .run(in_session(
+            "SELECT getSetting('max_threads')",
+            "keep",
+            60_000,
+            false,
+        ))
+        .await
+        .expect("read");
+    assert_ne!(threads.bytes, b"3\n", "put back");
+
+    // A restore that fails retires the session (forced with the test-only key).
+    let doomed = format!("{}x", loams_house_ipc::TEST_FAIL_RESTORE);
+    lease.run(create(&doomed, 60_000)).await.expect("create");
+    let mut with = in_session("SELECT 1", &doomed, 60_000, false);
+    with.settings = vec![("max_block_size".to_string(), "100".to_string())];
+    lease.run(with).await.expect("runs");
+    assert_eq!(
+        lease.run(count(&doomed)).await.expect_err("retired").code(),
+        60
+    );
+
+    // Idle sessions expire on the worker's timer: a statement outside any session
+    // (which sweeps nothing itself) sees the count drop.
+    lease.run(create("idle", 200)).await.expect("create");
+    let before = lease
+        .run(statement("SELECT 1", "TSV"))
+        .await
+        .expect("runs")
+        .stats
+        .sessions;
+    assert!(before >= 2, "{before}");
+    tokio::time::sleep(Duration::from_millis(1_600)).await;
+    let after = lease
+        .run(statement("SELECT 1", "TSV"))
+        .await
+        .expect("runs")
+        .stats
+        .sessions;
+    assert_eq!(after, before - 1, "the idle session went on the timer");
+    pool.release(lease, Outcome::Completed);
+}

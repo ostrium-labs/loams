@@ -30,8 +30,8 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use loams_chdb::{ChdbError, Engine, EngineConfig, Session, SessionId, Settings};
 use loams_house_ipc::{
-    Bind, CHUNK_BYTES, Chunk, CodecError, EngineError, Execute, Frame, FrameCodec,
-    PROTOCOL_VERSION, Progress, Ready,
+    Bind, CHUNK_BYTES, Chunk, Classification, CodecError, EngineError, Execute, Frame, FrameCodec,
+    PROTOCOL_VERSION, Progress, QueryClass, Ready,
 };
 
 use crate::config::{self, WorkerArgs};
@@ -156,12 +156,22 @@ impl Worker {
             .session(SessionId::new("control"), &Settings::new())
             .map_err(|err| engine_error(&err))?;
         replace_default_database(&control).map_err(|err| engine_error(&err))?;
+        let settings = control
+            .query("SELECT name FROM system.settings", "TSVRaw", &[])
+            .map(|bytes| {
+                String::from_utf8_lossy(&bytes)
+                    .lines()
+                    .map(str::to_string)
+                    .collect()
+            })
+            .map_err(|err| engine_error(&err))?;
         let ready = Ready {
             protocol: PROTOCOL_VERSION,
             pid: std::process::id(),
             chdb_version: engine.chdb_version().to_string(),
             clickhouse_version: engine.version().to_string(),
             boot_ms: u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX),
+            settings,
         };
         Ok(Self {
             engine,
@@ -201,6 +211,7 @@ impl Worker {
             };
             let answer = match frame {
                 Frame::Bind(bind) => self.bind(bind),
+                Frame::Classify(sql) => self.classify(&sql),
                 Frame::Execute(execute) => match self.execute(execute, &frames, &mut writer) {
                     Ok(answer) => answer,
                     Err(end) => return end,
@@ -263,7 +274,10 @@ impl Worker {
             drain_input(frames)?;
         }
         Ok(match result {
-            Ok(stats) => vec![Frame::Stats(stats), Frame::Done],
+            Ok(mut stats) => {
+                stats.sessions = u32::try_from(self.sessions.len()).unwrap_or(u32::MAX);
+                vec![Frame::Stats(stats), Frame::Done]
+            }
             Err(Failure::Engine(err)) => {
                 // Only chDB's fatal-signal path leaves no worker to trust. Code 0
                 // is a Loams-side refusal — SQL holding a NUL byte, an unknown
@@ -361,7 +375,9 @@ impl Worker {
         };
         let after = snapshot(&slot.session, &names);
         let restored = match (&before, &applied, &after) {
-            (Ok(before), Ok(applied), Ok(after)) => restore(&slot.session, before, applied, after),
+            (Ok(before), Ok(applied), Ok(after)) => {
+                restore(&slot.session, before, applied, after) && !spec.fails_restore_for_test()
+            }
             _ => false,
         };
         slot.last_used = Instant::now();
@@ -371,6 +387,24 @@ impl Worker {
             self.sessions.remove(&spec.key);
         }
         result
+    }
+
+    /// `Classify`: ClickHouse's parser on the control connection, nothing run
+    /// (HS1 Task 4, FL2 Ruling 6).
+    fn classify(&self, sql: &str) -> Vec<Frame> {
+        match self.control.classify(sql) {
+            Ok(analysis) => vec![Frame::Classified(Classification {
+                class: match analysis.class {
+                    loams_chdb::QueryClass::ReadOnly => QueryClass::ReadOnly,
+                    loams_chdb::QueryClass::Mutating => QueryClass::Mutating,
+                    loams_chdb::QueryClass::MutatingGlobal => QueryClass::MutatingGlobal,
+                    loams_chdb::QueryClass::Control => QueryClass::Control,
+                    loams_chdb::QueryClass::Unknown => QueryClass::Unknown,
+                },
+                statements: analysis.statements,
+            })],
+            Err(err) => vec![error_frame(engine_error(&err), false)],
+        }
     }
 
     /// Drops sessions idle past their timeout.

@@ -103,6 +103,11 @@ pub enum Frame {
     },
     /// worker → front: the request succeeded. Terminal.
     Done,
+    /// front → worker: classify a statement with ClickHouse's parser, without
+    /// running it (HS1 Task 4, FL2 Ruling 6). Answered by `Classified` or `Error`.
+    Classify(String),
+    /// worker → front: what `Classify` found. Terminal.
+    Classified(Classification),
     /// front → worker, tests only: `abort()` now. What
     /// `crash_does_not_reach_the_front` uses to crash a worker on demand. Last, so
     /// a worker built without it fails to decode it and exits, which is also a crash.
@@ -136,6 +141,8 @@ impl Frame {
             Self::Stats(_) => "Stats",
             Self::Error { .. } => "Error",
             Self::Done => "Done",
+            Self::Classify(_) => "Classify",
+            Self::Classified(_) => "Classified",
             #[cfg(feature = "test-hooks")]
             Self::Abort => "Abort",
         }
@@ -157,6 +164,34 @@ pub struct Ready {
     pub clickhouse_version: String,
     /// Process start to `Ready`, in milliseconds.
     pub boot_ms: u32,
+    /// Every setting name the engine knows (`system.settings`), so the front can
+    /// tell an unknown setting (`115`) from a known, disallowed one (`164`)
+    /// without libchdb (HS1 Task 4).
+    pub settings: Vec<String>,
+}
+
+/// ClickHouse's class of a statement (`chdb_query_class`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum QueryClass {
+    /// `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `CHECK`.
+    ReadOnly,
+    /// `INSERT`, `CREATE`, `ALTER`, `DROP`, …
+    Mutating,
+    /// Functions, access management, `system` writes.
+    MutatingGlobal,
+    /// `USE`, `SET`, `SYSTEM`, `KILL`, `INTO OUTFILE`, …
+    Control,
+    /// Did not parse.
+    Unknown,
+}
+
+/// What `Classify` found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Classification {
+    /// The class.
+    pub class: QueryClass,
+    /// Executable statements (0 when it does not parse).
+    pub statements: u32,
 }
 
 /// Binds a worker to one namespace for the rest of its life (§49 §10.1).
@@ -216,6 +251,18 @@ pub struct SessionRef {
     pub timeout_ms: u64,
     /// Drop the session once this statement is over (`close_session=1`).
     pub close: bool,
+}
+
+/// The key prefix that makes a worker treat a session's settings restore as failed
+/// (test-only, `test-hooks`), so the retire-on-failure path can be exercised.
+pub const TEST_FAIL_RESTORE: &str = "\u{0}loams-test-fail-restore/";
+
+impl SessionRef {
+    /// Whether this session asks the worker to fail its restore (always false
+    /// without `test-hooks`).
+    pub fn fails_restore_for_test(&self) -> bool {
+        cfg!(feature = "test-hooks") && self.key.starts_with(TEST_FAIL_RESTORE)
+    }
 }
 
 /// Where an `INSERT` body goes.
@@ -322,6 +369,8 @@ pub struct Progress {
     pub rss_bytes: u64,
     /// The worker's peak resident set (`VmHWM`).
     pub peak_rss_bytes: u64,
+    /// House sessions the worker holds now (HS1 Task 4).
+    pub sessions: u32,
 }
 
 /// A ClickHouse error as the engine raised it: the parts `loams-house` renders.

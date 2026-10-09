@@ -3,8 +3,8 @@
 
 use bytes::Bytes;
 use loams_house_ipc::{
-    Bind, Chunk, CodecError, EngineError, Execute, Frame, FrameCodec, InputSpec, Limits,
-    MAX_FRAME_BYTES, PROTOCOL_VERSION, Progress, Ready, SessionRef,
+    Bind, Chunk, Classification, CodecError, EngineError, Execute, Frame, FrameCodec, InputSpec,
+    Limits, MAX_FRAME_BYTES, PROTOCOL_VERSION, Progress, QueryClass, Ready, SessionRef,
 };
 use proptest::collection::vec;
 use proptest::option;
@@ -55,6 +55,7 @@ fn progress() -> impl Strategy<Value = Progress> {
                     elapsed_ns,
                     rss_bytes,
                     peak_rss_bytes: peak,
+                    sessions: (written_rows % 1000) as u32,
                 }
             },
         )
@@ -122,17 +123,26 @@ fn execute() -> impl Strategy<Value = Execute> {
 }
 
 fn frame() -> impl Strategy<Value = Frame> {
-    let ready = (any::<u8>(), any::<u32>(), text(), text(), any::<u32>()).prop_map(
-        |(protocol, pid, chdb_version, clickhouse_version, boot_ms)| {
-            Frame::Ready(Ready {
-                protocol,
-                pid,
-                chdb_version,
-                clickhouse_version,
-                boot_ms,
-            })
-        },
-    );
+    let ready = (
+        any::<u8>(),
+        any::<u32>(),
+        text(),
+        text(),
+        any::<u32>(),
+        vec(text(), 0..4),
+    )
+        .prop_map(
+            |(protocol, pid, chdb_version, clickhouse_version, boot_ms, settings)| {
+                Frame::Ready(Ready {
+                    protocol,
+                    pid,
+                    chdb_version,
+                    clickhouse_version,
+                    boot_ms,
+                    settings,
+                })
+            },
+        );
     let bind = (text(), text(), pairs(), option::of(text()), any::<u64>()).prop_map(
         |(namespace, isolation_class, settings, proxy_endpoint, temp_dir_quota_bytes)| {
             Frame::Bind(Bind {
@@ -166,6 +176,21 @@ fn frame() -> impl Strategy<Value = Frame> {
         progress().prop_map(Frame::Stats),
         error,
         Just(Frame::Done),
+        text().prop_map(Frame::Classify),
+        (
+            prop_oneof![
+                Just(QueryClass::ReadOnly),
+                Just(QueryClass::Mutating),
+                Just(QueryClass::MutatingGlobal),
+                Just(QueryClass::Control),
+                Just(QueryClass::Unknown),
+            ],
+            any::<u32>()
+        )
+            .prop_map(|(class, statements)| Frame::Classified(Classification {
+                class,
+                statements
+            })),
     ]
 }
 
