@@ -98,7 +98,7 @@ impl Violation {
 /// Values of `n`, the indexed field.
 const N_VALUES: i64 = 20;
 /// Documents per table before the sessions open.
-const SEED_DOCS: usize = 8;
+pub const SEED_DOCS: usize = 8;
 /// Queries per session.
 const QUERIES: u32 = 4;
 /// Concurrent writers.
@@ -253,14 +253,19 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
     let insert = sys(INSERT)?;
     let mut seeded: Vec<Vec<LiveValue>> = vec![Vec::new(); tables];
     for (t, ids) in seeded.iter_mut().enumerate() {
-        for _ in 0..SEED_DOCS {
+        for i in 0..SEED_DOCS {
             let args = obj(&[
                 ("table", s(&table_name(t))),
                 ("fields", obj(&[("n", n(rng.random_range(0..N_VALUES)))])),
             ]);
-            let m = mutate(&runner, &insert, &args)
-                .await
-                .map_err(|e| format!("seeding: {e}"))?;
+            let m = mutate(
+                &runner,
+                &insert,
+                &args,
+                format!("chk-{}-seed-{t}-{i}", w.seed),
+            )
+            .await
+            .map_err(|e| format!("seeding: {e}"))?;
             ids.push(m.result);
         }
     }
@@ -328,8 +333,7 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
             newest.clone(),
             failures.clone(),
         );
-        let ops = w.ops;
-        let seed = w.seed.wrapping_mul(1_000).wrapping_add(wid as u64);
+        let (ops, seed) = (w.ops, w.seed);
         writers.push(tokio::spawn(async move {
             if let Err(e) = write(&runner, seed, wid, tables, ops, &next, &newest).await {
                 failures
@@ -563,19 +567,25 @@ fn queries(rng: &mut StdRng, tables: usize, seeded: &[Vec<LiveValue>]) -> Vec<Qu
         .collect()
 }
 
-/// Runs a mutation, retrying it on a retryable storage error (out of time,
-/// a conflict, not applied, an unknown outcome) as a client would. Its
-/// effects are checked against fresh evaluations, not against expected
-/// contents, so a mutation applied twice is harmless.
+/// Runs a mutation with the idempotency key `key`, retrying it on a
+/// retryable storage error (out of time, a conflict, not applied, an
+/// unknown outcome) as a client would. Every try carries the same key, so a
+/// try after one that committed without an answer is replayed (`replayed`,
+/// a success with the first commit's result) instead of applying the op
+/// twice: a delete retried that way does not fail with "not found".
 async fn mutate(
     runner: &Runner,
     f: &Arc<dyn Function>,
     args: &LiveValue,
+    key: String,
 ) -> Result<crate::Mutated, String> {
     let mut tries = 0;
     loop {
         tries += 1;
-        match runner.mutate(f.clone(), args.clone(), None).await {
+        match runner
+            .mutate(f.clone(), args.clone(), Some(key.clone()))
+            .await
+        {
             Ok(m) => return Ok(m),
             Err(LiveError::Txn(
                 TxnError::Deadline
@@ -588,8 +598,10 @@ async fn mutate(
     }
 }
 
-/// One writer: takes ops from `next` until `ops`, inserting into, patching
-/// and deleting its own documents; `newest` keeps the latest commit.
+/// One writer of the workload seeded `seed`: takes ops from `next` until
+/// `ops`, inserting into, patching and deleting its own documents; `newest`
+/// keeps the latest commit. Op `op` carries the idempotency key
+/// `chk-{seed}-{wid}-{op}`.
 async fn write(
     runner: &Runner,
     seed: u64,
@@ -599,7 +611,7 @@ async fn write(
     next: &AtomicUsize,
     newest: &AtomicU64,
 ) -> Result<(), String> {
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = StdRng::seed_from_u64(seed.wrapping_mul(1_000).wrapping_add(wid as u64));
     let (insert, patch, delete) = (sys(INSERT)?, sys(PATCH)?, sys(DELETE)?);
     let mut own: Vec<Vec<LiveValue>> = vec![Vec::new(); tables];
     loop {
@@ -631,7 +643,7 @@ async fn write(
             let id = own[t].swap_remove(at);
             (delete.clone(), obj(&[("id", id)]), false)
         };
-        let m = mutate(runner, &f, &args)
+        let m = mutate(runner, &f, &args, format!("chk-{seed}-{wid}-{op}"))
             .await
             .map_err(|e| format!("writer {wid}, op {op}: {e}"))?;
         if inserted {
