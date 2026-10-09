@@ -1014,3 +1014,30 @@ async fn failure_maps_are_bounded() {
     fast.charge("d");
     assert_eq!(fast.len(), 1, "refilled buckets are forgotten first");
 }
+
+/// N4: during the drain, a session whose client spoke last (a query in
+/// flight) is busy even when no byte moves: its answer arrives before the
+/// gate closes it.
+#[tokio::test]
+async fn shutdown_lets_a_long_query_finish() {
+    let h = harness(Options {
+        drain_timeout: Duration::from_secs(3),
+        ..Options::default()
+    })
+    .await;
+    let mut c = h.tls("u_a", b"pa").await.expect("login");
+    c.wire.write(0, b"\x03SLEEP").await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let started = Instant::now();
+    h.gate.shutdown();
+    let (_, answer) = c.wire.read().await.expect("the query's answer");
+    let ok =
+        loams_sqlgate::codec::command::OkPacket::decode(&answer, super::client::CAPS).expect("OK");
+    assert_eq!(ok.info, b"slept");
+    assert!(started.elapsed() >= Duration::from_millis(800));
+    assert_eq!(c.wire.read().await, None, "then closed");
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "before the deadline"
+    );
+}

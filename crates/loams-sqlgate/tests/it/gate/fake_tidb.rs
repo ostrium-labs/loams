@@ -199,6 +199,11 @@ async fn serve(
         if first == 0x01 || cmd == b"\x03BYE" {
             return Some(());
         }
+        if cmd == b"\x03SLEEP" {
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            w.write(1, &ok("slept")).await;
+            continue;
+        }
         if cmd == b"\x03SLOW" {
             // One packet written in two halves 200 ms apart.
             let payload = ok(&format!("slow-{}", "x".repeat(200)));

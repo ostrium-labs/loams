@@ -15,7 +15,7 @@
 
 use std::io;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
@@ -44,10 +44,12 @@ pub(crate) struct Relay {
     pub shutdown: watch::Receiver<bool>,
 }
 
-/// The last time a byte moved, in milliseconds since `base`.
+/// The last time a byte moved, in milliseconds since `base`, and whether
+/// the client spoke last (a command awaits TiDB's answer).
 struct Clock {
     base: Instant,
     last: AtomicU64,
+    awaiting: AtomicBool,
 }
 
 impl Clock {
@@ -71,6 +73,7 @@ pub(crate) async fn relay(client: ClientStream, upstream: Upstream, mut r: Relay
     let clock = Clock {
         base: Instant::now(),
         last: AtomicU64::new(0),
+        awaiting: AtomicBool::new(false),
     };
     let idle = async {
         loop {
@@ -82,8 +85,9 @@ pub(crate) async fn relay(client: ClientStream, upstream: Upstream, mut r: Relay
         }
     };
     // On shutdown a session closes once quiet (no bytes either way for
-    // QUIET): between commands, never mid-result. The gate's drain
-    // deadline ends the others.
+    // QUIET) and not busy: a command the client sent last is still waiting
+    // for TiDB's answer (a long query). The gate's drain deadline ends the
+    // others (fix round 2, N4).
     let stop = async {
         if r.shutdown.wait_for(|stopped| *stopped).await.is_err() {
             // The gate is gone: nothing will ask us to stop.
@@ -91,10 +95,10 @@ pub(crate) async fn relay(client: ClientStream, upstream: Upstream, mut r: Relay
         }
         loop {
             let left = QUIET.saturating_sub(clock.idle_for());
-            if left.is_zero() {
+            if left.is_zero() && !clock.awaiting.load(Ordering::SeqCst) {
                 return;
             }
-            tokio::time::sleep(left).await;
+            tokio::time::sleep(left.max(Duration::from_millis(50))).await;
         }
     };
     tokio::select! {
@@ -137,8 +141,15 @@ async fn upstream_to_client(
         }
         w.flush().await?;
         drop(w);
+        clock.awaiting.store(false, Ordering::SeqCst);
         clock.touch();
     }
+}
+
+/// Whether TiDB answers the command (`COM_STMT_SEND_LONG_DATA`,
+/// `COM_STMT_CLOSE` and `COM_QUIT` get no answer).
+fn expects_answer(command: Command) -> bool {
+    !matches!(command, Command::Quit | Command::Other(0x18 | 0x19))
 }
 
 /// A protocol violation by the client: the connection is closed.
@@ -187,6 +198,8 @@ async fn client_to_upstream(
     let mut header = [0u8; HEADER_LEN];
     let mut buf = vec![0u8; 64 * 1024];
     let mut state = Message::Start;
+    // The command of the message being read (it may span frames).
+    let mut current = None;
     loop {
         cr.read_exact(&mut header).await?;
         clock.touch();
@@ -266,6 +279,12 @@ async fn client_to_upstream(
                     left -= n;
                 }
                 uw.flush().await?;
+                if first.is_some() {
+                    current = first;
+                }
+                if !more && current.is_some_and(expects_answer) {
+                    clock.awaiting.store(true, Ordering::SeqCst);
+                }
                 state = if more {
                     Message::Continues {
                         next: seq.wrapping_add(1),
