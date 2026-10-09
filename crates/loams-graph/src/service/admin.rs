@@ -28,7 +28,7 @@ pub const DEFAULT_RETENTION_HOLD: Duration = Duration::from_secs(24 * 3600);
 const UPDATABLE: [&str; 3] = ["languages", "limits", "replicas"];
 
 /// `GraphAdminService`, and the data plane over catalog graphs.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GraphAdmin {
     engine: Arc<Engine>,
     catalog: GraphCatalog,
@@ -38,6 +38,18 @@ pub struct GraphAdmin {
     validated: Arc<
         std::sync::Mutex<std::collections::HashMap<(String, String), (String, std::time::Instant)>>,
     >,
+    #[cfg(feature = "test-hooks")]
+    after_open_hook: Arc<std::sync::Mutex<Option<crate::catalog::AckHook>>>,
+}
+
+impl std::fmt::Debug for GraphAdmin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GraphAdmin")
+            .field("engine", &self.engine)
+            .field("catalog", &self.catalog)
+            .field("retention_hold", &self.retention_hold)
+            .finish_non_exhaustive()
+    }
 }
 
 /// How long a catalog read vouches for an open graph (review I4). A delete on this node clears
@@ -119,6 +131,8 @@ impl GraphAdmin {
             catalog,
             retention_hold: DEFAULT_RETENTION_HOLD,
             validated: Arc::default(),
+            #[cfg(feature = "test-hooks")]
+            after_open_hook: Arc::default(),
         }
     }
 
@@ -224,6 +238,23 @@ impl GraphAdmin {
             })
             .map_err(map_engine)?;
             if graph.id() == Some(id) {
+                #[cfg(feature = "test-hooks")]
+                self.after_open().await;
+                // Re-check after the (possibly slow) open: a delete that landed meanwhile must
+                // not leave this graph open and serving (review M1). Cheap: the document is
+                // cached unless the pointer moved.
+                let still = self.catalog.get_by_name(namespace, name).await;
+                if !matches!(&still, Ok(now) if now.id == meta.id) {
+                    drop(graph);
+                    let _ = self.engine.close(namespace, name);
+                    return Err(match still {
+                        Err(err) => map_catalog(err),
+                        Ok(_) => map_catalog(CatalogError::NotFound {
+                            namespace: namespace.to_string(),
+                            name: name.to_string(),
+                        }),
+                    });
+                }
                 self.remember(namespace, name, &meta.id);
                 return self.engine.reopen_if_poisoned(graph).map_err(map_engine);
             }
@@ -254,6 +285,28 @@ impl GraphAdmin {
         }
         self.open_graph(namespace, name)
             .filter(|g| g.id().is_some_and(|gid| gid.to_string() == id))
+    }
+
+    /// **Tests only** (feature `test-hooks`): runs between the engine open and the catalog
+    /// re-check of [`GraphAdmin::open`] (review M1).
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn set_after_open_hook(&self, hook: Option<crate::catalog::AckHook>) {
+        if let Ok(mut slot) = self.after_open_hook.lock() {
+            *slot = hook;
+        }
+    }
+
+    #[cfg(feature = "test-hooks")]
+    async fn after_open(&self) {
+        let hook = self
+            .after_open_hook
+            .lock()
+            .ok()
+            .and_then(|slot| slot.clone());
+        if let Some(hook) = hook {
+            let _ = hook().await;
+        }
     }
 
     fn remember(&self, namespace: &str, name: &str, id: &str) {
@@ -499,8 +552,8 @@ impl GraphAdmin {
         &self,
         req: pb::ExecuteRequest,
     ) -> Result<pb::ExecuteResponse, ConnectError> {
-        self.open(&req.namespace, &req.graph).await?;
-        data::execute(&self.engine, req)
+        let graph = self.open(&req.namespace, &req.graph).await?;
+        data::execute_on(&graph, req)
     }
 
     /// `ExecuteBatch` on a catalog graph, opening it lazily.
@@ -512,8 +565,8 @@ impl GraphAdmin {
         &self,
         req: pb::ExecuteBatchRequest,
     ) -> Result<pb::ExecuteBatchResponse, ConnectError> {
-        self.open(&req.namespace, &req.graph).await?;
-        data::execute_batch(&self.engine, req)
+        let graph = self.open(&req.namespace, &req.graph).await?;
+        data::execute_batch_on(&graph, req)
     }
 
     /// `Explain` on a catalog graph.
@@ -522,8 +575,8 @@ impl GraphAdmin {
     ///
     /// As [`data::explain`].
     pub async fn explain(&self, req: pb::ExplainRequest) -> Result<pb::Plan, ConnectError> {
-        self.open(&req.namespace, &req.graph).await?;
-        data::explain(&self.engine, req)
+        let graph = self.open(&req.namespace, &req.graph).await?;
+        data::explain_on(&graph, req)
     }
 
     /// Purges every deleted graph whose retention hold (`hold`, or the admin's own when `None`)

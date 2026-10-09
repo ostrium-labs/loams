@@ -91,8 +91,17 @@ pub fn execute(
     engine: &Engine,
     req: pb::ExecuteRequest,
 ) -> Result<pb::ExecuteResponse, ConnectError> {
-    check_language(req.language.as_known(), req.language)?;
     let graph = find_serving(engine, &req.namespace, &req.graph)?;
+    execute_on(&graph, req)
+}
+
+/// `Execute` on a graph the caller has already found and validated (review M1: the catalog path
+/// hands over the graph it checked, rather than having it looked up again by name).
+pub fn execute_on(
+    graph: &crate::engine::Graph,
+    req: pb::ExecuteRequest,
+) -> Result<pb::ExecuteResponse, ConnectError> {
+    check_language(req.language.as_known(), req.language)?;
     let result = if req.parameters.is_empty() {
         graph.execute(&req.statement, req.read_only)
     } else {
@@ -115,6 +124,15 @@ pub fn execute_batch(
     engine: &Engine,
     req: pb::ExecuteBatchRequest,
 ) -> Result<pb::ExecuteBatchResponse, ConnectError> {
+    let graph = find_serving(engine, &req.namespace, &req.graph)?;
+    execute_batch_on(&graph, req)
+}
+
+/// `ExecuteBatch` on a graph the caller has already found and validated (review M1).
+pub fn execute_batch_on(
+    graph: &crate::engine::Graph,
+    req: pb::ExecuteBatchRequest,
+) -> Result<pb::ExecuteBatchResponse, ConnectError> {
     // A statement's own language wins over the batch's (`Statement.language`); the batch's
     // applies to a statement that names none, and is checked when no statement names one (an
     // empty batch included) so a batch in a language this build lacks is still refused.
@@ -129,7 +147,6 @@ pub fn execute_batch(
     if batch_language_used {
         check_language(req.language.as_known(), req.language)?;
     }
-    let graph = find_serving(engine, &req.namespace, &req.graph)?;
     let statements = req
         .statements
         .iter()
@@ -187,8 +204,16 @@ pub fn execute_batch(
 /// before anything runs. The plan itself is Task 6's; until then a statement that passes is
 /// answered `not_implemented`.
 pub fn explain(engine: &Engine, req: pb::ExplainRequest) -> Result<pb::Plan, ConnectError> {
+    let graph = find_serving(engine, &req.namespace, &req.graph)?;
+    explain_on(&graph, req)
+}
+
+/// `Explain` on a graph the caller has already found and validated (review M1).
+pub fn explain_on(
+    _graph: &crate::engine::Graph,
+    req: pb::ExplainRequest,
+) -> Result<pb::Plan, ConnectError> {
     check_language(req.language.as_known(), req.language)?;
-    find_serving(engine, &req.namespace, &req.graph)?;
     let access = gate(&req.statement, pb::QueryLanguage::Gql).map_err(map_engine)?;
     if req.profile && access != Access::Read {
         return Err(refuse(

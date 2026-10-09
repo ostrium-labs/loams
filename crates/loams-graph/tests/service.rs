@@ -1159,6 +1159,42 @@ mod admin {
         assert_eq!(err.code, ErrorCode::NotFound);
     }
 
+    /// Review M1: a delete that lands between the catalog read and the engine open is caught by
+    /// the re-check after the open: the graph is closed again and the statement answers
+    /// NOT_FOUND.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_delete_during_a_lazy_open_is_caught() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        admin
+            .create_graph(create("acme", "kg", "k"))
+            .await
+            .expect("create");
+        let other = Arc::new(fixture.admin());
+        admin.set_after_open_hook(Some(ack_lost_once(move || {
+            let other = other.clone();
+            async move {
+                other
+                    .delete_graph(pb::DeleteGraphRequest {
+                        namespace: "acme".to_string(),
+                        name: "kg".to_string(),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("the concurrent delete");
+            }
+        })));
+        let err = admin
+            .execute(execute("acme", "kg", "RETURN 1 AS x"))
+            .await
+            .expect_err("deleted while opening");
+        assert_eq!(err.code, ErrorCode::NotFound, "{err:?}");
+        assert!(
+            admin.engine().list(Some("acme")).expect("list").is_empty(),
+            "the graph opened for the statement was closed again"
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn invalid_names_refused() {
         let fixture = Fixture::start().await;
