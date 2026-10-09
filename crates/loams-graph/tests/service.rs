@@ -1127,8 +1127,8 @@ mod admin {
         assert_eq!(names, ["intruder", "late"]);
     }
 
-    /// Review I4: a namespace document is fetched again only when its pointer moves, and an open
-    /// graph a recent catalog read vouched for runs statements without reading the catalog.
+    /// Review I4 and re-review 2: a namespace document is fetched again only when its pointer
+    /// moves, and a statement on an open graph costs exactly one catalog (pointer) read.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn catalog_reads_are_cached() {
         use std::sync::atomic::Ordering::Relaxed;
@@ -1149,7 +1149,10 @@ mod admin {
             .execute(execute("acme", "kg", "RETURN 1 AS x"))
             .await
             .expect("first statement");
-        let loads = counters.loads.load(Relaxed);
+        let (loads, gets) = (
+            counters.loads.load(Relaxed),
+            counters.document_gets.load(Relaxed),
+        );
         for _ in 0..5 {
             admin
                 .execute(execute("acme", "kg", "RETURN 1 AS x"))
@@ -1158,8 +1161,13 @@ mod admin {
         }
         assert_eq!(
             counters.loads.load(Relaxed),
-            loads,
-            "no catalog read for a vouched-for graph"
+            loads + 5,
+            "one catalog read per statement"
+        );
+        assert_eq!(
+            counters.document_gets.load(Relaxed),
+            gets,
+            "and no document fetch"
         );
 
         // A write moves the pointer: the next read fetches the new document.
@@ -1333,6 +1341,44 @@ mod admin {
         assert!(
             !message.contains("graphs/"),
             "no object key leaks: {message}"
+        );
+    }
+
+    /// Re-review 2: once `DeleteGraph` returns, no statement on the graph runs, through any
+    /// admin sharing the engine, with no window.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn statement_after_delete_returns_is_refused() {
+        let fixture = Fixture::start().await;
+        let engine = Arc::new(Engine::with_data_dir(fixture.data_dir.path()));
+        let catalog = || GraphCatalog::new(fixture.meta.clone(), fixture.store.clone());
+        let deleter = GraphAdmin::new(engine.clone(), catalog());
+        let runner = GraphAdmin::new(engine.clone(), catalog());
+        deleter
+            .create_graph(create("acme", "kg", "k"))
+            .await
+            .expect("create");
+        for _ in 0..3 {
+            runner
+                .execute(execute("acme", "kg", "RETURN 1 AS x"))
+                .await
+                .expect("open and run");
+        }
+        deleter
+            .delete_graph(pb::DeleteGraphRequest {
+                namespace: "acme".to_string(),
+                name: "kg".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("delete");
+        let err = runner
+            .execute(execute("acme", "kg", "RETURN 1 AS x"))
+            .await
+            .expect_err("refused at once");
+        assert_eq!(err.code, ErrorCode::NotFound);
+        assert!(
+            engine.list(Some("acme")).expect("list").is_empty(),
+            "and not reopened"
         );
     }
 

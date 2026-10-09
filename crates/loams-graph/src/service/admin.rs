@@ -71,9 +71,6 @@ pub struct GraphAdmin {
     engine: Arc<Engine>,
     catalog: GraphCatalog,
     retention_hold: Duration,
-    /// `(namespace, name)` → the catalog id it was last read with, and when (review I4): an
-    /// open graph whose id matches a read younger than [`VALIDATION_TTL`] skips the catalog.
-    validated: Arc<std::sync::Mutex<Validations>>,
     #[cfg(feature = "test-hooks")]
     after_open_hook: Arc<std::sync::Mutex<Option<crate::catalog::AckHook>>>,
 }
@@ -87,13 +84,6 @@ impl std::fmt::Debug for GraphAdmin {
             .finish_non_exhaustive()
     }
 }
-
-/// `(namespace, name)` → `(catalog id, when it was read)`.
-type Validations = std::collections::HashMap<(String, String), (String, std::time::Instant)>;
-
-/// How long a catalog read vouches for an open graph (review I4). A delete on this node clears
-/// it at once; one on another node is seen within this window (Task 12 makes it exact).
-pub const VALIDATION_TTL: Duration = Duration::from_secs(1);
 
 fn language_name(language: pb::QueryLanguage) -> &'static str {
     use pb::QueryLanguage as L;
@@ -170,7 +160,6 @@ impl GraphAdmin {
             engine,
             catalog,
             retention_hold: DEFAULT_RETENTION_HOLD,
-            validated: Arc::default(),
             #[cfg(feature = "test-hooks")]
             after_open_hook: Arc::default(),
         }
@@ -263,15 +252,21 @@ impl GraphAdmin {
     ///
     /// `NOT_FOUND`/`graph_not_found` when the catalog has no such graph, or the engine's error.
     pub async fn open(&self, namespace: &str, name: &str) -> Result<Arc<Graph>, ConnectError> {
-        if let Some(graph) = self.recently_validated(namespace, name) {
-            return self.engine.reopen_if_poisoned(graph).map_err(map_engine);
-        }
         let meta = self
             .catalog
             .get_by_name(namespace, name)
             .await
             .map_err(map_catalog)?;
         let id = meta.graph_id().map_err(map_catalog)?;
+        // Already open with this id: the one up-to-date catalog read above (a pointer read; the
+        // document is cached by pointer version) is the whole cost of a statement, and a delete
+        // is effective for every statement that starts after `DeleteGraph` returns (re-review 2).
+        if let Some(graph) = self
+            .open_graph(namespace, name)
+            .filter(|g| g.id() == Some(id))
+        {
+            return self.engine.reopen_if_poisoned(graph).map_err(map_engine);
+        }
         for _ in 0..2 {
             let graph = Graph::open_or_existing(&self.engine, namespace, name, || {
                 OpenSpec::for_catalog(&self.engine, id)
@@ -295,7 +290,6 @@ impl GraphAdmin {
                         }),
                     });
                 }
-                self.remember(namespace, name, &meta.id);
                 return self.engine.reopen_if_poisoned(graph).map_err(map_engine);
             }
             // An older graph of this name is still open: close it and open this one.
@@ -309,22 +303,6 @@ impl GraphAdmin {
             "graph_reloading",
             format!("graph {namespace}/{name} is being replaced; retry"),
         ))
-    }
-
-    /// The open graph under `(namespace, name)` when a catalog read younger than
-    /// [`VALIDATION_TTL`] vouched for its id.
-    fn recently_validated(&self, namespace: &str, name: &str) -> Option<Arc<Graph>> {
-        let (id, at) = self
-            .validated
-            .lock()
-            .ok()?
-            .get(&(namespace.to_string(), name.to_string()))
-            .cloned()?;
-        if at.elapsed() >= VALIDATION_TTL {
-            return None;
-        }
-        self.open_graph(namespace, name)
-            .filter(|g| g.id().is_some_and(|gid| gid.to_string() == id))
     }
 
     /// **Tests only** (feature `test-hooks`): runs between the engine open and the catalog
@@ -346,21 +324,6 @@ impl GraphAdmin {
             .and_then(|slot| slot.clone());
         if let Some(hook) = hook {
             let _ = hook().await;
-        }
-    }
-
-    fn remember(&self, namespace: &str, name: &str, id: &str) {
-        if let Ok(mut validated) = self.validated.lock() {
-            validated.insert(
-                (namespace.to_string(), name.to_string()),
-                (id.to_string(), std::time::Instant::now()),
-            );
-        }
-    }
-
-    fn forget(&self, namespace: &str, name: &str) {
-        if let Ok(mut validated) = self.validated.lock() {
-            validated.remove(&(namespace.to_string(), name.to_string()));
         }
     }
 
@@ -514,7 +477,6 @@ impl GraphAdmin {
         req: pb::DeleteGraphRequest,
     ) -> Result<ops::Operation, ConnectError> {
         let key = check_key("idempotency_key", &req.idempotency_key)?;
-        self.forget(&req.namespace, &req.name);
         let meta = self
             .catalog
             .mark_deleting(&req.namespace, &req.name, key)
@@ -530,7 +492,6 @@ impl GraphAdmin {
                 tracing::warn!(namespace = %req.namespace, name = %req.name, error = %err, "a deleted graph is still in use; it closes when released");
             }
         }
-        self.forget(&req.namespace, &req.name);
         let mut operation = ops::Operation {
             id: operation_id(),
             kind: "graph.delete".to_string(),
