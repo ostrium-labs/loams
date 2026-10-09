@@ -35,6 +35,17 @@ command -v docker-compose >/dev/null || COMPOSE=(docker compose)
 ENGINE=docker
 case ${DOCKER_HOST:-} in *podman*) ENGINE=podman ;; esac
 command -v "$ENGINE" >/dev/null || ENGINE=podman
+# Postgres 17 only (PG2 Task 0 ruling 7, R2.2): the timeline's version must
+# match the compute image, and the pinned compute is compute-node-v17.
+PG_MAJOR=17
+if [ -n "${PG_VERSION:-}" ] && [ "$PG_VERSION" != "$PG_MAJOR" ]; then
+  echo "PG_VERSION=$PG_VERSION: only Postgres $PG_MAJOR is supported" >&2
+  exit 1
+fi
+case ${COMPUTE_IMAGE:-compute-node-v$PG_MAJOR@} in
+  *compute-node-v$PG_MAJOR[@:]*) ;;
+  *) echo "COMPUTE_IMAGE=$COMPUTE_IMAGE: only a compute-node-v$PG_MAJOR image is supported" >&2; exit 1 ;;
+esac
 
 for port in 9000 50051 6400 9898 55433 3080 5460 7680; do
   if ss -ltn | awk '{print $4}' | grep -qE "[:.]$port\$"; then
@@ -78,7 +89,7 @@ curl -sf -X PUT -H 'Content-Type: application/json' \
   -d '{"mode":"AttachedSingle","generation":1,"tenant_conf":{}}' \
   "localhost:9898/v1/tenant/$TENANT_ID/location_config" >/dev/null
 curl -sf -X POST -H 'Content-Type: application/json' \
-  -d "{\"new_timeline_id\":\"$TIMELINE_ID\",\"pg_version\":${PG_VERSION:-17}}" \
+  -d "{\"new_timeline_id\":\"$TIMELINE_ID\",\"pg_version\":$PG_MAJOR}" \
   "localhost:9898/v1/tenant/$TENANT_ID/timeline/" >/dev/null
 start_compute() {
   "${COMPOSE[@]}" rm -sf compute >/dev/null 2>&1 || true
