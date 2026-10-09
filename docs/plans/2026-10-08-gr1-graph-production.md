@@ -240,7 +240,7 @@ Commit `feat(graph): graph catalog and admin service`.
 
 > **From Task 4 review (M8):** `GraphAdmin::open` opens a graph from disk (`GrafeoDB::open`, WAL replay) while holding the engine registry lock, on the async path, and the data-plane wrappers run statements synchronously inside async functions. Task 5 mounts them through `spawn_blocking` (or Task 6's pool), and opening moves out from under the registry lock (a per-graph opening latch), so one slow open blocks neither the runtime nor other graphs.
 
-**Files:** `crates/loams/Cargo.toml` (`graph = ["dep:loams-graph"]`), `crates/loams/src/api/connect.rs` (catalogue row `loams.graph.v1`, services `GraphService`, `GraphAdminService`, `available: cfg!(feature = "graph")`, `unstable: true`; a `GraphAbsent` stub answering `feature_not_in_variant`), `crates/loams/src/api/graph.rs`, `crates/loams/src/server.rs` (role `graph`; config `[graph] data_dir, idle_evict_after, node_memory, limits`), `release/` variant lists (`full` gets `graph`), `crates/loams/tests/it/graph.rs`.
+**Files:** `crates/loams/Cargo.toml` (`graph = ["dep:loams-graph"]`), `crates/loams/src/api/connect.rs` (catalogue row `loams.graph.v1`, services `GraphService`, `GraphAdminService`, `available: cfg!(feature = "graph")`, `unstable: true`; a `GraphAbsent` stub answering `feature_not_in_variant`), `crates/loams/src/api/graph.rs`, `crates/loams/src/server.rs` (role `graph`; config `[graph] data_dir, idle_evict_after, node_memory, limits`), `VARIANT` in `crates/loams/src/api/connect.rs` (`full` gets `graph`; `release/` holds no variant lists, see the Task 0 notes), `crates/loams/tests/it/graph.rs`.
 
 Tests:
 - `instance_advertises_graph_when_feature_on` and `…_unavailable_when_off` (two builds in CI).
@@ -654,7 +654,7 @@ Commit `docs(graph): Loams Graph documentation`.
 
 ### Task 39: The production exit
 
-**Files:** `docs/plans/gr1-exit-report.md`, `crates/loams/src/api/connect.rs` (`unstable: false`), `buf.yaml` (breaking checks on), variant lists (Q675's answer), `CHANGELOG.md`.
+**Files:** `docs/plans/gr1-exit-report.md`, `crates/loams/src/api/connect.rs` (`unstable: false`), `buf.yaml` (breaking checks on), `VARIANT` in `connect.rs` (Q675's answer; `release/` holds no variant lists), `CHANGELOG.md`.
 
 Steps: run every gate; fill the checklist below with evidence links; open the external security review (§48 §16) and record its findings and their status; ask the owner to accept any waived target; flip `unstable`; tag.
 
@@ -1137,4 +1137,20 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 - The tests live in `crates/loams/tests/connect_graph.rs` (not `tests/it/graph.rs`), so both builds can run them in isolation.
 - CI's `graph` job runs them with and without the feature, plus `connect_api` with the feature.
 - `cargo tree -p loams -e normal` shows 0 grafeo lines in the default build and 16 with `graph`.
+
+**R5.8 Fix round 1: an interim cap on graph work (review I1).**
+- A process-wide semaphore caps graph statements (`Execute`, `ExecuteBatch`, `Explain`, `GetSchema`) at `--graph-statement-slots` (default min(32, cores × 2), at most 4096). A statement takes its slot before its graph opens and its blocking work starts, and frees it when that work ends, so a statement whose client went away keeps its slot. With none free the RPC answers `RESOURCE_EXHAUSTED`/`resource_exhausted`; nothing queues. Task 6's per-graph pool replaces it.
+- Every graph opens with Grafeo's `query_timeout` as a backstop (R0.8 (a)): `--graph-query-timeout-ms`, default 30 s, at most 300 s, answered as `DEADLINE_EXCEEDED`/`graph_statement_timeout`. Grafeo checks it between pipeline chunks only, and only on `Session::execute`; `execute_with_params` runs through the query processor with no deadline. A statement without parameters therefore runs through `execute` (as Grafeo's own `execute_language` routes it), and a parameterised one has no engine backstop until upstream threads the deadline through (add to Q679). Task 6's Loams-side deadline still answers the client.
+
+**R5.9 Fix round 1: shutdown (review I3, I1).**
+- Once `GraphAdmin::shutdown` starts, `open` and every statement answer `UNAVAILABLE`/`unavailable`.
+- It waits, at most `GraphConfig.shutdown_wait` (config only, default 10 s), for every statement slot to free, then closes each graph on the blocking pool. The server's `graph` phase bounds the maintenance task's stop by the same wait.
+- A statement still running after the wait is detached and counted (logged): its graph stays open until it ends. Its blocking thread still delays the process's exit, because the tokio runtime waits for blocking work when it drops; nothing stops such a statement before Task 26's watchdog (R0.8).
+- `GraphConfig` is now `{ enabled, data_dir, ephemeral, retention_hold, sweep_grace, maintenance_every, statement_slots, query_timeout, shutdown_wait }`. `maintenance_every` and `shutdown_wait` are config only; `maintenance_every` must be greater than zero.
+
+**R5.10 Fix round 1: the opening latch (review I2).** The latch leaves the map under the `opening` lock only when no other opener holds it, through a guard on every path (a failed open included), and registration never overwrites a registered graph (`opens_around_a_close_never_double_open`, `a_failed_open_leaves_no_latch`).
+
+**R5.11 Listening and deployments.**
+- A graph RPC is served only on a loopback `--listen`; `0.0.0.0`, `::` and the IPv4-mapped `::ffff:127.0.0.1` are refused (`Ipv6Addr::is_loopback` is `::1` only).
+- `deploy/dapr/loams-stream.yaml` runs `loams dev --listen 0.0.0.0:8080`. Its image is not built with `graph` today; if it ever is, that deployment must pass `--no-graph` (until MT1's authorizer), or it will not start.
 
