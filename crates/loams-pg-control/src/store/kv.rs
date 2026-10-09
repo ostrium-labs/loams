@@ -881,7 +881,8 @@ fn check_watch_prefix(prefix: &[u8]) -> Result<(), StoreError> {
     match prefix {
         [tag, b'/', ..] if TAGS.contains(tag) => Ok(()),
         _ => Err(StoreError::InvalidArgument(
-            "a watch prefix starts with one of pg-control's tags (x/ X/ E/ C/ R/ D/ O/ I/)".into(),
+            "a watch prefix starts with one of pg-control's tags (x/ X/ E/ C/ R/ D/ O/ Q/ I/)"
+                .into(),
         )),
     }
 }

@@ -96,7 +96,7 @@ async fn create_project_writes_creating_records_and_an_operation() {
     assert_eq!(op.project_id, p.id);
     let stored = h
         .service
-        .get_operation("acme", &p.id, &op.id)
+        .get_operation(&op.id)
         .await
         .expect("the operation");
     assert_eq!(&stored, op);
@@ -698,4 +698,65 @@ async fn an_answer_in_an_unknown_format_is_failed_precondition() {
         .await
         .expect_err("an unknown format");
     assert_eq!(e.reason, Reason::FailedPrecondition);
+}
+
+/// Operations are found by id alone, and listed per namespace in creation
+/// order, through indexes written with them; a refused create writes none.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn operations_are_indexed_by_id_and_namespace() {
+    use loams_pg_control::model::OperationState;
+
+    let h = harness!();
+    let mut ids = Vec::new();
+    for i in 0..3 {
+        let out = h
+            .service
+            .create_project(&user(), create(&format!("p{i}"), &format!("k{i}")))
+            .await
+            .expect("create");
+        ids.push(out.operation.id);
+    }
+    h.service
+        .create_project(
+            &user(),
+            CreateProject {
+                namespace: "other".into(),
+                ..create("q", "k9")
+            },
+        )
+        .await
+        .expect("another namespace");
+    h.service
+        .create_project(&user(), create("p0", "k-dup"))
+        .await
+        .expect_err("a taken name writes no operation");
+    let op = h.service.get_operation(&ids[1]).await.expect("by id");
+    assert_eq!(op.id, ids[1]);
+    assert_eq!(op.namespace, "acme");
+    let e = h
+        .service
+        .get_operation("op-00000000000000000000000000")
+        .await
+        .expect_err("absent");
+    assert_eq!(e.reason, Reason::NotFound);
+
+    let mut listed = Vec::new();
+    let mut token = String::new();
+    loop {
+        let (page, next) = h
+            .service
+            .list_operations("acme", 2, &token)
+            .await
+            .expect("a page");
+        listed.extend(page.into_iter().map(|o| o.id));
+        if next.is_empty() {
+            break;
+        }
+        token = next;
+    }
+    let mut sorted = ids.clone();
+    sorted.sort();
+    assert_eq!(listed, sorted, "acme's three, in id order");
+    // The approval state Task 9 sets exists.
+    assert_ne!(OperationState::AwaitingApproval, OperationState::Pending);
 }

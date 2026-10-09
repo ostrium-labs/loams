@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::operations::{OperationKind, OperationRec, pending};
+use super::operations::{OperationKind, OperationRec, add_operation, pending};
 use super::projects::check_version;
 use super::{
     Applied, Begin, Caller, Mutation, NeonRead, PgService, Reason, ServiceError, list_error, page,
@@ -441,7 +441,7 @@ impl<N: NeonRead> PgService<N> {
                 },
                 Some(project.version),
             )?;
-            batch.put(&operation, None)?;
+            add_operation(&mut batch, &operation)?;
             let taken = ServiceError::new(
                 Reason::AlreadyExists,
                 format!("a branch named {} exists in this project", req.name),
@@ -715,7 +715,7 @@ impl<N: NeonRead> PgService<N> {
                 },
                 Some(project.version),
             )?;
-            batch.put(&operation, None)?;
+            add_operation(&mut batch, &operation)?;
             let mutation = Mutation::new(batch, move |_| operation.clone());
             if let Applied::Done(op) = self.apply("DeleteBranch", claim.as_ref(), mutation).await? {
                 return Ok(op);

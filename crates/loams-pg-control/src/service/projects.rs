@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::operations::{OperationKind, OperationRec, pending};
+use super::operations::{OperationKind, OperationRec, add_operation, pending};
 use super::{
     Applied, Begin, Caller, Mutation, NeonRead, PgService, Reason, ServiceError, check_namespace,
     list_error, page,
@@ -220,7 +220,7 @@ impl<N: NeonRead> PgService<N> {
                 None,
             )?;
             batch.put(&main, None)?;
-            batch.put(&operation, None)?;
+            add_operation(&mut batch, &operation)?;
             let taken = ServiceError::new(
                 Reason::AlreadyExists,
                 format!("a project named {} exists in this namespace", req.name),
@@ -419,7 +419,7 @@ impl<N: NeonRead> PgService<N> {
             );
             let mut batch = Batch::new();
             batch.put(&project, Some(current.version))?;
-            batch.put(&operation, None)?;
+            add_operation(&mut batch, &operation)?;
             let mutation = Mutation::new(batch, move |_| operation.clone());
             if let Applied::Done(op) = self
                 .apply("DeleteProject", claim.as_ref(), mutation)

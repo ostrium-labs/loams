@@ -2,8 +2,9 @@
 //! `loams.operations.v1.Operation`s, kept per project at
 //! `O/<project_id>/<operation_id>` ([`OperationRec`]).
 //!
-//! The API service writes an operation `Pending`, in the same batch as the
-//! record it acts on. The project's reconciler (Task 7) finds it by listing
+//! The API service writes an operation `Pending`, with its indexes
+//! (`Q/i/<id>` for `GetOperation`, `Q/n/<ns>/<id>` for `ListOperations` and
+//! `WatchOperations`), in the same batch as the record it acts on. The project's reconciler (Task 7) finds it by listing
 //! the project's operations and moves it to `Running`, then `Succeeded` or
 //! `Failed`, under its lease.
 
@@ -11,9 +12,11 @@ use ulid::Ulid;
 
 pub use crate::model::{OperationError, OperationKind, OperationRec, OperationState};
 
-use super::{NeonRead, PgService, ServiceError, check_namespace};
-use crate::model::OperationKey;
-use crate::store::PgControlStore;
+use super::{NeonRead, PgService, ServiceError, check_namespace, list_error, page};
+use crate::model::{
+    NamespaceOperationRec, NamespaceOperations, OperationIdKey, OperationIdRec, OperationKey,
+};
+use crate::store::{Batch, PgControlStore, StoreError};
 
 /// A new operation id: "op-" and 26 lower-case hex characters (D146), the
 /// first 104 bits of a fresh ULID (time first, so ids sort by creation).
@@ -43,36 +46,95 @@ pub(crate) fn pending(
     }
 }
 
+/// Adds `op` and its two indexes (by id, and in its namespace) to
+/// `batch`, all created; returns the operation's index.
+pub(crate) fn add_operation(batch: &mut Batch, op: &OperationRec) -> Result<usize, StoreError> {
+    let at = batch.put(op, None)?;
+    batch.put(
+        &OperationIdRec {
+            id: op.id.clone(),
+            namespace: op.namespace.clone(),
+            project_id: op.project_id.clone(),
+        },
+        None,
+    )?;
+    batch.put(
+        &NamespaceOperationRec {
+            namespace: op.namespace.clone(),
+            id: op.id.clone(),
+            project_id: op.project_id.clone(),
+        },
+        None,
+    )?;
+    Ok(at)
+}
+
 impl<N: NeonRead> PgService<N> {
-    /// An operation of a project in `namespace`.
+    /// `GetOperation`: an operation by its id alone, through `Q/i/`. The
+    /// caller (Task 9) authorizes it by its `namespace` and project.
     ///
     /// # Errors
     ///
-    /// `project_not_found` when the project is not in the namespace;
-    /// `not_found` when it has no such operation.
-    pub async fn get_operation(
-        &self,
-        namespace: &str,
-        project_id: &str,
-        operation_id: &str,
-    ) -> Result<OperationRec, ServiceError> {
-        check_namespace(namespace)?;
-        self.project(namespace, project_id).await?;
+    /// `invalid_argument` for a malformed id; `not_found`.
+    pub async fn get_operation(&self, operation_id: &str) -> Result<OperationRec, ServiceError> {
         if !operation_id.starts_with("op-") || operation_id.contains('/') {
             return Err(ServiceError::invalid(
                 "operation_id",
                 "an operation id starts with 'op-'",
             ));
         }
+        let missing = || ServiceError::not_found("operation", operation_id);
+        let index = self
+            .store
+            .get::<OperationIdRec>(&OperationIdKey {
+                id: operation_id.into(),
+            })
+            .await?
+            .ok_or_else(missing)?;
         let key = OperationKey {
-            project_id: project_id.into(),
+            project_id: index.record.project_id,
             id: operation_id.into(),
         };
         self.store
             .get::<OperationRec>(&key)
             .await?
             .map(|v| v.record)
-            .ok_or_else(|| ServiceError::not_found("operation", operation_id))
+            .ok_or_else(missing)
+    }
+
+    /// `ListOperations` for one namespace: a page in id (creation) order,
+    /// through `Q/n/<ns>/`, and the next page's token (empty on the last).
+    ///
+    /// # Errors
+    ///
+    /// `invalid_argument` for a bad namespace, size or token.
+    pub async fn list_operations(
+        &self,
+        namespace: &str,
+        page_size: i32,
+        page_token: &str,
+    ) -> Result<(Vec<OperationRec>, String), ServiceError> {
+        check_namespace(namespace)?;
+        let prefix = NamespaceOperations {
+            namespace: namespace.into(),
+        };
+        let (index, next) = self
+            .store
+            .list::<NamespaceOperationRec>(&prefix, page(page_size, page_token)?)
+            .await
+            .map_err(list_error)?;
+        let mut out = Vec::with_capacity(index.len());
+        for entry in index {
+            let key = OperationKey {
+                project_id: entry.record.project_id,
+                id: entry.record.id,
+            };
+            // An index whose operation was collected meanwhile is skipped.
+            if let Some(op) = self.store.get::<OperationRec>(&key).await? {
+                out.push(op.record);
+            }
+        }
+        Ok((out, next.unwrap_or_default()))
     }
 }
 

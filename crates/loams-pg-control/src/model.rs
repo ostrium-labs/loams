@@ -12,6 +12,8 @@
 //! | [`RoleRec`] | `R/<branch_id>/<role>` |
 //! | [`DatabaseRec`] | `D/<branch_id>/<db>` |
 //! | [`OperationRec`] | `O/<project_id>/<operation_id>` |
+//! | [`OperationIdRec`] (operations by id) | `Q/i/<operation_id>` |
+//! | [`NamespaceOperationRec`] (a namespace's operations) | `Q/n/<ns>/<operation_id>` |
 //! | [`IdempotencyRec`] (the idempotency ledger) | `I/<hex(SHA-256(principal, rpc, key))>` |
 //!
 //! Keys are relative to the store's root: on TiKV, the metastore's keyspace
@@ -43,9 +45,9 @@ use crate::store::StoreError;
 /// The format byte in front of every stored record.
 pub const FORMAT: u8 = 1;
 
-/// The tags of `pg-control`'s keys (§46 §6.2, plus Task 5's operations `O`
-/// and idempotency ledger `I`).
-pub const TAGS: [u8; 8] = *b"xXECRDOI";
+/// The tags of `pg-control`'s keys (§46 §6.2, plus Task 5's operations `O`,
+/// their indexes `Q` and the idempotency ledger `I`).
+pub const TAGS: [u8; 9] = *b"xXECRDOQI";
 
 /// The longest part of a key, in bytes.
 pub const MAX_PART_LEN: usize = 255;
@@ -677,6 +679,9 @@ impl OperationKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum OperationState {
     Pending,
+    /// Waiting for a `loams.approvals.v1` decision (an agent's delete of a
+    /// protected branch; Task 9).
+    AwaitingApproval,
     Running,
     Succeeded,
     Failed,
@@ -737,6 +742,89 @@ impl Record for OperationRec {
     }
     fn encode_prefix(p: &OperationPrefix) -> Result<Vec<u8>, StoreError> {
         prefix(b'O', &[&p.project_id], "")
+    }
+}
+
+/// Where an operation lives, by its id alone (`GetOperation` names only
+/// the id): `Q/i/<operation_id>`. Written in the batch that writes the
+/// operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationIdRec {
+    pub id: String,
+    pub namespace: String,
+    pub project_id: String,
+}
+
+/// An operation id.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OperationIdKey {
+    pub id: String,
+}
+
+/// Every operation id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AllOperationIds;
+
+impl Record for OperationIdRec {
+    type Key = OperationIdKey;
+    type Prefix = AllOperationIds;
+    const KIND: &'static str = "operation id";
+    fn project(&self) -> Option<&str> {
+        Some(&self.project_id)
+    }
+    fn key(&self) -> OperationIdKey {
+        OperationIdKey {
+            id: self.id.clone(),
+        }
+    }
+    fn encode_key(k: &OperationIdKey) -> Result<Vec<u8>, StoreError> {
+        key(b'Q', &["i", &k.id])
+    }
+    fn encode_prefix(_: &AllOperationIds) -> Result<Vec<u8>, StoreError> {
+        prefix(b'Q', &["i"], "")
+    }
+}
+
+/// A namespace's operations, in id (creation) order, for
+/// `ListOperations` and `WatchOperations`: `Q/n/<ns>/<operation_id>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NamespaceOperationRec {
+    pub namespace: String,
+    pub id: String,
+    pub project_id: String,
+}
+
+/// `(namespace, operation_id)`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NamespaceOperationKey {
+    pub namespace: String,
+    pub id: String,
+}
+
+/// The operations of a namespace.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NamespaceOperations {
+    pub namespace: String,
+}
+
+impl Record for NamespaceOperationRec {
+    type Key = NamespaceOperationKey;
+    type Prefix = NamespaceOperations;
+    const KIND: &'static str = "namespace operation";
+    fn project(&self) -> Option<&str> {
+        Some(&self.project_id)
+    }
+    fn key(&self) -> NamespaceOperationKey {
+        NamespaceOperationKey {
+            namespace: self.namespace.clone(),
+            id: self.id.clone(),
+        }
+    }
+    fn encode_key(k: &NamespaceOperationKey) -> Result<Vec<u8>, StoreError> {
+        key(b'Q', &["n", &k.namespace, &k.id])
+    }
+    fn encode_prefix(p: &NamespaceOperations) -> Result<Vec<u8>, StoreError> {
+        prefix(b'Q', &["n", &p.namespace], "")
     }
 }
 
@@ -859,6 +947,15 @@ mod tests {
         })
         .expect("a key");
         assert_eq!(op, b"O/prj-1/op-1");
+        let by_id =
+            OperationIdRec::encode_key(&OperationIdKey { id: "op-1".into() }).expect("a key");
+        assert_eq!(by_id, b"Q/i/op-1");
+        let in_ns = NamespaceOperationRec::encode_key(&NamespaceOperationKey {
+            namespace: "acme".into(),
+            id: "op-1".into(),
+        })
+        .expect("a key");
+        assert_eq!(in_ns, b"Q/n/acme/op-1");
         let ledger = IdempotencyKey::of("user:a", "CreateProject", "k");
         assert_eq!(ledger.digest.len(), 64);
         assert_ne!(ledger, IdempotencyKey::of("user:a", "CreateProjec", "tk"));
