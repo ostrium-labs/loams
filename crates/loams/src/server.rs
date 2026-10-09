@@ -273,12 +273,55 @@ pub struct ServerConfig {
     /// `--no-live`.
     #[cfg(feature = "live")]
     pub live: Option<loams_live::LiveConfig>,
+    /// Loams Graph (GR1 Task 5, design §48, D741; feature `graph`): where graphs live and how
+    /// often deleted graphs are purged. Served on `dev` and `standalone` (a cluster node gets
+    /// the `graph` role in Task 12).
+    #[cfg(feature = "graph")]
+    pub graph: GraphConfig,
+}
+
+/// Loams Graph's server settings (GR1 Task 5).
+#[cfg(feature = "graph")]
+#[derive(Clone, Debug)]
+pub struct GraphConfig {
+    /// Serve Loams Graph at all (`--no-graph` turns it off; its RPCs then answer
+    /// `feature_not_in_variant`).
+    pub enabled: bool,
+    /// The graph data directory: graphs live under `<data_dir>/graphs/<graph_id>/`. `None`
+    /// refuses to start unless [`GraphConfig::ephemeral`] (a served graph must be persistent:
+    /// an in-memory one fails rather than reopening after an engine panic, Task 3 review I2).
+    pub data_dir: Option<PathBuf>,
+    /// Keep graphs in memory, explicitly (`--graph-ephemeral`; dev and tests).
+    pub ephemeral: bool,
+    /// How long a deleted graph's storage is kept before it is purged.
+    pub retention_hold: Duration,
+    /// How long a superseded catalog document is kept (floor 5 minutes outside tests).
+    pub sweep_grace: Duration,
+    /// How often the purge and the catalog sweep run.
+    pub maintenance_every: Duration,
+}
+
+#[cfg(feature = "graph")]
+impl GraphConfig {
+    /// Graphs under `data_dir`, with the default hold, grace and interval.
+    pub fn under(data_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            enabled: true,
+            data_dir: Some(data_dir.into()),
+            ephemeral: false,
+            retention_hold: loams_graph::service::admin::DEFAULT_RETENTION_HOLD,
+            sweep_grace: loams_graph::catalog::DOCUMENT_GRACE,
+            maintenance_every: Duration::from_secs(600),
+        }
+    }
 }
 
 impl ServerConfig {
     /// The defaults, with data in `data_dir`, listening on 127.0.0.1:8080.
     pub fn new(data_dir: impl Into<PathBuf>) -> Self {
         let data_dir: PathBuf = data_dir.into();
+        #[cfg(feature = "graph")]
+        let data_dir_for_graph = data_dir.join("graph");
         Self {
             hot: HotTierConfig::new(&data_dir),
             hot_build: HotBuildConfig::new(&data_dir),
@@ -319,6 +362,8 @@ impl ServerConfig {
             reflection: false,
             #[cfg(feature = "live")]
             live: None,
+            #[cfg(feature = "graph")]
+            graph: GraphConfig::under(data_dir_for_graph),
         }
     }
 
@@ -346,6 +391,8 @@ impl ServerConfig {
             }
         }
         self.validate_durable()?;
+        #[cfg(feature = "graph")]
+        self.validate_graph()?;
         #[cfg(feature = "live")]
         if let Some(live) = &self.live {
             if self.cluster.is_some() {
@@ -404,6 +451,24 @@ impl ServerConfig {
     /// backlog at the budget fits the tail and strong reads need no range
     /// tail), non-zero budgets, `override_factor >= 1` and
     /// `min_retry_after <= max_retry_after`.
+    /// Loams Graph (GR1 Task 5): graphs need a data directory unless they are explicitly
+    /// ephemeral, and with no authorizer before MT1 (D750) graph RPCs are served on a loopback
+    /// address only.
+    #[cfg(feature = "graph")]
+    fn validate_graph(&self) -> Result<(), ServerError> {
+        // A cluster node does not serve Loams Graph until it has the `graph` role (GR1 Task 12).
+        if !self.graph.enabled || self.cluster.is_some() {
+            return Ok(());
+        }
+        if self.graph.data_dir.is_none() && !self.graph.ephemeral {
+            return Err(ServerError::GraphNeedsDataDir);
+        }
+        if !self.listen.ip().is_loopback() {
+            return Err(ServerError::GraphListenNotLoopback { addr: self.listen });
+        }
+        Ok(())
+    }
+
     fn validate_backpressure(&self) -> Result<(), ServerError> {
         let b = &self.query.backpressure;
         let config = |message: String| Err(ServerError::Config(message));
@@ -451,6 +516,21 @@ pub enum ServerError {
     Tikv(#[from] loams_tikv::TikvError),
     /// `--live-listen` is not a loopback address (D111, design §20 §7.1):
     /// the Live API has no authentication in R1.
+    /// Loams Graph has no data directory and graphs are not explicitly ephemeral (GR1 Task 5).
+    #[cfg(feature = "graph")]
+    #[error(
+        "Loams Graph needs a graph data directory (--graph-data-dir): a served graph must be \
+         persistent. Pass --graph-ephemeral to keep graphs in memory (development only), or \
+         --no-graph"
+    )]
+    GraphNeedsDataDir,
+    /// Graph RPCs on a non-loopback address before the authorizer exists (D750, until MT1).
+    #[cfg(feature = "graph")]
+    #[error(
+        "--listen {addr} is not a loopback address, and Loams Graph has no authorizer until the \
+         unified auth plan (D750, MT1); listen on a loopback address or pass --no-graph"
+    )]
+    GraphListenNotLoopback { addr: SocketAddr },
     #[cfg(feature = "live")]
     #[error(
         "--live-listen {addr} is not a loopback address; the Live API has no authentication \
@@ -637,6 +717,9 @@ pub struct Server {
     /// Loams Live, when configured.
     #[cfg(feature = "live")]
     live: Option<LiveRuntime>,
+    /// Loams Graph, when served (GR1 Task 5).
+    #[cfg(feature = "graph")]
+    graph: Option<GraphRuntime>,
     /// The metastore as the trait object every component holds.
     meta_store: Arc<dyn MetaStore>,
     writer: LogWriter,
@@ -843,6 +926,75 @@ struct Assembled {
     durable: Durable,
     #[cfg(feature = "es")]
     es: Option<Es>,
+    #[cfg(feature = "graph")]
+    graph: Option<GraphRuntime>,
+}
+
+/// Loams Graph as the server runs it (GR1 Task 5): the admin service (catalog and engine) and
+/// the maintenance task that purges deleted graphs and sweeps catalog documents.
+#[cfg(feature = "graph")]
+#[derive(Debug)]
+struct GraphRuntime {
+    admin: Arc<loams_graph::service::admin::GraphAdmin>,
+    data_dir: Option<PathBuf>,
+    stop: CancellationToken,
+    maintenance: JoinHandle<()>,
+}
+
+#[cfg(feature = "graph")]
+impl GraphRuntime {
+    fn start(config: &GraphConfig, meta: Arc<dyn MetaStore>, store: Store) -> Self {
+        use loams_graph::Engine;
+        use loams_graph::catalog::GraphCatalog;
+        use loams_graph::service::admin::GraphAdmin;
+        let engine = match (&config.data_dir, config.ephemeral) {
+            (Some(dir), _) => Engine::with_data_dir(dir),
+            (None, _) => Engine::new(),
+        };
+        let admin = Arc::new(
+            GraphAdmin::new(Arc::new(engine), GraphCatalog::new(meta, store))
+                .with_retention_hold(config.retention_hold),
+        );
+        let stop = CancellationToken::new();
+        let maintenance = {
+            let (admin, stop) = (admin.clone(), stop.clone());
+            let (every, hold, grace) = (
+                config.maintenance_every,
+                config.retention_hold,
+                config.sweep_grace,
+            );
+            tokio::spawn(async move {
+                let mut tick = tokio::time::interval(every);
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    tokio::select! {
+                        () = stop.cancelled() => return,
+                        _ = tick.tick() => {}
+                    }
+                    match admin.purge_expired(hold).await {
+                        Ok(0) => {}
+                        Ok(n) => tracing::info!(purged = n, "purged deleted graphs"),
+                        Err(err) => tracing::warn!(%err, "purging deleted graphs failed"),
+                    }
+                    if let Err(err) = admin.sweep_documents(grace).await {
+                        tracing::warn!(%err, "sweeping graph catalog documents failed");
+                    }
+                }
+            })
+        };
+        Self {
+            admin,
+            data_dir: config.data_dir.clone(),
+            stop,
+            maintenance,
+        }
+    }
+
+    async fn stop(self) {
+        self.stop.cancel();
+        let _ = self.maintenance.await;
+        self.admin.shutdown().await;
+    }
 }
 
 /// The running Qdrant gateway (plan M1.4 Task 2).
@@ -1233,6 +1385,8 @@ impl Server {
             durable,
             #[cfg(feature = "es")]
             es: parts.es,
+            #[cfg(feature = "graph")]
+            graph: parts.graph,
             cluster: None,
         };
         // The runtime after the collection service, before the listener
@@ -1331,6 +1485,8 @@ impl Server {
                     durable: parts.durable,
                     #[cfg(feature = "es")]
                     es: parts.es,
+                    #[cfg(feature = "graph")]
+                    graph: parts.graph,
                     cluster: Some(ClusterRuntime {
                         node_id,
                         roles,
@@ -1830,6 +1986,10 @@ impl Server {
             .timeout(api::hot::OWNER_TIMEOUT)
             .build()
             .unwrap_or_default();
+        // Loams Graph on dev and standalone (a cluster node gets the `graph` role in GR1 Task 12).
+        #[cfg(feature = "graph")]
+        let graph = (config.graph.enabled && config.cluster.is_none())
+            .then(|| GraphRuntime::start(&config.graph, meta_store.clone(), store.clone()));
         let state = AppState {
             meta: meta_store.clone(),
             writer: writer.clone(),
@@ -1852,6 +2012,8 @@ impl Server {
             node_info,
             cloudevents: config.cloudevents,
             reflection: config.reflection,
+            #[cfg(feature = "graph")]
+            graph: graph.as_ref().map(|g| g.admin.clone()),
         };
         let app = match roles.gateway {
             true => api::router(state),
@@ -1906,12 +2068,20 @@ impl Server {
             durable: Durable::none(),
             #[cfg(feature = "es")]
             es,
+            #[cfg(feature = "graph")]
+            graph,
         })
     }
 
     /// The address the HTTP API listens on.
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
+    }
+
+    /// The graph data directory, when Loams Graph is served with one (GR1 Task 5).
+    #[cfg(feature = "graph")]
+    pub fn graph_data_dir(&self) -> Option<&std::path::Path> {
+        self.graph.as_ref().and_then(|g| g.data_dir.as_deref())
     }
 
     /// The openraft metastore client, for embedding and tests; `None` on the
@@ -2111,6 +2281,12 @@ impl Server {
         // `late.close()`), before the collection service: the runtime first,
         // then the server (phases `durable_runtime`, `durable`).
         self.durable.stop().await;
+        // Loams Graph closes its graphs (flushing their WAL) before the rest stops.
+        #[cfg(feature = "graph")]
+        if let Some(graph) = self.graph {
+            shutdown_phase("graph");
+            graph.stop().await;
+        }
         shutdown_phase("collections");
         self.collections.shutdown().await;
         shutdown_phase("writer");

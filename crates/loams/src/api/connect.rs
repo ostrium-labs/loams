@@ -55,7 +55,8 @@ use super::AppState;
 pub const VARIANT: &str = if cfg!(any(
     feature = "tikv",
     feature = "mysql-wire",
-    feature = "stream-grpc"
+    feature = "stream-grpc",
+    feature = "graph"
 )) {
     "full"
 } else {
@@ -138,16 +139,34 @@ const CATALOGUE: &[Package] = &[
         available: false,
         unstable: true,
     },
+    Package {
+        // Loams Graph (GR1 Task 5, design §48 §8, D741): served with the `graph` cargo feature
+        // (the `full` variant) on dev and standalone; otherwise every RPC answers
+        // `feature_not_in_variant` (`super::graph`). Unstable until GR1 Task 39.
+        package: "loams.graph.v1",
+        services: &[
+            "loams.graph.v1.GraphAdminService",
+            "loams.graph.v1.GraphService",
+        ],
+        available: cfg!(feature = "graph"),
+        unstable: true,
+    },
 ];
 
+/// Whether a catalogue package is served by this running server: the build's `available`, and
+/// for `loams.graph.v1` also whether the graph runtime is on (`--no-graph`, cluster nodes).
+fn is_available(entry: &Package, graph_served: bool) -> bool {
+    entry.available && (entry.package != "loams.graph.v1" || graph_served)
+}
+
 /// The catalogue as `GetInstance.services[]`.
-fn statuses() -> Vec<ServiceStatus> {
+fn statuses(graph_served: bool) -> Vec<ServiceStatus> {
     CATALOGUE
         .iter()
         .map(|entry| ServiceStatus {
             package: entry.package.to_owned(),
             version: "v1".to_owned(),
-            available: entry.available,
+            available: is_available(entry, graph_served),
             services: entry
                 .services
                 .iter()
@@ -162,10 +181,10 @@ fn statuses() -> Vec<ServiceStatus> {
 /// The services a `grpc.health.v1` probe may ask about. The whole-process
 /// entry (the empty name) is pre-registered by `connectrpc-health` and is not
 /// repeated here.
-fn served_services() -> Vec<&'static str> {
+fn served_services(graph_served: bool) -> Vec<&'static str> {
     CATALOGUE
         .iter()
-        .filter(|entry| entry.available)
+        .filter(|entry| is_available(entry, graph_served))
         .flat_map(|entry| entry.services.iter().copied())
         .collect()
 }
@@ -177,7 +196,10 @@ static INSTANCE_ID: LazyLock<String> = LazyLock::new(|| Ulid::generate().to_stri
 
 /// `loams.instance.v1.InstanceService` for the OSS server.
 #[derive(Debug)]
-struct Instance;
+struct Instance {
+    /// Whether `loams.graph.v1` is served by this running server.
+    graph_served: bool,
+}
 
 impl InstanceService for Instance {
     /// No credentials: an app calls this before sign-in.
@@ -197,7 +219,7 @@ impl InstanceService for Instance {
             // `rpc.<service>` (AP1a Ruling 6); `services` is the long form.
             api_versions: CATALOGUE
                 .iter()
-                .filter(|entry| entry.available)
+                .filter(|entry| is_available(entry, self.graph_served))
                 .map(|entry| entry.package.to_owned())
                 .collect(),
             sign_in_methods: vec![SignInMethod {
@@ -205,7 +227,7 @@ impl InstanceService for Instance {
                 display_name: "No sign-in".to_owned(),
                 ..Default::default()
             }],
-            services: statuses(),
+            services: statuses(self.graph_served),
             // Empty until their plans land, not because they are off: `issuer`
             // and `jwks_uri` with the auth plan (MT), `tls_pins` and `push`
             // with the phone plans (§37 §7), `min_app_versions` with release
@@ -315,7 +337,7 @@ pub(crate) fn refuse(
 /// (design §44 §4, D600): `unimplemented`, the reason
 /// `feature_not_in_variant`, and the variant that was asked for, so a caller
 /// can tell "not in this build" from "not written yet" (`not_implemented`).
-fn not_in_variant(rpc: &str) -> ConnectError {
+pub(super) fn not_in_variant(rpc: &str) -> ConnectError {
     refuse(
         ErrorCode::Unimplemented,
         "feature_not_in_variant",
@@ -326,7 +348,7 @@ fn not_in_variant(rpc: &str) -> ConnectError {
 
 /// What an RPC whose service exists in the protos but is not implemented by
 /// this binary yet answers (AP0's `not_implemented`).
-fn not_implemented(rpc: &str) -> ConnectError {
+pub(super) fn not_implemented(rpc: &str) -> ConnectError {
     refuse(
         ErrorCode::Unimplemented,
         "not_implemented",
@@ -363,13 +385,15 @@ fn reflector(state: &AppState) -> Option<connectrpc_reflection::Reflector> {
 /// `/<package>.<Service>/<Method>` and every native path is under `/v1`,
 /// `/internal`, `/health` or `/ready`, so the two sets cannot collide.
 pub(crate) fn routes(state: &AppState, hot_default: bool) -> AxumRouter {
+    let graph_served = super::graph::served(state);
     let mut rpc = Router::new();
-    rpc = Arc::new(Instance).register(rpc);
+    rpc = Arc::new(Instance { graph_served }).register(rpc);
     rpc = Arc::new(LiveAbsent).register(rpc);
+    rpc = super::graph::register(rpc, state);
     rpc = super::connect_collections::register(rpc, state);
     rpc = super::connect_documents::register(rpc, state);
     rpc = super::connect_query::register(rpc, state);
-    let (rpc, _health) = connectrpc_health::install_static(rpc, served_services());
+    let (rpc, _health) = connectrpc_health::install_static(rpc, served_services(graph_served));
     let rpc = match reflector(state) {
         Some(reflector) => connectrpc_reflection::install(rpc, reflector),
         None => rpc,

@@ -7281,6 +7281,7 @@ dependencies = [
  "loams-common",
  "loams-durable",
  "loams-es",
+ "loams-graph",
  "loams-hnsw",
  "loams-hot",
  "loams-link",

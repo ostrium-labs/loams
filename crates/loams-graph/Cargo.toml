@@ -48,7 +48,7 @@ serde.workspace = true
 base64.workspace = true
 bytes.workspace = true
 # Backoff between catalog CAS retries (review M4).
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["time", "rt"] }
 # `gr_<ULID>` graph ids (shared contract `GraphId`).
 ulid.workspace = true
 

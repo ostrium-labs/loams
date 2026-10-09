@@ -22,6 +22,7 @@ mod connect_query_filters;
 mod connect_query_ir;
 mod errors;
 pub mod events;
+mod graph;
 pub mod hot;
 pub mod internal;
 mod query;
@@ -125,6 +126,10 @@ pub struct AppState {
     /// turns it on). It publishes the schema of the API to anyone who can
     /// reach the port, so it is not on by default.
     pub reflection: bool,
+    /// Loams Graph's admin and data plane (GR1 Task 5, feature `graph`); `None` when it is not
+    /// served (`--no-graph`, or a cluster node before GR1 Task 12).
+    #[cfg(feature = "graph")]
+    pub graph: Option<std::sync::Arc<loams_graph::service::admin::GraphAdmin>>,
 }
 
 /// What a query node needs to run forwarded reads (plan M1.3 Task 11).

@@ -350,24 +350,56 @@ impl Graph {
         name: &str,
         spec: OpenSpec,
     ) -> Result<Arc<Graph>, GraphError> {
+        let wanted = spec.clone();
+        let graph = Self::open_latched(engine, namespace, name, || spec)?;
+        if graph.spec != wanted {
+            return Err(GraphError::Conflict {
+                namespace: namespace.to_string(),
+                name: name.to_string(),
+            });
+        }
+        Ok(graph)
+    }
+
+    /// The graph open under `(namespace, name)`, or one opened with `spec()` (review M8).
+    ///
+    /// The disk open (`GrafeoDB::open`, a WAL replay) runs **outside** the registry lock, under a
+    /// per-graph latch: concurrent openers of one graph wait for the first and share its graph,
+    /// and a slow open never blocks another graph's lookups.
+    fn open_latched(
+        engine: &Engine,
+        namespace: &str,
+        name: &str,
+        spec: impl FnOnce() -> OpenSpec,
+    ) -> Result<Arc<Graph>, GraphError> {
         validate_names(namespace, name)?;
         let key = (namespace.to_string(), name.to_string());
-        let mut graphs = engine
+        if let Some(existing) = engine.registered(&key)? {
+            return Ok(existing);
+        }
+        let latch = {
+            let mut latches = engine
+                .opening
+                .lock()
+                .map_err(|_| poisoned("the graph opening latches are poisoned"))?;
+            Arc::clone(latches.entry(key.clone()).or_default())
+        };
+        let _opening = latch
+            .lock()
+            .map_err(|_| poisoned("a graph opening latch is poisoned"))?;
+        // Someone else may have opened it while this caller waited for the latch.
+        if let Some(existing) = engine.registered(&key)? {
+            return Ok(existing);
+        }
+        let graph = Arc::new(Graph::open_db(namespace, name, spec())?);
+        engine
             .graphs
             .lock()
-            .map_err(|_| poisoned("the graph registry is poisoned"))?;
-
-        if let Some(existing) = graphs.get(&key) {
-            if existing.spec != spec {
-                return Err(GraphError::Conflict {
-                    namespace: namespace.to_string(),
-                    name: name.to_string(),
-                });
-            }
-            return Ok(Arc::clone(existing));
+            .map_err(|_| poisoned("the graph registry is poisoned"))?
+            .insert(key.clone(), Arc::clone(&graph));
+        if let Ok(mut latches) = engine.opening.lock() {
+            latches.remove(&key);
         }
-        let graph = Arc::new(Graph::open_db(namespace, name, spec)?);
-        graphs.insert(key, Arc::clone(&graph));
         tracing::debug!(
             namespace = %graph.namespace,
             name = %graph.name,
@@ -472,6 +504,11 @@ impl Graph {
         }
     }
 
+    /// Whether the graph needs [`Engine::reopen_if_poisoned`] (or is failed) before it serves.
+    pub fn is_poisoned_or_failed(&self) -> bool {
+        self.is_poisoned() || self.failed.load(Ordering::Acquire)
+    }
+
     fn is_poisoned(&self) -> bool {
         self.poisoned.load(Ordering::Acquire)
     }
@@ -548,18 +585,7 @@ impl Graph {
         name: &str,
         spec: impl FnOnce() -> OpenSpec,
     ) -> Result<Arc<Graph>, GraphError> {
-        validate_names(namespace, name)?;
-        let key = (namespace.to_string(), name.to_string());
-        let mut graphs = engine
-            .graphs
-            .lock()
-            .map_err(|_| poisoned("the graph registry is poisoned"))?;
-        if let Some(existing) = graphs.get(&key) {
-            return Ok(Arc::clone(existing));
-        }
-        let graph = Arc::new(Graph::open_db(namespace, name, spec())?);
-        graphs.insert(key, Arc::clone(&graph));
-        Ok(graph)
+        Self::open_latched(engine, namespace, name, spec)
     }
 
     /// This graph's namespace.
@@ -813,6 +839,9 @@ impl Graph {
     }
 }
 
+/// A per-graph opening latch.
+type Latch = Arc<Mutex<()>>;
+
 /// The engine: the open graphs of one Loams process.
 ///
 /// Deliberately not a global. `Engine` is held by the service and injected, so a test can stand up
@@ -822,6 +851,8 @@ pub struct Engine {
     /// Keyed by `(namespace, name)`, never by a joined string, so no two pairs share a key
     /// (security review I3).
     graphs: Mutex<HashMap<(String, String), Arc<Graph>>>,
+    /// Per-graph latches held while a graph opens outside the registry lock (review M8).
+    opening: Mutex<HashMap<(String, String), Latch>>,
     /// Where persistent graphs live: `<data_dir>/graphs/<graph_id>/`. `None` keeps every graph in
     /// memory.
     data_dir: Option<PathBuf>,
@@ -843,10 +874,21 @@ impl Engine {
     pub fn new() -> Self {
         Self {
             graphs: Mutex::new(HashMap::new()),
+            opening: Mutex::new(HashMap::new()),
             data_dir: None,
             standard: crate::GQL_STANDARD,
             engine_version: crate::ENGINE_VERSION,
         }
+    }
+
+    /// The graph registered under `key`, if any.
+    fn registered(&self, key: &(String, String)) -> Result<Option<Arc<Graph>>, GraphError> {
+        Ok(self
+            .graphs
+            .lock()
+            .map_err(|_| poisoned("the graph registry is poisoned"))?
+            .get(key)
+            .cloned())
     }
 
     /// An engine whose persistent graphs live under `data_dir/graphs/`.

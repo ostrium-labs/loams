@@ -43,6 +43,8 @@ loams-collection.workspace = true
 loams-common.workspace = true
 # The embedded Resonate server (D1), with the durable feature only.
 loams-durable = { workspace = true, optional = true }
+# Loams Graph (feature `graph`, GR1 Task 5).
+loams-graph = { workspace = true, optional = true }
 loams-es = { workspace = true, optional = true }
 loams-hnsw.workspace = true
 loams-hot.workspace = true
@@ -119,6 +121,11 @@ mysql-wire = ["dep:opensrv-mysql", "dep:datafusion"]
 pgwire = ["dep:datafusion-postgres", "dep:datafusion", "dep:futures"]
 # The native stream gRPC endpoint used by Dapr protocol adapters.
 stream-grpc = ["dep:loams-stream-grpc"]
+# Loams Graph (GR1 Task 5, design §48, D741): `loams.graph.v1` on the main port, Grafeo
+# embedded. Off by default: without it `loams` links no Grafeo crate (CI checks
+# `cargo tree -p loams -e normal | grep -c grafeo` = 0) and the graph RPCs answer
+# `feature_not_in_variant`.
+graph = ["dep:loams-graph"]
 # Builds the multi-process cluster tests (`tests/cluster.rs`, M1.3 Task 11;
 # E43); CI runs them in their own job.
 cluster-tests = []

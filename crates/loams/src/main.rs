@@ -218,6 +218,18 @@ enum HotSwitch {
 /// `cluster`.
 #[derive(Debug, clap::Args)]
 struct Native {
+    /// Loams Graph's data directory (feature `graph`): graphs live under
+    /// <DIR>/graphs/<graph_id>/ [default: <data-dir>/graph for dev; required
+    /// for standalone unless --graph-ephemeral or --no-graph].
+    #[arg(long, conflicts_with_all = ["graph_ephemeral", "no_graph"])]
+    graph_data_dir: Option<PathBuf>,
+    /// Keep graphs in memory (development only): a graph is lost on restart,
+    /// and fails rather than reopening after an engine panic.
+    #[arg(long, conflicts_with = "no_graph")]
+    graph_ephemeral: bool,
+    /// Serve no Loams Graph API (its RPCs answer feature_not_in_variant).
+    #[arg(long)]
+    no_graph: bool,
     /// Address of the Arrow Flight SQL listener [default: 127.0.0.1:8082
     /// for dev, 0.0.0.0:8082 for standalone].
     #[arg(long, conflicts_with = "no_flight_sql")]
@@ -469,6 +481,29 @@ fn parse_key_value(text: &str) -> Result<(String, String), String> {
 }
 
 impl Native {
+    /// Loams Graph's settings (GR1 Task 5). `dev` keeps graphs under `<data-dir>/graph` by
+    /// default; `standalone` and `cluster` need `--graph-data-dir` (or `--graph-ephemeral`, or
+    /// `--no-graph`), and the server refuses to start without one.
+    fn apply_graph(&self, config: &mut ServerConfig, dev: bool) {
+        #[cfg(feature = "graph")]
+        {
+            config.graph.enabled = !self.no_graph;
+            config.graph.ephemeral = self.graph_ephemeral;
+            if let Some(dir) = &self.graph_data_dir {
+                config.graph.data_dir = Some(dir.clone());
+            } else if !dev || self.graph_ephemeral {
+                config.graph.data_dir = None;
+            }
+        }
+        #[cfg(not(feature = "graph"))]
+        {
+            let _ = (config, dev);
+            if self.graph_data_dir.is_some() || self.graph_ephemeral {
+                tracing::warn!("this build has no Loams Graph (the graph feature is off)");
+            }
+        }
+    }
+
     fn apply(&self, config: &mut ServerConfig, default_flight: SocketAddr) {
         config.flight_sql = if self.no_flight_sql {
             None
@@ -1042,6 +1077,7 @@ fn config(command: Command) -> ServerConfig {
             config.cluster = Some(cluster);
             // After `cluster`: a cluster node has no default durable store.
             native.apply(&mut config, STANDALONE_FLIGHT_SQL);
+            native.apply_graph(&mut config, false);
             tuning.apply(&mut config);
             config
         }
@@ -1066,6 +1102,7 @@ fn config(command: Command) -> ServerConfig {
                 config.log.flush_interval = Duration::from_millis(ms);
             }
             native.apply(&mut config, DEV_FLIGHT_SQL);
+            native.apply_graph(&mut config, true);
             tuning.apply(&mut config);
             // Q603's proposed default: `loams dev` publishes the schema of
             // the Connect API on the main port (design §44 §4), a production
@@ -1089,6 +1126,7 @@ fn config(command: Command) -> ServerConfig {
             live.apply(&mut config);
             config.bucket = Some(bucket);
             native.apply(&mut config, STANDALONE_FLIGHT_SQL);
+            native.apply_graph(&mut config, false);
             config
         }
     }
@@ -1305,6 +1343,41 @@ mod tests {
     fn dev_config(args: &[&str]) -> ServerConfig {
         let cli = Cli::try_parse_from(["loams", "dev"].iter().chain(args)).expect("parse");
         config(cli.command)
+    }
+
+    /// GR1 Task 5: `loams dev` keeps graphs under `<data-dir>/graph`; `standalone` has no graph
+    /// data dir unless one is given (and the server then refuses to start), and
+    /// `--graph-ephemeral` / `--no-graph` say so explicitly.
+    #[cfg(feature = "graph")]
+    #[test]
+    fn graph_data_dir_defaults_per_command() {
+        let dev = dev_config(&["--data-dir", "/d"]);
+        assert_eq!(
+            dev.graph.data_dir,
+            Some(std::path::PathBuf::from("/d/graph"))
+        );
+        assert!(dev.graph.enabled && !dev.graph.ephemeral);
+        let parse = |args: &[&str]| {
+            let cli = Cli::try_parse_from(
+                ["loams", "standalone", "--bucket", "file:///b"]
+                    .iter()
+                    .chain(args),
+            )
+            .expect("parse");
+            config(cli.command)
+        };
+        let standalone = parse(&[]);
+        assert_eq!(standalone.graph.data_dir, None);
+        assert!(
+            standalone.validate().is_err(),
+            "refuses without a graph data dir"
+        );
+        let given = parse(&["--graph-data-dir", "/g"]);
+        assert_eq!(given.graph.data_dir, Some(std::path::PathBuf::from("/g")));
+        let ephemeral = parse(&["--graph-ephemeral"]);
+        assert!(ephemeral.graph.ephemeral && ephemeral.graph.data_dir.is_none());
+        let off = parse(&["--no-graph"]);
+        assert!(!off.graph.enabled);
     }
 
     /// Q603's proposed default: `loams dev` publishes the Connect schema on

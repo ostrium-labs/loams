@@ -1004,6 +1004,8 @@ async fn the_link_endpoint_shows_version_and_applied_for_collections() {
         node_id: 1,
         internal: reqwest::Client::new(),
         hot_pin_all: false,
+        #[cfg(feature = "graph")]
+        graph: None,
         roles: loams_hot::Roles::all(),
         forwarded: None,
         forward_stats: Arc::default(),

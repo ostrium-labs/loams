@@ -178,6 +178,10 @@ jobs:
               - "crates/loams-proto/**"
               - "proto/loams/graph/**"
               - "crates/loams/Cargo.toml"
+              - "crates/loams/src/api/graph.rs"
+              - "crates/loams/src/api/connect.rs"
+              - "crates/loams/src/server.rs"
+              - "crates/loams/tests/connect_graph.rs"
               - "connectors/licences.toml"
               - "fabric/Cargo.lock"
             # Shared pnpm tooling uses the root workspace and lockfile.
@@ -1481,6 +1485,12 @@ jobs:
       # GR1 Task 3: panic containment (`engine_panic_poisons_one_graph`) behind a failpoint.
       - name: loams-graph with failpoints
         run: cargo test -p loams-graph --features failpoints --locked --test failpoints
+      # GR1 Task 5: loams.graph.v1 on the main port, in both builds (the default build answers
+      # feature_not_in_variant; the graph build serves it).
+      - name: loams serves loams.graph.v1 (graph feature)
+        run: cargo test -p loams --features graph --locked --test connect_graph --test connect_api
+      - name: loams answers feature_not_in_variant (default build)
+        run: cargo test -p loams --locked --test connect_graph
 
   # SQ1 Task 3: the gate's sans-I/O MySQL codec parses untrusted client
   # packets. Each cargo-fuzz target runs 60 s from its seed corpus; the same

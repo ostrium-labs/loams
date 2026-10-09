@@ -1362,3 +1362,38 @@ fn statement_language_wins_over_the_batch() {
     assert_eq!(err.code, ErrorCode::Unimplemented);
     assert_eq!(reason(&err), "graph_language_disabled");
 }
+
+/// GR1 Task 5 (Task 4 review M8): a graph opens outside the registry lock under a per-graph
+/// latch, so concurrent openers share one graph, and an open of one graph does not wait on
+/// another's.
+#[test]
+fn concurrent_opens_share_one_graph() {
+    let data_dir = scratch_dir("latch");
+    let engine = std::sync::Arc::new(Engine::with_data_dir(&data_dir));
+    let id = loams_graph::GraphId::new();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+    let graphs: Vec<_> = (0..8)
+        .map(|_| {
+            let (engine, barrier) = (engine.clone(), barrier.clone());
+            std::thread::spawn(move || {
+                barrier.wait();
+                Graph::open_or_existing(&engine, "acme", "shared", || {
+                    OpenSpec::persistent(&engine, id).expect("a data dir")
+                })
+                .expect("open")
+            })
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .map(|h| h.join().expect("thread"))
+        .collect();
+    for graph in &graphs[1..] {
+        assert!(
+            std::sync::Arc::ptr_eq(&graphs[0], graph),
+            "one graph for every opener"
+        );
+    }
+    drop(graphs);
+    assert_eq!(engine.close("acme", "shared"), Ok(true));
+    std::fs::remove_dir_all(&data_dir).ok();
+}

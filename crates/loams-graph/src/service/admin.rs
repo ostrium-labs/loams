@@ -146,6 +146,23 @@ fn limits_to(limits: &GraphLimits) -> pb::GraphLimits {
     }
 }
 
+/// Runs blocking engine work (a disk open, a statement) on the blocking pool, off the async
+/// runtime (review M8; Task 6 replaces this with its statement pool).
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, ConnectError> + Send + 'static,
+) -> Result<T, ConnectError> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .unwrap_or_else(|err| {
+            tracing::error!(error = %err, "a blocking graph task failed");
+            Err(refuse(
+                ErrorCode::Internal,
+                "internal",
+                "internal error running the statement",
+            ))
+        })
+}
+
 /// A short operation id: `op-` and 26 hex characters (D146).
 fn operation_id() -> String {
     let hex = format!("{:032x}", u128::from(ulid::Ulid::generate()));
@@ -265,13 +282,27 @@ impl GraphAdmin {
             .open_graph(namespace, name)
             .filter(|g| g.id() == Some(id))
         {
-            return self.engine.reopen_if_poisoned(graph).map_err(map_engine);
+            if !graph.is_poisoned_or_failed() {
+                return Ok(graph);
+            }
+            let engine = Arc::clone(&self.engine);
+            return blocking(move || engine.reopen_if_poisoned(graph).map_err(map_engine)).await;
         }
         for _ in 0..2 {
-            let graph = Graph::open_or_existing(&self.engine, namespace, name, || {
-                OpenSpec::for_catalog(&self.engine, id)
-            })
-            .map_err(map_engine)?;
+            let graph = {
+                let (engine, ns, nm) = (
+                    Arc::clone(&self.engine),
+                    namespace.to_string(),
+                    name.to_string(),
+                );
+                blocking(move || {
+                    Graph::open_or_existing(&engine, &ns, &nm, || {
+                        OpenSpec::for_catalog(&engine, id)
+                    })
+                    .map_err(map_engine)
+                })
+                .await?
+            };
             if graph.id() == Some(id) {
                 #[cfg(feature = "test-hooks")]
                 self.after_open().await;
@@ -281,7 +312,16 @@ impl GraphAdmin {
                 let still = self.catalog.get_by_name(namespace, name).await;
                 if !matches!(&still, Ok(now) if now.id == meta.id) {
                     drop(graph);
-                    let _ = self.engine.close(namespace, name);
+                    let (engine, ns, nm) = (
+                        Arc::clone(&self.engine),
+                        namespace.to_string(),
+                        name.to_string(),
+                    );
+                    let _ = blocking(move || {
+                        let _ = engine.close(&ns, &nm);
+                        Ok(())
+                    })
+                    .await;
                     return Err(match still {
                         Err(err) => map_catalog(err),
                         Ok(_) => map_catalog(CatalogError::NotFound {
@@ -290,13 +330,23 @@ impl GraphAdmin {
                         }),
                     });
                 }
-                return self.engine.reopen_if_poisoned(graph).map_err(map_engine);
+                let engine = Arc::clone(&self.engine);
+                return blocking(move || engine.reopen_if_poisoned(graph).map_err(map_engine))
+                    .await;
             }
             // An older graph of this name is still open: close it and open this one.
             drop(graph);
-            self.engine.close(namespace, name).map_err(|err| {
-                refuse(ErrorCode::Unavailable, "graph_reloading", err.to_string())
-            })?;
+            let (engine, ns, nm) = (
+                Arc::clone(&self.engine),
+                namespace.to_string(),
+                name.to_string(),
+            );
+            blocking(move || {
+                engine.close(&ns, &nm).map(|_| ()).map_err(|err| {
+                    refuse(ErrorCode::Unavailable, "graph_reloading", err.to_string())
+                })
+            })
+            .await?;
         }
         Err(refuse(
             ErrorCode::Unavailable,
@@ -488,9 +538,18 @@ impl GraphAdmin {
             drop(open);
             // A holder still mid-statement keeps it open; the catalog no longer serves it, and
             // `open` replaces it if the name is created again.
-            if let Err(err) = self.engine.close(&req.namespace, &req.name) {
-                tracing::warn!(namespace = %req.namespace, name = %req.name, error = %err, "a deleted graph is still in use; it closes when released");
-            }
+            let (engine, ns, nm) = (
+                Arc::clone(&self.engine),
+                req.namespace.clone(),
+                req.name.clone(),
+            );
+            let _ = blocking(move || {
+                if let Err(err) = engine.close(&ns, &nm) {
+                    tracing::warn!(namespace = %ns, name = %nm, error = %err, "a deleted graph is still in use; it closes when released");
+                }
+                Ok(())
+            })
+            .await;
         }
         let mut operation = ops::Operation {
             id: operation_id(),
@@ -514,7 +573,7 @@ impl GraphAdmin {
         req: pb::GetSchemaRequest,
     ) -> Result<pb::GraphSchema, ConnectError> {
         let graph = self.open(&req.namespace, &req.name).await?;
-        let summary = graph.schema().map_err(map_engine)?;
+        let summary = blocking(move || graph.schema().map_err(map_engine)).await?;
         Ok(pb::GraphSchema {
             labels: summary
                 .labels
@@ -559,7 +618,7 @@ impl GraphAdmin {
         req: pb::ExecuteRequest,
     ) -> Result<pb::ExecuteResponse, ConnectError> {
         let graph = self.open(&req.namespace, &req.graph).await?;
-        data::execute_on(&graph, req)
+        blocking(move || data::execute_on(&graph, req)).await
     }
 
     /// `ExecuteBatch` on a catalog graph, opening it lazily.
@@ -572,7 +631,7 @@ impl GraphAdmin {
         req: pb::ExecuteBatchRequest,
     ) -> Result<pb::ExecuteBatchResponse, ConnectError> {
         let graph = self.open(&req.namespace, &req.graph).await?;
-        data::execute_batch_on(&graph, req)
+        blocking(move || data::execute_batch_on(&graph, req)).await
     }
 
     /// `Explain` on a catalog graph.
@@ -582,7 +641,7 @@ impl GraphAdmin {
     /// As [`data::explain`].
     pub async fn explain(&self, req: pb::ExplainRequest) -> Result<pb::Plan, ConnectError> {
         let graph = self.open(&req.namespace, &req.graph).await?;
-        data::explain_on(&graph, req)
+        blocking(move || data::explain_on(&graph, req)).await
     }
 
     /// Purges every deleted graph whose retention hold (`hold`, or the admin's own when `None`)
@@ -610,17 +669,31 @@ impl GraphAdmin {
                     && open.id().is_some_and(|id| id.to_string() == meta.id)
                 {
                     drop(open);
-                    if self.engine.close(&namespace, &meta.name).is_err() {
+                    let (engine, ns, nm) = (
+                        Arc::clone(&self.engine),
+                        namespace.clone(),
+                        meta.name.clone(),
+                    );
+                    let closed = blocking(move || Ok(engine.close(&ns, &nm).is_ok())).await;
+                    if !matches!(closed, Ok(true)) {
                         // Still in use: purge on a later sweep.
                         continue;
                     }
                 }
                 if let (Some(data_dir), Ok(id)) = (self.engine.data_dir(), meta.graph_id()) {
                     let dir = data_dir.join("graphs").join(id.to_string());
-                    if let Err(err) = std::fs::remove_dir_all(&dir)
-                        && err.kind() != std::io::ErrorKind::NotFound
-                    {
-                        tracing::warn!(dir = %dir.display(), error = %err, "could not purge a deleted graph's storage");
+                    let removed = blocking(move || {
+                        Ok(match std::fs::remove_dir_all(&dir) {
+                            Ok(()) => true,
+                            Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+                            Err(err) => {
+                                tracing::warn!(dir = %dir.display(), error = %err, "could not purge a deleted graph's storage");
+                                false
+                            }
+                        })
+                    })
+                    .await;
+                    if !matches!(removed, Ok(true)) {
                         continue;
                     }
                 }

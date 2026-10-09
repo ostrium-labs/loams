@@ -177,7 +177,7 @@ Language idiom rules (D606): module and method names are the proto names in the 
 | `loams.streams` | `loams.stream.v1` | API1 |
 | `loams.links` | `loams.link.v1` | API1 |
 | `loams.tables`, `loams.live` | `loams.live.v1`: `tables` wraps `Query`, `Mutate`, `Deploy`; `live` wraps `Watch`, `ModifyQuerySet` | exists (R1) |
-| `loams.graph` | `loams.graph.v1` (M3; §07) | placeholder module, empty until the proto lands |
+| `loams.graph` | `loams.graph.v1` (M3; §07, §48) | served with the `graph` feature (GR1 Task 5); `feature_not_in_variant` otherwise; unstable until GR1e |
 | `loams.durable`, `loams.operations`, `loams.approvals` | durable engine control (start/signal/inspect) in `loams.durable.v1`; `loams.operations.v1`; `loams.approvals.v1` | partial (D1, AP0) |
 | `loams.jobs` | `loams.jobs.v1` (§26) | when J1 lands |
 | `loams.flow` | `loams.flow.v1` (§32) | when FL lands |

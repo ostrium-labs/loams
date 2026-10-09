@@ -1108,3 +1108,33 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 4. Outside `test-hooks` the sweep grace has a 5-minute floor (`MIN_DOCUMENT_GRACE`).
 5. **Accepted (controller):** an `UpdateGraph` whose CAS committed, whose ack was lost, and whose graph another writer then deleted, answers `NOT_FOUND` on its retry although the update applied. The graph is gone either way, and the caller sees the state that stands. `sweep_documents` and `purge_expired` are scheduled by Task 5 (single node) and Task 12 (cluster).
 
+### Task 5 (2026-10-09, on `backend/gr1`)
+
+**R5.1 Where `loams.graph.v1` is served.**
+- With the `graph` cargo feature (which puts the binary in the `full` variant), `dev` and `standalone` serve both services over `GraphAdmin`.
+- Without the feature, `--no-graph`, or on a `cluster` node, every RPC answers `unimplemented`/`feature_not_in_variant` from `GraphAbsent`, and `GetInstance.services[]` reports the package `available: false`. Availability is computed per running server, not only from the build.
+- `ExecuteStream` (Task 6) and `RestoreGraph`/`ExportGraph`/`ImportGraph` (Task 29) answer `not_implemented`.
+
+**R5.2 The `graph` role is deferred to Task 12 (deviation).**
+- The plan put role `graph` (`loams_hot::Roles`) in Task 5. A cluster node cannot serve graph RPCs before MT1 anyway: cluster listeners are non-loopback, and graph RPCs are refused off loopback. So Task 5 serves graph on single nodes only, and validation skips graph on cluster nodes.
+- Task 12 adds the role, makes peer-descriptor decoding tolerate unknown roles, and serves graph on nodes that hold the role.
+
+**R5.3 Configuration.** There is no `[graph]` TOML section, because `loams` is configured by flags. `ServerConfig.graph` is a `GraphConfig { enabled, data_dir, ephemeral, retention_hold, sweep_grace, maintenance_every }`.
+- The flags are `--graph-data-dir`, `--graph-ephemeral` and `--no-graph`.
+- `dev` defaults to `<data-dir>/graph`; `standalone` has no default.
+- `Server::start` refuses `GraphNeedsDataDir` when there is no data dir and graphs are not ephemeral (`graph_requires_a_data_dir`). It refuses `GraphListenNotLoopback` when `--listen` is not loopback (D750, until MT1; `non_loopback_listen_without_authorizer_refused`).
+- `idle_evict_after`, `node_memory` and `limits` arrive with Tasks 14, 26 and 6.
+
+**R5.4 Scheduling (R4.9).** A maintenance task runs `purge_expired(retention_hold)` and then `sweep_documents(sweep_grace)` every `maintenance_every` (default 10 min), and stops at shutdown before the collections. Shutdown then closes every graph (`deleted_graphs_are_purged_on_schedule`).
+
+**R5.5 Off the async path (Task 4 M8).**
+- A graph opens outside the engine registry lock under a per-graph latch, so concurrent openers share one graph (`concurrent_opens_share_one_graph`).
+- `GraphAdmin` runs every disk open, close, purge and statement on `spawn_blocking`.
+
+**R5.6 Reflection.** `reflection_lists_only_served_or_stubbed_services` (in both builds) calls every method of every service reflection lists and requires a route. `grpc.*` and the import-only `loams.operations.v1` are exempt. `loams.postgres.v1` is not compiled into `loams-proto` on this branch, so it needs no exemption here; whichever branch adds it must stub it or add it to `IMPORT_ONLY`.
+
+**R5.7 Tests and CI.**
+- The tests live in `crates/loams/tests/connect_graph.rs` (not `tests/it/graph.rs`), so both builds can run them in isolation.
+- CI's `graph` job runs them with and without the feature, plus `connect_api` with the feature.
+- `cargo tree -p loams -e normal` shows 0 grafeo lines in the default build and 16 with `graph`.
+
