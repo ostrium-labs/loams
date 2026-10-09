@@ -638,17 +638,45 @@ mod tests {
         })
     }
 
-    /// `loams-meta-tikv`'s tags (`crates/loams-meta-tikv/src/keys.rs`) and
-    /// its lease scopes (`e/m/`, `e/cluster/`), and the runner's commit
-    /// tokens (`t/`), as of Task 3. The pg keys share the metastore's root,
-    /// so neither may ever read the other's records.
+    /// The metastore's key tags, read from its source so a new tag there is
+    /// checked here without a hand-kept copy: every `tagged(b'?'` call and
+    /// every `b"?/"` constant of `crates/loams-meta-tikv/src/keys.rs`, plus
+    /// the lease tag `e` (its scopes are compared below) and the runner's
+    /// commit tokens `t/` (`crates/loams-tikv/src/token.rs`).
+    fn metastore_tags() -> std::collections::BTreeSet<u8> {
+        const KEYS: &str = include_str!("../../loams-meta-tikv/src/keys.rs");
+        const TOKEN: &str = include_str!("../../loams-tikv/src/token.rs");
+        let mut tags = std::collections::BTreeSet::new();
+        for (source, open) in [(KEYS, "tagged(b'"), (KEYS, "= b\""), (TOKEN, "= b\"")] {
+            for (at, _) in source.match_indices(open) {
+                let rest = &source.as_bytes()[at + open.len()..];
+                // A tag is one character, then `'` (tagged) or `/` (a prefix).
+                if let [tag, b'\'' | b'/', ..] = rest {
+                    tags.insert(*tag);
+                }
+            }
+        }
+        tags
+    }
+
+    /// The pg keys share the metastore's root (on TiKV), so neither may ever
+    /// read the other's records.
     #[test]
     fn tags_are_disjoint_from_the_metastore() {
-        let metastore = b"achHikKlLnNopqrsSwWet";
+        let metastore = metastore_tags();
+        // The parse found what Task 0 listed, so it reads the files right.
+        for known in b"NSLKwrqesht" {
+            assert!(
+                metastore.contains(known),
+                "metastore tag {}",
+                *known as char
+            );
+        }
         for tag in TAGS {
             assert!(!metastore.contains(&tag), "tag {}", tag as char);
         }
         let scope = crate::store::LEASE_SCOPE.as_bytes();
+        assert!(include_str!("../../loams-meta-tikv/src/keys.rs").contains("b\"e/m/\""));
         for theirs in [b"e/m/".as_slice(), b"e/cluster/"] {
             assert!(!scope.starts_with(theirs) && !theirs.starts_with(scope));
         }
