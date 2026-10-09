@@ -4,6 +4,8 @@ Status: **Proposed** · 2026-10-08. Source: the owner's goal "Loams Postgres (se
 
 This is an addendum to [§28](28-loams-postgres.md). It keeps §28's approved decisions D230–D232 and D234–D236 and its proposals D237–D241 and D263–D272. Under the owner's directive of 2026-10-08 ("remove safekeepers"), it **reverses D233's gating**: `loams-wal` is the only WAL at launch, and §28 §7's relative gate becomes the absolute launch targets of §9.3 (D714). It also builds on [§23](23-neon-and-wesql.md) §6 (N1–N6), [§31](31-loams-router-and-verification.md) (D304–D307, PgDog sharding), [§41](41-multitenant-byoc-control-plane.md) (D540–D559, the open control plane), [§19](19-console-identity-and-agents.md) and [§38](38-knative-authentik-gitops.md) §4 (identity), [§44](44-unified-api-and-sdks.md) (the API rules) and [§37](37-desktop-and-mobile-apps.md) §19.10 (D667, D668: the desktop as a local control plane). It **answers Q113**: the scale-to-zero design is PgDog plus a Loams waker, with Neon's proxy kept as the fallback (D709). It **amends D668**: the desktop's direct pageserver calls become the fallback, used only when a server does not offer this API (D719).
 
+**Amended by [§51](51-neon-fork.md) (2026-10-09).** Ostrium Labs now owns and maintains the Neon fork (D800). Fork releases follow D810–D811, not D241. The majors are D813's, which answers Q649. Major upgrades go through `fast_import` and `ImportPgdata` first (D815, amending D716's dump and restore into a fallback). The extension allow-list is D812's catalogue (Q651).
+
 **Out of scope:** the engine's `--pg-listen` listener (feature `pgwire`, PG1). It serves read-only SQL over a namespace's collections. It is **not** Loams Postgres, it never routes to a compute, and nothing here changes it.
 
 Markers: **(verify)** means not checked against a primary source; the plan task that depends on the fact checks it first. **(estimate)** means computed, not measured. **(target)** is a number this document sets as a gate.
@@ -454,7 +456,7 @@ The targets apply on the reference topology (§16.3). Task 30 calibrates them, a
 - **Pageservers** roll one at a time through the storage controller's drain and fill (`/control/v1/node/{id}/drain` (verify)). **`loams-wal`** rolls one acceptor (Arm A, keeping two of three) or one pool instance (TiKV store) at a time, waiting for the timelines to catch up between steps.
 - **PgDog** rolls with `maxUnavailable: 0`. Clients on a terminating Pod see a reconnect.
 - **`pg-control`** rolls freely. The API is versioned under `buf breaking`, and a breaking change needs `v2` beside `v1` for one minor release (D616).
-- **Fork releases** follow D241: quarterly rebases, minors within a week of upstream.
+- **Fork releases** follow D241: quarterly rebases, minors within a week of upstream. *(Superseded by §51 D810–D811: releases `nf-YYYY.MM.N`, weekly and nightly syncs by merge, Postgres minors within 7 days.)*
 - **Major Postgres versions.** At GA, `UpgradeProject{target_version}` creates a branch on a new project at the new version and copies the data with `pg_dump | pg_restore`, then swaps endpoints. Downtime equals the copy time and is announced. In-place `pg_upgrade` support on the fork is later work (Q648).
 
 ## 13. Observability (D717)
@@ -651,7 +653,7 @@ Nothing else in the desktop changes. The work is PG2 Task 58, scheduled after AP
 | Q646 | The storage controller's HA: does the fork support two replicas with leadership through its database, and is a two-instance CNPG Cluster enough? | PG2 Task 49 |
 | Q647 | Region-loss RPO now depends on `loams-wal`: is "250 ms group-commit interval plus bucket replication lag" acceptable at GA, and must the archive (`.lwal`) bucket replicate synchronously or asynchronously? | Founder, before GA |
 | Q648 | Major-version upgrades: dump and restore at GA (D716), or in-place `pg_upgrade` support in the fork first? | PG2 Task 51 |
-| Q649 | Postgres 18 at GA (D241 says 17 and 18; §28 §10 estimates 3–6 engineer-weeks of fork work), or 17 only at GA? | Founder, PG2 Task 0 |
+| Q649 | ~~Postgres 18 at GA (D241 says 17 and 18; §28 §10 estimates 3–6 engineer-weeks of fork work), or 17 only at GA?~~ Answered by §51 D813: 17 at GA; 18 when NF1e's gate passes; 19 beta | Answered (proposed) |
 | Q650 | The fields `loams-platform` needs from `ComputeLifecycleObserver` to bill compute and storage; confirm that storage-byte-hours are read from the pageserver's logical size by the platform | `loams-platform`, PG2 Task 12 |
 | Q651 | The extension allow-list at GA, and which extensions are excluded for licence reasons (for example TimescaleDB's TSL parts) | PG2 Task 55 |
 | Q652 | The launch `loams-wal` store: the TiKV hot tier (the owner's directive; D234) or Arm A (local NVMe acceptors; D264), on Task 42's bake-off results against §9.3; and whether the other store ships behind a setting | Founder, PG2 Task 42 |
