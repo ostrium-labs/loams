@@ -726,6 +726,7 @@ jobs:
           cargo test ${{ steps.packages.outputs.args }} --locked --no-run
           cargo test -p loams --features tikv --test meta_tikv --locked --no-run
           cargo test -p loams --features live-tikv --test live --locked --no-run
+          cargo test -p loams --features live-tikv --bin loams live --locked --no-run
           cargo test -p loams-durable --features tikv --lib --test tikv --locked --no-run
           cargo test -p loams-safekeeper --features tikv --test tikv --locked --no-run
       - uses: actions/cache@v6
@@ -746,6 +747,7 @@ jobs:
           cargo test ${{ steps.packages.outputs.args }} --locked
           cargo test -p loams --features tikv --test meta_tikv --locked
           cargo test -p loams --features live-tikv --test live --locked
+          cargo test -p loams --features live-tikv --bin loams live --locked
           cargo test -p loams-durable --features tikv --lib --test tikv --locked
           cargo test -p loams-safekeeper --features tikv --test tikv --locked
       - name: playground logs

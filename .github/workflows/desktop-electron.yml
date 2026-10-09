@@ -77,7 +77,8 @@ jobs:
         with:
           key: desktop-${{ matrix.name }}
 
-      # The desktop engine needs the live and durable cargo features; the default build lacks them.
+      # The desktop engine needs durable and live-tikv (Live on the TiKV stack, ruling T23-7);
+      # the default build has live (the embedded store) but lacks both.
       - name: engine
         run: cargo build --release -p loams --features live,durable,live-tikv
 

@@ -1,7 +1,8 @@
 // Copies the engine binary into resources/bin/ for electron-builder (extraResources) and strips it.
 // Source: LOAMS_BIN, else <cargo target_directory>/release/loams[.exe] from `cargo metadata`.
 // Set LOAMS_BUILD_ENGINE=1 to run `cargo build --release -p loams --features live,durable,live-tikv` first
-// (the default build lacks the live and durable features the desktop needs).
+// (the default build has live, on the embedded store, but lacks durable and live-tikv, which the
+// desktop needs for durable execution and Live on the TiKV stack; ruling T23-7).
 // Never sets CARGO_TARGET_DIR: the shared target dir comes from the cargo config.
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
