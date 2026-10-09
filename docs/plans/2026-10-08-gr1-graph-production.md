@@ -236,6 +236,8 @@ Commit `feat(graph): graph catalog and admin service`.
 
 ### Task 5: Mount in `loams` behind `graph`
 
+> **From Task 4 review (M8):** `GraphAdmin::open` opens a graph from disk (`GrafeoDB::open`, WAL replay) while holding the engine registry lock, on the async path, and the data-plane wrappers run statements synchronously inside async functions. Task 5 mounts them through `spawn_blocking` (or Task 6's pool), and opening moves out from under the registry lock (a per-graph opening latch), so one slow open blocks neither the runtime nor other graphs.
+
 **Files:** `crates/loams/Cargo.toml` (`graph = ["dep:loams-graph"]`), `crates/loams/src/api/connect.rs` (catalogue row `loams.graph.v1`, services `GraphService`, `GraphAdminService`, `available: cfg!(feature = "graph")`, `unstable: true`; a `GraphAbsent` stub answering `feature_not_in_variant`), `crates/loams/src/api/graph.rs`, `crates/loams/src/server.rs` (role `graph`; config `[graph] data_dir, idle_evict_after, node_memory, limits`), `release/` variant lists (`full` gets `graph`), `crates/loams/tests/it/graph.rs`.
 
 Tests:
@@ -249,6 +251,8 @@ Tests:
 Commit `feat(api): serve loams.graph.v1 behind the graph feature (D741)`.
 
 ### Task 6: Limits v1, streaming and redaction
+
+> **From Task 4 review (M8):** see the Task 5 note; the statement pool also takes the disk open.
 
 > **From Task 3 re-review (2c):** every parse and engine call now runs on a freshly spawned 256 MiB-stack thread (`classify::on_big_stack`), and `gate` refuses a statement with more than `MAX_CHAIN_TOKENS` = 4000 operator-chain links before anything parses. Task 6 replaces the per-statement spawn with its blocking pool, sized with the same stack, and moves the limit into `StatementLimits`.
 
@@ -1081,3 +1085,17 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 **R4.6 GetSchema** reads Grafeo's `schema()` and `list_indexes()` inside the panic and big-stack containment. Labels, edge types, keys and indexes are sorted.
 
 **R4.7 Kept sync helpers.** `service::{create_graph, get_graph, list_graphs, delete_graph}` remain as engine-registry helpers (tests, the mock). The RPC surface is `service::admin::GraphAdmin`, which Task 5 mounts.
+
+**R4.8 Task 4 review, fix round 1** (one commit each):
+- **I1 (with M2):** nothing in the catalog is deleted at once. A read whose GET finds its document gone re-reads the pointer and follows it. `sweep_documents(grace)` (default 10 min) removes superseded documents and lost-CAS orphans, keeping the pointer's target.
+- **I2:** writes retry on `VersionMismatch` and on unknown-outcome metastore errors, and each change recognises its own committed effect: create by its graph id, update and delete by a per-call token kept in the record's `recent_writes`, delete also by its `since_ms`. Tested with a "committed, ack lost, another writer on top" hook for each mutation.
+- **I3:** concurrency tests run over a bucket that delays every call, assert CAS retries happened, and check an exact final document after racing creates, deletes and `expected_version` updates against readers.
+- **I4:** namespace documents are cached by pointer version, and an open graph vouched for by a catalog read younger than 1 s skips the catalog.
+- **M1:** after a lazy open the catalog is re-checked, and the validated graph is passed to execution.
+- **M3:** the purge sweep survives a failing namespace (notes under Tasks 12 and 14).
+- **M4:** CAS retries use jittered exponential backoff (5 ms × 2^n, cap 200 ms).
+- **M5:** `ListGraphs` requires a namespace (§48 §11.1, Task 24, proto).
+- **M6:** `replicas` ≤ 8, limits capped, keys ≤ 128 bytes, and a replay under one key with other settings is `INVALID_ARGUMENT` (note under Task 24).
+- **M7:** backend errors answer generically.
+- **M8:** a note under Tasks 5 and 6.
+
