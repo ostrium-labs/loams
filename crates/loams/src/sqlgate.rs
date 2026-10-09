@@ -68,11 +68,7 @@ pub fn start(
         activity: Arc::new(ActivityCounter::default()),
     };
     let gate = Gate::new(GateConfig::new(tls, upstream), deps);
-    let task = tokio::spawn(async move {
-        if let Err(err) = gate.serve(listener).await {
-            tracing::error!(%err, "Loams SQL gate failed");
-        }
-    });
+    let task = tokio::spawn(gate.serve(listener));
     tracing::info!(%addr, "Loams SQL gate listening");
     Ok(SqlgateHandle { addr, task })
 }

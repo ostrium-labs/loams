@@ -21,7 +21,7 @@ use rustls::server::{ClientHello as TlsClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 use crate::auth::{FastAuthCache, ResolvedUser, UserResolver, decoy_hash, verify_password};
@@ -29,7 +29,9 @@ use crate::codec::command::{Command, ErrPacket, classify};
 use crate::codec::connection::{ConnectionPhase, PhaseError, Step};
 use crate::codec::handshake::{Capabilities, HandshakeV10, Limits, Nonce, TIDB_V8_5_8, advertise};
 use crate::codec::packet::{HEADER_LEN, MAX_FRAME, encode};
-use crate::limits::{ActivitySink, LimitError, Limiter, LimitsConfig, Slot};
+use crate::limits::{
+    ActivitySink, LimitError, Limiter, LimitsConfig, PreAuth, PreAuthConfig, Slot,
+};
 use crate::upstream::{ClientContext, CredentialStore, PoolResolver, Upstream, connect};
 use crate::wire::{ClientStream, Prefixed, SecretBuf};
 
@@ -131,6 +133,11 @@ pub struct GateConfig {
     pub upstream_timeout: Duration,
     /// Per-database limits.
     pub limits: LimitsConfig,
+    /// Per-IP limits on connections in their handshake.
+    pub pre_auth: PreAuthConfig,
+    /// Open client connections at once, over all databases (the gate's own
+    /// cap; beyond it new connections get 1040 instead of a greeting).
+    pub max_connections: usize,
     /// The static upstream capability profile ([`TIDB_V8_5_8`]).
     pub profile: Capabilities,
     /// The advertised server version.
@@ -150,6 +157,8 @@ impl GateConfig {
             handshake_timeout: Duration::from_secs(10),
             upstream_timeout: Duration::from_secs(30),
             limits: LimitsConfig::default(),
+            pre_auth: PreAuthConfig::default(),
+            max_connections: 10_000,
             profile: TIDB_V8_5_8,
             server_version: SERVER_VERSION.into(),
             fast_auth_cache: 100_000,
@@ -191,6 +200,8 @@ pub struct Gate {
     deps: GateDeps,
     cache: FastAuthCache,
     limiter: Arc<Limiter>,
+    pre_auth: Arc<PreAuth>,
+    connections: Arc<Semaphore>,
     next_id: AtomicU32,
     full_auths: AtomicU64,
     fast_hits: AtomicU64,
@@ -217,6 +228,37 @@ fn err_limit(e: LimitError) -> ErrPacket {
         LimitError::Cap => ErrPacket::new(1040, *b"08004", "Too many connections"),
         LimitError::Rate => ErrPacket::new(1040, *b"08004", "Too many connections, retry later"),
     }
+}
+
+/// The first accept retry delay, doubled per failure up to the maximum.
+const ACCEPT_BACKOFF_MIN: Duration = Duration::from_millis(5);
+const ACCEPT_BACKOFF_MAX: Duration = Duration::from_secs(1);
+
+/// Where the gate's connections come from: a [`TcpListener`], or a test's
+/// listener that fails on demand.
+#[async_trait::async_trait]
+pub trait Acceptor: Send + 'static {
+    /// The next connection.
+    async fn accept(&mut self) -> io::Result<(TcpStream, SocketAddr)>;
+}
+
+#[async_trait::async_trait]
+impl Acceptor for TcpListener {
+    async fn accept(&mut self) -> io::Result<(TcpStream, SocketAddr)> {
+        TcpListener::accept(self).await
+    }
+}
+
+/// An ERR in place of the greeting (sequence id 0), then close.
+async fn refuse_before_greeting(tcp: &mut TcpStream, err: &ErrPacket) {
+    let mut out = Vec::new();
+    let mut seq = 0;
+    encode(&err.encode(), &mut seq, &mut out);
+    let _ = tokio::time::timeout(Duration::from_secs(1), async {
+        let _ = tcp.write_all(&out).await;
+        let _ = tcp.shutdown().await;
+    })
+    .await;
 }
 
 fn err_unavailable() -> ErrPacket {
@@ -247,6 +289,8 @@ impl Gate {
         Arc::new(Self {
             cache: FastAuthCache::new(config.fast_auth_cache),
             limiter: Limiter::new(config.limits.clone()),
+            pre_auth: PreAuth::new(config.pre_auth.clone()),
+            connections: Arc::new(Semaphore::new(config.max_connections)),
             config,
             deps,
             next_id: AtomicU32::new(1),
@@ -263,18 +307,43 @@ impl Gate {
         }
     }
 
-    /// Serves clients on `listener` until it fails.
-    pub async fn serve(self: Arc<Self>, listener: TcpListener) -> io::Result<()> {
+    /// Serves clients from `listener`. Accept errors (out of file
+    /// descriptors, a connection reset before accept) are transient: they
+    /// are logged and retried with a backoff of up to 1 s.
+    pub async fn serve(self: Arc<Self>, mut listener: impl Acceptor) {
+        let mut backoff = ACCEPT_BACKOFF_MIN;
         loop {
-            let (tcp, peer) = listener.accept().await?;
-            let gate = self.clone();
-            tokio::spawn(async move { gate.handle(tcp, peer).await });
+            match listener.accept().await {
+                Ok((tcp, peer)) => {
+                    backoff = ACCEPT_BACKOFF_MIN;
+                    let gate = self.clone();
+                    tokio::spawn(async move { gate.handle(tcp, peer).await });
+                }
+                Err(err) => {
+                    tracing::warn!(%err, ?backoff, "accept failed; retrying");
+                    tokio::time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(ACCEPT_BACKOFF_MAX);
+                }
+            }
         }
     }
 
-    async fn handle(self: Arc<Self>, tcp: TcpStream, peer: SocketAddr) {
+    async fn handle(self: Arc<Self>, mut tcp: TcpStream, peer: SocketAddr) {
         let _ = tcp.set_nodelay(true);
         let Ok(local) = tcp.local_addr() else { return };
+        // The gate's own cap, then the IP's handshake limits: refused
+        // connections get an ERR instead of a greeting (as MySQL does).
+        let Ok(_connection) = self.connections.clone().try_acquire_owned() else {
+            refuse_before_greeting(&mut tcp, &err_limit(LimitError::Cap)).await;
+            return;
+        };
+        let pre_auth = match self.pre_auth.admit(peer.ip()) {
+            Ok(slot) => slot,
+            Err(e) => {
+                refuse_before_greeting(&mut tcp, &err_limit(e)).await;
+                return;
+            }
+        };
         let authed = match tokio::time::timeout(
             self.config.handshake_timeout,
             self.handshake(tcp, peer, local),
@@ -288,6 +357,7 @@ impl Gate {
                 return;
             }
         };
+        drop(pre_auth);
         let Authenticated {
             mut client,
             user,
@@ -406,7 +476,8 @@ impl Gate {
         io.write_all(&hello).await.ok()?;
         // Holds scrambles and full-auth passwords: zeroed as consumed
         // (R3.12). Handshake messages are capped at 96 KiB.
-        let mut buf = SecretBuf::with_capacity(16 * 1024);
+        // Allocated on the first read.
+        let mut buf = SecretBuf::with_capacity(0);
         let mut resolved: Option<Option<ResolvedUser>> = None;
         let mut admitted = false;
         let mut pending: Option<Result<Step, PhaseError>> = None;

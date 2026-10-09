@@ -361,3 +361,71 @@ fn handshake_buffer_zeroes_consumed_bytes() {
     assert!(b.as_slice().is_empty());
     assert!(b.storage().iter().all(|&x| x == 0), "take zeroes");
 }
+
+/// C2: accept errors (here EMFILE, out of file descriptors) are transient:
+/// the gate logs, backs off and keeps serving.
+#[tokio::test]
+async fn accept_errors_do_not_stop_the_gate() {
+    let h = harness(Options {
+        accept_failures: 5,
+        ..Options::default()
+    })
+    .await;
+    let mut c = h.tls("u_a", b"pa").await.expect("served after EMFILE");
+    assert_eq!(c.query_info("SELECT 1").await, "tidb-a");
+}
+
+/// C2: the gate-wide connection cap and the per-IP handshake cap answer
+/// 1040 in place of the greeting, and free their places when a connection
+/// ends.
+#[tokio::test]
+async fn connection_caps_hold() {
+    use super::client::{connect_from, tcp_from};
+    use loams_sqlgate::limits::PreAuthConfig;
+    let h = harness(Options {
+        max_connections: 2,
+        pre_auth: PreAuthConfig {
+            per_ip_concurrent: 1,
+            ..PreAuthConfig::default()
+        },
+        ..Options::default()
+    })
+    .await;
+    let tls = || Some((h.pki.client_config(), "localhost"));
+    let from = |ip: &str| Some(ip.parse::<IpAddr>().unwrap());
+
+    // 127.0.0.1 holds a connection in its handshake: a second one from the
+    // same IP is refused, another IP is not.
+    let mut stalled = tcp_from(from("127.0.0.1"), h.addr).await;
+    let mut greeting = [0u8; 4];
+    stalled.read_exact(&mut greeting).await.expect("greeting");
+    let e = connect_from(from("127.0.0.1"), h.addr, "u_a", b"pa", tls(), None)
+        .await
+        .err()
+        .expect("per-IP handshake cap");
+    assert_eq!(e.code, 1040);
+    let other = connect_from(from("127.0.0.2"), h.addr, "u_a", b"pa", tls(), None)
+        .await
+        .expect("another IP");
+
+    // Two connections open (stalled and other): the gate-wide cap of 2.
+    let e = connect_from(from("127.0.0.3"), h.addr, "u_a", b"pa", tls(), None)
+        .await
+        .err()
+        .expect("gate-wide cap");
+    assert_eq!(e.code, 1040);
+
+    // Places come back when connections end.
+    drop(stalled);
+    drop(other);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match connect_from(from("127.0.0.1"), h.addr, "u_a", b"pa", tls(), None).await {
+            Ok(_) => break,
+            Err(e) if e.code == 1040 && Instant::now() < deadline => {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            Err(e) => panic!("caps not released: {e:?}"),
+        }
+    }
+}

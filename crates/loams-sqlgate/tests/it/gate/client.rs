@@ -84,13 +84,41 @@ pub async fn connect(
     tls: Option<(Arc<rustls::ClientConfig>, &str)>,
     database: Option<&str>,
 ) -> Result<Client, Refused> {
-    let tcp = TcpStream::connect(addr).await.expect("connect");
+    connect_from(None, addr, user, password, tls, database).await
+}
+
+/// A TCP connection from `source` (any 127/8 address works on loopback).
+pub async fn tcp_from(source: Option<std::net::IpAddr>, addr: SocketAddr) -> TcpStream {
+    match source {
+        None => TcpStream::connect(addr).await.expect("connect"),
+        Some(ip) => {
+            let socket = tokio::net::TcpSocket::new_v4().expect("socket");
+            socket.bind(SocketAddr::new(ip, 0)).expect("bind source");
+            socket.connect(addr).await.expect("connect")
+        }
+    }
+}
+
+/// [`connect`] from a chosen source address.
+pub async fn connect_from(
+    source: Option<std::net::IpAddr>,
+    addr: SocketAddr,
+    user: &str,
+    password: &[u8],
+    tls: Option<(Arc<rustls::ClientConfig>, &str)>,
+    database: Option<&str>,
+) -> Result<Client, Refused> {
+    let tcp = tcp_from(source, addr).await;
     let local = tcp.local_addr().expect("local");
     let mut plain = Wire::new(tcp);
     let (_, g) = plain
         .read()
         .await
         .ok_or_else(|| ErrPacket::new(0, *b"00000", "closed before greeting"))?;
+    if g.first() == Some(&0xff) {
+        // Refused in place of the greeting (a connection limit).
+        return Err(ErrPacket::decode(&g).expect("err"));
+    }
     let greeting = HandshakeV10::decode(&g).expect("greeting");
     let mut caps = CAPS;
     let mut seq = 1;

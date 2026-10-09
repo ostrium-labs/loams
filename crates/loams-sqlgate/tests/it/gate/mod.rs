@@ -12,7 +12,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use loams_sqlgate::auth::{ResolvedUser, Role, StaticUsers, hash_password};
 use loams_sqlgate::codec::auth::Password;
-use loams_sqlgate::limits::{ActivityCounter, LimitsConfig};
+use loams_sqlgate::limits::{ActivityCounter, LimitsConfig, PreAuthConfig};
 use loams_sqlgate::server::{
     Gate, GateConfig, GateDeps, PlaintextPolicy, SniCert, sni_server_config,
 };
@@ -46,6 +46,23 @@ impl CredentialStore for Creds {
     }
 }
 
+/// A listener whose first `failures` accepts fail with EMFILE.
+pub struct Flaky {
+    failures: usize,
+    listener: tokio::net::TcpListener,
+}
+
+#[async_trait]
+impl loams_sqlgate::server::Acceptor for Flaky {
+    async fn accept(&mut self) -> std::io::Result<(tokio::net::TcpStream, SocketAddr)> {
+        if self.failures > 0 {
+            self.failures -= 1;
+            return Err(std::io::Error::from_raw_os_error(24)); // EMFILE
+        }
+        self.listener.accept().await
+    }
+}
+
 pub struct Harness {
     pub pki: Pki,
     pub gate: Arc<Gate>,
@@ -62,6 +79,10 @@ pub struct Options {
     pub upstream_ssl: bool,
     /// Flags the fake TiDBs leave out of their greeting.
     pub upstream_drop: loams_sqlgate::codec::handshake::Capabilities,
+    pub pre_auth: PreAuthConfig,
+    pub max_connections: usize,
+    /// Accept calls that fail with EMFILE before the listener works.
+    pub accept_failures: usize,
 }
 
 impl Default for Options {
@@ -72,6 +93,9 @@ impl Default for Options {
             limits: LimitsConfig::default(),
             upstream_ssl: true,
             upstream_drop: loams_sqlgate::codec::handshake::Capabilities(0),
+            pre_auth: PreAuthConfig::default(),
+            max_connections: 10_000,
+            accept_failures: 0,
         }
     }
 }
@@ -128,6 +152,8 @@ pub async fn harness(opts: Options) -> Harness {
     config.plaintext = opts.plaintext;
     config.handshake_timeout = opts.handshake_timeout;
     config.limits = opts.limits;
+    config.pre_auth = opts.pre_auth;
+    config.max_connections = opts.max_connections;
     let deps = GateDeps {
         users: Arc::new(users),
         credentials: Arc::new(Creds),
@@ -139,7 +165,11 @@ pub async fn harness(opts: Options) -> Harness {
         .expect("bind");
     let addr = listener.local_addr().expect("addr");
     let gate = Gate::new(config, deps);
-    tokio::spawn(gate.clone().serve(listener));
+    let flaky = Flaky {
+        failures: opts.accept_failures,
+        listener,
+    };
+    tokio::spawn(gate.clone().serve(flaky));
     Harness {
         pki,
         gate,
