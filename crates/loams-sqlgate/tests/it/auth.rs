@@ -119,14 +119,30 @@ fn malformed_auth_data_is_refused() {
     }
 }
 
+/// R3.10: an empty auth response, or a single 0x00 (what some clients send
+/// for an empty password), is an empty password: the gate never issues one,
+/// so it is denied (1045) without a lookup, first or after a switch.
 #[test]
-fn empty_password_is_checked_in_full() {
+fn empty_password_is_denied() {
     let n = nonce();
-    let mut s = CachingSha2Server::new(n, true);
-    let Action::CheckFull { password } = s.start(Some(CACHING_SHA2), &[]) else {
-        panic!("full")
-    };
-    assert!(password.expose().is_empty());
+    for data in [&[][..], &[0u8][..]] {
+        let mut s = CachingSha2Server::new(n, true);
+        assert_eq!(
+            s.start(Some(CACHING_SHA2), data),
+            Action::Fail(AuthError::AccessDenied),
+            "{data:?}"
+        );
+        assert!(s.is_done());
+        let mut s = CachingSha2Server::new(n, true);
+        assert!(matches!(s.start(Some(NATIVE), &[1; 20]), Action::Send(_)));
+        assert_eq!(
+            s.on_packet(data),
+            Ok(Action::Fail(AuthError::AccessDenied)),
+            "{data:?}"
+        );
+    }
+    assert_eq!(AuthError::AccessDenied.error_code(), 1045);
+    assert_eq!(AuthError::SecureTransportRequired.error_code(), 3159);
 }
 
 #[test]

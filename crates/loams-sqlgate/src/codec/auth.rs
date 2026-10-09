@@ -235,6 +235,20 @@ pub enum AuthError {
     /// A plugin the gate does not speak.
     #[error("unsupported authentication plugin")]
     UnsupportedPlugin,
+    /// Denied without a lookup (an empty password; the gate issues none).
+    #[error("access denied")]
+    AccessDenied,
+}
+
+impl AuthError {
+    /// The MySQL error code the gate answers with: 3159 when TLS is
+    /// required, 1045 otherwise.
+    pub fn error_code(self) -> u16 {
+        match self {
+            AuthError::SecureTransportRequired => 3159,
+            _ => 1045,
+        }
+    }
 }
 
 /// What the caller does next.
@@ -358,16 +372,14 @@ impl CachingSha2Server {
     }
 
     fn scramble(&mut self, data: &[u8]) -> Action {
-        match data.len() {
-            // An empty password: checked in full (it matches only an empty
-            // stored password, which the gate never issues).
-            0 => {
+        match data {
+            // An empty password (no data, or a lone 0x00 as some clients
+            // send it): the gate never issues one, so it is denied.
+            [] | [0] => {
                 self.state = State::Done;
-                Action::CheckFull {
-                    password: Password::new(Vec::new()),
-                }
+                Action::Fail(AuthError::AccessDenied)
             }
-            32 => {
+            _ if data.len() == 32 => {
                 self.state = State::AwaitFastResult;
                 Action::CheckFast {
                     scramble: data.to_vec(),
