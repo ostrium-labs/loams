@@ -119,6 +119,11 @@ qdrant-edge = "=0.8.0"
 rand = "0.9"
 rand_chacha = "0.9"
 redb = "4"
+# Loams Live's function runtime (LV1 plan Task 3, R1 row R13): the module
+# loader (for "loams:server"), ArrayBuffer and property definitions. The
+# runtime is driven synchronously on its own threads, so no `futures` or
+# `macro` (LV1 row T3-1).
+rquickjs = { version = "0.14.0", default-features = false, features = ["std", "loader", "array-buffer", "properties"] }
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 # Resonate, embedded by loams-durable (D1, D140): the fork ostrium-labs/resonate,
@@ -211,6 +216,7 @@ loams-hot = { path = "crates/loams-hot", version = "0.0.1" }
 loams-link = { path = "crates/loams-link", version = "0.0.1" }
 loams-kv = { path = "crates/loams-kv", version = "0.0.1" }
 loams-live = { path = "crates/loams-live", version = "0.0.1" }
+loams-live-js = { path = "crates/loams-live-js", version = "0.0.1" }
 loams-live-proto = { path = "crates/loams-live-proto", version = "0.0.1" }
 # The public `loams.*.v1` packages of the unified Connect API and their
 # descriptor set for reflection (design §44, API1 Task 1).
@@ -269,6 +275,11 @@ debug = "line-tables-only"
 # (plan DD1 ruling T1-9).
 [profile.dev.package.loams-agentd-sessions]
 opt-level = 1
+
+# QuickJS is an interpreter: built at -O0 it runs function bodies several
+# times slower, which skews the CPU-limit tests (LV1 plan Task 3).
+[profile.dev.package.rquickjs-sys]
+opt-level = 2
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

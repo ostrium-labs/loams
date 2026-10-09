@@ -58,5 +58,8 @@ pub use readset::{ReadSetIndex, SubId};
 pub use service::{LiveHandle, LiveServer};
 pub use session::{ClientState, SessionConfig, Sessions, Version};
 pub use subs::{SubKey, SubResult, SubsConfig, SubsStats, Subscriptions, Tick};
-pub use txn::{FnKind, Function, LiveTxn, Mutated, Queried, ReadSet, Runner, RunnerOptions, Usage};
+pub use txn::{
+    CallOutput, FnKind, Function, LiveTxn, LogLevel, LogLine, Mutated, Queried, ReadSet, Runner,
+    RunnerOptions, Usage,
+};
 pub use value::{LiveValue, fields_from_proto, fields_to_proto};

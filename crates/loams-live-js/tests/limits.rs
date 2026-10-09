@@ -1,0 +1,326 @@
+//! LV1 plan Task 3 (R1 Task 13 item 3; design §45 §3.2): the CPU interrupt
+//! (`FUNCTION_TIMEOUT`), the memory limit (`FUNCTION_OUT_OF_MEMORY`), a
+//! fresh context after either, and `console.*` truncation.
+
+mod common;
+
+use std::time::{Duration, Instant};
+
+use common::*;
+use loams_live::testing::TestStore;
+use loams_live::{LiveError, LiveValue, LogLevel, live_test, pb};
+use loams_live_js::{Bundle, JsConfig};
+
+const CPU: Duration = Duration::from_millis(300);
+
+fn config() -> JsConfig {
+    JsConfig {
+        cpu_limit: CPU,
+        memory_limit: 16 * 1024 * 1024,
+        contexts: 1,
+        ..JsConfig::default()
+    }
+}
+
+const HOGS: &str = r#"
+import { query, mutation } from "loams:server";
+
+export const hogs = {
+  spin: query(async () => { for (;;) {} }),
+  spinCaught: query(async () => {
+    try { for (;;) {} } catch (e) { return "caught"; }
+  }),
+  spinMutation: mutation(async (ctx) => {
+    await ctx.db.insert("hogs", { at: 1n });
+    for (;;) {}
+  }),
+  spinAfterAwait: query(async (ctx) => {
+    await ctx.db.query("hogs").collect();
+    for (;;) {}
+  }),
+  backtrack: query(async () => /^(a+)+$/.test("a".repeat(40) + "b")),
+  bomb: query(async () => {
+    const keep = [];
+    for (let i = 0; ; i++) keep.push("x".repeat(1 << 16) + i);
+  }),
+  bombCaught: query(async () => {
+    const keep = [];
+    try {
+      for (let i = 0; ; i++) keep.push("x".repeat(1 << 16) + i);
+    } catch (e) {
+      return String(e);
+    }
+  }),
+  recurse: query(async () => { const f = (n) => f(n + 1) + 1; return f(0); }),
+  ok: query(async () => "fine"),
+  log: query(async (ctx, { lines }) => {
+    console.log("short");
+    console.warn("é".repeat(10));
+    console.error("an", 1, 2n, { a: [1, "b"] }, null, undefined);
+    for (let i = 0; i < lines; i++) console.info("line", i);
+    return "logged";
+  }),
+};
+"#;
+
+async fn expect_timeout(r: &loams_live::Runner, bundle: &Bundle, path: &str) {
+    let f = function(bundle, path);
+    let started = Instant::now();
+    let result = if f.kind() == loams_live::FnKind::Query {
+        query(r, &f, unit()).await.map(|q| q.result)
+    } else {
+        mutate(r, &f, unit()).await.map(|m| m.result)
+    };
+    let took = started.elapsed();
+    match result {
+        Err(e @ LiveError::FunctionTimeout { .. }) => {
+            assert_eq!(e.code(), pb::ErrorCode::ERROR_CODE_FUNCTION_TIMEOUT);
+            assert!(e.to_string().contains(path), "{e}");
+        }
+        other => panic!("{path}: a timeout, not {other:?}"),
+    }
+    assert!(
+        took >= CPU,
+        "{path}: stopped after {took:?}, before the limit"
+    );
+    assert!(took < CPU * 10, "{path}: stopped only after {took:?}");
+}
+
+async fn busy_loop_times_out(store: TestStore) {
+    let r = runner(&store).await;
+    let bundle = load_with(HOGS, config());
+    for path in [
+        "hogs:spin",
+        "hogs:spinCaught",
+        "hogs:spinAfterAwait",
+        "hogs:backtrack",
+        "hogs:spinMutation",
+    ] {
+        expect_timeout(&r, &bundle, path).await;
+    }
+    // The timed-out mutation committed nothing.
+    let all = loams_live::system::lookup(loams_live::system::QUERY).expect("query");
+    let docs = query(&r, &all, obj(&[("table", s("hogs"))]))
+        .await
+        .expect("hogs");
+    assert!(items(&docs.result).is_empty());
+}
+live_test!(busy_loop_times_out);
+
+async fn allocation_bomb_hits_memory_limit(store: TestStore) {
+    let r = runner(&store).await;
+    let bundle = load_with(HOGS, config());
+    match query(&r, &function(&bundle, "hogs:bomb"), unit()).await {
+        Err(e @ LiveError::FunctionOutOfMemory { .. }) => {
+            assert_eq!(e.code(), pb::ErrorCode::ERROR_CODE_FUNCTION_OUT_OF_MEMORY);
+            assert!(e.to_string().contains("hogs:bomb"), "{e}");
+        }
+        other => panic!("out of memory, not {other:?}"),
+    }
+    // QuickJS's out-of-memory error is catchable (LV1 row T3-6): a handler
+    // that catches it keeps running, still under the limit.
+    match query(&r, &function(&bundle, "hogs:bombCaught"), unit()).await {
+        Err(LiveError::FunctionOutOfMemory { .. }) => {}
+        Ok(q) => assert_eq!(q.result, s("InternalError: out of memory")),
+        other => panic!("out of memory, not {other:?}"),
+    }
+    // Deep recursion is a stack overflow, a plain function error.
+    match query(&r, &function(&bundle, "hogs:recurse"), unit()).await {
+        Err(LiveError::FunctionError(m)) => assert!(m.contains("stack"), "{m}"),
+        other => panic!("a stack overflow, not {other:?}"),
+    }
+}
+live_test!(allocation_bomb_hits_memory_limit);
+
+async fn context_recovers_after_timeout(store: TestStore) {
+    let r = runner(&store).await;
+    // One context: every call runs on the same runtime.
+    let bundle = load_with(HOGS, config());
+    let ok = function(&bundle, "hogs:ok");
+    for hog in ["hogs:spin", "hogs:bomb", "hogs:recurse", "hogs:spin"] {
+        let failed = query(&r, &function(&bundle, hog), unit()).await;
+        assert!(failed.is_err(), "{hog} fails");
+        let started = Instant::now();
+        let fine = query(&r, &ok, unit()).await.expect("the next call runs");
+        assert_eq!(fine.result, s("fine"), "after {hog}");
+        assert!(
+            started.elapsed() < CPU,
+            "after {hog}, the next call is not slowed"
+        );
+    }
+    // A dropped caller (here: a timed-out await) also leaves a usable pool.
+    let spin = function(&bundle, "hogs:spin");
+    let at = r.store().now().await.expect("now");
+    let cut = tokio::time::timeout(Duration::from_millis(20), r.query(&*spin, unit(), at)).await;
+    assert!(cut.is_err(), "the caller gave up");
+    let fine = query(&r, &ok, unit()).await.expect("the next call runs");
+    assert_eq!(fine.result, s("fine"));
+}
+live_test!(context_recovers_after_timeout);
+
+async fn console_output_truncated_at_limits(store: TestStore) {
+    let r = runner(&store).await;
+    let bundle = load_with(
+        HOGS,
+        JsConfig {
+            console_lines: 5,
+            console_line_bytes: 8,
+            ..config()
+        },
+    );
+    let log = function(&bundle, "hogs:log");
+    let q = query(&r, &log, obj(&[("lines", LiveValue::F64(10.0))]))
+        .await
+        .expect("log runs");
+    assert_eq!(q.result, s("logged"));
+    let logs = &q.output.logs;
+    assert_eq!(logs.len(), 5);
+    assert_eq!(q.output.dropped, 8);
+    assert_eq!(
+        (logs[0].level, logs[0].line.as_str(), logs[0].truncated),
+        (LogLevel::Log, "short", false)
+    );
+    // Ten "é" are 20 bytes: cut to 8 bytes, four characters.
+    assert_eq!(
+        (logs[1].level, logs[1].line.as_str(), logs[1].truncated),
+        (LogLevel::Warn, "éééé", true)
+    );
+    assert_eq!(logs[2].level, LogLevel::Error);
+    assert_eq!(logs[2].line, "an 1 2n ");
+    assert_eq!(logs[3].level, LogLevel::Info);
+    assert_eq!(logs[3].line, "line 0");
+
+    // The defaults: 64 lines of 4 KiB.
+    let defaults = load(HOGS);
+    let q = query(
+        &r,
+        &function(&defaults, "hogs:log"),
+        obj(&[("lines", LiveValue::F64(100.0))]),
+    )
+    .await
+    .expect("log runs");
+    assert_eq!(q.output.logs.len(), 64);
+    assert_eq!(q.output.dropped, 103 - 64);
+    assert_eq!(
+        q.output.logs[2].line,
+        r#"an 1 2n { a: [ 1, "b" ] } null undefined"#
+    );
+}
+live_test!(console_output_truncated_at_limits);
+
+#[test]
+fn bundle_top_level_is_limited_too() {
+    let spin = "for (;;) {}";
+    match Bundle::load(spin, config()) {
+        Err(LiveError::FunctionTimeout { .. }) => {}
+        Err(e) => panic!("a timeout, not {e}"),
+        Ok(_) => panic!("a spinning bundle loads"),
+    }
+    let bomb = "const keep = []; for (let i = 0; ; i++) keep.push('x'.repeat(1 << 16) + i);";
+    match Bundle::load(bomb, config()) {
+        Err(LiveError::FunctionOutOfMemory { .. }) => {}
+        Err(e) => panic!("out of memory, not {e}"),
+        Ok(_) => panic!("a bomb loads"),
+    }
+}
+
+const SPARSE: &str = r#"
+import { query } from "loams:server";
+
+function huge() {
+  const a = [];
+  a.length = 2 ** 32 - 1;
+  return a;
+}
+
+export const sparse = {
+  join: query(async () => huge().join()),
+  toString: query(async () => String(huge())),
+  toLocaleString: query(async () => huge().toLocaleString()),
+  reverse: query(async () => huge().reverse()),
+  slice: query(async () => huge().slice(1)),
+  splice: query(async () => huge().splice(1, 1)),
+  shift: query(async () => huge().shift()),
+  unshift: query(async () => huge().unshift(1)),
+  concat: query(async () => [].concat(huge())),
+  copyWithin: query(async () => huge().copyWithin(0, 1)),
+  sort: query(async () => huge().sort()),
+  flat: query(async () => huge().flat()),
+  flatNested: query(async () => [[1], huge()].flat()),
+  flatMap: query(async () => [1].flatMap(() => huge())),
+  generic: query(async () => Array.prototype.join.call({ length: 2 ** 53 - 1 })),
+  dense: query(async () => [
+    Array.from({ length: 1000 }, (_, i) => i).join(",").length,
+    [3, 1, 2].sort().join(""),
+    [[1], [2, [3]]].flat(Infinity).join(""),
+    [1, 2].flatMap((x) => [x, x]).join(""),
+    [1].concat([2], 3).join(""),
+    String([1, [2, 3]]),
+    Array.prototype.join.length,
+    Array.prototype.flatMap.length,
+  ]),
+};
+"#;
+
+/// QuickJS runs these Array methods in C without interrupt checks: on a
+/// huge sparse array they would run for minutes past the CPU limit. The
+/// prelude refuses array-likes longer than any dense array could be.
+async fn uninterruptible_array_methods_refuse_huge_arrays(store: TestStore) {
+    let r = runner(&store).await;
+    for path in [
+        "sparse:join",
+        "sparse:toString",
+        "sparse:toLocaleString",
+        "sparse:reverse",
+        "sparse:slice",
+        "sparse:splice",
+        "sparse:shift",
+        "sparse:unshift",
+        "sparse:concat",
+        "sparse:copyWithin",
+        "sparse:sort",
+        "sparse:flat",
+        "sparse:flatNested",
+        "sparse:flatMap",
+        "sparse:generic",
+    ] {
+        // A bundle per case: a regression wedges its slot, not the others.
+        let bundle = load_with(SPARSE, config());
+        let started = Instant::now();
+        let ran = tokio::time::timeout(
+            Duration::from_secs(5),
+            query(&r, &function(&bundle, path), unit()),
+        )
+        .await;
+        match ran {
+            Ok(Err(LiveError::FunctionError(m))) => {
+                assert!(
+                    m.starts_with("RangeError") && m.contains("sparse"),
+                    "{path}: {m}"
+                );
+            }
+            Ok(other) => panic!("{path}: a RangeError, not {other:?}"),
+            Err(_) => panic!("{path}: still running after 5 s"),
+        }
+        assert!(started.elapsed() < CPU, "{path}: refused at once");
+    }
+    let bundle = load_with(SPARSE, config());
+    let dense = query(&r, &function(&bundle, "sparse:dense"), unit())
+        .await
+        .expect("dense arrays work")
+        .result;
+    assert_eq!(
+        dense,
+        LiveValue::Array(vec![
+            LiveValue::F64(3889.0),
+            s("123"),
+            s("123"),
+            s("1122"),
+            s("123"),
+            s("1,2,3"),
+            LiveValue::F64(1.0),
+            LiveValue::F64(1.0),
+        ])
+    );
+}
+live_test!(uninterruptible_array_methods_refuse_huge_arrays);

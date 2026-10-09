@@ -114,6 +114,37 @@ pub struct Usage {
     pub index_ranges: usize,
 }
 
+/// The level of a `console.*` line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    Debug,
+    Log,
+    Info,
+    Warn,
+    Error,
+}
+
+/// One `console.*` line of a function call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogLine {
+    pub level: LogLevel,
+    /// The line, cut to the per-line limit at a character boundary.
+    pub line: String,
+    /// The line was longer than the per-line limit and was cut.
+    pub truncated: bool,
+}
+
+/// What a function call produced beside its result (LV1 plan Task 3): its
+/// `console.*` lines, up to the per-call limit (D682), and how many lines
+/// past it were dropped. A mutation reports its committing attempt's
+/// output only, so a rerun is invisible.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CallOutput {
+    pub logs: Vec<LogLine>,
+    /// Lines dropped after the per-call line limit.
+    pub dropped: u64,
+}
+
 enum Access<'a> {
     Mutation(&'a mut Txn),
     Query(&'a mut Snap),
@@ -132,6 +163,8 @@ pub struct LiveTxn<'a> {
     read_set: ReadSet,
     writes: Vec<WriteRecord>,
     usage: Usage,
+    request_id: String,
+    output: CallOutput,
 }
 
 impl fmt::Debug for LiveTxn<'_> {
@@ -168,7 +201,31 @@ impl<'a> LiveTxn<'a> {
             read_set: ReadSet::default(),
             writes: Vec::new(),
             usage: Usage::default(),
+            request_id: String::new(),
+            output: CallOutput::default(),
         }
+    }
+
+    /// The call's request id: a mutation's idempotency key, else empty
+    /// (LV1 plan Task 3 seeds `Math.random` with it; Task 4 replaces this
+    /// with `CallCtx`).
+    pub fn request_id(&self) -> &str {
+        &self.request_id
+    }
+
+    /// Sets the call's request id.
+    pub fn set_request_id(&mut self, request_id: impl Into<String>) {
+        self.request_id = request_id.into();
+    }
+
+    /// The call's output so far; a function appends its `console.*` lines.
+    pub fn output_mut(&mut self) -> &mut CallOutput {
+        &mut self.output
+    }
+
+    /// The call's output so far.
+    pub fn output(&self) -> &CallOutput {
+        &self.output
     }
 
     /// The timestamp every read sees: the transaction's start timestamp, or
@@ -533,6 +590,8 @@ pub struct Mutated {
     pub earlier_unknown: bool,
     /// What the committing attempt used.
     pub usage: Usage,
+    /// The committing attempt's output (empty for a replay).
+    pub output: CallOutput,
 }
 
 /// A query's answer.
@@ -543,6 +602,7 @@ pub struct Queried {
     /// The snapshot timestamp it read at.
     pub ts: Ts,
     pub usage: Usage,
+    pub output: CallOutput,
 }
 
 /// Runs mutations and queries of one app. Cheap to clone.
@@ -586,6 +646,7 @@ enum Outcome {
         result: LiveValue,
         journal: Option<(u16, u64)>,
         usage: Usage,
+        output: CallOutput,
     },
     Replayed(LiveValue),
 }
@@ -804,6 +865,7 @@ impl Runner {
                 result,
                 journal,
                 usage,
+                output,
             } => Mutated {
                 commit_ts: committed.commit_ts,
                 result,
@@ -812,6 +874,7 @@ impl Runner {
                 replayed: false,
                 earlier_unknown: committed.earlier_unknown,
                 usage,
+                output,
             },
             Outcome::Replayed(result) => Mutated {
                 commit_ts: committed.commit_ts,
@@ -821,6 +884,7 @@ impl Runner {
                 replayed: true,
                 earlier_unknown: committed.earlier_unknown,
                 usage: Usage::default(),
+                output: CallOutput::default(),
             },
         })
     }
@@ -849,6 +913,7 @@ impl Runner {
             usage: txn.usage,
             read_set: txn.read_set,
             ts: at,
+            output: txn.output,
         })
     }
 }
@@ -910,10 +975,12 @@ async fn mutation_attempt(
     }
 
     let mut live = LiveTxn::for_mutation(txn, app, &inner.limits);
+    live.set_request_id(request_id.clone());
     let result = f.call(&mut live, args).await?;
     let has_ranges = !live.read_set.ranges.is_empty();
     let usage = live.usage;
     let writes = std::mem::take(&mut live.writes);
+    let output = std::mem::take(&mut live.output);
     drop(live);
     if writes.is_empty() {
         // Read-only: no journal entry and no idempotency record; a retry of
@@ -922,6 +989,7 @@ async fn mutation_attempt(
             result,
             journal: None,
             usage,
+            output,
         });
     }
 
@@ -971,6 +1039,7 @@ async fn mutation_attempt(
         result,
         journal: Some(position),
         usage,
+        output,
     })
 }
 

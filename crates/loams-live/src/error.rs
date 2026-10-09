@@ -50,6 +50,19 @@ pub enum LiveError {
     /// A failure of the server itself (the OS random source, a bug).
     #[error("internal error: {0}")]
     Internal(String),
+    /// A deployed function threw, or its bundle is invalid (LV1 plan
+    /// Task 3). The text is the function's own error message.
+    #[error("function error: {0}")]
+    FunctionError(String),
+    /// A deployed function ran past its JavaScript CPU limit.
+    #[error("function {function} ran past its CPU limit of {limit:?}")]
+    FunctionTimeout {
+        function: String,
+        limit: std::time::Duration,
+    },
+    /// A deployed function ran past its runtime's memory limit.
+    #[error("function {function} ran past its memory limit of {limit} bytes")]
+    FunctionOutOfMemory { function: String, limit: usize },
     /// A store transaction or read failed. Inside [`Store::run`] bodies this
     /// carries the runner's retry signals ([`TxnError::Conflict`],
     /// [`TxnError::NotApplied`]); [`LiveError::into_txn`] hands them back.
@@ -72,6 +85,11 @@ impl LiveError {
             }
             LiveError::LimitExceeded { .. } => pb::ErrorCode::ERROR_CODE_RESOURCE_EXHAUSTED,
             LiveError::Corrupt(_) | LiveError::Internal(_) => pb::ErrorCode::ERROR_CODE_INTERNAL,
+            LiveError::FunctionError(_) => pb::ErrorCode::ERROR_CODE_FUNCTION_ERROR,
+            LiveError::FunctionTimeout { .. } => pb::ErrorCode::ERROR_CODE_FUNCTION_TIMEOUT,
+            LiveError::FunctionOutOfMemory { .. } => {
+                pb::ErrorCode::ERROR_CODE_FUNCTION_OUT_OF_MEMORY
+            }
             LiveError::Txn(e) => match e {
                 TxnError::Conflict
                 | TxnError::NotApplied(_)

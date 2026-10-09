@@ -1,0 +1,30 @@
+[package]
+name = "loams-live-js"
+description = "Loams Live's function runtime: query and mutation bundles in QuickJS, with determinism, frozen globals and CPU and memory limits (design §20 §6, §45 §3)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# loams-live depends on loams-kv, whose tikv backend is a git dependency.
+publish = false
+
+[dependencies]
+futures.workspace = true
+loams-live.workspace = true
+# Math.random's seeded stream: ChaCha8, stable across platforms and releases.
+rand.workspace = true
+rand_chacha.workspace = true
+rquickjs.workspace = true
+# The seed of Math.random: SHA-256 of the start timestamp and the request id.
+sha2.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+loams-kv.workspace = true
+# The suites run the TiKV cases too (with LOAMS_TEST_PD).
+loams-live = { workspace = true, features = ["tikv"] }
+
+[lints]
+workspace = true
