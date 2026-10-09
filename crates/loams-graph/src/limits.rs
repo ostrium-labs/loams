@@ -195,8 +195,29 @@ impl Default for StatementLimits {
     }
 }
 
-/// The default number of one namespace's statements that may run at once (§48 §13.2).
+/// The default number of one namespace's statements that may run at once (§48 §13.2), before
+/// [`namespace_cap`] keeps a reserve of the process's slots for other namespaces.
 pub const DEFAULT_NAMESPACE_STATEMENTS: usize = 64;
+
+/// The default number of one namespace's statements that may run on past their deadline, across
+/// all its graphs, before the namespace refuses new statements (review fix 1, I1).
+pub const DEFAULT_NAMESPACE_DETACHED: usize = 8;
+
+/// The process slots no single namespace may take (review fix 1, I1): an eighth, at least one.
+#[must_use]
+pub fn slot_reserve(process_slots: usize) -> usize {
+    (process_slots / 8).max(1)
+}
+
+/// The cap on one namespace's statements at once: `configured`, but never more than the process
+/// slots less [`slot_reserve`], so one namespace can never take every slot. At least 1 (with a
+/// single process slot the reserve cannot be kept).
+#[must_use]
+pub fn namespace_cap(configured: usize, process_slots: usize) -> usize {
+    configured
+        .min(process_slots.saturating_sub(slot_reserve(process_slots)))
+        .max(1)
+}
 
 /// A job on the pool.
 type Job = Box<dyn FnOnce() + Send>;
@@ -381,10 +402,11 @@ impl NamespaceSlots {
     }
 }
 
-/// Statements running on past their deadline (R0.8 (a)), by graph.
+/// Statements running on past their deadline (R0.8 (a)), by graph and by namespace.
 #[derive(Debug, Default)]
 pub struct Detached {
     by_graph: Mutex<HashMap<(String, String), usize>>,
+    by_namespace: Mutex<HashMap<String, usize>>,
     total: AtomicUsize,
 }
 
@@ -398,6 +420,15 @@ impl Detached {
             .unwrap_or(0)
     }
 
+    /// Detached statements of every graph of one namespace.
+    #[must_use]
+    pub fn of_namespace(&self, namespace: &str) -> usize {
+        lock(&self.by_namespace)
+            .get(namespace)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// Detached statements of every graph (`loams_graph_detached_statements`, Task 27).
     #[must_use]
     pub fn total(&self) -> usize {
@@ -406,6 +437,7 @@ impl Detached {
 
     fn add(&self, key: &(String, String)) {
         *lock(&self.by_graph).entry(key.clone()).or_default() += 1;
+        *lock(&self.by_namespace).entry(key.0.clone()).or_default() += 1;
         self.total.fetch_add(1, Ordering::SeqCst);
     }
 
@@ -415,6 +447,14 @@ impl Detached {
             *count -= 1;
             if *count == 0 {
                 by_graph.remove(key);
+            }
+        }
+        drop(by_graph);
+        let mut by_namespace = lock(&self.by_namespace);
+        if let Some(count) = by_namespace.get_mut(&key.0) {
+            *count -= 1;
+            if *count == 0 {
+                by_namespace.remove(&key.0);
             }
         }
         self.total.fetch_sub(1, Ordering::SeqCst);

@@ -794,3 +794,105 @@ fn fingerprint_ignores_literals() {
     assert_eq!(fingerprint("RETURN 1"), fingerprint("RETURN 2"));
     assert_eq!(fingerprint(""), 0xcbf2_9ce4_8422_2325);
 }
+
+/// `name` in `ns` with `nodes` nodes `(:T {i})`.
+async fn graph_in(admin: &GraphAdmin, ns: &str, name: &str, nodes: u32) {
+    create(admin, ns, name, None).await;
+    admin
+        .execute(execute(
+            ns,
+            name,
+            &format!("UNWIND range(1, {nodes}) AS i INSERT (:T {{i: i}})"),
+        ))
+        .await
+        .expect("insert");
+}
+
+/// Review fix 1, I1: a namespace's cap keeps a reserve of the process slots (an eighth, at
+/// least one), so one namespace can never take every slot; another namespace still runs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_namespace_cannot_take_every_process_slot() {
+    let fixture = Fixture::start().await;
+    let default = fixture.admin();
+    assert!(
+        default.namespace_statements() < default.statement_slots(),
+        "{} of {}",
+        default.namespace_statements(),
+        default.statement_slots()
+    );
+    let admin = Arc::new(
+        fixture
+            .admin()
+            .with_statement_slots(4)
+            .with_namespace_statements(64),
+    );
+    assert_eq!(admin.namespace_statements(), 3);
+    for g in ["g1", "g2", "g3"] {
+        graph_in(&admin, "acme", g, 100).await;
+    }
+    create(&admin, "beta", "kg", None).await;
+    let running: Vec<_> = ["g1", "g2", "g3"]
+        .into_iter()
+        .map(|g| {
+            let admin = admin.clone();
+            tokio::spawn(async move { admin.execute(execute("acme", g, LONG)).await })
+        })
+        .collect();
+    until("three running", || admin.statements_in_flight() == 3).await;
+    let err = admin
+        .execute(execute("acme", "g1", "RETURN 1"))
+        .await
+        .expect_err("the namespace is at its cap");
+    assert_eq!(info(&err).reason, "quota_exceeded", "{err:?}");
+    admin
+        .execute(execute("beta", "kg", "RETURN 1"))
+        .await
+        .expect("the reserved slot serves another namespace");
+    for task in running {
+        task.await.expect("task").expect("ends");
+    }
+}
+
+/// Review fix 1, I1: detached statements spread over many graphs of one namespace hit the
+/// namespace's own cap (`quota_exceeded`, quota `detached_statements`), though no graph is at
+/// its own `max_detached`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn detached_statements_across_graphs_hit_the_namespace_cap() {
+    let fixture = Fixture::start().await;
+    let admin = fixture.admin().with_namespace_detached(2);
+    for g in ["g1", "g2"] {
+        graph_in(&admin, "acme", g, 100).await;
+    }
+    create(&admin, "acme", "g3", None).await;
+    create(&admin, "beta", "kg", None).await;
+    for (n, g) in ["g1", "g2"].into_iter().enumerate() {
+        let err = admin
+            .execute(pb::ExecuteRequest {
+                timeout_ms: 50,
+                ..execute("acme", g, LONG)
+            })
+            .await
+            .expect_err("past its deadline");
+        assert_eq!(reason(&err), "graph_statement_timeout");
+        assert_eq!(admin.detached_statements(), n + 1);
+    }
+    let err = admin
+        .execute(execute("acme", "g3", "RETURN 1"))
+        .await
+        .expect_err("the namespace has two detached");
+    let info = info(&err);
+    assert_eq!(info.reason, "quota_exceeded", "{err:?}");
+    assert_eq!(
+        info.metadata.get("quota").map(String::as_str),
+        Some("detached_statements")
+    );
+    admin
+        .execute(execute("beta", "kg", "RETURN 1"))
+        .await
+        .expect("another namespace runs");
+    until("detached end", || admin.detached_statements() == 0).await;
+    admin
+        .execute(execute("acme", "g3", "RETURN 1"))
+        .await
+        .expect("serving again");
+}

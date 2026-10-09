@@ -312,7 +312,9 @@ pub struct GraphConfig {
     /// `RESOURCE_EXHAUSTED`. It also sizes the statement pool (GR1 Task 6).
     pub statement_slots: usize,
     /// The cap on one namespace's graph statements at once (config only; default 64, §48
-    /// §13.2). Past it a statement is refused with `RESOURCE_EXHAUSTED`/`quota_exceeded`.
+    /// §13.2), never more than `statement_slots` less a reserve of an eighth (at least one), so
+    /// one namespace cannot take every slot. Past it a statement is refused with
+    /// `RESOURCE_EXHAUSTED`/`quota_exceeded`.
     pub namespace_statements: usize,
     /// The server's per-statement limits (config only; §48 §13.1's defaults, each capped at
     /// its maximum). A graph's own `GraphLimits` apply on top (GR1 Task 6).

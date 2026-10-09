@@ -22,7 +22,8 @@ use crate::catalog::{
 };
 use crate::engine::{Engine, Graph, GraphState, OpenSpec};
 use crate::limits::{
-    DEFAULT_NAMESPACE_STATEMENTS, Detached, NamespaceSlots, StatementLimits, StatementPool, Watch,
+    DEFAULT_NAMESPACE_DETACHED, DEFAULT_NAMESPACE_STATEMENTS, Detached, NamespaceSlots,
+    StatementLimits, StatementPool, Watch, namespace_cap,
 };
 
 /// How long a deleted graph's storage is kept before it is purged, by default.
@@ -97,6 +98,11 @@ pub struct GraphAdmin {
     limits: StatementLimits,
     /// Statements of one namespace at once (§48 §13.2).
     namespaces: Arc<NamespaceSlots>,
+    /// The namespace cap asked for; [`namespace_cap`] keeps a reserve of the process slots
+    /// from it (review fix 1, I1).
+    namespace_configured: usize,
+    /// Detached statements one namespace may have, across its graphs (review fix 1, I1).
+    namespace_detached: usize,
     /// Statements running on past their deadline or their client (R0.8 (a)).
     detached: Arc<Detached>,
     /// The client's own deadline for the call this handle serves ([`GraphAdmin::for_call`]).
@@ -236,7 +242,12 @@ impl GraphAdmin {
             statement_slots,
             pool: Arc::new(StatementPool::new(statement_slots + POOL_SPARE)),
             limits: StatementLimits::DEFAULT,
-            namespaces: Arc::new(NamespaceSlots::new(DEFAULT_NAMESPACE_STATEMENTS)),
+            namespaces: Arc::new(NamespaceSlots::new(namespace_cap(
+                DEFAULT_NAMESPACE_STATEMENTS,
+                statement_slots,
+            ))),
+            namespace_configured: DEFAULT_NAMESPACE_STATEMENTS,
+            namespace_detached: DEFAULT_NAMESPACE_DETACHED,
             detached: Arc::default(),
             client_deadline: None,
             closed: Arc::default(),
@@ -260,6 +271,10 @@ impl GraphAdmin {
         self.statements = Arc::new(tokio::sync::Semaphore::new(slots));
         self.statement_slots = slots;
         self.pool = Arc::new(StatementPool::new(slots + POOL_SPARE));
+        self.namespaces = Arc::new(NamespaceSlots::new(namespace_cap(
+            self.namespace_configured,
+            slots,
+        )));
         self
     }
 
@@ -278,14 +293,27 @@ impl GraphAdmin {
     }
 
     /// The same admin with another cap on one namespace's statements at once (§48 §13.2;
-    /// default [`DEFAULT_NAMESPACE_STATEMENTS`]).
+    /// default [`DEFAULT_NAMESPACE_STATEMENTS`]). The cap in force is never more than the
+    /// process slots less a reserve ([`namespace_cap`]), so one namespace cannot take every slot.
     #[must_use]
     pub fn with_namespace_statements(mut self, per_namespace: usize) -> Self {
-        self.namespaces = Arc::new(NamespaceSlots::new(per_namespace));
+        self.namespace_configured = per_namespace;
+        self.namespaces = Arc::new(NamespaceSlots::new(namespace_cap(
+            per_namespace,
+            self.statement_slots,
+        )));
         self
     }
 
-    /// The cap on one namespace's statements at once.
+    /// The same admin with another cap on one namespace's detached statements, across its
+    /// graphs (default [`DEFAULT_NAMESPACE_DETACHED`], at least 1).
+    #[must_use]
+    pub fn with_namespace_detached(mut self, per_namespace: usize) -> Self {
+        self.namespace_detached = per_namespace.max(1);
+        self
+    }
+
+    /// The cap on one namespace's statements at once, as in force.
     #[must_use]
     pub fn namespace_statements(&self) -> usize {
         self.namespaces.per_namespace()
@@ -429,6 +457,18 @@ impl GraphAdmin {
                 &[("quota", "concurrent_statements")],
             )
         })?;
+        let namespace_detached = self.detached.of_namespace(namespace);
+        if namespace_detached >= self.namespace_detached {
+            return Err(refuse_with(
+                ErrorCode::ResourceExhausted,
+                "quota_exceeded",
+                format!(
+                    "namespace {namespace} has {namespace_detached} graph statements still \
+                     running past their deadline; retry when they end"
+                ),
+                &[("quota", "detached_statements")],
+            ));
+        }
         let detached = self.detached.of(namespace, name);
         if detached >= limits.max_detached {
             return Err(refuse(
