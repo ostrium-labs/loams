@@ -290,12 +290,17 @@ cargo build -p loams --locked
 # Resonate server (127.0.0.1:8001); it rebuilds roughly 480 crates, so expect a
 # long first build. The `mysql-wire` and `pgwire` features add a datafusion build.
 cargo build --release -p loams --locked --features durable
+
+# Loams Graph (`loams.graph.v1`), which builds the embedded Grafeo engine.
+cargo build --release -p loams --locked --features graph
 ```
 
 The feature list is read from `crates/loams/Cargo.toml` **[verified]**;
 `default = ["es", "flight", "hnsw", "qdrant"]`, and `durable`, `durable-mysql`,
-`durable-tikv`, `mysql-wire`, `pgwire`, `stream-grpc`, `tikv`,
-`cluster-tests` and `failpoints` are all off by default.
+`durable-tikv`, `graph`, `mysql-wire`, `pgwire`, `stream-grpc`, `tikv`,
+`cluster-tests` and `failpoints` are all off by default. `graph` serves Loams
+Graph (`loams.graph.v1`, the embedded Grafeo engine) and makes the binary the
+`full` variant.
 
 Run it:
 

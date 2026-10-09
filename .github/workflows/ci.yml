@@ -338,8 +338,8 @@ jobs:
       # Owner ruling T7-3: the TiKV metastore is behind loams's `tikv`
       # feature (off by default), so lint that code too, and keep the default
       # build free of the git-pinned tikv-client.
-      - name: clippy (loams with the tikv and optional listener features)
-        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire --locked -- -D warnings
+      - name: clippy (loams with the tikv, graph and optional listener features)
+        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph --locked -- -D warnings
       - name: clippy (loams-live without TiKV, as the default build has it)
         run: cargo clippy -p loams-live --lib --locked -- -D warnings
       - name: clippy (loams-durable with the native TiKV store)
