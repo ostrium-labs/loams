@@ -38,6 +38,25 @@ pub const PINNED_OFF: &[&str] = &[
     "allow_custom_error_code_in_throwif",
 ];
 
+/// The largest `max_memory_usage` a statement may set: §49 §12's 4 GiB per query
+/// (FL2 Ruling 10). It is also the profile's value, so `0` (unlimited) is a change
+/// the constraint sees: ClickHouse does not check a value equal to the current one.
+pub const MAX_QUERY_MEMORY: u64 = 4 * 1024 * 1024 * 1024;
+
+/// The largest `max_execution_time` a statement may set, in seconds (FL2 Ruling
+/// 10); also the profile's value, for the same reason.
+pub const MAX_EXECUTION_TIME_S: u64 = 300;
+
+/// The smallest `max_execution_time`: one microsecond, ClickHouse's unit. The
+/// constraint is checked after the engine's conversion, so a value that truncates
+/// to 0 (unlimited) is under it (measured, fix round 1).
+pub const MIN_EXECUTION_TIME_S: &str = "0.000001";
+
+/// The `max_threads` cap: the node's cores, as the front's (FL2 Ruling 10).
+pub fn max_threads_cap() -> u64 {
+    std::thread::available_parallelism().map_or(1, |n| n.get() as u64)
+}
+
 /// The worker's command line.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WorkerArgs {
@@ -185,6 +204,30 @@ pub fn users_xml(args: &WorkerArgs) -> String {
         let _ = writeln!(pinned, "      <{name}>0</{name}>");
         let _ = writeln!(constraints, "        <{name}><readonly/></{name}>");
     }
+    // The caps of FL2 Ruling 10, enforced by the engine after its own parsing and
+    // conversion, wherever a setting comes from (URL, `SET`, `SETTINGS`), fix
+    // round 1, I3. The profile starts at the caps, so `0` is a change and checked.
+    let _ = writeln!(
+        pinned,
+        "      <max_memory_usage>{MAX_QUERY_MEMORY}</max_memory_usage>"
+    );
+    let _ = writeln!(
+        pinned,
+        "      <max_execution_time>{MAX_EXECUTION_TIME_S}</max_execution_time>"
+    );
+    let _ = writeln!(
+        constraints,
+        "        <max_memory_usage><min>1</min><max>{MAX_QUERY_MEMORY}</max></max_memory_usage>"
+    );
+    let _ = writeln!(
+        constraints,
+        "        <max_execution_time><min>{MIN_EXECUTION_TIME_S}</min><max>{MAX_EXECUTION_TIME_S}</max></max_execution_time>"
+    );
+    let _ = writeln!(
+        constraints,
+        "        <max_threads><max>{}</max></max_threads>",
+        max_threads_cap()
+    );
     format!(
         "<clickhouse>\n  \
            <users>\n    \
@@ -340,6 +383,16 @@ mod tests {
         for name in PINNED_OFF {
             assert!(users.contains(&format!("<{name}><readonly/></{name}>")));
         }
+        assert!(
+            users
+                .contains("<max_memory_usage><min>1</min><max>4294967296</max></max_memory_usage>")
+        );
+        assert!(users.contains("<max_memory_usage>4294967296</max_memory_usage>"));
+        assert!(users.contains(
+            "<max_execution_time><min>0.000001</min><max>300</max></max_execution_time>"
+        ));
+        assert!(users.contains("<max_execution_time>300</max_execution_time>"));
+        assert!(users.contains("<max_threads><max>"));
         let none = users_xml(&WorkerArgs {
             s3_endpoint: None,
             ..args()

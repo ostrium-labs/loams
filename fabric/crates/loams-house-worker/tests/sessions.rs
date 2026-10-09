@@ -685,3 +685,102 @@ async fn one_statement_per_request_on_every_route() {
     let drop = in_session(addr, "alice", "m", "DROP TEMPORARY TABLE t", &[]).await;
     assert_eq!(drop.status, 200, "{}", drop.text());
 }
+
+/// Fix round 1, I3: the caps hold however a value is written and wherever it comes
+/// from. URL parameters and `SET` (one or several) are read the ClickHouse way by
+/// the front; the `SETTINGS` clause, which the front does not parse, meets the
+/// worker profile's constraints after the engine's own conversion.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn setting_caps_hold_on_every_route() {
+    let (house, _pool) = house("caps", per_namespace(1)).await;
+    let addr = house.local_addr();
+    let get_setting = "SELECT getSetting('max_memory_usage')";
+    // The profile starts at the cap.
+    assert_eq!(
+        in_session(addr, "alice", "c", get_setting, &[])
+            .await
+            .text(),
+        "4294967296\n"
+    );
+
+    // URL parameters.
+    let ok = in_session(
+        addr,
+        "alice",
+        "u",
+        get_setting,
+        &[("max_memory_usage", "1Gi")],
+    )
+    .await;
+    assert_eq!(ok.text(), "1073741824\n", "{}", ok.text());
+    for (name, value, expected) in [
+        ("max_memory_usage", "0", "164"),
+        ("max_memory_usage", "5G", "164"),
+        ("max_memory_usage", "18446744073709551616", "36"),
+        ("max_memory_usage", "20000000Ti", "36"),
+        ("max_execution_time", "0", "164"),
+        ("max_execution_time", "1e-7", "164"),
+        ("max_execution_time", "-1", "164"),
+        ("max_execution_time", "inf", "36"),
+        ("max_threads", "100000", "164"),
+    ] {
+        let response = in_session(addr, "alice", "u", "SELECT 1", &[(name, value)]).await;
+        assert_eq!(
+            code(&response),
+            Some(expected),
+            "{name}={value}: {}",
+            response.text()
+        );
+    }
+
+    // SET, one and several: refused whole, nothing applied.
+    let set = in_session(addr, "alice", "s", "SET max_memory_usage = '2Gi'", &[]).await;
+    assert_eq!(set.status, 200, "{}", set.text());
+    for sql in [
+        "SET max_memory_usage = 0",
+        "SET max_memory_usage = '18446744073709551616'",
+        "SET max_execution_time = 0",
+        "SET max_memory_usage = '1Gi', max_execution_time = 0",
+        "SET max_threads = 1, max_memory_usage = '20000000Ti'",
+    ] {
+        let response = in_session(addr, "alice", "s", sql, &[]).await;
+        assert!(
+            matches!(code(&response), Some("164" | "36")),
+            "{sql}: {}",
+            response.text()
+        );
+    }
+    assert_eq!(
+        in_session(addr, "alice", "s", get_setting, &[])
+            .await
+            .text(),
+        "2147483648\n"
+    );
+
+    // The SETTINGS clause: the engine's constraints (452).
+    for clause in [
+        "max_memory_usage = 0",
+        "max_memory_usage = '18446744073709551616'",
+        "max_memory_usage = '20000000Ti'",
+        "max_memory_usage = '5G'",
+        "max_execution_time = 0",
+        "max_execution_time = '1e-7'",
+        "max_execution_time = -1",
+        "max_execution_time = 301",
+        "max_threads = 100000",
+        "max_memory_usage = 1, max_execution_time = 0",
+    ] {
+        let sql = format!("SELECT 1 SETTINGS {clause}");
+        let response = in_session(addr, "alice", "c", &sql, &[]).await;
+        assert_eq!(code(&response), Some("452"), "{sql}: {}", response.text());
+    }
+    let within = in_session(
+        addr,
+        "alice",
+        "c",
+        "SELECT getSetting('max_memory_usage') SETTINGS max_memory_usage = '1Gi', max_execution_time = 0.5",
+        &[],
+    )
+    .await;
+    assert_eq!(within.text(), "1073741824\n", "{}", within.text());
+}

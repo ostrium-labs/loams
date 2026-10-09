@@ -124,32 +124,111 @@ pub fn check(
             )))
         });
     }
-    let value = value.trim().trim_matches('\'');
+    // The value exactly as chDB will read it: the worker sets it as a quoted
+    // string (`SET name = 'value'`), so it is parsed the way ClickHouse parses a
+    // setting's string (fix round 1, I3). What cannot be parsed so is refused, and
+    // so is what converts to 0 (unlimited) or past a cap; the worker's profile
+    // enforces the same bounds after the engine's own conversion, for the
+    // `SETTINGS` clause the front never parses.
+    let unparseable = |kind: &str| {
+        HouseError::from(ChError::bad_arguments(format!(
+            "Cannot parse '{value}' as the value of setting {name}: expected {kind}"
+        )))
+    };
     match name {
         "max_threads" => {
-            if let Ok(n) = value.parse::<u64>()
-                && n > limits.max_threads
-            {
-                return Err(over(name, limits.max_threads));
+            // `auto`, `auto(n)` and 0 are the node's cores: bounded.
+            if !value.starts_with("auto") {
+                let n =
+                    parse_unsigned(value).ok_or_else(|| unparseable("a thread count or 'auto'"))?;
+                if n > limits.max_threads {
+                    return Err(over(name, limits.max_threads));
+                }
             }
         }
         "max_memory_usage" => {
-            if let Ok(n) = value.parse::<u64>()
-                && (n == 0 || n > limits.max_memory_usage)
-            {
+            let n = parse_size(value)
+                .ok_or_else(|| unparseable("a byte count such as 1000000000, 4G or 4Gi"))?;
+            if n == 0 {
+                return Err(under(name, 1));
+            }
+            if n > limits.max_memory_usage {
                 return Err(over(name, limits.max_memory_usage));
             }
         }
         "max_execution_time" => {
-            if let Ok(s) = value.parse::<f64>()
-                && (s == 0.0 || s > limits.max_execution_time_s)
-            {
+            let seconds = value
+                .parse::<f64>()
+                .ok()
+                .filter(|s| s.is_finite())
+                .ok_or_else(|| unparseable("a number of seconds"))?;
+            // ClickHouse keeps it in whole microseconds: what truncates to 0 (or
+            // is below it) is unlimited.
+            if seconds < MIN_EXECUTION_TIME_S {
+                return Err(under(name, MIN_EXECUTION_TIME_S));
+            }
+            if seconds > limits.max_execution_time_s {
                 return Err(over(name, limits.max_execution_time_s));
             }
         }
         _ => {}
     }
     Ok(())
+}
+
+/// The smallest `max_execution_time` that is not unlimited: one microsecond.
+pub const MIN_EXECUTION_TIME_S: f64 = 0.000_001;
+
+fn under(name: &str, floor: impl std::fmt::Display) -> HouseError {
+    readonly(format!(
+        "Setting {name} shouldn't be less than {floor} (0 is unlimited)"
+    ))
+}
+
+/// An unsigned integer setting's string as ClickHouse reads it: an optional `+`,
+/// then decimal digits (leading zeros allowed), nothing else. ClickHouse wraps an
+/// overflow (`'18446744073709551616'` reads as 0); here it does not parse.
+pub fn parse_unsigned(text: &str) -> Option<u64> {
+    let digits = text.strip_prefix('+').unwrap_or(text);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// A byte-size setting's string as ClickHouse reads it (`parseWithSizeSuffix`,
+/// measured on ClickHouse 26.7): [`parse_unsigned`], then optionally `k` or `K`
+/// (10^3), `M`, `G` or `T` (10^6, 10^9, 10^12), each optionally followed by `i`
+/// for the power of 1024 instead (`4Gi` is 4 294 967 296). Nothing else: no `B`,
+/// no `P`, no space, no fraction. ClickHouse wraps an overflow; here it does not
+/// parse.
+pub fn parse_size(text: &str) -> Option<u64> {
+    let unit_at = text
+        .bytes()
+        .position(|b| !(b.is_ascii_digit() || b == b'+'))
+        .unwrap_or(text.len());
+    let (number, suffix) = text.split_at(unit_at);
+    let number = parse_unsigned(number)?;
+    let power = |p: u32, binary: bool| {
+        if binary {
+            1024u64.checked_pow(p)
+        } else {
+            1000u64.checked_pow(p)
+        }
+    };
+    let (unit, binary) = match suffix.strip_suffix('i') {
+        Some(unit) if !unit.is_empty() => (unit, true),
+        _ => (suffix, false),
+    };
+    let multiplier = match unit {
+        "" if !binary => 1,
+        "k" | "K" => power(1, binary)?,
+        "M" => power(2, binary)?,
+        "G" => power(3, binary)?,
+        "T" => power(4, binary)?,
+        _ => return None,
+    };
+    number.checked_mul(multiplier)
 }
 
 /// Settings in order, later values replacing earlier ones of the same name.
@@ -267,6 +346,107 @@ mod tests {
         )
         .expect("prefix");
         check("loams_snapshot_id", "42", &limits, &known).expect("Loams's own");
+    }
+
+    /// Fix round 1, I3: values are read the way ClickHouse reads a setting's
+    /// string, and what converts to 0 (unlimited), past a cap, or cannot be read
+    /// is refused — not passed on unchecked.
+    #[test]
+    fn capped_values_are_parsed_the_clickhouse_way() {
+        let limits = SessionLimits {
+            max_threads: 8,
+            ..SessionLimits::default()
+        };
+        let known = known();
+        let code =
+            |name: &str, value: &str| check(name, value, &limits, &known).err().map(|e| e.code());
+        // Byte sizes (measured on ClickHouse 26.7).
+        assert_eq!(parse_size("4Gi"), Some(4 * 1024 * 1024 * 1024));
+        assert_eq!(parse_size("4G"), Some(4_000_000_000));
+        assert_eq!(parse_size("4ki"), Some(4096));
+        assert_eq!(parse_size("4K"), Some(4000));
+        assert_eq!(parse_size("+018"), Some(18));
+        assert_eq!(parse_size("4Ti"), Some(4 * 1024u64.pow(4)));
+        for bad in [
+            "",
+            "+",
+            "4GiB",
+            "4gi",
+            "4KI",
+            "1.5Gi",
+            "1e9",
+            "0x10",
+            " 5",
+            "5 ",
+            "4m",
+            "4P",
+            "4i",
+            "-1",
+            "1_000",
+            "18446744073709551616",
+            "20000000Ti",
+        ] {
+            assert_eq!(parse_size(bad), None, "{bad:?}");
+        }
+        for (value, expected) in [
+            ("4Gi", None),
+            ("1", None),
+            ("4294967296", None),
+            ("4G", None),
+            ("0", Some(164)),
+            ("+0", Some(164)),
+            ("0Gi", Some(164)),
+            ("4294967297", Some(164)),
+            ("5G", Some(164)),
+            ("4Ti", Some(164)),
+            // ClickHouse wraps these to 0 and to 3.5e18.
+            ("18446744073709551616", Some(36)),
+            ("20000000Ti", Some(36)),
+            ("1e30", Some(36)),
+            ("1.5Gi", Some(36)),
+            ("unlimited", Some(36)),
+            ("'4Gi'", Some(36)),
+            (" 4Gi", Some(36)),
+        ] {
+            assert_eq!(code("max_memory_usage", value), expected, "{value:?}");
+        }
+        for (value, expected) in [
+            ("300", None),
+            ("0.5", None),
+            (".5", None),
+            ("1E2", None),
+            ("+5", None),
+            ("0.000001", None),
+            ("0", Some(164)),
+            ("-0", Some(164)),
+            ("-1", Some(164)),
+            ("1e-7", Some(164)),
+            ("0.0000005", Some(164)),
+            ("300.5", Some(164)),
+            ("1e3", Some(164)),
+            ("inf", Some(36)),
+            ("Infinity", Some(36)),
+            ("nan", Some(36)),
+            ("5m", Some(36)),
+            ("0x10", Some(36)),
+            ("", Some(36)),
+        ] {
+            assert_eq!(code("max_execution_time", value), expected, "{value:?}");
+        }
+        for (value, expected) in [
+            ("8", None),
+            ("+4", None),
+            ("0", None),
+            ("auto", None),
+            ("auto(4)", None),
+            ("9", Some(164)),
+            ("99999999999999999999", Some(36)),
+            ("018446744073709551617", Some(36)),
+            ("1e3", Some(36)),
+            ("4Ki", Some(36)),
+        ] {
+            assert_eq!(code("max_threads", value), expected, "{value:?}");
+        }
     }
 
     #[test]
