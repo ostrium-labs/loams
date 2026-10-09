@@ -486,7 +486,9 @@ mod tests {
             "ws://user@127.0.0.1.example.com:1",
             "ws://127.0.0.1@example.com:1",
         ] {
-            let error = connect_ws(url).await.err().expect(url);
+            let Err(error) = connect_ws(url).await else {
+                panic!("{url} was dialed");
+            };
             assert!(error.to_string().contains("loopback"), "{url}: {error}");
         }
     }
