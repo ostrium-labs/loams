@@ -7,7 +7,7 @@
 //! answers its own refusal (`Conflict`, `NotFound`, `Fenced`) without
 //! writing. Writes carry a commit token unless [`StoreOptions`] says not.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ use super::{
     DEFAULT_PAGE_SIZE, Fence, LEASE_SCOPE, MAX_LEASE_TTL, MAX_PAGE_SIZE, Page, PgControlStore,
     StoreError, StoreEvent, Versioned,
 };
-use crate::model::{FORMAT, Record, project_lease};
+use crate::model::{FORMAT, Record, TAGS, project_lease};
 
 /// How often a watch rescans its prefix when this handle has not written.
 pub const DEFAULT_POLL: Duration = Duration::from_millis(250);
@@ -259,13 +259,15 @@ impl KvControlStore {
     }
 
     /// The version of every record under `prefix`, in one snapshot.
-    async fn versions(&self, prefix: &[u8]) -> Result<BTreeMap<Vec<u8>, u64>, StoreError> {
+    /// Undecodable values are returned apart, with why, for the watch to
+    /// report once.
+    async fn versions(&self, prefix: &[u8]) -> Result<Scan, StoreError> {
         let prefix = prefix.to_vec();
         self.read(OP_WATCH, move |txn| {
             let prefix = prefix.clone();
             Box::pin(async move {
                 let end = prefix_end(&prefix);
-                let mut out = BTreeMap::new();
+                let mut out = Scan::default();
                 let mut start = prefix.clone();
                 loop {
                     let pairs = txn.scan(&start, end.as_deref(), WATCH_SCAN).await?;
@@ -276,9 +278,11 @@ impl KvControlStore {
                     for (key, value) in pairs {
                         match decode_version(&value) {
                             Ok((version, _)) => {
-                                out.insert(key, version);
+                                out.versions.insert(key, version);
                             }
-                            Err(e) => tracing::warn!(error = %e, "pg-control watch skips a record"),
+                            Err(e) => {
+                                out.corrupt.insert(key, e.to_string());
+                            }
                         }
                     }
                     if !full {
@@ -451,7 +455,8 @@ impl PgControlStore for KvControlStore {
         .await
     }
 
-    fn watch(&self, prefix: &[u8]) -> BoxStream<'static, StoreEvent> {
+    fn watch(&self, prefix: &[u8]) -> Result<BoxStream<'static, StoreEvent>, StoreError> {
+        check_watch_prefix(prefix)?;
         let mut changes = self.changes.subscribe();
         changes.mark_unchanged();
         let state = Watch {
@@ -460,11 +465,15 @@ impl PgControlStore for KvControlStore {
             known: None,
             queue: VecDeque::new(),
             changes,
+            warned: BTreeSet::new(),
         };
-        Box::pin(futures::stream::unfold(state, |mut w| async move {
-            let event = w.next().await;
-            Some((event, w))
-        }))
+        Ok(Box::pin(futures::stream::unfold(
+            state,
+            |mut w| async move {
+                let event = w.next().await;
+                Some((event, w))
+            },
+        )))
     }
 }
 
@@ -475,6 +484,16 @@ struct Watch {
     known: Option<BTreeMap<Vec<u8>, u64>>,
     queue: VecDeque<StoreEvent>,
     changes: tokio::sync::watch::Receiver<u64>,
+    /// The undecodable keys already reported, so a rescan does not report
+    /// them again.
+    warned: BTreeSet<Vec<u8>>,
+}
+
+/// One scan of a watch's prefix.
+#[derive(Debug, Default)]
+struct Scan {
+    versions: BTreeMap<Vec<u8>, u64>,
+    corrupt: BTreeMap<Vec<u8>, String>,
 }
 
 impl Watch {
@@ -487,7 +506,10 @@ impl Watch {
                 self.wait().await;
             }
             match self.store.versions(&self.prefix).await {
-                Ok(now) => self.diff(now),
+                Ok(scan) => {
+                    self.report(&scan.corrupt);
+                    self.diff(scan.versions);
+                }
                 Err(e) => {
                     tracing::warn!(error = %e, "pg-control watch rescan failed");
                     if self.known.is_none() {
@@ -507,6 +529,21 @@ impl Watch {
                 }
             }
             () = tokio::time::sleep(poll) => {}
+        }
+    }
+
+    /// Warns once per undecodable key (again only after it decoded or went
+    /// away in between).
+    fn report(&mut self, corrupt: &BTreeMap<Vec<u8>, String>) {
+        self.warned.retain(|key| corrupt.contains_key(key));
+        for (key, why) in corrupt {
+            if self.warned.insert(key.clone()) {
+                tracing::warn!(
+                    key = %String::from_utf8_lossy(key),
+                    error = %why,
+                    "pg-control watch skips an undecodable record"
+                );
+            }
         }
     }
 
@@ -553,6 +590,17 @@ async fn check_fence(
         Ok(Some(lease)) if lease.epoch == fence.epoch() && lease.owner.is_some() => Ok(()),
         Ok(_) => Err(StoreError::Fenced),
     })
+}
+
+/// A watch scans only `pg-control`'s own keys: `<tag>/…` for a tag of
+/// [`TAGS`], never the metastore's records beside them (R3.13).
+fn check_watch_prefix(prefix: &[u8]) -> Result<(), StoreError> {
+    match prefix {
+        [tag, b'/', ..] if TAGS.contains(tag) => Ok(()),
+        _ => Err(StoreError::InvalidArgument(
+            "a watch prefix starts with one of pg-control's tags (x/ X/ E/ C/ R/ D/)".into(),
+        )),
+    }
 }
 
 /// A TTL in milliseconds: above zero, at most [`MAX_LEASE_TTL`].
@@ -693,6 +741,23 @@ mod tests {
         assert_eq!(prefix_end(b"X/a"), Some(b"X/b".to_vec()));
         assert_eq!(prefix_end(&[1, 0xff]), Some(vec![2]));
         assert_eq!(prefix_end(&[0xff]), None);
+    }
+
+    #[test]
+    fn watch_prefixes_are_pg_controls_own() {
+        for ok in [
+            b"x/".as_slice(),
+            b"X/prj-1/",
+            b"E/",
+            b"C/",
+            b"R/br-1/",
+            b"D/",
+        ] {
+            assert!(check_watch_prefix(ok).is_ok(), "{ok:?}");
+        }
+        for bad in [b"".as_slice(), b"X", b"N/", b"e/pg/", b"t/", b"x"] {
+            assert!(check_watch_prefix(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

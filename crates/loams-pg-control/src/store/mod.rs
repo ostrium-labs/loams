@@ -269,5 +269,11 @@ pub trait PgControlStore: Send + Sync + 'static {
     /// The records under `prefix` (raw key bytes, relative to the root):
     /// every record already there as a `Put`, then [`StoreEvent::Synced`],
     /// then each change. Never ends while the store lives.
-    fn watch(&self, prefix: &[u8]) -> BoxStream<'static, StoreEvent>;
+    ///
+    /// # Errors
+    ///
+    /// `InvalidArgument` unless `prefix` starts with `<tag>/` for a tag of
+    /// [`TAGS`](crate::model::TAGS): a watch never scans the metastore's
+    /// records (R3.13).
+    fn watch(&self, prefix: &[u8]) -> Result<BoxStream<'static, StoreEvent>, StoreError>;
 }

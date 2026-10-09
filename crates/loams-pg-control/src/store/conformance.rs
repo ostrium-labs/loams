@@ -542,6 +542,20 @@ pub async fn fence_covers_only_its_project(factory: Factory) {
     assert!(get(&store, &bkey("prj-b", "br-2")).await.is_some());
 }
 
+/// Writes a raw value straight into the `loams-kv` store.
+async fn kv_put(kv: &Store, key: &[u8], value: Vec<u8>) {
+    let key = key.to_vec();
+    kv.run(
+        loams_kv::TxnOptions::new("pg.conformance.raw"),
+        move |txn| {
+            let (key, value) = (key.clone(), value.clone());
+            Box::pin(async move { txn.put(&key, value).await })
+        },
+    )
+    .await
+    .expect("a raw write");
+}
+
 /// A watch sends what its prefix holds, `Synced`, then each put and delete
 /// under its prefix, and nothing of other prefixes; another handle's writes
 /// reach it too.
@@ -550,7 +564,7 @@ pub async fn watch_sees_put_and_delete(factory: Factory) {
         return;
     };
     let store = KvControlStore::new(kv.clone(), options());
-    let other_handle = KvControlStore::new(kv, options());
+    let other_handle = KvControlStore::new(kv.clone(), options());
     let v0 = store
         .api_writer()
         .put(&branch("prj-1", "br-0", "main"), None)
@@ -561,7 +575,15 @@ pub async fn watch_sees_put_and_delete(factory: Factory) {
     })
     .expect("a prefix");
     let key = |id: &str| BranchRec::encode_key(&bkey("prj-1", id)).expect("a key");
-    let mut events = store.watch(&prefix);
+    for bad in [b"".as_slice(), b"N/", b"e/pg/", b"X"] {
+        assert!(
+            matches!(store.watch(bad), Err(StoreError::InvalidArgument(_))),
+            "{bad:?}"
+        );
+    }
+    // An undecodable value under the prefix is skipped, not sent.
+    kv_put(&kv, &key("br-00"), vec![9, 9]).await;
+    let mut events = store.watch(&prefix).expect("a watch on pg-control's keys");
     let mut next = async || {
         tokio::time::timeout(Duration::from_secs(10), events.next())
             .await

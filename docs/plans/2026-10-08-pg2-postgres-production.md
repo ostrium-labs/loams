@@ -1534,3 +1534,7 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
   - `acquire_lease` keeps the metastore's acquire rule: it extends a lease its holder still holds, at the same epoch, and gives an expired or released lease the next epoch, even to the same holder. A holder that lost its lease therefore never gets its old fence back.
   - Task 7's reconciler renews with `renew_lease` and acquires only at start, or after `LeaseLost`.
   - `lease_fences_old_holder` is rewritten so that no deadline can pass early. `Held` and the renewal run under a 60 s TTL. Then holder A renews with 200 ms, sleeps 600 ms and gets `LeaseLost`. B takes the lease at epoch 2, and A's put and delete are `Fenced`.
+- **R3.13 A watch scans only `pg-control`'s keys (review).**
+  - `watch(prefix)` now returns `Result<BoxStream, StoreError>`. It refuses, with `InvalidArgument`, a prefix that does not start with `<tag>/` for a tag of `TAGS` (`x X E C R D`). So it never scans the metastore's records under the same root.
+  - An undecodable value under a valid prefix is skipped, and reported once per key. The report repeats only if the key decoded or disappeared in between.
+  - Scans no longer log from inside the transaction body, which can rerun.
