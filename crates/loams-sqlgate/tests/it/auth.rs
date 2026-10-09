@@ -301,3 +301,24 @@ fn upstream_cleartext_requires_tls() {
         b"pw\0"
     );
 }
+
+/// Fix round 2, D: an empty full-auth password (an empty packet or a lone
+/// 0x00) is denied without a lookup.
+#[test]
+fn empty_full_auth_password_is_denied() {
+    let n = nonce();
+    for data in [&[][..], &[0u8][..]] {
+        let mut s = CachingSha2Server::new(n, true);
+        s.start(
+            Some(CACHING_SHA2),
+            &scramble_caching_sha2(b"pw", n.as_bytes()),
+        );
+        s.fast_result(false);
+        assert_eq!(
+            s.on_packet(data),
+            Ok(Action::Fail(AuthError::AccessDenied)),
+            "{data:?}"
+        );
+        assert!(s.is_done());
+    }
+}

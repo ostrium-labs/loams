@@ -352,6 +352,12 @@ impl CachingSha2Server {
                     self.state = State::Done;
                     return Err(AuthError::PublicKeyRefused);
                 }
+                // An empty password (empty packet, or a lone NUL): the gate
+                // never issues one, so it is denied without a lookup.
+                if matches!(payload, [] | [0]) {
+                    self.state = State::Done;
+                    return Ok(Action::Fail(AuthError::AccessDenied));
+                }
                 let password = match payload {
                     [p @ .., 0] if p.len() <= MAX_CLEAR_PASSWORD && !p.contains(&0) => p,
                     _ => {
