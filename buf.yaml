@@ -57,3 +57,6 @@ breaking:
     # SDKs and `buf breaking` treat it as experimental, and GR1 Task 39
     # removes this line when the package is frozen at GA.
     - proto/loams/graph
+    # `loams.postgres.v1` is `unstable: true` until Loams Postgres GA (PG2
+    # Task 1 ruling R1.6); PG2 Task 60 removes this line and the option.
+    - proto/loams/postgres

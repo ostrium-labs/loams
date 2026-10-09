@@ -44,6 +44,9 @@ service PostgresService {
   option (loams.options.v1.module) = {
     name: "postgres"
     summary: "Loams Postgres: serverless Postgres on the bucket, with branches and scale to zero."
+    // Until Loams Postgres GA: `buf breaking` skips the package (buf.yaml)
+    // and SDKs mark the module experimental. PG2 Task 60 removes both.
+    unstable: true
   };
   // No method carries `loams.options.v1.facade` yet, so the SDK facades
   // expose no `postgres` module: that waits for the service to be served
