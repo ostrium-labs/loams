@@ -343,35 +343,41 @@ async fn gc_runs_in_bounded_batches() {
     assert_eq!(again.versions_deleted, 0);
 }
 
-/// A long GC round does not hold commits back for the whole pass: a commit
-/// started during the round finishes before the round does.
+/// A long GC round does not hold commits back for the whole pass: commits
+/// keep completing while a round works through its batches. Counted, not
+/// timed, so a loaded machine does not make it flaky (Task 23 review item
+/// 12).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn gc_does_not_block_commits_for_a_whole_pass() {
     let dir = tmp();
     let store = open(&dir.path().join("store.redb"), "gc").await;
     let h = handle(&store).clone();
     many_versions(&store, 200, 3).await;
-    // 600 entries, 20 per batch, 30 ms between batches: about a second.
+    // 600 entries, 20 per batch, with a pause between batches.
     h.tune_gc(20, Duration::from_millis(30));
-    let gc = tokio::spawn(async move {
-        let report = h
-            .gc_once_at(wall_ms() + 3_600_000)
+    let gc = tokio::spawn(async move { h.gc_once_at(wall_ms() + 3_600_000).await });
+    let mut during = 0;
+    let mut n: u32 = 0;
+    while !gc.is_finished() {
+        let key = n.to_be_bytes();
+        store
+            .run(TxnOptions::new("kv.embedded.during"), move |txn| {
+                Box::pin(async move { txn.put(&key, b"gc".to_vec()).await })
+            })
             .await
-            .expect("a GC round");
-        (report, std::time::Instant::now())
-    });
-    tokio::time::sleep(Duration::from_millis(150)).await;
-    let started = std::time::Instant::now();
-    put(&store, b"during", b"gc").await;
-    let committed = std::time::Instant::now();
-    let (report, gc_done) = gc.await.expect("joined");
+            .expect("a commit during GC");
+        n += 1;
+        if !gc.is_finished() {
+            during += 1;
+        }
+    }
+    let report = gc.await.expect("joined").expect("a GC round");
     assert!(report.batches >= 30, "{report:?}");
     assert!(
-        committed < gc_done,
-        "the commit waited for the whole GC pass ({:?})",
-        committed - started
+        during >= 5,
+        "only {during} commits completed while GC ran {} batches",
+        report.batches
     );
-    assert!(committed - started < Duration::from_millis(500));
 }
 
 /// A scan over keys with many versions reads each key's newest version

@@ -188,3 +188,18 @@ async fn data_survives_restart_on_embedded() {
     assert_ne!(other, id);
     drop(dev);
 }
+
+/// The same across a SIGKILL: a committed insert is durable without a clean
+/// shutdown (Task 23 review item 12).
+#[tokio::test(flavor = "multi_thread")]
+async fn data_survives_sigkill_on_embedded() {
+    let dir = TempDir::new().expect("a temp dir");
+    let mut dev = start(dir.path());
+    let (id, ts) = insert(dev.live, 43).await;
+    dev.child.kill().expect("SIGKILL");
+    dev.child.wait().expect("reaped");
+    drop(dev);
+    let dev = start(dir.path());
+    assert_eq!(get_n(dev.live, &id, &ts).await, json!("43"));
+    drop(dev);
+}
