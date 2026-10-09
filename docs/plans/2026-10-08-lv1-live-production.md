@@ -907,6 +907,9 @@ In standalone without the `ControlStore`, a file-backed `KeyStore` (`[auth] keys
   - the server's Live path with no cluster GC loop.
 - **Item 5, `Durability::None` (a suggestion to evaluate).** GC batches, and the oracle's mark writes, could commit with redb's `Durability::None`, then make one durable commit at the end of a round. That saves an fsync per batch. Their crash semantics must stay as they are: a lost batch is only re-done, but a mark must be durable before a timestamp above the old one is issued.
 
+**Carried from the Task 1 review** (note for this task):
+- **The reactive checker reads at old timestamps.** After a run, the checker evaluates every query at every recorded Transition's `end.ts` and at the ticks it checks, some minutes in the past on TiKV. At today's sizes (10 × 2 000 nightly, each seed on a fresh root and checked right after it runs) that stays inside the GC life time. Larger nightly sizes, a shorter GC life time, or a GC round that this task's alerts make more aggressive could move the safe point past those timestamps; the reads are then refused ("below the GC safe point") and show as `Stale` violations, not as GC errors. Before raising the sizes: have the checker hold a GC barrier (or a safe-point floor) at its first tick for the run, or check each seed's Transitions while the run is still within the life time, and make a below-safe-point refusal a `Workload` violation that names GC.
+
 **Commit:** `tikv: report blocked GC per keyspace`.
 
 ### Task 27: Metrics, traces and logs
