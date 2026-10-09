@@ -2,7 +2,7 @@
 import type { ChildProcess, spawn as spawnFn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import type { EngineState } from "../../shared/contracts";
-import { engineArgs } from "./binary";
+import { engineArgs, type LiveSupport } from "./binary";
 import { RotatingLog } from "./log-rotate";
 import { reservePorts } from "./ports";
 
@@ -14,8 +14,11 @@ export interface SupervisorDeps {
 	fetch: typeof fetch;
 	now: () => number;
 	sleep: (ms: number) => Promise<void>;
-	/** Whether the binary was built with the optional `live` feature. Default: false. */
-	liveSupported?: (bin: string) => Promise<boolean>;
+	/**
+	 * The binary's Live support (`probeLiveSupport`); `true` is an older
+	 * engine whose Live needs a PD, `false` none. Default: none.
+	 */
+	liveSupported?: (bin: string) => Promise<LiveSupport | boolean>;
 	livePd?: string | null;
 	platform?: NodeJS.Platform;
 	env?: NodeJS.ProcessEnv;
@@ -147,11 +150,16 @@ export class EngineSupervisor extends EventEmitter {
 			return;
 		}
 		let ports: number[];
-		let liveOk = false;
+		let support: LiveSupport = "none";
+		const pd = this.livePd ?? undefined;
+		// Live runs with a PD on any engine that has it, and with none on an
+		// engine with the embedded store (LV1 Task 23).
+		const liveOn = (): boolean =>
+			support !== "none" && (!!pd || support === "embedded");
 		try {
-			liveOk = (await d.liveSupported?.(bin)) ?? false;
-			const wantLive = liveOk && !!this.livePd;
-			ports = await reservePorts(wantLive ? 5 : 4);
+			const probed = (await d.liveSupported?.(bin)) ?? "none";
+			support = probed === true ? "tikv" : probed === false ? "none" : probed;
+			ports = await reservePorts(liveOn() ? 5 : 4);
 		} catch (e) {
 			if (!alive()) return;
 			this.fail(`could not reserve ports: ${(e as Error).message}`);
@@ -165,11 +173,14 @@ export class EngineSupervisor extends EventEmitter {
 			number,
 			number | undefined,
 		];
-		const pd = this.livePd ?? undefined;
 		const args = engineArgs({
 			dataDir: d.dataDir,
 			ports: { http, flight, es, durable, live },
-			live: { supported: liveOk, pd },
+			live: {
+				supported: support !== "none",
+				embedded: support === "embedded",
+				pd,
+			},
 		});
 		const url = `http://127.0.0.1:${http}`;
 		let child: ChildProcess;
@@ -232,7 +243,7 @@ export class EngineSupervisor extends EventEmitter {
 				esUrl: `http://127.0.0.1:${es}`,
 				flightUrl: `grpc://127.0.0.1:${flight}`,
 				durableUrl: `http://127.0.0.1:${durable}`,
-				...(live !== undefined && pd
+				...(live !== undefined && liveOn()
 					? { liveUrl: `http://127.0.0.1:${live}` }
 					: {}),
 				pid: child.pid ?? 0,

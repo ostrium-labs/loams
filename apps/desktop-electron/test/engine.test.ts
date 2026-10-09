@@ -10,6 +10,7 @@ import {
 	engineArgs,
 	findEngineBinary,
 	helpSupportsLive,
+	liveSupportFromHelp,
 } from "../src/main/engine/binary";
 import { RotatingLog } from "../src/main/engine/log-rotate";
 import { reservePorts } from "../src/main/engine/ports";
@@ -111,8 +112,38 @@ describe("engine", () => {
 			"--live-pd",
 			"pd:2379",
 		]);
+		// An engine with the embedded store (LV1 Task 23, ruling T23-7): Live
+		// with no PD, and `--live-store tikv://…` (not the deprecated
+		// `--live-pd`) with one.
+		expect(
+			engineArgs({
+				dataDir: "/d",
+				ports,
+				live: { supported: true, embedded: true },
+			}),
+		).toEqual([...base, "--live-listen", "127.0.0.1:5"]);
+		expect(
+			engineArgs({
+				dataDir: "/d",
+				ports,
+				live: { supported: true, embedded: true, pd: "pd:2379" },
+			}),
+		).toEqual([
+			...base,
+			"--live-listen",
+			"127.0.0.1:5",
+			"--live-store",
+			"tikv://pd:2379",
+		]);
 		expect(helpSupportsLive("  --no-live  disable")).toBe(true);
 		expect(helpSupportsLive("--no-durable")).toBe(false);
+		expect(liveSupportFromHelp("--no-durable")).toBe("none");
+		expect(
+			liveSupportFromHelp("--live-listen <A>\n --live-pd <P>\n --no-live"),
+		).toBe("tikv");
+		expect(
+			liveSupportFromHelp("--live-listen <A>\n --live-store <S>\n --no-live"),
+		).toBe("embedded");
 		expect(findEngineBinary(["/a", "/b"], (p) => p === "/b")).toBe("/b");
 		expect(findEngineBinary(["/a"], () => false)).toBeNull();
 	});
@@ -170,6 +201,41 @@ describe("engine", () => {
 		c.start();
 		await until(() => c.state().phase === "ready");
 		expect(seen[2]?.join(" ")).not.toMatch(/live/);
+	});
+
+	it("embedded_live_runs_without_a_pd", async () => {
+		const seen: string[][] = [];
+		const sup = new EngineSupervisor(
+			deps({
+				spawn: asSpawn((_c: string, a: string[]) => {
+					seen.push(a);
+					return new FakeChild();
+				}),
+				fetch: (async () => ({ ok: true })) as unknown as typeof fetch,
+				liveSupported: async () => "embedded" as const,
+			}),
+		);
+		sup.start();
+		await until(() => sup.state().phase === "ready");
+		const s = sup.state();
+		expect(s.phase === "ready" && s.liveUrl).toMatch(/^http:\/\/127/);
+		expect(seen[0]).toContain("--live-listen");
+		expect(seen[0]).not.toContain("--no-live");
+		expect(seen[0]).not.toContain("--live-store");
+		// A PD selects TiKV through --live-store, not the deprecated --live-pd.
+		await sup.setLivePd("127.0.0.1:19379");
+		await until(() => seen.length === 2 && sup.state().phase === "ready");
+		expect(seen[1]).toContain("--live-store");
+		expect(seen[1]).toContain("tikv://127.0.0.1:19379");
+		expect(seen[1]).not.toContain("--live-pd");
+		// Back to no PD: embedded Live again.
+		await sup.setLivePd(null);
+		await until(() => seen.length === 3 && sup.state().phase === "ready");
+		expect(seen[2]).toContain("--live-listen");
+		expect(seen[2]).not.toContain("--no-live");
+		const r = sup.state();
+		expect(r.phase === "ready" && r.liveUrl).toMatch(/^http:\/\/127/);
+		await sup.stop();
 	});
 
 	it("set_live_pd_restarts_engine", async () => {
