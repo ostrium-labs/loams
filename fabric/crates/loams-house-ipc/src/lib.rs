@@ -108,6 +108,14 @@ pub enum Frame {
     Classify(String),
     /// worker → front: what `Classify` found. Terminal.
     Classified(Classification),
+    /// front → worker: classify a statement and, when it is one statement
+    /// ClickHouse can parse, explain its syntax tree (`EXPLAIN AST`, and `EXPLAIN
+    /// QUERY TREE run_passes = 0` for a query) for the deny list (HS1 Task 5).
+    /// Nothing runs and nothing is resolved, so no table function is opened.
+    /// Answered by `Analyzed` or `Error`.
+    Analyze(Analyze),
+    /// worker → front: what `Analyze` found. Terminal.
+    Analyzed(Analysis),
     /// front → worker, tests only: `abort()` now. What
     /// `crash_does_not_reach_the_front` uses to crash a worker on demand. Last, so
     /// a worker built without it fails to decode it and exits, which is also a crash.
@@ -143,6 +151,8 @@ impl Frame {
             Self::Done => "Done",
             Self::Classify(_) => "Classify",
             Self::Classified(_) => "Classified",
+            Self::Analyze(_) => "Analyze",
+            Self::Analyzed(_) => "Analyzed",
             #[cfg(feature = "test-hooks")]
             Self::Abort => "Abort",
         }
@@ -192,6 +202,31 @@ pub struct Classification {
     pub class: QueryClass,
     /// Executable statements (0 when it does not parse).
     pub statements: u32,
+}
+
+/// A statement to analyse: its text exactly as chDB will parse it, and the
+/// query parameters it will run with (`{name:Type}` substitution happens while
+/// parsing, so an explain without them fails).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Analyze {
+    /// The statement, as chDB will run it.
+    pub sql: String,
+    /// `param_<name>` values.
+    pub params: Vec<(String, String)>,
+}
+
+/// What `Analyze` found (HS1 Task 5).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Analysis {
+    /// ClickHouse's class, as `Classify` reports it.
+    pub classification: Classification,
+    /// `EXPLAIN AST` of the statement, one TSV-escaped row per line. Empty when
+    /// the classification already refuses the statement (more than one, or
+    /// `Unknown`), so nothing was explained.
+    pub ast: String,
+    /// `EXPLAIN QUERY TREE run_passes = 0` of the statement, the same way, when it
+    /// is a query (`EXPLAIN QUERY TREE` takes nothing else).
+    pub query_tree: Option<String>,
 }
 
 /// Binds a worker to one namespace for the rest of its life (§49 §10.1).

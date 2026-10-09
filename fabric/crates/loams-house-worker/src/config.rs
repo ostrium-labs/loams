@@ -7,8 +7,10 @@
 //!
 //! At boot it writes two files into its private temporary directory:
 //!
-//! * `config.xml`, the engine's `--config-file`: the users file, `user_files_path`
-//!   and the three in-memory metadata caches sized from the memory limit (HS1 R1.4).
+//! * `config.xml`, the engine's `--config-file`: the users file, `user_files_path`,
+//!   the House's `display_name`, a `user_scripts_path` that never exists (HS1
+//!   Task 5) and the three in-memory metadata caches sized from the memory limit
+//!   (HS1 R1.4).
 //! * `users.xml`, which **redefines `default`** with explicit grants instead of
 //!   chDB's all-powerful one (HS1 R1.8: chDB cannot `REVOKE`, but it can be told
 //!   what to grant at connect). No `FILE`, `URL`, `REMOTE`, `WRITE ON S3`, `SYSTEM`,
@@ -26,49 +28,15 @@ pub const DEFAULT_MEMORY_LIMIT: u64 = 4 * 1024 * 1024 * 1024 + 512 * 1024 * 1024
 pub const GRANTS: &str = "GRANT SELECT, SHOW, CREATE TEMPORARY TABLE, CREATE VIEW, DROP VIEW, \
                           CREATE DATABASE, DROP DATABASE, INSERT ON *.*";
 
-/// Settings the worker's profile pins with `<readonly/>` constraints, so a user's
-/// `SET` answers `452` (HS1 R1.5, R1.8).
-pub const PINNED_OFF: &[&str] = &[
-    "allow_introspection_functions",
-    "allow_insert_into_iceberg",
-    "allow_experimental_iceberg_compaction",
-    "allow_iceberg_remove_orphan_files",
-    // A user-chosen code in `throwIf` could impersonate a Loams or chDB error
-    // (`236 ABORTED`, a crash) to the front (HS1 Task 2 review M2).
-    "allow_custom_error_code_in_throwif",
-];
+pub use crate::settings::{
+    MAX_EXECUTION_TIME_S, MAX_QUERY_MEMORY, MIN_EXECUTION_TIME_S, PINNED_OFF, PINNED_PATHS,
+    PINNED_VALUES, max_threads_cap,
+};
 
-/// The largest `max_memory_usage` a statement may set: §49 §12's 4 GiB per query
-/// (FL2 Ruling 10). It is also the profile's value, so `0` (unlimited) is a change
-/// the constraint sees: ClickHouse does not check a value equal to the current one.
-pub const MAX_QUERY_MEMORY: u64 = 4 * 1024 * 1024 * 1024;
-
-/// The largest `max_execution_time` a statement may set, in seconds (FL2 Ruling
-/// 10); also the profile's value, for the same reason.
-pub const MAX_EXECUTION_TIME_S: u64 = 300;
-
-/// The smallest `max_execution_time`: one microsecond, ClickHouse's unit. The
-/// constraint is checked after the engine's conversion, so a value that truncates
-/// to 0 (unlimited) is under it (measured, fix round 1).
-pub const MIN_EXECUTION_TIME_S: &str = "0.000001";
-
-/// Settings that name a file, a directory or a URL the engine would read or write:
-/// pinned with `<readonly/>` (HS1 Task 4 fix round 1, I4), so a query's `SETTINGS`
-/// clause, which the front does not parse, cannot set them either (`452`).
-pub const PINNED_PATHS: &[&str] = &[
-    "format_schema",
-    "output_format_schema",
-    "input_format_record_errors_file_path",
-    "format_template_resultset",
-    "format_template_row",
-    "format_avro_schema_registry_url",
-    "rename_files_after_processing",
-];
-
-/// The `max_threads` cap: the node's cores, as the front's (FL2 Ruling 10).
-pub fn max_threads_cap() -> u64 {
-    std::thread::available_parallelism().map_or(1, |n| n.get() as u64)
-}
+/// `user_scripts_path`: a directory under the worker's own that is never
+/// created, so `executable()` and executable UDFs find no script even with L1
+/// bypassed (HS1 Task 5).
+pub const NO_USER_SCRIPTS: &str = "no-user-scripts";
 
 /// The worker's command line.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -188,12 +156,16 @@ pub fn config_xml(args: &WorkerArgs) -> String {
         "<clickhouse>\n  \
            <users_config>{users}</users_config>\n  \
            <user_files_path>{files}/</user_files_path>\n  \
+           <display_name>{display}</display_name>\n  \
+           <user_scripts_path>{scripts}/</user_scripts_path>\n  \
            <iceberg_metadata_files_cache_size>{iceberg}</iceberg_metadata_files_cache_size>\n  \
            <parquet_metadata_cache_size>{parquet}</parquet_metadata_cache_size>\n  \
            <query_condition_cache_size>{condition}</query_condition_cache_size>\n\
          </clickhouse>\n",
         users = xml_text(&args.users_file().display().to_string()),
         files = xml_text(&args.files_dir().display().to_string()),
+        display = xml_text(crate::settings::DISPLAY_NAME),
+        scripts = xml_text(&args.tmp_dir.join(NO_USER_SCRIPTS).display().to_string()),
         iceberg = caches.iceberg_metadata,
         parquet = caches.parquet_metadata,
         condition = caches.query_condition,
@@ -215,6 +187,10 @@ pub fn users_xml(args: &WorkerArgs) -> String {
     let mut constraints = String::new();
     for name in PINNED_OFF {
         let _ = writeln!(pinned, "      <{name}>0</{name}>");
+        let _ = writeln!(constraints, "        <{name}><readonly/></{name}>");
+    }
+    for (name, value) in PINNED_VALUES {
+        let _ = writeln!(pinned, "      <{name}>{value}</{name}>");
         let _ = writeln!(constraints, "        <{name}><readonly/></{name}>");
     }
     for name in PINNED_PATHS {
@@ -361,6 +337,13 @@ mod tests {
     }
 
     #[test]
+    fn config_names_the_house_and_no_scripts() {
+        let config = config_xml(&args());
+        assert!(config.contains("<display_name>loams-house</display_name>"));
+        assert!(config.contains("<user_scripts_path>/w/7/no-user-scripts/</user_scripts_path>"));
+    }
+
+    #[test]
     fn caches_are_an_eighth_of_memory() {
         let sizes = CacheSizes::for_memory(8 * 1024 * 1024 * 1024);
         assert_eq!(
@@ -396,9 +379,14 @@ mod tests {
                 "{absent} must not be granted:\n{users}"
             );
         }
-        for name in PINNED_OFF.iter().chain(PINNED_PATHS) {
+        for name in crate::settings::pinned() {
             assert!(users.contains(&format!("<{name}><readonly/></{name}>")));
         }
+        assert!(
+            users.contains(
+                "<default_temporary_table_engine>Memory</default_temporary_table_engine>"
+            )
+        );
         assert!(
             users
                 .contains("<max_memory_usage><min>1</min><max>4294967296</max></max_memory_usage>")

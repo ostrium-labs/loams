@@ -14,6 +14,7 @@
 
 pub mod config;
 pub mod serve;
+pub mod settings;
 
 pub use config::WorkerArgs;
 /// The engine configuration type [`engine_config`] returns.

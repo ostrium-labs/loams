@@ -30,8 +30,8 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use loams_chdb::{ChdbError, Engine, EngineConfig, Session, SessionId, Settings};
 use loams_house_ipc::{
-    Bind, CHUNK_BYTES, Chunk, Classification, CodecError, EngineError, Execute, Frame, FrameCodec,
-    PROTOCOL_VERSION, Progress, QueryClass, Ready,
+    Analysis, Analyze, Bind, CHUNK_BYTES, Chunk, Classification, CodecError, EngineError, Execute,
+    Frame, FrameCodec, PROTOCOL_VERSION, Progress, QueryClass, Ready,
 };
 
 use crate::config::{self, WorkerArgs};
@@ -41,6 +41,11 @@ pub const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 
 /// How often the serve loop sweeps idle sessions when no frame comes.
 pub const SESSION_SWEEP: Duration = Duration::from_secs(1);
+
+/// The largest analysis (both explains) a worker sends: well inside a frame
+/// ([`loams_house_ipc::MAX_FRAME_BYTES`]). A statement whose tree is larger is
+/// refused (`36`), never run unchecked.
+pub const MAX_ANALYSIS_BYTES: usize = 8 * 1024 * 1024;
 
 /// The most House sessions one worker keeps; past it the least recently used is
 /// dropped (Task 3 review, decision 4).
@@ -54,15 +59,9 @@ struct SessionSlot {
     timeout: Duration,
 }
 
-/// The query-level arguments of every user connection (HS1 R1.9).
-///
-/// `session_timezone=UTC` because the House answers `X-ClickHouse-Timezone: UTC`
-/// (FL2 Task 2) and chDB takes its *server* timezone from the host: an empty
-/// environment leaves it on `/etc/localtime`, and neither `<timezone>` in the
-/// config file nor `--timezone=UTC` changes it (measured, HS1 Task 3). The session
-/// setting is what `timezone()` and every DateTime conversion use, and a user may
-/// still `SET` it, as in ClickHouse.
-pub const USER_CONNECTION_ARGS: &[&str] = &["--readonly=2", "--session_timezone=UTC"];
+/// The query-level arguments of every user connection: L2 (§49 §13.2), in
+/// [`crate::settings`].
+pub use crate::settings::USER_CONNECTION_ARGS;
 
 /// Where the serve loop runs, which decides what the end of the socket does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -212,6 +211,7 @@ impl Worker {
             let answer = match frame {
                 Frame::Bind(bind) => self.bind(bind),
                 Frame::Classify(sql) => self.classify(&sql),
+                Frame::Analyze(analyze) => self.analyze(&analyze),
                 Frame::Execute(execute) => match self.execute(execute, &frames, &mut writer) {
                     Ok(answer) => answer,
                     Err(end) => return end,
@@ -405,6 +405,63 @@ impl Worker {
             })],
             Err(err) => vec![error_frame(engine_error(&err), false)],
         }
+    }
+
+    /// `Analyze`: ClickHouse's class and, for one statement it can parse, its
+    /// syntax trees for the front's deny list (HS1 Task 5). Both explains are
+    /// syntax only — `EXPLAIN AST`, and `EXPLAIN QUERY TREE run_passes = 0`, which
+    /// builds the tree without resolving it — because a resolved tree opens what
+    /// it names: `EXPLAIN QUERY TREE SELECT * FROM url('http://…')` connects to
+    /// infer the schema (measured, Task 5). They run on the control connection
+    /// with the statement's parameters; nothing is executed.
+    fn analyze(&self, analyze: &Analyze) -> Vec<Frame> {
+        let classification = match self.classify(&analyze.sql).pop() {
+            Some(Frame::Classified(classification)) => classification,
+            Some(other) => return vec![other],
+            None => return Vec::new(),
+        };
+        let mut analysis = Analysis {
+            classification,
+            ast: String::new(),
+            query_tree: None,
+        };
+        if classification.statements != 1 || classification.class == QueryClass::Unknown {
+            // The front refuses these on the class alone (`62`).
+            return vec![Frame::Analyzed(analysis)];
+        }
+        let explain = |kind: &str| {
+            self.control
+                .query(
+                    &format!("EXPLAIN {kind} {}", analyze.sql),
+                    "TSV",
+                    &analyze.params,
+                )
+                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        };
+        analysis.ast = match explain("AST") {
+            Ok(ast) => ast,
+            Err(err) => return vec![error_frame(engine_error(&err), false)],
+        };
+        if classification.class == QueryClass::ReadOnly {
+            // Only a query has a query tree; `SHOW`, `DESCRIBE` and `EXPLAIN`
+            // fail to parse here and keep their AST alone.
+            analysis.query_tree = explain("QUERY TREE run_passes = 0").ok();
+        }
+        let size = analysis.ast.len() + analysis.query_tree.as_ref().map_or(0, String::len);
+        if size > MAX_ANALYSIS_BYTES {
+            return vec![error_frame(
+                EngineError {
+                    code: 36,
+                    name: "BAD_ARGUMENTS".to_string(),
+                    message: format!(
+                        "the statement's syntax tree is {size} bytes, more than the \
+                         {MAX_ANALYSIS_BYTES} the House analyses"
+                    ),
+                },
+                false,
+            )];
+        }
+        vec![Frame::Analyzed(analysis)]
     }
 
     /// Drops sessions idle past their timeout.

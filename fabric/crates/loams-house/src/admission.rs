@@ -28,8 +28,8 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use loams_house_ipc::{
-    Bind, CHUNK_BYTES, Chunk, Classification, CodecError, Execute, Frame, FrameCodec,
-    PROTOCOL_VERSION, Progress, Ready,
+    Analysis, Analyze, Bind, CHUNK_BYTES, Chunk, Classification, CodecError, Execute, Frame,
+    FrameCodec, PROTOCOL_VERSION, Progress, Ready,
 };
 use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
@@ -1062,6 +1062,37 @@ impl WorkerLease {
         let worker = self.worker()?;
         match FrameCodec::read_async(&mut worker.reader).await {
             Ok(Some(Frame::Classified(classification))) => Ok(classification),
+            Ok(Some(Frame::Error { error, .. })) => Err(HouseError::from(error)),
+            Ok(Some(other)) => Err(self.broke(other.kind())),
+            Ok(None) | Err(_) => Err(self.died()),
+        }
+    }
+
+    /// ClickHouse's class of `sql` and its syntax trees, from the worker's parser,
+    /// for the deny list (HS1 Task 5). Nothing runs and nothing is resolved.
+    pub async fn analyze(
+        &mut self,
+        sql: &str,
+        params: &[(String, String)],
+    ) -> Result<Analysis, HouseError> {
+        let worker = self.worker()?;
+        if worker.in_flight {
+            return Err(network(
+                "the worker is still running a statement".to_string(),
+            ));
+        }
+        let frame = Frame::Analyze(Analyze {
+            sql: sql.to_string(),
+            params: params.to_vec(),
+        });
+        match FrameCodec::write_async(&mut worker.writer, &frame).await {
+            Ok(()) => {}
+            Err(CodecError::Io(_)) => return Err(self.died()),
+            Err(err) => return Err(unsendable(&self.query_id.clone(), &err)),
+        }
+        let worker = self.worker()?;
+        match FrameCodec::read_async(&mut worker.reader).await {
+            Ok(Some(Frame::Analyzed(analysis))) => Ok(analysis),
             Ok(Some(Frame::Error { error, .. })) => Err(HouseError::from(error)),
             Ok(Some(other)) => Err(self.broke(other.kind())),
             Ok(None) | Err(_) => Err(self.died()),

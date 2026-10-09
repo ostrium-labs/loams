@@ -3,8 +3,9 @@
 
 use bytes::Bytes;
 use loams_house_ipc::{
-    Bind, Chunk, Classification, CodecError, EngineError, Execute, Frame, FrameCodec, InputSpec,
-    Limits, MAX_FRAME_BYTES, PROTOCOL_VERSION, Progress, QueryClass, Ready, SessionRef,
+    Analysis, Analyze, Bind, Chunk, Classification, CodecError, EngineError, Execute, Frame,
+    FrameCodec, InputSpec, Limits, MAX_FRAME_BYTES, PROTOCOL_VERSION, Progress, QueryClass, Ready,
+    SessionRef,
 };
 use proptest::collection::vec;
 use proptest::option;
@@ -191,6 +192,21 @@ fn frame() -> impl Strategy<Value = Frame> {
                 class,
                 statements
             })),
+        (text(), vec((text(), text()), 0..3))
+            .prop_map(|(sql, params)| Frame::Analyze(Analyze { sql, params })),
+        (
+            prop_oneof![Just(QueryClass::ReadOnly), Just(QueryClass::Unknown)],
+            any::<u32>(),
+            text(),
+            option::of(text())
+        )
+            .prop_map(|(class, statements, ast, query_tree)| {
+                Frame::Analyzed(Analysis {
+                    classification: Classification { class, statements },
+                    ast,
+                    query_tree,
+                })
+            }),
     ]
 }
 
