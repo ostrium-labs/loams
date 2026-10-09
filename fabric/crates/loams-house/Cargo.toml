@@ -31,12 +31,16 @@ nix.workspace = true
 # `HouseError`'s `Display`/`Error`, which the HTTP layer surfaces to the
 # per-request error handler. Apache-2.0 OR MIT.
 thiserror.workspace = true
-# The HTTP interface (HS1 Task 3): request heads, Basic credentials, the dev
+# The HTTP interface (HS1 Task 3): hyper, Basic credentials, the dev
 # users' password digests, request and response compression, query ids and the
 # `wait_end_of_query` spool.
 base64.workspace = true
 flate2.workspace = true
-httparse.workspace = true
+http.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 uuid.workspace = true
@@ -52,6 +56,8 @@ loams-house-worker = { path = "../loams-house-worker", optional = true, features
 loams-chdb-sys = { path = "../loams-chdb-sys", optional = true }
 
 [dev-dependencies]
+# `tests/request_fuzz.rs`: the `request_parse` fuzz target's body on stable.
+proptest.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
 
 [lints]

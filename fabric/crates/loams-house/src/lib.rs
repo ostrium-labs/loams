@@ -66,6 +66,7 @@ pub mod compress;
 pub mod config;
 pub mod errors;
 pub mod http;
+pub mod request;
 pub mod watchdog;
 
 pub use admission::{Collected, Event, Outcome, PoolConfig, PoolStats, WorkerLease, WorkerPool};

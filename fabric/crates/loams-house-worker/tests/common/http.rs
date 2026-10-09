@@ -97,10 +97,10 @@ pub fn request(
     let sent_at = Instant::now();
     stream.write_all(head.as_bytes()).expect("write head");
     stream.write_all(body).expect("write body");
-    read_response(stream, sent_at)
+    read_response(stream, sent_at, method == "HEAD")
 }
 
-fn read_response(stream: TcpStream, sent_at: Instant) -> Response {
+fn read_response(stream: TcpStream, sent_at: Instant, head_only: bool) -> Response {
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     reader.read_line(&mut line).expect("status line");
@@ -128,7 +128,12 @@ fn read_response(stream: TcpStream, sent_at: Instant) -> Response {
             .map(|(_, v, _)| v.clone())
     };
     let mut body = Vec::new();
-    let complete = if get("Transfer-Encoding").is_some_and(|v| v.eq_ignore_ascii_case("chunked")) {
+    let complete = if head_only {
+        // A HEAD response has no body, whatever its headers say: anything that
+        // follows (the connection is `close`) is a bug the caller sees in `body`.
+        let _ = reader.read_to_end(&mut body);
+        true
+    } else if get("Transfer-Encoding").is_some_and(|v| v.eq_ignore_ascii_case("chunked")) {
         read_chunked(&mut reader, &mut body)
     } else if let Some(length) = get("Content-Length") {
         let length: usize = length.parse().expect("length");
@@ -175,4 +180,20 @@ fn read_chunked(reader: &mut impl BufRead, body: &mut Vec<u8>) -> bool {
             return false;
         }
     }
+}
+
+/// Sends raw bytes and reads everything until the server closes (or `wait`).
+pub fn raw(addr: SocketAddr, bytes: &[u8], wait: Duration) -> String {
+    let mut stream = TcpStream::connect(addr).expect("connect");
+    stream.set_read_timeout(Some(wait)).expect("timeout");
+    stream.write_all(bytes).expect("write");
+    let mut out = Vec::new();
+    let mut piece = [0u8; 65536];
+    loop {
+        match stream.read(&mut piece) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => out.extend_from_slice(&piece[..n]),
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }

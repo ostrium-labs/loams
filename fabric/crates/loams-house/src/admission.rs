@@ -113,6 +113,8 @@ pub struct PoolStats {
     pub booting: usize,
     /// Workers started since the pool began.
     pub spawned_total: u64,
+    /// Leases handed out since the pool began.
+    pub acquired_total: u64,
     /// Workers retired, by reason (`loams_house_worker_kills_total{reason}`).
     pub kills: BTreeMap<ExitReason, u64>,
     /// Workers (idle or lent) per bound namespace.
@@ -157,6 +159,7 @@ struct State {
     /// Workers starting to refill the warm pool.
     warming: usize,
     spawned_total: u64,
+    acquired_total: u64,
     kills: BTreeMap<ExitReason, u64>,
     closed: bool,
 }
@@ -598,6 +601,7 @@ impl WorkerPool {
                     inner.state().leased.insert(id, namespace.to_string());
                 }
             }
+            inner.state().acquired_total += 1;
             inner.top_up();
             return Ok(WorkerLease {
                 pool: Arc::downgrade(inner),
@@ -712,6 +716,7 @@ impl WorkerPool {
             leased: state.leased.len(),
             booting: state.in_hand + state.warming,
             spawned_total: state.spawned_total,
+            acquired_total: state.acquired_total,
             kills: state.kills.clone(),
             bound,
         }

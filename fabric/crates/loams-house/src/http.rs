@@ -1,82 +1,98 @@
 //! The ClickHouse HTTP interface (FL2 Task 2's contract, HS1 Task 3), served on the
-//! worker pool.
+//! worker pool through hyper's HTTP/1.1 connection.
 //!
-//! # Why a server of its own
+//! # The transport (rulings R3.1, R3.8)
 //!
-//! ClickHouse writes `X-ClickHouse-Progress` header lines **while the query runs**,
-//! keeping the header block open until the first byte of the body: that is what
-//! `send_progress_in_http_headers = 1` means on the wire, and what clients use to
-//! keep a long query's connection alive. hyper (and so axum) writes a response's
-//! headers in one piece, so it cannot do that. This module is a small HTTP/1.1
-//! server over tokio instead — `httparse` for request heads, `Content-Length` and
-//! chunked request bodies, keep-alive, `Expect: 100-continue` — which also gives the
-//! exact header order and the deliberate protocol break of Ruling 9 (plan R3.1).
+//! hyper owns the wire: request heads (at most `max_headers` fields, else `431`;
+//! URIs up to hyper's 65 534 bytes, else `414`), `Content-Length` and chunked
+//! bodies, conflicting framing (two different `Content-Length`s or a malformed one
+//! are `400`; `Content-Length` with `Transfer-Encoding: chunked` is read as chunked
+//! and the connection closes after it, RFC 9112 §6.3, so nothing can be smuggled
+//! behind it: R3.9), HTTP/1.0, HEAD, pipelining,
+//! keep-alive and `Expect: 100-continue` (the `100` goes out only when the body is
+//! first read, which is after authentication). Every read and write has an idle
+//! timeout ([`IdleIo`]), connections are capped by a semaphore, and a connection
+//! ends with a lingering close.
 //!
 //! # A request
 //!
 //! `GET /` and `GET /ping` answer `Ok.\n`. Otherwise the statement is `?query=`, or
-//! the POST body; with both, the parameter is the statement and the body its data
-//! (an `INSERT … FORMAT <f>`), or the rest of the statement. Credentials, settings
-//! and the response headers are FL2 Task 2's; see [`crate::auth`] and
-//! [`crate::compress`]. GET, and a read-only user, may only read: anything else is
-//! `164 READONLY` before a worker is asked (HS1 Task 4's classifier replaces the
-//! keyword check here).
+//! the POST body; with both, the parameter is the statement and the body is its
+//! data (an `INSERT … FORMAT <f>`), or the rest of the statement. Credentials,
+//! settings and the response headers are FL2 Task 2's; see [`crate::auth`] and
+//! [`crate::compress`]. GET (and HEAD), and a read-only user, may only read:
+//! anything else is `164 READONLY` before a worker is asked. An `INSERT` takes its
+//! worker only once its data has started to arrive, so a slow client cannot hold
+//! one idle (review I1).
 //!
 //! # The response
 //!
-//! Output is held until `buffer_size` (1 MiB) bytes have accumulated, so a statement
-//! that fails early still gets its own status and `X-ClickHouse-Exception-Code`, and
-//! a small result's `X-ClickHouse-Summary` is final. Past it, the headers go out
-//! with the summary so far and the body streams. A failure after that is Ruling 9's:
-//! the exception text is appended to the body and the connection is closed without
-//! the terminating chunk ([`crate::errors::MidStreamBody`]'s rule).
-//! `wait_end_of_query = 1` instead spools the whole result (in memory up to
-//! `buffer_size`, then an unlinked temporary file, at most 1 GiB) and answers only
-//! when the statement is over.
+//! Output is held until `buffer_size` (1 MiB, clamped to 1 B – 16 MiB) has
+//! accumulated or the statement ends, so a statement that fails early still gets
+//! its own status and `X-ClickHouse-Exception-Code`, and a small result's
+//! `X-ClickHouse-Summary` is final. Past it, the head goes out with the summary so
+//! far and the body streams. A failure after that is Ruling 9's: the exception
+//! text is appended to the body and the connection is closed without the
+//! terminating chunk ([`crate::errors::MidStreamBody`]'s rule).
+//!
+//! With `send_progress_in_http_headers = 1` the head carries **one**
+//! `X-ClickHouse-Progress` line, the counters when it went out. ClickHouse writes
+//! such lines all through a query, keeping its header block open; hyper writes a
+//! head in one piece, so this is a recorded surface deviation (R3.8).
+//!
+//! `wait_end_of_query = 1` spools the whole result (in memory up to
+//! [`SPOOL_IN_MEMORY`], then an unlinked temporary file in `tmp_dir`, at most
+//! `wait_end_of_query_max_bytes`, within the front's `spool_budget_bytes`) and
+//! answers only when the statement is over.
 
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::convert::Infallible;
+use std::future::Future;
+use std::io::{self, Read as _, Seek, SeekFrom, Write as _};
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::task::{Context, Poll, ready};
+use std::time::Duration;
 
 use bytes::Bytes;
-use loams_house_ipc::{Execute, InputSpec, Limits, Progress, SessionRef};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use http::{HeaderValue, Method, Request, Response, StatusCode};
+use http_body::{Body as HttpBody, Frame as BodyFrame, SizeHint};
+use http_body_util::BodyExt;
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper_util::rt::{TokioIo, TokioTimer};
+use loams_house_ipc::{Execute, Limits, Progress, SessionRef};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinHandle;
-use tokio::time::Instant;
+use tokio::time::Sleep;
 
 use crate::admission::{Event, Outcome, WorkerLease, WorkerPool};
 use crate::auth;
 use crate::compress::{self, Decoder, Encoder, Encoding};
-use crate::config::{self, DISPLAY_NAME, HouseConfig, UserMap};
-use crate::errors::{ChError, HouseError, status_for};
+use crate::config::{self, BUFFER_SIZE_RANGE, DISPLAY_NAME, HouseConfig, SPOOL_IN_MEMORY, UserMap};
+use crate::errors::{ChError, HouseError};
+use crate::request::{self, InsertHead, NON_SETTINGS, Scanner};
 use crate::watchdog::ExitReason;
 
-/// The largest request head: 64 KiB.
-const MAX_HEAD: usize = 64 * 1024;
-/// The most a rejected request's unread body is drained to keep the connection.
+/// The most of an unwanted request body read to keep its connection (and to let
+/// the client read the answer before the connection closes).
 const MAX_DRAIN: u64 = 1024 * 1024;
+/// How long a failed body waits before aborting, so hyper flushes the exception
+/// text before it closes the connection (Ruling 9).
+const ABORT_DELAY: Duration = Duration::from_millis(20);
+/// How many body pieces may wait between the statement and the client.
+const CHANNEL_DEPTH: usize = 8;
+/// How long a closing connection waits for the client's side to finish.
+const LINGER: Duration = Duration::from_secs(2);
 
-/// The parameters that are not settings (FL2 Task 2). `param_<name>` are query
-/// parameters; every other parameter is a setting.
-pub const NON_SETTINGS: &[&str] = &[
-    "query",
-    "database",
-    "default_format",
-    "query_id",
-    "session_id",
-    "session_timeout",
-    "session_check",
-    "user",
-    "password",
-    "compress",
-    "decompress",
-    "enable_http_compression",
-    "wait_end_of_query",
-    "buffer_size",
-    "send_progress_in_http_headers",
-];
+/// The default and the largest `session_timeout`, in seconds (ClickHouse's).
+pub const SESSION_TIMEOUT_DEFAULT: u64 = 60;
+/// See [`SESSION_TIMEOUT_DEFAULT`].
+pub const SESSION_TIMEOUT_MAX: u64 = 3600;
 
 /// A running HTTP interface. Dropping it stops accepting connections; requests in
 /// flight finish.
@@ -108,6 +124,7 @@ impl Drop for HouseHandle {
 struct Shared {
     config: HouseConfig,
     pool: WorkerPool,
+    spool: Arc<SpoolBudget>,
 }
 
 /// Serves the ClickHouse HTTP interface on `config.listen`, running statements on
@@ -115,25 +132,35 @@ struct Shared {
 pub async fn serve(config: HouseConfig, pool: WorkerPool) -> Result<HouseHandle, HouseError> {
     config::check_listen(config.listen)?;
     let listen = config.listen;
-    let listener = TcpListener::bind(listen).await.map_err(|err| {
+    let network = |what: &str, err: io::Error| {
         HouseError::from(ChError::network_error(format!(
-            "house listen on {listen}: {err}"
+            "house listen on {listen}: {what}: {err}"
         )))
-    })?;
-    let addr = listener.local_addr().map_err(|err| {
-        HouseError::from(ChError::network_error(format!(
-            "house listen on {listen}: {err}"
-        )))
-    })?;
-    let shared = Arc::new(Shared { config, pool });
+    };
+    std::fs::create_dir_all(&config.tmp_dir).map_err(|err| network("the spool directory", err))?;
+    let listener = TcpListener::bind(listen)
+        .await
+        .map_err(|err| network("bind", err))?;
+    let addr = listener
+        .local_addr()
+        .map_err(|err| network("address", err))?;
+    let permits = Arc::new(Semaphore::new(config.max_connections.max(1)));
+    let shared = Arc::new(Shared {
+        spool: Arc::new(SpoolBudget::new(config.spool_budget_bytes)),
+        config,
+        pool,
+    });
     let accept = tokio::spawn(async move {
         loop {
+            let Ok(permit) = Arc::clone(&permits).acquire_owned().await else {
+                return;
+            };
             match listener.accept().await {
                 Ok((stream, _)) => {
                     let shared = Arc::clone(&shared);
                     tokio::spawn(async move {
-                        let _ = stream.set_nodelay(true);
-                        Conn::new(stream, shared).run().await;
+                        connection(stream, shared).await;
+                        drop(permit);
                     });
                 }
                 Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
@@ -143,232 +170,284 @@ pub async fn serve(config: HouseConfig, pool: WorkerPool) -> Result<HouseHandle,
     Ok(HouseHandle { addr, accept })
 }
 
-/// A request head.
+async fn connection(stream: TcpStream, shared: Arc<Shared>) {
+    let _ = stream.set_nodelay(true);
+    let config = &shared.config;
+    let io = TokioIo::new(IdleIo::new(
+        stream,
+        config.receive_timeout,
+        config.send_timeout,
+    ));
+    let mut builder = http1::Builder::new();
+    builder
+        .timer(TokioTimer::new())
+        .header_read_timeout(config.header_read_timeout)
+        .max_headers(config.max_headers)
+        .max_buf_size(config.max_head_bytes.max(8192))
+        .half_close(false)
+        .keep_alive(!config.keep_alive.is_zero());
+    let service_shared = Arc::clone(&shared);
+    let service = service_fn(move |request| {
+        let shared = Arc::clone(&service_shared);
+        async move { Ok::<_, Infallible>(handle(shared, request).await) }
+    });
+    // A clean end hands the socket back for a lingering close (review M3); a
+    // failed one (a body aborted under Ruling 9) has already broken it on purpose.
+    if let Ok(parts) = builder
+        .serve_connection(io, service)
+        .without_shutdown()
+        .await
+    {
+        let mut stream = parts.io.into_inner().stream;
+        let _ = tokio::time::timeout(LINGER, async {
+            let _ = stream.shutdown().await;
+            let mut sink = [0u8; 8192];
+            let mut read = 0usize;
+            while read < 64 * 1024 {
+                match stream.read(&mut sink).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => read += n,
+                }
+            }
+        })
+        .await;
+    }
+}
+
+/// A socket whose reads and writes each time out when idle (review I1): a client
+/// that stops sending a body, or stops reading a response, is cut off rather than
+/// holding a worker.
 #[derive(Debug)]
-struct Head {
-    method: String,
-    target: String,
-    minor: u8,
-    headers: Vec<(String, String)>,
-}
-
-impl Head {
-    fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
-    }
-
-    /// HTTP/1.1 keeps the connection unless asked not to; 1.0 only when asked.
-    fn wants_keep_alive(&self) -> bool {
-        let connection = self.header("Connection").unwrap_or("").to_ascii_lowercase();
-        if self.minor == 0 {
-            connection.contains("keep-alive")
-        } else {
-            !connection.contains("close")
-        }
-    }
-}
-
-/// How the request body is framed, and how much of it is left.
-#[derive(Debug)]
-enum Body {
-    Empty,
-    Length(u64),
-    Chunked(ChunkState),
-    Done,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ChunkState {
-    Size,
-    Data(u64),
-    DataEnd,
-    Trailers,
-}
-
-impl Body {
-    fn is_empty_or_done(&self) -> bool {
-        matches!(self, Self::Empty | Self::Done | Self::Length(0))
-    }
-}
-
-/// One client connection.
-struct Conn {
+struct IdleIo {
     stream: TcpStream,
-    buf: Vec<u8>,
-    shared: Arc<Shared>,
+    read_idle: Duration,
+    write_idle: Duration,
+    read_deadline: Option<Pin<Box<Sleep>>>,
+    write_deadline: Option<Pin<Box<Sleep>>>,
 }
 
-/// Whether the connection may serve another request.
-type KeepAlive = bool;
-
-impl Conn {
-    fn new(stream: TcpStream, shared: Arc<Shared>) -> Self {
+impl IdleIo {
+    fn new(stream: TcpStream, read_idle: Duration, write_idle: Duration) -> Self {
         Self {
             stream,
-            buf: Vec::new(),
-            shared,
+            read_idle,
+            write_idle,
+            read_deadline: None,
+            write_deadline: None,
         }
     }
 
-    async fn run(mut self) {
-        loop {
-            let idle = self.shared.config.keep_alive;
-            let head = match tokio::time::timeout(idle, self.read_head()).await {
-                Ok(Ok(Some(head))) => head,
-                Ok(Err(HeadError::TooLarge)) => {
-                    let _ = self
-                        .plain(431, "Request Header Fields Too Large", "", false)
-                        .await;
-                    return;
+    fn timed_out(
+        deadline: &mut Option<Pin<Box<Sleep>>>,
+        idle: Duration,
+        cx: &mut Context<'_>,
+        what: &str,
+    ) -> Poll<io::Error> {
+        let sleep = deadline.get_or_insert_with(|| Box::pin(tokio::time::sleep(idle)));
+        match sleep.as_mut().poll(cx) {
+            Poll::Ready(()) => Poll::Ready(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("the client {what} nothing for {idle:?}"),
+            )),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl AsyncRead for IdleIo {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.stream).poll_read(cx, buf) {
+            Poll::Ready(result) => {
+                this.read_deadline = None;
+                Poll::Ready(result)
+            }
+            Poll::Pending => {
+                match Self::timed_out(&mut this.read_deadline, this.read_idle, cx, "sent") {
+                    Poll::Ready(err) => Poll::Ready(Err(err)),
+                    Poll::Pending => Poll::Pending,
                 }
-                Ok(Err(HeadError::Bad)) => {
-                    let _ = self.plain(400, "Bad Request", "", false).await;
-                    return;
-                }
-                _ => return,
-            };
-            if !self.request(head).await {
-                let _ = self.stream.shutdown().await;
-                return;
             }
         }
     }
+}
 
-    /// Reads more bytes into the buffer; 0 is the end of the stream.
-    async fn fill(&mut self) -> std::io::Result<usize> {
-        let mut chunk = [0u8; 16 * 1024];
-        let n = self.stream.read(&mut chunk).await?;
-        self.buf.extend_from_slice(&chunk[..n]);
-        Ok(n)
-    }
-
-    async fn read_head(&mut self) -> Result<Option<Head>, HeadError> {
-        loop {
-            let mut slots = [httparse::EMPTY_HEADER; 128];
-            let mut request = httparse::Request::new(&mut slots);
-            match request.parse(&self.buf) {
-                Ok(httparse::Status::Complete(len)) => {
-                    let head = Head {
-                        method: request.method.unwrap_or("").to_string(),
-                        target: request.path.unwrap_or("/").to_string(),
-                        minor: request.version.unwrap_or(1),
-                        headers: request
-                            .headers
-                            .iter()
-                            .map(|h| {
-                                (
-                                    h.name.to_string(),
-                                    String::from_utf8_lossy(h.value).into_owned(),
-                                )
-                            })
-                            .collect(),
-                    };
-                    self.buf.drain(..len);
-                    return Ok(Some(head));
+impl AsyncWrite for IdleIo {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.stream).poll_write(cx, buf) {
+            Poll::Ready(result) => {
+                this.write_deadline = None;
+                Poll::Ready(result)
+            }
+            Poll::Pending => {
+                match Self::timed_out(&mut this.write_deadline, this.write_idle, cx, "read") {
+                    Poll::Ready(err) => Poll::Ready(Err(err)),
+                    Poll::Pending => Poll::Pending,
                 }
-                Ok(httparse::Status::Partial) => {}
-                Err(_) => return Err(HeadError::Bad),
-            }
-            if self.buf.len() > MAX_HEAD {
-                return Err(HeadError::TooLarge);
-            }
-            match self.fill().await {
-                Ok(0) if self.buf.is_empty() => return Ok(None),
-                Ok(0) | Err(_) => return Err(HeadError::Bad),
-                Ok(_) => {}
             }
         }
     }
 
-    /// The next piece of the request body, or `None` at its end.
-    async fn body_chunk(&mut self, body: &mut Body) -> std::io::Result<Option<Vec<u8>>> {
-        let eof = || std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "the body ended early");
-        loop {
-            match body {
-                Body::Empty | Body::Done | Body::Length(0) => {
-                    *body = Body::Done;
-                    return Ok(None);
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        match Pin::new(&mut this.stream).poll_flush(cx) {
+            Poll::Ready(result) => {
+                this.write_deadline = None;
+                Poll::Ready(result)
+            }
+            Poll::Pending => {
+                match Self::timed_out(&mut this.write_deadline, this.write_idle, cx, "read") {
+                    Poll::Ready(err) => Poll::Ready(Err(err)),
+                    Poll::Pending => Poll::Pending,
                 }
-                Body::Length(left) => {
-                    if self.buf.is_empty() && self.fill().await? == 0 {
-                        return Err(eof());
-                    }
-                    let take = (*left).min(self.buf.len() as u64) as usize;
-                    *left -= take as u64;
-                    return Ok(Some(self.buf.drain(..take).collect()));
-                }
-                Body::Chunked(state) => match *state {
-                    ChunkState::Size => {
-                        let Some(end) = find(&self.buf, b"\r\n") else {
-                            if self.fill().await? == 0 {
-                                return Err(eof());
-                            }
-                            continue;
-                        };
-                        let line = String::from_utf8_lossy(&self.buf[..end]).into_owned();
-                        self.buf.drain(..end + 2);
-                        let size =
-                            u64::from_str_radix(line.split(';').next().unwrap_or("").trim(), 16)
-                                .map_err(|_| {
-                                    std::io::Error::new(
-                                        std::io::ErrorKind::InvalidData,
-                                        "a bad chunk size",
-                                    )
-                                })?;
-                        *state = if size == 0 {
-                            ChunkState::Trailers
-                        } else {
-                            ChunkState::Data(size)
-                        };
-                    }
-                    ChunkState::Data(left) => {
-                        if self.buf.is_empty() && self.fill().await? == 0 {
-                            return Err(eof());
-                        }
-                        let take = left.min(self.buf.len() as u64) as usize;
-                        *state = if left == take as u64 {
-                            ChunkState::DataEnd
-                        } else {
-                            ChunkState::Data(left - take as u64)
-                        };
-                        return Ok(Some(self.buf.drain(..take).collect()));
-                    }
-                    ChunkState::DataEnd => {
-                        while self.buf.len() < 2 {
-                            if self.fill().await? == 0 {
-                                return Err(eof());
-                            }
-                        }
-                        self.buf.drain(..2);
-                        *state = ChunkState::Size;
-                    }
-                    ChunkState::Trailers => {
-                        let Some(end) = find(&self.buf, b"\r\n") else {
-                            if self.fill().await? == 0 {
-                                return Err(eof());
-                            }
-                            continue;
-                        };
-                        self.buf.drain(..end + 2);
-                        if end == 0 {
-                            *body = Body::Done;
-                            return Ok(None);
-                        }
-                    }
-                },
             }
         }
     }
 
-    /// Reads and discards what is left of a body, up to [`MAX_DRAIN`]; whether the
-    /// connection is still usable.
-    async fn drain(&mut self, body: &mut Body) -> KeepAlive {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
+    }
+}
+
+/// A response body: whole, or streamed from the statement through a channel.
+#[derive(Debug)]
+pub struct HouseBody {
+    kind: BodyKind,
+}
+
+#[derive(Debug)]
+enum BodyKind {
+    Full(Option<Bytes>),
+    Stream {
+        rx: mpsc::Receiver<Piece>,
+        len: Option<u64>,
+        abort: Option<Pin<Box<Sleep>>>,
+    },
+}
+
+/// A piece of a streamed body.
+#[derive(Debug)]
+enum Piece {
+    Data(Bytes),
+    /// The statement failed after the head went out: end the body with an error,
+    /// so hyper closes the connection without the terminating chunk (Ruling 9).
+    Abort,
+}
+
+impl HouseBody {
+    fn full(bytes: impl Into<Bytes>) -> Self {
+        Self {
+            kind: BodyKind::Full(Some(bytes.into())),
+        }
+    }
+
+    fn stream(rx: mpsc::Receiver<Piece>, len: Option<u64>) -> Self {
+        Self {
+            kind: BodyKind::Stream {
+                rx,
+                len,
+                abort: None,
+            },
+        }
+    }
+}
+
+impl HttpBody for HouseBody {
+    type Data = Bytes;
+    type Error = io::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<BodyFrame<Bytes>, io::Error>>> {
+        match &mut self.get_mut().kind {
+            BodyKind::Full(bytes) => Poll::Ready(bytes.take().map(|b| Ok(BodyFrame::data(b)))),
+            BodyKind::Stream { rx, abort, .. } => {
+                if let Some(sleep) = abort {
+                    ready!(sleep.as_mut().poll(cx));
+                    return Poll::Ready(Some(Err(io::Error::other(
+                        "the statement failed after the response started (Ruling 9)",
+                    ))));
+                }
+                match ready!(rx.poll_recv(cx)) {
+                    Some(Piece::Data(bytes)) => Poll::Ready(Some(Ok(BodyFrame::data(bytes)))),
+                    Some(Piece::Abort) => {
+                        // A pending poll lets hyper flush the exception text first.
+                        let mut sleep = Box::pin(tokio::time::sleep(ABORT_DELAY));
+                        let _ = sleep.as_mut().poll(cx);
+                        *abort = Some(sleep);
+                        Poll::Pending
+                    }
+                    None => Poll::Ready(None),
+                }
+            }
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        matches!(self.kind, BodyKind::Full(None))
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        match &self.kind {
+            BodyKind::Full(Some(bytes)) => SizeHint::with_exact(bytes.len() as u64),
+            BodyKind::Full(None) => SizeHint::with_exact(0),
+            BodyKind::Stream { len: Some(len), .. } => SizeHint::with_exact(*len),
+            BodyKind::Stream { .. } => SizeHint::default(),
+        }
+    }
+}
+
+/// The request body, read a data frame at a time.
+struct RequestBody {
+    body: Incoming,
+    done: bool,
+}
+
+impl RequestBody {
+    fn new(body: Incoming) -> Self {
+        let done = body.is_end_stream();
+        Self { body, done }
+    }
+
+    /// The next data, or `None` at the end. A read that fails (a timeout, broken
+    /// framing) is `210`.
+    async fn next(&mut self) -> Result<Option<Bytes>, HouseError> {
+        while !self.done {
+            match self.body.frame().await {
+                Some(Ok(frame)) => {
+                    if let Ok(data) = frame.into_data()
+                        && !data.is_empty()
+                    {
+                        return Ok(Some(data));
+                    }
+                }
+                Some(Err(err)) => {
+                    self.done = true;
+                    return Err(HouseError::from(ChError::network_error(format!(
+                        "Cannot read the request body: {err}"
+                    ))));
+                }
+                None => self.done = true,
+            }
+        }
+        Ok(None)
+    }
+
+    /// Reads and discards up to [`MAX_DRAIN`]; whether the body is now fully read.
+    async fn drain(&mut self) -> bool {
         let mut drained = 0u64;
         loop {
-            match self.body_chunk(body).await {
+            match self.next().await {
                 Ok(Some(piece)) => {
                     drained += piece.len() as u64;
                     if drained > MAX_DRAIN {
@@ -380,798 +459,703 @@ impl Conn {
             }
         }
     }
+}
 
-    async fn plain(
-        &mut self,
-        status: u16,
-        reason: &str,
-        body: &str,
-        keep_alive: bool,
-    ) -> std::io::Result<()> {
-        let head = format!(
-            "HTTP/1.1 {status} {reason}\r\nDate: {}\r\nConnection: {}\r\nContent-Type: text/plain; charset=UTF-8\r\nX-ClickHouse-Server-Display-Name: {DISPLAY_NAME}\r\nContent-Length: {}\r\n{}\r\n{body}",
-            http_date(SystemTime::now()),
-            if keep_alive { "Keep-Alive" } else { "Close" },
-            body.len(),
-            if keep_alive {
-                "Keep-Alive: timeout=10\r\n"
-            } else {
-                ""
-            },
-        );
-        self.stream.write_all(head.as_bytes()).await
+/// What every response of a statement carries.
+#[derive(Debug, Clone)]
+struct Meta {
+    query_id: String,
+    format: String,
+    timezone: String,
+    encoding: Option<Encoding>,
+    keep_alive: Duration,
+    version: String,
+    send_progress: bool,
+}
+
+impl Meta {
+    /// The head, in ClickHouse's order as far as hyper keeps it: hyper adds `Date`,
+    /// `Connection` and the framing itself.
+    fn head(
+        &self,
+        status: StatusCode,
+        content_type: &str,
+        code: Option<i32>,
+        last: &Progress,
+        close: bool,
+    ) -> http::response::Builder {
+        let mut builder = Response::builder()
+            .status(status)
+            .header("Content-Type", content_type)
+            .header("X-ClickHouse-Server-Display-Name", DISPLAY_NAME);
+        if let Some(encoding) = self.encoding {
+            builder = builder.header("Content-Encoding", encoding.as_str());
+        }
+        builder = builder
+            .header("X-ClickHouse-Query-Id", header_value(&self.query_id))
+            .header("X-ClickHouse-Format", header_value(&self.format))
+            .header("X-ClickHouse-Timezone", header_value(&self.timezone));
+        if let Some(code) = code {
+            builder = builder.header("X-ClickHouse-Exception-Code", code);
+        }
+        if close {
+            builder = builder.header("Connection", "close");
+        } else if !self.keep_alive.is_zero() {
+            builder = builder.header(
+                "Keep-Alive",
+                format!("timeout={}", self.keep_alive.as_secs().max(1)),
+            );
+        }
+        if self.send_progress {
+            builder = builder.header("X-ClickHouse-Progress", progress_json(last));
+        }
+        builder.header("X-ClickHouse-Summary", progress_json(last))
     }
 
-    /// One request. Returns whether the connection may serve another.
-    async fn request(&mut self, head: Head) -> KeepAlive {
-        let mut body = match framing(&head) {
-            Ok(body) => body,
-            Err(()) => {
-                let _ = self.plain(400, "Bad Request", "", false).await;
-                return false;
+    fn encode_whole(&self, bytes: &[u8]) -> Vec<u8> {
+        match self.encoding.and_then(|e| Encoder::new(e).ok()) {
+            Some(mut encoder) => {
+                let mut out = encoder.feed(bytes).unwrap_or_default();
+                out.extend(encoder.finish().unwrap_or_default());
+                out
             }
-        };
-        if !body.is_empty_or_done()
-            && head
-                .header("Expect")
-                .is_some_and(|v| v.eq_ignore_ascii_case("100-continue"))
-            && self
-                .stream
-                .write_all(b"HTTP/1.1 100 Continue\r\n\r\n")
-                .await
-                .is_err()
-        {
-            return false;
-        }
-        let keep_alive = head.wants_keep_alive();
-        let (path, query) = head
-            .target
-            .split_once('?')
-            .unwrap_or((head.target.as_str(), ""));
-        let path = path.to_string();
-        let params = parse_query(query);
-        let has_query = params.iter().any(|(k, _)| k == "query");
-
-        match (head.method.as_str(), path.as_str()) {
-            ("GET" | "HEAD", "/ping") | ("GET" | "HEAD", "/") if !has_query => {
-                let keep = keep_alive && self.drain(&mut body).await;
-                let ok = self.plain(200, "OK", "Ok.\n", keep).await.is_ok();
-                ok && keep
-            }
-            ("GET" | "POST", "/") => {
-                let keep = self.query(&head, params, &mut body, keep_alive).await;
-                keep && body.is_empty_or_done() || (keep && self.drain(&mut body).await)
-            }
-            (_, "/" | "/ping") => {
-                let keep = keep_alive && self.drain(&mut body).await;
-                let ok = self
-                    .plain(405, "Method Not Allowed", "Use GET or POST.\n", keep)
-                    .await
-                    .is_ok();
-                ok && keep
-            }
-            _ => {
-                let keep = keep_alive && self.drain(&mut body).await;
-                let text = format!(
-                    "There is no handle {path}\n\nUse / or /ping for health checks.\n\
-                     Send queries with POST or GET /?query=...\n"
-                );
-                let ok = self.plain(404, "Not Found", &text, keep).await.is_ok();
-                ok && keep
-            }
+            None => bytes.to_vec(),
         }
     }
 
-    /// A statement. Returns whether the connection may serve another request.
-    async fn query(
-        &mut self,
-        head: &Head,
-        params: Vec<(String, String)>,
-        body: &mut Body,
-        keep_alive: bool,
-    ) -> KeepAlive {
-        let config = self.shared.config.clone();
-        let get = |name: &str| {
-            params
-                .iter()
-                .find(|(k, _)| k == name)
-                .map(|(_, v)| v.as_str())
-        };
-        let query_id = get("query_id")
-            .map(str::to_string)
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let encoding = (get("enable_http_compression") == Some("1"))
-            .then(|| compress::accepted(head.header("Accept-Encoding")))
-            .flatten();
-        let mut settings: Vec<(String, String)> = Vec::new();
-        let mut query_params = Vec::new();
-        for (key, value) in &params {
-            if let Some(name) = key.strip_prefix("param_") {
-                query_params.push((name.to_string(), value.clone()));
-            } else if !NON_SETTINGS.contains(&key.as_str()) {
-                settings.push((key.clone(), value.clone()));
-            }
-        }
-        let setting = |name: &str| {
-            settings
-                .iter()
-                .find(|(k, _)| k == name)
-                .map(|(_, v)| v.clone())
-        };
-        let mut reply = Reply {
-            query_id: query_id.clone(),
-            format: get("default_format").unwrap_or("TabSeparated").to_string(),
-            timezone: setting("session_timezone").unwrap_or_else(|| "UTC".to_string()),
-            keep_alive,
-            encoding,
-            version: config.version.clone(),
-            state: HeadState::NotSent,
-            encoder: None,
-            pending: Vec::new(),
-            spool: None,
-            last: Progress::default(),
-        };
-
-        let prepared = match self.prepare(head, &params, body, &config).await {
-            Ok(prepared) => prepared,
-            Err(failure) => {
-                let keep = keep_alive && self.drain(body).await;
-                reply.keep_alive = keep;
-                return reply.fail(&mut self.stream, failure).await && keep;
-            }
-        };
-        let Prepared {
-            user,
-            sql,
-            format,
-            input,
-            mut decoder,
-            first_data,
-        } = prepared;
-        if let Some(format) = format {
-            reply.format = format;
-        }
-
-        let buffer_size = get("buffer_size")
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(config.default_buffer_size);
-        let wait_end = get("wait_end_of_query") == Some("1");
-        let send_progress = get("send_progress_in_http_headers") == Some("1");
-        let progress_every = setting("http_headers_progress_interval_ms")
-            .and_then(|v| v.parse::<u64>().ok())
-            .map(Duration::from_millis)
-            .unwrap_or(config.progress_interval);
-        if let Some(encoding) = reply.encoding {
-            match Encoder::new(encoding) {
-                Ok(encoder) => reply.encoder = Some(encoder),
-                Err(_) => reply.encoding = None,
-            }
-        }
-        if wait_end {
-            reply.spool = Some(Spool::new(
-                config.tmp_dir.clone(),
-                buffer_size,
-                config.wait_end_of_query_max_bytes,
-            ));
-        }
-
-        let execute = Execute {
-            query_id: query_id.clone(),
-            session: match session_ref(&user.user, &params) {
-                Ok(session) => session,
-                Err(err) => {
-                    let keep = keep_alive && self.drain(body).await;
-                    reply.keep_alive = keep;
-                    return reply.fail(&mut self.stream, err).await && keep;
-                }
-            },
-            settings,
-            views: Vec::new(),
-            sql,
-            format: reply.format.clone(),
-            params: query_params,
-            limits: Limits::default(),
-            input,
-        };
-        let has_input = execute.input.is_some();
-
-        let pool = self.shared.pool.clone();
-        let mut lease = match pool.acquire(&user.namespace.to_string()).await {
-            Ok(lease) => lease,
-            Err(err) => {
-                let keep = keep_alive && self.drain(body).await;
-                reply.keep_alive = keep;
-                return reply.fail(&mut self.stream, err).await && keep;
-            }
-        };
-        if let Err(err) = lease.start(execute).await {
-            pool.release(lease, Outcome::Completed);
-            let keep = keep_alive && self.drain(body).await;
-            reply.keep_alive = keep;
-            return reply.fail(&mut self.stream, err).await && keep;
-        }
-
-        if has_input
-            && let Err(failure) = self
-                .stream_input(&mut lease, body, &mut decoder, first_data)
-                .await
-        {
-            // The worker is mid-`INSERT`: ending its input would commit a body
-            // that did not arrive whole, so it is killed instead.
-            pool.kill(lease, ExitReason::Cancel);
-            reply.keep_alive = false;
-            let _ = reply.fail(&mut self.stream, failure).await;
-            return false;
-        }
-
-        let keep = self
-            .respond(
-                &mut reply,
-                &mut lease,
-                wait_end,
-                send_progress,
-                progress_every,
-                buffer_size,
-            )
-            .await;
-        pool.release(lease, Outcome::Completed);
-        keep
-    }
-
-    /// Everything a statement needs before a worker is asked: who, what, and how.
-    async fn prepare(
-        &mut self,
-        head: &Head,
-        params: &[(String, String)],
-        body: &mut Body,
-        config: &HouseConfig,
-    ) -> Result<Prepared, HouseError> {
-        let get = |name: &str| {
-            params
-                .iter()
-                .find(|(k, _)| k == name)
-                .map(|(_, v)| v.as_str())
-        };
-        let credentials = auth::credentials(&head.headers, params)?;
-        let user = auth::authenticate(&config.users, &credentials)?.clone();
-        for name in ["compress", "decompress"] {
-            if get(name) == Some("1") {
-                return Err(HouseError::from(ChError::not_implemented(format!(
-                    "{name}=1 (ClickHouse's own compressed framing) is not supported yet; use \
-                     enable_http_compression=1 or Content-Encoding"
-                ))));
-            }
-        }
-        if let Some(database) = get("database").filter(|d| *d != "default") {
-            return Err(HouseError::from(ChError::unknown_database(format!(
-                "Database {database} does not exist"
-            ))));
-        }
-        let mut decoder = Decoder::new(
-            compress::content_encoding(head.header("Content-Encoding"))?,
-            config.body_limits,
+    /// A whole error response (nothing of the result went out).
+    fn error(&self, error: &HouseError, last: &Progress, close: bool) -> Response<HouseBody> {
+        let body = self.encode_whole(error.render(&self.version).as_bytes());
+        let status =
+            StatusCode::from_u16(error.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        self.head(
+            status,
+            "text/plain; charset=UTF-8",
+            Some(error.code()),
+            last,
+            close,
         )
-        .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))?;
+        .body(HouseBody::full(body))
+        .unwrap_or_else(|_| fallback())
+    }
+}
 
-        // The statement: the parameter, else the body's head.
-        let (text, rest_known) = match get("query") {
-            Some(query) => (query.as_bytes().to_vec(), true),
-            None => (
-                self.read_statement(body, &mut decoder, config.max_query_size)
-                    .await?,
-                false,
+fn fallback() -> Response<HouseBody> {
+    let mut response = Response::new(HouseBody::full(Bytes::from_static(b"internal error\n")));
+    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+    response
+}
+
+fn plain(status: StatusCode, text: &str, keep_alive: Duration) -> Response<HouseBody> {
+    let mut builder = Response::builder()
+        .status(status)
+        .header("Content-Type", "text/plain; charset=UTF-8")
+        .header("X-ClickHouse-Server-Display-Name", DISPLAY_NAME);
+    if !keep_alive.is_zero() {
+        builder = builder.header(
+            "Keep-Alive",
+            format!("timeout={}", keep_alive.as_secs().max(1)),
+        );
+    }
+    builder
+        .body(HouseBody::full(text.as_bytes().to_vec()))
+        .unwrap_or_else(|_| fallback())
+}
+
+/// A header value without what a header cannot hold.
+fn header_value(value: &str) -> HeaderValue {
+    let cleaned: String = value
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    HeaderValue::from_str(&cleaned).unwrap_or_else(|_| HeaderValue::from_static(""))
+}
+
+async fn handle(shared: Arc<Shared>, request: Request<Incoming>) -> Response<HouseBody> {
+    let keep = shared.config.keep_alive;
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
+    let query = request.uri().query().unwrap_or("").to_string();
+    let params = match request::parse_query(&query) {
+        Ok(params) => params,
+        Err(err) => {
+            let meta = Meta {
+                query_id: uuid::Uuid::new_v4().to_string(),
+                format: "TabSeparated".to_string(),
+                timezone: "UTC".to_string(),
+                encoding: None,
+                keep_alive: keep,
+                version: shared.config.version.clone(),
+                send_progress: false,
+            };
+            return meta.error(&err, &Progress::default(), true);
+        }
+    };
+    let has_query = params.iter().any(|(k, _)| k == "query");
+    let reading = method == Method::GET || method == Method::HEAD;
+    match path.as_str() {
+        "/ping" | "/" if reading && (path == "/ping" || !has_query) => {
+            plain(StatusCode::OK, "Ok.\n", keep)
+        }
+        "/" if reading || method == Method::POST => run(&shared, request, params).await,
+        "/" | "/ping" => plain(StatusCode::METHOD_NOT_ALLOWED, "Use GET or POST.\n", keep),
+        _ => plain(
+            StatusCode::NOT_FOUND,
+            &format!(
+                "There is no handle {path}\n\nUse / or /ping for health checks.\nSend queries with POST or GET /?query=...\n"
             ),
-        };
-        let readonly = head.method == "GET" || user.readonly;
-
-        let mut plan = plan(&text, rest_known)?;
-        if rest_known && plan.input.is_none() && !body.is_empty_or_done() {
-            // `?query=` and a body that is not `INSERT` data: the body continues the
-            // statement, as in ClickHouse.
-            let more = self
-                .read_statement(body, &mut decoder, config.max_query_size)
-                .await?;
-            if !more.is_empty() {
-                let mut joined = text.clone();
-                joined.push(b'\n');
-                joined.extend_from_slice(&more);
-                plan = self::plan(&joined, false)?;
-            }
-        }
-        if readonly && (plan.input.is_some() || !is_read(&plan.sql)) {
-            return Err(HouseError::from(ChError::readonly(
-                "Cannot execute query in readonly mode. For queries over HTTP, method GET \
-                 implies readonly. You should use method POST for modifying queries",
-            )));
-        }
-        Ok(Prepared {
-            user,
-            sql: plan.sql,
-            format: plan.format,
-            input: plan.input,
-            decoder,
-            first_data: plan.first_data,
-        })
-    }
-
-    /// Reads the body as statement text: all of it, unless it is an `INSERT … FORMAT`
-    /// whose data follows, in which case only up to the data (the rest streams).
-    async fn read_statement(
-        &mut self,
-        body: &mut Body,
-        decoder: &mut Decoder,
-        max: usize,
-    ) -> Result<Vec<u8>, HouseError> {
-        let mut text = Vec::new();
-        loop {
-            if let InsertHead::Insert { .. } = insert_head(&text, false) {
-                return Ok(text);
-            }
-            let undecodable = |err: std::io::Error| {
-                HouseError::from(ChError::bad_arguments(format!(
-                    "Cannot decompress the request body: {err}"
-                )))
-            };
-            if let Some(piece) = decoder.next_piece().map_err(undecodable)? {
-                text.extend_from_slice(&piece);
-            } else {
-                match self.body_chunk(body).await {
-                    Ok(Some(piece)) => decoder.push(&piece),
-                    Ok(None) => {
-                        decoder.end();
-                        while let Some(piece) = decoder.next_piece().map_err(undecodable)? {
-                            text.extend_from_slice(&piece);
-                        }
-                        return Ok(text);
-                    }
-                    Err(err) => {
-                        return Err(HouseError::from(ChError::network_error(format!(
-                            "reading the request body: {err}"
-                        ))));
-                    }
-                }
-            }
-            if text.len() > max && !matches!(insert_head(&text, false), InsertHead::Incomplete) {
-                return Err(HouseError::from(ChError::syntax_error(format!(
-                    "Max query size exceeded: the statement is longer than {max} bytes"
-                ))));
-            }
-        }
-    }
-
-    /// Streams the `INSERT` body into the worker as `Input` frames.
-    async fn stream_input(
-        &mut self,
-        lease: &mut WorkerLease,
-        body: &mut Body,
-        decoder: &mut Decoder,
-        first: Vec<u8>,
-    ) -> Result<(), HouseError> {
-        let decode_error = |err: std::io::Error| {
-            HouseError::from(ChError::bad_arguments(format!(
-                "Cannot decompress the request body: {err}"
-            )))
-        };
-        if !first.is_empty() {
-            lease.send_input(Bytes::from(first)).await?;
-        }
-        loop {
-            while let Some(piece) = decoder.next_piece().map_err(decode_error)? {
-                lease.send_input(Bytes::from(piece)).await?;
-            }
-            match self.body_chunk(body).await {
-                Ok(Some(piece)) => decoder.push(&piece),
-                Ok(None) => break,
-                Err(err) => {
-                    return Err(HouseError::from(ChError::network_error(format!(
-                        "reading the request body: {err}"
-                    ))));
-                }
-            }
-        }
-        decoder.end();
-        // A truncated stream fails here, before `InputEnd`: nothing is committed.
-        while let Some(piece) = decoder.next_piece().map_err(decode_error)? {
-            lease.send_input(Bytes::from(piece)).await?;
-        }
-        lease.end_input().await
-    }
-
-    /// Streams the statement's events into the response.
-    async fn respond(
-        &mut self,
-        reply: &mut Reply,
-        lease: &mut WorkerLease,
-        wait_end: bool,
-        send_progress: bool,
-        progress_every: Duration,
-        buffer_size: usize,
-    ) -> KeepAlive {
-        let mut last_progress_header: Option<Instant> = None;
-        loop {
-            let event = lease.next_event().await;
-            let outcome = match event {
-                Ok(Event::Chunk(chunk)) => {
-                    reply
-                        .output(&mut self.stream, &chunk.bytes, wait_end, buffer_size)
-                        .await
-                }
-                Ok(Event::Progress(progress)) => {
-                    reply.last = progress;
-                    let due = last_progress_header.is_none_or(|at| at.elapsed() >= progress_every);
-                    if send_progress && due && reply.can_add_headers() {
-                        last_progress_header = Some(Instant::now());
-                        reply.progress_header(&mut self.stream).await
-                    } else {
-                        Ok(())
-                    }
-                }
-                Ok(Event::Done(stats)) => {
-                    reply.last = stats;
-                    return reply.finish(&mut self.stream).await;
-                }
-                Err(err) => return reply.fail(&mut self.stream, err).await,
-            };
-            match outcome {
-                Ok(()) => {}
-                Err(Stop::Client) => {
-                    // The client went away: the lease's drop kills the worker.
-                    return false;
-                }
-                Err(Stop::Fail(err)) => {
-                    // The spool is full: the statement is abandoned (its worker
-                    // killed when the lease is dropped below) and refused.
-                    if let Some(handle) = lease.kill_handle() {
-                        let _ = handle.kill(ExitReason::Cancel);
-                    }
-                    reply.keep_alive = false;
-                    let _ = reply.fail(&mut self.stream, err).await;
-                    return false;
-                }
-            }
-        }
+            keep,
+        ),
     }
 }
 
-#[derive(Debug)]
-enum HeadError {
-    TooLarge,
-    Bad,
-}
+/// A statement.
+async fn run(
+    shared: &Arc<Shared>,
+    request: Request<Incoming>,
+    params: Vec<(String, String)>,
+) -> Response<HouseBody> {
+    let config = &shared.config;
+    let get = |name: &str| {
+        params
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
+    let (parts, body) = request.into_parts();
+    let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
+    let expects_continue = header("Expect").is_some_and(|v| v.eq_ignore_ascii_case("100-continue"));
 
-/// Why streaming stopped early.
-#[derive(Debug)]
-enum Stop {
-    /// The socket failed.
-    Client,
-    /// A limit of the House's: answered as an error.
-    Fail(HouseError),
-}
-
-impl From<std::io::Error> for Stop {
-    fn from(_: std::io::Error) -> Self {
-        Self::Client
+    let mut settings: Vec<(String, String)> = Vec::new();
+    let mut query_params = Vec::new();
+    for (key, value) in &params {
+        if let Some(name) = key.strip_prefix("param_") {
+            query_params.push((name.to_string(), value.clone()));
+        } else if !NON_SETTINGS.contains(&key.as_str()) {
+            settings.push((key.clone(), value.clone()));
+        }
     }
+    let setting = |name: &str| {
+        settings
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+    };
+    let mut meta = Meta {
+        query_id: get("query_id")
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        format: get("default_format").unwrap_or("TabSeparated").to_string(),
+        timezone: setting("session_timezone").unwrap_or_else(|| "UTC".to_string()),
+        encoding: (get("enable_http_compression") == Some("1"))
+            .then(|| compress::accepted(header("Accept-Encoding")))
+            .flatten(),
+        keep_alive: config.keep_alive,
+        version: config.version.clone(),
+        send_progress: get("send_progress_in_http_headers") == Some("1"),
+    };
+    let mut body = RequestBody::new(body);
+
+    // Everything before a worker: who, what, and how.
+    let prepared = prepare(
+        config,
+        &parts.headers,
+        &params,
+        &mut body,
+        parts.method == Method::POST,
+    )
+    .await;
+    let prepared = match prepared {
+        Ok(prepared) => prepared,
+        Err(err) => {
+            // Do not read the body of a request still waiting for `100 Continue`:
+            // the client then never sends it (review M4). Otherwise drain a little,
+            // so the answer is read before the connection closes.
+            let close = expects_continue || !body.drain().await;
+            return meta.error(&err, &Progress::default(), close);
+        }
+    };
+    if let Some(format) = &prepared.format {
+        meta.format = format.clone();
+    }
+    let session = match session_ref(&prepared.user.user, &params) {
+        Ok(session) => session,
+        Err(err) => {
+            let close = !body.drain().await;
+            return meta.error(&err, &Progress::default(), close);
+        }
+    };
+    let Prepared {
+        user,
+        sql,
+        input,
+        mut decoder,
+        first_data,
+        ..
+    } = prepared;
+    let buffer_size = get("buffer_size")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(config.default_buffer_size)
+        .clamp(*BUFFER_SIZE_RANGE.start(), *BUFFER_SIZE_RANGE.end());
+    let wait_end = get("wait_end_of_query") == Some("1");
+
+    // An INSERT takes a worker only once its data has started (review I1).
+    if input.is_some() && first_data.is_empty() {
+        match body.next().await {
+            Ok(Some(piece)) => decoder.push(&piece),
+            Ok(None) => decoder.end(),
+            Err(err) => return meta.error(&err, &Progress::default(), true),
+        }
+    }
+
+    let execute = Execute {
+        query_id: meta.query_id.clone(),
+        session,
+        settings,
+        views: Vec::new(),
+        sql,
+        format: meta.format.clone(),
+        params: query_params,
+        limits: Limits::default(),
+        input,
+    };
+    let has_input = execute.input.is_some();
+    let pool = shared.pool.clone();
+    let mut lease = match pool.acquire(&user.namespace.to_string()).await {
+        Ok(lease) => lease,
+        Err(err) => {
+            let close = !body.drain().await;
+            return meta.error(&err, &Progress::default(), close);
+        }
+    };
+    if let Err(err) = lease.start(execute).await {
+        pool.release(lease, Outcome::Completed);
+        let close = !body.drain().await;
+        return meta.error(&err, &Progress::default(), close);
+    }
+    if has_input
+        && let Err(err) = stream_input(&mut lease, &mut body, &mut decoder, first_data).await
+    {
+        // The worker is mid-`INSERT`: ending its input would commit a body that did
+        // not arrive whole (review I5), so it is killed instead.
+        pool.kill(lease, ExitReason::Cancel);
+        return meta.error(&err, &Progress::default(), true);
+    }
+
+    respond(shared, meta, lease, wait_end, buffer_size).await
 }
 
-/// What [`Conn::prepare`] works out.
+/// Everything a statement needs before a worker is asked.
 struct Prepared {
     user: UserMap,
     sql: String,
     format: Option<String>,
-    input: Option<InputSpec>,
+    input: Option<loams_house_ipc::InputSpec>,
     decoder: Decoder,
     first_data: Vec<u8>,
 }
 
-/// How far the response has got.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HeadState {
-    /// Nothing written: the status can still be anything.
-    NotSent,
-    /// The status line and the fixed headers are written, and header lines can still
-    /// be added (`X-ClickHouse-Progress`).
-    Open,
-    /// The headers are ended and the chunked body has started.
-    Body,
+async fn prepare(
+    config: &HouseConfig,
+    headers: &http::HeaderMap,
+    params: &[(String, String)],
+    body: &mut RequestBody,
+    post: bool,
+) -> Result<Prepared, HouseError> {
+    let get = |name: &str| {
+        params
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
+    let header_pairs: Vec<(String, String)> = headers
+        .iter()
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|v| (k.as_str().to_string(), v.to_string()))
+        })
+        .collect();
+    let credentials = auth::credentials(&header_pairs, params)?;
+    let user = auth::authenticate(&config.users, &credentials)?.clone();
+    for name in ["compress", "decompress"] {
+        if get(name) == Some("1") {
+            return Err(HouseError::from(ChError::not_implemented(format!(
+                "{name}=1 (ClickHouse's own compressed framing) is not supported yet; use \
+                 enable_http_compression=1 or Content-Encoding"
+            ))));
+        }
+    }
+    if let Some(database) = get("database").filter(|d| *d != "default") {
+        return Err(HouseError::from(ChError::unknown_database(format!(
+            "Database {database} does not exist"
+        ))));
+    }
+    let encoding = compress::content_encoding(
+        headers
+            .get("Content-Encoding")
+            .and_then(|v| v.to_str().ok()),
+    )?;
+    let mut decoder = Decoder::new(encoding, config.body_limits)
+        .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))?;
+
+    let readonly = !post || user.readonly;
+    let plan = match get("query") {
+        Some(query) => {
+            let plan = request::plan(query.as_bytes(), true);
+            if plan.input.is_none() && !body.done {
+                // `?query=` and a body that is not `INSERT` data: the body continues
+                // the statement, as in ClickHouse.
+                let mut text = query.as_bytes().to_vec();
+                text.push(b'\n');
+                let text = read_statement(body, &mut decoder, text, config.max_query_size).await?;
+                request::plan(&text, false)
+            } else {
+                plan
+            }
+        }
+        None => {
+            let text =
+                read_statement(body, &mut decoder, Vec::new(), config.max_query_size).await?;
+            request::plan(&text, false)
+        }
+    };
+    if readonly && (plan.input.is_some() || !request::is_read(&plan.sql)) {
+        return Err(HouseError::from(ChError::readonly(
+            "Cannot execute query in readonly mode. For queries over HTTP, method GET \
+             implies readonly. You should use method POST for modifying queries",
+        )));
+    }
+    Ok(Prepared {
+        user,
+        sql: plan.sql,
+        format: plan.format,
+        input: plan.input,
+        decoder,
+        first_data: plan.first_data,
+    })
 }
 
-/// The response being written.
-struct Reply {
-    query_id: String,
-    format: String,
-    timezone: String,
-    keep_alive: bool,
-    encoding: Option<Encoding>,
-    version: String,
-    state: HeadState,
-    encoder: Option<Encoder>,
-    /// Encoded output not yet written.
-    pending: Vec<u8>,
-    spool: Option<Spool>,
-    last: Progress,
+fn undecodable(err: io::Error) -> HouseError {
+    HouseError::from(ChError::bad_arguments(format!(
+        "Cannot decompress the request body: {err}"
+    )))
 }
 
-impl Reply {
-    fn can_add_headers(&self) -> bool {
-        self.state != HeadState::Body
-    }
-
-    /// The status line and fixed headers, in ClickHouse's order, up to and including
-    /// `Keep-Alive`. `framing` is `Transfer-Encoding: chunked` or a
-    /// `Content-Length`.
-    fn fixed_headers(
-        &self,
-        status: u16,
-        content_type: &str,
-        framing: &str,
-        code: Option<i32>,
-    ) -> String {
-        let mut head = format!(
-            "HTTP/1.1 {status} {}\r\nDate: {}\r\nConnection: {}\r\nContent-Type: {content_type}\r\nX-ClickHouse-Server-Display-Name: {DISPLAY_NAME}\r\n",
-            reason(status),
-            http_date(SystemTime::now()),
-            if self.keep_alive {
-                "Keep-Alive"
-            } else {
-                "Close"
-            },
-        );
-        if let Some(encoding) = self.encoding {
-            head.push_str(&format!("Content-Encoding: {}\r\n", encoding.as_str()));
-        }
-        head.push_str(framing);
-        head.push_str(&format!(
-            "X-ClickHouse-Query-Id: {}\r\nX-ClickHouse-Format: {}\r\nX-ClickHouse-Timezone: {}\r\n",
-            header_safe(&self.query_id),
-            header_safe(&self.format),
-            header_safe(&self.timezone),
-        ));
-        if let Some(code) = code {
-            head.push_str(&format!("X-ClickHouse-Exception-Code: {code}\r\n"));
-        }
-        if self.keep_alive {
-            head.push_str("Keep-Alive: timeout=10\r\n");
-        }
-        head
-    }
-
-    fn summary_line(&self) -> String {
-        format!("X-ClickHouse-Summary: {}\r\n", progress_json(&self.last))
-    }
-
-    /// Opens the head for progress lines (status 200, chunked: the length is not
-    /// known yet).
-    async fn open(&mut self, stream: &mut TcpStream) -> std::io::Result<()> {
-        if self.state == HeadState::NotSent {
-            let head = self.fixed_headers(
-                200,
-                content_type(&self.format),
-                "Transfer-Encoding: chunked\r\n",
-                None,
-            );
-            stream.write_all(head.as_bytes()).await?;
-            self.state = HeadState::Open;
-        }
-        Ok(())
-    }
-
-    async fn progress_header(&mut self, stream: &mut TcpStream) -> Result<(), Stop> {
-        self.open(stream).await?;
-        let line = format!("X-ClickHouse-Progress: {}\r\n", progress_json(&self.last));
-        stream.write_all(line.as_bytes()).await?;
-        Ok(())
-    }
-
-    /// Ends the head (summary so far) and starts the chunked body.
-    async fn start_body(&mut self, stream: &mut TcpStream) -> std::io::Result<()> {
-        self.open(stream).await?;
-        if self.state == HeadState::Open {
-            let mut tail = self.summary_line();
-            tail.push_str("\r\n");
-            stream.write_all(tail.as_bytes()).await?;
-            self.state = HeadState::Body;
-        }
-        Ok(())
-    }
-
-    fn encode(&mut self, bytes: &[u8]) -> std::io::Result<Vec<u8>> {
-        match &mut self.encoder {
-            Some(encoder) => encoder.feed(bytes),
-            None => Ok(bytes.to_vec()),
-        }
-    }
-
-    fn finish_encoder(&mut self) -> std::io::Result<Vec<u8>> {
-        match self.encoder.take() {
-            Some(encoder) => encoder.finish(),
-            None => Ok(Vec::new()),
-        }
-    }
-
-    /// Output bytes from the worker.
-    async fn output(
-        &mut self,
-        stream: &mut TcpStream,
-        bytes: &[u8],
-        wait_end: bool,
-        buffer_size: usize,
-    ) -> Result<(), Stop> {
-        let encoded = self.encode(bytes)?;
-        if wait_end {
-            if let Some(spool) = &mut self.spool {
-                spool.write(&encoded).map_err(Stop::Fail)?;
+/// Reads statement text from the body after `text`: all of it, unless it is an
+/// `INSERT … FORMAT` whose data follows (then up to and a little past the data's
+/// start; the rest streams). Every buffered byte counts against `max` until that
+/// line is found (review I3).
+async fn read_statement(
+    body: &mut RequestBody,
+    decoder: &mut Decoder,
+    mut text: Vec<u8>,
+    max: usize,
+) -> Result<Vec<u8>, HouseError> {
+    let too_long = || {
+        HouseError::from(ChError::syntax_error(format!(
+            "Max query size exceeded: the statement is longer than {max} bytes"
+        )))
+    };
+    let mut scanner = Scanner::new();
+    scanner.advance(&text);
+    loop {
+        while let Some(piece) = decoder.next_piece().map_err(undecodable)? {
+            text.extend_from_slice(&piece);
+            scanner.advance(&text);
+            if let InsertHead::Insert { .. } = scanner.insert_head(&text, false) {
+                return Ok(text);
             }
-            return Ok(());
-        }
-        self.pending.extend_from_slice(&encoded);
-        if self.state == HeadState::Body || self.pending.len() > buffer_size {
-            self.start_body(stream).await?;
-            let pending = std::mem::take(&mut self.pending);
-            write_chunk(stream, &pending).await?;
-        }
-        Ok(())
-    }
-
-    /// The statement finished. Returns whether the connection may continue.
-    async fn finish(&mut self, stream: &mut TcpStream) -> KeepAlive {
-        let result = self.finish_inner(stream).await;
-        result.is_ok() && self.keep_alive
-    }
-
-    async fn finish_inner(&mut self, stream: &mut TcpStream) -> std::io::Result<()> {
-        let tail = self.finish_encoder()?;
-        if let Some(mut spool) = self.spool.take() {
-            spool
-                .write(&tail)
-                .map_err(|err| std::io::Error::other(err.to_string()))?;
-            if self.state == HeadState::NotSent {
-                let framing = format!("Content-Length: {}\r\n", spool.len());
-                let mut head = self.fixed_headers(200, content_type(&self.format), &framing, None);
-                head.push_str(&self.summary_line());
-                head.push_str("\r\n");
-                stream.write_all(head.as_bytes()).await?;
-                spool.copy_to(stream, false).await?;
-            } else {
-                self.start_body(stream).await?;
-                spool.copy_to(stream, true).await?;
-                stream.write_all(b"0\r\n\r\n").await?;
-            }
-            return stream.flush().await;
-        }
-        self.pending.extend_from_slice(&tail);
-        let pending = std::mem::take(&mut self.pending);
-        match self.state {
-            HeadState::NotSent => {
-                let framing = format!("Content-Length: {}\r\n", pending.len());
-                let mut head = self.fixed_headers(200, content_type(&self.format), &framing, None);
-                head.push_str(&self.summary_line());
-                head.push_str("\r\n");
-                stream.write_all(head.as_bytes()).await?;
-                stream.write_all(&pending).await?;
-            }
-            HeadState::Open | HeadState::Body => {
-                self.start_body(stream).await?;
-                write_chunk(stream, &pending).await?;
-                stream.write_all(b"0\r\n\r\n").await?;
+            if text.len() > max {
+                return Err(too_long());
             }
         }
-        stream.flush().await
+        match body.next().await? {
+            Some(piece) => decoder.push(&piece),
+            None => {
+                decoder.end();
+                while let Some(piece) = decoder.next_piece().map_err(undecodable)? {
+                    text.extend_from_slice(&piece);
+                    if text.len() > max {
+                        scanner.advance(&text);
+                        if !matches!(scanner.insert_head(&text, false), InsertHead::Insert { .. }) {
+                            return Err(too_long());
+                        }
+                    }
+                }
+                return Ok(text);
+            }
+        }
     }
+}
 
-    /// The statement failed. Returns whether the connection may continue.
-    async fn fail(&mut self, stream: &mut TcpStream, error: HouseError) -> KeepAlive {
-        let text = error.render(&self.version);
-        match self.state {
-            HeadState::NotSent => {
-                // Nothing went out: a proper error response, whatever was buffered
-                // or spooled discarded.
-                self.pending.clear();
-                self.spool = None;
-                self.encoder = self.encoding.and_then(|e| Encoder::new(e).ok());
-                let body = self
-                    .encode(text.as_bytes())
-                    .and_then(|mut b| {
-                        b.extend(self.finish_encoder()?);
-                        Ok(b)
-                    })
-                    .unwrap_or_else(|_| text.clone().into_bytes());
-                let framing = format!("Content-Length: {}\r\n", body.len());
-                let status = status_for(error.code());
-                let mut head = self.fixed_headers(
-                    status,
-                    "text/plain; charset=UTF-8",
-                    &framing,
-                    Some(error.code()),
+/// Streams the `INSERT` body into the worker as `Input` frames. A truncated or
+/// corrupt compressed body fails here, before `InputEnd` (review I5).
+async fn stream_input(
+    lease: &mut WorkerLease,
+    body: &mut RequestBody,
+    decoder: &mut Decoder,
+    first: Vec<u8>,
+) -> Result<(), HouseError> {
+    if !first.is_empty() {
+        lease.send_input(Bytes::from(first)).await?;
+    }
+    loop {
+        while let Some(piece) = decoder.next_piece().map_err(undecodable)? {
+            lease.send_input(Bytes::from(piece)).await?;
+        }
+        match body.next().await? {
+            Some(piece) => decoder.push(&piece),
+            None => break,
+        }
+    }
+    decoder.end();
+    while let Some(piece) = decoder.next_piece().map_err(undecodable)? {
+        lease.send_input(Bytes::from(piece)).await?;
+    }
+    lease.end_input().await
+}
+
+/// Runs the statement's events into a response: held until `buffer_size` or the
+/// end, then streamed.
+async fn respond(
+    shared: &Arc<Shared>,
+    meta: Meta,
+    mut lease: WorkerLease,
+    wait_end: bool,
+    buffer_size: usize,
+) -> Response<HouseBody> {
+    let pool = shared.pool.clone();
+    let mut encoder = meta.encoding.and_then(|e| Encoder::new(e).ok());
+    let mut pending: Vec<u8> = Vec::new();
+    let mut spool = wait_end.then(|| {
+        Spool::new(
+            shared.config.tmp_dir.clone(),
+            shared.config.wait_end_of_query_max_bytes,
+            Arc::clone(&shared.spool),
+        )
+    });
+    let mut last = Progress::default();
+    loop {
+        match lease.next_event().await {
+            Ok(Event::Chunk(chunk)) => {
+                let encoded = match encode(&mut encoder, &chunk.bytes) {
+                    Ok(encoded) => encoded,
+                    Err(err) => {
+                        pool.kill(lease, ExitReason::Cancel);
+                        return meta.error(&err, &last, true);
+                    }
+                };
+                if let Some(spool) = &mut spool {
+                    if let Err(err) = spool.write(&encoded) {
+                        // Over the spool's cap: refused, not truncated (review M13).
+                        pool.kill(lease, ExitReason::Cancel);
+                        return meta.error(&err, &last, false);
+                    }
+                    continue;
+                }
+                pending.extend_from_slice(&encoded);
+                if pending.len() > buffer_size {
+                    return stream_rest(pool, meta, lease, encoder, pending, last);
+                }
+            }
+            Ok(Event::Progress(progress)) => last = progress,
+            Ok(Event::Done(stats)) => {
+                last = stats;
+                pool.release(lease, Outcome::Completed);
+                let tail = encoder.take().map(Encoder::finish).transpose();
+                let tail = match tail {
+                    Ok(tail) => tail.unwrap_or_default(),
+                    Err(err) => {
+                        let err = HouseError::from(ChError::network_error(format!(
+                            "encoding the response: {err}"
+                        )));
+                        return meta.error(&err, &last, true);
+                    }
+                };
+                let head = meta.head(
+                    StatusCode::OK,
+                    content_type(&meta.format),
+                    None,
+                    &last,
+                    false,
                 );
-                head.push_str(&self.summary_line());
-                head.push_str("\r\n");
-                let sent = async {
-                    stream.write_all(head.as_bytes()).await?;
-                    stream.write_all(&body).await?;
-                    stream.flush().await
-                }
-                .await;
-                sent.is_ok() && self.keep_alive
+                return match spool {
+                    Some(mut spool) => {
+                        if let Err(err) = spool.write(&tail) {
+                            return meta.error(&err, &last, false);
+                        }
+                        spool.into_response(head)
+                    }
+                    None => {
+                        pending.extend_from_slice(&tail);
+                        head.body(HouseBody::full(pending))
+                            .unwrap_or_else(|_| fallback())
+                    }
+                };
             }
-            HeadState::Open => {
-                // Progress lines went out with a 200: the code goes in a header, the
-                // text in the body, and the response still ends properly.
-                self.pending.clear();
-                self.spool = None;
-                self.encoder = self.encoding.and_then(|e| Encoder::new(e).ok());
-                let sent = async {
-                    let line = format!("X-ClickHouse-Exception-Code: {}\r\n", error.code());
-                    stream.write_all(line.as_bytes()).await?;
-                    self.start_body(stream).await?;
-                    let mut body = self.encode(text.as_bytes())?;
-                    body.extend(self.finish_encoder()?);
-                    write_chunk(stream, &body).await?;
-                    stream.write_all(b"0\r\n\r\n").await?;
-                    stream.flush().await
-                }
-                .await;
-                sent.is_ok() && self.keep_alive
-            }
-            HeadState::Body => {
-                // Ruling 9: the rows already sent stay, the exception text follows
-                // them, and the connection closes without the terminating chunk so
-                // the client cannot read a partial result as a whole one.
-                let sent = async {
-                    let mut body = std::mem::take(&mut self.pending);
-                    body.extend(self.encode(text.as_bytes())?);
-                    body.extend(self.finish_encoder()?);
-                    write_chunk(stream, &body).await?;
-                    stream.flush().await
-                }
-                .await;
-                let _ = sent;
-                false
+            Err(err) => {
+                pool.release(lease, Outcome::Completed);
+                return meta.error(&err, &last, false);
             }
         }
+    }
+}
+
+fn encode(encoder: &mut Option<Encoder>, bytes: &[u8]) -> Result<Vec<u8>, HouseError> {
+    match encoder {
+        Some(encoder) => encoder.feed(bytes).map_err(|err| {
+            HouseError::from(ChError::network_error(format!(
+                "encoding the response: {err}"
+            )))
+        }),
+        None => Ok(bytes.to_vec()),
+    }
+}
+
+/// The head goes out now; the rest of the statement streams from a task.
+fn stream_rest(
+    pool: WorkerPool,
+    meta: Meta,
+    mut lease: WorkerLease,
+    mut encoder: Option<Encoder>,
+    pending: Vec<u8>,
+    last: Progress,
+) -> Response<HouseBody> {
+    let (tx, rx) = mpsc::channel(CHANNEL_DEPTH);
+    let head = meta.head(
+        StatusCode::OK,
+        content_type(&meta.format),
+        None,
+        &last,
+        false,
+    );
+    tokio::spawn(async move {
+        if tx.send(Piece::Data(Bytes::from(pending))).await.is_err() {
+            pool.kill(lease, ExitReason::Cancel);
+            return;
+        }
+        loop {
+            match lease.next_event().await {
+                Ok(Event::Chunk(chunk)) => {
+                    let Ok(encoded) = encode(&mut encoder, &chunk.bytes) else {
+                        pool.kill(lease, ExitReason::Cancel);
+                        let _ = tx.send(Piece::Abort).await;
+                        return;
+                    };
+                    if !encoded.is_empty()
+                        && tx.send(Piece::Data(Bytes::from(encoded))).await.is_err()
+                    {
+                        // The client went away: the statement is abandoned.
+                        pool.kill(lease, ExitReason::Cancel);
+                        return;
+                    }
+                }
+                Ok(Event::Progress(_)) => {}
+                Ok(Event::Done(_)) => {
+                    pool.release(lease, Outcome::Completed);
+                    if let Some(encoder) = encoder.take()
+                        && let Ok(tail) = encoder.finish()
+                        && !tail.is_empty()
+                    {
+                        let _ = tx.send(Piece::Data(Bytes::from(tail))).await;
+                    }
+                    return;
+                }
+                Err(err) => {
+                    pool.release(lease, Outcome::Completed);
+                    // Ruling 9: the rows sent stay, the exception text follows, and
+                    // the connection closes without the terminating chunk.
+                    let text = err.render(&meta.version);
+                    let mut tail = encode(&mut encoder, text.as_bytes())
+                        .unwrap_or_else(|_| text.clone().into_bytes());
+                    if let Some(encoder) = encoder.take() {
+                        tail.extend(encoder.finish().unwrap_or_default());
+                    }
+                    let _ = tx.send(Piece::Data(Bytes::from(tail))).await;
+                    let _ = tx.send(Piece::Abort).await;
+                    return;
+                }
+            }
+        }
+    });
+    head.body(HouseBody::stream(rx, None))
+        .unwrap_or_else(|_| fallback())
+}
+
+/// The front's total spool budget (review I2).
+#[derive(Debug)]
+struct SpoolBudget {
+    used: AtomicU64,
+    total: u64,
+}
+
+impl SpoolBudget {
+    fn new(total: u64) -> Self {
+        Self {
+            used: AtomicU64::new(0),
+            total,
+        }
+    }
+
+    fn reserve(&self, bytes: u64) -> bool {
+        self.used
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+                used.checked_add(bytes).filter(|n| *n <= self.total)
+            })
+            .is_ok()
+    }
+
+    fn release(&self, bytes: u64) {
+        self.used.fetch_sub(bytes, Ordering::AcqRel);
     }
 }
 
 /// A `wait_end_of_query` result: memory first, then an unlinked temporary file.
+#[derive(Debug)]
 struct Spool {
     dir: std::path::PathBuf,
     memory: Vec<u8>,
     file: Option<std::fs::File>,
-    in_memory_limit: usize,
     max: u64,
     len: u64,
+    budget: Arc<SpoolBudget>,
 }
 
 impl Spool {
-    fn new(dir: std::path::PathBuf, in_memory_limit: usize, max: u64) -> Self {
+    fn new(dir: std::path::PathBuf, max: u64, budget: Arc<SpoolBudget>) -> Self {
         Self {
             dir,
             memory: Vec::new(),
             file: None,
-            in_memory_limit,
             max,
             len: 0,
+            budget,
         }
     }
 
-    fn len(&self) -> u64 {
-        self.len
-    }
-
     fn write(&mut self, bytes: &[u8]) -> Result<(), HouseError> {
-        if self.len + bytes.len() as u64 > self.max {
+        let n = bytes.len() as u64;
+        if self.len + n > self.max {
             return Err(HouseError::from(ChError::bad_arguments(format!(
                 "The result is larger than the {} bytes wait_end_of_query=1 buffers; run the \
                  query without wait_end_of_query",
                 self.max
             ))));
         }
-        self.len += bytes.len() as u64;
-        if self.file.is_none() && self.memory.len() + bytes.len() <= self.in_memory_limit {
+        if !self.budget.reserve(n) {
+            return Err(HouseError::from(ChError::too_many_simultaneous_queries(
+                "The House's wait_end_of_query spool is full; retry, or run the query without \
+                 wait_end_of_query",
+            )));
+        }
+        self.len += n;
+        if self.file.is_none() && self.memory.len() + bytes.len() <= SPOOL_IN_MEMORY {
             self.memory.extend_from_slice(bytes);
             return Ok(());
         }
-        let spool_error = |err: std::io::Error| {
+        let spool_error = |err: io::Error| {
             HouseError::from(ChError::network_error(format!(
                 "wait_end_of_query could not spool the result: {err}"
             )))
@@ -1188,51 +1172,52 @@ impl Spool {
         Ok(())
     }
 
-    /// Writes the spooled bytes out, as one chunk per piece when `chunked`.
-    async fn copy_to(&mut self, stream: &mut TcpStream, chunked: bool) -> std::io::Result<()> {
-        match &mut self.file {
-            None => {
-                let memory = std::mem::take(&mut self.memory);
-                if chunked {
-                    write_chunk(stream, &memory).await
-                } else {
-                    stream.write_all(&memory).await
+    /// The response: the spool as its body, with its length.
+    fn into_response(mut self, head: http::response::Builder) -> Response<HouseBody> {
+        let Some(mut file) = self.file.take() else {
+            let memory = std::mem::take(&mut self.memory);
+            return head
+                .body(HouseBody::full(memory))
+                .unwrap_or_else(|_| fallback());
+        };
+        let len = self.len;
+        let (tx, rx) = mpsc::channel(CHANNEL_DEPTH);
+        tokio::task::spawn_blocking(move || {
+            // The spool (and its share of the budget) lives until it is sent.
+            let _spool = self;
+            if file.seek(SeekFrom::Start(0)).is_err() {
+                let _ = tx.blocking_send(Piece::Abort);
+                return;
+            }
+            let mut piece = vec![0u8; 256 * 1024];
+            loop {
+                match file.read(&mut piece) {
+                    Ok(0) => return,
+                    Ok(n) => {
+                        if tx
+                            .blocking_send(Piece::Data(Bytes::copy_from_slice(&piece[..n])))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Err(_) => {
+                        let _ = tx.blocking_send(Piece::Abort);
+                        return;
+                    }
                 }
             }
-            Some(file) => {
-                file.seek(SeekFrom::Start(0))?;
-                let mut piece = vec![0u8; 256 * 1024];
-                loop {
-                    let n = file.read(&mut piece)?;
-                    if n == 0 {
-                        return Ok(());
-                    }
-                    if chunked {
-                        write_chunk(stream, &piece[..n]).await?;
-                    } else {
-                        stream.write_all(&piece[..n]).await?;
-                    }
-                }
-            }
-        }
+        });
+        head.body(HouseBody::stream(rx, Some(len)))
+            .unwrap_or_else(|_| fallback())
     }
 }
 
-async fn write_chunk(stream: &mut TcpStream, bytes: &[u8]) -> std::io::Result<()> {
-    if bytes.is_empty() {
-        return Ok(());
+impl Drop for Spool {
+    fn drop(&mut self) {
+        self.budget.release(self.len);
     }
-    let mut out = Vec::with_capacity(bytes.len() + 16);
-    out.extend_from_slice(format!("{:x}\r\n", bytes.len()).as_bytes());
-    out.extend_from_slice(bytes);
-    out.extend_from_slice(b"\r\n");
-    stream.write_all(&out).await
 }
-
-/// The default and the largest `session_timeout`, in seconds (ClickHouse's).
-pub const SESSION_TIMEOUT_DEFAULT: u64 = 60;
-/// See [`SESSION_TIMEOUT_DEFAULT`].
-pub const SESSION_TIMEOUT_MAX: u64 = 3600;
 
 /// The worker session a request names: keyed by the user **and** `session_id`, so
 /// two users' sessions of one id never meet (Task 3 review, decision 4).
@@ -1268,90 +1253,9 @@ pub fn session_ref(
     }))
 }
 
-/// The request body's framing.
-fn framing(head: &Head) -> Result<Body, ()> {
-    if head
-        .header("Transfer-Encoding")
-        .is_some_and(|v| v.to_ascii_lowercase().contains("chunked"))
-    {
-        return Ok(Body::Chunked(ChunkState::Size));
-    }
-    match head.header("Content-Length") {
-        Some(length) => length
-            .trim()
-            .parse::<u64>()
-            .map(Body::Length)
-            .map_err(|_| ()),
-        None => Ok(Body::Empty),
-    }
-}
-
-fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|w| w == needle)
-}
-
-/// `a=b&c=d`, percent-decoded, `+` as a space.
-pub fn parse_query(query: &str) -> Vec<(String, String)> {
-    query
-        .split('&')
-        .filter(|pair| !pair.is_empty())
-        .map(|pair| {
-            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-            (percent_decode(key), percent_decode(value))
-        })
-        .collect()
-}
-
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'+' => out.push(b' '),
-            b'%' if i + 3 <= bytes.len() => {
-                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
-                match hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
-                    Some(byte) => {
-                        out.push(byte);
-                        i += 3;
-                        continue;
-                    }
-                    None => out.push(b'%'),
-                }
-            }
-            other => out.push(other),
-        }
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-/// A header value without line breaks.
-fn header_safe(value: &str) -> String {
-    value.replace(['\r', '\n'], " ")
-}
-
-fn reason(status: u16) -> &'static str {
-    match status {
-        200 => "OK",
-        400 => "Bad Request",
-        401 => "Unauthorized",
-        403 => "Forbidden",
-        404 => "Not Found",
-        408 => "Request Timeout",
-        411 => "Length Required",
-        413 => "Request Entity Too Large",
-        415 => "Unsupported Media Type",
-        501 => "Not Implemented",
-        503 => "Service Unavailable",
-        _ => "Internal Server Error",
-    }
-}
-
-/// The `Content-Type` of an output format. ClickHouse's own table is per format
-/// (`IOutputFormat::getContentType`); these are its values for the declared
-/// formats, to be re-checked against the reference server in HS1 Task 29.
+/// The `Content-Type` of an output format (review M7: text unless the format is
+/// binary). ClickHouse's own table is per format (`IOutputFormat::getContentType`);
+/// HS1 Task 29 re-checks these against the reference server.
 pub fn content_type(format: &str) -> &'static str {
     let lower = format.to_ascii_lowercase();
     if lower.starts_with("tabseparated") || lower.starts_with("tsv") {
@@ -1364,16 +1268,28 @@ pub fn content_type(format: &str) -> &'static str {
         "application/json; charset=UTF-8"
     } else if lower == "xml" {
         "application/xml; charset=UTF-8"
-    } else if lower.starts_with("pretty")
-        || lower == "vertical"
-        || lower == "values"
-        || lower == "markdown"
-        || lower == "lineasstring"
-        || lower.starts_with("raw")
-    {
-        "text/plain; charset=UTF-8"
-    } else {
+    } else if [
+        "native",
+        "rowbinary",
+        "parquet",
+        "arrow",
+        "arrowstream",
+        "orc",
+        "avro",
+        "protobuf",
+        "msgpack",
+        "capnproto",
+        "bson",
+    ]
+    .iter()
+    .any(|f| {
+        lower == *f
+            || (lower.starts_with("rowbinary") && *f == "rowbinary")
+            || lower.starts_with("protobuf")
+    }) {
         "application/octet-stream"
+    } else {
+        "text/plain; charset=UTF-8"
     }
 }
 
@@ -1392,426 +1308,9 @@ pub fn progress_json(p: &Progress) -> String {
     )
 }
 
-/// An RFC 7231 date: `Thu, 08 Oct 2026 22:55:30 GMT`.
-pub fn http_date(at: SystemTime) -> String {
-    let secs = at.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    let days = (secs / 86_400) as i64;
-    let rem = secs % 86_400;
-    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
-    // Howard Hinnant's civil_from_days.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    const WEEKDAYS: [&str; 7] = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"];
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    format!(
-        "{}, {d:02} {} {year} {h:02}:{m:02}:{s:02} GMT",
-        WEEKDAYS[days.rem_euclid(7) as usize],
-        MONTHS[(month - 1) as usize],
-    )
-}
-
-// ---------------------------------------------------------------------------
-// The statement's shape. HS1 Task 4's classifier replaces these with sqlparser;
-// until then they know just enough: the first keyword, a trailing `FORMAT`, and
-// where an `INSERT`'s data starts.
-// ---------------------------------------------------------------------------
-
-/// A word or a symbol of the statement, outside strings and comments.
-#[derive(Debug, Clone, Copy)]
-struct Token {
-    start: usize,
-    end: usize,
-    word: bool,
-    depth: i32,
-}
-
-/// Tokens of `text` (best effort: strings, quoted names and comments are skipped).
-fn tokens(text: &[u8]) -> Vec<Token> {
-    let mut out = Vec::new();
-    let mut i = 0;
-    let mut depth = 0;
-    while i < text.len() {
-        let c = text[i];
-        if c.is_ascii_whitespace() {
-            i += 1;
-        } else if c == b'-' && text.get(i + 1) == Some(&b'-') || c == b'#' {
-            while i < text.len() && text[i] != b'\n' {
-                i += 1;
-            }
-        } else if c == b'/' && text.get(i + 1) == Some(&b'*') {
-            i += 2;
-            while i + 1 < text.len() && !(text[i] == b'*' && text[i + 1] == b'/') {
-                i += 1;
-            }
-            i += 2;
-        } else if c == b'\'' || c == b'"' || c == b'`' {
-            let start = i;
-            i += 1;
-            while i < text.len() {
-                if text[i] == b'\\' {
-                    i += 2;
-                    continue;
-                }
-                if text[i] == c {
-                    if text.get(i + 1) == Some(&c) {
-                        i += 2;
-                        continue;
-                    }
-                    break;
-                }
-                i += 1;
-            }
-            i += 1;
-            out.push(Token {
-                start,
-                end: i.min(text.len()),
-                word: false,
-                depth,
-            });
-        } else if c.is_ascii_alphanumeric() || c == b'_' {
-            let start = i;
-            while i < text.len() && (text[i].is_ascii_alphanumeric() || text[i] == b'_') {
-                i += 1;
-            }
-            out.push(Token {
-                start,
-                end: i,
-                word: true,
-                depth,
-            });
-        } else {
-            if c == b'(' {
-                depth += 1;
-            }
-            out.push(Token {
-                start: i,
-                end: i + 1,
-                word: false,
-                depth,
-            });
-            if c == b')' {
-                depth -= 1;
-            }
-            i += 1;
-        }
-    }
-    out
-}
-
-fn word_is(text: &[u8], t: &Token, word: &str) -> bool {
-    t.word && text[t.start..t.end].eq_ignore_ascii_case(word.as_bytes())
-}
-
-/// The first keyword, upper-cased, past comments and opening parentheses.
-fn first_keyword(sql: &str) -> String {
-    let bytes = sql.as_bytes();
-    tokens(bytes)
-        .into_iter()
-        .find(|t| t.word)
-        .map(|t| String::from_utf8_lossy(&bytes[t.start..t.end]).to_ascii_uppercase())
-        .unwrap_or_default()
-}
-
-/// Whether a statement only reads (what GET and read-only users may run).
-fn is_read(sql: &str) -> bool {
-    matches!(
-        first_keyword(sql).as_str(),
-        "SELECT" | "WITH" | "SHOW" | "DESCRIBE" | "DESC" | "EXISTS" | "EXPLAIN" | "CHECK"
-    )
-}
-
-/// Where an `INSERT`'s data starts.
-#[derive(Debug, PartialEq, Eq)]
-enum InsertHead {
-    /// Not an `INSERT` (or not known to be one yet).
-    NotInsert,
-    /// An `INSERT` whose `FORMAT <f>` line has not been read to its end.
-    Incomplete,
-    /// An `INSERT … FORMAT <f>`: the statement, the format, and where the data
-    /// starts in the text.
-    Insert {
-        statement: String,
-        format: String,
-        data_start: usize,
-    },
-    /// An `INSERT` without `FORMAT` (`VALUES (…)` inline, or `… SELECT`).
-    NoFormat,
-}
-
-/// Finds an `INSERT`'s `FORMAT <f>` line. `complete` says whether the text can grow:
-/// a `FORMAT <f>` at the very end of a complete text is a statement with no data.
-fn insert_head(text: &[u8], complete: bool) -> InsertHead {
-    let toks = tokens(text);
-    let Some(first) = toks.iter().find(|t| t.word) else {
-        return if complete {
-            InsertHead::NotInsert
-        } else {
-            InsertHead::Incomplete
-        };
-    };
-    if !word_is(text, first, "INSERT") {
-        return InsertHead::NotInsert;
-    }
-    for (at, t) in toks.iter().enumerate() {
-        if t.depth == 0 && word_is(text, t, "FORMAT") {
-            let Some(name) = toks.get(at + 1).filter(|n| n.word) else {
-                return if complete {
-                    InsertHead::NoFormat
-                } else {
-                    InsertHead::Incomplete
-                };
-            };
-            // The data starts after the format name, its spaces and one newline.
-            let mut i = name.end;
-            while i < text.len() && (text[i] == b' ' || text[i] == b'\t') {
-                i += 1;
-            }
-            if i < text.len() && text[i] == b'\r' {
-                i += 1;
-            }
-            if i < text.len() && text[i] == b'\n' {
-                i += 1;
-            } else if i >= text.len() && !complete {
-                return InsertHead::Incomplete;
-            }
-            return InsertHead::Insert {
-                statement: String::from_utf8_lossy(&text[..t.start])
-                    .trim_end()
-                    .to_string(),
-                format: String::from_utf8_lossy(&text[name.start..name.end]).into_owned(),
-                data_start: i,
-            };
-        }
-    }
-    if complete {
-        InsertHead::NoFormat
-    } else {
-        InsertHead::Incomplete
-    }
-}
-
-/// The statement as the worker gets it.
-#[derive(Debug, PartialEq, Eq)]
-struct Plan {
-    sql: String,
-    format: Option<String>,
-    input: Option<InputSpec>,
-    first_data: Vec<u8>,
-}
-
-/// What to run for `text`. `body_follows`: the data of an `INSERT … FORMAT` is (also)
-/// in the request body.
-fn plan(text: &[u8], body_follows: bool) -> Result<Plan, HouseError> {
-    match insert_head(text, true) {
-        InsertHead::Insert {
-            statement,
-            format,
-            data_start,
-        } => {
-            let first_data = text[data_start..].to_vec();
-            Ok(Plan {
-                sql: String::new(),
-                format: None,
-                input: Some(InputSpec {
-                    insert: statement,
-                    format,
-                }),
-                first_data,
-            })
-        }
-        InsertHead::NoFormat if body_follows && ends_with_word(text, "VALUES") => {
-            // `INSERT INTO t VALUES` with the tuples in the body.
-            let toks = tokens(text);
-            let values = toks.last().map_or(text.len(), |t| t.start);
-            Ok(Plan {
-                sql: String::new(),
-                format: None,
-                input: Some(InputSpec {
-                    insert: String::from_utf8_lossy(&text[..values])
-                        .trim_end()
-                        .to_string(),
-                    format: "Values".to_string(),
-                }),
-                first_data: Vec::new(),
-            })
-        }
-        _ => {
-            let sql = String::from_utf8_lossy(text).into_owned();
-            let (sql, format) = split_format(&sql);
-            Ok(Plan {
-                sql,
-                format,
-                input: None,
-                first_data: Vec::new(),
-            })
-        }
-    }
-}
-
-fn ends_with_word(text: &[u8], word: &str) -> bool {
-    tokens(text).last().is_some_and(|t| word_is(text, t, word))
-}
-
-/// Strips a trailing `FORMAT <f>` (and `;`) from a statement, returning the format.
-fn split_format(sql: &str) -> (String, Option<String>) {
-    let bytes = sql.as_bytes();
-    let toks: Vec<Token> = tokens(bytes)
-        .into_iter()
-        .filter(|t| !(bytes[t.start] == b';' && t.end == t.start + 1))
-        .collect();
-    let trimmed = || sql.trim_end().trim_end_matches(';').trim_end().to_string();
-    if toks.len() >= 2 {
-        let name = toks[toks.len() - 1];
-        let keyword = toks[toks.len() - 2];
-        if name.word && keyword.depth == 0 && word_is(bytes, &keyword, "FORMAT") {
-            return (
-                sql[..keyword.start].trim_end().to_string(),
-                Some(sql[name.start..name.end].to_string()),
-            );
-        }
-    }
-    (trimmed(), None)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn query_strings_decode() {
-        assert_eq!(
-            parse_query("query=SELECT%201+%2B%201&x=&y"),
-            vec![
-                ("query".to_string(), "SELECT 1 + 1".to_string()),
-                ("x".to_string(), String::new()),
-                ("y".to_string(), String::new()),
-            ]
-        );
-        assert_eq!(
-            parse_query("a=%zz%4"),
-            vec![("a".to_string(), "%zz%4".to_string())]
-        );
-    }
-
-    #[test]
-    fn read_only_keywords() {
-        for sql in [
-            "SELECT 1",
-            " -- c\n select 1",
-            "/* x */ WITH 1 AS a SELECT a",
-            "(SELECT 1)",
-            "SHOW TABLES",
-            "EXPLAIN SELECT 1",
-        ] {
-            assert!(is_read(sql), "{sql}");
-        }
-        for sql in [
-            "INSERT INTO t VALUES (1)",
-            "SET a = 1",
-            "CREATE TABLE t (a Int8)",
-            "DROP TABLE t",
-            "",
-            "KILL QUERY WHERE 1",
-        ] {
-            assert!(!is_read(sql), "{sql}");
-        }
-    }
-
-    #[test]
-    fn insert_heads() {
-        let text = b"INSERT INTO FUNCTION null('n UInt64') FORMAT TSV\n1\n2\n";
-        match insert_head(text, true) {
-            InsertHead::Insert {
-                statement,
-                format,
-                data_start,
-            } => {
-                assert_eq!(statement, "INSERT INTO FUNCTION null('n UInt64')");
-                assert_eq!(format, "TSV");
-                assert_eq!(&text[data_start..], b"1\n2\n");
-            }
-            other => panic!("{other:?}"),
-        }
-        assert_eq!(
-            insert_head(b"INSERT INTO t FORMAT TS", false),
-            InsertHead::Incomplete
-        );
-        assert_eq!(
-            insert_head(b"INSERT INTO t FORMAT TSV", false),
-            InsertHead::Incomplete
-        );
-        assert!(matches!(
-            insert_head(b"INSERT INTO t FORMAT TSV", true),
-            InsertHead::Insert { .. }
-        ));
-        assert_eq!(
-            insert_head(b"INSERT INTO t VALUES (1)", true),
-            InsertHead::NoFormat
-        );
-        assert_eq!(
-            insert_head(b"SELECT 1 FORMAT TSV", true),
-            InsertHead::NotInsert
-        );
-        // `FORMAT` inside a string or parentheses is not the clause.
-        assert_eq!(
-            insert_head(b"INSERT INTO t SELECT 'FORMAT TSV', format('x')", true),
-            InsertHead::NoFormat
-        );
-    }
-
-    #[test]
-    fn trailing_format() {
-        assert_eq!(
-            split_format("SELECT 1 FORMAT JSON"),
-            ("SELECT 1".to_string(), Some("JSON".to_string()))
-        );
-        assert_eq!(
-            split_format("SELECT 1 FORMAT JSON;"),
-            ("SELECT 1".to_string(), Some("JSON".to_string()))
-        );
-        assert_eq!(split_format("SELECT 1;"), ("SELECT 1".to_string(), None));
-        assert_eq!(
-            split_format("SELECT 'FORMAT JSON'"),
-            ("SELECT 'FORMAT JSON'".to_string(), None)
-        );
-        assert_eq!(
-            split_format("SELECT format('x', 1)"),
-            ("SELECT format('x', 1)".to_string(), None)
-        );
-    }
-
-    #[test]
-    fn plans() {
-        let p = plan(b"INSERT INTO t VALUES", true).expect("plan");
-        assert_eq!(
-            p.input,
-            Some(InputSpec {
-                insert: "INSERT INTO t".to_string(),
-                format: "Values".to_string()
-            })
-        );
-        let p = plan(b"INSERT INTO t VALUES (1)", true).expect("plan");
-        assert_eq!(p.input, None);
-        assert_eq!(p.sql, "INSERT INTO t VALUES (1)");
-    }
-
-    #[test]
-    fn dates() {
-        assert_eq!(http_date(UNIX_EPOCH), "Thu, 01 Jan 1970 00:00:00 GMT");
-        assert_eq!(
-            http_date(UNIX_EPOCH + Duration::from_secs(1791500130)),
-            "Thu, 08 Oct 2026 22:55:30 GMT"
-        );
-    }
 
     #[test]
     fn summary_numbers_are_strings() {
@@ -1821,5 +1320,69 @@ mod tests {
         });
         assert!(json.starts_with("{\"read_rows\":\"7\""), "{json}");
         assert!(json.contains("\"total_rows_to_read\":\"0\""));
+    }
+
+    #[test]
+    fn content_types() {
+        assert_eq!(
+            content_type("TabSeparated"),
+            "text/tab-separated-values; charset=UTF-8"
+        );
+        assert_eq!(content_type("Parquet"), "application/octet-stream");
+        assert_eq!(
+            content_type("RowBinaryWithNames"),
+            "application/octet-stream"
+        );
+        assert_eq!(content_type("PrettyCompact"), "text/plain; charset=UTF-8");
+        assert_eq!(
+            content_type("SomethingNew"),
+            "text/plain; charset=UTF-8",
+            "review M7"
+        );
+    }
+
+    #[test]
+    fn spool_budget_is_shared_and_released() {
+        let budget = Arc::new(SpoolBudget::new(10));
+        let dir = std::env::temp_dir();
+        let mut a = Spool::new(dir.clone(), 100, Arc::clone(&budget));
+        a.write(b"123456").expect("fits");
+        let mut b = Spool::new(dir, 100, Arc::clone(&budget));
+        assert_eq!(b.write(b"12345").expect_err("over the budget").code(), 202);
+        drop(a);
+        b.write(b"12345").expect("released");
+    }
+
+    #[test]
+    fn sessions_are_per_user() {
+        let params = |p: &[(&str, &str)]| -> Vec<(String, String)> {
+            p.iter()
+                .map(|(a, b)| (a.to_string(), b.to_string()))
+                .collect()
+        };
+        let a = session_ref("alice", &params(&[("session_id", "s")]))
+            .expect("ok")
+            .expect("some");
+        let c = session_ref("carol", &params(&[("session_id", "s")]))
+            .expect("ok")
+            .expect("some");
+        assert_ne!(a.key, c.key);
+        assert_eq!(a.timeout_ms, 60_000);
+        assert_eq!(session_ref("a", &params(&[])).expect("ok"), None);
+        assert_eq!(
+            session_ref(
+                "a",
+                &params(&[("session_id", "s"), ("session_timeout", "3601")])
+            )
+            .expect_err("too long")
+            .code(),
+            36
+        );
+        assert!(
+            session_ref("a", &params(&[("session_id", "s"), ("close_session", "1")]))
+                .expect("ok")
+                .expect("some")
+                .close
+        );
     }
 }

@@ -16,7 +16,7 @@ use loams_house::{ProcessLauncher, WorkerPool};
 
 const VERSION: &str = "26.9.2.1";
 
-/// Basic `alice:secret`, `reader:books` and `alice:wrong`, encoded by hand.
+/// Basic `alice:secret` and `alice:wrong`, encoded by hand.
 const BASIC_ALICE: &str = "Basic YWxpY2U6c2VjcmV0";
 const BASIC_ALICE_WRONG: &str = "Basic YWxpY2U6d3Jvbmc=";
 
@@ -29,8 +29,17 @@ fn users() -> Vec<UserMap> {
 }
 
 async fn house(test: &str, adjust: impl FnOnce(&mut HouseConfig)) -> HouseHandle {
+    house_with_pool(test, common::small(3), adjust).await.0
+}
+
+/// A House and the pool behind it, for tests that watch the pool.
+async fn house_with_pool(
+    test: &str,
+    pool_config: loams_house::PoolConfig,
+    adjust: impl FnOnce(&mut HouseConfig),
+) -> (HouseHandle, WorkerPool) {
     let launcher = ProcessLauncher::new(common::WORKER, common::tmp_root(test));
-    let pool = WorkerPool::start(common::small(3), Arc::new(launcher))
+    let pool = WorkerPool::start(pool_config, Arc::new(launcher))
         .await
         .expect("pool");
     let mut config = HouseConfig {
@@ -40,7 +49,7 @@ async fn house(test: &str, adjust: impl FnOnce(&mut HouseConfig)) -> HouseHandle
         ..HouseConfig::default()
     };
     adjust(&mut config);
-    serve(config, pool).await.expect("serves")
+    (serve(config, pool.clone()).await.expect("serves"), pool)
 }
 
 /// Runs the blocking client off the runtime the server is on.
@@ -565,56 +574,56 @@ async fn non_loopback_is_refused() {
     assert!(ok.is_ok(), "IPv6 loopback is loopback");
 }
 
+/// R3.8 (Task 3 review, decision 1): hyper writes a head in one piece, so with
+/// `send_progress_in_http_headers = 1` the head carries exactly one
+/// `X-ClickHouse-Progress` line — the counters when it went out — instead of
+/// ClickHouse's stream of lines. Deterministic: no timing is asserted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn progress_headers_stream() {
     let house = house("progress", |_| {}).await;
     let addr = house.local_addr();
-    // One row a block, 15 ms each: about 1.5 s of output in small pieces.
-    let response = get(
+    // A result over `buffer_size`: the head goes out while the query runs.
+    let early = get(
         addr,
         &[
             (
                 "query",
-                "SELECT number, sleepEachRow(0.015) FROM numbers(100) SETTINGS max_block_size = 1",
+                "SELECT number, sleepEachRow(0.01) FROM numbers(50) SETTINGS max_block_size = 1",
             ),
+            ("send_progress_in_http_headers", "1"),
+            ("buffer_size", "1"),
+        ],
+    )
+    .await;
+    // A small result: the head goes out at the end.
+    let late = get(
+        addr,
+        &[
+            ("query", "SELECT count() FROM numbers(1000)"),
             ("send_progress_in_http_headers", "1"),
         ],
     )
     .await;
-    assert_eq!(response.status, 200, "{}", response.text());
-    assert_eq!(response.text().lines().count(), 100);
-    let progress = response.all("X-ClickHouse-Progress");
-    assert!(
-        progress.len() >= 3,
-        "progress while the query runs: {progress:?}"
-    );
-    for (value, _) in &progress {
-        let json: serde_json::Value = serde_json::from_str(value).expect("progress is JSON");
-        assert!(json["read_rows"].is_string(), "{json}");
-        assert!(json["elapsed_ns"].is_string(), "{json}");
+    for (response, rows) in [(&early, 50), (&late, 1)] {
+        assert_eq!(response.status, 200, "{}", response.text());
+        assert_eq!(response.text().lines().count(), rows);
+        let progress = response.all("X-ClickHouse-Progress");
+        assert_eq!(progress.len(), 1, "exactly one progress line: {progress:?}");
+        let json: serde_json::Value =
+            serde_json::from_str(progress[0].0).expect("progress is JSON");
+        for key in ["read_rows", "read_bytes", "result_rows", "elapsed_ns"] {
+            assert!(json[key].is_string(), "{key}: {json}");
+        }
+        assert!(response.header("X-ClickHouse-Summary").is_some());
     }
-    // They arrived as the query ran, not all at once at the end, and at most every
-    // 100 ms (with scheduling slack).
-    let first = progress.first().expect("first").1;
-    let last = progress.last().expect("last").1;
-    assert!(
-        last.duration_since(first) >= Duration::from_millis(400),
-        "spread over time"
+    let late_progress: serde_json::Value =
+        serde_json::from_str(late.all("X-ClickHouse-Progress")[0].0).expect("JSON");
+    assert_eq!(
+        late_progress["read_rows"], "1000",
+        "the head at the end carries the final counters"
     );
-    for pair in progress.windows(2) {
-        assert!(
-            pair[1].1.duration_since(pair[0].1) >= Duration::from_millis(80),
-            "throttled"
-        );
-    }
-    let summary_at = response
-        .all("X-ClickHouse-Summary")
-        .first()
-        .expect("summary at the end of the headers")
-        .1;
-    assert!(summary_at >= last);
 
-    // Without the parameter, no progress headers.
+    // Without the parameter, no progress header.
     let quiet = get(addr, &[("query", "SELECT 1")]).await;
     assert!(quiet.all("X-ClickHouse-Progress").is_empty());
 }
@@ -832,4 +841,540 @@ fn read_one(reader: &mut impl std::io::BufRead) -> String {
         reader.read_exact(&mut body).expect("body");
     }
     String::from_utf8(body).expect("utf-8")
+}
+
+async fn raw(addr: SocketAddr, bytes: Vec<u8>) -> String {
+    tokio::task::spawn_blocking(move || common::http::raw(addr, &bytes, Duration::from_secs(10)))
+        .await
+        .expect("client")
+}
+
+/// Task 3 review I8: broken framing is hyper's `400` and a closed connection, and
+/// no worker is asked; framing that could smuggle a request closes the connection.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn bad_framing_is_400_and_touches_no_worker() {
+    let (house, pool) = house_with_pool("framing", common::small(2), |_| {}).await;
+    let addr = house.local_addr();
+    // Content-Length with chunked (R3.9): hyper reads it as chunked (RFC 9112 §6.3)
+    // and closes the connection after it, so a request smuggled behind the body is
+    // never served.
+    let smuggle = "POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 13\r\nTransfer-Encoding: chunked\r\n\r\n8\r\nSELECT 1\r\n0\r\n\r\nGET /?query=SELECT%202 HTTP/1.1\r\nHost: x\r\n\r\n";
+    let answer = raw(addr, smuggle.as_bytes().to_vec()).await;
+    assert_eq!(
+        answer.matches("HTTP/1.1 ").count(),
+        1,
+        "one response only: {answer:?}"
+    );
+    assert!(
+        answer.to_ascii_lowercase().contains("connection: close"),
+        "{answer:?}"
+    );
+    assert!(
+        !answer.contains("\r\n\r\n2\n"),
+        "the smuggled request did not run"
+    );
+    let before = pool.stats().acquired_total;
+    for (what, request) in [
+        (
+            "two Content-Lengths",
+            "POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 8\r\nContent-Length: 9\r\n\r\nSELECT 1",
+        ),
+        (
+            "a signed Content-Length",
+            "POST / HTTP/1.1\r\nHost: x\r\nContent-Length: +8\r\n\r\nSELECT 1",
+        ),
+    ] {
+        let answer = raw(addr, request.as_bytes().to_vec()).await;
+        assert!(answer.starts_with("HTTP/1.1 400"), "{what}: {answer:?}");
+        assert_eq!(
+            answer.matches("HTTP/1.1 ").count(),
+            1,
+            "{what}: closed after the 400"
+        );
+    }
+    // A chunk that does not end where its size says: the read fails, nothing runs.
+    let answer = raw(
+        addr,
+        b"POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n8\r\nSELECT 1XX\r\n0\r\n\r\n".to_vec(),
+    )
+    .await;
+    assert!(!answer.starts_with("HTTP/1.1 200"), "{answer:?}");
+    assert_eq!(pool.stats().acquired_total, before, "no worker was asked");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn head_has_no_body() {
+    let house = house("head", |_| {}).await;
+    let addr = house.local_addr();
+    for target in ["/ping".to_string(), target(&[("query", "SELECT 1")])] {
+        let response = call(addr, "HEAD", target.clone(), Vec::new(), Vec::new()).await;
+        assert_eq!(response.status, 200, "{target}");
+        assert!(response.body.is_empty(), "{target}: {:?}", response.text());
+    }
+    // HEAD reads, like GET.
+    let write = call(
+        addr,
+        "HEAD",
+        target(&[("query", "DROP TABLE x")]),
+        Vec::new(),
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(write.header("X-ClickHouse-Exception-Code"), Some("164"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn http_1_0_is_never_chunked() {
+    let house = house("http10", |_| {}).await;
+    let addr = house.local_addr();
+    for (query, rows) in [
+        ("SELECT number FROM numbers(100000)", 100_000),
+        ("SELECT 1", 1),
+    ] {
+        let request = format!(
+            "GET {} HTTP/1.0\r\n\r\n",
+            target(&[("query", query), ("buffer_size", "1000")])
+        );
+        let answer = raw(addr, request.into_bytes()).await;
+        let (head, body) = answer.split_once("\r\n\r\n").expect("head and body");
+        assert!(
+            head.starts_with("HTTP/1.0 200") || head.starts_with("HTTP/1.1 200"),
+            "{head}"
+        );
+        assert!(
+            !head.to_ascii_lowercase().contains("transfer-encoding"),
+            "{head}"
+        );
+        assert_eq!(body.lines().count(), rows, "{query}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn pipelined_requests_answer_in_order() {
+    let house = house("pipeline", |_| {}).await;
+    let addr = house.local_addr();
+    let mut request = String::new();
+    for n in 1..=3 {
+        request.push_str(&format!(
+            "GET {} HTTP/1.1\r\nHost: x\r\n\r\n",
+            target(&[("query", &format!("SELECT {n}"))])
+        ));
+    }
+    request.push_str("GET /ping HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+    let answer = raw(addr, request.into_bytes()).await;
+    assert_eq!(answer.matches("HTTP/1.1 200").count(), 4, "{answer}");
+    let one = answer.find("\r\n\r\n1\n").expect("1");
+    let two = answer.find("\r\n\r\n2\n").expect("2");
+    let three = answer.find("\r\n\r\n3\n").expect("3");
+    assert!(one < two && two < three, "in order");
+}
+
+/// Review M4: authentication answers before any `100 Continue`, so a refused client
+/// never sends its body.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn expect_continue_comes_after_authentication() {
+    let house = house("expect", |_| {}).await;
+    let addr = house.local_addr();
+    let result = tokio::task::spawn_blocking(move || {
+        use std::io::BufRead;
+        let mut out = Vec::new();
+        for password in ["wrong", "secret"] {
+            let mut stream = std::net::TcpStream::connect(addr).expect("connect");
+            stream.set_read_timeout(Some(Duration::from_secs(10))).expect("timeout");
+            let body = b"SELECT 42";
+            let head = format!(
+                "POST {} HTTP/1.1\r\nHost: x\r\nExpect: 100-continue\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                target(&[("user", "alice"), ("password", password)]),
+                body.len()
+            );
+            stream.write_all(head.as_bytes()).expect("head");
+            let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone"));
+            let mut first = String::new();
+            reader.read_line(&mut first).expect("first line");
+            if first.starts_with("HTTP/1.1 100") {
+                let mut blank = String::new();
+                reader.read_line(&mut blank).expect("blank");
+                stream.write_all(body).expect("body");
+            }
+            let mut rest = String::new();
+            let _ = reader.read_to_string(&mut rest);
+            out.push((first, rest));
+        }
+        out
+    })
+    .await
+    .expect("client");
+    assert!(
+        result[0].0.starts_with("HTTP/1.1 403"),
+        "no 100 before a 516: {:?}",
+        result[0]
+    );
+    assert!(
+        result[0].1.contains("X-ClickHouse-Exception-Code: 516")
+            || result[0]
+                .1
+                .to_ascii_lowercase()
+                .contains("x-clickhouse-exception-code: 516")
+    );
+    assert!(result[1].0.starts_with("HTTP/1.1 100"), "{:?}", result[1]);
+    assert!(result[1].1.starts_with("HTTP/1.1 200"), "{:?}", result[1]);
+    assert!(result[1].1.ends_with("42\n"), "{:?}", result[1]);
+}
+
+/// The error path once the head is out, with a progress line in it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn error_after_the_head_with_progress() {
+    let house = house("error-after-head", |_| {}).await;
+    let addr = house.local_addr();
+    let response = get(
+        addr,
+        &[
+            ("query", FAILS_LATE),
+            ("buffer_size", "1000"),
+            ("send_progress_in_http_headers", "1"),
+        ],
+    )
+    .await;
+    assert_eq!(response.status, 200);
+    assert_eq!(response.all("X-ClickHouse-Progress").len(), 1);
+    assert!(!response.complete, "no terminating chunk");
+    assert!(response.text().ends_with(&format!(
+        "(FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version {VERSION})\n"
+    )));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn query_param_with_a_continuation_body() {
+    let house = house("continuation", |_| {}).await;
+    let addr = house.local_addr();
+    let response = post(addr, &[("query", "SELECT")], b"1 + 1").await;
+    assert_eq!(
+        (response.status, response.text().as_str()),
+        (200, "2\n"),
+        "{}",
+        response.text()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn auth_failures_never_touch_the_pool() {
+    let (house, pool) = house_with_pool("no-pool", common::small(2), |_| {}).await;
+    let addr = house.local_addr();
+    let before = pool.stats();
+    for params in [
+        vec![
+            ("query", "SELECT 1"),
+            ("user", "alice"),
+            ("password", "wrong"),
+        ],
+        vec![("query", "SELECT 1"), ("user", "nobody")],
+    ] {
+        let response = get(addr, &params).await;
+        assert_eq!(response.header("X-ClickHouse-Exception-Code"), Some("516"));
+    }
+    let mixed = call(
+        addr,
+        "GET",
+        target(&[("query", "SELECT 1"), ("user", "alice")]),
+        vec![("Authorization", BASIC_ALICE.into())],
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(mixed.header("X-ClickHouse-Exception-Code"), Some("516"));
+    let after = pool.stats();
+    assert_eq!(after.acquired_total, before.acquired_total, "{after:?}");
+    assert_eq!(after.leased, 0);
+}
+
+/// Review I1: a client that stops sending does not hold a worker. Before its data
+/// starts it never gets one; once it has one, the idle timeout ends it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn slow_clients_do_not_pin_a_worker() {
+    let (house, pool) = house_with_pool("slow", common::small(2), |config| {
+        config.receive_timeout = Duration::from_millis(500);
+    })
+    .await;
+    let addr = house.local_addr();
+    let insert = target(&[("query", "INSERT INTO FUNCTION null('n UInt64') FORMAT TSV")]);
+
+    // No body at all.
+    let before = pool.stats().acquired_total;
+    let head_only = format!("POST {insert} HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n");
+    let answer = raw(addr, head_only.into_bytes()).await;
+    assert!(!answer.starts_with("HTTP/1.1 200"), "{answer:?}");
+    assert_eq!(
+        pool.stats().acquired_total,
+        before,
+        "no worker before the data starts"
+    );
+
+    // Some body, then nothing.
+    let partial = format!("POST {insert} HTTP/1.1\r\nHost: x\r\nContent-Length: 100\r\n\r\n1\n2\n");
+    let cancels = pool.stats().kills_for(loams_house::ExitReason::Cancel);
+    let answer = raw(addr, partial.into_bytes()).await;
+    assert!(!answer.starts_with("HTTP/1.1 200"), "{answer:?}");
+    assert!(
+        common::eventually(Duration::from_secs(5), || {
+            let stats = pool.stats();
+            stats.leased == 0 && stats.kills_for(loams_house::ExitReason::Cancel) == cancels + 1
+        })
+        .await,
+        "the worker was let go: {:?}",
+        pool.stats()
+    );
+}
+
+/// Review I5: a truncated compressed `INSERT` body is an error and commits nothing —
+/// the worker is killed rather than told the input ended.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn truncated_compressed_inserts_commit_nothing() {
+    let (house, pool) = house_with_pool("truncated", common::small(2), |_| {}).await;
+    let addr = house.local_addr();
+    let rows: String = (0..20_000).map(|n| format!("{n}\n")).collect();
+    for encoding in ["gzip", "deflate", "zstd"] {
+        let whole = match encoding {
+            "gzip" => gzip(rows.as_bytes()),
+            "deflate" => deflate(rows.as_bytes()),
+            _ => zstd::encode_all(rows.as_bytes(), 3).expect("zstd"),
+        };
+        let cut = whole[..whole.len() - 4].to_vec();
+        let cancels = pool.stats().kills_for(loams_house::ExitReason::Cancel);
+        let response = call(
+            addr,
+            "POST",
+            target(&[("query", "INSERT INTO FUNCTION null('n UInt64') FORMAT TSV")]),
+            vec![("Content-Encoding", encoding.into())],
+            cut,
+        )
+        .await;
+        assert_eq!(
+            response.header("X-ClickHouse-Exception-Code"),
+            Some("36"),
+            "{encoding}: {}",
+            response.text()
+        );
+        assert!(
+            response.text().contains("decompress"),
+            "{encoding}: {}",
+            response.text()
+        );
+        assert_eq!(
+            pool.stats().kills_for(loams_house::ExitReason::Cancel),
+            cancels + 1,
+            "{encoding}: the INSERT was abandoned, not ended"
+        );
+    }
+}
+
+/// Task 3 review, decision 4, over HTTP: sessions are per user, URL settings do not
+/// stay, and `close_session` ends one. One worker per namespace, so the session's
+/// worker is the same without Task 4's pinning.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sessions_are_per_user_over_http() {
+    let pool_config = loams_house::PoolConfig {
+        max_workers_per_namespace: 1,
+        ..common::small(2)
+    };
+    let (house, _pool) = house_with_pool("http-sessions", pool_config, |config| {
+        config.users.push(UserMap::dev("carol", "c", 2, false));
+    })
+    .await;
+    let addr = house.local_addr();
+    let as_user =
+        |user: &'static str, password: &'static str, extra: &[(&'static str, &'static str)]| {
+            let mut params = vec![("user", user), ("password", password), ("session_id", "s1")];
+            params.extend_from_slice(extra);
+            params
+        };
+    let created = post(
+        addr,
+        &as_user(
+            "alice",
+            "secret",
+            &[(
+                "query",
+                "CREATE TEMPORARY TABLE t (n UInt8) ENGINE = Memory",
+            )],
+        ),
+        b"",
+    )
+    .await;
+    assert_eq!(created.status, 200, "{}", created.text());
+    let inserted = post(
+        addr,
+        &as_user("alice", "secret", &[("query", "INSERT INTO t FORMAT TSV")]),
+        b"1\n2\n",
+    )
+    .await;
+    assert_eq!(inserted.status, 200, "{}", inserted.text());
+    assert_eq!(
+        get(
+            addr,
+            &as_user("alice", "secret", &[("query", "SELECT count() FROM t")])
+        )
+        .await
+        .text(),
+        "2\n"
+    );
+    let carol = get(
+        addr,
+        &as_user("carol", "c", &[("query", "SELECT count() FROM t")]),
+    )
+    .await;
+    assert_eq!(
+        carol.header("X-ClickHouse-Exception-Code"),
+        Some("60"),
+        "carol's s1 is not alice's"
+    );
+
+    let with = get(
+        addr,
+        &as_user(
+            "alice",
+            "secret",
+            &[
+                ("query", "SELECT getSetting('max_threads')"),
+                ("max_threads", "3"),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(with.text(), "3\n");
+    let without = get(
+        addr,
+        &as_user(
+            "alice",
+            "secret",
+            &[("query", "SELECT getSetting('max_threads')")],
+        ),
+    )
+    .await;
+    assert_ne!(without.text(), "3\n", "URL settings are per query");
+
+    let closing = get(
+        addr,
+        &as_user(
+            "alice",
+            "secret",
+            &[("query", "SELECT 1"), ("close_session", "1")],
+        ),
+    )
+    .await;
+    assert_eq!(closing.status, 200);
+    let gone = get(
+        addr,
+        &as_user("alice", "secret", &[("query", "SELECT count() FROM t")]),
+    )
+    .await;
+    assert_eq!(gone.header("X-ClickHouse-Exception-Code"), Some("60"));
+
+    let too_long = get(
+        addr,
+        &as_user(
+            "alice",
+            "secret",
+            &[("query", "SELECT 1"), ("session_timeout", "3601")],
+        ),
+    )
+    .await;
+    assert_eq!(too_long.header("X-ClickHouse-Exception-Code"), Some("36"));
+}
+
+/// Review M5 and R3.8: too many header fields is `431`; a URI past hyper's
+/// 65 534 bytes is `414` (use POST for longer statements).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn header_and_uri_limits() {
+    let house = house("limits", |config| config.max_headers = 20).await;
+    let addr = house.local_addr();
+    let mut many = String::from("GET /ping HTTP/1.1\r\nHost: x\r\n");
+    for n in 0..30 {
+        many.push_str(&format!("X-Extra-{n}: y\r\n"));
+    }
+    many.push_str("\r\n");
+    let answer = raw(addr, many.into_bytes()).await;
+    assert!(answer.starts_with("HTTP/1.1 431"), "{answer:?}");
+
+    let long_ok = format!("SELECT length('{}')", "x".repeat(60_000));
+    assert_eq!(get(addr, &[("query", &long_ok)]).await.text(), "60000\n");
+    let too_long = format!(
+        "GET /?query={} HTTP/1.1\r\nHost: x\r\n\r\n",
+        "x".repeat(70_000)
+    );
+    let answer = raw(addr, too_long.into_bytes()).await;
+    assert!(
+        answer.starts_with("HTTP/1.1 414"),
+        "{}",
+        &answer[..answer.len().min(80)]
+    );
+}
+
+/// Review I7: parameters ClickHouse clients send that are not settings are not
+/// forwarded (each would be `115 UNKNOWN_SETTING` if it were).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reserved_parameters_are_not_settings() {
+    let house = house("reserved", |_| {}).await;
+    let addr = house.local_addr();
+    let response = get(
+        addr,
+        &[
+            ("query", "SELECT 1"),
+            ("quota_key", "q"),
+            ("role", "r"),
+            ("stacktrace", "1"),
+            ("client_protocol_version", "54460"),
+            ("close_session", "0"),
+        ],
+    )
+    .await;
+    assert_eq!(response.status, 200, "{}", response.text());
+}
+
+/// Review M6: query parameters are percent-decoded byte for byte, and a broken
+/// escape is refused rather than guessed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn percent_decoding_is_strict() {
+    let house = house("percent", |_| {}).await;
+    let addr = house.local_addr();
+    let exact = call(
+        addr,
+        "GET",
+        "/?query=SELECT%20%7Bp%3AString%7D&param_p=%C3%A9%2B%20x".to_string(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(exact.text(), "é+ x\n");
+    let broken = call(
+        addr,
+        "GET",
+        "/?query=SELECT%201&param_p=%+5".to_string(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .await;
+    assert_eq!(
+        broken.header("X-ClickHouse-Exception-Code"),
+        Some("36"),
+        "{}",
+        broken.text()
+    );
+    assert_eq!(broken.status, 400);
+}
+
+/// Review M11: `Keep-Alive` names the configured timeout.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn keep_alive_header_uses_the_config() {
+    let house = house("keep-alive-header", |config| {
+        config.keep_alive = Duration::from_secs(3)
+    })
+    .await;
+    let addr = house.local_addr();
+    // `request` sends `Connection: close`, so ask on a kept connection.
+    let answer = raw(addr, format!("GET {} HTTP/1.1\r\nHost: x\r\n\r\nGET /ping HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", target(&[("query", "SELECT 1")])).into_bytes()).await;
+    assert!(
+        answer
+            .to_ascii_lowercase()
+            .contains("keep-alive: timeout=3"),
+        "{answer}"
+    );
 }

@@ -65,12 +65,16 @@ sha2 = "0.10"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# HS1 Task 3's HTTP/1.1 server parses request heads with httparse rather than
-# serving through hyper/axum: ClickHouse streams `X-ClickHouse-Progress` header
-# lines while a query runs, which needs a header block the server keeps open
-# (plan ruling R3.1). 1.10.1 is the line the engine workspace already locks.
-# MIT OR Apache-2.0.
-httparse = "1.10"
+# The House HTTP interface is served by hyper's HTTP/1.1 connection (HS1 Task 3
+# review, decision 1; ruling R3.8): hyper owns request framing (Content-Length,
+# chunked, HTTP/1.0, pipelining, Expect: 100-continue), with a streaming body of
+# the House's own. 1.11 / 0.1.20 are the lines the engine workspace already
+# locks. MIT.
+hyper = { version = "1.11", features = ["server", "http1"] }
+hyper-util = { version = "0.1.20", features = ["tokio"] }
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
 # Basic credentials on the House HTTP interface. 0.22.1 is already in this
 # workspace's lock. MIT OR Apache-2.0.
 base64 = "0.22"

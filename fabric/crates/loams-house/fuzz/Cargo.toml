@@ -1,0 +1,24 @@
+# `cargo +nightly fuzz run request_parse` from `fabric/crates/loams-house/` (HS1
+# Task 3 review I8). Its own workspace, outside the fabric build; the same body
+# runs on stable as `tests/request_fuzz.rs`.
+[package]
+name = "loams-house-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+loams-house = { path = ".." }
+
+[[bin]]
+name = "request_parse"
+path = "fuzz_targets/request_parse.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

@@ -27,30 +27,51 @@ pub const DISPLAY_NAME: &str = "loams-house";
 pub struct HouseConfig {
     /// The HTTP listener: loopback only until TLS and the verifier (D111, HS1 Task 20).
     pub listen: SocketAddr,
-    /// The development users (FL2 Task 2's `UserMap`); Task 20 replaces them.
+    /// The development users (FL2 Task 2's `UserMap`); Task 20 replaces them. None
+    /// by default (Task 3 review M9): a House with no users serves no queries.
     pub users: Vec<UserMap>,
-    /// Where `wait_end_of_query = 1` spools results past `default_buffer_size`.
+    /// Where `wait_end_of_query = 1` spools results past [`SPOOL_IN_MEMORY`]: a data
+    /// directory on disk, never the RAM-backed `/tmp` by default (review I2).
     pub tmp_dir: PathBuf,
-    /// The most a `wait_end_of_query = 1` response may spool: 1 GiB (HS1 Task 3).
+    /// The most one `wait_end_of_query = 1` response may spool: 1 GiB.
     pub wait_end_of_query_max_bytes: u64,
-    /// How much output is held before the response starts, unless `buffer_size`
-    /// says otherwise: ClickHouse's 1 MiB. A statement that fails inside it still
-    /// gets a proper error status.
+    /// The most all spools together may hold at once (review I2): 8 GiB.
+    pub spool_budget_bytes: u64,
+    /// How much output is held before the response head goes out, unless
+    /// `buffer_size` says otherwise (clamped to [`BUFFER_SIZE_RANGE`]): ClickHouse's
+    /// 1 MiB. A statement that fails inside it still gets a proper error status.
     pub default_buffer_size: usize,
     /// The most bytes of a POST body read as statement text: ClickHouse's
     /// `max_query_size` default, 256 KiB. Data after an `INSERT … FORMAT` line is
     /// streamed, not counted.
     pub max_query_size: usize,
-    /// The least time between two `X-ClickHouse-Progress` headers, unless
-    /// `http_headers_progress_interval_ms` says otherwise: 100 ms.
-    pub progress_interval: Duration,
-    /// How long an idle keep-alive connection is kept: 10 s, as ClickHouse.
+    /// How long a connection may wait for the next bytes of a request (or between
+    /// requests) before it is closed: ClickHouse's `http_receive_timeout`, 30 s.
+    pub receive_timeout: Duration,
+    /// How long a write to the client may stall: ClickHouse's `http_send_timeout`.
+    pub send_timeout: Duration,
+    /// How long a request head may take to arrive.
+    pub header_read_timeout: Duration,
+    /// Keep-alive between requests (`Keep-Alive: timeout=…`); zero turns it off.
     pub keep_alive: Duration,
+    /// Connections served at once; more wait in the listen backlog (review I1).
+    pub max_connections: usize,
+    /// Request header fields at most; more answer `431` (review M5).
+    pub max_headers: usize,
+    /// The largest request head hyper buffers.
+    pub max_head_bytes: usize,
     /// The version rendered into errors.
     pub version: String,
-    /// How far a compressed request body may expand (Task 3 review I3).
+    /// How far a compressed request body may expand (review I3).
     pub body_limits: crate::compress::BodyLimits,
 }
+
+/// The bytes a `wait_end_of_query` spool keeps in memory before it moves to a file
+/// (review I2: a constant, not the client's `buffer_size`).
+pub const SPOOL_IN_MEMORY: usize = 1024 * 1024;
+
+/// `buffer_size` is clamped to this (review I2).
+pub const BUFFER_SIZE_RANGE: std::ops::RangeInclusive<usize> = 1..=16 * 1024 * 1024;
 
 impl Default for HouseConfig {
     fn default() -> Self {
@@ -58,13 +79,19 @@ impl Default for HouseConfig {
             listen: DEFAULT_LISTEN
                 .parse()
                 .unwrap_or_else(|_| SocketAddr::from(([127, 0, 0, 1], 8123))),
-            users: vec![UserMap::dev("default", "", 0, false)],
-            tmp_dir: std::env::temp_dir(),
+            users: Vec::new(),
+            tmp_dir: PathBuf::from("loams-house-data").join("spool"),
             wait_end_of_query_max_bytes: 1024 * 1024 * 1024,
+            spool_budget_bytes: 8 * 1024 * 1024 * 1024,
             default_buffer_size: 1024 * 1024,
             max_query_size: 256 * 1024,
-            progress_interval: Duration::from_millis(100),
+            receive_timeout: Duration::from_secs(30),
+            send_timeout: Duration::from_secs(30),
+            header_read_timeout: Duration::from_secs(30),
             keep_alive: Duration::from_secs(10),
+            max_connections: 1024,
+            max_headers: 100,
+            max_head_bytes: 1024 * 1024,
             version: CLICKHOUSE_VERSION.to_string(),
             body_limits: crate::compress::BodyLimits::default(),
         }
@@ -160,6 +187,27 @@ mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    fn defaults_have_no_users_and_no_tmpfs_spool() {
+        let config = HouseConfig::default();
+        assert!(config.users.is_empty(), "review M9");
+        assert!(!config.tmp_dir.starts_with("/tmp"), "review I2");
+    }
+
+    #[test]
+    fn config_debug_redacts_credentials() {
+        let config = HouseConfig {
+            users: vec![UserMap::dev("alice", "secret", 1, false)],
+            ..HouseConfig::default()
+        };
+        let digest = config.users[0].password_sha256.clone();
+        let shown = format!("{config:?}");
+        assert!(
+            !shown.contains(&digest) && !shown.contains("secret"),
+            "{shown}"
+        );
     }
 
     #[test]
