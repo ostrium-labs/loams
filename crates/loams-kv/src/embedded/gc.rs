@@ -288,8 +288,11 @@ fn collect(core: &Core, safe_point: Ts) -> Result<(u64, u64), redb::Error> {
                 deleted += 1;
             }
             if writes == 0 {
+                // Rounds may overlap (the GC thread and `gc_once`): the
+                // persisted safe point never moves back.
                 let mut oracle = write.open_table(ORACLE)?;
-                oracle.insert(GC_SAFE_POINT, safe_point.0)?;
+                let stored = oracle.get(GC_SAFE_POINT)?.map_or(0, |g| g.value());
+                oracle.insert(GC_SAFE_POINT, stored.max(safe_point.0))?;
             }
             scanned < batch
         };
@@ -365,5 +368,43 @@ pub(crate) fn spawn(shared: Weak<Shared>, interval: Duration) {
         });
     if let Err(e) = started {
         tracing::warn!(error = %e, "the embedded store's GC thread did not start");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use redb::ReadableDatabase;
+
+    use super::*;
+    use crate::EmbeddedConfig;
+    use crate::testing::TempDir;
+
+    fn stored_safe_point(core: &Core) -> u64 {
+        let read = core.db.begin_read().expect("a read");
+        let oracle = read.open_table(ORACLE).expect("the oracle table");
+        oracle
+            .get(GC_SAFE_POINT)
+            .expect("read")
+            .map_or(0, |g| g.value())
+    }
+
+    /// Two overlapping rounds: the one that computed the older safe point
+    /// persists last. The persisted safe point stays at the newer one
+    /// (Task 23 review item 4).
+    #[tokio::test]
+    async fn overlapping_rounds_never_move_the_persisted_safe_point_back() {
+        let base = std::env::temp_dir();
+        let dir = TempDir::new_in(&base).expect("a directory");
+        let handle = Handle::open(EmbeddedConfig::new(dir.path().join("store.redb"), "gc"))
+            .await
+            .expect("a store");
+        let core = &handle.shared.core;
+        // Round A (newer safe point) persists first, round B (older) after.
+        collect(core, Ts(2_000)).expect("round A");
+        assert_eq!(stored_safe_point(core), 2_000);
+        collect(core, Ts(1_000)).expect("round B");
+        assert_eq!(stored_safe_point(core), 2_000, "never moved back");
+        collect(core, Ts(3_000)).expect("a later round");
+        assert_eq!(stored_safe_point(core), 3_000);
     }
 }
