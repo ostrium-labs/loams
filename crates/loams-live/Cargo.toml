@@ -21,9 +21,9 @@ crc.workspace = true
 data-encoding.workspace = true
 futures.workspace = true
 loams-live-proto.workspace = true
-# The store seam (LV1 Task 20). `tikv` until Task 23 makes the backend a
-# feature of the binary.
-loams-kv = { workspace = true, features = ["tikv"] }
+# The store seam (LV1 Task 20): the embedded store always, TiKV with the
+# `tikv` feature (LV1 plan Task 23).
+loams-kv.workspace = true
 # The OS random source for document ids (rand's OsRng).
 rand.workspace = true
 # The idempotency key hash (design §20 §4.3).
@@ -34,6 +34,12 @@ tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 
+[features]
+# Live on TiKV: `StoreConfig::Tikv`, `LiveConfig::{on_tikv, with_tikv}` and
+# the TiKV cases of `live_test!` (LV1 plan Task 23). It pulls in the
+# git-pinned tikv-client.
+tikv = ["loams-kv/tikv"]
+
 [dev-dependencies]
 # The generated LiveServiceClient over connect-rust's HTTP client (Task 12's
 # service tests).
@@ -41,6 +47,8 @@ connectrpc = { workspace = true, features = ["axum", "client"] }
 loams-live-proto = { workspace = true, features = ["client"] }
 # The lost-acknowledgement tests put a FaultPlan on the store.
 loams-kv = { workspace = true, features = ["tikv", "faults"] }
+# The suites run the TiKV cases too (with LOAMS_TEST_PD).
+loams-live = { path = ".", features = ["tikv"] }
 proptest.workspace = true
 
 [lints]

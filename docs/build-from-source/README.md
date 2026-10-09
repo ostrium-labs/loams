@@ -58,6 +58,30 @@ The three platforms are in three different states, by decision of 2026-10-03
 [`docs/release/signing.md`](../release/signing.md) is the whole picture,
 including what is still blocked on a human with organisation access.
 
+## Cargo features of `loams`
+
+`cargo build -p loams` builds the **default** feature set:
+`es`, `flight`, `hnsw`, `live` and `qdrant`. **[verified]** — read from
+`crates/loams/Cargo.toml`; CI's `check` job asserts the default build has
+Live and no `tikv-client`.
+
+| Feature | Default | What it adds |
+|---|---|---|
+| `es` | yes | The Elasticsearch REST API (`--es-listen`). |
+| `flight` | yes | Arrow Flight SQL (`--flight-sql-listen`). |
+| `hnsw` | yes | The qdrant-edge HNSW engine for hot artifacts. |
+| `live` | yes | Loams Live (`--live-listen`, `--live-store embedded`) on the embedded store under `<data-dir>/live/`. No `tikv-client`. |
+| `qdrant` | yes | The Qdrant REST and gRPC APIs (`--qdrant-listen`). |
+| `live-tikv` | no | Live on TiKV as well: `--live-store tikv://<pd>[,<pd>]/<keyspace>` (and the deprecated `--live-pd`/`--live-keyspace`). Implies `live` and `tikv`, and pulls the git-pinned `tikv-client`. |
+| `tikv` | no | The TiKV metastore (`--meta tikv://…`), with its cluster GC loop. Pulls `tikv-client`. |
+| `durable`, `durable-mysql`, `durable-tikv` | no | Durable execution (`--durable-*`). |
+| `mysql-wire`, `pgwire`, `stream-grpc` | no | Optional listeners. |
+| `failpoints`, `cluster-tests` | no | Test-only. |
+
+A build without `live-tikv` refuses `--live-store tikv://…` ("needs a build
+with the live-tikv feature"), and ignores the deprecated `--live-pd` and
+`--live-keyspace` with a warning, running Live on the embedded store.
+
 ## The commands CI runs
 
 Both platform pages deliberately derive their build and test commands from

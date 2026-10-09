@@ -410,6 +410,12 @@ async fn loams_warm_posts_the_warm_request() {
             "--no-durable",
             "--no-es",
         ])
+        // Nor Live's (feature live, default port 7710; LV1 plan Task 23).
+        .args(if cfg!(feature = "live") {
+            &["--no-live"][..]
+        } else {
+            &[]
+        })
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()

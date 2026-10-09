@@ -1,9 +1,12 @@
 //! [`LiveConfig`]: one Loams Live app on a store (embedded or TiKV).
 
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use loams_kv::{StoreConfig, TikvConfig};
+#[cfg(feature = "tikv")]
+use loams_kv::TikvConfig;
+use loams_kv::{EmbeddedConfig, StoreConfig};
 
 use crate::session::SessionConfig;
 use crate::subs::SubsConfig;
@@ -16,6 +19,12 @@ pub const KEYSPACE_PREFIX: &str = "loams_live_";
 /// The journal shard count a new app gets (R1 plan Ruling 4, raised from 16
 /// to 64 by the owner, row T11-1; stored per app, row T10-1).
 pub const DEFAULT_JOURNAL_SHARDS: u16 = 64;
+
+/// Where Live's embedded store lives under a data directory:
+/// `<data_dir>/live/store.redb` (LV1 plan Ruling 4).
+pub fn store_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("live").join("store.redb")
+}
 
 /// Where the Live sync API listens by default (§20 §7.1).
 pub const DEFAULT_LISTEN: SocketAddr =
@@ -55,10 +64,23 @@ pub struct LiveConfig {
 }
 
 impl LiveConfig {
-    /// App `app` on the cluster whose PD endpoints are `pd`, in the keyspace
-    /// `loams_live_<app>`, with R1's default limits, served on
-    /// 127.0.0.1:7710 as node `1`.
-    pub fn new(pd: Vec<String>, app: &str) -> Result<Self, LiveError> {
+    /// App `app` on the default store: the embedded store of `data_dir`
+    /// ([`store_path`]), in the keyspace `loams_live_<app>`, with R1's
+    /// default limits, served on 127.0.0.1:7710 as node `1` (LV1 plan
+    /// Task 23).
+    pub fn new(data_dir: &Path, app: &str) -> Result<Self, LiveError> {
+        catalog::check_name("app", app)?;
+        Ok(LiveConfig::with_store(
+            app,
+            StoreConfig::Embedded(EmbeddedConfig::new(store_path(data_dir), keyspace_of(app))),
+        ))
+    }
+
+    /// App `app` on the TiKV cluster whose PD endpoints are `pd`, in the
+    /// keyspace `loams_live_<app>`, with the defaults of [`LiveConfig::new`]
+    /// (feature `tikv`).
+    #[cfg(feature = "tikv")]
+    pub fn on_tikv(pd: Vec<String>, app: &str) -> Result<Self, LiveError> {
         catalog::check_name("app", app)?;
         Ok(LiveConfig::with_tikv(
             app,
@@ -68,7 +90,8 @@ impl LiveConfig {
 
     /// App `app` on the TiKV handle `tikv` (whose keyspace and root the
     /// caller chose), with the defaults of [`LiveConfig::new`]. The name is
-    /// not checked.
+    /// not checked (feature `tikv`).
+    #[cfg(feature = "tikv")]
     pub fn with_tikv(app: &str, tikv: TikvConfig) -> Self {
         LiveConfig::with_store(app, StoreConfig::Tikv(tikv))
     }
@@ -113,17 +136,30 @@ mod tests {
     use crate::catalog::MAX_NAME_BYTES;
 
     #[test]
-    fn new_derives_the_keyspace_and_defaults() {
-        let config = LiveConfig::new(vec!["127.0.0.1:2379".into()], "chat")
-            .expect("chat is a valid app name");
+    fn new_defaults_to_the_embedded_store_of_the_data_dir() {
+        let config = LiveConfig::new(Path::new("/data"), "chat").expect("chat is a valid app name");
         assert_eq!(config.app, "chat");
         assert_eq!(config.store.keyspace(), "loams_live_chat");
-        let StoreConfig::Tikv(tikv) = &config.store else {
-            panic!("new configures TiKV until Task 23");
+        let StoreConfig::Embedded(store) = &config.store else {
+            panic!("new configures the embedded store (LV1 plan Task 23)");
         };
-        assert_eq!(tikv.pd, ["127.0.0.1:2379".to_string()]);
+        assert_eq!(store.path, Path::new("/data/live/store.redb"));
+        assert!(store.root.is_empty());
         assert_eq!(config.journal_shards, DEFAULT_JOURNAL_SHARDS);
         assert_eq!(config.limits, Limits::default());
+    }
+
+    #[cfg(feature = "tikv")]
+    #[test]
+    fn on_tikv_derives_the_keyspace() {
+        let config = LiveConfig::on_tikv(vec!["127.0.0.1:2379".into()], "chat")
+            .expect("chat is a valid app name");
+        let StoreConfig::Tikv(tikv) = &config.store else {
+            panic!("on_tikv configures TiKV");
+        };
+        assert_eq!(tikv.keyspace, "loams_live_chat");
+        assert_eq!(tikv.pd, ["127.0.0.1:2379".to_string()]);
+        assert!(LiveConfig::on_tikv(Vec::new(), "1bad").is_err());
     }
 
     #[test]
@@ -137,8 +173,11 @@ mod tests {
             matches!(&config.store, StoreConfig::Embedded(e) if e.keyspace == "loams_live_chat")
         );
         assert_eq!(config.journal_shards, DEFAULT_JOURNAL_SHARDS);
-        let tikv = LiveConfig::with_tikv("chat", TikvConfig::new(vec!["pd:2379".into()], "ks"));
-        assert!(matches!(&tikv.store, StoreConfig::Tikv(t) if t.keyspace == "ks"));
+        #[cfg(feature = "tikv")]
+        {
+            let tikv = LiveConfig::with_tikv("chat", TikvConfig::new(vec!["pd:2379".into()], "ks"));
+            assert!(matches!(&tikv.store, StoreConfig::Tikv(t) if t.keyspace == "ks"));
+        }
     }
 
     #[test]
@@ -150,7 +189,7 @@ mod tests {
     #[test]
     fn new_refuses_a_bad_app_name() {
         for bad in ["", "1chat", "chat-app", "chat app"] {
-            let err = LiveConfig::new(vec!["127.0.0.1:2379".into()], bad)
+            let err = LiveConfig::new(Path::new("/data"), bad)
                 .expect_err("a name must start with a letter");
             assert!(
                 matches!(err, LiveError::InvalidArgument(_)),
@@ -163,7 +202,7 @@ mod tests {
     fn new_accepts_the_longest_name_and_refuses_one_byte_more() {
         let longest = "a".repeat(MAX_NAME_BYTES);
         assert_eq!(
-            LiveConfig::new(Vec::new(), &longest)
+            LiveConfig::new(Path::new("/data"), &longest)
                 .expect("64 bytes is allowed")
                 .store
                 .keyspace(),
@@ -171,7 +210,7 @@ mod tests {
         );
         let too_long = "a".repeat(MAX_NAME_BYTES + 1);
         assert!(matches!(
-            LiveConfig::new(Vec::new(), &too_long),
+            LiveConfig::new(Path::new("/data"), &too_long),
             Err(LiveError::InvalidArgument(_))
         ));
     }

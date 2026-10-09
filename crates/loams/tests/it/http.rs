@@ -779,6 +779,12 @@ impl Dev {
                 "--no-durable",
                 "--no-es",
             ])
+            // Nor Live's (feature live, default port 7710; LV1 plan Task 23).
+            .args(if cfg!(feature = "live") {
+                &["--no-live"][..]
+            } else {
+                &[]
+            })
             .arg("--data-dir")
             .arg(dir.path())
             .env("RUST_LOG", "warn")
@@ -1093,6 +1099,12 @@ fn a_build_without_failpoints_refuses_to_arm_them() {
             "--no-durable",
             "--no-es",
         ])
+        // Nor Live's (feature live, default port 7710; LV1 plan Task 23).
+        .args(if cfg!(feature = "live") {
+            &["--no-live"][..]
+        } else {
+            &[]
+        })
         .arg("--data-dir")
         .arg(dir.path())
         .env("LOAMS_FAILPOINTS", "wal.after_put")
@@ -1325,6 +1337,12 @@ fn the_dev_binary_prints_the_flight_sql_line() {
             "--no-durable",
             "--no-es",
         ])
+        // Nor Live's (feature live, default port 7710; LV1 plan Task 23).
+        .args(if cfg!(feature = "live") {
+            &["--no-live"][..]
+        } else {
+            &[]
+        })
         .arg("--data-dir")
         .arg(dir.path())
         .env("RUST_LOG", "warn")

@@ -76,6 +76,13 @@ async fn dev_serves_durable_on_8001_style_port() {
             "--durable-listen",
         ])
         .arg(durable.to_string())
+        // Parallel servers must not share Live's port (feature live,
+        // default 7710; LV1 plan Task 23).
+        .args(if cfg!(feature = "live") {
+            &["--no-live"][..]
+        } else {
+            &[]
+        })
         .arg("--data-dir")
         .arg(dir.path())
         .env("RUST_LOG", "warn")

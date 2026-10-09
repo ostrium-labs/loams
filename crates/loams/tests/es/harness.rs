@@ -169,6 +169,11 @@ impl Es {
             "--no-flight-sql",
             "--no-qdrant",
         ]);
+        // Parallel servers must not share Live's port (feature live, default
+        // 7710; LV1 plan Task 23).
+        if cfg!(feature = "live") {
+            command.arg("--no-live");
+        }
         if es {
             command.args(["--es-listen", "127.0.0.1:0"]);
         } else {

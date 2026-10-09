@@ -1,18 +1,22 @@
-//! `loams dev` with Loam Live (R1 plan Task 12): the sync API listens on
+//! `loams dev` with Loams Live (R1 plan Task 12): the sync API listens on
 //! loopback beside the HTTP API, and its TiKV handle is swept by the
 //! metastore's GC loop when both are on one cluster, else by its own loop.
-//! The TiKV tests use a random root in the test keyspaces and skip without
-//! `LOAMS_TEST_PD`; on an embedded store Live needs no cluster and no
-//! cluster GC loop (LV1 row T20-9).
+//! The TiKV tests (feature `live-tikv`) use a random root in the test
+//! keyspaces and skip without `LOAMS_TEST_PD`; on an embedded store Live
+//! needs no cluster and no cluster GC loop (LV1 row T20-9).
 #![cfg(feature = "live")]
 
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use loams::{MetaBackend, Server, ServerConfig};
+#[cfg(feature = "live-tikv")]
+use loams::MetaBackend;
+use loams::{Server, ServerConfig};
+#[cfg(feature = "live-tikv")]
 use loams_tikv::testing::{self, TEST_LIVE, TEST_META, TestCluster};
 use tempfile::TempDir;
 
+#[cfg(feature = "live-tikv")]
 fn config(dir: &TempDir, cluster: &TestCluster) -> ServerConfig {
     let mut config = ServerConfig::new(dir.path());
     config.listen = SocketAddr::from(([127, 0, 0, 1], 0));
@@ -55,6 +59,7 @@ async fn dev_serves_live_on_an_embedded_store() {
 }
 
 /// On the openraft metastore, Live runs its own cluster GC loop.
+#[cfg(feature = "live-tikv")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn dev_serves_live_beside_the_http_api() {
     let Some(cluster) = testing::cluster().await else {
@@ -69,6 +74,7 @@ async fn dev_serves_live_beside_the_http_api() {
 
 /// On a TiKV metastore of the same cluster, the metastore's GC loop sweeps
 /// Live's handle (Carry T6: `GcConfig.sweep`).
+#[cfg(feature = "live-tikv")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn dev_on_tikv_sweeps_live_with_the_metastore_gc_loop() {
     let Some(cluster) = testing::cluster().await else {

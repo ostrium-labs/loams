@@ -115,7 +115,10 @@ The list this short is a consequence of the server's `reqwest` being
 ### The feature set, and what is not in the package
 
 Packages are built from the **default** feature set —
-`default = ["es", "flight", "hnsw", "qdrant"]` — with no extra flags.
+`default = ["es", "flight", "hnsw", "live", "qdrant"]` — with no extra flags.
+Since LV1 Task 23 that includes Loams Live on its embedded store: `loams dev`
+and `loams standalone` serve the Live API on loopback (127.0.0.1:7710) with
+data under `<data-dir>/live/`, unless started with `--no-live`.
 **[verified]** — read from `crates/loams/Cargo.toml`.
 
 That means these are **not** in the packaged binary, and a flag for one of them
@@ -124,7 +127,7 @@ will not work:
 | Feature | Not in the package because |
 |---|---|
 | `durable`, `durable-mysql`, `durable-tikv` | Opt-in, and the crate comment says it "rebuilds about 480 crates". It also pulls an embedded Resonate server, whose SQLite build would add a C dependency the `depends` list above does not declare. |
-| `tikv` | Opt-in; pulls a git-pinned `tikv-client` that the default build must not carry. |
+| `tikv`, `live-tikv` | Opt-in; pull a git-pinned `tikv-client` that the default build must not carry. A packaged binary refuses `--live-store tikv://…`. |
 | `mysql-wire`, `pgwire` | Opt-in; add a DataFusion build. |
 | `stream-grpc` | Opt-in. |
 | `failpoints` | Release builds must not contain failpoints. |

@@ -24,7 +24,9 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use loams_kv::testing::{EMBEDDED_KEYSPACE, TEST_LIVE, TMPDIR_ENV, TempDir, random_root};
+#[cfg(feature = "tikv")]
+use loams_kv::testing::TEST_LIVE;
+use loams_kv::testing::{EMBEDDED_KEYSPACE, TMPDIR_ENV, TempDir, random_root};
 use loams_kv::{Backend, EmbeddedConfig, Store, StoreConfig};
 
 use crate::LiveConfig;
@@ -74,14 +76,23 @@ impl TestStore {
     }
 
     /// A TiKV store on `TEST_LIVE` under a fresh root, or `None` (after a
-    /// `skipped:` line) when `LOAMS_TEST_PD` is unset.
+    /// `skipped:` line) when `LOAMS_TEST_PD` is unset, or in a build without
+    /// the `tikv` feature.
     ///
     /// # Panics
     ///
     /// When the variable is set and the cluster does not answer.
     pub async fn tikv() -> Option<Self> {
-        let cluster = loams_kv::testing::cluster().await?;
-        Some(Self::open(StoreConfig::Tikv(cluster.config(TEST_LIVE)), None).await)
+        #[cfg(feature = "tikv")]
+        {
+            let cluster = loams_kv::testing::cluster().await?;
+            Some(Self::open(StoreConfig::Tikv(cluster.config(TEST_LIVE)), None).await)
+        }
+        #[cfg(not(feature = "tikv"))]
+        {
+            eprintln!("skipped: the TiKV case needs loams-live's tikv feature");
+            None
+        }
     }
 
     async fn open(config: StoreConfig, dir: Option<Arc<TempDir>>) -> Self {
@@ -99,6 +110,7 @@ impl TestStore {
                 root: random_root(),
                 ..c.clone()
             }),
+            #[cfg(feature = "tikv")]
             StoreConfig::Tikv(c) => {
                 let mut c = c.clone();
                 c.root = random_root();

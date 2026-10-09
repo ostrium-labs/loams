@@ -80,7 +80,7 @@ ulid.workspace = true
 url.workspace = true
 
 [features]
-default = ["es", "flight", "hnsw", "qdrant"]
+default = ["es", "flight", "hnsw", "live", "qdrant"]
 # Serve the Elasticsearch REST API (plan M1.5; `--es-listen`).
 es = ["dep:loams-es"]
 # The TiKV metastore (R1 plan Task 6; `--meta tikv://…` on `dev` and
@@ -88,10 +88,15 @@ es = ["dep:loams-es"]
 # ruling T7-3): it pulls in the git-pinned tikv-client (row R4), which the
 # default build must not. CI's TiKV jobs build with `--features tikv`.
 tikv = ["dep:loams-meta-tikv", "dep:loams-tikv"]
-# Loam Live (R1 plan Task 12): the `loam.live.v1` sync API on its own
-# loopback listener (`--live-*` on `dev` and `standalone`). Off by default
-# and enables `tikv` (owner ruling T8-2).
-live = ["tikv", "dep:loams-live"]
+# Loams Live (R1 plan Task 12): the `loams.live.v1` sync API on its own
+# loopback listener (`--live-*` on `dev` and `standalone`), on the embedded
+# store under `<data_dir>/live/`. In the default set, with no tikv-client
+# (LV1 plan Task 23, design §45 §8; reverses owner ruling T8-2 for the
+# embedded part). The embedded store is always built into loams-kv.
+live = ["dep:loams-live"]
+# Live on TiKV too: `--live-store tikv://<pd>[,<pd>]/<keyspace>` (and the
+# deprecated `--live-pd`/`--live-keyspace`), with its cluster GC loop.
+live-tikv = ["live", "tikv", "loams-live/tikv"]
 # Serve Arrow Flight SQL (Task 12; `--flight-sql-listen`).
 flight = []
 # Serve the Qdrant REST and gRPC APIs (plan M1.4; `--qdrant-listen`).

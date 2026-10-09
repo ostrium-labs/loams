@@ -331,16 +331,24 @@ jobs:
       # feature (off by default), so lint that code too, and keep the default
       # build free of the git-pinned tikv-client.
       - name: clippy (loams with the tikv and optional listener features)
-        run: cargo clippy -p loams --all-targets --features tikv,durable-tikv,stream-grpc,pgwire,mysql-wire --locked -- -D warnings
+        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire --locked -- -D warnings
+      - name: clippy (loams-live without TiKV, as the default build has it)
+        run: cargo clippy -p loams-live --lib --locked -- -D warnings
       - name: clippy (loams-durable with the native TiKV store)
         run: cargo clippy -p loams-durable --all-targets --features tikv --locked -- -D warnings
       - name: clippy (loams-safekeeper with the service, the TiKV store and the NVMe store)
         run: cargo clippy -p loams-safekeeper --all-targets --features server,tikv,nvme --locked -- -D warnings
-      - name: loams's default build has no tikv-client
+      # LV1 plan Task 23 (default_build_has_no_tikv_client): Live is in the
+      # default build on the embedded store; TiKV for Live is `live-tikv`.
+      - name: loams's default build has Live and no tikv-client
         run: |
-          if cargo tree -p loams -e normal --prefix none --locked | grep -q '^tikv-client v'; then
-            echo "loams's default features depend on tikv-client (owner ruling T7-3)"; exit 1
+          tree=$(cargo tree -p loams -e normal --prefix none --locked)
+          if grep -q '^tikv-client v' <<< "$tree"; then
+            echo "loams's default features depend on tikv-client (owner ruling T7-3, LV1 plan Task 23)"; exit 1
           fi
+          grep -q '^loams-live v' <<< "$tree" || {
+            echo "loams's default build lacks Loams Live (the live feature, LV1 plan Task 23)"; exit 1
+          }
       # Intra-doc links must resolve in every crate that names its peers, or a
       # renamed type leaves a broken link nobody notices (#133). The gateway's
       # module doc holds its divergences from Qdrant (M1.4 Task 11).
@@ -717,6 +725,7 @@ jobs:
         run: |
           cargo test ${{ steps.packages.outputs.args }} --locked --no-run
           cargo test -p loams --features tikv --test meta_tikv --locked --no-run
+          cargo test -p loams --features live-tikv --test live --locked --no-run
           cargo test -p loams-durable --features tikv --lib --test tikv --locked --no-run
           cargo test -p loams-safekeeper --features tikv --test tikv --locked --no-run
       - uses: actions/cache@v6
@@ -736,6 +745,7 @@ jobs:
         run: |
           cargo test ${{ steps.packages.outputs.args }} --locked
           cargo test -p loams --features tikv --test meta_tikv --locked
+          cargo test -p loams --features live-tikv --test live --locked
           cargo test -p loams-durable --features tikv --lib --test tikv --locked
           cargo test -p loams-safekeeper --features tikv --test tikv --locked
       - name: playground logs

@@ -44,7 +44,7 @@ pub use loams_live_proto::loams::live::v1 as pb;
 pub use catalog::{IndexDef, IndexSpec, TableDef};
 pub use config::{
     DEFAULT_JANITOR_INTERVAL, DEFAULT_JOURNAL_SHARDS, DEFAULT_LISTEN, KEYSPACE_PREFIX, LiveConfig,
-    check_listen, keyspace_of,
+    check_listen, keyspace_of, store_path,
 };
 pub use docs::{Doc, IndexRange, Order, Reads, WriteRecord};
 pub use error::LiveError;
@@ -53,7 +53,7 @@ pub use journal::{Batch, Checkpoint, Janitor, JanitorReport, Journal, Tailer};
 pub use keys::{AppKeys, KeyRange};
 pub use limits::Limits;
 /// The store a [`LiveConfig`] names (LV1 row T20-9).
-pub use loams_kv::{EmbeddedConfig, StoreConfig};
+pub use loams_kv::{Backend, EmbeddedConfig, StoreConfig};
 pub use readset::{ReadSetIndex, SubId};
 pub use service::{LiveHandle, LiveServer};
 pub use session::{ClientState, SessionConfig, Sessions, Version};

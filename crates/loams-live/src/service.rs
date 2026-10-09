@@ -1,5 +1,5 @@
-//! The Loam Live sync service (design §20 §7, D121; R1 plan Task 12):
-//! [`LiveServer`] serves `loam.live.v1.LiveService` over connect-rust and
+//! The Loams Live sync service (design §20 §7, D121; R1 plan Task 12):
+//! [`LiveServer`] serves `loams.live.v1.LiveService` over connect-rust and
 //! axum on its own loopback listener, with one [`Subscriptions`] manager, one
 //! journal janitor and the [`Sessions`] of the app.
 //!
@@ -30,7 +30,7 @@ use crate::{Janitor, LiveConfig, LiveError, Runner, check_listen, deploy};
 /// How long stopping waits for in-flight requests before aborting them.
 const STOP_GRACE: Duration = Duration::from_secs(10);
 
-/// Starts Loam Live servers.
+/// Starts Loams Live servers.
 #[derive(Debug)]
 pub struct LiveServer;
 
@@ -117,7 +117,7 @@ impl LiveServer {
         tracing::warn!(
             %addr,
             app = %config.app,
-            "Loam Live API is unauthenticated (D111): Query, Mutate and Deploy are open to \
+            "Loams Live API is unauthenticated (D111): Query, Mutate and Deploy are open to \
              every local process; it listens on loopback only"
         );
         Ok(LiveHandle {

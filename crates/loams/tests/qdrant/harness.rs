@@ -163,6 +163,10 @@ impl Qd {
             "--no-flight-sql",
             "--no-durable",
         ]);
+        // Nor Live's (feature live, default port 7710; LV1 plan Task 23).
+        if cfg!(feature = "live") {
+            command.arg("--no-live");
+        }
         if qdrant {
             command.args([
                 "--qdrant-listen",

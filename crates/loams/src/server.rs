@@ -267,7 +267,7 @@ pub struct ServerConfig {
     /// answer. Reflection publishes the schema of the API to anyone who can
     /// reach the port, so it is a development convenience, not a default.
     pub reflection: bool,
-    /// Loam Live (R1 plan Task 12, feature `live`): the `loam.live.v1` sync
+    /// Loams Live (R1 plan Task 12, feature `live`): the `loams.live.v1` sync
     /// API on its own loopback listener, on `dev` and `standalone`. `None`
     /// (the default here) serves no Live API; the CLI sets it unless
     /// `--no-live`.
@@ -350,7 +350,7 @@ impl ServerConfig {
         if let Some(live) = &self.live {
             if self.cluster.is_some() {
                 return Err(ServerError::Config(
-                    "Loam Live runs on dev and standalone only in R1; pass --no-live".to_string(),
+                    "Loams Live runs on dev and standalone only in R1; pass --no-live".to_string(),
                 ));
             }
             if loams_live::check_listen(live.listen).is_err() {
@@ -457,9 +457,9 @@ pub enum ServerError {
          until the unified auth plan (D111)"
     )]
     LiveListenNotLoopback { addr: SocketAddr },
-    /// Loam Live could not start (R1 plan Task 12).
+    /// Loams Live could not start (R1 plan Task 12).
     #[cfg(feature = "live")]
-    #[error("Loam Live: {0}")]
+    #[error("Loams Live: {0}")]
     Live(loams_live::LiveError),
     #[error("cache: {0}")]
     Cache(#[from] loams_cache::CacheError),
@@ -634,7 +634,7 @@ pub struct Server {
     /// The cluster MVCC GC loop the TiKV metastore runs.
     #[cfg(feature = "tikv")]
     tikv_gc: Option<TikvGc>,
-    /// Loam Live, when configured.
+    /// Loams Live, when configured.
     #[cfg(feature = "live")]
     live: Option<LiveRuntime>,
     /// The metastore as the trait object every component holds.
@@ -679,7 +679,7 @@ struct TikvGc {
 #[cfg(feature = "tikv")]
 impl TikvGc {
     /// Starts the GC loop on the metastore's handle. The loop sweeps its own
-    /// handle's commit tokens and those of `sweep`: Loam Live's handle when
+    /// handle's commit tokens and those of `sweep`: Loams Live's handle when
     /// Live runs in the process on the same cluster (R1 plan Task 12).
     fn start(meta: &loams_meta_tikv::TikvMeta, sweep: Sweep) -> Result<Self, ServerError> {
         Self::spawn(meta.tikv().clone(), sweep)
@@ -706,7 +706,7 @@ impl TikvGc {
     }
 }
 
-/// Further TiKV handles the metastore's GC loop sweeps (Loam Live's).
+/// Further TiKV handles the metastore's GC loop sweeps (Loams Live's).
 #[cfg(feature = "tikv")]
 type Sweep = Vec<loams_tikv::Tikv>;
 /// Without TiKV there is nothing to sweep.
@@ -715,7 +715,7 @@ type Sweep = Vec<loams_tikv::Tikv>;
 struct Sweep;
 
 /// Nothing beside the metastore's own handle to sweep.
-#[cfg(not(feature = "live"))]
+#[cfg(not(feature = "live-tikv"))]
 fn no_sweep() -> Sweep {
     #[cfg(feature = "tikv")]
     let sweep = Vec::new();
@@ -724,12 +724,15 @@ fn no_sweep() -> Sweep {
     sweep
 }
 
-/// A running Loam Live server and, when no metastore GC loop covers its
+/// A running Loams Live server and, when no metastore GC loop covers its
 /// cluster, its own cluster GC loop (R1 plan Task 12).
 #[cfg(feature = "live")]
 #[derive(Debug)]
 struct LiveRuntime {
     handle: loams_live::LiveHandle,
+    /// Live's own cluster GC loop (a TiKV store not covered by the
+    /// metastore's); the embedded store collects its own versions.
+    #[cfg(feature = "live-tikv")]
     gc: Option<TikvGc>,
 }
 
@@ -737,6 +740,7 @@ struct LiveRuntime {
 impl LiveRuntime {
     /// Starts Live; with `own_gc`, a cluster GC loop on Live's handle too
     /// (the openraft metastore, or a TiKV metastore on another cluster).
+    #[cfg_attr(not(feature = "live-tikv"), allow(unused_variables))]
     async fn start(config: loams_live::LiveConfig, own_gc: bool) -> Result<Self, ServerError> {
         let handle = loams_live::LiveServer::start(config, CancellationToken::new())
             .await
@@ -747,8 +751,8 @@ impl LiveRuntime {
                 err => ServerError::Live(err),
             })?;
         // Only a TiKV store needs the cluster GC loop.
-        let tikv = handle.store().as_tikv().cloned();
-        let gc = match tikv {
+        #[cfg(feature = "live-tikv")]
+        let gc = match handle.store().as_tikv().cloned() {
             Some(tikv) if own_gc => match TikvGc::spawn(tikv, Vec::new()) {
                 Ok(gc) => Some(gc),
                 Err(err) => {
@@ -758,11 +762,16 @@ impl LiveRuntime {
             },
             _ => None,
         };
-        Ok(LiveRuntime { handle, gc })
+        Ok(LiveRuntime {
+            handle,
+            #[cfg(feature = "live-tikv")]
+            gc,
+        })
     }
 
     async fn stop(self) {
         self.handle.stop().await;
+        #[cfg(feature = "live-tikv")]
         if let Some(gc) = self.gc {
             gc.stop().await;
         }
@@ -771,7 +780,7 @@ impl LiveRuntime {
 
 /// Whether two PD endpoint lists name one cluster (the same endpoints, in
 /// any order, with or without `http://`).
-#[cfg(feature = "live")]
+#[cfg(feature = "live-tikv")]
 fn same_cluster(a: &[String], b: &[String]) -> bool {
     let norm = |pd: &[String]| {
         pd.iter()
@@ -1036,7 +1045,7 @@ impl Server {
         started
     }
 
-    /// `dev` or `standalone` with Loam Live: Live starts first, so the
+    /// `dev` or `standalone` with Loams Live: Live starts first, so the
     /// metastore's GC loop can sweep its handle when both are on one cluster
     /// (R1 plan Task 12).
     #[cfg(feature = "live")]
@@ -1044,6 +1053,7 @@ impl Server {
         {
             let live = match config.live.clone() {
                 Some(live) => {
+                    #[cfg(feature = "live-tikv")]
                     let covered = matches!(
                         &config.meta,
                         MetaBackend::Tikv(meta) if matches!(
@@ -1051,15 +1061,20 @@ impl Server {
                             loams_live::StoreConfig::Tikv(t) if same_cluster(&meta.tikv.pd, &t.pd)
                         )
                     );
+                    #[cfg(not(feature = "live-tikv"))]
+                    let covered = false;
                     Some(LiveRuntime::start(live, !covered).await?)
                 }
                 None => None,
             };
+            #[cfg(feature = "live-tikv")]
             let sweep: Sweep = live
                 .iter()
                 .filter(|l| l.gc.is_none())
                 .filter_map(|l| l.handle.store().as_tikv().cloned())
                 .collect();
+            #[cfg(not(feature = "live-tikv"))]
+            let sweep = no_sweep();
             match Self::start_single(config, sweep).await {
                 Ok(mut server) => {
                     server.live = live;
@@ -1928,27 +1943,31 @@ impl Server {
         self.collections.clone()
     }
 
-    /// The address the Loam Live sync API listens on, when it runs.
+    /// The address the Loams Live sync API listens on, when it runs.
     #[cfg(feature = "live")]
     pub fn live_addr(&self) -> Option<SocketAddr> {
         self.live.as_ref().map(|live| live.handle.addr)
     }
 
-    /// Loam Live's subscription counters, when it runs; `missed_invalidations`
+    /// Loams Live's subscription counters, when it runs; `missed_invalidations`
     /// is `live_missed_invalidation_total` (R1 plan row T12-8).
     #[cfg(feature = "live")]
     pub fn live_stats(&self) -> Option<loams_live::subs::SubsStats> {
         self.live.as_ref().map(|live| live.handle.stats())
     }
 
-    /// Whether Loam Live's TiKV handle is swept by the metastore's GC loop
+    /// Whether Loams Live's TiKV handle is swept by the metastore's GC loop
     /// (`true`), or Live runs its own GC (`false`: its own cluster GC loop,
     /// or the embedded store's GC), or Live is off (`None`).
     #[cfg(feature = "live")]
     pub fn live_swept_by_metastore_gc(&self) -> Option<bool> {
-        self.live
+        #[cfg(feature = "live-tikv")]
+        return self
+            .live
             .as_ref()
-            .map(|live| live.gc.is_none() && live.handle.store().as_tikv().is_some())
+            .map(|live| live.gc.is_none() && live.handle.store().as_tikv().is_some());
+        #[cfg(not(feature = "live-tikv"))]
+        self.live.as_ref().map(|_| false)
     }
 
     /// The address Flight SQL listens on, when it does.
@@ -2003,7 +2022,7 @@ impl Server {
         &self.writer
     }
 
-    /// Stops Loam Live (ending its sessions), then the Qdrant and Elasticsearch
+    /// Stops Loams Live (ending its sessions), then the Qdrant and Elasticsearch
     /// gateways (waiting up to 10 s for their requests), stops accepting
     /// requests, stops Flight SQL, stops the durable server (D1: before anything
     /// it may call into), stops the collection
@@ -2018,7 +2037,7 @@ impl Server {
     /// metastore routes keep serving until the replica stops (Task 11
     /// rule 4).
     pub async fn shutdown(self) -> Result<(), ServerError> {
-        // Loam Live's sessions end first; its own GC loop, if any, with it.
+        // Loams Live's sessions end first; its own GC loop, if any, with it.
         #[cfg(feature = "live")]
         if let Some(live) = self.live {
             live.stop().await;
