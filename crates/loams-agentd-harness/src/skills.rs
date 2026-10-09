@@ -171,32 +171,21 @@ fn discover_at(harness: HarnessId, cwd: &Path, home: &Path) -> Result<Vec<Skill>
             roots.push((config.join("commands"), String::new()));
             roots.push((config.join("skills"), String::new()));
             // Only installed plugin locations; never crawl caches or marketplaces.
-            if let Ok(bytes) = std::fs::read(config.join("plugins/installed_plugins.json")) {
-                if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
-                    if let Some(plugins) = value.get("plugins").and_then(|v| v.as_object()) {
-                        for (id, installs) in plugins {
-                            let namespace = id.split('@').next().unwrap_or(id);
-                            for install in installs.as_array().into_iter().flatten() {
-                                if let Some(project) =
-                                    install.get("projectPath").and_then(|v| v.as_str())
-                                {
-                                    if !cwd.starts_with(project) {
-                                        continue;
-                                    }
-                                }
-                                if let Some(path) =
-                                    install.get("installPath").and_then(|v| v.as_str())
-                                {
-                                    roots.push((
-                                        Path::new(path).join("skills"),
-                                        format!("{namespace}:"),
-                                    ));
-                                    roots.push((
-                                        Path::new(path).join("commands"),
-                                        format!("{namespace}:"),
-                                    ));
-                                }
-                            }
+            if let Ok(bytes) = std::fs::read(config.join("plugins/installed_plugins.json"))
+                && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes)
+                && let Some(plugins) = value.get("plugins").and_then(|v| v.as_object())
+            {
+                for (id, installs) in plugins {
+                    let namespace = id.split('@').next().unwrap_or(id);
+                    for install in installs.as_array().into_iter().flatten() {
+                        if let Some(project) = install.get("projectPath").and_then(|v| v.as_str())
+                            && !cwd.starts_with(project)
+                        {
+                            continue;
+                        }
+                        if let Some(path) = install.get("installPath").and_then(|v| v.as_str()) {
+                            roots.push((Path::new(path).join("skills"), format!("{namespace}:")));
+                            roots.push((Path::new(path).join("commands"), format!("{namespace}:")));
                         }
                     }
                 }

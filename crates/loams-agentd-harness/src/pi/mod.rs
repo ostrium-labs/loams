@@ -119,14 +119,13 @@ impl PiHarness {
         mcp: Option<&loams_agentd_proto::McpServer>,
     ) -> Result<Process, HarnessError> {
         let exe = self.resolve_executable()?;
-        if self.executable.is_none() {
-            if let Some(version) = crate::executable::binary_version(&exe) {
-                if version < semver::Version::new(0, 85, 1) {
-                    return Err(HarnessError::Protocol(format!(
-                        "Pi {version} is unsupported; update Pi to 0.85.1 or newer"
-                    )));
-                }
-            }
+        if self.executable.is_none()
+            && let Some(version) = crate::executable::binary_version(&exe)
+            && version < semver::Version::new(0, 85, 1)
+        {
+            return Err(HarnessError::Protocol(format!(
+                "Pi {version} is unsupported; update Pi to 0.85.1 or newer"
+            )));
         }
         let mut cmd = Command::new(&exe);
         // Process group plus the same env scrubbing the ACP launch applied.
@@ -474,7 +473,6 @@ impl Runner {
     }
     fn control_command(&self, text: &str) -> Option<Value> {
         let name = text
-            .trim()
             .split_whitespace()
             .next()
             .unwrap_or("")
@@ -663,30 +661,28 @@ impl Runner {
                             | Pending::EmptyState(..)
                     )
                 })
-            {
-                if !self.queued.front().is_some_and(|s| {
+                && !self.queued.front().is_some_and(|s| {
                     (self.active && self.control_command(&s.prompt).is_some())
                         || (!self.deliveries.is_empty()
                             && s.prompt.strip_prefix('/').is_some_and(|command| {
                                 self.extension_commands
                                     .contains(command.split_whitespace().next().unwrap_or(""))
                             }))
-                }) {
-                    if let Some(steer) = self.queued.pop_front() {
-                        if !self.active {
-                            self.norm.reset();
-                        }
-                        self.epoch += 1;
-                        self.active = true;
-                        // Atomic Pi operation: queue at a step boundary if busy, start if idle.
-                        // A separate get_state + steer pair would strand an input on the idle race.
-                        self.submit(steer.prompt.clone(), json!([]), true)?;
-                        self.deliveries.push_back(Delivery {
-                            epoch: self.epoch,
-                            queued: false,
-                        });
-                    }
+                })
+                && let Some(steer) = self.queued.pop_front()
+            {
+                if !self.active {
+                    self.norm.reset();
                 }
+                self.epoch += 1;
+                self.active = true;
+                // Atomic Pi operation: queue at a step boundary if busy, start if idle.
+                // A separate get_state + steer pair would strand an input on the idle race.
+                self.submit(steer.prompt.clone(), json!([]), true)?;
+                self.deliveries.push_back(Delivery {
+                    epoch: self.epoch,
+                    queued: false,
+                });
             }
             if !self.active && !open && self.queued.is_empty() {
                 return Ok(());

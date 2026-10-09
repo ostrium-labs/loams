@@ -18,16 +18,8 @@
 // workspace clippy already runs with -D warnings, so this list keeps it green until
 // Tasks 2-4 delete or fix the code and drop it.
 #![allow(
-    clippy::collapsible_if,
     clippy::type_complexity,
     clippy::too_many_arguments,
-    clippy::needless_borrow,
-    clippy::unnecessary_get_then_check,
-    clippy::trim_split_whitespace,
-    clippy::map_entry,
-    clippy::field_reassign_with_default,
-    clippy::manual_pattern_char_comparison,
-    clippy::unnecessary_unwrap,
     clippy::unwrap_used,
     missing_debug_implementations
 )]
