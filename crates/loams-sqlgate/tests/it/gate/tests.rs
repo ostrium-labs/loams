@@ -1041,3 +1041,28 @@ async fn shutdown_lets_a_long_query_finish() {
         "before the deadline"
     );
 }
+
+/// N5: a full fast-auth cache evicts its oldest entries, not everything
+/// (no Argon2id stampede).
+#[tokio::test]
+async fn full_fast_auth_cache_evicts_the_oldest() {
+    use loams_sqlgate::auth::FastAuthCache;
+    use loams_sqlgate::codec::auth::{Password, scramble_caching_sha2};
+    let cache = FastAuthCache::new(10, Duration::from_secs(3600));
+    let nonce = [9u8; 20];
+    let scramble = scramble_caching_sha2(b"pw", &nonce);
+    for i in 0..11 {
+        cache.remember(&format!("u{i}"), "h", &Password::new(b"pw".to_vec()));
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+    assert!(
+        !cache.check("u0", "h", &nonce, &scramble),
+        "the oldest went"
+    );
+    for i in 1..11 {
+        assert!(
+            cache.check(&format!("u{i}"), "h", &nonce, &scramble),
+            "u{i} kept"
+        );
+    }
+}

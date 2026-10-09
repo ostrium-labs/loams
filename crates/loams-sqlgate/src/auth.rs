@@ -200,8 +200,8 @@ type CacheKey = (String, [u8; 32]);
 /// The `caching_sha2_password` fast-auth cache: after a full Argon2id
 /// check, `SHA256(SHA256(password))` per user, keyed by the user and the
 /// SHA-256 of the stored hash, so a password rotation (a new hash) misses.
-/// Bounded; a full cache is cleared (every user then re-does full auth).
-/// An entry lives `ttl` after its full check (fix round 1, M8).
+/// Bounded: a full cache drops expired entries, then its oldest tenth. An
+/// entry lives `ttl` after its full check (fix round 1, M8).
 #[derive(Debug)]
 pub struct FastAuthCache {
     max: usize,
@@ -242,10 +242,25 @@ impl FastAuthCache {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if entries.len() >= self.max {
+            // Expired entries first, then the oldest tenth: never a full
+            // clear, which would send every user to Argon2id at once (a
+            // stampede; fix round 2, N5).
             let ttl = self.ttl;
             entries.retain(|_, (_, at)| at.elapsed() < ttl);
             if entries.len() >= self.max {
-                entries.clear();
+                let mut ages: Vec<Instant> = entries.values().map(|(_, at)| *at).collect();
+                let drop = (ages.len() / 10).max(1);
+                ages.select_nth_unstable(drop - 1);
+                let cutoff = ages[drop - 1];
+                let mut left = drop;
+                entries.retain(|_, (_, at)| {
+                    if left > 0 && *at <= cutoff {
+                        left -= 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
             }
         }
         entries.insert(
