@@ -797,3 +797,63 @@ async fn alpn_is_strict_when_offered() {
         assert_eq!(r.is_ok(), ok, "{alpn:?}: {:?}", r.err());
     }
 }
+
+/// Upstream TLS is verified: a TiDB certificate from another CA, or for
+/// another name, is refused before any credential is sent (1040).
+#[tokio::test]
+async fn upstream_certificate_is_verified() {
+    for opts in [
+        Options {
+            upstream_foreign_ca: true,
+            ..Options::default()
+        },
+        Options {
+            upstream_name: "other.test",
+            ..Options::default()
+        },
+    ] {
+        let h = harness(opts).await;
+        let e = h.tls("u_a", b"pa").await.err().expect("refused");
+        assert_eq!(e.code, 1040);
+        let seen = h.a.seen.lock().unwrap().clone();
+        assert!(seen.logins.is_empty(), "no login over unverified TLS");
+        assert_eq!(seen.plaintext_credentials, 0);
+    }
+}
+
+/// PROXY v2 for IPv6 and mixed families (an IPv4 client reaching an IPv6
+/// listener, and the reverse): both addresses as IPv6, v4 ones mapped.
+#[test]
+fn proxy_v2_headers_for_ipv6_and_mixed_families() {
+    use loams_sqlgate::upstream::proxy_v2_header;
+    use std::net::SocketAddr;
+    const SIG: &[u8] = b"\r\n\r\n\0\r\nQUIT\n";
+    let v4: SocketAddr = "10.1.2.3:4000".parse().unwrap();
+    let v6: SocketAddr = "[2001:db8::7]:3306".parse().unwrap();
+
+    let h = proxy_v2_header(v4, "10.9.9.9:3306".parse().unwrap());
+    assert_eq!(&h[..12], SIG);
+    assert_eq!(
+        (h[12], h[13], &h[14..16]),
+        (0x21, 0x11, &12u16.to_be_bytes()[..])
+    );
+    assert_eq!(h.len(), 16 + 12);
+
+    for (src, dst) in [(v6, v6), (v4, v6), (v6, "10.9.9.9:3306".parse().unwrap())] {
+        let h = proxy_v2_header(src, dst);
+        assert_eq!(&h[..12], SIG);
+        assert_eq!(
+            (h[12], h[13], &h[14..16]),
+            (0x21, 0x21, &36u16.to_be_bytes()[..])
+        );
+        assert_eq!(h.len(), 16 + 36);
+        let as_v6 = |a: SocketAddr| match a.ip() {
+            std::net::IpAddr::V4(ip) => ip.to_ipv6_mapped(),
+            std::net::IpAddr::V6(ip) => ip,
+        };
+        assert_eq!(&h[16..32], &as_v6(src).octets());
+        assert_eq!(&h[32..48], &as_v6(dst).octets());
+        assert_eq!(&h[48..50], &src.port().to_be_bytes());
+        assert_eq!(&h[50..52], &dst.port().to_be_bytes());
+    }
+}

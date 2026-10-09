@@ -24,7 +24,7 @@ use pki::Pki;
 
 const INTERNAL_PW: &[u8] = b"internal-ri-writer-password";
 
-pub struct Pools(HashMap<String, SocketAddr>);
+pub struct Pools(HashMap<String, SocketAddr>, &'static str);
 
 #[async_trait]
 impl PoolResolver for Pools {
@@ -32,7 +32,7 @@ impl PoolResolver for Pools {
         let addr = self.0.get(branch).ok_or(UpstreamError::Unavailable)?;
         Ok(vec![UpstreamMember {
             addr: *addr,
-            server_name: ServerName::try_from("tidb.test").expect("name"),
+            server_name: ServerName::try_from(self.1).expect("name"),
         }])
     }
 }
@@ -89,6 +89,11 @@ pub struct Options {
     pub auth_failure_rate_per_sec: u32,
     pub idle_timeout: Duration,
     pub drain_timeout: Duration,
+    /// The name the gate checks TiDB's certificate against.
+    pub upstream_name: &'static str,
+    /// The gate trusts another CA than the one that signed TiDB's
+    /// certificate.
+    pub upstream_foreign_ca: bool,
 }
 
 impl Default for Options {
@@ -107,6 +112,8 @@ impl Default for Options {
             auth_failure_rate_per_sec: 20,
             idle_timeout: Duration::from_secs(3600),
             drain_timeout: Duration::from_secs(10),
+            upstream_name: "tidb.test",
+            upstream_foreign_ca: false,
         }
     }
 }
@@ -148,10 +155,10 @@ pub async fn harness(opts: Options) -> Harness {
             },
         ),
     ]);
-    let pools = Pools(HashMap::from([
-        ("br_a".into(), a.addr),
-        ("br_b".into(), b.addr),
-    ]));
+    let pools = Pools(
+        HashMap::from([("br_a".into(), a.addr), ("br_b".into(), b.addr)]),
+        opts.upstream_name,
+    );
     let activity = Arc::new(ActivityCounter::default());
     let tls = sni_server_config(vec![SniCert {
         names: vec!["localhost".into(), "db-a.sql.test".into()],
@@ -159,7 +166,12 @@ pub async fn harness(opts: Options) -> Harness {
         key: pki.gate_key.clone_key(),
     }])
     .expect("tls");
-    let mut config = GateConfig::new(tls, pki.client_config());
+    let upstream_tls = if opts.upstream_foreign_ca {
+        Pki::new().client_config()
+    } else {
+        pki.client_config()
+    };
+    let mut config = GateConfig::new(tls, upstream_tls);
     config.plaintext = opts.plaintext;
     config.handshake_timeout = opts.handshake_timeout;
     config.limits = opts.limits;
