@@ -83,6 +83,9 @@ pub struct Options {
     pub max_connections: usize,
     /// Accept calls that fail with EMFILE before the listener works.
     pub accept_failures: usize,
+    pub verify_concurrency: usize,
+    pub auth_failure_burst: u32,
+    pub auth_failure_rate_per_sec: u32,
 }
 
 impl Default for Options {
@@ -96,6 +99,9 @@ impl Default for Options {
             pre_auth: PreAuthConfig::default(),
             max_connections: 10_000,
             accept_failures: 0,
+            verify_concurrency: 4,
+            auth_failure_burst: 200,
+            auth_failure_rate_per_sec: 20,
         }
     }
 }
@@ -154,6 +160,10 @@ pub async fn harness(opts: Options) -> Harness {
     config.limits = opts.limits;
     config.pre_auth = opts.pre_auth;
     config.max_connections = opts.max_connections;
+    config.verify_concurrency = opts.verify_concurrency;
+    config.verify_wait = Duration::from_secs(30);
+    config.auth_failure_burst = opts.auth_failure_burst;
+    config.auth_failure_rate_per_sec = opts.auth_failure_rate_per_sec;
     let deps = GateDeps {
         users: Arc::new(users),
         credentials: Arc::new(Creds),

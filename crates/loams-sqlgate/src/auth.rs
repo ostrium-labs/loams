@@ -3,15 +3,23 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
-use argon2::Argon2;
+use tokio::sync::Semaphore;
+
 use argon2::password_hash::phc::PasswordHash;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier};
+use argon2::{Algorithm, Argon2, Params, Version};
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 
 use crate::codec::auth::{Password, double_sha256, verify_caching_sha2};
+
+/// Argon2id parameters (re-exported for configuration).
+pub use argon2::Params as Argon2Params;
 
 /// A database role (plan SQ1 shared contracts). Each maps to the internal
 /// TiDB user the gate logs in as.
@@ -89,34 +97,100 @@ impl UserResolver for StaticUsers {
 /// An Argon2id PHC hash of `password` with a random salt (the control
 /// plane's job in Task 11; tests use it too).
 pub fn hash_password(password: &[u8]) -> String {
+    hash_password_with(&Params::default(), password)
+}
+
+/// [`hash_password`] with explicit Argon2id parameters.
+pub fn hash_password_with(params: &Params, password: &[u8]) -> String {
     let mut salt = [0u8; 16];
     getrandom::fill(&mut salt).unwrap_or_else(|e| panic!("OS randomness unavailable: {e}"));
-    let hash: PasswordHash = Argon2::default()
+    let hash: PasswordHash = Argon2::new(Algorithm::Argon2id, Version::V0x13, params.clone())
         .hash_password_with_salt(password, &salt)
         .unwrap_or_else(|e| panic!("argon2: {e}"));
     hash.to_string()
 }
 
-/// Checks `password` against a PHC hash, on the blocking pool (Argon2id is
-/// deliberately slow). A malformed hash is a mismatch.
-pub async fn verify_password(hash: String, password: Password) -> bool {
-    tokio::task::spawn_blocking(move || {
-        PasswordHash::new(&hash)
-            .map(|h| {
-                Argon2::default()
-                    .verify_password(password.expose(), &h)
-                    .is_ok()
-            })
-            .unwrap_or(false)
-    })
-    .await
-    .unwrap_or(false)
+/// Checks `password` against a PHC hash (its own parameters), on the
+/// calling thread. A malformed hash is a mismatch.
+fn verify_blocking(hash: &str, password: &Password) -> bool {
+    PasswordHash::new(hash)
+        .map(|h| {
+            Argon2::default()
+                .verify_password(password.expose(), &h)
+                .is_ok()
+        })
+        .unwrap_or(false)
 }
 
-/// The hash checked for unknown users, so they take as long as known ones.
-pub(crate) fn decoy_hash() -> &'static str {
-    static DECOY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    DECOY.get_or_init(|| hash_password(b"loams-decoy-password"))
+/// Checks `password` against a PHC hash, on the blocking pool (Argon2id is
+/// deliberately slow), with no bound. The gate uses [`Verifier`].
+pub async fn verify_password(hash: String, password: Password) -> bool {
+    tokio::task::spawn_blocking(move || verify_blocking(&hash, &password))
+        .await
+        .unwrap_or(false)
+}
+
+/// All Argon2id verifications are busy: the client gets 1040.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("password verification is busy")]
+pub struct Busy;
+
+/// Bounded Argon2id verification (Task 4 fix round 1, C1): at most
+/// `concurrency` checks run at once, a check waits at most `wait` for its
+/// turn, and a permit is taken *before* the blocking job is queued, so a
+/// client that gives up (the handshake deadline) leaves no queued work.
+/// Unknown users are checked against a decoy hash made with the configured
+/// parameters, so they cost and take what known users do.
+#[derive(Debug)]
+pub struct Verifier {
+    permits: Arc<Semaphore>,
+    wait: Duration,
+    decoy: String,
+    in_flight: Arc<AtomicUsize>,
+    peak: Arc<AtomicUsize>,
+}
+
+impl Verifier {
+    /// `concurrency` checks at once (at least 1), waiting at most `wait`.
+    pub fn new(params: &Params, concurrency: usize, wait: Duration) -> Self {
+        Self {
+            permits: Arc::new(Semaphore::new(concurrency.max(1))),
+            wait,
+            decoy: hash_password_with(params, b"loams-decoy-password"),
+            in_flight: Arc::new(AtomicUsize::new(0)),
+            peak: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// The decoy hash for unknown users.
+    pub fn decoy(&self) -> &str {
+        &self.decoy
+    }
+
+    /// The most checks that ran at once.
+    pub fn peak(&self) -> usize {
+        self.peak.load(Ordering::Relaxed)
+    }
+
+    /// Checks `password` against `hash`, or [`Busy`] when no permit came
+    /// within the wait.
+    pub async fn verify(&self, hash: String, password: Password) -> Result<bool, Busy> {
+        let permit = tokio::time::timeout(self.wait, self.permits.clone().acquire_owned())
+            .await
+            .map_err(|_| Busy)?
+            .map_err(|_| Busy)?;
+        let (in_flight, peak) = (self.in_flight.clone(), self.peak.clone());
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            peak.fetch_max(now, Ordering::SeqCst);
+            let ok = verify_blocking(&hash, &password);
+            in_flight.fetch_sub(1, Ordering::SeqCst);
+            ok
+        })
+        .await
+        .map_err(|_| Busy)
+    }
 }
 
 /// A user and the SHA-256 of their stored hash.

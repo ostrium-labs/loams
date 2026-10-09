@@ -429,3 +429,85 @@ async fn connection_caps_hold() {
         }
     }
 }
+
+/// C1: an unknown-user flood never runs more Argon2id checks at once than
+/// the verification semaphore allows, and legitimate logins still succeed
+/// under it (a cached user at once; a full check after the flood).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unknown_user_flood_is_bounded() {
+    let h = harness(Options {
+        verify_concurrency: 2,
+        handshake_timeout: Duration::from_secs(60),
+        ..Options::default()
+    })
+    .await;
+    h.tls("u_a", b"pa").await.expect("warm the cache");
+    let flood: Vec<_> = (0..12)
+        .map(|i| {
+            let (addr, config) = (h.addr, h.pki.client_config());
+            tokio::spawn(async move {
+                super::client::connect(
+                    addr,
+                    &format!("nobody{i}"),
+                    b"guess",
+                    Some((config, "localhost")),
+                    None,
+                )
+                .await
+                .err()
+                .expect("refused")
+                .code
+            })
+        })
+        .collect();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let mut cached = h
+        .tls("u_a", b"pa")
+        .await
+        .expect("cached login under the flood");
+    assert_eq!(cached.query_info("SELECT 1").await, "tidb-a");
+    for f in flood {
+        assert!([1045, 1040].contains(&f.await.unwrap()));
+    }
+    let s = h.gate.stats();
+    assert!(
+        s.verify_peak >= 1 && s.verify_peak <= 2,
+        "peak {}",
+        s.verify_peak
+    );
+    h.tls("u_b", b"pb")
+        .await
+        .expect("full login after the flood");
+}
+
+/// I1: 1040 never tells a known user from an unknown one. The database's
+/// rate is charged only after a successful login, and the gate-wide
+/// failure bucket is charged alike for wrong passwords and unknown users.
+#[tokio::test]
+async fn no_user_enumeration_through_1040() {
+    let h = harness(Options {
+        limits: LimitsConfig {
+            max_connections_per_db: 100,
+            connect_rate_per_sec: 0,
+            connect_burst: 1,
+        },
+        auth_failure_burst: 2,
+        auth_failure_rate_per_sec: 0,
+        ..Options::default()
+    })
+    .await;
+    h.tls("u_a", b"pa").await.expect("takes br_a's one token");
+    // br_a is out of tokens, but a failed login still says 1045.
+    assert_eq!(h.tls("u_a", b"nope").await.err().unwrap().code, 1045);
+    assert_eq!(h.tls("u_nobody", b"x").await.err().unwrap().code, 1045);
+    // A right password meets the database's rate only after login.
+    assert_eq!(h.tls("u_a", b"pa").await.err().unwrap().code, 1040);
+    // Two failures spent the gate-wide bucket: every full check now gets
+    // the same 1040, known user, unknown user or right password.
+    let known = h.tls("u_a", b"nope").await.err().unwrap();
+    let unknown = h.tls("u_nobody", b"x").await.err().unwrap();
+    let right = h.tls("u_b", b"pb").await.err().unwrap();
+    assert_eq!((known.code, unknown.code, right.code), (1040, 1040, 1040));
+    assert_eq!(known.message, unknown.message);
+    assert_eq!(known.message, right.message);
+}

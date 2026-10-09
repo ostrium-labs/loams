@@ -24,13 +24,13 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, Semaphore};
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
-use crate::auth::{FastAuthCache, ResolvedUser, UserResolver, decoy_hash, verify_password};
+use crate::auth::{Busy, FastAuthCache, ResolvedUser, UserResolver, Verifier};
 use crate::codec::command::{Command, ErrPacket, classify};
 use crate::codec::connection::{ConnectionPhase, PhaseError, Step};
 use crate::codec::handshake::{Capabilities, HandshakeV10, Limits, Nonce, TIDB_V8_5_8, advertise};
 use crate::codec::packet::{HEADER_LEN, MAX_FRAME, encode};
 use crate::limits::{
-    ActivitySink, LimitError, Limiter, LimitsConfig, PreAuth, PreAuthConfig, Slot,
+    ActivitySink, LimitError, Limiter, LimitsConfig, PreAuth, PreAuthConfig, Slot, TokenBucket,
 };
 use crate::upstream::{ClientContext, CredentialStore, PoolResolver, Upstream, connect};
 use crate::wire::{ClientStream, Prefixed, SecretBuf};
@@ -144,6 +144,18 @@ pub struct GateConfig {
     pub server_version: String,
     /// Fast-auth cache size, in users.
     pub fast_auth_cache: usize,
+    /// Argon2id parameters of the decoy hash (those of the control plane's
+    /// user hashes, so unknown users cost what known ones do).
+    pub argon2: argon2::Params,
+    /// Argon2id checks at once (default: the core count).
+    pub verify_concurrency: usize,
+    /// How long a check waits for its turn before the client gets 1040.
+    pub verify_wait: Duration,
+    /// Failed verifications per second, gate-wide, sustained; beyond the
+    /// bucket every full check gets 1040, known user or not.
+    pub auth_failure_rate_per_sec: u32,
+    /// Failed verifications allowed in a burst.
+    pub auth_failure_burst: u32,
 }
 
 impl GateConfig {
@@ -162,6 +174,11 @@ impl GateConfig {
             profile: TIDB_V8_5_8,
             server_version: SERVER_VERSION.into(),
             fast_auth_cache: 100_000,
+            argon2: argon2::Params::default(),
+            verify_concurrency: std::thread::available_parallelism().map_or(4, |n| n.get()),
+            verify_wait: Duration::from_secs(2),
+            auth_failure_rate_per_sec: 20,
+            auth_failure_burst: 200,
         }
     }
 }
@@ -191,6 +208,8 @@ pub struct GateStats {
     pub full_auths: u64,
     /// Logins that passed the fast-auth cache.
     pub fast_hits: u64,
+    /// The most Argon2id checks that ran at once.
+    pub verify_peak: usize,
 }
 
 /// The gate.
@@ -202,6 +221,8 @@ pub struct Gate {
     limiter: Arc<Limiter>,
     pre_auth: Arc<PreAuth>,
     connections: Arc<Semaphore>,
+    verifier: Verifier,
+    auth_failures: std::sync::Mutex<TokenBucket>,
     next_id: AtomicU32,
     full_auths: AtomicU64,
     fast_hits: AtomicU64,
@@ -291,6 +312,15 @@ impl Gate {
             limiter: Limiter::new(config.limits.clone()),
             pre_auth: PreAuth::new(config.pre_auth.clone()),
             connections: Arc::new(Semaphore::new(config.max_connections)),
+            verifier: Verifier::new(
+                &config.argon2,
+                config.verify_concurrency,
+                config.verify_wait,
+            ),
+            auth_failures: std::sync::Mutex::new(TokenBucket::new(
+                config.auth_failure_rate_per_sec,
+                config.auth_failure_burst,
+            )),
             config,
             deps,
             next_id: AtomicU32::new(1),
@@ -304,6 +334,7 @@ impl Gate {
         GateStats {
             full_auths: self.full_auths.load(Ordering::Relaxed),
             fast_hits: self.fast_hits.load(Ordering::Relaxed),
+            verify_peak: self.verifier.peak(),
         }
     }
 
@@ -371,6 +402,12 @@ impl Gate {
             database: authed.database.clone(),
             charset: authed.charset,
         };
+        // The database's rate and cap are charged only after a successful
+        // login, so they never reveal whether a user exists (I1).
+        if let Err(e) = self.limiter.admit(&user.branch) {
+            let _ = client.write_all(&replace_ok(&done, &err_limit(e))).await;
+            return;
+        }
         let slot = match self.limiter.acquire(&user.branch) {
             Ok(slot) => slot,
             Err(e) => {
@@ -479,7 +516,6 @@ impl Gate {
         // Allocated on the first read.
         let mut buf = SecretBuf::with_capacity(0);
         let mut resolved: Option<Option<ResolvedUser>> = None;
-        let mut admitted = false;
         let mut pending: Option<Result<Step, PhaseError>> = None;
         loop {
             let step = match pending.take() {
@@ -526,10 +562,6 @@ impl Gate {
                 Step::Write(bytes) => io.write_all(&bytes).await.ok()?,
                 Step::CheckFast { user, scramble } => {
                     let r = self.resolve(&mut resolved, &user).await;
-                    if let Some(refusal) = self.admit(&r, &mut admitted) {
-                        let _ = io.write_all(&phase.refuse(&refusal)).await;
-                        return None;
-                    }
                     let hit = r.as_ref().is_some_and(|r| {
                         self.cache
                             .check(&user, &r.password_hash, nonce.as_bytes(), &scramble)
@@ -540,20 +572,35 @@ impl Gate {
                     pending = Some(phase.fast_result(hit));
                 }
                 Step::CheckFull { user, password } => {
-                    let r = self.resolve(&mut resolved, &user).await;
-                    if let Some(refusal) = self.admit(&r, &mut admitted) {
-                        let _ = io.write_all(&phase.refuse(&refusal)).await;
+                    // The failure bucket is the same for every user, known
+                    // or not, so 1040 never tells them apart (I1).
+                    if !self.failure_token() {
+                        let _ = io
+                            .write_all(&phase.refuse(&err_limit(LimitError::Rate)))
+                            .await;
                         return None;
                     }
+                    let r = self.resolve(&mut resolved, &user).await;
                     // Unknown users are checked against a decoy hash so
                     // they take as long as known ones.
-                    let hash = r
-                        .as_ref()
-                        .map_or_else(|| decoy_hash().to_owned(), |r| r.password_hash.clone());
-                    let ok = verify_password(hash.clone(), password.clone()).await && r.is_some();
+                    let hash = r.as_ref().map_or_else(
+                        || self.verifier.decoy().to_owned(),
+                        |r| r.password_hash.clone(),
+                    );
+                    let ok = match self.verifier.verify(hash.clone(), password.clone()).await {
+                        Ok(ok) => ok && r.is_some(),
+                        Err(Busy) => {
+                            let _ = io
+                                .write_all(&phase.refuse(&err_limit(LimitError::Rate)))
+                                .await;
+                            return None;
+                        }
+                    };
                     if ok {
                         self.cache.remember(&user, &hash, &password);
                         self.full_auths.fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        self.charge_failure();
                     }
                     pending = Some(phase.full_result(ok).map_err(|e| match e {
                         PhaseError::Auth(_) => {
@@ -584,15 +631,22 @@ impl Gate {
         }
     }
 
-    /// The rate check, once per connection, as soon as the user's database
-    /// is known.
-    fn admit(&self, user: &Option<ResolvedUser>, admitted: &mut bool) -> Option<ErrPacket> {
-        if *admitted {
-            return None;
-        }
-        *admitted = true;
-        let r = user.as_ref()?;
-        self.limiter.admit(&r.branch).err().map(err_limit)
+    /// Whether the gate-wide failed-verification bucket allows another
+    /// Argon2id check.
+    fn failure_token(&self) -> bool {
+        self.auth_failures
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .has_token()
+    }
+
+    /// Charges one failed verification (an unknown user or a wrong
+    /// password alike).
+    fn charge_failure(&self) {
+        self.auth_failures
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .charge();
     }
 }
 
