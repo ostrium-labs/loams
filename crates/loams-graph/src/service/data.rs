@@ -66,10 +66,10 @@ impl ByteBudget {
         Self { limit, used: 0 }
     }
 
-    fn spend(&mut self, bytes: u64) -> Result<(), ConnectError> {
+    fn spend(&mut self, bytes: u64) -> Result<(), GraphError> {
         self.used = self.used.saturating_add(bytes);
         if self.used > self.limit {
-            return Err(map_engine(GraphError::ResultTooLarge { limit: self.limit }));
+            return Err(GraphError::ResultTooLarge { limit: self.limit });
         }
         Ok(())
     }
@@ -77,7 +77,7 @@ impl ByteBudget {
 
 /// Converts an engine result into its protobuf row set, within `budget`: the conversion stops
 /// with `graph_result_too_large` at the first row past it.
-fn to_pb_rows(result: &GraphResult, budget: &mut ByteBudget) -> Result<pb::RowSet, ConnectError> {
+fn to_pb_rows(result: &GraphResult, budget: &mut ByteBudget) -> Result<pb::RowSet, GraphError> {
     let mut rows = Vec::with_capacity(result.rows.len());
     for row in &result.rows {
         let row = to_pb_row(row);
@@ -94,14 +94,37 @@ fn to_pb_rows(result: &GraphResult, budget: &mut ByteBudget) -> Result<pb::RowSe
 
 /// Fills one `ExecuteResponse` from an engine result. `counters`, the token and the commit epoch
 /// come with the durable write path (Task 11).
+///
+/// An answer past the byte budget is `graph_result_too_large`, unless `committed`: a statement
+/// that committed is never reported as a failure (review fix 1, I3), so its rows are dropped,
+/// `truncated` is set, and a `01000` notification says why.
 fn to_pb_response(
     result: &GraphResult,
     budget: &mut ByteBudget,
-) -> Result<pb::ExecuteResponse, ConnectError> {
+    committed: bool,
+) -> Result<pb::ExecuteResponse, GraphError> {
+    let (rows, truncated, notifications) = match to_pb_rows(result, budget) {
+        Ok(rows) => (rows, result.truncated, Vec::new()),
+        Err(err) if committed => (
+            pb::RowSet {
+                columns: result.columns.clone(),
+                column_types: result.column_types.clone(),
+                ..Default::default()
+            },
+            true,
+            vec![pb::Notification {
+                gqlstatus: "01000".to_string(),
+                message: format!("the statement committed; its rows were dropped: {err}"),
+                ..Default::default()
+            }],
+        ),
+        Err(err) => return Err(err),
+    };
     Ok(pb::ExecuteResponse {
-        rows: to_pb_rows(result, budget)?.into(),
-        truncated: result.truncated,
+        rows: rows.into(),
+        truncated,
         elapsed_nanos: result.elapsed_nanos.unwrap_or_default(),
+        notifications,
         ..Default::default()
     })
 }
@@ -151,7 +174,12 @@ pub fn execute_on(
 ) -> Result<pb::ExecuteResponse, ConnectError> {
     let max_rows = limits.rows_for(req.max_rows) as usize;
     let result = run_statement(graph, &req, limits, Some(max_rows))?;
-    to_pb_response(&result, &mut ByteBudget::new(limits.max_result_bytes))
+    to_pb_response(
+        &result,
+        &mut ByteBudget::new(limits.max_result_bytes),
+        result.wrote,
+    )
+    .map_err(map_engine)
 }
 
 /// Checks and runs one statement of an `ExecuteRequest`, keeping at most `max_rows` rows: what
@@ -231,11 +259,14 @@ pub fn execute_batch_on(
             .execute_batch_within(&statements, limits, Some(max_rows))
             .map_err(map_engine)?;
         let mut budget = ByteBudget::new(limits.max_result_bytes);
+        // A batch that wrote has committed: none of its answers may fail it now (I3).
+        let committed = results.iter().any(|result| result.wrote);
         Ok(pb::ExecuteBatchResponse {
             results: results
                 .iter()
-                .map(|result| to_pb_response(result, &mut budget))
-                .collect::<Result<_, _>>()?,
+                .map(|result| to_pb_response(result, &mut budget, committed))
+                .collect::<Result<_, _>>()
+                .map_err(map_engine)?,
             committed: true,
             committed_through: u32::try_from(results.len()).unwrap_or(u32::MAX),
             ..Default::default()
@@ -254,26 +285,12 @@ pub fn execute_batch_on(
                 limits,
                 Some(max_rows),
             ) {
-                Ok(result) => match to_pb_response(&result, &mut budget) {
+                // A statement that wrote committed: past the byte budget it is answered without
+                // rows (`truncated`) and the batch goes on. A read past it changed nothing: it
+                // fails and stops the batch, and `committed_through` does not count it (I3).
+                Ok(result) => match to_pb_response(&result, &mut budget, result.wrote) {
                     Ok(response) => results.push(response),
-                    // This statement committed, but its answer does not fit: it is answered
-                    // without rows (`truncated`), and the batch stops here, so a retry from
-                    // `committed_through` repeats nothing.
-                    Err(_) => {
-                        results.push(pb::ExecuteResponse {
-                            rows: pb::RowSet {
-                                columns: result.columns.clone(),
-                                column_types: result.column_types.clone(),
-                                ..Default::default()
-                            }
-                            .into(),
-                            truncated: true,
-                            elapsed_nanos: result.elapsed_nanos.unwrap_or_default(),
-                            ..Default::default()
-                        });
-                        let err = GraphError::ResultTooLarge {
-                            limit: limits.max_result_bytes,
-                        };
+                    Err(err) => {
                         error = Some(statement_error(index, &err));
                         break;
                     }

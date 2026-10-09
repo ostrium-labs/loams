@@ -943,3 +943,104 @@ async fn in_flight_statements_count_against_max_detached() {
         .await
         .expect("serving again");
 }
+
+fn count_of(answer: &pb::ExecuteResponse) -> i64 {
+    int(&rows(answer)[0].values[0])
+}
+
+fn batch(graph: &str, statements: &[&str], atomic: bool) -> pb::ExecuteBatchRequest {
+    pb::ExecuteBatchRequest {
+        namespace: "acme".to_string(),
+        graph: graph.to_string(),
+        statements: statements
+            .iter()
+            .map(|s| pb::Statement {
+                statement: (*s).to_string(),
+                ..Default::default()
+            })
+            .collect(),
+        atomic,
+        ..Default::default()
+    }
+}
+
+/// Review fix 1, I3: a statement that committed is never reported as a failure. Past the byte
+/// limit, a write's answer drops its rows and sets `truncated` (with a `01000` notification); a
+/// read's is still `graph_result_too_large`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_committed_write_is_never_reported_as_too_large() {
+    let fixture = Fixture::start().await;
+    let admin = fixture.admin();
+    create(
+        &admin,
+        "acme",
+        "small",
+        Some(pb::GraphLimits {
+            max_result_bytes: 1000,
+            ..Default::default()
+        }),
+    )
+    .await;
+    let big_write =
+        "UNWIND range(1, 100) AS i INSERT (w:W {i: i}) RETURN w.i, 'twenty characters...'";
+    let big_read = "UNWIND range(1, 100) AS i RETURN i, 'twenty characters...'";
+    let count = |label: &str| {
+        let admin = &admin;
+        let statement = format!("MATCH (n:{label}) RETURN count(n)");
+        async move {
+            count_of(
+                &admin
+                    .execute(execute("acme", "small", &statement))
+                    .await
+                    .expect("count"),
+            )
+        }
+    };
+    // Unary.
+    let answer = admin
+        .execute(execute("acme", "small", big_write))
+        .await
+        .expect("a committed write succeeds");
+    assert!(answer.truncated);
+    assert!(rows(&answer).is_empty());
+    assert_eq!(answer.notifications[0].gqlstatus, "01000", "{answer:?}");
+    assert_eq!(count("W").await, 100);
+    let err = admin
+        .execute(execute("acme", "small", big_read))
+        .await
+        .expect_err("a read is still refused");
+    assert_eq!(reason(&err), "graph_result_too_large");
+    // Atomic batch: it wrote, so it committed, and every answer that does not fit is cut.
+    let answer = admin
+        .execute_batch(batch("small", &["INSERT (:X)", big_read], true))
+        .await
+        .expect("a committed batch succeeds");
+    assert!(answer.committed);
+    assert_eq!(answer.committed_through, 2);
+    assert!(answer.results[1].truncated && rows(&answer.results[1]).is_empty());
+    assert_eq!(count("X").await, 1);
+    // A read-only atomic batch committed nothing: refused.
+    let err = admin
+        .execute_batch(batch("small", &["RETURN 1", big_read], true))
+        .await
+        .expect_err("read-only and too large");
+    assert_eq!(reason(&err), "graph_result_too_large");
+    // Non-atomic: a write past the limit is answered without rows and the batch goes on; a
+    // read past it fails and stops the batch before what follows.
+    let answer = admin
+        .execute_batch(batch("small", &[big_write, "INSERT (:Y)"], false))
+        .await
+        .expect("batch");
+    assert!(answer.error.as_option().is_none(), "{answer:?}");
+    assert_eq!(answer.committed_through, 2);
+    assert!(answer.results[0].truncated);
+    assert_eq!(count("Y").await, 1);
+    let answer = admin
+        .execute_batch(batch("small", &[big_read, "INSERT (:Z)"], false))
+        .await
+        .expect("batch");
+    let error = answer.error.as_option().expect("the read failed");
+    assert_eq!(error.index, 0);
+    assert_eq!(answer.committed_through, 0);
+    assert_eq!(count("Z").await, 0, "nothing after the failed read ran");
+}

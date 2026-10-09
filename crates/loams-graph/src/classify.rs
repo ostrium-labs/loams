@@ -130,6 +130,40 @@ pub fn gate_within(
     language: QueryLanguage,
     limits: &StatementLimits,
 ) -> Result<Access, GraphError> {
+    gate_verdict(statement, language, limits).map(|verdict| verdict.access)
+}
+
+/// What [`gate_within`] decided, with the engine's own reading beside it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Verdict {
+    /// The access the statement runs with: the stricter of the guard and the engine.
+    pub access: Access,
+    /// The engine's own classification, or `None` when its translator could not parse the
+    /// statement.
+    pub engine: Option<Access>,
+}
+
+impl Verdict {
+    /// Whether running the statement can commit a change: the engine's plan has a mutation (or
+    /// the engine could not say, and the statement runs with write access). The guard alone
+    /// writing a read up to `Write` (an `UNWIND … RETURN`, say) commits nothing (review fix 1,
+    /// I3).
+    #[must_use]
+    pub fn writes(&self) -> bool {
+        self.engine.unwrap_or(self.access) != Access::Read
+    }
+}
+
+/// [`gate_within`], answering the [`Verdict`].
+///
+/// # Errors
+///
+/// As [`gate_within`].
+pub fn gate_verdict(
+    statement: &str,
+    language: QueryLanguage,
+    limits: &StatementLimits,
+) -> Result<Verdict, GraphError> {
     limits.check_statement(statement)?;
     if statement.trim().is_empty() {
         return Err(GraphError::EmptyStatement);
@@ -161,8 +195,14 @@ pub fn gate_within(
     }
     let guard = classify(statement, language);
     match engine_classify_within(statement, limits.max_path_hops) {
-        Ok(engine) => Ok(guard.max(engine)),
-        Err(GraphError::Engine(_)) => Ok(guard),
+        Ok(engine) => Ok(Verdict {
+            access: guard.max(engine),
+            engine: Some(engine),
+        }),
+        Err(GraphError::Engine(_)) => Ok(Verdict {
+            access: guard,
+            engine: None,
+        }),
         Err(refused) => Err(refused),
     }
 }

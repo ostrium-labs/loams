@@ -27,7 +27,7 @@ use std::time::Duration;
 use grafeo::{Error as GrafeoError, GrafeoDB, QueryResult, Value};
 use loams_proto::loams::graph::v1::QueryLanguage;
 
-use crate::classify::{Access, gate_within};
+use crate::classify::{Access, Verdict, gate_verdict, gate_within};
 use crate::limits::StatementLimits;
 use grafeo_common::types::PropertyKey;
 
@@ -325,6 +325,10 @@ pub struct GraphResult {
     /// The engine answered more rows than the caller's cap; `rows` holds the first ones
     /// (GR1 Task 6).
     pub truncated: bool,
+    /// The statement can have committed a change (the engine's plan has a mutation; see
+    /// [`Verdict::writes`]), so its answer must not be reported as a failure afterwards
+    /// (review fix 1, I3). For a batch, whether any of its statements can.
+    pub wrote: bool,
 }
 
 /// One graph, open in this process.
@@ -645,10 +649,11 @@ impl Graph {
         statement: &str,
         read_only: bool,
         limits: &StatementLimits,
-    ) -> Result<Access, GraphError> {
+    ) -> Result<Verdict, GraphError> {
         #[cfg(feature = "failpoints")]
         fail::fail_point!("loams_graph::gate");
-        let access = gate_within(statement, QueryLanguage::Gql, limits)?;
+        let verdict = gate_verdict(statement, QueryLanguage::Gql, limits)?;
+        let access = verdict.access;
         if access == Access::Admin {
             return Err(GraphError::StatementNotAllowed {
                 file_access: false,
@@ -658,7 +663,7 @@ impl Graph {
         if (read_only || self.read_only) && access != Access::Read {
             return Err(GraphError::ReadOnly);
         }
-        Ok(access)
+        Ok(verdict)
     }
 
     /// Answers the graph open under `(namespace, name)`, or opens it with `spec` when there is
@@ -747,8 +752,10 @@ impl Graph {
         // The gate and the row building run inside the same panic containment as the engine
         // call (security review M5).
         self.call(|| {
-            let access = self.admit(statement, read_only, limits)?;
-            self.run_engine(access, statement, parameters, max_rows)
+            let verdict = self.admit(statement, read_only, limits)?;
+            let mut result = self.run_engine(verdict.access, statement, parameters, max_rows)?;
+            result.wrote = verdict.writes();
+            Ok(result)
         })
     }
 
@@ -910,8 +917,11 @@ impl Graph {
             // Every statement is gated before any runs, so a refused one leaves nothing
             // half-applied.
             let mut access = Access::Read;
+            let mut writes = false;
             for statement in statements {
-                access = access.max(self.admit(&statement.text, false, limits)?);
+                let verdict = self.admit(&statement.text, false, limits)?;
+                access = access.max(verdict.access);
+                writes |= verdict.writes();
             }
             let mut session = self.session_for(access);
             session.begin_transaction().map_err(as_engine_error)?;
@@ -938,7 +948,10 @@ impl Graph {
             }
             Ok(out
                 .into_iter()
-                .map(|result| self.resolved(result))
+                .map(|mut result| {
+                    result.wrote = writes;
+                    self.resolved(result)
+                })
                 .collect())
         })
     }
@@ -1597,6 +1610,7 @@ impl GraphResult {
             elapsed_nanos,
             rows_affected: None,
             truncated,
+            wrote: false,
         }
     }
 }
