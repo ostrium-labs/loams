@@ -1,4 +1,5 @@
-//! Two-device e2e smoke driver (`scripts/e2e-smoke.sh` runs it).
+//! Two-device e2e smoke driver (the fork ran it from `scripts/e2e-smoke.sh`, already
+//! disabled there and deleted with `apps/desktop`; history: `513dd67b:apps/desktop/native/scripts/`).
 //!
 //! Connects to two running headless engines over their localhost IPC ports and proves
 //! the cross-device command plane end to end against a real edge:

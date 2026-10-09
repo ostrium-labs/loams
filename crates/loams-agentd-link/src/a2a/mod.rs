@@ -2,7 +2,7 @@
 //!
 //! Loams Bot delegates to the platform agents (Plane, Zulip, Forgejo,
 //! GlitchTip, analytics) over A2A. The desktop never speaks A2A to those
-//! agents itself (D465: clients speak Connect to Loams Bot); this client is
+//! agents itself (design 37 section 18: clients speak Connect to Loams Bot); this client is
 //! the stand-in that lets the chat entry point run end to end before
 //! `loams.bot.v1` exists (SF3), and it is what an external A2A agent URL
 //! (`LOAMS_BOT_URL`) is reached with.

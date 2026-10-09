@@ -6,7 +6,7 @@
 //! OPENCODE_PROBE_AGENT selects an agent, OPENCODE_PROBE_INTERRUPT_MS cancels
 //! after the first text delta. Set TMPDIR to control temporary workspace placement.
 //!
-//!     cargo run -p loams-desktop-harness --example opencode_turn_probe -- \
+//!     cargo run -p loams-agentd-harness --example opencode_turn_probe -- \
 //!         ~/.opencode/bin/opencode opencode/muse-spark-1.3-contributor-free \
 //!         "Reply with exactly: PONG"
 

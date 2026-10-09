@@ -11,7 +11,7 @@
 //! - [`a2a`]: the stub A2A client Loams Bot delegates with.
 //! - [`acp`]: Loams Bot as an ACP agent, which is how loams-desktop's engine and chat
 //!   UI drive it.
-//! - [`cli`]: the `loams-desktop loams …` subcommands that tie these together.
+//! - [`cli`]: the `loams-agentd loams …` subcommands that tie these together.
 
 pub mod a2a;
 pub mod acp;

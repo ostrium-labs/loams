@@ -1,4 +1,4 @@
-//! loams-desktop-proto — wire types shared by engine, UI, and RPC.
+//! loams-agentd-proto — wire types shared by engine, UI, and RPC.
 //!
 //! Ported from loams-desktop's `packages/control/src/wire.ts` + `packages/harness/src/types.ts`.
 //! Context occupancy is replicated per chat; billing `Usage` remains a harness passthrough.

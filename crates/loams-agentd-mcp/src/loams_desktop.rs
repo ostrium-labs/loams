@@ -29,7 +29,7 @@ const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(15);
 const RESUBSCRIBE_DELAY: Duration = Duration::from_millis(300);
 
 /// Which chat this server speaks for, when the engine injected it into a
-/// harness. Unset when a human runs `loams-desktop mcp` from a terminal.
+/// harness. Unset when a human runs `loams-agentd mcp` from a terminal.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Origin {
     pub chat_id: Option<String>,

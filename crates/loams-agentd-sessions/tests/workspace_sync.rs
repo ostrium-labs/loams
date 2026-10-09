@@ -5,7 +5,7 @@
 //! updates (`export(updates)`) between the two engines' workspace docs on a timer,
 //! which is exactly what `RoomClient` + the SessionRoom DO do over the wire. A live
 //! variant against a real edge runs behind `#[ignore]` (LOAMS_DESKTOP_EDGE_WS, like
-//! loams-desktop-sync's edge_convergence test).
+//! loams-agentd-store's edge_convergence test).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -594,7 +594,7 @@ async fn chat_config_selects_the_run_harness() {
 /// the TS edge (`wrangler dev` in `edge/` with AUTH_MODE=dev):
 ///
 /// ```sh
-/// LOAMS_DESKTOP_EDGE_WS=ws://127.0.0.1:8787 cargo test -p loams-desktop-engine -- --ignored
+/// LOAMS_DESKTOP_EDGE_WS=ws://127.0.0.1:8787 cargo test -p loams-agentd-sessions -- --ignored
 /// ```
 #[tokio::test]
 #[ignore = "requires a live edge: set LOAMS_DESKTOP_EDGE_WS (e.g. ws://127.0.0.1:8787)"]

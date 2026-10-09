@@ -2,7 +2,7 @@
 //! event stream, verifying subagent spawn correlation + the disk-tailed
 //! transcript end-to-end. Needs a logged-in `grok` on PATH.
 //!
-//!     cargo run -p loams-desktop-harness --example grok_subagent_probe -- /tmp/probe-dir
+//!     cargo run -p loams-agentd-harness --example grok_subagent_probe -- /tmp/probe-dir
 #![allow(clippy::unwrap_used)]
 
 use futures::StreamExt;

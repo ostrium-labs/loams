@@ -126,7 +126,7 @@ impl InstanceLock {
 
     /// Best-effort liveness probe: the pid stamped by the engine currently holding
     /// this data dir's lock, `None` when no engine is running (or the platform
-    /// cannot test a lock without taking it). Used by `loams-desktop status` and the
+    /// cannot test a lock without taking it). Used by `loams-agentd status` and the
     /// login/logout guards; a single non-blocking try — no retry budget — so a
     /// starting engine's transient fork-window artifacts read as "running", which
     /// is the safe direction for those callers.

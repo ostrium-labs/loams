@@ -1,6 +1,6 @@
-//! loams-desktop-mcp — a Model Context Protocol server over the running engine.
+//! loams-agentd-mcp — a Model Context Protocol server over the running engine.
 //!
-//! `loams-desktop mcp` speaks MCP (JSON-RPC 2.0, newline-delimited) on stdin/stdout
+//! `loams-agentd mcp` speaks MCP (JSON-RPC 2.0, newline-delimited) on stdin/stdout
 //! and proxies every tool into the engine's localhost IPC — the same
 //! `loams_agentd_rpc` WebSocket the headed app and `loams-desktop sync` dial. Nothing here
 //! talks to the edge or touches the filesystem: the engine stays the single
@@ -26,7 +26,7 @@ pub use loams_desktop::{LoamsDesktop, Origin};
 pub use tools::{ToolDef, Tools};
 pub use transcript::{RenderOptions, RenderedMessage, render_entries};
 
-/// How `loams-desktop mcp` finds the engine and who it speaks for.
+/// How `loams-agentd mcp` finds the engine and who it speaks for.
 #[derive(Debug, Clone)]
 pub struct McpConfig {
     /// Loopback IPC port of the engine to proxy (`LOAMS_DESKTOP_IPC_PORT`, default 27654).

@@ -3,7 +3,7 @@
 //! tool must still finish and its real result must reach the agent — then
 //! the steer is answered.
 //!
-//! LOAMS_DESKTOP_TEST_HARNESS=claude cargo test -p loams-desktop-engine --test steer_tool_live -- --ignored --nocapture
+//! LOAMS_DESKTOP_TEST_HARNESS=claude cargo test -p loams-agentd-sessions --test steer_tool_live -- --ignored --nocapture
 use loams_agentd_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
 use loams_agentd_harness::{
     AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,

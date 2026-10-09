@@ -6,7 +6,7 @@
 //! the rig recipe uses a mock OpenAI-compatible provider in the workspace's
 //! opencode.json, so no real login is required:
 //!
-//!     cargo run -p loams-desktop-harness --example opencode_subagent_probe -- /tmp/oc-probe/workspace
+//!     cargo run -p loams-agentd-harness --example opencode_subagent_probe -- /tmp/oc-probe/workspace
 //!
 //! Prompt content is irrelevant with the mock provider (it scripts a task
 //! spawn on the first parent round); against a real provider, ask for one

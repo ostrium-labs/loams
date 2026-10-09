@@ -255,10 +255,8 @@ mimalloc = { version = "0.1", features = ["v2"] }
 notify = "7"
 nucleo-matcher = "0.3"
 portable-pty = "0.8"
-pulldown-cmark = "0.12"
 rusqlite = { version = "0.32", features = ["bundled"] }
 similar = "2"
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 zip = { version = "7.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [profile.dev]

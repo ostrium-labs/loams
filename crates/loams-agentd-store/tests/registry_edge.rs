@@ -7,7 +7,7 @@
 //! `edge/` with AUTH_MODE=dev). Run with:
 //!
 //! ```sh
-//! LOAMS_DESKTOP_EDGE_WS=ws://127.0.0.1:27640 cargo test -p loams-desktop-sync --test registry_edge -- --ignored
+//! LOAMS_DESKTOP_EDGE_WS=ws://127.0.0.1:27640 cargo test -p loams-agentd-store --test registry_edge -- --ignored
 //! ```
 
 use std::sync::{Arc, Mutex};

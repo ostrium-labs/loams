@@ -1,5 +1,6 @@
 //! Production ChatClient + Loro + SQLite against an explicit test edge.
-//! Run through scripts/transport-proxy.py for controlled network conditions.
+//! Run through the fork's transport-proxy.py (deleted with `apps/desktop`; history:
+//! `513dd67b:apps/desktop/native/scripts/transport-proxy.py`) for controlled network conditions.
 //! Usage: transport_live <proxy-base> <cloudflare-origin> <stream|outage|http|catchup|upload>
 #![allow(clippy::unwrap_used)]
 use futures::future::BoxFuture;

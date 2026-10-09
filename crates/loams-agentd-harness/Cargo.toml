@@ -24,6 +24,7 @@ required-features = ["native-fixture"]
 
 [dependencies]
 loams-agentd-proto.workspace = true
+# The fork is on base64 0.22; the workspace key is 0.23.
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
 tokio.workspace = true

@@ -2,7 +2,7 @@
 //! once with no orphaned output. Silent gaps are measured for diagnostics;
 //! silence is never proof that an ACP prompt has completed (#296).
 //!
-//! SURVEY_RUNS=3 cargo test -p loams-desktop-harness --test real_quiet_survey -- --ignored --nocapture
+//! SURVEY_RUNS=3 cargo test -p loams-agentd-harness --test real_quiet_survey -- --ignored --nocapture
 //! Uninstalled/unauthenticated agents are skipped. For mandatory live Pi
 //! regression coverage with an injected delay, use real_acp_lifecycle.rs.
 

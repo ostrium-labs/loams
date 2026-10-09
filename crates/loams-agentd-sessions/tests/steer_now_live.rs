@@ -5,7 +5,7 @@
 //! The current answer must stop early and the steer must be answered within
 //! the same live runtime — not after the long answer finishes.
 //!
-//! LOAMS_DESKTOP_TEST_HARNESS=codex cargo test -p loams-desktop-engine --test steer_now_live -- --ignored --nocapture
+//! LOAMS_DESKTOP_TEST_HARNESS=codex cargo test -p loams-agentd-sessions --test steer_now_live -- --ignored --nocapture
 use loams_agentd_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
 use loams_agentd_harness::{
     AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,

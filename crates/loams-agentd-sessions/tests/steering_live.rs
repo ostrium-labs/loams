@@ -1,5 +1,5 @@
 //! Opt-in real-model checks through the production queue and command executor.
-//! LOAMS_DESKTOP_TEST_HARNESS=claude LOAMS_DESKTOP_TEST_MODEL=claude-haiku-4-5 cargo test -p loams-desktop-engine --test steering_live -- --ignored --nocapture
+//! LOAMS_DESKTOP_TEST_HARNESS=claude LOAMS_DESKTOP_TEST_MODEL=claude-haiku-4-5 cargo test -p loams-agentd-sessions --test steering_live -- --ignored --nocapture
 use loams_agentd_doc::{MessageRole, SessionCommandPayload};
 use loams_agentd_harness::{
     AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,

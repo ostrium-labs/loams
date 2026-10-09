@@ -1,6 +1,6 @@
 //! Run the M1 thin rebuild against a REAL whale snapshot (read-only: loads a
 //! snapshot file, rebuilds, reports accounting — writes nothing anywhere).
-//! Usage: cargo run -p loams-desktop-doc --example rebuild_whale -- <snapshot.bin>
+//! Usage: cargo run -p loams-agentd-doc --example rebuild_whale -- <snapshot.bin>
 #![allow(clippy::unwrap_used)]
 use loams_agentd_doc::rebuild::{doc_epoch, rebuild_thin_doc};
 use loams_agentd_doc::schema::SessionDoc;

@@ -2381,7 +2381,7 @@ async fn attachment_upload_then_run_threads_refs_and_paths() {
 /// color — it can only know it by SEEING the inline image block (the sandbox
 /// prompt forbids opening the file). Ignored by default: needs an installed,
 /// authenticated `claude` CLI and spends real tokens.
-/// Run with: `cargo test -p loams-desktop-engine --test e2e -- --ignored`
+/// Run with: `cargo test -p loams-agentd-sessions --test e2e -- --ignored`
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires installed+authenticated claude CLI; spends tokens"]
 async fn real_claude_sees_uploaded_image_inline() {

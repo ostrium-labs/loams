@@ -756,7 +756,7 @@ async fn nudges_reach_the_host_callback() {
 }
 
 /// Live-edge variant: run the same host+client path through a real DeviceRoom DO.
-/// `LOAMS_DESKTOP_EDGE_WS=http://127.0.0.1:26640 cargo test -p loams-desktop-rpc -- --ignored live_edge`
+/// `LOAMS_DESKTOP_EDGE_WS=http://127.0.0.1:26640 cargo test -p loams-agentd-rpc -- --ignored live_edge`
 /// (dev-mode edge; LOAMS_DESKTOP_EDGE_TOKEN defaults to a fixed dev user id).
 #[tokio::test]
 #[ignore = "needs a running edge (set LOAMS_DESKTOP_EDGE_WS)"]

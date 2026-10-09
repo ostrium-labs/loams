@@ -5,7 +5,7 @@
 //! `npx -y` at chat time (zeronsh/comet#95).
 //!
 //! Ignored: needs network and npm. Run with
-//! `cargo test -p loams-desktop-harness --test managed_install -- --ignored`.
+//! `cargo test -p loams-agentd-harness --test managed_install -- --ignored`.
 //!
 //! Single-test binary: it mutates LOAMS_DESKTOP_ADAPTERS_DIR process-wide.
 

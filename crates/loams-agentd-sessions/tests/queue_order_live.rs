@@ -3,7 +3,7 @@
 //! its busy state lands, or any remote client), the composer queue, and
 //! explicit steering (queue-row Steer / Send next, MCP `send_message` steer).
 //!
-//! LOAMS_DESKTOP_TEST_HARNESS=pi cargo test -p loams-desktop-engine --test queue_order_live -- --ignored --nocapture
+//! LOAMS_DESKTOP_TEST_HARNESS=pi cargo test -p loams-agentd-sessions --test queue_order_live -- --ignored --nocapture
 //! LOAMS_DESKTOP_TEST_MODEL optionally pins the model; LOAMS_DESKTOP_TEST_SCENARIO runs one of
 //! `sends`, `queue`, `steer`.
 #![allow(clippy::unwrap_used)]

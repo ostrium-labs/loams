@@ -1,5 +1,5 @@
 //! Opt-in production engine + Cursor SDK checks. Uses real account quota.
-//! LOAMS_DESKTOP_CURSOR_STATE_DIR=$(mktemp -d) cargo test -p loams-desktop-engine --test cursor_live -- --ignored --nocapture --test-threads=1
+//! LOAMS_DESKTOP_CURSOR_STATE_DIR=$(mktemp -d) cargo test -p loams-agentd-sessions --test cursor_live -- --ignored --nocapture --test-threads=1
 #![allow(clippy::unwrap_used)]
 use loams_agentd_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry,

@@ -1,4 +1,4 @@
-//! loams-desktop-rpc — the typed control plane (UiRpc / ControlRpc) over WebSocket + in-memory
+//! loams-agentd-rpc — the typed control plane (UiRpc / ControlRpc) over WebSocket + in-memory
 //! transports, plus the device-room relay transport ({s,k,to,from} frames — [`device_room`]).
 //!
 //! Framing: ndjson envelopes, one JSON object per WebSocket text message (or per line on

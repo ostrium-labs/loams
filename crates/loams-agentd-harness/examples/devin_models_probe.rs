@@ -1,7 +1,7 @@
 //! Live account catalog and optional ACP run (requires authenticated Devin).
 //!
-//!     cargo run -p loams-desktop-harness --example devin_models_probe
-//!     cargo run -p loams-desktop-harness --example devin_models_probe -- gpt-6-astra-medium
+//!     cargo run -p loams-agentd-harness --example devin_models_probe
+//!     cargo run -p loams-agentd-harness --example devin_models_probe -- gpt-6-astra-medium
 
 use futures::StreamExt;
 use loams_agentd_harness::{AcpHarness, CancellationToken, Harness, RunControls};

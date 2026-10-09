@@ -27,8 +27,9 @@ uuid = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 notify.workspace = true
 portable-pty.workspace = true
+# The fork is on base64 0.22; the workspace key is 0.23.
 base64 = "0.22"
-toml = "0.8"
+toml.workspace = true
 libc.workspace = true
 gethostname.workspace = true
 tokio-util = { workspace = true, features = ["rt"] }
@@ -45,7 +46,8 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 [dev-dependencies]
 loams-agentd-harness = { workspace = true, features = ["installer-fixture"] }
 zip.workspace = true
-tokio-tungstenite.workspace = true
+# 0.24 as in the fork; loams-web-bridge is on 0.30 (not a workspace key).
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 # In-process registry server for the two-engine workspace integration tests.
 loams-agentd-store = { workspace = true, features = ["mock-server"] }
 

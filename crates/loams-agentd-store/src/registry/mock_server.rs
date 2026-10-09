@@ -1,9 +1,9 @@
 //! In-process registry server speaking the same JSON WS protocol as
 //! `edge/src/registry-room.ts`, built on the SAME merge fn the client uses
 //! (`loams_agentd_doc::apply_op`). Test infrastructure only (`mock-server` feature):
-//! loams-desktop-sync's client tests and loams-desktop-engine's two-engine integration tests
+//! loams-agentd-store's client tests and loams-agentd-sessions's two-engine integration tests
 //! run against this; TS↔Rust interop is proven separately against a real DO
-//! by the `--ignored` live-edge tests and scripts/e2e-smoke.sh.
+//! by the `--ignored` live-edge tests and the fork's deleted scripts/e2e-smoke.sh.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

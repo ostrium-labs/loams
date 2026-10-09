@@ -142,7 +142,7 @@ struct RoutedSteer {
 struct Inner {
     device_id: String,
     /// Loopback IPC port this engine serves, once known (0 = not serving):
-    /// what the injected `loams-desktop mcp` server dials back into.
+    /// what the injected `loams-agentd mcp` server dials back into.
     ipc_port: std::sync::atomic::AtomicU16,
     journal: Arc<RunJournal>,
     registry: Arc<HarnessRegistry>,

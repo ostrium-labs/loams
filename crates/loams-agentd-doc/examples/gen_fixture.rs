@@ -1,5 +1,6 @@
 //! Generates a session-doc snapshot fixture for the cross-language compat check
-//! (`edge/scripts/compat-check.mjs`). Usage: `cargo run -p loams-desktop-doc --example gen_fixture -- <out>`
+//! (the fork's `edge/scripts/compat-check.mjs`, deleted with `apps/desktop`).
+//! Usage: `cargo run -p loams-agentd-doc --example gen_fixture -- <out>`
 
 use loams_agentd_doc::{
     MessagePart, MessageRole, MessageStatus, SegmentWriter, SessionCommandEntry,

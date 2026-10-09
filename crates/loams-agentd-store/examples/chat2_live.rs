@@ -5,7 +5,7 @@
 //! checkpoint-then-rows on a fresh doc, then live push/ack.
 //!
 //! Usage:
-//!   cargo run -p loams-desktop-sync --example chat2_live -- <baseUrl> <chatId> <token> <device>
+//!   cargo run -p loams-agentd-store --example chat2_live -- <baseUrl> <chatId> <token> <device>
 //!
 //! Prints a single JSON result line prefixed RESULT: for the driver to parse.
 #![allow(clippy::unwrap_used)]

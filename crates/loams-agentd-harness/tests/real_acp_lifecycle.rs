@@ -1,7 +1,7 @@
 //! Real Pi RPC + model regression for #296. Requires an authenticated Pi and
 //! fixtures/pi-slow-model.ts loaded as a Pi extension (35s delay by default).
 //! PI_EXECUTABLE can select an isolated Pi installation.
-//! cargo test -p loams-desktop-harness --test real_acp_lifecycle -- --ignored --nocapture
+//! cargo test -p loams-agentd-harness --test real_acp_lifecycle -- --ignored --nocapture
 #![allow(clippy::unwrap_used)]
 
 use futures::StreamExt;

@@ -1,4 +1,4 @@
-//! loams-desktop-harness — one interface over coding agents (plus a mock for tests).
+//! loams-agentd-harness — one interface over coding agents (plus a mock for tests).
 //!
 //! NATIVE DRIVERS speak each agent's own wire directly: Claude Code over
 //! stream-json ([`ClaudeHarness`]), Codex over the app-server JSON-RPC

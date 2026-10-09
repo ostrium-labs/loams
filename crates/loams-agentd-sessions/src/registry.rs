@@ -758,7 +758,7 @@ pub fn default_registry() -> HarnessRegistry {
             Ok(Arc::new(loams_agentd_harness::AcpHarness::antigravity()) as Arc<dyn Harness>)
         }),
     );
-    // loams: Loams Bot over ACP (`loams-desktop loams bot-acp`, the running binary),
+    // loams: Loams Bot over ACP (`loams-agentd loams bot-acp`, the running binary),
     // same lazy pattern. Prompts are A2A messages, so steers land at turn
     // boundaries and there is no effort ladder. Installed means "this binary".
     registry.register_lazy(

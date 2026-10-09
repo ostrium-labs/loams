@@ -4,7 +4,7 @@
 //! OPENCODE_EXECUTABLE); no provider auth required (the anonymous Zen tier
 //! always connects).
 //!
-//!     cargo run -p loams-desktop-harness --example opencode_models_probe
+//!     cargo run -p loams-agentd-harness --example opencode_models_probe
 
 use loams_agentd_harness::{Harness, OpencodeHarness};
 

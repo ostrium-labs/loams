@@ -1,13 +1,15 @@
-//! The `loams-desktop loams …` subcommands (wired in `apps/loams-desktop/src/main.rs` by one
-//! line). Hand-parsed: five verbs do not need a second argument parser.
+//! The link CLI's verbs. `loams-agentd` exposes only `bot-acp` (as
+//! `loams-agentd loams bot-acp`, plan DD1 ruling T1-2); the other verbs are
+//! reachable only through [`run`] and go with the WorkOS-era code in Task 3.
+//! Hand-parsed: five verbs do not need a second argument parser.
 //!
 //! ```text
-//! loams-desktop loams status            instance, API versions and sign-in methods
-//! loams-desktop loams login             Authentik sign-in in the system browser
-//! loams-desktop loams logout            forget the stored refresh token
-//! loams-desktop loams bot "<message>"   one message to Loams Bot over A2A
-//! loams-desktop loams bot-acp           serve Loams Bot to loams-desktop's engine over ACP (stdio)
-//! loams-desktop loams mock [ADDR]       run the in-process mock (default 127.0.0.1:8084)
+//! status            instance, API versions and sign-in methods
+//! login             Authentik sign-in in the system browser
+//! logout            forget the stored refresh token
+//! bot "<message>"   one message to Loams Bot over A2A
+//! bot-acp           serve Loams Bot to the sessions engine over ACP (stdio)
+//! mock [ADDR]       run the in-process mock (default 127.0.0.1:8084)
 //! ```
 //!
 //! `LOAMS_URL`, `LOAMS_MOCK=1`, `LOAMS_BOT_URL` and `LOAMS_OIDC_ISSUER` configure it
@@ -26,9 +28,8 @@ use crate::config::LoamsConfig;
 use crate::mock::MockServer;
 use crate::proto::loams::instance::v1::{GetInstanceResponse, SignInKind};
 
-/// Usage text for `loams-desktop loams` with no or unknown arguments.
-pub const USAGE: &str =
-    "usage: loams-desktop loams <status|login|logout|bot \"<message>\"|bot-acp|mock [ADDR]>";
+/// Usage text for the link CLI with no or unknown arguments.
+pub const USAGE: &str = "usage: <status|login|logout|bot \"<message>\"|bot-acp|mock [ADDR]>";
 
 /// The loopback address `mock` listens on by default (beside `loams-apps-mock`).
 pub const DEFAULT_MOCK_ADDR: &str = "127.0.0.1:8084";

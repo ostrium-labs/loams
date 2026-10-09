@@ -1,7 +1,7 @@
 //! Loader motion — the pure math behind loams-desktop's loading indicators.
 //!
 //! These are the curves and constants the gpui viewport animates with
-//! (`loams-desktop-ui/src/motion.rs`, `loams-desktop-ui/src/loaders.rs`), lifted here so any
+//! (the fork's former `loams-desktop-ui/src/{motion,loaders}.rs`), lifted here so any
 //! surface animates the *same* loaders rather than inventing its own spinner.
 //! A loading indicator is a brand surface; two of them that disagree read as
 //! two products.

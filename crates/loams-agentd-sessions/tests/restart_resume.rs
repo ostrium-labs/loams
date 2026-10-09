@@ -835,7 +835,7 @@ async fn persistent_startup_crash_keeps_stored_session_id() {
 /// the codeword back — the reply can only contain it if the second run resumed
 /// the first run's harness session. Ignored by default: needs an installed,
 /// authenticated `claude` CLI and spends real tokens (haiku, two tiny turns).
-/// Run with: `cargo test -p loams-desktop-engine --test restart_resume -- --ignored`
+/// Run with: `cargo test -p loams-agentd-sessions --test restart_resume -- --ignored`
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "requires installed+authenticated claude CLI; spends tokens"]
 async fn real_claude_remembers_codeword_across_engine_restart() {

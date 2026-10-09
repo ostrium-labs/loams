@@ -23,7 +23,7 @@ pub enum HarnessId {
     /// google's antigravity agent over acp (`agy_acp_server`, installed from
     /// its pinned release archive).
     Antigravity,
-    /// loams: Loams Bot, driven over ACP by `loams-desktop loams bot-acp` (the
+    /// loams: Loams Bot, driven over ACP by `loams-agentd loams bot-acp` (the
     /// `loams-desktop-link` crate). Wire name `loams-bot`.
     LoamsBot,
     /// Test harness; never shown in production pickers.
@@ -249,7 +249,7 @@ pub struct RunRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<WorktreeSpec>,
     /// Loams Desktop's own MCP server, injected by the HOST engine as it starts the
-    /// run: the `loams-desktop mcp` subcommand of this same binary, pointed at the
+    /// run: the `loams-agentd mcp` subcommand of this same binary, pointed at the
     /// engine's loopback IPC and stamped with the originating chat so the
     /// agent can spawn, read, and message side chats. Additive +
     /// serde-defaulted — an old host leaves it unset and the agent simply has
