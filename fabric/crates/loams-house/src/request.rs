@@ -147,15 +147,20 @@ pub enum InsertHead {
 }
 
 /// An incremental tokenizer: [`Scanner::advance`] scans only the bytes it has not
-/// seen, so feeding a body piece by piece is linear in its length.
+/// seen, and a streaming scanner keeps only what [`Scanner::insert_head`] needs —
+/// the first word, the first top-level `FORMAT`, and the token after it — so its
+/// memory and the cost of `insert_head` are constant however much has been read
+/// (fix round 2, N2). [`Scanner::collecting`] also keeps every token, for complete
+/// texts, which `max_query_size` bounds.
 #[derive(Debug, Clone)]
 pub struct Scanner {
     pos: usize,
     depth: i32,
     lex: Lex,
-    tokens: Vec<Token>,
-    /// The first `FORMAT` at depth 0, by token index, once seen.
-    format_at: Option<usize>,
+    first_word: Option<Token>,
+    format: Option<Token>,
+    after_format: Option<Token>,
+    collected: Option<Vec<Token>>,
 }
 
 impl Default for Scanner {
@@ -165,31 +170,50 @@ impl Default for Scanner {
 }
 
 impl Scanner {
-    /// A scanner at the start of a statement.
+    /// A streaming scanner at the start of a statement.
     pub fn new() -> Self {
         Self {
             pos: 0,
             depth: 0,
             lex: Lex::Normal,
-            tokens: Vec::new(),
-            format_at: None,
+            first_word: None,
+            format: None,
+            after_format: None,
+            collected: None,
         }
     }
 
-    /// The tokens so far.
+    /// A scanner that also keeps every token.
+    pub fn collecting() -> Self {
+        Self {
+            collected: Some(Vec::new()),
+            ..Self::new()
+        }
+    }
+
+    /// Every token so far (a [`Scanner::collecting`] scanner; empty otherwise).
     pub fn tokens(&self) -> &[Token] {
-        &self.tokens
+        self.collected.as_deref().unwrap_or(&[])
     }
 
     fn push(&mut self, token: Token, text: &[u8]) {
-        if token.word
+        if let Some(all) = &mut self.collected {
+            all.push(token);
+        }
+        if self.first_word.is_none() {
+            if token.word {
+                self.first_word = Some(token);
+            }
+        } else if self.format.is_some() {
+            if self.after_format.is_none() {
+                self.after_format = Some(token);
+            }
+        } else if token.word
             && token.depth == 0
-            && self.format_at.is_none()
             && text[token.start..token.end].eq_ignore_ascii_case(b"FORMAT")
         {
-            self.format_at = Some(self.tokens.len());
+            self.format = Some(token);
         }
-        self.tokens.push(token);
     }
 
     /// Scans `text[seen..]`. `text` must be the same bytes as before, grown.
@@ -380,7 +404,7 @@ impl Scanner {
     /// The `INSERT` shape of `text` so far. `complete`: no more bytes will come
     /// (call [`Scanner::finish`] first). Cost: constant after the scan.
     pub fn insert_head(&self, text: &[u8], complete: bool) -> InsertHead {
-        let Some(first) = self.tokens.iter().find(|t| t.word) else {
+        let Some(first) = self.first_word else {
             return if complete {
                 InsertHead::NotInsert
             } else {
@@ -390,16 +414,15 @@ impl Scanner {
         if !text[first.start..first.end].eq_ignore_ascii_case(b"INSERT") {
             return InsertHead::NotInsert;
         }
-        let Some(at) = self.format_at else {
+        let Some(format) = self.format else {
             return if complete {
                 InsertHead::NoFormat
             } else {
                 InsertHead::Incomplete
             };
         };
-        let format = self.tokens[at];
-        let Some(name) = self.tokens.get(at + 1).filter(|n| n.word) else {
-            return if complete {
+        let Some(name) = self.after_format.filter(|n| n.word) else {
+            return if complete || self.after_format.is_some() {
                 InsertHead::NoFormat
             } else {
                 InsertHead::Incomplete
@@ -433,9 +456,9 @@ impl Scanner {
 
 /// The tokens of a complete text.
 pub fn tokens(text: &[u8]) -> Vec<Token> {
-    let mut scanner = Scanner::new();
+    let mut scanner = Scanner::collecting();
     scanner.finish(text);
-    scanner.tokens
+    scanner.collected.unwrap_or_default()
 }
 
 fn word_is(text: &[u8], t: &Token, word: &str) -> bool {
@@ -476,7 +499,7 @@ pub struct Plan {
 /// What to run for a complete statement `text`. `body_follows`: the request body is
 /// (also) the `INSERT`'s data.
 pub fn plan(text: &[u8], body_follows: bool) -> Plan {
-    let mut scanner = Scanner::new();
+    let mut scanner = Scanner::collecting();
     scanner.finish(text);
     match scanner.insert_head(text, true) {
         InsertHead::Insert {
@@ -680,12 +703,12 @@ mod tests {
         let text: &[u8] =
             b"INSERT /* c */ INTO t (a, `b c`) SETTINGS x = 'it''s -- not' FORMAT CSV\r\n1,2\n";
         let whole = {
-            let mut s = Scanner::new();
+            let mut s = Scanner::collecting();
             s.finish(text);
             (s.tokens().to_vec(), s.insert_head(text, true))
         };
         for cut in 0..=text.len() {
-            let mut s = Scanner::new();
+            let mut s = Scanner::collecting();
             s.advance(&text[..cut]);
             s.finish(text);
             assert_eq!(

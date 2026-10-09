@@ -862,33 +862,32 @@ async fn read_statement(
         )))
     };
     let mut scanner = Scanner::new();
-    scanner.advance(&text);
+    let mut ended = false;
     loop {
-        while let Some(piece) = decoder.next_piece().map_err(undecodable)? {
-            text.extend_from_slice(&piece);
-            scanner.advance(&text);
-            if let InsertHead::Insert { .. } = scanner.insert_head(&text, false) {
-                return Ok(text);
-            }
-            if text.len() > max {
-                return Err(too_long());
-            }
-        }
-        match body.next().await? {
-            Some(piece) => decoder.push(&piece),
+        let piece = match decoder.next_piece().map_err(undecodable)? {
+            Some(piece) => piece,
+            None if ended => return Ok(text),
             None => {
-                decoder.end();
-                while let Some(piece) = decoder.next_piece().map_err(undecodable)? {
-                    text.extend_from_slice(&piece);
-                    if text.len() > max {
-                        scanner.advance(&text);
-                        if !matches!(scanner.insert_head(&text, false), InsertHead::Insert { .. }) {
-                            return Err(too_long());
-                        }
+                match body.next().await? {
+                    Some(piece) => decoder.push(&piece),
+                    None => {
+                        decoder.end();
+                        ended = true;
                     }
                 }
-                return Ok(text);
+                continue;
             }
+        };
+        text.extend_from_slice(&piece);
+        // Only the first `max` bytes are ever scanned (N2): a statement head must
+        // fit in them, and the data after an `INSERT … FORMAT` line is not text.
+        let scanned = text.len().min(max);
+        scanner.advance(&text[..scanned]);
+        if let InsertHead::Insert { .. } = scanner.insert_head(&text[..scanned], false) {
+            return Ok(text);
+        }
+        if text.len() > max {
+            return Err(too_long());
         }
     }
 }
