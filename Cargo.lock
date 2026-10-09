@@ -7530,6 +7530,7 @@ dependencies = [
  "futures",
  "loams-agentd-doc",
  "loams-agentd-proto",
+ "loams-agentd-store",
  "loro",
  "loro-protocol",
  "reqwest 0.12.28",

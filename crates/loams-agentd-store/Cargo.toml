@@ -30,6 +30,9 @@ block2 = "0.6"
 mock-server = []
 
 [dev-dependencies]
+# Self dev-dependency: the registry and reliability tests need the mock server, so
+# `cargo test -p loams-agentd-store` works without `--features` (plan DD1 T1-10).
+loams-agentd-store = { path = ".", features = ["mock-server"] }
 chrono.workspace = true
 # chat2_live example only (live checkpoint fetch against a deployed worker).
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
