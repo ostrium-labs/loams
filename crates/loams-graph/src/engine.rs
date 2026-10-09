@@ -384,22 +384,48 @@ impl Graph {
                 .map_err(|_| poisoned("the graph opening latches are poisoned"))?;
             Arc::clone(latches.entry(key.clone()).or_default())
         };
+        // Declared before the latch's guard, so it drops after it: the latch leaves the map on
+        // every path (success, a failed open, a panic), and only when no other opener holds it.
+        let _release = LatchRelease {
+            engine,
+            key: &key,
+            latch: &latch,
+        };
+        #[cfg(feature = "test-hooks")]
+        engine.open_hook.call(OpenPoint::LatchTaken, name);
+        // The latch guards nothing but the open itself, so a panic in another opener leaves
+        // nothing half-done behind it.
         let _opening = latch
             .lock()
-            .map_err(|_| poisoned("a graph opening latch is poisoned"))?;
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Someone else may have opened it while this caller waited for the latch.
         if let Some(existing) = engine.registered(&key)? {
             return Ok(existing);
         }
-        let graph = Arc::new(Graph::open_db(namespace, name, spec())?);
-        engine
-            .graphs
-            .lock()
-            .map_err(|_| poisoned("the graph registry is poisoned"))?
-            .insert(key.clone(), Arc::clone(&graph));
-        if let Ok(mut latches) = engine.opening.lock() {
-            latches.remove(&key);
-        }
+        #[cfg(feature = "test-hooks")]
+        engine.open_hook.call(OpenPoint::BeforeOpen, name);
+        let fresh = Arc::new(Graph::open_db(namespace, name, spec())?);
+        let graph = {
+            let mut graphs = engine
+                .graphs
+                .lock()
+                .map_err(|_| poisoned("the graph registry is poisoned"))?;
+            match graphs.entry(key.clone()) {
+                std::collections::hash_map::Entry::Vacant(slot) => Arc::clone(slot.insert(fresh)),
+                // The latch makes this unreachable: only an opener holding it registers a graph
+                // under this key. Were it reached, the registered graph stays (overwriting it
+                // would leave two engines on one store) and the fresh one is closed.
+                std::collections::hash_map::Entry::Occupied(existing) => {
+                    let existing = Arc::clone(existing.get());
+                    drop(graphs);
+                    tracing::error!(%namespace, %name, "a graph was registered while it was being opened; keeping the registered one");
+                    if let Err(err) = fresh.db.close() {
+                        tracing::warn!(%namespace, %name, error = %err, "closing the duplicate graph failed");
+                    }
+                    return Ok(existing);
+                }
+            }
+        };
         tracing::debug!(
             namespace = %graph.namespace,
             name = %graph.name,
@@ -842,6 +868,75 @@ impl Graph {
 /// A per-graph opening latch.
 type Latch = Arc<Mutex<()>>;
 
+/// Takes a graph's opening latch out of the map when its opener is done (review fix 1, I2), on
+/// the success and the error path alike, and only when no other opener holds it: a waiter
+/// still holding a latch that left the map would open beside a newcomer with a fresh latch.
+struct LatchRelease<'a> {
+    engine: &'a Engine,
+    key: &'a (String, String),
+    latch: &'a Latch,
+}
+
+impl Drop for LatchRelease<'_> {
+    fn drop(&mut self) {
+        let mut latches = self
+            .engine
+            .opening
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Under the map's lock nobody can take a new clone, so two holders (the map and this
+        // opener) means nobody else is waiting.
+        if latches
+            .get(self.key)
+            .is_some_and(|held| Arc::ptr_eq(held, self.latch))
+            && Arc::strong_count(self.latch) == 2
+        {
+            latches.remove(self.key);
+        }
+    }
+}
+
+/// **Tests only** (feature `test-hooks`): the points of an open a test can pause at.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenPoint {
+    /// The opener holds a clone of the graph's latch and has not locked it yet.
+    LatchTaken,
+    /// The opener holds the latch, found no graph registered, and is about to open storage.
+    BeforeOpen,
+}
+
+/// **Tests only** (feature `test-hooks`): called at each [`OpenPoint`] with the graph's name.
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub type OpenHook = Arc<dyn Fn(OpenPoint, &str) + Send + Sync>;
+
+#[cfg(feature = "test-hooks")]
+#[derive(Default)]
+struct OpenHookSlot(Mutex<Option<OpenHook>>);
+
+#[cfg(feature = "test-hooks")]
+impl fmt::Debug for OpenHookSlot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("OpenHookSlot")
+    }
+}
+
+#[cfg(feature = "test-hooks")]
+impl OpenHookSlot {
+    fn call(&self, point: OpenPoint, name: &str) {
+        let hook = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(hook) = hook {
+            hook(point, name);
+        }
+    }
+}
+
 /// The engine: the open graphs of one Loams process.
 ///
 /// Deliberately not a global. `Engine` is held by the service and injected, so a test can stand up
@@ -853,6 +948,8 @@ pub struct Engine {
     graphs: Mutex<HashMap<(String, String), Arc<Graph>>>,
     /// Per-graph latches held while a graph opens outside the registry lock (review M8).
     opening: Mutex<HashMap<(String, String), Latch>>,
+    #[cfg(feature = "test-hooks")]
+    open_hook: OpenHookSlot,
     /// Where persistent graphs live: `<data_dir>/graphs/<graph_id>/`. `None` keeps every graph in
     /// memory.
     data_dir: Option<PathBuf>,
@@ -875,6 +972,8 @@ impl Engine {
         Self {
             graphs: Mutex::new(HashMap::new()),
             opening: Mutex::new(HashMap::new()),
+            #[cfg(feature = "test-hooks")]
+            open_hook: OpenHookSlot::default(),
             data_dir: None,
             standard: crate::GQL_STANDARD,
             engine_version: crate::ENGINE_VERSION,
@@ -889,6 +988,28 @@ impl Engine {
             .map_err(|_| poisoned("the graph registry is poisoned"))?
             .get(key)
             .cloned())
+    }
+
+    /// **Tests only** (feature `test-hooks`): sets the hook every open calls at its
+    /// [`OpenPoint`]s.
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn set_open_hook(&self, hook: Option<OpenHook>) {
+        *self
+            .open_hook
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = hook;
+    }
+
+    /// **Tests only** (feature `test-hooks`): how many opening latches are in the map.
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn opening_latches(&self) -> usize {
+        self.opening
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
     }
 
     /// An engine whose persistent graphs live under `data_dir/graphs/`.

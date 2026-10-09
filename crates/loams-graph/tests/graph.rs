@@ -1364,8 +1364,7 @@ fn statement_language_wins_over_the_batch() {
 }
 
 /// GR1 Task 5 (Task 4 review M8): a graph opens outside the registry lock under a per-graph
-/// latch, so concurrent openers share one graph, and an open of one graph does not wait on
-/// another's.
+/// latch, so concurrent openers share one graph.
 #[test]
 fn concurrent_opens_share_one_graph() {
     let data_dir = scratch_dir("latch");
@@ -1396,4 +1395,151 @@ fn concurrent_opens_share_one_graph() {
     drop(graphs);
     assert_eq!(engine.close("acme", "shared"), Ok(true));
     std::fs::remove_dir_all(&data_dir).ok();
+}
+
+/// A gate a test hook blocks on until the test opens it, telling the test once it is waiting.
+struct Gate {
+    entered: std::sync::mpsc::SyncSender<()>,
+    open: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+impl Gate {
+    fn new() -> (
+        std::sync::Arc<Gate>,
+        std::sync::mpsc::Receiver<()>,
+        std::sync::mpsc::SyncSender<()>,
+    ) {
+        let (entered, entered_rx) = std::sync::mpsc::sync_channel(1);
+        let (open_tx, open) = std::sync::mpsc::sync_channel(1);
+        (
+            std::sync::Arc::new(Gate {
+                entered,
+                open: std::sync::Mutex::new(open),
+            }),
+            entered_rx,
+            open_tx,
+        )
+    }
+
+    fn pass(&self) {
+        self.entered.send(()).expect("the test waits");
+        self.open
+            .lock()
+            .expect("gate")
+            .recv()
+            .expect("the test opens it");
+    }
+}
+
+/// GR1 Task 5 fix round 1 (I2): a waiter on a graph's opening latch keeps the latch in the map,
+/// so after the graph is opened and closed, it and a newcomer still share one latch and the
+/// graph is opened once, not twice (the second registration overwriting the first).
+#[test]
+fn opens_around_a_close_never_double_open() {
+    use loams_graph::engine::OpenPoint;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let engine = Arc::new(Engine::new());
+    let (waiter_gate, waiter_in, open_waiter) = Gate::new();
+    let (newcomer_gate, newcomer_in, open_newcomer) = Gate::new();
+    let latch_taken = Arc::new(AtomicUsize::new(0));
+    let opens = Arc::new(AtomicUsize::new(0));
+    {
+        let (latch_taken, opens) = (latch_taken.clone(), opens.clone());
+        engine.set_open_hook(Some(Arc::new(move |point, _name: &str| match point {
+            // The first opener to take the latch is the waiter: it stops before locking it.
+            OpenPoint::LatchTaken => {
+                if latch_taken.fetch_add(1, Ordering::SeqCst) == 0 {
+                    waiter_gate.pass();
+                }
+            }
+            // The second disk open is the newcomer's: it stops holding the latch.
+            OpenPoint::BeforeOpen => {
+                if opens.fetch_add(1, Ordering::SeqCst) == 1 {
+                    newcomer_gate.pass();
+                }
+            }
+        })));
+    }
+    let open = |engine: Arc<Engine>| {
+        std::thread::spawn(move || {
+            Graph::open_or_existing(&engine, "acme", "g", OpenSpec::in_memory).expect("open")
+        })
+    };
+    let waiter = open(engine.clone());
+    waiter_in.recv().expect("the waiter holds the latch");
+    // Opened and closed while the waiter still holds the latch.
+    let first = Graph::open_or_existing(&engine, "acme", "g", OpenSpec::in_memory).expect("open");
+    drop(first);
+    assert_eq!(engine.close("acme", "g"), Ok(true));
+    let newcomer = open(engine.clone());
+    newcomer_in.recv().expect("the newcomer is opening");
+    open_waiter.send(()).expect("release the waiter");
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    open_newcomer.send(()).expect("release the newcomer");
+    let (waiter, newcomer) = (
+        waiter.join().expect("waiter"),
+        newcomer.join().expect("newcomer"),
+    );
+    assert!(Arc::ptr_eq(&waiter, &newcomer), "one graph after the close");
+    assert_eq!(
+        opens.load(Ordering::SeqCst),
+        2,
+        "opened once before and once after the close"
+    );
+    assert_eq!(engine.list(None).expect("list").len(), 1);
+    assert_eq!(engine.opening_latches(), 0, "no latch left behind");
+}
+
+/// GR1 Task 5 fix round 1 (I2): an open that fails takes its latch out of the map too.
+#[test]
+fn a_failed_open_leaves_no_latch() {
+    let data_dir = scratch_dir("latch-fail");
+    let engine = Engine::with_data_dir(&data_dir);
+    // Read-only needs an existing store, and this one has none.
+    let spec = OpenSpec::persistent(&engine, loams_graph::GraphId::new())
+        .expect("a data dir")
+        .read_only();
+    Graph::open(&engine, "acme", "missing", spec).expect_err("no store to open read-only");
+    assert_eq!(engine.opening_latches(), 0);
+    std::fs::remove_dir_all(&data_dir).ok();
+}
+
+/// GR1 Task 5 (Task 4 review M8): an open of one graph does not wait on another's, nor do
+/// lookups of the open graphs.
+#[test]
+fn open_of_one_graph_does_not_wait_on_another() {
+    use loams_graph::engine::OpenPoint;
+    use std::sync::Arc;
+    let engine = Arc::new(Engine::new());
+    let (slow_gate, slow_in, open_slow) = Gate::new();
+    engine.set_open_hook(Some(Arc::new(move |point, name: &str| {
+        if point == OpenPoint::BeforeOpen && name == "slow" {
+            slow_gate.pass();
+        }
+    })));
+    let slow = {
+        let engine = engine.clone();
+        std::thread::spawn(move || {
+            Graph::open_or_existing(&engine, "acme", "slow", OpenSpec::in_memory).expect("open")
+        })
+    };
+    slow_in.recv().expect("the slow open is under way");
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    {
+        let engine = engine.clone();
+        std::thread::spawn(move || {
+            let fast = Graph::open_or_existing(&engine, "acme", "fast", OpenSpec::in_memory)
+                .expect("open");
+            let listed = engine.list(None).expect("list").len();
+            done_tx.send((fast, listed)).expect("the test waits");
+        });
+    }
+    let (fast, listed) = done_rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the other graph opened while the slow open was under way");
+    assert_eq!(fast.name(), "fast");
+    assert_eq!(listed, 1, "only the fast graph is registered yet");
+    open_slow.send(()).expect("release the slow open");
+    assert_eq!(slow.join().expect("slow").name(), "slow");
 }
