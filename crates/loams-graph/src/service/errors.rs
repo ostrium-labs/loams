@@ -55,7 +55,9 @@ pub(crate) fn code_of(err: &GraphError) -> ErrorCode {
         | GraphError::TooComplex { .. }
         | GraphError::OverLimit(_)
         | GraphError::AllShortestPaths => ErrorCode::InvalidArgument,
-        GraphError::ResultTooLarge { .. } => ErrorCode::ResourceExhausted,
+        GraphError::ResultTooLarge { .. } | GraphError::RowTooLarge { .. } => {
+            ErrorCode::ResourceExhausted
+        }
         GraphError::ReadOnly
         | GraphError::StatementNotAllowed {
             file_access: true, ..

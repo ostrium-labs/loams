@@ -1069,9 +1069,7 @@ impl GraphAdmin {
             .await?;
         // The stream keeps the statement's slots until it ends or is dropped (I4).
         Ok(Box::pin(futures::stream::iter(
-            stream::Chunks::new(result, req.chunk_rows, max_bytes)
-                .holding(slots)
-                .map(Ok),
+            stream::Chunks::new(result, req.chunk_rows, max_bytes).holding(slots),
         )))
     }
 

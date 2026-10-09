@@ -129,6 +129,17 @@ pub enum GraphError {
         /// The limit, in encoded bytes.
         limit: u64,
     },
+    /// One row is larger than a Connect message may be, so no answer can carry it (review fix
+    /// 1, M7).
+    #[error(
+        "a row of the answer is {bytes} bytes; a message carries at most {limit}: return fewer or smaller values per row"
+    )]
+    RowTooLarge {
+        /// The row's encoded size.
+        bytes: u64,
+        /// The largest row a message carries.
+        limit: u64,
+    },
     /// An ALL SHORTEST search: its answer can grow exponentially with the graph (R6.4).
     #[error(
         "ALL SHORTEST path searches are not served: their answer can grow exponentially with the graph; use ANY SHORTEST"
@@ -161,7 +172,7 @@ impl GraphError {
             Self::TransactionStatement => "graph_transaction_statement",
             Self::StatementNotAllowed { .. } => "graph_statement_not_allowed",
             Self::UnboundedPath { .. } | Self::AllShortestPaths => "graph_unbounded_path",
-            Self::ResultTooLarge { .. } => "graph_result_too_large",
+            Self::ResultTooLarge { .. } | Self::RowTooLarge { .. } => "graph_result_too_large",
             Self::EnginePanic | Self::Failed => "graph_engine_panic",
             Self::Reloading => "graph_reloading",
             Self::StatementTimeout => "graph_statement_timeout",

@@ -54,6 +54,21 @@ pub(crate) fn row_bytes(row: &pb::Row) -> u64 {
     u64::from(row.try_encoded_len().unwrap_or(u32::MAX)) + 6
 }
 
+/// The largest row any answer carries: a Connect message's limit (connectrpc's default, 4 MiB,
+/// which clients share), less room for the message around the row (review fix 1, M7).
+pub(crate) fn max_row_bytes() -> u64 {
+    (connectrpc::Limits::default().max_message_size() as u64).saturating_sub(4096)
+}
+
+/// Refuses a row no message can carry (review fix 1, M7).
+pub(crate) fn check_row(bytes: u64) -> Result<(), GraphError> {
+    let limit = max_row_bytes();
+    if bytes > limit {
+        return Err(GraphError::RowTooLarge { bytes, limit });
+    }
+    Ok(())
+}
+
 /// The bytes a unary answer may still carry (§48 §13.1's `max_result_bytes`), across every
 /// result of a batch.
 pub(crate) struct ByteBudget {
@@ -81,7 +96,9 @@ fn to_pb_rows(result: &GraphResult, budget: &mut ByteBudget) -> Result<pb::RowSe
     let mut rows = Vec::with_capacity(result.rows.len());
     for row in &result.rows {
         let row = to_pb_row(row);
-        budget.spend(row_bytes(&row))?;
+        let bytes = row_bytes(&row);
+        check_row(bytes)?;
+        budget.spend(bytes)?;
         rows.push(row);
     }
     Ok(pb::RowSet {

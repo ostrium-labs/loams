@@ -1228,3 +1228,52 @@ async fn idle_namespaces_leave_no_slot_entry() {
     running.await.expect("task").expect("ends");
     assert_eq!(admin.namespaces_in_use(), 0);
 }
+
+/// Review fix 1, M7: a row larger than a Connect message (4 MiB) is refused with
+/// `graph_result_too_large`, in a unary answer and in a stream, even under the byte limits.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_row_larger_than_a_message_is_refused() {
+    let fixture = Fixture::start().await;
+    let admin = fixture.admin();
+    create(&admin, "acme", "kg", None).await;
+    let mut parameters = ::buffa::__private::HashMap::default();
+    parameters.insert(
+        "big".to_string(),
+        pb::Value {
+            kind: Some(Kind::String("x".repeat(5 << 20))),
+            ..Default::default()
+        },
+    );
+    let request = pb::ExecuteRequest {
+        parameters,
+        ..execute("acme", "kg", "UNWIND range(1, 3) AS i RETURN i, $big")
+    };
+    let err = admin
+        .execute(request.clone())
+        .await
+        .expect_err("a 5 MiB row");
+    assert_eq!(err.code, ErrorCode::ResourceExhausted, "{err:?}");
+    assert_eq!(reason(&err), "graph_result_too_large");
+    assert!(
+        err.message.as_deref().unwrap_or_default().contains("a row"),
+        "{err:?}"
+    );
+    let items: Vec<Result<pb::ResultChunk, ConnectError>> = admin
+        .execute_stream(pb::ExecuteStreamRequest {
+            request: request.into(),
+            ..Default::default()
+        })
+        .await
+        .expect("stream")
+        .collect()
+        .await;
+    let err = items
+        .iter()
+        .find_map(|item| item.as_ref().err())
+        .expect("the stream fails");
+    assert_eq!(reason(err), "graph_result_too_large");
+    assert!(
+        items.last().is_some_and(Result::is_err),
+        "the error ends the stream"
+    );
+}

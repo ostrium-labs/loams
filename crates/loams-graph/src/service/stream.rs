@@ -1,7 +1,8 @@
 //! `ExecuteStream`: a statement's rows in chunks (GR1 Task 6; §48 §8.2, §13.1).
 //!
 //! A chunk holds at most [`MAX_CHUNK_ROWS`] rows (or the request's smaller `chunk_rows`) and at
-//! most [`MAX_CHUNK_BYTES`] encoded bytes; a single row larger than that travels alone. The
+//! most [`MAX_CHUNK_BYTES`] encoded bytes; a single row larger than that travels alone, and one
+//! larger than a Connect message (4 MiB) is `graph_result_too_large` (review fix 1, M7). The
 //! first chunk carries the columns, the last one says so and carries `truncated` and the
 //! elapsed time. An empty result is one last chunk with the columns.
 //!
@@ -16,7 +17,10 @@
 use loams_proto::loams::graph::v1 as pb;
 
 use super::admin::Slots;
-use super::data::{row_bytes, to_pb_row};
+use connectrpc::ConnectError;
+
+use super::data::{check_row, row_bytes, to_pb_row};
+use super::errors::map_engine;
 use crate::engine::GraphResult;
 
 /// The most rows in one chunk.
@@ -84,9 +88,9 @@ impl Chunks {
 }
 
 impl Iterator for Chunks {
-    type Item = pb::ResultChunk;
+    type Item = Result<pb::ResultChunk, ConnectError>;
 
-    fn next(&mut self) -> Option<pb::ResultChunk> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.done {
             return None;
         }
@@ -116,10 +120,22 @@ impl Iterator for Chunks {
                 None => break,
             };
             let size = row_bytes(&row);
+            if let Err(err) = check_row(size) {
+                // No message can carry this row (M7). A statement that committed ends its
+                // stream `truncated` rather than failing (I3); a read fails the stream, after
+                // the rows already sent.
+                if self.result.wrote {
+                    self.finish(&mut chunk, true);
+                    return Some(Ok(chunk));
+                }
+                self.done = true;
+                self.slots = None;
+                return Some(Err(map_engine(err)));
+            }
             if self.sent_bytes + bytes + size > self.max_bytes {
                 // The whole stream's byte limit: it ends here, `truncated` (I4).
                 self.finish(&mut chunk, true);
-                return Some(chunk);
+                return Some(Ok(chunk));
             }
             if !chunk.rows.is_empty() && bytes + size > MAX_CHUNK_BYTES {
                 self.pending = Some(row);
@@ -133,6 +149,6 @@ impl Iterator for Chunks {
             let truncated = self.result.truncated;
             self.finish(&mut chunk, truncated);
         }
-        Some(chunk)
+        Some(Ok(chunk))
     }
 }
