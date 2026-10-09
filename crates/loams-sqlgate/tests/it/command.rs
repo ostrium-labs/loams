@@ -11,6 +11,8 @@ fn commands_are_classified_by_first_byte_only() {
         (0x12, Command::BinlogDump),
         (0x1e, Command::BinlogDumpGtid),
         (0x15, Command::RegisterSlave),
+        (0x08, Command::Shutdown),
+        (0x0d, Command::Debug),
         (0x03, Command::Other(0x03)),
         (0xff, Command::Other(0xff)),
     ] {
@@ -27,6 +29,8 @@ fn refused_commands_get_1235_and_ping_is_not_activity() {
         Command::BinlogDump,
         Command::BinlogDumpGtid,
         Command::RegisterSlave,
+        Command::Shutdown,
+        Command::Debug,
     ] {
         let err = cmd.refusal().expect("refused");
         assert_eq!((err.code, &err.sql_state), (1235, b"42000"), "{cmd:?}");

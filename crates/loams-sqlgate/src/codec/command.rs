@@ -10,6 +10,10 @@ use super::{DecodeError, Reader, invalid, put_lenenc, put_lenenc_bytes};
 pub enum Command {
     /// `COM_QUIT` (0x01).
     Quit,
+    /// `COM_SHUTDOWN` (0x08).
+    Shutdown,
+    /// `COM_DEBUG` (0x0D).
+    Debug,
     /// `COM_PING` (0x0E).
     Ping,
     /// `COM_CHANGE_USER` (0x11).
@@ -28,6 +32,8 @@ pub enum Command {
 pub fn classify(payload: &[u8]) -> Option<Command> {
     Some(match *payload.first()? {
         0x01 => Command::Quit,
+        0x08 => Command::Shutdown,
+        0x0d => Command::Debug,
         0x0e => Command::Ping,
         0x11 => Command::ChangeUser,
         0x12 => Command::BinlogDump,
@@ -39,12 +45,15 @@ pub fn classify(payload: &[u8]) -> Option<Command> {
 
 impl Command {
     /// The error the gate answers with instead of relaying, if refused:
-    /// `COM_CHANGE_USER` and replication commands get 1235.
+    /// `COM_CHANGE_USER`, replication commands, `COM_SHUTDOWN` and
+    /// `COM_DEBUG` get 1235.
     pub fn refusal(self) -> Option<ErrPacket> {
         let what = match self {
             Command::ChangeUser => "COM_CHANGE_USER",
             Command::BinlogDump | Command::BinlogDumpGtid => "binlog dump",
             Command::RegisterSlave => "COM_REGISTER_SLAVE",
+            Command::Shutdown => "COM_SHUTDOWN",
+            Command::Debug => "COM_DEBUG",
             Command::Quit | Command::Ping | Command::Other(_) => return None,
         };
         Some(ErrPacket::new(
