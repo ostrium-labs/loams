@@ -361,6 +361,22 @@ impl GraphCatalog {
                 }
                 if new.idempotency_key.is_some() && existing.idempotency_key == new.idempotency_key
                 {
+                    // AIP-155: a replay must be the same request (review M6).
+                    let languages = if new.languages.is_empty() {
+                        vec!["GQL".to_string()]
+                    } else {
+                        new.languages.clone()
+                    };
+                    if existing.mode != new.mode
+                        || existing.languages != languages
+                        || existing.limits != new.limits
+                        || existing.replicas != new.replicas
+                    {
+                        return Err(CatalogError::Invalid(format!(
+                            "idempotency_key {:?} was used to create {namespace}/{name} with different settings",
+                            new.idempotency_key.as_deref().unwrap_or_default()
+                        )));
+                    }
                     return Ok((None, existing.clone()));
                 }
                 return Err(CatalogError::AlreadyExists {

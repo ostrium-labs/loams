@@ -494,6 +494,8 @@ Commit `docs(graph): GraphRAG example and harness`.
 
 ### Task 24: Authentication and per-graph authorization
 
+> **From Task 4 review (M6):** `CreateGraph` creates its namespace when the namespace does not exist (as `CreateCollection` does). Task 24 decides who may do that: creating a namespace implicitly needs the namespace-create permission, or the RPC must refuse a namespace that does not exist.
+
 > **From Task 3 review (M1):** schema DDL does not run today. Grafeo's `execute_with_params`, which every Loams path uses, answers "Schema DDL commands cannot be executed as queries", so the gate files DDL as Admin and the engine then refuses it. Task 24, with Task 9's `SchemaChange` routing (R0.6 (d)), decides who may run DDL and runs it on Grafeo's non-parameterised path; Task 31 reviews that path.
 
 **Files:** `src/authz.rs`, the OpenFGA model file MT1 owns (add `type graph`, §48 §11.1), RBAC role expansion, `tests/authz.rs`. Depends on MT1's interceptor; until it lands, test against the `Authorizer` trait with the built-in RBAC.

@@ -1244,6 +1244,46 @@ mod admin {
         assert_eq!(err.code, ErrorCode::InvalidArgument);
     }
 
+    /// Review M6: bounded replicas, capped limits, 128-byte keys, and an idempotency key replayed
+    /// with other settings is refused (AIP-155).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn settings_and_keys_are_bounded() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        let mut too_many = create("acme", "kg", "k");
+        too_many.replicas = 9;
+        let err = admin.create_graph(too_many).await.expect_err("replicas");
+        assert_eq!(err.code, ErrorCode::InvalidArgument);
+        let err = admin
+            .create_graph(create("acme", "kg", &"k".repeat(129)))
+            .await
+            .expect_err("a long key");
+        assert_eq!(err.code, ErrorCode::InvalidArgument);
+
+        let mut big = create("acme", "kg", "k");
+        big.limits = pb::GraphLimits {
+            timeout_ms: 10_000_000,
+            max_rows: 7,
+            max_path_hops: 99,
+            ..Default::default()
+        }
+        .into();
+        let created = admin.create_graph(big.clone()).await.expect("create");
+        let limits = created.limits.as_option().expect("limits");
+        assert_eq!(limits.timeout_ms, 300_000, "capped to the server's maximum");
+        assert_eq!(limits.max_rows, 7, "a value under the maximum stands");
+        assert_eq!(limits.max_path_hops, 10);
+        // The same request replays; the same key with other settings does not.
+        admin.create_graph(big).await.expect("an exact replay");
+        let mut different = create("acme", "kg", "k");
+        different.replicas = 2;
+        let err = admin
+            .create_graph(different)
+            .await
+            .expect_err("another request under the key");
+        assert_eq!(err.code, ErrorCode::InvalidArgument, "{err:?}");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn invalid_names_refused() {
         let fixture = Fixture::start().await;

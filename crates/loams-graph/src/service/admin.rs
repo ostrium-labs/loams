@@ -24,6 +24,44 @@ use crate::engine::{Engine, Graph, GraphState, OpenSpec};
 /// How long a deleted graph's storage is kept before it is purged, by default.
 pub const DEFAULT_RETENTION_HOLD: Duration = Duration::from_secs(24 * 3600);
 
+/// The most followers a graph may ask for (review M6).
+pub const MAX_REPLICAS: u32 = 8;
+/// The longest idempotency key accepted (review M6).
+pub const MAX_IDEMPOTENCY_KEY: usize = 128;
+/// The server's per-statement maximums (§48 §13.1); a graph's limits are capped to them.
+pub const MAX_LIMITS: GraphLimits = GraphLimits {
+    timeout_ms: 300_000,
+    max_rows: 100_000,
+    max_result_bytes: 64 << 20,
+    memory_bytes: 64 << 30,
+    max_path_hops: crate::classify::MAX_PATH_HOPS,
+};
+
+fn check_replicas(replicas: u32) -> Result<(), ConnectError> {
+    if replicas > MAX_REPLICAS {
+        return Err(refuse(
+            ErrorCode::InvalidArgument,
+            "invalid_argument",
+            format!("replicas must be at most {MAX_REPLICAS}, got {replicas}"),
+        ));
+    }
+    Ok(())
+}
+
+fn check_key(field: &str, key: &str) -> Result<Option<String>, ConnectError> {
+    if key.len() > MAX_IDEMPOTENCY_KEY {
+        return Err(refuse(
+            ErrorCode::InvalidArgument,
+            "invalid_argument",
+            format!(
+                "{field} must be at most {MAX_IDEMPOTENCY_KEY} bytes, got {}",
+                key.len()
+            ),
+        ));
+    }
+    Ok((!key.is_empty()).then(|| key.to_string()))
+}
+
 /// The fields `UpdateGraph`'s mask may name.
 const UPDATABLE: [&str; 3] = ["languages", "limits", "replicas"];
 
@@ -97,11 +135,12 @@ fn languages(
 
 fn limits_from(limits: Option<&pb::GraphLimits>) -> GraphLimits {
     limits.map_or_else(GraphLimits::default, |l| GraphLimits {
-        timeout_ms: l.timeout_ms,
-        max_rows: l.max_rows,
-        max_result_bytes: l.max_result_bytes,
-        memory_bytes: l.memory_bytes,
-        max_path_hops: l.max_path_hops,
+        // Each capped to the server's maximum, as `GraphLimits` documents.
+        timeout_ms: l.timeout_ms.min(MAX_LIMITS.timeout_ms),
+        max_rows: l.max_rows.min(MAX_LIMITS.max_rows),
+        max_result_bytes: l.max_result_bytes.min(MAX_LIMITS.max_result_bytes),
+        memory_bytes: l.memory_bytes.min(MAX_LIMITS.memory_bytes),
+        max_path_hops: l.max_path_hops.min(MAX_LIMITS.max_path_hops),
     })
 }
 
@@ -347,12 +386,13 @@ impl GraphAdmin {
                 "LINKED graphs are not served yet (GR1 Task 17)",
             ));
         }
+        check_replicas(req.replicas)?;
         let new = NewGraph {
             mode: GraphMode::Owned,
             languages: languages(&req.languages)?,
             limits: limits_from(req.limits.as_option()),
             replicas: req.replicas,
-            idempotency_key: (!req.idempotency_key.is_empty()).then(|| req.idempotency_key.clone()),
+            idempotency_key: check_key("idempotency_key", &req.idempotency_key)?,
         };
         let meta = self
             .catalog
@@ -426,6 +466,10 @@ impl GraphAdmin {
                 ),
             ));
         }
+        if paths.iter().any(|p| p == "replicas") {
+            check_replicas(graph.replicas)?;
+        }
+        check_key("idempotency_key", &req.idempotency_key)?;
         let new_languages = languages(&graph.languages)?;
         let new_limits = limits_from(graph.limits.as_option());
         let meta = self
@@ -468,7 +512,7 @@ impl GraphAdmin {
         &self,
         req: pb::DeleteGraphRequest,
     ) -> Result<ops::Operation, ConnectError> {
-        let key = (!req.idempotency_key.is_empty()).then(|| req.idempotency_key.clone());
+        let key = check_key("idempotency_key", &req.idempotency_key)?;
         self.forget(&req.namespace, &req.name);
         let meta = self
             .catalog
