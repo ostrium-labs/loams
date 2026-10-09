@@ -345,6 +345,8 @@ Commit `feat(graph): durable write path through the Loams log (D742)`.
 
 ### Task 12: Ownership, fencing and forwarding
 
+> **From Task 4 review (M3):** `GraphAdmin::purge_expired` and `sweep_documents` run per node today, and remove `<data_dir>/graphs/<id>/` only on the node that runs them. With several `graph` nodes, the purge must run under a lease (one sweeper per cluster, or per graph owner), close the graph on whichever node owns it (forwarding), and remove the bucket snapshot and manifest (Task 13) as well as local caches on every node. A per-namespace failure is logged and skipped, which is already the case.
+
 **Files:** `src/owner.rs`, `crates/loams/src/server.rs` (role wiring), `loams.internal.v1` additions (`GraphForward { Execute, ExecuteBatch }`, internal only), `tests/ownership.rs`.
 
 **Interfaces produced:** lease `graph/<graph_id>/owner` (TTL 10 s, renew 3 s); placement by rendezvous over nodes with role `graph`; appends carry the lease epoch and the log refuses a stale one; a non-owner forwards; an owner that loses its lease stops serving and drops its engine.
@@ -371,6 +373,8 @@ Tests:
 Commit `feat(graph): snapshots in the bucket and the graph manifest`.
 
 ### Task 14: Recovery, rehydration and eviction
+
+> **From Task 4 review (M3):** recovery must not reopen a graph whose catalog record is `deleting`, and eviction must release a deleted graph's local cache even when `purge_expired` has not run on this node (see the Task 12 note).
 
 **Files:** `src/recovery.rs`, `src/evict.rs`, `tests/recovery.rs`.
 

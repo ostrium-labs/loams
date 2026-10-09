@@ -1195,6 +1195,43 @@ mod admin {
         );
     }
 
+    /// Review M3: a catalog failure in one namespace does not stop the purge of the others.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn purge_survives_one_failing_namespace() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        for ns in ["one", "two"] {
+            admin
+                .create_graph(create(ns, "kg", "k"))
+                .await
+                .expect("create");
+            admin
+                .delete_graph(pb::DeleteGraphRequest {
+                    namespace: ns.to_string(),
+                    name: "kg".to_string(),
+                    ..Default::default()
+                })
+                .await
+                .expect("delete");
+        }
+        // A fresh admin has no cached documents, so its first catalog read GETs, and fails.
+        let sweeper = fixture.admin();
+        fixture.faulty.inject(Op::Get, Fault::Error);
+        assert_eq!(
+            sweeper
+                .purge_expired(Duration::ZERO)
+                .await
+                .expect("the sweep completes"),
+            1,
+            "the other namespace was purged"
+        );
+        assert_eq!(
+            sweeper.purge_expired(Duration::ZERO).await.expect("sweep"),
+            1,
+            "and the failed one next time"
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn invalid_names_refused() {
         let fixture = Fixture::start().await;

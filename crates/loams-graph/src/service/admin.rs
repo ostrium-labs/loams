@@ -591,12 +591,15 @@ impl GraphAdmin {
         let before = now.saturating_sub(u64::try_from(hold.as_millis()).unwrap_or(u64::MAX));
         let mut purged = 0;
         for namespace in self.catalog.namespaces().await.map_err(map_catalog)? {
-            for meta in self
-                .catalog
-                .deleting(&namespace, before)
-                .await
-                .map_err(map_catalog)?
-            {
+            // A namespace whose catalog fails is logged and skipped; the sweep goes on (M3).
+            let deleting = match self.catalog.deleting(&namespace, before).await {
+                Ok(deleting) => deleting,
+                Err(err) => {
+                    tracing::warn!(%namespace, error = %err, "purging deleted graphs: the namespace's catalog failed; skipped");
+                    continue;
+                }
+            };
+            for meta in deleting {
                 if let Some(open) = self.open_graph(&namespace, &meta.name)
                     && open.id().is_some_and(|id| id.to_string() == meta.id)
                 {
@@ -615,13 +618,12 @@ impl GraphAdmin {
                         continue;
                     }
                 }
-                if self
-                    .catalog
-                    .purge(&namespace, &meta.id)
-                    .await
-                    .map_err(map_catalog)?
-                {
-                    purged += 1;
+                match self.catalog.purge(&namespace, &meta.id).await {
+                    Ok(true) => purged += 1,
+                    Ok(false) => {}
+                    Err(err) => {
+                        tracing::warn!(%namespace, id = %meta.id, error = %err, "purging a deleted graph's record failed; retried on the next sweep");
+                    }
                 }
             }
         }
