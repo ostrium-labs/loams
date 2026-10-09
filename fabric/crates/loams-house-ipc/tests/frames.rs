@@ -4,7 +4,7 @@
 use bytes::Bytes;
 use loams_house_ipc::{
     Bind, Chunk, CodecError, EngineError, Execute, Frame, FrameCodec, InputSpec, Limits,
-    MAX_FRAME_BYTES, PROTOCOL_VERSION, Progress, Ready,
+    MAX_FRAME_BYTES, PROTOCOL_VERSION, Progress, Ready, SessionRef,
 };
 use proptest::collection::vec;
 use proptest::option;
@@ -91,7 +91,13 @@ fn limits() -> impl Strategy<Value = Limits> {
 fn execute() -> impl Strategy<Value = Execute> {
     (
         text(),
-        option::of(text()),
+        option::of(
+            (text(), any::<u64>(), any::<bool>()).prop_map(|(key, timeout_ms, close)| SessionRef {
+                key,
+                timeout_ms,
+                close,
+            }),
+        ),
         pairs(),
         vec(text(), 0..3),
         text(),

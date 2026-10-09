@@ -181,9 +181,9 @@ pub struct Execute {
     /// The query id the client sees in `X-ClickHouse-Query-Id`.
     pub query_id: String,
     /// The House session this statement belongs to, when it needs one connection
-    /// across statements (temporary tables, HS1 Task 4). `None` runs on a fresh
-    /// connection that is closed afterwards, so nothing leaks between statements.
-    pub session: Option<String>,
+    /// across statements (temporary tables). `None` runs on a fresh connection that
+    /// is closed afterwards, so nothing leaks between statements.
+    pub session: Option<SessionRef>,
     /// `SET`s for this statement, in order: the session's settings.
     pub settings: Vec<(String, String)>,
     /// DDL the front generated (the views of §49 §7), run on the worker's control
@@ -200,6 +200,18 @@ pub struct Execute {
     /// When present, `Input` frames follow this one and are streamed into this
     /// `INSERT` before `sql` runs (HS1 R1.7).
     pub input: Option<InputSpec>,
+}
+
+/// A House session on a worker (Task 3 review, decision 4; Task 4 adds pinning).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionRef {
+    /// Opaque to the worker. The front makes it from the user **and** the
+    /// `session_id`, so two users' sessions of the same id never meet.
+    pub key: String,
+    /// How long the session may sit idle on the worker before it is dropped.
+    pub timeout_ms: u64,
+    /// Drop the session once this statement is over (`close_session=1`).
+    pub close: bool,
 }
 
 /// Where an `INSERT` body goes.

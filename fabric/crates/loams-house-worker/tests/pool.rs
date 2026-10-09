@@ -479,11 +479,11 @@ async fn input_frames_stream_into_an_insert() {
         "CREATE TEMPORARY TABLE staged (n UInt64) ENGINE = Memory",
         "TSV",
     );
-    create.session = Some("s1".to_string());
+    create.session = common::session("s1");
     lease.run(create).await.expect("temporary table");
 
     let mut insert = statement("SELECT count(), sum(n) FROM staged", "TSV");
-    insert.session = Some("s1".to_string());
+    insert.session = common::session("s1");
     insert.input = Some(InputSpec {
         insert: "INSERT INTO staged".to_string(),
         format: "TSV".to_string(),
@@ -511,7 +511,7 @@ async fn input_frames_stream_into_an_insert() {
     // A bad body fails the statement, the rest of it is drained, and the worker
     // stays in step.
     let mut bad = statement("", "TSV");
-    bad.session = Some("s1".to_string());
+    bad.session = common::session("s1");
     bad.input = Some(InputSpec {
         insert: "INSERT INTO staged".to_string(),
         format: "Parquet".to_string(),
@@ -1119,4 +1119,100 @@ async fn oversized_frames_are_split_or_refused_not_crashes() {
         "{:?}",
         pool.stats()
     );
+}
+
+fn in_session(sql: &str, key: &str, timeout_ms: u64, close: bool) -> loams_house_ipc::Execute {
+    let mut exec = statement(sql, "TSV");
+    exec.session = Some(loams_house_ipc::SessionRef {
+        key: key.to_string(),
+        timeout_ms,
+        close,
+    });
+    exec
+}
+
+/// Task 3 review, decision 4: sessions on a worker expire when idle, are capped
+/// (least recently used first), close on request, and URL settings apply to one
+/// statement only.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn worker_sessions_expire_cap_close_and_do_not_keep_url_settings() {
+    let pool = pool("sessions", small(1)).await;
+    let mut lease = pool.acquire("ns").await.expect("worker");
+    let create = |key: &str, timeout_ms: u64| {
+        in_session(
+            "CREATE TEMPORARY TABLE t (n UInt8) ENGINE = Memory",
+            key,
+            timeout_ms,
+            false,
+        )
+    };
+    let exists = |key: &str| in_session("SELECT count() FROM t", key, 60_000, false);
+
+    // URL settings are per statement.
+    lease.run(create("u", 60_000)).await.expect("create");
+    let mut with = in_session("SELECT getSetting('max_threads')", "u", 60_000, false);
+    with.settings = vec![("max_threads".to_string(), "3".to_string())];
+    assert_eq!(lease.run(with).await.expect("with").bytes, b"3\n");
+    let without = lease
+        .run(in_session(
+            "SELECT getSetting('max_threads')",
+            "u",
+            60_000,
+            false,
+        ))
+        .await
+        .expect("without");
+    assert_ne!(
+        without.bytes, b"3\n",
+        "the URL setting did not stay in the session"
+    );
+    // A SET statement is the session's own and does stay.
+    lease
+        .run(in_session("SET max_block_size = 777", "u", 60_000, false))
+        .await
+        .expect("SET");
+    assert_eq!(
+        lease
+            .run(in_session(
+                "SELECT getSetting('max_block_size')",
+                "u",
+                60_000,
+                false
+            ))
+            .await
+            .expect("kept")
+            .bytes,
+        b"777\n"
+    );
+
+    // close_session drops it after the statement.
+    lease
+        .run(in_session("SELECT 1", "u", 60_000, true))
+        .await
+        .expect("close");
+    assert_eq!(lease.run(exists("u")).await.expect_err("closed").code(), 60);
+
+    // An idle session expires.
+    lease.run(create("idle", 200)).await.expect("create");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(
+        lease.run(exists("idle")).await.expect_err("expired").code(),
+        60
+    );
+
+    // Past MAX_SESSIONS the least recently used goes.
+    for n in 0..=loams_house_worker::serve::MAX_SESSIONS {
+        lease
+            .run(create(&format!("s{n}"), 60_000))
+            .await
+            .expect("create");
+    }
+    // `s1` first: asking for `s0` opens a new `s0`, which itself evicts the least
+    // recently used.
+    assert_eq!(lease.run(exists("s1")).await.expect("kept").bytes, b"0\n");
+    assert_eq!(
+        lease.run(exists("s0")).await.expect_err("evicted").code(),
+        60
+    );
+    pool.release(lease, Outcome::Completed);
 }

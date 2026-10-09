@@ -78,3 +78,12 @@ pub async fn eventually(limit: Duration, mut check: impl FnMut() -> bool) -> boo
     }
     check()
 }
+
+/// A session reference with the default 60 s idle timeout.
+pub fn session(key: &str) -> Option<loams_house_ipc::SessionRef> {
+    Some(loams_house_ipc::SessionRef {
+        key: key.to_string(),
+        timeout_ms: 60_000,
+        close: false,
+    })
+}

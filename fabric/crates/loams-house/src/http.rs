@@ -40,7 +40,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
-use loams_house_ipc::{Execute, InputSpec, Limits, Progress};
+use loams_house_ipc::{Execute, InputSpec, Limits, Progress, SessionRef};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
@@ -557,7 +557,14 @@ impl Conn {
 
         let execute = Execute {
             query_id: query_id.clone(),
-            session: get("session_id").map(str::to_string),
+            session: match session_ref(&user.user, &params) {
+                Ok(session) => session,
+                Err(err) => {
+                    let keep = keep_alive && self.drain(body).await;
+                    reply.keep_alive = keep;
+                    return reply.fail(&mut self.stream, err).await && keep;
+                }
+            },
             settings,
             views: Vec::new(),
             sql,
@@ -1223,6 +1230,45 @@ async fn write_chunk(stream: &mut TcpStream, bytes: &[u8]) -> std::io::Result<()
     out.extend_from_slice(bytes);
     out.extend_from_slice(b"\r\n");
     stream.write_all(&out).await
+}
+
+/// The default and the largest `session_timeout`, in seconds (ClickHouse's).
+pub const SESSION_TIMEOUT_DEFAULT: u64 = 60;
+/// See [`SESSION_TIMEOUT_DEFAULT`].
+pub const SESSION_TIMEOUT_MAX: u64 = 3600;
+
+/// The worker session a request names: keyed by the user **and** `session_id`, so
+/// two users' sessions of one id never meet (Task 3 review, decision 4).
+pub fn session_ref(
+    user: &str,
+    params: &[(String, String)],
+) -> Result<Option<SessionRef>, HouseError> {
+    let get = |name: &str| {
+        params
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    };
+    let Some(id) = get("session_id").filter(|id| !id.is_empty()) else {
+        return Ok(None);
+    };
+    let timeout = match get("session_timeout") {
+        None => SESSION_TIMEOUT_DEFAULT,
+        Some(raw) => raw
+            .parse::<u64>()
+            .ok()
+            .filter(|t| *t <= SESSION_TIMEOUT_MAX)
+            .ok_or_else(|| {
+                HouseError::from(ChError::bad_arguments(format!(
+                    "Invalid session timeout: '{raw}', max is {SESSION_TIMEOUT_MAX} seconds"
+                )))
+            })?,
+    };
+    Ok(Some(SessionRef {
+        key: format!("{}/{user}/{id}", user.len()),
+        timeout_ms: timeout * 1000,
+        close: get("close_session") == Some("1"),
+    }))
 }
 
 /// The request body's framing.
