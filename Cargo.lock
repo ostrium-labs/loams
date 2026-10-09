@@ -6955,6 +6955,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-neon"
+version = "0.0.1"
+dependencies = [
+ "axum 0.8.9",
+ "hex",
+ "humantime",
+ "loams-proto",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "loams-pk"
 version = "0.0.1"
 dependencies = [
