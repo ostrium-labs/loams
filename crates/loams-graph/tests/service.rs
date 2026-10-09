@@ -1306,7 +1306,9 @@ mod admin {
         .into();
         let created = admin.create_graph(big.clone()).await.expect("create");
         let limits = created.limits.as_option().expect("limits");
-        assert_eq!(limits.timeout_ms, 300_000, "capped to the server's maximum");
+        // Capped to what the server can honour: the engine's own 30 s `query_timeout` (Task 6
+        // fix round 1, M5; it was 300 s, the protocol maximum, before).
+        assert_eq!(limits.timeout_ms, 30_000, "capped to the value in force");
         assert_eq!(limits.max_rows, 7, "a value under the maximum stands");
         assert_eq!(limits.max_path_hops, 10);
         // The same request replays; the same key with other settings does not.
@@ -1532,6 +1534,12 @@ mod admin {
         let fixture = Fixture::start().await;
         let admin = Arc::new(fixture.admin().with_statement_slots(1));
         graph_with_nodes(&admin, 70).await;
+        // Another namespace, so the refusal is the process cap's and not the namespace's
+        // (Task 6 fix round 1, I1: with one slot, a namespace's cap is that one slot too).
+        admin
+            .create_graph(create("beta", "kg", "k"))
+            .await
+            .expect("create");
         assert_eq!(admin.statements_in_flight(), 0);
         let running = {
             let admin = admin.clone();
@@ -1543,7 +1551,7 @@ mod admin {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
         let err = admin
-            .execute(execute("acme", "kg", "MATCH (n) RETURN count(n)"))
+            .execute(execute("beta", "kg", "MATCH (n) RETURN count(n)"))
             .await
             .expect_err("over the cap");
         assert_eq!(err.code, ErrorCode::ResourceExhausted, "{err:?}");
