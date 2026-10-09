@@ -102,6 +102,10 @@ const RATIO_SLACK: u64 = 1024 * 1024;
 /// so one step yields at most about 2 MiB, under [`CHUNK_BYTES`].
 const FLATE_STEP: usize = 2048;
 
+/// The zstd decoder's one output buffer: 256 KiB, so a piece is at most that
+/// (well under [`CHUNK_BYTES`]) and a small body does not zero 4 MiB.
+const ZSTD_OUT: usize = 256 * 1024;
+
 /// The most bytes one decoded piece holds.
 pub const CHUNK_BYTES: usize = loams_house_ipc::CHUNK_BYTES;
 
@@ -293,8 +297,8 @@ impl Decoder {
                         }
                         return Ok(None);
                     }
-                    if out.len() != CHUNK_BYTES {
-                        out.resize(CHUNK_BYTES, 0);
+                    if out.len() != ZSTD_OUT {
+                        out.resize(ZSTD_OUT, 0);
                     }
                     let status =
                         zstd::stream::raw::Operation::run_on_buffers(state.as_mut(), input, out)

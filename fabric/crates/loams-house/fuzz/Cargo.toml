@@ -12,7 +12,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-loams-house = { path = ".." }
+loams-house = { path = "..", features = ["test-hooks"] }
 
 [[bin]]
 name = "request_parse"

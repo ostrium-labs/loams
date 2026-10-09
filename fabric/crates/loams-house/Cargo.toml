@@ -60,5 +60,11 @@ loams-chdb-sys = { path = "../loams-chdb-sys", optional = true }
 proptest.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
 
+# The fuzz target's body (`src/fuzz.rs`) exists only with `test-hooks`; a
+# workspace test run turns it on (the worker's dev-dependency asks for it).
+[[test]]
+name = "request_fuzz"
+required-features = ["test-hooks"]
+
 [lints]
 workspace = true

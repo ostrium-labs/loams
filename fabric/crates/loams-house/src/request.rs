@@ -572,37 +572,6 @@ pub fn split_format(sql: &str) -> (String, Option<String>) {
     )
 }
 
-/// The `request_parse` fuzz target's body (Task 3 review I8), shared with a
-/// stable property test: every parser here on arbitrary bytes, never panicking,
-/// and the incremental scan equal to the whole one at an arbitrary split.
-pub fn fuzz_request(data: &[u8]) {
-    let text = String::from_utf8_lossy(data);
-    let _ = parse_query(&text);
-    let _ = is_read(&text);
-    let _ = split_format(&text);
-    let _ = plan(data, true);
-    let _ = plan(data, false);
-    let cut = data.first().map_or(0, |b| *b as usize % (data.len() + 1));
-    let mut whole = Scanner::new();
-    whole.finish(data);
-    let mut pieces = Scanner::new();
-    pieces.advance(&data[..cut]);
-    pieces.advance(data);
-    pieces.finish(data);
-    assert_eq!(
-        whole.tokens(),
-        pieces.tokens(),
-        "scanning in pieces changed the tokens"
-    );
-    assert_eq!(
-        whole.insert_head(data, true),
-        pieces.insert_head(data, true)
-    );
-    let mut partial = Scanner::new();
-    partial.advance(&data[..cut]);
-    let _ = partial.insert_head(&data[..cut], false);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
