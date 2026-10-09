@@ -65,6 +65,10 @@ sha2 = "0.10"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The House classifier (HS1 Task 4, FL2 Rulings 4 and 6): the statements Loams
+# owns are parsed with sqlparser's ClickHouseDialect. 0.63.0 (2026-09-13) is HS1
+# R0.7's pin. Apache-2.0.
+sqlparser = "0.63"
 # The House HTTP interface is served by hyper's HTTP/1.1 connection (HS1 Task 3
 # review, decision 1; ruling R3.8): hyper owns request framing (Content-Length,
 # chunked, HTTP/1.0, pipelining, Expect: 100-continue), with a streaming body of

@@ -62,6 +62,7 @@
 
 pub mod admission;
 pub mod auth;
+pub mod classify;
 pub mod compress;
 pub mod config;
 pub mod errors;
