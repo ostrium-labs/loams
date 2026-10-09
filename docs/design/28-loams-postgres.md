@@ -808,7 +808,7 @@ Each item below is proposed. P5 plans each one separately, after P4.
 
 ## 10. Maintaining the fork (D231, D241)
 
-> **Superseded in part by [§51](51-neon-fork.md) (2026-10-09).** The owner decided to mirror and fully fork Neon, Neon's Postgres and their dependencies, and to maintain them (D800). D241's cadence is replaced by D810–D813: merge, not rebase; weekly and nightly syncs; minors within 7 days; 17 and 18 supported, 19 beta, 16 in maintenance. Images go to `ghcr.io/ostrium-labs`, not `ghcr.io/dina-kar`. The facts and estimates below stay as the record of 2026-09-29; §51 §13 restates the estimates.
+> **Superseded in part by [§51](51-loams-postgres-fork.md) (2026-10-09), and made a hard fork named Loams Postgres the same day (D820–D824): `ostrium-labs/neon` is now `ostrium-labs/loams-postgres`, with no upstream sync.** The owner decided to mirror and fully fork Neon, Neon's Postgres and their dependencies, and to maintain them (D800). D241's cadence is replaced by D810–D813: merge, not rebase; nightly Postgres syncs (the weekly Neon sync was dropped by D820); minors within 7 days; 17 and 18 supported, 19 beta, 16 in maintenance. Images go to `ghcr.io/ostrium-labs`, not `ghcr.io/dina-kar`. The facts and estimates below stay as the record of 2026-09-29; §51 §13 restates the estimates.
 
 **The starting point, verified 2026-09-29.**
 
