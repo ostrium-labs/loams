@@ -399,8 +399,10 @@ Commit `feat(pg): neon upcall API`.
 - `loams pg-control --store tikv|local --runtime compose|kubernetes --listen <addr> --pg-upcall-listen <addr> [--pg-authz openfga|dev]`.
 - The OpenFGA relations on `pg_project:<id>` are `viewer`, `editor`, `admin` and `connect`, inherited from the namespace. Agents cannot hold `admin`.
 - Each mutation emits an audit event (D221) with the principal and the `act` chain.
+- *(Amended by Task 1's review, R1.4.)* gRPC reflection lists only the services the process serves: `connect.rs::reflector` builds `Reflector::with_services(served_services())`. Today it advertises every service in `loams-proto`'s descriptor set, including the unserved `PostgresService` and `OperationsService`.
 
 Tests:
+- `reflection_lists_only_served_services`: `grpc.reflection.v1` `ListServices` equals the catalogue's available services (`served_services()`, plus reflection and health themselves), with and without the feature `postgres`.
 - `default_features_exclude_postgres`: `cargo tree -p loams -e normal --no-default-features --features default` does not contain `loams-pg-control` or `loams-neon`.
 - `viewer_cannot_create_branch`
 - `agent_cannot_hold_admin`
@@ -685,9 +687,9 @@ Commit `feat(pg): scram through pgdog`.
 
 **Interfaces:**
 - `IssueConnectCredential{project, branch, role?, ttl_s}` checks the gateway-verified principal (an Authentik-backed Loams token, D449) and OpenFGA `connect`.
-- It creates or reuses `tok_<hex(sha256(sub))[0..16]>` with `VALID UNTIL`, a fresh password and membership in the role. It pushes PgDog synchronously, waiting for the generation, and returns `{user, password, expires_at}`. TTL defaults to 900 s and is at most 3,600 s.
+- It creates or reuses `tok_<hex(sha256(sub))[0..16]>` with `VALID UNTIL`, a fresh password and membership in the role. It pushes PgDog synchronously, waiting for the generation, and returns `{connection, password, expire_time}` (the proto's `IssueConnectCredentialResponse`; `connection.user` is the login). TTL defaults to 900 s and is at most 3,600 s. A replay with the same `idempotency_key` answers `secret_already_issued`: the ledger keeps only that a credential was issued, never the password (R1.10).
 - The reconciler drops expired roles within 60 s.
-- `GetConnectionInfo` returns host, port, database, user and the CA, and proactively starts the endpoint (D709 step 5).
+- `GetConnectionInfo` returns host, port, database, user and the CA. It stays `NO_SIDE_EFFECTS` (R1.9). For a caller with the `connect` relation, and never one with only `viewer`, it also starts a suspended endpoint as a best-effort hint (D709 step 5). The answer never depends on the start, and the start's failure is not the RPC's.
 
 Tests:
 - `issue_requires_connect_relation`
@@ -695,7 +697,8 @@ Tests:
 - `expired_credential_refused_and_dropped`
 - `issued_credential_not_in_operation_result`
 - `agent_token_gets_scoped_role_only`
-- `get_connection_info_starts_suspended_endpoint`
+- `get_connection_info_starts_suspended_endpoint` (with `connect`)
+- `get_connection_info_viewer_does_not_wake`
 
 Commit `feat(pg): credential exchange for oidc and agents`.
 
@@ -1197,6 +1200,7 @@ Commit `feat(desktop): postgres page on the control plane`.
 - `docs/runbooks/loams-postgres/{failover.md,restore.md,upgrade.md,wal-incident.md,pgdog.md}`;
 - user docs (connect, branch, restore, limits);
 - `docs/plans/README.md` (status);
+- *(Task 1's review, R1.6.)* At GA, remove `unstable: true` from `loams.postgres.v1`'s `ModuleOptions` and `proto/loams/postgres` from `buf.yaml`'s `breaking.ignore`, so that `buf breaking` protects the package from then on.
 - §46 §19 (as built). *(Task 32's review, M9.)* That includes §46 §9 and §28 §6.7, §7.2 and D271, which still describe the feeder and its `--no-sync` safekeeper as the pageserver's path. It was deleted in Task 31/32 (commit `3a91c0dc`; the pageserver finds `loams-wal` through the broker, R32.1–R32.3).
 - `docs/design/12-roadmap-testing-risks.md` (a PG2 row).
 
@@ -1356,21 +1360,42 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
 
 ### Task 1 rulings (2026-10-09)
 
-- **R1.1 `WatchProject` is `NO_SIDE_EFFECTS`.** The contract snippet left it unmarked. It is a read (AP0: reads are `NO_SIDE_EFFECTS`), and `every_mutation_has_idempotency_key` would otherwise require a key on a watch.
+- **R1.1 `WatchProject` is `NO_SIDE_EFFECTS`.** The contract snippet left it unmarked. It is a read (AP0: reads are `NO_SIDE_EFFECTS`), and `every_mutation_has_idempotency_key` would otherwise require a key on a watch. *Note (review):* the SDKs treat `NO_SIDE_EFFECTS` calls as retry-safe. For a watch, retrying means resuming from the last `cursor`, which the request's `resume_cursor` supports, so a retried watch neither repeats nor loses events. Connect sends server streams as POST, so the level does not turn the watch into an HTTP GET.
 - **R1.2 Console routes.** `docs/api/route-map.md` gains a "Planned: `loams.postgres.v1`" section that puts the route first in each row. `route_map_covers_every_route` holds every method-first row to what the binary serves, so these rows only become method-first rows in the main tables when PG2 Task 9 serves them. Until then, `every_rpc_has_a_planned_console_route` checks the section both ways: every row names one of the service's RPCs, and every RPC has a row.
   - §46 §4.2's pattern does not route `UpgradeProject`, `WatchProject`, `RestoreBranch`, `SetDefaultBranch`, `ResetRolePassword`, `GetConnectionInfo` or `IssueConnectCredential`. They get AIP-136 custom methods (`:upgrade`, `:watch`, `:restore`, `:set_default`, `:reset_password`, `:issue_credential`) or a `connection_info` sub-resource.
   - Roles and databases are per branch (§46 §3) but sit under the project, as §4.2 writes them, with the branch in the body or the query (default: the project's default branch).
 - **R1.3 SDK exposure waits.**
-  - `PostgresService` carries `ModuleOptions` (`postgres`, stable, because `buf breaking` covers it). No method carries `FacadeOptions` yet, so the generated SDK facades expose no `postgres` module.
+  - `PostgresService` carries `ModuleOptions` (`postgres`). *(Corrected by R1.6: it is `unstable: true` until GA, and `buf breaking` skips the package; the first version said "stable, because `buf breaking` covers it".)* No method carries `FacadeOptions` yet, so the generated SDK facades expose no `postgres` module.
   - A module with calls needs every SDK template's package map to name the package. The Go SDK's committed stubs (an explicit path list) and `@loams/proto` would need generating, which belongs with serving the API (Task 9) and the API advertisement (Task 57).
   - The facades change only in their package list and the new reasons: the Python, Rust and TypeScript facades are regenerated, and the Go SDK's hand-written fallback `reason.go` is updated by hand (its `TestReasonRegistryMatchesDocs` passes).
 - **R1.4 The types are in `loams-proto`'s default build; the service is not served.** As the plan's file list says, `loams/postgres/v1/postgres.proto` joins `loams-proto`'s `FILES`. The default `loams` registers no `PostgresService`; that is Task 9's, behind the feature `postgres`. gRPC reflection advertises every service of the descriptor set (`Reflector` is not curated), as it already does for the unserved `loams.operations.v1.OperationsService`. Task 9 should curate reflection with `Reflector::with_services(served_services())`, so that only served services are listed.
 - **R1.5 Reasons.** The nine §46 §4.1 reasons are registered with these codes:
   - `project_not_found` (not_found);
   - `branch_has_children`, `branch_protected` and `secret_already_issued` (failed_precondition);
-  - `lsn_out_of_retention` (out_of_range);
+  - `lsn_out_of_retention` (out_of_range at first; failed_precondition since R1.8);
   - `endpoint_exists_for_branch` (already_exists);
   - `compute_start_failed` and `storage_unavailable` (unavailable);
   - `quota_exceeded` (resource_exhausted).
 
   A create under a taken name with another key uses the generic `already_exists`. `loams.postgres.v1` is added to §44 §7.2's module catalogue, which `no_proto_declares_a_package_the_design_does_not_enumerate` requires.
+- **R1.6 `loams.postgres.v1` is unstable until GA (controller ruling, review I2).** The module carries `unstable: true`, and `buf.yaml`'s `breaking.ignore` lists `proto/loams/postgres`, as for `loams.graph.v1`. Task 60's text now removes both at GA. Until then fields may be renumbered, which fix round 1 used. `pg2.yml`'s `buf breaking` against dev passes for the package by construction until then; `buf lint` still covers it.
+- **R1.7 One addressing style (review minor 4).**
+  - Every request has a top-level `namespace = 1`, then `project_id` and the child's id. An update carries the resource, whose `id` names it.
+  - `project_id` and the console's `{project}` (likewise `{branch}`, `{endpoint}`) are always the ids, never names, because names can change.
+  - An empty `update_mask` is `invalid_argument`, not "every field".
+  - `DeleteProject`, `DeleteBranch`, `DeleteEndpoint` and `SetDefaultBranch` take `optional uint64 expected_version`. Roles and databases have no version, so their deletes have none.
+  - Every `branch_id` that may be empty says it takes the project's default branch.
+- **R1.8 Reason codes (review minors 1, 2).**
+  - `lsn_out_of_retention` is `failed_precondition`: the point exists, but not in what the project keeps.
+  - `endpoint_exists_for_branch` is `CreateEndpoint`'s only. A promote while the branch's read-write endpoint runs answers the generic `failed_precondition`.
+  - `secret_already_issued` carries `role` in its metadata and a hint (`ResetRolePassword`, or `IssueConnectCredential` with a new key).
+  - `reasons_have_their_connect_codes` pins all nine.
+- **R1.9 `GetConnectionInfo` stays `NO_SIDE_EFFECTS` (controller ruling, review I3).** Its wake of a suspended endpoint is a best-effort hint, made only for a caller with the `connect` relation and never for one with only `viewer`. The proto comment and Task 25's text say so, and Task 25 gains `get_connection_info_viewer_does_not_wake`.
+- **R1.10 Secrets and the idempotency ledger (review I1).** `CreateRole`, `ResetRolePassword` and `IssueConnectCredential` answer their secret once. The ledger records that a secret was issued, never the secret, so a replay answers `secret_already_issued`. This is stated in the proto header and in `docs/api/reasons.md`.
+- **R1.11 `ConnectionInfo` and the credential's shape (review minor 6).**
+  - `ConnectionInfo` (host, port, routed database, user, sslmode, CA, URI) is shared by `GetConnectionInfoResponse.connection` and `IssueConnectCredentialResponse.connection`.
+  - The credential is `{connection, password, expire_time}`. §46 §8.6 and Task 25 are amended from `expires_at` to the package's `*_time` naming.
+  - The TTL defaults to 15 minutes and is capped at 1 hour (a longer request is cut, not refused). This is documented on `ttl`.
+  - The no-secret test also refuses `credential`, `token` and `private_key`.
+- **R1.12 Branch and worktree names (review minor 9).** This plan runs on branch `backend/pg2` in worktree `~/Documents/Ostriumlabs/loams-wt/pg2`, one branch for all milestones, merged to `dev` task by task. That replaces the Global Constraints' `feat/pg2a-…`…`feat/pg2f-…` branches and the `loams-wt/pg2-postgres-production` worktree.
+
