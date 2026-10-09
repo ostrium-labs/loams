@@ -319,6 +319,13 @@ impl GraphAdmin {
         self
     }
 
+    /// Namespaces with a statement running now (review fix 1, M6: an idle or deleted namespace
+    /// keeps no entry).
+    #[must_use]
+    pub fn namespaces_in_use(&self) -> usize {
+        self.namespaces.namespaces()
+    }
+
     /// The cap on one namespace's statements at once, as in force.
     #[must_use]
     pub fn namespace_statements(&self) -> usize {
@@ -1253,5 +1260,5 @@ impl Drop for Waiting {
 /// A statement's process and namespace slots, freed when dropped.
 pub(crate) struct Slots {
     _process: tokio::sync::OwnedSemaphorePermit,
-    _namespace: tokio::sync::OwnedSemaphorePermit,
+    _namespace: crate::limits::NamespaceSlot,
 }

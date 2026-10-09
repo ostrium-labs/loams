@@ -398,13 +398,56 @@ impl NamespaceSlots {
 
     /// A slot of `namespace`, or `None` when all of its slots are taken.
     #[must_use]
-    pub fn try_acquire(&self, namespace: &str) -> Option<tokio::sync::OwnedSemaphorePermit> {
+    pub fn try_acquire(self: &Arc<Self>, namespace: &str) -> Option<NamespaceSlot> {
         let semaphore = Arc::clone(
             lock(&self.slots)
                 .entry(namespace.to_string())
                 .or_insert_with(|| Arc::new(tokio::sync::Semaphore::new(self.per_namespace))),
         );
-        semaphore.try_acquire_owned().ok()
+        let permit = semaphore.try_acquire_owned().ok();
+        if permit.is_none() {
+            self.forget_if_idle(namespace);
+        }
+        permit.map(|permit| NamespaceSlot {
+            permit: Some(permit),
+            slots: Arc::clone(self),
+            namespace: namespace.to_string(),
+        })
+    }
+
+    /// Namespaces with a semaphore now: only those with a statement running (review fix 1, M6).
+    #[must_use]
+    pub fn namespaces(&self) -> usize {
+        lock(&self.slots).len()
+    }
+
+    /// Drops a namespace's semaphore once no statement holds a slot of it, so the map holds
+    /// only namespaces in use and a deleted one leaves no entry behind (review fix 1, M6).
+    fn forget_if_idle(&self, namespace: &str) {
+        let mut slots = lock(&self.slots);
+        // Under the map's lock no new permit can be taken from this semaphore, and every
+        // permit holds a clone of it: one holder (the map) means none is running.
+        if slots
+            .get(namespace)
+            .is_some_and(|semaphore| Arc::strong_count(semaphore) == 1)
+        {
+            slots.remove(namespace);
+        }
+    }
+}
+
+/// One statement's slot of its namespace; dropping it frees the slot.
+#[derive(Debug)]
+pub struct NamespaceSlot {
+    permit: Option<tokio::sync::OwnedSemaphorePermit>,
+    slots: Arc<NamespaceSlots>,
+    namespace: String,
+}
+
+impl Drop for NamespaceSlot {
+    fn drop(&mut self) {
+        drop(self.permit.take());
+        self.slots.forget_if_idle(&self.namespace);
     }
 }
 

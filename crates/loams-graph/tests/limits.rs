@@ -592,7 +592,7 @@ async fn batch_over_limit_rejected() {
 async fn namespace_concurrency_limit_resource_exhausted() {
     let fixture = Fixture::start().await;
     let admin = Arc::new(fixture.admin().with_namespace_statements(1));
-    graph_with_nodes(&admin, 120).await;
+    graph_with_nodes(&admin, 100).await;
     create(&admin, "acme", "other", None).await;
     create(&admin, "beta", "kg", None).await;
     let running = {
@@ -1202,4 +1202,29 @@ async fn a_graph_timeout_is_answered_as_the_value_in_force() {
         updated.limits.as_option().expect("limits").timeout_ms,
         30_000
     );
+}
+
+/// Review fix 1, M6: a namespace's slot semaphore lives only while a statement of it runs, so a
+/// deleted (or idle) namespace leaves nothing behind.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn idle_namespaces_leave_no_slot_entry() {
+    let fixture = Fixture::start().await;
+    let admin = Arc::new(fixture.admin());
+    for ns in ["a1", "a2", "a3"] {
+        create(&admin, ns, "kg", None).await;
+        admin
+            .execute(execute(ns, "kg", "RETURN 1"))
+            .await
+            .expect("run");
+    }
+    assert_eq!(admin.namespaces_in_use(), 0);
+    graph_with_nodes(&admin, 100).await;
+    let running = {
+        let admin = admin.clone();
+        tokio::spawn(async move { admin.execute(execute("acme", "kg", LONG)).await })
+    };
+    until("running", || admin.statements_in_flight() == 1).await;
+    assert_eq!(admin.namespaces_in_use(), 1);
+    running.await.expect("task").expect("ends");
+    assert_eq!(admin.namespaces_in_use(), 0);
 }
