@@ -162,8 +162,9 @@ fn every_mutation_has_idempotency_key() {
     assert_eq!(checked, CONTRACT.iter().filter(|(_, r, _)| !r).count());
 }
 
-/// `GetConnectionInfoResponse`, and every message it holds, has no field
-/// named like a password or a secret (§46 §4.1; Review Focus 3).
+/// `GetConnectionInfoResponse`, and every message it holds (the shared
+/// `ConnectionInfo`), has no field named like a secret (§46 §4.1; Review
+/// Focus 3).
 #[test]
 fn connection_info_has_no_password_field() {
     let set = descriptor_set();
@@ -182,7 +183,7 @@ fn connection_info_has_no_password_field() {
         for f in &m.field {
             fields += 1;
             let lower = f.name().to_lowercase();
-            for bad in ["password", "secret"] {
+            for bad in ["password", "secret", "credential", "token", "private_key"] {
                 assert!(!lower.contains(bad), "{name}.{} carries a {bad}", f.name());
             }
             if f.r#type() == Type::Message && f.type_name().starts_with(&format!(".{PACKAGE}.")) {
@@ -190,7 +191,7 @@ fn connection_info_has_no_password_field() {
             }
         }
     }
-    assert!(fields >= 6, "{root} parsed with only {fields} fields");
+    assert!(fields >= 7, "{root} parsed with only {fields} fields");
 }
 
 /// The reasons §46 §4.1 names, read from the design: its Errors bullet, and
@@ -315,6 +316,7 @@ fn every_rpc_has_a_planned_console_route() {
         .map_or(text.len(), |e| start + 1 + e);
     let prefix = format!("`{PACKAGE}.{SERVICE}/");
     let mut routed = BTreeSet::new();
+    let mut pairs = BTreeSet::new();
     let mut rows = 0;
     for line in text[start..end].lines() {
         let cells: Vec<&str> = line.split('|').map(str::trim).collect();
@@ -322,6 +324,12 @@ fn every_rpc_has_a_planned_console_route() {
             continue;
         }
         rows += 1;
+        assert!(
+            pairs.insert((cells[1].to_string(), cells[2].to_string())),
+            "route {} {} is listed twice",
+            cells[2],
+            cells[1]
+        );
         assert!(
             ["GET", "POST", "PATCH", "DELETE"].contains(&cells[2]),
             "bad method in {line}"
@@ -344,4 +352,128 @@ fn every_rpc_has_a_planned_console_route() {
         "RPCs with no planned route: {unrouted:?}"
     );
     assert!(rows >= all.len());
+}
+
+fn request_of(set: &FileDescriptorSet, rpc: &str) -> DescriptorProto {
+    let m = methods(set).into_iter().find(|m| m.name() == rpc).unwrap();
+    messages(set)[m.input_type()].clone()
+}
+
+fn response_of(set: &FileDescriptorSet, rpc: &str) -> DescriptorProto {
+    let m = methods(set).into_iter().find(|m| m.name() == rpc).unwrap();
+    messages(set)[m.output_type()].clone()
+}
+
+fn field<'a>(m: &'a DescriptorProto, name: &str) -> &'a prost_types::FieldDescriptorProto {
+    m.field
+        .iter()
+        .find(|f| f.name() == name)
+        .unwrap_or_else(|| panic!("{} has no {name}", m.name()))
+}
+
+/// AP0 pagination: every `List*` takes `int32 page_size` and `string
+/// page_token`, and answers one repeated resource and `string
+/// next_page_token`.
+#[test]
+fn list_rpcs_page_as_ap0_says() {
+    let set = descriptor_set();
+    let lists: Vec<String> = CONTRACT
+        .iter()
+        .filter(|(n, _, _)| n.starts_with("List"))
+        .map(|(n, _, _)| n.to_string())
+        .collect();
+    assert_eq!(lists.len(), 5);
+    for rpc in &lists {
+        let req = request_of(&set, rpc);
+        assert_eq!(field(&req, "page_size").r#type(), Type::Int32, "{rpc}");
+        assert_eq!(field(&req, "page_token").r#type(), Type::String, "{rpc}");
+        let resp = response_of(&set, rpc);
+        assert_eq!(
+            field(&resp, "next_page_token").r#type(),
+            Type::String,
+            "{rpc}"
+        );
+        let repeated: Vec<_> = resp
+            .field
+            .iter()
+            .filter(|f| f.label() == Label::Repeated && f.r#type() == Type::Message)
+            .collect();
+        assert_eq!(repeated.len(), 1, "{rpc}: one repeated resource");
+    }
+}
+
+/// `optional uint64 expected_version`.
+fn assert_expected_version(m: &DescriptorProto, rpc: &str) {
+    let v = field(m, "expected_version");
+    assert_eq!(v.r#type(), Type::Uint64, "{rpc}");
+    assert!(
+        v.proto3_optional(),
+        "{rpc}: `optional`, so 0 is not a version"
+    );
+}
+
+/// AP0 updates: every `Update*` takes the resource, a `FieldMask
+/// update_mask` and an `optional uint64 expected_version`.
+#[test]
+fn update_rpcs_take_a_mask_and_a_version() {
+    let set = descriptor_set();
+    for (rpc, resource) in [
+        ("UpdateProject", ".loams.postgres.v1.Project"),
+        ("UpdateBranch", ".loams.postgres.v1.Branch"),
+        ("UpdateEndpoint", ".loams.postgres.v1.Endpoint"),
+    ] {
+        let req = request_of(&set, rpc);
+        assert!(
+            req.field.iter().any(|f| f.type_name() == resource),
+            "{rpc} carries no {resource}"
+        );
+        assert_eq!(
+            field(&req, "update_mask").type_name(),
+            ".google.protobuf.FieldMask",
+            "{rpc}"
+        );
+        assert_expected_version(&req, rpc);
+    }
+}
+
+/// The deletes of versioned resources, and `SetDefaultBranch` (the
+/// project's version), can be made conditional.
+#[test]
+fn deletes_and_set_default_take_an_expected_version() {
+    let set = descriptor_set();
+    for rpc in [
+        "DeleteProject",
+        "DeleteBranch",
+        "DeleteEndpoint",
+        "SetDefaultBranch",
+    ] {
+        assert_expected_version(&request_of(&set, rpc), rpc);
+    }
+}
+
+/// One addressing style: every request names its namespace in a top-level
+/// `string namespace = 1`.
+#[test]
+fn every_request_has_a_top_level_namespace() {
+    let set = descriptor_set();
+    for (rpc, _, _) in CONTRACT {
+        let req = request_of(&set, rpc);
+        let ns = req
+            .field
+            .iter()
+            .find(|f| f.number() == 1)
+            .unwrap_or_else(|| panic!("{rpc}: no field 1"));
+        assert_eq!(ns.name(), "namespace", "{rpc}");
+        assert_eq!(ns.r#type(), Type::String, "{rpc}");
+    }
+}
+
+/// `Removed.kind` is an enum, not a free string.
+#[test]
+fn removed_kind_is_an_enum() {
+    let set = descriptor_set();
+    let msgs = messages(&set);
+    let kind = field(&msgs[".loams.postgres.v1.Removed"], "kind");
+    assert_eq!(kind.r#type(), Type::Enum);
+    assert_eq!(kind.type_name(), ".loams.postgres.v1.ResourceKind");
 }

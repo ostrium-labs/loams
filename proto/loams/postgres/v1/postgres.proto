@@ -8,12 +8,24 @@ syntax = "proto3";
 // - **Ids.** "prj-", "br-", "ep-" and "cmp-" followed by a 26-character
 //   Crockford ULID. Names are unique per namespace (projects) or per project
 //   (branches); roles and databases are named per branch.
+// - **Addressing.** Every request names its namespace in a top-level
+//   `namespace`, then the project by `project_id` and a child by its id. An
+//   update carries the resource, whose `id` names it. `project_id` (and the
+//   console's `{project}`) is always the "prj-" id, never the name: ids never
+//   change, names can (`UpdateProject`).
+// - **Defaults.** Where a request's `branch_id` may be empty, its comment
+//   says so, and empty takes the project's default branch.
+// - **Updates** change exactly the fields named in `update_mask`; an empty
+//   mask is `invalid_argument` (field `update_mask`), never "every field".
+//   With `expected_version`, an update or delete applies only at that
+//   version of the resource (otherwise `aborted`).
 // - **Idempotency.** Every mutating request has `string idempotency_key = 15`
 //   (a client ULID). A replay within 24 h answers the first response,
-//   including the same `Operation` id; `CreateRole` and `ResetRolePassword`
-//   answer the reason `secret_already_issued` instead of the password a
-//   second time. A create under a taken name with another key is
-//   `already_exists`.
+//   including the same `Operation` id. `CreateRole`, `ResetRolePassword` and
+//   `IssueConnectCredential` answer a secret once: the idempotency ledger
+//   never stores the secret, only that one was issued, so a replay answers
+//   the reason `secret_already_issued` instead of the secret. A create under a
+//   taken name with another key is `already_exists`.
 // - **Operations.** The long-running RPCs answer a
 //   `loams.operations.v1.Operation` (watch it with `WatchOperations`), whose
 //   `target` is `{project, branch?, endpoint?}`. The kinds:
@@ -103,7 +115,8 @@ service PostgresService {
   // Operation `postgres.endpoint.suspend`.
   rpc SuspendEndpoint(SuspendEndpointRequest) returns (SuspendEndpointResponse);
   // Operation `postgres.endpoint.restart`; with `promote`, a read-only
-  // endpoint becomes the branch's read-write one (PG2 Task 16).
+  // endpoint becomes the branch's read-write one (PG2 Task 16), and while
+  // that read-write endpoint is running the promote is `failed_precondition`.
   rpc RestartEndpoint(RestartEndpointRequest) returns (RestartEndpointResponse);
   // Operation `postgres.endpoint.delete`.
   rpc DeleteEndpoint(DeleteEndpointRequest) returns (DeleteEndpointResponse);
@@ -123,7 +136,11 @@ service PostgresService {
   }
   rpc DeleteDatabase(DeleteDatabaseRequest) returns (DeleteDatabaseResponse);
 
-  // Where and as whom to connect, through PgDog. Never a password.
+  // Where and as whom to connect, through PgDog. Never a password. A read
+  // (`NO_SIDE_EFFECTS`): for a caller with the `connect` relation it may
+  // also start a suspended endpoint, as a best-effort hint that the
+  // connection follows (D709); never for a caller with only `viewer`, and
+  // never an error when the start does not happen.
   rpc GetConnectionInfo(GetConnectionInfoRequest) returns (GetConnectionInfoResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -358,13 +375,13 @@ message ListProjectsResponse {
 }
 
 message UpdateProjectRequest {
-  // Named by `namespace` and `id`; the fields in `update_mask` are taken
-  // from it.
-  Project project = 1;
-  // `name` and `history_retention`.
-  google.protobuf.FieldMask update_mask = 2;
+  string namespace = 1;
+  // Named by its `id`; the fields in `update_mask` are taken from it.
+  Project project = 2;
+  // `name` and `history_retention`; empty is `invalid_argument`.
+  google.protobuf.FieldMask update_mask = 3;
   // When set, the update applies only at this `Project.version`.
-  optional uint64 expected_version = 3;
+  optional uint64 expected_version = 4;
   string idempotency_key = 15;
 }
 
@@ -375,6 +392,8 @@ message UpdateProjectResponse {
 message DeleteProjectRequest {
   string namespace = 1;
   string project_id = 2;
+  // When set, the delete applies only at this `Project.version`.
+  optional uint64 expected_version = 3;
   string idempotency_key = 15;
 }
 
@@ -446,12 +465,14 @@ message ListBranchesResponse {
 }
 
 message UpdateBranchRequest {
-  // Named by `project_id` and `id`, in `namespace`.
   string namespace = 1;
-  Branch branch = 2;
-  // `name`, `expire_time` and `protected`.
-  google.protobuf.FieldMask update_mask = 3;
-  optional uint64 expected_version = 4;
+  string project_id = 2;
+  // Named by its `id`; the fields in `update_mask` are taken from it.
+  Branch branch = 3;
+  // `name`, `expire_time` and `protected`; empty is `invalid_argument`.
+  google.protobuf.FieldMask update_mask = 4;
+  // When set, the update applies only at this `Branch.version`.
+  optional uint64 expected_version = 5;
   string idempotency_key = 15;
 }
 
@@ -463,6 +484,8 @@ message DeleteBranchRequest {
   string namespace = 1;
   string project_id = 2;
   string branch_id = 3;
+  // When set, the delete applies only at this `Branch.version`.
+  optional uint64 expected_version = 4;
   string idempotency_key = 15;
 }
 
@@ -496,6 +519,8 @@ message SetDefaultBranchRequest {
   string namespace = 1;
   string project_id = 2;
   string branch_id = 3;
+  // When set, the change applies only at this `Project.version`.
+  optional uint64 expected_version = 4;
   string idempotency_key = 15;
 }
 
@@ -510,6 +535,7 @@ message SetDefaultBranchResponse {
 message CreateEndpointRequest {
   string namespace = 1;
   string project_id = 2;
+  // Empty takes the project's default branch.
   string branch_id = 3;
   EndpointType type = 4;
   double min_cu = 5;
@@ -549,12 +575,15 @@ message ListEndpointsResponse {
 }
 
 message UpdateEndpointRequest {
-  // Named by `project_id` and `id`, in `namespace`.
   string namespace = 1;
-  Endpoint endpoint = 2;
-  // `min_cu`, `max_cu`, `suspend_timeout`, `pool_mode` and `pg_settings`.
-  google.protobuf.FieldMask update_mask = 3;
-  optional uint64 expected_version = 4;
+  string project_id = 2;
+  // Named by its `id`; the fields in `update_mask` are taken from it.
+  Endpoint endpoint = 3;
+  // `min_cu`, `max_cu`, `suspend_timeout`, `pool_mode` and `pg_settings`;
+  // empty is `invalid_argument`.
+  google.protobuf.FieldMask update_mask = 4;
+  // When set, the update applies only at this `Endpoint.version`.
+  optional uint64 expected_version = 5;
   string idempotency_key = 15;
 }
 
@@ -602,6 +631,8 @@ message DeleteEndpointRequest {
   string namespace = 1;
   string project_id = 2;
   string endpoint_id = 3;
+  // When set, the delete applies only at this `Endpoint.version`.
+  optional uint64 expected_version = 4;
   string idempotency_key = 15;
 }
 
@@ -631,6 +662,7 @@ message CreateRoleResponse {
 message ListRolesRequest {
   string namespace = 1;
   string project_id = 2;
+  // Empty takes the project's default branch.
   string branch_id = 3;
   int32 page_size = 4;
   string page_token = 5;
@@ -644,6 +676,7 @@ message ListRolesResponse {
 message ResetRolePasswordRequest {
   string namespace = 1;
   string project_id = 2;
+  // Empty takes the project's default branch.
   string branch_id = 3;
   string name = 4;
   string idempotency_key = 15;
@@ -658,6 +691,7 @@ message ResetRolePasswordResponse {
 message DeleteRoleRequest {
   string namespace = 1;
   string project_id = 2;
+  // Empty takes the project's default branch.
   string branch_id = 3;
   string name = 4;
   string idempotency_key = 15;
@@ -668,6 +702,7 @@ message DeleteRoleResponse {}
 message CreateDatabaseRequest {
   string namespace = 1;
   string project_id = 2;
+  // Empty takes the project's default branch.
   string branch_id = 3;
   string name = 4;
   string owner_role = 5;
@@ -681,6 +716,7 @@ message CreateDatabaseResponse {
 message ListDatabasesRequest {
   string namespace = 1;
   string project_id = 2;
+  // Empty takes the project's default branch.
   string branch_id = 3;
   int32 page_size = 4;
   string page_token = 5;
@@ -694,6 +730,7 @@ message ListDatabasesResponse {
 message DeleteDatabaseRequest {
   string namespace = 1;
   string project_id = 2;
+  // Empty takes the project's default branch.
   string branch_id = 3;
   string name = 4;
   string idempotency_key = 15;
@@ -720,10 +757,14 @@ message GetConnectionInfoRequest {
   bool read_only = 7;
 }
 
+message GetConnectionInfoResponse {
+  ConnectionInfo connection = 1;
+}
+
 // Where and as whom to connect. No password: a role's is answered once by
 // `CreateRole` or `ResetRolePassword`, and a short-lived one by
 // `IssueConnectCredential`.
-message GetConnectionInfoResponse {
+message ConnectionInfo {
   // PgDog's address for the namespace.
   string host = 1;
   uint32 port = 2;
@@ -741,23 +782,28 @@ message GetConnectionInfoResponse {
 message IssueConnectCredentialRequest {
   string namespace = 1;
   string project_id = 2;
+  // Empty takes the project's default branch.
   string branch_id = 3;
+  // Empty takes the branch's read-write endpoint.
   string endpoint_id = 4;
-  // The role the caller's identity maps to; empty takes its default (an
-  // agent's is the read-only role).
+  // The role the issued login is a member of; empty takes the caller's
+  // default (an agent's is the read-only role).
   string role = 5;
-  // How long the credential lives; unset takes the server's default.
+  // How long the credential lives: unset takes 15 minutes, and anything
+  // longer than 1 hour is cut to 1 hour (§46 §8.6).
   google.protobuf.Duration ttl = 6;
   string idempotency_key = 15;
 }
 
+// The short-lived login (§46 §8.6's `{user, password, expire_time}`).
 message IssueConnectCredentialResponse {
-  string user = 1;
-  // Answered once; never in an `Operation`, a log or a metric.
-  string credential = 2;
+  // Where and as whom to connect; `user` is the issued login role.
+  ConnectionInfo connection = 1;
+  // Answered once; never stored for a replay, and never in an `Operation`,
+  // a log or a metric.
+  string password = 2;
+  // When the login stops working; the reconciler drops it after that.
   google.protobuf.Timestamp expire_time = 3;
-  // Where to use it.
-  GetConnectionInfoResponse connection = 4;
 }
 
 // ---------------------------------------------------------------------------
@@ -796,9 +842,15 @@ message ProjectSnapshot {
 
 // A branch, endpoint or compute that no longer exists.
 message Removed {
-  // "branch", "endpoint" or "compute".
-  string kind = 1;
+  ResourceKind kind = 1;
   string id = 2;
+}
+
+enum ResourceKind {
+  RESOURCE_KIND_UNSPECIFIED = 0;
+  RESOURCE_KIND_BRANCH = 1;
+  RESOURCE_KIND_ENDPOINT = 2;
+  RESOURCE_KIND_COMPUTE = 3;
 }
 
 message Heartbeat {}
