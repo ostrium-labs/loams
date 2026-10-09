@@ -169,10 +169,13 @@ fn languages(
     Ok(out)
 }
 
-fn limits_from(limits: Option<&pb::GraphLimits>) -> GraphLimits {
+/// A request's graph limits, each capped to the server's maximum, as `GraphLimits` documents.
+/// The timeout is capped to `timeout_ceiling` (the engine's own `query_timeout`, when lower than
+/// 300 s), so the record says the value in force (review fix 1, M5).
+fn limits_from(limits: Option<&pb::GraphLimits>, timeout_ceiling: Duration) -> GraphLimits {
+    let ceiling_ms = u32::try_from(timeout_ceiling.as_millis()).unwrap_or(u32::MAX);
     limits.map_or_else(GraphLimits::default, |l| GraphLimits {
-        // Each capped to the server's maximum, as `GraphLimits` documents.
-        timeout_ms: l.timeout_ms.min(MAX_LIMITS.timeout_ms),
+        timeout_ms: l.timeout_ms.min(MAX_LIMITS.timeout_ms).min(ceiling_ms),
         max_rows: l.max_rows.min(MAX_LIMITS.max_rows),
         max_result_bytes: l.max_result_bytes.min(MAX_LIMITS.max_result_bytes),
         memory_bytes: l.memory_bytes.min(MAX_LIMITS.memory_bytes),
@@ -809,7 +812,7 @@ impl GraphAdmin {
         let new = NewGraph {
             mode: GraphMode::Owned,
             languages: languages(&req.languages)?,
-            limits: limits_from(req.limits.as_option()),
+            limits: limits_from(req.limits.as_option(), self.timeout_ceiling()),
             replicas: req.replicas,
             idempotency_key: check_key("idempotency_key", &req.idempotency_key)?,
         };
@@ -890,7 +893,7 @@ impl GraphAdmin {
         }
         check_key("idempotency_key", &req.idempotency_key)?;
         let new_languages = languages(&graph.languages)?;
-        let new_limits = limits_from(graph.limits.as_option());
+        let new_limits = limits_from(graph.limits.as_option(), self.timeout_ceiling());
         let meta = self
             .catalog
             .update(

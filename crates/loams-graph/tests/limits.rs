@@ -1160,3 +1160,46 @@ async fn statement_slots_are_capped() {
         admin.statement_slots()
     );
 }
+
+/// Review fix 1, M5: a graph's timeout above what the server can honour (the engine's own
+/// `query_timeout`, 30 s by default) is stored and answered as the value in force.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_graph_timeout_is_answered_as_the_value_in_force() {
+    let fixture = Fixture::start().await;
+    let admin = fixture.admin();
+    let graph = admin
+        .create_graph(pb::CreateGraphRequest {
+            namespace: "acme".to_string(),
+            name: "kg".to_string(),
+            limits: pb::GraphLimits {
+                timeout_ms: 120_000,
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        })
+        .await
+        .expect("create");
+    assert_eq!(graph.limits.as_option().expect("limits").timeout_ms, 30_000);
+    let updated = admin
+        .update_graph(pb::UpdateGraphRequest {
+            graph: pb::Graph {
+                namespace: "acme".to_string(),
+                name: "kg".to_string(),
+                limits: pb::GraphLimits {
+                    timeout_ms: 200_000,
+                    ..Default::default()
+                }
+                .into(),
+                ..Default::default()
+            }
+            .into(),
+            ..Default::default()
+        })
+        .await
+        .expect("update");
+    assert_eq!(
+        updated.limits.as_option().expect("limits").timeout_ms,
+        30_000
+    );
+}
