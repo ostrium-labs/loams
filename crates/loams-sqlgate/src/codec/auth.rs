@@ -15,6 +15,7 @@
 use std::fmt;
 
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 
 use super::handshake::Nonce;
 use super::{DecodeError, Reader, invalid, utf8};
@@ -97,11 +98,10 @@ pub fn verify_caching_sha2(cached: &[u8; 32], nonce: &[u8], scramble: &[u8]) -> 
         *b = scramble[i] ^ h3[i];
     }
     let candidate: [u8; 32] = Sha256::digest(h1).into();
-    candidate
-        .iter()
-        .zip(cached)
-        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
-        == 0
+    // h1 is SHA256(password): as good as the password for this protocol.
+    h1.fill(0);
+    std::hint::black_box(&h1);
+    candidate[..].ct_eq(&cached[..]).into()
 }
 
 /// The gate's upstream login (Task 4): the auth response for `plugin`,

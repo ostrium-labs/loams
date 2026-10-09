@@ -232,7 +232,9 @@ pub fn upstream_capabilities(agreed: Capabilities, profile: Capabilities) -> Cap
 pub struct Nonce([u8; 20]);
 
 impl Nonce {
-    /// Maps 20 random bytes (the caller's CSPRNG) into the nonce alphabet.
+    /// Maps 20 random bytes into the nonce alphabet. Task 4 draws them from
+    /// the OS CSPRNG (`OsRng`) afresh for every connection: a reused or
+    /// predictable nonce lets a captured scramble be replayed (R3.11).
     pub fn from_random(random: [u8; 20]) -> Self {
         Self(random.map(|b| b % 127 + 1))
     }

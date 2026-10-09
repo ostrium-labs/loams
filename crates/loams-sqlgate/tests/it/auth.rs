@@ -224,3 +224,31 @@ fn tidb_auth_token_jwt_travels_in_the_switch_response() {
     let (_, m) = a.push(&framed).expect("frames");
     assert_eq!(m.expect("message").payload, [jwt.as_slice(), &[0]].concat());
 }
+
+/// R3.11: verification compares in constant time (subtle::ConstantTimeEq)
+/// and rejects any change to the scramble, the cache entry or the nonce.
+#[test]
+fn verify_rejects_every_single_bit_flip() {
+    let n = nonce();
+    let cached = double_sha256(b"pw");
+    let good = scramble_caching_sha2(b"pw", n.as_bytes());
+    assert!(verify_caching_sha2(&cached, n.as_bytes(), &good));
+    for i in 0..32 * 8 {
+        let mut s = good.clone();
+        s[i / 8] ^= 1 << (i % 8);
+        assert!(
+            !verify_caching_sha2(&cached, n.as_bytes(), &s),
+            "scramble bit {i}"
+        );
+        let mut c = cached;
+        c[i / 8] ^= 1 << (i % 8);
+        assert!(
+            !verify_caching_sha2(&c, n.as_bytes(), &good),
+            "cache bit {i}"
+        );
+    }
+    let mut other = *n.as_bytes();
+    other[0] ^= 1;
+    assert!(!verify_caching_sha2(&cached, &other, &good));
+    assert!(!verify_caching_sha2(&cached, n.as_bytes(), &good[..31]));
+}
