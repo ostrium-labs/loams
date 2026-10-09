@@ -236,6 +236,8 @@ Commit `feat(graph): graph catalog and admin service`.
 
 ### Task 5: Mount in `loams` behind `graph`
 
+> **From Task 4 re-review (5):** Task 5 schedules `GraphAdmin::purge_expired` (retention hold, default 24 h) and `GraphAdmin::sweep_documents` (grace `DOCUMENT_GRACE`, floor 5 min) periodically on a single node. Task 12 moves both under a cluster lease (see its note).
+
 > **From Task 4 review (M8):** `GraphAdmin::open` opens a graph from disk (`GrafeoDB::open`, WAL replay) while holding the engine registry lock, on the async path, and the data-plane wrappers run statements synchronously inside async functions. Task 5 mounts them through `spawn_blocking` (or Task 6's pool), and opening moves out from under the registry lock (a per-graph opening latch), so one slow open blocks neither the runtime nor other graphs.
 
 **Files:** `crates/loams/Cargo.toml` (`graph = ["dep:loams-graph"]`), `crates/loams/src/api/connect.rs` (catalogue row `loams.graph.v1`, services `GraphService`, `GraphAdminService`, `available: cfg!(feature = "graph")`, `unstable: true`; a `GraphAbsent` stub answering `feature_not_in_variant`), `crates/loams/src/api/graph.rs`, `crates/loams/src/server.rs` (role `graph`; config `[graph] data_dir, idle_evict_after, node_memory, limits`), `release/` variant lists (`full` gets `graph`), `crates/loams/tests/it/graph.rs`.
@@ -1098,4 +1100,11 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 - **M6:** `replicas` ≤ 8, limits capped, keys ≤ 128 bytes, and a replay under one key with other settings is `INVALID_ARGUMENT` (note under Task 24).
 - **M7:** backend errors answer generically.
 - **M8:** a note under Tasks 5 and 6.
+
+**R4.9 Task 4 re-review, fix round 2** (one commit each):
+1. A create retried after a lost ack matches its own id under any key, deleting records included, and never inserts a second record with that id.
+2. `VALIDATION_TTL` is dropped (see the amended I4 in R4.8).
+3. The sweep deletes only objects older than the pointer's target by ULID (upload order), and written at least the grace before it by bucket timestamps; it never uses the local clock. A write's put precedes its CAS by at most its retry budget (about 7 s), far under the floor.
+4. Outside `test-hooks` the sweep grace has a 5-minute floor (`MIN_DOCUMENT_GRACE`).
+5. **Accepted (controller):** an `UpdateGraph` whose CAS committed, whose ack was lost, and whose graph another writer then deleted, answers `NOT_FOUND` on its retry although the update applied. The graph is gone either way, and the caller sees the state that stands. `sweep_documents` and `purge_expired` are scheduled by Task 5 (single node) and Task 12 (cluster).
 
