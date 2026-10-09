@@ -424,8 +424,9 @@ pub struct HandshakeResponse41 {
     pub database: Option<String>,
     /// The client's plugin, with `CLIENT_PLUGIN_AUTH`.
     pub auth_plugin: Option<String>,
-    /// Connection attributes, in order, with `CLIENT_CONNECT_ATTRS`.
-    pub attributes: Vec<(String, String)>,
+    /// Connection attributes, in order, with `CLIENT_CONNECT_ATTRS`, as
+    /// bytes: clients send them in their own encoding (R3.9).
+    pub attributes: Vec<(Vec<u8>, Vec<u8>)>,
     /// The zstd level, with `CLIENT_ZSTD_COMPRESSION_ALGORITHM`.
     pub zstd_level: Option<u8>,
 }
@@ -440,7 +441,14 @@ impl fmt::Debug for HandshakeResponse41 {
             .field("auth_response", &"[redacted]")
             .field("database", &self.database)
             .field("auth_plugin", &self.auth_plugin)
-            .field("attributes", &self.attributes)
+            .field(
+                "attributes",
+                &self
+                    .attributes
+                    .iter()
+                    .map(|(k, v)| (String::from_utf8_lossy(k), String::from_utf8_lossy(v)))
+                    .collect::<Vec<_>>(),
+            )
             .field("zstd_level", &self.zstd_level)
             .finish()
     }
@@ -483,8 +491,8 @@ impl HandshakeResponse41 {
         if caps.contains(Capabilities::CONNECT_ATTRS) {
             let mut attrs = Vec::new();
             for (k, v) in &self.attributes {
-                put_lenenc_bytes(&mut attrs, k.as_bytes());
-                put_lenenc_bytes(&mut attrs, v.as_bytes());
+                put_lenenc_bytes(&mut attrs, k);
+                put_lenenc_bytes(&mut attrs, v);
             }
             put_lenenc(&mut out, attrs.len() as u64);
             out.extend_from_slice(&attrs);
@@ -586,14 +594,8 @@ pub fn decode_client_hello(payload: &[u8], limits: &Limits) -> Result<ClientHell
                     limit: limits.max_attributes,
                 });
             }
-            let k = utf8(
-                a.lenenc_bytes(block.len(), "attribute name")?,
-                "attribute name",
-            )?;
-            let v = utf8(
-                a.lenenc_bytes(block.len(), "attribute value")?,
-                "attribute value",
-            )?;
+            let k = a.lenenc_bytes(block.len(), "attribute name")?.to_vec();
+            let v = a.lenenc_bytes(block.len(), "attribute value")?.to_vec();
             attributes.push((k, v));
         }
     }

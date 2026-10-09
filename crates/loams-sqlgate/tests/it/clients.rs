@@ -73,8 +73,8 @@ fn handshake_response_decodes_captured_clients() {
         let attr = |k: &str| {
             r.attributes
                 .iter()
-                .find(|(n, _)| n == k)
-                .map(|(_, v)| v.as_str())
+                .find(|(n, _)| n.as_slice() == k.as_bytes())
+                .map(|(_, v)| std::str::from_utf8(v).expect("ascii"))
         };
         assert_eq!(attr("_client_name"), Some(client_name), "{name}");
         assert_eq!(attr("_client_version"), version, "{name}");

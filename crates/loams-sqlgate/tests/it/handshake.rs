@@ -63,7 +63,7 @@ fn response() -> HandshakeResponse41 {
         auth_response: vec![9; 32],
         database: Some("app".into()),
         auth_plugin: Some("caching_sha2_password".into()),
-        attributes: vec![("_client_name".into(), "test".into())],
+        attributes: vec![(b"_client_name".to_vec(), b"test".to_vec())],
         zstd_level: None,
     }
 }
@@ -256,4 +256,23 @@ fn long_auth_response_needs_lenenc() {
         matches!(decode_client_hello(&bytes, &Limits::default()), Ok(ClientHello::Response(d)) if d.auth_response.len() == 255)
     );
     assert!(!TIDB_V8_5_8.contains(C::PLUGIN_AUTH_LENENC_CLIENT_DATA));
+}
+
+/// R3.9: connection attributes are kept as bytes (any encoding a client
+/// uses); user and database names stay strict UTF-8.
+#[test]
+fn attributes_are_bytes_names_are_utf8() {
+    let mut r = response();
+    r.attributes = vec![(b"os_user".to_vec(), vec![0xff, 0xfe, b'x'])];
+    let bytes = r.encode().expect("encodable");
+    match decode_client_hello(&bytes, &Limits::default()) {
+        Ok(ClientHello::Response(d)) => assert_eq!(d.attributes, r.attributes),
+        other => panic!("{other:?}"),
+    }
+    let mut r = response();
+    r.database = Some("db".into());
+    let mut bytes = r.encode().expect("encodable");
+    let at = bytes.windows(3).position(|w| w == b"db\0").expect("db");
+    bytes[at] = 0xc3; // a lone UTF-8 lead byte
+    assert!(decode_client_hello(&bytes, &Limits::default()).is_err());
 }
