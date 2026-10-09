@@ -563,7 +563,8 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
         });
     }
 
-    // The writers: each patches and deletes only documents it inserted.
+    // The writers: each patches its share of the seeded documents (which the
+    // `get` queries watch) and patches and deletes documents it inserted.
     let next = Arc::new(AtomicUsize::new(0));
     let newest = Arc::new(AtomicU64::new(0));
     let failures = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -578,9 +579,19 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
             op_log.clone(),
         );
         let (ops, seed) = (w.ops, w.seed);
+        let share: Vec<Vec<LiveValue>> = seeded
+            .iter()
+            .map(|ids| ids.iter().skip(wid).step_by(WRITERS).cloned().collect())
+            .collect();
         writers.push(tokio::spawn(async move {
             let mut log = Vec::new();
-            let result = write(&runner, seed, wid, tables, ops, &next, &newest, &mut log).await;
+            let writer = Writer {
+                seed,
+                wid,
+                ops,
+                share,
+            };
+            let result = write(&runner, writer, &next, &newest, &mut log).await;
             op_log
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -928,21 +939,33 @@ async fn mutate(
     }
 }
 
-/// One writer of the workload seeded `seed`: takes ops from `next` until
-/// `ops`, inserting into, patching and deleting its own documents, logging
-/// each committed op in `log`; `newest` keeps the latest commit. Op `op`
-/// carries the idempotency key `chk-{seed}-{wid}-{op}`.
-#[allow(clippy::too_many_arguments)]
-async fn write(
-    runner: &Runner,
+/// One writer of the workload.
+struct Writer {
     seed: u64,
     wid: usize,
-    tables: usize,
     ops: usize,
+    /// Per table, the seeded documents this writer patches (never deletes).
+    share: Vec<Vec<LiveValue>>,
+}
+
+/// One writer: takes ops from `next` until `ops`, inserting into, patching
+/// and deleting its own documents and patching its share of the seeded
+/// ones, logging each committed op in `log`; `newest` keeps the latest
+/// commit. Op `op` carries the idempotency key `chk-{seed}-{wid}-{op}`.
+async fn write(
+    runner: &Runner,
+    writer: Writer,
     next: &AtomicUsize,
     newest: &AtomicU64,
     log: &mut Vec<OpRecord>,
 ) -> Result<(), String> {
+    let Writer {
+        seed,
+        wid,
+        ops,
+        share,
+    } = writer;
+    let tables = share.len();
     let mut rng = ChaCha8Rng::seed_from_u64(seed.wrapping_mul(1_000).wrapping_add(wid as u64));
     let (insert, patch, delete) = (sys(INSERT)?, sys(PATCH)?, sys(DELETE)?);
     let mut own: Vec<Vec<LiveValue>> = vec![Vec::new(); tables];
@@ -954,7 +977,8 @@ async fn write(
         let t = rng.random_range(0..tables);
         let roll = rng.random_range(0..10);
         let value = rng.random_range(0..N_VALUES);
-        let (f, args, kind, target) = if roll < 5 || own[t].is_empty() {
+        let patchable = own[t].len() + share[t].len();
+        let (f, args, kind, target, seeded) = if roll < 5 || patchable == 0 {
             (
                 insert.clone(),
                 obj(&[
@@ -963,14 +987,20 @@ async fn write(
                 ]),
                 OpKind::Insert,
                 None,
+                false,
             )
-        } else if roll < 8 {
-            let id = own[t][rng.random_range(0..own[t].len())].clone();
+        } else if roll < 8 || own[t].is_empty() {
+            let at = rng.random_range(0..patchable);
+            let (id, seeded) = match own[t].get(at) {
+                Some(id) => (id.clone(), false),
+                None => (share[t][at - own[t].len()].clone(), true),
+            };
             (
                 patch.clone(),
                 obj(&[("id", id.clone()), ("fields", obj(&[("n", n(value))]))]),
                 OpKind::Patch,
                 Some(id),
+                seeded,
             )
         } else {
             let at = rng.random_range(0..own[t].len());
@@ -980,6 +1010,7 @@ async fn write(
                 obj(&[("id", id.clone())]),
                 OpKind::Delete,
                 Some(id),
+                false,
             )
         };
         let m = mutate(runner, &f, &args, format!("chk-{seed}-{wid}-{op}"))
@@ -996,7 +1027,7 @@ async fn write(
             table: t,
             n: value,
             target,
-            seeded: false,
+            seeded,
             result: m.result,
             commit_ts: m.commit_ts.0,
             replayed: m.replayed,

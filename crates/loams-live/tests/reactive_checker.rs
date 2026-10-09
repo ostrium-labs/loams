@@ -6,7 +6,9 @@
 
 use loams_kv::TxnOptions;
 use loams_live::testing::TestStore;
-use loams_live::testing::checker::{Report, SEED_DOCS, ViolationKind, run_reactive_checker};
+use loams_live::testing::checker::{
+    OpKind, Report, SEED_DOCS, ViolationKind, run_reactive_checker,
+};
 use loams_live::testing::workload::{Disturbance, Sizes, Workload};
 use loams_live::{AppKeys, live_test};
 
@@ -269,3 +271,32 @@ async fn reactive_checker_seed_reproduces_the_op_mix(store: TestStore) {
     );
 }
 live_test!(reactive_checker_seed_reproduces_the_op_mix);
+
+/// The `get` queries watch seeded documents, so the writers patch those
+/// too (each writer its share; none deletes one), and a `get` result moves
+/// during the run.
+async fn reactive_checker_writers_patch_seeded_documents(store: TestStore) {
+    let w = Workload {
+        seed: 13,
+        sessions: 2,
+        tables: 2,
+        ops: 300,
+        disturb: Vec::new(),
+    };
+    let report = run_reactive_checker(store.fresh_root().await.store(), w).await;
+    assert!(report.violations.is_empty(), "{}", first(&report));
+    let seeded = |kind: OpKind| {
+        report
+            .ops
+            .iter()
+            .filter(|o| o.kind == kind && o.seeded)
+            .count()
+    };
+    assert!(
+        seeded(OpKind::Patch) >= 8,
+        "{} seeded patches",
+        seeded(OpKind::Patch)
+    );
+    assert_eq!(seeded(OpKind::Delete), 0, "a seeded document was deleted");
+}
+live_test!(reactive_checker_writers_patch_seeded_documents);
