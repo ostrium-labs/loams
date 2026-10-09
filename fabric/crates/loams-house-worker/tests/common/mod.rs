@@ -87,3 +87,35 @@ pub fn session(key: &str) -> Option<loams_house_ipc::SessionRef> {
         close: false,
     })
 }
+
+/// A directory under the worktree's `scratch/` for files a test watches; removed
+/// when dropped.
+pub struct Scratch(std::path::PathBuf);
+
+impl Scratch {
+    pub fn new(name: &str) -> Self {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../scratch")
+            .join(format!("{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch directory");
+        Self(dir.canonicalize().expect("absolute"))
+    }
+
+    pub fn path(&self, name: &str) -> String {
+        self.0.join(name).display().to_string()
+    }
+
+    pub fn files(&self) -> Vec<String> {
+        std::fs::read_dir(&self.0)
+            .expect("list")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}

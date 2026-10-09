@@ -65,6 +65,7 @@ pub mod auth;
 pub mod classify;
 pub mod compress;
 pub mod config;
+pub mod deny;
 pub mod errors;
 #[cfg(feature = "test-hooks")]
 pub mod fuzz;

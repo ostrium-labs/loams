@@ -55,13 +55,9 @@ pub const ALLOWED_EXPERIMENTS: &[&str] = &[
     "allow_experimental_join_right_table_sorting",
 ];
 
-/// Settings under an allowed prefix that name a file the engine would read or
-/// write (fix round 1, I4): never settable. The worker's profile pins them too,
-/// for the `SETTINGS` clause.
-pub const DENIED_SETTINGS: &[&str] = &[
-    "input_format_record_errors_file_path",
-    "output_format_schema",
-];
+/// Settings no request may change, whatever list would allow them: the deny
+/// list's (HS1 Task 5), which also covers the `SETTINGS` clause.
+pub use crate::deny::DENIED_SETTINGS;
 
 /// Loams's settings (HS1 Shared contracts): the front's own.
 pub const LOAMS_SETTINGS: &[&str] = &[
@@ -117,11 +113,11 @@ pub fn is_loams(name: &str) -> bool {
 
 /// Whether `name` may be set at all.
 pub fn is_allowed(name: &str) -> bool {
-    is_loams(name)
+    (is_loams(name)
         || ALLOWED_SETTINGS.contains(&name)
         || ALLOWED_EXPERIMENTS.contains(&name)
-        || (ALLOWED_PREFIXES.iter().any(|p| name.starts_with(p))
-            && !DENIED_SETTINGS.contains(&name))
+        || ALLOWED_PREFIXES.iter().any(|p| name.starts_with(p)))
+        && !crate::deny::is_denied_setting(name)
 }
 
 /// Checks one setting: `115`, `164`, or fine.
@@ -132,15 +128,19 @@ pub fn check(
     known: &HashSet<String>,
 ) -> Result<(), HouseError> {
     if !is_allowed(name) {
-        return Err(if known.contains(name) {
-            readonly(format!(
-                "Cannot modify '{name}' setting: it is not allowed on the House (see the surface page)"
-            ))
-        } else {
-            HouseError::from(ChError::unknown_setting(format!(
-                "Unknown setting '{name}'"
-            )))
-        });
+        // A denied name is `164` even where the engine has no such setting
+        // (`user_files_path` is a server setting): it is refused, not unknown.
+        return Err(
+            if known.contains(name) || crate::deny::is_denied_setting(name) {
+                readonly(format!(
+                    "Cannot modify '{name}' setting: it is not allowed on the House (see the surface page)"
+                ))
+            } else {
+                HouseError::from(ChError::unknown_setting(format!(
+                    "Unknown setting '{name}'"
+                )))
+            },
+        );
     }
     // The value exactly as chDB will read it: the worker sets it as a quoted
     // string (`SET name = 'value'`), so it is parsed the way ClickHouse parses a

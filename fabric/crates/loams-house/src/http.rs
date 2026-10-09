@@ -65,7 +65,7 @@ use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
-use loams_house_ipc::{Execute, Limits, Progress};
+use loams_house_ipc::{Execute, Limits, Progress, QueryClass};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, mpsc};
@@ -77,6 +77,7 @@ use crate::auth;
 use crate::classify::{Classified, Expect, Stmt, check_text, classify, decide, readonly_error};
 use crate::compress::{self, Decoder, Encoder, Encoding};
 use crate::config::{self, BUFFER_SIZE_RANGE, DISPLAY_NAME, HouseConfig, SPOOL_IN_MEMORY, UserMap};
+use crate::deny;
 use crate::errors::{ChError, HouseError};
 use crate::request::{self, InsertHead, NON_SETTINGS, Scanner};
 use crate::session::{SessionGuard, SessionParams, SessionTable};
@@ -724,12 +725,25 @@ async fn run(
         sql,
         classified,
         readonly,
-        input,
+        mut input,
         mut decoder,
         first_data,
         ..
     } = prepared;
     let namespace = user.namespace.to_string();
+
+    // The host functions answer the House's values (HS1 Task 5): rewritten in the
+    // text chDB gets, and refused by the deny list in any form the rewrite did not
+    // take.
+    let host = deny::HostValues {
+        display_name: DISPLAY_NAME,
+        timezone: "UTC",
+        user: &user.user,
+    };
+    let sql = deny::rewrite_host_functions(&sql, &host);
+    if let Some(spec) = input.as_mut() {
+        spec.insert = deny::rewrite_host_functions(&spec.insert, &host);
+    }
 
     // The session, for this statement only: 372, 373, 202 or 36 when it cannot be.
     let mut session = match SessionParams::from_params(&params) {
@@ -823,9 +837,15 @@ async fn run(
         Some(spec) => format!("{} FORMAT {}", spec.insert, spec.format),
         None => sql.clone(),
     };
-    let decided = match lease.classify(&parsed_text).await {
-        Ok(classification) => decide(classification, expect, readonly, unparsed.as_deref()),
-        Err(err) => Err(err),
+    let decided = match lease.analyze(&parsed_text, &query_params).await {
+        Ok(analysis) => admit(
+            &analysis,
+            &parsed_text,
+            expect,
+            readonly,
+            unparsed.as_deref(),
+        ),
+        Err(err) => Err(deny::as_setting_refusal(err)),
     };
     if let Err(err) = decided {
         pool.release(lease, Outcome::Completed);
@@ -850,13 +870,6 @@ async fn run(
             .filter(|(k, _)| !crate::settings::is_loams(k))
             .cloned(),
     );
-    let query_params = params
-        .iter()
-        .filter_map(|(k, v)| {
-            k.strip_prefix("param_")
-                .map(|name| (name.to_string(), v.clone()))
-        })
-        .collect();
     let execute = Execute {
         query_id: meta.query_id.clone(),
         session: worker_session,
@@ -884,6 +897,29 @@ async fn run(
     }
 
     respond(shared, meta, lease, wait_end, buffer_size, session).await
+}
+
+/// Whether a statement a worker analysed may run: the deny list over its trees
+/// (HS1 Task 5: `344`, or `164` for a denied setting), then ClickHouse's class
+/// ([`decide`]). A statement refused on its class alone (more than one, or one
+/// ClickHouse cannot parse) has no trees, and `decide` refuses it.
+fn admit(
+    analysis: &loams_house_ipc::Analysis,
+    sql: &str,
+    expect: Expect,
+    readonly: bool,
+    unparsed: Option<&str>,
+) -> Result<(), HouseError> {
+    let classification = analysis.classification;
+    if classification.statements == 1 && classification.class != QueryClass::Unknown {
+        // A `CREATE` of a lake table or a view never runs in chDB (the front owns
+        // it, or `decide` refuses the form): its engine is held to the denied
+        // engines, not to a temporary table's Memory or Null.
+        let tree = deny::QueryTree::from_explain(&analysis.ast, analysis.query_tree.as_deref())
+            .shared_create(crate::classify::creates_shared_object(sql));
+        deny::check(&tree).map_err(HouseError::from)?;
+    }
+    decide(classification, expect, readonly, unparsed)
 }
 
 /// The task that will serve an owned statement this front does not yet (`48`).

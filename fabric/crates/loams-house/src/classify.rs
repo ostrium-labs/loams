@@ -17,7 +17,14 @@
 //!   the hint that the form is outside the surface (FL2 Ruling 4).
 //!
 //! The text chDB runs is the input minus a trailing `FORMAT <f>` — never rewritten
-//! otherwise (`queries_are_never_rewritten`).
+//! otherwise (`queries_are_never_rewritten`), except that the front replaces the
+//! calls of host functions with the House's values before a worker sees the text
+//! (HS1 Task 5, `deny::rewrite_host_functions`).
+//!
+//! The deny list's statements (`SYSTEM`, `ATTACH`, `BACKUP`, `RESTORE`, `CREATE
+//! FUNCTION | DICTIONARY | NAMED COLLECTION`) and engines are `344` here, before any
+//! worker is asked (HS1 Task 5); the rest of the deny list runs over the worker's
+//! explain of the statement (`deny::check`).
 //!
 //! Two checks run before either half (fix round 1): no statement may read or write
 //! a host file ([`check_text`]: `INTO OUTFILE`, `FROM INFILE`, `344`), and every
@@ -29,6 +36,7 @@ use sqlparser::ast::{AlterTableOperation, ObjectType, Statement};
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::parser::Parser;
 
+use crate::deny;
 use crate::errors::{ChError, HouseError};
 use crate::request::{self, Token};
 
@@ -200,7 +208,7 @@ pub fn readonly_error() -> HouseError {
 
 /// What ClickHouse's lexer makes of a statement, as far as [`check_text`] needs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Lexeme {
+pub(crate) enum Lexeme {
     /// A bare word (`[A-Za-z0-9_$]+`), as `start..end`.
     Word(usize, usize),
     /// `;`.
@@ -220,6 +228,12 @@ enum Lexeme {
 /// ClickHouse reads Unicode spaces as whitespace and anything else there fails to
 /// parse, so skipping them can only join words, never hide one.
 fn lexemes(text: &str) -> Vec<Lexeme> {
+    lex(text).into_iter().map(|(lexeme, _)| lexeme).collect()
+}
+
+/// [`lexemes`] with the byte range each one covers (HS1 Task 5's rewrite of the
+/// host functions needs to know where a call ends).
+pub(crate) fn lex(text: &str) -> Vec<(Lexeme, std::ops::Range<usize>)> {
     let b = text.as_bytes();
     let n = b.len();
     let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
@@ -230,9 +244,11 @@ fn lexemes(text: &str) -> Vec<Lexeme> {
             .map_or(n, |p| from + p)
     };
     let mut out = Vec::new();
+    let mut spans = Vec::new();
     let mut i = 0;
     while i < n {
         let c = b[i];
+        let start = i;
         match c {
             // ClickHouse's whitespace includes \v (0x0B), which
             // `is_ascii_whitespace` leaves out: `INTO\vOUTFILE` is one clause.
@@ -316,8 +332,11 @@ fn lexemes(text: &str) -> Vec<Lexeme> {
                 out.push(Lexeme::Symbol(c));
             }
         }
+        if out.len() > spans.len() {
+            spans.push(start..i.min(n));
+        }
     }
-    out
+    out.into_iter().zip(spans).collect()
 }
 
 /// The first two words of a statement and whether it opens with `(`, as
@@ -358,12 +377,20 @@ pub fn check_text(text: &str) -> Result<(), HouseError> {
         if pair[0] == Lexeme::Semicolon && pair[1] != Lexeme::Semicolon {
             return Err(multi_statement());
         }
-        let clause = if is(&pair[0], "INTO") && is(&pair[1], "OUTFILE") {
-            "INTO OUTFILE (it writes a file on the server; read the result from the response)"
-        } else if is(&pair[0], "FROM") && is(&pair[1], "INFILE") {
-            "FROM INFILE (it reads a file on the server; send the data in the request body)"
-        } else {
+        let Some((first, second)) = deny::DENIED_CLAUSES
+            .iter()
+            .find(|(first, second)| is(&pair[0], first) && is(&pair[1], second))
+        else {
             continue;
+        };
+        let clause = if *first == "INTO" {
+            format!(
+                "{first} {second} (it writes a file on the server; read the result from the response)"
+            )
+        } else {
+            format!(
+                "{first} {second} (it reads a file on the server; send the data in the request body)"
+            )
         };
         return Err(HouseError::from(ChError::support_is_disabled(format!(
             "{clause} is disabled on the House. A table or column named like the clause's \
@@ -474,6 +501,47 @@ fn multi_statement() -> HouseError {
     HouseError::from(ChError::syntax_error(
         "Multi-statements are not allowed: send one statement per request",
     ))
+}
+
+/// The [`deny::DENIED_STATEMENTS`] a `CREATE` opens (`CREATE [OR REPLACE]
+/// FUNCTION | DICTIONARY | NAMED COLLECTION`), read with ClickHouse's lexing.
+fn denied_create(text: &str) -> Option<&'static str> {
+    let mut words = lexemes(text).into_iter().filter_map(|l| match l {
+        Lexeme::Word(start, end) => Some(text[start..end].to_ascii_uppercase()),
+        _ => None,
+    });
+    let _create = words.next();
+    let mut next = words.next()?;
+    if next == "OR" {
+        let _replace = words.next();
+        next = words.next()?;
+    }
+    match next.as_str() {
+        "FUNCTION" => Some("CREATE FUNCTION"),
+        "DICTIONARY" => Some("CREATE DICTIONARY"),
+        "NAMED" => Some("CREATE NAMED COLLECTION"),
+        _ => None,
+    }
+}
+
+/// Whether a statement creates something that outlives the session — `CREATE
+/// [OR REPLACE] <not TEMPORARY> …` — rather than a temporary table, read with
+/// ClickHouse's lexing (HS1 Task 5: the deny list holds a temporary table to
+/// Memory or Null).
+pub fn creates_shared_object(text: &str) -> bool {
+    let mut words = lexemes(text).into_iter().filter_map(|l| match l {
+        Lexeme::Word(start, end) => Some(text[start..end].to_ascii_uppercase()),
+        _ => None,
+    });
+    if words.next().as_deref() != Some("CREATE") {
+        return false;
+    }
+    let mut next = words.next();
+    if next.as_deref() == Some("OR") {
+        let _replace = words.next();
+        next = words.next();
+    }
+    next.is_some_and(|word| word != "TEMPORARY")
 }
 
 /// Engines that make a `CREATE TABLE` a pipe.
@@ -594,7 +662,17 @@ pub fn classify(sql: &str) -> Result<Classified, HouseError> {
                 .unwrap_or_default();
             return known(Stmt::KillQuery(id), None);
         }
-        "SYSTEM" | "GRANT" | "REVOKE" | "ATTACH" | "DETACH" | "BACKUP" | "RESTORE" | "CHECK" => {
+        // The deny list's statements (HS1 Task 5, §49 §13.2): `344`, before any
+        // worker is asked.
+        "SYSTEM" | "ATTACH" | "BACKUP" | "RESTORE" => {
+            return Err(HouseError::from(deny::denied_statement(first)));
+        }
+        "CREATE" => {
+            if let Some(what) = denied_create(&text) {
+                return Err(HouseError::from(deny::denied_statement(what)));
+            }
+        }
+        "GRANT" | "REVOKE" | "DETACH" | "CHECK" => {
             return known(
                 Stmt::Unsupported {
                     kind: format!("{first} …"),
@@ -628,6 +706,15 @@ pub fn classify(sql: &str) -> Result<Classified, HouseError> {
         Statement::CreateTable(create) => {
             let table = name(&create.name);
             let engine = engine_of(&text);
+            // The deny list's engines (HS1 Task 5): a temporary table is Memory or
+            // Null; no table names an engine that reaches outside, except a pipe's,
+            // which is the front's own.
+            if let Some(engine) = &engine
+                && (create.temporary
+                    || !PIPE_ENGINES.iter().any(|p| p.eq_ignore_ascii_case(engine)))
+            {
+                deny::check_engine(engine, create.temporary).map_err(HouseError::from)?;
+            }
             if create.temporary {
                 Stmt::CreateTemporaryTable { name: table }
             } else if let Some(pipe) = engine
@@ -825,6 +912,22 @@ mod tests {
             Classified::Known { stmt, .. } => stmt,
             other => panic!("{sql}: {other:?}"),
         }
+    }
+
+    #[test]
+    fn shared_and_temporary_creates() {
+        assert!(creates_shared_object(
+            "CREATE TABLE t (a UInt8) ENGINE = MergeTree"
+        ));
+        assert!(creates_shared_object(
+            "/* c */ create or replace view v AS SELECT 1"
+        ));
+        assert!(!creates_shared_object("CREATE TEMPORARY TABLE t (a UInt8)"));
+        assert!(!creates_shared_object(
+            "CREATE OR REPLACE TEMPORARY TABLE t (a UInt8)"
+        ));
+        assert!(!creates_shared_object("SELECT 1"));
+        assert!(!creates_shared_object("CREATE $$x$$ TEMPORARY"));
     }
 
     #[test]

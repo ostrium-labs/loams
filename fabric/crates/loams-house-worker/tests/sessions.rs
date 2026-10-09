@@ -452,37 +452,7 @@ async fn owned_statements_of_later_tasks_are_48() {
     assert_eq!(code(&access), Some("48"), "{}", access.text());
 }
 
-/// A directory under the worktree's `scratch/` for files a test watches; removed
-/// when dropped.
-struct Scratch(std::path::PathBuf);
-
-impl Scratch {
-    fn new(name: &str) -> Self {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../../scratch")
-            .join(format!("{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("scratch directory");
-        Self(dir.canonicalize().expect("absolute"))
-    }
-
-    fn path(&self, name: &str) -> String {
-        self.0.join(name).display().to_string()
-    }
-
-    fn files(&self) -> Vec<String> {
-        std::fs::read_dir(&self.0)
-            .expect("list")
-            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
-            .collect()
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
+use common::Scratch;
 
 async fn as_alice(addr: SocketAddr, method: &'static str, sql: &str, body: &[u8]) -> Response {
     call(
@@ -769,13 +739,21 @@ async fn setting_caps_hold_on_every_route() {
         "max_execution_time = 301",
         "max_threads = 100000",
         "max_memory_usage = 1, max_execution_time = 0",
+    ] {
+        let sql = format!("SELECT 1 SETTINGS {clause}");
+        let response = in_session(addr, "alice", "c", &sql, &[]).await;
+        assert_eq!(code(&response), Some("452"), "{sql}: {}", response.text());
+    }
+    // The deny list's settings are the front's `164` in a SETTINGS clause too
+    // (HS1 Task 5); the worker's pins stay behind them.
+    for clause in [
         "output_format_schema = '/abs/path/x.proto'",
         "input_format_record_errors_file_path = 'errors.log'",
         "format_schema = 'x.proto:M'",
     ] {
         let sql = format!("SELECT 1 SETTINGS {clause}");
         let response = in_session(addr, "alice", "c", &sql, &[]).await;
-        assert_eq!(code(&response), Some("452"), "{sql}: {}", response.text());
+        assert_eq!(code(&response), Some("164"), "{sql}: {}", response.text());
     }
     let within = in_session(
         addr,

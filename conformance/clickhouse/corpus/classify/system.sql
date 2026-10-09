@@ -1,2 +1,2 @@
--- kind: Unsupported
+-- kind: error 344
 SYSTEM DROP DNS CACHE

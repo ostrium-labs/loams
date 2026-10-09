@@ -56,6 +56,18 @@ pub fn fuzz_request(data: &[u8]) {
     }
     let _ = crate::session::SessionParams::from_params(&params);
     let _ = crate::classify::classify(&text);
+    // The deny list (HS1 Task 5): the host-function rewrite keeps every byte
+    // outside the calls it replaces, and the explain parser takes any text.
+    let host = crate::deny::HostValues {
+        display_name: "loams-house",
+        timezone: "UTC",
+        user: &text,
+    };
+    let rewritten = crate::deny::rewrite_host_functions(&text, &host);
+    assert!(rewritten.len() >= text.len(), "a rewrite only adds");
+    let tree = crate::deny::QueryTree::from_explain(&text, Some(&text));
+    let _ = crate::deny::check(&tree);
+    let _ = crate::deny::is_denied_setting(&text);
     let limits = crate::settings::SessionLimits::default();
     let known = std::collections::HashSet::from(["max_threads".to_string()]);
     for (name, value) in &params {
