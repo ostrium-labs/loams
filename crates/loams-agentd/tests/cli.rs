@@ -30,6 +30,23 @@ fn removed_subcommands_are_rejected() {
             "`{removed}` must not exist: {output:?}"
         );
     }
+    // The hidden `loams` entry point exists only for the Loams Bot harness
+    // (T1-2): every other link subcommand is a usage error. `mock` and `bot`
+    // would bind a port or reach the instance; `login`, `logout` and
+    // `status` are the WorkOS-era CLI.
+    for removed in ["login", "logout", "bot", "status", "mock", "bot-acpx"] {
+        let output = agentd()
+            .args(["loams", removed])
+            .output()
+            .expect("run loams-agentd");
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "`loams {removed}` must be rejected as a usage error: {output:?}"
+        );
+    }
+    let output = agentd().arg("loams").output().expect("run loams-agentd");
+    assert_eq!(output.status.code(), Some(2), "bare `loams`: {output:?}");
 }
 
 #[test]

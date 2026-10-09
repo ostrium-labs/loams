@@ -40,9 +40,18 @@ enum Command {
     /// Loams integration used by the Loams Bot harness (`loams bot-acp`).
     #[command(hide = true)]
     Loams {
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        #[command(subcommand)]
+        command: LoamsCommand,
     },
+}
+
+/// The link crate's CLI also has `login`, `logout`, `status`, `bot` and
+/// `mock`; the daemon exposes only the entry point the Loams Bot harness
+/// launches, so anything else is a usage error (plan DD1 ruling T1-2).
+#[derive(Subcommand)]
+enum LoamsCommand {
+    /// Speak ACP on stdin/stdout as the Loams Bot agent.
+    BotAcp,
 }
 
 /// Production edge (Cloudflare Worker + Durable Objects on the loams-desktop.sh zone).
@@ -143,9 +152,8 @@ fn main() -> anyhow::Result<()> {
     // long-running headless host. Quiet them by default (RUST_LOG still
     // overrides the whole filter).
     let long_running = matches!(&cli.command, Command::Run);
-    // loams: `loams-agentd loams bot-acp` speaks ACP on stdout, like `mcp`.
-    let stdout_is_protocol = matches!(&cli.command, Command::Mcp)
-        || matches!(&cli.command, Command::Loams { args } if loams_agentd_link::cli::owns_stdout(args));
+    // `loams-agentd loams bot-acp` speaks ACP on stdout, like `mcp`.
+    let stdout_is_protocol = matches!(&cli.command, Command::Mcp | Command::Loams { .. });
     let default_filter = if long_running {
         "info,loro_internal=warn,loro=warn"
     } else {
@@ -225,9 +233,11 @@ fn main() -> anyhow::Result<()> {
             println!("loams-agentd {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        Command::Loams { args } => {
+        Command::Loams {
+            command: LoamsCommand::BotAcp,
+        } => {
             let runtime = tokio::runtime::Runtime::new()?;
-            let code = runtime.block_on(loams_agentd_link::cli::run(args))?;
+            let code = runtime.block_on(loams_agentd_link::cli::run(vec!["bot-acp".to_owned()]))?;
             std::process::exit(code);
         }
     }
