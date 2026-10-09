@@ -249,7 +249,7 @@ impl WorkspaceHost {
         Ok(())
     }
 
-    // ── watches (WatchChats / WatchDevices / merged WatchSessions) ──────────
+    // ── watches (WatchChats / merged WatchSessions) ─────────────────────────
 
     pub fn watch_chats(&self) -> watch::Receiver<Vec<Chat>> {
         self.inner.chats_tx.subscribe()

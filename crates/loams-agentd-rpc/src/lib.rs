@@ -477,6 +477,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn connect_ws_dials_loopback_only() {
+        for url in [
+            "ws://example.com:27654",
+            "ws://10.0.0.1:27654",
+            "ws://[2001:db8::1]:27654",
+            "wss://127.0.0.1:27654",
+            "ws://user@127.0.0.1.example.com:1",
+            "ws://127.0.0.1@example.com:1",
+        ] {
+            let error = connect_ws(url).await.err().expect(url);
+            assert!(error.to_string().contains("loopback"), "{url}: {error}");
+        }
+    }
+
+    #[tokio::test]
     async fn websocket_round_trip() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();

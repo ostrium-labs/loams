@@ -218,7 +218,7 @@ mod gate_tests {
     }
 
     #[test]
-    fn development_and_local_never_use_the_workos_gate() {
+    fn development_and_local_never_use_the_sign_in_gate() {
         for scope in [WorkspaceScope::Local, WorkspaceScope::Development] {
             for auth in [
                 AuthState::SignedOut,

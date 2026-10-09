@@ -379,8 +379,10 @@ fn wire_error(error: String) -> RpcError {
 /// stranger on port 27654 would hang the app at boot rather than degrade it.
 const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// Dial a WebSocket RPC server (`ws://127.0.0.1:{ipc_port}`).
+/// Dial a WebSocket RPC server (`ws://127.0.0.1:{ipc_port}`). The RPC socket
+/// is loopback only, so any other host is refused before dialing.
 pub async fn connect_ws(url: &str) -> Result<RpcClient, RpcError> {
+    ensure_loopback(url)?;
     let (ws, _) = tokio::time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(url))
         .await
         .map_err(|_| RpcError::Transport(format!("timed out dialing {url}")))?
@@ -415,4 +417,29 @@ pub async fn connect_ws(url: &str) -> Result<RpcClient, RpcError> {
         }
     });
     Ok(RpcClient::new(out_tx, in_rx))
+}
+
+/// Refuse a URL that is not `ws://` to a loopback host (`localhost`,
+/// `127.0.0.0/8` or `[::1]`), with no user info.
+fn ensure_loopback(url: &str) -> Result<(), RpcError> {
+    let refuse = || RpcError::Transport(format!("not a loopback ws:// URL: {url}"));
+    let rest = url.strip_prefix("ws://").ok_or_else(refuse)?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') {
+        return Err(refuse());
+    }
+    let host = match authority.strip_prefix('[') {
+        Some(v6) => v6
+            .split_once(']')
+            .map(|(host, _)| host)
+            .ok_or_else(refuse)?,
+        None => authority
+            .rsplit_once(':')
+            .map_or(authority, |(host, _)| host),
+    };
+    let loopback = host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    if loopback { Ok(()) } else { Err(refuse()) }
 }
