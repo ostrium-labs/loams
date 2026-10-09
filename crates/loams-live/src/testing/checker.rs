@@ -10,9 +10,16 @@
 //!
 //! - **every recorded state equals a fresh snapshot evaluation** of each of
 //!   the session's queries at the Transition's `end.ts`. Checking the whole
-//!   state, not only the updated queries, makes a missed invalidation show:
-//!   a commit that changed a subscribed result is then reflected by the
-//!   first Transition at or after it, or that Transition's state is stale;
+//!   state, not only the updated queries, makes a missed invalidation that
+//!   is never repaired show as a stale state;
+//! - **a change reaches the session at the first tick at or after it**. The
+//!   checker records every tick of the subscription manager. For
+//!   consecutive Transitions of a session at `p` and `e`, a tick `T` with
+//!   `p < T < e` must not have a fresh result that differs from the state
+//!   at `p`: the change at `T` was then held back to a later tick. An
+//!   Outbox merge (or a resume) legitimately skips ticks, but delivers
+//!   promptly, so a tick is checked only when `e` arrived more than
+//!   [`LATE_BOUND`] after it;
 //! - **versions strictly increase** per session (a heartbeat repeats its
 //!   version by design, and so may the first Transition of a resumed
 //!   session, which re-sends the full results at the client's last
@@ -22,10 +29,12 @@
 //!   from its last version and its later states pass the same checks.
 //!
 //! The subscription manager runs with its safety rerun off, so a missed
-//! invalidation stays visible instead of being repaired.
+//! invalidation stays visible instead of being repaired. The report counts,
+//! per session, the update-carrying Transitions that arrived while the
+//! writers ran, so a run whose sessions only caught up at the end is seen.
 
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -34,6 +43,7 @@ use buffa::MessageField;
 use loams_kv::{CommitMode, EmbeddedConfig, Store, StoreConfig, Ts, TxnError, TxnOptions};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -53,6 +63,12 @@ pub struct Report {
     pub checked: usize,
     /// Sessions disconnected and resumed.
     pub resumes: usize,
+    /// Ticks of the subscription manager recorded.
+    pub ticks: usize,
+    /// Per session, the Transitions carrying updates that arrived before
+    /// the writers finished (the first Transition and a resumed session's
+    /// re-sent one excluded).
+    pub live_updates: Vec<usize>,
     pub violations: Vec<Violation>,
 }
 
@@ -62,6 +78,10 @@ pub enum ViolationKind {
     /// A held result differs from a fresh evaluation at the Transition's
     /// `end.ts`.
     Stale,
+    /// A tick changed a session's result, and the session's next
+    /// Transition came at a later tick, more than [`LATE_BOUND`] after it:
+    /// the change was not reflected by the first tick at or after it.
+    Late,
     /// A Transition's end does not follow its start.
     VersionOrder,
     /// A Transition did not start at the client's version.
@@ -105,6 +125,10 @@ const QUERIES: u32 = 4;
 const WRITERS: usize = 8;
 /// Tries per mutation (a retryable storage error is tried again).
 const MUTATION_TRIES: u32 = 5;
+/// How long after a tick the Transition reflecting it may arrive. A
+/// session's Transition for a tick is queued as the tick is published; an
+/// Outbox merge or a resume delivers a later tick instead, still promptly.
+pub const LATE_BOUND: Duration = Duration::from_secs(1);
 /// How long sessions may take to reach the last commit.
 const CATCH_UP: Duration = Duration::from_secs(30);
 
@@ -121,6 +145,90 @@ struct Query {
 struct Record {
     end: Version,
     results: BTreeMap<u32, QueryResult>,
+    /// When the consumer applied it.
+    arrived: Instant,
+    /// It carried updates.
+    updates: bool,
+    /// A resumed session's first Transition, re-sending its results.
+    resent: bool,
+}
+
+/// When a session's Transition arrived, as the first-tick check needs it.
+#[derive(Debug, Clone, Copy)]
+struct Arrival {
+    ts: u64,
+    arrived: Instant,
+    resent: bool,
+}
+
+/// The ticks to check between a session's Transitions: for consecutive
+/// Transitions `p` and `e` (by `p`'s index), each tick `T` with
+/// `p.ts < T < e.ts` (once per timestamp, at its first arrival) that `e`
+/// arrived more than `bound` after. The bound counts from the tick, or from
+/// `p` when `p` is a resumed session's re-sent Transition (the session
+/// could deliver nothing before it). At each, the session's results must
+/// still be those at `p`.
+fn late_ticks(records: &[Arrival], ticks: &[(u64, Instant)], bound: Duration) -> Vec<(usize, u64)> {
+    let mut out = Vec::new();
+    for (i, pair) in records.windows(2).enumerate() {
+        let (p, e) = (pair[0], pair[1]);
+        let from = ticks.partition_point(|t| t.0 <= p.ts);
+        let mut last = None;
+        for &(ts, arrived) in &ticks[from..] {
+            if ts >= e.ts {
+                break;
+            }
+            if last == Some(ts) {
+                continue;
+            }
+            last = Some(ts);
+            let since = if p.resent {
+                arrived.max(p.arrived)
+            } else {
+                arrived
+            };
+            if e.arrived.saturating_duration_since(since) > bound {
+                out.push((i, ts));
+            }
+        }
+    }
+    out
+}
+
+/// Fresh evaluations, shared between sessions watching the same query at
+/// the same tick.
+type Fresh = HashMap<(&'static str, String, u64), Result<LiveValue, String>>;
+
+/// `q`'s fresh result at `ts`.
+async fn fresh_at<'a>(
+    fresh: &'a mut Fresh,
+    runner: &Runner,
+    q: &Query,
+    ts: u64,
+) -> Result<&'a Result<LiveValue, String>, String> {
+    Ok(
+        match fresh.entry((q.function, format!("{:?}", q.args), ts)) {
+            Entry::Occupied(found) => found.into_mut(),
+            Entry::Vacant(slot) => {
+                let f = sys(q.function)?;
+                let got = runner
+                    .query(&*f, q.args.clone(), Ts(ts))
+                    .await
+                    .map(|r| r.result)
+                    .map_err(|e| e.to_string());
+                slot.insert(got)
+            }
+        },
+    )
+}
+
+/// Whether a held result is the fresh one.
+fn same(held: Option<&QueryResult>, want: &Result<LiveValue, String>) -> bool {
+    match (held, want) {
+        (Some(QueryResult::Value(v)), Ok(f)) => v == f,
+        (Some(QueryResult::Error(_)), Err(_)) => true,
+        _ => false,
+    }
 }
 
 #[derive(Debug, Default)]
@@ -288,6 +396,32 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
         shutdown.clone(),
     );
 
+    // Every tick, as it is published (before any session opens).
+    let ticks = Arc::new(Mutex::new(Vec::<(u64, Instant)>::new()));
+    let ticks_lagged = Arc::new(AtomicU64::new(0));
+    let recorder = {
+        let (ticks, lagged, stop) = (ticks.clone(), ticks_lagged.clone(), shutdown.clone());
+        let mut updates = subs.updates();
+        tokio::spawn(async move {
+            loop {
+                let tick = tokio::select! {
+                    () = stop.cancelled() => return,
+                    tick = updates.recv() => tick,
+                };
+                match tick {
+                    Ok(tick) => ticks
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .push((tick.at.0, Instant::now())),
+                    Err(RecvError::Lagged(n)) => {
+                        lagged.fetch_add(n, Ordering::SeqCst);
+                    }
+                    Err(RecvError::Closed) => return,
+                }
+            }
+        })
+    };
+
     let mut watchers = Vec::new();
     for index in 0..w.sessions {
         let queries = queries(&mut rng, tables, &seeded);
@@ -366,6 +500,7 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
     for writer in writers {
         writer.await.map_err(|e| format!("a writer: {e}"))?;
     }
+    let writers_done = Instant::now();
     for e in failures
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -412,38 +547,35 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
         let consumer = std::mem::replace(&mut watcher.consumer, tokio::spawn(async {}));
         let _ = consumer.await;
     }
+    let _ = recorder.await;
+    let ticks = std::mem::take(
+        &mut *ticks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    );
+    report.ticks = ticks.len();
+    let lagged = ticks_lagged.load(Ordering::SeqCst);
+    if lagged > 0 {
+        report.violations.push(Violation::new(
+            ViolationKind::Workload,
+            None,
+            format!("the tick recorder lagged and missed {lagged} ticks"),
+        ));
+    }
 
-    // Every recorded state against fresh evaluations.
-    let mut fresh: HashMap<(&str, String, u64), Result<LiveValue, String>> = HashMap::new();
+    // Every recorded state against fresh evaluations, then the ticks
+    // between Transitions.
+    let mut fresh = Fresh::new();
     for watcher in &watchers {
         let log = std::mem::take(&mut *lock(&watcher.log));
         report.violations.extend(log.violations);
         report.transitions += log.records.len();
         for record in &log.records {
             for q in &watcher.queries {
-                // Sessions watching the same query at the same tick share
-                // one evaluation.
-                let key = (q.function, format!("{:?}", q.args), record.end.ts);
-                let want = match fresh.entry(key) {
-                    Entry::Occupied(found) => found.into_mut(),
-                    Entry::Vacant(slot) => {
-                        let f = sys(q.function)?;
-                        let got = runner
-                            .query(&*f, q.args.clone(), Ts(record.end.ts))
-                            .await
-                            .map(|r| r.result)
-                            .map_err(|e| e.to_string());
-                        slot.insert(got)
-                    }
-                };
+                let want = fresh_at(&mut fresh, &runner, q, record.end.ts).await?;
                 report.checked += 1;
                 let held = record.results.get(&q.id);
-                let same = match (held, &*want) {
-                    (Some(QueryResult::Value(v)), Ok(f)) => v == f,
-                    (Some(QueryResult::Error(_)), Err(_)) => true,
-                    _ => false,
-                };
-                if !same {
+                if !same(held, want) {
                     report.violations.push(Violation::new(
                         ViolationKind::Stale,
                         Some(watcher.index),
@@ -460,6 +592,57 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
                 }
             }
         }
+
+        let arrivals: Vec<Arrival> = log
+            .records
+            .iter()
+            .map(|r| Arrival {
+                ts: r.end.ts,
+                arrived: r.arrived,
+                resent: r.resent,
+            })
+            .collect();
+        let mut late = BTreeSet::new();
+        for (p, tick) in late_ticks(&arrivals, &ticks, LATE_BOUND) {
+            if late.contains(&p) {
+                continue;
+            }
+            let (record, next) = (&log.records[p], &log.records[p + 1]);
+            for q in &watcher.queries {
+                let want = fresh_at(&mut fresh, &runner, q, tick).await?;
+                report.checked += 1;
+                let held = record.results.get(&q.id);
+                if !same(held, want) {
+                    late.insert(p);
+                    report.violations.push(Violation::new(
+                        ViolationKind::Late,
+                        Some(watcher.index),
+                        format!(
+                            "query {} ({} {:?}) changed by tick {tick}: held {} since ts {}, fresh {}; \
+                             the next Transition was at ts {}, {:?} after the Transition at ts {}",
+                            q.id,
+                            q.function,
+                            q.args,
+                            short(&format!("{held:?}")),
+                            record.end.ts,
+                            short(&format!("{want:?}")),
+                            next.end.ts,
+                            next.arrived.saturating_duration_since(record.arrived),
+                            record.end.ts,
+                        ),
+                    ));
+                    break;
+                }
+            }
+        }
+
+        report.live_updates.push(
+            log.records
+                .iter()
+                .skip(1)
+                .filter(|r| r.updates && !r.resent && r.arrived < writers_done)
+                .count(),
+        );
     }
     Ok(())
 }
@@ -655,6 +838,8 @@ async fn write(
 
 /// Consumes `session`'s Transitions into `log` until stopped or closed.
 async fn consume(index: usize, session: Session, log: Arc<Mutex<Log>>, stop: CancellationToken) {
+    // Whether the chunks of the Transition being received carried updates.
+    let mut carried = false;
     loop {
         let item = tokio::select! {
             item = session.outbox.pop() => item,
@@ -679,6 +864,7 @@ async fn consume(index: usize, session: Session, log: Arc<Mutex<Log>>, stop: Can
         let end = Version::from_proto(t.end.as_option());
         let heartbeat = start == end && t.updates.is_empty();
         let resent = start == end && log.resumed;
+        carried |= !t.updates.is_empty();
         if !t.more {
             log.resumed = false;
         }
@@ -694,6 +880,9 @@ async fn consume(index: usize, session: Session, log: Arc<Mutex<Log>>, stop: Can
                 let record = Record {
                     end: log.client.version,
                     results: log.client.results.clone(),
+                    arrived: Instant::now(),
+                    updates: std::mem::take(&mut carried),
+                    resent,
                 };
                 log.records.push(record);
             }
@@ -738,4 +927,96 @@ async fn resume(watcher: &mut Watcher, sessions: &Sessions) -> Result<(), String
     watcher.session = session;
     watcher.stop = stop;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(base: Instant, ms: u64) -> Instant {
+        base + Duration::from_millis(ms)
+    }
+
+    fn arrival(ts: u64, arrived: Instant, resent: bool) -> Arrival {
+        Arrival {
+            ts,
+            arrived,
+            resent,
+        }
+    }
+
+    /// A tick between two Transitions is checked only when the next
+    /// Transition came more than the bound after it.
+    #[test]
+    fn ticks_between_transitions_are_checked_past_the_bound() {
+        let base = Instant::now();
+        let ticks = vec![
+            (10, at(base, 0)),
+            (20, at(base, 100)),
+            (30, at(base, 200)),
+            (40, at(base, 1_500)),
+        ];
+        // On time: the Transition at 30 came 50 ms after tick 20.
+        let prompt = [
+            arrival(10, at(base, 5), false),
+            arrival(30, at(base, 250), false),
+        ];
+        assert!(late_ticks(&prompt, &ticks, LATE_BOUND).is_empty());
+        // Late: the Transition at 40 came 1.4 s after tick 20 and 1.3 s
+        // after tick 30; tick 40 itself is the Transition's own.
+        let late = [
+            arrival(10, at(base, 5), false),
+            arrival(40, at(base, 1_501), false),
+        ];
+        assert_eq!(
+            late_ticks(&late, &ticks, LATE_BOUND),
+            vec![(0, 20), (0, 30)]
+        );
+        // No tick strictly between: nothing to check.
+        let adjacent = [
+            arrival(20, at(base, 101), false),
+            arrival(30, at(base, 3_000), false),
+        ];
+        assert!(late_ticks(&adjacent, &ticks, LATE_BOUND).is_empty());
+    }
+
+    /// After a resume the bound counts from the re-sent Transition: the
+    /// session could not deliver while it was disconnected.
+    #[test]
+    fn a_resume_restarts_the_bound() {
+        let base = Instant::now();
+        let ticks = vec![
+            (10, at(base, 0)),
+            (20, at(base, 100)),
+            (30, at(base, 1_400)),
+        ];
+        let resumed = [
+            arrival(10, at(base, 5), false),
+            arrival(10, at(base, 1_300), true),
+            arrival(30, at(base, 1_450), false),
+        ];
+        assert!(late_ticks(&resumed, &ticks, LATE_BOUND).is_empty());
+        let stalled = [
+            arrival(10, at(base, 5), false),
+            arrival(10, at(base, 1_300), true),
+            arrival(30, at(base, 2_400), false),
+        ];
+        assert_eq!(late_ticks(&stalled, &ticks, LATE_BOUND), vec![(1, 20)]);
+    }
+
+    /// Repeated tick timestamps count once, at their first arrival.
+    #[test]
+    fn repeated_ticks_count_once() {
+        let base = Instant::now();
+        let ticks = vec![
+            (10, at(base, 0)),
+            (20, at(base, 100)),
+            (20, at(base, 1_200)),
+        ];
+        let records = [
+            arrival(10, at(base, 5), false),
+            arrival(30, at(base, 1_250), false),
+        ];
+        assert_eq!(late_ticks(&records, &ticks, LATE_BOUND), vec![(0, 20)]);
+    }
 }

@@ -20,6 +20,23 @@ fn first(report: &Report) -> String {
         .join("\n")
 }
 
+/// Ticks were recorded, and every session got several Transitions with
+/// updates while the writers ran, not only when it caught up at the end.
+fn assert_live(report: &Report, sessions: usize) {
+    assert!(report.ticks > 0, "no tick recorded");
+    assert_eq!(
+        report.live_updates.len(),
+        sessions,
+        "{:?}",
+        report.live_updates
+    );
+    assert!(
+        report.live_updates.iter().all(|n| *n >= 3),
+        "update-carrying Transitions per session before the writers finished: {:?}",
+        report.live_updates
+    );
+}
+
 /// 10 seeds × 2 000 ops: no violation, and the checker checked something.
 async fn reactive_checker_passes_seeded_workload(store: TestStore) {
     for seed in 0..10 {
@@ -43,6 +60,7 @@ async fn reactive_checker_passes_seeded_workload(store: TestStore) {
         );
         assert!(report.transitions > 0, "seed {seed}: no Transition");
         assert!(report.checked > 0, "seed {seed}: nothing checked");
+        assert_live(&report, 4);
     }
 }
 live_test!(reactive_checker_passes_seeded_workload);
@@ -108,6 +126,7 @@ async fn reactive_checker_resume_converges(store: TestStore) {
         first(&report)
     );
     assert!(report.resumes >= 3, "{} resumes", report.resumes);
+    assert_live(&report, 4);
 }
 live_test!(reactive_checker_resume_converges);
 
