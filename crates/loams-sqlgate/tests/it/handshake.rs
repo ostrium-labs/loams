@@ -1,6 +1,6 @@
 use loams_sqlgate::codec::handshake::{
     Capabilities as C, ClientHello, GATE_SUPPORTED, HandshakeResponse41, HandshakeV10, Limits,
-    Nonce, RELAY_SENSITIVE, SslRequest, advertise, decode_client_hello, negotiate,
+    Nonce, RELAY_SENSITIVE, SslRequest, TIDB_V8_5_8, advertise, decode_client_hello, negotiate,
     upstream_capabilities,
 };
 use proptest::prelude::*;
@@ -171,10 +171,13 @@ proptest! {
     fn capabilities_never_exceed_upstream(upstream in any::<u32>(), client in any::<u32>()) {
         let upstream = C(upstream);
         let offered = advertise(upstream);
-        prop_assert!(offered.is_subset_of(upstream));
+        // SSL is the gate's own (it terminates TLS); everything else is
+        // what TiDB's profile has.
+        prop_assert!(offered.contains(C::SSL));
+        prop_assert!(offered.without(C::SSL).is_subset_of(upstream));
         prop_assert!(offered.is_subset_of(GATE_SUPPORTED));
         if let Ok(agreed) = negotiate(C(client), offered) {
-            prop_assert!(agreed.is_subset_of(upstream));
+            prop_assert!(agreed.without(C::SSL).is_subset_of(upstream));
             prop_assert!(agreed.is_subset_of(GATE_SUPPORTED));
             prop_assert!(agreed.is_subset_of(C(client)));
             let up = upstream_capabilities(agreed);
@@ -194,4 +197,15 @@ fn auth_response_never_prints() {
     let shown = format!("{r:?}");
     assert!(shown.contains("[redacted]"), "{shown}");
     assert!(!shown.contains("9, 9, 9"), "{shown}");
+}
+
+/// R3.6: the offer never depends on TiDB's greeting: the profile is static
+/// for the pinned v8.5.8, and SSL is the gate's own.
+#[test]
+fn ssl_is_offered_on_the_gates_terms() {
+    assert!(advertise(TIDB_V8_5_8).contains(C::SSL));
+    assert!(advertise(TIDB_V8_5_8.without(C::SSL)).contains(C::SSL));
+    // The profile is the captured v8.5.8 greeting's capabilities plus SSL.
+    let captured = C(0x051b_a6af);
+    assert_eq!(TIDB_V8_5_8, captured | C::SSL);
 }

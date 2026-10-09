@@ -168,10 +168,19 @@ const REQUIRED: Capabilities = Capabilities(
     Capabilities::PROTOCOL_41.0 | Capabilities::SECURE_CONNECTION.0 | Capabilities::PLUGIN_AUTH.0,
 );
 
-/// What the gate offers clients: what the upstream TiDB supports and the
-/// gate implements.
-pub fn advertise(upstream: Capabilities) -> Capabilities {
-    upstream.intersect(GATE_SUPPORTED)
+/// The capabilities of the pinned TiDB v8.5.8, as a static profile: the
+/// gate greets a client before it knows the branch (wake on connect), so it
+/// never waits for a live TiDB greeting. The value is the v8.5.8 greeting
+/// captured in `tests/fixtures/clients` (`0x051ba6af`) plus `CLIENT_SSL`,
+/// which TiDB adds when TLS is configured (always, for Loams pools). A TiDB
+/// upgrade re-captures it (`ssl_is_offered_on_the_gates_terms`).
+pub const TIDB_V8_5_8: Capabilities = Capabilities(0x051b_a6af | Capabilities::SSL.0);
+
+/// What the gate offers clients: what the TiDB `profile` (normally
+/// [`TIDB_V8_5_8`]) supports and the gate implements, plus `CLIENT_SSL` on
+/// the gate's own terms (it terminates client TLS itself).
+pub fn advertise(profile: Capabilities) -> Capabilities {
+    profile.intersect(GATE_SUPPORTED) | Capabilities::SSL
 }
 
 /// A client the gate cannot serve.
