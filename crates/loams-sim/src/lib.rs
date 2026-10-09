@@ -25,11 +25,19 @@
 //! object store do real I/O and use real time, so a failing seed may not
 //! replay exactly. The event schedule, though, is a function of the seed
 //! alone. A failure report carries the seed and the full schedule.
+//!
+//! [`elle`] is an Elle-style list-append checker for transactional
+//! histories (LV1 plan Task 2). It has no dependencies, so it builds without
+//! the default `sim` feature, which gates everything else here.
 
+pub mod elle;
+#[cfg(feature = "sim")]
 mod sim;
 
 /// The checker, which lives in `loams-meta-conformance` so a metastore
 /// backend can use it without this crate (M1.2a Ruling 14).
+#[cfg(feature = "sim")]
 pub use loams_meta_conformance::linearizability;
 
+#[cfg(feature = "sim")]
 pub use sim::{Event, Histories, SimConfig, SimReport, SimStats, run};
