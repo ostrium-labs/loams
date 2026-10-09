@@ -13,7 +13,9 @@ fn corpus() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../conformance/clickhouse/corpus/classify")
 }
 
-/// Every file under `corpus/classify/` carries its expected kind on its first line.
+/// Every file under `corpus/classify/` carries its expected kind on its first line:
+/// a `Stmt` kind, `Unparsed (…)`, or `error <code>` for a refusal (fix round 1's
+/// adversarial payloads, `adversarial_*.sql`).
 #[test]
 fn classify_corpus() {
     let mut seen = 0;
@@ -32,6 +34,7 @@ fn classify_corpus() {
         let got = match classify(sql) {
             Ok(Classified::Known { stmt, .. }) => stmt.kind().to_string(),
             Ok(Classified::Unparsed { message, .. }) => format!("Unparsed ({message})"),
+            Err(err) if expected.starts_with("error ") => format!("error {}", err.code()),
             Err(err) => format!("error {err}"),
         };
         if got != expected {
@@ -342,4 +345,29 @@ fn multi_statement_and_unknown_are_refused() {
             assert!(err.message().starts_with("sqlparser's"), "{err}");
         }
     }
+}
+
+/// Fix round 1, the classifier oracle's finding: the keyword routes go by
+/// ClickHouse's lexing, so a heredoc or a nested comment cannot show the route one
+/// statement while chDB parses another.
+#[test]
+fn routes_follow_clickhouse_lexing() {
+    let route = |sql: &str| match classify(sql) {
+        Ok(Classified::Known { stmt, .. }) => stmt.kind().to_string(),
+        Ok(Classified::Unparsed { .. }) => "Unparsed".to_string(),
+        Err(err) => format!("error {}", err.code()),
+    };
+    // A heredoc is a string to ClickHouse: no INSERT here.
+    assert_ne!(route("$$INSERT INTO t VALUES (1)$$"), "Insert");
+    // Comments nest: what follows the outer comment is the statement.
+    assert_eq!(
+        route("/* /* */ INSERT INTO t VALUES (1) */ SELECT 1"),
+        "Query"
+    );
+    assert_eq!(
+        route("/* /* */ SELECT 1 */ INSERT INTO t VALUES (1)"),
+        "Insert"
+    );
+    // `#` before a space is a comment.
+    assert_eq!(route("# INSERT INTO t\nSELECT 1"), "Query");
 }

@@ -1,0 +1,2 @@
+-- kind: error 62
+DROP TEMPORARY TABLE t; DROP TABLE x

@@ -1403,6 +1403,7 @@ dependencies = [
  "loams-house-ipc",
  "nix",
  "parquet",
+ "proptest",
  "serde_json",
  "tokio",
  "zstd",

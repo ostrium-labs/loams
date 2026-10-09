@@ -205,8 +205,10 @@ enum Lexeme {
     Word(usize, usize),
     /// `;`.
     Semicolon,
-    /// A literal, a quoted name, a heredoc, or a symbol.
+    /// A literal, a quoted name, or a heredoc.
     Other,
+    /// Any other ASCII byte outside those (`(`, `,`, `=`, …).
+    Symbol(u8),
 }
 
 /// The lexemes of a complete statement, the way ClickHouse's lexer cuts it — not
@@ -309,11 +311,30 @@ fn lexemes(text: &str) -> Vec<Lexeme> {
             }
             _ => {
                 i += 1;
-                out.push(Lexeme::Other);
+                out.push(Lexeme::Symbol(c));
             }
         }
     }
     out
+}
+
+/// The first two words of a statement and whether it opens with `(`, as
+/// ClickHouse's lexer reads it ([`lexemes`]): what the keyword routes go by, so a
+/// heredoc or a nested comment cannot show the route one statement and chDB
+/// another (the classifier oracle's finding, fix round 1).
+fn route_words(text: &str) -> (String, String, bool) {
+    let lexemes = lexemes(text);
+    let mut words = lexemes.iter().filter_map(|l| match l {
+        Lexeme::Word(start, end) => Some(text[*start..*end].to_ascii_uppercase()),
+        _ => None,
+    });
+    let first = words.next().unwrap_or_default();
+    let second = words.next().unwrap_or_default();
+    (
+        first,
+        second,
+        lexemes.first() == Some(&Lexeme::Symbol(b'(')),
+    )
 }
 
 /// Refuses what no statement may carry, whatever its kind and wherever it goes
@@ -510,21 +531,19 @@ fn set_value(expr: &sqlparser::ast::Expr) -> String {
 pub fn classify(sql: &str) -> Result<Classified, HouseError> {
     // The checks every statement gets, on the statement's head (an `INSERT`'s data,
     // if any came with it, is not SQL).
-    if request::first_keyword(sql) == "INSERT" {
+    if route_words(sql).0 == "INSERT" {
         check_text(&insert_stmt(sql).text)?;
     } else {
         check_text(sql)?;
     }
     let (text, format) = request::split_format(sql);
     let toks = words(&text);
-    let mut keywords = toks.iter().filter(|(_, t)| t.word).map(|(w, _)| w.as_str());
-    let first = keywords.next().unwrap_or("");
-    let second = keywords.next().unwrap_or("");
+    let (first, second, opens_with_paren) = route_words(&text);
+    let (first, second) = (first.as_str(), second.as_str());
     let known = |stmt: Stmt, format: Option<String>| Ok(Classified::Known { stmt, format });
 
     // Queries need no parsing (FL2 Ruling 4); the keyword routes cover the
     // ClickHouse forms sqlparser does not have.
-    let opens_with_paren = toks.first().is_some_and(|(w, t)| !t.word && w == "(");
     match first {
         _ if opens_with_paren => return known(Stmt::Query { text }, format),
         "SELECT" | "WITH" => return known(Stmt::Query { text }, format),

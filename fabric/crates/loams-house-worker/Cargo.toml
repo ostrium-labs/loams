@@ -54,6 +54,8 @@ zstd.workspace = true
 nix.workspace = true
 parquet.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
+# `classify_oracle.rs`: statement-shaped text for the classifier oracle.
+proptest.workspace = true
 
 [lints]
 workspace = true
