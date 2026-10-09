@@ -178,9 +178,26 @@ impl Drop for Slot {
     }
 }
 
-/// Pre-authentication limits per client IP (plan SQ1 Task 4 fix round 1,
-/// C1 and C2): connections still in their handshake, and new connections
-/// per second.
+/// The key a client source is limited by (R4.2, fix round 2 N2): its IPv4
+/// address, with a v4-mapped IPv6 address canonicalised to IPv4, or its
+/// IPv6 /64 (one host usually owns a whole /64).
+pub fn source_key(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(v4) => IpAddr::V4(v4),
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let mut octets = v6.octets();
+                octets[8..].fill(0);
+                IpAddr::V6(octets.into())
+            }
+        },
+    }
+}
+
+/// Pre-authentication limits per client source ([`source_key`]; plan SQ1
+/// Task 4 fix rounds 1 and 2): connections still in their handshake, and
+/// new connections per second.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreAuthConfig {
     /// Connections from one IP in their handshake at once.
@@ -236,6 +253,7 @@ impl PreAuth {
     /// Admits a new connection from `ip` into its handshake: one rate
     /// token and one of the IP's handshake slots, released on drop.
     pub fn admit(self: &Arc<Self>, ip: IpAddr) -> Result<PreAuthSlot, LimitError> {
+        let ip = source_key(ip);
         let mut ips = self.lock();
         if !ips.contains_key(&ip) && ips.len() >= self.config.max_tracked_ips {
             ips.retain(|_, s| s.open > 0 || !s.bucket.is_full());
@@ -261,9 +279,9 @@ impl PreAuth {
         })
     }
 
-    /// Connections from `ip` in their handshake.
+    /// Connections from `ip`'s source ([`source_key`]) in their handshake.
     pub fn open(&self, ip: IpAddr) -> u32 {
-        self.lock().get(&ip).map_or(0, |s| s.open)
+        self.lock().get(&source_key(ip)).map_or(0, |s| s.open)
     }
 }
 

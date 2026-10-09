@@ -857,3 +857,37 @@ fn proxy_v2_headers_for_ipv6_and_mixed_families() {
         assert_eq!(&h[50..52], &dst.port().to_be_bytes());
     }
 }
+
+/// N2: per-source limits key IPv4 by address (v4-mapped IPv6 included)
+/// and IPv6 by /64.
+#[test]
+fn sources_are_keyed_by_ipv4_or_ipv6_64() {
+    use loams_sqlgate::limits::{PreAuth, PreAuthConfig, source_key};
+    let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+    assert_eq!(source_key(ip("::ffff:10.1.2.3")), ip("10.1.2.3"));
+    assert_eq!(source_key(ip("10.1.2.3")), ip("10.1.2.3"));
+    assert_eq!(source_key(ip("2001:db8:1:2:aaaa::1")), ip("2001:db8:1:2::"));
+    assert_eq!(
+        source_key(ip("2001:db8:1:2::1")),
+        source_key(ip("2001:db8:1:2:ffff:ffff:ffff:ffff"))
+    );
+    assert_ne!(
+        source_key(ip("2001:db8:1:2::1")),
+        source_key(ip("2001:db8:1:3::1"))
+    );
+
+    let limiter = PreAuth::new(PreAuthConfig {
+        per_ip_concurrent: 1,
+        ..PreAuthConfig::default()
+    });
+    let held = limiter.admit(ip("2001:db8:1:2::1")).expect("first");
+    assert!(limiter.admit(ip("2001:db8:1:2::99")).is_err(), "same /64");
+    let other = limiter.admit(ip("2001:db8:1:3::1")).expect("another /64");
+    let v4 = limiter.admit(ip("10.1.2.3")).expect("v4");
+    assert!(
+        limiter.admit(ip("::ffff:10.1.2.3")).is_err(),
+        "v4-mapped is the same source"
+    );
+    drop((held, other, v4));
+    assert_eq!(limiter.open(ip("2001:db8:1:2::5")), 0);
+}
