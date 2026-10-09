@@ -15,12 +15,15 @@
 //! `expected: None` creates, with `Some(v)` replaces version `v`; `delete`
 //! needs the current version.
 //!
-//! **Fences.** A write may carry a [`Fence`] from
-//! [`acquire_lease`](PgControlStore::acquire_lease). The write then checks,
+//! **Fences.** Every write of [`PgControlStore`] carries a [`Fence`] from
+//! [`acquire_lease`](PgControlStore::acquire_lease). The write checks,
 //! in its own transaction, that the lease is still at the fence's epoch and
 //! held, and locks the lease record, so a takeover committed meanwhile
 //! conflicts with it: `loams-meta-tikv`'s `check_fence` (R3.2). A stale
-//! fence's write fails with [`StoreError::Fenced`].
+//! fence's write fails with [`StoreError::Fenced`]. Unfenced writes (the API
+//! service's, which hold no project lease) exist only on [`ApiWriter`], from
+//! [`KvControlStore::api_writer`], not on the trait that reconcilers take
+//! (R3.10).
 //!
 //! **Unknown outcomes.** Writes carry a commit token, so a lost
 //! acknowledgement is resolved; when it cannot be, the write fails with
@@ -37,7 +40,7 @@ use std::time::Duration;
 
 use futures::stream::BoxStream;
 
-pub use kv::{DEFAULT_POLL, KvControlStore, StoreOptions};
+pub use kv::{ApiWriter, DEFAULT_POLL, KvControlStore, StoreOptions};
 
 use crate::model::Record;
 
@@ -118,23 +121,51 @@ impl Page {
     }
 }
 
-/// A lease epoch a write is fenced by, or none.
+/// A lease epoch a write is fenced by: the lease `scope`, its `holder`, at
+/// `epoch`. Only [`acquire_lease`](PgControlStore::acquire_lease) (and, from
+/// fix round 1, `renew_lease`) make one, so every write through
+/// [`PgControlStore`] is fenced by a lease the writer took (R3.10). The API
+/// service's unfenced writes go through [`ApiWriter`] instead, which the
+/// trait cannot hand out.
+///
+/// A fence cannot be built by hand:
+///
+/// ```compile_fail
+/// let fence = loams_pg_control::Fence {
+///     scope: "e/pg/prj-1".into(),
+///     holder: "pg-control-a".into(),
+///     epoch: 1,
+/// };
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Fence {
-    /// No lease: the write is guarded by its compare-and-set only (the API
-    /// service's writes, which hold no project lease; R3.4).
-    Unfenced,
-    /// The lease `scope` at `epoch`.
-    Lease { scope: String, epoch: u64 },
+pub struct Fence {
+    scope: String,
+    holder: String,
+    epoch: u64,
 }
 
 impl Fence {
-    /// The lease's epoch, if fenced.
-    pub fn epoch(&self) -> Option<u64> {
-        match self {
-            Fence::Unfenced => None,
-            Fence::Lease { epoch, .. } => Some(*epoch),
+    pub(crate) fn new(scope: String, holder: String, epoch: u64) -> Self {
+        Fence {
+            scope,
+            holder,
+            epoch,
         }
+    }
+
+    /// The lease scope (`e/pg/<project_id>`).
+    pub fn scope(&self) -> &str {
+        &self.scope
+    }
+
+    /// Who took the lease.
+    pub fn holder(&self) -> &str {
+        &self.holder
+    }
+
+    /// The lease's epoch.
+    pub fn epoch(&self) -> u64 {
+        self.epoch
     }
 }
 
@@ -152,9 +183,28 @@ pub enum StoreEvent {
     Synced,
 }
 
-/// The store of `pg-control`'s records (the shared contract of the PG2
-/// plan). Every write is a compare-and-set on the record's version, fenced
-/// by a lease epoch.
+/// The store of `pg-control`'s records (PG2's shared contract). Every write
+/// is a compare-and-set on the record's version, fenced by a lease epoch;
+/// there is no unfenced write here (R3.10). Code generic over this trait,
+/// as the reconcilers are, therefore cannot write without a lease:
+///
+/// ```compile_fail
+/// use loams_pg_control::PgControlStore;
+/// use loams_pg_control::model::BranchRec;
+/// async fn reconcile<S: PgControlStore>(store: &S, rec: &BranchRec) {
+///     let _ = store.api_writer().put(rec, None).await;
+/// }
+/// ```
+///
+/// while the fenced write compiles:
+///
+/// ```no_run
+/// use loams_pg_control::{Fence, PgControlStore};
+/// use loams_pg_control::model::BranchRec;
+/// async fn reconcile<S: PgControlStore>(store: &S, rec: &BranchRec, fence: &Fence) {
+///     let _ = store.put(rec, None, fence).await;
+/// }
+/// ```
 pub trait PgControlStore: Send + Sync + 'static {
     /// The record at `key`, if any.
     fn get<R: Record>(

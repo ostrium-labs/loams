@@ -65,6 +65,40 @@ pub struct KvControlStore {
     changes: Arc<tokio::sync::watch::Sender<u64>>,
 }
 
+/// Unfenced writes for the API service, which holds no project lease (Task 5
+/// writes a project or branch in state `creating`, and the reconciler acts
+/// on it under its lease). Every write is still a compare-and-set. Only
+/// [`KvControlStore::api_writer`] makes one (R3.10).
+#[derive(Debug, Clone)]
+pub struct ApiWriter {
+    store: KvControlStore,
+}
+
+impl ApiWriter {
+    /// `put` with no fence.
+    ///
+    /// # Errors
+    ///
+    /// As [`PgControlStore::put`], but never `Fenced`.
+    pub async fn put<R: Record>(&self, rec: &R, expected: Option<u64>) -> Result<u64, StoreError> {
+        self.store.put_record(rec, expected, None).await
+    }
+
+    /// `delete` with no fence.
+    ///
+    /// # Errors
+    ///
+    /// As [`PgControlStore::delete`], but never `Fenced`.
+    pub async fn delete<R: Record>(&self, key: &R::Key, expected: u64) -> Result<(), StoreError> {
+        self.store.delete_record::<R>(key, expected, None).await
+    }
+
+    /// The store, for reads.
+    pub fn store(&self) -> &KvControlStore {
+        &self.store
+    }
+}
+
 /// The lease record: the metastore's `Lease` field for field, so its
 /// encoding (`FORMAT ‖ postcard`) is the one `loams-meta-tikv` writes at
 /// `e/m/` (R3.2).
@@ -90,6 +124,15 @@ impl KvControlStore {
     /// The `loams-kv` store underneath.
     pub fn kv(&self) -> &Store {
         &self.store
+    }
+
+    /// The API service's writer: compare-and-set writes with no lease
+    /// (R3.10). An inherent method, not on [`PgControlStore`], so code
+    /// generic over the trait (the reconcilers) cannot reach it.
+    pub fn api_writer(&self) -> ApiWriter {
+        ApiWriter {
+            store: self.clone(),
+        }
     }
 
     /// The options this handle runs with.
@@ -122,6 +165,86 @@ impl KvControlStore {
             self.changes.send_modify(|n| *n = n.wrapping_add(1));
         }
         out
+    }
+
+    /// `put`, fenced by `fence` or (only for [`ApiWriter`]) by nothing.
+    async fn put_record<R: Record>(
+        &self,
+        rec: &R,
+        expected: Option<u64>,
+        fence: Option<&Fence>,
+    ) -> Result<u64, StoreError> {
+        let key = R::encode_key(&rec.key())?;
+        let body = postcard::to_stdvec(rec)
+            .map_err(|e| StoreError::InvalidArgument(format!("{} encodes: {e}", R::KIND)))?;
+        if let Some(fence) = fence {
+            check_scope(fence.scope())?;
+        }
+        let fence = fence.cloned();
+        self.write(OP_PUT, move |txn| {
+            let (key, body, fence) = (key.clone(), body.clone(), fence.clone());
+            Box::pin(async move {
+                if let Err(e) = check_fence(txn, fence.as_ref()).await? {
+                    return Ok(Err(e));
+                }
+                let current = match txn.get(&key).await? {
+                    Some(value) => match decode_version(&value) {
+                        Ok((version, _)) => Some(version),
+                        Err(e) => return Ok(Err(e)),
+                    },
+                    None => None,
+                };
+                if current != expected {
+                    return Ok(Err(StoreError::Conflict { current }));
+                }
+                // The start timestamp is above every committed write of the
+                // key under snapshot isolation; `max` only guards that.
+                let version = txn
+                    .start_ts()
+                    .0
+                    .max(current.map_or(0, |c| c.saturating_add(1)));
+                txn.put(&key, encode_value(version, &body)).await?;
+                Ok(Ok(version))
+            })
+        })
+        .await
+    }
+
+    /// `delete`, fenced by `fence` or (only for [`ApiWriter`]) by nothing.
+    async fn delete_record<R: Record>(
+        &self,
+        key: &R::Key,
+        expected: u64,
+        fence: Option<&Fence>,
+    ) -> Result<(), StoreError> {
+        let key = R::encode_key(key)?;
+        if let Some(fence) = fence {
+            check_scope(fence.scope())?;
+        }
+        let fence = fence.cloned();
+        self.write(OP_DELETE, move |txn| {
+            let (key, fence) = (key.clone(), fence.clone());
+            Box::pin(async move {
+                if let Err(e) = check_fence(txn, fence.as_ref()).await? {
+                    return Ok(Err(e));
+                }
+                let Some(value) = txn.get(&key).await? else {
+                    return Ok(Err(StoreError::NotFound));
+                };
+                let current = match decode_version(&value) {
+                    Ok((version, _)) => version,
+                    Err(e) => return Ok(Err(e)),
+                };
+                if current != expected {
+                    return Ok(Err(StoreError::Conflict {
+                        current: Some(current),
+                    }));
+                }
+                txn.delete(&key).await?;
+                Ok(Ok(()))
+            })
+        })
+        .await
     }
 
     /// The version of every record under `prefix`, in one snapshot.
@@ -178,38 +301,7 @@ impl PgControlStore for KvControlStore {
         expected: Option<u64>,
         fence: &Fence,
     ) -> Result<u64, StoreError> {
-        let key = R::encode_key(&rec.key())?;
-        let body = postcard::to_stdvec(rec)
-            .map_err(|e| StoreError::InvalidArgument(format!("{} encodes: {e}", R::KIND)))?;
-        check_fence_scope(fence)?;
-        let fence = fence.clone();
-        self.write(OP_PUT, move |txn| {
-            let (key, body, fence) = (key.clone(), body.clone(), fence.clone());
-            Box::pin(async move {
-                if let Err(e) = check_fence(txn, &fence).await? {
-                    return Ok(Err(e));
-                }
-                let current = match txn.get(&key).await? {
-                    Some(value) => match decode_version(&value) {
-                        Ok((version, _)) => Some(version),
-                        Err(e) => return Ok(Err(e)),
-                    },
-                    None => None,
-                };
-                if current != expected {
-                    return Ok(Err(StoreError::Conflict { current }));
-                }
-                // The start timestamp is above every committed write of the
-                // key under snapshot isolation; `max` only guards that.
-                let version = txn
-                    .start_ts()
-                    .0
-                    .max(current.map_or(0, |c| c.saturating_add(1)));
-                txn.put(&key, encode_value(version, &body)).await?;
-                Ok(Ok(version))
-            })
-        })
-        .await
+        self.put_record(rec, expected, Some(fence)).await
     }
 
     async fn delete<R: Record>(
@@ -218,32 +310,7 @@ impl PgControlStore for KvControlStore {
         expected: u64,
         fence: &Fence,
     ) -> Result<(), StoreError> {
-        let key = R::encode_key(key)?;
-        check_fence_scope(fence)?;
-        let fence = fence.clone();
-        self.write(OP_DELETE, move |txn| {
-            let (key, fence) = (key.clone(), fence.clone());
-            Box::pin(async move {
-                if let Err(e) = check_fence(txn, &fence).await? {
-                    return Ok(Err(e));
-                }
-                let Some(value) = txn.get(&key).await? else {
-                    return Ok(Err(StoreError::NotFound));
-                };
-                let current = match decode_version(&value) {
-                    Ok((version, _)) => version,
-                    Err(e) => return Ok(Err(e)),
-                };
-                if current != expected {
-                    return Ok(Err(StoreError::Conflict {
-                        current: Some(current),
-                    }));
-                }
-                txn.delete(&key).await?;
-                Ok(Ok(()))
-            })
-        })
-        .await
+        self.delete_record::<R>(key, expected, Some(fence)).await
     }
 
     async fn list<R: Record>(
@@ -333,13 +400,14 @@ impl PgControlStore for KvControlStore {
                     }
                     Some(lease) => lease.epoch + 1,
                 };
+                let holder_out = holder.clone();
                 let lease = LeaseRec {
                     epoch,
                     owner: Some(holder),
                     deadline_ms: now.saturating_add(ttl_ms),
                 };
                 txn.put(scope.as_bytes(), encode_lease(&lease)).await?;
-                Ok(Ok(Fence::Lease { scope, epoch }))
+                Ok(Ok(Fence::new(scope, holder_out, epoch)))
             })
         })
         .await
@@ -432,25 +500,21 @@ impl Watch {
 /// lease record is locked, so a takeover committed meanwhile conflicts with
 /// this write. `loams-meta-tikv`'s `check_fence`, on `loams-kv` (R3.2):
 /// `get` and `lock_keys` are an optimistic `get_for_update`.
-async fn check_fence(txn: &mut Txn, fence: &Fence) -> Result<Result<(), StoreError>, TxnError> {
-    let Fence::Lease { scope, epoch } = fence else {
+async fn check_fence(
+    txn: &mut Txn,
+    fence: Option<&Fence>,
+) -> Result<Result<(), StoreError>, TxnError> {
+    let Some(fence) = fence else {
         return Ok(Ok(()));
     };
-    let key = scope.as_bytes();
+    let key = fence.scope().as_bytes();
     let lease = txn.get(key).await?;
     txn.lock_keys([key]).await?;
     Ok(match lease.as_deref().map(decode_lease).transpose() {
         Err(e) => Err(e),
-        Ok(Some(lease)) if lease.epoch == *epoch && lease.owner.is_some() => Ok(()),
+        Ok(Some(lease)) if lease.epoch == fence.epoch() && lease.owner.is_some() => Ok(()),
         Ok(_) => Err(StoreError::Fenced),
     })
-}
-
-fn check_fence_scope(fence: &Fence) -> Result<(), StoreError> {
-    match fence {
-        Fence::Unfenced => Ok(()),
-        Fence::Lease { scope, .. } => check_scope(scope),
-    }
 }
 
 /// `e/pg/<id>`, with one part after the scope.

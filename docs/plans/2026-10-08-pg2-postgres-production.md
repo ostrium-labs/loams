@@ -1488,7 +1488,7 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
   - `Unavailable(String)` carries the message of the runner's error. It covers a conflict that outlasts the attempts, not-applied, the deadline and fatal errors. Nothing was written in those cases.
   - `Undetermined` stays a bare variant.
   - `Conflict { current }` names the current version, and `None` means the record is absent. `delete` of an absent record is `NotFound`.
-- **R3.4 `Fence::Unfenced`.** The API service's writes hold no project lease (Task 5 writes the `creating` record and the reconciler acts on it), so `Fence` is `Unfenced | Lease { scope, epoch }`. Unfenced writes are still compare-and-set. Reconcilers always write with their lease's fence.
+- **R3.4 `Fence::Unfenced`.** *(Superseded by R3.10.)* The API service's writes hold no project lease (Task 5 writes the `creating` record and the reconciler acts on it), so `Fence` is `Unfenced | Lease { scope, epoch }`. Unfenced writes are still compare-and-set. Reconcilers always write with their lease's fence.
 - **R3.5 Versions are start timestamps.** A write's version is its transaction's start timestamp, or the previous version plus 1 if that is larger. Under snapshot isolation that number grows with every committed write of a key, including across a delete and a re-create. So a version is never reused, and a watch that diffs versions cannot miss a re-create. A stored value is `FORMAT (1) ‖ varint(version) ‖ postcard(record)`.
 - **R3.6 Keys and the model.**
   - The records of §46 §6.2, plus the project name index `x/<ns>/n/<name>` as its own record (`ProjectNameRec`).
@@ -1509,3 +1509,17 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
 - **R3.9 The TiKV tests use `LOAMS_TEST_PD`, not `LOAMS_TIKV_PD`.** Every TiKV suite in the repository, and CI's TiKV job, use `loams_tikv::testing::cluster()` and `LOAMS_TEST_PD`, so `tests/store_tikv.rs` does too. Each case prints `skipped:` when the variable is unset. It runs on the test keyspace `loams_test_meta` under a fresh random root. CI changes:
   - `ci.yml`'s TiKV suites job builds and runs `cargo test -p loams-pg-control --features tikv --test store_tikv`, and its `tikv` filter covers the crate.
   - `pg2.yml` gains `pg-control`, which runs the tests on the local store and clippy on the default and `tikv` builds.
+
+#### Task 3 fix round 1 (2026-10-09)
+
+- **R3.10 Reconcilers cannot write unfenced (review I1).**
+  - `Fence` is now an opaque struct (`scope`, `holder`, `epoch`, with private fields), and `Fence::Unfenced` is gone. Only `acquire_lease` and `renew_lease` make a fence.
+  - Every write of `PgControlStore` takes a fence.
+  - The API service's unfenced, compare-and-set writes exist only on `ApiWriter`. It comes from `KvControlStore::api_writer()`, an inherent method that is not on the trait.
+  - Code generic over `S: PgControlStore`, as Task 7's reconcilers must be, has no unfenced path.
+  - Doc tests on `PgControlStore` and `Fence` prove it:
+    - a `compile_fail` reconciler that reaches for `api_writer()`;
+    - a `compile_fail` hand-built `Fence`;
+    - a `no_run` fenced write that compiles.
+  - Task 5 holds the `ApiWriter`. Task 7 takes the store generically.
+

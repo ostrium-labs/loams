@@ -9,7 +9,7 @@ loams_pg_control::pg_control_store_conformance!(
 async fn local_store_survives_a_reopen() {
     use loams_pg_control::model::{BranchKey, BranchRec, BranchState};
     use loams_pg_control::store::local;
-    use loams_pg_control::{Fence, PgControlStore, StoreOptions};
+    use loams_pg_control::{PgControlStore, StoreOptions};
 
     let dir = loams_kv::testing::TempDir::new_in(std::path::Path::new(env!("CARGO_TARGET_TMPDIR")))
         .expect("a directory");
@@ -32,7 +32,7 @@ async fn local_store_survives_a_reopen() {
         let store = local::open(&path, StoreOptions::default())
             .await
             .expect("open");
-        store.put(&rec, None, &Fence::Unfenced).await.expect("put")
+        store.api_writer().put(&rec, None).await.expect("put")
     };
     let store = local::open(&path, StoreOptions::default())
         .await

@@ -9,5 +9,6 @@ pub mod model;
 pub mod store;
 
 pub use store::{
-    Fence, KvControlStore, Page, PgControlStore, StoreError, StoreEvent, StoreOptions, Versioned,
+    ApiWriter, Fence, KvControlStore, Page, PgControlStore, StoreError, StoreEvent, StoreOptions,
+    Versioned,
 };
