@@ -22,7 +22,7 @@
 (function setup(natives, config) {
   "use strict";
 
-  const { now, random, log, host } = natives;
+  const { now, random, log, host, isProxy } = natives;
   // `globalThis.Date`: the name `Date` below is the hoisted shim.
   const OriginalDate = globalThis.Date;
   const defineProperty = Object.defineProperty;
@@ -169,20 +169,90 @@
   // `Array(2 ** 32 - 1).join()` would run for minutes past the CPU limit.
   // An array that long is sparse (a dense one would exceed the memory
   // limit), so they refuse it with a RangeError instead.
+  //
+  // The guard reads the length the way the built-in will, once, right
+  // before calling it, with no user code in between: it refuses a Proxy
+  // anywhere on the receiver's prototype chain, a `length` getter (except
+  // the typed arrays' own), and a `length` that is an object (its
+  // `valueOf` could answer differently the second time). `concat` and
+  // `flat` read several lengths, and user code (an element's getter) runs
+  // between those reads, so they are written in JavaScript here, where the
+  // interrupt handler is polled; they return plain arrays (no
+  // `Symbol.species`).
+  //
+  // Not every C loop is covered: other built-ins (`JSON.stringify` of a
+  // huge sparse array, `Array.from` of a huge array-like, string methods)
+  // are bounded by the memory limit, not the CPU limit. In-process
+  // isolation runs trusted code only (LV1 row T3-10).
   const MAX_LENGTH = config.maxLength;
   const ArrayProto = Array.prototype;
+  const typedArrayLength = getOwnPropertyDescriptor(
+    getPrototypeOf(Int8Array).prototype,
+    "length",
+  ).get;
+  const trunc = Math.trunc;
+  const SPREADABLE = Symbol.isConcatSpreadable;
 
-  function guardLength(target, name) {
+  function unsupported(name, what) {
+    throw new TypeError(
+      `Array.prototype.${name}: ${what} is not supported (the length could change ` +
+        "between the check and the built-in's own read)",
+    );
+  }
+
+  function tooLong(name, length) {
+    throw new RangeError(
+      `Array.prototype.${name}: an array of length ${length} is longer than functions ` +
+        `may process (${MAX_LENGTH}); an array this long is sparse`,
+    );
+  }
+
+  // The own or inherited property `key` of `target`, refusing a Proxy on
+  // the way (its traps are user code).
+  function lookup(target, key, name) {
+    for (let o = target; o !== null; o = getPrototypeOf(o)) {
+      if (isProxy(o)) {
+        unsupported(name, "a Proxy");
+      }
+      const desc = getOwnPropertyDescriptor(o, key);
+      if (desc !== undefined) {
+        return desc;
+      }
+    }
+    return undefined;
+  }
+
+  // The length a built-in will read from `target`, read without running
+  // user code; refuses one past MAX_LENGTH.
+  function lengthOf(target, name) {
+    let length;
     if (target === null || target === undefined) {
-      return;
+      return 0; // The built-in throws its own TypeError.
+    } else if (typeof target === "string") {
+      length = target.length;
+    } else if (typeof target !== "object" && typeof target !== "function") {
+      return 0; // Numbers, booleans, symbols and bigints have no length.
+    } else {
+      const desc = lookup(target, "length", name);
+      if (desc === undefined) {
+        return 0;
+      } else if (!("value" in desc)) {
+        if (desc.get !== typedArrayLength) {
+          unsupported(name, "a length getter");
+        }
+        length = apply(typedArrayLength, target, []);
+      } else {
+        const value = desc.value;
+        if (value !== null && (typeof value === "object" || typeof value === "function")) {
+          unsupported(name, "a length that is an object");
+        }
+        length = typeof value === "bigint" || typeof value === "symbol" ? 0 : Number(value);
+      }
     }
-    const length = Number(target.length);
     if (length > MAX_LENGTH) {
-      throw new RangeError(
-        `Array.prototype.${name}: an array of length ${length} is longer than functions ` +
-          `may process (${MAX_LENGTH}); an array this long is sparse`,
-      );
+      tooLong(name, length);
     }
+    return length;
   }
 
   function guard(name, check) {
@@ -207,39 +277,99 @@
     "unshift",
     "copyWithin",
     "sort",
+    "fill",
+    "with",
+    "toReversed",
+    "toSorted",
+    "toSpliced",
   ]) {
-    guard(name, (self) => guardLength(self, name));
+    guard(name, (self) => lengthOf(self, name));
   }
-  guard("concat", (self, args) => {
-    guardLength(self, "concat");
-    for (const arg of args) {
-      if (isArray(arg)) {
-        guardLength(arg, "concat");
+
+  function isSpreadable(value, name) {
+    if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+      return false;
+    }
+    const desc = lookup(value, SPREADABLE, name);
+    if (desc !== undefined) {
+      if (!("value" in desc)) {
+        unsupported(name, "a Symbol.isConcatSpreadable getter");
+      }
+      if (desc.value !== undefined) {
+        return !!desc.value;
       }
     }
-  });
-  function scanFlat(target, depth) {
-    guardLength(target, "flat");
-    if (!(depth >= 1)) {
-      return;
-    }
-    const length = Number(target.length);
+    return isArray(value);
+  }
+
+  defineProperty(ArrayProto, "concat", method({
+    concat(...items) {
+      if (this === null || this === undefined) {
+        throw new TypeError("Array.prototype.concat called on null or undefined");
+      }
+      const out = [];
+      let n = 0;
+      const sources = [Object(this), ...items];
+      for (let s = 0; s < sources.length; s++) {
+        const source = sources[s];
+        if (isSpreadable(source, "concat")) {
+          const length = lengthOf(source, "concat");
+          for (let k = 0; k < length; k++, n++) {
+            if (k in source) {
+              out[n] = source[k];
+            }
+          }
+        } else {
+          out[n] = source;
+          n++;
+        }
+      }
+      out.length = n;
+      return out;
+    },
+  }.concat));
+  defineProperty(ArrayProto.concat, "length", { value: 1 });
+
+  function flattenInto(out, source, length, start, depth) {
+    let n = start;
     for (let i = 0; i < length; i++) {
-      const item = target[i];
-      if (isArray(item)) {
-        scanFlat(item, depth - 1);
+      if (!(i in source)) {
+        continue;
+      }
+      const item = source[i];
+      if (depth > 0 && isArray(item)) {
+        n = flattenInto(out, item, lengthOf(item, "flat"), n, depth - 1);
+      } else {
+        out[n] = item;
+        n++;
       }
     }
+    return n;
   }
-  guard("flat", (self, args) => {
-    if (self !== null && self !== undefined) {
-      scanFlat(self, args[0] === undefined ? 1 : Number(args[0]));
-    }
-  });
+
+  defineProperty(ArrayProto, "flat", method({
+    flat(depthArg) {
+      if (this === null || this === undefined) {
+        throw new TypeError("Array.prototype.flat called on null or undefined");
+      }
+      const source = Object(this);
+      const length = lengthOf(source, "flat");
+      let depth = 1;
+      if (depthArg !== undefined) {
+        const d = Number(depthArg);
+        depth = d !== d || d < 0 ? 0 : trunc(d);
+      }
+      const out = [];
+      flattenInto(out, source, length, 0, depth);
+      return out;
+    },
+  }.flat));
+  defineProperty(ArrayProto.flat, "length", { value: 0 });
+
   const flatMap = ArrayProto.flatMap;
   defineProperty(ArrayProto, "flatMap", method({
     flatMap(callback, thisArg) {
-      guardLength(this, "flatMap");
+      lengthOf(this, "flatMap");
       if (typeof callback !== "function") {
         return apply(flatMap, this, [callback, thisArg]);
       }
@@ -247,7 +377,7 @@
         (...args) => {
           const result = apply(callback, thisArg, args);
           if (isArray(result)) {
-            guardLength(result, "flatMap");
+            lengthOf(result, "flatMap");
           }
           return result;
         },

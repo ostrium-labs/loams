@@ -233,6 +233,11 @@ function huge() {
   return a;
 }
 
+function twoFaced() {
+  let reads = 0;
+  return { get length() { return reads++ === 0 ? 1 : 2 ** 32 - 1; } };
+}
+
 export const sparse = {
   join: query(async () => huge().join()),
   toString: query(async () => String(huge())),
@@ -249,6 +254,62 @@ export const sparse = {
   flatNested: query(async () => [[1], huge()].flat()),
   flatMap: query(async () => [1].flatMap(() => huge())),
   generic: query(async () => Array.prototype.join.call({ length: 2 ** 53 - 1 })),
+  fill: query(async () => huge().fill(0)),
+  with: query(async () => huge().with(0, 1)),
+  toReversed: query(async () => huge().toReversed()),
+  toSorted: query(async () => huge().toSorted()),
+  toSpliced: query(async () => huge().toSpliced(0, 1)),
+  // A length that reads small to the guard and huge to the built-in.
+  getterReverse: query(async () => Array.prototype.reverse.call(twoFaced())),
+  getterJoin: query(async () => Array.prototype.join.call(twoFaced())),
+  proxyReverse: query(async () => {
+    let reads = 0;
+    const p = new Proxy([], {
+      get: (t, k) => (k === "length" ? (reads++ === 0 ? 1 : 2 ** 32 - 1) : undefined),
+    });
+    return Array.prototype.reverse.call(p);
+  }),
+  valueOfSort: query(async () => {
+    let reads = 0;
+    return Array.prototype.sort.call({
+      length: { valueOf: () => (reads++ === 0 ? 1 : 2 ** 32 - 1) },
+    });
+  }),
+  inheritedGetter: query(async () => {
+    let reads = 0;
+    const proto = { get length() { return reads++ === 0 ? 1 : 2 ** 32 - 1; } };
+    return Array.prototype.slice.call(Object.create(proto));
+  }),
+  // concat spreads any object with Symbol.isConcatSpreadable.
+  spreadableConcat: query(async () =>
+    [].concat({ [Symbol.isConcatSpreadable]: true, length: 2 ** 32 - 1 })),
+  spreadableReceiver: query(async () =>
+    Array.prototype.concat.call({ [Symbol.isConcatSpreadable]: true, length: 2 ** 32 - 1 })),
+  spreadableGetter: query(async () => {
+    let reads = 0;
+    const o = { length: 2 ** 32 - 1 };
+    Object.defineProperty(o, Symbol.isConcatSpreadable, { get: () => reads++ > 0 });
+    return [].concat(o).length;
+  }),
+  // An element's getter lengthens a later argument after the guard.
+  concatLengthenedLater: query(async () => {
+    const later = [1];
+    const first = [];
+    Object.defineProperty(first, 0, {
+      get() { later.length = 2 ** 32 - 1; return 0; },
+      enumerable: true,
+    });
+    return [].concat(first, later).length;
+  }),
+  flatLengthenedLater: query(async () => {
+    const later = [1];
+    const first = [];
+    Object.defineProperty(first, 0, {
+      get() { later.length = 2 ** 32 - 1; return 0; },
+      enumerable: true,
+    });
+    return [first, later].flat().length;
+  }),
   dense: query(async () => [
     Array.from({ length: 1000 }, (_, i) => i).join(",").length,
     [3, 1, 2].sort().join(""),
@@ -258,6 +319,11 @@ export const sparse = {
     String([1, [2, 3]]),
     Array.prototype.join.length,
     Array.prototype.flatMap.length,
+    String([1, , 3].concat([, 5], 6)),
+    [1, , 3].concat([]).hasOwnProperty(1),
+    [0, [1, [2, [3]]]].flat(2).length,
+    Array.prototype.concat.call("ab", [1]).length,
+    [new Uint8Array(3)].flat().length,
   ]),
 };
 "#;
@@ -283,6 +349,21 @@ async fn uninterruptible_array_methods_refuse_huge_arrays(store: TestStore) {
         "sparse:flatNested",
         "sparse:flatMap",
         "sparse:generic",
+        "sparse:fill",
+        "sparse:with",
+        "sparse:toReversed",
+        "sparse:toSorted",
+        "sparse:toSpliced",
+        "sparse:getterReverse",
+        "sparse:getterJoin",
+        "sparse:proxyReverse",
+        "sparse:valueOfSort",
+        "sparse:inheritedGetter",
+        "sparse:spreadableConcat",
+        "sparse:spreadableReceiver",
+        "sparse:spreadableGetter",
+        "sparse:concatLengthenedLater",
+        "sparse:flatLengthenedLater",
     ] {
         // A bundle per case: a regression wedges its slot, not the others.
         let bundle = load_with(SPARSE, config());
@@ -295,7 +376,8 @@ async fn uninterruptible_array_methods_refuse_huge_arrays(store: TestStore) {
         match ran {
             Ok(Err(LiveError::FunctionError(m))) => {
                 assert!(
-                    m.starts_with("RangeError") && m.contains("sparse"),
+                    (m.starts_with("RangeError") && m.contains("sparse"))
+                        || (m.starts_with("TypeError") && m.contains("not supported")),
                     "{path}: {m}"
                 );
             }
@@ -319,6 +401,11 @@ async fn uninterruptible_array_methods_refuse_huge_arrays(store: TestStore) {
             s("123"),
             s("1,2,3"),
             LiveValue::F64(1.0),
+            LiveValue::F64(1.0),
+            s("1,,3,,5,6"),
+            LiveValue::Bool(false),
+            LiveValue::F64(4.0),
+            LiveValue::F64(2.0),
             LiveValue::F64(1.0),
         ])
     );

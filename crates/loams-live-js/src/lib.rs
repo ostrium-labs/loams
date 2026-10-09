@@ -17,6 +17,13 @@
 //! [`JsConfig::memory_limit`] (`FUNCTION_OUT_OF_MEMORY`). `console.*` lines
 //! are collected per call into [`loams_live::CallOutput`], truncated at
 //! [`JsConfig::console_lines`] × [`JsConfig::console_line_bytes`] (D682).
+//!
+//! **Trusted code only.** The slots run in this process, and some of
+//! QuickJS's C built-ins loop without polling the interrupt handler, so the
+//! CPU limit cannot be guaranteed against hostile code (LV1 rows T3-7 and
+//! T3-10). In-process mode serves desktop, `loams dev` and single-tenant
+//! deployments; multi-tenant serving needs LV1 Task 5's isolated worker and
+//! its wall-clock kill.
 
 mod limits;
 mod runtime;

@@ -795,6 +795,10 @@ impl Engine {
             "random",
             rquickjs::Function::new(ctx.clone(), move || s.random())?,
         )?;
+        natives.set(
+            "isProxy",
+            rquickjs::Function::new(ctx.clone(), |value: Value<'js>| value.is_proxy())?,
+        )?;
         let s = self.state.clone();
         natives.set(
             "log",
