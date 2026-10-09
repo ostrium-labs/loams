@@ -1197,10 +1197,7 @@ impl AgentAccounts {
     /// Grok: `grok login --device-auth` into a throwaway `GROK_HOME`. It
     /// prints a verification url + code; the login lands as that home's
     /// `auth.json`, which the poll snapshots.
-    pub(super) async fn start_grok_login(
-        &self,
-        requester: Option<&str>,
-    ) -> Result<AgentLoginStart, EngineError> {
+    pub(super) async fn start_grok_login(&self) -> Result<AgentLoginStart, EngineError> {
         self.reap_spawned_flows(HarnessId::Grok);
         let login_id = new_id();
         let home = self.login_home(&login_id)?;
@@ -1229,7 +1226,6 @@ impl AgentAccounts {
             home,
             SpawnedCompletion::CredentialFile,
             scan_grok_url,
-            requester,
         )
         .await
     }
@@ -1269,7 +1265,6 @@ impl AgentAccounts {
             home,
             SpawnedCompletion::ExitSuccess,
             scan_hermes_url,
-            None,
         )
         .await
     }
@@ -1279,11 +1274,8 @@ impl AgentAccounts {
     /// live one. Devin opens the browser itself: a recording `$BROWSER`
     /// hands the url to the app instead (where Devin honours `$BROWSER`),
     /// and its log is scanned as a fallback — either way the url's
-    /// `redirect_uri` port is reported so a remote login can tunnel it.
-    pub(super) fn start_devin_login(
-        &self,
-        requester: Option<&str>,
-    ) -> Result<AgentLoginStart, EngineError> {
+    /// `redirect_uri` port is reported.
+    pub(super) fn start_devin_login(&self) -> Result<AgentLoginStart, EngineError> {
         self.reap_spawned_flows(HarnessId::Devin);
         let acp = self
             .acp_harness(HarnessId::Devin)
@@ -1314,10 +1306,7 @@ impl AgentAccounts {
             ],
             url_filter: Some(devin_login_url),
         };
-        let state = Arc::new(Mutex::new(TaskLoginState {
-            requester: requester.map(str::to_string),
-            ..Default::default()
-        }));
+        let state = Arc::new(Mutex::new(TaskLoginState::default()));
         let this = self.clone();
         let task_state = state.clone();
         let task_home = home.clone();

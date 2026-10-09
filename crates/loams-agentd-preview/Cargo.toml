@@ -20,16 +20,15 @@ uuid = { workspace = true, features = ["serde"] }
 sha2 = "0.10"
 libc.workspace = true
 chrono.workspace = true
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
-# 0.24 as in the fork; loams-web-bridge is on 0.30 (not a workspace key).
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 bytes.workspace = true
 hyper = { version = "1", features = ["client", "server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
-webrtc = "0.20.2"
 
 [dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
+# 0.24 as in the fork; loams-web-bridge is on 0.30 (not a workspace key).
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 tempfile.workspace = true
 tracing-subscriber.workspace = true
 

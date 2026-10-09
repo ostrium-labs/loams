@@ -23,7 +23,6 @@ struct Inner {
 struct State {
     names: Names,
     routes: HashMap<String, LocalRoute>,
-    remote: HashMap<String, Vec<PreviewService>>,
     proxy_port: u16,
     error: Option<String>,
 }
@@ -35,8 +34,6 @@ pub struct LocalRoute {
 #[derive(Default, Serialize, Deserialize)]
 struct Names {
     device_label: String,
-    #[serde(default)]
-    peer_labels: BTreeMap<String, String>,
     projects: BTreeMap<String, ProjectName>,
 }
 #[derive(Serialize, Deserialize)]
@@ -125,7 +122,6 @@ impl Catalog {
             state: Mutex::new(State {
                 names,
                 routes: HashMap::new(),
-                remote: HashMap::new(),
                 proxy_port: PREVIEW_PROXY_PORT,
                 error: None,
             }),
@@ -160,87 +156,17 @@ impl Catalog {
         self.0.state.lock().unwrap().routes.get(id).cloned()
     }
     pub fn by_hostname(&self, hostname: &str) -> Option<PreviewService> {
-        // Ambiguous remote aliases never pick an arbitrary machine. Local
-        // aliases retain their established meaning when a peer has the same name.
         let state = self.0.state.lock().unwrap();
-        if let Some(route) = state
+        state
             .routes
             .values()
             .find(|r| r.service.hostname == hostname)
-        {
-            return Some(route.service.clone());
-        }
-        let mut matches = state
-            .remote
-            .values()
-            .flatten()
-            .filter(|s| s.hostname == hostname);
-        let result = matches.next()?.clone();
-        matches.next().is_none().then_some(result)
+            .map(|route| route.service.clone())
     }
     pub fn set_proxy_status(&self, port: u16, error: Option<String>) {
         let mut state = self.0.state.lock().unwrap();
         state.proxy_port = port;
         state.error = error;
-        self.publish(&state);
-    }
-    pub fn set_remote(
-        &self,
-        device: &str,
-        mut services: Vec<PreviewService>,
-    ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            device != self.device_id(),
-            "cannot replace the local device catalog"
-        );
-        anyhow::ensure!(
-            services.len() <= 256,
-            "too many advertised preview services"
-        );
-        let mut ids = HashSet::new();
-        anyhow::ensure!(
-            services.iter().all(|s| s.device_id == device
-                && valid_hostname(&s.hostname)
-                && s.id.len() <= 128
-                && !s.id.is_empty()
-                && ids.insert(s.id.clone())
-                && s.project_cwd.len() <= 4096
-                && s.name.len() <= 128),
-            "invalid peer service advertisement"
-        );
-        let mut state = self.0.state.lock().unwrap();
-        if let Some(first) = services.first() {
-            if !state.names.peer_labels.contains_key(device) {
-                let base = first.hostname.split('.').next().unwrap();
-                let used = state
-                    .names
-                    .peer_labels
-                    .values()
-                    .cloned()
-                    .chain(std::iter::once(state.names.device_label.clone()))
-                    .collect();
-                let label = allocate(base, &used);
-                state.names.peer_labels.insert(device.to_owned(), label);
-                self.persist(&state.names)?;
-            }
-            let label = &state.names.peer_labels[device];
-            for service in &mut services {
-                service.hostname =
-                    format!("{label}.{}", service.hostname.split_once('.').unwrap().1);
-            }
-        }
-        state.remote.insert(device.to_owned(), services);
-        self.publish(&state);
-        Ok(())
-    }
-    pub fn remove_remote(&self, device: &str) {
-        let mut state = self.0.state.lock().unwrap();
-        state.remote.remove(device);
-        self.publish(&state);
-    }
-    pub fn clear_remote(&self) {
-        let mut state = self.0.state.lock().unwrap();
-        state.remote.clear();
         self.publish(&state);
     }
     fn persist(&self, names: &Names) -> anyhow::Result<()> {
@@ -259,12 +185,7 @@ impl Catalog {
         Ok(())
     }
     fn publish(&self, state: &State) {
-        let mut services: Vec<_> = state
-            .routes
-            .values()
-            .map(|r| r.service.clone())
-            .chain(state.remote.values().flatten().cloned())
-            .collect();
+        let mut services: Vec<_> = state.routes.values().map(|r| r.service.clone()).collect();
         services.sort_by(|a, b| {
             (
                 &a.device_id,
@@ -520,39 +441,6 @@ mod tests {
             assert_eq!(old.hostname, new.hostname);
             assert_ne!(old.port, new.port);
         }
-    }
-    #[test]
-    fn duplicate_device_names_get_persistent_distinct_aliases() {
-        let temp = tempfile::tempdir().unwrap();
-        let file = temp.path().join("names.json");
-        let catalog = Catalog::open(&file, "local".into(), "MacBook".into()).unwrap();
-        catalog
-            .replace_local(vec![("/work/my-app".into(), server(5173, 1, "vite"))])
-            .unwrap();
-        let mut remote = catalog.local_services()[0].clone();
-        remote.device_id = "peer".into();
-        catalog.set_remote("peer", vec![remote.clone()]).unwrap();
-        assert_eq!(
-            catalog
-                .by_hostname("macbook.my-app.localhost")
-                .unwrap()
-                .device_id,
-            "local"
-        );
-        assert_eq!(
-            catalog
-                .by_hostname("macbook-2.my-app.localhost")
-                .unwrap()
-                .device_id,
-            "peer"
-        );
-        drop(catalog);
-        let catalog = Catalog::open(&file, "local".into(), "MacBook".into()).unwrap();
-        catalog.set_remote("peer", vec![remote]).unwrap();
-        assert_eq!(
-            catalog.snapshot().services[0].hostname,
-            "macbook-2.my-app.localhost"
-        );
     }
     #[test]
     fn hostnames_cannot_address_arbitrary_hosts() {

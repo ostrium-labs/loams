@@ -508,7 +508,7 @@ pub fn fold_event_into_parts(out: &mut Vec<MessagePart>, event: &AgentEvent) {
 /// Separate from the fold because the fold is chat-agnostic and pure; the
 /// caller (who knows the chat id) runs this right after each fold step, before
 /// the parts hit the doc. Idempotent. Key shape `{chatId}/{partId}` (+
-/// `.diff`) matches the edge's `/blob/{chatId}/{partId}` route.
+/// `.diff`) names the file in the daemon's local tool-output store.
 pub fn apply_sidecar_refs(chat_id: &str, parts: &mut [MessagePart]) {
     for part in parts.iter_mut() {
         if let MessagePart::Tool {

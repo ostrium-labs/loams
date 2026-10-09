@@ -14,7 +14,7 @@ use loams_agentd_doc::{
     SessionCommandPayload, SessionMessageEntry, TranscriptFrame, apply_transcript_frame,
 };
 use loams_agentd_proto::{
-    Chat, Device, HarnessId, Model, ReasoningLevel, Session, SessionStatus, Space, SteeringMode,
+    Chat, HarnessId, Model, ReasoningLevel, Session, SessionStatus, Space, SteeringMode,
 };
 use loams_agentd_rpc::{RpcClient, RpcError, RpcSubscription, connect_ws, methods};
 use serde::Deserialize;
@@ -235,10 +235,6 @@ impl LoamsDesktop {
         self.call(methods::ENGINE_INFO, json!({})).await
     }
 
-    pub async fn devices(&self) -> anyhow::Result<Vec<Device>> {
-        self.snapshot_as(methods::WATCH_DEVICES, json!({})).await
-    }
-
     pub async fn spaces(&self) -> anyhow::Result<Vec<Space>> {
         self.snapshot_as(methods::WATCH_SPACES, json!({})).await
     }
@@ -356,37 +352,16 @@ impl LoamsDesktop {
         resolve_space_in(&spaces, key.trim())
     }
 
-    /// Device id or exact name; `None` means this engine's own device.
+    /// Device id; `None` means this engine's own device, the only one that
+    /// hosts chats (the engine is local-only, D781).
     pub async fn resolve_device_id(&self, key: Option<&str>) -> anyhow::Result<String> {
-        let Some(key) = key.map(str::trim).filter(|k| !k.is_empty()) else {
-            return self.local_device_id().await;
-        };
-        let devices = self.devices().await?;
-        if let Some(device) = devices.iter().find(|d| d.id == key) {
-            return Ok(device.id.clone());
-        }
-        let by_name: Vec<&Device> = devices
-            .iter()
-            .filter(|d| d.name.eq_ignore_ascii_case(key))
-            .collect();
-        match by_name.as_slice() {
-            [one] => Ok(one.id.clone()),
-            [] => bail!(
-                "no device matches {key:?}; known: {}",
-                devices
-                    .iter()
-                    .map(|d| format!("{} ({})", d.name, d.id))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            many => bail!(
-                "{} devices are named {key:?}; use an id: {}",
-                many.len(),
-                many.iter()
-                    .map(|d| d.id.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+        let local = self.local_device_id().await?;
+        match key.map(str::trim).filter(|k| !k.is_empty()) {
+            None => Ok(local),
+            Some(key) if key == local => Ok(local),
+            Some(key) => {
+                bail!("no device matches {key:?}; chats are hosted on this device ({local}) only")
+            }
         }
     }
 
@@ -637,7 +612,7 @@ mod tests {
         }
         // Keep the RPC connection alive throughout: disconnect must not be the cleanup.
         client
-            .snapshot(methods::WATCH_DEVICES, json!({}))
+            .snapshot(methods::WATCH_SPACES, json!({}))
             .await
             .unwrap();
     }

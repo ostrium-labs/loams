@@ -80,7 +80,6 @@ fn assemble(dir: &Path) -> EngineCore {
         dir,
         Arc::new(HarnessRegistry::new()),
         loams_agentd_proto::HarnessId::Mock,
-        None,
     )
     .expect("engine assembles");
     // Terminals run /bin/sh with a temporary HOME and ZDOTDIR, never the
@@ -1111,15 +1110,6 @@ async fn git_status_stream_is_scoped_deduplicated_and_resets_after_commit() {
             .subscribe_checked(
                 methods::WATCH_WORKSPACE_GIT_STATUS,
                 serde_json::json!({"chatId": "missing"})
-            )
-            .await
-            .is_err()
-    );
-    assert!(
-        client
-            .subscribe_checked(
-                methods::WATCH_WORKSPACE_GIT_STATUS,
-                serde_json::json!({"chatId": "chat", "targetDeviceId": "offline-remote"})
             )
             .await
             .is_err()

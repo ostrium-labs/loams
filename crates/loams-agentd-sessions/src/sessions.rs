@@ -1442,10 +1442,10 @@ fn is_active(session: &Session) -> bool {
 
 // ── subagent docs ───────────────────────────────────────────────────────────
 
-/// The per-subagent doc id: `{chatId}--sub--{suffix}`. Constrained by the
-/// edge's `ID_RE` (`^[A-Za-z0-9_-]{1,128}$` — the same id names the ChatRoom
-/// `chat2/{id}/ws` and the frozen blob `blob/{chatId}/{id}`): a clean, short
-/// tool-use id rides verbatim; anything unclean or over budget hashes.
+/// The per-subagent doc id: `{chatId}--sub--{suffix}`, within the chat-id
+/// alphabet (`^[A-Za-z0-9_-]{1,128}$` — the same id names the frozen tool
+/// output `{chatId}/{id}`): a clean, short tool-use id rides verbatim;
+/// anything unclean or over budget hashes.
 pub(crate) fn subagent_doc_id(chat_id: &str, tool_use_id: &str) -> String {
     let clean = tool_use_id
         .chars()
@@ -1475,9 +1475,8 @@ thread_local! {
     static FLUSH_TICKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// A live subagent transcript sink: its own doc (opened by id — the room
-/// `chat2/{docId}/ws` dials automatically, so viewers sync it like a chat),
-/// one streaming assistant entry folded from the tagged events. The held
+/// A live subagent transcript sink: its own doc (opened by id, so viewers
+/// watch it like a chat), one streaming assistant entry folded from the tagged events. The held
 /// doc Arc pins the doc warm for the LRU while the subagent runs.
 struct SubagentSink {
     doc_id: String,
@@ -2417,15 +2416,14 @@ async fn drive_run(
                     };
                     let sink = subagents.remove(parent_tool_use_id).expect("checked");
                     let doc_id = sink.doc_id.clone();
-                    // FREEZE: the finished transcript uploads as a static R2
-                    // blob (`blob/{chatId}/{subDocId}`) so viewers of
-                    // finished subagents never wake the doc's room; dropping
-                    // the sink unpins the doc for the LRU and the room
-                    // idles. The live doc remains the fallback.
+                    // FREEZE: the finished transcript is kept as a static
+                    // tool output (`{chatId}/{subDocId}`); dropping the sink
+                    // unpins the doc for the LRU. The live doc remains the
+                    // fallback.
                     if let Some(json) = sink.finish(&device_id, status)
                         && let Some(host) = inner.doc_host()
                     {
-                        host.upload_tool_sidecar(
+                        host.store_tool_output(
                             &chat_id,
                             loams_agentd_doc::SidecarPayload {
                                 part_id: doc_id,
@@ -2731,12 +2729,17 @@ async fn drive_run(
         let skip_fold = matches!(&event, AgentEvent::SessionStarted { .. }) && !folded.is_empty();
         if !skip_fold {
             fold_event_into_parts(&mut folded, &event);
-            // R2 sidecar PARKED (2026-08-10, product call): the fold's
-            // summary/stats ARE the doc's whole record — no refs stamped, no
-            // uploads. Full outputs survive only in the host's local run
-            // journal. To reintroduce: `loams_agentd_doc::sidecar_payload(&event)`
-            // → `apply_sidecar_refs` → `doc_host.upload_tool_sidecar`, all
-            // still in place and tested.
+            // Full tool outputs stay on this device (plan DD1 ruling T0-16):
+            // the doc keeps the fold's summary and stats, and the whole output
+            // and diff go to the local tool-output store under the part's ref
+            // (`{chatId}/{partId}`), where FetchToolBlob reads them. The doc
+            // rows are unchanged: refs are not stamped (`apply_sidecar_refs`)
+            // until a UI offers "show full output".
+            if let Some(payload) = loams_agentd_doc::sidecar_payload(&event)
+                && let Some(host) = inner.doc_host()
+            {
+                host.store_tool_output(&chat_id, payload);
+            }
         }
 
         if let AgentEvent::Done { status, .. } = &event {
@@ -2859,7 +2862,7 @@ async fn drive_run(
         if let Some(json) = sink.finish(&device_id, MessageStatus::Aborted)
             && let Some(host) = inner.doc_host()
         {
-            host.upload_tool_sidecar(
+            host.store_tool_output(
                 &chat_id,
                 loams_agentd_doc::SidecarPayload {
                     part_id: doc_id,
@@ -3179,7 +3182,7 @@ mod tests {
             crate::doc_host::DocHostConfig {
                 device_id: "dev-test".into(),
                 default_harness: HarnessId::Mock,
-                edge: None,
+                tool_outputs: dir.path().join("tool-outputs"),
             },
         );
         let handle = host.open("chat-sub-flush--sub--t1").unwrap();
@@ -3262,8 +3265,7 @@ mod tests {
         }));
         let dir = tempfile::tempdir().unwrap();
         let core =
-            crate::EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock, None)
-                .unwrap();
+            crate::EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Mock).unwrap();
         let chat = "chat-sink-spin";
         core.sessions
             .dispatch(chat, HarnessId::Mock, request(), None)

@@ -1,11 +1,6 @@
-//! M4a integration: two `EngineCore`s (distinct data dirs + device ids) sharing one
-//! per-org workspace doc.
-//!
-//! The in-memory bridge below stands in for the edge room: it cross-imports Loro
-//! updates (`export(updates)`) between the two engines' workspace docs on a timer,
-//! which is exactly what `RoomClient` + the SessionRoom DO do over the wire. A live
-//! variant against a real edge runs behind `#[ignore]` (LOAMS_DESKTOP_EDGE_WS, like
-//! loams-agentd-store's edge_convergence test).
+//! M4a integration: the workspace registry of one local engine — chat claims,
+//! run harness selection, host gating and the legacy workspace migration. The
+//! fork's two-engine room tests went with the edge (D781).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -115,20 +110,7 @@ fn registry() -> Arc<HarnessRegistry> {
 fn assemble(dir: &std::path::Path, device_id: &str) -> EngineCore {
     std::fs::create_dir_all(dir).expect("create data dir");
     std::fs::write(dir.join("device-id"), device_id).expect("write device id");
-    EngineCore::assemble(dir, registry(), HarnessId::Mock, None).expect("engine core assembles")
-}
-
-/// The in-process room: an in-memory registry server speaking the DO's JSON
-/// WS protocol (what the RegistryRoom DO does over the wire), with both
-/// engines' hosts wired to it via the test seam.
-async fn bridge(
-    a: &EngineCore,
-    b: &EngineCore,
-) -> loams_agentd_store::registry::mock_server::MockRegistryServer {
-    let server = loams_agentd_store::registry::mock_server::MockRegistryServer::start().await;
-    a.workspace.connect_registry_url(&server.url());
-    b.workspace.connect_registry_url(&server.url());
-    server
+    EngineCore::assemble(dir, registry(), HarnessId::Mock).expect("engine core assembles")
 }
 
 async fn wait_for<F>(mut predicate: F, what: &str)
@@ -201,225 +183,25 @@ fn queue_run_with(
 }
 
 #[tokio::test]
-async fn two_engines_share_a_workspace() {
-    let dir_a = tempfile::tempdir().unwrap();
-    let dir_b = tempfile::tempdir().unwrap();
-    let a = assemble(dir_a.path(), "dev-a");
-    let b = assemble(dir_b.path(), "dev-b");
-    let link = bridge(&a, &b).await;
-
-    // Device rows from BOTH engines appear on both sides.
-    for core in [&a, &b] {
-        wait_for(
-            || {
-                let ids: Vec<String> = core
-                    .workspace
-                    .read_devices()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|d| d.id)
-                    .collect();
-                ids == ["dev-a", "dev-b"]
-            },
-            "both device rows",
-        )
-        .await;
-    }
-
-    // CreateSpace + CreateChat on A (Mutate over the real RPC surface), hosted
-    // by dev-a via the space.
-    let client_a = loams_agentd_rpc::memory_client(a.rpc_service());
-    let client_b = loams_agentd_rpc::memory_client(b.rpc_service());
-    client_a
-        .call(
-            methods::MUTATE,
-            serde_json::json!({
-                "op": "createSpace", "spaceId": "space-1", "deviceId": "dev-a", "path": "/tmp"
-            }),
-        )
-        .await
-        .expect("create space");
-    client_a
-        .call(
-            methods::MUTATE,
-            serde_json::json!({
-                "op": "createChat", "chatId": "chat-1", "spaceId": "space-1"
-            }),
-        )
-        .await
-        .expect("create chat");
-    // The space row crosses to B alongside the chat row.
-    wait_for(
-        || {
-            b.workspace
-                .read_spaces()
-                .unwrap_or_default()
-                .iter()
-                .any(|s| s.id == "space-1" && s.device_id == "dev-a" && s.path == "/tmp")
-        },
-        "space row on B",
-    )
-    .await;
-    wait_for(
-        || b.workspace.chat("chat-1").ok().flatten().is_some(),
-        "chat row on B",
-    )
-    .await;
-
-    // Run on A: B's workspace view shows the session Working, then Idle.
-    queue_run(&a, "chat-1", "cmd-run-1", "m-1");
-    let b_status = |wanted: SessionStatus| {
-        let ws = b.workspace.clone();
-        move || {
-            ws.read_sessions()
-                .unwrap_or_default()
-                .iter()
-                .any(|s| s.chat_id == "chat-1" && s.device_id == "dev-a" && s.status == wanted)
-        }
-    };
-    wait_for(b_status(SessionStatus::Working), "Working on B").await;
-    wait_for(b_status(SessionStatus::Idle), "Idle on B").await;
-
-    // Sidebar freshness crossed too: the chat row's preview settles on the
-    // assistant's final text (first-120-chars policy).
-    wait_for(
-        || {
-            b.workspace
-                .chat("chat-1")
-                .ok()
-                .flatten()
-                .and_then(|c| c.last_message_preview)
-                .as_deref()
-                == Some("Hello")
-        },
-        "assistant preview on B",
-    )
-    .await;
-
-    // Rename + archive from B (LWW from any device) become visible on A.
-    client_b
-        .call(
-            methods::MUTATE,
-            serde_json::json!({ "op": "renameChat", "chatId": "chat-1", "title": "Renamed from B" }),
-        )
-        .await
-        .expect("rename chat");
-    client_b
-        .call(
-            methods::MUTATE,
-            serde_json::json!({ "op": "setChatArchived", "chatId": "chat-1", "archived": true }),
-        )
-        .await
-        .expect("archive chat");
-    wait_for(
-        || {
-            a.workspace
-                .chat("chat-1")
-                .ok()
-                .flatten()
-                .is_some_and(|c| c.title.as_deref() == Some("Renamed from B") && c.archived)
-        },
-        "rename + archive on A",
-    )
-    .await;
-
-    // Device rename from B visible on A.
-    client_b
-        .call(
-            methods::MUTATE,
-            serde_json::json!({ "op": "renameDevice", "deviceId": "dev-b", "name": "B's VPS" }),
-        )
-        .await
-        .expect("rename device");
-    wait_for(
-        || {
-            a.workspace
-                .read_devices()
-                .unwrap_or_default()
-                .iter()
-                .any(|d| d.id == "dev-b" && d.name == "B's VPS")
-        },
-        "device rename on A",
-    )
-    .await;
-
-    drop(link);
-    a.shutdown().await;
-    b.shutdown().await;
-}
-
-#[tokio::test]
 async fn claim_on_first_command_creates_the_chat_row() {
     let dir_a = tempfile::tempdir().unwrap();
-    let dir_b = tempfile::tempdir().unwrap();
     let a = assemble(dir_a.path(), "dev-a");
-    let b = assemble(dir_b.path(), "dev-b");
-    let link = bridge(&a, &b).await;
 
     // No CreateChat: the first run command claims the chat under A's device id.
     queue_run(&a, "chat-claimed", "cmd-claim-1", "m-1");
     wait_for(
         || {
-            b.workspace
+            a.workspace
                 .chat("chat-claimed")
                 .ok()
                 .flatten()
                 .is_some_and(|c| c.device_id == "dev-a" && c.cwd.as_deref() == Some("/tmp"))
         },
-        "claimed chat row on B",
+        "claimed chat row",
     )
     .await;
 
-    drop(link);
     a.shutdown().await;
-    b.shutdown().await;
-}
-
-#[tokio::test]
-async fn projectless_claim_syncs_after_offline_creation_and_survives_viewer_restart() {
-    let dir_a = tempfile::tempdir().unwrap();
-    let dir_b = tempfile::tempdir().unwrap();
-    let a = assemble(dir_a.path(), "dev-a");
-    let b = assemble(dir_b.path(), "dev-b");
-    let mut request = run_request("projectless while offline");
-    request.cwd = "~".into();
-    a.doc_host
-        .queue_command(
-            "projectless-offline",
-            SessionCommandPayload::Run {
-                request,
-                message_id: "projectless-msg".into(),
-            },
-        )
-        .unwrap();
-    wait_for(
-        || a.workspace.chat("projectless-offline").unwrap().is_some(),
-        "offline claim",
-    )
-    .await;
-    let link = bridge(&a, &b).await;
-    wait_for(
-        || b.workspace.chat("projectless-offline").unwrap().is_some(),
-        "projectless sync",
-    )
-    .await;
-    let row = b.workspace.chat("projectless-offline").unwrap().unwrap();
-    assert_eq!(row.device_id, "dev-a");
-    assert_eq!(row.space_id, None);
-    assert_eq!(row.cwd.as_deref(), Some("~"));
-    assert!(a.workspace.read_spaces().unwrap().is_empty());
-    assert!(b.workspace.read_spaces().unwrap().is_empty());
-    b.shutdown().await;
-    drop(b);
-    let b = assemble(dir_b.path(), "dev-b");
-    let row = b.workspace.chat("projectless-offline").unwrap().unwrap();
-    assert_eq!(row.space_id, None);
-    assert_eq!(row.device_id, "dev-a");
-    assert_eq!(b.workspace.read_chats().unwrap().len(), 1);
-    assert!(b.workspace.read_spaces().unwrap().is_empty());
-    drop(link);
-    a.shutdown().await;
-    b.shutdown().await;
 }
 
 /// A first command whose cwd is a linked WORKTREE must attribute the chat to
@@ -590,78 +372,6 @@ async fn chat_config_selects_the_run_harness() {
     a.shutdown().await;
 }
 
-/// Live-edge variant: the same convergence through a real workspace room. Requires
-/// the TS edge (`wrangler dev` in `edge/` with AUTH_MODE=dev):
-///
-/// ```sh
-/// LOAMS_DESKTOP_EDGE_WS=ws://127.0.0.1:8787 cargo test -p loams-agentd-sessions -- --ignored
-/// ```
-#[tokio::test]
-#[ignore = "requires a live edge: set LOAMS_DESKTOP_EDGE_WS (e.g. ws://127.0.0.1:8787)"]
-async fn two_engines_converge_through_a_real_workspace_room() {
-    use loams_agentd_sessions::doc_host::EdgeConfig;
-
-    let base = std::env::var("LOAMS_DESKTOP_EDGE_WS")
-        .expect("set LOAMS_DESKTOP_EDGE_WS to the edge origin, e.g. ws://127.0.0.1:8787");
-    let org = format!("org-{}", uuid::Uuid::new_v4().simple());
-
-    let assemble_live = |dir: &std::path::Path, device_id: &str, user: &str| {
-        std::fs::create_dir_all(dir).expect("create data dir");
-        std::fs::write(dir.join("device-id"), device_id).expect("write device id");
-        // Dev-mode bearer `user@org` carries the org claim the workspace route checks.
-        let edge = Some(EdgeConfig::with_static_token(
-            base.clone(),
-            format!("{user}@{org}"),
-        ));
-        EngineCore::assemble_with_identity(dir, registry(), HarnessId::Mock, edge, &org, user)
-            .expect("engine core assembles")
-    };
-
-    // Workspace docs are per-user (`ws3/{org}/{user}`): convergence is across
-    // ONE user's devices — two engines, same user, different device ids.
-    let dir_a = tempfile::tempdir().unwrap();
-    let dir_b = tempfile::tempdir().unwrap();
-    let a = assemble_live(dir_a.path(), "dev-live-a", "alice");
-    let b = assemble_live(dir_b.path(), "dev-live-b", "alice");
-
-    // Both device rows converge through the real room.
-    for core in [&a, &b] {
-        wait_for(
-            || {
-                let ids: Vec<String> = core
-                    .workspace
-                    .read_devices()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|d| d.id)
-                    .collect();
-                ids == ["dev-live-a", "dev-live-b"]
-            },
-            "both device rows through the edge",
-        )
-        .await;
-    }
-
-    // A rename from B lands on A.
-    b.workspace
-        .rename_device("dev-live-a", "renamed by b")
-        .expect("rename");
-    wait_for(
-        || {
-            a.workspace
-                .read_devices()
-                .unwrap_or_default()
-                .iter()
-                .any(|d| d.id == "dev-live-a" && d.name == "renamed by b")
-        },
-        "device rename through the edge",
-    )
-    .await;
-
-    a.shutdown().await;
-    b.shutdown().await;
-}
-
 #[tokio::test]
 async fn legacy_workspace_doc_migrates_instantly_on_first_boot() {
     use loams_agentd_proto::{Chat, Device, Session, Space};
@@ -669,7 +379,7 @@ async fn legacy_workspace_doc_migrates_instantly_on_first_boot() {
     let dir_a = tempfile::tempdir().unwrap();
     // Seed the identity-scoped store with a LEGACY Loro workspace snapshot —
     // what an updated engine finds on its first boot after the registry change.
-    let org_dir = dir_a.path().join("orgs").join("dev-org").join("dev-user");
+    let org_dir = dir_a.path().join("profiles").join("local");
     {
         let store = loams_agentd_store::DocsStore::open(&org_dir).expect("open store");
         let legacy = loams_agentd_doc::WorkspaceDoc::new();
@@ -735,8 +445,7 @@ async fn legacy_workspace_doc_migrates_instantly_on_first_boot() {
             .expect("save legacy snapshot");
     }
 
-    // Boot: migration is instant — the full sidebar state is readable before
-    // any server contact.
+    // Boot: migration is instant — the full sidebar state is readable at once.
     let a = assemble(dir_a.path(), "dev-a");
     let chats = a.workspace.read_chats().expect("chats");
     assert_eq!(chats.len(), 1);
@@ -752,41 +461,19 @@ async fn legacy_workspace_doc_migrates_instantly_on_first_boot() {
     assert_eq!(devices.len(), 1);
     assert_eq!(devices[0].name, "old laptop");
 
-    // A second (fresh) device converges through the room from the migrated seed.
-    let dir_b = tempfile::tempdir().unwrap();
-    let b = assemble(dir_b.path(), "dev-b");
-    let link = bridge(&a, &b).await;
-    wait_for(
-        || {
-            b.workspace
-                .chat("chat-legacy")
-                .ok()
-                .flatten()
-                .is_some_and(|c| c.title.as_deref() == Some("Migrated chat"))
-        },
-        "migrated chat on B",
-    )
-    .await;
-
-    // A live rename beats the migrated (historical-HLC) title everywhere.
-    b.workspace
+    // A live rename beats the migrated (historical-HLC) title.
+    a.workspace
         .rename_chat("chat-legacy", "renamed live")
         .expect("rename");
-    wait_for(
-        || {
-            a.workspace
-                .chat("chat-legacy")
-                .ok()
-                .flatten()
-                .is_some_and(|c| c.title.as_deref() == Some("renamed live"))
-        },
-        "live rename beats migration on A",
-    )
-    .await;
-
-    drop(link);
+    assert_eq!(
+        a.workspace
+            .chat("chat-legacy")
+            .expect("chat")
+            .and_then(|c| c.title)
+            .as_deref(),
+        Some("renamed live")
+    );
     a.shutdown().await;
-    b.shutdown().await;
 
     // The registry snapshot now exists; the legacy snapshot is kept for rollback.
     let store = loams_agentd_store::DocsStore::open(&org_dir).expect("reopen store");

@@ -64,11 +64,6 @@ fn catalog() -> Vec<ToolDef> {
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
-            name: "list_devices",
-            description: "Devices in this workspace (the local engine's device is flagged). Chats and projects are hosted on a device.",
-            input_schema: json!({ "type": "object", "properties": {} }),
-        },
-        ToolDef {
             name: "list_projects",
             description: "Projects: a folder on a device. Each chat belongs to one project, which fixes its host device and working directory.",
             input_schema: json!({ "type": "object", "properties": {} }),
@@ -96,7 +91,7 @@ fn catalog() -> Vec<ToolDef> {
                 "type": "object",
                 "properties": {
                     "project": { "type": "string", "description": "Only chats in this project (id, path, or name)." },
-                    "device": { "type": "string", "description": "Only chats hosted on this device (id or name)." },
+                    "device": { "type": "string", "description": "Only chats hosted on this device (its id; this engine hosts every chat)." },
                     "include_archived": { "type": "boolean", "default": false },
                     "parent": { "type": "string", "description": "Only chats created by this chat (id, prefix, or title) — e.g. your own id to list the chats you spawned." },
                     "limit": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 }
@@ -115,7 +110,7 @@ fn catalog() -> Vec<ToolDef> {
                 "type": "object",
                 "properties": {
                     "project": { "type": "string", "description": "Project id, path, or name. Required unless device is given." },
-                    "device": { "type": "string", "description": "Host device (id or name) for a project-less chat; defaults to this device." },
+                    "device": { "type": "string", "description": "Host device id for a project-less chat; defaults to this device, the only host." },
                     "parent": { "type": "string", "description": "Parent chat to record (id, prefix, or title). Defaults to the chat you are speaking from." },
                     "harness": { "type": "string", "description": "Harness id (see list_harnesses). Defaults to claude-code when available." },
                     "model": { "type": "string", "description": "Model id from list_models. Omit for the harness default." },
@@ -406,7 +401,6 @@ impl Tools {
     pub async fn call(&self, name: &str, args: Value) -> Result<Value, String> {
         let result = match name {
             "whoami" => self.whoami().await,
-            "list_devices" => self.list_devices().await,
             "list_projects" => self.list_projects().await,
             "list_harnesses" => self.list_harnesses().await,
             "list_models" => self.list_models(parse(args)?).await,
@@ -492,34 +486,14 @@ impl Tools {
         }))
     }
 
-    async fn list_devices(&self) -> anyhow::Result<Value> {
-        let (devices, local) = tokio::try_join!(
-            self.loams_desktop.devices(),
-            self.loams_desktop.local_device_id()
-        )?;
-        Ok(json!({
-            "devices": devices.iter().map(|d| json!({
-                "id": d.id,
-                "name": d.name,
-                "platform": d.platform,
-                "local": d.id == local,
-                "lastSeenAt": d.last_seen_at,
-                "version": d.version,
-            })).collect::<Vec<_>>()
-        }))
-    }
-
     async fn list_projects(&self) -> anyhow::Result<Value> {
-        let (spaces, devices) =
-            tokio::try_join!(self.loams_desktop.spaces(), self.loams_desktop.devices())?;
-        let device_name = |id: &str| devices.iter().find(|d| d.id == id).map(|d| d.name.clone());
+        let spaces = self.loams_desktop.spaces().await?;
         Ok(json!({
             "projects": spaces.iter().map(|s| json!({
                 "id": s.id,
                 "name": s.display_name(),
                 "path": s.path,
                 "deviceId": s.device_id,
-                "deviceName": device_name(&s.device_id),
                 "git": s.git_detected,
             })).collect::<Vec<_>>()
         }))
@@ -1135,10 +1109,6 @@ mod tests {
                 methods::ENGINE_INFO => RpcReply::Value(json!({
                     "deviceId": "dev-local", "workspaceScope": "local"
                 })),
-                methods::WATCH_DEVICES => stream(json!([{
-                    "id": "dev-local", "name": "Laptop", "platform": "linux",
-                    "lastSeenAt": null
-                }])),
                 methods::WATCH_SPACES => stream(json!([{
                     "id": "space-1", "deviceId": "dev-local", "path": "/repo/comet",
                     "gitDetected": true, "createdAt": "2026-09-01T00:00:00Z"

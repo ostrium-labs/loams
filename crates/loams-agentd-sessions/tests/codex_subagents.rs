@@ -20,9 +20,9 @@ fn assemble(dir: &Path) -> (EngineCore, EngineProfile) {
         .join("../loams-agentd-harness/tests/fixtures/fake-codex.sh");
     let registry = Arc::new(HarnessRegistry::new());
     registry.register(Arc::new(CodexHarness::new().with_executable(fixture)));
-    let profile = EngineProfile::development(dir, "test-org", "test-user");
-    let core = EngineCore::assemble_with_profile(profile.clone(), registry, HarnessId::Codex, None)
-        .unwrap();
+    let profile = EngineProfile::local(dir).unwrap();
+    let core =
+        EngineCore::assemble_with_profile(profile.clone(), registry, HarnessId::Codex).unwrap();
     (core, profile)
 }
 

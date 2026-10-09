@@ -11,7 +11,6 @@ use loams_agentd_preview::{
     catalog::Catalog,
     discovery::Listener,
     mux::{self, BoxIo, Connector},
-    peer::Peers,
     proxy::{self, Router},
 };
 use std::{
@@ -181,13 +180,11 @@ async fn streaming_headers_websocket_cancellation_and_restart() {
         let backend_port = server(backend_stop.clone(), active.clone()).await;
         observe(&catalog, backend_port, 1);
         let connector = Arc::new(Backend(catalog.clone()));
-        let local = mux::local(connector.clone(), stop.clone());
-        let (peers, _) = Peers::new("local".into(), connector, stop.clone());
+        let local = mux::local(connector, stop.clone());
         let (port, _listeners) = proxy::serve(
             Router {
                 catalog: catalog.clone(),
                 local,
-                peers,
             },
             0,
             stop.clone(),

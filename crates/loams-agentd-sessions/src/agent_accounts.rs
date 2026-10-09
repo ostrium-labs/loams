@@ -57,9 +57,7 @@
 //!    (pasting the code is only the fallback when no port can be bound);
 //!    Codex spawns `codex login` against a throwaway `CODEX_HOME` and polls
 //!    until its loopback callback lands; Antigravity runs its server's
-//!    `authenticate`. A login run for ANOTHER device (`requester`) publishes
-//!    its callback port to [`loams_agentd_preview::login`], so the requester can
-//!    forward its own loopback to it over the P2P link.
+//!    `authenticate`.
 //!
 //! Usage probes: all three providers expose the rate-limit view their own CLIs render
 //! (`/usage` in Claude Code, `/status` in Codex; Cursor's key has no quota view,
@@ -419,8 +417,6 @@ enum LoginFlow {
         exit: Arc<Mutex<Option<Option<i32>>>>,
         /// Finds the sign-in page in the child's output.
         scan_url: fn(&str) -> Option<String>,
-        /// The device a remote login's callback is forwarded for.
-        requester: Option<String>,
     },
     /// A sign-in the engine drives itself — Claude's and ChatGPT's loopback
     /// callbacks, GitHub's device code, Antigravity's and Devin's ACP
@@ -455,8 +451,6 @@ struct TaskLoginState {
     url: Option<String>,
     message: Option<String>,
     outcome: Option<Result<(), String>>,
-    /// The device a remote login's callback is forwarded for.
-    requester: Option<String>,
 }
 
 impl LoginFlow {
@@ -729,8 +723,6 @@ struct Inner {
     /// (commonly single-use) refresh token would revoke the family.
     inflight_refreshes: Mutex<std::collections::HashSet<String>>,
     claude_credentials: Mutex<Option<CachedClaudeCredentials>>,
-    /// Callback ports of logins run for another device (see module docs).
-    callback_routes: loams_agentd_preview::login::CallbackRoutes,
     /// Who an opaque live token belongs to (Pi's Claude login, a Copilot
     /// token), by token fingerprint — one profile call per token, not per
     /// list; a failed lookup waits [`IDENTITY_RETRY`] before the next. See
@@ -769,23 +761,10 @@ pub struct AgentAccounts {
 
 impl AgentAccounts {
     pub fn new(config: AgentAccountsConfig) -> Self {
-        Self::with_endpoints(config, ProbeEndpoints::default(), Default::default())
+        Self::with_endpoints(config, ProbeEndpoints::default())
     }
 
-    /// [`Self::new`], publishing remote logins' callback ports to `routes`
-    /// (the engine's P2P service, which serves them to the requester).
-    pub fn with_callback_routes(
-        config: AgentAccountsConfig,
-        routes: loams_agentd_preview::login::CallbackRoutes,
-    ) -> Self {
-        Self::with_endpoints(config, ProbeEndpoints::default(), routes)
-    }
-
-    fn with_endpoints(
-        config: AgentAccountsConfig,
-        endpoints: ProbeEndpoints,
-        callback_routes: loams_agentd_preview::login::CallbackRoutes,
-    ) -> Self {
+    fn with_endpoints(config: AgentAccountsConfig, endpoints: ProbeEndpoints) -> Self {
         // Startup sweep: a previous process that crashed mid-login leaves
         // `.login-<uuid>` throwaway CODEX_HOME dirs — each may hold live OAuth
         // tokens — with no owner to clean them. Reclaim them at boot.
@@ -826,7 +805,6 @@ impl AgentAccounts {
                 inflight_probes: Mutex::new(std::collections::HashSet::new()),
                 inflight_refreshes: Mutex::new(std::collections::HashSet::new()),
                 claude_credentials: Mutex::new(None),
-                callback_routes,
                 identities: Mutex::new(HashMap::new()),
                 cli_overrides: Mutex::new(HashMap::new()),
             }),
@@ -1391,21 +1369,10 @@ impl AgentAccounts {
     // ── add-account OAuth flows ─────────────────────────────────────────────
 
     pub async fn start_login(&self, harness: HarnessId) -> Result<AgentLoginStart, EngineError> {
-        self.start_login_for(harness, None).await
+        self.start_login_with(harness, None).await
     }
 
-    /// [`Self::start_login`] on behalf of `requester` — another device, whose
-    /// browser finishes the sign-in. The login's loopback callback port is
-    /// published for that device alone, for as long as the login runs.
-    pub async fn start_login_for(
-        &self,
-        harness: HarnessId,
-        requester: Option<&str>,
-    ) -> Result<AgentLoginStart, EngineError> {
-        self.start_login_with(harness, None, requester).await
-    }
-
-    /// [`Self::start_login_for`] for one model provider of an agent that
+    /// [`Self::start_login`] for one model provider of an agent that
     /// keeps a login per provider (`provider`: OpenCode's `openai` /
     /// `github-copilot`, Pi's `openai-codex`, Hermes' `openai-codex` /
     /// `nous`); `None` picks the agent's default.
@@ -1413,7 +1380,6 @@ impl AgentAccounts {
         &self,
         harness: HarnessId,
         provider: Option<&str>,
-        requester: Option<&str>,
     ) -> Result<AgentLoginStart, EngineError> {
         self.sweep_flows();
         let provider = provider.filter(|p| !p.is_empty());
@@ -1424,11 +1390,11 @@ impl AgentAccounts {
                 self.reap_spawned_flows(HarnessId::ClaudeCode);
                 self.start_claude_login().await
             }
-            HarnessId::Codex => self.start_codex_login(requester).await?,
+            HarnessId::Codex => self.start_codex_login().await?,
             HarnessId::Cursor => self.start_cursor_login().await?,
-            HarnessId::Antigravity => self.start_antigravity_login(requester),
-            HarnessId::Grok => self.start_grok_login(requester).await?,
-            HarnessId::Devin => self.start_devin_login(requester)?,
+            HarnessId::Antigravity => self.start_antigravity_login(),
+            HarnessId::Grok => self.start_grok_login().await?,
+            HarnessId::Devin => self.start_devin_login()?,
             HarnessId::Opencode => match provider.unwrap_or("openai") {
                 "openai" => {
                     self.start_openai_login(HarnessId::Opencode, "openai")
@@ -1459,11 +1425,6 @@ impl AgentAccounts {
         };
         if start.callback_port.is_none() {
             start.callback_port = loopback_port(&start.url);
-        }
-        if let (Some(requester), Some(port)) = (requester, start.callback_port) {
-            self.inner
-                .callback_routes
-                .register(&start.login_id, port, requester, FLOW_TTL);
         }
         Ok(start)
     }
@@ -1668,7 +1629,6 @@ impl AgentAccounts {
         home: PathBuf,
         completion: SpawnedCompletion,
         scan_url: fn(&str) -> Option<String>,
-        requester: Option<&str>,
     ) -> Result<AgentLoginStart, EngineError> {
         command
             .stdin(loams_agentd_harness::process::Stdio::null())
@@ -1700,7 +1660,6 @@ impl AgentAccounts {
                 output: output.clone(),
                 exit: exit.clone(),
                 scan_url,
-                requester: requester.map(str::to_string),
             },
         );
         let url = await_login_url(&output, &exit, scan_url).await;
@@ -1712,10 +1671,7 @@ impl AgentAccounts {
         })
     }
 
-    async fn start_codex_login(
-        &self,
-        requester: Option<&str>,
-    ) -> Result<AgentLoginStart, EngineError> {
+    async fn start_codex_login(&self) -> Result<AgentLoginStart, EngineError> {
         self.reap_spawned_flows(HarnessId::Codex);
         // `codex login` binds the same fixed port as the ChatGPT sign-ins.
         self.reap_port_flows(oauth::OPENAI_LOOPBACK_PORT);
@@ -1765,7 +1721,6 @@ impl AgentAccounts {
             home,
             SpawnedCompletion::CredentialFile,
             scan_openai_url,
-            requester,
         )
         .await
     }
@@ -1775,13 +1730,10 @@ impl AgentAccounts {
     /// the browser url once the server prints it. A server that already holds
     /// a valid token answers `authenticate` without any browser at all, which
     /// is success: the poll reports done and the list shows the login.
-    fn start_antigravity_login(&self, requester: Option<&str>) -> AgentLoginStart {
+    fn start_antigravity_login(&self) -> AgentLoginStart {
         self.reap_spawned_flows(HarnessId::Antigravity);
         let login_id = new_id();
-        let state = Arc::new(Mutex::new(TaskLoginState {
-            requester: requester.map(str::to_string),
-            ..Default::default()
-        }));
+        let state = Arc::new(Mutex::new(TaskLoginState::default()));
         #[cfg(unix)]
         let browser = {
             self.inner
@@ -1858,7 +1810,6 @@ impl AgentAccounts {
             home,
             SpawnedCompletion::CredentialFile,
             scan_cursor_url,
-            None,
         )
         .await
     }
@@ -2063,7 +2014,7 @@ impl AgentAccounts {
         if let Some(poll) = self.poll_task_login(login_id) {
             return Ok(poll);
         }
-        let (harness, home, completion, exit, output, scan_url, requester) =
+        let (harness, home, completion, exit, output, scan_url) =
             match lock(&self.inner.flows).get(login_id) {
                 None => {
                     return Err(EngineError::Other(
@@ -2086,7 +2037,6 @@ impl AgentAccounts {
                     exit,
                     output,
                     scan_url,
-                    requester,
                     ..
                 }) => (
                     *harness,
@@ -2095,7 +2045,6 @@ impl AgentAccounts {
                     exit.clone(),
                     output.clone(),
                     *scan_url,
-                    requester.clone(),
                 ),
             };
         let exited = *lock(&exit);
@@ -2175,13 +2124,6 @@ impl AgentAccounts {
             (scan_url(&output), code)
         };
         let callback_port = url.as_deref().and_then(loopback_port);
-        if let (Some(requester), Some(port)) = (&requester, callback_port)
-            && !self.inner.callback_routes.is_registered(login_id)
-        {
-            self.inner
-                .callback_routes
-                .register(login_id, port, requester, FLOW_TTL);
-        }
         Ok(AgentLoginPoll {
             status: AgentLoginStatus::Pending,
             message: message.map(|code| format!("Enter the code {code} when asked.")),
@@ -2190,9 +2132,7 @@ impl AgentAccounts {
         })
     }
 
-    /// Poll an engine-driven sign-in; `None` when `login_id` isn't one. A
-    /// page first learned here (Antigravity's) publishes its callback port
-    /// for a remote requester before the poll hands the url out.
+    /// Poll an engine-driven sign-in; `None` when `login_id` isn't one.
     fn poll_task_login(&self, login_id: &str) -> Option<AgentLoginPoll> {
         let state = match lock(&self.inner.flows).get(login_id) {
             Some(LoginFlow::Task { state, .. }) => state.clone(),
@@ -2203,13 +2143,6 @@ impl AgentAccounts {
             match &state.outcome {
                 None => {
                     let callback_port = state.url.as_deref().and_then(loopback_port);
-                    if let (Some(requester), Some(port)) = (&state.requester, callback_port)
-                        && !self.inner.callback_routes.is_registered(login_id)
-                    {
-                        self.inner
-                            .callback_routes
-                            .register(login_id, port, requester, FLOW_TTL);
-                    }
                     return Some(AgentLoginPoll {
                         status: AgentLoginStatus::Pending,
                         message: state.message.clone(),
@@ -2235,9 +2168,8 @@ impl AgentAccounts {
         Some(poll)
     }
 
-    /// Drop a flow's bookkeeping, and with it any callback route it published.
+    /// Drop a flow's bookkeeping.
     fn remove_flow(&self, login_id: &str) -> Option<LoginFlow> {
-        self.inner.callback_routes.remove(login_id);
         lock(&self.inner.flows).remove(login_id)
     }
 
@@ -3790,7 +3722,7 @@ fn ensure_noop_browser(root: &Path) -> Option<PathBuf> {
 
 /// A "browser" that records the url it was asked to open into
 /// `$LOAMS_DESKTOP_LOGIN_URL_FILE` instead of opening it — so the app opens the
-/// one tab (on the requesting device, for a remote login) even when the CLI
+/// one tab even when the CLI
 /// never prints its sign-in url. Unix only, like [`ensure_noop_browser`].
 #[cfg(unix)]
 fn ensure_recording_browser(root: &Path) -> Option<PathBuf> {
@@ -3941,17 +3873,6 @@ fn pkce_pair() -> (String, String) {
 /// The loopback port an authorize url's `redirect_uri` lands on — where the
 /// login's CLI (or our own listener) waits for the browser. `None` for flows
 /// that don't redirect to this machine.
-/// Whether a remote login's reported callback `port` may be forwarded on this
-/// device: never a privileged port, and only the one its authorize `url`
-/// actually redirects to — a buggy or hostile peer can't make us bind (and
-/// receive local traffic on) an arbitrary loopback port.
-pub(crate) fn tunnel_port_allowed(port: u16, url: Option<&str>) -> bool {
-    port >= 1024
-        && url
-            .and_then(loopback_port)
-            .is_some_and(|redirect| redirect == port)
-}
-
 pub(crate) fn loopback_port(url: &str) -> Option<u16> {
     let url = reqwest::Url::parse(url).ok()?;
     let redirect = url
@@ -4480,20 +4401,6 @@ mod probe_tests {
         }
     }
 
-    #[test]
-    fn remote_login_tunnels_only_forward_the_redirect_port() {
-        let url = "https://auth.openai.com/oauth/authorize?client_id=x\
-                   &redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback";
-        assert!(tunnel_port_allowed(1455, Some(url)));
-        // A port the authorize url doesn't redirect to, a privileged port,
-        // or no url at all: refused.
-        assert!(!tunnel_port_allowed(22, Some(url)));
-        assert!(!tunnel_port_allowed(8080, Some(url)));
-        assert!(!tunnel_port_allowed(1455, None));
-        let privileged = "https://x/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A80%2Fcb";
-        assert!(!tunnel_port_allowed(80, Some(privileged)));
-    }
-
     #[tokio::test]
     async fn a_pasted_code_with_another_logins_state_is_refused() {
         let dir = tempfile::tempdir().unwrap();
@@ -4905,8 +4812,7 @@ mod login_tests {
             claude_profile: "http://127.0.0.1:9/profile".into(),
             ..Default::default()
         };
-        let accounts =
-            AgentAccounts::with_endpoints(config(tmp.path()), endpoints, Default::default());
+        let accounts = AgentAccounts::with_endpoints(config(tmp.path()), endpoints);
         let start = accounts.start_login(HarnessId::ClaudeCode).await.unwrap();
         assert_eq!(start.mode, AgentLoginMode::Browser);
         let port = start.callback_port.unwrap();
@@ -4992,7 +4898,7 @@ mod login_tests {
             claude_profile: "http://127.0.0.1:9/profile".into(),
             ..Default::default()
         };
-        AgentAccounts::with_endpoints(config(root), endpoints, Default::default())
+        AgentAccounts::with_endpoints(config(root), endpoints)
     }
 
     #[tokio::test]
@@ -5064,8 +4970,7 @@ mod login_tests {
             claude_profile: "http://127.0.0.1:9/profile".into(),
             ..Default::default()
         };
-        let accounts =
-            AgentAccounts::with_endpoints(config(tmp.path()), endpoints, Default::default());
+        let accounts = AgentAccounts::with_endpoints(config(tmp.path()), endpoints);
         let start = accounts.start_login(HarnessId::ClaudeCode).await.unwrap();
         let port = start.callback_port.unwrap();
         let state = reqwest::Url::parse(&start.url)
@@ -5116,25 +5021,5 @@ mod login_tests {
         let poll = poll_until_settled(&accounts, &start.login_id).await;
         assert_eq!(poll.status, AgentLoginStatus::Error);
         assert!(poll.message.unwrap().contains("User declined"));
-    }
-
-    #[tokio::test]
-    async fn a_login_for_another_device_publishes_its_callback_until_it_ends() {
-        let tmp = tempfile::tempdir().unwrap();
-        let routes = loams_agentd_preview::login::CallbackRoutes::default();
-        let accounts = AgentAccounts::with_callback_routes(config(tmp.path()), routes.clone());
-        // A local login publishes nothing.
-        let local = accounts.start_login(HarnessId::ClaudeCode).await.unwrap();
-        assert!(!routes.is_registered(&local.login_id));
-        accounts.cancel_login(&local.login_id);
-        // A login started for device-a serves its port to device-a only.
-        let remote = accounts
-            .start_login_for(HarnessId::ClaudeCode, Some("device-a"))
-            .await
-            .unwrap();
-        assert!(remote.callback_port.is_some());
-        assert!(routes.is_registered(&remote.login_id));
-        accounts.cancel_login(&remote.login_id);
-        assert!(!routes.is_registered(&remote.login_id));
     }
 }

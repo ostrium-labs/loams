@@ -250,7 +250,6 @@ gethostname = "1"
 ignore = "0.4"
 libc = "0.2"
 loro = "1.13"
-loro-protocol = "0.3"
 mimalloc = { version = "0.1", features = ["v2"] }
 notify = "7"
 nucleo-matcher = "0.3"

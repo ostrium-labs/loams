@@ -46,7 +46,6 @@ fn assemble(data_dir: &Path, device_id: &str) -> EngineCore {
         data_dir,
         Arc::new(HarnessRegistry::new()),
         loams_agentd_proto::HarnessId::Mock,
-        None,
     )
     .expect("engine assembles")
 }

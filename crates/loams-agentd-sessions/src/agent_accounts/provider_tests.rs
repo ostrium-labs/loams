@@ -119,7 +119,7 @@ impl MockServer {
 fn accounts_with(root: &Path, endpoints: ProbeEndpoints) -> (AgentAccounts, AgentAccountsConfig) {
     let config = AgentAccountsConfig::isolated(root);
     (
-        AgentAccounts::with_endpoints(config.clone(), endpoints, Default::default()),
+        AgentAccounts::with_endpoints(config.clone(), endpoints),
         config,
     )
 }
@@ -657,11 +657,7 @@ done
 "#,
     );
     accounts.override_cli(HarnessId::Devin, agent);
-    let routes = accounts.inner.callback_routes.clone();
-    let start = accounts
-        .start_login_for(HarnessId::Devin, Some("device-b"))
-        .await
-        .unwrap();
+    let start = accounts.start_login(HarnessId::Devin).await.unwrap();
     let polls = settle(&accounts, &start.login_id).await;
     assert_eq!(
         polls.last().unwrap().status,
@@ -669,17 +665,13 @@ done
         "{polls:?}"
     );
     // The sign-in page (not the url in the handshake) reached the app, with
-    // its loopback port for the remote requester's tunnel.
+    // its loopback port.
     let page = polls
         .iter()
         .find_map(|p| p.url.clone())
         .expect("url reported");
     assert!(page.contains("/auth/cli/continue"), "{page}");
     assert!(polls.iter().any(|p| p.callback_port == Some(45678)));
-    assert!(
-        !routes.is_registered(&start.login_id),
-        "route dropped once done"
-    );
     // No live login before → the fresh key is connected.
     let text = std::fs::read_to_string(&config.devin_credentials_file).unwrap();
     assert!(text.contains("fresh-devin-key-9999"));
@@ -932,7 +924,7 @@ async fn chatgpt_sign_in_for_pi_lands_on_the_loopback_and_connects_the_first_log
     );
     // Claude logins for Pi stay with pi.
     let refused = accounts
-        .start_login_with(HarnessId::Pi, Some("anthropic"), None)
+        .start_login_with(HarnessId::Pi, Some("anthropic"))
         .await
         .unwrap_err();
     assert!(refused.to_string().contains("/login"), "{refused}");
@@ -1026,7 +1018,7 @@ async fn a_new_login_never_replaces_an_unidentified_live_one() {
     assert!(before[0].active && !before[0].switchable);
 
     let start = accounts
-        .start_login_with(HarnessId::Opencode, Some("github-copilot"), None)
+        .start_login_with(HarnessId::Opencode, Some("github-copilot"))
         .await
         .unwrap();
     let polls = settle(&accounts, &start.login_id).await;
@@ -1093,7 +1085,7 @@ async fn copilot_device_sign_in_for_opencode_shows_the_code_and_connects() {
     let tmp = tempfile::tempdir().unwrap();
     let (accounts, config) = accounts_with(tmp.path(), mocked(&server.base));
     let start = accounts
-        .start_login_with(HarnessId::Opencode, Some("github-copilot"), None)
+        .start_login_with(HarnessId::Opencode, Some("github-copilot"))
         .await
         .unwrap();
     assert_eq!(start.url, "https://github.com/login/device");
@@ -1326,7 +1318,7 @@ echo 'Added openai-codex OAuth credential #1: "new@example.com"'
     // Only the device-code providers are offered.
     assert!(
         accounts
-            .start_login_with(HarnessId::Hermes, Some("anthropic"), None)
+            .start_login_with(HarnessId::Hermes, Some("anthropic"))
             .await
             .is_err()
     );

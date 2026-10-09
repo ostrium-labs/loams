@@ -1,6 +1,5 @@
-//! Project-scoped HTTP discovery, stable local routing, and authenticated peers.
-//! Application bytes use bounded multiplexed streams; edge signaling never
-//! transports preview requests or response bodies.
+//! Project-scoped HTTP discovery and stable local routing on this device.
+//! Application bytes use bounded multiplexed streams over a local socket pair.
 
 // Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
 // workspace clippy already runs with -D warnings, so this list keeps it green until
@@ -13,11 +12,8 @@
 )]
 pub mod catalog;
 pub mod discovery;
-pub mod login;
 pub mod mux;
-pub mod peer;
 pub mod proxy;
-pub mod signaling;
 
 pub mod service;
 pub use service::PreviewService;

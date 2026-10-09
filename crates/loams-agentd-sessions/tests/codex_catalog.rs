@@ -10,13 +10,8 @@ async fn catalog_child() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let core = EngineCore::assemble(
-        dir.path(),
-        default_registry().into(),
-        HarnessId::Codex,
-        None,
-    )
-    .expect("assemble isolated engine");
+    let core = EngineCore::assemble(dir.path(), default_registry().into(), HarnessId::Codex)
+        .expect("assemble isolated engine");
     let client = loams_agentd_rpc::memory_client(core.rpc_service());
     let catalog = client
         .call(

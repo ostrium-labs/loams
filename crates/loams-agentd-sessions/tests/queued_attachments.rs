@@ -146,7 +146,6 @@ async fn run_defers_until_attachment_bytes_land_then_executes_rewritten() {
         &tmp.path().join("data"),
         Arc::new(registry),
         HarnessId::Mock,
-        None,
     )
     .expect("engine core assembles");
 
@@ -252,7 +251,6 @@ async fn queued_row_waits_for_attachment_bytes_then_sends_resolved_paths() {
         &tmp.path().join("data"),
         Arc::new(registry),
         HarnessId::Mock,
-        None,
     )
     .expect("engine core assembles");
 

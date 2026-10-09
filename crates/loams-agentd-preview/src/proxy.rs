@@ -3,7 +3,6 @@
 use crate::{
     catalog::Catalog,
     mux::{Mux, Stream},
-    peer::Peers,
 };
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full, combinators::UnsyncBoxBody};
@@ -26,15 +25,14 @@ fn tunnel_slot() -> anyhow::Result<tokio::sync::SemaphorePermit<'static>> {
 pub struct Router {
     pub catalog: Catalog,
     pub local: Mux,
-    pub peers: Peers,
 }
 impl Router {
     async fn open(&self, device: &str, service: &str, websocket: bool) -> anyhow::Result<Stream> {
-        if device == self.catalog.device_id() {
-            self.local.open(service, websocket).await
-        } else {
-            self.peers.open(device, service, websocket).await
-        }
+        anyhow::ensure!(
+            device == self.catalog.device_id(),
+            "previews are served from this device only"
+        );
+        self.local.open(service, websocket).await
     }
     /// WebKit on older macOS releases delegates `.localhost` DNS to the OS.
     /// Its per-domain CONNECT proxy reaches this same loopback HTTP listener

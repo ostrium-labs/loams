@@ -2,10 +2,8 @@
 use crate::{
     catalog::Catalog,
     discovery,
-    login::{self, CallbackForwarder, CallbackRoutes, CallbackTunnels},
     mux::{self, BoxIo, Connector},
-    peer::Peers,
-    proxy, signaling,
+    proxy,
 };
 use futures::{StreamExt, stream};
 use std::{
@@ -94,11 +92,6 @@ struct Inner {
     stop: CancellationToken,
     started: AtomicBool,
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
-    /// Sign-in callbacks peers may reach on this device (see [`login`]).
-    callback_routes: CallbackRoutes,
-    /// Sign-in callbacks this device forwards to the device running them.
-    callback_tunnels: CallbackTunnels,
-    peers: std::sync::OnceLock<Peers>,
 }
 pub type Projects = Arc<dyn Fn() -> Vec<PathBuf> + Send + Sync>;
 impl PreviewService {
@@ -108,70 +101,21 @@ impl PreviewService {
             stop: CancellationToken::new(),
             started: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
-            callback_routes: CallbackRoutes::default(),
-            callback_tunnels: CallbackTunnels::default(),
-            peers: std::sync::OnceLock::new(),
         })))
     }
     pub fn catalog(&self) -> &Catalog {
         &self.0.catalog
     }
-    /// The registry the agent-login flows publish their callback ports to.
-    pub fn callback_routes(&self) -> CallbackRoutes {
-        self.0.callback_routes.clone()
-    }
-    /// Forward loopback `port` on this device to login `login_id`'s callback
-    /// on `device` until [`Self::close_login_tunnel`] or `lifetime` passes.
-    /// Idempotent per login; a port taken here is an error.
-    pub async fn open_login_tunnel(
-        &self,
-        login_id: &str,
-        device: &str,
-        port: u16,
-        lifetime: Duration,
-    ) -> anyhow::Result<()> {
-        if self.0.callback_tunnels.contains(login_id) {
-            return Ok(());
-        }
-        let peers = self.0.peers.get().cloned().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Direct connections to other devices aren't available yet — try again in a moment."
-            )
-        })?;
-        let device = device.to_owned();
-        let service = login::service_id(login_id);
-        let open: login::Opener = Arc::new(move || {
-            let (peers, device, service) = (peers.clone(), device.clone(), service.clone());
-            Box::pin(
-                async move { Ok(Box::new(peers.open(&device, &service, false).await?) as BoxIo) },
-            )
-        });
-        let forwarder = CallbackForwarder::bind(port, lifetime, open).await?;
-        self.0.callback_tunnels.insert(login_id, forwarder);
-        Ok(())
-    }
-    pub fn close_login_tunnel(&self, login_id: &str) {
-        self.0.callback_tunnels.close(login_id);
-    }
-    pub async fn start(&self, projects: Projects, signaling: Option<signaling::Config>) {
+    /// Start discovery for `projects` and the local routing proxy (port 7331).
+    pub async fn start(&self, projects: Projects) {
         if self.0.started.swap(true, Ordering::SeqCst) {
             return;
         }
-        let connector = Arc::new(LocalConnector(
-            self.0.catalog.clone(),
-            self.0.callback_routes.clone(),
-        ));
-        let local = mux::local(connector.clone(), self.0.stop.child_token());
-        let (peers, output) = Peers::new(
-            self.0.catalog.device_id().into(),
-            connector,
-            self.0.stop.child_token(),
-        );
-        let _ = self.0.peers.set(peers.clone());
+        let connector = Arc::new(LocalConnector(self.0.catalog.clone()));
+        let local = mux::local(connector, self.0.stop.child_token());
         let router = proxy::Router {
             catalog: self.0.catalog.clone(),
             local,
-            peers: peers.clone(),
         };
         let proxy_catalog = self.0.catalog.clone();
         let proxy_stop = self.0.stop.clone();
@@ -262,21 +206,10 @@ impl PreviewService {
                 tokio::select! { _ = stop.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(2)) => {} }
             }
         });
-        let mut tasks = self.0.tasks.lock().unwrap();
-        tasks.push(scanner);
-        if let Some(config) = signaling {
-            tasks.push(tokio::spawn(signaling::run(
-                config,
-                self.0.catalog.clone(),
-                peers,
-                output,
-                self.0.stop.child_token(),
-            )));
-        }
+        self.0.tasks.lock().unwrap().push(scanner);
     }
     pub fn stop(&self) {
         self.0.stop.cancel();
-        self.0.catalog.clear_remote();
     }
     pub async fn shutdown(&self) {
         self.stop();
@@ -286,18 +219,10 @@ impl PreviewService {
         }
     }
 }
-struct LocalConnector(Catalog, CallbackRoutes);
+struct LocalConnector(Catalog);
 #[async_trait::async_trait]
 impl Connector for LocalConnector {
     async fn connect(&self, id: &str) -> anyhow::Result<BoxIo> {
-        self.connect_from(None, id).await
-    }
-    async fn connect_from(&self, peer: Option<&str>, id: &str) -> anyhow::Result<BoxIo> {
-        // A sign-in callback: only the registered port, only for the device
-        // that started the login, only while it runs.
-        if let Some(port) = self.1.target(peer, id) {
-            return CallbackRoutes::connect(port?).await;
-        }
         let route = self
             .0
             .local_route(id)
@@ -305,8 +230,7 @@ impl Connector for LocalConnector {
         // Recheck process identity before dialing: a stopped dev server's port
         // may have been reused since the last scan. Checking the one pid is
         // cheap; enumerating every listener here spawned lsof and ps for each
-        // asset a remote page requested, which showed up as memory and CPU
-        // churn on the hosting Mac.
+        // asset a page requested, which showed up as memory and CPU churn.
         let (pid, started_at) = (route.listener.pid, route.listener.started_at);
         let valid =
             tokio::task::spawn_blocking(move || discovery::same_process(pid, started_at)).await?;

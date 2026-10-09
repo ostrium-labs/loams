@@ -1,37 +1,13 @@
-//! loams-agentd-store — the edge room clients (registry rows + chat2 row protocol over
-//! WebSocket against the TS edge) and the local `DocsStore` (SQLite snapshots +
-//! processed-command ledger).
-//!
-//! - [`ChatClient`]: joins a ChatRoom DO (`wss://…/chat2/{chatId}/ws?token=`),
-//!   catches up via checkpoint + row backfill, pushes local loro updates as
-//!   rows, and reconnects with exponential backoff.
-//! - [`RegistryClient`]: the per-profile workspace registry room (sidebar rows,
-//!   presence).
-//! - [`DocsStore`]: snapshot persistence (the doc IS the outbox — commands + user entries
-//!   flush immediately) and the processed-command ledger with mark-BEFORE-execute semantics.
+//! loams-agentd-store — the daemon's local document store: [`DocsStore`] keeps SQLite
+//! snapshots of the chat and workspace docs and the processed-command ledger
+//! (mark-BEFORE-execute semantics). The doc IS the outbox: commands and user entries
+//! flush immediately. The edge room clients that synced these docs are gone (D781).
 
 // Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
 // workspace clippy already runs with -D warnings, so this list keeps it green until
 // Tasks 2-4 delete or fix the code and drop it.
 #![allow(clippy::question_mark, missing_debug_implementations)]
 
-pub mod budget;
-pub mod chat_client;
-pub mod chat_frames;
-pub mod dial;
-pub mod net_path;
-pub mod registry;
-pub mod socket;
 mod store;
-mod sync_jobs;
-mod types;
-pub mod wake;
 
-pub use chat_client::{
-    ChatClient, ChatDocSink, ChatEvent, ChatStatsSnapshot, ChatTuning, CheckpointFetcher,
-};
-pub use registry::{
-    ReconnectState, RegistryClient, RegistryEvent, RegistryTransport, RegistryTuning,
-};
 pub use store::{DocsStore, StoreError};
-pub use types::{RoomStatsSnapshot, StaticUrl, SyncError, UrlProvider};

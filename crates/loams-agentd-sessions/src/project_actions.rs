@@ -912,7 +912,6 @@ mod tests {
             temp.path(),
             Arc::new(crate::HarnessRegistry::new()),
             loams_agentd_proto::HarnessId::Mock,
-            None,
         )
         .unwrap();
         core.workspace

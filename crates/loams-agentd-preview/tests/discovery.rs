@@ -72,7 +72,7 @@ async fn only_current_project_http_processes_are_exposed_and_removals_are_live()
     .unwrap();
     let occupied = tokio::net::TcpListener::bind("127.0.0.1:7331").await.ok();
     service
-        .start(Arc::new(move || projects.lock().unwrap().clone()), None)
+        .start(Arc::new(move || projects.lock().unwrap().clone()))
         .await;
     wait(&service, Some(local.0.id())).await;
     if let Some(listener) = occupied {
@@ -141,7 +141,7 @@ async fn a_discovered_server_is_probed_once_not_every_cycle() {
     )
     .unwrap();
     let roots = vec![app.clone()];
-    service.start(Arc::new(move || roots.clone()), None).await;
+    service.start(Arc::new(move || roots.clone())).await;
     wait(&service, Some(server.0.id())).await;
     // Several scan cycles (2s cadence) pass while the server stays discovered.
     tokio::time::sleep(Duration::from_secs(7)).await;
