@@ -83,9 +83,13 @@ use crate::watchdog::ExitReason;
 /// The most of an unwanted request body read to keep its connection (and to let
 /// the client read the answer before the connection closes).
 const MAX_DRAIN: u64 = 1024 * 1024;
-/// How long a failed body waits before aborting, so hyper flushes the exception
-/// text before it closes the connection (Ruling 9).
-const ABORT_DELAY: Duration = Duration::from_millis(20);
+/// How long a failed body holds its abort after the exception text (Ruling 9, fix
+/// round 2 N5). hyper gives a body no signal that its bytes reached the socket, but
+/// it flushes whenever the body is pending, so the text goes out within this bound
+/// unless the client's socket stops accepting bytes for that long. **The limit:**
+/// a client that is not reading may then miss the text; it still gets a body
+/// without its terminating chunk, which no client reads as a complete result.
+const FLUSH_BOUND: Duration = Duration::from_millis(100);
 /// How many body pieces may wait between the statement and the client.
 const CHANNEL_DEPTH: usize = 8;
 /// How long a closing connection waits for the client's side to finish.
@@ -377,7 +381,7 @@ impl HttpBody for HouseBody {
                     Some(Piece::Data(bytes)) => Poll::Ready(Some(Ok(BodyFrame::data(bytes)))),
                     Some(Piece::Abort) => {
                         // A pending poll lets hyper flush the exception text first.
-                        let mut sleep = Box::pin(tokio::time::sleep(ABORT_DELAY));
+                        let mut sleep = Box::pin(tokio::time::sleep(FLUSH_BOUND));
                         let _ = sleep.as_mut().poll(cx);
                         *abort = Some(sleep);
                         Poll::Pending
