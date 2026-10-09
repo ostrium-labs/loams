@@ -2,7 +2,7 @@
 //! Tasks 12–13).
 //!
 //! In Task 12 an app serves the built-in system functions only
-//! ([`system`](crate::system)), and `Deploy` answers `UNIMPLEMENTED`; Task 13
+//! ([`system`]), and `Deploy` answers `UNIMPLEMENTED`; Task 13
 //! adds QuickJS bundles, their deployment pointer and the deploy gate.
 
 use std::sync::Arc;

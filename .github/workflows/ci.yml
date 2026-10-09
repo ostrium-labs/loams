@@ -357,6 +357,7 @@ jobs:
           cargo doc
           -p loams-qdrant -p loams-common -p loams-store -p loams-cache
           -p loams-log -p loams-hnsw -p loams-worker
+          -p loams-kv -p loams-live
           --no-deps --locked
         env:
           RUSTDOCFLAGS: "-D warnings"

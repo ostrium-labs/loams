@@ -134,7 +134,7 @@ impl LiveServer {
 
 impl LiveHandle {
     /// The app's store (on TiKV, the cluster GC loop sweeps its commit
-    /// tokens through [`Store::as_tikv`]; the embedded store runs its own
+    /// tokens through `Store::as_tikv`, feature `tikv`; the embedded store runs its own
     /// GC).
     pub fn store(&self) -> &Store {
         &self.store

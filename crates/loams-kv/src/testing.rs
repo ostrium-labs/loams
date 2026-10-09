@@ -3,7 +3,8 @@
 //! [`stores`] yields the embedded store always and a TiKV store when
 //! `LOAMS_TEST_PD` names a test cluster (feature `tikv`), so a plain
 //! `cargo test` covers the embedded backend and CI's `tikv` job both.
-//! TiKV-only tests take [`tikv`], or [`cluster`] for a configuration.
+//! TiKV-only tests take `tikv`, or `cluster` for a configuration (feature
+//! `tikv`).
 //! [`Factory`] opens stores of one backend for the conformance cases of
 //! [`kv_conformance!`](crate::kv_conformance).
 //!

@@ -9,7 +9,7 @@
 //! to the store's root. [`Ts`] is a timestamp in TSO layout on both backends
 //! (Ruling 3). [`TxnOptions`], [`TxnError`] and [`Committed`] are the
 //! runner's options, error classes and result; [`FaultPlan`] its fault hooks;
-//! [`GcBarrier`] holds GC below a timestamp. [`tuple`] is the
+//! [`GcBarrier`] holds GC below a timestamp. [`tuple`](mod@tuple) is the
 //! order-preserving tuple codec. [`testing`] yields the stores a test runs
 //! on, and [`conformance`] holds every backend to the same semantics
 //! ([`kv_conformance!`]).
