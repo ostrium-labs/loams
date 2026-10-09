@@ -257,7 +257,7 @@ pub enum GraphState {
 
 /// One row of a result. Values positionally aligned with the result's column names, because a graph
 /// result legitimately repeats a key across a path and a map would collapse those duplicates.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct GraphRow {
     /// One row's values, as the engine answered them. The wire form is
     /// [`crate::value::to_proto`]'s, which keeps every type (GR1 Task 2); the fabric-era JSON form
@@ -271,7 +271,7 @@ pub struct GraphRow {
 /// never has to know what protobuf is. A graph value travels as a parameter and never as part of the
 /// text — interpolating one would let a value change the statement's meaning, which is the whole
 /// reason the contract's `Statement` has a `parameters` map beside its `statement` string.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct BatchStatement {
     /// The statement text, which reaches the engine unchanged.
     pub text: String,
@@ -306,7 +306,7 @@ impl BatchStatement {
 ///
 /// `None` therefore means "this version of the engine does not count it", and the service layer
 /// says so in one place rather than putting a zero on the wire that reads like a measurement.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Clone, Default, PartialEq)]
 pub struct GraphResult {
     /// The result's column names, in order.
     pub columns: Vec<String>,
@@ -1072,7 +1072,7 @@ impl Graph {
 }
 
 /// One operator of a statement's plan (`Explain`, GR1 Task 6).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct PlanNode {
     /// The operator, for example `NodeScan`.
     pub name: String,
@@ -1089,7 +1089,7 @@ pub struct PlanNode {
 }
 
 /// A statement's plan (`Explain`, GR1 Task 6).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct ExplainedPlan {
     /// The operator tree.
     pub root: PlanNode,
@@ -1168,6 +1168,65 @@ fn parse_profile(text: &str) -> PlanNode {
             children: roots,
             ..PlanNode::default()
         },
+    }
+}
+
+// Debug forms that never print a value (review fix 1, M3; the Global Constraints' "Secrets and
+// literals"): rows print their size, statements their redacted text and parameter names, plans
+// their redacted labels.
+
+impl fmt::Debug for GraphRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GraphRow")
+            .field("values", &self.values.len())
+            .finish()
+    }
+}
+
+impl fmt::Debug for BatchStatement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut names: Vec<&String> = self.parameters.keys().collect();
+        names.sort();
+        f.debug_struct("BatchStatement")
+            .field("text", &crate::redact::redact_literals(&self.text))
+            .field("parameters", &names)
+            .finish()
+    }
+}
+
+impl fmt::Debug for GraphResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GraphResult")
+            .field("columns", &self.columns)
+            .field("column_types", &self.column_types)
+            .field("rows", &self.rows.len())
+            .field("rows_read", &self.rows_read)
+            .field("elapsed_nanos", &self.elapsed_nanos)
+            .field("truncated", &self.truncated)
+            .field("wrote", &self.wrote)
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for PlanNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PlanNode")
+            .field("name", &self.name)
+            .field("label", &crate::redact::redact_literals(&self.label))
+            .field("line", &crate::redact::redact_literals(&self.line))
+            .field("children", &self.children)
+            .field("rows", &self.rows)
+            .field("elapsed_nanos", &self.elapsed_nanos)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ExplainedPlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ExplainedPlan")
+            .field("root", &self.root)
+            .field("text", &crate::redact::redact_literals(&self.text))
+            .finish()
     }
 }
 

@@ -1112,3 +1112,38 @@ async fn a_stream_holds_its_slots_and_is_capped_in_bytes() {
         "a finished stream frees its slot"
     );
 }
+
+/// Review fix 1, M3: the engine types' `Debug` never prints a value: rows print their size,
+/// statements their redacted text and parameter names, plans their redacted text.
+#[test]
+fn debug_forms_never_print_values() {
+    use loams_graph::{BatchStatement, Graph, OpenSpec};
+    let statement = BatchStatement {
+        text: "MATCH (u {token: 'tok_secret'}) WHERE u.pin = 4242 RETURN u".to_string(),
+        parameters: [("pw".to_string(), grafeo::Value::from("hunter2"))].into(),
+    };
+    let shown = format!("{statement:?}");
+    assert!(
+        !shown.contains("tok_secret") && !shown.contains("4242") && !shown.contains("hunter2"),
+        "{shown}"
+    );
+    assert!(shown.contains("pw"), "{shown}");
+    let engine = Engine::new();
+    let graph = Graph::open(&engine, "acme", "dbg", OpenSpec::default()).expect("open");
+    let result = graph
+        .execute("RETURN 'tok_secret' AS s, 4242 AS n", true)
+        .expect("run");
+    let shown = format!("{result:?}");
+    assert!(
+        !shown.contains("tok_secret") && !shown.contains("4242"),
+        "{shown}"
+    );
+    let plan = graph
+        .explain_within(
+            "MATCH (n:T) WHERE n.secret = 'tok_secret' RETURN n",
+            &StatementLimits::DEFAULT,
+        )
+        .expect("plan");
+    let shown = format!("{plan:?}");
+    assert!(!shown.contains("tok_secret"), "{shown}");
+}
