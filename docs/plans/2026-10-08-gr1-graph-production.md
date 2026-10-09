@@ -920,7 +920,7 @@ Rulings:
 - The pattern for a plugin to call Connect: inject `transport`, then `createClient(<pkg>.<Service>, transport)` from `@loams/proto`, as `plugins/data-studio/src/client.ts:102` does.
 - In Electron the transport is `createConnectTransport({ baseUrl: page origin, useBinaryFormat: true, fetch: desktopFetch })` (`web/packages/platform-electron/src/index.ts:103`).
 - The main process proxies every path that is not `/durable/` or `/loams.live.v1.` to the active server (`apps/desktop-electron/src/main/protocol/route.ts`), so `/loams.graph.v1.*` needs **no proxy change**.
-- Task 8 adds `./graph` to `web/packages/proto` (generation plus `exports`), adds `transport` to the plugin's `inject`, and adds `graph` to `apps/desktop-electron/scripts/fetch-engine.mjs`'s `--features live,durable`, its README, and `test/e2e/smoke.spec.ts`'s message. Coordination with the AP owner still applies.
+- Task 8 adds `./graph` to `web/packages/proto` (generation plus `exports`), adds `transport` to the plugin's `inject`, and adds `graph` to `apps/desktop-electron/scripts/fetch-engine.mjs`'s `--features live,durable,live-tikv`, its README, and `test/e2e/smoke.spec.ts`'s message. Coordination with the AP owner still applies.
 
 **R0.21 Licences (changes Task 1).**
 - All six crates declare `license = "Apache-2.0"` in their published `Cargo.toml`, and crates.io agrees for 0.5.42 through 0.5.44.

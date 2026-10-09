@@ -79,7 +79,7 @@ jobs:
 
       # The desktop engine needs the live and durable cargo features; the default build lacks them.
       - name: engine
-        run: cargo build --release -p loams --features live,durable
+        run: cargo build --release -p loams --features live,durable,live-tikv
 
       - name: package (unsigned)
         run: pnpm nx run loams-desktop-electron:${{ matrix.target }} --outputStyle=static

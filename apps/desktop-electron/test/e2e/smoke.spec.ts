@@ -53,7 +53,7 @@ function resolveEngine(): string | undefined {
 	}
 	if (!found && mode === "real")
 		throw new Error(
-			"LOAMS_E2E_ENGINE=real but no release `loams` was found (build with --features live,durable or set LOAMS_BIN)",
+			"LOAMS_E2E_ENGINE=real but no release `loams` was found (build with --features live,durable,live-tikv or set LOAMS_BIN)",
 		);
 	return found;
 }
