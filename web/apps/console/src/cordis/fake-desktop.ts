@@ -621,6 +621,17 @@ function previewStacks(): LoamsDesktopApi['stacks'] {
     wesql: { phase: 'stopped' },
     tikv: { phase: 'unavailable', reason: 'no_container_runtime' },
   };
+  // `?pgmismatch` previews the postgres stack holding Postgres 16 data (PG2 R2.2).
+  if (/[?&]pgmismatch\b/.test(globalThis.location?.search ?? '')) {
+    states.postgres = {
+      phase: 'error',
+      code: 'pg_major_mismatch',
+      message:
+        'Your local Postgres data was made with Postgres 16, and this version of Loams runs ' +
+        'Postgres 17, which cannot open it. Use "Reset local Postgres data" to delete the local ' +
+        'data and start again, or keep it by staying on the older Loams.',
+    };
+  }
   // `?noruntime` previews the install guidance on every stack.
   if (/[?&]noruntime\b/.test(globalThis.location?.search ?? '')) {
     for (const id of ['postgres', 'wesql'] as const) {
@@ -650,6 +661,11 @@ function previewStacks(): LoamsDesktopApi['stacks'] {
       return ok;
     },
     stop: async (id) => {
+      set(id, { phase: 'stopped' });
+      return ok;
+    },
+    // The preview has no native dialog: the reset is confirmed and the data "deleted".
+    reset: async (id) => {
       set(id, { phase: 'stopped' });
       return ok;
     },

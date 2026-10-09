@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import type {
 	IpcResult,
 	LiveStoreChoice,
+	StackErrorCode,
 	StackId,
 	StackState,
 } from "../../shared/contracts";
@@ -96,6 +97,72 @@ export async function tikvReady(
 		return false;
 	}
 }
+/**
+ * The Postgres major version the postgres stack runs: deploy/neon pins
+ * compute-node-v17 (PG2 Task 2, R2.2).
+ */
+export const PG_MAJOR = 17;
+
+/** The postgres stack's pageserver management API. */
+export const PAGESERVER_ADDR = `127.0.0.1:${STACKS.postgres.ports.pageserver}`;
+
+/** A stack whose containers run but cannot be used, and why. */
+export interface StackProblem {
+	code: StackErrorCode;
+	message: string;
+}
+
+/** What `ready` answers: usable, not yet (still starting), or a problem. */
+export type Readiness = boolean | StackProblem;
+
+export const RESET_POSTGRES_LABEL = "Reset local Postgres data";
+
+/**
+ * The postgres stack is usable once its pageserver answers and every timeline it
+ * holds is of the compute's major version. Data made by an older Loams (Postgres 16)
+ * cannot be read by compute-node-v17, so it is `pg_major_mismatch`, not "starting".
+ */
+export async function postgresReady(
+	fetchFn: (url: string) => Promise<Response>,
+): Promise<Readiness> {
+	const get = async (path: string): Promise<unknown> => {
+		const r = await fetchFn(`http://${PAGESERVER_ADDR}${path}`);
+		if (!r.ok) throw new Error(`status ${r.status}`);
+		return r.json();
+	};
+	let found: { tenant: string; timeline: string; version: unknown }[];
+	try {
+		const tenants = (await get("/v1/tenant")) as { id?: unknown }[];
+		found = [];
+		for (const t of Array.isArray(tenants) ? tenants : []) {
+			const tenant = String(t?.id ?? "");
+			if (!/^[0-9a-f]{32}$/.test(tenant)) continue;
+			const timelines = (await get(`/v1/tenant/${tenant}/timeline`)) as {
+				timeline_id?: unknown;
+				pg_version?: unknown;
+			}[];
+			for (const tl of Array.isArray(timelines) ? timelines : [])
+				found.push({
+					tenant,
+					timeline: String(tl?.timeline_id ?? ""),
+					version: tl?.pg_version,
+				});
+		}
+	} catch {
+		return false;
+	}
+	const other = found.filter((f) => f.version !== PG_MAJOR);
+	if (other.length === 0) return true;
+	const versions = [...new Set(other.map((f) => String(f.version)))].join(", ");
+	return {
+		code: "pg_major_mismatch",
+		message:
+			`Your local Postgres data was made with Postgres ${versions}, and this version of ` +
+			`Loams runs Postgres ${PG_MAJOR}, which cannot open it. Use "${RESET_POSTGRES_LABEL}" ` +
+			`to delete the local data and start again, or keep it by staying on the older Loams.`,
+	};
+}
+
 export const POLL_MS = 5000;
 
 export function composeArgs(
@@ -285,8 +352,12 @@ export interface StackManagerDeps {
 	version?: string;
 	/** Re-copy on every launch (dev: the sources change without a version bump). */
 	alwaysCopy?: boolean;
-	/** Service-level readiness once every container runs (tikv: PD health and a store Up). */
-	ready?: (id: StackId) => Promise<boolean>;
+	/**
+	 * Service-level readiness once every container runs (tikv: PD health and a store Up;
+	 * postgres: the pageserver answers and its timelines are Postgres 17). A problem
+	 * makes the stack an error with its code.
+	 */
+	ready?: (id: StackId) => Promise<Readiness>;
 	logsDir: string;
 	run?: RunFn;
 	timeoutMs?: number;
@@ -398,13 +469,14 @@ export class StackManager extends EventEmitter {
 					message: `unreadable ps output: ${(e as Error).message}`,
 				};
 			}
-			// Running containers are reported as starting until the service answers.
-			if (
-				s.phase === "running" &&
-				this.deps.ready &&
-				!(await this.deps.ready(id).catch(() => false))
-			)
-				s = { phase: "starting" };
+			// Running containers are reported as starting until the service answers,
+			// and as an error when it answers that it cannot be used.
+			if (s.phase === "running" && this.deps.ready) {
+				const r = await this.deps.ready(id).catch(() => false);
+				if (r === false) s = { phase: "starting" };
+				else if (r !== true)
+					s = { phase: "error", code: r.code, message: r.message };
+			}
 		}
 		if (this.failed.has(id) && s.phase === "stopped") s = this.cur.get(id) ?? s;
 		else this.failed.delete(id);
@@ -484,6 +556,36 @@ export class StackManager extends EventEmitter {
 		return { ok: true, value: undefined };
 	}
 
+	/**
+	 * Stops the stack and deletes its named volumes (`compose down -v`): every local
+	 * database, branch and timeline of that stack. Only the stack's own compose project
+	 * (`loams-desktop-<id>`) is touched. The caller confirms first ({@link confirmReset}).
+	 */
+	async reset(id: StackId): Promise<IpcResult<void>> {
+		const rt = await this.runtime();
+		if (!rt) return unavailable();
+		const key = lockKey(id);
+		if (this.locks.has(key))
+			return { ok: false, code: "busy", message: `${id} is already changing` };
+		this.locks.add(key);
+		this.busy.add(id);
+		this.failed.delete(id);
+		try {
+			const r = await this.exec(rt, id, ["down", "-v"]);
+			if (r.code !== 0) {
+				const message = `compose down -v failed (exit ${r.code}); see stacks/${id}.log`;
+				this.failed.add(id);
+				this.set(id, { phase: "error", message });
+				return { ok: false, code: "compose_failed", message };
+			}
+		} finally {
+			this.busy.delete(id);
+			this.locks.delete(key);
+		}
+		await this.state(id);
+		return { ok: true, value: undefined };
+	}
+
 	/** Refreshes every stack once. */
 	async poll(): Promise<void> {
 		await Promise.all(STACK_IDS.map((id) => this.state(id)));
@@ -500,6 +602,20 @@ function unavailable(): IpcResult<void> {
 		code: "unavailable",
 		message: "no_container_runtime",
 	};
+}
+
+/**
+ * Resets a stack only after `confirm` says yes (the IPC layer asks with a native
+ * dialog); a declined reset runs nothing and answers `cancelled`.
+ */
+export async function confirmReset(
+	manager: Pick<StackManager, "reset">,
+	id: StackId,
+	confirm: (id: StackId) => Promise<boolean>,
+): Promise<IpcResult<void>> {
+	if (!(await confirm(id)))
+		return { ok: false, code: "cancelled", message: "reset cancelled" };
+	return manager.reset(id);
 }
 
 /** Consecutive polls that must see tikv stopped before the engine drops TiKV. */

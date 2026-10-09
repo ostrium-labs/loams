@@ -70,6 +70,7 @@ const api: LoamsDesktopApi = {
 		state: (id) => invoke(CH.stacksState, id),
 		start: (id) => invoke(CH.stacksStart, id),
 		stop: (id) => invoke(CH.stacksStop, id),
+		reset: (id) => invoke(CH.stacksReset, id),
 		openLogs: (id) => invoke(CH.stacksOpenLogs, id),
 		onState: (cb) => {
 			const listener = (_e: unknown, id: StackId, s: StackState) => cb(id, s);

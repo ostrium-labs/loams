@@ -1,14 +1,17 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { ipcMain, shell } from "electron";
+import { dialog, ipcMain, shell } from "electron";
 import { CH, type StackId, type StackState } from "../../shared/contracts";
 import { assertTrustedSender } from "../security/policy";
 import { getMainWindow } from "../shell/main-window";
 import { type ComposeRuntime, detectRuntime } from "./runtime";
 import {
+	confirmReset,
 	POLL_MS,
 	PROBE_TIMEOUT_MS,
+	postgresReady,
+	RESET_POSTGRES_LABEL,
 	STACK_IDS,
 	StackManager,
 	type StackManagerDeps,
@@ -65,11 +68,13 @@ export function createStackManager(
 	return new StackManager({
 		...deps,
 		runtime: () => resolveRuntime(whichBin, composeWorks),
-		ready: async (id) =>
-			id !== "tikv" ||
-			tikvReady((url) =>
-				fetch(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) }),
-			),
+		ready: async (id) => {
+			const probe = (url: string) =>
+				fetch(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+			if (id === "tikv") return tikvReady(probe);
+			if (id === "postgres") return postgresReady(probe);
+			return true;
+		},
 	});
 }
 
@@ -99,6 +104,11 @@ export function registerStacksIpc(
 		assertTrustedSender(e);
 		return isStackId(id) ? manager.stop(id) : bad();
 	});
+	ipcMain.handle(CH.stacksReset, async (e, id: unknown) => {
+		assertTrustedSender(e);
+		if (!isStackId(id)) return bad();
+		return confirmReset(manager, id, askReset);
+	});
 	ipcMain.handle(CH.stacksOpenLogs, async (e, id: unknown) => {
 		assertTrustedSender(e);
 		if (!isStackId(id)) return bad();
@@ -119,4 +129,32 @@ export function registerStacksIpc(
 		const w = getMainWindow();
 		if (w && !w.isDestroyed()) void manager.poll();
 	}, POLL_MS).unref();
+}
+
+/** The native confirmation before `down -v`: Cancel is the default and the Escape answer. */
+async function askReset(id: StackId): Promise<boolean> {
+	const opts = {
+		type: "warning" as const,
+		buttons: [
+			"Cancel",
+			id === "postgres" ? RESET_POSTGRES_LABEL : `Reset ${id} data`,
+		],
+		defaultId: 0,
+		cancelId: 0,
+		noLink: true,
+		title: "Reset local data",
+		message:
+			id === "postgres"
+				? "Delete all local Postgres data?"
+				: `Delete all local ${id} data?`,
+		detail:
+			"This stops the stack and deletes its volumes: every local database, branch and " +
+			"timeline in it. It cannot be undone. Data on Loams servers is not touched.",
+	};
+	const w = getMainWindow();
+	const r =
+		w && !w.isDestroyed()
+			? await dialog.showMessageBox(w, opts)
+			: await dialog.showMessageBox(opts);
+	return r.response === 1;
 }

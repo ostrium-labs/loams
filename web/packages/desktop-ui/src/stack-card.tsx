@@ -136,9 +136,32 @@ export function StackCard({
         {state.phase === 'starting' && (
           <p className="m-0 text-sm text-muted">Starting containers. This can take a minute.</p>
         )}
-        {state.phase === 'error' && (
+        {state.phase === 'error' && state.code !== 'pg_major_mismatch' && (
           <Notice tone="danger" title="The stack failed">
             {state.message}
+          </Notice>
+        )}
+        {state.phase === 'error' && state.code === 'pg_major_mismatch' && (
+          <Notice tone="danger" title="Local data from another Postgres version">
+            <div className="flex flex-col gap-2">
+              <span>{state.message}</span>
+              <div>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={busy}
+                  onClick={() =>
+                    act(async () => {
+                      const r = await desktop.stacks.reset(id);
+                      // Declined in the confirmation: nothing to report.
+                      return !r.ok && r.code === 'cancelled' ? { ok: true, value: undefined } : r;
+                    })
+                  }
+                >
+                  Reset local Postgres data
+                </Button>
+              </div>
+            </div>
           </Notice>
         )}
         {state.phase === 'running' && (

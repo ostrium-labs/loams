@@ -20,8 +20,13 @@ import { detectRuntime } from "../src/main/stacks/runtime";
 import {
 	bindLiveToTikv,
 	composeArgs,
+	confirmReset,
 	LIVE_TIKV_UNAVAILABLE,
+	PAGESERVER_ADDR,
+	PG_MAJOR,
 	parsePs,
+	postgresReady,
+	RESET_POSTGRES_LABEL,
 	type RunFn,
 	StackManager,
 	syncStackDir,
@@ -564,5 +569,143 @@ describe("tikv readiness", () => {
 		expect(await m.state("tikv")).toEqual({ phase: "starting" });
 		ready = true;
 		expect(await m.state("tikv")).toMatchObject({ phase: "running" });
+	});
+});
+
+describe("postgres readiness and reset (PG2 R2.2)", () => {
+	const T1 = "4c6f616d734e656f6e54656e616e7431";
+	const T2 = "4c6f616d734e656f6e54656e616e7432";
+	/** A pageserver answering /v1/tenant and each tenant's timelines. */
+	const pageserver =
+		(
+			timelines: Record<string, { timeline_id: string; pg_version: number }[]>,
+		) =>
+		async (url: string): Promise<Response> => {
+			const path = new URL(url).pathname;
+			if (path === "/v1/tenant")
+				return Response.json(
+					Object.keys(timelines).map((id) => ({
+						id,
+						state: { slug: "Active" },
+					})),
+				);
+			const tenant = /^\/v1\/tenant\/([0-9a-f]{32})\/timeline$/.exec(path)?.[1];
+			if (tenant && timelines[tenant]) return Response.json(timelines[tenant]);
+			return new Response('{"msg":"NotFound"}', { status: 404 });
+		};
+
+	it("ready_when_every_timeline_is_the_computes_major", async () => {
+		expect(PG_MAJOR).toBe(17);
+		const urls: string[] = [];
+		const fetchFn = pageserver({
+			[T1]: [{ timeline_id: "a".repeat(32), pg_version: 17 }],
+			[T2]: [],
+		});
+		expect(
+			await postgresReady(async (u) => {
+				urls.push(u);
+				return fetchFn(u);
+			}),
+		).toBe(true);
+		expect(urls[0]).toBe(`http://${PAGESERVER_ADDR}/v1/tenant`);
+		expect(PAGESERVER_ADDR).toBe("127.0.0.1:9898");
+		// No tenant yet is ready too.
+		expect(await postgresReady(pageserver({}))).toBe(true);
+	});
+
+	it("an_older_major_is_pg_major_mismatch", async () => {
+		const r = await postgresReady(
+			pageserver({
+				[T1]: [
+					{ timeline_id: "a".repeat(32), pg_version: 17 },
+					{ timeline_id: "b".repeat(32), pg_version: 16 },
+				],
+			}),
+		);
+		expect(r).toMatchObject({ code: "pg_major_mismatch" });
+		const message = (r as { message: string }).message;
+		expect(message).toContain("Postgres 16");
+		expect(message).toContain("Postgres 17");
+		expect(message).toContain(RESET_POSTGRES_LABEL);
+	});
+
+	it("an_unreachable_pageserver_is_not_ready_yet", async () => {
+		expect(
+			await postgresReady(async () => {
+				throw new Error("ECONNREFUSED");
+			}),
+		).toBe(false);
+		expect(
+			await postgresReady(async () => new Response("", { status: 503 })),
+		).toBe(false);
+	});
+
+	it("a_mismatch_makes_the_stack_an_error_with_its_code", async () => {
+		const ps = JSON.stringify(
+			["rustfs", "storage_broker", "pageserver", "safekeeper1", "compute1"].map(
+				(Service) => ({ Service, State: "running", Publishers: [] }),
+			),
+		);
+		const m = new StackManager({
+			runtime: { bin: "docker", args: ["compose"] },
+			stacksDir: "/r",
+			logsDir: LOGS(),
+			run: async () => ({ code: 0, stdout: ps }),
+			ready: (id) =>
+				id === "postgres"
+					? postgresReady(
+							pageserver({
+								[T1]: [{ timeline_id: "a".repeat(32), pg_version: 16 }],
+							}),
+						)
+					: Promise.resolve(true),
+		});
+		const s = await m.state("postgres");
+		expect(s).toMatchObject({ phase: "error", code: "pg_major_mismatch" });
+	});
+
+	it("reset_runs_down_v_only_after_confirmation", async () => {
+		const calls: string[][] = [];
+		const m = manager(
+			{ bin: "podman", args: ["compose"] },
+			async (bin, args) => {
+				calls.push([bin, ...args]);
+				return { code: 0, stdout: "" };
+			},
+		);
+		const declined = await confirmReset(m, "postgres", async () => false);
+		expect(declined).toEqual({
+			ok: false,
+			code: "cancelled",
+			message: "reset cancelled",
+		});
+		expect(calls).toEqual([]);
+		const asked: string[] = [];
+		const r = await confirmReset(m, "postgres", async (id) => {
+			asked.push(id);
+			return true;
+		});
+		expect(r).toEqual({ ok: true, value: undefined });
+		expect(asked).toEqual(["postgres"]);
+		expect(calls[0]).toEqual([
+			"podman",
+			"compose",
+			"-p",
+			"loams-desktop-postgres",
+			"-f",
+			"/res/stacks/neon/compose.yaml",
+			"down",
+			"-v",
+		]);
+		expect(await m.state("postgres")).toEqual({ phase: "stopped" });
+	});
+
+	it("a_failed_reset_is_an_error", async () => {
+		const m = manager({ bin: "docker", args: ["compose"] }, async (_b, args) =>
+			args.includes("down") ? { code: 1, stdout: "" } : { code: 0, stdout: "" },
+		);
+		const r = await m.reset("postgres");
+		expect(r).toMatchObject({ ok: false, code: "compose_failed" });
+		expect(await m.state("postgres")).toMatchObject({ phase: "error" });
 	});
 });

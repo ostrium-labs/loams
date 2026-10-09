@@ -13,7 +13,10 @@ HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
   this.removeAttribute('open');
 };
 
-function fakeStacks(initial: StackState) {
+function fakeStacks(
+  initial: StackState,
+  resetAnswer: IpcResult<void> = { ok: true, value: undefined },
+) {
   let cb: (id: 'postgres', s: StackState) => void = () => undefined;
   const calls: string[] = [];
   const desktop = {
@@ -26,6 +29,10 @@ function fakeStacks(initial: StackState) {
       stop: async () => {
         calls.push('stop');
         return { ok: true as const, value: undefined };
+      },
+      reset: async (): Promise<IpcResult<void>> => {
+        calls.push('reset');
+        return resetAnswer;
       },
       onState: (f: typeof cb) => {
         cb = f;
@@ -67,6 +74,21 @@ describe('stack card', () => {
     expect((screen.getByRole('button', { name: 'Open logs' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  it('pg_major_mismatch_offers_the_reset_and_a_declined_one_is_quiet', async () => {
+    const mismatch: StackState = {
+      phase: 'error',
+      code: 'pg_major_mismatch',
+      message: 'Your local Postgres data was made with Postgres 16.',
+    };
+    const f = fakeStacks(mismatch, { ok: false, code: 'cancelled', message: 'reset cancelled' });
+    render(<StackCard desktop={f.desktop as never} id="postgres" />);
+    expect(await screen.findByText('Local data from another Postgres version')).toBeTruthy();
+    expect(screen.getByText(/made with Postgres 16/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset local Postgres data' }));
+    await waitFor(() => expect(f.calls).toEqual(['reset']));
+    expect(screen.queryByText('Could not change the stack')).toBeNull();
   });
 
   it('no_runtime_guidance', async () => {

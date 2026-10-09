@@ -9,6 +9,9 @@ export const STACKS: { id: StackId; label: string; note: string }[] = [
   { id: 'tikv', label: 'TiKV', note: 'Distributed key-value store' },
 ];
 
+/** The action that deletes the postgres stack's data (the desktop's `stacks.reset`). */
+export const RESET_POSTGRES_LABEL = 'Reset local Postgres data';
+
 export const STACK_LABEL: Record<StackState['phase'], string> = {
   unavailable: 'Unavailable',
   stopped: 'Stopped',
@@ -61,7 +64,8 @@ export function StacksSection({ desktop }: { desktop: LoamsDesktopApi }) {
     setActionError(undefined);
     try {
       const res = await op();
-      if (!res.ok) setActionError(`${id}: ${res.message}`);
+      // A reset the user declined in the confirmation is not a failure.
+      if (!res.ok && res.code !== 'cancelled') setActionError(`${id}: ${res.message}`);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -136,6 +140,20 @@ export function StacksSection({ desktop }: { desktop: LoamsDesktopApi }) {
                 const st = states[s.id];
                 if (!st || st.phase === 'unavailable') return null;
                 const on = st.phase === 'running' || st.phase === 'starting';
+                // Data of another Postgres major version: the only way on is to delete
+                // it (the main process asks for a native confirmation first).
+                if (st.phase === 'error' && st.code === 'pg_major_mismatch') {
+                  return (
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={busy === s.id}
+                      onClick={() => void run(s.id, () => desktop.stacks.reset(s.id))}
+                    >
+                      {RESET_POSTGRES_LABEL}
+                    </Button>
+                  );
+                }
                 return on ? (
                   <Button
                     size="sm"

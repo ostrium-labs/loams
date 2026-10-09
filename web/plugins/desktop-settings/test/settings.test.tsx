@@ -25,6 +25,7 @@ function fake(
     update?: Update;
     liveStore?: 'embedded' | 'tikv-stack';
     liveNotice?: string;
+    resetAnswer?: { ok: false; code: string; message: string };
   } = {},
 ) {
   const calls: string[] = [];
@@ -70,6 +71,10 @@ function fake(
       stop: async (id: string) => {
         calls.push(`stop:${id}`);
         return ok;
+      },
+      reset: async (id: string) => {
+        calls.push(`reset:${id}`);
+        return init.resetAnswer ?? ok;
       },
       onState: () => () => undefined,
     },
@@ -188,6 +193,24 @@ describe('local stacks section', () => {
     render(<StacksSection desktop={api} />);
     await screen.findByText('No container runtime found');
     expect(screen.queryByRole('button', { name: /Start/ })).toBeNull();
+  });
+
+  it('pg_major_mismatch_offers_the_reset_and_a_declined_one_is_quiet', async () => {
+    const { api, calls } = fake({
+      stacks: {
+        postgres: {
+          phase: 'error',
+          code: 'pg_major_mismatch',
+          message: 'Your local Postgres data was made with Postgres 16.',
+        },
+      },
+      resetAnswer: { ok: false, code: 'cancelled', message: 'reset cancelled' },
+    });
+    render(<StacksSection desktop={api} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset local Postgres data' }));
+    await waitFor(() => expect(calls).toContain('reset:postgres'));
+    expect(screen.getByText(/made with Postgres 16/)).toBeTruthy();
+    expect(screen.queryByText('That did not work')).toBeNull();
   });
 
   it('start_stop_and_error_reporting', async () => {
