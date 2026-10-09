@@ -760,3 +760,101 @@ async fn operations_are_indexed_by_id_and_namespace() {
     // The approval state Task 9 sets exists.
     assert_ne!(OperationState::AwaitingApproval, OperationState::Pending);
 }
+
+/// A mutation without a principal is refused before anything is read.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_empty_principal_is_refused() {
+    let h = harness!();
+    let nobody = loams_pg_control::service::Caller {
+        principal: String::new(),
+        admin: true,
+    };
+    let e = h
+        .service
+        .create_project(&nobody, create("shop", "k1"))
+        .await
+        .expect_err("no principal");
+    assert_eq!(e.reason, Reason::Unauthenticated);
+    assert!(all_projects(&h).await.is_empty());
+}
+
+/// After its entry expired, a key's next call succeeds as a fresh one,
+/// replacing the entry, and is replayed from then on.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_expired_entry_is_replaced_by_a_fresh_call() {
+    let h = harness!();
+    let first = h
+        .service
+        .create_project(&user(), create("shop", "k1"))
+        .await
+        .expect("create");
+    h.clock.advance_ms(24 * 3600 * 1000 + 1);
+    let second = h
+        .service
+        .create_project(&user(), create("store", "k1"))
+        .await
+        .expect("a fresh call under the expired key");
+    assert_ne!(second.operation.id, first.operation.id);
+    let replay = h
+        .service
+        .create_project(&user(), create("store", "k1"))
+        .await
+        .expect("a replay of the new entry");
+    assert_eq!(replay, second);
+    let entry = ledger_entry(&h).await;
+    assert_eq!(entry.record.created_at_ms, h.clock.now_ms());
+    assert_eq!(h.service.ledger().prune(h.clock.now_ms()).await, Ok(0));
+}
+
+/// A branch protected between a non-admin's project delete reading the
+/// branches and its commit fails that delete (the branches it read are
+/// checked in its batch); its second try sees the protection.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_branch_protected_during_a_project_delete_conflicts() {
+    use crate::common::{FakeNeon, fresh_store, harness_with, once_before, plain_service};
+
+    let Some(store) = fresh_store().await else {
+        eprintln!("skipped: no store");
+        return;
+    };
+    let setup = plain_service(&store, &FakeNeon::default());
+    let p = setup
+        .create_project(&user(), create("shop", "k1"))
+        .await
+        .expect("create")
+        .project
+        .record;
+    let main = p.default_branch_id.clone().expect("main");
+    let hook = {
+        let (store, pid) = (store.clone(), p.id.clone());
+        once_before("DeleteProject", move || {
+            let other = plain_service(&store, &FakeNeon::default());
+            let req = UpdateBranch {
+                namespace: "acme".into(),
+                project_id: pid.clone(),
+                branch_id: main.clone(),
+                protected: Some(true),
+                idempotency_key: "p1".into(),
+                ..UpdateBranch::default()
+            };
+            async move {
+                other.update_branch(&user(), req).await.expect("protect");
+            }
+        })
+    };
+    let h = harness_with(store, Some(hook));
+    let e = h
+        .service
+        .delete_project(
+            &user(),
+            DeleteProject {
+                namespace: "acme".into(),
+                project_id: p.id.clone(),
+                expected_version: None,
+                idempotency_key: "d1".into(),
+            },
+        )
+        .await
+        .expect_err("protected meanwhile");
+    assert_eq!(e.reason, Reason::BranchProtected, "{e}");
+}

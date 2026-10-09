@@ -1000,3 +1000,84 @@ async fn a_point_before_the_parent_starts_is_refused() {
         .await
         .expect("at dev's start");
 }
+
+/// UpdateBranch's rules: no update on a deleting project, no expiry in the
+/// past, and only an admin sets an expiry on a protected or the default
+/// branch.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn update_branch_rules() {
+    use loams_pg_control::service::projects::DeleteProject;
+
+    let h = harness!();
+    let (p, main) = project(&h).await;
+    let prod = h
+        .service
+        .create_branch(
+            &user(),
+            CreateBranch {
+                protected: true,
+                ..branch(&p.id, "prod", "b1")
+            },
+        )
+        .await
+        .expect("prod")
+        .branch
+        .branch
+        .record
+        .id;
+    let expire = |id: &str, at: u64, key: &str| UpdateBranch {
+        namespace: "acme".into(),
+        project_id: p.id.clone(),
+        branch_id: id.into(),
+        expire_at_ms: Some(Some(at)),
+        idempotency_key: key.into(),
+        ..UpdateBranch::default()
+    };
+    let e = h
+        .service
+        .update_branch(&admin(), expire(&prod, T0_MS, "u0"))
+        .await
+        .expect_err("an expiry now");
+    assert_eq!(e.reason, Reason::InvalidArgument);
+    for (id, key) in [(&prod, "u1"), (&main, "u2")] {
+        let e = h
+            .service
+            .update_branch(&user(), expire(id, T0_MS + 60_000, key))
+            .await
+            .expect_err("protected or default");
+        assert_eq!(e.reason, Reason::PermissionDenied, "{id}");
+    }
+    h.service
+        .update_branch(&admin(), expire(&prod, T0_MS + 60_000, "u3"))
+        .await
+        .expect("an admin may");
+
+    h.service
+        .delete_project(
+            &admin(),
+            DeleteProject {
+                namespace: "acme".into(),
+                project_id: p.id.clone(),
+                expected_version: None,
+                idempotency_key: "d1".into(),
+            },
+        )
+        .await
+        .expect("delete the project");
+    let e = h
+        .service
+        .update_branch(
+            &user(),
+            UpdateBranch {
+                namespace: "acme".into(),
+                project_id: p.id.clone(),
+                branch_id: main.clone(),
+                name: Some("other".into()),
+                idempotency_key: "u4".into(),
+                ..UpdateBranch::default()
+            },
+        )
+        .await
+        .expect_err("a deleting project");
+    assert_eq!(e.reason, Reason::FailedPrecondition);
+}

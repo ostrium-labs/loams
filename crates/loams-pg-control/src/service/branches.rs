@@ -354,14 +354,16 @@ impl<N: NeonRead> PgService<N> {
         if req.ttl.is_some_and(|t| t.is_zero()) {
             return Err(ServiceError::invalid("ttl", "a ttl is above zero"));
         }
-        let claim = match self
-            .begin(caller, "CreateBranch", &req.idempotency_key, &req)
-            .await?
-        {
-            Begin::Replay(first) => return Ok(first),
-            Begin::Fresh(claim) => claim,
-        };
         for _ in 0..super::ATTEMPTS {
+            // Each try asks the ledger again: an expired entry another
+            // call replaced meanwhile is then its answer.
+            let claim = match self
+                .begin(caller, "CreateBranch", &req.idempotency_key, &req)
+                .await?
+            {
+                Begin::Replay(first) => return Ok(first),
+                Begin::Fresh(claim) => claim,
+            };
             let project = self.project(&req.namespace, &req.project_id).await?;
             if project.record.state != ProjectState::Creating
                 && project.record.state != ProjectState::Ready
@@ -537,8 +539,11 @@ impl<N: NeonRead> PgService<N> {
     ///
     /// # Errors
     ///
-    /// `invalid_argument` (an empty mask too); `permission_denied`;
-    /// `already_exists`; `aborted`; `failed_precondition` while deleting.
+    /// `invalid_argument` (an empty mask too, or an expiry not in the
+    /// future); `permission_denied` (lifting a protection, or an expiry on
+    /// a protected or the default branch, without `admin`);
+    /// `already_exists`; `aborted`; `failed_precondition` while the branch
+    /// or the project is deleting.
     pub async fn update_branch(
         &self,
         caller: &Caller,
@@ -553,14 +558,16 @@ impl<N: NeonRead> PgService<N> {
         if let Some(name) = &req.name {
             validate_name(name).map_err(|e| ServiceError::invalid("branch.name", e.to_string()))?;
         }
-        let claim = match self
-            .begin(caller, "UpdateBranch", &req.idempotency_key, &req)
-            .await?
-        {
-            Begin::Replay(first) => return Ok(first),
-            Begin::Fresh(claim) => claim,
-        };
         for _ in 0..super::ATTEMPTS {
+            // Each try asks the ledger again: an expired entry another
+            // call replaced meanwhile is then its answer.
+            let claim = match self
+                .begin(caller, "UpdateBranch", &req.idempotency_key, &req)
+                .await?
+            {
+                Begin::Replay(first) => return Ok(first),
+                Begin::Fresh(claim) => claim,
+            };
             let project = self.project(&req.namespace, &req.project_id).await?;
             let current = self
                 .branch(&req.project_id, &req.branch_id, "branch.id")
@@ -571,14 +578,44 @@ impl<N: NeonRead> PgService<N> {
                     "the branch is being deleted or has failed",
                 ));
             }
+            if project.record.state == ProjectState::Deleting {
+                return Err(ServiceError::failed_precondition(
+                    "the project is being deleted",
+                ));
+            }
             if current.record.protected && req.protected == Some(false) && !caller.admin {
                 return Err(ServiceError::new(
                     Reason::PermissionDenied,
                     "lifting a branch's protection needs the admin relation",
                 ));
             }
+            if let Some(Some(at_ms)) = req.expire_at_ms {
+                if at_ms <= self.now_ms() {
+                    return Err(ServiceError::invalid(
+                        "branch.expire_time",
+                        "an expiry is in the future",
+                    ));
+                }
+                let protected = current.record.protected || req.protected == Some(true);
+                let default =
+                    project.record.default_branch_id.as_deref() == Some(current.record.id.as_str());
+                if (protected || default) && !caller.admin {
+                    return Err(ServiceError::new(
+                        Reason::PermissionDenied,
+                        "an expiry on a protected or the default branch needs the admin relation",
+                    ));
+                }
+            }
             let mut branch = current.record.clone();
             let mut batch = Batch::new();
+            // A delete of the project meanwhile fails the update.
+            batch.check::<ProjectRec>(
+                &ProjectKey {
+                    namespace: req.namespace.clone(),
+                    id: req.project_id.clone(),
+                },
+                Some(project.version),
+            )?;
             let mut renamed_at = None;
             if let Some(name) = req.name.as_ref().filter(|n| **n != branch.name) {
                 let old = BranchNameKey {
@@ -649,14 +686,16 @@ impl<N: NeonRead> PgService<N> {
         caller: &Caller,
         req: DeleteBranch,
     ) -> Result<OperationRec, ServiceError> {
-        let claim = match self
-            .begin(caller, "DeleteBranch", &req.idempotency_key, &req)
-            .await?
-        {
-            Begin::Replay(first) => return Ok(first),
-            Begin::Fresh(claim) => claim,
-        };
         for _ in 0..super::ATTEMPTS {
+            // Each try asks the ledger again: an expired entry another
+            // call replaced meanwhile is then its answer.
+            let claim = match self
+                .begin(caller, "DeleteBranch", &req.idempotency_key, &req)
+                .await?
+            {
+                Begin::Replay(first) => return Ok(first),
+                Begin::Fresh(claim) => claim,
+            };
             let project = self.project(&req.namespace, &req.project_id).await?;
             let current = self
                 .branch(&req.project_id, &req.branch_id, "branch_id")
@@ -737,14 +776,16 @@ impl<N: NeonRead> PgService<N> {
         caller: &Caller,
         req: SetDefaultBranch,
     ) -> Result<Versioned<ProjectRec>, ServiceError> {
-        let claim = match self
-            .begin(caller, "SetDefaultBranch", &req.idempotency_key, &req)
-            .await?
-        {
-            Begin::Replay(first) => return Ok(first),
-            Begin::Fresh(claim) => claim,
-        };
         for _ in 0..super::ATTEMPTS {
+            // Each try asks the ledger again: an expired entry another
+            // call replaced meanwhile is then its answer.
+            let claim = match self
+                .begin(caller, "SetDefaultBranch", &req.idempotency_key, &req)
+                .await?
+            {
+                Begin::Replay(first) => return Ok(first),
+                Begin::Fresh(claim) => claim,
+            };
             let current = self.project(&req.namespace, &req.project_id).await?;
             check_version(req.expected_version, current.version)?;
             if current.record.state == ProjectState::Deleting {

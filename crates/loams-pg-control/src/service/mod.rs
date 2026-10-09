@@ -396,6 +396,12 @@ impl<N: NeonRead> PgService<N> {
         key: &str,
         request: &Q,
     ) -> Result<Begin<T>, ServiceError> {
+        if caller.principal.is_empty() {
+            return Err(ServiceError::new(
+                Reason::Unauthenticated,
+                "a mutation needs an authenticated principal",
+            ));
+        }
         self.ledger
             .begin(caller, rpc, key, request, self.now_ms())
             .await

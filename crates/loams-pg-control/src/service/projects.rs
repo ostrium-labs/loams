@@ -18,7 +18,7 @@ use super::{
 use crate::ids::{BranchId, ProjectId, tenant_id, timeline_id};
 use crate::model::{
     BranchNameRec, BranchRec, BranchState, ProjectKey, ProjectNameKey, ProjectNameRec,
-    ProjectPrefix, ProjectRec, ProjectState, WalService,
+    ProjectPrefix, ProjectRec, ProjectState, Record, WalService,
 };
 use crate::names::validate_name;
 use crate::store::{Batch, PgControlStore, Versioned};
@@ -148,14 +148,16 @@ impl<N: NeonRead> PgService<N> {
             "" => self.config.default_wal_pool.clone(),
             p => p.to_string(),
         };
-        let claim = match self
-            .begin(caller, "CreateProject", &req.idempotency_key, &req)
-            .await?
-        {
-            Begin::Replay(first) => return Ok(first),
-            Begin::Fresh(claim) => claim,
-        };
         for _ in 0..super::ATTEMPTS {
+            // Each try asks the ledger again: an expired entry another
+            // call replaced meanwhile is then its answer.
+            let claim = match self
+                .begin(caller, "CreateProject", &req.idempotency_key, &req)
+                .await?
+            {
+                Begin::Replay(first) => return Ok(first),
+                Begin::Fresh(claim) => claim,
+            };
             let now = self.now_ms();
             let project_id = ProjectId::new();
             let main_id = BranchId::new();
@@ -306,14 +308,16 @@ impl<N: NeonRead> PgService<N> {
             Some(r) => Some(self.retention(Some(r))?),
             None => None,
         };
-        let claim = match self
-            .begin(caller, "UpdateProject", &req.idempotency_key, &req)
-            .await?
-        {
-            Begin::Replay(first) => return Ok(first),
-            Begin::Fresh(claim) => claim,
-        };
         for _ in 0..super::ATTEMPTS {
+            // Each try asks the ledger again: an expired entry another
+            // call replaced meanwhile is then its answer.
+            let claim = match self
+                .begin(caller, "UpdateProject", &req.idempotency_key, &req)
+                .await?
+            {
+                Begin::Replay(first) => return Ok(first),
+                Begin::Fresh(claim) => claim,
+            };
             let current = self.project(&req.namespace, &req.project_id).await?;
             check_version(req.expected_version, current.version)?;
             if current.record.state == ProjectState::Deleting {
@@ -383,14 +387,16 @@ impl<N: NeonRead> PgService<N> {
         caller: &Caller,
         req: DeleteProject,
     ) -> Result<OperationRec, ServiceError> {
-        let claim = match self
-            .begin(caller, "DeleteProject", &req.idempotency_key, &req)
-            .await?
-        {
-            Begin::Replay(first) => return Ok(first),
-            Begin::Fresh(claim) => claim,
-        };
         for _ in 0..super::ATTEMPTS {
+            // Each try asks the ledger again: an expired entry another
+            // call replaced meanwhile is then its answer.
+            let claim = match self
+                .begin(caller, "DeleteProject", &req.idempotency_key, &req)
+                .await?
+            {
+                Begin::Replay(first) => return Ok(first),
+                Begin::Fresh(claim) => claim,
+            };
             let current = self.project(&req.namespace, &req.project_id).await?;
             check_version(req.expected_version, current.version)?;
             if current.record.state == ProjectState::Deleting {
@@ -398,14 +404,16 @@ impl<N: NeonRead> PgService<N> {
                     "the project is already being deleted",
                 ));
             }
-            if !caller.admin
-                && let Some(protected) = self
-                    .all_branches(&current.record.id)
-                    .await?
-                    .into_iter()
-                    .find(|b| b.record.protected)
-            {
-                return Err(super::branches::protected(&protected.record.id));
+            // A non-admin's delete reads every branch, and checks each in
+            // its batch: a branch protected meanwhile fails the delete.
+            let mut unprotected = Vec::new();
+            if !caller.admin {
+                for b in self.all_branches(&current.record.id).await? {
+                    if b.record.protected {
+                        return Err(super::branches::protected(&b.record.id));
+                    }
+                    unprotected.push(b);
+                }
             }
             let mut project = current.record;
             project.state = ProjectState::Deleting;
@@ -419,6 +427,9 @@ impl<N: NeonRead> PgService<N> {
             );
             let mut batch = Batch::new();
             batch.put(&project, Some(current.version))?;
+            for b in &unprotected {
+                batch.check::<BranchRec>(&b.record.key(), Some(b.version))?;
+            }
             add_operation(&mut batch, &operation)?;
             let mutation = Mutation::new(batch, move |_| operation.clone());
             if let Applied::Done(op) = self
