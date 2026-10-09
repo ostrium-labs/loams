@@ -251,8 +251,8 @@ impl AuthError {
     }
 }
 
-/// What the caller does next.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What the caller does next. `Debug` redacts the scramble and password.
+#[derive(Clone, PartialEq, Eq)]
 pub enum Action {
     /// Send this payload (next sequence id) and wait for the client.
     Send(Vec<u8>),
@@ -270,6 +270,17 @@ pub enum Action {
     },
     /// Send the error for this and close.
     Fail(AuthError),
+}
+
+impl fmt::Debug for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Action::Send(p) => f.debug_tuple("Send").field(p).finish(),
+            Action::CheckFast { .. } => f.write_str("CheckFast { scramble: [redacted] }"),
+            Action::CheckFull { .. } => f.write_str("CheckFull { password: [redacted] }"),
+            Action::Fail(e) => f.debug_tuple("Fail").field(e).finish(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

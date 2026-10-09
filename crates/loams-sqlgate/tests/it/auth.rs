@@ -252,3 +252,20 @@ fn verify_rejects_every_single_bit_flip() {
     assert!(!verify_caching_sha2(&cached, &other, &good));
     assert!(!verify_caching_sha2(&cached, n.as_bytes(), &good[..31]));
 }
+
+/// R3.12: no secret or scramble prints.
+#[test]
+fn actions_print_no_secret() {
+    let a = Action::CheckFast {
+        scramble: vec![0xab; 32],
+    };
+    let shown = format!("{a:?}");
+    assert!(
+        shown.contains("[redacted]") && !shown.contains("171"),
+        "{shown}"
+    );
+    let a = Action::CheckFull {
+        password: Password::new(b"hunter2".to_vec()),
+    };
+    assert!(!format!("{a:?}").contains("hunter2"));
+}
