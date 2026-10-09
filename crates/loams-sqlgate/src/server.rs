@@ -19,18 +19,18 @@ use std::time::Duration;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::{ClientHello as TlsClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Semaphore;
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
 use crate::auth::{Busy, FastAuthCache, ResolvedUser, UserResolver, Verifier};
-use crate::codec::command::{Command, ErrPacket, classify};
+use crate::codec::command::ErrPacket;
 use crate::codec::connection::{ConnectionPhase, PhaseError, Step};
 use crate::codec::handshake::{Capabilities, HandshakeV10, Limits, Nonce, TIDB_V8_5_8, advertise};
-use crate::codec::packet::{HEADER_LEN, MAX_FRAME, encode};
+use crate::codec::packet::{HEADER_LEN, encode};
 use crate::limits::{
-    ActivitySink, LimitError, Limiter, LimitsConfig, PreAuth, PreAuthConfig, Slot, TokenBucket,
+    ActivitySink, LimitError, Limiter, LimitsConfig, PreAuth, PreAuthConfig, TokenBucket,
 };
 use crate::upstream::{ClientContext, CredentialStore, PoolResolver, Upstream, connect};
 use crate::wire::{ClientStream, Prefixed, SecretBuf};
@@ -156,6 +156,9 @@ pub struct GateConfig {
     pub auth_failure_rate_per_sec: u32,
     /// Failed verifications allowed in a burst.
     pub auth_failure_burst: u32,
+    /// A session with no bytes either way for this long is closed (MySQL's
+    /// default `wait_timeout`, 8 h).
+    pub idle_timeout: Duration,
 }
 
 impl GateConfig {
@@ -179,6 +182,7 @@ impl GateConfig {
             verify_wait: Duration::from_secs(2),
             auth_failure_rate_per_sec: 20,
             auth_failure_burst: 200,
+            idle_timeout: Duration::from_secs(8 * 3600),
         }
     }
 }
@@ -223,6 +227,7 @@ pub struct Gate {
     connections: Arc<Semaphore>,
     verifier: Verifier,
     auth_failures: std::sync::Mutex<TokenBucket>,
+    shutdown: tokio::sync::watch::Sender<bool>,
     next_id: AtomicU32,
     full_auths: AtomicU64,
     fast_hits: AtomicU64,
@@ -317,6 +322,7 @@ impl Gate {
                 config.verify_concurrency,
                 config.verify_wait,
             ),
+            shutdown: tokio::sync::watch::Sender::new(false),
             auth_failures: std::sync::Mutex::new(TokenBucket::new(
                 config.auth_failure_rate_per_sec,
                 config.auth_failure_burst,
@@ -327,6 +333,11 @@ impl Gate {
             full_auths: AtomicU64::new(0),
             fast_hits: AtomicU64::new(0),
         })
+    }
+
+    /// Open client connections of database `db` (after login).
+    pub fn open_connections(&self, db: &str) -> u32 {
+        self.limiter.open(db)
     }
 
     /// Counters.
@@ -437,12 +448,16 @@ impl Gate {
         if client.write_all(&done).await.is_err() || client.flush().await.is_err() {
             return;
         }
-        relay(
+        crate::relay::relay(
             client,
             upstream,
-            user.branch.clone(),
-            self.deps.activity.clone(),
-            slot,
+            crate::relay::Relay {
+                branch: user.branch.clone(),
+                activity: self.deps.activity.clone(),
+                slot,
+                idle_timeout: self.config.idle_timeout,
+                shutdown: self.shutdown.subscribe(),
+            },
         )
         .await;
     }
@@ -648,112 +663,6 @@ impl Gate {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .charge();
     }
-}
-
-/// Relays packets until either side closes. Client → TiDB is read frame by
-/// frame: a command's first byte (sequence id 0) is classified, refused
-/// commands are answered with 1235 and never forwarded, and every command
-/// but `COM_PING` is reported as activity. TiDB → client is copied as is.
-async fn relay(
-    client: ClientStream,
-    upstream: Upstream,
-    branch: String,
-    activity: Arc<dyn ActivitySink>,
-    slot: Slot,
-) {
-    let (cr, cw) = tokio::io::split(client);
-    let (mut ur, uw) = tokio::io::split(upstream);
-    let cw = Arc::new(Mutex::new(cw));
-    let down = {
-        let cw = cw.clone();
-        tokio::spawn(async move {
-            let mut buf = vec![0u8; 64 * 1024];
-            loop {
-                let n = match ur.read(&mut buf).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => n,
-                };
-                let mut w = cw.lock().await;
-                if w.write_all(&buf[..n]).await.is_err() || w.flush().await.is_err() {
-                    break;
-                }
-            }
-            let _ = cw.lock().await.shutdown().await;
-        })
-    };
-    let _ = client_to_upstream(cr, uw, &cw, &branch, &*activity).await;
-    down.abort();
-    drop(slot);
-}
-
-async fn client_to_upstream(
-    mut cr: ReadHalf<ClientStream>,
-    mut uw: WriteHalf<Upstream>,
-    cw: &Mutex<WriteHalf<ClientStream>>,
-    branch: &str,
-    activity: &dyn ActivitySink,
-) -> io::Result<()> {
-    let mut header = [0u8; HEADER_LEN];
-    let mut buf = vec![0u8; 64 * 1024];
-    // Continuation frames of a refused command are dropped too.
-    let mut dropping = false;
-    loop {
-        cr.read_exact(&mut header).await?;
-        let len =
-            usize::from(header[0]) | usize::from(header[1]) << 8 | usize::from(header[2]) << 16;
-        let seq = header[3];
-        let mut remaining = len;
-        let mut first = None;
-        if seq == 0 && !dropping && len > 0 {
-            cr.read_exact(&mut buf[..1]).await?;
-            first = Some(buf[0]);
-            remaining -= 1;
-        }
-        let command = first.and_then(|b| classify(&[b]));
-        let refused = command.and_then(Command::refusal);
-        if let Some(err) = &refused {
-            dropping = len == MAX_FRAME;
-            discard(&mut cr, remaining, &mut buf).await?;
-            let mut out = Vec::new();
-            let mut s = 1;
-            encode(&err.encode(), &mut s, &mut out);
-            let mut w = cw.lock().await;
-            w.write_all(&out).await?;
-            w.flush().await?;
-            continue;
-        }
-        if dropping {
-            dropping = len == MAX_FRAME;
-            discard(&mut cr, remaining, &mut buf).await?;
-            continue;
-        }
-        if command.is_some_and(Command::is_activity) {
-            activity.command(branch);
-        }
-        uw.write_all(&header).await?;
-        if let Some(b) = first {
-            uw.write_all(&[b]).await?;
-        }
-        while remaining > 0 {
-            let n = remaining.min(buf.len());
-            cr.read_exact(&mut buf[..n]).await?;
-            uw.write_all(&buf[..n]).await?;
-            remaining -= n;
-        }
-        uw.flush().await?;
-        if command == Some(Command::Quit) {
-            return Ok(());
-        }
-    }
-}
-
-async fn discard(cr: &mut ReadHalf<ClientStream>, mut n: usize, buf: &mut [u8]) -> io::Result<()> {
-    while n > 0 {
-        let k = n.min(buf.len());
-        cr.read_exact(&mut buf[..k]).await?;
-        n -= k;
-    }
-    Ok(())
 }
 
 /// A certificate for `names` from PEM files (chain, then key).

@@ -511,3 +511,122 @@ async fn no_user_enumeration_through_1040() {
     assert_eq!(known.message, unknown.message);
     assert_eq!(known.message, right.message);
 }
+
+/// Waits until br_a has no open connection (the slot is freed).
+async fn slot_freed(h: &super::Harness) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.gate.open_connections("br_a") > 0 {
+        assert!(Instant::now() < deadline, "slot still held");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// I2: when TiDB closes, the gate closes the client and frees the slot.
+#[tokio::test]
+async fn upstream_eof_closes_client_and_frees_slot() {
+    let h = harness(Options::default()).await;
+    let mut c = h.tls("u_a", b"pa").await.expect("login");
+    assert_eq!(h.gate.open_connections("br_a"), 1);
+    assert_eq!(c.command(b"\x03BYE").await, None, "client sees EOF");
+    slot_freed(&h).await;
+}
+
+/// I2: a session with no traffic for the idle timeout is closed.
+#[tokio::test]
+async fn idle_sessions_are_closed() {
+    let h = harness(Options {
+        idle_timeout: Duration::from_millis(300),
+        ..Options::default()
+    })
+    .await;
+    let mut c = h.tls("u_a", b"pa").await.expect("login");
+    assert_eq!(c.query_info("SELECT 1").await, "tidb-a");
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert_eq!(c.command(b"\x03SELECT 2").await, None, "closed when idle");
+    slot_freed(&h).await;
+}
+
+/// M1: a gate ERR never lands inside a TiDB packet. TiDB writes one packet
+/// in two halves 200 ms apart; a refused command sent meanwhile is
+/// answered only after that packet is whole.
+#[tokio::test]
+async fn gate_errors_land_on_packet_boundaries() {
+    let h = harness(Options::default()).await;
+    let mut c = h.tls("u_a", b"pa").await.expect("login");
+    c.wire.write(0, b"\x03SLOW").await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    c.wire.write(0, b"\x11u_b\0").await;
+    let (_, first) = c.wire.read().await.expect("slow reply");
+    let ok = loams_sqlgate::codec::command::OkPacket::decode(&first, super::client::CAPS)
+        .expect("a whole OK");
+    assert!(ok.info.starts_with(b"slow-"));
+    let (_, second) = c.wire.read().await.expect("refusal");
+    assert_eq!(
+        code(&loams_sqlgate::codec::command::ErrPacket::decode(&second).unwrap()),
+        1235
+    );
+    assert_eq!(c.query_info("SELECT 1").await, "tidb-a");
+}
+
+/// M2: a refused command longer than one frame (16 MiB - 1) is dropped
+/// whole, continuation frames included, and answered once.
+#[tokio::test]
+async fn refused_command_over_max_frame_is_dropped_whole() {
+    use loams_sqlgate::codec::packet::MAX_FRAME;
+    use tokio::io::AsyncWriteExt;
+    let h = harness(Options::default()).await;
+    let mut c = h.tls("u_a", b"pa").await.expect("login");
+    let mut payload = vec![0x11];
+    payload.resize(MAX_FRAME + 10, b'p');
+    let mut frames = Vec::new();
+    loams_sqlgate::codec::packet::encode(&payload, &mut 0, &mut frames);
+    c.wire.io.write_all(&frames).await.unwrap();
+    c.wire.io.flush().await.unwrap();
+    let (seq, p) = c.wire.read().await.expect("refusal");
+    let e = loams_sqlgate::codec::command::ErrPacket::decode(&p).unwrap();
+    assert_eq!((code(&e), seq), (1235, 2), "after frames 0 and 1");
+    assert_eq!(c.query_info("SELECT 1").await, "tidb-a");
+    assert!(!h.a.seen.lock().unwrap().commands.contains(&0x11));
+}
+
+/// M2: a command that does not start at sequence id 0 closes the session.
+#[tokio::test]
+async fn nonzero_sequence_at_command_start_closes() {
+    let h = harness(Options::default()).await;
+    let mut c = h.tls("u_a", b"pa").await.expect("login");
+    c.wire.write(3, b"\x03SELECT 1").await;
+    assert_eq!(c.wire.read().await, None);
+    slot_freed(&h).await;
+}
+
+/// M2, M3: commands TiDB does not dispatch get 1047 and KILL statements
+/// get 1235; neither reaches TiDB.
+#[tokio::test]
+async fn unlisted_commands_and_kill_are_refused() {
+    let h = harness(Options::default()).await;
+    let mut c = h.tls("u_a", b"pa").await.expect("login");
+    let refused = |p: Vec<u8>| code(&loams_sqlgate::codec::command::ErrPacket::decode(&p).unwrap());
+    assert_eq!(refused(c.command(&[0x0c, 5, 0, 0, 0]).await.unwrap()), 1047);
+    assert_eq!(refused(c.command(&[0x00]).await.unwrap()), 1047);
+    assert_eq!(refused(c.command(b"\x03KILL QUERY 5").await.unwrap()), 1235);
+    assert_eq!(
+        refused(c.command(b"\x03/*!50000 kill 5 */").await.unwrap()),
+        1235
+    );
+    assert_eq!(refused(c.command(b"\x16KILL 5").await.unwrap()), 1235);
+    assert_eq!(c.query_info("SELECT 'KILL'").await, "tidb-a");
+    let seen = h.a.seen.lock().unwrap().commands.clone();
+    assert_eq!(seen, vec![0x03], "only the SELECT reached TiDB");
+}
+
+/// M7: discarded bytes are zeroed.
+#[tokio::test]
+async fn discarded_bytes_are_zeroed() {
+    let mut src: &[u8] = b"secret-password";
+    let mut buf = [0u8; 4];
+    loams_sqlgate::relay::discard(&mut src, 15, &mut buf)
+        .await
+        .unwrap();
+    assert_eq!(buf, [0; 4]);
+    assert!(src.is_empty());
+}

@@ -38,6 +38,14 @@ fn refused_commands_get_1235_and_ping_is_not_activity() {
     for cmd in [Command::Quit, Command::Ping, Command::Other(0x03)] {
         assert!(cmd.refusal().is_none(), "{cmd:?}");
     }
+    // Fix round 1, M2: only what TiDB dispatches is relayed.
+    for b in loams_sqlgate::codec::command::RELAYED {
+        assert!(classify(&[b]).unwrap().refusal().is_none(), "{b:#x}");
+    }
+    for b in [0x00, 0x05, 0x06, 0x0a, 0x0c, 0x10, 0x14, 0x20, 0xff] {
+        let err = classify(&[b]).unwrap().refusal().expect("not relayed");
+        assert_eq!((err.code, &err.sql_state), (1047, b"08S01"), "{b:#x}");
+    }
     assert!(!Command::Ping.is_activity());
     assert!(Command::Other(0x03).is_activity());
     assert!(Command::Quit.is_activity());
@@ -67,4 +75,44 @@ fn ok_and_err_packets_roundtrip() {
         OkPacket::decode(&[0x00, 0xfb], C::PROTOCOL_41).is_err(),
         "NULL is not a length"
     );
+}
+
+/// Fix round 1, M3: `KILL` statements are recognised past comments and
+/// executable-comment openers, and an undecidable prefix counts as one.
+#[test]
+fn kill_statements_are_recognised() {
+    use loams_sqlgate::codec::command::starts_with_kill;
+    for sql in [
+        "KILL 5",
+        "kill query 5",
+        "  KILL TIDB 5",
+        "/* x */ KILL 5",
+        "/*!50000 KILL 5 */",
+        "/*+ hint */kill 5",
+        "/*T! KILL 5 */",
+        "/*T![clustered_index] KILL 5 */",
+        "-- note\nKILL 5",
+        "# note\nKill connection 5",
+        "\t\nKILL\t5",
+        "KILL",
+    ] {
+        assert!(starts_with_kill(sql.as_bytes(), true), "{sql:?}");
+    }
+    for sql in [
+        "SELECT 1",
+        "killer()",
+        "SELECT 'KILL 5'",
+        "/* KILL */ SELECT 1",
+        "/*+ KILL */ SELECT 1",
+        "--x",
+        "SKILL",
+        "kill_me()",
+        "",
+    ] {
+        assert!(!starts_with_kill(sql.as_bytes(), true), "{sql:?}");
+    }
+    // A prefix that cannot be decided is refused.
+    assert!(starts_with_kill(b"/* a long comment", false));
+    assert!(starts_with_kill(b"KI", false));
+    assert!(!starts_with_kill(b"SE", false));
 }

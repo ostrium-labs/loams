@@ -86,6 +86,7 @@ pub struct Options {
     pub verify_concurrency: usize,
     pub auth_failure_burst: u32,
     pub auth_failure_rate_per_sec: u32,
+    pub idle_timeout: Duration,
 }
 
 impl Default for Options {
@@ -102,6 +103,7 @@ impl Default for Options {
             verify_concurrency: 4,
             auth_failure_burst: 200,
             auth_failure_rate_per_sec: 20,
+            idle_timeout: Duration::from_secs(3600),
         }
     }
 }
@@ -164,6 +166,7 @@ pub async fn harness(opts: Options) -> Harness {
     config.verify_wait = Duration::from_secs(30);
     config.auth_failure_burst = opts.auth_failure_burst;
     config.auth_failure_rate_per_sec = opts.auth_failure_rate_per_sec;
+    config.idle_timeout = opts.idle_timeout;
     let deps = GateDeps {
         users: Arc::new(users),
         credentials: Arc::new(Creds),

@@ -43,10 +43,21 @@ pub fn classify(payload: &[u8]) -> Option<Command> {
     })
 }
 
+/// The commands TiDB v8.5.8 dispatches (`server/conn.go`), less those the
+/// gate refuses by name: `COM_QUIT`, `COM_INIT_DB`, `COM_QUERY`,
+/// `COM_FIELD_LIST`, `COM_REFRESH`, `COM_STATISTICS`, `COM_PING`,
+/// `COM_STMT_PREPARE`, `COM_STMT_EXECUTE`, `COM_STMT_SEND_LONG_DATA`,
+/// `COM_STMT_CLOSE`, `COM_STMT_RESET`, `COM_SET_OPTION`, `COM_STMT_FETCH`
+/// and `COM_RESET_CONNECTION`. Everything else (`COM_SLEEP`,
+/// `COM_PROCESS_KILL`, `COM_CREATE_DB`, ...) gets 1047 (fix round 1, M2).
+pub const RELAYED: [u8; 15] = [
+    0x01, 0x02, 0x03, 0x04, 0x07, 0x09, 0x0e, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1f,
+];
+
 impl Command {
     /// The error the gate answers with instead of relaying, if refused:
     /// `COM_CHANGE_USER`, replication commands, `COM_SHUTDOWN` and
-    /// `COM_DEBUG` get 1235.
+    /// `COM_DEBUG` get 1235; a command TiDB does not dispatch gets 1047.
     pub fn refusal(self) -> Option<ErrPacket> {
         let what = match self {
             Command::ChangeUser => "COM_CHANGE_USER",
@@ -54,7 +65,11 @@ impl Command {
             Command::RegisterSlave => "COM_REGISTER_SLAVE",
             Command::Shutdown => "COM_SHUTDOWN",
             Command::Debug => "COM_DEBUG",
-            Command::Quit | Command::Ping | Command::Other(_) => return None,
+            Command::Quit | Command::Ping => return None,
+            Command::Other(b) if RELAYED.contains(&b) => return None,
+            Command::Other(_) => {
+                return Some(ErrPacket::new(1047, *b"08S01", "Unknown command"));
+            }
         };
         Some(ErrPacket::new(
             1235,
@@ -207,5 +222,69 @@ impl ErrPacket {
             sql_state,
             message: String::from_utf8_lossy(rest).into_owned(),
         })
+    }
+}
+
+/// How far [`starts_with_kill`] looks into a statement.
+pub const KILL_SCAN: usize = 4096;
+
+/// Whether a `COM_QUERY` or `COM_STMT_PREPARE` statement (its first bytes,
+/// up to [`KILL_SCAN`]) is a `KILL`: after whitespace, comments and the
+/// openers of executable comments (`/*!50700`, `/*T![ttl]`), the first word is
+/// `KILL`. A prefix that ends before the first word is treated as a `KILL`
+/// (refused, never guessed). The gate refuses `KILL` because a client's
+/// connection id (the greeting's) is not TiDB's, and every client of a
+/// branch and role shares one TiDB user (fix round 1, M3).
+pub fn starts_with_kill(sql: &[u8], complete: bool) -> bool {
+    let mut at = 0;
+    loop {
+        while at < sql.len() && sql[at].is_ascii_whitespace() {
+            at += 1;
+        }
+        let rest = &sql[at..];
+        if rest.starts_with(b"/*!") {
+            // MySQL's executable comment: `/*!` and an optional version.
+            at += 3;
+            while at < sql.len() && sql[at].is_ascii_digit() {
+                at += 1;
+            }
+        } else if rest.starts_with(b"/*T!") {
+            // TiDB's: `/*T!` and an optional `[feature,...]`.
+            at += 4;
+            if sql.get(at) == Some(&b'[') {
+                match sql[at..].iter().position(|&c| c == b']') {
+                    Some(end) => at += end + 1,
+                    None => return !complete,
+                }
+            }
+        } else if rest.starts_with(b"/*") {
+            match rest[2..].windows(2).position(|w| w == b"*/") {
+                Some(end) => at += 2 + end + 2,
+                None => return !complete,
+            }
+        } else if rest.starts_with(b"#")
+            || (rest.starts_with(b"--") && rest.get(2).is_none_or(|c| c.is_ascii_whitespace()))
+        {
+            match rest.iter().position(|&c| c == b'\n') {
+                Some(end) => at += end + 1,
+                None => return !complete,
+            }
+        } else if rest.starts_with(b"*/") {
+            // The end of an executable comment opened before.
+            at += 2;
+        } else if rest.is_empty() {
+            return !complete;
+        } else {
+            let word = rest.len().min(5);
+            if word < 5 && !complete && b"kill".len() >= word {
+                // Too short to tell.
+                return rest.eq_ignore_ascii_case(&b"kill"[..word]);
+            }
+            return rest.len() >= 4
+                && rest[..4].eq_ignore_ascii_case(b"kill")
+                && rest
+                    .get(4)
+                    .is_none_or(|c| !(c.is_ascii_alphanumeric() || *c == b'_' || *c == b'$'));
+        }
     }
 }

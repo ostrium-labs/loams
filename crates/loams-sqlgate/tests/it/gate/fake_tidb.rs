@@ -11,7 +11,7 @@ use loams_sqlgate::codec::command::{ErrPacket, OkPacket};
 use loams_sqlgate::codec::handshake::{
     Capabilities as C, ClientHello, HandshakeV10, Limits, Nonce, TIDB_V8_5_8, decode_client_hello,
 };
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use super::pki::Pki;
@@ -178,8 +178,21 @@ async fn serve(
         let (_, cmd) = w.read().await?;
         let first = *cmd.first()?;
         seen.lock().expect("seen").commands.push(first);
-        if first == 0x01 {
+        if first == 0x01 || cmd == b"\x03BYE" {
             return Some(());
+        }
+        if cmd == b"\x03SLOW" {
+            // One packet written in two halves 200 ms apart.
+            let payload = ok(&format!("slow-{}", "x".repeat(200)));
+            let mut frame = Vec::new();
+            loams_sqlgate::codec::packet::encode(&payload, &mut 1, &mut frame);
+            let half = frame.len() / 2;
+            w.io.write_all(&frame[..half]).await.ok()?;
+            w.io.flush().await.ok()?;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            w.io.write_all(&frame[half..]).await.ok()?;
+            w.io.flush().await.ok()?;
+            continue;
         }
         w.write(1, &ok(opts.name)).await;
     }
