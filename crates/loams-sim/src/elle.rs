@@ -16,16 +16,20 @@
 //! - `rw`: `T1` read a list that ends just before `T2`'s value (an
 //!   anti-dependency: `T2` overwrote what `T1` saw).
 //!
-//! **The anomalies.** Snapshot isolation forbids every cycle with fewer
-//! than two `rw` edges: [`AnomalyKind::G0`] (only `ww`),
-//! [`AnomalyKind::G1c`] (`ww` and `wr`) and [`AnomalyKind::GSingle`]
-//! (exactly one `rw`), as well as aborted reads ([`AnomalyKind::G1a`]),
-//! intermediate reads ([`AnomalyKind::G1b`]), reads that disagree on a
-//! key's order and transactions that do not see their own writes. A cycle
-//! with two or more `rw` edges ([`AnomalyKind::G2`], write skew) is allowed
-//! by snapshot isolation and forbidden by serializability, so it is
-//! reported separately: [`check_list_append`] checks snapshot isolation and
-//! ignores G2, and [`check_serializable`] fails on G2 too.
+//! **The anomalies.** Snapshot isolation allows a dependency cycle only
+//! when two of its `rw` edges are adjacent (Cerone and Gotsman, "Analysing
+//! Snapshot Isolation", PODC 2016: a history is snapshot isolated when
+//! `(ww ∪ wr) ; rw?` is acyclic). So it forbids [`AnomalyKind::G0`] (only
+//! `ww`), [`AnomalyKind::G1c`] (`ww` and `wr`), [`AnomalyKind::GSingle`]
+//! (exactly one `rw`) and [`AnomalyKind::GNonadjacent`] (two or more `rw`,
+//! no two in a row, the cycle read round), as well as aborted reads
+//! ([`AnomalyKind::G1a`]), intermediate reads ([`AnomalyKind::G1b`]), reads
+//! that disagree on a key's order and transactions that do not see their
+//! own writes. A cycle with two adjacent `rw` edges ([`AnomalyKind::G2`],
+//! write skew) is allowed by snapshot isolation and forbidden by
+//! serializability, so it is reported separately: [`check_list_append`]
+//! checks snapshot isolation and ignores G2, and [`check_serializable`]
+//! fails on G2 too.
 //!
 //! **Outcomes.** An [`Outcome::Ok`] transaction committed and its reads are
 //! known. An [`Outcome::Fail`] one did not commit. An [`Outcome::Info`] one
@@ -178,8 +182,11 @@ pub enum AnomalyKind {
     G1c,
     /// Read skew: a cycle with exactly one `rw` edge.
     GSingle,
-    /// Write skew: a cycle with two or more `rw` edges. Allowed by snapshot
-    /// isolation.
+    /// A cycle with two or more `rw` edges, no two of them adjacent (the
+    /// cycle read round). A closed walk: it may pass a transaction twice.
+    GNonadjacent,
+    /// Write skew: a cycle with two adjacent `rw` edges. Allowed by
+    /// snapshot isolation.
     G2,
 }
 
@@ -234,6 +241,15 @@ impl fmt::Display for Anomaly {
 }
 
 impl std::error::Error for Anomaly {}
+
+impl Anomaly {
+    /// Whether two `rw` edges of the cycle are adjacent (the cycle read
+    /// round): the only cycles snapshot isolation allows.
+    pub fn has_adjacent_rw(&self) -> bool {
+        let n = self.cycle.len();
+        (0..n).any(|i| self.cycle[i].dep == Dep::Rw && self.cycle[(i + 1) % n].dep == Dep::Rw)
+    }
+}
 
 /// Edge counts of the dependency graph (each counted once per pair, kind
 /// and key).
@@ -441,9 +457,10 @@ pub fn analyze(history: &History) -> Analysis {
     if let Some(cycle) = graph.single_rw_cycle() {
         found.cycle(AnomalyKind::GSingle, cycle);
     }
-    if let Some(cycle) = graph.cycle(&[Dep::Ww, Dep::Wr, Dep::Rw])
-        && cycle.iter().filter(|s| s.dep == Dep::Rw).count() >= 2
-    {
+    if let Some(cycle) = graph.nonadjacent_cycle() {
+        found.cycle(AnomalyKind::GNonadjacent, cycle);
+    }
+    if let Some(cycle) = graph.adjacent_rw_cycle() {
         found.cycle(AnomalyKind::G2, cycle);
     }
 
@@ -715,6 +732,115 @@ impl Graph {
         }
         None
     }
+
+    /// A cycle with two or more `rw` edges and no two adjacent: from each
+    /// `rw` edge `a → b`, a search over (transaction, whether the last edge
+    /// was `rw`, `rw` edges so far, capped at 2) that never takes an `rw`
+    /// edge right after another and reaches `a` over a `ww` or `wr` edge
+    /// with two `rw` edges. What it finds is a closed walk, which may pass
+    /// a transaction twice; any such walk breaks snapshot isolation (the
+    /// relation `(ww ∪ wr) ; rw?` then has a cycle).
+    fn nonadjacent_cycle(&self) -> Option<Vec<Step>> {
+        let all = self.components(&[Dep::Ww, Dep::Wr, Dep::Rw]);
+        for a in 0..self.out.len() {
+            for &(b, dep, key) in &self.out[a] {
+                if dep != Dep::Rw || all[a] != all[b] {
+                    continue;
+                }
+                let first = Step {
+                    from: a,
+                    to: b,
+                    dep,
+                    key,
+                };
+                // State: (node, last edge was rw, rw edges so far ≤ 2).
+                type State = (usize, bool, u8);
+                let start: State = (b, true, 1);
+                let goal: State = (a, false, 2);
+                let mut parent: HashMap<State, (State, Step)> = HashMap::new();
+                let mut visited = HashSet::from([start]);
+                let mut queue = VecDeque::from([start]);
+                while let Some(state @ (v, last_rw, rws)) = queue.pop_front() {
+                    for &(w, dep, key) in &self.out[v] {
+                        if all[w] != all[a] || (dep == Dep::Rw && last_rw) {
+                            continue;
+                        }
+                        let is_rw = dep == Dep::Rw;
+                        let next: State = (w, is_rw, (rws + u8::from(is_rw)).min(2));
+                        if !visited.insert(next) {
+                            continue;
+                        }
+                        let step = Step {
+                            from: v,
+                            to: w,
+                            dep,
+                            key,
+                        };
+                        parent.insert(next, (state, step));
+                        if next == goal {
+                            let mut steps = Vec::new();
+                            let mut at = goal;
+                            while at != start {
+                                let (prev, step) = parent[&at];
+                                steps.push(step);
+                                at = prev;
+                            }
+                            steps.push(first);
+                            steps.reverse();
+                            return Some(steps);
+                        }
+                        queue.push_back(next);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// A cycle with two adjacent `rw` edges `a → b → c` and a path from `c`
+    /// back to `a` (a closed walk, like [`nonadjacent_cycle`]'s).
+    ///
+    /// [`nonadjacent_cycle`]: Graph::nonadjacent_cycle
+    fn adjacent_rw_cycle(&self) -> Option<Vec<Step>> {
+        let all_deps = [Dep::Ww, Dep::Wr, Dep::Rw];
+        let all = self.components(&all_deps);
+        for a in 0..self.out.len() {
+            for &(b, dep, key) in &self.out[a] {
+                if dep != Dep::Rw || all[a] != all[b] {
+                    continue;
+                }
+                for &(c, dep2, key2) in &self.out[b] {
+                    if dep2 != Dep::Rw || all[c] != all[a] {
+                        continue;
+                    }
+                    let back = if c == a {
+                        Some(Vec::new())
+                    } else {
+                        self.path(c, a, &all_deps, &all, all[a])
+                    };
+                    if let Some(back) = back {
+                        let mut cycle = vec![
+                            Step {
+                                from: a,
+                                to: b,
+                                dep,
+                                key,
+                            },
+                            Step {
+                                from: b,
+                                to: c,
+                                dep: dep2,
+                                key: key2,
+                            },
+                        ];
+                        cycle.extend(back);
+                        return Some(cycle);
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
@@ -769,6 +895,7 @@ mod tests {
         let analysis = analyze(&h);
         let g2 = analysis.g2().expect("write skew is G2");
         assert_eq!(g2.cycle.iter().filter(|s| s.dep == Dep::Rw).count(), 2);
+        assert!(g2.has_adjacent_rw(), "{g2}");
         assert_eq!(check_list_append(&h), Ok(()), "SI allows write skew");
         let a = check_serializable(&h).expect_err("serializability does not");
         assert_eq!(a.kind, AnomalyKind::G2, "{a}");
@@ -813,6 +940,48 @@ mod tests {
         assert_eq!(analysis.committed, 6);
         assert!(analysis.edges.ww > 0 && analysis.edges.wr > 0 && analysis.edges.rw > 0);
         assert_eq!(check_serializable(&h), Ok(()));
+    }
+
+    /// T1 -rw-> T2 -wr-> T3 -rw-> T4 -wr-> T1: two anti-dependencies, never
+    /// adjacent. Snapshot isolation forbids it (G-nonadjacent).
+    #[test]
+    fn elle_detects_g_nonadjacent() {
+        let h: History = [
+            Op::ok(0, vec![Mop::read(1, []), Mop::read(4, [1])]),
+            Op::ok(1, vec![Mop::append(1, 1), Mop::append(2, 1)]),
+            Op::ok(2, vec![Mop::read(2, [1]), Mop::read(3, [])]),
+            Op::ok(3, vec![Mop::append(3, 1), Mop::append(4, 1)]),
+            Op::ok(4, vec![Mop::read(1, [1]), Mop::read(3, [1])]),
+        ]
+        .into_iter()
+        .collect();
+        let a = check_list_append(&h).expect_err("a non-adjacent cycle is flagged");
+        assert_eq!(a.kind, AnomalyKind::GNonadjacent, "{a}");
+        assert_eq!(
+            a.cycle.iter().filter(|s| s.dep == Dep::Rw).count(),
+            2,
+            "{a}"
+        );
+        assert!(!a.has_adjacent_rw(), "{a}");
+        assert_eq!(analyze(&h).g2(), None, "not reported as allowed G2");
+    }
+
+    /// T1 -rw-> T2 -rw-> T3 -wr-> T1: the two anti-dependencies are
+    /// adjacent, so snapshot isolation allows it (G2), serializability not.
+    #[test]
+    fn elle_accepts_g2_with_adjacent_rw() {
+        let h: History = [
+            Op::ok(0, vec![Mop::read(1, []), Mop::read(3, [1])]),
+            Op::ok(1, vec![Mop::append(1, 1), Mop::read(2, [])]),
+            Op::ok(2, vec![Mop::append(2, 1), Mop::append(3, 1)]),
+            Op::ok(3, vec![Mop::read(1, [1]), Mop::read(2, [1])]),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(check_list_append(&h), Ok(()));
+        let a = check_serializable(&h).expect_err("not serializable");
+        assert_eq!(a.kind, AnomalyKind::G2, "{a}");
+        assert!(a.has_adjacent_rw(), "{a}");
     }
 
     #[test]
