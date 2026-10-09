@@ -159,6 +159,8 @@ pub struct GateConfig {
     pub server_version: String,
     /// Fast-auth cache size, in users.
     pub fast_auth_cache: usize,
+    /// How long a fast-auth entry lives after its full check.
+    pub fast_auth_ttl: Duration,
     /// Argon2id parameters of the decoy hash (those of the control plane's
     /// user hashes, so unknown users cost what known ones do).
     pub argon2: argon2::Params,
@@ -193,6 +195,7 @@ impl GateConfig {
             profile: TIDB_V8_5_8,
             server_version: SERVER_VERSION.into(),
             fast_auth_cache: 100_000,
+            fast_auth_ttl: Duration::from_secs(3600),
             argon2: argon2::Params::default(),
             verify_concurrency: std::thread::available_parallelism().map_or(4, |n| n.get()),
             verify_wait: Duration::from_secs(2),
@@ -352,7 +355,7 @@ impl Gate {
     /// A gate with `config` and `deps`.
     pub fn new(config: GateConfig, deps: GateDeps) -> Arc<Self> {
         Arc::new(Self {
-            cache: FastAuthCache::new(config.fast_auth_cache),
+            cache: FastAuthCache::new(config.fast_auth_cache, config.fast_auth_ttl),
             limiter: Limiter::new(config.limits.clone()),
             pre_auth: PreAuth::new(config.pre_auth.clone()),
             connections: Arc::new(Semaphore::new(config.max_connections)),

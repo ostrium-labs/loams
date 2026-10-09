@@ -681,3 +681,46 @@ fn gateways_default_to_no_plaintext() {
     assert_eq!("loopback".parse(), Ok(PlaintextPolicy::LoopbackOnly));
     assert!("always".parse::<PlaintextPolicy>().is_err());
 }
+
+/// M8: a fast-auth entry expires after its TTL (the next login does the
+/// full check again).
+#[tokio::test]
+async fn fast_auth_entries_expire() {
+    use loams_sqlgate::auth::FastAuthCache;
+    use loams_sqlgate::codec::auth::{Password, scramble_caching_sha2};
+    let cache = FastAuthCache::new(10, Duration::from_millis(100));
+    let nonce = [7u8; 20];
+    let scramble = scramble_caching_sha2(b"pa", &nonce);
+    cache.remember("u_a", "hash", &Password::new(b"pa".to_vec()));
+    assert!(cache.check("u_a", "hash", &nonce, &scramble));
+    assert!(!cache.check("u_a", "other-hash", &nonce, &scramble));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!cache.check("u_a", "hash", &nonce, &scramble), "expired");
+}
+
+/// M7: the upstream login response is encoded into one allocation, so no
+/// copy of its auth response is left behind by a reallocation.
+#[test]
+fn handshake_response_is_encoded_in_one_allocation() {
+    use loams_sqlgate::codec::auth::Password;
+    use loams_sqlgate::codec::handshake::{Capabilities as C, HandshakeResponse41};
+    let r = HandshakeResponse41 {
+        capabilities: super::client::CAPS
+            | C::CONNECT_ATTRS
+            | C::PLUGIN_AUTH_LENENC_CLIENT_DATA
+            | C::SSL,
+        max_packet: 1 << 24,
+        charset: 0xff,
+        username: "ri_writer".into(),
+        auth_response: Password::new(vec![0xab; 300]),
+        database: Some("app".repeat(20)),
+        auth_plugin: Some("caching_sha2_password".into()),
+        attributes: (0..20)
+            .map(|i| (format!("key{i}").into_bytes(), vec![b'v'; 40]))
+            .collect(),
+        zstd_level: None,
+    };
+    let bytes = r.encode().unwrap();
+    assert!(bytes.len() <= r.encoded_len_bound());
+    assert_eq!(bytes.capacity(), r.encoded_len_bound(), "never grew");
+}

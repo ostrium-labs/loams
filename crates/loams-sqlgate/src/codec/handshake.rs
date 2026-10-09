@@ -468,7 +468,9 @@ impl HandshakeResponse41 {
     /// [`crate::codec::auth::client_auth_response`]).
     pub fn encode(&self) -> Result<Vec<u8>, EncodeError> {
         let caps = self.capabilities;
-        let mut out = Vec::with_capacity(128);
+        // Sized once: a reallocation would leave a copy of the auth
+        // response in freed memory (fix round 1, M7).
+        let mut out = Vec::with_capacity(self.encoded_len_bound());
         put_fixed_header(&mut out, caps, self.max_packet, self.charset);
         out.extend_from_slice(self.username.as_bytes());
         out.push(0);
@@ -507,6 +509,29 @@ impl HandshakeResponse41 {
             out.push(self.zstd_level.unwrap_or(3));
         }
         Ok(out)
+    }
+}
+
+impl HandshakeResponse41 {
+    /// An upper bound of [`Self::encode`]'s length, which it allocates once.
+    pub fn encoded_len_bound(&self) -> usize {
+        let attrs: usize = self
+            .attributes
+            .iter()
+            .map(|(k, v)| 18 + k.len() + v.len())
+            .sum();
+        32 + self.username.len()
+            + 1
+            + 9
+            + self.auth_response.expose().len()
+            + 1
+            + self.database.as_deref().map_or(0, str::len)
+            + 1
+            + self.auth_plugin.as_deref().map_or(0, str::len)
+            + 1
+            + 9
+            + attrs
+            + 1
     }
 }
 

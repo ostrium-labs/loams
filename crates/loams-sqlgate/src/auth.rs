@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tokio::sync::Semaphore;
+use tokio::time::Instant;
 
 use argon2::password_hash::phc::PasswordHash;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier};
@@ -200,17 +201,20 @@ type CacheKey = (String, [u8; 32]);
 /// check, `SHA256(SHA256(password))` per user, keyed by the user and the
 /// SHA-256 of the stored hash, so a password rotation (a new hash) misses.
 /// Bounded; a full cache is cleared (every user then re-does full auth).
+/// An entry lives `ttl` after its full check (fix round 1, M8).
 #[derive(Debug)]
 pub struct FastAuthCache {
     max: usize,
-    entries: Mutex<HashMap<CacheKey, [u8; 32]>>,
+    ttl: Duration,
+    entries: Mutex<HashMap<CacheKey, ([u8; 32], Instant)>>,
 }
 
 impl FastAuthCache {
-    /// A cache of at most `max` users.
-    pub fn new(max: usize) -> Self {
+    /// A cache of at most `max` users, each kept `ttl`.
+    pub fn new(max: usize, ttl: Duration) -> Self {
         Self {
             max,
+            ttl,
             entries: Mutex::new(HashMap::new()),
         }
     }
@@ -227,7 +231,8 @@ impl FastAuthCache {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         entries
             .get(&Self::key(user, hash))
-            .is_some_and(|cached| verify_caching_sha2(cached, nonce, scramble))
+            .filter(|(_, at)| at.elapsed() < self.ttl)
+            .is_some_and(|(cached, _)| verify_caching_sha2(cached, nonce, scramble))
     }
 
     /// Remembers a password that passed the full check.
@@ -237,8 +242,15 @@ impl FastAuthCache {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if entries.len() >= self.max {
-            entries.clear();
+            let ttl = self.ttl;
+            entries.retain(|_, (_, at)| at.elapsed() < ttl);
+            if entries.len() >= self.max {
+                entries.clear();
+            }
         }
-        entries.insert(Self::key(user, hash), double_sha256(password.expose()));
+        entries.insert(
+            Self::key(user, hash),
+            (double_sha256(password.expose()), Instant::now()),
+        );
     }
 }
