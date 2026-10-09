@@ -49,6 +49,16 @@ fn ids(p: &ProjectRec, branch_id: &str) -> ([u8; 16], [u8; 16]) {
     (tenant_id(&pid), timeline_id(&bid))
 }
 
+/// `loams-wal`'s heads with every LSN at `commit`.
+fn heads(commit: u64) -> WalHeads {
+    WalHeads {
+        commit_lsn: Lsn(commit),
+        flush_lsn: Lsn(commit),
+        remote_consistent_lsn: Lsn(commit),
+        backup_lsn: Lsn(commit),
+    }
+}
+
 fn timeline(min_readable: u64, last_record: u64) -> TimelineView {
     TimelineView {
         last_record_lsn: Lsn(last_record),
@@ -142,6 +152,7 @@ async fn create_branch_at_timestamp_resolves_lsn() {
         .set_lsn_at_time(t, tl, LsnAtTime::Present(Lsn(0x0169_AD58)));
     h.neon
         .set_timeline(t, tl, timeline(0x0100_0000, 0x0200_0000));
+    h.neon.set_wal(t, tl, heads(0x0200_0000));
     let at = T0_MS - 3_600_000;
     let out = h
         .service
@@ -176,9 +187,10 @@ async fn create_branch_at_timestamp_resolves_lsn() {
         .expect("create at an LSN");
     assert_eq!(out.branch.branch.record.ancestor_lsn, Some(0x0180_0000));
 
-    // A time Neon has no WAL for yet is the head.
+    // A time after the pageserver's last commit is the head: loams-wal's
+    // commit_lsn.
     h.neon
-        .set_lsn_at_time(t, tl, LsnAtTime::Future(Lsn(0x0200_0000)));
+        .set_lsn_at_time(t, tl, LsnAtTime::Future(Lsn(0x01F0_0000)));
     let out = h
         .service
         .create_branch(
@@ -201,6 +213,7 @@ async fn lsn_out_of_retention_refused() {
     let (t, tl) = ids(&p, &main);
     h.neon
         .set_timeline(t, tl, timeline(0x0200_0000, 0x0300_0000));
+    h.neon.set_wal(t, tl, heads(0x0300_0010));
 
     // An LSN below what the pageserver keeps.
     let e = h
@@ -254,7 +267,7 @@ async fn lsn_out_of_retention_refused() {
         .expect_err("past");
     assert_eq!(e.reason, Reason::LsnOutOfRetention);
 
-    // Past the parent's head is not a point in its history.
+    // Past the parent's commit_lsn is not a point in its history.
     let e = h
         .service
         .create_branch(
@@ -890,4 +903,97 @@ async fn a_failed_branch_can_be_deleted() {
         .await
         .expect("get");
     assert_eq!(got.branch.record.state, BranchState::Deleting);
+}
+
+/// R5.9: a point is bounded by loams-wal's commit_lsn, which can be ahead
+/// of what the pageserver has ingested.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_branch_right_after_a_commit_is_accepted() {
+    let h = harness!();
+    let (p, main) = project(&h).await;
+    mark_branch_ready(&h.store, &p.id, &main).await;
+    let (t, tl) = ids(&p, &main);
+    h.neon
+        .set_timeline(t, tl, timeline(0x0100_0000, 0x0200_0000));
+    h.neon.set_wal(t, tl, heads(0x0280_0000));
+    let out = h
+        .service
+        .create_branch(
+            &user(),
+            CreateBranch {
+                point: BranchPoint::Lsn("0/2800000".into()),
+                ..branch(&p.id, "just-committed", "b1")
+            },
+        )
+        .await
+        .expect("committed, not yet ingested");
+    assert_eq!(out.branch.branch.record.ancestor_lsn, Some(0x0280_0000));
+}
+
+/// R5.9: a head branch of a ready parent records the parent's commit_lsn.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_head_branch_records_an_lsn() {
+    let h = harness!();
+    let (p, main) = project(&h).await;
+    mark_branch_ready(&h.store, &p.id, &main).await;
+    let (t, tl) = ids(&p, &main);
+    h.neon.set_wal(t, tl, heads(0x0300_0010));
+    let out = h
+        .service
+        .create_branch(&user(), branch(&p.id, "dev", "b1"))
+        .await
+        .expect("a head branch");
+    assert_eq!(out.branch.branch.record.ancestor_lsn, Some(0x0300_0010));
+}
+
+/// R5.9: a point before the parent's own start is in its parent's history,
+/// not this branch's.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_point_before_the_parent_starts_is_refused() {
+    let h = harness!();
+    let (p, main) = project(&h).await;
+    mark_branch_ready(&h.store, &p.id, &main).await;
+    let (t, tl) = ids(&p, &main);
+    h.neon.set_wal(t, tl, heads(0x0180_0000));
+    let dev = h
+        .service
+        .create_branch(&user(), branch(&p.id, "dev", "b1"))
+        .await
+        .expect("dev at main's head")
+        .branch
+        .branch
+        .record;
+    assert_eq!(dev.ancestor_lsn, Some(0x0180_0000));
+    mark_branch_ready(&h.store, &p.id, &dev.id).await;
+    let (_, dev_tl) = ids(&p, &dev.id);
+    h.neon.set_wal(t, dev_tl, heads(0x0300_0000));
+    h.neon.set_timeline(t, dev_tl, timeline(0, 0x0300_0000));
+    let e = h
+        .service
+        .create_branch(
+            &user(),
+            CreateBranch {
+                parent_id: dev.id.clone(),
+                point: BranchPoint::Lsn("0/1000000".into()),
+                ..branch(&p.id, "too-early", "b2")
+            },
+        )
+        .await
+        .expect_err("before dev starts");
+    assert_eq!(e.reason, Reason::InvalidArgument);
+    assert_eq!(
+        e.metadata.get("oldest_lsn").map(String::as_str),
+        Some("0/1800000")
+    );
+    h.service
+        .create_branch(
+            &user(),
+            CreateBranch {
+                parent_id: dev.id.clone(),
+                point: BranchPoint::Lsn("0/1800000".into()),
+                ..branch(&p.id, "at-start", "b3")
+            },
+        )
+        .await
+        .expect("at dev's start");
 }

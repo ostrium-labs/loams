@@ -1,11 +1,13 @@
 //! `CreateBranch`, `GetBranch`, `ListBranches`, `UpdateBranch`,
 //! `DeleteBranch` and `SetDefaultBranch` (§46 §4, §10; PG2 Task 5).
 //!
-//! - **A branch point** is the parent's head (the reconciler branches
-//!   there), an LSN, or a time the pageserver resolves to an LSN. A point
-//!   needs a `ready` parent, and must lie in what the project keeps: a time
-//!   older than the history retention, a time before the oldest WAL, or an
-//!   LSN below the parent's `min_readable_lsn` is `lsn_out_of_retention`.
+//! - **A branch point** (R5.9) is the parent's head, an LSN, or a time the
+//!   pageserver resolves to an LSN (and leases). The head of a `ready`
+//!   parent is recorded as its `loams-wal` `commit_lsn`. A point needs a
+//!   `ready` parent and must lie between the parent's `ancestor_lsn` and its
+//!   `commit_lsn`; a time older than the history retention, a time before
+//!   the oldest WAL, or an LSN below the parent's `min_readable_lsn` is
+//!   `lsn_out_of_retention`.
 //! - **Races.** A create writes its parent's [`BranchGuardRec`]
 //!   (`children + 1`), and a delete writes the branch's own (`deleting`), so
 //!   a child created while its parent is deleted conflicts either way
@@ -31,7 +33,7 @@ use crate::model::{
     BranchRec, BranchState, ProjectKey, ProjectRec, ProjectState, Record,
 };
 use crate::names::validate_name;
-use crate::neon::{Lsn, LsnAtTime, TenantId, TimelineId, TimelineView, WalHeads};
+use crate::neon::{Lsn, LsnAtTime, TenantId, TimelineId, WalHeads};
 use crate::store::{Batch, MAX_PAGE_SIZE, Page, PgControlStore, Versioned};
 
 /// Where in its parent's history a branch starts.
@@ -216,24 +218,37 @@ impl<N: NeonRead> PgService<N> {
         }
     }
 
-    async fn parent_timeline(
+    /// A `ready` parent, or `failed_precondition`: a branch point needs
+    /// its timeline.
+    fn need_ready(parent: &BranchRec) -> Result<(), ServiceError> {
+        if parent.state == BranchState::Ready {
+            return Ok(());
+        }
+        Err(ServiceError::failed_precondition(format!(
+            "branch {} is not ready: a branch point needs its timeline",
+            parent.id
+        )))
+    }
+
+    /// The parent's WAL heads from `loams-wal`.
+    async fn parent_heads(
         &self,
         project: &ProjectRec,
         parent: &BranchRec,
-    ) -> Result<TimelineView, ServiceError> {
-        if parent.state != BranchState::Ready {
-            return Err(ServiceError::failed_precondition(format!(
-                "branch {} is not ready: a branch point needs its timeline",
-                parent.id
-            )));
-        }
+    ) -> Result<WalHeads, ServiceError> {
         self.neon
-            .timeline(TenantId(project.tenant_id), TimelineId(parent.timeline_id))
+            .wal_heads(TenantId(project.tenant_id), TimelineId(parent.timeline_id))
             .await
             .map_err(|e| ServiceError::neon(&e))
     }
 
-    /// The parent LSN a point names (`None`: the head).
+    /// The parent LSN a point names (R5.9). The head of a `ready` parent is
+    /// its `commit_lsn` on `loams-wal`, recorded so the branch starts where
+    /// the parent's acknowledged commits end; the head of a parent still
+    /// creating is `None`, and the reconciler branches at its head. A
+    /// requested point must lie between the parent's start
+    /// (`ancestor_lsn`) and `commit_lsn`, and not below what the
+    /// pageserver keeps (`min_readable_lsn`).
     async fn resolve(
         &self,
         point: &BranchPoint,
@@ -242,24 +257,26 @@ impl<N: NeonRead> PgService<N> {
     ) -> Result<Option<u64>, ServiceError> {
         let retention_s = project.history_retention_s;
         let (lsn, field) = match point {
-            BranchPoint::Head => return Ok(None),
+            BranchPoint::Head => {
+                if parent.state != BranchState::Ready {
+                    return Ok(None);
+                }
+                let heads = self.parent_heads(project, parent).await?;
+                return Ok(Some(heads.commit_lsn.0));
+            }
             BranchPoint::Lsn(text) => {
                 let lsn = text
                     .parse::<Lsn>()
                     .map_err(|e| ServiceError::invalid("lsn", e.to_string()))?;
-                (lsn, "lsn")
+                Self::need_ready(parent)?;
+                (Some(lsn), "lsn")
             }
             BranchPoint::Time(at_ms) => {
                 let window_ms = retention_s.saturating_mul(1000);
                 if at_ms.saturating_add(window_ms) < self.now_ms() {
                     return Err(out_of_retention(None, retention_s));
                 }
-                if parent.state != BranchState::Ready {
-                    return Err(ServiceError::failed_precondition(format!(
-                        "branch {} is not ready: a branch point needs its timeline",
-                        parent.id
-                    )));
-                }
+                Self::need_ready(parent)?;
                 let at = self
                     .neon
                     .lsn_by_timestamp(
@@ -270,7 +287,9 @@ impl<N: NeonRead> PgService<N> {
                     .await
                     .map_err(|e| ServiceError::neon(&e))?;
                 match at {
-                    LsnAtTime::Present(lsn) | LsnAtTime::Future(lsn) => (lsn, "time"),
+                    LsnAtTime::Present(lsn) => (Some(lsn), "time"),
+                    // After the last commit the pageserver has: the head.
+                    LsnAtTime::Future(_) => (None, "time"),
                     LsnAtTime::Past => return Err(out_of_retention(None, retention_s)),
                     LsnAtTime::NoData => {
                         return Err(ServiceError::failed_precondition(
@@ -280,20 +299,38 @@ impl<N: NeonRead> PgService<N> {
                 }
             }
         };
-        let timeline = self.parent_timeline(project, parent).await?;
+        let heads = self.parent_heads(project, parent).await?;
+        let Some(lsn) = lsn else {
+            return Ok(Some(heads.commit_lsn.0));
+        };
+        if lsn > heads.commit_lsn {
+            return Err(ServiceError::invalid(
+                field,
+                format!("{lsn} is past the parent's commit_lsn {}", heads.commit_lsn),
+            ));
+        }
+        if let Some(start) = parent.ancestor_lsn
+            && lsn.0 < start
+        {
+            return Err(ServiceError::invalid(
+                field,
+                format!(
+                    "{lsn} is before branch {} starts ({}): branch from its parent instead",
+                    parent.id,
+                    Lsn(start)
+                ),
+            )
+            .with("oldest_lsn", Lsn(start).to_string()));
+        }
+        let timeline = self
+            .neon
+            .timeline(TenantId(project.tenant_id), TimelineId(parent.timeline_id))
+            .await
+            .map_err(|e| ServiceError::neon(&e))?;
         if lsn < timeline.min_readable_lsn {
             return Err(out_of_retention(
                 Some(timeline.min_readable_lsn),
                 retention_s,
-            ));
-        }
-        if lsn > timeline.last_record_lsn {
-            return Err(ServiceError::invalid(
-                field,
-                format!(
-                    "{lsn} is past the parent's head {}",
-                    timeline.last_record_lsn
-                ),
             ));
         }
         Ok(Some(lsn.0))
