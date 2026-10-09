@@ -33,7 +33,10 @@ pub const DEFAULT_RETENTION_HOLD: Duration = Duration::from_secs(24 * 3600);
 pub const DEFAULT_SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
 
 /// The largest statement cap [`GraphAdmin::with_statement_slots`] accepts.
-pub const MAX_STATEMENT_SLOTS: usize = 4096;
+///
+/// Each slot can hold a pool worker with a 256 MiB stack reservation (review fix 1, M4: 4096
+/// slots would reserve 1 TiB of address space).
+pub const MAX_STATEMENT_SLOTS: usize = 256;
 
 /// The most followers a graph may ask for (review M6).
 pub const MAX_REPLICAS: u32 = 8;

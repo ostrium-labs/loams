@@ -1147,3 +1147,16 @@ fn debug_forms_never_print_values() {
     let shown = format!("{plan:?}");
     assert!(!shown.contains("tok_secret"), "{shown}");
 }
+
+/// Review fix 1, M4: at most 256 statement slots (each can hold a worker with a 256 MiB stack
+/// reservation).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn statement_slots_are_capped() {
+    let fixture = Fixture::start().await;
+    let admin = fixture.admin().with_statement_slots(100_000);
+    assert_eq!(admin.statement_slots(), 256);
+    assert_eq!(
+        loams_graph::service::admin::MAX_STATEMENT_SLOTS,
+        admin.statement_slots()
+    );
+}

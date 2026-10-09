@@ -232,7 +232,7 @@ struct Native {
     no_graph: bool,
     /// Loams Graph: graph statements that may run at once in this process;
     /// past it a statement is refused with RESOURCE_EXHAUSTED [default: twice
-    /// the cores, at most 32].
+    /// the cores, at most 32; at most 256].
     #[arg(long)]
     graph_statement_slots: Option<usize>,
     /// Loams Graph: the engine's own statement time limit, a backstop (it
@@ -1468,6 +1468,17 @@ mod tests {
         assert!(capped.validate().is_ok());
         assert!(
             parse(&["--graph-ephemeral", "--graph-statement-slots", "0"])
+                .validate()
+                .is_err()
+        );
+        // At most 256 (GR1 Task 6 fix round 1, M4).
+        assert!(
+            parse(&["--graph-ephemeral", "--graph-statement-slots", "256"])
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            parse(&["--graph-ephemeral", "--graph-statement-slots", "257"])
                 .validate()
                 .is_err()
         );
