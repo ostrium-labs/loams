@@ -642,21 +642,35 @@ struct LiveArgs {
     /// (D111).
     #[arg(long, default_value = "127.0.0.1:7710", value_parser = parse_live_listen)]
     live_listen: SocketAddr,
-    /// Where Live keeps its data: `embedded` (a store under
-    /// <data-dir>/live/) or `tikv://<pd>[,<pd>]/<keyspace>` (a build with
-    /// the live-tikv feature; the keyspace defaults to loams_live_<app>)
-    /// [default: embedded].
+    // The help names `tikv://` only in a build that has it: the desktop app
+    // reads `dev --help` to tell the two apart (row T23-9).
+    #[cfg_attr(
+        feature = "live-tikv",
+        doc = "Where Live keeps its data: `embedded` (a store under <data-dir>/live/) or \
+               `tikv://<pd>[,<pd>]/<keyspace>` (the keyspace defaults to loams_live_<app>) \
+               [default: embedded]."
+    )]
+    #[cfg_attr(
+        not(feature = "live-tikv"),
+        doc = "Where Live keeps its data: `embedded`, a store under <data-dir>/live/ (this \
+               build has no other) [default: embedded]."
+    )]
     #[arg(long, value_parser = parse_live_store, conflicts_with_all = ["live_pd", "live_keyspace"])]
     live_store: Option<LiveStore>,
     /// Deprecated: use --live-store tikv://<pd>/<keyspace>. PD endpoints of
-    /// a Live TiKV cluster, comma-separated (a build with the live-tikv
-    /// feature).
-    #[arg(long, value_delimiter = ',', value_parser = parse_live_tikv_alias)]
+    /// a Live TiKV cluster, comma-separated. Hidden, and refused, in a build
+    /// without the live-tikv feature.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        value_parser = parse_live_tikv_alias,
+        hide = !cfg!(feature = "live-tikv")
+    )]
     live_pd: Vec<String>,
     /// Deprecated: use --live-store tikv://<pd>/<keyspace>. The Live app's
-    /// TiKV keyspace [default: loams_live_<app>] (a build with the
-    /// live-tikv feature).
-    #[arg(long, value_parser = parse_live_tikv_alias)]
+    /// TiKV keyspace [default: loams_live_<app>]. Hidden, and refused, in a
+    /// build without the live-tikv feature.
+    #[arg(long, value_parser = parse_live_tikv_alias, hide = !cfg!(feature = "live-tikv"))]
     live_keyspace: Option<String>,
     /// The Live app.
     #[arg(long, default_value = "dev", value_parser = parse_live_app)]
@@ -704,10 +718,12 @@ fn parse_live_tikv_alias(value: &str) -> Result<String, String> {
     #[cfg(not(feature = "live-tikv"))]
     {
         let _ = value;
-        Err("--live-pd and --live-keyspace select Live on TiKV and need a build with the \
+        Err(
+            "--live-pd and --live-keyspace select Live on TiKV and need a build with the \
              live-tikv feature; this build runs Live on the embedded store (drop the flag, \
              or build with --features live-tikv)"
-            .to_string())
+                .to_string(),
+        )
     }
 }
 
@@ -742,6 +758,12 @@ fn parse_live_store(value: &str) -> Result<LiveStore, String> {
             .collect();
         if pd.is_empty() {
             return Err(format!("--live-store {value:?}: names no PD endpoint"));
+        }
+        if keyspace.is_some_and(|k| k.contains('/')) {
+            return Err(format!(
+                "--live-store {value:?}: a keyspace has no '/'; expected \
+                 tikv://<pd>[,<pd>]/<keyspace>"
+            ));
         }
         Ok(LiveStore::Tikv {
             pd,
@@ -1750,6 +1772,46 @@ mod tests {
             .expect("on");
         assert_eq!(live_tikv(&live).pd, ["pd:2379"]);
         assert_eq!(live_tikv(&live).keyspace, "loams_live_chat");
+        let err = Cli::try_parse_from(["loams", "dev", "--live-store", "tikv://pd:2379/ks/extra"])
+            .expect_err("a / in the keyspace")
+            .to_string();
+        assert!(err.contains("a keyspace has no '/'"), "{err}");
+    }
+
+    /// Row T23-9: `dev --help` names `tikv://` for `--live-store` (and lists
+    /// the deprecated aliases) only in a build with live-tikv, so the desktop
+    /// app's probe can tell the builds apart.
+    #[cfg(feature = "live")]
+    #[test]
+    fn live_store_help_names_tikv_only_with_live_tikv() {
+        use clap::CommandFactory;
+        let mut cli = Cli::command();
+        let dev = cli.find_subcommand_mut("dev").expect("dev");
+        let help = dev.render_long_help().to_string();
+        // The flag's line and its description, up to the next flag.
+        let mut lines = help
+            .lines()
+            .skip_while(|l| !l.trim_start().starts_with("--live-store"));
+        let first = lines.next().unwrap_or_default().to_string();
+        let block: String = std::iter::once(first)
+            .chain(
+                lines
+                    .take_while(|l| !l.trim_start().starts_with('-'))
+                    .map(str::to_string),
+            )
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(block.contains("--live-store"), "{help}");
+        assert_eq!(
+            block.contains("tikv://"),
+            cfg!(feature = "live-tikv"),
+            "{block}"
+        );
+        assert_eq!(
+            help.contains("--live-pd"),
+            cfg!(feature = "live-tikv"),
+            "{help}"
+        );
     }
 
     /// LV1 plan Task 23: `--live-pd` and `--live-keyspace` stay one release
@@ -1812,7 +1874,10 @@ mod tests {
             let err = Cli::try_parse_from(args)
                 .expect_err("no TiKV backend in this build")
                 .to_string();
-            assert!(err.contains("need a build with the live-tikv feature"), "{err}");
+            assert!(
+                err.contains("need a build with the live-tikv feature"),
+                "{err}"
+            );
         }
     }
 
