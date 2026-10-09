@@ -313,6 +313,7 @@ Commit `feat(sqldb): records and store`.
 - `PdKeyspaces`: `create(name)`, `get`, `set_state(DISABLED|ARCHIVED|TOMBSTONE)`, over PD's `/pd/api/v2/keyspaces`.
 - **Create saga:** record `CREATING`, then the keyspace, then `ensure_pool(1)` with the bootstrap waited on (TiDB's `mysql.tidb` `bootstrapped` row read through `ri_control`), then the internal users (Task 11), then `scale(0)` unless `min_class` keeps it warm.
 - **Delete saga:** pool → 0, keyspace `DISABLED` → `ARCHIVED`, the GC loop's range destroy (Task 10), then `TOMBSTONE`.
+- **KILL enforcement (R4.3).** The rendered TiDB config carries what Task 11 chooses for KILL: either the fork patch that limits `KILL` to connections of the same external identity (the gate sends it in a PROXY v2 TLV or a connection attribute that clients cannot set), or one TiDB user per external user. Global kill (`enable-global-kill`) stays on, so its cross-instance privilege check is what Task 11 tests.
 
 Tests:
 - `create_resumes_after_crash_at_each_step`, `delete_resumes_after_crash_at_each_step`.
@@ -355,6 +356,9 @@ Tests:
 - `role_password_returned_once_never_stored`, `ephemeral_credential_ttl_capped_at_one_hour`, `ephemeral_credential_expires`.
 - `reader_cannot_insert`, `writer_cannot_create_table`, `ddl_can_alter_table`, `admin_can_kill_own_connections_only`.
 - `grant_and_create_user_refused_for_app_roles`.
+- `internal_roles_have_no_admin_privileges`: no `ri_*` role has `SHUTDOWN`, `SUPER`, `CONNECTION_ADMIN`, `RELOAD` or `SYSTEM_VARIABLES_ADMIN` (R4.1).
+- `kill_limited_to_same_external_identity` (R4.3): a client cannot `KILL` another external user's connection that shares its role, whether by a plain statement, inside a multi-statement query, or after `COM_SET_OPTION` turns multi-statements on (`LOAMS_IT_SQLDB=1`).
+- `global_kill_checks_privilege_across_instances` (R4.3): with two TiDB members in one pool, a `KILL` of a connection id on the other member goes through TiDB global kill's cross-instance privilege check and is refused for another identity (`LOAMS_IT_SQLDB=1`).
 - `branch_copy_rekeys_internal_users` (`LOAMS_IT_SQLDB=1`).
 
 Commit `feat(sqldb): roles, credentials and grants`.
@@ -369,6 +373,7 @@ Tests:
 - `instance_lists_sqldb_when_enabled`.
 - `agent_principal_cannot_mint_admin_credentials` (a test principal behind a `Principal` seam until MT1).
 - `watch_database_streams_state_changes`.
+- `kill_query_with_the_greeting_id_cancels_own_query` (R4.3): the gate keeps a map from its greeting connection id to the upstream id and translates `KILL [QUERY] <greeting id>` (the `mysql` client's Ctrl-C) before relaxing its first-word refusal.
 
 Commit `feat(sqldb): loams.sqldb.v1 handlers in loams dev`.
 
@@ -868,12 +873,26 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
 
     A 60 s run made 10.6 M executions with no crash.
 - **R4.1 Task 4 fix round 1: implementer records (for the controller to confirm).**
-  - **Argon2id admission (C1, I1).** Every full check waits at most `verify_wait` (2 s) for one of `verify_concurrency` permits (the core count); otherwise it gets 1040. The permit is taken before `spawn_blocking`. The C1 "global bucket for unknown users" is a gate-wide bucket of *failed* verifications. Unknown users and wrong passwords charge it alike, and when it is empty every full check gets the same 1040, so 1040 never tells a known user from an unknown one. Users already in the fast-auth cache need no Argon2id check and still log in during a flood. The per-database rate and cap are charged only after a successful login.
+  - **Argon2id admission (C1, I1; the global bucket is superseded by R4.2).** Every full check waits at most `verify_wait` (2 s) for one of `verify_concurrency` permits (the core count); otherwise it gets 1040. The permit is taken before `spawn_blocking`. The C1 "global bucket for unknown users" is a gate-wide bucket of *failed* verifications. Unknown users and wrong passwords charge it alike, and when it is empty every full check gets the same 1040, so 1040 never tells a known user from an unknown one. Users already in the fast-auth cache need no Argon2id check and still log in during a flood. The per-database rate and cap are charged only after a successful login.
   - **Pre-auth limits (C2).** A gate-wide connection cap (default 10 000) and, per client IP, a handshake concurrency cap (32) and a connection rate (20/s, burst 200). They answer ERR 1040 in place of the greeting. Behind a proxy that hides client IPs, the per-IP limits would apply to the proxy: SQ1's gate is the edge.
   - **Commands (M2).** Only the commands TiDB v8.5.8 dispatches are relayed (`codec::command::RELAYED`); others get 1047. **Note for Task 11:** no `ri_*` role gets `SHUTDOWN`, `SUPER`, `CONNECTION_ADMIN`, `RELOAD` or `SYSTEM_VARIABLES_ADMIN`-like privileges (`COM_REFRESH` and the SQL `SHUTDOWN` reach TiDB). Task 11 tests this.
-  - **KILL (M3).** The greeting's connection id is the gate's own, not TiDB's, and every client of a branch and role shares one TiDB user. A `KILL` could therefore end another client's session. The gate refuses `COM_PROCESS_KILL` (1047) and a `COM_QUERY` or `COM_STMT_PREPARE` whose first word is `KILL` (1235). The check looks past comments and the `/*!` and `/*T!` executable-comment openers, and an undecidable prefix is refused. It does not catch a `KILL` after `;` in a multi-statement query, or one inside `PREPARE ... FROM '...'`. **Tasks 9 and 12:** translate `KILL [QUERY] <greeting id>` to the upstream connection id (the gate keeps the map), then lift the refusal.
+  - **KILL (M3; corrected by R4.3: a usability guard, not a security control).** The greeting's connection id is the gate's own, not TiDB's, and every client of a branch and role shares one TiDB user. A `KILL` could therefore end another client's session. The gate refuses `COM_PROCESS_KILL` (1047) and a `COM_QUERY` or `COM_STMT_PREPARE` whose first word is `KILL` (1235). The check looks past comments and the `/*!` and `/*T!` executable-comment openers, and an undecidable prefix is refused. It does not catch a `KILL` after `;` in a multi-statement query, or one inside `PREPARE ... FROM '...'`. **Tasks 9 and 12:** translate `KILL [QUERY] <greeting id>` to the upstream connection id (the gate keeps the map), then lift the refusal.
   - **ALPN (M9).** The gate offers ALPN `mysql`, which is not IANA-registered. No MySQL client sends ALPN today (libmysqlclient, Connector/J, go-sql-driver, mysql2), and those clients are served. A client that offers only other protocols is refused. **Note for Task 14:** every pool member's certificate is checked against one runtime CA and a name, so a member of branch A could present a certificate valid for branch B. Bind the upstream certificate to the branch (a per-branch name or CA, R2.x's per-branch Secret).
   - **Profile drift (M5).** A TiDB greeting that lacks a flag of the static profile is refused (1040), logged at error level, and counted (`GateStats::profile_mismatches`). Upstream 1049 and 1044 reach the client with their codes, in the gate's own words.
   - **Plaintext (M6).** `GateConfig::new` defaults to `Never`. `loams dev` (the desktop) sets `LoopbackOnly` unless `--sqlgate-plaintext never` is given.
   - **Sessions (I2, M10).** An 8 h idle timeout (MySQL's `wait_timeout`). On shutdown, sessions close once quiet (250 ms without bytes), and the rest close at the drain deadline (10 s).
   - **Task 5 finding (from the first pass).** Against one PD (v8.5.8), a TiDB resumed while another keyspace's TiDB ran never got its DDL owner elected. Its `CREATE DATABASE` hung, and the stopped instance's `all_schema_by_job_versions` key stayed in etcd with no lease. `user_of_db_a_cannot_reach_db_b` therefore runs DDL only while A is alone. The resume saga must handle it.
+- **R4.2 Failed-login limits (controller ruling, Task 4 re-review N1 and N2; supersedes R4.1's gate-wide failure bucket).**
+  - **Semaphore.** It is the CPU bound: `verify_concurrency = max(1, cores / 2)`, a 2 s wait, FIFO (tokio's semaphore is fair).
+  - **Per source.** Keyed by IPv4 /32 or IPv6 /64, with v4-mapped addresses canonicalised (`limits::source_key`). It is checked before the user lookup and Argon2id. Every failure is charged, unknown user or wrong password. Burst 10, refilled one per 10 s; when empty the client gets the one 1040 text.
+  - **Per user name as sent.** Burst 10, refilled one per 60 s, checked before Argon2id, and the map holds at most 100 000 entries. On overflow, full buckets are evicted first, then the tenth with the most tokens left. A name can be locked out for about a minute per failure past the burst; the per-source bucket limits how fast one source can do that.
+  - **No gate-wide refuse-everyone bucket.** The optional global bucket for suspect sources and the reserved permits for clean sources were not built.
+  - **N2.** All per-IP limits (pre-auth concurrency and rate, failures) use `source_key`.
+- **R4.3 KILL and multi-statements (Task 4 re-review N3; corrects R4.1's KILL record).**
+  - **The first-word KILL check is a usability guard, not a security control.** A `KILL` still gets through after `;` in a multi-statement query (`CLIENT_MULTI_STATEMENTS`, or `COM_SET_OPTION` turning it on), inside `PREPARE ... FROM`, and in forms the scan does not parse.
+  - **Enforcement belongs in TiDB.** Either a fork patch that limits `KILL` to connections of the same external identity (passed by the gate in a PROXY v2 TLV or a connection attribute), or one TiDB user per external user. Tasks 9, 11 and 12 carry it, including a test of global kill's cross-instance privilege check.
+  - **Multi-statements stay.** The gate keeps offering `CLIENT_MULTI_STATEMENTS` and keeps relaying `COM_SET_OPTION`, because MySQL drivers commonly use them (`multi_statements_stay_offered`).
+- **R4.4 Later tasks (Task 4 re-review).**
+  - **N4, done in Task 4.** During the drain, a session whose client spoke last (a command awaiting TiDB) is busy.
+  - **N5, done in Task 4.** A full fast-auth cache evicts expired entries, then the oldest tenth, never all of them.
+  - **N6–N8.** Their text did not reach the implementer; the controller adds them here.

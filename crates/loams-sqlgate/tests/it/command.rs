@@ -116,3 +116,14 @@ fn kill_statements_are_recognised() {
     assert!(starts_with_kill(b"KI", false));
     assert!(!starts_with_kill(b"SE", false));
 }
+
+/// R4.3: multi-statements stay offered and `COM_SET_OPTION` stays relayed
+/// (drivers use them); KILL is enforced in TiDB, not by the gate.
+#[test]
+fn multi_statements_stay_offered() {
+    use loams_sqlgate::codec::command::RELAYED;
+    use loams_sqlgate::codec::handshake::{TIDB_V8_5_8, advertise};
+    assert!(advertise(TIDB_V8_5_8).contains(C::MULTI_STATEMENTS));
+    assert!(RELAYED.contains(&0x1b), "COM_SET_OPTION");
+    assert!(classify(&[0x1b]).unwrap().refusal().is_none());
+}

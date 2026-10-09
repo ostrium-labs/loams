@@ -233,8 +233,10 @@ pub const KILL_SCAN: usize = 4096;
 /// openers of executable comments (`/*!50700`, `/*T![ttl]`), the first word is
 /// `KILL`. A prefix that ends before the first word is treated as a `KILL`
 /// (refused, never guessed). The gate refuses `KILL` because a client's
-/// connection id (the greeting's) is not TiDB's, and every client of a
-/// branch and role shares one TiDB user (fix round 1, M3).
+/// connection id (the greeting's) is not TiDB's (fix round 1, M3). This is
+/// a usability guard, not a security control: a `KILL` after `;` in a
+/// multi-statement query, or inside `PREPARE ... FROM`, is not seen.
+/// Enforcement belongs in TiDB (plan R4.3).
 pub fn starts_with_kill(sql: &[u8], complete: bool) -> bool {
     let mut at = 0;
     loop {
