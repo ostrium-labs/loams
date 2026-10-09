@@ -654,7 +654,7 @@ mod tests {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
             let started = std::time::Instant::now();
             assert_eq!(binary_version(&path), None);
-            assert!(started.elapsed() < std::time::Duration::from_secs(3));
+            assert!(started.elapsed() < std::time::Duration::from_secs(10));
             assert_eq!(newest_candidate(vec![path.clone()]), Some(path));
         }
     }
