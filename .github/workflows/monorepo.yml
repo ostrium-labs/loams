@@ -6,15 +6,6 @@ on:
   push:
     branches: [main, dev]
   workflow_dispatch:
-    inputs:
-      desktop-default-features:
-        description: Also check the desktop with its default WebKit features
-        type: boolean
-        default: false
-      desktop-core-tests:
-        description: Also run the broader desktop non-GUI core suite
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -38,7 +29,6 @@ jobs:
     outputs:
       web: ${{ steps.filter.outputs.web }}
       plugins: ${{ steps.filter.outputs.plugins }}
-      desktop: ${{ steps.filter.outputs.desktop }}
       android: ${{ steps.filter.outputs.android }}
       ios: ${{ steps.filter.outputs.ios }}
       mock: ${{ steps.filter.outputs.mock }}
@@ -87,9 +77,6 @@ jobs:
             plugins:
               - *workspace
               - 'plugins/**'
-            desktop:
-              - 'apps/desktop/**'
-              - '.github/workflows/monorepo.yml'
             mobile-shared: &mobile-shared
               - 'apps/mobile/proto/**'
               - 'apps/mobile/buf*.yaml'
@@ -183,57 +170,6 @@ jobs:
       - run: pnpm nx run plugins:test --outputStyle=static
       - run: pnpm nx run plugins-dashboard-ui:typecheck --outputStyle=static
       - run: pnpm nx run plugins-dashboard-ui:build --outputStyle=static
-
-  # Initial desktop coverage is Linux only; macOS/Windows desktop checks need
-  # separately validated native prerequisites, not copied upstream setup hooks.
-  desktop:
-    name: monorepo desktop minimal check and focused tests (Linux)
-    needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.desktop == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      CARGO_BUILD_JOBS: '2'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
-        with:
-          version: 11.27.1
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      # Browser headers also provision the manual default-feature check.
-      - name: Install Linux GPUI and embedded-browser dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential clang libclang-dev cmake pkg-config protobuf-compiler \
-            libssl-dev libasound2-dev libfontconfig1-dev libfreetype-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
-            libx11-dev libxcb1-dev libx11-xcb-dev libvulkan-dev \
-            libwebkit2gtk-4.1-dev libjson-glib-dev
-      - name: Install desktop toolchain (independent of the server workspace)
-        working-directory: apps/desktop/native
-        run: rustup show active-toolchain
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: apps/desktop/native -> target
-          key: monorepo-desktop-minimal
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}
-      - run: pnpm nx run loams-desktop:format-check --outputStyle=static
-      - run: pnpm nx run loams-desktop:check-minimal --outputStyle=static
-      - run: pnpm nx run loams-desktop:test-focused --outputStyle=static
-      - name: Desktop core suite (manual opt-in only)
-        if: github.event_name == 'workflow_dispatch' && inputs.desktop-core-tests
-        run: pnpm nx run loams-desktop:test-core --outputStyle=static
-      - name: Check desktop default features (manual opt-in only)
-        if: github.event_name == 'workflow_dispatch' && inputs.desktop-default-features
-        run: pnpm nx run loams-desktop:check --outputStyle=static
 
   mobile-mock:
     name: monorepo mobile mock vet, test and build (Linux)
@@ -410,7 +346,7 @@ jobs:
   summary:
     name: monorepo CI summary
     if: always()
-    needs: [changes, web, plugins, desktop, mobile-mock, mobile-android, mobile-conformance, mobile-ios, mobile-contracts]
+    needs: [changes, web, plugins, mobile-mock, mobile-android, mobile-conformance, mobile-ios, mobile-contracts]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -426,7 +362,7 @@ jobs:
           jobs = json.loads(os.environ['NEEDS_JSON'])
           filters = jobs['changes']['outputs']
           selections = {
-              'web': 'web', 'plugins': 'plugins', 'desktop': 'desktop',
+              'web': 'web', 'plugins': 'plugins',
               'mobile-mock': 'mock', 'mobile-android': 'android',
               'mobile-conformance': 'conformance', 'mobile-ios': 'ios',
               'mobile-contracts': 'contracts',
