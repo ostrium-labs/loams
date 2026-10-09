@@ -261,6 +261,7 @@ async fn upstream_profile_drift_is_refused() {
     assert_eq!(e.code, 1040);
     let seen = h.a.seen.lock().unwrap().clone();
     assert!(seen.logins.is_empty(), "no login on a drifted TiDB");
+    assert_eq!(h.gate.stats().profile_mismatches, 1, "counted (M5)");
     assert_eq!(seen.plaintext_credentials, 0);
 }
 
@@ -629,4 +630,33 @@ async fn discarded_bytes_are_zeroed() {
         .unwrap();
     assert_eq!(buf, [0; 4]);
     assert!(src.is_empty());
+}
+
+/// M5: a missing or forbidden database keeps its MySQL code, in the gate's
+/// words (no internal user).
+#[tokio::test]
+async fn upstream_database_errors_keep_their_codes() {
+    let h = harness(Options::default()).await;
+    for (db, want) in [("missing", 1049), ("forbidden", 1044)] {
+        let e = super::client::connect(
+            h.addr,
+            "u_a",
+            b"pa",
+            Some((h.pki.client_config(), "localhost")),
+            Some(db),
+        )
+        .await
+        .err()
+        .expect("refused");
+        assert_eq!(e.code, want, "{db}: {e:?}");
+        assert!(
+            e.message.contains(db) && !e.message.contains("ri_"),
+            "{e:?}"
+        );
+    }
+    assert!(slot_free_now(&h));
+}
+
+fn slot_free_now(h: &super::Harness) -> bool {
+    h.gate.open_connections("br_a") == 0
 }

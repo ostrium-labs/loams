@@ -32,7 +32,9 @@ use crate::codec::packet::{HEADER_LEN, encode};
 use crate::limits::{
     ActivitySink, LimitError, Limiter, LimitsConfig, PreAuth, PreAuthConfig, TokenBucket,
 };
-use crate::upstream::{ClientContext, CredentialStore, PoolResolver, Upstream, connect};
+use crate::upstream::{
+    ClientContext, CredentialStore, PoolResolver, Upstream, UpstreamError, connect,
+};
 use crate::wire::{ClientStream, Prefixed, SecretBuf};
 
 /// The version the gate advertises (Q658, as TiDB's rendered config).
@@ -214,6 +216,9 @@ pub struct GateStats {
     pub fast_hits: u64,
     /// The most Argon2id checks that ran at once.
     pub verify_peak: usize,
+    /// Upstream logins refused because TiDB's greeting did not match the
+    /// static profile (a TiDB upgraded without a re-captured profile).
+    pub profile_mismatches: u64,
 }
 
 /// The gate.
@@ -231,6 +236,7 @@ pub struct Gate {
     next_id: AtomicU32,
     full_auths: AtomicU64,
     fast_hits: AtomicU64,
+    profile_mismatches: AtomicU64,
 }
 
 /// A client that passed authentication.
@@ -239,6 +245,7 @@ struct Authenticated {
     peer: SocketAddr,
     gate: SocketAddr,
     user: ResolvedUser,
+    username: String,
     agreed: Capabilities,
     database: Option<String>,
     charset: u8,
@@ -287,6 +294,24 @@ async fn refuse_before_greeting(tcp: &mut TcpStream, err: &ErrPacket) {
     .await;
 }
 
+/// The client's view of an upstream login failure: a missing or forbidden
+/// database keeps its MySQL code (1049, 1044) in the gate's own words (no
+/// internal user name); everything else is a generic, retryable 1040.
+fn err_upstream(e: &UpstreamError, user: &str, database: Option<&str>) -> ErrPacket {
+    let db = database.unwrap_or("");
+    match e {
+        UpstreamError::Login(1049) => {
+            ErrPacket::new(1049, *b"42000", &format!("Unknown database '{db}'"))
+        }
+        UpstreamError::Login(1044) => ErrPacket::new(
+            1044,
+            *b"42000",
+            &format!("Access denied for user '{user}' to database '{db}'"),
+        ),
+        _ => err_unavailable(),
+    }
+}
+
 fn err_unavailable() -> ErrPacket {
     ErrPacket::new(1040, *b"08004", "database is unavailable, retry")
 }
@@ -332,6 +357,7 @@ impl Gate {
             next_id: AtomicU32::new(1),
             full_auths: AtomicU64::new(0),
             fast_hits: AtomicU64::new(0),
+            profile_mismatches: AtomicU64::new(0),
         })
     }
 
@@ -346,6 +372,7 @@ impl Gate {
             full_auths: self.full_auths.load(Ordering::Relaxed),
             fast_hits: self.fast_hits.load(Ordering::Relaxed),
             verify_peak: self.verifier.peak(),
+            profile_mismatches: self.profile_mismatches.load(Ordering::Relaxed),
         }
     }
 
@@ -403,6 +430,7 @@ impl Gate {
         let Authenticated {
             mut client,
             user,
+            username,
             done,
             ..
         } = authed;
@@ -431,10 +459,14 @@ impl Gate {
         let upstream = match upstream {
             Ok(Ok(u)) => u,
             Ok(Err(e)) => {
-                tracing::warn!(%peer, error = %e, "upstream login failed");
-                let _ = client
-                    .write_all(&replace_ok(&done, &err_unavailable()))
-                    .await;
+                if e == UpstreamError::ProfileMismatch {
+                    self.profile_mismatches.fetch_add(1, Ordering::Relaxed);
+                    tracing::error!(%peer, branch = %user.branch, error = %e, "upstream login failed");
+                } else {
+                    tracing::warn!(%peer, error = %e, "upstream login failed");
+                }
+                let err = err_upstream(&e, &username, ctx.database.as_deref());
+                let _ = client.write_all(&replace_ok(&done, &err)).await;
                 return;
             }
             Err(_) => {
@@ -636,6 +668,7 @@ impl Gate {
                         peer,
                         gate: local,
                         user,
+                        username: response.username.clone(),
                         agreed: phase.agreed()?,
                         database: response.database.clone().filter(|d| !d.is_empty()),
                         charset: response.charset,

@@ -173,6 +173,24 @@ async fn serve(
         }
         .encode(C::PROTOCOL_41)
     };
+    // Like TiDB: the database is checked after the password.
+    match response.database.as_deref() {
+        Some("missing") => {
+            w.write(
+                7,
+                &ErrPacket::new(1049, *b"42000", "Unknown database 'missing'").encode(),
+            )
+            .await;
+            return None;
+        }
+        Some("forbidden") => {
+            let msg = "Access denied for user 'ri_writer'@'%' to database 'forbidden'";
+            w.write(7, &ErrPacket::new(1044, *b"42000", msg).encode())
+                .await;
+            return None;
+        }
+        _ => {}
+    }
     w.write(7, &ok("")).await;
     loop {
         let (_, cmd) = w.read().await?;
