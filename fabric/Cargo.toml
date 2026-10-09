@@ -68,9 +68,11 @@ serde_json = "1"
 # The House HTTP interface is served by hyper's HTTP/1.1 connection (HS1 Task 3
 # review, decision 1; ruling R3.8): hyper owns request framing (Content-Length,
 # chunked, HTTP/1.0, pipelining, Expect: 100-continue), with a streaming body of
-# the House's own. 1.11 / 0.1.20 are the lines the engine workspace already
-# locks. MIT.
-hyper = { version = "1.11", features = ["server", "http1"] }
+# the House's own. Locked at hyper 1.11.1 and hyper-util 0.1.20, the versions
+# the engine workspace locks (a fresh resolve picked 1.12.0 / 0.1.21, whose age
+# could not be checked offline, so the lock was pinned back; fix round 2, N7).
+# MIT.
+hyper = { version = "1.11.1", features = ["server", "http1"] }
 hyper-util = { version = "0.1.20", features = ["tokio"] }
 http = "1"
 http-body = "1"

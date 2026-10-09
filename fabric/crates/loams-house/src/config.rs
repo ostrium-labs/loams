@@ -58,7 +58,8 @@ pub struct HouseConfig {
     pub max_connections: usize,
     /// Request header fields at most; more answer `431` (review M5).
     pub max_headers: usize,
-    /// The largest request head hyper buffers.
+    /// The largest request head hyper buffers: 128 KiB (fix round 2, N6), room for
+    /// hyper's 65 534-byte URI limit and the headers.
     pub max_head_bytes: usize,
     /// The version rendered into errors.
     pub version: String,
@@ -90,7 +91,7 @@ impl Default for HouseConfig {
             keep_alive: Duration::from_secs(10),
             max_connections: 1024,
             max_headers: 100,
-            max_head_bytes: 1024 * 1024,
+            max_head_bytes: 128 * 1024,
             version: CLICKHOUSE_VERSION.to_string(),
             body_limits: crate::compress::BodyLimits::default(),
         }
