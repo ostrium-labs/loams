@@ -1449,13 +1449,15 @@ jobs:
         run: cargo test -p loams-graph --features failpoints --locked --test failpoints
 
   # SQ1 Task 3: the gate's sans-I/O MySQL codec parses untrusted client
-  # packets. Each cargo-fuzz target runs 60 s from the captured-client seed
-  # corpus; the same invariants run under proptest in `cargo test`.
+  # packets. Each cargo-fuzz target runs 60 s from its seed corpus; the same
+  # invariants run under proptest in `cargo test`.
   sqlgate-fuzz:
     name: Loams SQL gate codec fuzzing
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sqlgate == 'true') }}
     runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    # Five targets x 60 s plus the build.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       # A dated nightly (14+ days old when pinned, 2026-10-09), not a floating one.
@@ -1463,15 +1465,27 @@ jobs:
         run: rustup toolchain install nightly-2026-09-24 --profile minimal
       - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
         with:
-          tool: cargo-fuzz
-      - name: fuzz handshake_response and packet_framing, 60 s each
+          tool: cargo-fuzz@0.13.2
+      # cargo-fuzz has no --locked: check fuzz/Cargo.lock is current first.
+      - name: fuzz lock file is current (--locked)
+        working-directory: crates/loams-sqlgate
+        run: cargo +nightly-2026-09-24 metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml > /dev/null
+      # Keep in sync with fuzz/Cargo.toml (tests/it/ci.rs checks it).
+      - name: fuzz every target for 60 s
         working-directory: crates/loams-sqlgate
         run: |
           set -euo pipefail
-          for t in handshake_response packet_framing; do
+          for t in handshake_response packet_framing connection_phase auth_server decoders; do
             mkdir -p "fuzz/corpus/$t"
             cargo +nightly-2026-09-24 fuzz run "$t" "fuzz/corpus/$t" -- -max_total_time=60 -rss_limit_mb=2048
           done
+      - name: upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sqlgate-fuzz-artifacts
+          path: crates/loams-sqlgate/fuzz/artifacts
+          if-no-files-found: ignore
 
   deny:
     name: licenses, advisories, sources
