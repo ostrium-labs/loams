@@ -112,7 +112,10 @@ pub const CHUNK_BYTES: usize = loams_house_ipc::CHUNK_BYTES;
 /// (review I5), so the caller can refuse to commit it.
 pub struct Decoder {
     codec: Codec,
+    /// Compressed input not yet decoded: `pending[consumed..]`. Consumed bytes are
+    /// skipped, not drained, and dropped when more input arrives (fix round 2, N3).
     pending: Vec<u8>,
+    consumed: usize,
     ended: bool,
     total_in: u64,
     total_out: u64,
@@ -128,6 +131,8 @@ enum Codec {
     },
     Zstd {
         state: Box<zstd::stream::raw::Decoder<'static>>,
+        /// One output buffer for the whole body (N3).
+        out: Vec<u8>,
         /// zstd's hint after the last call: 0 once a frame is complete.
         remaining: usize,
     },
@@ -151,12 +156,14 @@ impl Decoder {
             },
             Some(Encoding::Zstd) => Codec::Zstd {
                 state: Box::new(zstd::stream::raw::Decoder::new()?),
+                out: Vec::new(),
                 remaining: 0,
             },
         };
         Ok(Self {
             codec,
             pending: Vec::new(),
+            consumed: 0,
             ended: false,
             total_in: 0,
             total_out: 0,
@@ -167,6 +174,10 @@ impl Decoder {
     /// Adds compressed bytes.
     pub fn push(&mut self, bytes: &[u8]) {
         self.total_in += bytes.len() as u64;
+        if self.consumed > 0 {
+            self.pending.drain(..self.consumed);
+            self.consumed = 0;
+        }
         self.pending.extend_from_slice(bytes);
     }
 
@@ -206,16 +217,19 @@ impl Decoder {
 
     fn step(&mut self) -> io::Result<Option<Vec<u8>>> {
         loop {
+            let input = &self.pending[self.consumed..];
             match &mut self.codec {
                 Codec::Identity => {
-                    if self.pending.is_empty() {
+                    if input.is_empty() {
                         return Ok(None);
                     }
-                    let take = CHUNK_BYTES.min(self.pending.len());
-                    return Ok(Some(self.pending.drain(..take).collect()));
+                    let take = CHUNK_BYTES.min(input.len());
+                    let piece = input[..take].to_vec();
+                    self.consumed += take;
+                    return Ok(Some(piece));
                 }
                 Codec::Gzip(decoder) => {
-                    if self.pending.is_empty() {
+                    if input.is_empty() {
                         if !self.ended {
                             return Ok(None);
                         }
@@ -227,20 +241,20 @@ impl Decoder {
                         let rest = std::mem::take(decoder.get_mut());
                         return Ok((!rest.is_empty()).then_some(rest));
                     }
-                    let take = FLATE_STEP.min(self.pending.len());
-                    let input: Vec<u8> = self.pending.drain(..take).collect();
-                    decoder.write_all(&input)?;
+                    let take = FLATE_STEP.min(input.len());
+                    decoder.write_all(&input[..take])?;
+                    self.consumed += take;
                     let out = std::mem::take(decoder.get_mut());
                     if !out.is_empty() {
                         return Ok(Some(out));
                     }
                 }
                 Codec::Deflate { state, done } => {
-                    if *done || self.pending.is_empty() {
+                    if *done || input.is_empty() {
                         if self.ended && !*done {
                             return Err(bad("the deflate request body is truncated"));
                         }
-                        if *done && !self.pending.is_empty() {
+                        if *done && !input.is_empty() {
                             return Err(bad("bytes after the end of the deflate request body"));
                         }
                         return Ok(None);
@@ -248,12 +262,12 @@ impl Decoder {
                     let mut out = Vec::with_capacity(CHUNK_BYTES.min(1 << 20));
                     let before_in = state.total_in();
                     let status = state
-                        .decompress_vec(&self.pending, &mut out, flate2::FlushDecompress::None)
+                        .decompress_vec(input, &mut out, flate2::FlushDecompress::None)
                         .map_err(|err| {
                             bad(format!("the deflate request body is corrupt: {err}"))
                         })?;
                     let used = (state.total_in() - before_in) as usize;
-                    self.pending.drain(..used);
+                    self.consumed += used;
                     if status == flate2::Status::StreamEnd {
                         *done = true;
                     }
@@ -268,25 +282,29 @@ impl Decoder {
                         return Ok(None);
                     }
                 }
-                Codec::Zstd { state, remaining } => {
-                    if self.pending.is_empty() {
+                Codec::Zstd {
+                    state,
+                    out,
+                    remaining,
+                } => {
+                    if input.is_empty() {
                         if self.ended && *remaining != 0 {
                             return Err(bad("the zstd request body is truncated"));
                         }
                         return Ok(None);
                     }
-                    let mut out = vec![0u8; CHUNK_BYTES];
-                    let status = zstd::stream::raw::Operation::run_on_buffers(
-                        state.as_mut(),
-                        &self.pending,
-                        &mut out,
-                    )
-                    .map_err(|err| bad(format!("the zstd request body is corrupt: {err}")))?;
-                    self.pending.drain(..status.bytes_read);
+                    if out.len() != CHUNK_BYTES {
+                        out.resize(CHUNK_BYTES, 0);
+                    }
+                    let status =
+                        zstd::stream::raw::Operation::run_on_buffers(state.as_mut(), input, out)
+                            .map_err(|err| {
+                                bad(format!("the zstd request body is corrupt: {err}"))
+                            })?;
+                    self.consumed += status.bytes_read;
                     *remaining = status.remaining;
-                    out.truncate(status.bytes_written);
-                    if !out.is_empty() {
-                        return Ok(Some(out));
+                    if status.bytes_written > 0 {
+                        return Ok(Some(out[..status.bytes_written].to_vec()));
                     }
                     if status.bytes_read == 0 {
                         return Ok(None);
