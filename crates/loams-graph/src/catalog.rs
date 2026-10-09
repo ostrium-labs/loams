@@ -39,6 +39,19 @@ pub const MAX_PAGE_SIZE: usize = 1000;
 /// How long a superseded catalog document is kept before the sweep may delete it (review I1).
 pub const DOCUMENT_GRACE: std::time::Duration = std::time::Duration::from_secs(600);
 
+/// The least grace a sweep runs with outside tests (re-review 4): well over a write's put-to-CAS
+/// latency, so the upload-order rule of the sweep is never the only safeguard.
+pub const MIN_DOCUMENT_GRACE: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// `grace`, raised to [`MIN_DOCUMENT_GRACE`] when `floor` (every build but `test-hooks`).
+fn clamp_grace(grace: std::time::Duration, floor: bool) -> std::time::Duration {
+    if floor {
+        grace.max(MIN_DOCUMENT_GRACE)
+    } else {
+        grace
+    }
+}
+
 /// How many times a write retries a CAS that lost to a concurrent writer.
 const MAX_ATTEMPTS: usize = 32;
 
@@ -873,6 +886,7 @@ impl GraphCatalog {
     /// [`CatalogError::Unavailable`] when the namespaces cannot be listed; a failure in one
     /// namespace is logged and the sweep goes on.
     pub async fn sweep_documents(&self, grace: std::time::Duration) -> Result<usize, CatalogError> {
+        let grace = clamp_grace(grace, !cfg!(feature = "test-hooks"));
         let grace_ms = u64::try_from(grace.as_millis()).unwrap_or(u64::MAX);
         let namespaces = self
             .meta
@@ -973,7 +987,22 @@ fn decode_token(namespace: &str, token: &str) -> Result<String, CatalogError> {
 
 #[cfg(test)]
 mod tests {
-    use super::backoff;
+    use super::{MIN_DOCUMENT_GRACE, backoff, clamp_grace};
+
+    /// Re-review 4: outside `test-hooks` the sweep grace is never under five minutes.
+    #[test]
+    fn sweep_grace_has_a_floor() {
+        assert_eq!(clamp_grace(Duration::ZERO, true), MIN_DOCUMENT_GRACE);
+        assert_eq!(
+            clamp_grace(Duration::from_secs(60), true),
+            MIN_DOCUMENT_GRACE
+        );
+        assert_eq!(
+            clamp_grace(Duration::from_secs(900), true),
+            Duration::from_secs(900)
+        );
+        assert_eq!(clamp_grace(Duration::ZERO, false), Duration::ZERO);
+    }
     use std::time::Duration;
 
     /// Review M4: exponential, capped at 200 ms, jittered within [base / 2, base).
