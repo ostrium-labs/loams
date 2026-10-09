@@ -433,7 +433,8 @@ async fn leftover_jobs_never_run_in_the_next_call(store: TestStore) {
             contexts: 1,
             ..loams_live_js::JsConfig::default()
         },
-    ).await;
+    )
+    .await;
     let leave = function(&bundle, "floating:leave");
     let ok = function(&bundle, "floating:okMutation");
     for _ in 0..3 {
@@ -467,7 +468,10 @@ async fn leftover_jobs_never_run_in_the_next_call(store: TestStore) {
     let spin = function(&bundle, "floating:leaveSpinning");
     let ok = function(&bundle, "floating:ok");
     for _ in 0..3 {
-        assert_eq!(query(&r, &spin, unit()).await.expect("spin").result, s("left"));
+        assert_eq!(
+            query(&r, &spin, unit()).await.expect("spin").result,
+            s("left")
+        );
         let started = std::time::Instant::now();
         assert_eq!(query(&r, &ok, unit()).await.expect("ok").result, s("fine"));
         assert!(

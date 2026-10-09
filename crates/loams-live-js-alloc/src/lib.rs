@@ -66,7 +66,8 @@ impl State {
 
     fn release(&self, bytes: usize) {
         let used = self.used.load(Ordering::Relaxed);
-        self.used.store(used.saturating_sub(bytes), Ordering::Relaxed);
+        self.used
+            .store(used.saturating_sub(bytes), Ordering::Relaxed);
     }
 }
 

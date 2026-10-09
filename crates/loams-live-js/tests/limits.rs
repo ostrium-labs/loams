@@ -158,7 +158,10 @@ async fn allocation_bomb_hits_memory_limit(store: TestStore) {
     let hogs = query(&r, &all, obj(&[("table", s("hogs"))]))
         .await
         .expect("hogs");
-    assert!(items(&hogs.result).is_empty(), "nothing written after the limit");
+    assert!(
+        items(&hogs.result).is_empty(),
+        "nothing written after the limit"
+    );
     // The code is the runtime's, never the message's: a thrown error that
     // looks like QuickJS's, or a thrown null, is a function error.
     for path in ["hogs:spoofOom", "hogs:throwNull"] {
@@ -210,7 +213,8 @@ async fn console_output_truncated_at_limits(store: TestStore) {
             console_line_bytes: 8,
             ..config()
         },
-    ).await;
+    )
+    .await;
     let log = function(&bundle, "hogs:log");
     let q = query(&r, &log, obj(&[("lines", LiveValue::F64(10.0))]))
         .await
@@ -532,7 +536,8 @@ async fn value_conversion_is_budgeted(store: TestStore) {
             cpu_limit: Duration::from_secs(10),
             ..config()
         },
-    ).await;
+    )
+    .await;
     let returned = function(&bundle, "values:returned");
     let inserted = function(&bundle, "values:inserted");
     let read = function(&bundle, "values:insertedByQuery");

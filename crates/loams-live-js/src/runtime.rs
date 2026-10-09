@@ -933,18 +933,20 @@ impl Engine {
                         Err(Conv::Invalid(m)) => Err(self.stopped(phase).unwrap_or_else(|| {
                             LiveError::FunctionError(format!("{path} returned {m}"))
                         })),
-                        Err(Conv::Stopped) => Err(self.stopped(phase).unwrap_or_else(|| {
-                            LiveError::Internal("a conversion stopped".into())
-                        })),
-                        Err(Conv::Over) => Err(self.stopped(phase).unwrap_or_else(|| {
-                            LiveError::LimitExceeded {
-                                limit: "max_result_bytes",
-                                message: format!(
-                                    "{path} returned a value larger than {result_bytes} bytes \
+                        Err(Conv::Stopped) => Err(self
+                            .stopped(phase)
+                            .unwrap_or_else(|| LiveError::Internal("a conversion stopped".into()))),
+                        Err(Conv::Over) => {
+                            Err(self
+                                .stopped(phase)
+                                .unwrap_or_else(|| LiveError::LimitExceeded {
+                                    limit: "max_result_bytes",
+                                    message: format!(
+                                        "{path} returned a value larger than {result_bytes} bytes \
                                      (every reference to a shared value counts)"
-                                ),
-                            }
-                        })),
+                                    ),
+                                }))
+                        }
                     }
                 }
                 Err(rquickjs::Error::WouldBlock) => Err(self.stopped(phase).unwrap_or_else(|| {

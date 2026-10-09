@@ -554,7 +554,10 @@ async fn storage_errors_in_host_calls_are_never_swallowed(store: TestStore) {
     let id = mutate(
         &r,
         &insert,
-        obj(&[("table", s("kept")), ("fields", obj(&[("x", LiveValue::I64(0))]))]),
+        obj(&[
+            ("table", s("kept")),
+            ("fields", obj(&[("x", LiveValue::I64(0))])),
+        ]),
     )
     .await
     .expect("insert")
