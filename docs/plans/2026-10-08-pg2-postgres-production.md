@@ -3,6 +3,12 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Work task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact names, paths, ports or defaults, use them verbatim. Where it gives a contract and named tests, write the code to that contract, and record any deviation in "Rulings made during execution" at the end of this file.
 >
 > **Status: Planned** (2026-10-08). Track PG2, design [§46](../design/46-loams-postgres-production.md) (D700–D719, Q640–Q654), building on [§28](../design/28-loams-postgres.md) (D230–D241, D263–D272). PG2a–PG2c implement §28's P2b and P3. **Owner directive, 2026-10-08: "remove safekeepers".** `loams-wal` is the only WAL, and PG2d (making it meet its launch targets) is launch-critical. PG2 is unrelated to PG1: the engine's read-only `--pg-listen` is not Loams Postgres and is out of scope.
+>
+> **Amended by [NF1](2026-10-09-nf1-neon-fork.md) (2026-10-09, design [§51](../design/51-neon-fork.md), owner decision "Mirror and fully fork neon postgres all repos we will maintain").** Ostrium Labs builds and maintains the fork's images. NF1 supersedes D241's cadence (D810–D813) and changes four things here:
+> - **Task 0 ruling 7 (Q649):** D813 answers it. Postgres 17 at GA; 18 when NF1e's gate passes, without delaying PG2; 19 beta.
+> - **Task 2 ruling R2.1:** the image pins move to `ghcr.io/ostrium-labs`, first as a digest-preserving mirror, then as our own builds, through one pin file, `deploy/pins/neon-images.toml` (NF1 Tasks 1, 2, 14).
+> - **Task 51:** builds `UpgradeProject` on NF1 Task 37 (`fast_import` and `ImportPgdata`), with dump and restore as the fallback (D815).
+> - **Task 55:** takes its extension allow-list from NF1's catalogue (D812, NF1 Task 21).
 
 **Goal:** Loams Postgres GA. Serverless Postgres on the bucket (the `ostrium-labs/neon` fork), with:
 - Loams' control plane: `loams.postgres.v1`, `pg-control`, compute lifecycle and scale-to-zero;
@@ -1105,6 +1111,13 @@ Commit `feat(pg): rolling upgrades`.
 
 Tests: `upgrade_16_to_17_preserves_data` (or 17 to 18 per Q649), `upgrade_failure_keeps_source_serving` and `upgrade_crash_resumes`. Commit `feat(pg): major version upgrade by dump and restore`.
 
+*(Amended by NF1, D815.)* The saga's first path is NF1 Task 37's:
+1. `fast_import pgdata` from the target major's compute into the bucket;
+2. `ImportPgdata` into a new root timeline of the same tenant, plus a `loams-wal` timeline at the import's end LSN;
+3. a new branch, then the endpoint swap on the caller's request.
+
+`pg_dump | pg_restore` into a new project stays the fallback when the import refuses. Test `upgrade_17_to_18_preserves_checksums` replaces the 16 → 17 case.
+
 ### Task 52: The failure table, and the chaos soak
 
 **Files:** `scripts/pg2/chaos.sh`, `scripts/pg2/bank-check.py`, and a `pg2-e2e.yml` nightly job (2 h) plus a manual 72 h workflow.
@@ -1144,6 +1157,8 @@ Commit `bench(pg): ga performance gate`.
 **Files:** `scripts/pg2/pg-regress.sh` (runs the compute major version's `parallel_schedule` through PgDog in session mode) and `conformance/pg-regress/allowlist.tsv` (test, reason, issue). Extension smoke tests per §46 §16.1. Q651's allow-list goes in the compute image config.
 
 Tests: `pg_regress_matches_allowlist` (any unlisted failure fails the job, and so does a listed test that now passes, until the list is updated) and `extensions_survive_branch_and_restore`.
+
+*(Amended by NF1, D812.)* Q651's allow-list is NF1's extension catalogue (`compute/loams-extensions.toml` in the fork, NF1 Tasks 20–21): `core` extensions are tested here on every supported major, and `included` ones by `CREATE EXTENSION`.
 
 Commit `test(pg): pg_regress and extensions`.
 
@@ -1276,7 +1291,7 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
 4. **MT1 / OpenFGA.** MT1 is **Planned**, not merged (`docs/plans/2026-10-02-mt1-authentik-identity.md`); no OpenFGA model or client exists in `crates/` (only design mentions and a buy-vs-build line for `openfga-client`). Ruling: Task 9 ships the `Authorizer` trait with an allow-all dev implementation behind `--pg-authz dev`, which refuses to start unless the listener is loopback, and adds the OpenFGA implementation when MT1 lands.
 5. **`kube`.** No workspace `Cargo.toml` depends on `kube`, and MT2/MT4/`loams-operator` are unbuilt (MT4's plan says only that the operator will use `kube`). Ruling: Task 8 picks the newest `kube` release that is at least 14 days old on the day it runs, pins it exactly, and records the version here; `cargo deny` must pass.
 6. **Neon fork pins.** `ostrium-labs/neon` `HEAD` is `fa504217c61bbcaf5c512d75830564541f917f8f` (read with `git ls-remote`, 2026-10-08). No registry client (`skopeo`, `crane`, `docker`) is available in this environment, so **image digests are not recorded**; Task 2 must resolve the digests of `neon` and `compute-node-v17` for a fork-built tag and pin them (`@sha256:...`), replacing `latest`. `compute-node-v16` is not kept (ruling 7). The commit above is a starting point; Task 2 confirms it builds and records the final one.
-7. **Q649.** No owner answer on record. Default applies: **Postgres 17 only at GA**; 18 when §28 §10 step 2 lands. `deploy/neon` moves from 16 to 17 in Task 2.
+7. **Q649.** No owner answer on record. Default applies: **Postgres 17 only at GA**; 18 when §28 §10 step 2 lands. `deploy/neon` moves from 16 to 17 in Task 2. *(Superseded 2026-10-09 by D813, §51 §8.1: 17 at GA; 18 once NF1e's gate passes, without delaying PG2's GA; 19 beta.)*
 8. **Desktop control plane (AP1e Tasks 21-23, built; changes §46 §19's "Desktop" row).** `apps/desktop-electron/src/main/sql/` (`neon.ts`, `pg.ts`, `wesql.ts`, `caps.ts`, `ipc.electron.ts`, `tools.ts`) now drives `deploy/neon` through the pageserver API on `127.0.0.1:9898` and the safekeeper API on `7676` as a local control plane. Rulings on how PG2 relates:
    - `pg.ts`'s `PostgresBackend` is the seam. `loams.postgres.v1` becomes a second implementation (`ControlPlanePostgresBackend`) chosen when the server advertises the API. Task 58 keeps the desktop's `neon.ts` path as the **single-node/dev fallback** and does not delete it, and the RPC shapes must be expressible by `PostgresBackend` (branches, timelines, WAL status, read-only role) without changing the UI contracts in `shared/contracts`.
    - `neon.ts`'s gaps from §19 (tenant `location_config`, trailing slash, `TENANT_ID` and `TIMELINE_ID`) were not re-verified here; Task 58 still checks them.
