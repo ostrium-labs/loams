@@ -28,16 +28,16 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     COMMAND_DEFAULT_TTL_MS, CommandBasedOn, CommandDisposition, DocError, EvaluationContext,
     MessagePart, MessageRole, MessageStatus, QueueDeliveryGate, QueuedMessage, SessionCommandEntry,
     SessionCommandPayload, SessionCommandStatus, SessionDoc, SessionMessageEntry, SubagentStatus,
     evaluate_command, join_continuation_entries,
 };
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     ConversationSourceContext, HarnessId, UserInputAnswer, UserInputQuestion,
 };
-use loams_desktop_sync::DocsStore;
+use loams_agentd_store::DocsStore;
 
 use crate::http_error::describe_http_error;
 use crate::project_actions::{
@@ -56,7 +56,7 @@ const SNAPSHOT_DEBOUNCE_MS: u64 = 1_000;
 pub const QUEUE_EDIT_LEASE_MS: i64 = 60_000;
 
 /// Warm-doc LRU: how many unwatched, run-less docs stay fully open. Everything
-/// beyond this (and beyond [`loams_desktop_doc::DOC_LRU_BYTE_BUDGET`]) is evicted
+/// beyond this (and beyond [`loams_agentd_doc::DOC_LRU_BYTE_BUDGET`]) is evicted
 /// oldest-access-first — reopening from the SQLite snapshot measured within
 /// ~11ms of a warm doc, so the cap trades no perceptible open latency.
 const WARM_DOC_CAP: usize = 12;
@@ -131,14 +131,14 @@ const RELAY_MIN_VERSION: (u64, u64, u64) = (0, 2, 12);
 /// Edge connection config. The bearer is a **provider**, never a snapshot:
 /// every room (re)connect and HTTP request re-reads it, so WorkOS access-token
 /// refreshes (~1h expiry) take effect without an engine restart. Dev bearers
-/// (which never expire) ride the same seam as a [`loams_desktop_rpc::StaticToken`].
+/// (which never expire) ride the same seam as a [`loams_agentd_rpc::StaticToken`].
 #[derive(Clone)]
 pub struct EdgeConfig {
     /// Edge base URL (`http(s)://…`); rewritten to `ws(s)` for the room socket.
     pub url: String,
     /// Fresh-bearer provider (the relay's `TokenSource`), consulted per
     /// connect/request. Temporary failures preserve the signed-in session.
-    pub token: Arc<dyn loams_desktop_rpc::TokenSource>,
+    pub token: Arc<dyn loams_agentd_rpc::TokenSource>,
     /// This engine's device id, carried on room dials (`&device=`) so the
     /// edge can attribute sockets in logs. Debugging the 2026-08-04 deaf
     /// socket meant reverse-engineering devices from rotating IPv6 privacy
@@ -156,7 +156,7 @@ impl std::fmt::Debug for EdgeConfig {
 }
 
 impl EdgeConfig {
-    pub fn new(url: impl Into<String>, token: Arc<dyn loams_desktop_rpc::TokenSource>) -> Self {
+    pub fn new(url: impl Into<String>, token: Arc<dyn loams_agentd_rpc::TokenSource>) -> Self {
         Self {
             url: url.into(),
             token,
@@ -172,11 +172,11 @@ impl EdgeConfig {
 
     /// Fixed bearer — dev mode and tests, where tokens never expire.
     pub fn with_static_token(url: impl Into<String>, token: impl Into<String>) -> Self {
-        Self::new(url, Arc::new(loams_desktop_rpc::StaticToken(token.into())))
+        Self::new(url, Arc::new(loams_agentd_rpc::StaticToken(token.into())))
     }
 
     /// The current bearer, or a distinct signed-out/temporarily-unavailable error.
-    pub async fn bearer(&self) -> Result<String, loams_desktop_rpc::TokenError> {
+    pub async fn bearer(&self) -> Result<String, loams_agentd_rpc::TokenError> {
         self.token.token().await
     }
 
@@ -187,7 +187,7 @@ impl EdgeConfig {
     /// A per-dial room URL provider for `path` (e.g. `/session/{chatId}/ws`):
     /// the bearer is re-fetched before every connect, so reconnects after a
     /// token expiry present a fresh `?token=` instead of the boot-time one.
-    pub fn room_url(&self, path: impl Into<String>) -> Arc<dyn loams_desktop_sync::UrlProvider> {
+    pub fn room_url(&self, path: impl Into<String>) -> Arc<dyn loams_agentd_store::UrlProvider> {
         let ws_base = self.url.replacen("http", "ws", 1);
         Arc::new(EdgeRoomUrl {
             base: format!("{}{}", ws_base.trim_end_matches('/'), path.into()),
@@ -199,14 +199,14 @@ impl EdgeConfig {
 
 struct EdgeRoomUrl {
     base: String,
-    token: Arc<dyn loams_desktop_rpc::TokenSource>,
+    token: Arc<dyn loams_agentd_rpc::TokenSource>,
     device_id: String,
 }
 
-impl loams_desktop_sync::UrlProvider for EdgeRoomUrl {
+impl loams_agentd_store::UrlProvider for EdgeRoomUrl {
     fn url(
         &self,
-    ) -> futures::future::BoxFuture<'static, Result<String, loams_desktop_sync::SyncError>> {
+    ) -> futures::future::BoxFuture<'static, Result<String, loams_agentd_store::SyncError>> {
         let token = self.token.clone();
         let base = self.base.clone();
         let device = self.device_id.clone();
@@ -214,7 +214,7 @@ impl loams_desktop_sync::UrlProvider for EdgeRoomUrl {
             let token = token
                 .token()
                 .await
-                .map_err(loams_desktop_sync::SyncError::from)?;
+                .map_err(loams_agentd_store::SyncError::from)?;
             let mut url = format!("{base}?token={token}");
             if !device.is_empty() {
                 url.push_str(&format!("&device={device}"));
@@ -274,14 +274,14 @@ struct DocHostInner {
     uploads: OnceLock<crate::uploads::Uploads>,
     /// Connectivity watch (`WatchConnectivity`): lazily-started monitor
     /// publishes the edge posture on change (see `watch_connectivity`).
-    connectivity: OnceLock<watch::Sender<loams_desktop_proto::Connectivity>>,
+    connectivity: OnceLock<watch::Sender<loams_agentd_proto::Connectivity>>,
     connectivity_started: AtomicBool,
     /// In-flight queued-attachment transfers, published per landed chunk
     /// (see `watch_transfers`). Entries live exactly as long as bytes are
     /// moving: added when a file's push starts, removed on commit or failure
     /// (a retry re-adds), so consumers can render a real percent while the
     /// relay leg runs and fall back to indeterminate otherwise.
-    transfers: watch::Sender<Vec<loams_desktop_proto::TransferProgress>>,
+    transfers: watch::Sender<Vec<loams_agentd_proto::TransferProgress>>,
     connectivity_grace: Mutex<DegradeGrace>,
     /// Command ids currently BETWEEN mark-processed and their resolution in a
     /// drain. Distinguishes "executing right now" from "consumed by the
@@ -291,7 +291,7 @@ struct DocHostInner {
     executing: Mutex<HashSet<String>>,
     /// Peer links (engine assembly, edge runtimes only) — the transport that
     /// pushes queued attachment bytes to a remote host.
-    links: OnceLock<Arc<loams_desktop_rpc::LinkCache>>,
+    links: OnceLock<Arc<loams_agentd_rpc::LinkCache>>,
     /// Shared client for sidecar blob PUT/GET (30s timeout, uploads.rs
     /// discipline — diff_sync's untimed client hung on dead links).
     http: reqwest::Client,
@@ -402,7 +402,7 @@ impl DegradeGrace {
 struct ChatConnectionSnapshot {
     sync_started: bool,
     sync_requested: bool,
-    stats: Option<loams_desktop_sync::ChatStatsSnapshot>,
+    stats: Option<loams_agentd_store::ChatStatsSnapshot>,
     delivery_live: bool,
 }
 
@@ -535,7 +535,7 @@ pub enum FinishQueueEditOutcome {
 #[derive(Clone, Default)]
 pub struct TranscriptSnapshot {
     pub entries: Arc<Vec<SessionMessageEntry>>,
-    pub replay_baseline: Arc<loams_desktop_doc::TranscriptBaseline>,
+    pub replay_baseline: Arc<loams_agentd_doc::TranscriptBaseline>,
 }
 
 /// One open chat doc: the `SessionDoc`, its change plumbing, and the room client.
@@ -601,7 +601,7 @@ pub struct ChatDocHandle {
     retired: AtomicBool,
     /// chat2 relay client (docs/chat2-sync.md C3) — populated once the
     /// registry names roomGen 2 for this chat and the join resolves.
-    chat2: Mutex<Option<loams_desktop_sync::ChatClient>>,
+    chat2: Mutex<Option<loams_agentd_store::ChatClient>>,
     sync_started: AtomicBool,
     sync_requested: AtomicBool,
     sync_background: AtomicBool,
@@ -1003,7 +1003,7 @@ impl DocHost {
     /// is why this can afford to be indiscriminate.
     fn spawn_queue_flush_watcher(
         &self,
-        mut statuses: watch::Receiver<Vec<loams_desktop_proto::Session>>,
+        mut statuses: watch::Receiver<Vec<loams_agentd_proto::Session>>,
     ) {
         let host = self.clone();
         self.spawn_worker(async move {
@@ -1065,7 +1065,7 @@ impl DocHost {
     }
 
     /// Wire the repos engine (engine assembly) — worktree materialization for
-    /// Run commands carrying a [`loams_desktop_proto::WorktreeSpec`].
+    /// Run commands carrying a [`loams_agentd_proto::WorktreeSpec`].
     pub fn set_repos(&self, repos: crate::repos::Repos) {
         let _ = self.inner.repos.set(repos);
     }
@@ -1089,7 +1089,7 @@ impl DocHost {
 
     /// Wire the peer-link cache (engine assembly, edge runtimes only) — the
     /// transport for queued attachment transfers to a remote host.
-    pub fn set_links(&self, links: Arc<loams_desktop_rpc::LinkCache>) {
+    pub fn set_links(&self, links: Arc<loams_agentd_rpc::LinkCache>) {
         let _ = self.inner.links.set(links);
     }
 
@@ -1139,7 +1139,7 @@ impl DocHost {
                     return; // edge-less engine: nothing to migrate onto
                 };
                 let Some(ws) = host.workspace() else { continue };
-                let chats: Vec<loams_desktop_proto::Chat> = ws.watch_chats().borrow().clone();
+                let chats: Vec<loams_agentd_proto::Chat> = ws.watch_chats().borrow().clone();
                 let device = host.inner.config.device_id.clone();
                 let now = now_ms();
                 let candidate = chats.into_iter().find(|c| {
@@ -1182,7 +1182,7 @@ impl DocHost {
     /// the chat2 adopt path. A handle with a LIVE local writer (a running
     /// turn's doc ref) is left alone — the host never flips mid-run, and a
     /// racing writer must never lose its doc out from under it.
-    fn spawn_cutover_watcher(&self, mut chats: watch::Receiver<Vec<loams_desktop_proto::Chat>>) {
+    fn spawn_cutover_watcher(&self, mut chats: watch::Receiver<Vec<loams_agentd_proto::Chat>>) {
         let host = self.clone();
         self.spawn_worker(async move {
             loop {
@@ -1566,23 +1566,22 @@ impl DocHost {
         // retried: the exact "transcript frozen until restart" report.
         // Retry on the workspace host's capped, jittered backoff; a system
         // wake redials immediately; eviction/purge ends the loop via `weak`.
-        if self.inner.config.edge.is_some() {
-            if room_gen >= 2 {
-                // Subscription BEFORE the dial (review B3): every local
-                // commit lands in the client when connected, else in the
-                // pending buffer the join drains — nothing composed during
-                // (or before) the dial is lost to the room.
-                // A one-time full replay heals history stranded by older clients.
-                // Its durable marker is independent of the download cursor.
-                if !self.inner.store.chat_outbox_initialized(chat_id)? {
-                    let updates = crate::chat2_host::publication_updates(doc.doc())
-                        .map_err(EngineError::Other)?;
-                    self.inner.store.initialize_chat_outbox(chat_id, &updates)?;
-                }
-                let weak_push = Arc::downgrade(&handle);
-                let publication_store = self.inner.store.clone();
-                let publication_chat = chat_id.to_string();
-                let sub = doc
+        if self.inner.config.edge.is_some() && room_gen >= 2 {
+            // Subscription BEFORE the dial (review B3): every local
+            // commit lands in the client when connected, else in the
+            // pending buffer the join drains — nothing composed during
+            // (or before) the dial is lost to the room.
+            // A one-time full replay heals history stranded by older clients.
+            // Its durable marker is independent of the download cursor.
+            if !self.inner.store.chat_outbox_initialized(chat_id)? {
+                let updates = crate::chat2_host::publication_updates(doc.doc())
+                    .map_err(EngineError::Other)?;
+                self.inner.store.initialize_chat_outbox(chat_id, &updates)?;
+            }
+            let weak_push = Arc::downgrade(&handle);
+            let publication_store = self.inner.store.clone();
+            let publication_chat = chat_id.to_string();
+            let sub = doc
                     .doc()
                     .subscribe_local_update(Box::new(move |bytes: &Vec<u8>| {
                         if let Some(handle) = weak_push.upgrade() {
@@ -1603,17 +1602,16 @@ impl DocHost {
                         }
                         true
                     }));
-                *lock(&handle.chat2_local_sub) = Some(sub);
-                // Re-queue survives the adopt: our own pending commands
-                // become fresh entries in the new lineage (the
-                // processed_commands ledger still guards double execution).
-                // Committed AFTER the local-update subscription above — a
-                // commit before it never enters the pending buffer or the
-                // client, so the requeued command would sit in the local doc
-                // and never reach the room (the host would never see it).
-                for command in &requeue_commands {
-                    let _ = doc.queue_command(command);
-                }
+            *lock(&handle.chat2_local_sub) = Some(sub);
+            // Re-queue survives the adopt: our own pending commands
+            // become fresh entries in the new lineage (the
+            // processed_commands ledger still guards double execution).
+            // Committed AFTER the local-update subscription above — a
+            // commit before it never enters the pending buffer or the
+            // client, so the requeued command would sit in the local doc
+            // and never reach the room (the host would never see it).
+            for command in &requeue_commands {
+                let _ = doc.queue_command(command);
             }
         }
         // Publish only after the durable subscription and bootstrap are installed.
@@ -1759,9 +1757,9 @@ impl DocHost {
                 };
                 // Overflow reconciliation is metadata-only and resumable. Wait
                 // for registry truth before deciding the hosted set is complete.
-                if let Some(ws) = host.workspace() {
-                    if ws.sync_status().is_some_and(|s| s.synced) {
-                        if let Ok(Some((version, cursor))) =
+                if let Some(ws) = host.workspace()
+                    && ws.sync_status().is_some_and(|s| s.synced)
+                        && let Ok(Some((version, cursor))) =
                             host.inner.store.reconciliation_progress()
                         {
                             let mut ids: Vec<_> = ws
@@ -1777,8 +1775,6 @@ impl DocHost {
                             ids.truncate(32);
                             let _ = host.inner.store.reconcile_page(version, &ids);
                         }
-                    }
-                }
                 let handles: Vec<_> = lock(&host.inner.handles).values().cloned().collect();
                 for handle in &handles {
                     if !handle.publication_failed.load(Ordering::Acquire) {
@@ -1828,11 +1824,10 @@ impl DocHost {
                         candidates.push((id, None));
                     }
                 }
-                if let Some((id, _)) = &handoff {
-                    if !candidates.iter().any(|(chat, _)| chat == id) {
+                if let Some((id, _)) = &handoff
+                    && !candidates.iter().any(|(chat, _)| chat == id) {
                         candidates.push((id.clone(), handles.iter().find(|h| &h.chat_id == id).cloned()));
                     }
-                }
                 let mut waiting = Vec::new();
                 for (id, handle) in candidates {
                     let wake_version = match host.inner.store.sync_job_version(&id, "wake") {
@@ -1919,7 +1914,7 @@ impl DocHost {
                 let available = ACTIVE_SYNC_CAP.saturating_sub(running);
                 let now = now_ms();
                 let contended = available == 0 && !waiting.is_empty();
-                let budget = loams_desktop_sync::budget::shared().stats();
+                let budget = loams_agentd_store::budget::shared().stats();
                 let global_contended = !budget.resource_paused && budget.sockets >= budget.socket_limit && budget.socket_waiting > 0;
                 // A teardown gap or the end of a paged disk scan is not the
                 // end of contention. Resetting there starves cold jobs under
@@ -1945,7 +1940,7 @@ impl DocHost {
                 ));
                 // Three focus turns, then one overdue service turn. A served
                 // focus cannot immediately take its slot back after rotation.
-                let fair = oldest_waiter.is_some() && (newest_focus.is_none() || (turn + 1) % 4 == 0);
+                let fair = oldest_waiter.is_some() && (newest_focus.is_none() || (turn + 1).is_multiple_of(4));
                 let winner = if fair {
                     oldest_waiter.map(|(id, _, _)| id.clone())
                 } else {
@@ -2011,8 +2006,8 @@ impl DocHost {
                         });
                         (
                             handoff.as_ref().map(|(chat, _)| chat) != Some(id),
-                            if turn % 4 == 0 { protected } else { !protected },
-                            std::cmp::Reverse(if turn % 4 == 0 { 0 } else { focus }),
+                            if turn.is_multiple_of(4) { protected } else { !protected },
+                            std::cmp::Reverse(if turn.is_multiple_of(4) { 0 } else { focus }),
                             h.as_ref().map_or(0, |h| h.sync_last_started.load(Ordering::Acquire)),
                             id.clone(),
                         )
@@ -2129,9 +2124,9 @@ impl DocHost {
         let cancel = CancellationToken::new();
         *lock(&handle.sync_cancel) = cancel.clone();
         let priority = if handle.sync_background.load(Ordering::Acquire) {
-            loams_desktop_sync::budget::Priority::Background
+            loams_agentd_store::budget::Priority::Background
         } else {
-            loams_desktop_sync::budget::Priority::Interactive
+            loams_agentd_store::budget::Priority::Interactive
         };
         let chat = handle.chat_id.clone();
         let doc = handle.doc.clone();
@@ -2154,7 +2149,7 @@ impl DocHost {
                 chat.clone(),
             ).with_priority(priority));
             let url = edge.room_url(format!("/chat2/{chat}/ws"));
-            let mut wake = loams_desktop_sync::wake::subscribe();
+            let mut wake = loams_agentd_store::wake::subscribe();
             // Sibling-dial successes end a backoff wait immediately, exactly
             // like the joined clients' own reconnect loops (chat_client.rs).
             // Without this, a NEW chat whose first joins hit a network blip
@@ -2162,7 +2157,7 @@ impl DocHost {
             // established room redialed instantly on recovery — fresh sends
             // to new sessions stalled while other chats hummed (2026-08-19
             // user report, reproduced on two networks).
-            let mut online = loams_desktop_sync::wake::subscribe_online();
+            let mut online = loams_agentd_store::wake::subscribe_online();
             let mut backoff = crate::workspace_host::JOIN_RETRY_BASE;
             loop {
                 if weak.upgrade().is_none() {
@@ -2181,7 +2176,7 @@ impl DocHost {
                 ).with_priority(priority));
                 let dial = tokio::time::timeout(
                     std::time::Duration::from_secs(60),
-                    loams_desktop_sync::ChatClient::connect_via_transport(
+                    loams_agentd_store::ChatClient::connect_via_transport(
                         url.clone(),
                         sink.clone(),
                         fetcher.clone(),
@@ -2193,7 +2188,7 @@ impl DocHost {
                 .await;
                 match dial {
                     Ok(Ok(client)) => {
-                        if matches!(edge.bearer().await, Err(loams_desktop_rpc::TokenError::SignedOut)) {
+                        if matches!(edge.bearer().await, Err(loams_agentd_rpc::TokenError::SignedOut)) {
                             return;
                         }
                         let Some(handle) = weak.upgrade() else {
@@ -2295,7 +2290,7 @@ impl DocHost {
                             let weak = weak.clone();
                             let chat = chat.clone();
                             host.clone().spawn_sync_worker(cancel.clone(), async move {
-                                use loams_desktop_sync::chat_client::ChatEvent;
+                                use loams_agentd_store::chat_client::ChatEvent;
                                 loop {
                                     match events.recv().await {
                                         Ok(ChatEvent::ServerReset) => {
@@ -2326,7 +2321,7 @@ impl DocHost {
                                     Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                                 },
                                 _ = crate::workspace_host::token_changed(&mut token_changes) => {
-                                    if matches!(edge.bearer().await, Err(loams_desktop_rpc::TokenError::SignedOut)) {
+                                    if matches!(edge.bearer().await, Err(loams_agentd_rpc::TokenError::SignedOut)) {
                                         if let Some(handle) = weak.upgrade() {
                                             lock(&handle.chat2).take();
                                             // Keep journaling local cleanup after credentials disappear.
@@ -2466,7 +2461,7 @@ impl DocHost {
         use base64::Engine as _;
         let vv_at_rebuild = doc.doc().oplog_vv().encode();
         let rebuilt =
-            loams_desktop_doc::rebuild::rebuild_thin_doc(&doc).map_err(|e| e.to_string())?;
+            loams_agentd_doc::rebuild::rebuild_thin_doc(&doc).map_err(|e| e.to_string())?;
         // The seed's own doc ref must be gone before the pinned re-check
         // below: `pinned` reads `Arc::strong_count(&handle.doc) > 1`, and
         // holding this clone made that true unconditionally — every seed
@@ -2487,8 +2482,8 @@ impl DocHost {
             edge.url.trim_end_matches('/'),
             chat_id
         );
-        let _permit = loams_desktop_sync::budget::shared()
-            .http(loams_desktop_sync::budget::Priority::Background)
+        let _permit = loams_agentd_store::budget::shared()
+            .http(loams_agentd_store::budget::Priority::Background)
             .await
             .map_err(|e| e.to_string())?;
         let res = self
@@ -2594,7 +2589,7 @@ impl DocHost {
             // Let boot settle (registry load, room joins) before sweeping.
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             let Some(ws) = host.workspace() else { return };
-            let chats: Vec<loams_desktop_proto::Chat> = ws.watch_chats().borrow().clone();
+            let chats: Vec<loams_agentd_proto::Chat> = ws.watch_chats().borrow().clone();
             for chat in chats {
                 if chat.device_id != host.inner.config.device_id {
                     continue; // only the host owns its chats' history
@@ -2633,13 +2628,13 @@ impl DocHost {
                     .sync_job_version(&chat, "recovery")
                     .ok()
                     .flatten();
-                if host.salvage_chat_transcript(&chat).await.is_ok() {
-                    if let Some(version) = version {
-                        let _ = host
-                            .inner
-                            .store
-                            .complete_sync_job(&chat, "recovery", version);
-                    }
+                if host.salvage_chat_transcript(&chat).await.is_ok()
+                    && let Some(version) = version
+                {
+                    let _ = host
+                        .inner
+                        .store
+                        .complete_sync_job(&chat, "recovery", version);
                 }
             }
         });
@@ -2692,7 +2687,7 @@ impl DocHost {
         raw.import(&bytes).map_err(|e| e.to_string())?;
         let fat = SessionDoc::from_doc(raw);
         let rebuilt =
-            loams_desktop_doc::rebuild::rebuild_thin_doc(&fat).map_err(|e| e.to_string())?;
+            loams_agentd_doc::rebuild::rebuild_thin_doc(&fat).map_err(|e| e.to_string())?;
         let entries = rebuilt.doc.read_entries().map_err(|e| e.to_string())?;
         if entries.is_empty() {
             return Ok(());
@@ -2774,10 +2769,10 @@ impl DocHost {
         // history. Materialization/encoding must not occupy a network worker.
         let doc = handle.doc.clone();
         let body = tokio::task::spawn_blocking(move || {
-            let tail = loams_desktop_doc::materialize_tail(
+            let tail = loams_agentd_doc::materialize_tail(
                 &doc,
                 now_ms(),
-                loams_desktop_doc::TAIL_MESSAGE_COUNT,
+                loams_agentd_doc::TAIL_MESSAGE_COUNT,
             )
             .ok()?;
             serde_json::to_vec(&tail).ok()
@@ -2798,8 +2793,8 @@ impl DocHost {
                     edge_tail.url.trim_end_matches('/'),
                     chat
                 );
-                let Ok(_permit) = loams_desktop_sync::budget::shared()
-                    .http(loams_desktop_sync::budget::Priority::Background)
+                let Ok(_permit) = loams_agentd_store::budget::shared()
+                    .http(loams_agentd_store::budget::Priority::Background)
                     .await
                 else {
                     return;
@@ -2881,7 +2876,7 @@ impl DocHost {
                 chat_id,
                 seq_covered
             );
-            let Ok(_permit) = loams_desktop_sync::budget::shared().http(loams_desktop_sync::budget::Priority::Background).await else {
+            let Ok(_permit) = loams_agentd_store::budget::shared().http(loams_agentd_store::budget::Priority::Background).await else {
                 return;
             };
             let size = snapshot.len() as u64;
@@ -2955,7 +2950,7 @@ impl DocHost {
                         .sum::<usize>(),
                 )
             };
-            if count <= WARM_DOC_CAP && estimate <= loams_desktop_doc::DOC_LRU_BYTE_BUDGET {
+            if count <= WARM_DOC_CAP && estimate <= loams_agentd_doc::DOC_LRU_BYTE_BUDGET {
                 return;
             }
             let evicted = {
@@ -3070,14 +3065,14 @@ impl DocHost {
             if let Ok(res) = res
                 && res.status().is_success()
             {
-                loams_desktop_sync::wake::notify_online();
+                loams_agentd_store::wake::notify_online();
             }
         });
     }
 
     /// The in-flight queued-attachment transfer set: current entries first,
     /// then a fresh snapshot per landed chunk (see `push_attachments`).
-    pub fn watch_transfers(&self) -> watch::Receiver<Vec<loams_desktop_proto::TransferProgress>> {
+    pub fn watch_transfers(&self) -> watch::Receiver<Vec<loams_agentd_proto::TransferProgress>> {
         self.inner.transfers.subscribe()
     }
 
@@ -3089,7 +3084,7 @@ impl DocHost {
                     t.done = done;
                     t.total = total;
                 }
-                None => list.push(loams_desktop_proto::TransferProgress {
+                None => list.push(loams_agentd_proto::TransferProgress {
                     upload_id: upload_id.to_string(),
                     file_name: file_name.to_string(),
                     done,
@@ -3112,7 +3107,7 @@ impl DocHost {
     /// (atomics + small locks), published only when the value changes. The
     /// retry countdown renders client-side from `retry_at_ms`, so quiet
     /// periods emit nothing at all.
-    pub fn watch_connectivity(&self) -> watch::Receiver<loams_desktop_proto::Connectivity> {
+    pub fn watch_connectivity(&self) -> watch::Receiver<loams_agentd_proto::Connectivity> {
         let tx = self
             .inner
             .connectivity
@@ -3153,8 +3148,8 @@ impl DocHost {
     /// those flashed amber warnings and "Queued" badges at every chat
     /// switch. Raw degradation must persist [`DEGRADE_GRACE`] before it is
     /// reported; recovery reports instantly.
-    fn compute_connectivity(&self) -> loams_desktop_proto::Connectivity {
-        use loams_desktop_proto::{ChatConnectivity, Connectivity, ConnectivityState};
+    fn compute_connectivity(&self) -> loams_agentd_proto::Connectivity {
+        use loams_agentd_proto::{ChatConnectivity, Connectivity, ConnectivityState};
         let workspace = self.workspace();
         let edge_expected = self.inner.config.edge.is_some()
             || workspace.as_ref().is_some_and(|w| w.edge_expected());
@@ -3195,7 +3190,7 @@ impl DocHost {
             .is_some_and(|s| s.connected);
         let path_offline = grace.degraded(
             GraceKey::OsPath,
-            loams_desktop_sync::wake::path_is_offline(),
+            loams_agentd_store::wake::path_is_offline(),
             now,
         );
         let registry_down = grace.degraded(GraceKey::Registry, !registry_connected, now);
@@ -3223,8 +3218,8 @@ impl DocHost {
         }
     }
 
-    pub fn chat_sync_state(&self, chat_id: &str) -> loams_desktop_proto::ChatSyncState {
-        use loams_desktop_proto::ChatSyncState as S;
+    pub fn chat_sync_state(&self, chat_id: &str) -> loams_agentd_proto::ChatSyncState {
+        use loams_agentd_proto::ChatSyncState as S;
         let handle = lock(&self.inner.handles).get(chat_id).cloned();
         let Some(handle) = handle else {
             return S::Local;
@@ -3237,8 +3232,8 @@ impl DocHost {
         &self,
         handle: &ChatDocHandle,
         snapshot: &ChatConnectionSnapshot,
-    ) -> loams_desktop_proto::ChatSyncState {
-        use loams_desktop_proto::ChatSyncState as S;
+    ) -> loams_agentd_proto::ChatSyncState {
+        use loams_agentd_proto::ChatSyncState as S;
         if handle.publication_failed.load(Ordering::Acquire) {
             return S::StorageError;
         }
@@ -3254,7 +3249,7 @@ impl DocHost {
         }
         match snapshot.stats {
             Some(stats) if snapshot.delivery_live && stats.pending_pushes == 0 => S::Synced,
-            Some(_) if !snapshot.delivery_live && loams_desktop_sync::wake::path_is_offline() => {
+            Some(_) if !snapshot.delivery_live && loams_agentd_store::wake::path_is_offline() => {
                 S::Offline
             }
             _ => S::Connecting,
@@ -3299,7 +3294,7 @@ impl DocHost {
         #[cfg(not(unix))]
         let fd_limit: Option<u64> = None;
         serde_json::json!({
-            "budget": loams_desktop_sync::budget::shared().stats(),
+            "budget": loams_agentd_store::budget::shared().stats(),
             "activeClientLimit": ACTIVE_SYNC_CAP,
             "openDocuments": handles.len(), "waitingDocuments": waiting,
             "documentLoads": self.inner.document_loads.load(Ordering::Relaxed),
@@ -3311,10 +3306,10 @@ impl DocHost {
 
     /// Per-open-chat room introspection for SyncStatus / `loams-desktop sync`.
     /// `None` room = still dialing (join retry loop) or edge-less.
-    pub fn sync_statuses(&self) -> Vec<(String, Option<loams_desktop_sync::ChatStatsSnapshot>)> {
+    pub fn sync_statuses(&self) -> Vec<(String, Option<loams_agentd_store::ChatStatsSnapshot>)> {
         let handles: Vec<Arc<ChatDocHandle>> =
             lock(&self.inner.handles).values().cloned().collect();
-        let mut rows: Vec<(String, Option<loams_desktop_sync::ChatStatsSnapshot>)> = handles
+        let mut rows: Vec<(String, Option<loams_agentd_store::ChatStatsSnapshot>)> = handles
             .iter()
             .map(|h| {
                 (
@@ -4233,7 +4228,7 @@ impl DocHost {
     /// 2. give the normal path (chat2 rows → edge → host's room) a short
     ///    grace to ack;
     /// 3. rows still not at the edge but the peer link alive → relay-forward
-    ///    the entry itself ([`loams_desktop_rpc::methods::RELAY_COMMAND`]). The
+    ///    the entry itself ([`loams_agentd_rpc::methods::RELAY_COMMAND`]). The
     ///    host's processed ledger claims the client-minted id, so the doc
     ///    row arriving later dedupes to a no-op — exactly-once by
     ///    construction (the 2026-08-18 03:45 incident shape: nudges flowed,
@@ -4258,8 +4253,8 @@ impl DocHost {
             if !transfers.is_empty() && !host.deliver_attachments(&chat, &transfers).await {
                 return; // gave up; the drain's wait cap surfaces the failure
             }
-            let mut wake = loams_desktop_sync::wake::subscribe();
-            let mut online = loams_desktop_sync::wake::subscribe_online();
+            let mut wake = loams_agentd_store::wake::subscribe();
+            let mut online = loams_agentd_store::wake::subscribe_online();
             let give_up = tokio::time::Instant::now() + RELAY_GIVE_UP;
             let grace_end = tokio::time::Instant::now() + ROWS_GRACE;
             while tokio::time::Instant::now() < grace_end {
@@ -4310,8 +4305,8 @@ impl DocHost {
         chat: &str,
         transfers: &[crate::uploads::AttachmentTransfer],
     ) -> bool {
-        let mut wake = loams_desktop_sync::wake::subscribe();
-        let mut online = loams_desktop_sync::wake::subscribe_online();
+        let mut wake = loams_agentd_store::wake::subscribe();
+        let mut online = loams_agentd_store::wake::subscribe_online();
         let mut backoff = TRANSFER_BACKOFF_BASE;
         let deadline = tokio::time::Instant::now() + ATTACHMENT_WAIT_MAX;
         loop {
@@ -4385,7 +4380,7 @@ impl DocHost {
             .and_then(|d| {
                 d.version
                     .as_deref()
-                    .and_then(loams_desktop_proto::version_triple)
+                    .and_then(loams_agentd_proto::version_triple)
             })
             .is_some_and(|v| v >= RELAY_MIN_VERSION);
         if !supported {
@@ -4401,15 +4396,13 @@ impl DocHost {
             .await
             .map_err(|e| format!("peer link: {e}"))?;
         let params = serde_json::json!({ "chatId": chat_id, "entry": entry });
-        let call = client.call(loams_desktop_rpc::methods::RELAY_COMMAND, params);
+        let call = client.call(loams_agentd_rpc::methods::RELAY_COMMAND, params);
         match tokio::time::timeout(RELAY_CALL_TIMEOUT, call).await {
             Err(_) => {
                 links.invalidate(target);
                 Err("relay call timed out; peer link suspect".into())
             }
-            Ok(Err(loams_desktop_rpc::RpcError::Failed(err))) => {
-                Err(format!("host refused: {err}"))
-            }
+            Ok(Err(loams_agentd_rpc::RpcError::Failed(err))) => Err(format!("host refused: {err}")),
             Ok(Err(err)) => {
                 links.invalidate(target);
                 Err(format!("relay call failed: {err}"))
@@ -4559,7 +4552,7 @@ impl DocHost {
         Ok(())
     }
 
-    /// Host side of [`loams_desktop_rpc::methods::RELAY_COMMAND`]: evaluate the
+    /// Host side of [`loams_agentd_rpc::methods::RELAY_COMMAND`]: evaluate the
     /// forwarded entry against OUR doc (dedupe/TTL/supersede rules apply
     /// unchanged), claim its client-minted id in the processed ledger, then
     /// execute. The claim is what makes the doc row arriving later — over
@@ -4675,13 +4668,13 @@ impl DocHost {
                 let params = serde_json::json!({
                     "uploadId": transfer.upload_id, "seq": seq, "data": &b64[start..end],
                 });
-                let call = client.call(loams_desktop_rpc::methods::UPLOAD_CHUNK, params);
+                let call = client.call(loams_agentd_rpc::methods::UPLOAD_CHUNK, params);
                 match tokio::time::timeout(TRANSFER_CHUNK_TIMEOUT, call).await {
                     Err(_) => {
                         links.invalidate(target);
                         return Err(Transient("chunk push timed out; peer link suspect".into()));
                     }
-                    Ok(Err(loams_desktop_rpc::RpcError::Failed(err))) => {
+                    Ok(Err(loams_agentd_rpc::RpcError::Failed(err))) => {
                         return Err(Permanent(format!("host refused chunk: {err}")));
                     }
                     Ok(Err(err)) => {
@@ -4703,13 +4696,13 @@ impl DocHost {
             let params = serde_json::json!({
                 "uploadId": transfer.upload_id, "fileName": transfer.file_name,
             });
-            let call = client.call(loams_desktop_rpc::methods::UPLOAD_COMMIT, params);
+            let call = client.call(loams_agentd_rpc::methods::UPLOAD_COMMIT, params);
             match tokio::time::timeout(TRANSFER_COMMIT_TIMEOUT, call).await {
                 Err(_) => {
                     links.invalidate(target);
                     return Err(Transient("commit timed out; peer link suspect".into()));
                 }
-                Ok(Err(loams_desktop_rpc::RpcError::Failed(err))) => {
+                Ok(Err(loams_agentd_rpc::RpcError::Failed(err))) => {
                     return Err(Permanent(format!("host refused commit: {err}")));
                 }
                 Ok(Err(err)) => {
@@ -4727,7 +4720,7 @@ impl DocHost {
     /// Fire-and-forget: the doc already carries the summary, so a lost upload
     /// degrades to "full output unavailable" — it must never block or fail
     /// the run. Offline/edge-less engines skip silently.
-    pub fn upload_tool_sidecar(&self, chat_id: &str, payload: loams_desktop_doc::SidecarPayload) {
+    pub fn upload_tool_sidecar(&self, chat_id: &str, payload: loams_agentd_doc::SidecarPayload) {
         let Some(edge) = self.inner.config.edge.clone() else {
             return;
         };
@@ -4859,7 +4852,7 @@ impl DocHost {
     pub(crate) fn harness_for_request(
         &self,
         chat_id: &str,
-        request: &loams_desktop_proto::RunRequest,
+        request: &loams_agentd_proto::RunRequest,
     ) -> HarnessId {
         request.harness.unwrap_or_else(|| self.harness_for(chat_id))
     }
@@ -5097,7 +5090,7 @@ impl DocHost {
     /// paths — in the attachments list AND the prompt text — so the harness
     /// (and the persisted user entry) see ordinary local files, exactly like
     /// the legacy pre-upload flow produced.
-    fn resolve_request_attachments(&self, request: &mut loams_desktop_proto::RunRequest) {
+    fn resolve_request_attachments(&self, request: &mut loams_agentd_proto::RunRequest) {
         self.resolve_attachment_refs(&mut request.prompt, &mut request.attachments);
     }
 
@@ -5201,7 +5194,7 @@ impl DocHost {
                 let worktree_spec = request.worktree.take();
                 let fresh_worktree = match &worktree_spec {
                     Some(spec) => {
-                        let (cwd, fresh) = self.materialize_worktree(chat_id, &spec).await?;
+                        let (cwd, fresh) = self.materialize_worktree(chat_id, spec).await?;
                         request.cwd = cwd;
                         fresh
                     }
@@ -5243,7 +5236,7 @@ impl DocHost {
                 if let Some(ws) = self.workspace()
                     && ws.chat_config(chat_id).is_none()
                 {
-                    let config = loams_desktop_proto::ChatConfig {
+                    let config = loams_agentd_proto::ChatConfig {
                         harness,
                         model: request.model.clone(),
                         reasoning: request.reasoning,
@@ -5537,7 +5530,7 @@ impl DocHost {
         sessions: &SessionsEngine,
         chat_id: &str,
         harness: HarnessId,
-        request: loams_desktop_proto::RunRequest,
+        request: loams_agentd_proto::RunRequest,
         message_id: Option<String>,
     ) -> Result<String, EngineError> {
         if let Some(workspace) = self.workspace()
@@ -5551,7 +5544,7 @@ impl DocHost {
             .await
     }
 
-    /// Create (or reuse) the isolated worktree a Run's [`loams_desktop_proto::WorktreeSpec`]
+    /// Create (or reuse) the isolated worktree a Run's [`loams_agentd_proto::WorktreeSpec`]
     /// asks for, returning the resolved cwd plus the fresh worktree when one was
     /// actually created. Reuse guard: a chat whose row already points inside a
     /// linked worktree of the same repo keeps it — a duplicate Run (client retry
@@ -5559,8 +5552,8 @@ impl DocHost {
     async fn materialize_worktree(
         &self,
         chat_id: &str,
-        spec: &loams_desktop_proto::WorktreeSpec,
-    ) -> Result<(String, Option<loams_desktop_proto::Worktree>), EngineError> {
+        spec: &loams_agentd_proto::WorktreeSpec,
+    ) -> Result<(String, Option<loams_agentd_proto::Worktree>), EngineError> {
         if let Some(ws) = self.workspace()
             && let Ok(Some(chat)) = ws.chat(chat_id)
             && let Some(cwd) = chat.cwd
@@ -5592,8 +5585,8 @@ impl DocHost {
         &self,
         command_id: &str,
         chat_id: &str,
-        spec: &loams_desktop_proto::WorktreeSpec,
-        fresh_worktree: Option<&loams_desktop_proto::Worktree>,
+        spec: &loams_agentd_proto::WorktreeSpec,
+        fresh_worktree: Option<&loams_agentd_proto::Worktree>,
     ) {
         let Some((project_actions, terminals)) = self.inner.project_action_runtime.get() else {
             return;
@@ -5624,8 +5617,8 @@ impl DocHost {
         project_actions: &ProjectActionsStore,
         terminals: &Terminals,
         space_id: &str,
-        spec: &loams_desktop_proto::WorktreeSpec,
-        worktree: &loams_desktop_proto::Worktree,
+        spec: &loams_agentd_proto::WorktreeSpec,
+        worktree: &loams_agentd_proto::Worktree,
     ) -> Result<ProjectActionSetupHandoff, EngineError> {
         let workspace = self
             .workspace()
@@ -5675,7 +5668,7 @@ impl DocHost {
         &self,
         chat_id: &str,
         prompt: &str,
-    ) -> Option<loams_desktop_proto::RunRequest> {
+    ) -> Option<loams_agentd_proto::RunRequest> {
         let workspace = self.workspace()?;
         let chat = match workspace.chat(chat_id) {
             Ok(chat) => chat?,
@@ -5685,7 +5678,7 @@ impl DocHost {
             }
         };
         let config = chat.config;
-        Some(loams_desktop_proto::RunRequest {
+        Some(loams_agentd_proto::RunRequest {
             mcp: None,
             prompt: prompt.to_string(),
             harness: config.as_ref().map(|c| c.harness),
@@ -5699,7 +5692,7 @@ impl DocHost {
             sandbox: config
                 .as_ref()
                 .map(|c| c.sandbox)
-                .unwrap_or(loams_desktop_proto::SandboxLevel::WorkspaceWrite),
+                .unwrap_or(loams_agentd_proto::SandboxLevel::WorkspaceWrite),
             auto_approve: false,
             attachments: Vec::new(),
             resume: None,
@@ -5815,12 +5808,12 @@ mod transfer_progress_tests {
 
     fn host() -> (tempfile::TempDir, DocHost) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let store = Arc::new(loams_desktop_sync::DocsStore::open(dir.path()).expect("store opens"));
+        let store = Arc::new(loams_agentd_store::DocsStore::open(dir.path()).expect("store opens"));
         let host = DocHost::new(
             store,
             DocHostConfig {
                 device_id: "dev-test".into(),
-                default_harness: loams_desktop_proto::HarnessId::Mock,
+                default_harness: loams_agentd_proto::HarnessId::Mock,
                 edge: None,
             },
         );
@@ -5830,13 +5823,13 @@ mod transfer_progress_tests {
     #[tokio::test]
     async fn whale_snapshot_opens_and_reopens_without_network() {
         let (_dir, host) = host();
-        let source = loams_desktop_doc::SessionDoc::init("persisted-whale").unwrap();
+        let source = loams_agentd_doc::SessionDoc::init("persisted-whale").unwrap();
         for i in 0..2000 {
             source
-                .push_message(&loams_desktop_doc::SessionMessageEntry {
+                .push_message(&loams_agentd_doc::SessionMessageEntry {
                     id: format!("row-{i}"),
-                    role: loams_desktop_doc::MessageRole::User,
-                    parts: vec![loams_desktop_doc::MessagePart::Text {
+                    role: loams_agentd_doc::MessageRole::User,
+                    parts: vec![loams_agentd_doc::MessagePart::Text {
                         id: "text".into(),
                         text: "x".repeat(2048),
                     }],
@@ -5991,13 +5984,13 @@ mod source_context_tests {
         git(&repo, &["commit", "-m", "capture"]);
 
         let store = Arc::new(
-            loams_desktop_sync::DocsStore::open(dir.path().join("docs")).expect("store opens"),
+            loams_agentd_store::DocsStore::open(dir.path().join("docs")).expect("store opens"),
         );
         let host = DocHost::new(
             store,
             DocHostConfig {
                 device_id: "device-a".into(),
-                default_harness: loams_desktop_proto::HarnessId::Mock,
+                default_harness: loams_agentd_proto::HarnessId::Mock,
                 edge: None,
             },
         );
@@ -6066,13 +6059,13 @@ mod degrade_grace_tests {
     #[tokio::test]
     async fn dormant_chat_clears_old_degradation_before_reconnection() {
         use super::{DocHost, DocHostConfig, EdgeConfig, lock};
-        use loams_desktop_proto::{ChatSyncState, HarnessId};
+        use loams_agentd_proto::{ChatSyncState, HarnessId};
         use std::sync::Arc;
         use std::sync::atomic::Ordering;
 
         let dir = tempfile::tempdir().unwrap();
         let host = DocHost::new(
-            Arc::new(loams_desktop_sync::DocsStore::open(dir.path()).unwrap()),
+            Arc::new(loams_agentd_store::DocsStore::open(dir.path()).unwrap()),
             DocHostConfig {
                 device_id: "local".into(),
                 default_harness: HarnessId::Mock,
@@ -6289,7 +6282,7 @@ mod publication_eviction_tests {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         assert_eq!(
             host.chat_sync_state("failed"),
-            loams_desktop_proto::ChatSyncState::StorageError
+            loams_agentd_proto::ChatSyncState::StorageError
         );
         assert!(!other.sync_started.load(Ordering::Acquire));
         assert!(host.pinned(&handle));

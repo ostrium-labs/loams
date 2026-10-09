@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use loams_desktop_doc::{SessionMessageEntry, TranscriptBaseline};
+use loams_agentd_doc::{SessionMessageEntry, TranscriptBaseline};
 use loro::{Container, ContainerID, EventTriggerKind, Index, LoroDoc, LoroValue, ValueOrContainer};
 
 pub(crate) const REPLAY_ORIGIN: &str = "loams-desktop:transcript-replay";
@@ -136,7 +136,7 @@ impl TranscriptHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loams_desktop_doc::{MessagePart, MessageRole, MessageStatus, SegmentWriter, SessionDoc};
+    use loams_agentd_doc::{MessagePart, MessageRole, MessageStatus, SegmentWriter, SessionDoc};
     use std::sync::Mutex;
 
     fn entry(id: &str) -> SessionMessageEntry {
@@ -217,7 +217,7 @@ mod tests {
             id: "old".into(),
             text: "histórico".into(),
         };
-        writer.sync(&[old.clone()]).unwrap();
+        writer.sync(std::slice::from_ref(&old)).unwrap();
         doc.doc()
             .import_with(&source.export_snapshot().unwrap(), REPLAY_ORIGIN)
             .unwrap();

@@ -7,7 +7,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use loams_desktop_proto::WorkspaceScope;
+use loams_agentd_proto::WorkspaceScope;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -379,7 +379,7 @@ mod tests {
         let core = crate::EngineCore::assemble_with_profile(
             profile,
             std::sync::Arc::new(crate::default_registry()),
-            loams_desktop_proto::HarnessId::Mock,
+            loams_agentd_proto::HarnessId::Mock,
             None,
         )
         .unwrap();
@@ -403,7 +403,7 @@ mod tests {
         let core = crate::EngineCore::assemble(
             dir.path(),
             std::sync::Arc::new(crate::default_registry()),
-            loams_desktop_proto::HarnessId::Mock,
+            loams_agentd_proto::HarnessId::Mock,
             None,
         )
         .unwrap();

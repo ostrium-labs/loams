@@ -11,10 +11,10 @@ use std::time::Duration;
 use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
-use loams_desktop_harness::{
+use loams_agentd_harness::{
     CancellationToken, ClaudeHarness, Harness, HarnessError, RunControls, SteerMessage,
 };
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, RunRequest, SandboxLevel, ToolCall, UserInputAnswer,
     UserInputQuestion,
 };
@@ -339,8 +339,8 @@ async fn ask_user_question_round_trips_through_the_control_channel() {
 
 #[tokio::test]
 async fn ultrathink_preserves_selected_commands_on_initial_and_steered_sends() {
-    use loams_desktop_proto::ReasoningLevel;
-    use loams_desktop_proto::invocation::{Invocation, SkillCommand, harness_prompt};
+    use loams_agentd_proto::ReasoningLevel;
+    use loams_agentd_proto::invocation::{Invocation, SkillCommand, harness_prompt};
 
     let invocations = [
         Invocation::Command {
@@ -784,7 +784,7 @@ async fn command_discovery_tracks_project_changes() {
 
 #[tokio::test]
 async fn shared_skill_colliding_with_builtin_keeps_file_delivery() {
-    use loams_desktop_proto::invocation::{Invocation, harness_prompt};
+    use loams_agentd_proto::invocation::{Invocation, harness_prompt};
     let cwd = tempfile::tempdir().unwrap();
     std::fs::create_dir(cwd.path().join(".git")).unwrap();
     let directory = cwd.path().join(".agents/skills/compact");
@@ -820,7 +820,7 @@ async fn shared_skill_colliding_with_builtin_keeps_file_delivery() {
 
 #[tokio::test]
 async fn claude_skills_follow_native_availability_and_dollar_selection_keeps_arguments() {
-    use loams_desktop_proto::{
+    use loams_agentd_proto::{
         HarnessId,
         invocation::{Invocation, harness_prompt},
     };

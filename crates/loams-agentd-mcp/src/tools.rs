@@ -9,8 +9,8 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use loams_desktop_doc::SessionCommandPayload;
-use loams_desktop_proto::{
+use loams_agentd_doc::SessionCommandPayload;
+use loams_agentd_proto::{
     Chat, ChatConfig, HarnessId, ReasoningLevel, RunRequest, SandboxLevel, Session, SessionStatus,
     Space, UserInputAnswer,
 };
@@ -1061,14 +1061,14 @@ impl Tools {
         let rendered = render_entries(&entries, RenderOptions::default());
         let replies: Vec<&RenderedMessage> = rendered
             .iter()
-            .filter(|m| m.role == loams_desktop_doc::MessageRole::Assistant)
+            .filter(|m| m.role == loams_agentd_doc::MessageRole::Assistant)
             .filter(|m| m.created_at >= since_millis.saturating_sub(2_000))
             .collect();
         let replies: Vec<&RenderedMessage> = if replies.is_empty() {
             rendered
                 .iter()
                 .rev()
-                .find(|m| m.role == loams_desktop_doc::MessageRole::Assistant)
+                .find(|m| m.role == loams_agentd_doc::MessageRole::Assistant)
                 .into_iter()
                 .collect()
         } else {
@@ -1110,7 +1110,7 @@ mod tests {
     use crate::loams_desktop::Origin;
     use async_trait::async_trait;
     use futures::StreamExt;
-    use loams_desktop_rpc::{RpcError, RpcReply, RpcService, memory_client, methods};
+    use loams_agentd_rpc::{RpcError, RpcReply, RpcService, memory_client, methods};
     use std::sync::Mutex;
 
     /// A fixed little workspace: one device, one project, one chat with a

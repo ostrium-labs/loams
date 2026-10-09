@@ -1,7 +1,7 @@
 //! Persisted names are independent of ephemeral process/listener observations.
 use crate::discovery::{Listener, command_identity, framework};
 use anyhow::Context;
-use loams_desktop_proto::{PREVIEW_PROXY_PORT, PreviewService, PreviewSnapshot};
+use loams_agentd_proto::{PREVIEW_PROXY_PORT, PreviewService, PreviewSnapshot};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{

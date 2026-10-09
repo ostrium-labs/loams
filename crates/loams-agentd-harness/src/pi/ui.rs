@@ -1,5 +1,5 @@
 use super::{normalize::string, rpc::Client};
-use loams_desktop_proto::{UserInputAnswer, UserInputQuestion};
+use loams_agentd_proto::{UserInputAnswer, UserInputQuestion};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::{sync::oneshot, task::JoinSet};

@@ -2,7 +2,7 @@
 //!
 //! `loams-desktop mcp` speaks MCP (JSON-RPC 2.0, newline-delimited) on stdin/stdout
 //! and proxies every tool into the engine's localhost IPC — the same
-//! `loams_desktop_rpc` WebSocket the headed app and `loams-desktop sync` dial. Nothing here
+//! `loams_agentd_rpc` WebSocket the headed app and `loams-desktop sync` dial. Nothing here
 //! talks to the edge or touches the filesystem: the engine stays the single
 //! authority for chats, devices, projects, and the command plane.
 //!

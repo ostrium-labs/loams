@@ -25,8 +25,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use loams_desktop_doc::{REGISTRY_DOC_ID, RegistryDoc};
-use loams_desktop_sync::DocsStore;
+use loams_agentd_doc::{REGISTRY_DOC_ID, RegistryDoc};
+use loams_agentd_store::DocsStore;
 use serde::{Deserialize, Serialize};
 
 use crate::EngineError;
@@ -396,7 +396,7 @@ impl LocalImporter {
     fn import_chat(
         &self,
         source_store: &DocsStore,
-        chat: &loams_desktop_proto::Chat,
+        chat: &loams_agentd_proto::Chat,
         source_journals: &Path,
     ) -> Result<bool, EngineError> {
         // Doc bytes may be absent (a chat row created but never opened) — the
@@ -436,6 +436,21 @@ impl LocalImporter {
     }
 }
 
+/// Whether a recorded import grants the synced profile `(org, user)` the local
+/// profile's uploads root as a read-only jail root. `EngineCore::assemble`
+/// calls this on every account-scoped boot.
+pub fn marker_grants_read_root(data_dir: &Path, org_id: &str, user_id: &str) -> Option<PathBuf> {
+    let marker: Marker = std::fs::read_to_string(data_dir.join(MARKER_FILE))
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())?;
+    let hit = marker
+        .imports
+        .iter()
+        .any(|e| e.org_id == org_id && e.user_id == user_id);
+    let uploads = data_dir.join("profiles").join("local").join("uploads");
+    (hit && uploads.is_dir()).then_some(uploads)
+}
+
 #[cfg(test)]
 mod tests {
     use super::ImportEvent;
@@ -466,19 +481,4 @@ mod tests {
         .expect("serialize");
         assert_eq!(chat["chatId"], "c1", "fields must be camelCase: {chat}");
     }
-}
-
-/// Whether a recorded import grants the synced profile `(org, user)` the local
-/// profile's uploads root as a read-only jail root. `EngineCore::assemble`
-/// calls this on every account-scoped boot.
-pub fn marker_grants_read_root(data_dir: &Path, org_id: &str, user_id: &str) -> Option<PathBuf> {
-    let marker: Marker = std::fs::read_to_string(data_dir.join(MARKER_FILE))
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())?;
-    let hit = marker
-        .imports
-        .iter()
-        .any(|e| e.org_id == org_id && e.user_id == user_id);
-    let uploads = data_dir.join("profiles").join("local").join("uploads");
-    (hit && uploads.is_dir()).then_some(uploads)
 }

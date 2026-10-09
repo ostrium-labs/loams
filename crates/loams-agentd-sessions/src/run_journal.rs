@@ -18,7 +18,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use serde::{Deserialize, Serialize};
 
-use loams_desktop_proto::AgentEvent;
+use loams_agentd_proto::AgentEvent;
 
 #[derive(Debug, thiserror::Error)]
 pub enum JournalError {
@@ -271,7 +271,7 @@ fn sanitize_id(chat_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loams_desktop_proto::DoneStatus;
+    use loams_agentd_proto::DoneStatus;
 
     fn text(s: &str) -> AgentEvent {
         AgentEvent::TextDelta { text: s.into() }

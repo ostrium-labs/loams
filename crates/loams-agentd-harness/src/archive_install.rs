@@ -179,7 +179,7 @@ where
     let _ = std::fs::remove_dir_all(&tmp_dir);
     std::fs::create_dir_all(&tmp_dir)?;
     tracing::info!(
-        target: "loams_desktop_harness::adapter_install",
+        target: "loams_agentd_harness::adapter_install",
         url = source.url,
         dir = %tmp_dir.display(),
         "installing {display_name} ACP server"

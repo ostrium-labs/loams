@@ -138,7 +138,7 @@ mod tests {
     use super::*;
     use crate::schema::{MessageRole, SessionMessageEntry};
     use crate::{MessageStatus, SessionCommandEntry, SessionCommandPayload};
-    use loams_desktop_proto::{ToolCall, ToolDiff};
+    use loams_agentd_proto::{ToolCall, ToolDiff};
 
     /// ~4KB of varied output — repeated text would compress away inside the
     /// Loro snapshot and hide the size win the assertion checks.

@@ -59,12 +59,12 @@ use std::collections::HashSet;
 use std::time::Duration;
 use tokio::sync::watch;
 
-use loams_desktop_doc::{MessagePart, SessionCommandPayload};
-use loams_desktop_proto::{
+use loams_agentd_doc::{MessagePart, SessionCommandPayload};
+use loams_agentd_proto::{
     ChatConfig, CreateWorktreeOutcome, EngineInfo, HarnessId, HarnessUpdatePolicy,
     ProjectActionDraft, Space, ToolCall, WorkspaceScope,
 };
-use loams_desktop_rpc::{LinkCache, RpcError, RpcReply, RpcService, methods, parse_params};
+use loams_agentd_rpc::{LinkCache, RpcError, RpcReply, RpcService, methods, parse_params};
 
 use crate::agent_accounts::AgentAccounts;
 use crate::auth::Auth;
@@ -153,7 +153,7 @@ struct RelayCommandParams {
     chat_id: String,
     /// The full command entry, client-minted id included — the exactly-once
     /// key the host claims in its processed ledger before executing.
-    entry: loams_desktop_doc::SessionCommandEntry,
+    entry: loams_agentd_doc::SessionCommandEntry,
 }
 
 #[derive(Debug, Deserialize)]
@@ -585,7 +585,7 @@ enum MutateParams {
     /// Change one pin without replacing another device's edits.
     #[serde(rename_all = "camelCase")]
     ChangeSidebarPin {
-        change: loams_desktop_proto::SidebarPinChange,
+        change: loams_agentd_proto::SidebarPinChange,
     },
     /// Full-config replace on the chat row (loams-desktop `SetChatConfig`): the
     /// composer's mid-session model / reasoning / options changes, LWW-synced
@@ -616,14 +616,13 @@ pub struct EngineRpc {
     workspace_files: crate::WorkspaceFiles,
     terminals: Terminals,
     project_actions: ProjectActionsStore,
-    previews: Option<loams_desktop_preview::PreviewService>,
+    previews: Option<loams_agentd_preview::PreviewService>,
     change_requests: CheckoutChangeRequests,
     diff_sync: CheckoutDiffSync,
     uploads: Uploads,
     agent_accounts: AgentAccounts,
     auth: Option<Auth>,
     links: Option<std::sync::Arc<LinkCache>>,
-    updater: Option<loams_desktop_update::Updater>,
     harness_updates: Option<crate::harness_updates::HarnessUpdateCoordinator>,
     local_import: Option<crate::local_import::LocalImporter>,
     engine_info: EngineInfo,
@@ -649,8 +648,8 @@ impl EngineRpc {
         let engine_info = EngineInfo {
             device_id: doc_host.device_id().to_string(),
             workspace_scope,
-            cursor_sdk_version: Some(loams_desktop_harness::CursorHarness::sdk_version().into()),
-            capabilities: loams_desktop_proto::capabilities::current(),
+            cursor_sdk_version: Some(loams_agentd_harness::CursorHarness::sdk_version().into()),
+            capabilities: loams_agentd_proto::capabilities::current(),
         };
         Self {
             sessions,
@@ -668,14 +667,13 @@ impl EngineRpc {
             agent_accounts,
             auth: None,
             links: None,
-            updater: None,
             harness_updates: None,
             local_import: None,
             engine_info,
         }
     }
 
-    pub fn with_previews(mut self, previews: loams_desktop_preview::PreviewService) -> Self {
+    pub fn with_previews(mut self, previews: loams_agentd_preview::PreviewService) -> Self {
         self.previews = Some(previews);
         self
     }
@@ -689,12 +687,6 @@ impl EngineRpc {
     /// Attach the peer link cache — enables `targetDeviceId` relay forwarding.
     pub fn with_links(mut self, links: std::sync::Arc<LinkCache>) -> Self {
         self.links = Some(links);
-        self
-    }
-
-    /// Attach the release checker (UpdateStatus stream + ApplyUpdate).
-    pub fn with_updater(mut self, updater: loams_desktop_update::Updater) -> Self {
-        self.updater = Some(updater);
         self
     }
 
@@ -716,12 +708,6 @@ impl EngineRpc {
         self.auth
             .as_ref()
             .ok_or_else(|| RpcError::Failed("auth unavailable".into()))
-    }
-
-    fn updater(&self) -> Result<&loams_desktop_update::Updater, RpcError> {
-        self.updater
-            .as_ref()
-            .ok_or_else(|| RpcError::Failed("updates unavailable".into()))
     }
 
     fn harness_updates(
@@ -756,7 +742,7 @@ impl EngineRpc {
     /// name an existing linked worktree for a new chat, but it is verified
     /// against the space repository before any filesystem walk begins.
     async fn file_search_root(&self, p: &FileSearchParams) -> Result<std::path::PathBuf, RpcError> {
-        let target = loams_desktop_proto::WorkspaceTarget {
+        let target = loams_agentd_proto::WorkspaceTarget {
             chat_id: p.chat_id.clone(),
             space_id: p.space_id.clone(),
             checkout_path: p.path.clone(),
@@ -895,7 +881,7 @@ impl EngineRpc {
 
     /// An agent login runs on `target`, but the browser that finishes it runs
     /// HERE: while the login waits on a loopback callback, this device's same
-    /// port forwards to it over P2P ([`loams_desktop_preview::login`]). The forwarder
+    /// port forwards to it over P2P ([`loams_agentd_preview::login`]). The forwarder
     /// opens when a reply first names the port and closes when the login
     /// finishes, fails, is cancelled or its time runs out; a port taken here
     /// fails the login with that reason instead of stranding the browser.
@@ -905,7 +891,7 @@ impl EngineRpc {
         method: &str,
         mut params: serde_json::Value,
     ) -> Result<RpcReply, RpcError> {
-        use loams_desktop_proto::{AgentLoginPoll, AgentLoginStart, AgentLoginStatus};
+        use loams_agentd_proto::{AgentLoginPoll, AgentLoginStart, AgentLoginStatus};
         let login_id = params
             .get("loginId")
             .and_then(|v| v.as_str())
@@ -1230,15 +1216,13 @@ fn should_invalidate_link(error: &RpcError) -> bool {
 /// everything else is interactive and must fail fast.
 #[derive(Default)]
 pub(crate) struct Installations(
-    std::sync::Mutex<
-        std::collections::HashMap<HarnessId, loams_desktop_harness::CancellationToken>,
-    >,
+    std::sync::Mutex<std::collections::HashMap<HarnessId, loams_agentd_harness::CancellationToken>>,
 );
 
 struct Installing<'a> {
     installs: &'a Installations,
     harness: HarnessId,
-    cancel: loams_desktop_harness::CancellationToken,
+    cancel: loams_agentd_harness::CancellationToken,
 }
 impl Drop for Installing<'_> {
     fn drop(&mut self) {
@@ -1256,7 +1240,7 @@ impl Installations {
         if installs.contains_key(&harness) {
             return Err(RpcError::Failed("already installing".into()));
         }
-        let cancel = loams_desktop_harness::CancellationToken::new();
+        let cancel = loams_agentd_harness::CancellationToken::new();
         installs.insert(harness, cancel.clone());
         Ok(Installing {
             installs: self,
@@ -1278,16 +1262,15 @@ impl Installations {
 
 async fn run_requested_install(
     harness: HarnessId,
-    cancel: loams_desktop_harness::CancellationToken,
-) -> Result<(), loams_desktop_harness::HarnessError> {
+    cancel: loams_agentd_harness::CancellationToken,
+) -> Result<(), loams_agentd_harness::HarnessError> {
     #[cfg(test)]
     if let Ok(script) =
         std::env::var(format!("LOAMS_DESKTOP_INSTALLER_COMMAND_{harness:?}").to_uppercase())
     {
-        return loams_desktop_harness::install::install_with_command(harness, &script, cancel)
-            .await;
+        return loams_agentd_harness::install::install_with_command(harness, &script, cancel).await;
     }
-    loams_desktop_harness::install::install_harness(harness, cancel).await
+    loams_agentd_harness::install::install_harness(harness, cancel).await
 }
 
 async fn install_harness_with<F, Fut>(
@@ -1297,9 +1280,9 @@ async fn install_harness_with<F, Fut>(
 ) -> Result<Vec<crate::registry::HarnessDescriptor>, RpcError>
 where
     F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Result<(), loams_desktop_harness::HarnessError>>,
+    Fut: std::future::Future<Output = Result<(), loams_agentd_harness::HarnessError>>,
 {
-    if !loams_desktop_harness::install::can_install(harness) {
+    if !loams_agentd_harness::install::can_install(harness) {
         return Err(RpcError::Failed(
             "No supported installer or required tools available on this device".into(),
         ));
@@ -1313,9 +1296,7 @@ where
 fn forward_deadline(method: &str) -> std::time::Duration {
     use std::time::Duration;
     match method {
-        methods::CLONE_REPO | methods::FETCH_ALL | methods::APPLY_UPDATE => {
-            Duration::from_secs(15 * 60)
-        }
+        methods::CLONE_REPO | methods::FETCH_ALL => Duration::from_secs(15 * 60),
         methods::INSTALL_HARNESS => Duration::from_secs(15 * 60),
         // A full fleet of enabled providers is checked two at a time; each
         // provider may need both a CLI probe and a network request.
@@ -1422,9 +1403,7 @@ fn forwardable(method: &str) -> bool {
             | methods::UPLOAD_CHUNK
             | methods::UPLOAD_COMMIT
             | methods::READ_ATTACHMENT_CHUNK
-            // Updates report/apply on the device whose binary they concern.
-            | methods::UPDATE_STATUS
-            | methods::APPLY_UPDATE
+            // Harness updates report/apply on the device whose CLI they concern.
             | methods::WATCH_HARNESS_UPDATES
             | methods::CHECK_HARNESS_UPDATES
             | methods::APPLY_HARNESS_UPDATE
@@ -1445,7 +1424,6 @@ fn is_stream_method(method: &str) -> bool {
             | methods::WATCH_WORKSPACE_GIT_STATUS
             | methods::WATCH_CHECKOUT_CHANGE_REQUEST
             | methods::WATCH_WORKSPACE_FILES
-            | methods::UPDATE_STATUS
             | methods::WATCH_HARNESS_UPDATES
     )
 }
@@ -1468,21 +1446,21 @@ where
     .boxed()
 }
 
-/// The transcript watch as delta frames (`loams_desktop_doc::transcript_delta`): a
+/// The transcript watch as delta frames (`loams_agentd_doc::transcript_delta`): a
 /// full `reset` first, then only changed entries per commit — the whole-Vec
 /// serialization here was the per-tick cost that scaled with transcript size.
 fn doc_messages_stream(
     rx: watch::Receiver<crate::doc_host::TranscriptSnapshot>,
-    doc: std::sync::Arc<loams_desktop_doc::SessionDoc>,
+    doc: std::sync::Arc<loams_agentd_doc::SessionDoc>,
 ) -> BoxStream<'static, serde_json::Value> {
-    use loams_desktop_doc::transcript_delta::{TranscriptFrame, diff_transcript};
+    use loams_agentd_doc::transcript_delta::{TranscriptFrame, diff_transcript};
     futures::stream::unfold(
         (
             rx,
             None::<crate::doc_host::TranscriptSnapshot>,
             doc,
             None,
-            loams_desktop_doc::TranscriptBaseline::default(),
+            loams_agentd_doc::TranscriptBaseline::default(),
         ),
         |(mut rx, mut prev, doc, mut previous_usage, mut opening_baseline)| async move {
             loop {
@@ -1499,7 +1477,7 @@ fn doc_messages_stream(
                 let replay_baseline = match prev.as_ref() {
                     None => {
                         opening_baseline =
-                            loams_desktop_doc::TranscriptBaseline::capture(&current.entries);
+                            loams_agentd_doc::TranscriptBaseline::capture(&current.entries);
                         Some(opening_baseline.clone())
                     }
                     Some(prev)
@@ -1533,7 +1511,7 @@ fn doc_messages_stream(
                     continue;
                 }
                 previous_usage = usage;
-                let value = serde_json::to_value(loams_desktop_doc::TranscriptUpdate {
+                let value = serde_json::to_value(loams_agentd_doc::TranscriptUpdate {
                     frame,
                     context_usage: usage,
                     replay_baseline,
@@ -1555,10 +1533,10 @@ async fn opening_doc_messages_stream(
     let (handle, preview) = tokio::task::spawn_blocking(move || {
         let handle = host.open(&chat_id)?;
         let entries = handle.doc().read_opening_tail(128)?;
-        let mut preview = serde_json::to_value(loams_desktop_doc::TranscriptUpdate {
-            frame: loams_desktop_doc::TranscriptFrame::reset(&entries),
+        let mut preview = serde_json::to_value(loams_agentd_doc::TranscriptUpdate {
+            frame: loams_agentd_doc::TranscriptFrame::reset(&entries),
             context_usage: handle.doc().context_usage(),
-            replay_baseline: Some(loams_desktop_doc::TranscriptBaseline::capture(&entries)),
+            replay_baseline: Some(loams_agentd_doc::TranscriptBaseline::capture(&entries)),
         })
         .map_err(|e| crate::EngineError::Other(e.to_string()))?;
         preview["historyPending"] = serde_json::Value::Bool(true);
@@ -1902,8 +1880,8 @@ impl RpcService for EngineRpc {
                 let boundary = entries
                     .iter()
                     .rposition(|entry| {
-                        entry.role == loams_desktop_doc::MessageRole::Assistant
-                            && entry.status == Some(loams_desktop_doc::MessageStatus::Complete)
+                        entry.role == loams_agentd_doc::MessageRole::Assistant
+                            && entry.status == Some(loams_agentd_doc::MessageStatus::Complete)
                     })
                     .ok_or_else(|| {
                         RpcError::Failed(
@@ -1937,7 +1915,7 @@ impl RpcService for EngineRpc {
                     // Historical approvals belong to the source runtime; they
                     // must never block or send answers from the new composer.
                     for part in &mut entry.parts {
-                        if let loams_desktop_doc::MessagePart::Input { resolved, .. } = part {
+                        if let loams_agentd_doc::MessagePart::Input { resolved, .. } = part {
                             *resolved = true;
                         }
                     }
@@ -1958,18 +1936,18 @@ impl RpcService for EngineRpc {
                         .unwrap_or_else(|| "New session".into());
                     target
                         .doc()
-                        .push_message(&loams_desktop_doc::SessionMessageEntry {
+                        .push_message(&loams_agentd_doc::SessionMessageEntry {
                             duration_ms: None,
                             id: marker_id.clone(),
-                            role: loams_desktop_doc::MessageRole::System,
-                            parts: vec![loams_desktop_doc::MessagePart::Fork {
+                            role: loams_agentd_doc::MessageRole::System,
+                            parts: vec![loams_agentd_doc::MessagePart::Fork {
                                 id: marker_id,
                                 source_chat_id: source.id.clone(),
                                 source_title,
                             }],
                             created_at: chrono::Utc::now().timestamp_millis(),
                             device_id: self.doc_host.device_id().to_owned(),
-                            status: Some(loams_desktop_doc::MessageStatus::Complete),
+                            status: Some(loams_agentd_doc::MessageStatus::Complete),
                             continuation_of: None,
                         })
                         .map_err(|e| RpcError::Failed(e.to_string()))?;
@@ -2155,7 +2133,7 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&serde_json::json!({}))
             }
             methods::SYNC_STATUS => {
-                fn room_json(s: &loams_desktop_sync::RoomStatsSnapshot) -> serde_json::Value {
+                fn room_json(s: &loams_agentd_store::RoomStatsSnapshot) -> serde_json::Value {
                     serde_json::json!({
                         "connected": s.connected,
                         "synced": s.synced,
@@ -2168,7 +2146,7 @@ impl RpcService for EngineRpc {
                         "rejected": s.rejected,
                     })
                 }
-                fn chat2_json(s: &loams_desktop_sync::ChatStatsSnapshot) -> serde_json::Value {
+                fn chat2_json(s: &loams_agentd_store::ChatStatsSnapshot) -> serde_json::Value {
                     serde_json::json!({
                         "connected": s.connected,
                         "cursor": s.cursor,
@@ -2213,7 +2191,7 @@ impl RpcService for EngineRpc {
                 self.doc_host.watch_transfers(),
             ))),
             methods::WATCH_PREVIEWS => {
-                let p: loams_desktop_proto::WatchPreviewsParams = parse_params(params)?;
+                let p: loams_agentd_proto::WatchPreviewsParams = parse_params(params)?;
                 if self
                     .workspace
                     .chat(&p.chat_id)
@@ -2333,15 +2311,6 @@ impl RpcService for EngineRpc {
                     move |cx| rx.poll_recv(cx),
                 ))))
             }
-            methods::UPDATE_STATUS => Ok(RpcReply::Stream(watch_stream(self.updater()?.watch()))),
-            methods::APPLY_UPDATE => {
-                let version = self
-                    .updater()?
-                    .apply()
-                    .await
-                    .map_err(|e| RpcError::Failed(format!("{e:#}")))?;
-                RpcReply::value(&serde_json::json!({ "ok": true, "version": version }))
-            }
             methods::WATCH_HARNESS_UPDATES => Ok(RpcReply::Stream(watch_stream(
                 self.harness_updates()?.watch(),
             ))),
@@ -2411,8 +2380,7 @@ impl RpcService for EngineRpc {
                 Ok(RpcReply::Stream(watch_stream(self.diff_sync.watch_diffs())))
             }
             methods::WATCH_WORKSPACE_GIT_STATUS => {
-                let request: loams_desktop_proto::WatchWorkspaceFilesRequest =
-                    parse_params(params)?;
+                let request: loams_agentd_proto::WatchWorkspaceFilesRequest = parse_params(params)?;
                 let workspace = self.workspace_files.resolve_target(&request.target).await?;
                 let rx = self.diff_sync.watch_git_statuses();
                 // Only this authorized checkout crosses the connection. None means
@@ -2433,7 +2401,7 @@ impl RpcService for EngineRpc {
                                 emitted = true;
                                 previous = next.clone();
                                 let value = serde_json::to_value(
-                                    loams_desktop_proto::WorkspaceGitStatusFrame { status: next },
+                                    loams_agentd_proto::WorkspaceGitStatusFrame { status: next },
                                 )
                                 .ok()?;
                                 return Some((value, (rx, checkout_id, previous, emitted)));
@@ -2516,7 +2484,7 @@ impl RpcService for EngineRpc {
                         _ => crate::diff_sync::capture_diff(&self.repos, root).await,
                     }
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
-                    RpcReply::value(&loams_desktop_proto::CheckoutDiff {
+                    RpcReply::value(&loams_agentd_proto::CheckoutDiff {
                         checkout_id: identity.id,
                         device_id: self.doc_host.device_id().to_string(),
                         cwd: identity.root.to_string_lossy().to_string(),
@@ -2588,8 +2556,8 @@ impl RpcService for EngineRpc {
                                 .is_some_and(|session| {
                                     matches!(
                                         session.status,
-                                        loams_desktop_proto::SessionStatus::Working
-                                            | loams_desktop_proto::SessionStatus::AwaitingInput
+                                        loams_agentd_proto::SessionStatus::Working
+                                            | loams_agentd_proto::SessionStatus::AwaitingInput
                                     )
                                 })
                         {
@@ -2616,7 +2584,7 @@ impl RpcService for EngineRpc {
                 // behind an allocation so every unrelated RPC does not carry that
                 // state in `EngineRpc::handle`'s stack frame.
                 Box::pin(async move {
-                    let p: loams_desktop_proto::GetCheckoutFileDiffTextRequest =
+                    let p: loams_agentd_proto::GetCheckoutFileDiffTextRequest =
                         parse_params(params)?;
                     let identity =
                         Box::pin(self.repos.checkout_identity(std::path::Path::new(&p.cwd)))
@@ -2690,7 +2658,7 @@ impl RpcService for EngineRpc {
                             (snapshot, base, None)
                         }
                     };
-                    let stale = || loams_desktop_proto::CheckoutFileDiffText {
+                    let stale = || loams_agentd_proto::CheckoutFileDiffText {
                         diff_checksum: p.diff_checksum.clone(),
                         old_text: None,
                         new_text: None,
@@ -2753,7 +2721,7 @@ impl RpcService for EngineRpc {
                     if current.checksum != p.diff_checksum {
                         return RpcReply::value(&stale());
                     }
-                    RpcReply::value(&loams_desktop_proto::CheckoutFileDiffText {
+                    RpcReply::value(&loams_agentd_proto::CheckoutFileDiffText {
                         diff_checksum: p.diff_checksum,
                         old_text: pair.old_text,
                         new_text: pair.new_text,
@@ -2945,7 +2913,7 @@ impl RpcService for EngineRpc {
                     .list_drives()
                     .await
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&loams_desktop_proto::DriveListing { drives })
+                RpcReply::value(&loams_agentd_proto::DriveListing { drives })
             }
             methods::SEARCH_FILES => {
                 let p: FileSearchParams = parse_params(params)?;
@@ -2972,7 +2940,7 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&matches)
             }
             methods::LIST_WORKSPACE_DIRECTORY => {
-                let request: loams_desktop_proto::ListWorkspaceDirectoryRequest =
+                let request: loams_agentd_proto::ListWorkspaceDirectoryRequest =
                     parse_params(params)?;
                 let page = tokio::time::timeout(
                     crate::workspace_files::WORKSPACE_FILE_RPC_TIMEOUT,
@@ -2984,7 +2952,7 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&page)
             }
             methods::SEARCH_WORKSPACE_FILES => {
-                let request: loams_desktop_proto::SearchWorkspaceFilesRequest =
+                let request: loams_agentd_proto::SearchWorkspaceFilesRequest =
                     parse_params(params)?;
                 let matches = tokio::time::timeout(
                     crate::workspace_files::WORKSPACE_FILE_RPC_TIMEOUT,
@@ -2996,7 +2964,7 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&matches)
             }
             methods::READ_WORKSPACE_IMAGE => {
-                let request: loams_desktop_proto::ReadWorkspaceImageRequest = parse_params(params)?;
+                let request: loams_agentd_proto::ReadWorkspaceImageRequest = parse_params(params)?;
                 let chunk = tokio::time::timeout(
                     crate::workspace_files::WORKSPACE_FILE_RPC_TIMEOUT,
                     self.workspace_files.read_image(request),
@@ -3007,7 +2975,7 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&chunk)
             }
             methods::READ_WORKSPACE_FILE => {
-                let request: loams_desktop_proto::ReadWorkspaceFileRequest = parse_params(params)?;
+                let request: loams_agentd_proto::ReadWorkspaceFileRequest = parse_params(params)?;
                 let file = tokio::time::timeout(
                     crate::workspace_files::WORKSPACE_FILE_RPC_TIMEOUT,
                     self.workspace_files.read_file(request),
@@ -3018,7 +2986,7 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&file)
             }
             methods::DELETE_WORKSPACE_ENTRY => {
-                let request: loams_desktop_proto::DeleteWorkspaceEntryRequest =
+                let request: loams_agentd_proto::DeleteWorkspaceEntryRequest =
                     parse_params(params)?;
                 let outcome = self
                     .workspace_files
@@ -3028,7 +2996,7 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&outcome)
             }
             methods::MOVE_WORKSPACE_ENTRY => {
-                let request: loams_desktop_proto::MoveWorkspaceEntryRequest = parse_params(params)?;
+                let request: loams_agentd_proto::MoveWorkspaceEntryRequest = parse_params(params)?;
                 let outcome = self
                     .workspace_files
                     .move_entry(request)
@@ -3037,7 +3005,7 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&outcome)
             }
             methods::WRITE_WORKSPACE_FILE => {
-                let request: loams_desktop_proto::WriteWorkspaceFileRequest = parse_params(params)?;
+                let request: loams_agentd_proto::WriteWorkspaceFileRequest = parse_params(params)?;
                 let outcome = tokio::time::timeout(
                     crate::workspace_files::WORKSPACE_FILE_RPC_TIMEOUT,
                     self.workspace_files.write_file(request),
@@ -3048,8 +3016,7 @@ impl RpcService for EngineRpc {
                 RpcReply::value(&outcome)
             }
             methods::WATCH_WORKSPACE_FILES => {
-                let request: loams_desktop_proto::WatchWorkspaceFilesRequest =
-                    parse_params(params)?;
+                let request: loams_agentd_proto::WatchWorkspaceFilesRequest = parse_params(params)?;
                 let subscription = self
                     .workspace_files
                     .watch_files(request)
@@ -3468,7 +3435,7 @@ mod tests {
             std::env::var_os("LOAMS_DESKTOP_INSTALL_FIXTURE_CHILD").unwrap(),
         );
         let registry = Arc::new(HarnessRegistry::new());
-        registry.register(Arc::new(loams_desktop_harness::CodexHarness::new()));
+        registry.register(Arc::new(loams_agentd_harness::CodexHarness::new()));
         let core = crate::EngineCore::assemble(
             &root.join("engine"),
             registry.clone(),
@@ -3571,7 +3538,7 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_install_rpc_verifies_archive_and_refreshes_descriptors() {
-        use loams_desktop_harness::archive_install::{
+        use loams_agentd_harness::archive_install::{
             ArchivePin, ensure_installed, installed_entry,
         };
         use sha2::{Digest, Sha512};
@@ -3598,7 +3565,7 @@ mod tests {
             );
             return;
         }
-        if !loams_desktop_harness::acp::can_install(HarnessId::Antigravity) {
+        if !loams_agentd_harness::acp::can_install(HarnessId::Antigravity) {
             return;
         }
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -3687,23 +3654,23 @@ mod tests {
         use crate::doc_host::{DocHost, DocHostConfig};
         use std::sync::Arc;
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(loams_desktop_sync::DocsStore::open(dir.path()).unwrap());
+        let store = Arc::new(loams_agentd_store::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
             store,
             DocHostConfig {
                 device_id: "viewer".into(),
-                default_harness: loams_desktop_proto::HarnessId::Mock,
+                default_harness: loams_agentd_proto::HarnessId::Mock,
                 edge: None,
             },
         );
         let handle = host.open("whale").unwrap();
         handle
             .doc()
-            .push_message(&loams_desktop_doc::SessionMessageEntry {
+            .push_message(&loams_agentd_doc::SessionMessageEntry {
                 id: "turn".into(),
-                role: loams_desktop_doc::MessageRole::Assistant,
+                role: loams_agentd_doc::MessageRole::Assistant,
                 parts: (0..500)
-                    .map(|i| loams_desktop_doc::MessagePart::Text {
+                    .map(|i| loams_agentd_doc::MessagePart::Text {
                         id: format!("part-{i}"),
                         text: "local text".into(),
                     })
@@ -3757,9 +3724,8 @@ mod tests {
             .unwrap();
         let mut entries = Vec::new();
         for value in [full, live] {
-            let update: loams_desktop_doc::TranscriptUpdate =
-                serde_json::from_value(value).unwrap();
-            loams_desktop_doc::apply_transcript_frame(&mut entries, update.frame).unwrap();
+            let update: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(value).unwrap();
+            loams_agentd_doc::apply_transcript_frame(&mut entries, update.frame).unwrap();
         }
         assert_eq!(entries.len(), 3);
         assert_eq!(entries.last().unwrap().id, "live");
@@ -3771,10 +3737,10 @@ mod tests {
         let registry = HarnessRegistry::new();
         let executable = std::env::current_exe().unwrap();
         registry.register(std::sync::Arc::new(
-            loams_desktop_harness::AcpHarness::grok().with_executable(executable.clone()),
+            loams_agentd_harness::AcpHarness::grok().with_executable(executable.clone()),
         ));
         registry.register(std::sync::Arc::new(
-            loams_desktop_harness::AcpHarness::antigravity().with_executable(executable),
+            loams_agentd_harness::AcpHarness::antigravity().with_executable(executable),
         ));
         registry.set_enabled(HarnessId::Antigravity, true).unwrap();
 
@@ -3818,7 +3784,7 @@ mod tests {
         .expect("sidebar preferences params");
         assert!(matches!(
             p,
-            MutateParams::ChangeSidebarPin { change: loams_desktop_proto::SidebarPinChange::Move { session_id, before, .. } }
+            MutateParams::ChangeSidebarPin { change: loams_agentd_proto::SidebarPinChange::Move { session_id, before, .. } }
                 if session_id == "chat-b" && before.as_deref() == Some("chat-a")
         ));
     }
@@ -3966,14 +3932,14 @@ mod context_usage_tests {
     #[tokio::test]
     async fn replay_cutoff_travels_with_coalesced_backfill_and_live_content() {
         use crate::doc_host::{DocHost, DocHostConfig};
-        use loams_desktop_sync::chat_client::ChatDocSink;
+        use loams_agentd_store::chat_client::ChatDocSink;
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(loams_desktop_sync::DocsStore::open(dir.path()).unwrap());
+        let store = Arc::new(loams_agentd_store::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
             store.clone(),
             DocHostConfig {
                 device_id: "viewer".into(),
-                default_harness: loams_desktop_proto::HarnessId::Mock,
+                default_harness: loams_agentd_proto::HarnessId::Mock,
                 edge: None,
             },
         );
@@ -3981,23 +3947,23 @@ mod context_usage_tests {
         let sink = crate::chat2_host::EngineChatSink::new(&handle.doc_arc(), store, "replay-chat")
             .with_handle(Arc::downgrade(&handle));
         let mut stream = doc_messages_stream(handle.watch_messages(), handle.doc_arc());
-        let first: loams_desktop_doc::TranscriptUpdate =
+        let first: loams_agentd_doc::TranscriptUpdate =
             serde_json::from_value(stream.next().await.unwrap()).unwrap();
         assert!(first.replay_baseline.unwrap().entries.is_empty());
 
-        let source = loams_desktop_doc::SessionDoc::init("replay-chat").unwrap();
+        let source = loams_agentd_doc::SessionDoc::init("replay-chat").unwrap();
         let append = |id: &str| {
             source
-                .push_message(&loams_desktop_doc::SessionMessageEntry {
+                .push_message(&loams_agentd_doc::SessionMessageEntry {
                     id: id.into(),
-                    role: loams_desktop_doc::MessageRole::Assistant,
-                    parts: vec![loams_desktop_doc::MessagePart::Text {
+                    role: loams_agentd_doc::MessageRole::Assistant,
+                    parts: vec![loams_agentd_doc::MessagePart::Text {
                         id: "text".into(),
                         text: id.into(),
                     }],
                     created_at: 0,
                     device_id: "writer".into(),
-                    status: Some(loams_desktop_doc::MessageStatus::Streaming),
+                    status: Some(loams_agentd_doc::MessageStatus::Streaming),
                     continuation_of: None,
                     duration_ms: None,
                 })
@@ -4006,7 +3972,7 @@ mod context_usage_tests {
         append("cached");
         sink.apply_checkpoint(&source.export_snapshot().unwrap(), 0)
             .unwrap();
-        let checkpoint: loams_desktop_doc::TranscriptUpdate = serde_json::from_value(
+        let checkpoint: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await
                 .unwrap()
@@ -4041,7 +4007,7 @@ mod context_usage_tests {
         );
         // Neither the doc worker nor the RPC consumer ran between these
         // imports. They must not flatten their different presentation origins.
-        let update: loams_desktop_doc::TranscriptUpdate = serde_json::from_value(
+        let update: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await
                 .unwrap()
@@ -4052,8 +4018,8 @@ mod context_usage_tests {
         assert!(cutoff.entries.contains_key("away"));
         assert!(!cutoff.entries.contains_key("live"));
         let mut entries = vec![];
-        loams_desktop_doc::apply_transcript_frame(&mut entries, checkpoint.frame).unwrap();
-        loams_desktop_doc::apply_transcript_frame(&mut entries, update.frame).unwrap();
+        loams_agentd_doc::apply_transcript_frame(&mut entries, checkpoint.frame).unwrap();
+        loams_agentd_doc::apply_transcript_frame(&mut entries, update.frame).unwrap();
         assert_eq!(entries.len(), 3);
 
         let version = source.doc().oplog_vv();
@@ -4065,7 +4031,7 @@ mod context_usage_tests {
                 .unwrap(),
             3,
         );
-        let update: loams_desktop_doc::TranscriptUpdate = serde_json::from_value(
+        let update: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await
                 .unwrap()
@@ -4077,7 +4043,7 @@ mod context_usage_tests {
             "live updates must not resend the history watermark"
         );
         let mut reopened = doc_messages_stream(handle.watch_messages(), handle.doc_arc());
-        let opening: loams_desktop_doc::TranscriptUpdate =
+        let opening: loams_agentd_doc::TranscriptUpdate =
             serde_json::from_value(reopened.next().await.unwrap()).unwrap();
         assert_eq!(
             opening.replay_baseline.unwrap().entries.len(),
@@ -4090,14 +4056,14 @@ mod context_usage_tests {
     #[tokio::test]
     async fn replay_metadata_and_backfill_leave_interleaved_local_content_live() {
         use crate::doc_host::{DocHost, DocHostConfig};
-        use loams_desktop_sync::chat_client::ChatDocSink;
+        use loams_agentd_store::chat_client::ChatDocSink;
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(loams_desktop_sync::DocsStore::open(dir.path()).unwrap());
+        let store = Arc::new(loams_agentd_store::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
             store.clone(),
             DocHostConfig {
                 device_id: "host".into(),
-                default_harness: loams_desktop_proto::HarnessId::Mock,
+                default_harness: loams_agentd_proto::HarnessId::Mock,
                 edge: None,
             },
         );
@@ -4106,26 +4072,26 @@ mod context_usage_tests {
             .with_handle(Arc::downgrade(&handle));
         let mut stream = doc_messages_stream(handle.watch_messages(), handle.doc_arc());
         stream.next().await.unwrap();
-        let source = loams_desktop_doc::SessionDoc::init("interleaved").unwrap();
+        let source = loams_agentd_doc::SessionDoc::init("interleaved").unwrap();
         sink.apply_checkpoint(&source.export_snapshot().unwrap(), 0)
             .unwrap();
-        let entry = |id: &str| loams_desktop_doc::SessionMessageEntry {
+        let entry = |id: &str| loams_agentd_doc::SessionMessageEntry {
             id: id.into(),
-            role: loams_desktop_doc::MessageRole::Assistant,
-            parts: vec![loams_desktop_doc::MessagePart::Text {
+            role: loams_agentd_doc::MessageRole::Assistant,
+            parts: vec![loams_agentd_doc::MessagePart::Text {
                 id: "text".into(),
                 text: id.into(),
             }],
             created_at: 0,
             device_id: "host".into(),
-            status: Some(loams_desktop_doc::MessageStatus::Streaming),
+            status: Some(loams_agentd_doc::MessageStatus::Streaming),
             continuation_of: None,
             duration_ms: None,
         };
         handle.doc().push_message(&entry("local-before")).unwrap();
         source.update_context_usage(Some(10), Some(100)).unwrap();
         sink.apply_replay_row(&source.export_snapshot().unwrap(), 1);
-        let update: loams_desktop_doc::TranscriptUpdate = serde_json::from_value(
+        let update: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await
                 .unwrap()
@@ -4137,7 +4103,7 @@ mod context_usage_tests {
             "metadata must not reset ongoing live animations"
         );
         let mut entries = vec![];
-        loams_desktop_doc::apply_transcript_frame(&mut entries, update.frame).unwrap();
+        loams_agentd_doc::apply_transcript_frame(&mut entries, update.frame).unwrap();
         assert_eq!(entries[0].id, "local-before");
         let version = source.doc().oplog_vv();
         source.push_message(&entry("historical")).unwrap();
@@ -4150,7 +4116,7 @@ mod context_usage_tests {
             2,
         );
         handle.doc().push_message(&entry("local-after")).unwrap();
-        let update: loams_desktop_doc::TranscriptUpdate = serde_json::from_value(
+        let update: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await
                 .unwrap()
@@ -4160,7 +4126,7 @@ mod context_usage_tests {
         let baseline = update.replay_baseline.unwrap();
         assert_eq!(baseline.entries.len(), 1);
         assert!(baseline.entries.contains_key("historical"));
-        loams_desktop_doc::apply_transcript_frame(&mut entries, update.frame).unwrap();
+        loams_agentd_doc::apply_transcript_frame(&mut entries, update.frame).unwrap();
         assert_eq!(entries.len(), 4);
         host.shutdown_workers().await;
     }
@@ -4168,14 +4134,14 @@ mod context_usage_tests {
     #[tokio::test]
     async fn replay_preserves_each_watchers_opening_cutoff_without_consuming_live_text() {
         use crate::doc_host::{DocHost, DocHostConfig};
-        use loams_desktop_sync::chat_client::ChatDocSink;
+        use loams_agentd_store::chat_client::ChatDocSink;
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(loams_desktop_sync::DocsStore::open(dir.path()).unwrap());
+        let store = Arc::new(loams_agentd_store::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
             store.clone(),
             DocHostConfig {
                 device_id: "viewer".into(),
-                default_harness: loams_desktop_proto::HarnessId::Mock,
+                default_harness: loams_agentd_proto::HarnessId::Mock,
                 edge: None,
             },
         );
@@ -4183,21 +4149,21 @@ mod context_usage_tests {
         let sink =
             crate::chat2_host::EngineChatSink::new(&handle.doc_arc(), store, "cached-replay")
                 .with_handle(Arc::downgrade(&handle));
-        let source = loams_desktop_doc::SessionDoc::init("cached-replay").unwrap();
+        let source = loams_agentd_doc::SessionDoc::init("cached-replay").unwrap();
         let mut writer =
-            loams_desktop_doc::SegmentWriter::begin(&source, "reply", "host", 0).unwrap();
-        let text = |id: &str, value: &str| loams_desktop_doc::MessagePart::Text {
+            loams_agentd_doc::SegmentWriter::begin(&source, "reply", "host", 0).unwrap();
+        let text = |id: &str, value: &str| loams_agentd_doc::MessagePart::Text {
             id: id.into(),
             text: value.into(),
         };
         let cached = text("body", "café histórico");
-        writer.sync(&[cached.clone()]).unwrap();
+        writer.sync(std::slice::from_ref(&cached)).unwrap();
         sink.apply_checkpoint(&source.export_snapshot().unwrap(), 0)
             .unwrap();
         // Cached content exists before the first watcher and never enters
         // the changed-parts tracker. It may not have been painted yet.
         let mut first = doc_messages_stream(handle.watch_messages(), handle.doc_arc());
-        let opening: loams_desktop_doc::TranscriptUpdate =
+        let opening: loams_agentd_doc::TranscriptUpdate =
             serde_json::from_value(first.next().await.unwrap()).unwrap();
         assert_eq!(
             opening.replay_baseline.unwrap().entries["reply"]["body"],
@@ -4205,9 +4171,9 @@ mod context_usage_tests {
         );
 
         let live = text("body", "café histórico y nuevo");
-        writer.sync(&[live.clone()]).unwrap();
+        writer.sync(std::slice::from_ref(&live)).unwrap();
         sink.apply_row(&source.export_snapshot().unwrap(), 1);
-        let update: loams_desktop_doc::TranscriptUpdate = serde_json::from_value(
+        let update: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), first.next())
                 .await
                 .unwrap()
@@ -4218,7 +4184,7 @@ mod context_usage_tests {
         // A later subscriber sees a longer historical prefix, but must not
         // change the first subscriber's ongoing live animation.
         let mut second = doc_messages_stream(handle.watch_messages(), handle.doc_arc());
-        let opening: loams_desktop_doc::TranscriptUpdate =
+        let opening: loams_agentd_doc::TranscriptUpdate =
             serde_json::from_value(second.next().await.unwrap()).unwrap();
         assert_eq!(
             opening.replay_baseline.unwrap().entries["reply"]["body"],
@@ -4235,7 +4201,7 @@ mod context_usage_tests {
                 (&mut first, "café histórico".len()),
                 (&mut second, "café histórico y nuevo".len()),
             ] {
-                let update: loams_desktop_doc::TranscriptUpdate = serde_json::from_value(
+                let update: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(
                     tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                         .await
                         .unwrap()
@@ -4261,24 +4227,24 @@ mod context_usage_tests {
     #[tokio::test]
     async fn reopening_rearms_history_for_previously_live_text() {
         use crate::doc_host::{DocHost, DocHostConfig};
-        use loams_desktop_sync::chat_client::ChatDocSink;
+        use loams_agentd_store::chat_client::ChatDocSink;
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(loams_desktop_sync::DocsStore::open(dir.path()).unwrap());
+        let store = Arc::new(loams_agentd_store::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
             store.clone(),
             DocHostConfig {
                 device_id: "viewer".into(),
-                default_harness: loams_desktop_proto::HarnessId::Mock,
+                default_harness: loams_agentd_proto::HarnessId::Mock,
                 edge: None,
             },
         );
         let handle = host.open("reopen").unwrap();
         let sink = crate::chat2_host::EngineChatSink::new(&handle.doc_arc(), store, "reopen")
             .with_handle(Arc::downgrade(&handle));
-        let source = loams_desktop_doc::SessionDoc::init("reopen").unwrap();
+        let source = loams_agentd_doc::SessionDoc::init("reopen").unwrap();
         let mut writer =
-            loams_desktop_doc::SegmentWriter::begin(&source, "reply", "host", 0).unwrap();
-        let part = |text: &str| loams_desktop_doc::MessagePart::Text {
+            loams_agentd_doc::SegmentWriter::begin(&source, "reply", "host", 0).unwrap();
+        let part = |text: &str| loams_agentd_doc::MessagePart::Text {
             id: "body".into(),
             text: text.into(),
         };
@@ -4297,7 +4263,7 @@ mod context_usage_tests {
         stream.next().await.unwrap();
         writer.sync(&[part("live plus recovered")]).unwrap();
         sink.apply_replay_row(&source.export_snapshot().unwrap(), 2);
-        let update: loams_desktop_doc::TranscriptUpdate = serde_json::from_value(
+        let update: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(
             tokio::time::timeout(std::time::Duration::from_secs(2), stream.next())
                 .await
                 .unwrap()
@@ -4313,11 +4279,11 @@ mod context_usage_tests {
 
     #[tokio::test]
     async fn context_only_commits_reach_remote_watch_and_reconnect() {
-        let host = loams_desktop_doc::SessionDoc::init("context-chat").unwrap();
+        let host = loams_agentd_doc::SessionDoc::init("context-chat").unwrap();
         host.update_context_usage(Some(42000), Some(200000))
             .unwrap();
         // The viewing engine reads a replicated document, with no harness process.
-        let remote = Arc::new(loams_desktop_doc::SessionDoc::from_doc(loro::LoroDoc::new()));
+        let remote = Arc::new(loams_agentd_doc::SessionDoc::from_doc(loro::LoroDoc::new()));
         remote
             .doc()
             .import(&host.export_snapshot().unwrap())

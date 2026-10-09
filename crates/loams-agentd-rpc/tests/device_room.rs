@@ -25,10 +25,10 @@ use tokio_tungstenite::tungstenite::handshake::server::{
     Request as WsRequest, Response as WsResponse,
 };
 
-use loams_desktop_rpc::device_room::{
+use loams_agentd_rpc::device_room::{
     CLIENT_CLOSED, CLIENT_GONE, HOST_CLOSED, HOST_OFFLINE, NUDGE_KIND, RELAY_KIND,
 };
-use loams_desktop_rpc::{
+use loams_agentd_rpc::{
     DeviceFrameHeader, DeviceLink, HostRelay, HostRelayConfig, LinkCache, LinkCacheConfig,
     RpcError, RpcReply, RpcService, StaticToken, TokenError, TokenSource, decode_device_frame,
     device_room_ws_url, encode_device_frame, methods,
@@ -344,7 +344,7 @@ fn cache(edge_url: &str) -> Arc<LinkCache> {
     LinkCache::new(config)
 }
 
-fn noop_nudge() -> loams_desktop_rpc::NudgeHandler {
+fn noop_nudge() -> loams_agentd_rpc::NudgeHandler {
     Arc::new(|_| true)
 }
 
@@ -742,7 +742,7 @@ async fn nudges_reach_the_host_callback() {
     let relay = FakeRelay::start().await;
     let service = TestService::new("host-a");
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-    let on_nudge: loams_desktop_rpc::NudgeHandler =
+    let on_nudge: loams_agentd_rpc::NudgeHandler =
         Arc::new(move |chat_id| tx.send(chat_id).is_ok());
     let _host = HostRelay::spawn(relay_config(&relay.edge_url(), 100), service, on_nudge);
     relay.wait_host_connected().await;
@@ -806,7 +806,7 @@ async fn zombie_relay_path_trips_the_echo_deadline() {
     // minutes, retrying frames into the void, until an unrelated host-session
     // cycle exposed it. The app-level echo must rule the link dead within its
     // deadline instead.
-    loams_desktop_rpc::device_room::set_client_liveness_for_tests(
+    loams_agentd_rpc::device_room::set_client_liveness_for_tests(
         Duration::from_millis(100),
         Duration::from_millis(600),
     );
@@ -829,7 +829,7 @@ async fn zombie_relay_path_trips_the_echo_deadline() {
         "the zombie path must be ruled dead by the echo deadline"
     );
     // Restore the production clocks for the rest of the process's tests.
-    loams_desktop_rpc::device_room::set_client_liveness_for_tests(Duration::ZERO, Duration::ZERO);
+    loams_agentd_rpc::device_room::set_client_liveness_for_tests(Duration::ZERO, Duration::ZERO);
 }
 
 #[tokio::test]
@@ -837,7 +837,7 @@ async fn nudge_ack_requires_durable_acceptance_and_echoes_the_exact_token() {
     let relay = FakeRelay::start().await;
     let accept = Arc::new(AtomicBool::new(false));
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let callback: loams_desktop_rpc::NudgeHandler = Arc::new({
+    let callback: loams_agentd_rpc::NudgeHandler = Arc::new({
         let accept = accept.clone();
         move |id| {
             let _ = tx.send(id);

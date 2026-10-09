@@ -1,4 +1,4 @@
-//! The engine client: a thin, reconnecting wrapper over `loams_desktop_rpc` with the
+//! The engine client: a thin, reconnecting wrapper over `loams_agentd_rpc` with the
 //! snapshot/resolve helpers the tools share.
 //!
 //! Watch streams are the engine's only read surface for chats, devices,
@@ -10,13 +10,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, anyhow, bail};
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     SessionCommandPayload, SessionMessageEntry, TranscriptFrame, apply_transcript_frame,
 };
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     Chat, Device, HarnessId, Model, ReasoningLevel, Session, SessionStatus, Space, SteeringMode,
 };
-use loams_desktop_rpc::{RpcClient, RpcError, RpcSubscription, connect_ws, methods};
+use loams_agentd_rpc::{RpcClient, RpcError, RpcSubscription, connect_ws, methods};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -586,19 +586,19 @@ mod tests {
         use futures::StreamExt;
         struct Service(tokio::sync::watch::Sender<()>);
         #[async_trait::async_trait]
-        impl loams_desktop_rpc::RpcService for Service {
+        impl loams_agentd_rpc::RpcService for Service {
             async fn handle(
                 &self,
                 method: &str,
                 _: Value,
-            ) -> Result<loams_desktop_rpc::RpcReply, RpcError> {
+            ) -> Result<loams_agentd_rpc::RpcReply, RpcError> {
                 let first = if method == methods::WATCH_DOC_MESSAGES {
                     json!({"reset":[]})
                 } else {
                     json!([])
                 };
                 let rx = self.0.subscribe();
-                Ok(loams_desktop_rpc::RpcReply::Stream(
+                Ok(loams_agentd_rpc::RpcReply::Stream(
                     futures::stream::unfold((Some(first), rx), |(first, mut rx)| async move {
                         if let Some(item) = first {
                             return Some((item, (None, rx)));
@@ -611,7 +611,7 @@ mod tests {
             }
         }
         let (watched, _) = tokio::sync::watch::channel(());
-        let rpc = loams_desktop_rpc::memory_client(Arc::new(Service(watched.clone())));
+        let rpc = loams_agentd_rpc::memory_client(Arc::new(Service(watched.clone())));
         let client = LoamsDesktop::with_client(rpc, Origin::default());
         for _ in 0..16 {
             assert!(client.transcript("quiet").await.unwrap().is_empty());

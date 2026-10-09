@@ -1,5 +1,5 @@
 #![cfg(unix)]
-use loams_desktop_harness::{AcpHarness, CodexHarness, Harness};
+use loams_agentd_harness::{AcpHarness, CodexHarness, Harness};
 use std::{path::Path, sync::Arc};
 
 fn harnesses(binary: &Path) -> Vec<Arc<dyn Harness>> {
@@ -7,7 +7,7 @@ fn harnesses(binary: &Path) -> Vec<Arc<dyn Harness>> {
         Arc::new(CodexHarness::new().with_executable(binary)),
         Arc::new(AcpHarness::grok().with_executable(binary)),
         Arc::new(AcpHarness::hermes().with_executable(binary)),
-        Arc::new(loams_desktop_harness::PiHarness::new().with_executable(binary)),
+        Arc::new(loams_agentd_harness::PiHarness::new().with_executable(binary)),
         Arc::new(AcpHarness::antigravity().with_executable(binary)),
         Arc::new(AcpHarness::devin().with_executable(binary)),
     ]
@@ -64,7 +64,7 @@ async fn every_native_catalog_retains_last_good_and_cold_failure_stays_an_error(
         assert_eq!(first.source, "live", "{:?}", harness.id());
         assert_eq!(
             first.models[0].id,
-            if harness.id() == loams_desktop_proto::HarnessId::Pi {
+            if harness.id() == loams_agentd_proto::HarnessId::Pi {
                 "fixture/account-model"
             } else {
                 "account-model"
@@ -90,8 +90,8 @@ async fn every_native_catalog_retains_last_good_and_cold_failure_stays_an_error(
         .unwrap();
         let error = harness.model_catalog(true).await.unwrap_err();
         assert_eq!(
-            loams_desktop_harness::CatalogFailure::classify(&error),
-            loams_desktop_harness::CatalogFailureCode::AuthRequired
+            loams_agentd_harness::CatalogFailure::classify(&error),
+            loams_agentd_harness::CatalogFailureCode::AuthRequired
         );
         assert!(
             harness.models().await.is_err(),
@@ -110,8 +110,8 @@ async fn codex_empty_catalogs_retire_children_and_next_request_spawns_fresh() {
     std::fs::write(&state, r#"{"fail":false,"empty":true,"id":"ignored"}"#).unwrap();
     let error = harness.model_catalog(true).await.unwrap_err();
     assert_eq!(
-        loams_desktop_harness::CatalogFailure::classify(&error),
-        loams_desktop_harness::CatalogFailureCode::Failed
+        loams_agentd_harness::CatalogFailure::classify(&error),
+        loams_agentd_harness::CatalogFailureCode::Failed
     );
     let reaped = |expected: usize| {
         let ids: Vec<i32> = std::fs::read_to_string(dir.path().join("pids"))
@@ -172,8 +172,8 @@ fn auth_context_child() {
             "{auth}"
         );
     }
-    let claude = loams_desktop_harness::ClaudeHarness::new().with_executable(&binary);
-    let opencode = loams_desktop_harness::OpencodeHarness::new().with_executable(&binary);
+    let claude = loams_agentd_harness::ClaudeHarness::new().with_executable(&binary);
+    let opencode = loams_agentd_harness::OpencodeHarness::new().with_executable(&binary);
     for (harness, file) in [
         (&claude as &dyn Harness, ".claude/settings.json"),
         (&opencode as &dyn Harness, ".local/share/opencode/auth.json"),

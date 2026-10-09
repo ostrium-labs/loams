@@ -11,7 +11,7 @@ use hyper::{
     body::{Frame, Incoming},
 };
 use hyper_util::rt::TokioIo;
-use loams_desktop_preview::{
+use loams_agentd_preview::{
     catalog::Catalog,
     discovery::Listener,
     mux::{self, BoxIo, Connector},

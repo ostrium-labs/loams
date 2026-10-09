@@ -1,5 +1,5 @@
 use super::*;
-use loams_desktop_proto::{CheckoutGitStatus, GitFileState, GitFileStatus};
+use loams_agentd_proto::{CheckoutGitStatus, GitFileState, GitFileStatus};
 
 fn state(code: u8) -> Option<GitFileState> {
     Some(match code {

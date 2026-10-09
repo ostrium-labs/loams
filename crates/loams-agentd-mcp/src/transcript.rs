@@ -5,8 +5,8 @@
 //! continuation entries. An agent reading another chat wants prose plus a
 //! one-line record of what each tool did — never the raw part map.
 
-use loams_desktop_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
-use loams_desktop_proto::ToolCall;
+use loams_agentd_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
+use loams_agentd_proto::ToolCall;
 use serde::Serialize;
 use serde_json::{Value, json};
 

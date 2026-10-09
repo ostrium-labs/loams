@@ -1,7 +1,7 @@
 //! Host-side discovery for providers without a typed skills catalog. Only
 //! configured skill roots are traversed; bodies stay on the host until invoked.
 use crate::HarnessError;
-use loams_desktop_proto::{HarnessId, invocation::Skill};
+use loams_agentd_proto::{HarnessId, invocation::Skill};
 use std::{
     collections::{BTreeMap, HashSet},
     path::{Path, PathBuf},
@@ -18,7 +18,7 @@ pub(crate) struct CommandDiscovery {
         Option<(
             PathBuf,
             std::time::Instant,
-            Vec<loams_desktop_proto::SlashCommand>,
+            Vec<loams_agentd_proto::SlashCommand>,
         )>,
     >,
 }
@@ -28,9 +28,9 @@ impl CommandDiscovery {
         &self,
         cwd: &Path,
         discover: impl std::future::Future<
-            Output = Result<Vec<loams_desktop_proto::SlashCommand>, HarnessError>,
+            Output = Result<Vec<loams_agentd_proto::SlashCommand>, HarnessError>,
         >,
-    ) -> Result<Vec<loams_desktop_proto::SlashCommand>, HarnessError> {
+    ) -> Result<Vec<loams_agentd_proto::SlashCommand>, HarnessError> {
         let requested = std::time::Instant::now();
         let mut latest = self.latest.lock().await;
         if let Some((root, completed, commands)) = latest.as_ref()
@@ -69,11 +69,11 @@ pub(crate) fn is_shared_skill(path: &str) -> bool {
 pub(crate) fn attach_advertised_commands(
     harness: HarnessId,
     skills: &mut Vec<Skill>,
-    commands: &[loams_desktop_proto::SlashCommand],
+    commands: &[loams_agentd_proto::SlashCommand],
 ) {
-    use loams_desktop_proto::invocation::SkillCommand;
+    use loams_agentd_proto::invocation::SkillCommand;
     for command in commands {
-        if !loams_desktop_proto::invocation::valid_skill_command_name(&command.name) {
+        if !loams_agentd_proto::invocation::valid_skill_command_name(&command.name) {
             continue;
         }
         let name = if harness == HarnessId::Pi {
@@ -306,7 +306,7 @@ fn scan_root(
                     skill.name = relative.to_string_lossy().replace(['/', '\\'], ":");
                 }
                 skill.name = format!("{namespace}{}", skill.name);
-                if loams_desktop_proto::invocation::valid_invocation_name(&skill.name) {
+                if loams_agentd_proto::invocation::valid_invocation_name(&skill.name) {
                     found.insert(skill.name.clone(), skill);
                 }
             }
@@ -378,8 +378,8 @@ fn read_skill(path: &Path) -> Result<Option<Skill>, HarnessError> {
         .and_then(|v| v.as_str())
         .unwrap_or(fallback);
     let path = path.to_string_lossy();
-    if !loams_desktop_proto::invocation::valid_invocation_name(name)
-        || !loams_desktop_proto::invocation::valid_skill_path(&path)
+    if !loams_agentd_proto::invocation::valid_invocation_name(name)
+        || !loams_agentd_proto::invocation::valid_skill_path(&path)
     {
         return Ok(None);
     }
@@ -411,7 +411,7 @@ mod tests {
         let probe = || async {
             probes.set(probes.get() + 1);
             tokio::task::yield_now().await;
-            Ok(vec![loams_desktop_proto::SlashCommand {
+            Ok(vec![loams_agentd_proto::SlashCommand {
                 name: format!("probe-{}", probes.get()),
                 description: String::new(),
                 input_hint: None,
@@ -529,12 +529,12 @@ mod tests {
     #[test]
     fn acp_native_skill_commands_remain_distinct_from_builtin_commands() {
         let commands = vec![
-            loams_desktop_proto::SlashCommand {
+            loams_agentd_proto::SlashCommand {
                 name: "skill:review".into(),
                 description: "Review".into(),
                 input_hint: None,
             },
-            loams_desktop_proto::SlashCommand {
+            loams_agentd_proto::SlashCommand {
                 name: "compact".into(),
                 description: String::new(),
                 input_hint: None,
@@ -544,13 +544,13 @@ mod tests {
         attach_advertised_commands(HarnessId::Pi, &mut skills, &commands);
         assert_eq!(skills.len(), 1);
         let skill = &skills[0];
-        let invocation = loams_desktop_proto::invocation::Invocation::Skill {
+        let invocation = loams_agentd_proto::invocation::Invocation::Skill {
             name: skill.name.clone(),
             path: skill.path.clone(),
             command: skill.command.clone(),
         };
         assert_eq!(
-            loams_desktop_proto::invocation::harness_prompt(
+            loams_agentd_proto::invocation::harness_prompt(
                 &format!("{} arguments", invocation.link()),
                 HarnessId::Pi
             ),
@@ -564,7 +564,7 @@ mod tests {
                 enabled: true,
                 command: None,
             }];
-            let command = loams_desktop_proto::SlashCommand {
+            let command = loams_agentd_proto::SlashCommand {
                 name: "review".into(),
                 description: String::new(),
                 input_hint: None,
@@ -590,7 +590,7 @@ mod tests {
                 enabled: true,
                 command: None,
             }];
-            let command = |name: &str| loams_desktop_proto::SlashCommand {
+            let command = |name: &str| loams_agentd_proto::SlashCommand {
                 name: name.into(),
                 description: String::new(),
                 input_hint: None,
@@ -606,7 +606,7 @@ mod tests {
 
     #[test]
     fn advertised_commands_preserve_valid_skill_links() {
-        use loams_desktop_proto::invocation::{Invocation, invocation_links};
+        use loams_agentd_proto::invocation::{Invocation, invocation_links};
         let commands = [
             "skill:",
             "skill:two words",
@@ -616,7 +616,7 @@ mod tests {
             "skill:审查-é:ui.v2_test",
         ]
         .into_iter()
-        .map(|name| loams_desktop_proto::SlashCommand {
+        .map(|name| loams_agentd_proto::SlashCommand {
             name: name.into(),
             description: String::new(),
             input_hint: None,
@@ -876,7 +876,7 @@ mod tests {
             home.join(".agents/skills/private"),
         ] {
             std::fs::create_dir_all(&denied).unwrap();
-            std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0)).unwrap();
+            std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o0)).unwrap();
             let result = discover_at(HarnessId::Cursor, &repo, &home);
             std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o700)).unwrap();
             let skills = result.unwrap();
@@ -913,7 +913,7 @@ mod tests {
         symlink("SKILL.md", cycle.join("SKILL.md")).unwrap();
 
         let denied = write(&repo, ".agents/skills/denied/SKILL.md", "Private");
-        std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0)).unwrap();
+        std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o0)).unwrap();
         // Root can read mode-000 files; missing and cyclic links still exercise
         // per-file I/O failures on privileged test runners.
         let denied_is_readable = std::fs::File::open(&denied).is_ok();

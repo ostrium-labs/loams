@@ -9,18 +9,18 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     MessagePart, MessageRole, MessageStatus, SegmentWriter, SessionCommandEntry,
     SessionCommandPayload, SessionCommandStatus, SessionDoc, SessionMessageEntry, SubagentStatus,
 };
-use loams_desktop_engine::{EngineCore, HarnessRegistry, RunJournal};
-use loams_desktop_harness::mock::MockHarness;
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_harness::mock::MockHarness;
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SessionStatus, SteeringMode, ToolCall,
 };
-use loams_desktop_sync::DocsStore;
+use loams_agentd_sessions::{EngineCore, HarnessRegistry, RunJournal};
+use loams_agentd_store::DocsStore;
 
 const CHAT: &str = "chat-e2e";
 const VIEWER: &str = "viewer-device";
@@ -469,7 +469,7 @@ async fn pending_update_does_not_block_dispatch_or_other_harnesses() {
 fn queue_as_viewer(doc: &SessionDoc, id: &str, payload: SessionCommandPayload) {
     let now = chrono::Utc::now().timestamp_millis();
     let based_on = doc.read_entries().expect("read entries").last().map(|m| {
-        loams_desktop_doc::CommandBasedOn {
+        loams_agentd_doc::CommandBasedOn {
             turn_id: Some(m.id.clone()),
             frontier: None,
         }
@@ -1101,9 +1101,9 @@ async fn processed_commands_are_skipped_on_redelivery() {
     let entry = commands.iter().find(|c| c.id == "cmd-crashed").unwrap();
     let is_processed = |id: &str| store.is_processed(id).unwrap_or(false);
     let never_past = |_: &str| false;
-    let verdict = loams_desktop_doc::evaluate_command(
+    let verdict = loams_agentd_doc::evaluate_command(
         entry,
-        &loams_desktop_doc::EvaluationContext {
+        &loams_agentd_doc::EvaluationContext {
             is_processed: &is_processed,
             now_ms: chrono::Utc::now().timestamp_millis(),
             entries: &commands,
@@ -1111,7 +1111,7 @@ async fn processed_commands_are_skipped_on_redelivery() {
             turn_is_past: &never_past,
         },
     );
-    assert_eq!(verdict, loams_desktop_doc::CommandDisposition::Skip);
+    assert_eq!(verdict, loams_agentd_doc::CommandDisposition::Skip);
 }
 
 /// The v0.2.12 field report: a send whose command was consumed by the ledger
@@ -1442,12 +1442,12 @@ async fn rpc_surface_over_in_memory_transport() {
             script: mock_script(),
         }),
     );
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
 
     // ListHarnesses + ListModels.
     let harnesses = client
         .call(
-            loams_desktop_rpc::methods::LIST_HARNESSES,
+            loams_agentd_rpc::methods::LIST_HARNESSES,
             serde_json::Value::Null,
         )
         .await
@@ -1455,7 +1455,7 @@ async fn rpc_surface_over_in_memory_transport() {
     assert_eq!(harnesses[0]["id"], "mock");
     let models = client
         .call(
-            loams_desktop_rpc::methods::LIST_MODELS,
+            loams_agentd_rpc::methods::LIST_MODELS,
             serde_json::json!({"harness": "mock"}),
         )
         .await
@@ -1465,7 +1465,7 @@ async fn rpc_surface_over_in_memory_transport() {
     // WatchSessions + WatchDocMessages streams.
     let mut sessions_stream = client
         .subscribe(
-            loams_desktop_rpc::methods::WATCH_SESSIONS,
+            loams_agentd_rpc::methods::WATCH_SESSIONS,
             serde_json::Value::Null,
         )
         .await
@@ -1478,7 +1478,7 @@ async fn rpc_surface_over_in_memory_transport() {
 
     let mut messages_stream = client
         .subscribe(
-            loams_desktop_rpc::methods::WATCH_DOC_MESSAGES,
+            loams_agentd_rpc::methods::WATCH_DOC_MESSAGES,
             serde_json::json!({"chatId": CHAT}),
         )
         .await
@@ -1501,7 +1501,7 @@ async fn rpc_surface_over_in_memory_transport() {
     .unwrap();
     let queued = client
         .call(
-            loams_desktop_rpc::methods::QUEUE_COMMAND,
+            loams_agentd_rpc::methods::QUEUE_COMMAND,
             serde_json::json!({"chatId": CHAT, "command": command}),
         )
         .await
@@ -1518,8 +1518,8 @@ async fn rpc_surface_over_in_memory_transport() {
             .await
             .expect("doc messages before timeout")
             .expect("stream alive");
-        let frame: loams_desktop_doc::TranscriptFrame = serde_json::from_value(item).unwrap();
-        loams_desktop_doc::apply_transcript_frame(&mut materialized, frame).unwrap();
+        let frame: loams_agentd_doc::TranscriptFrame = serde_json::from_value(item).unwrap();
+        loams_agentd_doc::apply_transcript_frame(&mut materialized, frame).unwrap();
         if materialized.len() == 2 && materialized[1].status == Some(MessageStatus::Complete) {
             break materialized;
         }
@@ -1577,7 +1577,7 @@ async fn respond_input_resolves_pending_question() {
             let (tx, rx) = tokio::sync::mpsc::channel::<Result<AgentEvent, HarnessError>>(16);
             tokio::spawn(async move {
                 let answers =
-                    (controls.request_input)(vec![loams_desktop_proto::UserInputQuestion {
+                    (controls.request_input)(vec![loams_agentd_proto::UserInputQuestion {
                         id: "q1".into(),
                         header: "Pick".into(),
                         question: "Which one?".into(),
@@ -1660,7 +1660,7 @@ async fn respond_input_resolves_pending_question() {
         "cmd-answer-1",
         SessionCommandPayload::RespondInput {
             request_id,
-            answers: vec![loams_desktop_proto::UserInputAnswer {
+            answers: vec![loams_agentd_proto::UserInputAnswer {
                 question_id: "q1".into(),
                 labels: vec!["b".into()],
             }],
@@ -1733,7 +1733,7 @@ async fn wrong_id_respond_is_rejected_and_correct_answer_still_resumes() {
             let (tx, rx) = tokio::sync::mpsc::channel::<Result<AgentEvent, HarnessError>>(16);
             tokio::spawn(async move {
                 let answers =
-                    (controls.request_input)(vec![loams_desktop_proto::UserInputQuestion {
+                    (controls.request_input)(vec![loams_agentd_proto::UserInputQuestion {
                         id: "q1".into(),
                         header: "Pick".into(),
                         question: "Which one?".into(),
@@ -1805,7 +1805,7 @@ async fn wrong_id_respond_is_rejected_and_correct_answer_still_resumes() {
         "cmd-answer-bogus",
         SessionCommandPayload::RespondInput {
             request_id: "bogus-id".into(),
-            answers: vec![loams_desktop_proto::UserInputAnswer {
+            answers: vec![loams_agentd_proto::UserInputAnswer {
                 question_id: "q1".into(),
                 labels: vec!["a".into()],
             }],
@@ -1852,7 +1852,7 @@ async fn wrong_id_respond_is_rejected_and_correct_answer_still_resumes() {
         "cmd-answer-right",
         SessionCommandPayload::RespondInput {
             request_id,
-            answers: vec![loams_desktop_proto::UserInputAnswer {
+            answers: vec![loams_agentd_proto::UserInputAnswer {
                 question_id: "q1".into(),
                 labels: vec!["b".into()],
             }],
@@ -1926,17 +1926,16 @@ async fn interrupt_unblocks_a_run_awaiting_input() {
                     // Blocks on the question; an interrupt fails the resolver
                     // (empty answers) and cancels the token — like a real CLI
                     // being torn down, the stream then ends WITHOUT a Done.
-                    let _ =
-                        (controls.request_input)(vec![loams_desktop_proto::UserInputQuestion {
-                            id: "q1".into(),
-                            header: "Pick".into(),
-                            question: "Which one?".into(),
-                            options: vec!["a".into(), "b".into()],
-                            prefill: None,
-                            multiline: false,
-                            multi_select: false,
-                        }])
-                        .await;
+                    let _ = (controls.request_input)(vec![loams_agentd_proto::UserInputQuestion {
+                        id: "q1".into(),
+                        header: "Pick".into(),
+                        question: "Which one?".into(),
+                        options: vec!["a".into(), "b".into()],
+                        prefill: None,
+                        multiline: false,
+                        multi_select: false,
+                    }])
+                    .await;
                     interrupt.cancelled().await;
                     drop(tx);
                 });
@@ -2076,7 +2075,7 @@ async fn harness_emitted_input_twin_is_dropped_and_answer_resumes() {
         ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
             let (tx, rx) = tokio::sync::mpsc::channel::<Result<AgentEvent, HarnessError>>(16);
             tokio::spawn(async move {
-                let question = loams_desktop_proto::UserInputQuestion {
+                let question = loams_agentd_proto::UserInputQuestion {
                     id: "q1".into(),
                     header: "Pick".into(),
                     question: "Which one?".into(),
@@ -2185,7 +2184,7 @@ async fn harness_emitted_input_twin_is_dropped_and_answer_resumes() {
         "cmd-answer-twin",
         SessionCommandPayload::RespondInput {
             request_id,
-            answers: vec![loams_desktop_proto::UserInputAnswer {
+            answers: vec![loams_agentd_proto::UserInputAnswer {
                 question_id: "q1".into(),
                 labels: vec!["a".into()],
             }],
@@ -2283,7 +2282,7 @@ async fn attachment_upload_then_run_threads_refs_and_paths() {
             seen: seen.clone(),
         }),
     );
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
 
     // Chunked upload exactly as the composer sends it: base64 split across
     // positional UploadChunk slots, then UploadCommit → the durable path.
@@ -2293,7 +2292,7 @@ async fn attachment_upload_then_run_threads_refs_and_paths() {
     for (seq, data) in [(0, first), (1, second)] {
         client
             .call(
-                loams_desktop_rpc::methods::UPLOAD_CHUNK,
+                loams_agentd_rpc::methods::UPLOAD_CHUNK,
                 serde_json::json!({ "uploadId": "e2e-att", "seq": seq, "data": data }),
             )
             .await
@@ -2301,7 +2300,7 @@ async fn attachment_upload_then_run_threads_refs_and_paths() {
     }
     let committed = client
         .call(
-            loams_desktop_rpc::methods::UPLOAD_COMMIT,
+            loams_agentd_rpc::methods::UPLOAD_COMMIT,
             serde_json::json!({ "uploadId": "e2e-att", "fileName": "red.png" }),
         )
         .await
@@ -2366,7 +2365,7 @@ async fn attachment_upload_then_run_threads_refs_and_paths() {
     // Read-back over the same RPC surface the transcript uses.
     let chunk = client
         .call(
-            loams_desktop_rpc::methods::READ_ATTACHMENT_CHUNK,
+            loams_agentd_rpc::methods::READ_ATTACHMENT_CHUNK,
             serde_json::json!({ "path": path, "offset": 0 }),
         )
         .await
@@ -2394,7 +2393,7 @@ async fn real_claude_sees_uploaded_image_inline() {
 
     let core = EngineCore::assemble(
         &dir,
-        Arc::new(loams_desktop_engine::default_registry()),
+        Arc::new(loams_agentd_sessions::default_registry()),
         HarnessId::ClaudeCode,
         None,
     )
@@ -2409,17 +2408,17 @@ async fn real_claude_sees_uploaded_image_inline() {
 
     // 8×8 solid-red PNG, uploaded exactly as the composer does.
     const RED_PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAB+GTG2wAAJP0GeGuMDBnAAAAAElFTkSuQmCC";
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     client
         .call(
-            loams_desktop_rpc::methods::UPLOAD_CHUNK,
+            loams_agentd_rpc::methods::UPLOAD_CHUNK,
             serde_json::json!({ "uploadId": "real-img", "seq": 0, "data": RED_PNG_B64 }),
         )
         .await
         .expect("UploadChunk");
     let committed = client
         .call(
-            loams_desktop_rpc::methods::UPLOAD_COMMIT,
+            loams_agentd_rpc::methods::UPLOAD_COMMIT,
             serde_json::json!({ "uploadId": "real-img", "fileName": "swatch.png" }),
         )
         .await
@@ -2883,7 +2882,7 @@ async fn context_usage_settles_after_done_without_reopening_the_turn() {
     .await;
     assert_eq!(
         handle.doc().context_usage(),
-        Some(loams_desktop_proto::ContextUsage {
+        Some(loams_agentd_proto::ContextUsage {
             tokens: Some(0),
             window: Some(200000)
         })
@@ -2979,7 +2978,7 @@ async fn pending_steer_handoff_does_not_publish_a_completion() {
                     .steer(CHAT, "redirect", Some("user-steer".into()))
                     .await
                     .unwrap(),
-                loams_desktop_engine::sessions::SteerOutcome::Accepted
+                loams_agentd_sessions::sessions::SteerOutcome::Accepted
             );
         }
         let before_done = core.sessions.session_status(CHAT).unwrap().updated_at;
@@ -3051,7 +3050,7 @@ async fn pending_steer_handoff_does_not_publish_a_completion() {
 /// Real drive_run + journal + Loro, with an isolated Codex source root.
 #[tokio::test]
 async fn generated_image_is_materialized_before_publication_and_survives_reopen() {
-    use loams_desktop_engine::{DocHost, DocHostConfig, SessionsEngine, Uploads};
+    use loams_agentd_sessions::{DocHost, DocHostConfig, SessionsEngine, Uploads};
     let dir = tempfile::tempdir().unwrap();
     let source_root = dir.path().join("codex/generated_images");
     std::fs::create_dir_all(&source_root).unwrap();
@@ -3185,7 +3184,7 @@ async fn real_image_generation_profile_smoke() {
     let dir = tempfile::tempdir().unwrap();
     let core = EngineCore::assemble(
         dir.path(),
-        registry_with(Arc::new(loams_desktop_harness::CodexHarness::new())),
+        registry_with(Arc::new(loams_agentd_harness::CodexHarness::new())),
         HarnessId::Codex,
         None,
     )

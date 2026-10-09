@@ -25,13 +25,13 @@ use futures::StreamExt;
 use futures::stream::BoxStream;
 use tokio::sync::{Mutex, mpsc};
 
-use loams_desktop_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
-use loams_desktop_engine::{EngineCore, HarnessRegistry, SteerOutcome};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SessionStatus, SteeringMode, ToolCall,
 };
+use loams_agentd_sessions::{EngineCore, HarnessRegistry, SteerOutcome};
 
 const CHAT: &str = "chat-quiesce";
 /// Watchdog window for every test in this file (the process-global env knob

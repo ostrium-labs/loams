@@ -4,8 +4,8 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use loams_desktop_engine::{AgentAccounts, AgentAccountsConfig};
-use loams_desktop_proto::HarnessId;
+use loams_agentd_proto::HarnessId;
+use loams_agentd_sessions::{AgentAccounts, AgentAccountsConfig};
 
 #[tokio::test]
 async fn codex_login_resolves_override_and_adds_its_directory_to_child_path() {

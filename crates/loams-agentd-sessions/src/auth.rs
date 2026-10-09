@@ -30,7 +30,7 @@ use tokio::sync::watch;
 
 use crate::EngineError;
 use crate::http_error::describe_http_error;
-use loams_desktop_rpc::TokenError;
+use loams_agentd_rpc::TokenError;
 
 const SIGN_IN_TTL: Duration = Duration::from_secs(15 * 60);
 /// Refresh when the cached token has less than this much life left.
@@ -89,7 +89,7 @@ pub struct OrgMembership {
 }
 
 /// AuthStatus stream payload (`SignedOut | NeedsOrganization{user} |
-/// SignedIn{user, orgId?}`). Serializes as the canonical [`loams_desktop_proto::AuthState`]
+/// SignedIn{user, orgId?}`). Serializes as the canonical [`loams_agentd_proto::AuthState`]
 /// wire shape (`{"state": "signedIn", …}`) so every client parses one form.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AuthState {
@@ -123,20 +123,20 @@ impl AuthState {
     }
 
     /// The proto wire twin — the one shape the engine emits over AuthStatus.
-    pub fn to_proto(&self) -> loams_desktop_proto::AuthState {
-        let profile = |user: &AuthUser| loams_desktop_proto::UserProfile {
+    pub fn to_proto(&self) -> loams_agentd_proto::AuthState {
+        let profile = |user: &AuthUser| loams_agentd_proto::UserProfile {
             id: user.id.clone(),
             email: user.email.clone(),
             name: user.name.clone(),
         };
         match self {
-            AuthState::SignedOut => loams_desktop_proto::AuthState::SignedOut,
+            AuthState::SignedOut => loams_agentd_proto::AuthState::SignedOut,
             AuthState::NeedsOrganization { user } => {
-                loams_desktop_proto::AuthState::NeedsOrganization {
+                loams_agentd_proto::AuthState::NeedsOrganization {
                     user: profile(user),
                 }
             }
-            AuthState::SignedIn { user, org_id } => loams_desktop_proto::AuthState::SignedIn {
+            AuthState::SignedIn { user, org_id } => loams_agentd_proto::AuthState::SignedIn {
                 user: profile(user),
                 org_id: org_id.clone(),
             },
@@ -444,8 +444,8 @@ impl Auth {
                 return;
             }
             let mut state_rx = auth.watch_state();
-            let mut wake = loams_desktop_sync::wake::subscribe();
-            let mut online = loams_desktop_sync::wake::subscribe_online();
+            let mut wake = loams_agentd_store::wake::subscribe();
+            let mut online = loams_agentd_store::wake::subscribe_online();
             let mut retry_rx = auth.inner.retry_tx.subscribe();
             loop {
                 if !state_rx.borrow().is_signed_in() {
@@ -1056,10 +1056,10 @@ fn state_for(user: AuthUser, org_id: Option<String>) -> AuthState {
     }
 }
 
-/// The relay/room token seam: `Auth` IS a [`loams_desktop_rpc::TokenSource`], so the host relay
+/// The relay/room token seam: `Auth` IS a [`loams_agentd_rpc::TokenSource`], so the host relay
 /// and link cache always dial with a fresh bearer after refreshes.
 #[async_trait::async_trait]
-impl loams_desktop_rpc::TokenSource for Auth {
+impl loams_agentd_rpc::TokenSource for Auth {
     async fn token(&self) -> Result<String, TokenError> {
         if self.inner.workos.is_some() && !self.state().is_signed_in() {
             return Err(TokenError::SignedOut);
@@ -1288,6 +1288,13 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     }
 }
 
+#[async_trait::async_trait]
+impl loams_agentd_preview::signaling::TokenSource for Auth {
+    async fn token(&self) -> anyhow::Result<String> {
+        Ok(self.access_token().await?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1333,7 +1340,7 @@ mod tests {
         let edge = crate::EdgeConfig::new("https://edge.invalid", Arc::new(auth.clone()));
         assert!(matches!(
             edge.room_url("/registry/org_1/ws").url().await,
-            Err(loams_desktop_sync::SyncError::TemporarilyUnavailable(message)) if &message == reason
+            Err(loams_agentd_store::SyncError::TemporarilyUnavailable(message)) if &message == reason
         ));
         assert!(matches!(
             auth.list_orgs().await,
@@ -1413,11 +1420,11 @@ mod tests {
             })
         );
         // The proto type itself round-trips the emitted value.
-        let parsed: loams_desktop_proto::AuthState =
+        let parsed: loams_agentd_proto::AuthState =
             serde_json::from_value(value).expect("proto parse");
         assert!(matches!(
             parsed,
-            loams_desktop_proto::AuthState::SignedIn { .. }
+            loams_agentd_proto::AuthState::SignedIn { .. }
         ));
         assert_eq!(
             serde_json::to_value(AuthState::SignedOut).expect("json"),
@@ -1430,12 +1437,5 @@ mod tests {
                 "user": {"id": "u1", "email": "u@x", "name": null},
             })
         );
-    }
-}
-
-#[async_trait::async_trait]
-impl loams_desktop_preview::signaling::TokenSource for Auth {
-    async fn token(&self) -> anyhow::Result<String> {
-        Ok(self.access_token().await?)
     }
 }

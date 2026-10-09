@@ -1,6 +1,6 @@
 #![cfg(unix)]
-use loams_desktop_harness::{ClaudeHarness, Harness};
-use loams_desktop_proto::ReasoningLevel;
+use loams_agentd_harness::{ClaudeHarness, Harness};
+use loams_agentd_proto::ReasoningLevel;
 use serde_json::json;
 use std::os::unix::fs::PermissionsExt;
 
@@ -31,7 +31,7 @@ async fn initialize_is_shared_and_curated_metadata_survives_the_live_union() {
     assert_eq!(commands.unwrap()[0].name, "review");
     assert_eq!(catalog.models[0].id, "claude-opus-5-5[1m]");
     assert_eq!(catalog.models[1].id, "claude-opus-5-5");
-    for curated in loams_desktop_harness::claude::catalog::static_models() {
+    for curated in loams_agentd_harness::claude::catalog::static_models() {
         assert_eq!(
             catalog.models.iter().find(|m| m.id == curated.id),
             Some(&curated)

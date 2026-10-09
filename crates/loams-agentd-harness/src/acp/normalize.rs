@@ -8,7 +8,7 @@
 //! tagged `sessionUpdate`/snake_case; structs are camelCase; tool kinds and
 //! statuses are snake_case).
 
-use loams_desktop_proto::{AgentEvent, SlashCommand, TodoItem, ToolCall, ToolDiff};
+use loams_agentd_proto::{AgentEvent, SlashCommand, TodoItem, ToolCall, ToolDiff};
 use serde_json::Value;
 
 /// Byte cap applied to tool output text at the harness boundary. The doc-side
@@ -412,11 +412,11 @@ pub(crate) fn map_update(update: &Value) -> Vec<AgentEvent> {
             // update refresh the same chip (fold refreshes in place by id).
             vec![
                 AgentEvent::ToolCall {
-                    id: loams_desktop_proto::LIVE_PLAN_TOOL_ID.into(),
+                    id: loams_agentd_proto::LIVE_PLAN_TOOL_ID.into(),
                     call: ToolCall::Todo { items },
                 },
                 AgentEvent::ToolResult {
-                    id: loams_desktop_proto::LIVE_PLAN_TOOL_ID.into(),
+                    id: loams_agentd_proto::LIVE_PLAN_TOOL_ID.into(),
                     is_error: false,
                     output: None,
                     diff: None,
@@ -656,7 +656,7 @@ mod tests {
         assert_eq!(
             events[0],
             AgentEvent::ToolCall {
-                id: loams_desktop_proto::LIVE_PLAN_TOOL_ID.into(),
+                id: loams_agentd_proto::LIVE_PLAN_TOOL_ID.into(),
                 call: ToolCall::Todo {
                     items: vec![
                         TodoItem {

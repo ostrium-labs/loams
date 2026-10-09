@@ -20,7 +20,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use loams_desktop_proto::{AgentEvent, DoneStatus, ToolCall};
+use loams_agentd_proto::{AgentEvent, DoneStatus, ToolCall};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 

@@ -14,16 +14,16 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     CommandBasedOn, SessionCommandEntry, SessionCommandPayload, SessionCommandStatus,
 };
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, ChatConfig, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SessionStatus, SteeringMode,
 };
-use loams_desktop_rpc::methods;
+use loams_agentd_rpc::methods;
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 
 const VIEWER: &str = "viewer-device";
 
@@ -124,8 +124,8 @@ fn assemble(dir: &std::path::Path, device_id: &str) -> EngineCore {
 async fn bridge(
     a: &EngineCore,
     b: &EngineCore,
-) -> loams_desktop_sync::registry::mock_server::MockRegistryServer {
-    let server = loams_desktop_sync::registry::mock_server::MockRegistryServer::start().await;
+) -> loams_agentd_store::registry::mock_server::MockRegistryServer {
+    let server = loams_agentd_store::registry::mock_server::MockRegistryServer::start().await;
     a.workspace.connect_registry_url(&server.url());
     b.workspace.connect_registry_url(&server.url());
     server
@@ -228,8 +228,8 @@ async fn two_engines_share_a_workspace() {
 
     // CreateSpace + CreateChat on A (Mutate over the real RPC surface), hosted
     // by dev-a via the space.
-    let client_a = loams_desktop_rpc::memory_client(a.rpc_service());
-    let client_b = loams_desktop_rpc::memory_client(b.rpc_service());
+    let client_a = loams_agentd_rpc::memory_client(a.rpc_service());
+    let client_b = loams_agentd_rpc::memory_client(b.rpc_service());
     client_a
         .call(
             methods::MUTATE,
@@ -429,7 +429,7 @@ async fn projectless_claim_syncs_after_offline_creation_and_survives_viewer_rest
 async fn claim_resolves_a_worktree_cwd_to_the_repo_root_space() {
     let dir = tempfile::tempdir().unwrap();
     let core = assemble(dir.path(), "dev-a");
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
 
     // A checkout with a linked worktree — fs layout only; the claim path
     // reads `.git` without spawning git.
@@ -579,7 +579,7 @@ async fn chat_config_selects_the_run_harness() {
         || {
             handle.doc().read_entries().unwrap_or_default().iter().any(|e| {
                 e.parts.iter().any(
-                    |p| matches!(p, loams_desktop_doc::MessagePart::Text { text, .. } if text == "From cursor"),
+                    |p| matches!(p, loams_agentd_doc::MessagePart::Text { text, .. } if text == "From cursor"),
                 )
             })
         },
@@ -599,7 +599,7 @@ async fn chat_config_selects_the_run_harness() {
 #[tokio::test]
 #[ignore = "requires a live edge: set LOAMS_DESKTOP_EDGE_WS (e.g. ws://127.0.0.1:8787)"]
 async fn two_engines_converge_through_a_real_workspace_room() {
-    use loams_desktop_engine::doc_host::EdgeConfig;
+    use loams_agentd_sessions::doc_host::EdgeConfig;
 
     let base = std::env::var("LOAMS_DESKTOP_EDGE_WS")
         .expect("set LOAMS_DESKTOP_EDGE_WS to the edge origin, e.g. ws://127.0.0.1:8787");
@@ -664,15 +664,15 @@ async fn two_engines_converge_through_a_real_workspace_room() {
 
 #[tokio::test]
 async fn legacy_workspace_doc_migrates_instantly_on_first_boot() {
-    use loams_desktop_proto::{Chat, Device, Session, Space};
+    use loams_agentd_proto::{Chat, Device, Session, Space};
 
     let dir_a = tempfile::tempdir().unwrap();
     // Seed the identity-scoped store with a LEGACY Loro workspace snapshot —
     // what an updated engine finds on its first boot after the registry change.
     let org_dir = dir_a.path().join("orgs").join("dev-org").join("dev-user");
     {
-        let store = loams_desktop_sync::DocsStore::open(&org_dir).expect("open store");
-        let legacy = loams_desktop_doc::WorkspaceDoc::new();
+        let store = loams_agentd_store::DocsStore::open(&org_dir).expect("open store");
+        let legacy = loams_agentd_doc::WorkspaceDoc::new();
         let now = chrono::Utc::now();
         legacy
             .upsert_device(&Device {
@@ -789,10 +789,10 @@ async fn legacy_workspace_doc_migrates_instantly_on_first_boot() {
     b.shutdown().await;
 
     // The registry snapshot now exists; the legacy snapshot is kept for rollback.
-    let store = loams_desktop_sync::DocsStore::open(&org_dir).expect("reopen store");
+    let store = loams_agentd_store::DocsStore::open(&org_dir).expect("reopen store");
     assert!(
         store
-            .load_snapshot(loams_desktop_doc::REGISTRY_DOC_ID)
+            .load_snapshot(loams_agentd_doc::REGISTRY_DOC_ID)
             .expect("load registry snapshot")
             .is_some(),
         "registry snapshot persisted"

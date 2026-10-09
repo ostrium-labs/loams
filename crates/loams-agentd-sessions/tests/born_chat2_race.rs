@@ -15,13 +15,13 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 
-use loams_desktop_doc::{MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry};
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_doc::{MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry};
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SteeringMode,
 };
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 
 const CHAT: &str = "chat-born-gen2-race";
 
@@ -130,10 +130,10 @@ async fn transcript_survives_open_racing_create_chat() {
         let live_writer_ref = handle.doc_arc();
 
         // The mint lands a beat later, exactly as the composer sends it.
-        let client = loams_desktop_rpc::memory_client(core.rpc_service());
+        let client = loams_agentd_rpc::memory_client(core.rpc_service());
         client
             .call(
-                loams_desktop_rpc::methods::MUTATE,
+                loams_agentd_rpc::methods::MUTATE,
                 serde_json::json!({
                     "op": "createChat",
                     "chatId": CHAT,

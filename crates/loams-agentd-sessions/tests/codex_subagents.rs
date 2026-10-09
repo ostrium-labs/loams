@@ -5,18 +5,18 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     MessagePart, MessageRole, MessageStatus, SessionMessageEntry, SubagentStatus,
 };
-use loams_desktop_engine::{EngineCore, EngineProfile, HarnessRegistry};
-use loams_desktop_harness::CodexHarness;
-use loams_desktop_proto::{HarnessId, RunRequest, SandboxLevel, SessionStatus};
+use loams_agentd_harness::CodexHarness;
+use loams_agentd_proto::{HarnessId, RunRequest, SandboxLevel, SessionStatus};
+use loams_agentd_sessions::{EngineCore, EngineProfile, HarnessRegistry};
 
 const CHAT: &str = "codex-subagents";
 
 fn assemble(dir: &Path) -> (EngineCore, EngineProfile) {
-    let fixture =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../harness/tests/fixtures/fake-codex.sh");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../loams-agentd-harness/tests/fixtures/fake-codex.sh");
     let registry = Arc::new(HarnessRegistry::new());
     registry.register(Arc::new(CodexHarness::new().with_executable(fixture)));
     let profile = EngineProfile::development(dir, "test-org", "test-user");

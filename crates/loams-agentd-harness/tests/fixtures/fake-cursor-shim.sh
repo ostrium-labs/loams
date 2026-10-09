@@ -23,7 +23,8 @@ case "$first" in
 
 *scenario:mcp*)
   case "$first" in
-    *'"mcp":{"args":["mcp"],"command":"/path with spaces/loams-desktop","env":{"LOAMS_DESKTOP_CHAT_ID":"origin-chat"},"name":"loams-desktop"}'*) ;;
+    # serde_json keeps field order (the workspace enables preserve_order).
+    *'"mcp":{"name":"loams-desktop","command":"/path with spaces/loams-desktop","args":["mcp"],"env":{"LOAMS_DESKTOP_CHAT_ID":"origin-chat"}}'*) ;;
     *) exit 1 ;;
   esac
   emit '{"ev":"ready","agentId":"agent-1","model":"auto"}'

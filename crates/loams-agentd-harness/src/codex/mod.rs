@@ -52,7 +52,7 @@ use serde_json::{Value, json};
 use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc;
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice, ReasoningLevel,
     RunRequest, SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
 };
@@ -88,7 +88,7 @@ pub fn resolve_codex_executable() -> Option<PathBuf> {
 
 /// Dotted `thread/start` config overrides that add an injected MCP server
 /// to the user's `mcp_servers` table.
-fn codex_mcp_overrides(mcp: &loams_desktop_proto::McpServer) -> Vec<(String, Value)> {
+fn codex_mcp_overrides(mcp: &loams_agentd_proto::McpServer) -> Vec<(String, Value)> {
     let key = |field: &str| format!("mcp_servers.{}.{field}", mcp.name);
     vec![
         (key("command"), mcp.command.clone().into()),
@@ -516,7 +516,7 @@ fn parse_model_list_page(result: &Value) -> (Vec<(Model, bool)>, Option<String>)
 /// `skills/list` result → typed skills. Keep distinct paths for duplicate names.
 /// Identical name/path pairs are deduplicated across cwd groups. The interface's
 /// shortDescription is picker-sized; the model-facing description is a fallback.
-fn parse_skills(result: &Value) -> Vec<loams_desktop_proto::invocation::Skill> {
+fn parse_skills(result: &Value) -> Vec<loams_agentd_proto::invocation::Skill> {
     let mut seen = HashSet::new();
     result
         .get("data")
@@ -533,13 +533,13 @@ fn parse_skills(result: &Value) -> Vec<loams_desktop_proto::invocation::Skill> {
         .filter_map(|skill| {
             let name = skill.get("name")?.as_str()?;
             let path = skill.get("path")?.as_str()?;
-            if !loams_desktop_proto::invocation::valid_invocation_name(name)
-                || !loams_desktop_proto::invocation::valid_skill_path(path)
+            if !loams_agentd_proto::invocation::valid_invocation_name(name)
+                || !loams_agentd_proto::invocation::valid_skill_path(path)
                 || !seen.insert((name.to_owned(), path.to_owned()))
             {
                 return None;
             }
-            Some(loams_desktop_proto::invocation::Skill {
+            Some(loams_agentd_proto::invocation::Skill {
                 command: None,
                 name: name.to_owned(),
                 path: path.to_owned(),
@@ -626,7 +626,7 @@ impl Harness for CodexHarness {
     async fn skills(
         &self,
         cwd: &std::path::Path,
-    ) -> Result<Option<Vec<loams_desktop_proto::invocation::Skill>>, HarnessError> {
+    ) -> Result<Option<Vec<loams_agentd_proto::invocation::Skill>>, HarnessError> {
         self.discover_skills(Some(cwd))
             .await
             .map(|value| Some(parse_skills(&value)))
@@ -701,9 +701,9 @@ impl CodexHarness {
         // worktree on a slash-named branch derives a malformed mount that
         // kills every command.
         request.sandbox = if title_only {
-            loams_desktop_proto::SandboxLevel::ReadOnly
+            loams_agentd_proto::SandboxLevel::ReadOnly
         } else {
-            loams_desktop_proto::SandboxLevel::DangerFullAccess
+            loams_agentd_proto::SandboxLevel::DangerFullAccess
         };
         let mut cmd = Command::new(&exe);
         cmd.arg("app-server");
@@ -737,7 +737,7 @@ impl CodexHarness {
             tokio::spawn(async move {
                 let mut lines = tokio::io::BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::debug!(target: "loams_desktop_harness::codex", "stderr: {line}");
+                    tracing::debug!(target: "loams_agentd_harness::codex", "stderr: {line}");
                     tail.push(&line);
                 }
             });
@@ -854,12 +854,12 @@ async fn send(tx: &mpsc::Sender<Result<AgentEvent, HarnessError>>, ev: AgentEven
 /// Preserve the selected path in the app-server's native skill input. Text
 /// stays first for command routing; repeated selections do not load a skill twice.
 fn prompt_input(text: &str) -> Value {
-    use loams_desktop_proto::invocation::{Invocation, invocation_links, invocation_prompt};
+    use loams_agentd_proto::invocation::{Invocation, invocation_links, invocation_prompt};
     let mut input = vec![json!({"type": "text", "text": invocation_prompt(text)})];
     let mut seen = std::collections::HashSet::new();
     for (_, invocation) in invocation_links(text) {
         if let Invocation::Skill { name, path, .. } = invocation {
-            if !loams_desktop_proto::invocation::native_skill_identity(&path)
+            if !loams_agentd_proto::invocation::native_skill_identity(&path)
                 && seen.insert((name.clone(), path.clone()))
             {
                 input.push(json!({"type": "skill", "name": name, "path": path}));
@@ -874,17 +874,17 @@ fn command_request(
     text: &str,
     thread_id: &str,
 ) -> Result<Option<(&'static str, Value)>, HarnessError> {
-    let decoded = loams_desktop_proto::invocation::invocation_prompt(text);
-    let Some((name, args)) = loams_desktop_proto::invocation::leading_command(&decoded) else {
+    let decoded = loams_agentd_proto::invocation::invocation_prompt(text);
+    let Some((name, args)) = loams_agentd_proto::invocation::leading_command(&decoded) else {
         return Ok(None);
     };
     if matches!(name, "compact" | "review")
-        && loams_desktop_proto::invocation::invocation_links(text)
+        && loams_agentd_proto::invocation::invocation_links(text)
             .iter()
             .any(|(_, invocation)| {
                 matches!(
                     invocation,
-                    loams_desktop_proto::invocation::Invocation::Skill { .. }
+                    loams_agentd_proto::invocation::Invocation::Skill { .. }
                 )
             })
     {
@@ -1080,7 +1080,7 @@ async fn run_session(session: Session) {
                         return Err(e);
                     }
                     tracing::debug!(
-                        target: "loams_desktop_harness::codex",
+                        target: "loams_agentd_harness::codex",
                         "thread/resume failed (starting fresh): {e}"
                     );
                     client
@@ -1530,7 +1530,7 @@ async fn run_session(session: Session) {
                             // fallback for older Codex without steering).
                             Err(e) => {
                                 tracing::debug!(
-                                    target: "loams_desktop_harness::codex",
+                                    target: "loams_agentd_harness::codex",
                                     "turn/steer rejected (queued as next turn): {e}"
                                 );
                                 if router.active.as_deref() == Some(expected.as_str())
@@ -1577,7 +1577,7 @@ async fn run_session(session: Session) {
                             .await
                         {
                             tracing::debug!(
-                                target: "loams_desktop_harness::codex",
+                                target: "loams_agentd_harness::codex",
                                 "turn/interrupt failed (escalation will reap): {e}"
                             );
                         }
@@ -1735,7 +1735,7 @@ fn handle_server_request(
     );
     if !is_approval {
         tracing::debug!(
-            target: "loams_desktop_harness::codex",
+            target: "loams_agentd_harness::codex",
             "unhandled server request: {method}"
         );
         client.respond_error(&id, -32601, &format!("unsupported method: {method}"));
@@ -1998,7 +1998,7 @@ mod mcp_injection_tests {
 
     #[test]
     fn codex_mcp_overrides_use_the_dotted_mcp_servers_keys() {
-        let mcp = loams_desktop_proto::McpServer {
+        let mcp = loams_agentd_proto::McpServer {
             name: "loams-desktop".into(),
             command: "/opt/loams-desktop/loams-desktop".into(),
             args: vec!["mcp".into()],
@@ -2025,7 +2025,7 @@ mod skill_discovery_tests {
     use super::*;
     #[test]
     fn selected_skills_use_native_identity_for_initial_and_steered_inputs() {
-        use loams_desktop_proto::invocation::Invocation;
+        use loams_agentd_proto::invocation::Invocation;
         let a = Invocation::Skill {
             command: None,
             name: "review".into(),
@@ -2071,13 +2071,13 @@ mod skill_discovery_tests {
 
     #[test]
     fn backtick_labels_keep_native_skill_identity_with_repeated_selections() {
-        use loams_desktop_proto::invocation::{Invocation, harness_prompt};
+        use loams_agentd_proto::invocation::{Invocation, harness_prompt};
         let skill = Invocation::Skill {
             command: None,
             name: "review`ui".into(),
             path: "/repo/é skill/SKILL.md".into(),
         };
-        let file = loams_desktop_proto::file_mentions::local_file_link("src/a`b.rs", false);
+        let file = loams_agentd_proto::file_mentions::local_file_link("src/a`b.rs", false);
         let raw = format!("{} on {file} and {}", skill.link(), skill.link());
         let input = prompt_input(&harness_prompt(&raw, HarnessId::Codex));
         assert_eq!(input.as_array().unwrap().len(), 2);
@@ -2125,7 +2125,7 @@ mod skill_discovery_tests {
 
     #[test]
     fn catalog_rejects_invalid_identities_without_changing_valid_names() {
-        use loams_desktop_proto::invocation::{Invocation, invocation_links};
+        use loams_agentd_proto::invocation::{Invocation, invocation_links};
         let mut entries = vec![];
         for name in [
             "",

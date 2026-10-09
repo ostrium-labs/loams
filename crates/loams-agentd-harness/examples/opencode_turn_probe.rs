@@ -11,8 +11,8 @@
 //!         "Reply with exactly: PONG"
 
 use futures::StreamExt;
-use loams_desktop_harness::{CancellationToken, Harness, OpencodeHarness, RunControls};
-use loams_desktop_proto::{AgentEvent, RunRequest, SandboxLevel};
+use loams_agentd_harness::{CancellationToken, Harness, OpencodeHarness, RunControls};
+use loams_agentd_proto::{AgentEvent, RunRequest, SandboxLevel};
 use tokio::sync::mpsc;
 
 #[tokio::main]
@@ -73,7 +73,7 @@ async fn main() {
                         .into_iter()
                         .map(|question| {
                             eprintln!("PERMISSION Yes (once): {}", question.question);
-                            loams_desktop_proto::UserInputAnswer {
+                            loams_agentd_proto::UserInputAnswer {
                                 question_id: question.id,
                                 labels: vec!["Yes".into()],
                             }
@@ -137,9 +137,9 @@ async fn main() {
     };
     eprintln!("--- done: {status:?} text={text:?} tools={tools}");
     match status {
-        Some(loams_desktop_proto::DoneStatus::Completed)
+        Some(loams_agentd_proto::DoneStatus::Completed)
             if !expect_interrupt && !text.trim().is_empty() => {}
-        Some(loams_desktop_proto::DoneStatus::Interrupted) if expect_interrupt => {}
+        Some(loams_agentd_proto::DoneStatus::Interrupted) if expect_interrupt => {}
         _ => std::process::exit(1),
     }
 }

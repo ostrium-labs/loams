@@ -1,6 +1,6 @@
 //! loams: Loams Bot as an ACP agent.
 //!
-//! The agent itself is `loams-desktop loams bot-acp` (crate `loams-desktop-link`): the same
+//! The agent itself is `loams-agentd loams bot-acp` (crate `loams-agentd-link`): the same
 //! binary that is running, so there is nothing to install and the harness
 //! cannot drift from the app version. Kept in its own file so the only upstream
 //! lines this feature touches in `acp/mod.rs` are `mod loams_bot;` and the
@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 
 use super::{AcpAgentSpec, AcpHarness, default_effort_values, identity_transform};
-use loams_desktop_proto::{HarnessId, Model, SteeringMode};
+use loams_agentd_proto::{HarnessId, Model, SteeringMode};
 
 fn loams_bot_spec() -> AcpAgentSpec {
     AcpAgentSpec {
@@ -17,15 +17,15 @@ fn loams_bot_spec() -> AcpAgentSpec {
         display_name: "Loams Bot",
         // The launch program is always the running executable (see
         // `AcpHarness::loams_bot`); this name only labels error messages.
-        executable: "loams-desktop",
+        executable: loams_agentd_proto::brand::BINARY_NAME,
         env_override: "LOAMS_BOT_EXECUTABLE",
         args: &["loams", "bot-acp"],
         npm_package: None,
         archive: None,
         extra_paths: current_exe_paths,
-        cli_executable: "loams-desktop",
+        cli_executable: loams_agentd_proto::brand::BINARY_NAME,
         cli_extra_paths: current_exe_paths,
-        install_hint: "Loams Bot ships inside Loams Desktop (`loams-desktop loams bot-acp`); \
+        install_hint: "Loams Bot ships inside Loams Desktop (`loams-agentd loams bot-acp`); \
              set LOAMS_BOT_EXECUTABLE to point at a different build",
         models: || {
             vec![Model {
@@ -55,7 +55,7 @@ fn loams_bot_spec() -> AcpAgentSpec {
     }
 }
 
-/// The running executable, but only when it is the `loams-desktop` app itself. Test
+/// The running executable, but only when it is the `loams-agentd` daemon itself. Test
 /// fixtures and examples link the same registry; launching *them* with
 /// `loams bot-acp` would start another copy of the fixture (a second window
 /// that steals focus, which broke `macos-frame-recovery`), so for any other
@@ -67,7 +67,7 @@ fn loams_desktop_exe() -> Option<PathBuf> {
 
 fn is_loams_desktop(path: &std::path::Path) -> bool {
     path.file_stem()
-        .is_some_and(|stem| stem == loams_desktop_brand::BINARY_NAME)
+        .is_some_and(|stem| stem == loams_agentd_proto::brand::BINARY_NAME)
 }
 
 fn current_exe_paths() -> Vec<PathBuf> {
@@ -75,7 +75,7 @@ fn current_exe_paths() -> Vec<PathBuf> {
 }
 
 impl AcpHarness {
-    /// Loams Bot (`loams-desktop loams bot-acp`): this binary, speaking ACP on stdio.
+    /// Loams Bot (`loams-agentd loams bot-acp`): this binary, speaking ACP on stdio.
     pub fn loams_bot() -> Self {
         let harness = Self::with_spec(loams_bot_spec());
         match loams_desktop_exe() {
@@ -93,17 +93,17 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_exe_suffix_is_accepted() {
-        assert!(is_loams_desktop(Path::new(r"C:\Loams\loams-desktop.exe")));
+        assert!(is_loams_desktop(Path::new(r"C:\Loams\loams-agentd.exe")));
     }
 
     #[test]
-    fn only_the_loams_desktop_binary_is_a_launch_target() {
-        assert!(is_loams_desktop(Path::new("/opt/loams/loams-desktop")));
+    fn only_the_loams_agentd_binary_is_a_launch_target() {
+        assert!(is_loams_desktop(Path::new("/opt/loams/loams-agentd")));
         assert!(!is_loams_desktop(Path::new(
             "/tmp/Fixture.app/Contents/MacOS/fixture"
         )));
         assert!(!is_loams_desktop(Path::new(
-            "/target/debug/deps/loams_desktop_engine-1a2b"
+            "/target/debug/deps/loams_agentd_sessions-1a2b"
         )));
     }
 }

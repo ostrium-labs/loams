@@ -1,6 +1,6 @@
 //! Structural mutations execute on the workspace host, serialized against saves.
 use super::*;
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     MoveWorkspaceEntryRequest, WorkspaceMutationOutcome, WorkspaceMutationRejection as Reason,
 };
 
@@ -9,7 +9,7 @@ type MutationResult<T> = Result<T, (Reason, String)>;
 impl WorkspaceFiles {
     pub async fn delete_entry(
         &self,
-        request: loams_desktop_proto::DeleteWorkspaceEntryRequest,
+        request: loams_agentd_proto::DeleteWorkspaceEntryRequest,
     ) -> Result<WorkspaceMutationOutcome, WorkspaceFilesError> {
         let workspace = self.resolve_target(&request.target).await?;
         let gate = self
@@ -131,7 +131,7 @@ impl WorkspaceFiles {
 
 fn delete_blocking(
     workspace: &ResolvedWorkspace,
-    request: &loams_desktop_proto::DeleteWorkspaceEntryRequest,
+    request: &loams_agentd_proto::DeleteWorkspaceEntryRequest,
     cancel: &AtomicBool,
 ) -> MutationResult<()> {
     if request.operation_id.is_empty() || request.operation_id.len() > 128 {
@@ -594,7 +594,7 @@ mod tests {
             checkout_id: "checkout".into(),
             root: root.into(),
         };
-        let mut req = loams_desktop_proto::DeleteWorkspaceEntryRequest {
+        let mut req = loams_agentd_proto::DeleteWorkspaceEntryRequest {
             target: request(root, "folder", "unused").target,
             operation_id: "delete".into(),
             expected_checkout_id: "checkout".into(),
@@ -627,7 +627,7 @@ mod tests {
             checkout_id: "checkout".into(),
             root: dir.path().into(),
         };
-        let req = loams_desktop_proto::DeleteWorkspaceEntryRequest {
+        let req = loams_agentd_proto::DeleteWorkspaceEntryRequest {
             target: request(dir.path(), "folder", "unused").target,
             operation_id: "delete".into(),
             expected_checkout_id: "checkout".into(),

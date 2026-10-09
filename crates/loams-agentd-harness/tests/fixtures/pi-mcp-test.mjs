@@ -23,9 +23,9 @@ if (process.argv[2] === 'server') {
     try {
       await handlers.session_start();
       for (const name of ['create_chat','create_chats','read_chat','send_message','wait_for_turn']) {
-        assert.equal((await tools[`loams_desktop_${name}`].execute('delegation',{})).content[0].text, chat);
+        assert.equal((await tools[`loams-desktop_${name}`].execute('delegation',{})).content[0].text, chat);
       }
-      const tool = tools.loams_desktop_whoami;
+      const tool = tools['loams-desktop_whoami'];
       assert.equal(tool.parameters.type,'object');
       const result = await tool.execute('call',{});
       assert.equal(result.content[0].text,chat);
@@ -38,8 +38,8 @@ if (process.argv[2] === 'server') {
       assert.equal(handlers.message_end, undefined, "native RPC reports provider failures directly");
       // Restarting the session must not let an old child's exit fail new RPCs.
       await handlers.session_start();
-      assert.equal((await tools.loams_desktop_whoami.execute('call',{})).content[0].text,chat);
+      assert.equal((await tools['loams-desktop_whoami'].execute('call',{})).content[0].text,chat);
     } finally { handlers.session_shutdown(); }
-    await assert.rejects(tools.loams_desktop_whoami.execute('call',{}),/not connected/);
+    await assert.rejects(tools['loams-desktop_whoami'].execute('call',{}),/not connected/);
   }
 }

@@ -1,4 +1,4 @@
-use loams_desktop_proto::{AgentEvent, DoneStatus, ToolCall, ToolDiff};
+use loams_agentd_proto::{AgentEvent, DoneStatus, ToolCall, ToolDiff};
 use serde_json::Value;
 use std::collections::HashMap;
 

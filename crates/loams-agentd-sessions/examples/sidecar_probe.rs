@@ -3,8 +3,8 @@
 //! zero-blobs-in-prod mystery (refs stamped, uploads absent, no warns).
 use std::sync::Arc;
 
-use loams_desktop_engine::doc_host::{DocHost, DocHostConfig, EdgeConfig};
-use loams_desktop_sync::DocsStore;
+use loams_agentd_sessions::doc_host::{DocHost, DocHostConfig, EdgeConfig};
+use loams_agentd_store::DocsStore;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::main]
@@ -35,7 +35,7 @@ async fn main() {
         store,
         DocHostConfig {
             device_id: "probe-dev".into(),
-            default_harness: loams_desktop_proto::HarnessId::ClaudeCode,
+            default_harness: loams_agentd_proto::HarnessId::ClaudeCode,
             edge: Some(EdgeConfig::with_static_token(
                 format!("http://{addr}"),
                 "probe-user",
@@ -44,7 +44,7 @@ async fn main() {
     );
     host.upload_tool_sidecar(
         "chat-probe",
-        loams_desktop_doc::SidecarPayload {
+        loams_agentd_doc::SidecarPayload {
             part_id: "part#1".into(),
             output: Some("full output body".into()),
             diff: None,

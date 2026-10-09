@@ -5,15 +5,19 @@
 //! sessions + docs + commands + minimal IPC. Terminals, repos/diffs, uploads, auth,
 //! agent accounts, and the device-room host land in later milestones.
 
+// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
+// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
+#![allow(clippy::doc_lazy_continuation, clippy::too_many_arguments)]
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-pub use loams_desktop_proto::{EngineInfo, HarnessId, WorkspaceScope};
-use loams_desktop_rpc::{RpcError, RpcReply, RpcService, methods};
+pub use loams_agentd_proto::{EngineInfo, HarnessId, WorkspaceScope};
+use loams_agentd_rpc::{RpcError, RpcReply, RpcService, methods};
 
-use loams_desktop_sync::DocsStore;
+use loams_agentd_store::DocsStore;
 
 pub mod agent_accounts;
 pub mod auth;
@@ -79,15 +83,15 @@ pub(crate) const LEGACY_UNKNOWN_DEVICE_NAME: &str = "unknown-device";
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
     #[error(transparent)]
-    Token(#[from] loams_desktop_rpc::TokenError),
+    Token(#[from] loams_agentd_rpc::TokenError),
     #[error("doc: {0}")]
-    Doc(#[from] loams_desktop_doc::DocError),
+    Doc(#[from] loams_agentd_doc::DocError),
     #[error("journal: {0}")]
     Journal(#[from] run_journal::JournalError),
     #[error("store: {0}")]
-    Store(#[from] loams_desktop_sync::StoreError),
+    Store(#[from] loams_agentd_store::StoreError),
     #[error("harness: {0}")]
-    Harness(#[from] loams_desktop_harness::HarnessError),
+    Harness(#[from] loams_agentd_harness::HarnessError),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -134,7 +138,7 @@ pub struct EngineCore {
     pub workspace_files: WorkspaceFiles,
     pub terminals: Terminals,
     pub project_actions: ProjectActionsStore,
-    pub previews: loams_desktop_preview::PreviewService,
+    pub previews: loams_agentd_preview::PreviewService,
     pub change_requests: CheckoutChangeRequests,
     pub diff_sync: CheckoutDiffSync,
     pub spaces_sync: SpacesSync,
@@ -148,12 +152,7 @@ pub struct EngineCore {
     /// Auth service (attached by [`Engine::run`]; a lazy dev-mode instance otherwise).
     auth: std::sync::Mutex<Option<Auth>>,
     /// Peer link cache for `targetDeviceId` routing (attached when edge+auth are ready).
-    links: std::sync::Mutex<Option<Arc<loams_desktop_rpc::LinkCache>>>,
-    /// Release checker (attached by [`Engine::assemble_runtime`]) — the
-    /// UpdateStatus stream + ApplyUpdate.
-    updater: std::sync::Mutex<Option<loams_desktop_update::Updater>>,
-    /// The updater's token-change wake forwarder — owned so shutdown can end it.
-    updater_wake: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    links: std::sync::Mutex<Option<Arc<loams_agentd_rpc::LinkCache>>>,
     /// Exclusive data-dir lock — held for the engine's lifetime (single-instance).
     _instance_lock: InstanceLock,
 }
@@ -260,7 +259,7 @@ impl EngineCore {
         let terminals = Terminals::new();
         let project_actions = ProjectActionsStore::open(profile.store_root())?;
         doc_host.set_project_action_runtime(project_actions.clone(), terminals.clone());
-        let previews = loams_desktop_preview::PreviewService::new(
+        let previews = loams_agentd_preview::PreviewService::new(
             profile.store_root().join("previews.json"),
             device_id.clone(),
             local_device_name(&device_id),
@@ -339,8 +338,6 @@ impl EngineCore {
             workspace_scope: profile.scope(),
             auth: std::sync::Mutex::new(None),
             links: std::sync::Mutex::new(None),
-            updater: std::sync::Mutex::new(None),
-            updater_wake: std::sync::Mutex::new(None),
             _instance_lock: lock,
         })
     }
@@ -378,7 +375,7 @@ impl EngineCore {
 
     /// Attach the peer link cache — enables `targetDeviceId` routing,
     /// [`Self::dial_device`], and the doc host's queued-attachment transfers.
-    pub fn set_links(&self, links: Arc<loams_desktop_rpc::LinkCache>) {
+    pub fn set_links(&self, links: Arc<loams_agentd_rpc::LinkCache>) {
         self.doc_host.set_links(links.clone());
         *self
             .links
@@ -386,30 +383,8 @@ impl EngineCore {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(links);
     }
 
-    pub fn links(&self) -> Option<Arc<loams_desktop_rpc::LinkCache>> {
+    pub fn links(&self) -> Option<Arc<loams_agentd_rpc::LinkCache>> {
         self.links
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
-    }
-
-    /// Attach the release checker (before building the RPC service).
-    pub fn set_updater_wake(&self, handle: tokio::task::JoinHandle<()>) {
-        *self
-            .updater_wake
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(handle);
-    }
-
-    pub fn set_updater(&self, updater: loams_desktop_update::Updater) {
-        *self
-            .updater
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(updater);
-    }
-
-    pub fn updater(&self) -> Option<loams_desktop_update::Updater> {
-        self.updater
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
@@ -420,7 +395,7 @@ impl EngineCore {
     pub async fn dial_device(
         &self,
         device_id: &str,
-    ) -> Result<Arc<loams_desktop_rpc::RpcClient>, EngineError> {
+    ) -> Result<Arc<loams_agentd_rpc::RpcClient>, EngineError> {
         let links = self
             .links()
             .ok_or_else(|| EngineError::Other("peer links unavailable (offline)".into()))?;
@@ -433,15 +408,15 @@ impl EngineCore {
     /// Start hosting our device room: serve the full RPC surface to relay clients and
     /// warm-open chat docs on nudges (§7 cold-chat command delivery). The token source
     /// re-reads auth on every (re)dial, so token refreshes take effect at reconnect.
-    pub fn start_host_relay(&self, edge_url: &str) -> loams_desktop_rpc::HostRelay {
+    pub fn start_host_relay(&self, edge_url: &str) -> loams_agentd_rpc::HostRelay {
         let auth = self.auth();
-        let config = loams_desktop_rpc::HostRelayConfig::new(
+        let config = loams_agentd_rpc::HostRelayConfig::new(
             edge_url,
             self.device_id.clone(),
             Arc::new(auth),
         );
         let doc_host = self.doc_host.clone();
-        let on_nudge: loams_desktop_rpc::NudgeHandler = Arc::new(move |chat_id: String| {
+        let on_nudge: loams_agentd_rpc::NudgeHandler = Arc::new(move |chat_id: String| {
             match doc_host.enqueue_wakeup(&chat_id) {
                 Ok(()) => true,
                 Err(err) => {
@@ -450,7 +425,7 @@ impl EngineCore {
                 }
             }
         });
-        loams_desktop_rpc::HostRelay::spawn(config, self.rpc_service(), on_nudge)
+        loams_agentd_rpc::HostRelay::spawn(config, self.rpc_service(), on_nudge)
     }
 
     pub fn rpc_service(&self) -> Arc<EngineRpc> {
@@ -474,9 +449,6 @@ impl EngineCore {
         .with_harness_updates(self.harness_updates.clone());
         if let Some(links) = self.links() {
             rpc = rpc.with_links(links);
-        }
-        if let Some(updater) = self.updater() {
-            rpc = rpc.with_updater(updater);
         }
         if let Some(importer) = self.local_import.clone() {
             rpc = rpc.with_local_import(importer);
@@ -510,26 +482,6 @@ impl EngineCore {
         self.terminals.shutdown();
         self.agent_accounts.shutdown();
         self.change_requests.shutdown();
-        // Cancel + await every worker that can reach Edge before flushing: a
-        // replaced synced runtime must not keep polling releases or draining
-        // the attachment outbox under the old identity after Local boots.
-        let wake = self
-            .updater_wake
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some(wake) = wake {
-            wake.abort();
-            let _ = wake.await;
-        }
-        let updater = self
-            .updater
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some(updater) = updater {
-            updater.shutdown().await;
-        }
         self.diff_sync.shutdown().await;
         self.workspace_files.shutdown().await;
         self.spaces_sync.shutdown().await;
@@ -551,7 +503,7 @@ pub struct Engine {
 /// in-process engine so their production authentication paths cannot diverge.
 pub struct EngineRuntime {
     core: EngineCore,
-    host_relay: std::sync::Mutex<Option<loams_desktop_rpc::HostRelay>>,
+    host_relay: std::sync::Mutex<Option<loams_agentd_rpc::HostRelay>>,
 }
 
 /// IPC-only lifecycle control owned by `loams-desktop headless`. The regular
@@ -711,8 +663,8 @@ impl Engine {
         Ok(EngineInfo {
             device_id: load_or_create_device_id(&config.data_dir)?,
             workspace_scope,
-            cursor_sdk_version: Some(loams_desktop_harness::CursorHarness::sdk_version().into()),
-            capabilities: loams_desktop_proto::capabilities::current(),
+            cursor_sdk_version: Some(loams_agentd_harness::CursorHarness::sdk_version().into()),
+            capabilities: loams_agentd_proto::capabilities::current(),
         })
     }
 
@@ -774,7 +726,7 @@ impl Engine {
             // path returns every parked reconnect backoff redials, and while
             // the OS says there is no path the dial loops park instead of
             // burning attempts. No-op on platforms without a monitor.
-            loams_desktop_sync::net_path::spawn_path_monitor();
+            loams_agentd_store::net_path::spawn_path_monitor();
         }
         let device_id = load_or_create_device_id(profile.device_root())?;
         let edge = edge_enabled.then(|| {
@@ -809,44 +761,21 @@ impl Engine {
                 .filter_map(|chat| chat.cwd.map(std::path::PathBuf::from))
                 .collect()
         });
-        let preview_signaling = edge_enabled.then(|| loams_desktop_preview::signaling::Config {
+        let preview_signaling = edge_enabled.then(|| loams_agentd_preview::signaling::Config {
             edge_url: config.edge_url.clone(),
             org_id: preview_org,
             tokens: Arc::new(auth.clone()),
         });
         core.previews.start(projects, preview_signaling).await;
-        // Release checker: polls {edge}/releases hourly (wall clock); headless
-        // installs with LOAMS_DESKTOP_AUTO_UPDATE=1 apply + restart themselves — gated
-        // on quiescence so a restart never lands under a live run or open PTY.
-        // Spawned for every install: application updates must not depend on
-        // workspace sync being enabled — the feed is the public release feed
-        // (served without authentication), not an edge feature.
-        let quiescent: loams_desktop_update::QuiescentCheck = {
-            let sessions = core.sessions.clone();
-            let terminals = core.terminals.clone();
-            Arc::new(move || !sessions.any_active() && !terminals.any_open())
-        };
-        let updater =
-            loams_desktop_update::Updater::spawn(config.edge_url.clone(), Some(quiescent));
-        if let Some(mut token_changes) = edge.as_ref().and_then(EdgeConfig::token_changes) {
-            let updater_for_tokens = updater.clone();
-            let wake = tokio::spawn(async move {
-                while token_changes.changed().await.is_ok() {
-                    updater_for_tokens.check_now();
-                }
-            });
-            core.set_updater_wake(wake);
-        }
-        core.set_updater(updater);
         tracing::info!(device_id = %core.device_id, "engine core assembled");
         // Managed ACP adapters install in the background at boot (agents
         // whose CLI is present but whose adapter isn't yet), so a first chat
         // never waits on — or dies inside — an npm run.
-        loams_desktop_harness::acp::prewarm_managed_adapters();
+        loams_agentd_harness::acp::prewarm_managed_adapters();
 
         let host_relay = edge.as_ref().map(|edge| {
             let mut link_config =
-                loams_desktop_rpc::LinkCacheConfig::new(edge.url.clone(), Arc::new(auth.clone()));
+                loams_agentd_rpc::LinkCacheConfig::new(edge.url.clone(), Arc::new(auth.clone()));
             // Registry-dark dial gate: devices with no recent presence fail
             // fast with zero dials; presence returning un-parks them (the
             // peer-alive hook below clears any cooldown at the same moment).
@@ -854,7 +783,7 @@ impl Engine {
             link_config.liveness = Some(Arc::new(move |device_id: &str| {
                 workspace_for_liveness.peer_liveness(device_id)
             }));
-            let links = loams_desktop_rpc::LinkCache::new(link_config);
+            let links = loams_agentd_rpc::LinkCache::new(link_config);
             let links_for_presence = links.clone();
             core.workspace
                 .set_peer_alive_hook(Arc::new(move |device_id: &str| {
@@ -895,11 +824,6 @@ impl Engine {
             .ok_or_else(|| EngineError::Other("synced workspace profile is not ready".into()))?;
 
         let runtime = Self::assemble_runtime(&config, auth, profile).await?;
-        // The desktop app or `loams-desktop update` may install a newer binary under
-        // a running service; restart into it once no run or terminal is live.
-        if let Some(updater) = runtime.core().updater() {
-            updater.restart_when_superseded();
-        }
 
         // A daemon exists to serve this port, so a bind failure is fatal here —
         // unlike the headed app, which can still work over its in-process
@@ -979,11 +903,11 @@ async fn shutdown_signal() -> std::io::Result<()> {
 /// port, not who can reach it.
 pub async fn serve_ipc(
     port: u16,
-    service: std::sync::Arc<dyn loams_desktop_rpc::RpcService>,
+    service: std::sync::Arc<dyn loams_agentd_rpc::RpcService>,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     tracing::info!(port, "IPC server listening");
-    Ok(tokio::spawn(loams_desktop_rpc::serve_ws_listener(
+    Ok(tokio::spawn(loams_agentd_rpc::serve_ws_listener(
         listener, service,
     )))
 }
@@ -1205,122 +1129,6 @@ fn native_friendly_device_name() -> Option<String> {
     None
 }
 
-#[cfg(all(test, windows))]
-mod identity_lock_retry_tests {
-    use super::*;
-
-    /// A concurrent holder of the lock file (share_mode(0)) fails the open
-    /// with ERROR_SHARING_VIOLATION, which Rust reports as
-    /// ErrorKind::Uncategorized, not PermissionDenied. acquire must retry
-    /// through that error until the holder releases; before the fix the
-    /// retry loop never matched it and startup failed outright.
-    #[test]
-    fn acquire_retries_through_sharing_violations() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("device-id.lock");
-
-        // Hold the file exclusively for 50ms, then release. The retry loop
-        // has a 200 x 5ms budget, so the timing is comfortable.
-        {
-            use std::os::windows::fs::OpenOptionsExt;
-            let holder = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(false)
-                .share_mode(0)
-                .open(&path)
-                .unwrap();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-                drop(holder);
-            });
-        }
-
-        let lock = DeviceIdentityLock::acquire(dir.path());
-        assert!(
-            lock.is_ok(),
-            "acquire did not retry through the sharing violation"
-        );
-    }
-}
-
-#[cfg(test)]
-mod device_name_tests {
-    use super::select_local_device_name;
-
-    fn name(candidates: &[Option<&str>], device_id: &str, platform: &str) -> String {
-        select_local_device_name(
-            candidates
-                .iter()
-                .map(|candidate| candidate.map(str::to_string)),
-            device_id,
-            platform,
-        )
-    }
-
-    #[test]
-    fn explicit_override_wins_and_is_trimmed() {
-        assert_eq!(
-            name(
-                &[Some("  Studio Mac  "), Some("system-host")],
-                "17bc0aa2-rest",
-                "macos"
-            ),
-            "Studio Mac"
-        );
-    }
-
-    #[test]
-    fn native_friendly_name_wins_over_hostnames() {
-        assert_eq!(
-            name(
-                &[
-                    None,
-                    Some("MacBook Pro de Jose"),
-                    None,
-                    Some("MacBook-Pro.local"),
-                ],
-                "17bc0aa2-rest",
-                "macos"
-            ),
-            "MacBook Pro de Jose"
-        );
-    }
-
-    #[test]
-    fn windows_computer_name_is_used_when_present() {
-        assert_eq!(
-            name(
-                &[None, Some("DESKTOP-123"), Some("shell-host")],
-                "17bc0aa2-rest",
-                "windows"
-            ),
-            "DESKTOP-123"
-        );
-    }
-
-    #[test]
-    fn blank_candidates_are_ignored() {
-        assert_eq!(
-            name(
-                &[Some("  "), None, Some("\n"), Some("linux-box")],
-                "17bc0aa2-rest",
-                "linux"
-            ),
-            "linux-box"
-        );
-    }
-
-    #[test]
-    fn final_fallback_is_platform_specific_and_distinct() {
-        assert_eq!(
-            name(&[None, Some(" ")], "17bc0aa2-rest", "linux"),
-            "Linux device 17bc0aa2"
-        );
-    }
-}
-
 /// Trimmed env var or the given default.
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key)
@@ -1478,5 +1286,121 @@ fn replace_empty_device_id(temp_path: &Path, path: &Path) -> std::io::Result<()>
             Err(err) => return Err(err),
         }
         std::fs::hard_link(temp_path, path)
+    }
+}
+
+#[cfg(all(test, windows))]
+mod identity_lock_retry_tests {
+    use super::*;
+
+    /// A concurrent holder of the lock file (share_mode(0)) fails the open
+    /// with ERROR_SHARING_VIOLATION, which Rust reports as
+    /// ErrorKind::Uncategorized, not PermissionDenied. acquire must retry
+    /// through that error until the holder releases; before the fix the
+    /// retry loop never matched it and startup failed outright.
+    #[test]
+    fn acquire_retries_through_sharing_violations() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("device-id.lock");
+
+        // Hold the file exclusively for 50ms, then release. The retry loop
+        // has a 200 x 5ms budget, so the timing is comfortable.
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            let holder = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .share_mode(0)
+                .open(&path)
+                .unwrap();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                drop(holder);
+            });
+        }
+
+        let lock = DeviceIdentityLock::acquire(dir.path());
+        assert!(
+            lock.is_ok(),
+            "acquire did not retry through the sharing violation"
+        );
+    }
+}
+
+#[cfg(test)]
+mod device_name_tests {
+    use super::select_local_device_name;
+
+    fn name(candidates: &[Option<&str>], device_id: &str, platform: &str) -> String {
+        select_local_device_name(
+            candidates
+                .iter()
+                .map(|candidate| candidate.map(str::to_string)),
+            device_id,
+            platform,
+        )
+    }
+
+    #[test]
+    fn explicit_override_wins_and_is_trimmed() {
+        assert_eq!(
+            name(
+                &[Some("  Studio Mac  "), Some("system-host")],
+                "17bc0aa2-rest",
+                "macos"
+            ),
+            "Studio Mac"
+        );
+    }
+
+    #[test]
+    fn native_friendly_name_wins_over_hostnames() {
+        assert_eq!(
+            name(
+                &[
+                    None,
+                    Some("MacBook Pro de Jose"),
+                    None,
+                    Some("MacBook-Pro.local"),
+                ],
+                "17bc0aa2-rest",
+                "macos"
+            ),
+            "MacBook Pro de Jose"
+        );
+    }
+
+    #[test]
+    fn windows_computer_name_is_used_when_present() {
+        assert_eq!(
+            name(
+                &[None, Some("DESKTOP-123"), Some("shell-host")],
+                "17bc0aa2-rest",
+                "windows"
+            ),
+            "DESKTOP-123"
+        );
+    }
+
+    #[test]
+    fn blank_candidates_are_ignored() {
+        assert_eq!(
+            name(
+                &[Some("  "), None, Some("\n"), Some("linux-box")],
+                "17bc0aa2-rest",
+                "linux"
+            ),
+            "linux-box"
+        );
+    }
+
+    #[test]
+    fn final_fallback_is_platform_specific_and_distinct() {
+        assert_eq!(
+            name(&[None, Some(" ")], "17bc0aa2-rest", "linux"),
+            "Linux device 17bc0aa2"
+        );
     }
 }

@@ -6,13 +6,17 @@
 //! Uninstalled/unauthenticated agents are skipped. For mandatory live Pi
 //! regression coverage with an injected delay, use real_acp_lifecycle.rs.
 
+// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
+// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
+#![allow(clippy::type_complexity)]
+
 use std::time::Duration;
 
 use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
-use loams_desktop_harness::{AcpHarness, CancellationToken, Harness, RunControls, SteerMessage};
-use loams_desktop_proto::{
+use loams_agentd_harness::{AcpHarness, CancellationToken, Harness, RunControls, SteerMessage};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, RunRequest, SandboxLevel, UserInputAnswer, UserInputQuestion,
 };
 
@@ -200,7 +204,7 @@ async fn real_all_harnesses_quiet_survey() {
         ("devin", || Box::new(AcpHarness::devin())),
         ("grok", || Box::new(AcpHarness::grok())),
         ("hermes", || Box::new(AcpHarness::hermes())),
-        ("pi", || Box::new(loams_desktop_harness::PiHarness::new())),
+        ("pi", || Box::new(loams_agentd_harness::PiHarness::new())),
     ];
     let mut failures: Vec<String> = Vec::new();
     for (name, ctor) in agents {

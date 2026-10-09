@@ -26,9 +26,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use chrono::Utc;
 use tokio::sync::watch;
 
-use loams_desktop_doc::{DeletedSpace, REGISTRY_DOC_ID, RegistryDoc, WorkspaceDoc};
-use loams_desktop_proto::{Chat, ChatConfig, Device, Session, SidebarPreferencesState, Space};
-use loams_desktop_sync::{DocsStore, RegistryClient, RegistryTuning};
+use loams_agentd_doc::{DeletedSpace, REGISTRY_DOC_ID, RegistryDoc, WorkspaceDoc};
+use loams_agentd_proto::{Chat, ChatConfig, Device, Session, SidebarPreferencesState, Space};
+use loams_agentd_store::{DocsStore, RegistryClient, RegistryTuning};
 
 use crate::doc_host::EdgeConfig;
 use crate::http_error::describe_http_error;
@@ -90,11 +90,11 @@ pub(crate) async fn token_changed(changes: &mut Option<tokio::sync::watch::Recei
     }
 }
 
-async fn token_revoked(token: &Option<Arc<dyn loams_desktop_rpc::TokenSource>>) -> bool {
+async fn token_revoked(token: &Option<Arc<dyn loams_agentd_rpc::TokenSource>>) -> bool {
     match token {
         Some(token) => matches!(
             token.token().await,
-            Err(loams_desktop_rpc::TokenError::SignedOut)
+            Err(loams_agentd_rpc::TokenError::SignedOut)
         ),
         // Fixed test/dev URLs have no revocable credential source.
         None => false,
@@ -274,8 +274,8 @@ impl WorkspaceHost {
             // Every boot restamps the running binary's version (fleet staleness
             // on the Devices page; workspace version — same for every crate).
             version: Some(env!("CARGO_PKG_VERSION").to_string()),
-            cursor_sdk_version: Some(loams_desktop_harness::CursorHarness::sdk_version().into()),
-            capabilities: loams_desktop_proto::capabilities::current(),
+            cursor_sdk_version: Some(loams_agentd_harness::CursorHarness::sdk_version().into()),
+            capabilities: loams_agentd_proto::capabilities::current(),
         })?;
 
         let state = doc.read_all()?;
@@ -345,7 +345,7 @@ impl WorkspaceHost {
     #[doc(hidden)]
     pub fn connect_registry_url(&self, url: &str) {
         self.spawn_join(
-            Arc::new(loams_desktop_sync::StaticUrl(url.to_string())),
+            Arc::new(loams_agentd_store::StaticUrl(url.to_string())),
             None,
             None,
         );
@@ -353,17 +353,17 @@ impl WorkspaceHost {
 
     fn spawn_join(
         &self,
-        url: Arc<dyn loams_desktop_sync::UrlProvider>,
+        url: Arc<dyn loams_agentd_store::UrlProvider>,
         mut token_changes: Option<tokio::sync::watch::Receiver<u64>>,
-        token: Option<Arc<dyn loams_desktop_rpc::TokenSource>>,
+        token: Option<Arc<dyn loams_agentd_rpc::TokenSource>>,
     ) {
         let org_id = self.inner.config.org_id.clone();
         let reg = self.inner.reg.clone();
         let device_id = self.inner.config.device_id.clone();
         let weak = Arc::downgrade(&self.inner);
         tokio::spawn(async move {
-            let mut wake = loams_desktop_sync::wake::subscribe();
-            let mut online = loams_desktop_sync::wake::subscribe_online();
+            let mut wake = loams_agentd_store::wake::subscribe();
+            let mut online = loams_agentd_store::wake::subscribe_online();
             // `RegistryClient` only self-reconnects AFTER a first successful
             // join; an INITIAL failure (a 500 from an overloaded DO, a token
             // racing a refresh, an edge deploy) must not end this task and
@@ -420,7 +420,7 @@ impl WorkspaceHost {
                         loop {
                             tokio::select! {
                                 event = events.recv() => match event {
-                                    Ok(loams_desktop_sync::RegistryEvent::Connected) => {
+                                    Ok(loams_agentd_store::RegistryEvent::Connected) => {
                                         let Some(inner) = weak.upgrade() else { return };
                                         // Re-join: restart the dial gate's
                                         // warm-up clock (presence map is empty
@@ -430,15 +430,15 @@ impl WorkspaceHost {
                                             .store(now_ms(), std::sync::atomic::Ordering::Relaxed);
                                         inner.bump_changed();
                                     }
-                                    Ok(loams_desktop_sync::RegistryEvent::Applied) => {
+                                    Ok(loams_agentd_store::RegistryEvent::Applied) => {
                                         let Some(inner) = weak.upgrade() else { return };
                                         inner.bump_changed();
                                     }
-                                    Ok(loams_desktop_sync::RegistryEvent::Presence) => {
+                                    Ok(loams_agentd_store::RegistryEvent::Presence) => {
                                         let Some(inner) = weak.upgrade() else { return };
                                         inner.publish();
                                     }
-                                    Ok(loams_desktop_sync::RegistryEvent::Disconnected) => {}
+                                    Ok(loams_agentd_store::RegistryEvent::Disconnected) => {}
                                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                                 },
@@ -513,8 +513,8 @@ impl WorkspaceHost {
     /// down, relay fine: the 2026-08-18 03:45 incident shape) must never
     /// park the relay. Un-park is presence-driven: heartbeats resume → the
     /// verdict flips and the peer-alive hook clears any dial cooldown.
-    pub fn peer_liveness(&self, device_id: &str) -> loams_desktop_rpc::PeerLiveness {
-        use loams_desktop_rpc::PeerLiveness::{Dark, Live, Unknown};
+    pub fn peer_liveness(&self, device_id: &str) -> loams_agentd_rpc::PeerLiveness {
+        use loams_agentd_rpc::PeerLiveness::{Dark, Live, Unknown};
         if device_id == self.inner.config.device_id {
             return Live;
         }
@@ -603,13 +603,13 @@ impl WorkspaceHost {
 
     /// Registry room introspection for SyncStatus / `loams-desktop sync`.
     /// `None` = no room yet (edge-less, or the initial join is still retrying).
-    pub fn sync_status(&self) -> Option<loams_desktop_sync::RoomStatsSnapshot> {
+    pub fn sync_status(&self) -> Option<loams_agentd_store::RoomStatsSnapshot> {
         lock(&self.inner.room).as_ref().map(|room| room.stats())
     }
 
     /// The registry room's reconnect posture (next-dial deadline + sticky
     /// last failure) for the connectivity stream. `None` = no room yet.
-    pub fn reconnect_state(&self) -> Option<loams_desktop_sync::ReconnectState> {
+    pub fn reconnect_state(&self) -> Option<loams_agentd_store::ReconnectState> {
         lock(&self.inner.room)
             .as_ref()
             .map(|room| room.reconnect_state())
@@ -662,7 +662,7 @@ impl WorkspaceHost {
 
     pub fn change_sidebar_pin(
         &self,
-        change: &loams_desktop_proto::SidebarPinChange,
+        change: &loams_agentd_proto::SidebarPinChange,
     ) -> Result<(), EngineError> {
         let synced = self.sync_status().is_some_and(|status| status.synced);
         self.mutate(|doc| {
@@ -673,8 +673,8 @@ impl WorkspaceHost {
         })?;
         if matches!(
             change,
-            loams_desktop_proto::SidebarPinChange::Section {
-                change: loams_desktop_proto::SidebarSectionChange::Import { .. }
+            loams_agentd_proto::SidebarPinChange::Section {
+                change: loams_agentd_proto::SidebarSectionChange::Import { .. }
             }
         ) {
             // The UI removes its legacy copy only after this acknowledgement.
@@ -1137,7 +1137,7 @@ impl WorkspaceHost {
     pub fn set_chat_source_context(
         &self,
         chat_id: &str,
-        context: &loams_desktop_proto::ConversationSourceContext,
+        context: &loams_agentd_proto::ConversationSourceContext,
     ) -> Result<bool, EngineError> {
         Ok(self.mutate(|doc| doc.set_chat_source_context(chat_id, context))?)
     }
@@ -1581,12 +1581,12 @@ fn device_name_on_boot(existing_name: Option<&str>, detected_name: &str) -> Stri
 /// auth path to maintain, and the `?beat=1` keeps presence alive for a
 /// device that can only reach the edge over HTTPS.
 struct WsDerivedRegistryTransport {
-    url: Arc<dyn loams_desktop_sync::UrlProvider>,
+    url: Arc<dyn loams_agentd_store::UrlProvider>,
     client: reqwest::Client,
 }
 
 impl WsDerivedRegistryTransport {
-    fn new(url: Arc<dyn loams_desktop_sync::UrlProvider>) -> Self {
+    fn new(url: Arc<dyn loams_agentd_store::UrlProvider>) -> Self {
         Self {
             url,
             client: reqwest::Client::new(),
@@ -1594,17 +1594,17 @@ impl WsDerivedRegistryTransport {
     }
 
     async fn leaf_url(
-        provider: &Arc<dyn loams_desktop_sync::UrlProvider>,
+        provider: &Arc<dyn loams_agentd_store::UrlProvider>,
         leaf: &str,
-    ) -> Result<(reqwest::Url, Option<String>), loams_desktop_sync::SyncError> {
+    ) -> Result<(reqwest::Url, Option<String>), loams_agentd_store::SyncError> {
         let ws = provider.url().await?;
         let mut u = reqwest::Url::parse(&ws)
-            .map_err(|e| loams_desktop_sync::SyncError::Protocol(format!("bad ws url: {e}")))?;
+            .map_err(|e| loams_agentd_store::SyncError::Protocol(format!("bad ws url: {e}")))?;
         let scheme = if u.scheme() == "wss" { "https" } else { "http" };
         let _ = u.set_scheme(scheme);
         let path = u.path().to_string();
         let Some(base) = path.strip_suffix("/ws") else {
-            return Err(loams_desktop_sync::SyncError::Protocol(
+            return Err(loams_agentd_store::SyncError::Protocol(
                 "ws url without /ws leaf".into(),
             ));
         };
@@ -1630,11 +1630,11 @@ impl WsDerivedRegistryTransport {
     }
 }
 
-impl loams_desktop_sync::RegistryTransport for WsDerivedRegistryTransport {
+impl loams_agentd_store::RegistryTransport for WsDerivedRegistryTransport {
     fn fetch(
         &self,
         since: u64,
-    ) -> futures::future::BoxFuture<'static, Result<String, loams_desktop_sync::SyncError>> {
+    ) -> futures::future::BoxFuture<'static, Result<String, loams_agentd_store::SyncError>> {
         let provider = self.url.clone();
         let client = self.client.clone();
         Box::pin(async move {
@@ -1649,23 +1649,23 @@ impl loams_desktop_sync::RegistryTransport for WsDerivedRegistryTransport {
             let resp = req
                 .send()
                 .await
-                .map_err(|e| loams_desktop_sync::SyncError::WebSocket(describe_http_error(e)))?;
+                .map_err(|e| loams_agentd_store::SyncError::WebSocket(describe_http_error(e)))?;
             if !resp.status().is_success() {
-                return Err(loams_desktop_sync::SyncError::Protocol(format!(
+                return Err(loams_agentd_store::SyncError::Protocol(format!(
                     "registry pull http {}",
                     resp.status()
                 )));
             }
             resp.text()
                 .await
-                .map_err(|e| loams_desktop_sync::SyncError::WebSocket(describe_http_error(e)))
+                .map_err(|e| loams_agentd_store::SyncError::WebSocket(describe_http_error(e)))
         })
     }
 
     fn push(
         &self,
         body: String,
-    ) -> futures::future::BoxFuture<'static, Result<String, loams_desktop_sync::SyncError>> {
+    ) -> futures::future::BoxFuture<'static, Result<String, loams_agentd_store::SyncError>> {
         let provider = self.url.clone();
         let client = self.client.clone();
         Box::pin(async move {
@@ -1680,16 +1680,16 @@ impl loams_desktop_sync::RegistryTransport for WsDerivedRegistryTransport {
             let resp = req
                 .send()
                 .await
-                .map_err(|e| loams_desktop_sync::SyncError::WebSocket(describe_http_error(e)))?;
+                .map_err(|e| loams_agentd_store::SyncError::WebSocket(describe_http_error(e)))?;
             if !resp.status().is_success() {
-                return Err(loams_desktop_sync::SyncError::Protocol(format!(
+                return Err(loams_agentd_store::SyncError::Protocol(format!(
                     "registry push http {}",
                     resp.status()
                 )));
             }
             resp.text()
                 .await
-                .map_err(|e| loams_desktop_sync::SyncError::WebSocket(describe_http_error(e)))
+                .map_err(|e| loams_agentd_store::SyncError::WebSocket(describe_http_error(e)))
         })
     }
 }
@@ -1702,11 +1702,11 @@ mod tests {
     async fn registry_http_sync_retains_dns_cause() {
         use super::*;
         use crate::http_error::test_support::FailingDns;
-        use loams_desktop_sync::RegistryTransport;
+        use loams_agentd_store::RegistryTransport;
 
         let dns = Arc::new(FailingDns::default());
         let transport = WsDerivedRegistryTransport {
-            url: Arc::new(loams_desktop_sync::StaticUrl(
+            url: Arc::new(loams_agentd_store::StaticUrl(
                 "wss://edge.invalid/registry/org/ws?token=token-secret".into(),
             )),
             client: dns.client(),
@@ -1796,7 +1796,7 @@ mod tests {
         let mut preferences = host.watch_sidebar_preferences();
         assert!(!preferences.borrow().initialized);
 
-        host.change_sidebar_pin(&loams_desktop_proto::SidebarPinChange::Unpin {
+        host.change_sidebar_pin(&loams_agentd_proto::SidebarPinChange::Unpin {
             session_id: "absent".into(),
         })
         .unwrap();
@@ -1816,7 +1816,7 @@ mod tests {
         );
         host.create_chat("cached", None, Some("test-device"), None, None)
             .unwrap();
-        host.change_sidebar_pin(&loams_desktop_proto::SidebarPinChange::Pin {
+        host.change_sidebar_pin(&loams_agentd_proto::SidebarPinChange::Pin {
             session_id: "cached".into(),
             after: None,
             before: None,
@@ -1825,8 +1825,8 @@ mod tests {
         let acknowledgement = host.sidebar_preferences_snapshot();
         assert!(acknowledgement.revision > first_revision);
         assert_eq!(*preferences.borrow(), acknowledgement);
-        host.change_sidebar_pin(&loams_desktop_proto::SidebarPinChange::Section {
-            change: loams_desktop_proto::SidebarSectionChange::Create {
+        host.change_sidebar_pin(&loams_agentd_proto::SidebarPinChange::Section {
+            change: loams_agentd_proto::SidebarSectionChange::Create {
                 id: "focus".into(),
                 name: "Focus".into(),
             },
@@ -1836,8 +1836,8 @@ mod tests {
         assert!(sections.revision > acknowledgement.revision);
         assert_eq!(sections.sections[0].name, "Focus");
         assert_eq!(*preferences.borrow(), sections);
-        host.change_sidebar_pin(&loams_desktop_proto::SidebarPinChange::Section {
-            change: loams_desktop_proto::SidebarSectionChange::Collapse {
+        host.change_sidebar_pin(&loams_agentd_proto::SidebarPinChange::Section {
+            change: loams_agentd_proto::SidebarSectionChange::Collapse {
                 id: "focus".into(),
                 collapsed: true,
             },

@@ -1,9 +1,9 @@
 [package]
-name = "loams-desktop-harness"
+name = "loams-agentd-harness"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-publish.workspace = true
+license = "MIT"
+publish = false
 
 [features]
 # Synthetic native protocol peer for subprocess tests; never part of a normal build.
@@ -22,13 +22,12 @@ path = "tests/fixtures/pi_rpc.rs"
 required-features = ["native-fixture"]
 
 [dependencies]
-loams-desktop-brand.workspace = true
-loams-desktop-proto.workspace = true
+loams-agentd-proto.workspace = true
 base64 = "0.22"
-reqwest.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
 tokio.workspace = true
 tokio-util = { workspace = true, features = ["io-util"] }
-uuid.workspace = true
+uuid = { workspace = true, features = ["serde"] }
 futures.workspace = true
 async-trait.workspace = true
 serde.workspace = true
@@ -38,7 +37,7 @@ serde_yaml_ng = "0.10"
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-sha2.workspace = true
+sha2 = "0.10"
 semver = "1"
 zip.workspace = true
 

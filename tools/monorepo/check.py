@@ -3,7 +3,6 @@
 import json
 import os
 from pathlib import Path
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 SKIP = {".git", ".worktrees", ".nx", "node_modules", "target", "build", "dist", "lib", ".gradle", "__pycache__"}
@@ -51,7 +50,7 @@ def main() -> int:
     errors = []
     projects = discover(ROOT)
     errors.extend(project_errors(ROOT, projects))
-    required = {"loams-engine", "loams-contracts", "loams-desktop", "mobile-android", "mobile-ios",
+    required = {"loams-engine", "loams-contracts", "mobile-android", "mobile-ios",
                 "mobile-mock", "mobile-contracts", "mobile-fixtures", "plugins", "plugins-dashboard-ui", "@loams/console"}
     missing = required - {p["name"] for p in projects.values()}
     if missing:
@@ -62,25 +61,23 @@ def main() -> int:
     for obsolete in ["web/pnpm-lock.yaml", "web/pnpm-workspace.yaml", "plugins/package-lock.json"]:
         if (ROOT / obsolete).exists():
             errors.append("Obsolete competing workspace/lockfile: " + obsolete)
-    for subtree in ["apps/desktop", "apps/mobile", "plugins"]:
+    for subtree in ["apps/mobile", "plugins"]:
         for directory, folders, files in os.walk(ROOT / subtree):
             if ".git" in folders or ".git" in files:
                 errors.append("Nested Git metadata: " + str(Path(directory).relative_to(ROOT)))
             folders[:] = [name for name in folders if name not in SKIP]
-    for notice in ["apps/desktop/native/LICENSE", "apps/desktop/native/NOTICE",
-                   "apps/desktop/native/THIRD_PARTY_NOTICES.md", "apps/mobile/LICENSE", "apps/mobile/NOTICE",
+    for notice in ["crates/loams-agentd/LICENSE", "crates/loams-agentd/NOTICE",
+                   "crates/loams-agentd/THIRD_PARTY_NOTICES.md", "apps/mobile/LICENSE", "apps/mobile/NOTICE",
                    "plugins/LICENSE", "plugins/NOTICE"]:
         if not (ROOT / notice).is_file():
             errors.append("Missing scoped license/notice: " + notice)
-    desktop = tomllib.loads((ROOT / "apps/desktop/native/Cargo.toml").read_text())
-    if not desktop.get("workspace", {}).get("members"):
-        errors.append("Desktop must retain an independent Cargo workspace")
-    if not (ROOT / "apps/desktop/native/Cargo.lock").is_file():
-        errors.append("Desktop Cargo lockfile is missing")
+    # The zeron fork moved into the root workspace as crates/loams-agentd* (D783).
+    if (ROOT / "apps/desktop").exists():
+        errors.append("apps/desktop must stay deleted: the daemon lives in crates/loams-agentd* (D783)")
     if errors:
         print("\n".join(errors))
         return 1
-    print(f"Monorepo checks passed: {len(projects)} projects, scoped licenses, isolated native workspaces, no sibling dependency.")
+    print(f"Monorepo checks passed: {len(projects)} projects, scoped licenses, no sibling dependency.")
     return 0
 
 

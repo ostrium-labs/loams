@@ -14,9 +14,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use loams_desktop_doc::RegistryDoc;
-use loams_desktop_proto::{Chat, Session, SessionStatus};
-use loams_desktop_sync::RegistryClient;
+use loams_agentd_doc::RegistryDoc;
+use loams_agentd_proto::{Chat, Session, SessionStatus};
+use loams_agentd_store::RegistryClient;
 
 fn ts(ms: i64) -> DateTime<Utc> {
     DateTime::from_timestamp_millis(ms).unwrap_or(DateTime::UNIX_EPOCH)

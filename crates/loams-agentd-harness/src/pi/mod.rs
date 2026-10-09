@@ -12,7 +12,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
-use loams_desktop_proto::{AgentEvent, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode};
+use loams_agentd_proto::{AgentEvent, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode};
 use normalize::{Normalizer, string};
 use serde_json::{Value, json};
 use std::{
@@ -116,7 +116,7 @@ impl PiHarness {
         &self,
         cwd: &Path,
         args: &[String],
-        mcp: Option<&loams_desktop_proto::McpServer>,
+        mcp: Option<&loams_agentd_proto::McpServer>,
     ) -> Result<Process, HarnessError> {
         let exe = self.resolve_executable()?;
         if self.executable.is_none() {
@@ -290,13 +290,13 @@ impl Harness for PiHarness {
             )
             .await
     }
-    async fn commands(&self) -> Result<Vec<loams_desktop_proto::SlashCommand>, HarnessError> {
+    async fn commands(&self) -> Result<Vec<loams_agentd_proto::SlashCommand>, HarnessError> {
         self.commands_for(&std::env::current_dir()?).await
     }
     async fn commands_for(
         &self,
         cwd: &Path,
-    ) -> Result<Vec<loams_desktop_proto::SlashCommand>, HarnessError> {
+    ) -> Result<Vec<loams_agentd_proto::SlashCommand>, HarnessError> {
         self.workspace_commands
             .get(cwd, async {
                 Ok(catalog::commands(&self.probe(cwd, false).await?))
@@ -306,7 +306,7 @@ impl Harness for PiHarness {
     async fn skills(
         &self,
         cwd: &Path,
-    ) -> Result<Option<Vec<loams_desktop_proto::invocation::Skill>>, HarnessError> {
+    ) -> Result<Option<Vec<loams_agentd_proto::invocation::Skill>>, HarnessError> {
         let mut skills = crate::skills::discover(HarnessId::Pi, cwd).await?;
         let commands = self.commands_for(cwd).await?;
         crate::skills::attach_advertised_commands(HarnessId::Pi, &mut skills, &commands);
@@ -462,7 +462,7 @@ impl Runner {
         self.process.dialogs.cancel();
         self.emit(AgentEvent::Done {
             status: if self.interrupted {
-                loams_desktop_proto::DoneStatus::Interrupted
+                loams_agentd_proto::DoneStatus::Interrupted
             } else {
                 self.norm.status()
             },

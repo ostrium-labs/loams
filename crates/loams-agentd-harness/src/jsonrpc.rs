@@ -177,7 +177,7 @@ async fn write_loop(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<Strin
             stdin.flush().await
         };
         if let Err(e) = write.await {
-            tracing::debug!(target: "loams_desktop_harness::rpc", "stdin write failed (tolerated): {e}");
+            tracing::debug!(target: "loams_agentd_harness::rpc", "stdin write failed (tolerated): {e}");
             return;
         }
     }
@@ -246,7 +246,7 @@ async fn read_loop(
             continue;
         }
         let Ok(mut msg) = serde_json::from_str::<Value>(line) else {
-            tracing::debug!(target: "loams_desktop_harness::rpc", "non-JSON stdout line (skipped)");
+            tracing::debug!(target: "loams_agentd_harness::rpc", "non-JSON stdout line (skipped)");
             continue;
         };
         if !msg.is_object() || msg.get("jsonrpc").is_some_and(|version| version != "2.0") {

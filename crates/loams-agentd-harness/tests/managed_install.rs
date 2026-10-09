@@ -10,8 +10,8 @@
 //! Single-test binary: it mutates LOAMS_DESKTOP_ADAPTERS_DIR process-wide.
 
 use futures::StreamExt;
-use loams_desktop_harness::{AcpHarness, Harness, RunControls};
-use loams_desktop_proto::{AgentEvent, RunRequest};
+use loams_agentd_harness::{AcpHarness, Harness, RunControls};
+use loams_agentd_proto::{AgentEvent, RunRequest};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -42,7 +42,7 @@ async fn managed_install_reaches_session_started() {
         reasoning: None,
         model_options: serde_json::Map::new(),
         cwd: std::env::temp_dir().display().to_string(),
-        sandbox: loams_desktop_proto::SandboxLevel::WorkspaceWrite,
+        sandbox: loams_agentd_proto::SandboxLevel::WorkspaceWrite,
         auto_approve: true,
         attachments: Vec::new(),
         worktree: None,

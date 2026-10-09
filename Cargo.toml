@@ -231,8 +231,46 @@ loams-tuple = { path = "crates/loams-tuple", version = "0.0.1" }
 loams-web-bridge = { path = "crates/loams-web-bridge", version = "0.0.1" }
 loams-worker = { path = "crates/loams-worker", version = "0.0.1" }
 
+# loams-agentd: the per-user desktop daemon, moved from the zeron fork
+# (design §50, D783, plan DD1 Task 1). Versions follow the fork's lockfile
+# (DD1 T0-4). The fork pins reqwest 0.12 and sha2 0.10, which differ from the
+# workspace keys above, so its crates name those two directly.
+loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.0.1" }
+loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.0.1" }
+loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.0.1" }
+loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.0.1" }
+loams-agentd-preview = { path = "crates/loams-agentd-preview", version = "0.0.1" }
+loams-agentd-proto = { path = "crates/loams-agentd-proto", version = "0.0.1" }
+loams-agentd-rpc = { path = "crates/loams-agentd-rpc", version = "0.0.1" }
+loams-agentd-sessions = { path = "crates/loams-agentd-sessions", version = "0.0.1" }
+loams-agentd-store = { path = "crates/loams-agentd-store", version = "0.0.1" }
+chrono = { version = "0.4", features = ["serde"] }
+deser-hjson = "2.2"
+gethostname = "1"
+ignore = "0.4"
+libc = "0.2"
+loro = "1.13"
+loro-protocol = "0.3"
+mimalloc = { version = "0.1", features = ["v2"] }
+notify = "7"
+nucleo-matcher = "0.3"
+portable-pty = "0.8"
+pulldown-cmark = "0.12"
+rusqlite = { version = "0.32", features = ["bundled"] }
+similar = "2"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+zip = { version = "7.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
 [profile.dev]
 debug = "line-tables-only"
+
+# The daemon's RPC dispatch (`EngineRpc::handle`) is one large async state
+# machine; unoptimized, it overflows a tokio worker's default 2 MiB stack
+# (`checkout_file_diff_text_rpc_fits_the_default_worker_stack`). The zeron fork
+# built its dependencies at opt-level 2; optimizing only this crate is enough
+# (plan DD1 ruling T1-9).
+[profile.dev.package.loams-agentd-sessions]
+opt-level = 1
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

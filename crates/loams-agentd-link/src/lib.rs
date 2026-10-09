@@ -16,7 +16,7 @@
 pub mod a2a;
 pub mod acp;
 /// Identity strings (re-exported so callers need one import).
-pub use loams_desktop_brand as brand;
+pub use loams_agentd_proto::brand;
 pub mod auth;
 pub mod cli;
 pub mod client;

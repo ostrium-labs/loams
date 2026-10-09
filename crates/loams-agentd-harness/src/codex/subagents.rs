@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use loams_desktop_proto::AgentEvent;
+use loams_agentd_proto::AgentEvent;
 use serde_json::Value;
 
 use super::normalize::{ChildStream, Phase, collab_spawn_child, item_type, map_item};

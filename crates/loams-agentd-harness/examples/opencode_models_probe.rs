@@ -6,7 +6,7 @@
 //!
 //!     cargo run -p loams-desktop-harness --example opencode_models_probe
 
-use loams_desktop_harness::{Harness, OpencodeHarness};
+use loams_agentd_harness::{Harness, OpencodeHarness};
 
 #[tokio::main]
 async fn main() {

@@ -48,7 +48,7 @@ use serde_json::{Value, json};
 use tokio::io::AsyncBufReadExt;
 use tokio::sync::mpsc;
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice, ReasoningLevel,
     RunRequest, SlashCommand, SteeringMode, UserInputAnswer, UserInputQuestion,
 };
@@ -1195,12 +1195,12 @@ pub fn prewarm_managed_adapters() {
         handle.spawn(async move {
             match crate::adapter_install::ensure_installed(pin, bin_name, display_name).await {
                 Ok(entry) => tracing::info!(
-                    target: "loams_desktop_harness::adapter_install",
+                    target: "loams_agentd_harness::adapter_install",
                     adapter = %entry.display(),
                     "prewarmed {display_name} ACP adapter"
                 ),
                 Err(e) => tracing::warn!(
-                    target: "loams_desktop_harness::adapter_install",
+                    target: "loams_agentd_harness::adapter_install",
                     "prewarm of the {display_name} ACP adapter failed: {e}"
                 ),
             }
@@ -1415,7 +1415,7 @@ impl AcpHarness {
                 while let Ok(Some(line)) = lines.next_line().await {
                     // Sign-in output carries authorize urls and device codes.
                     tracing::debug!(
-                        target: "loams_desktop_harness::acp",
+                        target: "loams_agentd_harness::acp",
                         "sign-in stderr: {}",
                         crate::redact::redact_output(&line)
                     );
@@ -1622,7 +1622,7 @@ impl AcpHarness {
                             .await
                             {
                                 tracing::warn!(
-                                    target: "loams_desktop_harness::adapter_install",
+                                    target: "loams_agentd_harness::adapter_install",
                                     "background adapter install failed: {e}"
                                 );
                             }
@@ -1679,7 +1679,7 @@ impl AcpHarness {
         cwd: Option<&str>,
         block_on_install: bool,
         extra_args: &[String],
-        _mcp: Option<&loams_desktop_proto::McpServer>,
+        _mcp: Option<&loams_agentd_proto::McpServer>,
     ) -> Result<
         (
             Option<ScratchDir>,
@@ -1737,7 +1737,7 @@ impl AcpHarness {
             tokio::spawn(async move {
                 let mut lines = tokio::io::BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::debug!(target: "loams_desktop_harness::acp", "stderr: {line}");
+                    tracing::debug!(target: "loams_agentd_harness::acp", "stderr: {line}");
                     tail.push(&line);
                     if is_sign_in_prompt(harness, &line) {
                         prompted.cancel();
@@ -2271,7 +2271,7 @@ impl Harness for AcpHarness {
     async fn skills(
         &self,
         cwd: &std::path::Path,
-    ) -> Result<Option<Vec<loams_desktop_proto::invocation::Skill>>, HarnessError> {
+    ) -> Result<Option<Vec<loams_agentd_proto::invocation::Skill>>, HarnessError> {
         let (mut skills, commands) = tokio::try_join!(
             crate::skills::discover(self.id(), cwd),
             self.workspace_commands
@@ -2478,7 +2478,7 @@ fn initialize_params(harness: HarnessId) -> Value {
 /// server as name/command/args plus `[{name, value}]` env pairs. Empty when
 /// the host injected nothing — the user's own servers come from the agent's
 /// config, never from here.
-fn acp_mcp_servers(mcp: Option<&loams_desktop_proto::McpServer>) -> Vec<Value> {
+fn acp_mcp_servers(mcp: Option<&loams_agentd_proto::McpServer>) -> Vec<Value> {
     mcp.into_iter()
         .map(|mcp| {
             json!({
@@ -2976,7 +2976,7 @@ fn handle_server_request(
             Vec::new()
         }
         _ => {
-            tracing::debug!(target: "loams_desktop_harness::acp", "unhandled server request: {method}");
+            tracing::debug!(target: "loams_agentd_harness::acp", "unhandled server request: {method}");
             client.respond_error(&id, -32601, &format!("unsupported method: {method}"));
             Vec::new()
         }
@@ -3536,7 +3536,7 @@ async fn run_session(session: Session) {
                 // A missing/foreign session falls back to a fresh one.
                 Err(e) => {
                     tracing::debug!(
-                        target: "loams_desktop_harness::acp",
+                        target: "loams_agentd_harness::acp",
                         "session/load failed (starting fresh): {e}"
                     );
                     let _ = send(&event_tx, AgentEvent::Error {
@@ -3708,7 +3708,7 @@ async fn run_session(session: Session) {
                             )));
                         }
                         tracing::debug!(
-                            target: "loams_desktop_harness::acp",
+                            target: "loams_agentd_harness::acp",
                             "session/set_config_option {config_id}={payload} rejected (agent default runs): {e}"
                         );
                     }
@@ -3771,7 +3771,7 @@ async fn run_session(session: Session) {
                             None => e.to_string(),
                         },
                     };
-                    tracing::warn!(target: "loams_desktop_harness::acp", %error, "agent setup failed");
+                    tracing::warn!(target: "loams_agentd_harness::acp", %error, "agent setup failed");
                     let _ = event_tx
                         .send(Ok(AgentEvent::Done {
                             status: DoneStatus::Errored,
@@ -4333,7 +4333,7 @@ async fn run_session(session: Session) {
                         .to_owned(),
                     Err(e) => {
                         tracing::debug!(
-                            target: "loams_desktop_harness::acp",
+                            target: "loams_agentd_harness::acp",
                             "_session/steering failed (redelivering): {e}"
                         );
                         // Failed calls redeliver like a lost turn-end race.
@@ -4428,7 +4428,7 @@ async fn run_session(session: Session) {
                         == Some("noRunningTurn")
                     {
                         tracing::warn!(
-                            target: "loams_desktop_harness::acp",
+                            target: "loams_agentd_harness::acp",
                             "steering answered noRunningTurn with a prompt \
                              outstanding; arming starved-turn recovery"
                         );
@@ -4532,7 +4532,7 @@ async fn run_session(session: Session) {
             ), if starve_deadline.is_some() && turn.is_some() && !interrupted => {
                 starve_deadline = None;
                 tracing::warn!(
-                    target: "loams_desktop_harness::acp",
+                    target: "loams_agentd_harness::acp",
                     "prompt response missing past turn-end evidence; settling \
                      the dead turn (and promoting any queued steer)"
                 );
@@ -4614,7 +4614,7 @@ async fn run_session(session: Session) {
                         // cancel it rather than prompt into the starve.
                         //
                         tracing::info!(
-                            target: "loams_desktop_harness::acp",
+                            target: "loams_agentd_harness::acp",
                             "steer into a self-continuing session; cancelling \
                              the unowned turn before prompting"
                         );
@@ -6090,7 +6090,7 @@ mod mcp_injection_tests {
     #[test]
     fn acp_mcp_servers_spell_env_as_name_value_pairs_and_default_empty() {
         assert!(acp_mcp_servers(None).is_empty());
-        let mcp = loams_desktop_proto::McpServer {
+        let mcp = loams_agentd_proto::McpServer {
             name: "loams-desktop".into(),
             command: "/opt/loams-desktop/loams-desktop".into(),
             args: vec!["mcp".into()],

@@ -9,11 +9,11 @@ use std::time::Duration;
 use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
-use loams_desktop_harness::acp::SignInProgress;
-use loams_desktop_harness::{
+use loams_agentd_harness::acp::SignInProgress;
+use loams_agentd_harness::{
     AcpHarness, CancellationToken, Harness, HarnessError, RunControls, SteerMessage,
 };
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, ReasoningLevel, RunRequest, SandboxLevel, SteeringMode,
     TodoItem, ToolCall, UserInputAnswer,
 };
@@ -225,7 +225,7 @@ async fn happy_path_maps_chunks_tools_diffs_plans_and_commands() {
 async fn config_options_apply_requested_model_and_effort() {
     let (controls, _steer, _token) = controls();
     let mut req = request("scenario:config");
-    req.reasoning = Some(loams_desktop_proto::ReasoningLevel::Medium);
+    req.reasoning = Some(loams_agentd_proto::ReasoningLevel::Medium);
     let events = run_to_end(&harness(), req, controls).await;
     // The fixture answers refusal unless BOTH set_config_option calls
     // (model grok-4.5, effort medium) arrived before the prompt.
@@ -507,9 +507,9 @@ fn descriptor_surface_matches_registry_expectations() {
     assert_eq!(
         harness.reasoning_levels(),
         &[
-            loams_desktop_proto::ReasoningLevel::Low,
-            loams_desktop_proto::ReasoningLevel::Medium,
-            loams_desktop_proto::ReasoningLevel::High,
+            loams_agentd_proto::ReasoningLevel::Low,
+            loams_agentd_proto::ReasoningLevel::Medium,
+            loams_agentd_proto::ReasoningLevel::High,
         ]
     );
 }
@@ -526,9 +526,9 @@ async fn models_are_discovered_from_the_acp_session() {
     assert_eq!(
         models[0].reasoning_levels,
         vec![
-            loams_desktop_proto::ReasoningLevel::Low,
-            loams_desktop_proto::ReasoningLevel::Medium,
-            loams_desktop_proto::ReasoningLevel::High,
+            loams_agentd_proto::ReasoningLevel::Low,
+            loams_agentd_proto::ReasoningLevel::Medium,
+            loams_agentd_proto::ReasoningLevel::High,
         ],
         "{models:?}"
     );
@@ -580,7 +580,7 @@ async fn missing_override_is_not_installed_and_fails_discovery() {
     assert!(!harness.installed());
     let err = harness.models().await.expect_err("missing override");
     assert!(
-        matches!(err, loams_desktop_harness::HarnessError::NotInstalled(_)),
+        matches!(err, loams_agentd_harness::HarnessError::NotInstalled(_)),
         "{err:?}"
     );
 }
@@ -630,7 +630,7 @@ fn hermes_and_pi_descriptor_surfaces_match_registry_expectations() {
     assert_eq!(hermes.steering_mode(), SteeringMode::TurnBoundary);
     assert!(hermes.reasoning_levels().is_empty());
 
-    let pi = loams_desktop_harness::PiHarness::new();
+    let pi = loams_agentd_harness::PiHarness::new();
     assert_eq!(pi.id(), HarnessId::Pi);
     assert_eq!(pi.display_name(), "Pi");
     assert!(pi.supports_steering());
@@ -706,7 +706,7 @@ async fn devin_sign_in_runs_the_given_method_in_the_given_environment() {
     AcpHarness::devin()
         .with_executable(devin_auth_fixture())
         .sign_in_with(
-            loams_desktop_harness::acp::SignInOptions {
+            loams_agentd_harness::acp::SignInOptions {
                 method: Some("devin-browser".into()),
                 env: vec![("XDG_DATA_HOME".into(), data.path().into())],
                 url_filter: Some(|url| url.contains("redirect_uri=")),
@@ -1161,8 +1161,7 @@ async fn grok_subagent_lifecycle_tails_the_disk_transcript_into_tagged_events() 
             .unwrap();
         writeln!(
             f,
-            "{}",
-            "{\"type\":\"assistant\",\"content\":\"two files\",\"model_id\":\"grok-4.6-build\"}"
+            "{{\"type\":\"assistant\",\"content\":\"two files\",\"model_id\":\"grok-4.6-build\"}}"
         )
         .unwrap();
     });
@@ -1205,7 +1204,7 @@ async fn grok_subagent_lifecycle_tails_the_disk_transcript_into_tagged_events() 
     let tool = pos(&|e| {
         matches!(
             e,
-            AgentEvent::ToolCall { id, call: loams_desktop_proto::ToolCall::Exec { command } }
+            AgentEvent::ToolCall { id, call: loams_agentd_proto::ToolCall::Exec { command } }
                 if id == "call-1-0" && command == "ls"
         )
     })
@@ -2012,7 +2011,7 @@ async fn acp_boundary_steer(scenario: &str, trigger_on_done: bool) {
             };
             if trigger && let Some(sender) = steer.take() {
                 sender
-                    .send(loams_desktop_harness::SteerMessage {
+                    .send(loams_agentd_harness::SteerMessage {
                         prompt: "second".into(),
                         message_id: None,
                     })
@@ -2183,7 +2182,7 @@ async fn mcp_injection_all_acp_harnesses_new_resume_and_fallback() {
             let mut req = request("scenario:mcp");
             req.model = None;
             req.resume = resume.map(str::to_owned);
-            req.mcp = Some(loams_desktop_proto::McpServer {
+            req.mcp = Some(loams_agentd_proto::McpServer {
                 name: "loams-desktop".into(),
                 command: "/path with spaces/loams-desktop".into(),
                 args: vec!["mcp".into()],
@@ -2245,7 +2244,7 @@ async fn all_acp_harnesses_use_project_scoped_session_command_updates() {
 
 #[tokio::test]
 async fn shared_acp_skills_require_explicit_native_command_classification() {
-    use loams_desktop_proto::invocation::{Invocation, harness_prompt};
+    use loams_agentd_proto::invocation::{Invocation, harness_prompt};
     for h in [
         AcpHarness::devin(),
         AcpHarness::grok(),

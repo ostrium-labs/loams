@@ -5,7 +5,7 @@
 //! (`delta`/`textDelta`, `exitCode`/`exit_code`, camelCase/snake_case item
 //! types) are accepted, and unknown item types map to nothing.
 
-use loams_desktop_proto::{AgentEvent, DoneStatus, TodoItem, ToolCall};
+use loams_agentd_proto::{AgentEvent, DoneStatus, TodoItem, ToolCall};
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

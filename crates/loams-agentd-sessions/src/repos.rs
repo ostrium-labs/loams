@@ -18,7 +18,7 @@ use std::time::Duration;
 use futures::{StreamExt, stream};
 use sha2::{Digest, Sha256};
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     DriveEntry, FileSearchMatch, FolderEntry, FolderListing, GitHistoryCommit,
     GitHistoryComparison, GitHistoryPage, GitHistoryRef, GitHistoryRefKind, Repo, RepoRef,
     Worktree,
@@ -1793,14 +1793,18 @@ fn compare_file_matches(
         .then_with(|| featured_a.cmp(featured_b))
         .then_with(|| score_b.cmp(score_a))
         .then_with(|| {
-            empty_query
-                .then(|| path_a.split('/').count().cmp(&path_b.split('/').count()))
-                .unwrap_or(std::cmp::Ordering::Equal)
+            if empty_query {
+                path_a.split('/').count().cmp(&path_b.split('/').count())
+            } else {
+                std::cmp::Ordering::Equal
+            }
         })
         .then_with(|| {
-            empty_query
-                .then(|| dir_a.cmp(dir_b))
-                .unwrap_or_else(|| dir_b.cmp(dir_a))
+            if empty_query {
+                dir_a.cmp(dir_b)
+            } else {
+                dir_b.cmp(dir_a)
+            }
         })
         .then_with(|| path_a.len().cmp(&path_b.len()))
         .then_with(|| path_a.cmp(path_b))
@@ -2040,7 +2044,7 @@ pub fn worktree_branch_from_title(title: &str) -> String {
     slug.truncate(48);
     let slug = slug.trim_matches('-');
     format!(
-        "loams_desktop/{}",
+        "loams-desktop/{}",
         if slug.is_empty() { "update" } else { slug }
     )
 }

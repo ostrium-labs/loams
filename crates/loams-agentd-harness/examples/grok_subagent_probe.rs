@@ -5,8 +5,8 @@
 //!     cargo run -p loams-desktop-harness --example grok_subagent_probe -- /tmp/probe-dir
 
 use futures::StreamExt;
-use loams_desktop_harness::{AcpHarness, CancellationToken, Harness, RunControls};
-use loams_desktop_proto::{AgentEvent, RunRequest, SandboxLevel, UserInputAnswer};
+use loams_agentd_harness::{AcpHarness, CancellationToken, Harness, RunControls};
+use loams_agentd_proto::{AgentEvent, RunRequest, SandboxLevel, UserInputAnswer};
 use tokio::sync::{mpsc, oneshot};
 
 #[tokio::main]

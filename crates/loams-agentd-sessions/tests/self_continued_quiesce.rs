@@ -20,12 +20,12 @@ use futures::StreamExt;
 use futures::stream::BoxStream;
 use tokio::sync::{Mutex, mpsc};
 
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SessionStatus, SteeringMode,
 };
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 
 const CHAT: &str = "chat-self-quiesce";
 /// Normal window: far beyond the test horizon — any park inside the test

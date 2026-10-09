@@ -116,7 +116,7 @@ impl A2aClient for JsonRpcA2aClient {
 
 /// A canned agent for `LOAMS_MOCK=1`, tests and demos. It completes every
 /// message with an echo, except `/ask`, which parks in `INPUT_REQUIRED` with a
-/// question, as an agent waiting for an approval would (D467, D468).
+/// question, as an agent waiting for an approval would (design 37 section 18).
 #[derive(Debug, Default)]
 pub struct MockA2aClient {
     counter: AtomicU64,

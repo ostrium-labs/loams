@@ -4,7 +4,7 @@
 //! reconnect with exponential backoff.
 //!
 //! The client owns no row semantics: everything applies through the shared
-//! [`loams_desktop_doc::RegistryDoc`] under a lock. Wire frames are JSON text —
+//! [`loams_agentd_doc::RegistryDoc`] under a lock. Wire frames are JSON text —
 //! byte-compatible with `edge/src/registry-room.ts`.
 //!
 //! Liveness discipline is inherited from `room.rs` and its incidents: the
@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
-use loams_desktop_doc::{PendingBatch, RegistryDoc, RegistryRow, StateOutcome};
+use loams_agentd_doc::{PendingBatch, RegistryDoc, RegistryRow, StateOutcome};
 
 use crate::types::{RoomStatsSnapshot, StaticUrl, SyncError, UrlProvider};
 
@@ -91,7 +91,7 @@ enum ClientFrame<'a> {
     },
     Push {
         batch: &'a str,
-        ops: &'a [loams_desktop_doc::RowOp],
+        ops: &'a [loams_agentd_doc::RowOp],
     },
     Presence {
         at: i64,
@@ -319,6 +319,8 @@ impl RegistryClient {
         Self::connect_with_transport(connector, doc, device_id, tuning, Some(transport)).await
     }
 
+    // Used only by the registry tests; the registry client goes in DD1 Task 2.
+    #[allow(dead_code)]
     pub(crate) async fn connect_with_tuned(
         connector: Arc<dyn TextConnector>,
         doc: Arc<Mutex<RegistryDoc>>,

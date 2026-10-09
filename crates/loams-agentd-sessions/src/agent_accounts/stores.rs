@@ -1179,13 +1179,13 @@ impl AgentAccounts {
         &self,
         harness: HarnessId,
         args: &[&str],
-    ) -> Result<loams_desktop_harness::process::Command, EngineError> {
+    ) -> Result<loams_agentd_harness::process::Command, EngineError> {
         let acp = self
             .acp_harness(harness)
             .ok_or_else(|| EngineError::Other(format!("{harness:?} has no CLI sign-in")))?;
         acp.cli_command(args).await.map_err(|err| {
             EngineError::Other(match err {
-                loams_desktop_harness::HarnessError::NotInstalled(hint) => format!(
+                loams_agentd_harness::HarnessError::NotInstalled(hint) => format!(
                     "The `{}` CLI was not found on this device — install it first. ({hint})",
                     cli_name(harness)
                 ),
@@ -1300,7 +1300,7 @@ impl AgentAccounts {
         let browser = ensure_recording_browser(&self.inner.config.root_dir());
         #[cfg(not(unix))]
         let browser = None;
-        let options = loams_desktop_harness::acp::SignInOptions {
+        let options = loams_agentd_harness::acp::SignInOptions {
             browser,
             method: Some("devin-browser".into()),
             env: vec![
@@ -1341,7 +1341,7 @@ impl AgentAccounts {
             let progress_state = task_state.clone();
             let signed_in = acp
                 .sign_in_with(options, move |progress| match progress {
-                    loams_desktop_harness::acp::SignInProgress::OpenBrowser(url) => {
+                    loams_agentd_harness::acp::SignInProgress::OpenBrowser(url) => {
                         let mut state = lock(&progress_state);
                         if state.url.is_none() {
                             state.url = Some(url);

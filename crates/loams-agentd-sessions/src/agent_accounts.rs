@@ -58,7 +58,7 @@
 //!    Codex spawns `codex login` against a throwaway `CODEX_HOME` and polls
 //!    until its loopback callback lands; Antigravity runs its server's
 //!    `authenticate`. A login run for ANOTHER device (`requester`) publishes
-//!    its callback port to [`loams_desktop_preview::login`], so the requester can
+//!    its callback port to [`loams_agentd_preview::login`], so the requester can
 //!    forward its own loopback to it over the P2P link.
 //!
 //! Usage probes: all three providers expose the rate-limit view their own CLIs render
@@ -86,7 +86,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     AgentAccount, AgentAccountWarning, AgentAccountsSnapshot, AgentAuthKind, AgentLoginMode,
     AgentLoginPoll, AgentLoginStart, AgentLoginStatus, AgentUsageWindow, HarnessId,
 };
@@ -217,7 +217,7 @@ impl AgentAccountsConfig {
             claude_config_file,
             codex_home: env_dir("CODEX_HOME").unwrap_or_else(|| home_dir().join(".codex")),
             cursor_sdk_auth_file: home_dir().join(".cursor").join("sdk").join("auth.json"),
-            antigravity_home: loams_desktop_harness::acp::antigravity_home().ok(),
+            antigravity_home: loams_agentd_harness::acp::antigravity_home().ok(),
             antigravity_keychain: cfg!(target_os = "macos")
                 && std::env::var_os("AGY_ACP_FORCE_FILE_STORAGE")
                     .is_none_or(|v| !matches!(v.to_str(), Some("1" | "true"))),
@@ -408,7 +408,7 @@ enum LoginFlow {
     Spawned {
         harness: HarnessId,
         /// The login child; monitored (try_wait) + killable from cancel.
-        child: Arc<Mutex<Option<loams_desktop_harness::process::Child>>>,
+        child: Arc<Mutex<Option<loams_agentd_harness::process::Child>>>,
         /// Throwaway dir, reclaimed on cancel/completion.
         home: PathBuf,
         /// What finishing looks like.
@@ -730,7 +730,7 @@ struct Inner {
     inflight_refreshes: Mutex<std::collections::HashSet<String>>,
     claude_credentials: Mutex<Option<CachedClaudeCredentials>>,
     /// Callback ports of logins run for another device (see module docs).
-    callback_routes: loams_desktop_preview::login::CallbackRoutes,
+    callback_routes: loams_agentd_preview::login::CallbackRoutes,
     /// Who an opaque live token belongs to (Pi's Claude login, a Copilot
     /// token), by token fingerprint — one profile call per token, not per
     /// list; a failed lookup waits [`IDENTITY_RETRY`] before the next. See
@@ -776,7 +776,7 @@ impl AgentAccounts {
     /// (the engine's P2P service, which serves them to the requester).
     pub fn with_callback_routes(
         config: AgentAccountsConfig,
-        routes: loams_desktop_preview::login::CallbackRoutes,
+        routes: loams_agentd_preview::login::CallbackRoutes,
     ) -> Self {
         Self::with_endpoints(config, ProbeEndpoints::default(), routes)
     }
@@ -784,7 +784,7 @@ impl AgentAccounts {
     fn with_endpoints(
         config: AgentAccountsConfig,
         endpoints: ProbeEndpoints,
-        callback_routes: loams_desktop_preview::login::CallbackRoutes,
+        callback_routes: loams_agentd_preview::login::CallbackRoutes,
     ) -> Self {
         // Startup sweep: a previous process that crashed mid-login leaves
         // `.login-<uuid>` throwaway CODEX_HOME dirs — each may hold live OAuth
@@ -841,12 +841,12 @@ impl AgentAccounts {
     }
 
     /// The ACP harness for `harness`'s CLI, honouring [`Self::override_cli`].
-    fn acp_harness(&self, harness: HarnessId) -> Option<loams_desktop_harness::AcpHarness> {
+    fn acp_harness(&self, harness: HarnessId) -> Option<loams_agentd_harness::AcpHarness> {
         let acp = match harness {
-            HarnessId::Grok => loams_desktop_harness::AcpHarness::grok(),
-            HarnessId::Devin => loams_desktop_harness::AcpHarness::devin(),
-            HarnessId::Hermes => loams_desktop_harness::AcpHarness::hermes(),
-            HarnessId::Antigravity => loams_desktop_harness::AcpHarness::antigravity(),
+            HarnessId::Grok => loams_agentd_harness::AcpHarness::grok(),
+            HarnessId::Devin => loams_agentd_harness::AcpHarness::devin(),
+            HarnessId::Hermes => loams_agentd_harness::AcpHarness::hermes(),
+            HarnessId::Antigravity => loams_agentd_harness::AcpHarness::antigravity(),
             _ => return None,
         };
         Some(match lock(&self.inner.cli_overrides).get(&harness) {
@@ -1574,7 +1574,7 @@ impl AgentAccounts {
                 &format!(
                     "<!doctype html><title>Sign-in failed</title><p>{}</p>\
                      <p>Return to Loams Desktop to try again.</p>",
-                    html_escape(&loams_desktop_harness::redact::redact_output(
+                    html_escape(&loams_agentd_harness::redact::redact_output(
                         &error.to_string()
                     ))
                 ),
@@ -1664,16 +1664,16 @@ impl AgentAccounts {
         &self,
         login_id: String,
         harness: HarnessId,
-        mut command: loams_desktop_harness::process::Command,
+        mut command: loams_agentd_harness::process::Command,
         home: PathBuf,
         completion: SpawnedCompletion,
         scan_url: fn(&str) -> Option<String>,
         requester: Option<&str>,
     ) -> Result<AgentLoginStart, EngineError> {
         command
-            .stdin(loams_desktop_harness::process::Stdio::null())
-            .stdout(loams_desktop_harness::process::Stdio::piped())
-            .stderr(loams_desktop_harness::process::Stdio::piped());
+            .stdin(loams_agentd_harness::process::Stdio::null())
+            .stdout(loams_agentd_harness::process::Stdio::piped())
+            .stderr(loams_agentd_harness::process::Stdio::piped());
         let child = match command.spawn() {
             Ok(child) => child,
             Err(err) => {
@@ -1727,12 +1727,12 @@ impl AgentAccounts {
         // login-shell snapshot, install dirs — the Windows npm payload
         // included) and compose the same child PATH a chat run gets, so
         // account login never diverges from what the harness can launch.
-        let mut command = match loams_desktop_harness::codex::login_command(&home) {
+        let mut command = match loams_agentd_harness::codex::login_command(&home) {
             Ok(command) => command,
             Err(err) => {
                 let _ = std::fs::remove_dir_all(&home);
                 return Err(EngineError::Other(match err {
-                    loams_desktop_harness::HarnessError::NotInstalled(hint) => {
+                    loams_agentd_harness::HarnessError::NotInstalled(hint) => {
                         format!(
                             "The `codex` CLI was not found on this device — install it first. ({hint})"
                         )
@@ -1742,9 +1742,9 @@ impl AgentAccounts {
             }
         };
         command
-            .stdin(loams_desktop_harness::process::Stdio::null())
-            .stdout(loams_desktop_harness::process::Stdio::piped())
-            .stderr(loams_desktop_harness::process::Stdio::piped());
+            .stdin(loams_agentd_harness::process::Stdio::null())
+            .stdout(loams_agentd_harness::process::Stdio::piped())
+            .stderr(loams_agentd_harness::process::Stdio::piped());
         // The CLI opens the authorization tab itself (via the `webbrowser`
         // crate) AND the app opens the page when this start reply lands —
         // users got TWO identical auth.openai.com tabs. `webbrowser` prefers
@@ -1797,9 +1797,9 @@ impl AgentAccounts {
         let task_state = state.clone();
         let handle = tokio::spawn(async move {
             let progress_state = task_state.clone();
-            let mut outcome = loams_desktop_harness::AcpHarness::antigravity()
+            let mut outcome = loams_agentd_harness::AcpHarness::antigravity()
                 .sign_in(browser, move |progress| match progress {
-                    loams_desktop_harness::acp::SignInProgress::OpenBrowser(url) => {
+                    loams_agentd_harness::acp::SignInProgress::OpenBrowser(url) => {
                         lock(&progress_state).url = Some(url);
                     }
                 })
@@ -1845,7 +1845,7 @@ impl AgentAccounts {
         self.reap_spawned_flows(HarnessId::Cursor);
         let login_id = new_id();
         let home = self.login_home(&login_id)?;
-        let cmd = loams_desktop_harness::cursor::login_command(&home.join("auth.json"))
+        let cmd = loams_agentd_harness::cursor::login_command(&home.join("auth.json"))
             .await
             .map_err(|e| {
                 let _ = std::fs::remove_dir_all(&home);
@@ -2157,7 +2157,7 @@ impl AgentAccounts {
             // worse — never hand them to the UI (or a log) raw.
             return Ok(AgentLoginPoll {
                 status: AgentLoginStatus::Error,
-                message: Some(loams_desktop_harness::redact::redact_output(&message)),
+                message: Some(loams_agentd_harness::redact::redact_output(&message)),
                 url: None,
                 callback_port: None,
             });
@@ -2225,7 +2225,7 @@ impl AgentAccounts {
                 },
                 Some(Err(message)) => AgentLoginPoll {
                     status: AgentLoginStatus::Error,
-                    message: Some(loams_desktop_harness::redact::redact_output(message)),
+                    message: Some(loams_agentd_harness::redact::redact_output(message)),
                     url: None,
                     callback_port: None,
                 },
@@ -3053,7 +3053,7 @@ impl AntigravityLogin {
 /// so the saved method is all there is. A first run saves no method; its
 /// default is the personal Google sign-in.
 async fn detect_antigravity_login(home: &Path, keychain: bool) -> Option<AntigravityLogin> {
-    let method = loams_desktop_harness::acp::antigravity_saved_auth_method(home)
+    let method = loams_agentd_harness::acp::antigravity_saved_auth_method(home)
         .unwrap_or_else(|| "oauth-personal".into());
     let token = match method.as_str() {
         "oauth-personal" => Some(("acp_token.json", "antigravity-acp")),
@@ -3762,12 +3762,11 @@ fn scan_device_code(output: &str) -> Option<String> {
         {
             return Some(token.to_string());
         }
-        if lower.contains("enter") || lower.trim_end().ends_with("code:") {
-            if let Some(next) = lines[ix + 1..].iter().find(|l| !l.trim().is_empty())
-                && is_code(next)
-            {
-                return Some(next.trim().to_string());
-            }
+        if (lower.contains("enter") || lower.trim_end().ends_with("code:"))
+            && let Some(next) = lines[ix + 1..].iter().find(|l| !l.trim().is_empty())
+            && is_code(next)
+        {
+            return Some(next.trim().to_string());
         }
     }
     None
@@ -3831,7 +3830,7 @@ fn scan_shim_fatal(output: &str) -> Option<String> {
 }
 
 type LoginChildHandles = (
-    Arc<Mutex<Option<loams_desktop_harness::process::Child>>>,
+    Arc<Mutex<Option<loams_agentd_harness::process::Child>>>,
     Arc<Mutex<String>>,
     Arc<Mutex<Option<Option<i32>>>>,
 );
@@ -3840,7 +3839,7 @@ type LoginChildHandles = (
 /// (the URL can land on either stream), and a monitor polls `try_wait` so the
 /// child is reaped without owning it — the cancel path needs concurrent kill
 /// access.
-fn wire_login_child(mut child: loams_desktop_harness::process::Child) -> LoginChildHandles {
+fn wire_login_child(mut child: loams_agentd_harness::process::Child) -> LoginChildHandles {
     let output = Arc::new(Mutex::new(String::new()));
     for pipe in [
         child
@@ -5122,7 +5121,7 @@ mod login_tests {
     #[tokio::test]
     async fn a_login_for_another_device_publishes_its_callback_until_it_ends() {
         let tmp = tempfile::tempdir().unwrap();
-        let routes = loams_desktop_preview::login::CallbackRoutes::default();
+        let routes = loams_agentd_preview::login::CallbackRoutes::default();
         let accounts = AgentAccounts::with_callback_routes(config(tmp.path()), routes.clone());
         // A local login publishes nothing.
         let local = accounts.start_login(HarnessId::ClaudeCode).await.unwrap();

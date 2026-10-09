@@ -14,12 +14,27 @@
 //! first uncorrelated idle), manufacturing done-status bugs the native
 //! wires don't have (decision record: docs/research/acp.md).
 
+// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
+// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
+#![allow(
+    clippy::collapsible_if,
+    clippy::type_complexity,
+    clippy::too_many_arguments,
+    clippy::needless_borrow,
+    clippy::unnecessary_get_then_check,
+    clippy::trim_split_whitespace,
+    clippy::map_entry,
+    clippy::field_reassign_with_default,
+    clippy::manual_pattern_char_comparison,
+    clippy::unnecessary_unwrap
+)]
+
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use tokio::sync::{mpsc, oneshot};
 pub use tokio_util::sync::CancellationToken;
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     AgentEvent, HarnessId, Model, ReasoningLevel, RunRequest, SlashCommand, SteeringMode,
     UserInputAnswer, UserInputQuestion,
 };
@@ -141,7 +156,7 @@ pub trait Harness: Send + Sync {
     async fn skills(
         &self,
         cwd: &std::path::Path,
-    ) -> Result<Option<Vec<loams_desktop_proto::invocation::Skill>>, HarnessError> {
+    ) -> Result<Option<Vec<loams_agentd_proto::invocation::Skill>>, HarnessError> {
         if self.id() == HarnessId::Mock {
             return Ok(None);
         }

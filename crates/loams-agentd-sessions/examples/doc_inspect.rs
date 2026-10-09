@@ -8,14 +8,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let root = args.next().expect("store root");
     let chat_id = args.next().expect("chat id");
-    let store = loams_desktop_sync::DocsStore::open(std::path::PathBuf::from(root))?;
+    let store = loams_agentd_store::DocsStore::open(std::path::PathBuf::from(root))?;
     let Some(bytes) = store.load_snapshot(&chat_id)? else {
         println!("NO SNAPSHOT for {chat_id}");
         return Ok(());
     };
     let raw = loro::LoroDoc::new();
     raw.import(&bytes)?;
-    let doc = loams_desktop_doc::SessionDoc::from_doc(raw);
+    let doc = loams_agentd_doc::SessionDoc::from_doc(raw);
     let entries = doc.read_entries()?;
     println!("== messages: {} ==", entries.len());
     for e in &entries {

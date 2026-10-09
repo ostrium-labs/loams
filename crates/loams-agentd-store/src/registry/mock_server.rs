@@ -1,6 +1,6 @@
 //! In-process registry server speaking the same JSON WS protocol as
 //! `edge/src/registry-room.ts`, built on the SAME merge fn the client uses
-//! (`loams_desktop_doc::apply_op`). Test infrastructure only (`mock-server` feature):
+//! (`loams_agentd_doc::apply_op`). Test infrastructure only (`mock-server` feature):
 //! loams-desktop-sync's client tests and loams-desktop-engine's two-engine integration tests
 //! run against this; TS↔Rust interop is proven separately against a real DO
 //! by the `--ignored` live-edge tests and scripts/e2e-smoke.sh.
@@ -14,7 +14,7 @@ use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
-use loams_desktop_doc::{RegistryRow, RowOp, apply_op};
+use loams_agentd_doc::{RegistryRow, RowOp, apply_op};
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)

@@ -20,16 +20,16 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandPayload, SessionDoc, SessionMessageEntry,
 };
-use loams_desktop_engine::{EngineCore, HarnessRegistry, RunJournal};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SteeringMode,
 };
-use loams_desktop_sync::DocsStore;
+use loams_agentd_sessions::{EngineCore, HarnessRegistry, RunJournal};
+use loams_agentd_store::DocsStore;
 
 const CHAT: &str = "chat-restart";
 
@@ -459,7 +459,7 @@ impl Harness for PersistentHarness {
     }
     async fn run(
         &self,
-        request: RunRequest,
+        _request: RunRequest,
         controls: RunControls,
     ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
         *self.runs_started.lock().unwrap() += 1;
@@ -861,7 +861,7 @@ async fn real_claude_remembers_codeword_across_engine_restart() {
     let assemble_real = || {
         EngineCore::assemble(
             &dir,
-            Arc::new(loams_desktop_engine::default_registry()),
+            Arc::new(loams_agentd_sessions::default_registry()),
             HarnessId::ClaudeCode,
             None,
         )

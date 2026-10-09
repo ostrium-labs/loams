@@ -1,15 +1,15 @@
 //! Pi's native session id survives an idle process crash through dispatch.
 #![cfg(unix)]
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::PiHarness;
-use loams_desktop_proto::{HarnessId, RunRequest, SandboxLevel};
+use loams_agentd_harness::PiHarness;
+use loams_agentd_proto::{HarnessId, RunRequest, SandboxLevel};
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::{sync::Arc, time::Duration};
 
 #[tokio::test]
 async fn pi_idle_crash_next_dispatch_loads_stored_session() {
     let dir = tempfile::tempdir().unwrap();
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../harness/tests/fixtures/fake-pi-rpc.py");
+        .join("../loams-agentd-harness/tests/fixtures/fake-pi-rpc.py");
     let registry = HarnessRegistry::new();
     registry.register(Arc::new(
         PiHarness::new()
@@ -43,7 +43,7 @@ async fn pi_idle_crash_next_dispatch_loads_stored_session() {
             loop {
                 let entries = handle.doc().read_entries().unwrap();
                 if entries.iter().any(|entry| entry.parts.iter().any(|part|
-                    matches!(part, loams_desktop_doc::MessagePart::Text { text, .. } if text == &format!("reply:{prompt}"))
+                    matches!(part, loams_agentd_doc::MessagePart::Text { text, .. } if text == &format!("reply:{prompt}"))
                 )) { break; }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
@@ -61,7 +61,7 @@ async fn timed_out_native_question_resolves_and_finishes_without_user_input() {
         PiHarness::new()
             .with_executable(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../harness/tests/fixtures/fake-pi-rpc.py"),
+                    .join("../loams-agentd-harness/tests/fixtures/fake-pi-rpc.py"),
             )
             .with_session_store(dir.path().join("index"))
             .with_graces(Duration::from_millis(50), Duration::from_millis(100)),
@@ -95,7 +95,7 @@ async fn timed_out_native_question_resolves_and_finishes_without_user_input() {
         while !core
             .sessions
             .session_status(chat)
-            .is_some_and(|s| s.status == loams_desktop_proto::SessionStatus::AwaitingInput)
+            .is_some_and(|s| s.status == loams_agentd_proto::SessionStatus::AwaitingInput)
         {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
@@ -105,13 +105,13 @@ async fn timed_out_native_question_resolves_and_finishes_without_user_input() {
                 entry.parts.iter().any(|part| {
                     matches!(
                         part,
-                        loams_desktop_doc::MessagePart::Input { resolved: true, .. }
+                        loams_agentd_doc::MessagePart::Input { resolved: true, .. }
                     )
                 })
             }) && core
                 .sessions
                 .session_status(chat)
-                .is_some_and(|s| s.status == loams_desktop_proto::SessionStatus::Idle)
+                .is_some_and(|s| s.status == loams_agentd_proto::SessionStatus::Idle)
             {
                 break;
             }

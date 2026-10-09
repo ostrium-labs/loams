@@ -6,7 +6,7 @@ use hyper::{
     body::{Frame, Incoming},
 };
 use hyper_util::rt::TokioIo;
-use loams_desktop_preview::{
+use loams_agentd_preview::{
     catalog::Catalog,
     discovery::Listener,
     mux::{self, BoxIo, Connector},
@@ -113,10 +113,10 @@ async fn server(stop: CancellationToken, active: Arc<AtomicUsize>) -> u16 {
                                             let _ = socket.flush().await;
                                             break;
                                         }
-                                        if message.is_text() || message.is_binary() {
-                                            if socket.send(message).await.is_err() {
-                                                break;
-                                            }
+                                        if (message.is_text() || message.is_binary())
+                                            && socket.send(message).await.is_err()
+                                        {
+                                            break;
                                         }
                                     }
                                 });

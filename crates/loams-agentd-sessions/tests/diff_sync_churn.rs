@@ -13,8 +13,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use loams_desktop_engine::{CheckoutDiffSync, EngineCore, HarnessRegistry};
-use loams_desktop_proto::CheckoutDiff;
+use loams_agentd_proto::CheckoutDiff;
+use loams_agentd_sessions::{CheckoutDiffSync, EngineCore, HarnessRegistry};
 
 async fn git(cwd: &Path, args: &[&str]) {
     let output = tokio::process::Command::new("git")
@@ -50,7 +50,7 @@ fn assemble(dir: &Path) -> EngineCore {
     EngineCore::assemble(
         dir,
         Arc::new(HarnessRegistry::new()),
-        loams_desktop_proto::HarnessId::Mock,
+        loams_agentd_proto::HarnessId::Mock,
         None,
     )
     .expect("engine assembles")

@@ -9,8 +9,8 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-use loams_desktop_engine::{Auth, AuthConfig, AuthState};
-use loams_desktop_rpc::{TokenError, TokenSource};
+use loams_agentd_rpc::{TokenError, TokenSource};
+use loams_agentd_sessions::{Auth, AuthConfig, AuthState};
 
 // ---------------------------------------------------------------------------
 // Fake JWTs
@@ -547,19 +547,19 @@ async fn twenty_consumers_and_background_loop_share_a_failed_refresh() {
 
 #[tokio::test]
 async fn temporary_token_errors_reach_http_and_websocket_consumers() {
-    use loams_desktop_sync::chat_client::ChatTransport;
+    use loams_agentd_store::chat_client::ChatTransport;
     let edge = StubEdge::start().await;
     edge.state.drop_refresh.store(true, Ordering::SeqCst);
     let dir = tempfile::tempdir().unwrap();
     let auth = persisted_auth(&edge, dir.path());
-    let edge_config = loams_desktop_engine::EdgeConfig::new(edge.url(), Arc::new(auth.clone()));
+    let edge_config = loams_agentd_sessions::EdgeConfig::new(edge.url(), Arc::new(auth.clone()));
 
     let websocket = edge_config.room_url("/registry/org_1/ws").url().await;
     assert!(matches!(
         websocket,
-        Err(loams_desktop_sync::SyncError::TemporarilyUnavailable(_))
+        Err(loams_agentd_store::SyncError::TemporarilyUnavailable(_))
     ));
-    let transport = loams_desktop_engine::chat2_host::EdgeChatTransport::new(
+    let transport = loams_agentd_sessions::chat2_host::EdgeChatTransport::new(
         reqwest::Client::new(),
         edge_config,
         "chat",
@@ -567,11 +567,11 @@ async fn temporary_token_errors_reach_http_and_websocket_consumers() {
     );
     assert!(matches!(
         transport.fetch_rows(0).await,
-        Err(loams_desktop_sync::SyncError::TemporarilyUnavailable(_))
+        Err(loams_agentd_store::SyncError::TemporarilyUnavailable(_))
     ));
     assert!(matches!(
         auth.list_orgs().await,
-        Err(loams_desktop_engine::EngineError::Token(
+        Err(loams_agentd_sessions::EngineError::Token(
             TokenError::TemporarilyUnavailable(_)
         ))
     ));

@@ -1,7 +1,7 @@
 //! Per-section metadata and one placement register per session. Concurrent moves
 //! can never place a session in two sections, or in both a section and Pinned.
 use super::*;
-use loams_desktop_proto::{SidebarSection, SidebarSectionChange};
+use loams_agentd_proto::{SidebarSection, SidebarSectionChange};
 
 const SECTIONS: &str = "sidebarSections";
 const LOCATIONS: &str = "sidebarLocations";
@@ -16,11 +16,10 @@ impl RegistryDoc {
             if let (Some(ms), Some(counter)) = (
                 parts.next().and_then(|v| v.parse::<i64>().ok()),
                 parts.next().and_then(|v| v.parse::<u32>().ok()),
-            ) {
-                if (ms, counter) > (self.clock.last_ms, self.clock.counter) {
-                    self.clock.last_ms = ms;
-                    self.clock.counter = counter;
-                }
+            ) && (ms, counter) > (self.clock.last_ms, self.clock.counter)
+            {
+                self.clock.last_ms = ms;
+                self.clock.counter = counter;
             }
         }
     }

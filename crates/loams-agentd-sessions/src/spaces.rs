@@ -30,7 +30,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
-use loams_desktop_proto::Space;
+use loams_agentd_proto::Space;
 
 use crate::repos::Repos;
 use crate::workspace_host::WorkspaceHost;

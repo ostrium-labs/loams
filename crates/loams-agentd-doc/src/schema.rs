@@ -341,7 +341,7 @@ impl SessionDoc {
     }
 
     /// A single atomic value prevents tokens and capacity from tearing on sync.
-    pub fn context_usage(&self) -> Option<loams_desktop_proto::ContextUsage> {
+    pub fn context_usage(&self) -> Option<loams_agentd_proto::ContextUsage> {
         let loro::ValueOrContainer::Value(LoroValue::String(value)) =
             self.doc.get_map("meta").get("contextUsage")?
         else {
@@ -356,7 +356,7 @@ impl SessionDoc {
         window: Option<u64>,
     ) -> Result<(), DocError> {
         let previous = self.context_usage().unwrap_or_default();
-        let next = loams_desktop_proto::ContextUsage {
+        let next = loams_agentd_proto::ContextUsage {
             tokens: tokens.or(previous.tokens),
             window: window.filter(|n| *n > 0).or(previous.window),
         };
@@ -764,7 +764,7 @@ impl SessionDoc {
                             _ => None,
                         })
                         .and_then(|j| {
-                            serde_json::from_value::<loams_desktop_proto::ToolCall>(j).ok()
+                            serde_json::from_value::<loams_agentd_proto::ToolCall>(j).ok()
                         })
                         .is_some_and(|c| c.is_subagent_spawn());
                     if !is_spawn {
@@ -1437,7 +1437,7 @@ mod tests {
         assert_eq!(entries[0].role, MessageRole::System);
         assert_eq!(entries[0].parts, vec![seam]);
     }
-    use loams_desktop_proto::{AgentEvent, ToolCall};
+    use loams_agentd_proto::{AgentEvent, ToolCall};
 
     #[test]
     fn opening_tail_bounds_parts_and_preserves_continuation_ids() {
@@ -1563,7 +1563,7 @@ mod tests {
         let mut w = SegmentWriter::begin(&doc, "e1", "dev", 1).unwrap();
         let mut part = MessagePart::Tool {
             id: "call_alpha".into(),
-            call: loams_desktop_proto::ToolCall::Unknown {
+            call: loams_agentd_proto::ToolCall::Unknown {
                 name: "Agent: alpha".into(),
                 input: None,
             },
@@ -1616,7 +1616,7 @@ mod tests {
         // subtype and turned Run chips into dead spawn links, 2026-08-20).
         let doc = SessionDoc::init("c1").unwrap();
         let mut w = SegmentWriter::begin(&doc, "e1", "dev", 1).unwrap();
-        let tool = |id: &str, call: loams_desktop_proto::ToolCall| MessagePart::Tool {
+        let tool = |id: &str, call: loams_agentd_proto::ToolCall| MessagePart::Tool {
             id: id.into(),
             call,
             is_error: false,
@@ -1634,13 +1634,13 @@ mod tests {
         let parts = vec![
             tool(
                 "toolu_bash",
-                loams_desktop_proto::ToolCall::Exec {
+                loams_agentd_proto::ToolCall::Exec {
                     command: "git clone …".into(),
                 },
             ),
             tool(
                 "toolu_spawn",
-                loams_desktop_proto::ToolCall::Unknown {
+                loams_agentd_proto::ToolCall::Unknown {
                     name: "Agent: scan".into(),
                     input: None,
                 },
@@ -1897,7 +1897,7 @@ mod tests {
                 id: "t1".into(),
                 is_error: false,
                 output: Some("total 0\nmore lines".into()),
-                diff: Some(loams_desktop_proto::ToolDiff {
+                diff: Some(loams_agentd_proto::ToolDiff {
                     path: "/w/a.rs".into(),
                     old_text: Some("old\n".into()),
                     new_text: "new\n".into(),
@@ -1953,7 +1953,7 @@ mod tests {
                 is_error: false,
                 resolved: true,
                 output: Some("full inline output\nline 2".into()),
-                diff: Some(loams_desktop_proto::ToolDiff {
+                diff: Some(loams_agentd_proto::ToolDiff {
                     path: "/w/a.rs".into(),
                     old_text: Some("old".into()),
                     new_text: "new".into(),
@@ -2129,7 +2129,7 @@ mod context_usage_tests {
             .unwrap();
         assert_eq!(
             replica.context_usage(),
-            Some(loams_desktop_proto::ContextUsage {
+            Some(loams_agentd_proto::ContextUsage {
                 tokens: Some(0),
                 window: Some(200_000)
             })

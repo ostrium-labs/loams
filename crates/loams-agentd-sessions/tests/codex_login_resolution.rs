@@ -8,8 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
-use loams_desktop_engine::{AgentAccounts, AgentAccountsConfig};
-use loams_desktop_proto::{AgentLoginMode, HarnessId};
+use loams_agentd_proto::{AgentLoginMode, HarnessId};
+use loams_agentd_sessions::{AgentAccounts, AgentAccountsConfig};
 
 fn test_accounts(root: &Path) -> AgentAccounts {
     let config = AgentAccountsConfig {

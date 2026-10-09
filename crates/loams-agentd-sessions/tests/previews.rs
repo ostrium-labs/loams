@@ -1,7 +1,7 @@
 use futures::StreamExt;
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_proto::{HarnessId, PreviewService};
-use loams_desktop_rpc::{RpcReply, RpcService, methods};
+use loams_agentd_proto::{HarnessId, PreviewService};
+use loams_agentd_rpc::{RpcReply, RpcService, methods};
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::{sync::Arc, time::Duration};
 
 fn service(device: &str, cwd: &std::path::Path, id: &str) -> PreviewService {

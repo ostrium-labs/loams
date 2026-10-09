@@ -1,11 +1,11 @@
 //! Exercise the actual manual/setup runner with commands at the supported limit.
 #![cfg(unix)]
 
-use loams_desktop_engine::project_actions::{
+use loams_agentd_proto::{ProjectActionDraft, ProjectActionIcon};
+use loams_agentd_sessions::project_actions::{
     MAX_PROJECT_ACTION_COMMAND_BYTES, launch_project_action, launch_project_setup_action,
 };
-use loams_desktop_engine::{ProjectActionsStore, Terminals};
-use loams_desktop_proto::{ProjectActionDraft, ProjectActionIcon};
+use loams_agentd_sessions::{ProjectActionsStore, Terminals};
 use std::time::Duration;
 
 #[tokio::test]

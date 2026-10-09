@@ -1,86 +1,48 @@
-//! loams-desktop — headed by default; `loams-desktop headless` runs the engine alone. Both start
-//! local-only without credentials. `loams-desktop login` and `loams-desktop logout` select the
-//! profile used by the next engine start without mutating a live runtime.
+//! loams-agentd: Loams Desktop's per-user agent daemon (design §50).
+//!
+//! Headless only (D782): `run` serves the sessions engine and its harnesses on
+//! the loopback IPC port, `mcp` is the stdio MCP shim injected into harness
+//! runs, `status` reports a running daemon, and `version` prints the build.
+//! Two hidden entry points serve harnesses: `loams bot-acp` (Loams Bot over
+//! ACP) and `--noop-browser` (browser suppression for Antigravity sign-in).
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-mod auth_cli;
-mod daemon;
 mod paths;
-mod update_cli;
+mod status;
 
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
-    name = "loams-desktop",
-    version,
-    about = "Multi-device controller for coding agents"
+    name = "loams-agentd",
+    about = "Loams Desktop's per-user agent daemon",
+    disable_version_flag = true
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Command>,
-    /// Open a Loams Desktop conversation URL.
-    #[arg(value_name = "URL")]
-    open_url: Option<String>,
-    #[cfg(windows)]
-    #[arg(long, hide = true)]
-    wait_for_exit: Option<u32>,
+    command: Command,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run the engine without a UI (local-only unless a saved session enables sync).
-    Headless,
-    /// Sign in and enable sync on the next engine start.
-    Login,
-    /// Remove the saved session and return to local-only on the next start.
-    Logout,
-    /// Show workspace mode, optional auth, and engine status.
+    /// Run the daemon in the foreground: the sessions engine, its harnesses
+    /// and the IPC server (local-only).
+    Run,
+    /// Serve the MCP (Model Context Protocol) server on stdin/stdout,
+    /// proxying to the running daemon's IPC. Harness runs get it injected.
+    /// Logs go to stderr; stdout is the protocol.
+    Mcp,
+    /// Show the data directory and whether a daemon is running.
     Status,
-    /// Live sync introspection from the running engine: per-room connection
-    /// state, last pushed-frame/ack ages, rejoin/probe/resync counters.
-    Sync,
-    /// Loams integration: status, login, logout, bot, bot-acp, mock
-    /// (`loams-desktop loams --help`). Everything lives in the `loams-desktop-link` crate.
+    /// Print the daemon's version.
+    Version,
+    /// Loams integration used by the Loams Bot harness (`loams bot-acp`).
+    #[command(hide = true)]
     Loams {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    #[cfg(target_os = "linux")]
-    /// Trigger an Appshot in the running headed instance (desktop shortcut fallback).
-    Appshot,
-    /// Serve the Loams Desktop MCP (Model Context Protocol) server on stdin/stdout,
-    /// proxying to the running engine's IPC. Agents use it to create, read,
-    /// and message chats. Logs go to stderr; stdout is the protocol.
-    Mcp,
-    /// Manage `loams-desktop headless` as a background service (launchd / systemd --user).
-    Daemon {
-        #[command(subcommand)]
-        command: DaemonCommand,
-    },
-    /// Check for a newer release and apply it (download → verify → swap →
-    /// service restart). `--check` only reports (exits 1 when one is available).
-    Update {
-        #[arg(long)]
-        check: bool,
-    },
-}
-
-#[derive(Subcommand)]
-enum DaemonCommand {
-    /// Install, enable, and start the service (captures LOAMS_DESKTOP_* env).
-    Install,
-    /// Stop and remove the service.
-    Uninstall,
-    /// Start the installed service.
-    Start,
-    /// Stop the service.
-    Stop,
-    /// Restart the service.
-    Restart,
-    /// Show the service manager's view of the daemon.
-    Status,
 }
 
 /// Production edge (Cloudflare Worker + Durable Objects on the loams-desktop.sh zone).
@@ -166,27 +128,23 @@ fn spawn_malloc_trimmer() {
 
 fn main() -> anyhow::Result<()> {
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--noop-browser")) {
+        // A harness's `BROWSER` points here so a sign-in page never opens
+        // (the Antigravity driver, `loams-agentd-harness` `noop_browser`).
         return Ok(());
     }
     #[cfg(windows)]
     attach_parent_console();
     let cli = Cli::parse();
-    #[cfg(windows)]
-    if let Some(pid) = cli.wait_for_exit {
-        loams_desktop_update::windows::wait_for_exit(pid)?;
-    } else if matches!(&cli.command, None | Some(Command::Headless)) {
-        loams_desktop_update::windows::cleanup_previous_image();
-    }
     // Long-running modes log at info, one-shot CLI commands at warn (RUST_LOG
     // overrides either).
     // loro's internal block-encode diagnostics log at info and flood
     // journald on every snapshot export — enough to fill a disk on a
     // long-running headless host. Quiet them by default (RUST_LOG still
     // overrides the whole filter).
-    let long_running = matches!(&cli.command, None | Some(Command::Headless));
-    // loams: `loams-desktop loams bot-acp` speaks ACP on stdout, like `mcp`.
-    let stdout_is_protocol = matches!(&cli.command, Some(Command::Mcp))
-        || matches!(&cli.command, Some(Command::Loams { args }) if loams_desktop_link::cli::owns_stdout(args));
+    let long_running = matches!(&cli.command, Command::Run);
+    // loams: `loams-agentd loams bot-acp` speaks ACP on stdout, like `mcp`.
+    let stdout_is_protocol = matches!(&cli.command, Command::Mcp)
+        || matches!(&cli.command, Command::Loams { args } if loams_agentd_link::cli::owns_stdout(args));
     let default_filter = if long_running {
         "info,loro_internal=warn,loro=warn"
     } else {
@@ -194,25 +152,18 @@ fn main() -> anyhow::Result<()> {
     };
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| default_filter.into());
-    // Long-running modes mirror stdout logging to {data_dir}/logs — a headed
-    // app launched from Finder has no visible stdout, which left every sync
-    // wedge report ("stale until restart") with zero diagnostics even though
-    // the engine logs the exact failure line. One file per launch, previous
-    // launch kept as `.old`.
+    // `run` mirrors stdout logging to {data_dir}/logs: a daemon started by a
+    // service manager or by Electron has no visible stdout. One file per
+    // launch, the previous launch kept as `.old`.
     let log_file = if long_running {
-        let mode = if cli.command.is_some() {
-            "headless"
-        } else {
-            "headed"
-        };
-        open_log_file(mode)
+        open_log_file("run")
     } else {
         None
     };
     {
         use tracing_subscriber::layer::SubscriberExt;
         use tracing_subscriber::util::SubscriberInitExt;
-        // `loams-desktop mcp` owns stdout for the protocol: a single log line on it
+        // `loams-agentd mcp` owns stdout for the protocol: a single log line on it
         // would corrupt the JSON-RPC stream, so its diagnostics go to stderr.
         if stdout_is_protocol {
             tracing_subscriber::registry()
@@ -255,75 +206,28 @@ fn main() -> anyhow::Result<()> {
     }
 
     match cli.command {
-        Some(Command::Headless) => {
+        Command::Run => {
             let runtime = tokio::runtime::Runtime::new()?;
             runtime.block_on(async {
-                let engine = loams_desktop_engine::Engine::new(engine_config_from_env());
+                let engine = loams_agentd_sessions::Engine::new(engine_config_from_env());
                 engine.run().await
             })
         }
-        Some(Command::Login) => {
+        Command::Mcp => {
             let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(auth_cli::login(engine_config_from_env()))
-        }
-        Some(Command::Logout) => {
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(auth_cli::logout(engine_config_from_env()))
-        }
-        Some(Command::Status) => {
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(auth_cli::status(engine_config_from_env()))
-        }
-        Some(Command::Sync) => {
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(sync_cli(engine_config_from_env().ipc_port))
-        }
-        Some(Command::Mcp) => {
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(loams_desktop_mcp::run(
-                loams_desktop_mcp::McpConfig::from_env(),
+            runtime.block_on(loams_agentd_mcp::run(
+                loams_agentd_mcp::McpConfig::from_env(),
             ))
         }
-        Some(Command::Loams { args }) => {
-            let runtime = tokio::runtime::Runtime::new()?;
-            let code = runtime.block_on(loams_desktop_link::cli::run(args))?;
-            std::process::exit(code);
-        }
-        #[cfg(target_os = "linux")]
-        Some(Command::Appshot) => {
-            loams_desktop_ui::appshots::request_running_appshot(&engine_config_from_env().data_dir)
-                .map_err(anyhow::Error::msg)
-        }
-        Some(Command::Update { check }) => {
-            let runtime = tokio::runtime::Runtime::new()?;
-            runtime.block_on(update_cli::update(&edge_url_from_env(), check))
-        }
-        Some(Command::Daemon { command }) => match command {
-            DaemonCommand::Install => daemon::install(&engine_config_from_env().data_dir),
-            DaemonCommand::Uninstall => daemon::uninstall(),
-            DaemonCommand::Start => daemon::start(),
-            DaemonCommand::Stop => daemon::stop(),
-            DaemonCommand::Restart => daemon::restart(),
-            DaemonCommand::Status => daemon::status(),
-        },
-        None => {
-            let edge_token = std::env::var("LOAMS_DESKTOP_EDGE_TOKEN").ok();
-            // Headed: the UI probes LOAMS_DESKTOP_IPC_PORT and connects to a running
-            // daemon, or embeds the engine in-process (ARCHITECTURE §1).
-            loams_desktop_ui::run_app(loams_desktop_ui::UiConfig {
-                data_dir: paths::data_dir(),
-                ipc_port: std::env::var("LOAMS_DESKTOP_IPC_PORT")
-                    .ok()
-                    .and_then(|p| p.parse().ok())
-                    .unwrap_or(27654),
-                edge_url: edge_url_from_env(),
-                workos_client_id: workos_client_id_from_env(&edge_token),
-                edge_token,
-                org_id: std::env::var("LOAMS_DESKTOP_ORG_ID").ok(),
-                default_harness: loams_desktop_ui::HarnessId::ClaudeCode,
-                initial_url: cli.open_url,
-            });
+        Command::Status => status::status(&engine_config_from_env()),
+        Command::Version => {
+            println!("loams-agentd {}", env!("CARGO_PKG_VERSION"));
             Ok(())
+        }
+        Command::Loams { args } => {
+            let runtime = tokio::runtime::Runtime::new()?;
+            let code = runtime.block_on(loams_agentd_link::cli::run(args))?;
+            std::process::exit(code);
         }
     }
 }
@@ -356,10 +260,10 @@ fn attach_parent_console() {
 /// The env-resolved engine configuration shared by `headless`, `login`,
 /// `logout`, and `status` — one resolution so the CLI auth commands always
 /// operate on the exact session the daemon will load.
-fn engine_config_from_env() -> loams_desktop_engine::EngineConfig {
+fn engine_config_from_env() -> loams_agentd_sessions::EngineConfig {
     // Dev-mode bearer (no WorkOS): an explicit token enables sync.
     let edge_token = std::env::var("LOAMS_DESKTOP_EDGE_TOKEN").ok();
-    loams_desktop_engine::EngineConfig {
+    loams_agentd_sessions::EngineConfig {
         data_dir: paths::data_dir(),
         edge_url: edge_url_from_env(),
         ipc_port: std::env::var("LOAMS_DESKTOP_IPC_PORT")
@@ -379,154 +283,24 @@ fn engine_config_from_env() -> loams_desktop_engine::EngineConfig {
 
 /// `LOAMS_DESKTOP_HARNESS` (kebab-case id) picks the default harness for chats without a
 /// config row — `mock` powers the e2e smoke; default `claude-code`.
-fn harness_from_env() -> loams_desktop_engine::HarnessId {
+fn harness_from_env() -> loams_agentd_sessions::HarnessId {
     match std::env::var("LOAMS_DESKTOP_HARNESS")
         .as_deref()
         .map(str::trim)
     {
-        Ok("mock") => loams_desktop_engine::HarnessId::Mock,
-        Ok("codex") => loams_desktop_engine::HarnessId::Codex,
-        Ok("cursor") => loams_desktop_engine::HarnessId::Cursor,
-        Ok("devin") => loams_desktop_engine::HarnessId::Devin,
-        Ok("grok") => loams_desktop_engine::HarnessId::Grok,
-        Ok("hermes") => loams_desktop_engine::HarnessId::Hermes,
-        Ok("pi") => loams_desktop_engine::HarnessId::Pi,
-        Ok("antigravity") => loams_desktop_engine::HarnessId::Antigravity,
-        _ => loams_desktop_engine::HarnessId::ClaudeCode,
+        Ok("mock") => loams_agentd_sessions::HarnessId::Mock,
+        Ok("codex") => loams_agentd_sessions::HarnessId::Codex,
+        Ok("cursor") => loams_agentd_sessions::HarnessId::Cursor,
+        Ok("devin") => loams_agentd_sessions::HarnessId::Devin,
+        Ok("grok") => loams_agentd_sessions::HarnessId::Grok,
+        Ok("hermes") => loams_agentd_sessions::HarnessId::Hermes,
+        Ok("pi") => loams_agentd_sessions::HarnessId::Pi,
+        Ok("antigravity") => loams_agentd_sessions::HarnessId::Antigravity,
+        _ => loams_agentd_sessions::HarnessId::ClaudeCode,
     }
 }
 
-/// `loams-desktop sync`: dial the running engine's IPC and print per-room sync state.
-/// The introspection surface every 2026-08 incident was missing — "is this
-/// device's workspace room actually receiving?" as a one-liner.
-async fn sync_cli(ipc_port: u16) -> anyhow::Result<()> {
-    let client = loams_desktop_rpc::connect_ws(&format!("ws://127.0.0.1:{ipc_port}"))
-        .await
-        .map_err(|e| {
-            anyhow::anyhow!(
-                "no engine listening on 127.0.0.1:{ipc_port} ({e}) — is loams-desktop running?"
-            )
-        })?;
-    let status = client
-        .call(
-            loams_desktop_rpc::methods::SYNC_STATUS,
-            serde_json::json!({}),
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("SyncStatus failed: {e}"))?;
-    let now = status.get("nowMs").and_then(|v| v.as_i64()).unwrap_or(0);
-    let age = |ms: i64| -> String {
-        if ms <= 0 {
-            return "never".into();
-        }
-        let s = (now - ms).max(0) / 1000;
-        if s >= 3600 {
-            format!("{}h{}m ago", s / 3600, (s % 3600) / 60)
-        } else if s >= 60 {
-            format!("{}m{}s ago", s / 60, s % 60)
-        } else {
-            format!("{s}s ago")
-        }
-    };
-    let room_line = |room: Option<&serde_json::Value>| -> String {
-        let Some(room) = room else {
-            return "no room (dialing or edge-less)".into();
-        };
-        let get = |k: &str| room.get(k).and_then(|v| v.as_i64()).unwrap_or(0);
-        // REJECTED is loud and only shown when nonzero: rejected writes with
-        // a fresh-looking room is exactly the latched-session wedge
-        // (2026-08-04) this readout previously masked.
-        let rejected = get("rejected");
-        format!(
-            "{} pushed {} · acked {} · rejoins {} probes {} resyncs {} drops {}{}",
-            if room.get("connected").and_then(|v| v.as_bool()) == Some(true) {
-                "connected ·"
-            } else {
-                "DISCONNECTED ·"
-            },
-            age(get("lastPushedMs")),
-            age(get("lastAckMs")),
-            get("rejoins"),
-            get("probes"),
-            get("fullResyncs"),
-            get("disconnects"),
-            if rejected > 0 {
-                format!(" REJECTED {rejected}")
-            } else {
-                String::new()
-            },
-        )
-    };
-    println!(
-        "Device:    {}",
-        status
-            .get("deviceId")
-            .and_then(|v| v.as_str())
-            .unwrap_or("?")
-    );
-    println!(
-        "Workspace: {}",
-        room_line(status.get("workspace").filter(|v| !v.is_null()))
-    );
-    let chats = status
-        .get("chats")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    if chats.is_empty() {
-        println!("Chats:     none open");
-    }
-    // Chat rooms speak chat2: cursor/head tell "am I caught up?", pending
-    // tells "did my writes leave?", resets/rejected are the loud tells.
-    let chat_line = |room: Option<&serde_json::Value>| -> String {
-        let Some(room) = room else {
-            return "no room (dialing or edge-less)".into();
-        };
-        let get = |k: &str| room.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-        let resets = get("serverResets");
-        let rejected = get("rejected");
-        format!(
-            "{} cursor {}/{} · pending {} · rows {} ({}KB) · rejoins {} drops {}{}{}",
-            if room.get("connected").and_then(|v| v.as_bool()) == Some(true) {
-                "connected ·"
-            } else {
-                "DISCONNECTED ·"
-            },
-            get("cursor"),
-            get("headSeq"),
-            get("pendingPushes"),
-            get("rowCount"),
-            get("rowBytes") / 1024,
-            get("rejoins"),
-            get("disconnects"),
-            if resets > 0 {
-                format!(" RESETS {resets}")
-            } else {
-                String::new()
-            },
-            if rejected > 0 {
-                format!(" REJECTED {rejected}")
-            } else {
-                String::new()
-            },
-        )
-    };
-    for chat in &chats {
-        println!(
-            "Chat {}: {}",
-            chat.get("chatId")
-                .and_then(|v| v.as_str())
-                .map(|s| &s[..s.len().min(8)])
-                .unwrap_or("?"),
-            chat_line(chat.get("room").filter(|v| !v.is_null()))
-        );
-    }
-    Ok(())
-}
-
-/// `{data_dir}/logs/loams-desktop-{mode}.log`, previous launch preserved as `.old`.
-/// Headed and headless are separate files so an embedded-engine app and a
-/// daemon on the same machine never interleave writes.
+/// `{data_dir}/logs/loams-agentd-{mode}.log`, previous launch preserved as `.old`.
 ///
 /// The returned file holds an exclusive `flock` for the process lifetime:
 /// rotate-on-launch is only safe when nothing is still WRITING the current
@@ -535,7 +309,7 @@ async fn sync_cli(ipc_port: u16) -> anyhow::Result<()> {
 /// second unlinked it entirely, and the daemon spent the rest of the incident
 /// logging to an orphaned inode (an entire day of sync diagnostics gone at
 /// the exact moment they were needed). A launch that finds the canonical file
-/// locked logs to `loams-desktop-{mode}.{pid}.log` instead; the next lock-holding
+/// locked logs to `loams-agentd-{mode}.{pid}.log` instead; the next lock-holding
 /// launch sweeps pid-suffixed files older than a week.
 fn open_log_file(mode: &str) -> Option<std::fs::File> {
     let dir = paths::data_dir().join("logs");
@@ -545,7 +319,7 @@ fn open_log_file(mode: &str) -> Option<std::fs::File> {
 /// Dir-parameterized body of [`open_log_file`] (unit-testable without env).
 fn open_log_file_in(dir: &std::path::Path, mode: &str) -> Option<std::fs::File> {
     std::fs::create_dir_all(dir).ok()?;
-    let path = dir.join(format!("loams-desktop-{mode}.log"));
+    let path = dir.join(format!("loams-agentd-{mode}.log"));
     #[cfg(unix)]
     {
         use std::os::unix::io::AsRawFd;
@@ -562,7 +336,7 @@ fn open_log_file_in(dir: &std::path::Path, mode: &str) -> Option<std::fs::File> 
         if rc != 0 {
             // A live process owns the canonical log — leave it alone.
             return std::fs::File::create(
-                dir.join(format!("loams-desktop-{mode}.{}.log", std::process::id())),
+                dir.join(format!("loams-agentd-{mode}.{}.log", std::process::id())),
             )
             .ok();
         }
@@ -571,7 +345,7 @@ fn open_log_file_in(dir: &std::path::Path, mode: &str) -> Option<std::fs::File> 
         // to rotate — the probe itself created the empty file.)
         drop(existing);
         if preexisting {
-            let _ = std::fs::rename(&path, dir.join(format!("loams-desktop-{mode}.log.old")));
+            let _ = std::fs::rename(&path, dir.join(format!("loams-agentd-{mode}.log.old")));
         }
         let file = std::fs::File::create(&path).ok()?;
         unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
@@ -580,7 +354,7 @@ fn open_log_file_in(dir: &std::path::Path, mode: &str) -> Option<std::fs::File> 
     }
     #[cfg(not(unix))]
     {
-        let _ = std::fs::rename(&path, dir.join(format!("loams-desktop-{mode}.log.old")));
+        let _ = std::fs::rename(&path, dir.join(format!("loams-agentd-{mode}.log.old")));
         std::fs::File::create(&path).ok()
     }
 }
@@ -594,37 +368,37 @@ mod log_file_tests {
         let dir = tempfile::tempdir().unwrap();
         let dir = dir.path();
         // First launch owns the canonical file and keeps writing.
-        let first = open_log_file_in(dir, "headed").expect("first log");
-        assert!(dir.join("loams-desktop-headed.log").is_file());
+        let first = open_log_file_in(dir, "run").expect("first log");
+        assert!(dir.join("loams-agentd-run.log").is_file());
         // Second launch while the first is alive: canonical file untouched,
         // pid-suffixed overflow file instead (the 2026-08-04 clobber).
-        let second = open_log_file_in(dir, "headed").expect("second log");
-        let pid_path = dir.join(format!("loams-desktop-headed.{}.log", std::process::id()));
+        let second = open_log_file_in(dir, "run").expect("second log");
+        let pid_path = dir.join(format!("loams-agentd-run.{}.log", std::process::id()));
         assert!(pid_path.is_file(), "expected pid-suffixed overflow log");
         assert!(
-            !dir.join("loams-desktop-headed.log.old").exists(),
+            !dir.join("loams-agentd-run.log.old").exists(),
             "live canonical log must not be rotated away"
         );
         drop(second);
         // After the owner exits, a fresh launch rotates normally.
         drop(first);
-        let third = open_log_file_in(dir, "headed").expect("third log");
+        let third = open_log_file_in(dir, "run").expect("third log");
         assert!(
-            dir.join("loams-desktop-headed.log.old").is_file(),
+            dir.join("loams-agentd-run.log.old").is_file(),
             "rotation resumes"
         );
         drop(third);
     }
 }
 
-/// Delete `loams-desktop-{mode}.{pid}.log` overflow files older than a week — they
+/// Delete `loams-agentd-{mode}.{pid}.log` overflow files older than a week — they
 /// only exist when a second instance raced a live one for the canonical log.
 #[cfg(unix)]
 fn sweep_stale_pid_logs(dir: &std::path::Path, mode: &str) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
-    let prefix = format!("loams-desktop-{mode}.");
+    let prefix = format!("loams-agentd-{mode}.");
     let week = std::time::Duration::from_secs(7 * 24 * 60 * 60);
     for entry in entries.flatten() {
         let name = entry.file_name();

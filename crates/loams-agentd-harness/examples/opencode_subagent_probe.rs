@@ -13,8 +13,8 @@
 //! `task` explicitly.
 
 use futures::StreamExt;
-use loams_desktop_harness::{CancellationToken, Harness, OpencodeHarness, RunControls};
-use loams_desktop_proto::{AgentEvent, RunRequest, SandboxLevel, UserInputAnswer};
+use loams_agentd_harness::{CancellationToken, Harness, OpencodeHarness, RunControls};
+use loams_agentd_proto::{AgentEvent, RunRequest, SandboxLevel, UserInputAnswer};
 use tokio::sync::{mpsc, oneshot};
 
 #[tokio::main]

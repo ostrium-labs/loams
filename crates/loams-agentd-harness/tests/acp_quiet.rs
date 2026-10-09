@@ -10,8 +10,8 @@ use std::time::Duration;
 use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
-use loams_desktop_harness::{AcpHarness, CancellationToken, Harness, RunControls, SteerMessage};
-use loams_desktop_proto::{
+use loams_agentd_harness::{AcpHarness, CancellationToken, Harness, RunControls, SteerMessage};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, RunRequest, SandboxLevel, UserInputAnswer, UserInputQuestion,
 };
 
@@ -82,7 +82,7 @@ fn controls() -> (RunControls, mpsc::Sender<SteerMessage>, CancellationToken) {
 async fn collect_until_done(
     stream: &mut futures::stream::BoxStream<
         'static,
-        Result<AgentEvent, loams_desktop_harness::HarnessError>,
+        Result<AgentEvent, loams_agentd_harness::HarnessError>,
     >,
 ) -> Vec<AgentEvent> {
     tokio::time::timeout(Duration::from_secs(15), async {

@@ -47,7 +47,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ModelOption, ModelOptionChoice, ReasoningLevel,
     RunRequest, SteeringMode, TodoItem, ToolCall,
 };
@@ -340,7 +340,7 @@ impl Harness for CursorHarness {
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::debug!(target: "loams_desktop_harness::cursor", "stderr: {line}");
+                    tracing::debug!(target: "loams_agentd_harness::cursor", "stderr: {line}");
                     tail.push(&line);
                 }
             });
@@ -476,7 +476,7 @@ async fn stdin_writer(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<Str
             stdin.flush().await
         };
         if let Err(e) = write.await {
-            tracing::debug!(target: "loams_desktop_harness::cursor", "stdin write failed (tolerated): {e}");
+            tracing::debug!(target: "loams_agentd_harness::cursor", "stdin write failed (tolerated): {e}");
             return;
         }
     }
@@ -564,7 +564,7 @@ async fn run_session(session: Session) {
                         continue;
                     }
                     let Ok(frame) = serde_json::from_str::<Value>(line) else {
-                        tracing::debug!(target: "loams_desktop_harness::cursor", "unparseable shim frame (skipped)");
+                        tracing::debug!(target: "loams_agentd_harness::cursor", "unparseable shim frame (skipped)");
                         continue;
                     };
                     match frame.get("ev").and_then(Value::as_str).unwrap_or("") {
@@ -607,7 +607,7 @@ async fn run_session(session: Session) {
                             if frame.get("ev").and_then(Value::as_str) == Some("fatal")
                                 || frame.get("status").and_then(Value::as_str) == Some("error")
                             {
-                                tracing::warn!(target: "loams_desktop_harness::cursor",
+                                tracing::warn!(target: "loams_agentd_harness::cursor",
                                     session_id = ?session_id,
                                     error = ?frame.get("error").or_else(|| frame.get("message")),
                                     "Cursor SDK run failed");
@@ -945,7 +945,7 @@ fn map_shim_frame(frame: &Value, interrupted: bool) -> Vec<AgentEvent> {
             session_id: None,
         }],
         other => {
-            tracing::debug!(target: "loams_desktop_harness::cursor", "unknown shim frame (skipped): {other}");
+            tracing::debug!(target: "loams_agentd_harness::cursor", "unknown shim frame (skipped): {other}");
             Vec::new()
         }
     }

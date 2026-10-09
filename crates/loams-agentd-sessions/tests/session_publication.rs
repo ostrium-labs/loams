@@ -1,14 +1,18 @@
 //! Real Codex adapter + engine persistence + ChatClient over a loopback relay.
 //! Faults are injected only in temporary profiles and the test relay.
+
+// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
+// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
+#![allow(clippy::if_same_then_else)]
 use futures::{SinkExt, StreamExt, future::BoxFuture};
-use loams_desktop_doc::{MessageRole, MessageStatus, SessionDoc};
-use loams_desktop_engine::{
+use loams_agentd_doc::{MessageRole, MessageStatus, SessionDoc};
+use loams_agentd_harness::CodexHarness;
+use loams_agentd_proto::{HarnessId, ReasoningLevel, RunRequest, SandboxLevel, SessionStatus};
+use loams_agentd_sessions::{
     EdgeConfig, EngineCore, EngineProfile, HarnessRegistry, chat2_host::EngineChatSink,
 };
-use loams_desktop_harness::CodexHarness;
-use loams_desktop_proto::{HarnessId, ReasoningLevel, RunRequest, SandboxLevel, SessionStatus};
-use loams_desktop_sync::chat_frames::{decode, encode, frame_type};
-use loams_desktop_sync::{
+use loams_agentd_store::chat_frames::{decode, encode, frame_type};
+use loams_agentd_store::{
     ChatClient, ChatDocSink, CheckpointFetcher, DocsStore, SyncError, chat_client::RowImportOutcome,
 };
 use loro::{ExportMode, LoroDoc};
@@ -215,7 +219,7 @@ fn assemble(profile: &EngineProfile, live: bool) -> EngineCore {
     } else {
         CodexHarness::new().with_executable(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../harness/tests/fixtures/fake-codex.sh"),
+                .join("../loams-agentd-harness/tests/fixtures/fake-codex.sh"),
         )
     };
     let registry = Arc::new(HarnessRegistry::new());
@@ -320,7 +324,7 @@ async fn regression(live: bool) {
         let native_sessions: Vec<_> = events
             .iter()
             .filter_map(|e| match &e.event {
-                loams_desktop_proto::AgentEvent::SessionStarted { session_id, .. } => {
+                loams_agentd_proto::AgentEvent::SessionStarted { session_id, .. } => {
                     Some(session_id)
                 }
                 _ => None,
@@ -430,7 +434,7 @@ async fn real_codex_restart_publication() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn disconnected_cleanup_is_durable_before_snapshot_debounce() {
-    use loams_desktop_engine::{DocHost, DocHostConfig};
+    use loams_agentd_sessions::{DocHost, DocHostConfig};
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(DocsStore::open(dir.path()).unwrap());
     let config = || DocHostConfig {
@@ -471,7 +475,7 @@ async fn disconnected_cleanup_is_durable_before_snapshot_debounce() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires private incident snapshot paths; all writes remain in a temporary store"]
 async fn supplied_incident_snapshots_reconcile_via_durable_bootstrap() {
-    use loams_desktop_engine::{DocHost, DocHostConfig};
+    use loams_agentd_sessions::{DocHost, DocHostConfig};
     let remote = std::fs::read(std::env::var("SESSION_SYNC_REMOTE_SNAPSHOT").unwrap()).unwrap();
     let before = std::fs::read(std::env::var("SESSION_SYNC_DESKTOP_SNAPSHOT").unwrap()).unwrap();
     let dir = tempfile::tempdir().unwrap();
@@ -495,7 +499,7 @@ async fn supplied_incident_snapshots_reconcile_via_durable_bootstrap() {
     let updates = store.pending_chat_updates(CHAT).unwrap();
     assert!(!updates.is_empty());
     for (_, bytes) in &updates {
-        assert!(bytes.len() <= loams_desktop_sync::chat_client::MAX_PUSH_BYTES);
+        assert!(bytes.len() <= loams_agentd_store::chat_client::MAX_PUSH_BYTES);
     }
     let (url, _, acks, server) = relay(before.clone()).await;
     acks.store(true, Ordering::SeqCst);
@@ -557,7 +561,7 @@ async fn supplied_incident_snapshots_reconcile_via_durable_bootstrap() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn rejected_update_retries_failed_checkpoint_and_retires_only_after_success() {
     use base64::Engine as _;
-    use loams_desktop_engine::{DocHost, DocHostConfig};
+    use loams_agentd_sessions::{DocHost, DocHostConfig};
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(DocsStore::open(dir.path()).unwrap());
     let initial = SessionDoc::init(CHAT).unwrap().export_snapshot().unwrap();
@@ -629,7 +633,7 @@ async fn rejected_update_retries_failed_checkpoint_and_retires_only_after_succes
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cold_outbox_is_published_after_restart_without_opening_the_chat() {
-    use loams_desktop_engine::{DocHost, DocHostConfig};
+    use loams_agentd_sessions::{DocHost, DocHostConfig};
     let dir = tempfile::tempdir().unwrap();
     let doc = SessionDoc::init(CHAT).unwrap();
     let before = doc.doc().oplog_vv();

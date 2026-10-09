@@ -1,12 +1,12 @@
 //! Generates a session-doc snapshot fixture for the cross-language compat check
 //! (`edge/scripts/compat-check.mjs`). Usage: `cargo run -p loams-desktop-doc --example gen_fixture -- <out>`
 
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     MessagePart, MessageRole, MessageStatus, SegmentWriter, SessionCommandEntry,
     SessionCommandPayload, SessionCommandStatus, SessionDoc, SessionMessageEntry,
     fold_event_into_parts,
 };
-use loams_desktop_proto::{AgentEvent, ToolCall};
+use loams_agentd_proto::{AgentEvent, ToolCall};
 
 fn main() {
     let out = std::env::args()

@@ -9,18 +9,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let t = Instant::now();
         doc.import(&bytes)?;
         let import = t.elapsed();
-        let doc = loams_desktop_doc::SessionDoc::from_doc(doc);
+        let doc = loams_agentd_doc::SessionDoc::from_doc(doc);
         let t = Instant::now();
         let tail = doc.read_opening_tail(128)?;
         let tail_materialize = t.elapsed();
         let t = Instant::now();
-        let preview = loams_desktop_doc::TranscriptUpdate {
-            frame: loams_desktop_doc::TranscriptFrame::reset(&tail),
+        let preview = loams_agentd_doc::TranscriptUpdate {
+            frame: loams_agentd_doc::TranscriptFrame::reset(&tail),
             context_usage: doc.context_usage(),
-            replay_baseline: Some(loams_desktop_doc::TranscriptBaseline::capture(&tail)),
+            replay_baseline: Some(loams_agentd_doc::TranscriptBaseline::capture(&tail)),
         };
         let tail_wire = serde_json::to_vec(&serde_json::to_value(preview)?)?;
-        let _: loams_desktop_doc::TranscriptUpdate =
+        let _: loams_agentd_doc::TranscriptUpdate =
             serde_json::from_value(serde_json::from_slice(&tail_wire)?)?;
         println!(
             "opening tail parts={} wire_bytes={} materialize={tail_materialize:?} serialize_and_decode={:?}",
@@ -29,15 +29,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             t.elapsed()
         );
         let t = Instant::now();
-        let entries = loams_desktop_doc::join_continuation_entries(doc.read_entries()?);
+        let entries = loams_agentd_doc::join_continuation_entries(doc.read_entries()?);
         let materialize = t.elapsed();
         let mut kinds = std::collections::BTreeMap::<&str, (usize, usize, usize)>::new();
         for entry in &entries {
             for part in &entry.parts {
                 let kind = match part {
-                    loams_desktop_doc::MessagePart::Text { .. } => "text",
-                    loams_desktop_doc::MessagePart::Reasoning { .. } => "reasoning",
-                    loams_desktop_doc::MessagePart::Tool { .. } => "tool",
+                    loams_agentd_doc::MessagePart::Text { .. } => "text",
+                    loams_agentd_doc::MessagePart::Reasoning { .. } => "reasoning",
+                    loams_agentd_doc::MessagePart::Tool { .. } => "tool",
                     _ => "other",
                 };
                 let size = part.byte_len();
@@ -50,17 +50,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("part count/bytes/max: {kinds:?}");
 
         let t = Instant::now();
-        let update = loams_desktop_doc::TranscriptUpdate {
-            frame: loams_desktop_doc::TranscriptFrame::reset(&entries),
+        let update = loams_agentd_doc::TranscriptUpdate {
+            frame: loams_agentd_doc::TranscriptFrame::reset(&entries),
             context_usage: doc.context_usage(),
-            replay_baseline: Some(loams_desktop_doc::TranscriptBaseline::capture(&entries)),
+            replay_baseline: Some(loams_agentd_doc::TranscriptBaseline::capture(&entries)),
         };
         let value = serde_json::to_value(update)?;
         let wire = serde_json::to_vec(&value)?;
         let serialize = t.elapsed();
         let t = Instant::now();
         let value: serde_json::Value = serde_json::from_slice(&wire)?;
-        let _: loams_desktop_doc::TranscriptUpdate = serde_json::from_value(value)?;
+        let _: loams_agentd_doc::TranscriptUpdate = serde_json::from_value(value)?;
         let deserialize = t.elapsed();
         println!(
             "{} snapshot_bytes={} entries={} wire_bytes={} read={read:?} import={import:?} materialize={materialize:?} serialize={serialize:?} deserialize={deserialize:?}",

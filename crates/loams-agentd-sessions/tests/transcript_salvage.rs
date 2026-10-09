@@ -7,9 +7,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use loams_desktop_doc::{MessagePart, MessageRole, MessageStatus, SessionDoc, SessionMessageEntry};
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_proto::HarnessId;
+use loams_agentd_doc::{MessagePart, MessageRole, MessageStatus, SessionDoc, SessionMessageEntry};
+use loams_agentd_proto::HarnessId;
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 
 const CHAT: &str = "chat-salvage";
 
@@ -48,10 +48,10 @@ async fn blank_journaled_chat_recovers_entries_from_fat_rollback() {
     // the doc itself never gets a single entry, like a post-loss reopen.
     {
         let core = assemble(&dir);
-        let client = loams_desktop_rpc::memory_client(core.rpc_service());
+        let client = loams_agentd_rpc::memory_client(core.rpc_service());
         client
             .call(
-                loams_desktop_rpc::methods::MUTATE,
+                loams_agentd_rpc::methods::MUTATE,
                 serde_json::json!({
                     "op": "createChat",
                     "chatId": CHAT,
@@ -90,7 +90,7 @@ async fn blank_journaled_chat_recovers_entries_from_fat_rollback() {
     .unwrap();
     let fat_bytes = fat.export_snapshot().unwrap();
     {
-        let store = loams_desktop_sync::DocsStore::open(&org_dir).unwrap();
+        let store = loams_agentd_store::DocsStore::open(&org_dir).unwrap();
         store
             .save_snapshot(&format!("{CHAT}.pre-chat2"), &fat_bytes)
             .unwrap();

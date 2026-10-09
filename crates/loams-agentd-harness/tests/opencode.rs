@@ -10,10 +10,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::StreamExt;
-use loams_desktop_harness::{
+use loams_agentd_harness::{
     CancellationToken, Harness, HarnessError, OpencodeHarness, RunControls, SteerMessage,
 };
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, ReasoningLevel, RunRequest, SandboxLevel, ToolCall, UserInputAnswer,
 };
 use serde_json::{Value, json};
@@ -1037,7 +1037,7 @@ async fn slash_command_rejects_attachments_instead_of_dropping_them() {
 
 #[tokio::test]
 async fn dollar_selected_skill_uses_opencode_native_command_with_arguments() {
-    use loams_desktop_proto::{
+    use loams_agentd_proto::{
         HarnessId,
         invocation::{Invocation, harness_prompt},
     };

@@ -1,4 +1,4 @@
-//! A stub A2A 1.0 client for Loams Bot (design 39 section 5, D465-D467).
+//! A stub A2A 1.0 client for Loams Bot (design 39 section 5; design 37 section 18).
 //!
 //! Loams Bot delegates to the platform agents (Plane, Zulip, Forgejo,
 //! GlitchTip, analytics) over A2A. The desktop never speaks A2A to those

@@ -1,7 +1,7 @@
 //! Explicit, user-requested CLI installation. Catalog probes never call this module's executor.
 use std::{path::PathBuf, time::Duration};
 
-use loams_desktop_proto::HarnessId;
+use loams_agentd_proto::HarnessId;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::{

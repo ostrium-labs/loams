@@ -24,12 +24,12 @@ use chrono::Utc;
 use futures::StreamExt;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     DocError, MessagePart, MessageRole, MessageStatus, STREAM_COMMIT_MS, SegmentWriter, SessionDoc,
     SessionMessageEntry, fold_event_into_parts, sanitize_tool_call,
 };
-use loams_desktop_harness::{CancellationToken, Harness, RunControls, SteerMessage};
-use loams_desktop_proto::{
+use loams_agentd_harness::{CancellationToken, Harness, RunControls, SteerMessage};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, RunRequest, Session, SessionStatus, UserInputAnswer,
     UserInputQuestion,
 };
@@ -77,12 +77,12 @@ struct HarnessSessionRef {
 struct RuntimeConfig {
     harness_id: HarnessId,
     model: Option<String>,
-    reasoning: Option<loams_desktop_proto::ReasoningLevel>,
+    reasoning: Option<loams_agentd_proto::ReasoningLevel>,
     model_options: serde_json::Map<String, serde_json::Value>,
     cwd: String,
-    sandbox: loams_desktop_proto::SandboxLevel,
+    sandbox: loams_agentd_proto::SandboxLevel,
     auto_approve: bool,
-    worktree: Option<loams_desktop_proto::WorktreeSpec>,
+    worktree: Option<loams_agentd_proto::WorktreeSpec>,
 }
 
 impl RuntimeConfig {
@@ -213,7 +213,7 @@ impl SessionsEngine {
     }
 
     /// Record the loopback IPC port this engine serves. Runs started after
-    /// this carry Loams Desktop's MCP server (see [`Inner::loams_desktop_mcp`]); until then —
+    /// this carry Loams Desktop's MCP server (see [`Inner::loams_agentd_mcp`]); until then —
     /// or with 0 — agents get no Loams Desktop tools rather than a dead server.
     pub fn set_ipc_port(&self, port: u16) {
         self.inner
@@ -425,7 +425,7 @@ impl SessionsEngine {
             .map_err(|error| EngineError::Other(error.to_string()))?;
         // Native-only catalog entries have no portable file fallback. Reject
         // cross-harness delivery before recording or routing the user turn.
-        loams_desktop_proto::invocation::validate_harness_invocations(&request.prompt, harness_id)
+        loams_agentd_proto::invocation::validate_harness_invocations(&request.prompt, harness_id)
             .map_err(EngineError::Other)?;
         let routed = lock(&self.inner.runs).get(chat_id).map(|h| {
             (
@@ -453,7 +453,7 @@ impl SessionsEngine {
                     prompt: if harness_id == HarnessId::Opencode {
                         delivered.to_owned()
                     } else {
-                        loams_desktop_proto::invocation::harness_prompt(delivered, harness_id)
+                        loams_agentd_proto::invocation::harness_prompt(delivered, harness_id)
                     },
                     message_id: Some(user_id.clone()),
                 };
@@ -699,7 +699,7 @@ impl SessionsEngine {
         let Some((run_id, harness_id, steer_tx, ledger, history_sent)) = target else {
             return Ok(SteerOutcome::NotSteerable);
         };
-        loams_desktop_proto::invocation::validate_harness_invocations(prompt, harness_id)
+        loams_agentd_proto::invocation::validate_harness_invocations(prompt, harness_id)
             .map_err(EngineError::Other)?;
         let user_id = message_id.unwrap_or_else(new_id);
         let bootstrap = self.warm_fork_history(chat_id, harness_id, prompt, &history_sent);
@@ -708,7 +708,7 @@ impl SessionsEngine {
             prompt: if harness_id == HarnessId::Opencode {
                 delivered.to_owned()
             } else {
-                loams_desktop_proto::invocation::harness_prompt(delivered, harness_id)
+                loams_agentd_proto::invocation::harness_prompt(delivered, harness_id)
             },
             message_id: Some(user_id.clone()),
         };
@@ -923,7 +923,7 @@ impl SessionsEngine {
                             reasoning: None,
                             model_options: Default::default(),
                             cwd,
-                            sandbox: loams_desktop_proto::SandboxLevel::WorkspaceWrite,
+                            sandbox: loams_agentd_proto::SandboxLevel::WorkspaceWrite,
                             auto_approve: false,
                             attachments: Vec::new(),
                             resume: None,
@@ -1194,13 +1194,13 @@ impl Inner {
     /// mcp` subcommand, dialing the engine's IPC port and stamped with the
     /// originating chat + device so the agent's side chats link back here.
     /// None when the engine serves no port or its executable is unknown.
-    fn loams_desktop_mcp(&self, chat_id: &str) -> Option<loams_desktop_proto::McpServer> {
+    fn loams_agentd_mcp(&self, chat_id: &str) -> Option<loams_agentd_proto::McpServer> {
         let port = self.ipc_port.load(std::sync::atomic::Ordering::Relaxed);
         if port == 0 {
             return None;
         }
         let command = std::env::current_exe().ok()?.to_str()?.to_owned();
-        Some(loams_desktop_proto::McpServer {
+        Some(loams_agentd_proto::McpServer {
             name: "loams-desktop".into(),
             command,
             args: vec!["mcp".into()],
@@ -1382,7 +1382,7 @@ impl Inner {
                     entry
                         .parts
                         .iter()
-                        .any(|part| matches!(part, loams_desktop_doc::MessagePart::Fork { .. }))
+                        .any(|part| matches!(part, loams_agentd_doc::MessagePart::Fork { .. }))
                 })?
             }
         };
@@ -1393,8 +1393,8 @@ impl Inner {
                     .parts
                     .iter()
                     .filter_map(|part| match part {
-                        loams_desktop_doc::MessagePart::Text { text, .. } => Some(text.clone()),
-                        loams_desktop_doc::MessagePart::Tool { call, output, .. } => Some(format!(
+                        loams_agentd_doc::MessagePart::Text { text, .. } => Some(text.clone()),
+                        loams_agentd_doc::MessagePart::Tool { call, output, .. } => Some(format!(
                             "Tool: {}\n{}",
                             serde_json::to_string(call).unwrap_or_default(),
                             output.clone().unwrap_or_default()
@@ -1423,11 +1423,11 @@ impl Inner {
 /// slash commands). Anything put in front of it would make it model input.
 fn native_command(prompt: &str, harness: HarnessId) -> bool {
     let delivered = if harness == HarnessId::Codex {
-        loams_desktop_proto::invocation::invocation_prompt(prompt)
+        loams_agentd_proto::invocation::invocation_prompt(prompt)
     } else {
-        loams_desktop_proto::invocation::harness_prompt(prompt, harness)
+        loams_agentd_proto::invocation::harness_prompt(prompt, harness)
     };
-    loams_desktop_proto::invocation::leading_command(&delivered).is_some()
+    loams_agentd_proto::invocation::leading_command(&delivered).is_some()
 }
 
 /// A turn is in flight: streaming, or parked on a question it is still owed an
@@ -1464,12 +1464,12 @@ pub(crate) fn subagent_doc_id(chat_id: &str, tool_use_id: &str) -> String {
     format!("{chat_id}--sub--{hex}")
 }
 
-/// Test-only instrumentation: how often `drive_run`'s coalesced commit branch
-/// fires. The sink-dirty regression test proves the branch ticks once per
-/// commit window instead of spinning on a deadline left in the past.
-/// Thread-local so parallel tests' runs can't bleed into the count: the
-/// test's current-thread runtime runs its spawned `drive_run` on its own
-/// thread.
+// Test-only instrumentation: how often `drive_run`'s coalesced commit branch
+// fires. The sink-dirty regression test proves the branch ticks once per
+// commit window instead of spinning on a deadline left in the past.
+// Thread-local so parallel tests' runs can't bleed into the count: the
+// test's current-thread runtime runs its spawned `drive_run` on its own
+// thread.
 #[cfg(test)]
 thread_local! {
     static FLUSH_TICKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -1594,7 +1594,7 @@ impl SubagentSink {
         if let Err(err) = finished {
             tracing::warn!(doc = %self.doc_id, error = %err, "subagent sink finish failed");
         }
-        let entries = loams_desktop_doc::join_continuation_entries(self.doc.read_entries().ok()?);
+        let entries = loams_agentd_doc::join_continuation_entries(self.doc.read_entries().ok()?);
         serde_json::to_string(&entries).ok()
     }
 }
@@ -1729,7 +1729,7 @@ fn cursor_unstarted_history(
     // Convert each message before JSON encoding. Rewriting canonical chips in
     // the encoded envelope can introduce unescaped quotes or newlines and can
     // cause Cursor's current message to be converted twice.
-    let prompt = loams_desktop_proto::invocation::harness_prompt(prompt, HarnessId::Cursor);
+    let prompt = loams_agentd_proto::invocation::harness_prompt(prompt, HarnessId::Cursor);
     let entries = doc.read_entries()?;
     let preceding: Vec<_> = entries
         .iter()
@@ -1771,7 +1771,7 @@ fn cursor_unstarted_history(
                 .join("\n")
         })
         .filter(|text| !text.is_empty())
-        .map(|text| loams_desktop_proto::invocation::harness_prompt(&text, HarnessId::Cursor))
+        .map(|text| loams_agentd_proto::invocation::harness_prompt(&text, HarnessId::Cursor))
         .collect();
     if previous.is_empty() {
         return Ok(prompt);
@@ -1806,7 +1806,7 @@ async fn drive_run(
     // The host stamps its own MCP server onto every run it drives, so the
     // agent can spawn and talk to side chats through the engine it runs in.
     if request.mcp.is_none() {
-        request.mcp = inner.loams_desktop_mcp(&chat_id);
+        request.mcp = inner.loams_agentd_mcp(&chat_id);
     }
     // Kept whole for the startup-crash retry (same user entry; dispatch
     // re-injects the stored resume id). Option so the retry branch (inside
@@ -1847,7 +1847,7 @@ async fn drive_run(
             request.resume.is_some(),
         )
         .map(|prompt| request.prompt = prompt)
-        .map_err(|e| loams_desktop_harness::HarnessError::Protocol(e.to_string()))
+        .map_err(|e| loams_agentd_harness::HarnessError::Protocol(e.to_string()))
     } else {
         Ok(())
     };
@@ -1870,7 +1870,7 @@ async fn drive_run(
                 }
                 let mut wire_request = request;
                 if !matches!(harness_id, HarnessId::Cursor | HarnessId::Opencode) {
-                    wire_request.prompt = loams_desktop_proto::invocation::harness_prompt(
+                    wire_request.prompt = loams_agentd_proto::invocation::harness_prompt(
                         &wire_request.prompt,
                         harness_id,
                     );
@@ -2212,7 +2212,7 @@ async fn drive_run(
                     && steerable
                     && !folded.iter().any(|p| match p {
                         MessagePart::Tool { id, resolved: false, .. } => {
-                            id != loams_desktop_proto::LIVE_PLAN_TOOL_ID
+                            id != loams_agentd_proto::LIVE_PLAN_TOOL_ID
                         }
                         MessagePart::Input { resolved: false, .. } => true,
                         _ => false,
@@ -2329,7 +2329,7 @@ async fn drive_run(
                         }
                     }
                 }
-                loams_desktop_doc::fold_event_into_parts(&mut folded, &event);
+                loams_agentd_doc::fold_event_into_parts(&mut folded, &event);
                 if !dirty {
                     dirty = true;
                     flush_at = tokio::time::Instant::now()
@@ -2392,7 +2392,7 @@ async fn drive_run(
                     continue;
                 }
                 let was_clean = !sink.dirty;
-                loams_desktop_doc::fold_event_into_parts(&mut sink.folded, sub_event);
+                loams_agentd_doc::fold_event_into_parts(&mut sink.folded, sub_event);
                 sink.dirty = true;
                 // A sink waking on its own must arm the same commit window
                 // the parent's dirty flag does — `flush_at` is otherwise only
@@ -2427,7 +2427,7 @@ async fn drive_run(
                     {
                         host.upload_tool_sidecar(
                             &chat_id,
-                            loams_desktop_doc::SidecarPayload {
+                            loams_agentd_doc::SidecarPayload {
                                 part_id: doc_id,
                                 output: Some(json),
                                 diff: None,
@@ -2509,7 +2509,7 @@ async fn drive_run(
                 ) || matches!(
                     &event,
                     AgentEvent::ToolCall { id, .. }
-                        if id == loams_desktop_proto::LIVE_PLAN_TOOL_ID || !seen_tools.contains(id)
+                        if id == loams_agentd_proto::LIVE_PLAN_TOOL_ID || !seen_tools.contains(id)
                 ));
             if self_continued {
                 tracing::info!(
@@ -2578,8 +2578,8 @@ async fn drive_run(
             // treating its reappearance after a park/steer reset as a stale
             // echo dropped the todo list for the rest of the run — from the
             // first boundary on, plans never rendered again.
-            AgentEvent::ToolCall { id, .. } if id == loams_desktop_proto::LIVE_PLAN_TOOL_ID => {}
-            AgentEvent::ToolResult { id, .. } if id == loams_desktop_proto::LIVE_PLAN_TOOL_ID => {}
+            AgentEvent::ToolCall { id, .. } if id == loams_agentd_proto::LIVE_PLAN_TOOL_ID => {}
+            AgentEvent::ToolResult { id, .. } if id == loams_agentd_proto::LIVE_PLAN_TOOL_ID => {}
             AgentEvent::ToolCall { id, .. } => {
                 if !in_segment(&folded, id) && seen_tools.contains(id) {
                     continue;
@@ -2734,7 +2734,7 @@ async fn drive_run(
             // R2 sidecar PARKED (2026-08-10, product call): the fold's
             // summary/stats ARE the doc's whole record — no refs stamped, no
             // uploads. Full outputs survive only in the host's local run
-            // journal. To reintroduce: `loams_desktop_doc::sidecar_payload(&event)`
+            // journal. To reintroduce: `loams_agentd_doc::sidecar_payload(&event)`
             // → `apply_sidecar_refs` → `doc_host.upload_tool_sidecar`, all
             // still in place and tested.
         }
@@ -2861,7 +2861,7 @@ async fn drive_run(
         {
             host.upload_tool_sidecar(
                 &chat_id,
-                loams_desktop_doc::SidecarPayload {
+                loams_agentd_doc::SidecarPayload {
                     part_id: doc_id,
                     output: Some(json),
                     diff: None,
@@ -2932,18 +2932,18 @@ mod tests {
 
     #[test]
     fn cursor_recovery_converts_rich_messages_before_json_encoding() {
-        let doc = loams_desktop_doc::SessionDoc::init("cursor-rich-recovery").unwrap();
-        let skill = loams_desktop_proto::invocation::Invocation::Skill {
+        let doc = loams_agentd_doc::SessionDoc::init("cursor-rich-recovery").unwrap();
+        let skill = loams_agentd_proto::invocation::Invocation::Skill {
             name: "review \"quoted\"".into(),
             path: "/repo/quoted \"path\"/SKILL.md".into(),
             command: None,
         }
         .link();
         let previous = format!("Previous {skill}\nSecond line with \\ and \"quotes\"");
-        doc.push_message(&loams_desktop_doc::SessionMessageEntry {
+        doc.push_message(&loams_agentd_doc::SessionMessageEntry {
             id: "u1".into(),
-            role: loams_desktop_doc::MessageRole::User,
-            parts: vec![loams_desktop_doc::MessagePart::Text {
+            role: loams_agentd_doc::MessageRole::User,
+            parts: vec![loams_agentd_doc::MessagePart::Text {
                 id: "u1-text".into(),
                 text: previous.clone(),
             }],
@@ -2960,49 +2960,45 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(json).unwrap();
         assert_eq!(
             parsed["currentUserMessage"],
-            loams_desktop_proto::invocation::harness_prompt(
+            loams_agentd_proto::invocation::harness_prompt(
                 &current,
-                loams_desktop_proto::HarnessId::Cursor
+                loams_agentd_proto::HarnessId::Cursor
             )
         );
         assert_eq!(
             parsed["previousUserMessages"][0],
-            loams_desktop_proto::invocation::harness_prompt(
+            loams_agentd_proto::invocation::harness_prompt(
                 &previous,
-                loams_desktop_proto::HarnessId::Cursor
+                loams_agentd_proto::HarnessId::Cursor
             )
         );
     }
 
     #[test]
     fn cursor_without_a_session_id_retains_only_preceding_user_messages() {
-        let doc = loams_desktop_doc::SessionDoc::init("cursor-unstarted").unwrap();
+        let doc = loams_agentd_doc::SessionDoc::init("cursor-unstarted").unwrap();
         for (id, role, text) in [
             (
                 "u1",
-                loams_desktop_doc::MessageRole::User,
+                loams_agentd_doc::MessageRole::User,
                 "first interrupted request",
             ),
             (
                 "a1",
-                loams_desktop_doc::MessageRole::Assistant,
+                loams_agentd_doc::MessageRole::Assistant,
                 "partial output",
             ),
-            (
-                "u2",
-                loams_desktop_doc::MessageRole::User,
-                "current request",
-            ),
+            ("u2", loams_agentd_doc::MessageRole::User, "current request"),
             (
                 "u3",
-                loams_desktop_doc::MessageRole::User,
+                loams_agentd_doc::MessageRole::User,
                 "future pending request",
             ),
         ] {
-            doc.push_message(&loams_desktop_doc::SessionMessageEntry {
+            doc.push_message(&loams_agentd_doc::SessionMessageEntry {
                 id: id.into(),
                 role,
-                parts: vec![loams_desktop_doc::MessagePart::Text {
+                parts: vec![loams_agentd_doc::MessagePart::Text {
                     id: format!("{id}-text"),
                     text: text.into(),
                 }],
@@ -3039,7 +3035,7 @@ mod tests {
         assert_eq!(doc.read_entries().unwrap().len(), 4);
     }
 
-    use loams_desktop_proto::{HarnessId, RunRequest, SandboxLevel};
+    use loams_agentd_proto::{HarnessId, RunRequest, SandboxLevel};
 
     #[tokio::test]
     async fn generated_image_failure_is_sanitized_even_inside_subagents() {
@@ -3070,7 +3066,7 @@ mod tests {
             &mut parts,
             &AgentEvent::ToolCall {
                 id: "i".into(),
-                call: loams_desktop_proto::ToolCall::Unknown {
+                call: loams_agentd_proto::ToolCall::Unknown {
                     name: "Generate image".into(),
                     input: None,
                 },
@@ -3109,7 +3105,7 @@ mod tests {
             prompt: "first".into(),
             harness: None,
             model: Some("grok-4.6".into()),
-            reasoning: Some(loams_desktop_proto::ReasoningLevel::High),
+            reasoning: Some(loams_agentd_proto::ReasoningLevel::High),
             model_options: serde_json::Map::new(),
             cwd: "/tmp".into(),
             sandbox: SandboxLevel::WorkspaceWrite,
@@ -3134,7 +3130,7 @@ mod tests {
         assert!(!config.can_route(HarnessId::Grok, &follow_up));
         follow_up.model = initial.model.clone();
 
-        follow_up.reasoning = Some(loams_desktop_proto::ReasoningLevel::Medium);
+        follow_up.reasoning = Some(loams_agentd_proto::ReasoningLevel::Medium);
         assert!(!config.can_route(HarnessId::Grok, &follow_up));
         follow_up.reasoning = initial.reasoning;
 
@@ -3177,7 +3173,7 @@ mod tests {
     async fn subagent_sink_flush_clears_dirty_when_nothing_folded() {
         use super::*;
         let dir = tempfile::tempdir().unwrap();
-        let store = Arc::new(loams_desktop_sync::DocsStore::open(dir.path()).unwrap());
+        let store = Arc::new(loams_agentd_store::DocsStore::open(dir.path()).unwrap());
         let host = DocHost::new(
             store,
             crate::doc_host::DocHostConfig {
@@ -3220,15 +3216,15 @@ mod tests {
         fn supports_steering(&self) -> bool {
             true
         }
-        fn steering_mode(&self) -> loams_desktop_proto::SteeringMode {
-            loams_desktop_proto::SteeringMode::StepBoundary
+        fn steering_mode(&self) -> loams_agentd_proto::SteeringMode {
+            loams_agentd_proto::SteeringMode::StepBoundary
         }
-        fn reasoning_levels(&self) -> &[loams_desktop_proto::ReasoningLevel] {
-            &[loams_desktop_proto::ReasoningLevel::Medium]
+        fn reasoning_levels(&self) -> &[loams_agentd_proto::ReasoningLevel] {
+            &[loams_agentd_proto::ReasoningLevel::Medium]
         }
         async fn models(
             &self,
-        ) -> Result<Vec<loams_desktop_proto::Model>, loams_desktop_harness::HarnessError> {
+        ) -> Result<Vec<loams_agentd_proto::Model>, loams_agentd_harness::HarnessError> {
             Ok(vec![])
         }
         async fn run(
@@ -3238,9 +3234,9 @@ mod tests {
         ) -> Result<
             futures::stream::BoxStream<
                 'static,
-                Result<AgentEvent, loams_desktop_harness::HarnessError>,
+                Result<AgentEvent, loams_agentd_harness::HarnessError>,
             >,
-            loams_desktop_harness::HarnessError,
+            loams_agentd_harness::HarnessError,
         > {
             let mut feed = self
                 .feed

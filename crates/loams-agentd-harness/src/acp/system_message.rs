@@ -6,7 +6,7 @@
 
 use futures::StreamExt;
 use futures::stream::{self, BoxStream};
-use loams_desktop_proto::AgentEvent;
+use loams_agentd_proto::AgentEvent;
 
 use crate::HarnessError;
 

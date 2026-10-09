@@ -1,7 +1,7 @@
 //! Full authenticated Worker → catalog → SDP/ICE → P2P → HTTP integration.
 //! Run against `wrangler dev --local --var AUTH_MODE:dev --port 27641`:
 //! LOAMS_DESKTOP_PREVIEW_TEST_EDGE=http://127.0.0.1:27641 cargo test -p loams-desktop-preview --test coordinator -- --ignored
-use loams_desktop_preview::{
+use loams_agentd_preview::{
     catalog::Catalog,
     discovery::Listener,
     mux::{self, BoxIo, Connector},

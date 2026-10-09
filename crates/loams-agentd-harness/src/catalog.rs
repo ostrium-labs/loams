@@ -1,7 +1,7 @@
 //! A failed refresh is not a new catalog. Keep the last successful response
 //! for the same credential context, coalesce callers, and respect rate limits.
 use crate::{CatalogFailure, CatalogFailureCode, HarnessError, ModelCatalog};
-use loams_desktop_proto::Model;
+use loams_agentd_proto::Model;
 use std::{
     future::Future,
     time::{Duration, Instant},

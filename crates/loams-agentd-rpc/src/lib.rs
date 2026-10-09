@@ -94,11 +94,11 @@ pub mod methods {
     /// counters for the workspace room and every open chat doc. No params;
     /// IPC-only.
     pub const SYNC_STATUS: &str = "SyncStatus";
-    /// Pushed edge-connectivity posture (`loams_desktop_proto::Connectivity`):
+    /// Pushed edge-connectivity posture (`loams_agentd_proto::Connectivity`):
     /// current value first, then every change — the connection pill /
     /// composer-honesty / queued-badge feed. No params; IPC-only.
     pub const WATCH_CONNECTIVITY: &str = "WatchConnectivity";
-    /// In-flight queued-attachment transfers (`loams_desktop_proto::TransferProgress`
+    /// In-flight queued-attachment transfers (`loams_agentd_proto::TransferProgress`
     /// list): current set first, then a fresh snapshot per landed chunk —
     /// the sending thumbnail's percent-ring feed. No params; IPC-only.
     pub const WATCH_TRANSFERS: &str = "WatchTransfers";

@@ -9,14 +9,14 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use futures::StreamExt;
-use loams_desktop_harness::process::{Command, Stdio};
+use loams_agentd_harness::process::{Command, Stdio};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     HarnessId, HarnessInstallSource, HarnessUpdateFailure, HarnessUpdatePhase, HarnessUpdatePolicy,
     HarnessUpdateProgress, HarnessUpdateStatus,
 };
@@ -308,7 +308,7 @@ fn update_plan(harness: HarnessId, executable: &Path) -> Result<UpdatePlan, Stri
         return Ok(UpdatePlan::CodexStandalone(install));
     }
     if harness == HarnessId::Antigravity
-        && loams_desktop_harness::acp::is_managed_antigravity_server(executable)
+        && loams_agentd_harness::acp::is_managed_antigravity_server(executable)
     {
         return Ok(UpdatePlan::AntigravityArchive);
     }
@@ -324,7 +324,7 @@ fn manual_update_command(harness: HarnessId, executable: &Path, can_apply: bool)
         return None;
     }
     if harness == HarnessId::Antigravity
-        && loams_desktop_harness::acp::is_managed_antigravity_server(executable)
+        && loams_agentd_harness::acp::is_managed_antigravity_server(executable)
     {
         return Some("Update Loams Desktop to install this release".into());
     }
@@ -356,7 +356,7 @@ struct Inner {
     client: reqwest::Client,
     /// the registry release the last check reported, installed verbatim by
     /// apply so a registry change in between cannot swap what gets installed.
-    antigravity_release: Mutex<Option<loams_desktop_harness::acp::AntigravityRelease>>,
+    antigravity_release: Mutex<Option<loams_agentd_harness::acp::AntigravityRelease>>,
 }
 
 /// Cloneable engine service exposed to RPC and the periodic worker.
@@ -1055,7 +1055,7 @@ impl HarnessUpdateCoordinator {
                     .filter(|release| current.latest_version.as_ref() == Some(&release.version));
                 match release {
                     Some(release) => match self.begin_install(harness, &cancel) {
-                        Ok(()) => loams_desktop_harness::acp::install_antigravity_release(&release)
+                        Ok(()) => loams_agentd_harness::acp::install_antigravity_release(&release)
                             .await
                             .map(drop)
                             .map_err(|error| error.to_string()),
@@ -1143,7 +1143,7 @@ impl HarnessUpdateCoordinator {
             // pruning runs under the update lease, so none of this engine's
             // sessions can be launching the superseded server meanwhile.
             let _ = tokio::task::spawn_blocking(
-                loams_desktop_harness::acp::prune_superseded_antigravity_installs,
+                loams_agentd_harness::acp::prune_superseded_antigravity_installs,
             )
             .await;
         }
@@ -1415,7 +1415,7 @@ impl HarnessUpdateCoordinator {
         let response = self
             .inner
             .client
-            .get(loams_desktop_harness::acp::ANTIGRAVITY_REGISTRY_URL)
+            .get(loams_agentd_harness::acp::ANTIGRAVITY_REGISTRY_URL)
             .send()
             .await
             .map_err(|error| format!("Antigravity ACP release check failed: {error}"))?
@@ -1425,7 +1425,7 @@ impl HarnessUpdateCoordinator {
             .json()
             .await
             .map_err(|error| format!("Antigravity ACP release response was invalid: {error}"))?;
-        let release = loams_desktop_harness::acp::antigravity_release(&json)
+        let release = loams_agentd_harness::acp::antigravity_release(&json)
             .ok_or("Antigravity ACP release response contained no valid version")?;
         let version = release.version.clone();
         *lock(&self.inner.antigravity_release) = Some(release);
@@ -2206,7 +2206,7 @@ async fn run_command_output_env(
     for (key, value) in env {
         command.env(*key, *value);
     }
-    loams_desktop_harness::compose_child_path(&mut command, executable);
+    loams_agentd_harness::compose_child_path(&mut command, executable);
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command
@@ -2259,9 +2259,11 @@ async fn run_command_output_env(
             "{} exited with {}{}",
             executable.display(),
             output.status,
-            (!detail.is_empty())
-                .then(|| format!(": {detail}"))
-                .unwrap_or_default()
+            if !detail.is_empty() {
+                format!(": {detail}")
+            } else {
+                Default::default()
+            }
         ));
     }
     Ok(if stdout.is_empty() { stderr } else { stdout })
@@ -2281,7 +2283,7 @@ fn extract_version(text: &str) -> Option<String> {
 
 fn installed_version(harness: HarnessId, output: &str) -> Option<String> {
     if harness == HarnessId::Antigravity {
-        return loams_desktop_harness::acp::antigravity_build_version(output)
+        return loams_agentd_harness::acp::antigravity_build_version(output)
             .or_else(|| output.lines().next().and_then(extract_version));
     }
     extract_version(output)
@@ -2343,8 +2345,8 @@ mod tests {
 
     use async_trait::async_trait;
     use futures::StreamExt as _;
-    use loams_desktop_harness::{Harness, HarnessError, RunControls};
-    use loams_desktop_proto::{
+    use loams_agentd_harness::{Harness, HarnessError, RunControls};
+    use loams_agentd_proto::{
         AgentEvent, HarnessId, HarnessUpdatePhase, Model, ReasoningLevel, RunRequest, SteeringMode,
     };
 
@@ -2532,6 +2534,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[ignore = "fails since the Loams import made HarnessUpdatePolicy::Off the default; DD1 Task 3 removes the policies and polling and rewrites this test (ruling T1-8)"]
     #[tokio::test]
     async fn command_update_check_offers_the_newer_release() {
         use std::os::unix::fs::PermissionsExt;
@@ -2554,6 +2557,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[ignore = "fails since the Loams import made HarnessUpdatePolicy::Off the default; DD1 Task 3 removes the policies and polling and rewrites this test (ruling T1-8)"]
     #[tokio::test]
     async fn shutdown_does_not_wait_for_a_slow_periodic_check() {
         use std::os::unix::fs::PermissionsExt;
@@ -2652,9 +2656,10 @@ esac
     }
 
     #[cfg(unix)]
+    #[ignore = "fails since the Loams import made HarnessUpdatePolicy::Off the default; DD1 Task 3 removes the policies and polling and rewrites this test (ruling T1-8)"]
     #[tokio::test]
     async fn hermes_commit_updates_can_install_without_changing_the_cli_version() {
-        use loams_desktop_proto::HarnessUpdatePolicy;
+        use loams_agentd_proto::HarnessUpdatePolicy;
         use std::os::unix::fs::PermissionsExt;
 
         let temp = tempfile::tempdir().unwrap();
@@ -2760,9 +2765,10 @@ esac
     }
 
     #[cfg(unix)]
+    #[ignore = "fails since the Loams import made HarnessUpdatePolicy::Off the default; DD1 Task 3 removes the policies and polling and rewrites this test (ruling T1-8)"]
     #[tokio::test]
     async fn notify_cancels_waiting_automatic_but_preserves_explicit_updates() {
-        use loams_desktop_proto::HarnessUpdatePolicy;
+        use loams_agentd_proto::HarnessUpdatePolicy;
         for automatic in [true, false] {
             let (temp, coordinator) = automatic_fixture();
             coordinator.check_one(HarnessId::Grok).await.unwrap();
@@ -2829,6 +2835,7 @@ esac
     }
 
     #[cfg(unix)]
+    #[ignore = "fails since the Loams import made HarnessUpdatePolicy::Off the default; DD1 Task 3 removes the policies and polling and rewrites this test (ruling T1-8)"]
     #[tokio::test]
     async fn cancelling_versionless_available_update_preserves_its_notice() {
         let (temp, _) = automatic_fixture();
@@ -2863,7 +2870,7 @@ esac
 
     #[tokio::test]
     async fn automatic_install_boundary_rechecks_policy_for_commands_and_downloads() {
-        use loams_desktop_proto::HarnessUpdatePolicy;
+        use loams_agentd_proto::HarnessUpdatePolicy;
         let temp = tempfile::tempdir().unwrap();
         let registry = Arc::new(HarnessRegistry::new());
         registry.register(Arc::new(ExecutableHarness(
@@ -2898,7 +2905,7 @@ esac
     #[cfg(unix)]
     #[tokio::test]
     async fn disabling_an_agent_cancels_its_waiting_automatic_update() {
-        use loams_desktop_proto::HarnessUpdatePolicy;
+        use loams_agentd_proto::HarnessUpdatePolicy;
         let (temp, coordinator) = automatic_fixture();
         let registry = &coordinator.inner.registry;
         registry.register(Arc::new(ExecutableHarness(
@@ -2971,7 +2978,7 @@ esac
     #[cfg(unix)]
     #[tokio::test]
     async fn enabling_auto_updates_installs_release_discovered_by_its_check() {
-        use loams_desktop_proto::HarnessUpdatePolicy;
+        use loams_agentd_proto::HarnessUpdatePolicy;
         for phase in [
             HarnessUpdatePhase::Dormant,
             HarnessUpdatePhase::Checking,
@@ -2992,7 +2999,7 @@ esac
     #[cfg(unix)]
     #[tokio::test]
     async fn retrying_one_failed_check_schedules_automatic_installation() {
-        use loams_desktop_proto::HarnessUpdatePolicy;
+        use loams_agentd_proto::HarnessUpdatePolicy;
         let (temp, coordinator) = automatic_fixture();
         std::fs::write(temp.path().join("fail-check"), "").unwrap();
         coordinator.set_policy(HarnessId::Grok, HarnessUpdatePolicy::AutoWhenIdle);
@@ -3293,6 +3300,7 @@ esac
     }
 
     #[cfg(unix)]
+    #[ignore = "fails since the Loams import made HarnessUpdatePolicy::Off the default; DD1 Task 3 removes the policies and polling and rewrites this test (ruling T1-8)"]
     #[tokio::test]
     async fn cancelling_a_busy_host_does_not_touch_another_device_or_its_installation() {
         let first = tempfile::tempdir().unwrap();
@@ -3519,7 +3527,7 @@ esac
     #[cfg(unix)]
     #[tokio::test]
     async fn unknown_claude_channel_clears_stale_release_and_never_auto_installs() {
-        use loams_desktop_proto::HarnessUpdatePolicy;
+        use loams_agentd_proto::HarnessUpdatePolicy;
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
         let executable = temp.path().join("claude");

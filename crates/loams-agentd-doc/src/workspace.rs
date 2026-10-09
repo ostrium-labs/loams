@@ -22,13 +22,13 @@
 //! loams-desktop's 15s heartbeat writes so liveness never grows the oplog.
 //!
 //! Timestamps are stored as epoch millis (the session-doc convention) and surface as
-//! `chrono::DateTime<Utc>` through the `loams_desktop_proto` entity types.
+//! `chrono::DateTime<Utc>` through the `loams_agentd_proto` entity types.
 
 use chrono::{DateTime, Utc};
 use loro::{ExportMode, LoroDoc, LoroMap, LoroValue, ToJson};
 use serde::{Deserialize, Serialize};
 
-use loams_desktop_proto::{Chat, ChatConfig, Device, Session, SessionStatus, Space};
+use loams_agentd_proto::{Chat, ChatConfig, Device, Session, SessionStatus, Space};
 
 use crate::schema::DocError;
 
@@ -371,7 +371,7 @@ impl WorkspaceDoc {
     pub fn set_chat_source_context(
         &self,
         chat_id: &str,
-        context: &loams_desktop_proto::ConversationSourceContext,
+        context: &loams_agentd_proto::ConversationSourceContext,
     ) -> Result<bool, DocError> {
         let Some(row) = self.existing_row("chats", chat_id) else {
             return Ok(false);
@@ -689,7 +689,7 @@ pub(crate) struct RawChat {
     #[serde(default)]
     checkout_id: Option<String>,
     #[serde(default)]
-    source_context: Option<loams_desktop_proto::ConversationSourceContext>,
+    source_context: Option<loams_agentd_proto::ConversationSourceContext>,
     /// LENIENT: a config this build can't decode (a harness/reasoning/sandbox
     /// id from a NEWER peer — field incident: pre-v0.2.10 laptops dropped
     /// every `"opencode"` chat row wholesale, so new sessions silently never
@@ -791,7 +791,7 @@ impl From<RawSession> for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loams_desktop_proto::{HarnessId, SandboxLevel};
+    use loams_agentd_proto::{HarnessId, SandboxLevel};
 
     fn ts(ms: i64) -> DateTime<Utc> {
         dt(ms)
@@ -918,7 +918,7 @@ mod tests {
         let config = ChatConfig {
             harness: HarnessId::ClaudeCode,
             model: Some("claude-fable-5".into()),
-            reasoning: Some(loams_desktop_proto::ReasoningLevel::XHigh),
+            reasoning: Some(loams_agentd_proto::ReasoningLevel::XHigh),
             model_options: options,
             sandbox: SandboxLevel::WorkspaceWrite,
         };
@@ -934,7 +934,7 @@ mod tests {
     fn conversation_source_context_round_trips_with_legacy_fields() {
         let ws = WorkspaceDoc::new();
         ws.upsert_chat(&chat("chat-1", "dev-a")).unwrap();
-        let context = loams_desktop_proto::ConversationSourceContext {
+        let context = loams_agentd_proto::ConversationSourceContext {
             checkout_id: "checkout-a".into(),
             repo_root: "/repo".into(),
             cwd: "/repo/worktree".into(),
@@ -970,7 +970,7 @@ mod tests {
     fn rows_round_trip() {
         let ws = WorkspaceDoc::new();
         let mut device = device("dev-a", "laptop");
-        device.capabilities = vec![loams_desktop_proto::capabilities::MESSAGE_QUEUE_V1.into()];
+        device.capabilities = vec![loams_agentd_proto::capabilities::MESSAGE_QUEUE_V1.into()];
         ws.upsert_device(&device).unwrap();
         ws.upsert_chat(&chat("chat-1", "dev-a")).unwrap();
         ws.upsert_session(&session("chat-1", "dev-a", SessionStatus::Working))

@@ -4,8 +4,8 @@
 //! cargo test -p loams-desktop-harness --test real_acp_lifecycle -- --ignored --nocapture
 
 use futures::StreamExt;
-use loams_desktop_harness::{CancellationToken, Harness, RunControls, SteerMessage};
-use loams_desktop_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
+use loams_agentd_harness::{CancellationToken, Harness, RunControls, SteerMessage};
+use loams_agentd_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
 
@@ -31,7 +31,7 @@ async fn live_run(cancel: bool) {
         sandbox: SandboxLevel::WorkspaceWrite, auto_approve: true,
         attachments: Vec::new(), worktree: None, resume: None,
     };
-    let mut stream = loams_desktop_harness::PiHarness::new()
+    let mut stream = loams_agentd_harness::PiHarness::new()
         .run(request, controls)
         .await
         .expect("real Pi must start");

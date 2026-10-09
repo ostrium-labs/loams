@@ -1,7 +1,7 @@
 //! Coalesced chat snapshots. Cursor is sampled BEFORE export; snapshot and
 //! cursor commit atomically. Queue/lock waits never occupy a Tokio worker.
-use loams_desktop_doc::SessionDoc;
-use loams_desktop_sync::DocsStore;
+use loams_agentd_doc::SessionDoc;
+use loams_agentd_store::DocsStore;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;

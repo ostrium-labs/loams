@@ -1,12 +1,12 @@
 //! #296 through the engine: completed tools must not park a pending ACP turn.
 //! Separate binary because the diagnostic watchdog setting is process-wide.
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandEntry, SessionCommandPayload,
     SessionCommandStatus,
 };
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::AcpHarness;
-use loams_desktop_proto::{HarnessId, RunRequest, SandboxLevel, SessionStatus};
+use loams_agentd_harness::AcpHarness;
+use loams_agentd_proto::{HarnessId, RunRequest, SandboxLevel, SessionStatus};
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::{sync::Arc, time::Duration};
 
 async fn wait_for(mut condition: impl FnMut() -> bool) {
@@ -29,7 +29,7 @@ async fn quiet_acp_prompt_stays_working_until_response() {
     let dir = tempfile::tempdir().unwrap();
     let registry = HarnessRegistry::new();
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../harness/tests/fixtures/acp-lifecycle.py");
+        .join("../loams-agentd-harness/tests/fixtures/acp-lifecycle.py");
     registry.register(Arc::new(AcpHarness::devin().with_executable(fixture)));
     let core =
         EngineCore::assemble(dir.path(), Arc::new(registry), HarnessId::Devin, None).unwrap();
@@ -130,7 +130,7 @@ async fn quiet_acp_prompt_stays_working_until_response() {
     // The steer landed with no tool open, so it preempted the model wait
     // (the peer answers `session/cancel` without "finished"). The original
     // output stays in its turn and the steer is answered in the next one.
-    let texts = |entry: &loams_desktop_doc::SessionMessageEntry| {
+    let texts = |entry: &loams_agentd_doc::SessionMessageEntry| {
         entry
             .parts
             .iter()

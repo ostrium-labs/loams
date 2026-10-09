@@ -4,7 +4,7 @@
 //! Child-process probes: resolution reads process env (PATH, the override), so
 //! each case re-runs this test binary with a controlled environment.
 
-use loams_desktop_harness::{ClaudeHarness, Harness};
+use loams_agentd_harness::{ClaudeHarness, Harness};
 
 #[test]
 fn availability_child() {

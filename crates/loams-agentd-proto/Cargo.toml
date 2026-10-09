@@ -1,13 +1,13 @@
 [package]
-name = "loams-desktop-proto"
+name = "loams-agentd-proto"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-publish.workspace = true
+license = "MIT"
+publish = false
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 pulldown-cmark.workspace = true

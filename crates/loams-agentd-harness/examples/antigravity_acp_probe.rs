@@ -9,8 +9,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[tokio::main]
 async fn main() {
-    use loams_desktop_harness::Harness;
-    let harness = loams_desktop_harness::AcpHarness::antigravity();
+    use loams_agentd_harness::Harness;
+    let harness = loams_agentd_harness::AcpHarness::antigravity();
     println!("installed: {}", harness.installed());
     if std::env::args().any(|arg| arg == "--detect-only") {
         return;
@@ -25,7 +25,7 @@ async fn main() {
         }
         return;
     }
-    let (server, args) = loams_desktop_harness::AcpHarness::antigravity()
+    let (server, args) = loams_agentd_harness::AcpHarness::antigravity()
         .resolve_program(true)
         .await
         .expect("install or resolve server");

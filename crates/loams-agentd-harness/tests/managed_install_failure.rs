@@ -11,8 +11,8 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use loams_desktop_harness::{AcpHarness, Harness, HarnessError, RunControls};
-use loams_desktop_proto::{RunRequest, SandboxLevel};
+use loams_agentd_harness::{AcpHarness, Harness, HarnessError, RunControls};
+use loams_agentd_proto::{RunRequest, SandboxLevel};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 

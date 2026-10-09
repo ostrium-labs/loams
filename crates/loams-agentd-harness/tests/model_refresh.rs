@@ -1,7 +1,7 @@
 //! Catalog refresh must survive large responses, account changes, and failed
 //! probes without pinning a stale catalog for the lifetime of the engine.
 #![cfg(unix)]
-use loams_desktop_harness::{AcpHarness, Harness};
+use loams_agentd_harness::{AcpHarness, Harness};
 use std::{os::unix::fs::PermissionsExt, path::Path};
 
 fn fixture(dir: &Path) -> std::path::PathBuf {

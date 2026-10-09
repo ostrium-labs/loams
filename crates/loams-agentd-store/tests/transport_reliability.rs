@@ -2,8 +2,8 @@
 //! This models delayed bytes, a temporary blackout and a connection reset;
 //! it does not claim to reproduce TCP packet loss or an airline network.
 
-use loams_desktop_doc::RegistryDoc;
-use loams_desktop_sync::{RegistryClient, registry::mock_server::MockRegistryServer};
+use loams_agentd_doc::RegistryDoc;
+use loams_agentd_store::{RegistryClient, registry::mock_server::MockRegistryServer};
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -126,7 +126,7 @@ async fn delayed_registry_survives_blackout_and_reset_without_losing_writes() {
     {
         let mut doc = doc.lock().unwrap();
         for i in 0..20 {
-            doc.upsert_device(&loams_desktop_proto::Device {
+            doc.upsert_device(&loams_agentd_proto::Device {
                 id: format!("offline-{i}"),
                 name: format!("queued-{i}"),
                 platform: "test".into(),

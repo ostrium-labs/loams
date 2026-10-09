@@ -1,14 +1,14 @@
 //! Round 17 probe: RunRequest.attachments must survive the command ledger's
 //! loro round trip.
 
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     SessionCommandEntry, SessionCommandPayload, SessionCommandStatus, SessionDoc,
 };
 
 #[test]
 fn run_request_attachments_survive_command_round_trip() {
     let doc = SessionDoc::init("chat-1").unwrap();
-    let request = loams_desktop_proto::RunRequest {
+    let request = loams_agentd_proto::RunRequest {
         mcp: None,
         prompt: "p".into(),
         harness: None,
@@ -16,7 +16,7 @@ fn run_request_attachments_survive_command_round_trip() {
         reasoning: None,
         model_options: Default::default(),
         cwd: "/tmp".into(),
-        sandbox: loams_desktop_proto::SandboxLevel::WorkspaceWrite,
+        sandbox: loams_agentd_proto::SandboxLevel::WorkspaceWrite,
         auto_approve: true,
         attachments: vec!["/tmp/a.png".into()],
         worktree: None,

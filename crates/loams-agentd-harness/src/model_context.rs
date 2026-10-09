@@ -1,6 +1,6 @@
 //! Credential bytes are hashed locally and never included in diagnostics or disk catalogs.
 use crate::{HarnessError, ModelContext};
-use loams_desktop_proto::HarnessId;
+use loams_agentd_proto::HarnessId;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 

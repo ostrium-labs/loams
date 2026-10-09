@@ -1,8 +1,8 @@
 //! Windows npm Codex must survive the production registry and ListHarnesses RPC.
 #![cfg(windows)]
 
-use loams_desktop_engine::{EngineCore, registry::default_registry};
-use loams_desktop_proto::HarnessId;
+use loams_agentd_proto::HarnessId;
+use loams_agentd_sessions::{EngineCore, registry::default_registry};
 
 #[tokio::test]
 async fn catalog_child() {
@@ -17,10 +17,10 @@ async fn catalog_child() {
         None,
     )
     .expect("assemble isolated engine");
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     let catalog = client
         .call(
-            loams_desktop_rpc::methods::LIST_HARNESSES,
+            loams_agentd_rpc::methods::LIST_HARNESSES,
             serde_json::json!({}),
         )
         .await

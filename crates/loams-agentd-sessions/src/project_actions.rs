@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     ProjectAction, ProjectActionDraft, ProjectActionIcon, ProjectActionRun, ProjectActionsSnapshot,
 };
 use serde::{Deserialize, Serialize};
@@ -905,12 +905,12 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn project_actions_rpc_does_not_block_async_worker() {
-        use loams_desktop_rpc::{RpcService, methods};
+        use loams_agentd_rpc::{RpcService, methods};
         let temp = tempfile::tempdir().unwrap();
         let core = crate::EngineCore::assemble(
             temp.path(),
             Arc::new(crate::HarnessRegistry::new()),
-            loams_desktop_proto::HarnessId::Mock,
+            loams_agentd_proto::HarnessId::Mock,
             None,
         )
         .unwrap();

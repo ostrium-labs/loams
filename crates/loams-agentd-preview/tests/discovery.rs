@@ -1,5 +1,5 @@
 //! Real OS process/listener association, including unrelated project isolation.
-use loams_desktop_preview::PreviewService;
+use loams_agentd_preview::PreviewService;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,

@@ -12,7 +12,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
-use loams_desktop_proto::CheckoutChangeRequestStatus;
+use loams_agentd_proto::CheckoutChangeRequestStatus;
 
 use crate::repos::{CheckoutIdentity, Repos};
 use crate::source_control::{
@@ -362,7 +362,7 @@ struct SemanticStatus {
     device_id: String,
     cwd: String,
     branch: String,
-    change_request: Option<loams_desktop_proto::ChangeRequestSummary>,
+    change_request: Option<loams_agentd_proto::ChangeRequestSummary>,
 }
 
 impl From<&CheckoutChangeRequestStatus> for SemanticStatus {
@@ -412,7 +412,7 @@ mod tests {
 
     use async_trait::async_trait;
     use futures::StreamExt;
-    use loams_desktop_proto::{ChangeRequestState, ChangeRequestSummary};
+    use loams_agentd_proto::{ChangeRequestState, ChangeRequestSummary};
 
     use super::*;
     use crate::source_control::BranchHeadContext;

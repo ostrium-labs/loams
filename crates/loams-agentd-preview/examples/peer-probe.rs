@@ -2,7 +2,7 @@
 //! channel (for example Loams Desktop terminal RPC); never publish SDP in release logs.
 //! `peer-probe host <localhost-port>` serves that explicit backend; `peer-probe
 //! client` requests it. Each process reads the other process's signals on stdin.
-use loams_desktop_preview::{
+use loams_agentd_preview::{
     mux::{BoxIo, Connector},
     peer::{Peers, Signal},
 };
@@ -27,7 +27,7 @@ impl Connector for Backend {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter("loams_desktop_preview=debug,webrtc=warn")
+        .with_env_filter("loams_agentd_preview=debug,webrtc=warn")
         .with_writer(std::io::stderr)
         .init();
     let args: Vec<_> = std::env::args().skip(1).collect();

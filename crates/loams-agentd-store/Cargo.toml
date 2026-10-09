@@ -1,12 +1,12 @@
 [package]
-name = "loams-desktop-sync"
+name = "loams-agentd-store"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-publish.workspace = true
+license = "MIT"
+publish = false
 
 [dependencies]
-loams-desktop-doc.workspace = true
+loams-agentd-doc.workspace = true
 loro.workspace = true
 loro-protocol.workspace = true
 serde.workspace = true
@@ -17,7 +17,7 @@ futures.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, features = ["serde"] }
 
 # NWPathMonitor bridge (net_path.rs) — the update handler is an ObjC block.
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -25,14 +25,14 @@ block2 = "0.6"
 
 [features]
 # In-process registry server speaking the DO's JSON WS protocol — test
-# infrastructure for this crate's tests and loams-desktop-engine's integration tests.
+# infrastructure for this crate's tests and loams-agentd-sessions's integration tests.
 mock-server = []
 
 [dev-dependencies]
 chrono.workspace = true
 # chat2_live example only (live checkpoint fetch against a deployed worker).
-reqwest.workspace = true
-loams-desktop-proto.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
+loams-agentd-proto.workspace = true
 tempfile.workspace = true
 # `start_paused` virtual-clock tests (the 2026-07-30 sync-stall regressions).
 tokio = { workspace = true, features = ["test-util"] }

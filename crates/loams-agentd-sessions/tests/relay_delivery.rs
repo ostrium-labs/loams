@@ -25,17 +25,17 @@ use tokio_tungstenite::tungstenite::handshake::server::{
     Request as WsRequest, Response as WsResponse,
 };
 
-use loams_desktop_doc::{MessageRole, MessageStatus, SessionCommandPayload};
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_doc::{MessageRole, MessageStatus, SessionCommandPayload};
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, Device, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SteeringMode,
 };
-use loams_desktop_rpc::{
+use loams_agentd_rpc::{
     DeviceFrameHeader, LinkCache, LinkCacheConfig, StaticToken, decode_device_frame,
     encode_device_frame, methods,
 };
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 
 const CHAT: &str = "chat-relay-fallback";
 
@@ -225,9 +225,9 @@ async fn rows_dark_command_delivers_over_the_peer_relay_exactly_once() {
         created_at: None,
         version: Some("0.2.12".into()),
         cursor_sdk_version: None,
-        capabilities: loams_desktop_proto::capabilities::current(),
+        capabilities: loams_agentd_proto::capabilities::current(),
     });
-    let client_a = loams_desktop_rpc::memory_client(core_a.rpc_service());
+    let client_a = loams_agentd_rpc::memory_client(core_a.rpc_service());
     client_a
         .call(
             methods::MUTATE,

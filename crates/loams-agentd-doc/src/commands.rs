@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use loams_desktop_proto::{RunRequest, UserInputAnswer};
+use loams_agentd_proto::{RunRequest, UserInputAnswer};
 
 use crate::constants::COMMAND_DEFAULT_TTL_MS;
 
@@ -356,7 +356,7 @@ mod tests {
             reasoning: None,
             model_options: Default::default(),
             cwd: "/tmp".into(),
-            sandbox: loams_desktop_proto::SandboxLevel::WorkspaceWrite,
+            sandbox: loams_agentd_proto::SandboxLevel::WorkspaceWrite,
             auto_approve: false,
             attachments: Vec::new(),
             worktree: None,

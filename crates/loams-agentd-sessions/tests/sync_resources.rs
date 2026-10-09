@@ -39,9 +39,9 @@ fn resource_limit_child() {
 #[cfg(unix)]
 async fn stress() {
     use futures::{SinkExt, StreamExt};
-    use loams_desktop_engine::{DocHost, DocHostConfig, EdgeConfig};
-    use loams_desktop_proto::HarnessId;
-    use loams_desktop_sync::{
+    use loams_agentd_proto::HarnessId;
+    use loams_agentd_sessions::{DocHost, DocHostConfig, EdgeConfig};
+    use loams_agentd_store::{
         DocsStore,
         chat_frames::{decode, encode, frame_type},
     };
@@ -150,7 +150,7 @@ async fn stress() {
     server.abort();
     let _ = server.await;
     tokio::time::timeout(Duration::from_secs(3), async {
-        while loams_desktop_sync::budget::shared().stats().sockets != 0 {
+        while loams_agentd_store::budget::shared().stats().sockets != 0 {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })

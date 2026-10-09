@@ -1,13 +1,13 @@
 [package]
-name = "loams-desktop-rpc"
+name = "loams-agentd-rpc"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-publish.workspace = true
+license = "MIT"
+publish = false
 
 [dependencies]
-loams-desktop-proto.workspace = true
-loams-desktop-sync.workspace = true
+loams-agentd-proto.workspace = true
+loams-agentd-store.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
 futures.workspace = true
@@ -17,10 +17,10 @@ anyhow.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
-loams-desktop-doc.workspace = true
+loams-agentd-doc.workspace = true
 
 # Deterministic stalled-transport deadlines.
 tokio = { workspace = true, features = ["test-util"] }

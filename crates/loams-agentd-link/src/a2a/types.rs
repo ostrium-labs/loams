@@ -65,7 +65,7 @@ impl Part {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
-    /// Deterministic per durable step, so a replay deduplicates (D467).
+    /// Deterministic per durable step, so a replay deduplicates (design 37 section 18).
     pub message_id: String,
     /// The chat thread or factory run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -176,7 +176,7 @@ pub struct Artifact {
     pub parts: Vec<Part>,
 }
 
-/// An A2A task; its id is the Loams operation id (D467).
+/// An A2A task; its id is the Loams operation id (design 37 section 18).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {

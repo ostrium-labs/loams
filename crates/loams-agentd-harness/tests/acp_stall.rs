@@ -12,8 +12,8 @@ use std::time::Duration;
 use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
-use loams_desktop_harness::{AcpHarness, CancellationToken, Harness, RunControls};
-use loams_desktop_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
+use loams_agentd_harness::{AcpHarness, CancellationToken, Harness, RunControls};
+use loams_agentd_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
 
 fn fixture_path() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

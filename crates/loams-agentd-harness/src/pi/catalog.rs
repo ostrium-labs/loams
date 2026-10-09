@@ -1,6 +1,6 @@
 use super::{Process, normalize::string};
 use crate::HarnessError;
-use loams_desktop_proto::{Model, ModelOption, ModelOptionChoice, ReasoningLevel, SlashCommand};
+use loams_agentd_proto::{Model, ModelOption, ModelOptionChoice, ReasoningLevel, SlashCommand};
 use serde_json::{Value, json};
 
 pub(super) fn levels(data: &Value) -> Vec<ReasoningLevel> {

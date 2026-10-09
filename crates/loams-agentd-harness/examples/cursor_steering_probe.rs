@@ -1,8 +1,8 @@
 //! Real-model conversational steering check (no tools or additive jobs).
 //! cargo run -p loams-desktop-harness --example cursor_steering_probe -- gemini-3-flash
 use futures::StreamExt;
-use loams_desktop_harness::{CancellationToken, CursorHarness, Harness, RunControls, SteerMessage};
-use loams_desktop_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
+use loams_agentd_harness::{CancellationToken, CursorHarness, Harness, RunControls, SteerMessage};
+use loams_agentd_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 

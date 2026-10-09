@@ -5,7 +5,7 @@ use crate::{
     peer::{OutgoingSignal, Peers, Signal},
 };
 use futures::{SinkExt, StreamExt};
-use loams_desktop_proto::PreviewService;
+use loams_agentd_proto::PreviewService;
 use serde::Deserialize;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc;

@@ -1,8 +1,8 @@
 //! Real native Pi, isolated settings, and a local provider (no network/API spend).
 #![cfg(unix)]
 use futures::StreamExt;
-use loams_desktop_harness::{CancellationToken, Harness, PiHarness, RunControls, SteerMessage};
-use loams_desktop_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel, UserInputAnswer};
+use loams_agentd_harness::{CancellationToken, Harness, PiHarness, RunControls, SteerMessage};
+use loams_agentd_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel, UserInputAnswer};
 use std::{os::unix::fs::PermissionsExt, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 
@@ -105,10 +105,10 @@ async fn real_pi_mock_lifecycle() {
             while let Some(event) = stream.next().await {
                 match event.unwrap() {
                     AgentEvent::SessionStarted { session_id, .. } => {
-                        if let Some(old) = &session {
-                            if prompt != "/probe-new" {
-                                assert_eq!(old, &session_id);
-                            }
+                        if let Some(old) = &session
+                            && prompt != "/probe-new"
+                        {
+                            assert_eq!(old, &session_id);
                         }
                         session = Some(session_id);
                         if prompt == "steering slow" {

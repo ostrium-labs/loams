@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     ListWorkspaceDirectoryRequest, ReadWorkspaceFileRequest, SearchWorkspaceFilesRequest,
     WatchWorkspaceFilesRequest, WorkspaceDirectoryPage, WorkspaceEntry, WorkspaceEntryKind,
     WorkspaceFileChange, WorkspaceFileChangeKind, WorkspaceFileChanges,
@@ -19,7 +19,7 @@ use loams_desktop_proto::{
     WorkspaceTextEncoding, WorkspaceWritableEncoding, WorkspaceWritableLineEnding,
     WriteWorkspaceFileOutcome, WriteWorkspaceFileRequest,
 };
-use loams_desktop_rpc::RpcError;
+use loams_agentd_rpc::RpcError;
 use sha2::{Digest, Sha256};
 use tokio::sync::{Notify, broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
@@ -398,7 +398,7 @@ impl WorkspaceFiles {
         cancel_on_drop.disarm();
         result.map(|mut page| {
             page.checkout_id = Some(workspace.checkout_id);
-            page.mutation_capabilities = Some(loams_desktop_proto::WorkspaceMutationCapabilities {
+            page.mutation_capabilities = Some(loams_agentd_proto::WorkspaceMutationCapabilities {
                 move_entry: cfg!(any(target_os = "linux", target_os = "macos", windows)),
                 delete_entry: true,
             });
@@ -458,8 +458,8 @@ impl WorkspaceFiles {
 
     pub async fn read_image(
         &self,
-        request: loams_desktop_proto::ReadWorkspaceImageRequest,
-    ) -> Result<loams_desktop_proto::WorkspaceImageChunk, WorkspaceFilesError> {
+        request: loams_agentd_proto::ReadWorkspaceImageRequest,
+    ) -> Result<loams_agentd_proto::WorkspaceImageChunk, WorkspaceFilesError> {
         let workspace = self.resolve_target(&request.target).await?;
         let absolute = request.target.chat_id.is_some() && request.path.starts_with('/');
         if !absolute
@@ -1296,10 +1296,10 @@ fn compare_workspace_search_matches(
 fn read_image_blocking(
     root: &Path,
     relative: &WorkspaceRelativePath,
-    request: &loams_desktop_proto::ReadWorkspaceImageRequest,
-) -> Result<loams_desktop_proto::WorkspaceImageChunk, WorkspaceFilesError> {
+    request: &loams_agentd_proto::ReadWorkspaceImageRequest,
+) -> Result<loams_agentd_proto::WorkspaceImageChunk, WorkspaceFilesError> {
     use base64::Engine as _;
-    use loams_desktop_proto::{MAX_WORKSPACE_IMAGE_BYTES, WORKSPACE_IMAGE_CHUNK_BYTES};
+    use loams_agentd_proto::{MAX_WORKSPACE_IMAGE_BYTES, WORKSPACE_IMAGE_CHUNK_BYTES};
     use std::io::Read;
     let mime = match relative
         .as_path()
@@ -1375,7 +1375,7 @@ fn read_image_blocking(
         .offset
         .saturating_add(WORKSPACE_IMAGE_CHUNK_BYTES)
         .min(bytes.len());
-    Ok(loams_desktop_proto::WorkspaceImageChunk {
+    Ok(loams_agentd_proto::WorkspaceImageChunk {
         checkout_id: request.expected_checkout_id.clone(),
         content_hash: hash,
         mime_type: mime.into(),
@@ -2678,7 +2678,7 @@ mod tests {
         else {
             panic!("expected outside resolution");
         };
-        let request = loams_desktop_proto::ReadWorkspaceImageRequest {
+        let request = loams_agentd_proto::ReadWorkspaceImageRequest {
             target: WorkspaceTarget {
                 chat_id: Some("chat".into()),
                 space_id: None,
@@ -3167,7 +3167,7 @@ mod tests {
 #[cfg(test)]
 mod image_tests {
     use super::*;
-    use loams_desktop_proto::{
+    use loams_agentd_proto::{
         ReadWorkspaceImageRequest, WORKSPACE_IMAGE_CHUNK_BYTES, WorkspaceTarget,
     };
     fn request() -> ReadWorkspaceImageRequest {
@@ -3217,7 +3217,7 @@ mod image_tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
         let file = std::fs::File::create(root.join("image.png")).unwrap();
-        file.set_len(loams_desktop_proto::MAX_WORKSPACE_IMAGE_BYTES as u64 + 1)
+        file.set_len(loams_agentd_proto::MAX_WORKSPACE_IMAGE_BYTES as u64 + 1)
             .unwrap();
         assert!(
             read_image_blocking(

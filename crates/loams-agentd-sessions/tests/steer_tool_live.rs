@@ -4,12 +4,12 @@
 //! the steer is answered.
 //!
 //! LOAMS_DESKTOP_TEST_HARNESS=claude cargo test -p loams-desktop-engine --test steer_tool_live -- --ignored --nocapture
-use loams_desktop_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::{
+use loams_agentd_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
+use loams_agentd_harness::{
     AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,
 };
-use loams_desktop_proto::{ChatConfig, McpServer, RunRequest, SandboxLevel, SessionStatus};
+use loams_agentd_proto::{ChatConfig, McpServer, RunRequest, SandboxLevel, SessionStatus};
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -53,7 +53,7 @@ fn harness(name: &str) -> Arc<dyn Harness> {
         "grok" => Arc::new(AcpHarness::grok()),
         "devin" => Arc::new(AcpHarness::devin()),
         "hermes" => Arc::new(AcpHarness::hermes()),
-        "pi" => Arc::new(loams_desktop_harness::PiHarness::new()),
+        "pi" => Arc::new(loams_agentd_harness::PiHarness::new()),
         "antigravity" => Arc::new(AcpHarness::antigravity()),
         _ => panic!("unknown harness {name}"),
     }

@@ -2,8 +2,8 @@
 //! Run through scripts/transport-proxy.py for controlled network conditions.
 //! Usage: transport_live <proxy-base> <cloudflare-origin> <stream|outage|http|catchup|upload>
 use futures::future::BoxFuture;
-use loams_desktop_sync::chat_client::{ChatTransport, RowImportOutcome};
-use loams_desktop_sync::{
+use loams_agentd_store::chat_client::{ChatTransport, RowImportOutcome};
+use loams_agentd_store::{
     ChatClient, ChatDocSink, CheckpointFetcher, DocsStore, StaticUrl, SyncError,
 };
 use loro::{ExportMode, LoroDoc, VersionVector};

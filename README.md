@@ -83,7 +83,7 @@ Statuses describe the engine implementation; consult the selected source ref and
 
 ## Monorepo applications
 
-This repository also contains the [Loams Desktop](apps/desktop/README.md),
+This repository also contains [Loams Desktop](apps/desktop-electron/README.md) with its agent daemon ([`crates/loams-agentd`](docs/design/50-loams-desktop-daemon.md)),
 [native Android/iOS apps](apps/mobile/README.md), and [plugin services and dashboard](plugins/README.md).
 Nx coordinates Cargo, Gradle, Xcode/SwiftPM, Go, and the root pnpm workspace; it does not replace those build tools.
 

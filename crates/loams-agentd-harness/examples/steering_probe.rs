@@ -2,11 +2,11 @@
 //! cargo run -p loams-desktop-harness --example steering_probe -- <harness> [model|--models]
 //! Checks a running shell survives a rapid burst and every follow-up is acted on.
 use futures::StreamExt;
-use loams_desktop_harness::{
+use loams_agentd_harness::{
     AcpHarness, CancellationToken, ClaudeHarness, CodexHarness, CursorHarness, Harness,
     OpencodeHarness, RunControls, SteerMessage,
 };
-use loams_desktop_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
+use loams_agentd_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{mpsc, oneshot};
 
@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
         "grok" => Arc::new(AcpHarness::grok()),
         "devin" => Arc::new(AcpHarness::devin()),
         "hermes" => Arc::new(AcpHarness::hermes()),
-        "pi" => Arc::new(loams_desktop_harness::PiHarness::new()),
+        "pi" => Arc::new(loams_agentd_harness::PiHarness::new()),
         "antigravity" => Arc::new(AcpHarness::antigravity()),
         _ => anyhow::bail!("unknown harness"),
     };

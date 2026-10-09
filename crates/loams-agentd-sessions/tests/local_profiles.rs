@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::{Arc, Barrier, Mutex};
 
-use loams_desktop_engine::{
+use loams_agentd_sessions::{
     AuthState, Engine, EngineConfig, EngineCore, EngineProfile, HarnessId, WorkspaceScope,
     default_registry,
 };

@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
-use loams_desktop_sync::SyncError;
-use loams_desktop_sync::chat_client::{
+use loams_agentd_store::SyncError;
+use loams_agentd_store::chat_client::{
     ChatClient, ChatDocSink, CheckpointFetcher, RowImportOutcome,
 };
 use loro::{ExportMode, LoroDoc, VersionVector};

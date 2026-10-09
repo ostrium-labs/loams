@@ -1,11 +1,11 @@
 //! Opt-in production engine + Cursor SDK checks. Uses real account quota.
 //! LOAMS_DESKTOP_CURSOR_STATE_DIR=$(mktemp -d) cargo test -p loams-desktop-engine --test cursor_live -- --ignored --nocapture --test-threads=1
-use loams_desktop_doc::{
+use loams_agentd_doc::{
     MessagePart, MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry,
 };
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::CursorHarness;
-use loams_desktop_proto::{HarnessId, RunRequest, SandboxLevel};
+use loams_agentd_harness::CursorHarness;
+use loams_agentd_proto::{HarnessId, RunRequest, SandboxLevel};
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::{sync::Arc, time::Duration};
 
 const CHAT: &str = "cursor-live-audit";
@@ -130,11 +130,11 @@ async fn remote_steer_batch_reaches_real_muse_with_every_message() {
         .unwrap()
         .as_millis() as i64;
     for (i, token) in tokens.iter().enumerate().skip(1) {
-        handle.doc().queue_command(&loams_desktop_doc::SessionCommandEntry {
+        handle.doc().queue_command(&loams_agentd_doc::SessionCommandEntry {
             id: format!("remote-{i}"),
             payload: SessionCommandPayload::Steer {prompt: format!("Remember {token}. Reply with the immediately previous user token and this token. Do not use tools."), message_id: Some(format!("message-{i}"))},
             issued_by: "remote-viewer".into(), issued_at: now + i as i64,
-            based_on: None, expires_at: None, status: loams_desktop_doc::SessionCommandStatus::Pending, resolution: None,
+            based_on: None, expires_at: None, status: loams_agentd_doc::SessionCommandStatus::Pending, resolution: None,
         }).unwrap();
     }
     core.doc_host.drain_commands(&handle).await;
@@ -253,7 +253,7 @@ async fn send_now_recall(stage: u8) {
                         events.iter().any(|e| {
                             matches!(
                                 e.event,
-                                loams_desktop_proto::AgentEvent::SessionStarted { .. }
+                                loams_agentd_proto::AgentEvent::SessionStarted { .. }
                             )
                         })
                     })
@@ -328,7 +328,7 @@ async fn startup_steering_burst_retains_all_interrupted_messages() {
                     .filter(|e| {
                         matches!(
                             e.event,
-                            loams_desktop_proto::AgentEvent::SessionStarted { .. }
+                            loams_agentd_proto::AgentEvent::SessionStarted { .. }
                         )
                     })
                     .count()

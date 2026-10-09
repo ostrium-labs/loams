@@ -1,18 +1,17 @@
 [package]
-name = "loams-desktop-engine"
+name = "loams-agentd-sessions"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-publish.workspace = true
+license = "MIT"
+publish = false
 
 [dependencies]
-loams-desktop-preview.workspace = true
-loams-desktop-proto.workspace = true
-loams-desktop-doc.workspace = true
-loams-desktop-sync.workspace = true
-loams-desktop-harness.workspace = true
-loams-desktop-rpc.workspace = true
-loams-desktop-update.workspace = true
+loams-agentd-preview.workspace = true
+loams-agentd-proto.workspace = true
+loams-agentd-doc.workspace = true
+loams-agentd-store.workspace = true
+loams-agentd-harness.workspace = true
+loams-agentd-rpc.workspace = true
 loro.workspace = true
 tokio.workspace = true
 futures.workspace = true
@@ -23,7 +22,7 @@ rusqlite.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 notify.workspace = true
 portable-pty.workspace = true
@@ -32,8 +31,8 @@ toml = "0.8"
 libc.workspace = true
 gethostname.workspace = true
 tokio-util = { workspace = true, features = ["rt"] }
-sha2.workspace = true
-reqwest.workspace = true
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
 ignore.workspace = true
 nucleo-matcher.workspace = true
 
@@ -43,8 +42,8 @@ tempfile.workspace = true
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Threading"] }
 
 [dev-dependencies]
-loams-desktop-harness = { workspace = true, features = ["installer-fixture"] }
+loams-agentd-harness = { workspace = true, features = ["installer-fixture"] }
 zip.workspace = true
 tokio-tungstenite.workspace = true
 # In-process registry server for the two-engine workspace integration tests.
-loams-desktop-sync = { workspace = true, features = ["mock-server"] }
+loams-agentd-store = { workspace = true, features = ["mock-server"] }

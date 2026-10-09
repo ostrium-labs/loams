@@ -3,8 +3,8 @@
 #![cfg(all(windows, feature = "native-fixture"))]
 
 use futures::StreamExt;
-use loams_desktop_harness::{AcpHarness, CancellationToken, Harness, RunControls};
-use loams_desktop_proto::{AgentEvent, DoneStatus, HarnessId, RunRequest, SandboxLevel};
+use loams_agentd_harness::{AcpHarness, CancellationToken, Harness, RunControls};
+use loams_agentd_proto::{AgentEvent, DoneStatus, HarnessId, RunRequest, SandboxLevel};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -18,9 +18,9 @@ fn managed_process_protocol_progresses_with_one_blocking_worker() {
         .build()
         .unwrap();
     runtime.block_on(async {
-        use loams_desktop_harness::process::Stdio;
+        use loams_agentd_harness::process::Stdio;
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-        let mut command = loams_desktop_harness::process::Command::new(env!(
+        let mut command = loams_agentd_harness::process::Command::new(env!(
             "CARGO_BIN_EXE_harness-native-fixture"
         ));
         command
@@ -50,14 +50,14 @@ fn managed_process_protocol_progresses_with_one_blocking_worker() {
 #[tokio::test]
 async fn output_captures_both_streams_with_default_or_null_stdio() {
     for null_streams in [false, true] {
-        let mut command = loams_desktop_harness::process::Command::new(env!(
+        let mut command = loams_agentd_harness::process::Command::new(env!(
             "CARGO_BIN_EXE_harness-native-fixture"
         ));
         command.arg("--capture-output");
         if null_streams {
             command
-                .stdout(loams_desktop_harness::process::Stdio::null())
-                .stderr(loams_desktop_harness::process::Stdio::null());
+                .stdout(loams_agentd_harness::process::Stdio::null())
+                .stderr(loams_agentd_harness::process::Stdio::null());
         }
         let output = tokio::time::timeout(Duration::from_secs(5), command.output())
             .await
@@ -73,7 +73,7 @@ struct ProcessHandle(*mut std::ffi::c_void);
 
 #[tokio::test]
 async fn native_launch_matches_tokio_argv_environment_cwd_and_path() {
-    use loams_desktop_harness::process::{Command, Stdio};
+    use loams_agentd_harness::process::{Command, Stdio};
     let dir = tempfile::tempdir().unwrap();
     let exe = fixture(dir.path());
     let arguments = [
@@ -140,7 +140,7 @@ async fn native_launch_matches_tokio_argv_environment_cwd_and_path() {
 
 #[tokio::test]
 async fn invalid_launch_inputs_fail_without_starting_a_child() {
-    use loams_desktop_harness::process::Command;
+    use loams_agentd_harness::process::Command;
     let exe = env!("CARGO_BIN_EXE_harness-native-fixture");
     for command in [
         Command::new(exe).arg("NUL\0argument"),
@@ -396,13 +396,13 @@ async fn cooperative_cancel_also_cleans_up_descendants() {
 #[tokio::test]
 async fn process_exit_drains_buffered_output_despite_inherited_descendant_pipes() {
     let dir = tempfile::tempdir().unwrap();
-    let mut command = loams_desktop_harness::process::Command::new(fixture(dir.path()));
+    let mut command = loams_agentd_harness::process::Command::new(fixture(dir.path()));
     command
         .arg("--output-tree")
         .current_dir(dir.path())
-        .stdin(loams_desktop_harness::process::Stdio::null())
-        .stdout(loams_desktop_harness::process::Stdio::piped())
-        .stderr(loams_desktop_harness::process::Stdio::piped());
+        .stdin(loams_agentd_harness::process::Stdio::null())
+        .stdout(loams_agentd_harness::process::Stdio::piped())
+        .stderr(loams_agentd_harness::process::Stdio::piped());
     let mut child = command.spawn().unwrap();
     let mut stdout = child.stdout.take().unwrap();
     let mut stderr = child.stderr.take().unwrap();
@@ -459,8 +459,8 @@ async fn batch_overrides_launch_through_cmd() {
     .unwrap();
     let harnesses: Vec<Box<dyn Harness>> = vec![
         Box::new(AcpHarness::grok().with_executable(script.clone())),
-        Box::new(loams_desktop_harness::ClaudeHarness::new().with_executable(script.clone())),
-        Box::new(loams_desktop_harness::CodexHarness::new().with_executable(script)),
+        Box::new(loams_agentd_harness::ClaudeHarness::new().with_executable(script.clone())),
+        Box::new(loams_agentd_harness::CodexHarness::new().with_executable(script)),
     ];
     for harness in harnesses {
         let expected_prefix: Vec<String> = match harness.id() {
@@ -589,7 +589,7 @@ async fn application_exit_without_destructors_kills_owned_processes() {
 
 #[tokio::test]
 async fn batch_arguments_resist_shell_interpretation() {
-    use loams_desktop_harness::process::Command;
+    use loams_agentd_harness::process::Command;
     let dir = tempfile::tempdir().unwrap();
     let script = dir.path().join("shim 日本語 Ħ &!.cmd");
     std::fs::write(
@@ -664,7 +664,7 @@ async fn batch_executable_path_rejects_percent_expansion() {
     let script = dir.path().join("shim%LOAMS_DESKTOP_BATCH_NAME%.cmd");
     std::fs::write(&script, "@exit /b 0\r\n").unwrap();
     assert_eq!(
-        loams_desktop_harness::process::Command::new(&script)
+        loams_agentd_harness::process::Command::new(&script)
             .spawn()
             .unwrap_err()
             .kind(),

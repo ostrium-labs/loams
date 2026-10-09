@@ -11,16 +11,16 @@ use std::os::unix::ffi::OsStringExt;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
-use loams_desktop_engine::{
+use loams_agentd_proto::{
+    CreateWorktreeOutcome, GitHistoryRefKind, ProjectActionDraft, ProjectActionIcon,
+    ProjectActionRun, TerminalEvent,
+};
+use loams_agentd_rpc::methods;
+use loams_agentd_sessions::{
     EngineCore, HarnessRegistry, Repos, Terminals, capture_commit_diff, capture_diff,
     capture_diff_against, capture_turn_diff, discard_working_tree, merge_base, read_diff_file_text,
     snapshot_tree, working_diff_base,
 };
-use loams_desktop_proto::{
-    CreateWorktreeOutcome, GitHistoryRefKind, ProjectActionDraft, ProjectActionIcon,
-    ProjectActionRun, TerminalEvent,
-};
-use loams_desktop_rpc::methods;
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -79,7 +79,7 @@ fn assemble(dir: &Path) -> EngineCore {
     EngineCore::assemble(
         dir,
         Arc::new(HarnessRegistry::new()),
-        loams_desktop_proto::HarnessId::Mock,
+        loams_agentd_proto::HarnessId::Mock,
         None,
     )
     .expect("engine assembles")
@@ -869,7 +869,7 @@ async fn discard_working_tree_removes_untracked_symlinks_without_following_them(
 
 #[tokio::test]
 async fn git_status_preserves_index_changes_even_when_head_diff_is_empty() {
-    use loams_desktop_proto::GitFileState::*;
+    use loams_agentd_proto::GitFileState::*;
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("repo");
     init_repo(&root).await;
@@ -959,7 +959,7 @@ async fn git_status_enumerates_untracked_symlinks_without_reading_their_targets(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn git_status_stream_is_scoped_deduplicated_and_resets_after_commit() {
-    use loams_desktop_proto::CheckoutGitStatus;
+    use loams_agentd_proto::CheckoutGitStatus;
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("repo");
     let other = tmp.path().join("other");
@@ -980,19 +980,19 @@ async fn git_status_stream_is_scoped_deduplicated_and_resets_after_commit() {
             .unwrap();
     }
     core.diff_sync.reconcile_now().await;
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     let params = serde_json::json!({"chatId": "chat"});
     let mut stream = client
         .subscribe_checked(methods::WATCH_WORKSPACE_GIT_STATUS, params.clone())
         .await
         .unwrap();
-    async fn next(stream: &mut loams_desktop_rpc::RpcSubscription) -> CheckoutGitStatus {
+    async fn next(stream: &mut loams_agentd_rpc::RpcSubscription) -> CheckoutGitStatus {
         tokio::time::timeout(Duration::from_secs(15), async {
             loop {
                 let value = stream.recv().await.expect("stream alive");
                 assert!(value.get("patch").is_none());
                 if let Some(status) =
-                    serde_json::from_value::<loams_desktop_proto::WorkspaceGitStatusFrame>(value)
+                    serde_json::from_value::<loams_agentd_proto::WorkspaceGitStatusFrame>(value)
                         .unwrap()
                         .status
                 {
@@ -1052,11 +1052,11 @@ async fn git_status_stream_is_scoped_deduplicated_and_resets_after_commit() {
     let staged = next(&mut stream).await;
     assert_eq!(
         staged.files[0].index,
-        loams_desktop_proto::GitFileState::Modified
+        loams_agentd_proto::GitFileState::Modified
     );
     assert_eq!(
         staged.files[0].worktree,
-        loams_desktop_proto::GitFileState::Unchanged
+        loams_agentd_proto::GitFileState::Unchanged
     );
     git(&root, &["commit", "-m", "done"]).await;
     let clean = next(&mut stream).await;
@@ -1172,7 +1172,7 @@ async fn diff_file_text_returns_both_checked_sources() {
     assert!(!pair.binary);
     assert!(!pair.truncated);
 
-    let escape = loams_desktop_proto::DiffFileSummary {
+    let escape = loams_agentd_proto::DiffFileSummary {
         path: "../outside.txt".into(),
         old_path: None,
         status: "modified".into(),
@@ -1487,7 +1487,7 @@ async fn checkout_file_diff_text_rpc_fits_the_default_worker_stack() {
     let snapshot = capture_diff(&core.repos, &repo_dir)
         .await
         .expect("diff snapshot");
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
 
     let response = client
         .call(
@@ -1502,7 +1502,7 @@ async fn checkout_file_diff_text_rpc_fits_the_default_worker_stack() {
         )
         .await
         .expect("GetCheckoutFileDiffText");
-    let response: loams_desktop_proto::CheckoutFileDiffText =
+    let response: loams_agentd_proto::CheckoutFileDiffText =
         serde_json::from_value(response).expect("typed response");
     assert_eq!(response.old_text.as_deref(), Some("one\ntwo\n"));
     assert_eq!(response.new_text.as_deref(), Some("one\ntwo edited\n"));
@@ -1534,7 +1534,7 @@ async fn checkout_file_diff_text_rpc_reads_pinned_commit_sources() {
     let snapshot = capture_commit_diff(&core.repos, &repo_dir, &sha)
         .await
         .expect("commit snapshot");
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
 
     let response = client
         .call(
@@ -1550,7 +1550,7 @@ async fn checkout_file_diff_text_rpc_reads_pinned_commit_sources() {
         )
         .await
         .expect("GetCheckoutFileDiffText");
-    let response: loams_desktop_proto::CheckoutFileDiffText =
+    let response: loams_agentd_proto::CheckoutFileDiffText =
         serde_json::from_value(response).expect("typed response");
     assert_eq!(response.old_text.as_deref(), Some("one\ntwo\n"));
     assert_eq!(
@@ -1701,7 +1701,7 @@ async fn project_actions_crud_preserves_saved_actions_with_invalid_imports() {
             true,
         )
         .unwrap();
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     let path = project.join("loams-desktop.json");
     // Directories must be reported as an import issue without preventing CRUD.
     std::fs::create_dir(&path).unwrap();
@@ -1826,7 +1826,7 @@ async fn project_actions_run_in_fresh_host_resolved_terminals() {
         )
         .expect("save Action");
     let action_id = snapshot.actions[0].id.clone();
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
 
     let run = client
         .call_as::<ProjectActionRun>(
@@ -1991,7 +1991,7 @@ async fn rpc_dispatch_for_m5_methods() {
     // worktrees out of $HOME. (Process-global — this is the only test that sets it.)
     unsafe { std::env::set_var("LOAMS_DESKTOP_WORKTREES_DIR", tmp.path().join("worktrees")) };
     let core = assemble(&tmp.path().join("data"));
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
 
     // CreateRepo → ListRepos.
     let created = client

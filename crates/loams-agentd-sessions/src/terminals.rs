@@ -26,8 +26,8 @@ use portable_pty::{CommandBuilder, native_pty_system};
 mod windows;
 use tokio::sync::mpsc;
 
-use loams_desktop_doc::TERMINAL_OUTPUT_BATCH_MS;
-use loams_desktop_proto::{TerminalEvent, TerminalSession};
+use loams_agentd_doc::TERMINAL_OUTPUT_BATCH_MS;
+use loams_agentd_proto::{TerminalEvent, TerminalSession};
 
 use crate::{EngineError, new_id};
 
@@ -435,7 +435,7 @@ impl Terminals {
             .as_mut()
             .ok_or_else(|| EngineError::Other("Terminal has exited".into()))?;
         writer
-            .write_all(&bytes)
+            .write_all(bytes)
             .and_then(|_| writer.flush())
             .map_err(|e| EngineError::Other(format!("Terminal write failed: {e}")))
     }
@@ -649,7 +649,7 @@ mod windows_tests {
 
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD as BASE64;
-    use loams_desktop_proto::TerminalEvent;
+    use loams_agentd_proto::TerminalEvent;
 
     use super::Terminals;
 

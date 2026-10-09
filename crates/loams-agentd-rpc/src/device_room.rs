@@ -231,7 +231,7 @@ pub enum TokenError {
     TemporarilyUnavailable(String),
 }
 
-impl From<TokenError> for loams_desktop_sync::SyncError {
+impl From<TokenError> for loams_agentd_store::SyncError {
     fn from(error: TokenError) -> Self {
         match error {
             TokenError::SignedOut => Self::Auth("signed out".into()),
@@ -320,8 +320,8 @@ impl HostRelay {
         on_nudge: NudgeHandler,
     ) -> Self {
         let task = tokio::spawn(async move {
-            let mut wake = loams_desktop_sync::wake::subscribe();
-            let mut online = loams_desktop_sync::wake::subscribe_online();
+            let mut wake = loams_agentd_store::wake::subscribe();
+            let mut online = loams_agentd_store::wake::subscribe_online();
             let mut token_changes = config.token.subscribe();
             // Fast-rejoin bookkeeping: the edge DO periodically ends healthy
             // host sessions (hibernation/deploys). Every second the host is
@@ -471,13 +471,13 @@ async fn host_session(
     service: &Arc<dyn RpcService>,
     on_nudge: &NudgeHandler,
 ) -> Result<(), RpcError> {
-    let ws = loams_desktop_sync::dial::connect_ws(url)
+    let ws = loams_agentd_store::dial::connect_ws(url)
         .await
         .map_err(|e| RpcError::Transport(format!("device room unreachable: {e}")))?;
     tracing::info!("device-room: host connected");
     let (out_tx, out_rx) = mpsc::channel::<Vec<u8>>(256);
     let (in_tx, mut in_rx) = mpsc::channel::<Vec<u8>>(1);
-    let transport = loams_desktop_sync::socket::pump_with_timing(
+    let transport = loams_agentd_store::socket::pump_with_timing(
         ws,
         out_rx,
         in_tx,
@@ -559,13 +559,14 @@ async fn handle_host_frame(
             Ok(nudge) => {
                 // Acknowledge local durable admission, never mere receipt or
                 // successful socket send. Old edges omit token and need no ACK.
-                if on_nudge(nudge.chat_id.clone()) && nudge.token.is_some() {
-                    if let Ok(frame) = encode_device_frame(
+                if on_nudge(nudge.chat_id.clone())
+                    && nudge.token.is_some()
+                    && let Ok(frame) = encode_device_frame(
                         &DeviceFrameHeader::new(&nudge.chat_id, "nudgeAck"),
                         &payload,
-                    ) {
-                        let _ = out_tx.send(frame).await;
-                    }
+                    )
+                {
+                    let _ = out_tx.send(frame).await;
                 }
             }
             Err(_) => tracing::warn!("device-room: malformed nudge — ignoring"),
@@ -603,13 +604,13 @@ pub struct DeviceLink {
 
 impl DeviceLink {
     pub async fn connect(url: &str) -> Result<Self, RpcError> {
-        let ws = loams_desktop_sync::dial::connect_ws(url)
+        let ws = loams_agentd_store::dial::connect_ws(url)
             .await
             .map_err(|e| RpcError::Transport(format!("device room unreachable: {e}")))?;
         Ok(Self::from_socket(ws))
     }
 
-    fn from_socket<S>(ws: loams_desktop_sync::socket::Connection<S>) -> Self
+    fn from_socket<S>(ws: loams_agentd_store::socket::Connection<S>) -> Self
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     {
@@ -620,7 +621,7 @@ impl DeviceLink {
         let (closed_tx, closed_rx) = watch::channel::<Option<String>>(None);
 
         let pump = tokio::spawn(async move {
-            let transport = loams_desktop_sync::socket::pump_with_timing(
+            let transport = loams_agentd_store::socket::pump_with_timing(
                 ws,
                 wire_rx,
                 wire_in,
@@ -845,8 +846,8 @@ impl LinkCache {
         if tokio::runtime::Handle::try_current().is_ok() {
             let weak = Arc::downgrade(&cache);
             tokio::spawn(async move {
-                let mut wake = loams_desktop_sync::wake::subscribe();
-                let mut online = loams_desktop_sync::wake::subscribe_online();
+                let mut wake = loams_agentd_store::wake::subscribe();
+                let mut online = loams_agentd_store::wake::subscribe_online();
                 let mut token_changes = weak
                     .upgrade()
                     .and_then(|cache| cache.config.token.subscribe());
@@ -1112,8 +1113,8 @@ mod tests {
     async fn blocked_relay_upload_closes_link_and_fails_pending_rpc() {
         use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Role};
         let (client, _peer) = tokio::io::duplex(64);
-        let (client, progress) = loams_desktop_sync::socket::ProgressIo::new(client);
-        let socket = loams_desktop_sync::socket::Connection {
+        let (client, progress) = loams_agentd_store::socket::ProgressIo::new(client);
+        let socket = loams_agentd_store::socket::Connection {
             socket: WebSocketStream::from_raw_socket(client, Role::Client, None).await,
             progress,
         };
@@ -1135,8 +1136,8 @@ mod tests {
         use tokio::io::AsyncReadExt;
         use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Role};
         let (client, mut peer) = tokio::io::duplex(8);
-        let (client, progress) = loams_desktop_sync::socket::ProgressIo::new(client);
-        let socket = loams_desktop_sync::socket::Connection {
+        let (client, progress) = loams_agentd_store::socket::ProgressIo::new(client);
+        let socket = loams_agentd_store::socket::Connection {
             socket: WebSocketStream::from_raw_socket(client, Role::Client, None).await,
             progress,
         };

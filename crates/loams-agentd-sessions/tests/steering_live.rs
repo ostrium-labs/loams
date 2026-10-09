@@ -1,11 +1,11 @@
 //! Opt-in real-model checks through the production queue and command executor.
 //! LOAMS_DESKTOP_TEST_HARNESS=claude LOAMS_DESKTOP_TEST_MODEL=claude-haiku-4-5 cargo test -p loams-desktop-engine --test steering_live -- --ignored --nocapture
-use loams_desktop_doc::{MessageRole, SessionCommandPayload};
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::{
+use loams_agentd_doc::{MessageRole, SessionCommandPayload};
+use loams_agentd_harness::{
     AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,
 };
-use loams_desktop_proto::{ChatConfig, RunRequest, SandboxLevel, SessionStatus};
+use loams_agentd_proto::{ChatConfig, RunRequest, SandboxLevel, SessionStatus};
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::{sync::Arc, time::Duration};
 
 async fn wait(core: &EngineCore, mut predicate: impl FnMut() -> bool, what: &str) {
@@ -47,7 +47,7 @@ async fn rapid_steers_preserve_children_context_and_held_queue() {
         "grok" => Arc::new(AcpHarness::grok()),
         "devin" => Arc::new(AcpHarness::devin()),
         "hermes" => Arc::new(AcpHarness::hermes()),
-        "pi" => Arc::new(loams_desktop_harness::PiHarness::new()),
+        "pi" => Arc::new(loams_agentd_harness::PiHarness::new()),
         "antigravity" => Arc::new(AcpHarness::antigravity()),
         _ => panic!("unknown harness"),
     };
@@ -210,8 +210,8 @@ async fn rapid_steers_preserve_children_context_and_held_queue() {
             .filter(|event| {
                 matches!(
                     event.event,
-                    loams_desktop_proto::AgentEvent::Done {
-                        status: loams_desktop_proto::DoneStatus::Completed,
+                    loams_agentd_proto::AgentEvent::Done {
+                        status: loams_agentd_proto::DoneStatus::Completed,
                         ..
                     }
                 )

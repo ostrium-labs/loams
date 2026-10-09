@@ -1,5 +1,5 @@
 use super::*;
-use loams_desktop_proto::{SidebarPinChange, pin_order_key_between, valid_pin_order_key};
+use loams_agentd_proto::{SidebarPinChange, pin_order_key_between, valid_pin_order_key};
 
 impl RegistryDoc {
     pub fn sidebar_pins_initialized(&self) -> bool {
@@ -67,18 +67,17 @@ impl RegistryDoc {
         self.observe_sidebar_row("sidebarLocations", id);
         // Observe this pin's field clocks before a causally subsequent edit,
         // including clocks from a device whose wall clock runs ahead of ours.
-        if let Some(row) = self.overlay_row(KIND_SIDEBAR_PINS, id) {
-            if let Some(clock) = row.max_clock() {
-                let mut parts = clock.splitn(3, '-');
-                if let (Some(ms), Some(counter)) = (
-                    parts.next().and_then(|v| v.parse::<i64>().ok()),
-                    parts.next().and_then(|v| v.parse::<u32>().ok()),
-                ) {
-                    if (ms, counter) > (self.clock.last_ms, self.clock.counter) {
-                        self.clock.last_ms = ms;
-                        self.clock.counter = counter;
-                    }
-                }
+        if let Some(row) = self.overlay_row(KIND_SIDEBAR_PINS, id)
+            && let Some(clock) = row.max_clock()
+        {
+            let mut parts = clock.splitn(3, '-');
+            if let (Some(ms), Some(counter)) = (
+                parts.next().and_then(|v| v.parse::<i64>().ok()),
+                parts.next().and_then(|v| v.parse::<u32>().ok()),
+            ) && (ms, counter) > (self.clock.last_ms, self.clock.counter)
+            {
+                self.clock.last_ms = ms;
+                self.clock.counter = counter;
             }
         }
         if matches!(change, SidebarPinChange::Unpin { .. }) {

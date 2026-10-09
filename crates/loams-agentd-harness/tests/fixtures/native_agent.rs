@@ -50,13 +50,13 @@ fn main() {
             .unwrap()
             .join("descendant-pids.json");
         let mut command =
-            loams_desktop_harness::process::Command::new(std::env::current_exe().unwrap());
+            loams_agentd_harness::process::Command::new(std::env::current_exe().unwrap());
         command
             .arg("--tree-child")
             .arg(&path)
-            .stdin(loams_desktop_harness::process::Stdio::null())
-            .stdout(loams_desktop_harness::process::Stdio::null())
-            .stderr(loams_desktop_harness::process::Stdio::null());
+            .stdin(loams_agentd_harness::process::Stdio::null())
+            .stdout(loams_agentd_harness::process::Stdio::null())
+            .stderr(loams_agentd_harness::process::Stdio::null());
         let _owned = command.spawn().unwrap();
         let pids = await_tree(&path);
         println!("{}", serde_json::to_string(&pids).unwrap());

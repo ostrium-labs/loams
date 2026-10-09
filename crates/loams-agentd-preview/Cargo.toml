@@ -1,12 +1,12 @@
 [package]
-name = "loams-desktop-preview"
+name = "loams-agentd-preview"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-publish.workspace = true
+license = "MIT"
+publish = false
 
 [dependencies]
-loams-desktop-proto.workspace = true
+loams-agentd-proto.workspace = true
 tokio.workspace = true
 tokio-util = { workspace = true, features = ["rt"] }
 futures.workspace = true
@@ -15,11 +15,11 @@ serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
-uuid.workspace = true
-sha2.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+sha2 = "0.10"
 libc.workspace = true
 chrono.workspace = true
-reqwest.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
 tokio-tungstenite.workspace = true
 bytes = "1"
 hyper = { version = "1", features = ["client", "server", "http1"] }

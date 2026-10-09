@@ -1,5 +1,5 @@
 //! Live probe: real cursor model discovery through the harness path.
-use loams_desktop_harness::{CursorHarness, Harness};
+use loams_agentd_harness::{CursorHarness, Harness};
 
 #[tokio::main]
 async fn main() {

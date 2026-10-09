@@ -1,7 +1,7 @@
 //! Frame → [`AgentEvent`] normalization (init dedupe, subagent tagging, tool
 //! decoding, error-code mapping).
 
-use loams_desktop_proto::{AgentEvent, DoneStatus, HarnessId, TodoItem, ToolCall};
+use loams_agentd_proto::{AgentEvent, DoneStatus, HarnessId, TodoItem, ToolCall};
 use serde_json::Value;
 
 use super::wire::{ContentBlock, Frame};
@@ -720,7 +720,7 @@ impl Normalizer {
                         .partition(|m| is_internal_diagnostic(m));
                     for diagnostic in &diagnostics {
                         tracing::debug!(
-                            target: "loams_desktop_harness::claude",
+                            target: "loams_agentd_harness::claude",
                             "internal CLI diagnostic (not surfaced): {diagnostic}"
                         );
                     }

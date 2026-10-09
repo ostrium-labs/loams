@@ -14,13 +14,13 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 
-use loams_desktop_doc::{MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry};
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_doc::{MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry};
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ProjectActionDraft, ProjectActionIcon,
     ReasoningLevel, RunRequest, SandboxLevel, SteeringMode, WorktreeSpec,
 };
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 
 const CHAT: &str = "chat-worktree-run";
 
@@ -204,10 +204,10 @@ async fn check_worktree_setup_and_reuse(use_project_symlink: bool) {
         .expect("create project");
     // Save through the same RPC as the editor: the Space may use an alias
     // while the queued WorktreeSpec carries the canonical repository path.
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     client
         .call(
-            loams_desktop_rpc::methods::UPSERT_PROJECT_ACTION,
+            loams_agentd_rpc::methods::UPSERT_PROJECT_ACTION,
             serde_json::json!({
                 "spaceId": "space-worktree-run",
                 "action": ProjectActionDraft {
@@ -225,7 +225,7 @@ async fn check_worktree_setup_and_reuse(use_project_symlink: bool) {
     // resolves the project folder), then the queued Run carries the spec.
     client
         .call(
-            loams_desktop_rpc::methods::MUTATE,
+            loams_agentd_rpc::methods::MUTATE,
             serde_json::json!({
                 "op": "createChat",
                 "chatId": CHAT,

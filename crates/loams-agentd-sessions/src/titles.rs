@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
 
-use loams_desktop_harness::{CancellationToken, RunControls, SteerMessage};
-use loams_desktop_proto::{
+use loams_agentd_harness::{CancellationToken, RunControls, SteerMessage};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     UserInputAnswer, UserInputQuestion,
 };
@@ -154,16 +154,16 @@ impl TitleGenerator {
         let settings = self.inner.registry.title_settings();
         let enabled = self.inner.registry.enabled_set();
         let harness_id = settings.harness.or_else(|| {
-            if loams_desktop_harness::supports_titles(harness_id) {
+            if loams_agentd_harness::supports_titles(harness_id) {
                 Some(harness_id)
             } else {
                 enabled
                     .iter()
                     .copied()
-                    .find(|id| loams_desktop_harness::supports_titles(*id))
+                    .find(|id| loams_agentd_harness::supports_titles(*id))
             }
         })?;
-        if !loams_desktop_harness::supports_titles(harness_id) {
+        if !loams_agentd_harness::supports_titles(harness_id) {
             return None;
         }
         // Order this entire isolated subprocess against a queued update for
@@ -195,7 +195,7 @@ impl TitleGenerator {
         };
         let title_prompt = format!(
             "{}\n\nSession request (JSON string):\n{}",
-            loams_desktop_harness::TITLE_INSTRUCTIONS,
+            loams_agentd_harness::TITLE_INSTRUCTIONS,
             serde_json::to_string(prompt).ok()?
         );
         for attempt in 0..=RETRY_DELAYS_MS.len() {
@@ -269,7 +269,7 @@ fn clean_title(raw: &str) -> String {
 /// Drive one titling run through the harness: no steering, questions resolved
 /// empty immediately (a titling prompt must never block on input).
 async fn collect_text(
-    harness: &dyn loams_desktop_harness::Harness,
+    harness: &dyn loams_agentd_harness::Harness,
     request: RunRequest,
     execution_lease: Option<Arc<tokio::sync::OwnedRwLockReadGuard<()>>>,
 ) -> Result<String, EngineError> {
@@ -326,7 +326,7 @@ async fn collect_text(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use loams_desktop_proto::Model;
+    use loams_agentd_proto::Model;
 
     fn model(id: &str, label: &str) -> Model {
         Model {
@@ -353,14 +353,14 @@ mod tests {
 
     #[tokio::test]
     async fn tool_use_rejects_the_title_instead_of_accepting_coding_output() {
-        let harness = loams_desktop_harness::mock::MockHarness {
+        let harness = loams_agentd_harness::mock::MockHarness {
             script: vec![
                 AgentEvent::TextDelta {
                     text: "I will change your code".into(),
                 },
                 AgentEvent::ToolCall {
                     id: "tool".into(),
-                    call: loams_desktop_proto::ToolCall::Unknown {
+                    call: loams_agentd_proto::ToolCall::Unknown {
                         name: "write".into(),
                         input: None,
                     },
@@ -393,7 +393,7 @@ mod tests {
     struct RecordingTitleHarness(std::sync::Mutex<Vec<RunRequest>>);
 
     #[async_trait::async_trait]
-    impl loams_desktop_harness::Harness for RecordingTitleHarness {
+    impl loams_agentd_harness::Harness for RecordingTitleHarness {
         fn id(&self) -> HarnessId {
             HarnessId::ClaudeCode
         }
@@ -403,13 +403,13 @@ mod tests {
         fn supports_steering(&self) -> bool {
             false
         }
-        fn steering_mode(&self) -> loams_desktop_proto::SteeringMode {
-            loams_desktop_proto::SteeringMode::TurnBoundary
+        fn steering_mode(&self) -> loams_agentd_proto::SteeringMode {
+            loams_agentd_proto::SteeringMode::TurnBoundary
         }
         fn reasoning_levels(&self) -> &[ReasoningLevel] {
             &[]
         }
-        async fn models(&self) -> Result<Vec<Model>, loams_desktop_harness::HarnessError> {
+        async fn models(&self) -> Result<Vec<Model>, loams_agentd_harness::HarnessError> {
             panic!("an explicit title model should bypass catalog discovery")
         }
         async fn run(
@@ -419,9 +419,9 @@ mod tests {
         ) -> Result<
             futures::stream::BoxStream<
                 'static,
-                Result<AgentEvent, loams_desktop_harness::HarnessError>,
+                Result<AgentEvent, loams_agentd_harness::HarnessError>,
             >,
-            loams_desktop_harness::HarnessError,
+            loams_agentd_harness::HarnessError,
         > {
             panic!("title generation must never call the coding entry point")
         }
@@ -432,9 +432,9 @@ mod tests {
         ) -> Result<
             futures::stream::BoxStream<
                 'static,
-                Result<AgentEvent, loams_desktop_harness::HarnessError>,
+                Result<AgentEvent, loams_agentd_harness::HarnessError>,
             >,
-            loams_desktop_harness::HarnessError,
+            loams_agentd_harness::HarnessError,
         > {
             assert!(std::path::Path::new(&request.cwd).is_dir());
             self.0.lock().unwrap().push(request);

@@ -3,7 +3,7 @@ use crate::{HarnessError, process::Command, scratch::ScratchDir};
 
 pub(super) fn configure(
     cmd: &mut Command,
-    config: &loams_desktop_proto::McpServer,
+    config: &loams_agentd_proto::McpServer,
 ) -> Result<ScratchDir, HarnessError> {
     let scratch = ScratchDir::new("pi-mcp")?;
     let extension = scratch.path().join("loams-desktop-mcp.mjs");

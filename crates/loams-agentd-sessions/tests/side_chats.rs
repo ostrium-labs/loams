@@ -1,13 +1,16 @@
+// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
+// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
+#![allow(clippy::type_complexity)]
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
-use loams_desktop_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SteeringMode,
 };
-use loams_desktop_rpc::methods;
+use loams_agentd_rpc::methods;
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::sync::{Arc, Mutex};
 
 struct Capture(Arc<Mutex<Vec<RunRequest>>>);
@@ -125,10 +128,10 @@ async fn fork_is_frozen_durable_idempotent_and_has_an_independent_provider_sessi
             MessageStatus::Streaming,
         ))
         .unwrap();
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     let params = serde_json::json!({ "chatId": "side", "sourceChatId": "main", "targetDeviceId": core.device_id });
     let fork = client
-        .call_as::<loams_desktop_proto::Chat>(methods::FORK_SIDE_CHAT, params.clone())
+        .call_as::<loams_agentd_proto::Chat>(methods::FORK_SIDE_CHAT, params.clone())
         .await
         .unwrap();
     assert_eq!(fork.parent_chat_id.as_deref(), Some("main"));
@@ -144,7 +147,7 @@ async fn fork_is_frozen_durable_idempotent_and_has_an_independent_provider_sessi
     assert_eq!(copied[2].status, Some(MessageStatus::Complete));
     assert_eq!(
         copied[2].parts,
-        vec![loams_desktop_doc::MessagePart::Fork {
+        vec![loams_agentd_doc::MessagePart::Fork {
             id: "fork:side".into(),
             source_chat_id: "main".into(),
             source_title: "Main conversation".into(),
@@ -257,7 +260,7 @@ async fn cannot_fork_an_empty_chat_or_overwrite_a_main_chat() {
     core.workspace
         .create_chat("main", None, Some(&core.device_id), None, None)
         .unwrap();
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     assert!(
         client
             .call(
@@ -309,11 +312,11 @@ async fn forking_a_side_chat_can_land_as_a_sibling_under_the_main_chat() {
             MessageStatus::Complete,
         ))
         .unwrap();
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     // A first-level side chat, then its own fork button: the copy hangs
     // under MAIN (the side chat's parent), not under the side chat.
     let side = client
-        .call_as::<loams_desktop_proto::Chat>(
+        .call_as::<loams_agentd_proto::Chat>(
             methods::FORK_SIDE_CHAT,
             serde_json::json!({ "chatId": "side", "sourceChatId": "main" }),
         )
@@ -343,7 +346,7 @@ async fn forking_a_side_chat_can_land_as_a_sibling_under_the_main_chat() {
         ))
         .unwrap();
     let sibling = client
-        .call_as::<loams_desktop_proto::Chat>(
+        .call_as::<loams_agentd_proto::Chat>(
             methods::FORK_SIDE_CHAT,
             serde_json::json!({
                 "chatId": "side-2",
@@ -366,7 +369,7 @@ async fn forking_a_side_chat_can_land_as_a_sibling_under_the_main_chat() {
     let seams: Vec<_> = entries
         .iter()
         .filter_map(|e| match e.parts.first() {
-            Some(loams_desktop_doc::MessagePart::Fork { source_title, .. }) => {
+            Some(loams_agentd_doc::MessagePart::Fork { source_title, .. }) => {
                 Some(source_title.clone())
             }
             _ => None,
@@ -376,7 +379,7 @@ async fn forking_a_side_chat_can_land_as_a_sibling_under_the_main_chat() {
     assert_eq!(seams, ["New session", "Side quest"]);
     // An empty parent falls back to the source, like an omitted one.
     let nested = client
-        .call_as::<loams_desktop_proto::Chat>(
+        .call_as::<loams_agentd_proto::Chat>(
             methods::FORK_SIDE_CHAT,
             serde_json::json!({
                 "chatId": "side-3",
@@ -431,7 +434,7 @@ async fn side_turn(
             || core
                 .sessions
                 .session_status(chat)
-                .is_some_and(|s| s.status != loams_desktop_proto::SessionStatus::Idle)
+                .is_some_and(|s| s.status != loams_agentd_proto::SessionStatus::Idle)
         {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
@@ -485,7 +488,7 @@ async fn native_commands_and_empty_side_chats_skip_the_history_wrapper() {
             .push_message(&message(id, role, text, MessageStatus::Complete))
             .unwrap();
     }
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     client
         .call(
             methods::FORK_SIDE_CHAT,
@@ -608,7 +611,7 @@ async fn warm_side_chat_sends_owed_fork_history_once() {
             .push_message(&message(id, role, text, MessageStatus::Complete))
             .unwrap();
     }
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     client
         .call(
             methods::FORK_SIDE_CHAT,
@@ -639,7 +642,7 @@ async fn warm_side_chat_sends_owed_fork_history_once() {
                     || core
                         .sessions
                         .session_status("fork")
-                        .is_some_and(|s| s.status != loams_desktop_proto::SessionStatus::Idle)
+                        .is_some_and(|s| s.status != loams_agentd_proto::SessionStatus::Idle)
                 {
                     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
                 }
@@ -793,7 +796,7 @@ async fn orphaned_history_steer_still_owes_the_history() {
             .push_message(&message(id, role, text, MessageStatus::Complete))
             .unwrap();
     }
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     client
         .call(
             methods::FORK_SIDE_CHAT,
@@ -827,7 +830,7 @@ async fn orphaned_history_steer_still_owes_the_history() {
     let idle = || {
         core.sessions
             .session_status("fork")
-            .is_some_and(|s| s.status == loams_desktop_proto::SessionStatus::Idle)
+            .is_some_and(|s| s.status == loams_agentd_proto::SessionStatus::Idle)
     };
     for _ in 0..500 {
         if idle() {

@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use loams_desktop_harness::{CodexHarness, Harness};
+use loams_agentd_harness::{CodexHarness, Harness};
 
 #[test]
 fn availability_child() {

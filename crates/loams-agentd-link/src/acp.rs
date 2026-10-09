@@ -11,7 +11,7 @@
 //!
 //! An A2A task is shown as an ACP tool call, so the transcript renders it as
 //! a card with live status, like any sub-agent. `INPUT_REQUIRED` is relayed
-//! as text and never answered here (D468).
+//! as text and never answered here (design 37 section 18).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

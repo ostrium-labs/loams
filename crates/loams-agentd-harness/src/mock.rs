@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 
-use loams_desktop_proto::{
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SteeringMode,
     UserInputQuestion,
 };
@@ -288,7 +288,7 @@ impl Harness for MockHarness {
                     },
                     AgentEvent::ToolCall {
                         id: "mock-think-tool".into(),
-                        call: loams_desktop_proto::ToolCall::Exec {
+                        call: loams_agentd_proto::ToolCall::Exec {
                             command: "rg -n walletInsufficient apps/word/src | wc -l".into(),
                         },
                     },
@@ -322,7 +322,7 @@ impl Harness for MockHarness {
                     id: id.into(),
                     // The claude-driver spawn shape: `Agent: {description}`
                     // with the task in the input (names the chip AND the tab).
-                    call: loams_desktop_proto::ToolCall::Unknown {
+                    call: loams_agentd_proto::ToolCall::Unknown {
                         name: format!("Agent: {description}"),
                         input: Some(serde_json::json!({
                             "description": description,
@@ -380,7 +380,7 @@ impl Harness for MockHarness {
                         "mock-sub-1",
                         AgentEvent::ToolCall {
                             id: "sub1-grep".into(),
-                            call: loams_desktop_proto::ToolCall::Exec {
+                            call: loams_agentd_proto::ToolCall::Exec {
                                 command: "grep -rn fold_event_into_parts crates".into(),
                             },
                         },
@@ -422,7 +422,7 @@ impl Harness for MockHarness {
                         "mock-sub-2",
                         AgentEvent::ToolCall {
                             id: "sub2-burst".into(),
-                            call: loams_desktop_proto::ToolCall::Exec {
+                            call: loams_agentd_proto::ToolCall::Exec {
                                 command: "cargo test -p loams-desktop-doc cadence_burst -- --nocapture".into(),
                             },
                         },
@@ -454,7 +454,7 @@ impl Harness for MockHarness {
                         "mock-sub-2",
                         AgentEvent::ToolCall {
                             id: "sub2-steer-burst".into(),
-                            call: loams_desktop_proto::ToolCall::Exec {
+                            call: loams_agentd_proto::ToolCall::Exec {
                                 command: "cargo test -p loams-desktop-doc cadence_steer -- --nocapture"
                                     .into(),
                             },
@@ -491,7 +491,7 @@ impl Harness for MockHarness {
                 [
                     AgentEvent::ToolCall {
                         id: "mock-code-tool".into(),
-                        call: loams_desktop_proto::ToolCall::Exec {
+                        call: loams_agentd_proto::ToolCall::Exec {
                             command: "set -e\nfixture_in_original=0\ngrep -rn \"veil\" crates/ui/src | wc -l".into(),
                         },
                     },

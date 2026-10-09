@@ -9,8 +9,8 @@ use std::time::Duration;
 use futures::StreamExt;
 use tokio::sync::{mpsc, oneshot};
 
-use loams_desktop_harness::{CancellationToken, CursorHarness, Harness, RunControls, SteerMessage};
-use loams_desktop_proto::{AgentEvent, DoneStatus, HarnessId, RunRequest, SandboxLevel, ToolCall};
+use loams_agentd_harness::{CancellationToken, CursorHarness, Harness, RunControls, SteerMessage};
+use loams_agentd_proto::{AgentEvent, DoneStatus, HarnessId, RunRequest, SandboxLevel, ToolCall};
 
 fn fixture_path() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -492,7 +492,7 @@ async fn mcp_injection_reaches_shim_on_new_and_resumed_runs() {
     for resume in [None, Some("agent-1")] {
         let mut req = request("scenario:mcp");
         req.resume = resume.map(str::to_owned);
-        req.mcp = Some(loams_desktop_proto::McpServer {
+        req.mcp = Some(loams_agentd_proto::McpServer {
             name: "loams-desktop".into(),
             command: "/path with spaces/loams-desktop".into(),
             args: vec!["mcp".into()],

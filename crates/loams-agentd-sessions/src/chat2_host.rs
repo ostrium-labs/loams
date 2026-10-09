@@ -1,6 +1,6 @@
 //! chat2 host wiring (docs/chat2-sync.md C3): the engine-side implementations
-//! of [`loams_desktop_sync::chat_client::ChatDocSink`] and
-//! [`loams_desktop_sync::chat_client::CheckpointFetcher`], binding a
+//! of [`loams_agentd_store::chat_client::ChatDocSink`] and
+//! [`loams_agentd_store::chat_client::CheckpointFetcher`], binding a
 //! [`crate::doc_host::ChatDocHandle`]'s live doc to a chat2 room.
 //!
 //! The C2 rule is enforced by the coalescing persister: doc content AND its
@@ -11,9 +11,9 @@
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
-use loams_desktop_doc::SessionDoc;
-use loams_desktop_sync::chat_client::{ChatDocSink, CheckpointFetcher, RowImportOutcome};
-use loams_desktop_sync::{DocsStore, SyncError};
+use loams_agentd_doc::SessionDoc;
+use loams_agentd_store::chat_client::{ChatDocSink, CheckpointFetcher, RowImportOutcome};
+use loams_agentd_store::{DocsStore, SyncError};
 
 use crate::doc_host::EdgeConfig;
 use crate::http_error::describe_http_error;
@@ -132,7 +132,7 @@ impl ChatDocSink for EngineChatSink {
             .map_err(|e| e.to_string())?;
         let mut updates = Vec::new();
         for (id, bytes) in pending {
-            if bytes.len() > loams_desktop_sync::chat_client::MAX_PUSH_BYTES {
+            if bytes.len() > loams_agentd_store::chat_client::MAX_PUSH_BYTES {
                 self.store
                     .reject_chat_update(&self.chat_id, &id)
                     .map_err(|e| e.to_string())?;
@@ -236,21 +236,21 @@ impl ChatDocSink for EngineChatSink {
 /// the previous attempt died (the DO serves 206), which is the entire point
 /// of checkpoint-over-HTTP on the 1.2 Mbps links this design targets.
 pub struct EdgeCheckpointFetcher {
-    priority: loams_desktop_sync::budget::Priority,
+    priority: loams_agentd_store::budget::Priority,
     http: reqwest::Client,
     edge: EdgeConfig,
     chat_id: String,
 }
 
 impl EdgeCheckpointFetcher {
-    pub fn with_priority(mut self, priority: loams_desktop_sync::budget::Priority) -> Self {
+    pub fn with_priority(mut self, priority: loams_agentd_store::budget::Priority) -> Self {
         self.priority = priority;
         self
     }
 
     pub fn new(http: reqwest::Client, edge: EdgeConfig, chat_id: impl Into<String>) -> Self {
         Self {
-            priority: loams_desktop_sync::budget::Priority::Interactive,
+            priority: loams_agentd_store::budget::Priority::Interactive,
             http,
             edge,
             chat_id: chat_id.into(),
@@ -276,7 +276,7 @@ impl CheckpointFetcher for EdgeCheckpointFetcher {
             // the last one stopped. Attempt count bounds a flapping link;
             // the ChatClient's own deadline bounds wall clock.
             for _attempt in 0..4 {
-                let _permit = loams_desktop_sync::budget::shared().http(priority).await?;
+                let _permit = loams_agentd_store::budget::shared().http(priority).await?;
                 let bearer = edge.bearer().await.map_err(SyncError::from)?;
                 let mut req = http
                     .get(&url)
@@ -352,7 +352,7 @@ impl CheckpointFetcher for EdgeCheckpointFetcher {
 /// Plain-HTTPS chat pull/push (the airplane-wifi transport): GET/POST
 /// `/chat2/{id}/rows` with the same bearer auth the checkpoint fetcher uses.
 pub struct EdgeChatTransport {
-    priority: loams_desktop_sync::budget::Priority,
+    priority: loams_agentd_store::budget::Priority,
     http: reqwest::Client,
     edge: EdgeConfig,
     chat_id: String,
@@ -360,7 +360,7 @@ pub struct EdgeChatTransport {
 }
 
 impl EdgeChatTransport {
-    pub fn with_priority(mut self, priority: loams_desktop_sync::budget::Priority) -> Self {
+    pub fn with_priority(mut self, priority: loams_agentd_store::budget::Priority) -> Self {
         self.priority = priority;
         self
     }
@@ -372,7 +372,7 @@ impl EdgeChatTransport {
         device_id: impl Into<String>,
     ) -> Self {
         Self {
-            priority: loams_desktop_sync::budget::Priority::Interactive,
+            priority: loams_agentd_store::budget::Priority::Interactive,
             http,
             edge,
             chat_id: chat_id.into(),
@@ -389,7 +389,7 @@ impl EdgeChatTransport {
     }
 }
 
-impl loams_desktop_sync::chat_client::ChatTransport for EdgeChatTransport {
+impl loams_agentd_store::chat_client::ChatTransport for EdgeChatTransport {
     fn fetch_rows(&self, after: u64) -> BoxFuture<'static, Result<Vec<u8>, SyncError>> {
         let priority = self.priority;
         let http = self.http.clone();
@@ -397,7 +397,7 @@ impl loams_desktop_sync::chat_client::ChatTransport for EdgeChatTransport {
         let url = self.rows_url();
         let device = self.device_id.clone();
         Box::pin(async move {
-            let _permit = loams_desktop_sync::budget::shared().http(priority).await?;
+            let _permit = loams_agentd_store::budget::shared().http(priority).await?;
             let bearer = edge.bearer().await.map_err(SyncError::from)?;
             let res = http
                 .get(&url)
@@ -431,7 +431,7 @@ impl loams_desktop_sync::chat_client::ChatTransport for EdgeChatTransport {
         let url = self.rows_url();
         let device = self.device_id.clone();
         Box::pin(async move {
-            let _permit = loams_desktop_sync::budget::shared().http(priority).await?;
+            let _permit = loams_agentd_store::budget::shared().http(priority).await?;
             let bearer = edge.bearer().await.map_err(SyncError::from)?;
             let res = http
                 .post(&url)
@@ -462,7 +462,7 @@ mod frontier_tests {
     #[tokio::test]
     async fn http_sync_and_exhausted_checkpoint_retries_retain_dns_cause() {
         use crate::http_error::test_support::FailingDns;
-        use loams_desktop_sync::chat_client::ChatTransport;
+        use loams_agentd_store::chat_client::ChatTransport;
 
         let dns = Arc::new(FailingDns::default());
         let edge = EdgeConfig::with_static_token("https://edge.invalid", "token-secret");
@@ -594,7 +594,7 @@ pub(crate) fn publication_updates(doc: &loro::LoroDoc) -> Result<Vec<Vec<u8>>, S
                 peer, start, end,
             )]))
             .map_err(|e| e.to_string())?;
-        if bytes.len() <= loams_desktop_sync::chat_client::MAX_PUSH_BYTES || end - start <= 1 {
+        if bytes.len() <= loams_agentd_store::chat_client::MAX_PUSH_BYTES || end - start <= 1 {
             // An indivisible oversized op remains durable until checkpointed.
             out.push(bytes);
         } else {

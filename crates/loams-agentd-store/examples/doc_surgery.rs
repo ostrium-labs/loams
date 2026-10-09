@@ -4,8 +4,8 @@
 //!   inspect-workspace <data_dir> <chat_id>
 //!   inspect-chat      <data_dir> <chat_id>
 //!   cut-chat          <data_dir> <chat_id> <from_index>
-use loams_desktop_doc::SessionDoc;
-use loams_desktop_sync::DocsStore;
+use loams_agentd_doc::SessionDoc;
+use loams_agentd_store::DocsStore;
 use loro::{LoroDoc, ToJson};
 
 fn load_doc(store: &DocsStore, doc_id: &str) -> LoroDoc {

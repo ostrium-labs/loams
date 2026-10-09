@@ -11,13 +11,13 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 
-use loams_desktop_doc::{MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry};
-use loams_desktop_engine::{EngineCore, HarnessRegistry};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::{
+use loams_agentd_doc::{MessageRole, MessageStatus, SessionCommandPayload, SessionMessageEntry};
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SteeringMode,
 };
+use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 
 const CHAT: &str = "chat-projectless";
 
@@ -115,7 +115,7 @@ async fn projectless_chat_runs_from_home_and_mints_no_space() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn projectless_terminal_resolves_home_and_preserves_explicit_paths() {
-    use loams_desktop_rpc::methods;
+    use loams_agentd_rpc::methods;
 
     let tmp = tempfile::tempdir().unwrap();
     let core = EngineCore::assemble(
@@ -125,7 +125,7 @@ async fn projectless_terminal_resolves_home_and_preserves_explicit_paths() {
         None,
     )
     .expect("engine core assembles");
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     let home = std::env::var("HOME").expect("HOME set in test env");
 
     for (chat_id, cwd, expected) in [
@@ -247,11 +247,11 @@ async fn exercise_projectless(command_first: bool) {
 
     // The composer's exact wire shape for "Don't work in a project": a
     // deviceId, no spaceId, no cwd.
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     if !command_first {
         client
             .call(
-                loams_desktop_rpc::methods::MUTATE,
+                loams_agentd_rpc::methods::MUTATE,
                 serde_json::json!({
                     "op": "createChat",
                     "chatId": CHAT,
@@ -312,7 +312,7 @@ async fn exercise_projectless(command_first: bool) {
     for _ in 0..2 {
         client
             .call(
-                loams_desktop_rpc::methods::MUTATE,
+                loams_agentd_rpc::methods::MUTATE,
                 serde_json::json!({
                     "op": "createChat", "chatId": CHAT, "deviceId": core.device_id,
                 }),

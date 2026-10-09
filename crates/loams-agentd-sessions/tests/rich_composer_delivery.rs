@@ -1,5 +1,9 @@
 //! Canonical editor selections survive persistence, queue editing and retries;
 //! provider text is produced only at each fresh-run or steering boundary.
+
+// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
+// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
+#![allow(clippy::large_enum_variant)]
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -8,18 +12,18 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
-use loams_desktop_doc::{MessagePart, MessageRole};
-use loams_desktop_engine::doc_host::{
-    BeginQueueEditOutcome, FinishQueueEditAction, FinishQueueEditOutcome,
-};
-use loams_desktop_engine::{EngineCore, HarnessRegistry, SteerOutcome};
-use loams_desktop_harness::{Harness, HarnessError, RunControls};
-use loams_desktop_proto::invocation::Invocation;
-use loams_desktop_proto::{
+use loams_agentd_doc::{MessagePart, MessageRole};
+use loams_agentd_harness::{Harness, HarnessError, RunControls};
+use loams_agentd_proto::invocation::Invocation;
+use loams_agentd_proto::{
     AgentEvent, DoneStatus, HarnessId, Model, ReasoningLevel, RunRequest, SandboxLevel,
     SteeringMode,
 };
-use loams_desktop_rpc::RpcService;
+use loams_agentd_rpc::RpcService;
+use loams_agentd_sessions::doc_host::{
+    BeginQueueEditOutcome, FinishQueueEditAction, FinishQueueEditOutcome,
+};
+use loams_agentd_sessions::{EngineCore, HarnessRegistry, SteerOutcome};
 use tokio::sync::mpsc;
 
 const CHAT: &str = "rich-delivery";
@@ -81,9 +85,9 @@ impl Harness for RecordingHarness {
     async fn commands_for(
         &self,
         cwd: &std::path::Path,
-    ) -> Result<Vec<loams_desktop_proto::SlashCommand>, HarnessError> {
+    ) -> Result<Vec<loams_agentd_proto::SlashCommand>, HarnessError> {
         self.discovery(cwd).await;
-        Ok(vec![loams_desktop_proto::SlashCommand {
+        Ok(vec![loams_agentd_proto::SlashCommand {
             name: "probe".into(),
             description: cwd.to_string_lossy().into_owned(),
             input_hint: None,
@@ -92,9 +96,9 @@ impl Harness for RecordingHarness {
     async fn skills(
         &self,
         cwd: &std::path::Path,
-    ) -> Result<Option<Vec<loams_desktop_proto::invocation::Skill>>, HarnessError> {
+    ) -> Result<Option<Vec<loams_agentd_proto::invocation::Skill>>, HarnessError> {
         self.discovery(cwd).await;
-        Ok(Some(vec![loams_desktop_proto::invocation::Skill {
+        Ok(Some(vec![loams_agentd_proto::invocation::Skill {
             name: "probe".into(),
             path: cwd.join("SKILL.md").to_string_lossy().into_owned(),
             description: cwd.to_string_lossy().into_owned(),
@@ -168,7 +172,7 @@ fn rich_text(label: &str) -> (String, String) {
         command: None,
     }
     .link();
-    let file = loams_desktop_proto::file_mentions::local_file_link("src/é file.rs", false);
+    let file = loams_agentd_proto::file_mentions::local_file_link("src/é file.rs", false);
     let raw = format!(
         "{label}: {skill} on {file}\n\n- **keep this markdown**\n- `literal @file $review /compact`"
     );
@@ -180,7 +184,7 @@ fn rich_text(label: &str) -> (String, String) {
 fn expected(raw: &str, readable: &str, id: HarnessId) -> String {
     if id == HarnessId::Codex {
         raw.replace(
-            &loams_desktop_proto::file_mentions::local_file_link("src/é file.rs", false),
+            &loams_agentd_proto::file_mentions::local_file_link("src/é file.rs", false),
             "[é file.rs](src/%C3%A9%20file.rs)",
         )
     } else if id == HarnessId::Opencode {
@@ -235,10 +239,10 @@ async fn setup(
     registry.register(harness.clone());
     let core =
         EngineCore::assemble(&tmp.path().join("data"), Arc::new(registry), id, None).unwrap();
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     client
         .call(
-            loams_desktop_rpc::methods::MUTATE,
+            loams_agentd_rpc::methods::MUTATE,
             serde_json::json!({"op":"createChat", "chatId":CHAT, "deviceId":core.device_id}),
         )
         .await
@@ -433,10 +437,10 @@ async fn queue_edits_preserve_reselected_skills_until_delivery_for_every_harness
 #[tokio::test]
 async fn projectless_catalogs_use_the_session_directory_and_reject_unknown_targets() {
     let (tmp, core, _harness, _rx) = setup(HarnessId::Codex).await;
-    let client = loams_desktop_rpc::memory_client(core.rpc_service());
+    let client = loams_agentd_rpc::memory_client(core.rpc_service());
     for method in [
-        loams_desktop_rpc::methods::LIST_COMMANDS,
-        loams_desktop_rpc::methods::LIST_SKILLS,
+        loams_agentd_rpc::methods::LIST_COMMANDS,
+        loams_agentd_rpc::methods::LIST_SKILLS,
     ] {
         let new_chat = client
             .call(method, serde_json::json!({"harness":"codex"}))
@@ -478,8 +482,8 @@ async fn projectless_catalogs_use_the_session_directory_and_reject_unknown_targe
         .set_chat_cwd(CHAT, cwd.to_str().unwrap())
         .unwrap();
     for method in [
-        loams_desktop_rpc::methods::LIST_COMMANDS,
-        loams_desktop_rpc::methods::LIST_SKILLS,
+        loams_agentd_rpc::methods::LIST_COMMANDS,
+        loams_agentd_rpc::methods::LIST_SKILLS,
     ] {
         let result = client
             .call(
@@ -495,8 +499,8 @@ async fn projectless_catalogs_use_the_session_directory_and_reject_unknown_targe
 #[tokio::test]
 async fn project_catalog_rpcs_hold_update_leases_through_cancelled_discovery_cleanup() {
     for method in [
-        loams_desktop_rpc::methods::LIST_COMMANDS,
-        loams_desktop_rpc::methods::LIST_SKILLS,
+        loams_agentd_rpc::methods::LIST_COMMANDS,
+        loams_agentd_rpc::methods::LIST_SKILLS,
     ] {
         let (tmp, core, harness, _rx) = setup(HarnessId::Codex).await;
         let root = tmp.path().join("project-catalog");

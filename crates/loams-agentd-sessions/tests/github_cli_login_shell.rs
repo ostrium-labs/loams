@@ -9,7 +9,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
-use loams_desktop_engine::ChangeRequestResolver;
+use loams_agentd_sessions::ChangeRequestResolver;
 
 fn write_executable(path: &Path, body: &str) {
     std::fs::write(path, body).unwrap();
