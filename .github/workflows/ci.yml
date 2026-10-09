@@ -765,7 +765,8 @@ jobs:
           LOAMS_TEST_PD: 127.0.0.1:19379
           # LV1 plan Task 1 (row T1-4): the reactive checker's seeded run is
           # 2 seeds x 2 000 ops here; live-embedded runs the embedded case at
-          # 10 x 2 000, and the nightly job runs TiKV at 10.
+          # 10 x 2 000, and the nightly job runs TiKV at 10. The transaction
+          # checker reads the same variables (row T2-4).
           LOAMS_CHECKER_SEEDS: "2"
           LOAMS_CHECKER_OPS: "2000"
         run: |
@@ -892,9 +893,11 @@ jobs:
       - name: the reactive checker's seeds
         if: failure() && steps.paths.outputs.run == 'true'
         run: |
-          echo "The reactive checker ran seeds $LOAMS_CHECKER_SEED_OFFSET..$(( LOAMS_CHECKER_SEED_OFFSET + 9 )) x 2000 ops."
+          echo "The reactive and transaction checkers ran seeds $LOAMS_CHECKER_SEED_OFFSET..$(( LOAMS_CHECKER_SEED_OFFSET + 9 )) x 2000 ops."
           echo "A failing seed is named in its assertion; rerun it with"
           echo "LOAMS_CHECKER_SEED_OFFSET=<seed> LOAMS_CHECKER_SEEDS=1 cargo test -p loams-live --test reactive_checker passes_seeded"
+          echo "or, for the transaction checker (LV1 plan Task 2), with"
+          echo "LOAMS_CHECKER_SEED_OFFSET=<seed> LOAMS_CHECKER_SEEDS=1 cargo test -p loams-live --test txn_checker snapshot_isolated"
       - name: playground logs
         if: failure() && steps.paths.outputs.run == 'true'
         uses: actions/upload-artifact@v7.0.1

@@ -7900,6 +7900,7 @@ dependencies = [
  "loams-kv",
  "loams-live",
  "loams-live-proto",
+ "loams-sim",
  "proptest",
  "rand 0.9.5",
  "rand_chacha 0.9.0",

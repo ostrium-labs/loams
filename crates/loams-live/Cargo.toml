@@ -53,6 +53,9 @@ loams-kv = { workspace = true, features = ["tikv", "faults"] }
 # The suites run the TiKV cases too (with LOAMS_TEST_PD).
 loams-live = { path = ".", features = ["tikv"] }
 proptest.workspace = true
+# The transaction checker's Elle-style list-append checker (LV1 plan Task 2),
+# without the simulation it sits beside.
+loams-sim = { path = "../loams-sim", default-features = false }
 
 [lints]
 workspace = true
