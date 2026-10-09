@@ -8023,6 +8023,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-pg-control"
+version = "0.0.1"
+dependencies = [
+ "futures",
+ "hex",
+ "loams-kv",
+ "loams-pg-control",
+ "postcard",
+ "serde",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-pk"
 version = "0.0.1"
 dependencies = [

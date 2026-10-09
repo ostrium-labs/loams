@@ -12,6 +12,10 @@
 #
 # neon-client (Task 2): loams-neon's fixture tests (the request bodies and
 # answers recorded from deploy/neon at its pinned digests).
+#
+# pg-control (Task 3 onward): loams-pg-control's tests on the local store, and
+# clippy on the default and the tikv build. Its TiKV conformance runs in
+# ci.yml's TiKV suites job, against the playground.
 name: PG2
 
 on:
@@ -27,6 +31,8 @@ on:
       - "crates/loams-tikv/**"
       - "crates/loams-wal-decoder/**"
       - "crates/loams-neon/**"
+      - "crates/loams-pg-control/**"
+      - "crates/loams-kv/**"
       - "scripts/pg2/**"
       - "proto/**"
       - "buf.yaml"
@@ -44,6 +50,8 @@ on:
       - "crates/loams-tikv/**"
       - "crates/loams-wal-decoder/**"
       - "crates/loams-neon/**"
+      - "crates/loams-pg-control/**"
+      - "crates/loams-kv/**"
       - "scripts/pg2/**"
       - "proto/**"
       - "buf.yaml"
@@ -165,3 +173,22 @@ jobs:
         run: |
           export POSTGRES_INSTALL_DIR="$GITHUB_WORKSPACE/crates/loams-wal-decoder/pg_install"
           cargo build --locked --bin loams-wal-interpreted --features tikv
+
+  pg-control:
+    name: loams-pg-control (local store, clippy default and tikv)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: pg2-loams-pg-control
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: test
+        env:
+          LOAMS_TEST_PD: ""
+          LOAMS_TEST_TMPDIR: ${{ runner.temp }}
+        run: cargo test -p loams-pg-control --locked
+      - name: clippy (default)
+        run: cargo clippy -p loams-pg-control --all-targets --locked -- -D warnings
+      - name: clippy (tikv)
+        run: cargo clippy -p loams-pg-control --all-targets --features tikv --locked -- -D warnings

@@ -1,0 +1,39 @@
+[package]
+name = "loams-pg-control"
+description = "Loams Postgres's control plane (design §46 §6): the records and the PgControlStore, over loams-kv's embedded (redb) store in single-node mode and TiKV in production."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# Reached only through `loams`'s feature `postgres` (PG2 Task 9); its tikv
+# backend depends on loams-tikv, which is publish = false.
+publish = false
+
+[features]
+# The TiKV backend (store::tikv), wrapping loams-tikv through loams-kv.
+tikv = ["loams-kv/tikv"]
+# KvControlStore::with_faults: loams-kv's fault hooks, for the conformance
+# suite's injected faults.
+faults = ["loams-kv/faults"]
+
+[dependencies]
+futures.workspace = true
+hex.workspace = true
+loams-kv.workspace = true
+postcard.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+# The conformance suite injects faults (feature `faults`).
+loams-pg-control = { path = ".", features = ["faults"] }
+
+[[test]]
+name = "store_tikv"
+required-features = ["tikv"]
+
+[lints]
+workspace = true

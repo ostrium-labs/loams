@@ -1469,3 +1469,43 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
 - **R2.16 Scripts and CI (review M6–M8).** `run.sh` and `it-pageserver-loams-wal.sh` refuse a `PG_VERSION` other than 17 and a `COMPUTE_IMAGE` that is not `compute-node-v17`. When `NEON_IMAGE` overrides the pin with a tag, `run.sh` records the tag with the digest it resolved to. `pg2-e2e.yml`'s path filters cover every crate and file its builds use; its jobs read the rust caches `pg2.yml` saves on `dev` (`pg2-loams-neon`, `pg2-wal-decoder`) and never save their own; the pinned images are pulled in their own step, with retries.
 - **R2.17 The desktop refuses data of another Postgres major (controller ruling, review I4; it overrides the constraint not to edit `apps/desktop-electron` for these files).** The postgres stack's readiness probe compares every timeline's `pg_version` (`GET /v1/tenant`, then `GET /v1/tenant/{t}/timeline`) with 17. A mismatch is the stack error `pg_major_mismatch` with a plain message. "Reset local Postgres data" (`stacks.reset`) runs `compose down -v` on the stack's own project after a native confirmation whose default is Cancel; a declined reset answers `cancelled` and shows no error. It is offered in Settings > Local stacks and on the stack card; the console's fake bridge implements it (`?pgmismatch` previews the state). Desktop branch names in `branches.json` are keyed by timeline id, so names left by a reset never match a new timeline; they are not deleted.
 - **R2.18 Mirroring the pinned images (controller ruling, review I5): pending.** Whether the pinned Neon images are mirrored to a registry Loams controls waits for the owner's answer; the pins are unchanged until then (R2.1).
+
+### Task 3 rulings (2026-10-09)
+
+- **R3.1 `PgControlStore` sits on `loams-kv`, with one implementation for both backends.** `loams-kv` (LV1) already gives the embedded store (MVCC on redb) and TiKV the same optimistic transactions, `lock_keys`, timestamps in TSO layout, fault hooks and commit tokens, and holds both to `kv_conformance!`. A redb backend of our own would copy that MVCC and conflict logic. So `KvControlStore` (`src/store/kv.rs`, a file the task's list did not name) implements the trait once over `loams_kv::Store`. `store::local::open(path, options)` opens the embedded store in one redb file, keyspace `loams_pg`, root empty. `store::tikv::open(config, options)` (feature `tikv`) opens a `loams-tikv` handle with the metastore's `TikvConfig` (keyspace `loams_meta` and its root), so the keys sit beside `loams-meta-tikv`'s. The backend still reaches TiKV only through `loams-tikv`, now via `loams-kv`. The features are `tikv` (`loams-kv/tikv`) and `faults` (`loams-kv/faults`, for the injected cases). The default build of the crate has no TiKV code.
+- **R3.2 `check_fence` is reused as a rule, not as a function.** `loams-meta-tikv`'s `check_fence` is `pub(crate)`, takes a `loams_tikv::Txn`, and reads the lease at `e/m/<key>`, which is the metastore's own scope. `pg-control`'s leases live at `e/pg/<project_id>`. The fence check in `kv.rs` does the same thing inside each write's transaction. It reads the lease and locks it (`get` plus `lock_keys` is an optimistic `get_for_update`, which is what `check_fence` runs in an optimistic transaction). The write goes through only if the epoch is equal and the lease has an owner. The lease record is the metastore's `Lease` field for field, and its encoding (`FORMAT ‖ postcard`) is byte for byte the same. A test pins that encoding. Acquire follows `loams-meta-tikv`'s rules:
+  - Deadlines are judged against the transaction's start timestamp, which is the TSO on TiKV.
+  - A free, expired or released lease goes to the next epoch.
+  - The current holder renews at the same epoch.
+  - Any other holder gets `Held`.
+  - The TTL is capped at 10 minutes, as `MAX_LEASE_TTL_MS` is.
+  - Only scopes `e/pg/<id>` are accepted, so `pg-control` can never touch `e/m/` or `e/cluster/gc`.
+- **R3.3 The contract's `StoreError` gains three variants, and two carry a message.**
+  - New variants:
+    - `Held { holder, deadline_ms }`: a lease another holder has. Task 7's second reconciler needs to tell this apart from a failure.
+    - `InvalidArgument(String)`: a bad key part, page token, lease scope or TTL.
+    - `Corrupt(String)`: a stored value that does not decode.
+  - `Unavailable(String)` carries the message of the runner's error. It covers a conflict that outlasts the attempts, not-applied, the deadline and fatal errors. Nothing was written in those cases.
+  - `Undetermined` stays a bare variant.
+  - `Conflict { current }` names the current version, and `None` means the record is absent. `delete` of an absent record is `NotFound`.
+- **R3.4 `Fence::Unfenced`.** The API service's writes hold no project lease (Task 5 writes the `creating` record and the reconciler acts on it), so `Fence` is `Unfenced | Lease { scope, epoch }`. Unfenced writes are still compare-and-set. Reconcilers always write with their lease's fence.
+- **R3.5 Versions are start timestamps.** A write's version is its transaction's start timestamp, or the previous version plus 1 if that is larger. Under snapshot isolation that number grows with every committed write of a key, including across a delete and a re-create. So a version is never reused, and a watch that diffs versions cannot miss a re-create. A stored value is `FORMAT (1) ‖ varint(version) ‖ postcard(record)`.
+- **R3.6 Keys and the model.**
+  - The records of §46 §6.2, plus the project name index `x/<ns>/n/<name>` as its own record (`ProjectNameRec`).
+  - A project listing's prefix is `x/<ns>/prj-`, so it never meets the name index. A project id must start with `prj-`.
+  - Every key part except the last must not contain `/` or be empty, and every part is at most 255 bytes. The last part is a role or database name, and it may contain `/`.
+  - Ids are the prefixed strings for now. Task 4's newtypes must serialize as the same strings, so the format byte stays 1.
+  - `tags_are_disjoint_from_the_metastore` pins the tags `x X E C R D` against `loams-meta-tikv`'s tags, the `e/m/` and `e/cluster/` scopes and the commit tokens' `t/`. Task 4 keeps this test, as Task 0 ruling 1 asks.
+- **R3.7 The watch is a poll over its prefix.**
+  - `watch(prefix)` scans the prefix in one snapshot. It sends a `Put` for each record, then `Synced`. After that it rescans every `poll` (default 250 ms), and at once after the handle's own writes, and sends a `Put` or `Delete` for each change.
+  - Changes between two scans collapse to the latest version.
+  - A scan that fails is logged and retried. The stream never ends.
+  - This follows `loams-meta-tikv`'s change watch, which uses no change counters (row T5-4).
+  - If a reconciler's full-prefix rescans cost too much on TiKV, a scoped change feed (D63) replaces this behind the same `StoreEvent`s.
+- **R3.8 Unknown outcomes.**
+  - Writes carry a commit token by default (`StoreOptions::commit_tokens`), so `loams-kv`'s runner resolves a lost acknowledgement. `lost_ack_is_resolved_by_its_token`, a ninth case, checks this.
+  - `undetermined_is_surfaced` injects `LoseAck` after the commit and before it into a store without tokens. Both surface `Undetermined`, never success or a conflict, and the write applied only in the first case.
+  - With tokens, `Undetermined` appears only when the token cannot be resolved for two request timeouts.
+- **R3.9 The TiKV tests use `LOAMS_TEST_PD`, not `LOAMS_TIKV_PD`.** Every TiKV suite in the repository, and CI's TiKV job, use `loams_tikv::testing::cluster()` and `LOAMS_TEST_PD`, so `tests/store_tikv.rs` does too. Each case prints `skipped:` when the variable is unset. It runs on the test keyspace `loams_test_meta` under a fresh random root. CI changes:
+  - `ci.yml`'s TiKV suites job builds and runs `cargo test -p loams-pg-control --features tikv --test store_tikv`, and its `tikv` filter covers the crate.
+  - `pg2.yml` gains `pg-control`, which runs the tests on the local store and clippy on the default and `tikv` builds.
