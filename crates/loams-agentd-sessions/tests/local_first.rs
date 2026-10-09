@@ -65,7 +65,6 @@ async fn removed_edge_and_sign_in_methods_are_unknown() {
     let client = memory_client(runtime.core().rpc_service());
     for method in [
         "RelayCommand",
-        "RetryDelivery",
         "FocusChat",
         "ProbeSync",
         "SyncStatus",
@@ -92,6 +91,17 @@ async fn removed_edge_and_sign_in_methods_are_unknown() {
             "{method}: {error}"
         );
     }
+    // The local re-send of dead attempts stays (DD1 fix round 1, I1).
+    assert_eq!(
+        client
+            .call(
+                methods::RETRY_DELIVERY,
+                serde_json::json!({ "chatId": "c" })
+            )
+            .await
+            .unwrap(),
+        serde_json::json!({})
+    );
     runtime.shutdown().await;
 }
 

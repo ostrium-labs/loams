@@ -1864,6 +1864,101 @@ impl DocHost {
         request.harness.unwrap_or_else(|| self.harness_for(chat_id))
     }
 
+    /// User-driven retry (the failed-send affordance, `RetryDelivery`):
+    /// re-send every dead Run/Steer attempt under a fresh id, then run a
+    /// drain pass. Exactly-once is per command id, so a retry mints a new
+    /// attempt with the same payload and message id (the executor's
+    /// user-entry pre-write dedupes by message id). A dead attempt is one
+    /// whose user message never landed and that can never execute again:
+    /// Rejected (execute failed, or the dead-command sweep terminalized it),
+    /// Expired (an explicit retry is the consent to re-send), or consumed by
+    /// the ledger with no outcome and not executing (a crash between mark
+    /// and resolve). One re-issue per message: the latest attempt speaks for
+    /// it. The fork's redial and host nudge went with the edge (plan DD1
+    /// ruling T2-12).
+    pub fn retry_delivery(&self, chat_id: &str) -> Result<(), EngineError> {
+        let handle = self.open(chat_id)?;
+        let commands = handle.doc.read_commands()?;
+        let is_processed = |id: &str| self.inner.store.is_processed(id).unwrap_or(false);
+        let messages = handle.doc.read_entries().unwrap_or_default();
+        let message_landed = |mid: &str| messages.iter().any(|m| m.id == mid);
+        let mut latest_dead: HashMap<String, &SessionCommandEntry> = HashMap::new();
+        for c in &commands {
+            let Some(mid) = retry_message_id(&c.payload) else {
+                continue;
+            };
+            if message_landed(mid) {
+                continue;
+            }
+            let dead = match c.status {
+                SessionCommandStatus::Rejected | SessionCommandStatus::Expired => true,
+                SessionCommandStatus::Pending => {
+                    is_processed(&c.id) && !lock(&self.inner.executing).contains(&c.id)
+                }
+                _ => false,
+            };
+            if !dead {
+                continue;
+            }
+            // A live pending attempt for the same message makes a re-issue
+            // a duplicate.
+            let live_attempt = commands.iter().any(|o| {
+                o.id != c.id
+                    && o.status == SessionCommandStatus::Pending
+                    && !is_processed(&o.id)
+                    && same_send(&o.payload, &c.payload)
+            });
+            if live_attempt {
+                continue;
+            }
+            match latest_dead.entry(mid.to_string()) {
+                std::collections::hash_map::Entry::Occupied(mut slot) => {
+                    if c.issued_at > slot.get().issued_at {
+                        slot.insert(c);
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(c);
+                }
+            }
+        }
+        for old in latest_dead.values() {
+            if old.status == SessionCommandStatus::Pending {
+                // Terminalize the consumed-but-dead original so the doc tells
+                // the truth and the next retry does not see it again.
+                self.resolve_command(
+                    &handle,
+                    &old.id,
+                    SessionCommandStatus::Rejected,
+                    Some("interrupted before completion — superseded by retry"),
+                );
+            }
+            let now = now_ms();
+            let reissue = SessionCommandEntry {
+                id: new_id(),
+                payload: old.payload.clone(),
+                issued_by: self.inner.config.device_id.clone(),
+                issued_at: now,
+                based_on: messages.last().map(|m| CommandBasedOn {
+                    turn_id: Some(m.id.clone()),
+                    frontier: None,
+                }),
+                expires_at: Some(now + COMMAND_DEFAULT_TTL_MS),
+                status: SessionCommandStatus::Pending,
+                resolution: None,
+            };
+            tracing::info!(chat = %chat_id, old = %old.id, new = %reissue.id,
+                "retry re-issues a dead send attempt");
+            handle.doc.queue_command(&reissue)?;
+        }
+        if tokio::runtime::Handle::try_current().is_ok() {
+            let host = self.clone();
+            let handle = handle.clone();
+            self.spawn_worker(async move { host.drain_commands(&handle).await });
+        }
+        Ok(())
+    }
+
     /// Drain pending commands (host-only): evaluate → mark processed BEFORE execute →
     /// execute → write the outcome as the sole outcome writer.
     pub async fn drain_commands(&self, handle: &Arc<ChatDocHandle>) {
@@ -2777,6 +2872,31 @@ pub fn respond_input_prompt(
         }
     }
     lines.join("\n")
+}
+
+/// The message a Run or Steer command delivers, the key [`DocHost::retry_delivery`]
+/// groups attempts by.
+fn retry_message_id(payload: &SessionCommandPayload) -> Option<&str> {
+    match payload {
+        SessionCommandPayload::Run { message_id, .. } => Some(message_id.as_str()),
+        SessionCommandPayload::Steer { message_id, .. } => message_id.as_deref(),
+        _ => None,
+    }
+}
+
+/// Two attempts of the same send: same kind, same message id.
+fn same_send(a: &SessionCommandPayload, b: &SessionCommandPayload) -> bool {
+    match (a, b) {
+        (
+            SessionCommandPayload::Run { message_id: a, .. },
+            SessionCommandPayload::Run { message_id: b, .. },
+        ) => a == b,
+        (
+            SessionCommandPayload::Steer { message_id: a, .. },
+            SessionCommandPayload::Steer { message_id: b, .. },
+        ) => a == b,
+        _ => false,
+    }
 }
 
 #[cfg(test)]

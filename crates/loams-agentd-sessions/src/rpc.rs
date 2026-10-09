@@ -1288,6 +1288,13 @@ impl RpcService for EngineRpc {
                     None => RpcReply::value(&serde_json::json!({ "ready": false })),
                 }
             }
+            methods::RETRY_DELIVERY => {
+                let p: ChatParams = parse_params(params)?;
+                self.doc_host
+                    .retry_delivery(&p.chat_id)
+                    .map_err(|e| RpcError::Failed(e.to_string()))?;
+                RpcReply::value(&serde_json::json!({}))
+            }
             methods::FORK_SIDE_CHAT => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase")]

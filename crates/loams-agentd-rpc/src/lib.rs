@@ -40,6 +40,10 @@ pub mod methods {
     pub const LIST_SKILLS: &str = "ListSkills";
     pub const LIST_COMMANDS: &str = "ListCommands";
     pub const QUEUE_COMMAND: &str = "QueueCommand";
+    /// User-driven retry of a chat's failed sends: re-sends every dead
+    /// Run/Steer attempt (Rejected, Expired, or consumed with no result)
+    /// under a new id, then drains. Params `{chatId}`; IPC-only.
+    pub const RETRY_DELIVERY: &str = "RetryDelivery";
     pub const TAKE_PROJECT_ACTION_SETUP: &str = "TakeProjectActionSetup";
     pub const FORK_SIDE_CHAT: &str = "ForkSideChat";
     pub const WATCH_DOC_MESSAGES: &str = "WatchDocMessages";
