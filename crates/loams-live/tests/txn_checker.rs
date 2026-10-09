@@ -5,8 +5,14 @@
 //! (with what it read) goes into an Elle history (`loams_sim::elle`). The
 //! checker then infers the dependency graph and looks for cycles.
 //!
-//! Mutations are snapshot isolated (§20 §5.2): no G0, G1 or G-single, on
-//! either backend. Point reads (`db.get`) are promoted into the lock set, so
+//! An append reads the document by id before patching it, and that read
+//! goes into the history too. Every committed append must be in the final
+//! read of every key.
+//!
+//! Mutations are snapshot isolated (§20 §5.2): no G0, G1, G-single or
+//! G-nonadjacent cycle (one whose anti-dependency edges are never
+//! adjacent), on either backend; G2 cycles occur and have adjacent
+//! anti-dependency edges, which snapshot isolation allows. Point reads (`db.get`) are promoted into the lock set, so
 //! a workload that reads by id is serializable too (no G2). Index-range
 //! reads are plain snapshot reads, so range write skew (G2) can occur
 //! unless `RunnerOptions::serializable_ranges` is set (Q31); the tests pin
@@ -28,7 +34,7 @@ use loams_live::{
     DocId, FnKind, Function, IndexId, IndexRange, LiveConfig, LiveError, LiveTxn, LiveValue,
     Runner, RunnerOptions, live_test,
 };
-use loams_sim::elle::{self, Analysis, AnomalyKind, Elem, History, Key, Mop, Op};
+use loams_sim::elle::{self, Analysis, Elem, History, Key, Mop, Op};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use tokio::sync::Barrier;
@@ -128,8 +134,9 @@ impl Pause {
 
 /// `{ mops: [{ f: "r", id } | { f: "a", id, v } | { f: "w", id, list }] }`:
 /// reads a list, appends `v` to it (reading it first), or (`w`, the broken
-/// client of the control run) writes `list` blind. Returns the lists read,
-/// in order.
+/// client of the control run) writes `list` blind. Returns one entry per
+/// micro-op, in order: the list read, the list an append read before
+/// appending, or `null` for a blind write.
 struct ListTxn {
     reads: Reads,
     pause: Option<Pause>,
@@ -214,6 +221,8 @@ impl Function for ListTxn {
                         .await?
                         .ok_or_else(|| invalid(format!("no document {id}")))?;
                     let mut list = elems(doc.fields.get("list"))?;
+                    // The append's own read, for the history.
+                    out.push(elems_value(&list));
                     match field(m, "v") {
                         Some(LiveValue::I64(v)) => {
                             list.push(u64::try_from(*v).map_err(|_| invalid("a negative value"))?)
@@ -222,6 +231,7 @@ impl Function for ListTxn {
                     }
                     elems_value(&list)
                 } else if f == Some(&s("w")) {
+                    out.push(LiveValue::Null);
                     field(m, "list").cloned().unwrap_or(LiveValue::Null)
                 } else {
                     return Err(invalid(format!("an op, not {f:?}")));
@@ -312,13 +322,14 @@ impl Lists {
     /// Runs `args` with `f` as the transaction `mops` (reads with unknown
     /// lists) of `process`, retrying a retryable storage error with the
     /// same idempotency key `key`. Returns the history's op, with the lists
-    /// read when it committed (`Info`, unknown, when every try failed with
-    /// a retryable error), and the attempts of its committing try.
+    /// read when it committed, each append preceded by the read it made
+    /// (`Info`, unknown, when every try failed with a retryable error), and
+    /// the attempts of its committing try.
     async fn transact_with(
         &self,
         f: &Arc<dyn Function>,
         process: u64,
-        mut mops: Vec<Mop>,
+        mops: Vec<Mop>,
         args: LiveValue,
         key: String,
     ) -> Result<(Op, u32), String> {
@@ -349,27 +360,46 @@ impl Lists {
         let LiveValue::Array(lists) = &m.result else {
             return Err(format!("{key}: a result of {:?}", m.result));
         };
-        let mut lists = lists.iter();
-        for mop in &mut mops {
-            if let Mop::Read { list, .. } = mop {
-                let read = lists
-                    .next()
-                    .ok_or_else(|| format!("{key}: fewer lists than reads"))?;
-                *list = Some(elems(Some(read)).map_err(|e| format!("{key}: {e}"))?);
+        if lists.len() != mops.len() {
+            return Err(format!(
+                "{key}: {} results for {} ops",
+                lists.len(),
+                mops.len()
+            ));
+        }
+        let mut done = Vec::new();
+        for (mop, read) in mops.into_iter().zip(lists) {
+            let list = match read {
+                LiveValue::Null => None,
+                read => Some(elems(Some(read)).map_err(|e| format!("{key}: {e}"))?),
+            };
+            match mop {
+                Mop::Read { key: k, .. } => done.push(Mop::Read { key: k, list }),
+                Mop::Append { key: k, value } => {
+                    if let Some(list) = list {
+                        done.push(Mop::read(k, list));
+                    }
+                    done.push(Mop::append(k, value));
+                }
             }
         }
-        Ok((Op::ok(process, mops), m.attempts))
+        Ok((Op::ok(process, done), m.attempts))
     }
 
     /// A transaction reading every key (by id), so the history has each
-    /// key's whole order.
+    /// key's whole order. It must commit: an unknown outcome is an error.
     async fn read_all(&self, process: u64, key: String) -> Result<Op, String> {
         let mops = (0..self.ids.len() as u64)
             .map(|k| Mop::Read { key: k, list: None })
             .collect();
         let (op, _) = self
-            .transact(&ListTxn::plain(Reads::Point), process, mops, key)
+            .transact(&ListTxn::plain(Reads::Point), process, mops, key.clone())
             .await?;
+        if op.outcome != elle::Outcome::Ok {
+            return Err(format!(
+                "{key}: the final read did not commit in {TRIES} tries"
+            ));
+        }
         Ok(op)
     }
 
@@ -414,9 +444,14 @@ struct Run {
 /// workload's keys, half each) from `clients` concurrent clients, then one
 /// that reads every key. Client `c` draws its transactions from ChaCha8 at
 /// `seed × 1 000 + c`, and transaction `op` carries the idempotency key
-/// `txn-{seed}-{c}-{op}`; a seed reproduces the mix, not the interleaving.
-/// Values are unique: transaction `op`'s `j`-th micro-op appends
-/// `op × 8 + j + 1`.
+/// `txn-{seed}-{c}-{op}`. Values are unique: transaction `op`'s `j`-th
+/// micro-op appends `op × 8 + j + 1`.
+///
+/// A seed reproduces each client's sequence of draws (lengths, keys, reads
+/// or appends, read modes), not which op indices a client takes from the
+/// shared counter (so not its values or idempotency keys), not the
+/// interleaving of clients, and not the runner's journal shard picks, which
+/// come from the thread RNG inside `Runner::mutate`.
 async fn random_workload(
     lists: &Arc<Lists>,
     seed: u64,
@@ -574,6 +609,60 @@ fn assert_dense(analysis: &Analysis, context: &str) {
     );
 }
 
+/// The committed appends missing from the history's last transaction (the
+/// final read of every key): appends a later write lost.
+fn lost_appends(history: &History) -> Vec<(Key, Elem)> {
+    let Some(last) = history.ops.last() else {
+        return Vec::new();
+    };
+    let finals: BTreeMap<Key, &Vec<Elem>> = last
+        .mops
+        .iter()
+        .filter_map(|m| match m {
+            Mop::Read {
+                key,
+                list: Some(list),
+            } => Some((*key, list)),
+            _ => None,
+        })
+        .collect();
+    history
+        .ops
+        .iter()
+        .filter(|op| op.outcome == elle::Outcome::Ok)
+        .flat_map(|op| &op.mops)
+        .filter_map(|m| match *m {
+            Mop::Append { key, value } if !finals.get(&key).is_some_and(|l| l.contains(&value)) => {
+                Some((key, value))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Every committed append is in the final read.
+fn assert_no_lost_appends(history: &History, context: &str, name: &str) {
+    let lost = lost_appends(history);
+    assert!(
+        lost.is_empty(),
+        "{context}: committed appends missing from the final read (key, value): {:?}\n{}",
+        &lost[..lost.len().min(10)],
+        dump(name, history)
+    );
+}
+
+/// A G2 cycle, if any, has adjacent `rw` edges (allowed by snapshot
+/// isolation); returns whether there is one.
+fn adjacent_g2(analysis: &Analysis, context: &str) -> bool {
+    match analysis.g2() {
+        Some(g2) => {
+            assert!(g2.has_adjacent_rw(), "{context}: {g2}");
+            true
+        }
+        None => false,
+    }
+}
+
 // ---- the tests ----
 
 /// Seeded random list-append workloads, reads by id and by range mixed:
@@ -596,19 +685,18 @@ async fn live_histories_are_snapshot_isolated(store: TestStore) {
             .await
             .unwrap_or_else(|e| panic!("{rerun}: the workload failed: {e}"));
         let analysis = elle::analyze(&run.history);
-        eprintln!(
-            "seed {seed}: {} committed, {} reran, {:?}, G2: {}",
-            analysis.committed,
-            run.reran,
-            analysis.edges,
-            analysis.g2().is_some()
-        );
         if let Some(a) = analysis.snapshot_isolation() {
             panic!(
                 "{rerun}: not snapshot isolated: {a}\n{}",
                 dump(&format!("si-seed-{seed}"), &run.history)
             );
         }
+        let g2 = adjacent_g2(&analysis, &rerun);
+        eprintln!(
+            "seed {seed}: {} committed, {} reran, {:?}, G2 with adjacent rw edges: {g2}",
+            analysis.committed, run.reran, analysis.edges,
+        );
+        assert_no_lost_appends(&run.history, &rerun, &format!("si-seed-{seed}"));
         assert_dense(&analysis, &rerun);
         assert!(run.reran > 0, "{rerun}: no transaction reran on a conflict");
     }
@@ -630,17 +718,16 @@ async fn txn_checker_flags_lost_appends(store: TestStore) {
             dump("control", &control.history)
         );
     }
+    assert_no_lost_appends(&control.history, "the control run", "control");
     let lists = Arc::new(Lists::open(&store, keys, RunnerOptions::default(), SHARDS).await);
     let broken = random_workload(&lists, seed, ops, CLIENTS, Mode::LostAppends)
         .await
         .expect("the broken run");
     let a = elle::check_list_append(&broken.history).expect_err("lost appends are flagged");
+    assert!(!a.kind.allowed_by_snapshot_isolation(), "{a}");
     assert!(
-        matches!(
-            a.kind,
-            AnomalyKind::IncompatibleOrder | AnomalyKind::GSingle | AnomalyKind::G1c
-        ),
-        "{a}"
+        !lost_appends(&broken.history).is_empty(),
+        "the final read misses no append of the broken run"
     );
 }
 live_test!(txn_checker_flags_lost_appends);
@@ -663,6 +750,7 @@ async fn point_read_promotion_prevents_write_skew(store: TestStore) {
         attempts.iter().all(|n| *n >= 3),
         "one side of every round reran: {attempts:?}"
     );
+    assert_no_lost_appends(&history, "point rounds", "point-skew");
 
     let sizes = sizes(&store);
     let lists = Arc::new(Lists::open(&store, KEYS, RunnerOptions::default(), SHARDS).await);
@@ -677,7 +765,12 @@ async fn point_read_promotion_prevents_write_skew(store: TestStore) {
             dump("point-random", &run.history)
         );
     }
+    assert_no_lost_appends(&run.history, "point reads", "point-random");
     assert_dense(&analysis, "point reads");
+    assert!(
+        run.reran > 0,
+        "point reads: no transaction reran on a conflict"
+    );
 }
 live_test!(point_read_promotion_prevents_write_skew);
 
@@ -699,10 +792,8 @@ async fn range_write_skew_is_possible_without_serializable_ranges(store: TestSto
     let g2 = analysis
         .g2()
         .unwrap_or_else(|| panic!("no write skew in {rounds} rounds without serializable_ranges"));
-    assert!(
-        g2.cycle.iter().filter(|s| s.dep == elle::Dep::Rw).count() >= 2,
-        "{g2}"
-    );
+    assert!(g2.has_adjacent_rw(), "{g2}");
+    assert_no_lost_appends(&history, "range rounds", "range-off");
 
     let on = RunnerOptions {
         serializable_ranges: true,
@@ -715,6 +806,7 @@ async fn range_write_skew_is_possible_without_serializable_ranges(store: TestSto
     if let Err(a) = elle::check_serializable(&history) {
         panic!("serializable_ranges: {a}\n{}", dump("range-on", &history));
     }
+    assert_no_lost_appends(&history, "range rounds, serializable", "range-on");
     assert!(
         attempts.iter().all(|n| *n >= 3),
         "one side of every round reran: {attempts:?}"
@@ -724,11 +816,18 @@ async fn range_write_skew_is_possible_without_serializable_ranges(store: TestSto
     let run = random_workload(&lists, sizes(&store).offset, 200, 4, Mode::Range)
         .await
         .expect("the workload");
-    if let Err(a) = elle::check_serializable(&run.history) {
+    let analysis = elle::analyze(&run.history);
+    if let Some(a) = analysis.snapshot_isolation().or_else(|| analysis.g2()) {
         panic!(
             "serializable_ranges, random: {a}\n{}",
             dump("range-on-random", &run.history)
         );
     }
+    assert_no_lost_appends(&run.history, "range reads, serializable", "range-on-random");
+    assert_dense(&analysis, "range reads, serializable");
+    assert!(
+        run.reran > 0,
+        "range reads, serializable: no transaction reran on a conflict"
+    );
 }
 live_test!(range_write_skew_is_possible_without_serializable_ranges);
