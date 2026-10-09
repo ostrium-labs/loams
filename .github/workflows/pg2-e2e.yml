@@ -1,0 +1,131 @@
+# PG2 end-to-end tests on compose stacks (docs/plans/2026-10-08-pg2-postgres-production.md).
+#
+# neon-deploy (Task 2): loams-neon against deploy/neon at its pinned digests
+# (it_deploy_neon_tenant_timeline_branch: attach, timeline, branch, list,
+# delete).
+#
+# pageserver-loams-wal (Tasks 31 and 32, run here since Task 2 pinned the
+# bench's Neon images; R32.2): scripts/pg2/it-pageserver-loams-wal.sh on
+# deploy/loams-pg-bench with no safekeeper. A compute writes through
+# loams-wal-interpreted, the pageserver finds it through the storage broker and
+# ingests the interpreted protocol, and a fresh compute reads the rows back.
+# This is it_pageserver_discovers_loams_wal_via_broker, which is also Task 31's
+# it_pageserver_ingests_from_loams_wal_without_safekeeper.
+#
+# The images are pinned by digest in the compose files; nothing here uses a tag.
+name: PG2 e2e
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - "crates/loams-neon/**"
+      - "crates/loams-safekeeper/**"
+      - "crates/loams-wal-decoder/**"
+      - "deploy/neon/**"
+      - "deploy/loams-pg-bench/**"
+      - "scripts/pg2/**"
+      - ".github/workflows/pg2-e2e.yml"
+  pull_request:
+    paths:
+      - "crates/loams-neon/**"
+      - "crates/loams-safekeeper/**"
+      - "crates/loams-wal-decoder/**"
+      - "deploy/neon/**"
+      - "deploy/loams-pg-bench/**"
+      - "scripts/pg2/**"
+      - ".github/workflows/pg2-e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pg2-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # deploy/loams-pg-bench's pinned `neon` image, the server headers' source
+  # (as in pg2.yml; PG2 Task 2, R2.1).
+  PG_HEADERS_IMAGE: ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+jobs:
+  neon-deploy:
+    name: loams-neon against deploy/neon (it_deploy_neon)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: build the test
+        run: cargo test -p loams-neon --locked --test it_deploy_neon --no-run
+      - name: deploy/neon storage
+        working-directory: deploy/neon
+        run: |
+          docker compose up -d rustfs create-bucket storage_broker pageserver
+          for _ in $(seq 1 120); do curl -sf localhost:9898/v1/status && break; sleep 1; done
+          curl -sf localhost:9898/v1/status
+      - name: it_deploy_neon_tenant_timeline_branch
+        run: cargo test -p loams-neon --locked --test it_deploy_neon -- --ignored
+      - name: logs
+        if: failure()
+        working-directory: deploy/neon
+        run: docker compose logs --tail 200
+      - name: teardown
+        if: always()
+        working-directory: deploy/neon
+        run: docker compose down -v
+
+  pageserver-loams-wal:
+    name: the pageserver ingests from loams-wal (it-pageserver-loams-wal.sh)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+      # The neon image is about 5 GB and the decoder workspace's build several
+      # more; the runner's preinstalled toolchains are not needed.
+      - name: free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: header cache
+        id: headers
+        uses: actions/cache@v6
+        with:
+          path: crates/loams-wal-decoder/pg_install
+          key: pg-server-headers-${{ env.PG_HEADERS_IMAGE }}
+      - name: extract the server headers
+        if: steps.headers.outputs.cache-hit != 'true'
+        run: scripts/pg2/pg-headers.sh "$PG_HEADERS_IMAGE" crates/loams-wal-decoder/pg_install
+      - name: build tools (protoc, libclang for bindgen)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev libclang-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates/loams-wal-decoder
+          cache-directories: ~/.cargo/git/db
+      - name: seed the fork's Postgres submodules (shallow)
+        run: scripts/pg2/seed-neon-submodules.sh crates/loams-wal-decoder/Cargo.lock
+      - name: build loams-wal-interpreted
+        working-directory: crates/loams-wal-decoder
+        run: |
+          export POSTGRES_INSTALL_DIR="$GITHUB_WORKSPACE/crates/loams-wal-decoder/pg_install"
+          cargo build --locked --bin loams-wal-interpreted
+          target=$(cargo metadata --format-version 1 --no-deps --offline |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+          echo "LOAMS_WAL=$target/debug/loams-wal-interpreted" >> "$GITHUB_ENV"
+      - name: it_pageserver_discovers_loams_wal_via_broker
+        env:
+          RUN_DIR: ${{ runner.temp }}/it-pg
+          LOAMS_BENCH_LOCK: ${{ runner.temp }}/loams-pg-bench.lock
+        run: |
+          mkdir -p "$RUN_DIR"
+          scripts/pg2/it-pageserver-loams-wal.sh
+      - name: logs
+        if: failure()
+        run: |
+          tail -n 200 "${{ runner.temp }}/it-pg/"*.log || true

@@ -36,7 +36,8 @@ jobs:
       # reads WAL from it, found through the broker (Task 32); no feeder.
       - name: build loams-wal-interpreted
         env:
-          PG_HEADERS_IMAGE: ghcr.io/neondatabase/neon@sha256:ead56a7b33925ca4df9f1ee0d29f55fa25e165a3fee6a4f19055050c68e8cad0
+          # deploy/loams-pg-bench's pinned `neon` image (PG2 Task 2, R2.1).
+          PG_HEADERS_IMAGE: ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
         run: |
           scripts/pg2/pg-headers.sh "$PG_HEADERS_IMAGE" crates/loams-wal-decoder/pg_install

@@ -9,6 +9,9 @@
 # which are extracted from a `neon` image pinned by digest and cached per
 # digest. Its golden tests compare loams-wal's stream with the fork's
 # safekeeper's (tests/fixtures).
+#
+# neon-client (Task 2): loams-neon's fixture tests (the request bodies and
+# answers recorded from deploy/neon at its pinned digests).
 name: PG2
 
 on:
@@ -23,6 +26,7 @@ on:
       - "crates/loams-safekeeper/**"
       - "crates/loams-tikv/**"
       - "crates/loams-wal-decoder/**"
+      - "crates/loams-neon/**"
       - "scripts/pg2/**"
       - "proto/**"
       - "buf.yaml"
@@ -39,6 +43,7 @@ on:
       - "crates/loams-safekeeper/**"
       - "crates/loams-tikv/**"
       - "crates/loams-wal-decoder/**"
+      - "crates/loams-neon/**"
       - "scripts/pg2/**"
       - "proto/**"
       - "buf.yaml"
@@ -52,10 +57,11 @@ permissions:
   contents: read
 
 env:
-  # The headers' source: Neon at 77e22e4b (the image the golden fixtures'
-  # safekeeper came from; no header changes up to the fork's fa504217).
-  # Task 2 replaces it with the fork's own image when it pins one.
-  PG_HEADERS_IMAGE: ghcr.io/neondatabase/neon@sha256:ead56a7b33925ca4df9f1ee0d29f55fa25e165a3fee6a4f19055050c68e8cad0
+  # The headers' source: the `neon` image deploy/neon and deploy/loams-pg-bench
+  # pin (Neon 77e22e4b, the build the golden fixtures' safekeeper came from; no
+  # header changes up to the fork's tag loams-decoder-trim-1). The fork
+  # publishes no image yet (PG2 Task 2, R2.1); this is its multi-arch index.
+  PG_HEADERS_IMAGE: ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
@@ -89,6 +95,19 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: the descriptor, reasons and route-map tests
         run: cargo test -p loams-proto --test postgres --locked
+
+  neon-client:
+    name: loams-neon (fixture tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: test
+        run: cargo test -p loams-neon --locked
+      - name: clippy
+        run: cargo clippy -p loams-neon --all-targets --locked -- -D warnings
 
   wal-decoder:
     name: loams-wal-decoder (golden tests against the fork's sender)
