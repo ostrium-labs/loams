@@ -381,3 +381,135 @@ async fn globals_are_frozen_but_overridable_by_own_properties(store: TestStore) 
     );
 }
 live_test!(globals_are_frozen_but_overridable_by_own_properties);
+
+const FLOATING: &str = r#"
+import { query, mutation } from "loams:server";
+
+export const floating = {
+  // Returns while an async loop it started is still queued: from the
+  // eleventh turn on, the loop logs and writes on every turn.
+  leave: mutation(async (ctx) => {
+    (async () => {
+      for (let turn = 0; ; turn++) {
+        await null;
+        if (turn > 10) {
+          console.log("leaked");
+          await ctx.db.insert("leaks", { turn: BigInt(turn) });
+        }
+      }
+    })();
+    return "left";
+  }),
+  // The same with no host calls: only CPU, 20 ms a turn.
+  leaveSpinning: query(async () => {
+    (async () => {
+      for (let turn = 0; ; turn++) {
+        await null;
+        if (turn > 10) {
+          for (let i = 0; i < 2e5; i++) {}
+        }
+      }
+    })();
+    return "left";
+  }),
+  ok: query(async () => "fine"),
+  okMutation: mutation(async (ctx) => {
+    await ctx.db.insert("marks", { x: 1n });
+    console.log("mine");
+    return "fine";
+  }),
+};
+"#;
+
+/// LV1 Task 3 fix round 1, C1: a call that returns while promise jobs it
+/// queued are pending must not leave them for the next call, which would
+/// run them with its own host link (its transaction, its console).
+async fn leftover_jobs_never_run_in_the_next_call(store: TestStore) {
+    let r = runner(&store).await;
+    // One slot: every call runs on the same runtime.
+    let bundle = load_with(
+        FLOATING,
+        loams_live_js::JsConfig {
+            contexts: 1,
+            ..loams_live_js::JsConfig::default()
+        },
+    );
+    let leave = function(&bundle, "floating:leave");
+    let ok = function(&bundle, "floating:okMutation");
+    for _ in 0..3 {
+        let m = mutate(&r, &leave, unit()).await.expect("leave");
+        assert_eq!(m.result, s("left"));
+        let started = std::time::Instant::now();
+        let m = mutate(&r, &ok, unit()).await.expect("the next call runs");
+        assert_eq!(m.result, s("fine"));
+        let lines: Vec<_> = m.output.logs.iter().map(|l| l.line.as_str()).collect();
+        assert_eq!(lines, ["mine"], "no line of the earlier call's loop");
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(500),
+            "the next call is not slowed"
+        );
+    }
+    let all = loams_live::system::lookup(loams_live::system::QUERY).expect("query");
+    let leaks = query(&r, &all, obj(&[("table", s("leaks"))]))
+        .await
+        .expect("leaks");
+    assert!(
+        items(&leaks.result).is_empty(),
+        "the loop never wrote: {:?}",
+        leaks.result
+    );
+    let marks = query(&r, &all, obj(&[("table", s("marks"))]))
+        .await
+        .expect("marks");
+    assert_eq!(items(&marks.result).len(), 3);
+
+    // CPU only: the next call is not slowed by a leftover loop.
+    let spin = function(&bundle, "floating:leaveSpinning");
+    let ok = function(&bundle, "floating:ok");
+    for _ in 0..3 {
+        assert_eq!(query(&r, &spin, unit()).await.expect("spin").result, s("left"));
+        let started = std::time::Instant::now();
+        assert_eq!(query(&r, &ok, unit()).await.expect("ok").result, s("fine"));
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(200),
+            "the next call is not slowed: {:?}",
+            started.elapsed()
+        );
+    }
+}
+live_test!(leftover_jobs_never_run_in_the_next_call);
+
+/// C1 at load: the jobs a bundle's top level leaves are run within the
+/// load's limits, so none is left for the first call; a top level that
+/// never stops queueing jobs fails to load.
+#[tokio::test]
+async fn bundle_top_level_jobs_run_within_its_limits() {
+    let finite = r#"
+import { query } from "loams:server";
+let settled = 0;
+Promise.resolve().then(() => { settled += 1; }).then(() => { settled += 1; });
+export const top = { settled: query(async () => settled) };
+"#;
+    let bundle = load(finite);
+    let store = TestStore::embedded(option_env!("CARGO_TARGET_TMPDIR")).await;
+    let r = runner(&store).await;
+    let got = query(&r, &function(&bundle, "top:settled"), unit())
+        .await
+        .expect("settled");
+    assert_eq!(got.result, LiveValue::F64(2.0));
+
+    let forever = r#"
+(async () => { for (;;) { await null; } })();
+export const top = {};
+"#;
+    let config = loams_live_js::JsConfig {
+        cpu_limit: std::time::Duration::from_millis(200),
+        contexts: 1,
+        ..loams_live_js::JsConfig::default()
+    };
+    match loams_live_js::Bundle::load(forever, config) {
+        Err(LiveError::FunctionTimeout { function, .. }) => assert_eq!(function, "<bundle>"),
+        Err(e) => panic!("a timeout, not {e}"),
+        Ok(_) => panic!("a bundle that never stops queueing jobs loads"),
+    }
+}

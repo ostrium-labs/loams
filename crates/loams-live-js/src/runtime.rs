@@ -7,8 +7,11 @@
 //! ran, the globals are frozen and the bundle is evaluated. A call takes
 //! the ready context, runs exactly one invocation in it and drops it, on
 //! success or failure; the slot then prepares the next one before it takes
-//! another call. After a timeout, an out-of-memory error or an aborted
-//! call, the slot also replaces its runtime.
+//! another call. After a timeout, an out-of-memory error, an aborted call
+//! or a call that left promise jobs queued (a floating promise, which
+//! would otherwise run in the next call), the slot also replaces its
+//! runtime. The jobs a bundle's top level leaves run while it loads,
+//! within the load's limits.
 //!
 //! **Host calls.** `ctx.db.*` reaches the host through `natives.host`: the
 //! slot sends the operation to the caller's future, which runs it on the
@@ -736,6 +739,14 @@ impl Engine {
             };
             match steps() {
                 Ok((internals, metas)) => {
+                    // The jobs the top level left (a floating promise) run
+                    // now, within the load's limits, so none is left for
+                    // the first call (C1). A top level that never stops
+                    // queueing jobs is stopped by the CPU limit.
+                    while ctx.execute_pending_job() {}
+                    if let Some(stopped) = self.stopped(Phase::Load) {
+                        return Err(stopped);
+                    }
                     let metas = metas.into_iter().map(meta).collect::<Result<Vec<_>, _>>()?;
                     Ok((Persistent::save(&ctx, internals), metas))
                 }
@@ -855,9 +866,14 @@ impl Engine {
         self.state.meter.pause();
         let output = self.state.console.borrow_mut().take();
         self.state.link.borrow_mut().take();
+        // Jobs still queued (a floating promise) would run in the next
+        // call's `finish`, with its host link: its transaction, its
+        // console and its CPU. They belong to this call's context, so the
+        // runtime is replaced with them (C1).
         let poisoned = self.state.abort.get()
             || self.state.meter.timed_out()
-            || matches!(result, Err(LiveError::FunctionOutOfMemory { .. }));
+            || matches!(result, Err(LiveError::FunctionOutOfMemory { .. }))
+            || self.rt.is_job_pending();
         drop(ctx);
         if !poisoned {
             // Cycles of the dropped context, so the next call starts with
