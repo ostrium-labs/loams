@@ -896,3 +896,50 @@ async fn detached_statements_across_graphs_hit_the_namespace_cap() {
         .await
         .expect("serving again");
 }
+
+/// Review fix 1, I2: once a statement of a graph is detached, the statements in flight on it
+/// count against `max_detached` (2) too, since each could run past its deadline.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn in_flight_statements_count_against_max_detached() {
+    let fixture = Fixture::start().await;
+    let admin = Arc::new(fixture.admin());
+    graph_with_nodes(&admin, 100).await;
+    // Nothing detached: two at once, and a third, are all admitted.
+    let quick = "MATCH (n:T) RETURN count(n)";
+    let three: Vec<_> = (0..3)
+        .map(|_| {
+            let admin = admin.clone();
+            tokio::spawn(async move { admin.execute(execute("acme", "kg", quick)).await })
+        })
+        .collect();
+    for task in three {
+        task.await.expect("task").expect("admitted");
+    }
+    // One detached.
+    let err = admin
+        .execute(pb::ExecuteRequest {
+            timeout_ms: 50,
+            ..execute("acme", "kg", LONG)
+        })
+        .await
+        .expect_err("past its deadline");
+    assert_eq!(reason(&err), "graph_statement_timeout");
+    // One more in flight: 1 detached + 1 running = 2, the limit.
+    let running = {
+        let admin = admin.clone();
+        tokio::spawn(async move { admin.execute(execute("acme", "kg", LONG)).await })
+    };
+    until("two in flight", || admin.statements_in_flight() == 2).await;
+    let err = admin
+        .execute(execute("acme", "kg", "RETURN 1"))
+        .await
+        .expect_err("detached plus running at the limit");
+    assert_eq!(err.code, ErrorCode::ResourceExhausted, "{err:?}");
+    assert_eq!(reason(&err), "resource_exhausted");
+    running.await.expect("task").expect("ends");
+    until("detached end", || admin.detached_statements() == 0).await;
+    admin
+        .execute(execute("acme", "kg", "RETURN 1"))
+        .await
+        .expect("serving again");
+}

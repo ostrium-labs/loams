@@ -469,19 +469,28 @@ impl GraphAdmin {
                 &[("quota", "detached_statements")],
             ));
         }
-        let detached = self.detached.of(namespace, name);
-        if detached >= limits.max_detached {
-            return Err(refuse(
+        let slot = self.statement_slot()?;
+        // Once a statement of this graph is detached, every one in flight counts against
+        // `max_detached` (review fix 1, I2).
+        let watch = Watch::admit(
+            Arc::clone(&self.detached),
+            namespace,
+            name,
+            limits.max_detached,
+        )
+        .ok_or_else(|| {
+            refuse(
                 ErrorCode::ResourceExhausted,
                 "resource_exhausted",
                 format!(
-                    "graph {namespace}/{name} has {detached} statements still running past their \
-                     deadline; retry when they end"
+                    "graph {namespace}/{name} has {} statements running past their deadline and \
+                     {} more in flight, against a limit of {}; retry when they end",
+                    self.detached.of(namespace, name),
+                    self.detached.running(namespace, name),
+                    limits.max_detached
                 ),
-            ));
-        }
-        let slot = self.statement_slot()?;
-        let watch = Watch::new(Arc::clone(&self.detached), namespace, name);
+            )
+        })?;
         let task = {
             let admin = self.clone();
             let watch = watch.clone();

@@ -405,6 +405,8 @@ impl NamespaceSlots {
 /// Statements running on past their deadline (R0.8 (a)), by graph and by namespace.
 #[derive(Debug, Default)]
 pub struct Detached {
+    /// Statements of a graph still waited for (not detached), review fix 1, I2.
+    running: Mutex<HashMap<(String, String), usize>>,
     by_graph: Mutex<HashMap<(String, String), usize>>,
     by_namespace: Mutex<HashMap<String, usize>>,
     total: AtomicUsize,
@@ -420,6 +422,37 @@ impl Detached {
             .unwrap_or(0)
     }
 
+    /// Statements of one graph that run with their caller still waiting.
+    #[must_use]
+    pub fn running(&self, namespace: &str, name: &str) -> usize {
+        lock(&self.running)
+            .get(&(namespace.to_string(), name.to_string()))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Counts one more statement of a graph, if it takes one under `max_detached` (review fix 1,
+    /// I2).
+    ///
+    /// A graph with no detached statement takes any number (the namespace and process slots
+    /// bound them). Once one is detached, every statement in flight counts against the limit:
+    /// each of them could run past its deadline too, so a new statement is admitted only while
+    /// detached plus running stays under `max_detached`. What this cannot bound is statements
+    /// already running when the first one detaches; the namespace's slots and detached cap do.
+    ///
+    /// The check and the count of the new statement happen under one lock, so two statements
+    /// arriving together cannot both take the last place.
+    fn try_start(&self, key: &(String, String), max_detached: usize) -> bool {
+        let mut running = lock(&self.running);
+        let detached = lock(&self.by_graph).get(key).copied().unwrap_or(0);
+        let now = running.get(key).copied().unwrap_or(0);
+        if detached > 0 && detached + now >= max_detached {
+            return false;
+        }
+        *running.entry(key.clone()).or_default() += 1;
+        true
+    }
+
     /// Detached statements of every graph of one namespace.
     #[must_use]
     pub fn of_namespace(&self, namespace: &str) -> usize {
@@ -433,6 +466,16 @@ impl Detached {
     #[must_use]
     pub fn total(&self) -> usize {
         self.total.load(Ordering::SeqCst)
+    }
+
+    fn stop(&self, key: &(String, String)) {
+        let mut running = lock(&self.running);
+        if let Some(count) = running.get_mut(key) {
+            *count -= 1;
+            if *count == 0 {
+                running.remove(key);
+            }
+        }
     }
 
     fn add(&self, key: &(String, String)) {
@@ -479,14 +522,21 @@ pub struct Watch {
 }
 
 impl Watch {
-    /// A running statement of `namespace`/`name`.
+    /// A new running statement of `namespace`/`name`, or `None` when the graph is at its
+    /// `max_detached` ([`Detached::try_start`]).
     #[must_use]
-    pub fn new(detached: Arc<Detached>, namespace: &str, name: &str) -> Self {
-        Self {
+    pub fn admit(
+        detached: Arc<Detached>,
+        namespace: &str,
+        name: &str,
+        max_detached: usize,
+    ) -> Option<Self> {
+        let key = Arc::new((namespace.to_string(), name.to_string()));
+        detached.try_start(&key, max_detached).then(|| Self {
             phase: Arc::new(Mutex::new(Phase::Running)),
-            key: Arc::new((namespace.to_string(), name.to_string())),
+            key,
             detached,
-        }
+        })
     }
 
     /// The caller gave up on a statement that is still running: it is detached and counted.
@@ -494,6 +544,7 @@ impl Watch {
         let mut phase = lock(&self.phase);
         if *phase == Phase::Running {
             *phase = Phase::Abandoned;
+            self.detached.stop(&self.key);
             self.detached.add(&self.key);
             tracing::warn!(
                 namespace = %self.key.0,
@@ -506,8 +557,10 @@ impl Watch {
     /// The statement ended; a detached one is no longer counted.
     pub fn finish(&self) {
         let mut phase = lock(&self.phase);
-        if *phase == Phase::Abandoned {
-            self.detached.remove(&self.key);
+        match *phase {
+            Phase::Running => self.detached.stop(&self.key),
+            Phase::Abandoned => self.detached.remove(&self.key),
+            Phase::Done => {}
         }
         *phase = Phase::Done;
     }
