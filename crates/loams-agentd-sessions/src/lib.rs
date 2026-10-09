@@ -42,7 +42,7 @@ pub mod source_control;
 pub mod spaces;
 pub mod terminals;
 pub mod titles;
-mod tool_outputs;
+pub mod tool_outputs;
 mod transcript_history;
 pub mod uploads;
 pub mod workspace_files;
@@ -113,6 +113,8 @@ pub struct EngineConfig {
     pub default_harness: HarnessId,
     /// A fixed shell for terminals and project actions; `None` = the user's `$SHELL`.
     pub terminal_shell: Option<TerminalShell>,
+    /// Bounds of the full tool-output store (plan DD1 ruling T2-13).
+    pub tool_outputs: tool_outputs::ToolOutputLimits,
 }
 
 /// The assembled engine core — also constructible without the IPC server for tests.
@@ -424,6 +426,7 @@ impl Engine {
             )?,
         };
         core.terminals.set_shell(config.terminal_shell.clone());
+        core.doc_host.set_tool_output_limits(config.tool_outputs);
         let preview_workspace = core.workspace.clone();
         let preview_device = core.device_id.clone();
         let projects = Arc::new(move || {

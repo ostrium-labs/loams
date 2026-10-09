@@ -469,6 +469,12 @@ struct ReadAttachmentChunkParams {
 struct FetchToolBlobParams {
     /// Doc-resident sidecar ref (`{chatId}/{partId}` or `…​.diff`).
     blob_ref: String,
+    /// Body offset of the page.
+    #[serde(default)]
+    offset: u64,
+    /// Page length; at most (and by default) the max frame.
+    #[serde(default)]
+    len: Option<u64>,
 }
 
 /// The Mutate surface (feature-inventory §2 DataRpc), tagged by `op`.
@@ -2690,12 +2696,12 @@ impl RpcService for EngineRpc {
             }
             methods::FETCH_TOOL_BLOB => {
                 let p: FetchToolBlobParams = parse_params(params)?;
-                let text = self
+                let chunk = self
                     .doc_host
-                    .fetch_tool_blob(&p.blob_ref)
+                    .fetch_tool_blob(&p.blob_ref, p.offset, p.len)
                     .await
                     .map_err(|e| RpcError::Failed(e.to_string()))?;
-                RpcReply::value(&serde_json::json!({ "text": text }))
+                RpcReply::value(&chunk)
             }
             other => Err(RpcError::UnknownMethod(other.to_string())),
         }

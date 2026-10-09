@@ -237,6 +237,7 @@ fn engine_config_from_env() -> loams_agentd_sessions::EngineConfig {
             .unwrap_or(27654),
         default_harness: harness_from_env(),
         terminal_shell: None,
+        tool_outputs: Default::default(),
     }
 }
 

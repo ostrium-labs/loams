@@ -155,7 +155,9 @@ pub mod methods {
     pub const UPLOAD_COMMIT: &str = "UploadCommit";
     pub const READ_ATTACHMENT_CHUNK: &str = "ReadAttachmentChunk";
     /// Lazy full-tool-output fetch by doc-resident ref, read from the daemon's
-    /// local tool-output store (plan DD1 ruling T0-16).
+    /// local tool-output store (plan DD1 rulings T0-16, T2-13), one page at a
+    /// time: `{blobRef, offset?, len?}` → `{text, offset, len, total,
+    /// truncated, eof}`.
     pub const FETCH_TOOL_BLOB: &str = "FetchToolBlob";
     // Updates (ControlRpc). Stream: current UpdateStatus, then every change.
     pub const UPDATE_STATUS: &str = "UpdateStatus";

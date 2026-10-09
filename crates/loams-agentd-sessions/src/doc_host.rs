@@ -44,6 +44,9 @@ use crate::sessions::{SessionsEngine, SteerOutcome};
 use crate::workspace_host::WorkspaceHost;
 use crate::{EngineError, Terminals, new_id, now_ms};
 
+/// How often archived chats' tool outputs are checked against the retention.
+const TOOL_OUTPUT_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3600);
+
 /// Debounce window for local snapshot saves after a doc change.
 const SNAPSHOT_DEBOUNCE_MS: u64 = 1_000;
 
@@ -558,8 +561,22 @@ impl DocHost {
         };
         if tokio::runtime::Handle::try_current().is_ok() {
             host.spawn_eviction_tick();
+            host.spawn_tool_output_sweep();
         }
         host
+    }
+
+    /// The archived-chat retention of the tool-output store, hourly.
+    fn spawn_tool_output_sweep(&self) {
+        let weak = Arc::downgrade(&self.inner);
+        self.spawn_worker(async move {
+            loop {
+                tokio::time::sleep(TOOL_OUTPUT_SWEEP_INTERVAL).await;
+                let Some(inner) = weak.upgrade() else { return };
+                let host = Self { inner };
+                let _ = tokio::task::spawn_blocking(move || host.sweep_tool_outputs()).await;
+            }
+        });
     }
 
     /// The warm-doc LRU also runs on a tick: a doc pinned by a viewer or a
@@ -1827,14 +1844,46 @@ impl DocHost {
         }
     }
 
-    /// Read a stored tool output by its doc-resident ref (`{chatId}/{partId}`
-    /// or `….diff`) — the UI's lazy "Show full output" path.
-    pub async fn fetch_tool_blob(&self, blob_ref: &str) -> Result<String, EngineError> {
+    /// Read one page of a stored tool output by its doc-resident ref
+    /// (`{chatId}/{partId}` or `….diff`), `len` bytes from `offset` (at most
+    /// [`crate::tool_outputs::TOOL_OUTPUT_MAX_FRAME`]) — the UI's lazy "Show
+    /// full output" path.
+    pub async fn fetch_tool_blob(
+        &self,
+        blob_ref: &str,
+        offset: u64,
+        len: Option<u64>,
+    ) -> Result<crate::tool_outputs::ToolOutputChunk, EngineError> {
         let outputs = self.inner.tool_outputs.clone();
         let blob_ref = blob_ref.to_string();
-        tokio::task::spawn_blocking(move || outputs.read(&blob_ref))
+        tokio::task::spawn_blocking(move || outputs.read(&blob_ref, offset, len))
             .await
             .map_err(|e| EngineError::Other(format!("tool output read failed: {e}")))?
+    }
+
+    /// Bound the tool-output store (`EngineConfig::tool_outputs`).
+    pub fn set_tool_output_limits(&self, limits: crate::tool_outputs::ToolOutputLimits) {
+        self.inner.tool_outputs.set_limits(limits);
+    }
+
+    /// Delete archived chats' tool outputs older than the retention. Runs
+    /// hourly on the blocking pool; a no-op before the workspace is wired.
+    pub fn sweep_tool_outputs(&self) {
+        let Some(workspace) = self.workspace() else {
+            return;
+        };
+        let archived: Vec<String> = workspace
+            .read_chats()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|chat| chat.archived)
+            .map(|chat| chat.id)
+            .collect();
+        if !archived.is_empty() {
+            self.inner
+                .tool_outputs
+                .sweep_archived(&archived, std::time::SystemTime::now());
+        }
     }
 
     /// §2.2 writer discipline: we host a chat iff its workspace row's `deviceId` is
@@ -3236,18 +3285,29 @@ mod publication_eviction_tests {
             },
         );
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while host.fetch_tool_blob("chat-1/m1#tool:call_9").await.is_err() {
+            while host
+                .fetch_tool_blob("chat-1/m1#tool:call_9", 0, None)
+                .await
+                .is_err()
+            {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
         })
         .await
         .unwrap();
         assert_eq!(
-            host.fetch_tool_blob("chat-1/m1#tool:call_9").await.unwrap(),
+            host.fetch_tool_blob("chat-1/m1#tool:call_9", 0, None)
+                .await
+                .unwrap()
+                .text,
             "full output"
         );
         host.purge_chat("chat-1");
-        assert!(host.fetch_tool_blob("chat-1/m1#tool:call_9").await.is_err());
+        assert!(
+            host.fetch_tool_blob("chat-1/m1#tool:call_9", 0, None)
+                .await
+                .is_err()
+        );
         host.shutdown_workers().await;
     }
 }

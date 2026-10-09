@@ -3291,3 +3291,58 @@ async fn start_failure_lands_in_the_transcript() {
     ));
     core.sessions.shutdown().await;
 }
+
+/// The hourly sweep deletes an archived chat's tool outputs past the
+/// retention and leaves a live chat's alone (plan DD1 ruling T2-13).
+#[tokio::test]
+async fn archived_chat_tool_outputs_expire() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = assemble(
+        dir.path(),
+        Arc::new(MockHarness {
+            script: mock_script(),
+        }),
+    );
+    for chat in ["chat-archived", "chat-live"] {
+        core.workspace.claim_chat(chat, None).unwrap();
+        core.doc_host.store_tool_output(
+            chat,
+            loams_agentd_doc::SidecarPayload {
+                part_id: "p".into(),
+                output: Some("full output".into()),
+                diff: None,
+            },
+        );
+    }
+    assert!(
+        core.workspace
+            .set_chat_archived("chat-archived", true)
+            .unwrap()
+    );
+    let outputs = dir.path().join("profiles/local/tool-outputs");
+    for chat in ["chat-archived", "chat-live"] {
+        let file = outputs.join(chat).join("p");
+        wait_for(|| file.is_file(), "tool output written").await;
+        std::fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - Duration::from_secs(31 * 24 * 3600))
+            .unwrap();
+    }
+    core.doc_host.sweep_tool_outputs();
+    assert!(
+        core.doc_host
+            .fetch_tool_blob("chat-archived/p", 0, None)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        core.doc_host
+            .fetch_tool_blob("chat-live/p", 0, None)
+            .await
+            .unwrap()
+            .text,
+        "full output"
+    );
+}
