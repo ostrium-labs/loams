@@ -103,7 +103,11 @@ jobs:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      # Shared with pg2-e2e.yml's neon-deploy, which only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: pg2-loams-neon
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       - name: test
         run: cargo test -p loams-neon --locked
       - name: clippy
@@ -129,10 +133,13 @@ jobs:
         run: scripts/pg2/pg-headers.sh "$PG_HEADERS_IMAGE" crates/loams-wal-decoder/pg_install
       - name: build tools (protoc, libclang for bindgen)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev libclang-dev
+      # Shared with pg2-e2e.yml's pageserver-loams-wal, which only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: crates/loams-wal-decoder
           cache-directories: ~/.cargo/git/db
+          shared-key: pg2-wal-decoder
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
       # One commit per Postgres submodule instead of the full history: the
       # build reads the headers from POSTGRES_INSTALL_DIR, never the sources.
       - name: seed the fork's Postgres submodules (shallow)

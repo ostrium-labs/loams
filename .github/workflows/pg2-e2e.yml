@@ -20,18 +20,38 @@ on:
   push:
     branches: [dev]
     paths:
+      # loams-neon and what it builds on
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
       - "crates/loams-neon/**"
-      - "crates/loams-safekeeper/**"
+      - "crates/loams-proto/**"
+      - "proto/**"
+      # loams-wal-interpreted and what it builds on (its own workspace)
       - "crates/loams-wal-decoder/**"
+      - "crates/loams-safekeeper/**"
+      - "crates/loams-tikv/**"
+      - "crates/loams-tuple/**"
+      # the stacks and the scripts that drive them
       - "deploy/neon/**"
       - "deploy/loams-pg-bench/**"
       - "scripts/pg2/**"
       - ".github/workflows/pg2-e2e.yml"
   pull_request:
     paths:
+      # loams-neon and what it builds on
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
       - "crates/loams-neon/**"
-      - "crates/loams-safekeeper/**"
+      - "crates/loams-proto/**"
+      - "proto/**"
+      # loams-wal-interpreted and what it builds on (its own workspace)
       - "crates/loams-wal-decoder/**"
+      - "crates/loams-safekeeper/**"
+      - "crates/loams-tikv/**"
+      - "crates/loams-tuple/**"
+      # the stacks and the scripts that drive them
       - "deploy/neon/**"
       - "deploy/loams-pg-bench/**"
       - "scripts/pg2/**"
@@ -59,13 +79,26 @@ jobs:
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      # The cache pg2.yml's neon-client job saves (on dev); this job only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: pg2-loams-neon
+          save-if: false
       - name: build the test
         run: cargo test -p loams-neon --locked --test it_deploy_neon --no-run
+      # Pulled on their own, with retries, so a registry hiccup is not a test failure.
+      - name: pull the pinned images
+        working-directory: deploy/neon
+        run: |
+          for i in 1 2 3; do
+            docker compose pull rustfs create-bucket storage_broker pageserver && exit 0
+            sleep $((i * 15))
+          done
+          exit 1
       - name: deploy/neon storage
         working-directory: deploy/neon
         run: |
-          docker compose up -d rustfs create-bucket storage_broker pageserver
+          docker compose up -d --pull never rustfs create-bucket storage_broker pageserver
           for _ in $(seq 1 120); do curl -sf localhost:9898/v1/status && break; sleep 1; done
           curl -sf localhost:9898/v1/status
       - name: it_deploy_neon_tenant_timeline_branch
@@ -104,10 +137,13 @@ jobs:
         run: scripts/pg2/pg-headers.sh "$PG_HEADERS_IMAGE" crates/loams-wal-decoder/pg_install
       - name: build tools (protoc, libclang for bindgen)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev libclang-dev
+      # The cache pg2.yml's wal-decoder job saves (on dev); this job only reads it.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: crates/loams-wal-decoder
           cache-directories: ~/.cargo/git/db
+          shared-key: pg2-wal-decoder
+          save-if: false
       - name: seed the fork's Postgres submodules (shallow)
         run: scripts/pg2/seed-neon-submodules.sh crates/loams-wal-decoder/Cargo.lock
       - name: build loams-wal-interpreted
@@ -118,6 +154,14 @@ jobs:
           target=$(cargo metadata --format-version 1 --no-deps --offline |
             python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
           echo "LOAMS_WAL=$target/debug/loams-wal-interpreted" >> "$GITHUB_ENV"
+      - name: pull the pinned images
+        working-directory: deploy/loams-pg-bench
+        run: |
+          for i in 1 2 3; do
+            docker compose pull rustfs create-bucket storage_broker pageserver compute && exit 0
+            sleep $((i * 15))
+          done
+          exit 1
       - name: it_pageserver_discovers_loams_wal_via_broker
         env:
           RUN_DIR: ${{ runner.temp }}/it-pg
