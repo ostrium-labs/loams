@@ -79,20 +79,67 @@ fn fuzz_greeting() -> HandshakeV10 {
     }
 }
 
-/// Drives the connection phase with arbitrary client bytes. The first byte
-/// picks plaintext-allowed (bit 0), the verdicts (bits 1-3) and the chunk
-/// size (bits 4-7). Never panics; reaching `Done` implies the rules held.
-/// Returns whether the handshake completed.
+/// What the caller is expected to call next.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Expect {
+    Bytes,
+    Tls,
+    Fast,
+    Full,
+}
+
+/// Every entry point refuses once the phase has failed.
+fn assert_refused(p: &mut ConnectionPhase) {
+    assert!(
+        p.on_bytes(&[0, 0, 0, 0]).is_err(),
+        "on_bytes after an error"
+    );
+    assert!(
+        p.tls_established().is_err(),
+        "tls_established after an error"
+    );
+    assert!(p.fast_result(true).is_err(), "fast_result after an error");
+    assert!(p.full_result(true).is_err(), "full_result after an error");
+    assert!(!p.is_done());
+}
+
+/// Calls something other than `expect`; it must fail and fail the phase.
+fn call_out_of_order(p: &mut ConnectionPhase, expect: Expect, pick: u8) {
+    let wrong = [Expect::Bytes, Expect::Tls, Expect::Fast, Expect::Full];
+    let candidates: Vec<Expect> = wrong.into_iter().filter(|w| *w != expect).collect();
+    let call = candidates[usize::from(pick) % candidates.len()];
+    let refused = match call {
+        Expect::Bytes => p.on_bytes(&[]).is_err(),
+        Expect::Tls => p.tls_established().is_err(),
+        Expect::Fast => p.fast_result(pick & 0x10 != 0).is_err(),
+        Expect::Full => p.full_result(pick & 0x10 != 0).is_err(),
+    };
+    assert!(refused, "an out-of-order call was accepted");
+    assert_refused(p);
+}
+
+/// Drives the connection phase with arbitrary client bytes. Byte 0 picks
+/// plaintext-allowed (bit 0), the verdicts (bits 1-3) and the chunk size
+/// (bits 4-7); byte 1 picks when to make an out-of-order call. Never panics;
+/// a full password check happens only over TLS; after any error every entry
+/// point refuses; reaching `Done` implies the rules held. Returns whether
+/// the handshake completed.
 pub fn connection_phase(data: &[u8]) -> bool {
-    let Some((&ctl, rest)) = data.split_first() else {
+    let [ctl, chaos, rest @ ..] = data else {
         return false;
     };
+    let (ctl, mut chaos) = (*ctl, *chaos);
     let plaintext_allowed = ctl & 1 == 1;
     let mut verdicts = (ctl >> 1) & 0x7;
     let mut next_verdict = move || {
         let v = verdicts & 1 == 1;
         verdicts = verdicts.rotate_right(1);
         v
+    };
+    let mut misbehave = move || {
+        let m = chaos & 0x80 != 0;
+        chaos = chaos.rotate_left(1);
+        m.then_some(chaos)
     };
     let greeting = fuzz_greeting();
     let offered = greeting.capabilities;
@@ -117,6 +164,10 @@ pub fn connection_phase(data: &[u8]) -> bool {
             p.is_tls(),
             "SSL flag matches transport"
         );
+        assert!(
+            r.auth_response.expose().is_empty(),
+            "first-packet secret kept"
+        );
     };
     for c in rest.chunks(chunk) {
         buf.extend_from_slice(c);
@@ -125,26 +176,45 @@ pub fn connection_phase(data: &[u8]) -> bool {
                 Ok(r) => r,
                 Err(e) => {
                     let _ = p.error_packet(&e);
+                    assert_refused(&mut p);
                     return false;
                 }
             };
             assert!(used <= buf.len());
             buf.drain(..used);
+            let expect = match &step {
+                Step::NeedMore | Step::Write(_) => Expect::Bytes,
+                Step::StartTls => Expect::Tls,
+                Step::CheckFast { .. } => Expect::Fast,
+                Step::CheckFull { .. } => {
+                    assert!(p.is_tls(), "a full password check without TLS");
+                    Expect::Full
+                }
+                Step::Done(_) => unreachable!("on_bytes never finishes the handshake"),
+            };
+            if let Some(pick) = misbehave() {
+                call_out_of_order(&mut p, expect, pick);
+                return false;
+            }
             let after = match step {
                 Step::NeedMore => break,
                 Step::StartTls => p.tls_established().map(|()| Step::NeedMore),
                 Step::Write(_) => Ok(Step::NeedMore),
                 Step::CheckFast { .. } => p.fast_result(next_verdict()),
                 Step::CheckFull { .. } => p.full_result(next_verdict()),
-                Step::Done(_) => unreachable!("on_bytes never finishes the handshake"),
+                Step::Done(_) => unreachable!(),
             };
             match after {
                 Ok(Step::Done(_)) => {
                     check_done(&p);
                     return true;
                 }
+                Ok(Step::CheckFull { .. }) => unreachable!("verdicts never ask for a check"),
                 Ok(_) => {}
-                Err(_) => return false,
+                Err(_) => {
+                    assert_refused(&mut p);
+                    return false;
+                }
             }
         }
     }

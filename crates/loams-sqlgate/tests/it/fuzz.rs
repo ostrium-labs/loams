@@ -70,13 +70,14 @@ fn load_valid() -> Vec<u8> {
     hex::decode(v["hex"].as_str().expect("hex")).expect("hex")
 }
 
-/// A valid TLS conversation for `connection_phase`: control byte, then
+/// A valid TLS conversation for `connection_phase`: control and chaos bytes, then
 /// SSLRequest (seq 1), response (seq 2) and a full-auth password (seq 4).
 pub fn conversation(ctl: u8) -> Vec<u8> {
     use loams_sqlgate::codec::handshake::{Capabilities as C, HandshakeResponse41, SslRequest};
     use loams_sqlgate::codec::packet::encode;
     let caps = C::PROTOCOL_41 | C::SECURE_CONNECTION | C::PLUGIN_AUTH | C::SSL;
-    let mut out = vec![ctl & !1];
+    // Byte 1 (chaos) is 0: no out-of-order calls.
+    let mut out = vec![ctl & !1, 0];
     let mut seq = 1;
     encode(
         &SslRequest {
@@ -140,5 +141,19 @@ fn fuzz_seed_corpus() {
             std::fs::read(&path).expect("seed (UPDATE_FUZZ_SEEDS=1 writes it)"),
             conversation(ctl)
         );
+    }
+}
+
+/// Fix round 2, C: out-of-order calls at every step are refused, and the
+/// phase refuses everything after; never a panic.
+#[test]
+fn out_of_order_calls_are_refused_at_every_step() {
+    // Any set bit fires at some step (the chaos byte rotates per step).
+    for chaos in 1..=255u8 {
+        for ctl in [0b0000_0100u8, 0b0011_0100, 0b1111_0100] {
+            let mut v = conversation(ctl);
+            v[1] = chaos;
+            assert!(!connection_phase(&v), "chaos {chaos:#x} ctl {ctl:#x}");
+        }
     }
 }
