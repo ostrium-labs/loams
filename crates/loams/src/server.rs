@@ -468,13 +468,21 @@ impl ServerConfig {
         Ok(())
     }
 
+    /// Whether this server serves Loams Graph (GR1 Task 5): unless `--no-graph`, and not on a
+    /// cluster node, which gets the `graph` role in Task 12 (R5.2). Otherwise every graph RPC
+    /// answers `feature_not_in_variant`.
+    #[cfg(feature = "graph")]
+    #[must_use]
+    pub fn serves_graph(&self) -> bool {
+        self.graph.enabled && self.cluster.is_none()
+    }
+
     /// Loams Graph (GR1 Task 5): graphs need a data directory unless they are explicitly
     /// ephemeral, and with no authorizer before MT1 (D750) graph RPCs are served on a loopback
     /// address only.
     #[cfg(feature = "graph")]
     fn validate_graph(&self) -> Result<(), ServerError> {
-        // A cluster node does not serve Loams Graph until it has the `graph` role (GR1 Task 12).
-        if !self.graph.enabled || self.cluster.is_some() {
+        if !self.serves_graph() {
             return Ok(());
         }
         if self.graph.data_dir.is_none() && !self.graph.ephemeral {
@@ -979,6 +987,8 @@ struct GraphRuntime {
     stop: CancellationToken,
     maintenance: JoinHandle<()>,
     shutdown_wait: Duration,
+    /// Catalog sweeps the maintenance task has completed.
+    sweeps: Arc<std::sync::atomic::AtomicU64>,
 }
 
 #[cfg(feature = "graph")]
@@ -998,8 +1008,9 @@ impl GraphRuntime {
                 .with_statement_slots(config.statement_slots),
         );
         let stop = CancellationToken::new();
+        let sweeps = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let maintenance = {
-            let (admin, stop) = (admin.clone(), stop.clone());
+            let (admin, stop, sweeps) = (admin.clone(), stop.clone(), sweeps.clone());
             let (every, hold, grace) = (
                 config.maintenance_every,
                 config.retention_hold,
@@ -1018,8 +1029,11 @@ impl GraphRuntime {
                         Ok(n) => tracing::info!(purged = n, "purged deleted graphs"),
                         Err(err) => tracing::warn!(%err, "purging deleted graphs failed"),
                     }
-                    if let Err(err) = admin.sweep_documents(grace).await {
-                        tracing::warn!(%err, "sweeping graph catalog documents failed");
+                    match admin.sweep_documents(grace).await {
+                        Ok(_) => {
+                            sweeps.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        Err(err) => tracing::warn!(%err, "sweeping graph catalog documents failed"),
                     }
                 }
             })
@@ -1030,6 +1044,7 @@ impl GraphRuntime {
             stop,
             maintenance,
             shutdown_wait: config.shutdown_wait,
+            sweeps,
         }
     }
 
@@ -2042,7 +2057,8 @@ impl Server {
             .unwrap_or_default();
         // Loams Graph on dev and standalone (a cluster node gets the `graph` role in GR1 Task 12).
         #[cfg(feature = "graph")]
-        let graph = (config.graph.enabled && config.cluster.is_none())
+        let graph = config
+            .serves_graph()
             .then(|| GraphRuntime::start(&config.graph, meta_store.clone(), store.clone()));
         let state = AppState {
             meta: meta_store.clone(),
@@ -2130,6 +2146,16 @@ impl Server {
     /// The address the HTTP API listens on.
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
+    }
+
+    /// How many scheduled graph catalog sweeps have completed, when Loams Graph is served
+    /// (GR1 Task 5, R4.9).
+    #[cfg(feature = "graph")]
+    #[must_use]
+    pub fn graph_sweeps(&self) -> Option<u64> {
+        self.graph
+            .as_ref()
+            .map(|g| g.sweeps.load(std::sync::atomic::Ordering::Relaxed))
     }
 
     /// The graph data directory, when Loams Graph is served with one (GR1 Task 5).

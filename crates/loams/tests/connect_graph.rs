@@ -16,7 +16,6 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 
 /// Every RPC of both graph services, with its streaming shape.
-#[cfg_attr(feature = "graph", allow(dead_code))]
 const RPCS: &[(&str, bool)] = &[
     ("/loams.graph.v1.GraphAdminService/GetEngineInfo", false),
     ("/loams.graph.v1.GraphAdminService/CreateGraph", false),
@@ -131,7 +130,6 @@ fn frames(body: &[u8]) -> Vec<(u8, &[u8])> {
 }
 
 /// The `ErrorInfo.reason` of a Connect JSON error body.
-#[cfg_attr(feature = "graph", allow(dead_code))]
 fn reason(error: &Value) -> String {
     let detail = &error["details"][0];
     assert_eq!(detail["type"], "loams.errors.v1.ErrorInfo", "{error}");
@@ -251,12 +249,25 @@ async fn reflection_lists_only_served_or_stubbed_services() {
         };
         for (method, streaming) in service_methods {
             let rpc = format!("/{service}/{method}");
-            let status = if *streaming {
-                running.connect_stream(&rpc, &json!({})).await.0
+            // A Connect answer, not merely "not 404": a unary error is a JSON body with a `code`;
+            // a stream is a 200 with an end-of-stream message, whose `error` has one.
+            if *streaming {
+                let (status, messages) = running.connect_stream(&rpc, &json!({})).await;
+                assert_eq!(status, reqwest::StatusCode::OK, "{rpc}");
+                let end = messages
+                    .iter()
+                    .find(|(flags, _)| flags & 0x02 != 0)
+                    .unwrap_or_else(|| panic!("{rpc}: no end-of-stream message"));
+                if let Some(error) = end.1.get("error") {
+                    assert!(error["code"].is_string(), "{rpc}: {error}");
+                }
             } else {
-                running.connect(&rpc, &json!({})).await.0
-            };
-            assert_ne!(status, reqwest::StatusCode::NOT_FOUND, "{rpc} has no route");
+                let (status, body) = running.connect(&rpc, &json!({})).await;
+                assert!(body.is_object(), "{rpc}: {status} {body}");
+                if !status.is_success() {
+                    assert!(body["code"].is_string(), "{rpc}: {status} {body}");
+                }
+            }
             checked += 1;
         }
     }
@@ -289,6 +300,12 @@ async fn instance_advertises_graph_unavailable_when_off() {
 #[tokio::test]
 async fn graph_rpcs_answer_not_in_variant_without_feature() {
     let running = Running::start().await;
+    assert_graph_absent(&running).await;
+    running.server.shutdown().await.expect("shutdown");
+}
+
+/// Every graph RPC answers `unimplemented`/`feature_not_in_variant` (`GraphAbsent`).
+async fn assert_graph_absent(running: &Running) {
     for (rpc, streaming) in RPCS {
         if *streaming {
             let (status, messages) = running.connect_stream(rpc, &json!({})).await;
@@ -311,7 +328,6 @@ async fn graph_rpcs_answer_not_in_variant_without_feature() {
             assert_eq!(reason(&error), "feature_not_in_variant", "{rpc}");
         }
     }
-    running.server.shutdown().await.expect("shutdown");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -467,13 +483,83 @@ async fn graph_requires_a_data_dir() {
 #[cfg(feature = "graph")]
 #[tokio::test]
 async fn non_loopback_listen_without_authorizer_refused() {
+    // `::ffff:127.0.0.1` too: `Ipv6Addr::is_loopback` is `::1` only, and refusing the mapped
+    // form is the safe side.
+    for listen in ["0.0.0.0:0", "[::]:0", "[::ffff:127.0.0.1]:0"] {
+        let dir = TempDir::new().expect("temp dir");
+        let mut config = ServerConfig::new(dir.path());
+        config.listen = listen.parse().expect("an address");
+        let err = Server::start(config).await.expect_err("refused");
+        let text = err.to_string();
+        assert!(text.contains("loopback"), "{listen}: {text}");
+        assert!(text.contains("graph"), "{listen}: {text}");
+    }
+}
+
+/// In a `graph` build, `--no-graph` serves `GraphAbsent`: every graph RPC answers
+/// `feature_not_in_variant` and `GetInstance` reports the package unavailable.
+#[cfg(feature = "graph")]
+#[tokio::test]
+async fn no_graph_answers_graph_absent() {
+    let running = Running::start_with(|config| config.graph.enabled = false).await;
+    assert!(running.server.graph_data_dir().is_none());
+    assert_ne!(graph_status(&running.instance().await)["available"], true);
+    assert_graph_absent(&running).await;
+    running.server.shutdown().await.expect("shutdown");
+}
+
+/// In a `graph` build, a cluster node does not serve Loams Graph before it has the `graph` role
+/// (R5.2, Task 12), so it answers `GraphAbsent` (the node's start path takes `serves_graph`; a
+/// cluster node cannot start in process here).
+#[cfg(feature = "graph")]
+#[test]
+fn a_cluster_node_does_not_serve_graph() {
     let dir = TempDir::new().expect("temp dir");
     let mut config = ServerConfig::new(dir.path());
-    config.listen = SocketAddr::from(([0, 0, 0, 0], 0));
+    assert!(config.serves_graph());
+    config.cluster = Some(loams::ClusterConfig::new(
+        1,
+        loams_hot::Roles::all(),
+        "127.0.0.1:1",
+        std::collections::BTreeMap::from([(1, "127.0.0.1:1".to_string())]),
+    ));
+    assert!(!config.serves_graph());
+    config.cluster = None;
+    config.graph.enabled = false;
+    assert!(!config.serves_graph());
+}
+
+/// The scheduled catalog sweep (R4.9) runs on its interval, without anyone calling
+/// `sweep_documents`. (What it deletes is `loams-graph`'s tests: outside `test-hooks` its grace
+/// has a 5-minute floor.)
+#[cfg(feature = "graph")]
+#[tokio::test]
+async fn catalog_sweep_runs_on_schedule() {
+    let running = Running::start_with(|config| {
+        config.graph.maintenance_every = Duration::from_millis(50);
+    })
+    .await;
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while running.server.graph_sweeps().expect("graph is served") < 2 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the sweep never ran twice"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    running.server.shutdown().await.expect("shutdown");
+}
+
+/// `maintenance_every` must be greater than zero (a zero interval would panic the task).
+#[cfg(feature = "graph")]
+#[tokio::test]
+async fn zero_maintenance_interval_refused() {
+    let dir = TempDir::new().expect("temp dir");
+    let mut config = ServerConfig::new(dir.path());
+    config.listen = SocketAddr::from(([127, 0, 0, 1], 0));
+    config.graph.maintenance_every = Duration::ZERO;
     let err = Server::start(config).await.expect_err("refused");
-    let text = err.to_string();
-    assert!(text.contains("loopback"), "{text}");
-    assert!(text.contains("graph"), "{text}");
+    assert!(err.to_string().contains("maintenance_every"), "{err}");
 }
 
 /// The scheduled purge (Task 4 R4.9): a deleted graph's storage goes once the retention hold has
