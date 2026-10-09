@@ -840,3 +840,33 @@ async fn no_allowed_setting_names_a_file() {
         assert!(!loams_house::settings::is_allowed(name), "{name}");
     }
 }
+
+/// Fix round 1, M1: a `CREATE TEMPORARY TABLE` that fails leaves a session without
+/// temporary tables unpinned; one that already had them keeps its pin.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn failed_first_temporary_table_unpins() {
+    let (house, pool) = house("unpin", per_namespace(2)).await;
+    let addr = house.local_addr();
+    let bad = "CREATE TEMPORARY TABLE t (a UInt8) ENGINE = NoSuchEngine";
+    let failed = in_session(addr, "alice", "f", bad, &[]).await;
+    assert_ne!(failed.status, 200, "{}", failed.text());
+    assert_eq!(
+        pool.stats().pinned,
+        0,
+        "the failed statement's pin is released"
+    );
+    // The session is still usable, and pins on its first real temporary table.
+    let good = "CREATE TEMPORARY TABLE t (a UInt8) ENGINE = Memory";
+    let created = in_session(addr, "alice", "f", good, &[]).await;
+    assert_eq!(created.status, 200, "{}", created.text());
+    assert_eq!(pool.stats().pinned, 1);
+    let again = in_session(addr, "alice", "f", bad.replace(" t ", " u ").as_str(), &[]).await;
+    assert_ne!(again.status, 200, "{}", again.text());
+    assert_eq!(
+        pool.stats().pinned,
+        1,
+        "a session with temporary tables keeps its pin"
+    );
+    let count = in_session(addr, "alice", "f", "SELECT count() FROM t", &[]).await;
+    assert_eq!(count.text(), "0\n", "{}", count.text());
+}

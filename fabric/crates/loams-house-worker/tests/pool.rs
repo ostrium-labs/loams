@@ -1413,6 +1413,13 @@ async fn pinned_workers_are_reserved_capped_and_lost_on_death() {
         "a pinned worker outlives the budget"
     );
     assert_eq!(pool.stats().pinned, 1);
+    // Fix round 1, M4: never lent to another namespace, even by its id.
+    let err = pool
+        .acquire_pinned("other", &a_id)
+        .await
+        .expect_err("another namespace");
+    assert_eq!(err.code(), 497, "{err}");
+    assert_eq!(pool.stats().pinned, 1);
 
     // The cap.
     let b = pool.acquire_and_pin("ns").await.expect("pin b");

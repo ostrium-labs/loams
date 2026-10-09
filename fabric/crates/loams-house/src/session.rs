@@ -206,7 +206,7 @@ impl SessionTable {
         let key = (user.to_string(), params.id.clone());
         let slot = {
             let mut map = self.map();
-            match map.get(&key) {
+            let slot = match map.get(&key) {
                 Some(slot) => Arc::clone(slot),
                 None => {
                     if params.check {
@@ -237,20 +237,24 @@ impl SessionTable {
                     map.insert(key.clone(), Arc::clone(&slot));
                     slot
                 }
+            };
+            // Marked busy under the map's lock (fix round 1, M2), so `sweep`, which
+            // holds that lock, can never end a session between its lookup and here.
+            if slot.busy.swap(true, Ordering::AcqRel) {
+                return Err(HouseError::from(ChError::session_is_locked(format!(
+                    "Session {} is locked by a concurrent client",
+                    params.id
+                ))));
             }
+            slot
         };
-        if slot.busy.swap(true, Ordering::AcqRel) {
-            return Err(HouseError::from(ChError::session_is_locked(format!(
-                "Session {} is locked by a concurrent client",
-                params.id
-            ))));
-        }
         slot.state().timeout = params.timeout;
         Ok(SessionGuard {
             table: Arc::clone(self),
             slot,
             key,
             close: params.close,
+            provisional: None,
         })
     }
 }
@@ -262,6 +266,9 @@ pub struct SessionGuard {
     slot: Arc<Slot>,
     key: Key,
     close: bool,
+    /// A worker pinned for this statement's `CREATE TEMPORARY TABLE` and not yet
+    /// confirmed by its success: released with the guard (fix round 1, M1).
+    provisional: Option<String>,
 }
 
 impl std::fmt::Debug for SessionGuard {
@@ -288,6 +295,20 @@ impl SessionGuard {
     pub fn affinity_key(&self) -> String {
         affinity_key(&self.key.0, &self.key.1)
     }
+
+    /// Pins `worker` for this statement, the session's first temporary table. The
+    /// pin lasts only if [`SessionGuard::confirm_pin`] is called before the guard
+    /// drops; otherwise (the statement failed, so the session still has no
+    /// temporary table) the worker is unpinned (fix round 1, M1).
+    pub fn pin_provisionally(&mut self, worker: String) {
+        self.state().pinned = Some(worker.clone());
+        self.provisional = Some(worker);
+    }
+
+    /// The statement that pinned the worker succeeded: the pin stays.
+    pub fn confirm_pin(&mut self) {
+        self.provisional = None;
+    }
 }
 
 impl Drop for SessionGuard {
@@ -295,6 +316,12 @@ impl Drop for SessionGuard {
         let pinned = {
             let mut state = self.slot.state();
             state.last_used = Instant::now();
+            if let Some(worker) = self.provisional.take() {
+                if state.pinned.as_deref() == Some(worker.as_str()) {
+                    state.pinned = None;
+                }
+                (self.table.unpin)(&worker);
+            }
             state.pinned.clone()
         };
         self.slot.busy.store(false, Ordering::Release);
@@ -383,6 +410,69 @@ mod tests {
             unpinned.lock().expect("lock").contains(&"w2".to_string()),
             "expiry unpins"
         );
+    }
+
+    /// Fix round 1, M1: a pin made for a statement that then failed is released
+    /// with the guard; a confirmed one stays.
+    #[test]
+    fn provisional_pins() {
+        let unpinned = Arc::new(Mutex::new(Vec::new()));
+        let table = table(Arc::clone(&unpinned));
+        let mut failed = table.checkout("alice", 1, &params("p", &[])).expect("new");
+        failed.pin_provisionally("w1".to_string());
+        drop(failed);
+        assert_eq!(
+            unpinned.lock().expect("lock").as_slice(),
+            ["w1".to_string()]
+        );
+        let mut ok = table
+            .checkout("alice", 1, &params("p", &[]))
+            .expect("again");
+        assert_eq!(ok.state().pinned, None, "the failed pin is gone");
+        ok.pin_provisionally("w2".to_string());
+        ok.confirm_pin();
+        drop(ok);
+        assert_eq!(unpinned.lock().expect("lock").len(), 1);
+        let held = table
+            .checkout("alice", 1, &params("p", &[]))
+            .expect("again");
+        assert_eq!(held.state().pinned.as_deref(), Some("w2"));
+    }
+
+    /// Fix round 1, M2: a session is marked busy under the map's lock, so a sweep
+    /// between its lookup and its lock cannot end it and let a second checkout
+    /// make another session of the same key: two guards are never held at once.
+    #[test]
+    fn checkout_and_sweep_never_lend_a_session_twice() {
+        use std::sync::atomic::AtomicUsize;
+        let table = SessionTable::new(16, Arc::new(|_: &str| {}));
+        let held = Arc::new(AtomicUsize::new(0));
+        let overlaps = Arc::new(AtomicUsize::new(0));
+        let threads: Vec<_> = (0..4)
+            .map(|_| {
+                let table = Arc::clone(&table);
+                let held = Arc::clone(&held);
+                let overlaps = Arc::clone(&overlaps);
+                std::thread::spawn(move || {
+                    // Timeout 0: the session expires whenever it is not in use.
+                    let p = params("s", &[("session_timeout", "0")]);
+                    for _ in 0..20_000 {
+                        if let Ok(guard) = table.checkout("alice", 1, &p) {
+                            if held.fetch_add(1, Ordering::SeqCst) != 0 {
+                                overlaps.fetch_add(1, Ordering::SeqCst);
+                            }
+                            held.fetch_sub(1, Ordering::SeqCst);
+                            drop(guard);
+                        }
+                        table.sweep();
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().expect("thread");
+        }
+        assert_eq!(overlaps.load(Ordering::SeqCst), 0);
     }
 
     #[test]

@@ -465,6 +465,13 @@ fn unsendable(query_id: &str, err: &CodecError) -> HouseError {
     )))
 }
 
+/// A pinned worker asked for by another namespace than its own (M4).
+fn pinned_elsewhere(worker_id: &str, namespace: &str) -> HouseError {
+    HouseError::from(ChError::access_denied(format!(
+        "Worker {worker_id} is not pinned to namespace {namespace}"
+    )))
+}
+
 fn network(message: String) -> HouseError {
     HouseError::from(ChError::network_error(message))
 }
@@ -722,14 +729,22 @@ impl WorkerPool {
             notified.as_mut().enable();
             let taken = {
                 let mut state = inner.state();
-                if !state.pinned.contains_key(worker_id) {
-                    return Ok(None);
+                // A pin is one namespace's (fix round 1, M4): a worker bound to
+                // another tenant is never lent, whatever the caller holds.
+                match state.pinned.get(worker_id) {
+                    None => return Ok(None),
+                    Some(owner) if owner != namespace => {
+                        return Err(pinned_elsewhere(worker_id, namespace));
+                    }
+                    Some(_) => {}
                 }
-                state
-                    .idle
-                    .iter()
-                    .position(|w| w.shared.id() == worker_id)
-                    .map(|at| state.idle.swap_remove(at))
+                let at = state.idle.iter().position(|w| w.shared.id() == worker_id);
+                if let Some(at) = at
+                    && state.idle[at].namespace.as_deref() != Some(namespace)
+                {
+                    return Err(pinned_elsewhere(worker_id, namespace));
+                }
+                at.map(|at| state.idle.swap_remove(at))
             };
             if let Some(worker) = taken {
                 if worker.shared.has_exited() {

@@ -974,7 +974,8 @@ async fn acquire_for(
     }
     if pins {
         let lease = pool.acquire_and_pin(namespace).await?;
-        guard.state().pinned = Some(lease.worker_id().to_string());
+        // Kept only if the statement succeeds (fix round 1, M1).
+        guard.pin_provisionally(lease.worker_id().to_string());
         return Ok(lease);
     }
     pool.acquire(namespace).await
@@ -1188,7 +1189,7 @@ async fn respond(
     mut lease: WorkerLease,
     wait_end: bool,
     buffer_size: usize,
-    session: Option<SessionGuard>,
+    mut session: Option<SessionGuard>,
 ) -> Response<HouseBody> {
     let pool = shared.pool.clone();
     let mut encoder = meta.encoding.and_then(|e| Encoder::new(e).ok());
@@ -1228,6 +1229,9 @@ async fn respond(
             Ok(Event::Done(stats)) => {
                 last = stats;
                 pool.release(lease, Outcome::Completed);
+                if let Some(guard) = session.as_mut() {
+                    guard.confirm_pin();
+                }
                 let tail = encoder.take().map(Encoder::finish).transpose();
                 let tail = match tail {
                     Ok(tail) => tail.unwrap_or_default(),
@@ -1298,7 +1302,7 @@ fn stream_rest(
     );
     tokio::spawn(async move {
         // The session stays checked out until the statement ends (373 meanwhile).
-        let _session = session;
+        let mut session = session;
         if tx.send(Piece::Data(Bytes::from(pending))).await.is_err() {
             pool.kill(lease, ExitReason::Cancel);
             return;
@@ -1322,6 +1326,9 @@ fn stream_rest(
                 Ok(Event::Progress(_)) => {}
                 Ok(Event::Done(_)) => {
                     pool.release(lease, Outcome::Completed);
+                    if let Some(guard) = session.as_mut() {
+                        guard.confirm_pin();
+                    }
                     if let Some(encoder) = encoder.take()
                         && let Ok(tail) = encoder.finish()
                         && !tail.is_empty()
