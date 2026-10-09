@@ -191,7 +191,20 @@ fn registry() -> Arc<HarnessRegistry> {
 fn assemble(dir: &std::path::Path, device_id: &str) -> EngineCore {
     std::fs::create_dir_all(dir).expect("create data dir");
     std::fs::write(dir.join("device-id"), device_id).expect("write device id");
-    EngineCore::assemble(dir, registry(), HarnessId::Mock, None).expect("engine assembles")
+    let core =
+        EngineCore::assemble(dir, registry(), HarnessId::Mock, None).expect("engine assembles");
+    // Terminals run /bin/sh with a temporary HOME and ZDOTDIR, never the
+    // developer's login shell (plan DD1 T1-10).
+    #[cfg(unix)]
+    {
+        let home = dir.join("shell-home");
+        std::fs::create_dir_all(&home).expect("shell home");
+        core.terminals
+            .set_shell(Some(loams_agentd_sessions::TerminalShell::isolated(
+                "/bin/sh", &home,
+            )));
+    }
+    core
 }
 
 async fn git(cwd: &std::path::Path, args: &[&str]) {

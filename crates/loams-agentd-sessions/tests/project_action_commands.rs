@@ -5,7 +5,7 @@ use loams_agentd_proto::{ProjectActionDraft, ProjectActionIcon};
 use loams_agentd_sessions::project_actions::{
     MAX_PROJECT_ACTION_COMMAND_BYTES, launch_project_action, launch_project_setup_action,
 };
-use loams_agentd_sessions::{ProjectActionsStore, Terminals};
+use loams_agentd_sessions::{ProjectActionsStore, TerminalShell, Terminals};
 use std::time::Duration;
 
 #[tokio::test]
@@ -15,6 +15,11 @@ async fn manual_and_setup_actions_preserve_long_multiline_commands() {
     std::fs::create_dir(&checkout).unwrap();
     let store = ProjectActionsStore::open(root.path()).unwrap();
     let terminals = Terminals::new();
+    // /bin/sh with a temporary HOME and ZDOTDIR, never the developer's login
+    // shell (plan DD1 T1-10).
+    let home = root.path().join("shell-home");
+    std::fs::create_dir(&home).unwrap();
+    terminals.set_shell(Some(TerminalShell::isolated("/bin/sh", &home)));
     for setup in [false, true] {
         let prefix = "printf '%s' '";
         let suffix = "' > payload\nprintf '%s' \"$LOAMS_DESKTOP_PROJECT_ROOT\" > project-root\nprintf '%s' \"$LOAMS_DESKTOP_WORKTREE_PATH\" > worktree-path\nprintf '%s' 'quotes: \" $() ` ; é' > literal\n";

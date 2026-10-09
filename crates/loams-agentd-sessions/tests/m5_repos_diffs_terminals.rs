@@ -76,13 +76,25 @@ fn test_repos(data_dir: &Path) -> Repos {
 
 fn assemble(dir: &Path) -> EngineCore {
     std::fs::create_dir_all(dir).expect("data dir");
-    EngineCore::assemble(
+    let core = EngineCore::assemble(
         dir,
         Arc::new(HarnessRegistry::new()),
         loams_agentd_proto::HarnessId::Mock,
         None,
     )
-    .expect("engine assembles")
+    .expect("engine assembles");
+    // Terminals run /bin/sh with a temporary HOME and ZDOTDIR, never the
+    // developer's login shell (plan DD1 T1-10).
+    #[cfg(unix)]
+    {
+        let home = dir.join("shell-home");
+        std::fs::create_dir_all(&home).expect("shell home");
+        core.terminals
+            .set_shell(Some(loams_agentd_sessions::TerminalShell::isolated(
+                "/bin/sh", &home,
+            )));
+    }
+    core
 }
 
 fn decoded(events: &[TerminalEvent]) -> String {

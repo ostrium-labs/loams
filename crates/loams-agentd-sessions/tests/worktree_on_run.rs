@@ -199,6 +199,17 @@ async fn check_worktree_setup_and_reuse(use_project_symlink: bool) {
         None,
     )
     .expect("engine core assembles");
+    // Terminals run /bin/sh with a temporary HOME and ZDOTDIR, never the
+    // developer's login shell (plan DD1 T1-10).
+    #[cfg(unix)]
+    {
+        let home = tmp_path.join("shell-home");
+        std::fs::create_dir_all(&home).expect("shell home");
+        core.terminals
+            .set_shell(Some(loams_agentd_sessions::TerminalShell::isolated(
+                "/bin/sh", &home,
+            )));
+    }
     core.workspace
         .create_space(
             "space-worktree-run",

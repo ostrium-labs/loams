@@ -396,6 +396,9 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
     runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    # A hung test fails its partition instead of holding the runner; nextest
+    # also terminates a loams-agentd* test after 3 minutes (.config/nextest.toml).
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -406,6 +409,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
+      # The loams-agentd-harness tests run `#!/usr/bin/env node` and
+      # `#!/usr/bin/env python3` fixtures (harness stand-ins). The runner images
+      # ship both; pin Node here so the fixtures do not depend on the image.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - name: workspace tests
         run: cargo nextest run --workspace --locked --partition hash:${{ matrix.partition }}/2
 

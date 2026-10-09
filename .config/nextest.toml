@@ -1,0 +1,9 @@
+# cargo-nextest configuration (https://nexte.st/docs/configuration/).
+
+# The loams-agentd* crates spawn PTYs, login shells and harness fixtures. A
+# test that waits on one must fail within minutes, not hold a CI runner until
+# the job limit (plan DD1 ruling T1-10): flag it as slow every 60 s and
+# terminate it after the third period.
+[[profile.default.overrides]]
+filter = 'package(/^loams-agentd/)'
+slow-timeout = { period = "60s", terminate-after = 3 }

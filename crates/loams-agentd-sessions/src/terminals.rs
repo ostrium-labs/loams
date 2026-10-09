@@ -93,6 +93,35 @@ impl LiveTerminal {
 
 struct TerminalsInner {
     sessions: Mutex<HashMap<String, Arc<Mutex<LiveTerminal>>>>,
+    /// Replaces [`selected_shell`] for every terminal and project action that
+    /// does not name its own shell ([`EngineConfig::terminal_shell`](crate::EngineConfig)).
+    shell: Mutex<Option<TerminalShell>>,
+}
+
+/// A fixed shell for terminals and project actions instead of the user's
+/// `$SHELL`, with environment applied before the caller's. Tests use
+/// [`TerminalShell::isolated`] so a login shell never reads the developer's
+/// profile (an interactive zsh profile can wait for input and hang the run).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalShell {
+    /// The shell executable; on Unix it is started as a login shell (`-l`).
+    pub program: String,
+    pub environment: HashMap<String, String>,
+}
+
+impl TerminalShell {
+    /// `program` with `HOME` and `ZDOTDIR` pointed at `home`, so no user
+    /// profile or rc file is read.
+    pub fn isolated(program: impl Into<String>, home: &std::path::Path) -> Self {
+        let home = home.to_string_lossy().into_owned();
+        Self {
+            program: program.into(),
+            environment: HashMap::from([
+                ("HOME".to_owned(), home.clone()),
+                ("ZDOTDIR".to_owned(), home),
+            ]),
+        }
+    }
 }
 
 impl Drop for TerminalsInner {
@@ -157,10 +186,18 @@ impl Terminals {
         let terminals = Self {
             inner: Arc::new(TerminalsInner {
                 sessions: Mutex::new(HashMap::new()),
+                shell: Mutex::new(None),
             }),
         };
         tokio::spawn(reaper_task(Arc::downgrade(&terminals.inner)));
         terminals
+    }
+
+    /// Use `shell` instead of the user's `$SHELL` for every later terminal and
+    /// project action that does not name its own shell; `None` restores `$SHELL`.
+    /// Shared by every clone of this handle.
+    pub fn set_shell(&self, shell: Option<TerminalShell>) {
+        *lock(&self.inner.shell) = shell;
     }
 
     /// Open a login shell in `cwd`. The PTY outlives every subscriber; it dies on
@@ -237,7 +274,17 @@ impl Terminals {
             ));
         }
 
-        let shell = shell.map(str::to_string).unwrap_or_else(selected_shell);
+        let configured = lock(&self.inner.shell).clone();
+        let (shell, environment) = match (shell, configured) {
+            (Some(shell), _) => (shell.to_string(), environment.clone()),
+            (None, Some(configured)) => {
+                let mut merged = configured.environment;
+                merged.extend(environment.iter().map(|(k, v)| (k.clone(), v.clone())));
+                (configured.program, merged)
+            }
+            (None, None) => (selected_shell(), environment.clone()),
+        };
+        let environment = &environment;
         let shell_name = std::path::Path::new(&shell)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -1167,6 +1214,39 @@ mod initial_command_tests {
             std::fs::remove_file(output).unwrap();
         }
         assert!(!terminals.any_open());
+    }
+
+    #[tokio::test]
+    async fn shell_override_replaces_the_user_shell_and_isolates_home() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        std::fs::create_dir(&home).unwrap();
+        let terminals = Terminals::new();
+        // Shared by clones (the engine hands one to the project-action runtime).
+        terminals
+            .clone()
+            .set_shell(Some(TerminalShell::isolated("/bin/sh", &home)));
+        let session = terminals
+            .open_session(
+                root.path().to_str().unwrap(),
+                80,
+                24,
+                None,
+                &HashMap::new(),
+                Some("printf '%s|%s' \"$HOME\" \"$ZDOTDIR\" > result"),
+            )
+            .unwrap();
+        assert_eq!(session.shell, "sh");
+        let output = root.path().join("result");
+        let expected = format!("{0}|{0}", home.display());
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while std::fs::read_to_string(&output).ok().as_deref() != Some(expected.as_str()) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("the override shell ran with the isolated HOME and ZDOTDIR");
+        terminals.close(&session.id).unwrap();
     }
 
     #[tokio::test]

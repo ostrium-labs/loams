@@ -1,4 +1,4 @@
-//! loams-desktop-engine — the headless backend: sessions engine, doc host + command executor,
+//! loams-agentd-sessions — the headless backend: sessions engine, doc host + command executor,
 //! run journal + crash recovery, and the IPC RPC server.
 //!
 //! Spec: ARCHITECTURE.md §5 and docs/research/feature-inventory.md §3. M2 surface:
@@ -75,7 +75,7 @@ pub use source_control::{
     GitRemote, parse_git_remote,
 };
 pub use spaces::SpacesSync;
-pub use terminals::Terminals;
+pub use terminals::{TerminalShell, Terminals};
 pub use titles::TitleGenerator;
 pub use uploads::{AttachmentChunk, Uploads};
 pub use workspace_files::WorkspaceFiles;
@@ -130,6 +130,8 @@ pub struct EngineConfig {
     pub org_id: Option<String>,
     /// WorkOS client id — enables real auth; `None` = dev mode (bearer = `edge_token`).
     pub workos_client_id: Option<String>,
+    /// A fixed shell for terminals and project actions; `None` = the user's `$SHELL`.
+    pub terminal_shell: Option<TerminalShell>,
 }
 
 /// The assembled engine core — also constructible without the IPC server for tests
@@ -511,7 +513,7 @@ pub struct EngineRuntime {
     host_relay: std::sync::Mutex<Option<loams_agentd_rpc::HostRelay>>,
 }
 
-/// IPC-only lifecycle control owned by `loams-desktop headless`. The regular
+/// IPC-only lifecycle control owned by `loams-agentd run`. The regular
 /// [`EngineRpc`] deliberately does not expose this method, so a viewport
 /// attached to another headed process cannot shut down that process's engine.
 struct HeadlessRpc {
@@ -755,6 +757,7 @@ impl Engine {
             )?,
         };
         core.set_auth(auth.clone());
+        core.terminals.set_shell(config.terminal_shell.clone());
         let preview_workspace = core.workspace.clone();
         let preview_device = core.device_id.clone();
         let projects = Arc::new(move || {

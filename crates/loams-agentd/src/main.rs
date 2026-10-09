@@ -71,9 +71,9 @@ const DEFAULT_EDGE_URL: &str = "https://edge.loams.invalid";
 ///
 /// loams: a placeholder that is not loams-desktop's tenant. Loams Desktop's WorkOS tenant
 /// belongs to loams-desktop's backend; Loams signs in at Authentik through
-/// `loams-desktop loams login` (design 37 section 18, D486). It is non-empty on
+/// the fork's `loams-desktop loams login` (design 37 section 18, D486). It is non-empty on
 /// purpose: an empty id selects the Development workspace scope, which
-/// `loams-desktop status` reports as unhealthy. With a placeholder and no saved session
+/// `loams-agentd status` reports as unhealthy. With a placeholder and no saved session
 /// the app starts in the normal local-only profile, offline, as upstream does;
 /// a WorkOS sign-in attempt fails closed.
 const DEFAULT_WORKOS_CLIENT_ID: &str = "client_loams_unconfigured";
@@ -291,6 +291,7 @@ fn engine_config_from_env() -> loams_agentd_sessions::EngineConfig {
         // Real auth against production by default; see
         // `workos_client_id_from_env` for the dev-mode escape hatches.
         workos_client_id: workos_client_id_from_env(&edge_token),
+        terminal_shell: None,
         edge_token,
     }
 }
