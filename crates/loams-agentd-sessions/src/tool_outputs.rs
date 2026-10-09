@@ -286,7 +286,7 @@ impl ToolOutputs {
 
     /// The file for `{chatId}/{partId}`. The ref shape is the one
     /// `apply_sidecar_refs` writes; anything else is a forged ref, and no
-    /// part may name `.` or `..`.
+    /// part may name `.` or `..` or end in `.diff`.
     fn path(&self, blob_ref: &str) -> Result<PathBuf, EngineError> {
         let valid = blob_ref.split_once('/').filter(|(chat, part)| {
             valid_chat_id(chat)
@@ -294,6 +294,9 @@ impl ToolOutputs {
                 && part.len() <= 200
                 && *part != "."
                 && *part != ".."
+                // `{chat}/{part}.diff` names part's diff, so no part may end
+                // in `.diff` and overwrite another part's diff.
+                && !part.ends_with(".diff")
                 && part
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b"._:#~-".contains(&b))
@@ -673,5 +676,27 @@ mod tests {
         assert_eq!(mode(&root), 0o700);
         assert_eq!(mode(&root.join("chat-1")), 0o700);
         assert_eq!(mode(&root.join("chat-1/p")), 0o600);
+    }
+
+    #[test]
+    fn a_part_id_ending_in_diff_cannot_overwrite_another_parts_diff() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outputs = ToolOutputs::new(dir.path().to_path_buf());
+        let diff: loams_agentd_proto::ToolDiff = serde_json::from_value(serde_json::json!({
+            "path": "a.txt", "oldText": "a", "newText": "b"
+        }))
+        .expect("tool diff");
+        outputs.write(
+            "chat-1",
+            &SidecarPayload {
+                part_id: "x".into(),
+                output: None,
+                diff: Some(diff.clone()),
+            },
+        );
+        outputs.write("chat-1", &output("x.diff", "not a diff"));
+        let stored: loams_agentd_proto::ToolDiff =
+            serde_json::from_str(&whole(&outputs, "chat-1/x.diff")).expect("json");
+        assert_eq!(stored, diff);
     }
 }
