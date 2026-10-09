@@ -399,21 +399,53 @@ fn diff_name(path: &Path) -> String {
     )
 }
 
+/// Write `bytes` to `path` through a temporary file and a rename. On Unix
+/// the store is private to the user: directories are 0700 and files 0600.
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), EngineError> {
+    use std::io::Write as _;
     let dir = path
         .parent()
         .ok_or_else(|| EngineError::Other("tool output path has no parent".into()))?;
-    std::fs::create_dir_all(dir)?;
+    create_private_dir(dir)?;
     let tmp = path.with_file_name(format!(
         ".{}.tmp-{}",
         path.file_name().unwrap_or_default().to_string_lossy(),
         uuid::Uuid::new_v4()
     ));
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path).inspect_err(|_| {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let written = options
+        .open(&tmp)
+        .and_then(|mut file| file.write_all(bytes))
+        .and_then(|()| std::fs::rename(&tmp, path));
+    if let Err(error) = written {
         let _ = std::fs::remove_file(&tmp);
-    })?;
+        return Err(error.into());
+    }
     Ok(())
+}
+
+/// Create a chat directory and the store root above it as 0700 on Unix,
+/// tightening them if an older build created them wider.
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
+        builder.mode(0o700);
+        builder.create(dir)?;
+        for dir in [Some(dir), dir.parent()].into_iter().flatten() {
+            if std::fs::metadata(dir)?.permissions().mode() & 0o077 != 0 {
+                std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    builder.create(dir)
 }
 
 /// Percent-encode a part id for use as a file name. The part alphabet
@@ -621,5 +653,25 @@ mod tests {
             "o",
             "a live chat keeps its outputs"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_store_is_private_to_the_user() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("tool-outputs");
+        let outputs = ToolOutputs::new(root.clone());
+        outputs.write("chat-1", &output("p", "secret"));
+        let mode = |path: &Path| {
+            std::fs::metadata(path)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        assert_eq!(mode(&root), 0o700);
+        assert_eq!(mode(&root.join("chat-1")), 0o700);
+        assert_eq!(mode(&root.join("chat-1/p")), 0o600);
     }
 }
