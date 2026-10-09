@@ -49,7 +49,8 @@ macro_rules! pg_control_store_conformance {
             watch_sees_put_and_delete,
             undetermined_is_surfaced,
             lost_ack_is_resolved_by_its_token,
-            batch_applies_all_or_nothing
+            batch_applies_all_or_nothing,
+            concurrent_batches_lose_no_update
         );
     };
     (@cases $factory:expr; $($case:ident),* $(,)?) => {
@@ -859,4 +860,77 @@ pub async fn batch_applies_all_or_nothing(factory: Factory) {
     let out = writer.commit(batch).await.expect("delete");
     assert_eq!(out, vec![None]);
     assert!(get(&store, &bkey("prj-1", "br-2")).await.is_none());
+}
+
+/// Batches racing on one record lose no update: each of several tasks
+/// repeatedly reads a counter and commits `counter + 1` (compare-and-set)
+/// with a record of its own, retrying a conflict at the counter. Whatever
+/// the interleaving, the counter ends at the number of commits and every
+/// task's records exist, each written exactly with its counter step.
+pub async fn concurrent_batches_lose_no_update(factory: Factory) {
+    const TASKS: u64 = 4;
+    const STEPS: u64 = 5;
+    let Some(store) = factory.store(options()).await else {
+        return;
+    };
+    let writer = store.api_writer();
+    let counter = branch("prj-1", "br-counter", "counter");
+    writer.put(&counter, None).await.expect("the counter");
+    let mut tasks = Vec::new();
+    for task in 0..TASKS {
+        let (store, writer) = (store.clone(), writer.clone());
+        tasks.push(tokio::spawn(async move {
+            let mut conflicts = 0u32;
+            for step in 0..STEPS {
+                loop {
+                    let current = get(&store, &bkey("prj-1", "br-counter"))
+                        .await
+                        .expect("the counter");
+                    let n = current.record.ancestor_lsn.unwrap_or(0);
+                    let mut next = current.record.clone();
+                    next.ancestor_lsn = Some(n + 1);
+                    let id = format!("br-{task}-{step}");
+                    let mut mine = branch("prj-1", &id, &id);
+                    mine.ancestor_lsn = Some(n + 1);
+                    let mut batch = Batch::new();
+                    batch.put(&next, Some(current.version)).expect("a put");
+                    batch.put(&mine, None).expect("a put");
+                    match writer.commit(batch).await {
+                        Ok(_) => break,
+                        Err(BatchError {
+                            index: Some(0),
+                            error: StoreError::Conflict { .. },
+                        }) => conflicts += 1,
+                        Err(BatchError {
+                            index: None,
+                            error: StoreError::Unavailable(_),
+                        }) => conflicts += 1,
+                        Err(e) => panic!("task {task} step {step}: {e}"),
+                    }
+                    assert!(conflicts < 1000, "task {task} starves");
+                }
+            }
+        }));
+    }
+    for t in tasks {
+        t.await.expect("a task");
+    }
+    let end = get(&store, &bkey("prj-1", "br-counter"))
+        .await
+        .expect("the counter");
+    assert_eq!(end.record.ancestor_lsn, Some(TASKS * STEPS));
+    let mut steps = Vec::new();
+    for task in 0..TASKS {
+        for step in 0..STEPS {
+            let id = format!("br-{task}-{step}");
+            let rec = get(&store, &bkey("prj-1", &id)).await.expect("its record");
+            steps.push(rec.record.ancestor_lsn.expect("a step"));
+        }
+    }
+    steps.sort_unstable();
+    assert_eq!(
+        steps,
+        (1..=TASKS * STEPS).collect::<Vec<_>>(),
+        "each step once"
+    );
 }
