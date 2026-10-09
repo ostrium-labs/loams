@@ -84,7 +84,7 @@ fn insert_format_kept() {
 /// ClickHouse cannot parse either, runs unchanged (chDB then answers its own 62).
 #[test]
 fn unparseable_ddl_is_62_with_hint() {
-    let sql = "CREATE TABLE t (a UInt64 CODEC(ZSTD(3))) ENGINE = MergeTree ORDER BY a TTL a + INTERVAL 1 DAY DELETE WHERE a > 1 GROUP BY a SET b = max(b)";
+    let sql = "CREATE TABLE t (a UInt64 CODEC(ZSTD(3))) ENGINE = MergeTree ORDER BY a";
     let Classified::Unparsed { text, message, .. } = classify(sql).expect("classifies") else {
         panic!("sqlparser was expected not to parse this form");
     };

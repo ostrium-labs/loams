@@ -7,10 +7,10 @@
 //! content codings, the body decoder under every coding, and the statement scanner
 //! — fed in arbitrary pieces, and checked against the whole-text answer.
 
+use crate::auth;
 use crate::compress::{self, BodyLimits, CHUNK_BYTES, Decoder, Encoding};
 use crate::config::UserMap;
 use crate::request::{self, InsertHead, Scanner};
-use crate::{auth, http};
 
 /// Cut points for `data`, taken from its own bytes: arbitrary, reproducible.
 fn cuts(data: &[u8]) -> Vec<usize> {
@@ -54,7 +54,13 @@ pub fn fuzz_request(data: &[u8]) {
     if let Ok(credentials) = auth::credentials(&headers, &params) {
         let _ = auth::authenticate(&users, &credentials);
     }
-    let _ = http::session_ref("user", &params);
+    let _ = crate::session::SessionParams::from_params(&params);
+    let _ = crate::classify::classify(&text);
+    let limits = crate::settings::SessionLimits::default();
+    let known = std::collections::HashSet::from(["max_threads".to_string()]);
+    for (name, value) in &params {
+        let _ = crate::settings::check(name, value, &limits, &known);
+    }
     let _ = compress::content_encoding(Some(&text));
     let _ = compress::accepted(Some(&text));
     let _ = request::is_read(&text);

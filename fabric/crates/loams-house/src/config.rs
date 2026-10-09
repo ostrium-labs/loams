@@ -65,6 +65,10 @@ pub struct HouseConfig {
     pub version: String,
     /// How far a compressed request body may expand (review I3).
     pub body_limits: crate::compress::BodyLimits,
+    /// The caps on settings (FL2 Ruling 10; HS1 Task 4).
+    pub session_limits: crate::settings::SessionLimits,
+    /// Sessions live at once (FL2 Ruling 10).
+    pub max_live_sessions: usize,
 }
 
 /// The bytes a `wait_end_of_query` spool keeps in memory before it moves to a file
@@ -94,6 +98,8 @@ impl Default for HouseConfig {
             max_head_bytes: 128 * 1024,
             version: CLICKHOUSE_VERSION.to_string(),
             body_limits: crate::compress::BodyLimits::default(),
+            session_limits: crate::settings::SessionLimits::default(),
+            max_live_sessions: crate::session::MAX_LIVE_SESSIONS,
         }
     }
 }

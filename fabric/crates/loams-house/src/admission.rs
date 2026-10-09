@@ -28,8 +28,8 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use loams_house_ipc::{
-    Bind, CHUNK_BYTES, Chunk, CodecError, Execute, Frame, FrameCodec, PROTOCOL_VERSION, Progress,
-    Ready,
+    Bind, CHUNK_BYTES, Chunk, Classification, CodecError, Execute, Frame, FrameCodec,
+    PROTOCOL_VERSION, Progress, Ready,
 };
 use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
@@ -198,6 +198,8 @@ struct PoolInner {
     state: Mutex<State>,
     changed: Notify,
     next_id: AtomicU64,
+    /// Every setting name the engine knows, from the first worker's `Ready`.
+    known_settings: std::sync::OnceLock<Arc<std::collections::HashSet<String>>>,
 }
 
 /// The pool of worker processes. Cheap to clone.
@@ -288,8 +290,11 @@ impl PoolInner {
         )
         .await;
         let failure = match first {
-            Ok(Ok(Some(Frame::Ready(ready)))) if ready.protocol == PROTOCOL_VERSION => {
+            Ok(Ok(Some(Frame::Ready(mut ready)))) if ready.protocol == PROTOCOL_VERSION => {
                 abandoned.disarm();
+                let names = std::mem::take(&mut ready.settings);
+                self.known_settings
+                    .get_or_init(|| Arc::new(names.into_iter().collect()));
                 return Ok(Worker {
                     shared,
                     reader,
@@ -487,6 +492,7 @@ impl WorkerPool {
             state: Mutex::new(State::default()),
             changed: Notify::new(),
             next_id: AtomicU64::new(1),
+            known_settings: std::sync::OnceLock::new(),
         });
         let first = inner.boot().await?;
         inner.state().idle.push(first);
@@ -753,6 +759,12 @@ impl WorkerPool {
         }
     }
 
+    /// Every setting name the engine knows (the first worker's `Ready`), so the
+    /// front tells `115` from `164` (HS1 Task 4).
+    pub fn known_settings(&self) -> Arc<std::collections::HashSet<String>> {
+        self.inner.known_settings.get().cloned().unwrap_or_default()
+    }
+
     /// Releases a pin: the worker is an ordinary worker of its namespace again.
     pub fn unpin(&self, worker_id: &str) {
         self.inner.state().pinned.remove(worker_id);
@@ -1013,6 +1025,29 @@ impl WorkerLease {
                 }
                 Err(HouseError::from(error))
             }
+            Ok(Some(other)) => Err(self.broke(other.kind())),
+            Ok(None) | Err(_) => Err(self.died()),
+        }
+    }
+
+    /// ClickHouse's class of `sql`, from the worker's parser (HS1 Task 4, FL2
+    /// Ruling 6). Nothing runs.
+    pub async fn classify(&mut self, sql: &str) -> Result<Classification, HouseError> {
+        let worker = self.worker()?;
+        if worker.in_flight {
+            return Err(network(
+                "the worker is still running a statement".to_string(),
+            ));
+        }
+        match FrameCodec::write_async(&mut worker.writer, &Frame::Classify(sql.to_string())).await {
+            Ok(()) => {}
+            Err(CodecError::Io(_)) => return Err(self.died()),
+            Err(err) => return Err(unsendable(&self.query_id.clone(), &err)),
+        }
+        let worker = self.worker()?;
+        match FrameCodec::read_async(&mut worker.reader).await {
+            Ok(Some(Frame::Classified(classification))) => Ok(classification),
+            Ok(Some(Frame::Error { error, .. })) => Err(HouseError::from(error)),
             Ok(Some(other)) => Err(self.broke(other.kind())),
             Ok(None) | Err(_) => Err(self.died()),
         }

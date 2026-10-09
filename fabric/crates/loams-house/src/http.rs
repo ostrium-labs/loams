@@ -65,7 +65,7 @@ use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
-use loams_house_ipc::{Execute, Limits, Progress, SessionRef};
+use loams_house_ipc::{Execute, Limits, Progress, QueryClass};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, mpsc};
@@ -74,10 +74,12 @@ use tokio::time::Sleep;
 
 use crate::admission::{Event, Outcome, WorkerLease, WorkerPool};
 use crate::auth;
+use crate::classify::{Classified, Stmt, classify, decide_unparsed};
 use crate::compress::{self, Decoder, Encoder, Encoding};
 use crate::config::{self, BUFFER_SIZE_RANGE, DISPLAY_NAME, HouseConfig, SPOOL_IN_MEMORY, UserMap};
 use crate::errors::{ChError, HouseError};
 use crate::request::{self, InsertHead, NON_SETTINGS, Scanner};
+use crate::session::{SessionGuard, SessionParams, SessionTable};
 use crate::watchdog::ExitReason;
 
 /// The most of an unwanted request body read to keep its connection (and to let
@@ -94,11 +96,6 @@ const FLUSH_BOUND: Duration = Duration::from_millis(100);
 const CHANNEL_DEPTH: usize = 8;
 /// How long a closing connection waits for the client's side to finish.
 const LINGER: Duration = Duration::from_secs(2);
-
-/// The default and the largest `session_timeout`, in seconds (ClickHouse's).
-pub const SESSION_TIMEOUT_DEFAULT: u64 = 60;
-/// See [`SESSION_TIMEOUT_DEFAULT`].
-pub const SESSION_TIMEOUT_MAX: u64 = 3600;
 
 /// A running HTTP interface. Dropping it stops accepting connections; requests in
 /// flight finish.
@@ -131,6 +128,7 @@ struct Shared {
     config: HouseConfig,
     pool: WorkerPool,
     spool: Arc<SpoolBudget>,
+    sessions: Arc<SessionTable>,
 }
 
 /// Serves the ClickHouse HTTP interface on `config.listen`, running statements on
@@ -151,10 +149,29 @@ pub async fn serve(config: HouseConfig, pool: WorkerPool) -> Result<HouseHandle,
         .local_addr()
         .map_err(|err| network("address", err))?;
     let permits = Arc::new(Semaphore::new(config.max_connections.max(1)));
+    let unpin_pool = pool.clone();
+    let sessions = SessionTable::new(
+        config.max_live_sessions,
+        Arc::new(move |worker: &str| unpin_pool.unpin(worker)),
+    );
+    // Sessions idle past their timeout end on a timer too, releasing their pinned
+    // workers (HS1 Task 4); the task ends with the table.
+    let swept = Arc::downgrade(&sessions);
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            tick.tick().await;
+            let Some(sessions) = swept.upgrade() else {
+                return;
+            };
+            sessions.sweep();
+        }
+    });
     let shared = Arc::new(Shared {
         spool: Arc::new(SpoolBudget::new(config.spool_budget_bytes)),
         config,
         pool,
+        sessions,
     });
     let accept = tokio::spawn(async move {
         loop {
@@ -478,6 +495,10 @@ struct Meta {
     keep_alive: Duration,
     version: String,
     send_progress: bool,
+    /// `X-Loams-Session-Affinity`, for a request in a session (HS1 Task 4).
+    affinity: Option<String>,
+    /// `X-Loams-Worker`, once a worker ran the statement (Shared contracts).
+    worker: Option<String>,
 }
 
 impl Meta {
@@ -504,6 +525,12 @@ impl Meta {
             .header("X-ClickHouse-Timezone", header_value(&self.timezone));
         if let Some(code) = code {
             builder = builder.header("X-ClickHouse-Exception-Code", code);
+        }
+        if let Some(affinity) = &self.affinity {
+            builder = builder.header("X-Loams-Session-Affinity", header_value(affinity));
+        }
+        if let Some(worker) = &self.worker {
+            builder = builder.header("X-Loams-Worker", header_value(worker));
         }
         if close {
             builder = builder.header("Connection", "close");
@@ -594,6 +621,8 @@ async fn handle(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Hou
                 keep_alive: keep,
                 version: shared.config.version.clone(),
                 send_progress: false,
+                affinity: None,
+                worker: None,
             };
             return meta.error(&err, &Progress::default(), true);
         }
@@ -661,16 +690,20 @@ async fn run(
         keep_alive: config.keep_alive,
         version: config.version.clone(),
         send_progress: get("send_progress_in_http_headers") == Some("1"),
+        affinity: None,
+        worker: None,
     };
     let mut body = RequestBody::new(body, config.receive_timeout);
 
     // Everything before a worker: who, what, and how.
+    let known = shared.pool.known_settings();
     let prepared = prepare(
         config,
         &parts.headers,
         &params,
         &mut body,
         parts.method == Method::POST,
+        &known,
     )
     .await;
     let prepared = match prepared {
@@ -686,21 +719,67 @@ async fn run(
     if let Some(format) = &prepared.format {
         meta.format = format.clone();
     }
-    let session = match session_ref(&prepared.user.user, &params) {
-        Ok(session) => session,
-        Err(err) => {
-            let close = !body.drain().await;
-            return meta.error(&err, &Progress::default(), close);
-        }
-    };
     let Prepared {
         user,
         sql,
+        classified,
+        readonly,
         input,
         mut decoder,
         first_data,
         ..
     } = prepared;
+    let namespace = user.namespace.to_string();
+
+    // The session, for this statement only: 372, 373, 202 or 36 when it cannot be.
+    let mut session = match SessionParams::from_params(&params) {
+        Ok(Some(session_params)) => {
+            match shared
+                .sessions
+                .checkout(&user.user, user.namespace, &session_params)
+            {
+                Ok(guard) => Some(guard),
+                Err(err) => {
+                    let close = !body.drain().await;
+                    return meta.error(&err, &Progress::default(), close);
+                }
+            }
+        }
+        Ok(None) => None,
+        Err(err) => {
+            let close = !body.drain().await;
+            return meta.error(&err, &Progress::default(), close);
+        }
+    };
+    meta.affinity = session.as_ref().map(SessionGuard::affinity_key);
+
+    // What the front answers itself, and what runs.
+    let (unparsed, pins) = match classified {
+        Classified::Known { stmt, .. } => {
+            match front_answer(&stmt, session.as_ref(), &config.session_limits, &known) {
+                Some(Ok(())) => {
+                    drop(session);
+                    return meta
+                        .head(
+                            StatusCode::OK,
+                            content_type(&meta.format),
+                            None,
+                            &Progress::default(),
+                            false,
+                        )
+                        .body(HouseBody::full(Vec::new()))
+                        .unwrap_or_else(|_| fallback());
+                }
+                Some(Err(err)) => {
+                    let close = !body.drain().await;
+                    return meta.error(&err, &Progress::default(), close);
+                }
+                None => (None, matches!(stmt, Stmt::CreateTemporaryTable { .. })),
+            }
+        }
+        Classified::Unparsed { text, message, .. } => (Some((text, message)), false),
+    };
+
     let buffer_size = get("buffer_size")
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(config.default_buffer_size)
@@ -716,26 +795,79 @@ async fn run(
         }
     }
 
-    let execute = Execute {
-        query_id: meta.query_id.clone(),
-        session,
-        settings,
-        views: Vec::new(),
-        sql,
-        format: meta.format.clone(),
-        params: query_params,
-        limits: Limits::default(),
-        input,
-    };
-    let has_input = execute.input.is_some();
+    // The worker: the session's pinned one, a newly pinned one for its first
+    // temporary table, or any (HS1 Task 4).
     let pool = shared.pool.clone();
-    let mut lease = match pool.acquire(&user.namespace.to_string()).await {
+    let acquired = acquire_for(&pool, &namespace, session.as_mut(), pins).await;
+    let mut lease = match acquired {
         Ok(lease) => lease,
         Err(err) => {
             let close = !body.drain().await;
             return meta.error(&err, &Progress::default(), close);
         }
     };
+    meta.worker = Some(lease.worker_id().to_string());
+
+    // ClickHouse's class decides what sqlparser could not parse (FL2 Ruling 6).
+    if let Some((text, message)) = unparsed {
+        let decided = match lease.classify(&text).await {
+            Ok(classification) => {
+                if readonly
+                    && !matches!(
+                        classification.class,
+                        QueryClass::ReadOnly | QueryClass::Unknown
+                    )
+                {
+                    Err(readonly_error())
+                } else {
+                    decide_unparsed(text, &message, classification.class).map(|_| ())
+                }
+            }
+            Err(err) => Err(err),
+        };
+        if let Err(err) = decided {
+            pool.release(lease, Outcome::Completed);
+            let close = !body.drain().await;
+            return meta.error(&err, &Progress::default(), close);
+        }
+    }
+
+    // Settings: the session's, then the request's (which win); Loams's own stay here.
+    let mut settings = Vec::new();
+    let mut worker_session = None;
+    if let Some(guard) = &session {
+        let state = guard.state();
+        settings.extend(state.settings.for_engine());
+        if state.pinned.is_some() {
+            worker_session = Some(state.worker_ref(guard.closing()));
+        }
+    }
+    settings.extend(
+        params
+            .iter()
+            .filter(|(k, _)| !k.starts_with("param_") && !NON_SETTINGS.contains(&k.as_str()))
+            .filter(|(k, _)| !crate::settings::is_loams(k))
+            .cloned(),
+    );
+    let query_params = params
+        .iter()
+        .filter_map(|(k, v)| {
+            k.strip_prefix("param_")
+                .map(|name| (name.to_string(), v.clone()))
+        })
+        .collect();
+    let execute = Execute {
+        query_id: meta.query_id.clone(),
+        session: worker_session,
+        settings,
+        views: Vec::new(),
+        sql: if input.is_some() { String::new() } else { sql },
+        format: meta.format.clone(),
+        params: query_params,
+        limits: Limits::default(),
+        input,
+    };
+    let has_input = execute.input.is_some();
     if let Err(err) = lease.start(execute).await {
         pool.release(lease, Outcome::Completed);
         let close = !body.drain().await;
@@ -750,13 +882,117 @@ async fn run(
         return meta.error(&err, &Progress::default(), true);
     }
 
-    respond(shared, meta, lease, wait_end, buffer_size).await
+    respond(shared, meta, lease, wait_end, buffer_size, session).await
+}
+
+fn readonly_error() -> HouseError {
+    HouseError::from(ChError::readonly(
+        "Cannot execute query in readonly mode. For queries over HTTP, method GET implies \
+         readonly. You should use method POST for modifying queries",
+    ))
+}
+
+/// The task that will serve an owned statement this front does not yet (`48`).
+fn later(stmt: &Stmt) -> Option<String> {
+    let (what, task) = match stmt {
+        Stmt::CreateDatabase { .. } => ("CREATE DATABASE", "HS1 Task 10"),
+        Stmt::CreateTable { .. } => ("CREATE TABLE (a lake table)", "HS1 Task 10"),
+        Stmt::CreateTableAs { .. } => ("CREATE TABLE … AS SELECT", "HS1 Task 12"),
+        Stmt::CreatePipe { .. } => (
+            "A pipe (LoamsStream, IggyTopic, S3Queue)",
+            "HS1 Tasks 16 and 18",
+        ),
+        Stmt::CreateMaterializedView { .. } => ("CREATE MATERIALIZED VIEW", "HS1 Task 17"),
+        Stmt::Drop(drop) if !drop.temporary => ("DROP (a lake object)", "HS1 Task 10"),
+        Stmt::Truncate { .. } => ("TRUNCATE", "HS1 Task 12"),
+        Stmt::AlterAddColumns { .. } => ("ALTER TABLE … ADD COLUMN", "HS1 Task 10"),
+        Stmt::Rename { .. } => ("RENAME TABLE", "HS1 Task 10"),
+        Stmt::Undrop { .. } => ("UNDROP TABLE", "HS1 Task 15"),
+        Stmt::Optimize { .. } => ("OPTIMIZE TABLE", "HS1 Task 13"),
+        Stmt::KillQuery(_) => ("KILL QUERY", "HS1 Task 21"),
+        Stmt::Unsupported { kind } => {
+            return Some(format!("{kind} is not on the House's ClickHouse surface"));
+        }
+        _ => return None,
+    };
+    Some(format!(
+        "{what} is served from {task}; this House does not serve it yet"
+    ))
+}
+
+/// What the front answers itself: `Some(Ok)` for an empty success (`SET`, `USE`),
+/// `Some(Err)` for an error, `None` for a statement a worker runs.
+fn front_answer(
+    stmt: &Stmt,
+    session: Option<&SessionGuard>,
+    limits: &crate::settings::SessionLimits,
+    known: &std::collections::HashSet<String>,
+) -> Option<Result<(), HouseError>> {
+    if let Some(message) = later(stmt) {
+        return Some(Err(HouseError::from(ChError::not_implemented(message))));
+    }
+    match stmt {
+        Stmt::Set(pairs) => Some((|| {
+            for (name, value) in pairs {
+                crate::settings::check(name, value, limits, known)?;
+            }
+            // Without a session a SET has nothing to keep it, as in ClickHouse.
+            if let Some(guard) = session {
+                let mut state = guard.state();
+                for (name, value) in pairs {
+                    state.settings.apply(name, value, limits, known)?;
+                }
+            }
+            Ok(())
+        })()),
+        Stmt::Use(database) => Some(if database != "default" {
+            Err(HouseError::from(ChError::unknown_database(format!(
+                "Database {database} does not exist"
+            ))))
+        } else {
+            if let Some(guard) = session {
+                guard.state().database = database.clone();
+            }
+            Ok(())
+        }),
+        _ => None,
+    }
+}
+
+/// The worker for a statement: the session's pinned worker (a lost pin falls back
+/// to any worker: its temporary tables are gone), a newly pinned one for the
+/// session's first temporary table, or any worker of the namespace.
+async fn acquire_for(
+    pool: &WorkerPool,
+    namespace: &str,
+    session: Option<&mut SessionGuard>,
+    pins: bool,
+) -> Result<WorkerLease, HouseError> {
+    let Some(guard) = session else {
+        return pool.acquire(namespace).await;
+    };
+    let pinned = guard.state().pinned.clone();
+    if let Some(worker) = pinned {
+        if let Some(lease) = pool.acquire_pinned(namespace, &worker).await? {
+            return Ok(lease);
+        }
+        guard.state().pinned = None;
+    }
+    if pins {
+        let lease = pool.acquire_and_pin(namespace).await?;
+        guard.state().pinned = Some(lease.worker_id().to_string());
+        return Ok(lease);
+    }
+    pool.acquire(namespace).await
 }
 
 /// Everything a statement needs before a worker is asked.
 struct Prepared {
     user: UserMap,
+    /// The statement's text minus a trailing `FORMAT`: what chDB runs, unchanged.
     sql: String,
+    classified: Classified,
+    readonly: bool,
     format: Option<String>,
     input: Option<loams_house_ipc::InputSpec>,
     decoder: Decoder,
@@ -769,6 +1005,7 @@ async fn prepare(
     params: &[(String, String)],
     body: &mut RequestBody,
     post: bool,
+    known: &std::collections::HashSet<String>,
 ) -> Result<Prepared, HouseError> {
     let get = |name: &str| {
         params
@@ -799,6 +1036,13 @@ async fn prepare(
             "Database {database} does not exist"
         ))));
     }
+    // The request's settings: 115 unknown, 164 disallowed or over a cap (Task 4).
+    for (name, value) in params
+        .iter()
+        .filter(|(k, _)| !k.starts_with("param_") && !NON_SETTINGS.contains(&k.as_str()))
+    {
+        crate::settings::check(name, value, &config.session_limits, known)?;
+    }
     let encoding = compress::content_encoding(
         headers
             .get("Content-Encoding")
@@ -828,16 +1072,31 @@ async fn prepare(
             request::plan(&text, false)
         }
     };
-    if readonly && (plan.input.is_some() || !request::is_read(&plan.sql)) {
-        return Err(HouseError::from(ChError::readonly(
-            "Cannot execute query in readonly mode. For queries over HTTP, method GET \
-             implies readonly. You should use method POST for modifying queries",
-        )));
+    let classified = match &plan.input {
+        Some(spec) => Classified::Known {
+            stmt: Stmt::Insert(crate::classify::InsertStmt {
+                text: spec.insert.clone(),
+                format: Some(spec.format.clone()),
+                table: None,
+            }),
+            format: None,
+        },
+        None => classify(&plan.sql)?,
+    };
+    if readonly && matches!(&classified, Classified::Known { stmt, .. } if !stmt.is_read()) {
+        return Err(readonly_error());
     }
+    let format = match &classified {
+        Classified::Known { format, .. } | Classified::Unparsed { format, .. } => {
+            format.clone().or(plan.format)
+        }
+    };
     Ok(Prepared {
         user,
-        sql: plan.sql,
-        format: plan.format,
+        sql: plan.sql.clone(),
+        classified,
+        readonly,
+        format: if plan.input.is_some() { None } else { format },
         input: plan.input,
         decoder,
         first_data: plan.first_data,
@@ -931,6 +1190,7 @@ async fn respond(
     mut lease: WorkerLease,
     wait_end: bool,
     buffer_size: usize,
+    session: Option<SessionGuard>,
 ) -> Response<HouseBody> {
     let pool = shared.pool.clone();
     let mut encoder = meta.encoding.and_then(|e| Encoder::new(e).ok());
@@ -963,7 +1223,7 @@ async fn respond(
                 }
                 pending.extend_from_slice(&encoded);
                 if pending.len() > buffer_size {
-                    return stream_rest(pool, meta, lease, encoder, pending, last);
+                    return stream_rest(pool, meta, lease, encoder, pending, last, session);
                 }
             }
             Ok(Event::Progress(progress)) => last = progress,
@@ -1028,6 +1288,7 @@ fn stream_rest(
     mut encoder: Option<Encoder>,
     pending: Vec<u8>,
     last: Progress,
+    session: Option<SessionGuard>,
 ) -> Response<HouseBody> {
     let (tx, rx) = mpsc::channel(CHANNEL_DEPTH);
     let head = meta.head(
@@ -1038,6 +1299,8 @@ fn stream_rest(
         false,
     );
     tokio::spawn(async move {
+        // The session stays checked out until the statement ends (373 meanwhile).
+        let _session = session;
         if tx.send(Piece::Data(Bytes::from(pending))).await.is_err() {
             pool.kill(lease, ExitReason::Cancel);
             return;
@@ -1225,40 +1488,6 @@ impl Drop for Spool {
     }
 }
 
-/// The worker session a request names: keyed by the user **and** `session_id`, so
-/// two users' sessions of one id never meet (Task 3 review, decision 4).
-pub fn session_ref(
-    user: &str,
-    params: &[(String, String)],
-) -> Result<Option<SessionRef>, HouseError> {
-    let get = |name: &str| {
-        params
-            .iter()
-            .find(|(k, _)| k == name)
-            .map(|(_, v)| v.as_str())
-    };
-    let Some(id) = get("session_id").filter(|id| !id.is_empty()) else {
-        return Ok(None);
-    };
-    let timeout = match get("session_timeout") {
-        None => SESSION_TIMEOUT_DEFAULT,
-        Some(raw) => raw
-            .parse::<u64>()
-            .ok()
-            .filter(|t| *t <= SESSION_TIMEOUT_MAX)
-            .ok_or_else(|| {
-                HouseError::from(ChError::bad_arguments(format!(
-                    "Invalid session timeout: '{raw}', max is {SESSION_TIMEOUT_MAX} seconds"
-                )))
-            })?,
-    };
-    Ok(Some(SessionRef {
-        key: format!("{}/{user}/{id}", user.len()),
-        timeout_ms: timeout * 1000,
-        close: get("close_session") == Some("1"),
-    }))
-}
-
 /// The `Content-Type` of an output format (review M7: text unless the format is
 /// binary). ClickHouse's own table is per format (`IOutputFormat::getContentType`);
 /// HS1 Task 29 re-checks these against the reference server.
@@ -1357,38 +1586,5 @@ mod tests {
         assert_eq!(b.write(b"12345").expect_err("over the budget").code(), 202);
         drop(a);
         b.write(b"12345").expect("released");
-    }
-
-    #[test]
-    fn sessions_are_per_user() {
-        let params = |p: &[(&str, &str)]| -> Vec<(String, String)> {
-            p.iter()
-                .map(|(a, b)| (a.to_string(), b.to_string()))
-                .collect()
-        };
-        let a = session_ref("alice", &params(&[("session_id", "s")]))
-            .expect("ok")
-            .expect("some");
-        let c = session_ref("carol", &params(&[("session_id", "s")]))
-            .expect("ok")
-            .expect("some");
-        assert_ne!(a.key, c.key);
-        assert_eq!(a.timeout_ms, 60_000);
-        assert_eq!(session_ref("a", &params(&[])).expect("ok"), None);
-        assert_eq!(
-            session_ref(
-                "a",
-                &params(&[("session_id", "s"), ("session_timeout", "3601")])
-            )
-            .expect_err("too long")
-            .code(),
-            36
-        );
-        assert!(
-            session_ref("a", &params(&[("session_id", "s"), ("close_session", "1")]))
-                .expect("ok")
-                .expect("some")
-                .close
-        );
     }
 }

@@ -1167,13 +1167,14 @@ async fn truncated_compressed_inserts_commit_nothing() {
 }
 
 /// Task 3 review, decision 4, over HTTP: sessions are per user, URL settings do not
-/// stay, and `close_session` ends one. One worker per namespace, so the session's
-/// worker is the same without Task 4's pinning.
+/// stay, and `close_session` ends one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn sessions_are_per_user_over_http() {
+    // Several workers per namespace: the temporary table pins its session to one
+    // (HS1 Task 4), so the session needs no single-worker namespace any more.
     let pool_config = loams_house::PoolConfig {
-        max_workers_per_namespace: 1,
-        ..common::small(2)
+        max_workers_per_namespace: 3,
+        ..common::small(3)
     };
     let (house, _pool) = house_with_pool("http-sessions", pool_config, |config| {
         config.users.push(UserMap::dev("carol", "c", 2, false));

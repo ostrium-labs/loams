@@ -70,6 +70,8 @@ pub mod errors;
 pub mod fuzz;
 pub mod http;
 pub mod request;
+pub mod session;
+pub mod settings;
 pub mod watchdog;
 
 pub use admission::{Collected, Event, Outcome, PoolConfig, PoolStats, WorkerLease, WorkerPool};
