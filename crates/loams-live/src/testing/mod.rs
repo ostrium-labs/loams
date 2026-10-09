@@ -20,6 +20,9 @@
 //! on `TEST_LIVE` under a fresh root when `LOAMS_TEST_PD` is set, and
 //! otherwise returns after a `skipped:` line.
 
+pub mod checker;
+pub mod workload;
+
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
