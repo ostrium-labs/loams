@@ -71,5 +71,18 @@ pub(crate) fn map_catalog(err: crate::catalog::CatalogError) -> ConnectError {
         E::Unavailable(_) => (ErrorCode::Unavailable, "unavailable"),
         E::Corrupt(_) => (ErrorCode::Internal, "internal"),
     };
-    refuse(code, reason, err.to_string())
+    // Backend detail (object keys, metastore errors) stays in the server log; a client gets a
+    // generic message (review M7).
+    let message = match &err {
+        E::Unavailable(_) => {
+            tracing::warn!(error = %err, "the graph catalog is unavailable");
+            "the graph catalog is unavailable; retry".to_string()
+        }
+        E::Corrupt(_) => {
+            tracing::error!(error = %err, "the graph catalog is corrupt");
+            "internal error in the graph catalog".to_string()
+        }
+        _ => err.to_string(),
+    };
+    refuse(code, reason, message)
 }

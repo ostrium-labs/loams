@@ -1284,6 +1284,30 @@ mod admin {
         assert_eq!(err.code, ErrorCode::InvalidArgument, "{err:?}");
     }
 
+    /// Review M7: a backend failure answers a generic UNAVAILABLE; the detail stays in the log.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn unavailable_is_generic_to_clients() {
+        let fixture = Fixture::start().await;
+        fixture
+            .admin()
+            .create_graph(create("acme", "kg", "k"))
+            .await
+            .expect("create");
+        let fresh = fixture.admin();
+        fixture.faulty.inject(Op::Get, Fault::Error);
+        let err = fresh
+            .get_graph(get("acme", "kg"))
+            .await
+            .expect_err("the bucket failed");
+        assert_eq!(err.code, ErrorCode::Unavailable);
+        let message = err.message.as_deref().unwrap_or_default();
+        assert_eq!(message, "the graph catalog is unavailable; retry");
+        assert!(
+            !message.contains("graphs/"),
+            "no object key leaks: {message}"
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn invalid_names_refused() {
         let fixture = Fixture::start().await;
