@@ -660,3 +660,24 @@ async fn upstream_database_errors_keep_their_codes() {
 fn slot_free_now(h: &super::Harness) -> bool {
     h.gate.open_connections("br_a") == 0
 }
+
+/// M6: a gate takes no plaintext unless configured to (the desktop sets
+/// loopback); the policy parses from its flag value.
+#[test]
+fn gateways_default_to_no_plaintext() {
+    use loams_sqlgate::server::GateConfig;
+    let pki = super::pki::Pki::new();
+    let tls = loams_sqlgate::server::sni_server_config(vec![loams_sqlgate::server::SniCert {
+        names: vec!["localhost".into()],
+        chain: pki.gate_chain.clone(),
+        key: pki.gate_key.clone_key(),
+    }])
+    .unwrap();
+    assert_eq!(
+        GateConfig::new(tls, pki.client_config()).plaintext,
+        PlaintextPolicy::Never
+    );
+    assert_eq!("never".parse(), Ok(PlaintextPolicy::Never));
+    assert_eq!("loopback".parse(), Ok(PlaintextPolicy::LoopbackOnly));
+    assert!("always".parse::<PlaintextPolicy>().is_err());
+}

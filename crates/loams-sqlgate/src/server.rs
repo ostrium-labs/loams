@@ -49,6 +49,19 @@ pub enum PlaintextPolicy {
     Never,
 }
 
+impl std::str::FromStr for PlaintextPolicy {
+    type Err = String;
+
+    /// `never` or `loopback`.
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "never" => Ok(PlaintextPolicy::Never),
+            "loopback" => Ok(PlaintextPolicy::LoopbackOnly),
+            other => Err(format!("{other:?}: expected never or loopback")),
+        }
+    }
+}
+
 impl PlaintextPolicy {
     /// Whether a peer at `ip` may skip TLS.
     pub fn allows(self, ip: IpAddr) -> bool {
@@ -164,13 +177,14 @@ pub struct GateConfig {
 }
 
 impl GateConfig {
-    /// Defaults: loopback-only plaintext, 10 s handshake, 30 s upstream,
+    /// Defaults: no plaintext (a gateway; the desktop sets
+    /// [`PlaintextPolicy::LoopbackOnly`]), 10 s handshake, 30 s upstream,
     /// default limits, the v8.5.8 profile.
     pub fn new(tls: Arc<rustls::ServerConfig>, upstream_tls: Arc<rustls::ClientConfig>) -> Self {
         Self {
             tls,
             upstream_tls,
-            plaintext: PlaintextPolicy::LoopbackOnly,
+            plaintext: PlaintextPolicy::Never,
             handshake_timeout: Duration::from_secs(10),
             upstream_timeout: Duration::from_secs(30),
             limits: LimitsConfig::default(),

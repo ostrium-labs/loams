@@ -9,7 +9,8 @@ use std::sync::Arc;
 use loams_sqlgate::auth::StaticUsers;
 use loams_sqlgate::limits::ActivityCounter;
 use loams_sqlgate::server::{
-    Gate, GateConfig, GateDeps, sni_cert_from_pem, sni_server_config, upstream_tls_from_ca_pem,
+    Gate, GateConfig, GateDeps, PlaintextPolicy, sni_cert_from_pem, sni_server_config,
+    upstream_tls_from_ca_pem,
 };
 use loams_sqlgate::upstream::{NoCredentials, NoPools};
 use tokio::net::TcpListener;
@@ -26,6 +27,9 @@ pub struct SqlgateConfig {
     pub tls_key: PathBuf,
     /// The CA (PEM) that signs the TiDB pools' certificates.
     pub upstream_ca: PathBuf,
+    /// When plaintext is accepted: `loams dev` (the desktop) allows it from
+    /// loopback peers, a gateway never.
+    pub plaintext: PlaintextPolicy,
 }
 
 /// A running gate.
@@ -67,7 +71,9 @@ pub fn start(
         pools: Arc::new(NoPools),
         activity: Arc::new(ActivityCounter::default()),
     };
-    let gate = Gate::new(GateConfig::new(tls, upstream), deps);
+    let mut gate_config = GateConfig::new(tls, upstream);
+    gate_config.plaintext = config.plaintext;
+    let gate = Gate::new(gate_config, deps);
     let task = tokio::spawn(gate.serve(listener));
     tracing::info!(%addr, "Loams SQL gate listening");
     Ok(SqlgateHandle { addr, task })

@@ -283,6 +283,11 @@ struct Native {
     #[cfg(feature = "sqldb")]
     #[arg(long, requires = "sqlgate_listen")]
     sqlgate_upstream_ca: Option<std::path::PathBuf>,
+    /// When the gate accepts plaintext: never, or loopback (from loopback
+    /// peers only) [default: loopback for `loams dev`, never otherwise].
+    #[cfg(feature = "sqldb")]
+    #[arg(long, requires = "sqlgate_listen")]
+    sqlgate_plaintext: Option<loams_sqlgate::server::PlaintextPolicy>,
     /// Address of the Qdrant REST API [default: 127.0.0.1:6333].
     #[arg(long, conflicts_with = "no_qdrant")]
     qdrant_listen: Option<SocketAddr>,
@@ -586,6 +591,9 @@ impl Native {
                         tls_cert: cert.clone(),
                         tls_key: key.clone(),
                         upstream_ca: ca.clone(),
+                        plaintext: self
+                            .sqlgate_plaintext
+                            .unwrap_or(loams_sqlgate::server::PlaintextPolicy::Never),
                     })
                 }
                 _ => None,
@@ -1156,9 +1164,17 @@ fn config(command: Command) -> ServerConfig {
             if let Some(ms) = flush_interval_ms {
                 config.log.flush_interval = Duration::from_millis(ms);
             }
+            #[cfg(feature = "sqldb")]
+            let dev_plaintext = native.sqlgate_plaintext.is_none();
             native.apply(&mut config, DEV_FLIGHT_SQL);
             native.apply_graph(&mut config, true);
             tuning.apply(&mut config);
+            // The desktop's gate takes plaintext from loopback peers unless
+            // told otherwise; a gateway never does (fix round 1, M6).
+            #[cfg(feature = "sqldb")]
+            if let Some(gate) = config.sqlgate.as_mut().filter(|_| dev_plaintext) {
+                gate.plaintext = loams_sqlgate::server::PlaintextPolicy::LoopbackOnly;
+            }
             // Q603's proposed default: `loams dev` publishes the schema of
             // the Connect API on the main port (design §44 §4), a production
             // deployment does not unless it asks.
@@ -1542,6 +1558,23 @@ mod tests {
         let gate = config.sqlgate.expect("configured");
         assert_eq!(gate.listen, "127.0.0.1:3307".parse().unwrap());
         assert_eq!(gate.tls_key, std::path::PathBuf::from("/k.pem"));
+        // M6: `loams dev` (the desktop) takes plaintext from loopback.
+        use loams_sqlgate::server::PlaintextPolicy;
+        assert_eq!(gate.plaintext, PlaintextPolicy::LoopbackOnly);
+        let flags = [
+            "--sqlgate-listen",
+            "127.0.0.1:3307",
+            "--sqlgate-tls-cert",
+            "/c.pem",
+            "--sqlgate-tls-key",
+            "/k.pem",
+            "--sqlgate-upstream-ca",
+            "/ca.pem",
+            "--sqlgate-plaintext",
+            "never",
+        ];
+        let gate = dev_config(&flags).sqlgate.expect("configured");
+        assert_eq!(gate.plaintext, PlaintextPolicy::Never);
     }
 
     #[cfg(feature = "stream-grpc")]
