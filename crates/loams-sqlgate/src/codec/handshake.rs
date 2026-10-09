@@ -7,6 +7,7 @@
 use std::fmt;
 use std::ops::BitOr;
 
+use super::auth::Password;
 use super::{DecodeError, Reader, invalid, put_lenenc, put_lenenc_bytes, utf8};
 
 /// Capability flags (`CLIENT_*`).
@@ -422,8 +423,9 @@ pub struct HandshakeResponse41 {
     pub charset: u8,
     /// The user name.
     pub username: String,
-    /// The authentication response (a scramble, or a secret: never logged).
-    pub auth_response: Vec<u8>,
+    /// The authentication response: a scramble or a secret, so a
+    /// [`Password`] (redacted, zeroed on drop).
+    pub auth_response: Password,
     /// The database, with `CLIENT_CONNECT_WITH_DB`.
     pub database: Option<String>,
     /// The client's plugin, with `CLIENT_PLUGIN_AUTH`.
@@ -471,17 +473,17 @@ impl HandshakeResponse41 {
         out.extend_from_slice(self.username.as_bytes());
         out.push(0);
         if caps.contains(Capabilities::PLUGIN_AUTH_LENENC_CLIENT_DATA) {
-            put_lenenc_bytes(&mut out, &self.auth_response);
+            put_lenenc_bytes(&mut out, self.auth_response.expose());
         } else if caps.contains(Capabilities::SECURE_CONNECTION) {
-            let n = u8::try_from(self.auth_response.len())
+            let n = u8::try_from(self.auth_response.expose().len())
                 .map_err(|_| EncodeError::AuthResponseTooLong)?;
             out.push(n);
-            out.extend_from_slice(&self.auth_response);
+            out.extend_from_slice(self.auth_response.expose());
         } else {
-            if self.auth_response.contains(&0) {
+            if self.auth_response.expose().contains(&0) {
                 return Err(EncodeError::AuthResponseHasNul);
             }
-            out.extend_from_slice(&self.auth_response);
+            out.extend_from_slice(self.auth_response.expose());
             out.push(0);
         }
         if caps.contains(Capabilities::CONNECT_WITH_DB) {
@@ -571,6 +573,8 @@ pub fn decode_client_hello(payload: &[u8], limits: &Limits) -> Result<ClientHell
         r.nul_terminated(limits.max_auth_response, "auth response")?
     }
     .to_vec();
+    // Zeroed on drop, including when a later field fails to decode.
+    let auth_response = Password::new(auth_response);
     let database = if capabilities.contains(Capabilities::CONNECT_WITH_DB) {
         Some(utf8(
             r.nul_terminated(limits.max_database, "database")?,

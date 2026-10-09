@@ -93,7 +93,7 @@ pub fn conversation(ctl: u8) -> Vec<u8> {
         max_packet: 1 << 24,
         charset: 0xff,
         username: "u".into(),
-        auth_response: vec![5; 32],
+        auth_response: loams_sqlgate::codec::auth::Password::new(vec![5; 32]),
         database: None,
         auth_plugin: Some("caching_sha2_password".into()),
         attributes: vec![],

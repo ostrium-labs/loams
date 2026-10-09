@@ -64,7 +64,11 @@ fn handshake_response_decodes_captured_clients() {
         };
         assert_eq!(r.username, "loams_cap", "{name}");
         assert_eq!(r.auth_plugin.as_deref(), Some(NATIVE), "{name}");
-        assert_eq!(r.auth_response.len(), 20, "{name}: a native scramble");
+        assert_eq!(
+            r.auth_response.expose().len(),
+            20,
+            "{name}: a native scramble"
+        );
         assert!(
             r.capabilities
                 .contains(C::PROTOCOL_41 | C::SECURE_CONNECTION | C::PLUGIN_AUTH),
@@ -178,14 +182,14 @@ fn tls_sha2_captures_drive_the_connection_phase() {
         );
         assert_eq!(r.auth_plugin.as_deref(), Some(CACHING_SHA2), "{name}");
         assert_eq!(
-            r.auth_response,
+            r.auth_response.expose(),
             scramble_caching_sha2(b"capture", &nonce),
             "{name}: SHA-2 first response"
         );
         assert!(verify_caching_sha2(
             &double_sha256(b"capture"),
             &nonce,
-            &r.auth_response
+            r.auth_response.expose()
         ));
 
         // TiDB asked for full authentication; the client sent its password
@@ -196,7 +200,7 @@ fn tls_sha2_captures_drive_the_connection_phase() {
             .expect("cleartext password");
         let mut s = CachingSha2Server::new(greeting.nonce, true);
         assert!(matches!(
-            s.start(r.auth_plugin.as_deref(), &r.auth_response),
+            s.start(r.auth_plugin.as_deref(), r.auth_response.expose()),
             Action::CheckFast { .. }
         ));
         s.fast_result(false);

@@ -1,3 +1,4 @@
+use loams_sqlgate::codec::auth::Password;
 use loams_sqlgate::codec::handshake::{
     Capabilities as C, ClientHello, GATE_SUPPORTED, HandshakeResponse41, HandshakeV10, Limits,
     Nonce, RELAY_SENSITIVE, SslRequest, TIDB_V8_5_8, advertise, decode_client_hello, negotiate,
@@ -60,7 +61,7 @@ fn response() -> HandshakeResponse41 {
         max_packet: 16 << 20,
         charset: 0xff,
         username: "u_abc".into(),
-        auth_response: vec![9; 32],
+        auth_response: Password::new(vec![9; 32]),
         database: Some("app".into()),
         auth_plugin: Some("caching_sha2_password".into()),
         attributes: vec![(b"_client_name".to_vec(), b"test".to_vec())],
@@ -247,14 +248,14 @@ fn upstream_leg_is_the_gates_own_connection() {
 #[test]
 fn long_auth_response_needs_lenenc() {
     let mut r = response();
-    r.auth_response = vec![b'j'; 300];
+    r.auth_response = Password::new(vec![b'j'; 300]);
     assert!(r.encode().is_ok(), "length-encoded: any length");
     r.capabilities = r.capabilities.without(C::PLUGIN_AUTH_LENENC_CLIENT_DATA);
     assert!(r.encode().is_err(), "one-byte length: at most 255");
-    r.auth_response.truncate(255);
+    r.auth_response = Password::new(vec![b'j'; 255]);
     let bytes = r.encode().expect("255 fits");
     assert!(
-        matches!(decode_client_hello(&bytes, &Limits::default()), Ok(ClientHello::Response(d)) if d.auth_response.len() == 255)
+        matches!(decode_client_hello(&bytes, &Limits::default()), Ok(ClientHello::Response(d)) if d.auth_response.expose().len() == 255)
     );
     assert!(!TIDB_V8_5_8.contains(C::PLUGIN_AUTH_LENENC_CLIENT_DATA));
 }

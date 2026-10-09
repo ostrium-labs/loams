@@ -36,7 +36,7 @@ fn response(ssl: bool, plugin: &str, auth: Vec<u8>) -> HandshakeResponse41 {
         max_packet: 1 << 24,
         charset: 0xff,
         username: "u_test".into(),
-        auth_response: auth,
+        auth_response: loams_sqlgate::codec::auth::Password::new(auth),
         database: None,
         auth_plugin: Some(plugin.into()),
         attributes: vec![],
@@ -275,4 +275,31 @@ fn partial_input_waits_and_steps_do_not_print_secrets() {
         shown.contains("[redacted]") && !shown.contains("7, 7"),
         "{shown}"
     );
+}
+
+/// Fix round 2, B: a first packet's auth response (here a cleartext
+/// `mysql_clear_password` secret) is not kept: the stored response holds an
+/// empty, zeroing `Password`, on success and on refusal.
+#[test]
+fn first_packet_secret_is_not_retained() {
+    use loams_sqlgate::codec::auth::{CLEAR, Password};
+    let (mut p, seq) = tls_phase();
+    let mut r = response(true, CLEAR, Vec::new());
+    r.auth_response = Password::new(b"s3cret-token\0".to_vec());
+    let Ok(Step::Write(_)) = feed(&mut p, &frame(&r.encode().expect("enc"), seq)) else {
+        panic!("switch")
+    };
+    let kept = p.response().expect("response");
+    assert!(
+        kept.auth_response.expose().is_empty(),
+        "the first packet's secret is dropped"
+    );
+    assert!(!format!("{kept:?}").contains("s3cret"));
+
+    // Refused (plaintext with TLS required): nothing is kept at all.
+    let (mut p, _) = ConnectionPhase::new(greeting(), false, Limits::default());
+    let mut r = response(false, CLEAR, Vec::new());
+    r.auth_response = Password::new(b"s3cret-token\0".to_vec());
+    assert!(feed(&mut p, &frame(&r.encode().expect("enc"), 1)).is_err());
+    assert!(p.response().is_none());
 }

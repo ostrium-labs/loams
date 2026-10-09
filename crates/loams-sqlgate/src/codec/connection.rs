@@ -259,7 +259,7 @@ impl ConnectionPhase {
         self.frame(&packet.encode())
     }
 
-    /// The client's response, once received.
+    /// The client's response, once received, without its auth data.
     pub fn response(&self) -> Option<&HandshakeResponse41> {
         self.response.as_ref()
     }
@@ -312,11 +312,15 @@ impl ConnectionPhase {
         }
     }
 
-    fn start_auth(&mut self, r: HandshakeResponse41) -> Result<Step, PhaseError> {
+    fn start_auth(&mut self, mut r: HandshakeResponse41) -> Result<Step, PhaseError> {
+        // The first packet's auth data is used once, then zeroed (dropped
+        // here); the kept response holds an empty Password.
+        let auth_data = std::mem::replace(&mut r.auth_response, Password::new(Vec::new()));
         let agreed = negotiate(r.capabilities, self.greeting.capabilities)?;
         self.agreed = Some(agreed);
         let mut auth = CachingSha2Server::new(self.greeting.nonce, self.tls);
-        let action = auth.start(r.auth_plugin.as_deref(), &r.auth_response);
+        let action = auth.start(r.auth_plugin.as_deref(), auth_data.expose());
+        drop(auth_data);
         self.auth = Some(auth);
         self.response = Some(r);
         self.act(action)
