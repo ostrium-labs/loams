@@ -6,6 +6,7 @@
 //! reaper used to fire on the parent's park time alone, cancel the child, and
 //! stamp every still-running subagent `failed` — the "subagents die after
 //! ~20 minutes and can't be resumed" report.
+#![allow(clippy::unwrap_used)]
 
 use std::sync::{Arc, Once};
 use std::time::Duration;
@@ -34,7 +35,10 @@ fn init_env() {
     ONCE.call_once(|| {
         // SAFETY: called before any engine (and thus any reader of the var)
         // exists in this test process; all tests share the one value.
-        unsafe { std::env::set_var("LOAMS_DESKTOP_SESSION_IDLE_MS", IDLE_MS.to_string()) };
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("LOAMS_DESKTOP_SESSION_IDLE_MS", IDLE_MS.to_string())
+        };
     });
 }
 

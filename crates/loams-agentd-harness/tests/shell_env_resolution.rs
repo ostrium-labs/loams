@@ -5,6 +5,7 @@
 //! own test binary with no parallel siblings.
 
 #![cfg(unix)]
+#![allow(clippy::unwrap_used)]
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -44,6 +45,7 @@ async fn cli_on_login_shell_path_only_is_resolved() {
     // A GUI/service-launch environment: minimal PATH, no CLIs reachable, HOME
     // pointed away from any real install dirs.
     // SAFETY: single-test binary — nothing else reads env concurrently.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("SHELL", &fake_shell);
         std::env::set_var("HOME", dir.path());

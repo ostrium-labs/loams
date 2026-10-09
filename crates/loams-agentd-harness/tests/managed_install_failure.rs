@@ -27,6 +27,7 @@ async fn silent_npm_enoent_death_surfaces_decoded_error() {
     std::fs::set_permissions(&npm, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     // SAFETY: single-test binary — nothing else reads env concurrently.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("LOAMS_DESKTOP_ADAPTERS_DIR", dir.path().join("adapters"));
         std::env::set_var("LOAMS_DESKTOP_NO_LOGIN_SHELL", "1");

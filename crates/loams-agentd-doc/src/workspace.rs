@@ -61,6 +61,7 @@ pub struct DeletedSpace {
 }
 
 /// A workspace doc handle: typed access over a LoroDoc with the schema above.
+#[derive(Debug)]
 pub struct WorkspaceDoc {
     doc: LoroDoc,
 }

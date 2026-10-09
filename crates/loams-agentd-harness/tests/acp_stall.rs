@@ -31,6 +31,7 @@ fn fixture_path() -> PathBuf {
 #[tokio::test]
 async fn silent_agent_errors_via_the_prompt_stall_watchdog() {
     // SAFETY: single-test binary — nothing else reads env concurrently.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("LOAMS_DESKTOP_ACP_PROMPT_STALL_MS", "700");
     }

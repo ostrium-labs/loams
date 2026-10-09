@@ -2,6 +2,7 @@
 //! with `--prompt`, the session updates and usage one short turn produces.
 //! run from a directory outside any loams-desktop project so preview discovery never
 //! probes the server's ports.
+#![allow(clippy::unwrap_used)]
 use std::process::Stdio;
 
 use serde_json::{Value, json};

@@ -92,7 +92,10 @@ struct Console(HPCON);
 impl Drop for Console {
     fn drop(&mut self) {
         // SAFETY: this is the unique owner of a live pseudoconsole.
-        unsafe { ClosePseudoConsole(self.0) };
+        #[allow(unsafe_code)]
+        unsafe {
+            ClosePseudoConsole(self.0)
+        };
     }
 }
 
@@ -103,7 +106,9 @@ struct Master {
     size: Mutex<PtySize>,
 }
 impl MasterPty for Master {
+    #[allow(unsafe_code)]
     fn resize(&self, size: PtySize) -> anyhow::Result<()> {
+        // SAFETY: self.console owns a live pseudoconsole.
         hresult(unsafe { ResizePseudoConsole(self.console.0, coord(size)) })?;
         *super::lock(&self.size) = size;
         Ok(())
@@ -152,10 +157,13 @@ impl ChildKiller for Process {
     }
 }
 impl Process {
+    #[allow(unsafe_code)]
     fn wait_for(&self, timeout: u32) -> io::Result<Option<ExitStatus>> {
+        // SAFETY: self.handle is a live process handle this Process owns.
         match unsafe { WaitForSingleObject(self.handle.as_raw_handle(), timeout) } {
             WAIT_OBJECT_0 => {
                 let mut code = 0;
+                // SAFETY: the handle is live and code is a valid out-pointer.
                 if unsafe { GetExitCodeProcess(self.handle.as_raw_handle(), &mut code) } == 0 {
                     return Err(io::Error::last_os_error());
                 }
@@ -171,11 +179,13 @@ impl Child for Process {
     fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
         self.wait_for(0)
     }
+    #[allow(unsafe_code)]
     fn wait(&mut self) -> io::Result<ExitStatus> {
         // Terminals starts the output reader before scheduling this wait. Even
         // shell startup output is therefore drained, and earlier setup failures
         // can drop a never-started process without blocking ClosePseudoConsole.
         if let Some(thread) = self.thread.take() {
+            // SAFETY: thread is a live, suspended thread handle this Process owns.
             if unsafe { ResumeThread(thread.as_raw_handle()) } == u32::MAX {
                 return Err(io::Error::last_os_error());
             }
@@ -214,6 +224,7 @@ fn wide(value: &OsStr) -> io::Result<Vec<u16>> {
     result.push(0);
     Ok(result)
 }
+#[allow(unsafe_code)]
 fn pipe() -> io::Result<(File, File)> {
     let (mut read, mut write) = (std::ptr::null_mut(), std::ptr::null_mut());
     // SAFETY: output pointers are valid; null attributes disable inheritance.
@@ -370,6 +381,7 @@ mod resolution_tests {
     }
 }
 
+#[allow(unsafe_code)]
 pub(super) fn open(
     shell: &str,
     cwd: &str,
@@ -426,6 +438,7 @@ pub(super) fn open(
     let (input, writer) = pipe()?;
     let (reader, output) = pipe()?;
     let mut console = 0;
+    // SAFETY: both pipe handles are live and console is a valid out-pointer.
     hresult(unsafe {
         CreatePseudoConsole(
             coord(size),
@@ -470,7 +483,9 @@ pub(super) fn open(
         return Err(io::Error::last_os_error().into());
     }
     // SAFETY: these two handles are newly owned on successful CreateProcessW.
+    #[allow(unsafe_code)]
     let handle = unsafe { OwnedHandle::from_raw_handle(info.hProcess) };
+    #[allow(unsafe_code)]
     let thread = unsafe { OwnedHandle::from_raw_handle(info.hThread) };
     let child = Process {
         handle,

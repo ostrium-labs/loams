@@ -35,6 +35,12 @@ pub struct LoamsClient {
     inner: InstanceServiceClient<HttpClient>,
 }
 
+impl std::fmt::Debug for LoamsClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoamsClient").finish_non_exhaustive()
+    }
+}
+
 impl LoamsClient {
     /// A client for `server_url`, for example `http://127.0.0.1:8080`.
     ///

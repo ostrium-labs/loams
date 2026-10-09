@@ -1,4 +1,5 @@
 //! Real OS process/listener association, including unrelated project isolation.
+#![allow(clippy::unwrap_used)]
 use loams_agentd_preview::PreviewService;
 use std::{
     sync::{Arc, Mutex},

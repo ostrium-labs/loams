@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used)]
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use http_body_util::{BodyExt, Full, StreamBody, combinators::UnsyncBoxBody};

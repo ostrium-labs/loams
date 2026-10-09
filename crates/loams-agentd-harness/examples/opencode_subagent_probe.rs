@@ -11,6 +11,7 @@
 //! Prompt content is irrelevant with the mock provider (it scripts a task
 //! spawn on the first parent round); against a real provider, ask for one
 //! `task` explicitly.
+#![allow(clippy::unwrap_used)]
 
 use futures::StreamExt;
 use loams_agentd_harness::{CancellationToken, Harness, OpencodeHarness, RunControls};

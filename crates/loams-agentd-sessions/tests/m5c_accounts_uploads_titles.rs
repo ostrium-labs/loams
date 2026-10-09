@@ -4,6 +4,7 @@
 //!
 //! Account tests use explicit `AgentAccountsConfig` paths under a tempdir (never
 //! the real `~/.claude` / `~/.codex`), so they are hermetic and parallel-safe.
+#![allow(clippy::unwrap_used)]
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1356,7 +1357,12 @@ exit 0
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    unsafe { std::env::set_var("CURSOR_SDK_SHIM_EXECUTABLE", &shim) };
+    // SAFETY: test-only, and only this test sets this variable. A concurrent getenv from
+    // another test thread is the remaining risk, accepted for this fixture.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("CURSOR_SDK_SHIM_EXECUTABLE", &shim)
+    };
 
     let start = accounts
         .start_login(HarnessId::Cursor)
@@ -1470,7 +1476,12 @@ async fn codex_relogin_revives_the_live_account_and_live_is_removable() {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    unsafe { std::env::set_var("CODEX_EXECUTABLE", &codex) };
+    // SAFETY: test-only, and only this test sets this variable. A concurrent getenv from
+    // another test thread is the remaining risk, accepted for this fixture.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("CODEX_EXECUTABLE", &codex)
+    };
     let fresh_auth = |email: &str, account_id: &str| {
         serde_json::json!({
             "tokens": {

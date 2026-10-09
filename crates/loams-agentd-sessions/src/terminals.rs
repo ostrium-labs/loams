@@ -805,6 +805,7 @@ mod windows_tests {
         }
     }
 
+    #[allow(unsafe_code)]
     async fn process_exists(pid: u32) -> bool {
         use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
         use windows_sys::Win32::Foundation::{ERROR_INVALID_PARAMETER, STILL_ACTIVE};
@@ -814,6 +815,8 @@ mod windows_tests {
 
         // Launching another PowerShell for each poll measures shell startup,
         // not cleanup. Query the OS directly and never treat access errors as exit.
+        // SAFETY: OpenProcess takes no pointers; a null result is handled below.
+        #[allow(unsafe_code)]
         let raw = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
         if raw.is_null() {
             let error = std::io::Error::last_os_error();
@@ -824,8 +827,11 @@ mod windows_tests {
             );
             return false;
         }
+        // SAFETY: raw is a non-null handle OpenProcess just returned, owned by nobody else.
+        #[allow(unsafe_code)]
         let handle = unsafe { OwnedHandle::from_raw_handle(raw) };
         let mut code = 0;
+        // SAFETY: handle is live and code is a valid out-pointer for the call.
         assert_ne!(
             unsafe { GetExitCodeProcess(handle.as_raw_handle(), &mut code) },
             0,

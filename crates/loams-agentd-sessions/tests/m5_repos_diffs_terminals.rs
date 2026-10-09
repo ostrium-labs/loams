@@ -1989,7 +1989,12 @@ async fn rpc_dispatch_for_m5_methods() {
     let tmp = tempfile::tempdir().expect("tempdir");
     // EngineCore's Repos resolves the worktree root from the env; keep test
     // worktrees out of $HOME. (Process-global — this is the only test that sets it.)
-    unsafe { std::env::set_var("LOAMS_DESKTOP_WORKTREES_DIR", tmp.path().join("worktrees")) };
+    // SAFETY: test-only, and only this test sets this variable. A concurrent getenv from
+    // another test thread is the remaining risk, accepted for this fixture.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("LOAMS_DESKTOP_WORKTREES_DIR", tmp.path().join("worktrees"))
+    };
     let core = assemble(&tmp.path().join("data"));
     let client = loams_agentd_rpc::memory_client(core.rpc_service());
 

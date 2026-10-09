@@ -5,9 +5,14 @@
 //! sessions + docs + commands + minimal IPC. Terminals, repos/diffs, uploads, auth,
 //! agent accounts, and the device-room host land in later milestones.
 
-// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
-// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
-#![allow(clippy::doc_lazy_continuation, clippy::too_many_arguments)]
+// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
+// workspace clippy already runs with -D warnings, so this list keeps it green until
+// Tasks 2-4 delete or fix the code and drop it.
+#![allow(
+    clippy::doc_lazy_continuation,
+    clippy::too_many_arguments,
+    missing_debug_implementations
+)]
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -1217,6 +1222,7 @@ struct DeviceIdentityLock {
 }
 
 impl DeviceIdentityLock {
+    #[allow(unsafe_code)]
     fn acquire(data_dir: &Path) -> Result<Self, EngineError> {
         let path = data_dir.join("device-id.lock");
         let mut options = std::fs::OpenOptions::new();
@@ -1258,6 +1264,7 @@ impl DeviceIdentityLock {
         {
             use std::os::unix::io::AsRawFd;
             loop {
+                // SAFETY: flock on a descriptor this function owns; it touches no memory.
                 if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
                     break;
                 }

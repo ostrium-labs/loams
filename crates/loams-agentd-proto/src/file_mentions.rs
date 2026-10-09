@@ -2,6 +2,7 @@
 use std::ops::Range;
 pub const FILE_MENTION_SCHEME: &str = "zeron-file:";
 
+#[derive(Debug)]
 pub struct FileMentionLink {
     pub range: Range<usize>,
     pub basename: String,

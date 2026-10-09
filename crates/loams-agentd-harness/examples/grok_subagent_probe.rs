@@ -3,6 +3,7 @@
 //! transcript end-to-end. Needs a logged-in `grok` on PATH.
 //!
 //!     cargo run -p loams-desktop-harness --example grok_subagent_probe -- /tmp/probe-dir
+#![allow(clippy::unwrap_used)]
 
 use futures::StreamExt;
 use loams_agentd_harness::{AcpHarness, CancellationToken, Harness, RunControls};

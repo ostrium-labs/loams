@@ -14,11 +14,17 @@ use windows_sys::Win32::System::Threading::{
 struct FixtureProcess(OwnedHandle);
 impl Drop for FixtureProcess {
     fn drop(&mut self) {
-        unsafe { TerminateProcess(self.0.as_raw_handle(), 99) };
+        // SAFETY: self.0 is a live process handle this fixture owns.
+        #[allow(unsafe_code)]
+        unsafe {
+            TerminateProcess(self.0.as_raw_handle(), 99)
+        };
     }
 }
 impl FixtureProcess {
+    #[allow(unsafe_code)]
     fn assert_exited(&self) {
+        // SAFETY: self.0 is a live process handle this fixture owns.
         assert_eq!(
             unsafe { WaitForSingleObject(self.0.as_raw_handle(), 5000) },
             WAIT_OBJECT_0
@@ -40,6 +46,9 @@ fn parked_child_helper() {
     if let Ok(handle) = std::env::var("LOAMS_DESKTOP_TEST_INHERITED_EVENT") {
         // Signal only if the parent's sentinel handle accidentally survived the
         // launch allow-list. Handle reuse in this child cannot signal that event.
+        // SAFETY: SetEvent takes no pointers; on a stale or foreign handle value it only fails,
+        // which is the outcome the parent asserts.
+        #[allow(unsafe_code)]
         unsafe {
             windows_sys::Win32::System::Threading::SetEvent(handle.parse::<usize>().unwrap() as _)
         };
@@ -50,6 +59,7 @@ fn parked_child_helper() {
 }
 
 #[tokio::test]
+#[allow(unsafe_code)]
 async fn unrelated_inheritable_handles_are_not_passed_to_agents() {
     use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
     use windows_sys::Win32::System::Threading::CreateEventW;
@@ -58,8 +68,12 @@ async fn unrelated_inheritable_handles_are_not_passed_to_agents() {
         lpSecurityDescriptor: std::ptr::null_mut(),
         bInheritHandle: 1,
     };
+    // SAFETY: security outlives the call and the name is null.
+    #[allow(unsafe_code)]
     let event = unsafe { CreateEventW(&security, 1, 0, std::ptr::null()) };
     assert!(!event.is_null());
+    // SAFETY: event is a non-null handle CreateEventW just returned, owned by nothing else.
+    #[allow(unsafe_code)]
     let event = unsafe { OwnedHandle::from_raw_handle(event) };
     let mut command = parked_command();
     command.env(
@@ -68,6 +82,7 @@ async fn unrelated_inheritable_handles_are_not_passed_to_agents() {
     );
     let mut child = command.spawn().unwrap();
     assert!(child.wait().await.unwrap().success());
+    // SAFETY: event is a live handle this test owns.
     assert_eq!(
         unsafe { WaitForSingleObject(event.as_raw_handle(), 0) },
         WAIT_TIMEOUT
@@ -75,12 +90,14 @@ async fn unrelated_inheritable_handles_are_not_passed_to_agents() {
 }
 
 #[test]
+#[allow(unsafe_code)]
 fn creation_is_already_in_job_and_setup_failure_rolls_back() {
     let mut processes = Vec::new();
     let result = spawn_prepared(&parked_command(), |child| {
         processes.push(FixtureProcess(child.process.try_clone()?));
         processes.push(FixtureProcess(child.escrow.process.try_clone()?));
         let mut member = 0;
+        // SAFETY: both handles are live and member is a valid out-pointer.
         assert_ne!(
             unsafe {
                 IsProcessInJob(
@@ -106,6 +123,7 @@ fn creation_is_already_in_job_and_setup_failure_rolls_back() {
 }
 
 #[test]
+#[allow(unsafe_code)]
 fn ordinary_subprocess_cannot_keep_agent_pipes_open() {
     use std::io::Read;
     let mut command = parked_command();
@@ -124,6 +142,7 @@ fn ordinary_subprocess_cannot_keep_agent_pipes_open() {
             .spawn()?;
         outsider = Some(foreign);
         let raw = child.stdout.as_ref().unwrap().as_raw_handle();
+        // SAFETY: raw is the child's live stdout handle, borrowed only for the clone.
         reader = Some(std::fs::File::from(
             unsafe { std::os::windows::io::BorrowedHandle::borrow_raw(raw) }
                 .try_clone_to_owned()?,
@@ -173,6 +192,7 @@ fn crash_interval_owner_helper() {
 }
 
 #[test]
+#[allow(unsafe_code)]
 fn owner_death_immediately_after_creation_kills_suspended_child() {
     let temp = tempfile::tempdir().unwrap();
     let pid_file = temp.path().join("pid");
@@ -215,8 +235,12 @@ fn owner_death_immediately_after_creation_kills_suspended_child() {
     let children: Vec<_> = pids
         .into_iter()
         .map(|pid| {
+            // SAFETY: OpenProcess takes no pointers; a null result is asserted against.
+            #[allow(unsafe_code)]
             let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, 0, pid) };
             assert!(!handle.is_null());
+            // SAFETY: handle is a non-null handle OpenProcess just returned, owned by nothing
+            // else.
             FixtureProcess(unsafe { OwnedHandle::from_raw_handle(handle) })
         })
         .collect();

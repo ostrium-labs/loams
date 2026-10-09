@@ -10,6 +10,7 @@ mod windows;
 pub use windows::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 #[cfg(unix)]
+#[allow(unsafe_code)]
 pub(crate) fn signal_target(child: &Child) -> Option<i32> {
     let pid = child.id()? as i32;
     // ACP children lead a private group; other harnesses retain pid signaling.

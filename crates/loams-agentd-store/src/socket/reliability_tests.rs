@@ -108,7 +108,8 @@ impl AsyncRead for MeteredIo {
         });
         let result = Pin::new(&mut self.inner).poll_read(cx, &mut chunk);
         let n = chunk.filled().len();
-        // ReadBuf::take initialized and filled this prefix of the original.
+        // SAFETY: ReadBuf::take initialized and filled this prefix of the original.
+        #[allow(unsafe_code)]
         unsafe {
             buf.assume_init(n);
         }

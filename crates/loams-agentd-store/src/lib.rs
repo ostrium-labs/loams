@@ -10,9 +10,10 @@
 //! - [`DocsStore`]: snapshot persistence (the doc IS the outbox — commands + user entries
 //!   flush immediately) and the processed-command ledger with mark-BEFORE-execute semantics.
 
-// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
-// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
-#![allow(clippy::question_mark)]
+// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
+// workspace clippy already runs with -D warnings, so this list keeps it green until
+// Tasks 2-4 delete or fix the code and drop it.
+#![allow(clippy::question_mark, missing_debug_implementations)]
 
 pub mod budget;
 pub mod chat_client;

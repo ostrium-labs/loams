@@ -3,6 +3,7 @@
 //! WebSocket) through the proxy on the viewing device over a real WebRTC pair
 //! to a backend on the hosting device and compares live tasks and RSS
 //! against the warmed-up baseline.
+#![allow(clippy::unwrap_used)]
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use http_body_util::{BodyExt, Full, StreamBody, combinators::UnsyncBoxBody};

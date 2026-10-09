@@ -1,6 +1,7 @@
 //! Production ChatClient + Loro + SQLite against an explicit test edge.
 //! Run through scripts/transport-proxy.py for controlled network conditions.
 //! Usage: transport_live <proxy-base> <cloudflare-origin> <stream|outage|http|catchup|upload>
+#![allow(clippy::unwrap_used)]
 use futures::future::BoxFuture;
 use loams_agentd_store::chat_client::{ChatTransport, RowImportOutcome};
 use loams_agentd_store::{

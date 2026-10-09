@@ -73,9 +73,14 @@ impl<'a> Attributes<'a> {
         Ok(attrs)
     }
 
+    #[allow(unsafe_code)]
     fn new(count: u32) -> io::Result<Self> {
         let mut bytes = 0;
-        unsafe { InitializeProcThreadAttributeList(std::ptr::null_mut(), count, 0, &mut bytes) };
+        // SAFETY: a null list with a size out-pointer only queries the required size.
+        #[allow(unsafe_code)]
+        unsafe {
+            InitializeProcThreadAttributeList(std::ptr::null_mut(), count, 0, &mut bytes)
+        };
         if bytes == 0 {
             return Err(io::Error::last_os_error());
         }
@@ -84,6 +89,7 @@ impl<'a> Attributes<'a> {
             initialized: false,
             _values: std::marker::PhantomData,
         };
+        // SAFETY: attrs owns an allocation of the size the first call reported.
         if unsafe { InitializeProcThreadAttributeList(attrs.ptr(), count, 0, &mut bytes) } == 0 {
             return Err(io::Error::last_os_error());
         }
@@ -92,12 +98,15 @@ impl<'a> Attributes<'a> {
     }
 
     // Private: constructors supply valid values borrowed for the list's lifetime.
+    #[allow(unsafe_code)]
     fn add(
         &mut self,
         attribute: u32,
         value: *const std::ffi::c_void,
         bytes: usize,
     ) -> io::Result<()> {
+        // SAFETY: the list is initialized, and value is borrowed for the list's lifetime (see
+        // the note above).
         if unsafe {
             UpdateProcThreadAttribute(
                 self.ptr(),
@@ -121,7 +130,11 @@ impl<'a> Attributes<'a> {
 impl Drop for Attributes<'_> {
     fn drop(&mut self) {
         if self.initialized {
-            unsafe { DeleteProcThreadAttributeList(self.ptr()) };
+            // SAFETY: the list was initialized and is deleted exactly once, here.
+            #[allow(unsafe_code)]
+            unsafe {
+                DeleteProcThreadAttributeList(self.ptr())
+            };
         }
     }
 }
@@ -133,8 +146,10 @@ impl Job {
         self.0.as_handle()
     }
 
+    #[allow(unsafe_code)]
     pub fn new() -> io::Result<Self> {
         // SAFETY: null security attributes create a non-inheritable, unnamed job.
+        #[allow(unsafe_code)]
         let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if handle.is_null() {
             return Err(io::Error::last_os_error());
@@ -158,6 +173,7 @@ impl Job {
         Ok(job)
     }
 
+    #[allow(unsafe_code)]
     pub fn terminate(&self) -> io::Result<()> {
         // SAFETY: this handle owns only processes assigned to this session.
         if unsafe { TerminateJobObject(self.0.as_raw_handle(), 1) } == 0 {

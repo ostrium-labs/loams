@@ -134,6 +134,7 @@ struct InstallFileLock {
 }
 
 impl InstallFileLock {
+    #[allow(unsafe_code)]
     fn acquire(root: &Path) -> Result<Self, String> {
         let path = root.join("install.lock");
         let file = OpenOptions::new()
@@ -148,6 +149,7 @@ impl InstallFileLock {
         {
             use std::os::fd::AsRawFd as _;
             loop {
+                // SAFETY: flock on a descriptor this lock owns; it touches no memory.
                 let result =
                     unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
                 if result == 0 {
@@ -169,10 +171,12 @@ impl InstallFileLock {
 }
 
 impl Drop for InstallFileLock {
+    #[allow(unsafe_code)]
     fn drop(&mut self) {
         #[cfg(unix)]
         {
             use std::os::fd::AsRawFd as _;
+            // SAFETY: flock on a descriptor this lock owns; it touches no memory.
             unsafe {
                 libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
             }
@@ -2177,7 +2181,10 @@ struct UpdateProcessGroup(libc::pid_t);
 impl Drop for UpdateProcessGroup {
     fn drop(&mut self) {
         // SAFETY: spawn creates a private group whose ID is this child's PID.
-        unsafe { libc::kill(-self.0, libc::SIGKILL) };
+        #[allow(unsafe_code)]
+        unsafe {
+            libc::kill(-self.0, libc::SIGKILL)
+        };
     }
 }
 
@@ -2356,6 +2363,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    #[allow(unsafe_code)]
     async fn updater_timeout_stops_descendants_before_returning() {
         for leader_exits in [false, true] {
             let temp = tempfile::tempdir().unwrap();
@@ -2384,6 +2392,7 @@ mod tests {
                 .parse()
                 .unwrap();
             // The direct child must already be reaped, not merely signalled.
+            // SAFETY: signal 0 only probes whether the pid exists; it touches no memory.
             assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
             tokio::time::sleep(Duration::from_millis(500)).await;
             assert!(

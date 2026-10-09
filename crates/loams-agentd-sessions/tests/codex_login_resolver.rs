@@ -26,6 +26,7 @@ async fn codex_login_resolves_override_and_adds_its_directory_to_child_path() {
     std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     // SAFETY: this binary has one test and no other environment users yet.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("CODEX_EXECUTABLE", &exe);
         std::env::set_var("PATH", "/usr/bin:/bin");

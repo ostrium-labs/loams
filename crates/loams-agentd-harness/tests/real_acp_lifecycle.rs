@@ -2,6 +2,7 @@
 //! fixtures/pi-slow-model.ts loaded as a Pi extension (35s delay by default).
 //! PI_EXECUTABLE can select an isolated Pi installation.
 //! cargo test -p loams-desktop-harness --test real_acp_lifecycle -- --ignored --nocapture
+#![allow(clippy::unwrap_used)]
 
 use futures::StreamExt;
 use loams_agentd_harness::{CancellationToken, Harness, RunControls, SteerMessage};

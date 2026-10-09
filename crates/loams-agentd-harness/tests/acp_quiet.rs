@@ -2,6 +2,7 @@
 //! The retired env knob stays set so reintroducing its old behavior fails fast.
 
 #![cfg(unix)]
+#![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
 use std::sync::Once;
@@ -22,7 +23,10 @@ fn init_env() {
     ONCE.call_once(|| {
         // SAFETY: set before any harness runs in this test process; all
         // tests in this binary share the one value.
-        unsafe { std::env::set_var("LOAMS_DESKTOP_ACP_QUIET_SETTLE_MS", QUIET_MS.to_string()) };
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("LOAMS_DESKTOP_ACP_QUIET_SETTLE_MS", QUIET_MS.to_string())
+        };
     });
 }
 

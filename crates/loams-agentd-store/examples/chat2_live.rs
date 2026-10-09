@@ -8,6 +8,7 @@
 //!   cargo run -p loams-desktop-sync --example chat2_live -- <baseUrl> <chatId> <token> <device>
 //!
 //! Prints a single JSON result line prefixed RESULT: for the driver to parse.
+#![allow(clippy::unwrap_used)]
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 

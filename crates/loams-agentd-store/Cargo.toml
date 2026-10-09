@@ -2,6 +2,7 @@
 name = "loams-agentd-store"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license = "MIT"
 publish = false
 
@@ -36,3 +37,16 @@ loams-agentd-proto.workspace = true
 tempfile.workspace = true
 # `start_paused` virtual-clock tests (the 2026-07-30 sync-stall regressions).
 tokio = { workspace = true, features = ["test-util"] }
+
+# The workspace policy, except `unsafe_code` is `deny` rather than `forbid`: this crate
+# has audited FFI and process sites, each under `#[allow(unsafe_code)]` with a SAFETY
+# comment (plan DD1 ruling T1-13). Cargo cannot combine `workspace = true` with an
+# override, so the rest of `[workspace.lints]` is repeated here; keep them in step.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

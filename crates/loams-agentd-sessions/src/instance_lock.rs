@@ -30,6 +30,8 @@ impl Drop for InstanceLock {
         // Release the shared open-file-description lock explicitly instead of
         // waiting for every inherited descriptor to close.
         loop {
+            // SAFETY: flock on a descriptor this lock owns; it touches no memory.
+            #[allow(unsafe_code)]
             let rc = unsafe { libc::flock(self._file.as_raw_fd(), libc::LOCK_UN) };
             if rc == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
                 break;
@@ -62,6 +64,8 @@ impl InstanceLock {
             // well within the budget.
             let mut retries = 40u32; // × 25ms = 1s budget
             loop {
+                // SAFETY: flock on a descriptor this function owns; it touches no memory.
+                #[allow(unsafe_code)]
                 let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
                 if rc == 0 {
                     break;
@@ -138,11 +142,17 @@ impl InstanceLock {
                 .truncate(false)
                 .open(&path)
                 .ok()?;
+            // SAFETY: flock on a descriptor this function owns; it touches no memory.
+            #[allow(unsafe_code)]
             let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
             if rc == 0 {
                 // We took it: nothing is running. Closing the fd releases it, but
                 // unlock explicitly so the window is as small as possible.
-                unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+                // SAFETY: flock on a descriptor this function owns; it touches no memory.
+                #[allow(unsafe_code)]
+                unsafe {
+                    libc::flock(file.as_raw_fd(), libc::LOCK_UN)
+                };
                 return None;
             }
             let pid = std::fs::read_to_string(&path).unwrap_or_default();

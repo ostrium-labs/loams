@@ -3,6 +3,7 @@
 //! `spaceId`) stores cwd `~`, spawns its run from the host's REAL home dir,
 //! and never mints a space row — the two failure modes of pre-#40 engines
 //! (a phantom project at root, and the run dying on the literal `~`).
+#![allow(clippy::unwrap_used)]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

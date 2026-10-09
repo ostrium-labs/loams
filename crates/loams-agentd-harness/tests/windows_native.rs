@@ -163,7 +163,9 @@ async fn invalid_launch_inputs_fail_without_starting_a_child() {
     bad_cwd.current_dir(dir.path().join("missing"));
     assert!(bad_cwd.spawn().is_err());
 }
+// SAFETY: these declarations match kernel32's signatures.
 #[link(name = "kernel32")]
+#[allow(unsafe_code)]
 unsafe extern "system" {
     fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut std::ffi::c_void;
     fn WaitForSingleObject(handle: *mut std::ffi::c_void, milliseconds: u32) -> u32;
@@ -171,6 +173,8 @@ unsafe extern "system" {
 }
 impl ProcessHandle {
     fn open(pid: u32) -> Self {
+        // SAFETY: OpenProcess takes no pointers; a null result is asserted against.
+        #[allow(unsafe_code)]
         let handle = unsafe { OpenProcess(0x00100000, 0, pid) }; // SYNCHRONIZE
         assert!(
             !handle.is_null(),
@@ -179,8 +183,10 @@ impl ProcessHandle {
         );
         Self(handle)
     }
+    #[allow(unsafe_code)]
     async fn assert_exited(&self) {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        // SAFETY: self.0 is a live process handle this value owns.
         while unsafe { WaitForSingleObject(self.0, 0) } != 0 {
             assert!(
                 tokio::time::Instant::now() < deadline,
@@ -191,7 +197,9 @@ impl ProcessHandle {
     }
 }
 impl Drop for ProcessHandle {
+    #[allow(unsafe_code)]
     fn drop(&mut self) {
+        // SAFETY: self.0 is a live handle this value owns, closed exactly once, here.
         unsafe {
             CloseHandle(self.0);
         }
@@ -478,7 +486,10 @@ async fn batch_overrides_launch_through_cmd() {
         // The harness owns its child's environment; reach the helper through
         // the inherited process env. No other test in this binary reads it.
         // SAFETY: written before any child exists in this iteration.
-        unsafe { std::env::set_var("LOAMS_DESKTOP_TEST_BATCH_ARGS_FILE", &received) };
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("LOAMS_DESKTOP_TEST_BATCH_ARGS_FILE", &received)
+        };
         let (_steer, steering) = mpsc::channel(1);
         let controls = RunControls {
             execution_lease: None,
@@ -541,7 +552,10 @@ async fn batch_overrides_launch_through_cmd() {
             harness.display_name()
         );
         // SAFETY: no other test in this binary reads this variable.
-        unsafe { std::env::remove_var("LOAMS_DESKTOP_TEST_BATCH_ARGS_FILE") };
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::remove_var("LOAMS_DESKTOP_TEST_BATCH_ARGS_FILE")
+        };
     }
 }
 

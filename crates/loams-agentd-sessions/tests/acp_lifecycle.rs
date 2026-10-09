@@ -23,6 +23,7 @@ async fn wait_for(mut condition: impl FnMut() -> bool) {
 async fn quiet_acp_prompt_stays_working_until_response() {
     // SAFETY: this is the only test in this binary, on a current-thread runtime,
     // and no engine or harness tasks have started yet.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("LOAMS_DESKTOP_TURN_QUIESCE_MS", "100");
     }

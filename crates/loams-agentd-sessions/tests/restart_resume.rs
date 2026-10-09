@@ -12,6 +12,7 @@
 //!   down hard never tombstones the stored session id;
 //! - a steer with no live run after a restart dispatches as a new turn that
 //!   still resumes the prior conversation.
+#![allow(clippy::unwrap_used)]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

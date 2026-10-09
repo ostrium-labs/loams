@@ -26,7 +26,10 @@ mod imp {
 
     // nw_path_monitor_t / nw_path_t / dispatch_queue_t are ObjC objects;
     // opaque pointers are all this bridge needs.
+    // SAFETY: these declarations match the Network framework's C signatures; the objects are
+    // only passed back to it as opaque pointers.
     #[link(name = "Network", kind = "framework")]
+    #[allow(unsafe_code)]
     unsafe extern "C" {
         fn nw_path_monitor_create() -> *mut c_void;
         fn nw_path_monitor_set_update_handler(
@@ -38,6 +41,8 @@ mod imp {
         fn nw_path_get_status(path: *mut c_void) -> i32;
     }
 
+    // SAFETY: this declaration matches libdispatch's C signature.
+    #[allow(unsafe_code)]
     unsafe extern "C" {
         fn dispatch_queue_create(label: *const c_char, attr: *mut c_void) -> *mut c_void;
     }
@@ -47,7 +52,10 @@ mod imp {
     /// monitor can only ever make us dial too much, never go silent.
     const NW_PATH_STATUS_UNSATISFIED: i32 = 2;
 
+    #[allow(unsafe_code)]
     pub(super) fn start() {
+        // SAFETY: the monitor and queue are checked for null before use and are owned by this
+        // bridge for the life of the process; the handler block is retained by the monitor.
         unsafe {
             let monitor = nw_path_monitor_create();
             if monitor.is_null() {
@@ -55,6 +63,9 @@ mod imp {
                 return;
             }
             let handler = RcBlock::new(|path: *mut c_void| {
+                // SAFETY: the monitor passes a valid nw_path_t for the duration of the
+                // callback.
+                #[allow(unsafe_code)]
                 let status = unsafe { nw_path_get_status(path) };
                 let online = status != NW_PATH_STATUS_UNSATISFIED;
                 crate::wake::set_path_online(online);

@@ -19,9 +19,9 @@ struct Saved {
 }
 
 fn location(root: &Path, harness: &dyn Harness, context: &ModelContext) -> PathBuf {
-    let id = serde_json::to_value(harness.id()).unwrap();
+    let id = serde_json::to_value(harness.id()).expect("HarnessId serializes");
     root.join("model-catalogs")
-        .join(id.as_str().unwrap())
+        .join(id.as_str().expect("HarnessId serializes as a string"))
         .join(format!("{}.json", context.hash))
 }
 fn read(path: &Path, context: &ModelContext) -> Option<Vec<Model>> {
@@ -35,7 +35,9 @@ fn save(path: &Path, context: &ModelContext, models: &[Model]) -> std::io::Resul
     if models.is_empty() {
         return Ok(());
     }
-    std::fs::create_dir_all(path.parent().unwrap())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let bytes = serde_json::to_vec(&Saved {
         schema_version: 1,
         fetched_at: SystemTime::now()

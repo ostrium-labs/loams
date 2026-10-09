@@ -1,6 +1,7 @@
 //! Catalog refresh must survive large responses, account changes, and failed
 //! probes without pinning a stale catalog for the lifetime of the engine.
 #![cfg(unix)]
+#![allow(clippy::unwrap_used)]
 use loams_agentd_harness::{AcpHarness, Harness};
 use std::{os::unix::fs::PermissionsExt, path::Path};
 

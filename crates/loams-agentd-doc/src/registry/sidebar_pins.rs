@@ -98,7 +98,10 @@ impl RegistryDoc {
         let pins = self.ordered_sidebar_pins();
         let mut next = current.clone();
         change.project(&mut next);
-        let index = next.iter().position(|v| v == id).unwrap();
+        let index = next
+            .iter()
+            .position(|v| v == id)
+            .expect("projecting a pin change keeps its id");
         let key_for = |id: &String| {
             pins.iter()
                 .find(|(pin, _)| pin == id)

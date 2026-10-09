@@ -14,8 +14,9 @@
 //! first uncorrelated idle), manufacturing done-status bugs the native
 //! wires don't have (decision record: docs/research/acp.md).
 
-// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
-// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
+// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
+// workspace clippy already runs with -D warnings, so this list keeps it green until
+// Tasks 2-4 delete or fix the code and drop it.
 #![allow(
     clippy::collapsible_if,
     clippy::type_complexity,
@@ -26,7 +27,9 @@
     clippy::map_entry,
     clippy::field_reassign_with_default,
     clippy::manual_pattern_char_comparison,
-    clippy::unnecessary_unwrap
+    clippy::unnecessary_unwrap,
+    clippy::unwrap_used,
+    missing_debug_implementations
 )]
 
 use async_trait::async_trait;
@@ -455,6 +458,7 @@ pub(crate) enum Signal {
 }
 
 #[cfg(unix)]
+#[allow(unsafe_code)]
 pub(crate) fn send_signal(pid: &i32, signal: Signal) {
     let sig = match signal {
         Signal::Term => libc::SIGTERM,

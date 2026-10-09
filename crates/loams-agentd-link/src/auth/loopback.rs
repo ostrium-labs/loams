@@ -13,6 +13,7 @@ const PAGE: &str = "<!doctype html><meta charset=utf-8><title>Loams</title>\
 <p>You can close this tab and return to Loams Desktop.</p></body>";
 
 /// A bound loopback listener awaiting the authorization callback.
+#[derive(Debug)]
 pub struct Loopback {
     listener: TcpListener,
     /// The `redirect_uri` to register in the authorization request.

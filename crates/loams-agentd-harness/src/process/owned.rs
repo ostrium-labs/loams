@@ -31,6 +31,7 @@ impl Child {
         }
     }
 
+    #[allow(unsafe_code)]
     pub(crate) async fn shutdown(&mut self, grace: std::time::Duration) {
         #[cfg(unix)]
         if let Some(group) = self.group.take() {

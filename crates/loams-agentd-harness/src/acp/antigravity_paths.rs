@@ -127,6 +127,9 @@ pub(super) fn passwd_entry(name: Option<&str>) -> Result<(String, PathBuf), Harn
         let mut entry = std::mem::MaybeUninit::<libc::passwd>::uninit();
         let mut result = std::ptr::null_mut();
         // reentrant lookups keep other auth tasks from overwriting the returned strings.
+        // SAFETY: the reentrant lookup writes only into entry and buffer, whose real length is
+        // passed, and name is a live CString.
+        #[allow(unsafe_code)]
         let status = unsafe {
             match &name {
                 Some(name) => libc::getpwnam_r(
@@ -154,7 +157,8 @@ pub(super) fn passwd_entry(name: Option<&str>) -> Result<(String, PathBuf), Harn
                 "cannot resolve GEMINI_HOME through the user database; set an absolute path".into(),
             ));
         }
-        // a successful lookup initializes entry; its strings live in buffer until copied.
+        // SAFETY: a successful lookup initializes entry; its strings live in buffer until copied.
+        #[allow(unsafe_code)]
         let (username, home) = unsafe {
             let entry = entry.assume_init();
             if entry.pw_name.is_null() || entry.pw_dir.is_null() {

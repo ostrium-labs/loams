@@ -36,6 +36,7 @@ pub struct ToolDef {
     pub input_schema: Value,
 }
 
+#[derive(Debug)]
 pub struct Tools {
     loams_desktop: Arc<LoamsDesktop>,
 }
@@ -202,7 +203,7 @@ fn catalog() -> Vec<ToolDef> {
         let item_schema = tools
             .iter()
             .find(|tool| tool.name == single)
-            .unwrap()
+            .expect("each batch tool names a registered single tool")
             .input_schema
             .clone();
         tools.push(ToolDef {

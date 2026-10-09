@@ -776,6 +776,7 @@ fn running_command_lines() -> Option<Vec<String>> {
 
 /// the image path of every process this user can inspect.
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn running_command_lines() -> Option<Vec<String>> {
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{

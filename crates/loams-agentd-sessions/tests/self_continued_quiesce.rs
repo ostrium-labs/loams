@@ -11,6 +11,7 @@
 //! This file exists separately from `turn_quiesce.rs` because the env knobs
 //! are process-global: here the NORMAL window is set far beyond the test
 //! horizon, so a fast park can only have come through the short path.
+#![allow(clippy::unwrap_used)]
 
 use std::sync::{Arc, Once};
 use std::time::Duration;
@@ -34,6 +35,7 @@ const QUIESCE_MS: u64 = 600_000;
 /// Short window under test.
 const SELF_QUIESCE_MS: u64 = 400;
 
+#[allow(unsafe_code)]
 fn init_env() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {

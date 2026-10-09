@@ -1,5 +1,6 @@
-// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
-// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
+// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
+// workspace clippy already runs with -D warnings, so this list keeps it green until
+// Tasks 2-4 delete or fix the code and drop it.
 #![allow(clippy::while_let_loop)]
 use loams_agentd_preview::mux::{self, BoxIo, Connector};
 use std::{

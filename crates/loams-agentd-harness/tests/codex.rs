@@ -37,6 +37,7 @@ fn harness() -> CodexHarness {
 
 #[cfg(unix)]
 #[tokio::test]
+#[allow(unsafe_code)]
 async fn execution_lease_outlives_dropped_run_and_title_streams_until_child_is_reaped() {
     for title_only in [false, true] {
         let temp = tempfile::tempdir().unwrap();

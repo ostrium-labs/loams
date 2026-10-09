@@ -2,6 +2,7 @@
 name = "loams-agentd-rpc"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license = "MIT"
 publish = false
 
@@ -24,3 +25,6 @@ loams-agentd-doc.workspace = true
 
 # Deterministic stalled-transport deadlines.
 tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

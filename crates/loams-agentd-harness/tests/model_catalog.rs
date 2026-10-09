@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::unwrap_used)]
 use loams_agentd_harness::{AcpHarness, CodexHarness, Harness};
 use std::{path::Path, sync::Arc};
 
@@ -102,6 +103,7 @@ async fn every_native_catalog_retains_last_good_and_cold_failure_stays_an_error(
 }
 
 #[tokio::test]
+#[allow(unsafe_code)]
 async fn codex_empty_catalogs_retire_children_and_next_request_spawns_fresh() {
     let dir = tempfile::tempdir().unwrap();
     let binary = binary(dir.path());
@@ -121,6 +123,7 @@ async fn codex_empty_catalogs_retire_children_and_next_request_spawns_fresh() {
             .collect();
         assert_eq!(ids.len(), expected);
         for pid in ids {
+            // SAFETY: signal 0 only probes whether the pid exists; it touches no memory.
             assert_eq!(
                 unsafe { libc::kill(pid, 0) },
                 -1,

@@ -2,6 +2,7 @@
 //! `tests/fixtures/fake-acp.sh` (no real `grok` binary involved).
 
 #![cfg(unix)]
+#![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
 use std::time::Duration;

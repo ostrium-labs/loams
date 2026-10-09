@@ -134,6 +134,16 @@ pub struct EvaluationContext<'a> {
     pub turn_is_past: &'a dyn Fn(&str) -> bool,
 }
 
+impl std::fmt::Debug for EvaluationContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EvaluationContext")
+            .field("now_ms", &self.now_ms)
+            .field("entries", &self.entries.len())
+            .field("current_turn_id", &self.current_turn_id)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Rule 3 — pure evaluation of a single pending command.
 pub fn evaluate_command(
     entry: &SessionCommandEntry,

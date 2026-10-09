@@ -8,8 +8,9 @@
 //! LoroList of part maps whose text bodies live in **LoroText** — streaming appends RLE-merge at
 //! ~1.03x oplog overhead, whereas rewriting whole part values costs ~125x.
 
-// Lints the zeron fork never ran clippy against; plan DD1 ruling T1-12. Tasks 2-4
-// delete or fix the code and then drop this list (Task 4 makes the agentd job -D warnings).
+// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
+// workspace clippy already runs with -D warnings, so this list keeps it green until
+// Tasks 2-4 delete or fix the code and drop it.
 #![allow(clippy::large_enum_variant, clippy::explicit_counter_loop)]
 
 pub mod commands;

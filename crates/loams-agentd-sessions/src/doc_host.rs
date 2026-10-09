@@ -3264,17 +3264,17 @@ impl DocHost {
         let mut oldest = 0i64;
         for h in handles.values() {
             if h.messages_tx.receiver_count() > 0 || h.queue_tx.receiver_count() > 0 {
-                reasons["views"] = (reasons["views"].as_u64().unwrap() + 1).into();
+                reasons["views"] = (reasons["views"].as_u64().unwrap_or(0) + 1).into();
             }
             if h.writers.load(Ordering::Acquire) > 0 {
-                reasons["writers"] = (reasons["writers"].as_u64().unwrap() + 1).into();
+                reasons["writers"] = (reasons["writers"].as_u64().unwrap_or(0) + 1).into();
             }
             if h.publication_failed.load(Ordering::Acquire) {
                 reasons["storageFailures"] =
-                    (reasons["storageFailures"].as_u64().unwrap() + 1).into();
+                    (reasons["storageFailures"].as_u64().unwrap_or(0) + 1).into();
             }
             if h.sync_started.load(Ordering::Acquire) {
-                reasons["connections"] = (reasons["connections"].as_u64().unwrap() + 1).into();
+                reasons["connections"] = (reasons["connections"].as_u64().unwrap_or(0) + 1).into();
             } else if h.sync_requested.load(Ordering::Acquire) {
                 waiting += 1;
                 oldest = oldest.max(now_ms() - h.last_access.load(Ordering::Relaxed));
@@ -3286,7 +3286,9 @@ impl DocHost {
             .map(|fds| fds.count());
         #[cfg(not(target_os = "linux"))]
         let open_fds: Option<usize> = None;
+        // SAFETY: getrlimit writes only into the zero-initialized rlimit it is given.
         #[cfg(unix)]
+        #[allow(unsafe_code)]
         let fd_limit = unsafe {
             let mut limit: libc::rlimit = std::mem::zeroed();
             (libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) == 0).then_some(limit.rlim_cur as u64)

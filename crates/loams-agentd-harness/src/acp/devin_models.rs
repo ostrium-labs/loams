@@ -731,6 +731,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    #[allow(unsafe_code)]
     async fn timed_out_catalog_probe_is_reaped_before_returning() {
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
@@ -750,6 +751,7 @@ mod tests {
             .trim()
             .parse()
             .unwrap();
+        // SAFETY: signal 0 only probes whether the pid exists; it touches no memory.
         assert_eq!(
             unsafe { libc::kill(pid, 0) },
             -1,

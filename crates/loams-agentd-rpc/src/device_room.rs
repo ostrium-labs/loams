@@ -15,6 +15,9 @@
 //! string-frame connection feeding the existing [`serve_connection`] seam, so every RPC
 //! handler works through the relay untouched (the port of loams-desktop's `device-room-host.ts`).
 
+// Edge transport that Task 2 deletes (plan DD1 T0-2); not worth Debug impls first.
+#![allow(missing_debug_implementations)]
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};

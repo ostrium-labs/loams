@@ -598,6 +598,7 @@ fn same_generated_file(a: &std::fs::Metadata, b: &std::fs::Metadata) -> bool {
 /// Walk canonical descendants relative to a pinned directory descriptor. A
 /// concurrent directory/symlink replacement cannot redirect the source open.
 #[cfg(unix)]
+#[allow(unsafe_code)]
 fn open_generated_file(
     root: &Path,
     relative: &Path,
@@ -627,10 +628,12 @@ fn open_generated_file(
             };
         // SAFETY: a live directory fd and a NUL-terminated component; ownership
         // of the returned fd transfers exactly once into File.
+        #[allow(unsafe_code)]
         let fd = unsafe { libc::openat(file.as_raw_fd(), name.as_ptr(), flags) };
         if fd < 0 {
             return Err(std::io::Error::last_os_error());
         }
+        // SAFETY: fd was just returned by openat and is owned by nothing else.
         file = unsafe { std::fs::File::from_raw_fd(fd) };
     }
     Ok((file, Vec::new()))

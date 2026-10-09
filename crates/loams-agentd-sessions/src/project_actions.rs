@@ -568,6 +568,7 @@ fn open_project_file(path: &Path) -> std::io::Result<std::fs::File> {
     open_regular_project_file(path)
 }
 
+#[allow(unsafe_code)]
 fn open_regular_project_file(path: &Path) -> std::io::Result<std::fs::File> {
     let invalid = || std::io::Error::other("expected a regular file");
     let mut options = std::fs::OpenOptions::new();
@@ -1003,6 +1004,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    #[allow(unsafe_code)]
     fn project_file_special_files_do_not_block() {
         const CHILD_ENV: &str = "LOAMS_DESKTOP_TEST_PROJECT_FILE_SPECIAL_FILES";
         if std::env::var_os(CHILD_ENV).is_some() {

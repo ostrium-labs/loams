@@ -31,6 +31,7 @@ pub fn doc_epoch(doc: &SessionDoc) -> u32 {
 
 /// A completed rebuild: the thin doc plus everything it stripped out (owed
 /// to the sidecar) and the copy accounting.
+#[derive(Debug)]
 pub struct ThinRebuild {
     pub doc: SessionDoc,
     /// Full outputs/diffs stripped from old fat parts — upload to the A2

@@ -44,12 +44,28 @@ pub struct RpcClient {
     reader: tokio::task::JoinHandle<()>,
 }
 
+impl std::fmt::Debug for RpcClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RpcClient")
+            .field("next_id", &self.next_id)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Owned stream receiver whose drop immediately cancels the server task.
 pub struct RpcSubscription {
     id: u64,
     items: mpsc::Receiver<serde_json::Value>,
     out: mpsc::Sender<String>,
     shared: Arc<Shared>,
+}
+
+impl std::fmt::Debug for RpcSubscription {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RpcSubscription")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
 }
 
 impl RpcSubscription {

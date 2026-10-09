@@ -144,6 +144,8 @@ fn linux_clock() -> (u64, u64) {
             })
         })
         .unwrap_or(0);
+    // SAFETY: sysconf only reads a process-wide constant; it takes no pointers.
+    #[allow(unsafe_code)]
     let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) }.max(1) as u64;
     (boot, ticks)
 }
@@ -193,6 +195,8 @@ pub fn listeners() -> Vec<Listener> {
         }
     }
     let (boot, ticks) = linux_clock();
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    #[allow(unsafe_code)]
     let uid = unsafe { libc::geteuid() };
     let mut result = Vec::new();
     let mut parents = HashMap::new();
@@ -330,6 +334,8 @@ pub fn same_process(pid: u32, started_at: u64) -> bool {
 #[cfg(target_os = "macos")]
 pub fn listeners() -> Vec<Listener> {
     use std::process::Command;
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    #[allow(unsafe_code)]
     let uid = unsafe { libc::geteuid() }.to_string();
     let fields = |arguments: &[&str]| -> Vec<(u32, String)> {
         let Ok(output) = Command::new("/usr/sbin/lsof").args(arguments).output() else {

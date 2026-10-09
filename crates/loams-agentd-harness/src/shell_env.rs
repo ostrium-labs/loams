@@ -101,6 +101,7 @@ mod unix {
         })
     }
 
+    #[allow(unsafe_code)]
     fn passwd_shell() -> Option<PathBuf> {
         // SAFETY: getpwuid's static buffer is only read here, and callers are
         // serialized through the OnceLock init above.

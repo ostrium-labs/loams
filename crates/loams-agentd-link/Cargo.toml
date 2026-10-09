@@ -3,6 +3,7 @@ name = "loams-agentd-link"
 description = "Loams integration for the desktop fork: Connect-RPC client for a local loams server (with a mock mode), Authentik OIDC sign-in, and the Loams Bot A2A client and ACP shim. No GPUI dependency, so it builds and tests fast."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license = "Apache-2.0"
 publish = false
 
@@ -33,3 +34,6 @@ async-trait.workspace = true
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -316,6 +316,7 @@ fn image_part(
 }
 
 /// A session doc handle: typed access over a LoroDoc with the schema above.
+#[derive(Debug)]
 pub struct SessionDoc {
     doc: LoroDoc,
 }
@@ -1118,6 +1119,7 @@ pub fn join_continuation_entries(entries: Vec<SessionMessageEntry>) -> Vec<Sessi
 ///
 /// Invariant relied upon: the fold only ever APPENDS parts or grows the trailing text; earlier
 /// text never mutates. Tool/input parts may update fields in place.
+#[derive(Debug)]
 pub struct SegmentWriter<'a> {
     doc: &'a SessionDoc,
     /// Index of this entry in the `messages` list.

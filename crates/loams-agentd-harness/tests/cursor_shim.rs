@@ -1,5 +1,6 @@
 //! Execute the production JavaScript shim with a synthetic SDK. A shell shim
 //! cannot catch Node dropping buffered stdout during process.exit().
+#![allow(clippy::unwrap_used)]
 use std::process::Stdio;
 
 async fn run_shim(sdk: &str, mode: &str) -> std::process::Output {

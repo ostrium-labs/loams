@@ -110,6 +110,14 @@ pub struct LoamsDesktop {
     rpc: Mutex<Option<Arc<RpcClient>>>,
 }
 
+impl std::fmt::Debug for LoamsDesktop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoamsDesktop")
+            .field("url", &self.url)
+            .finish_non_exhaustive()
+    }
+}
+
 impl LoamsDesktop {
     /// Lazy dialer: nothing connects until the first tool call, so `loams-desktop
     /// mcp` starts (and answers `initialize`) even before the engine is up.

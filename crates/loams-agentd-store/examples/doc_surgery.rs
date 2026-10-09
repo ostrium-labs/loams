@@ -4,6 +4,7 @@
 //!   inspect-workspace <data_dir> <chat_id>
 //!   inspect-chat      <data_dir> <chat_id>
 //!   cut-chat          <data_dir> <chat_id> <from_index>
+#![allow(clippy::unwrap_used)]
 use loams_agentd_doc::SessionDoc;
 use loams_agentd_store::DocsStore;
 use loro::{LoroDoc, ToJson};

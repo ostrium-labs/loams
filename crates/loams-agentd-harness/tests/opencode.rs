@@ -5,6 +5,7 @@
 //! `/provider`, `/command`, `/global/event`) and hands the TEST full control
 //! of bus timing via `emit()` — the premature-done class is exactly about
 //! what happens between events, so the fixtures must own the clock.
+#![allow(clippy::unwrap_used)]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

@@ -16,6 +16,7 @@
 //! (fold it, show Working), and the quiesce watchdog settles any turn whose
 //! stream goes silent after completed output with nothing in flight —
 //! without ending the run, so a false trip costs a status dip, not content.
+#![allow(clippy::unwrap_used)]
 
 use std::sync::{Arc, Once};
 use std::time::Duration;
@@ -43,7 +44,10 @@ fn init_quiesce_env() {
     ONCE.call_once(|| {
         // SAFETY: called before any engine (and thus any reader of the var)
         // exists in this test process; all tests share the one value.
-        unsafe { std::env::set_var("LOAMS_DESKTOP_TURN_QUIESCE_MS", QUIESCE_MS.to_string()) };
+        #[allow(unsafe_code)]
+        unsafe {
+            std::env::set_var("LOAMS_DESKTOP_TURN_QUIESCE_MS", QUIESCE_MS.to_string())
+        };
     });
 }
 

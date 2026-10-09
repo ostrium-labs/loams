@@ -5,6 +5,7 @@
 //! own test binary with no parallel siblings.
 
 #![cfg(unix)]
+#![allow(clippy::unwrap_used)]
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -87,6 +88,7 @@ printf '%s\n' '[{"number":90,"title":"Login shell pull request","url":"https://g
     // login PATH. Keeping the direct PATH isolated makes this deterministic
     // even on systems that install the real GitHub CLI in /usr/bin.
     // SAFETY: single-test binary — nothing else reads env concurrently.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("SHELL", &fake_shell);
         std::env::set_var("HOME", dir.path());

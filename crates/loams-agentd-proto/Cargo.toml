@@ -2,6 +2,7 @@
 name = "loams-agentd-proto"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license = "MIT"
 publish = false
 
@@ -11,3 +12,6 @@ serde_json.workspace = true
 uuid = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 pulldown-cmark.workspace = true
+
+[lints]
+workspace = true

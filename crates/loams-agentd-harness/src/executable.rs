@@ -218,7 +218,10 @@ pub fn binary_version(path: &Path) -> Option<semver::Version> {
                 }
             }
         };
+        // SAFETY: the child leads its own process group (spawned with process_group(0)), so the
+        // negative pid signals only that group.
         #[cfg(unix)]
+        #[allow(unsafe_code)]
         unsafe {
             libc::kill(-(child.id() as i32), libc::SIGKILL);
         }

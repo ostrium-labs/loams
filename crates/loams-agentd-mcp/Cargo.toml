@@ -2,6 +2,7 @@
 name = "loams-agentd-mcp"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license = "MIT"
 publish = false
 
@@ -18,3 +19,6 @@ uuid = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 async-trait.workspace = true
 futures.workspace = true
+
+[lints]
+workspace = true

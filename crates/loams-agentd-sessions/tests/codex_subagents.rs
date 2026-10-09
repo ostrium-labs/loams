@@ -1,5 +1,6 @@
 //! Actual CodexHarness JSON-RPC decoding through the engine's document writer.
 //! Fixtures run offline; no installed agent or model account is involved.
+#![allow(clippy::unwrap_used)]
 
 use std::path::Path;
 use std::sync::Arc;

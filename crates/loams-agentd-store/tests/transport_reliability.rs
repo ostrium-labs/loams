@@ -1,6 +1,7 @@
 //! Real TCP/WebSocket impairment test. All listeners are loopback-only.
 //! This models delayed bytes, a temporary blackout and a connection reset;
 //! it does not claim to reproduce TCP packet loss or an airline network.
+#![allow(clippy::unwrap_used)]
 
 use loams_agentd_doc::RegistryDoc;
 use loams_agentd_store::{RegistryClient, registry::mock_server::MockRegistryServer};

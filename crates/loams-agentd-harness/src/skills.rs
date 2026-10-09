@@ -479,6 +479,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    #[allow(unsafe_code)]
     fn discovery_skips_special_files_without_blocking() {
         const CHILD: &str = "LOAMS_DESKTOP_SKILL_SPECIAL_FILE_TEST";
         if std::env::var_os(CHILD).is_none() {
@@ -513,6 +514,7 @@ mod tests {
         symlink(valid, root.join("linked.md")).unwrap();
         let fifo = root.join("pipe.md");
         let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: name is a NUL-terminated CString that outlives the call.
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         symlink(fifo, root.join("pipe-link.md")).unwrap();
         symlink("/dev/zero", root.join("device.md")).unwrap();

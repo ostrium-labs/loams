@@ -317,7 +317,11 @@ fn move_blocking(
     let updated = std::fs::symlink_metadata(&target).unwrap_or(metadata);
     Ok(WorkspaceEntry {
         path: destination.wire_path(),
-        name: target.file_name().unwrap().to_string_lossy().into_owned(),
+        name: target
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
         kind: request.expected_kind,
         size: updated.is_file().then_some(updated.len()),
         modified_at: updated.modified().ok().map(chrono::DateTime::from),
@@ -399,6 +403,7 @@ fn is_case_alias(root: &Path, source: &Path, destination: &Path) -> bool {
 
 /// Open every ancestor without following links, and anchor the native rename to those handles.
 #[cfg(unix)]
+#[allow(unsafe_code)]
 fn open_parent(root: &Path, relative: &Path) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
     use std::os::{
@@ -415,6 +420,7 @@ fn open_parent(root: &Path, relative: &Path) -> std::io::Result<std::fs::File> {
         };
         let name = std::ffi::CString::new(name.as_bytes())?;
         // SAFETY: a valid directory descriptor and NUL-terminated single path component.
+        #[allow(unsafe_code)]
         let fd = unsafe {
             libc::openat(
                 directory.as_raw_fd(),
@@ -450,6 +456,7 @@ fn move_no_replace(root: &Path, source: &Path, destination: &Path) -> std::io::R
     )?;
     // SAFETY: live parent handles and NUL-terminated basename buffers; replacement is disabled.
     #[cfg(target_os = "linux")]
+    #[allow(unsafe_code)]
     let result = unsafe {
         libc::renameat2(
             from.as_raw_fd(),
@@ -459,7 +466,9 @@ fn move_no_replace(root: &Path, source: &Path, destination: &Path) -> std::io::R
             libc::RENAME_NOREPLACE,
         )
     };
+    // SAFETY: live directory fds and NUL-terminated names, as for renameat2 above.
     #[cfg(target_os = "macos")]
+    #[allow(unsafe_code)]
     let result = unsafe {
         libc::renameatx_np(
             from.as_raw_fd(),
@@ -477,6 +486,7 @@ fn move_no_replace(root: &Path, source: &Path, destination: &Path) -> std::io::R
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn move_no_replace(root: &Path, source: &Path, destination: &Path) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};

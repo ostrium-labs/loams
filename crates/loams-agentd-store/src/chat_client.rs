@@ -440,7 +440,11 @@ pub struct ChatStatsSnapshot {
 }
 
 fn retry_jitter(max: Duration) -> Duration {
-    let random = u64::from_le_bytes(uuid::Uuid::new_v4().as_bytes()[..8].try_into().unwrap());
+    let random = u64::from_le_bytes(
+        uuid::Uuid::new_v4().as_bytes()[..8]
+            .try_into()
+            .expect("a UUID has 16 bytes"),
+    );
     Duration::from_millis(random % (max.as_millis() as u64 + 1))
 }
 

@@ -270,6 +270,15 @@ pub enum RpcReply {
     Stream(BoxStream<'static, serde_json::Value>),
 }
 
+impl std::fmt::Debug for RpcReply {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Value(value) => f.debug_tuple("Value").field(value).finish(),
+            Self::Stream(_) => f.debug_tuple("Stream").finish_non_exhaustive(),
+        }
+    }
+}
+
 impl RpcReply {
     /// Serialize a value into a unary reply.
     pub fn value<T: Serialize>(value: &T) -> Result<Self, RpcError> {

@@ -1,5 +1,6 @@
 //! Real native Pi, isolated settings, and a local provider (no network/API spend).
 #![cfg(unix)]
+#![allow(clippy::unwrap_used)]
 use futures::StreamExt;
 use loams_agentd_harness::{CancellationToken, Harness, PiHarness, RunControls, SteerMessage};
 use loams_agentd_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel, UserInputAnswer};

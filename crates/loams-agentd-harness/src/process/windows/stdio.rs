@@ -29,6 +29,7 @@ impl Stdio {
         Self(Mode::Pipe)
     }
 
+    #[allow(unsafe_code)]
     pub(super) fn open(self, index: usize) -> io::Result<(OwnedHandle, Option<tokio::fs::File>)> {
         let input = index == 0;
         let null = || -> io::Result<OwnedHandle> {
@@ -41,22 +42,30 @@ impl Stdio {
         let (child, parent) = match self.0 {
             Mode::Null => (null()?, None),
             Mode::Inherit => {
+                // SAFETY: GetStdHandle takes no pointers.
+                #[allow(unsafe_code)]
                 let handle = unsafe {
                     GetStdHandle([STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE][index])
                 };
                 let owned = if handle.is_null() || handle == INVALID_HANDLE_VALUE {
                     null()?
                 } else {
+                    // SAFETY: handle is this process's non-null, valid standard handle,
+                    // borrowed only for the clone.
+                    #[allow(unsafe_code)]
                     unsafe { BorrowedHandle::borrow_raw(handle) }.try_clone_to_owned()?
                 };
                 (owned, None)
             }
             Mode::Pipe => {
                 let (mut read, mut write) = (std::ptr::null_mut(), std::ptr::null_mut());
+                // SAFETY: CreatePipe writes two handles into the local out-pointers; ownership
+                // moves into OwnedHandle below.
                 if unsafe { CreatePipe(&mut read, &mut write, std::ptr::null(), 0) } == 0 {
                     return Err(io::Error::last_os_error());
                 }
                 // SAFETY: successful CreatePipe returns two newly owned handles.
+                #[allow(unsafe_code)]
                 let (read, write) = unsafe {
                     (
                         OwnedHandle::from_raw_handle(read),

@@ -2,6 +2,7 @@
 name = "loams-agentd-sessions"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license = "MIT"
 publish = false
 
@@ -47,3 +48,16 @@ zip.workspace = true
 tokio-tungstenite.workspace = true
 # In-process registry server for the two-engine workspace integration tests.
 loams-agentd-store = { workspace = true, features = ["mock-server"] }
+
+# The workspace policy, except `unsafe_code` is `deny` rather than `forbid`: this crate
+# has audited FFI and process sites, each under `#[allow(unsafe_code)]` with a SAFETY
+# comment (plan DD1 ruling T1-13). Cargo cannot combine `workspace = true` with an
+# override, so the rest of `[workspace.lints]` is repeated here; keep them in step.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

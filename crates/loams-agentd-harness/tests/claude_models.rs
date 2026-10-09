@@ -1,4 +1,5 @@
 #![cfg(unix)]
+#![allow(clippy::unwrap_used)]
 use loams_agentd_harness::{ClaudeHarness, Harness};
 use loams_agentd_proto::ReasoningLevel;
 use serde_json::json;

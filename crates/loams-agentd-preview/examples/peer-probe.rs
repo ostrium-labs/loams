@@ -2,6 +2,7 @@
 //! channel (for example Loams Desktop terminal RPC); never publish SDP in release logs.
 //! `peer-probe host <localhost-port>` serves that explicit backend; `peer-probe
 //! client` requests it. Each process reads the other process's signals on stdin.
+#![allow(clippy::unwrap_used)]
 use loams_agentd_preview::{
     mux::{BoxIo, Connector},
     peer::{Peers, Signal},

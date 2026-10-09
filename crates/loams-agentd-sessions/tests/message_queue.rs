@@ -7,6 +7,7 @@
 //!   and flushes when the turn ends;
 //! - busy agent, including one that takes input mid-turn → held until turn end;
 //! - "send now" → interrupts whatever is running.
+#![allow(clippy::unwrap_used)]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

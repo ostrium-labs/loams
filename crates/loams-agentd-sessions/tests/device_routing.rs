@@ -2,7 +2,7 @@
 //! to engine B through B's device-room relay (host relay on B, link cache on A), with a
 //! minimal in-memory device-room standing in for the edge DO (route client→host with
 //! `from` stamped, host→client by `to`).
-
+#![allow(clippy::unwrap_used)]
 // tungstenite's `accept_hdr_async` callback signature fixes the Err type as a full
 // `Response` — its size is not ours to shrink.
 #![allow(clippy::result_large_err)]

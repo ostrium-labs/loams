@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 async fn managed_install_reaches_session_started() {
     let adapters = tempfile::tempdir().unwrap();
     // SAFETY: single-test binary — nothing else reads env concurrently.
+    #[allow(unsafe_code)]
     unsafe {
         std::env::set_var("LOAMS_DESKTOP_ADAPTERS_DIR", adapters.path());
         std::env::remove_var("GROK_EXECUTABLE");

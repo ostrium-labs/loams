@@ -642,7 +642,10 @@ pub fn split_parts(parts: &[MessagePart]) -> Vec<Vec<MessagePart>> {
             *current = 0;
         }
         *current += len;
-        chunks.last_mut().unwrap().push(part);
+        chunks
+            .last_mut()
+            .expect("chunks starts with one entry")
+            .push(part);
     };
 
     for part in parts {

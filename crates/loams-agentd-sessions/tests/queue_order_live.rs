@@ -6,6 +6,7 @@
 //! LOAMS_DESKTOP_TEST_HARNESS=pi cargo test -p loams-desktop-engine --test queue_order_live -- --ignored --nocapture
 //! LOAMS_DESKTOP_TEST_MODEL optionally pins the model; LOAMS_DESKTOP_TEST_SCENARIO runs one of
 //! `sends`, `queue`, `steer`.
+#![allow(clippy::unwrap_used)]
 use loams_agentd_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
 use loams_agentd_harness::{
     AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,

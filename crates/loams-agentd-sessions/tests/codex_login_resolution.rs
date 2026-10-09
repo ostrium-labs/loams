@@ -5,6 +5,7 @@
 //!
 //! Child-process probes: resolution reads process env (PATH, the override),
 //! so each case re-runs this test binary with a controlled environment.
+#![allow(clippy::unwrap_used)]
 
 use std::path::{Path, PathBuf};
 

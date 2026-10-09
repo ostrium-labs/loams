@@ -4,6 +4,7 @@
 //! relay RPC), runs there, and stamps the chat row's cwd + `loams-desktop/<name>`
 //! branch. A second spec-carrying Run for the same chat REUSES the checkout
 //! instead of minting another.
+#![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -156,7 +157,12 @@ async fn check_worktree_setup_and_reuse(use_project_symlink: bool) {
     // macOS tempdirs live behind the /var → /private/var symlink.
     let tmp_path = tmp.path().canonicalize().unwrap();
     let worktrees_root = tmp_path.join("worktrees");
-    unsafe { std::env::set_var("LOAMS_DESKTOP_WORKTREES_DIR", &worktrees_root) };
+    // SAFETY: test-only, and only this test sets this variable. A concurrent getenv from
+    // another test thread is the remaining risk, accepted for this fixture.
+    #[allow(unsafe_code)]
+    unsafe {
+        std::env::set_var("LOAMS_DESKTOP_WORKTREES_DIR", &worktrees_root)
+    };
 
     let repo_dir = tmp_path.join("repo");
     std::fs::create_dir_all(&repo_dir).unwrap();

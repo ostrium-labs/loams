@@ -75,6 +75,7 @@ impl InstanceService for MockInstance {
 
 /// A running mock; stop it with [`MockServer::stop`] or by dropping the
 /// handle (the task is aborted).
+#[derive(Debug)]
 pub struct MockServer {
     addr: SocketAddr,
     shutdown: Option<oneshot::Sender<()>>,

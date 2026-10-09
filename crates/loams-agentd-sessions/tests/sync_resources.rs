@@ -1,4 +1,5 @@
 //! Resource tests run in a child: lowering RLIMIT must not affect the test runner.
+#![allow(clippy::unwrap_used)]
 #[cfg(unix)]
 #[test]
 fn sync_keeps_git_available_with_256_file_descriptors() {
@@ -22,6 +23,9 @@ fn resource_limit_child() {
     if std::env::var_os("LOAMS_DESKTOP_RESOURCE_TEST_CHILD").is_none() {
         return;
     }
+    // SAFETY: getrlimit and setrlimit only read and write the local rlimit; this runs in a
+    // dedicated child process.
+    #[allow(unsafe_code)]
     unsafe {
         let mut limit: libc::rlimit = std::mem::zeroed();
         assert_eq!(libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit), 0);

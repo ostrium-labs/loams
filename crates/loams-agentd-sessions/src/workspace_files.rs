@@ -1975,7 +1975,9 @@ fn atomic_replace(source: &Path, target: &Path) -> std::io::Result<()> {
 fn atomic_replace(source: &Path, target: &Path) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
 
+    // SAFETY: this declaration matches Kernel32's MoveFileExW signature.
     #[link(name = "Kernel32")]
+    #[allow(unsafe_code)]
     unsafe extern "system" {
         fn MoveFileExW(existing: *const u16, replacement: *const u16, flags: u32) -> i32;
     }
@@ -1984,6 +1986,7 @@ fn atomic_replace(source: &Path, target: &Path) -> std::io::Result<()> {
     let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
     let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
     // SAFETY: both pointers reference NUL-terminated buffers for the duration of the call.
+    #[allow(unsafe_code)]
     let result = unsafe {
         MoveFileExW(
             source.as_ptr(),

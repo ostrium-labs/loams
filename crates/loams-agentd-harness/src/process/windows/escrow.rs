@@ -30,10 +30,15 @@ impl Drop for Escrow {
     fn drop(&mut self) {
         // This handle can only refer to our never-resumed helper. On an early
         // return before agent ownership exists, dropping the job is a backstop.
-        unsafe { TerminateProcess(self.process.as_raw_handle(), 1) };
+        // SAFETY: self.process is a live process handle this escrow owns.
+        #[allow(unsafe_code)]
+        unsafe {
+            TerminateProcess(self.process.as_raw_handle(), 1)
+        };
     }
 }
 impl Escrow {
+    #[allow(unsafe_code)]
     pub(super) fn new(job: &Job) -> io::Result<Self> {
         let image: Vec<u16> = std::env::current_exe()?
             .as_os_str()
@@ -48,6 +53,8 @@ impl Escrow {
         let mut info = PROCESS_INFORMATION::default();
         // No inherited handles and no execution. Explicit image, no command
         // interpreter, no global job assignment to the application itself.
+        // SAFETY: image is NUL-terminated, startup and attrs outlive the call, and info is a
+        // valid out-pointer.
         if unsafe {
             CreateProcessW(
                 image.as_ptr(),
@@ -65,8 +72,11 @@ impl Escrow {
         {
             return Err(io::Error::last_os_error());
         }
+        // SAFETY: CreateProcessW succeeded, so hProcess is a new handle owned by nothing else.
+        #[allow(unsafe_code)]
         let process = unsafe { OwnedHandle::from_raw_handle(info.hProcess) };
         // Closing the thread handle does not resume it.
+        // SAFETY: hThread is likewise a new handle owned by nothing else.
         drop(unsafe { OwnedHandle::from_raw_handle(info.hThread) });
         Ok(Self {
             process,
@@ -74,6 +84,7 @@ impl Escrow {
             pid: info.dwProcessId,
         })
     }
+    #[allow(unsafe_code)]
     pub(super) fn duplicate(&self, handles: &[OwnedHandle]) -> io::Result<Vec<RawHandle>> {
         handles
             .iter()
@@ -82,6 +93,7 @@ impl Escrow {
                 // These handle values belong to the escrow's table, not ours. They
                 // must never be wrapped in OwnedHandle in this process. Escrow/job
                 // destruction closes all duplicates, including partial failures.
+                // SAFETY: both process handles are live and remote is a valid out-pointer.
                 if unsafe {
                     DuplicateHandle(
                         GetCurrentProcess(),
@@ -100,11 +112,13 @@ impl Escrow {
             })
             .collect()
     }
+    #[allow(unsafe_code)]
     pub(super) fn release(&self, handles: &[RawHandle]) -> io::Result<()> {
         for &handle in handles {
             let mut temporary = std::ptr::null_mut();
             // Move each remote duplicate back as non-inheritable, then close it.
             // Keeping the helper alive must not keep agent pipes artificially open.
+            // SAFETY: the escrow handle is live and temporary is a valid out-pointer.
             if unsafe {
                 DuplicateHandle(
                     self.process.as_raw_handle(),
@@ -119,6 +133,8 @@ impl Escrow {
             {
                 return Err(io::Error::last_os_error());
             }
+            // SAFETY: DuplicateHandle succeeded, so temporary is a new handle in this process
+            // owned by nothing else.
             drop(unsafe { OwnedHandle::from_raw_handle(temporary) });
         }
         Ok(())

@@ -1,6 +1,7 @@
 //! Opt-in live test. Uses real Cursor quota in a disposable workspace.
 //! LOAMS_DESKTOP_CURSOR_STATE_DIR=$(mktemp -d) cargo run -p loams-desktop-harness --example cursor_stability_probe -- sessions 20
 //! cargo run -p loams-desktop-harness --example cursor_stability_probe -- models 1000
+#![allow(clippy::unwrap_used)]
 use futures::StreamExt;
 use loams_agentd_harness::{CancellationToken, CursorHarness, Harness, RunControls};
 use loams_agentd_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};

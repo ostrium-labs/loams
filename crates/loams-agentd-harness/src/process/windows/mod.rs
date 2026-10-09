@@ -49,14 +49,17 @@ impl Child {
     pub fn start_kill(&mut self) -> io::Result<()> {
         self.job.terminate()
     }
+    #[allow(unsafe_code)]
     pub fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
         if self.status.is_some() {
             return Ok(self.status);
         }
+        // SAFETY: self.process is a live process handle this Child owns.
         match unsafe { WaitForSingleObject(self.process.as_raw_handle(), 0) } {
             WAIT_TIMEOUT => Ok(None),
             WAIT_OBJECT_0 => {
                 let mut code = 0;
+                // SAFETY: the handle is live and code is a valid out-pointer.
                 if unsafe { GetExitCodeProcess(self.process.as_raw_handle(), &mut code) } == 0 {
                     return Err(io::Error::last_os_error());
                 }
@@ -119,6 +122,7 @@ impl Command {
 
 // A private hook makes the critical interval testable: the process exists but
 // is still suspended, and no monitor has been started. Production uses a no-op.
+#[allow(unsafe_code)]
 fn spawn_prepared(
     command: &Command,
     after_create: impl FnOnce(&Child) -> io::Result<()>,
@@ -167,7 +171,11 @@ fn spawn_prepared(
     }
     // Child owns the job immediately: every subsequent fallible setup step is
     // protected by Drop. A hard owner crash is protected by kernel job membership.
+    // SAFETY: CreateProcessW succeeded, so hProcess is a new handle owned by nothing else.
+    #[allow(unsafe_code)]
     let process = unsafe { OwnedHandle::from_raw_handle(info.hProcess) };
+    // SAFETY: hThread is likewise a new handle owned by nothing else.
+    #[allow(unsafe_code)]
     let thread = unsafe { OwnedHandle::from_raw_handle(info.hThread) };
     let (done, exited) = tokio::sync::oneshot::channel();
     let child = Child {
@@ -189,10 +197,15 @@ fn spawn_prepared(
     std::thread::Builder::new()
         .name("agent-exit".into())
         .spawn(move || {
-            unsafe { WaitForSingleObject(process.as_raw_handle(), INFINITE) };
+            // SAFETY: process is a live handle moved into this thread.
+            #[allow(unsafe_code)]
+            unsafe {
+                WaitForSingleObject(process.as_raw_handle(), INFINITE)
+            };
             let _ = cleanup_job.terminate();
             let _ = done.send(());
         })?;
+    // SAFETY: thread is a live thread handle this function owns.
     if unsafe { ResumeThread(thread.as_raw_handle()) } == u32::MAX {
         return Err(io::Error::last_os_error());
     }

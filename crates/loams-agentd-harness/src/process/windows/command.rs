@@ -220,6 +220,8 @@ fn batch_command<'a>(
 
 fn system_directory() -> io::Result<PathBuf> {
     let mut buffer = vec![0u16; 32768];
+    // SAFETY: buffer is a live allocation whose length is passed.
+    #[allow(unsafe_code)]
     let len = unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
     if len == 0 || len >= buffer.len() {
         return Err(io::Error::last_os_error());
@@ -281,9 +283,11 @@ fn wide(value: &OsStr) -> io::Result<Vec<u16>> {
     Ok(result)
 }
 // Windows environment keys use OS ordinal case folding, not Unicode lowercase.
+#[allow(unsafe_code)]
 fn compare(a: &OsStr, b: &OsStr) -> std::cmp::Ordering {
     let a: Vec<_> = a.encode_wide().collect();
     let b: Vec<_> = b.encode_wide().collect();
+    // SAFETY: both pointers come from live Vecs whose lengths are passed.
     let result =
         unsafe { CompareStringOrdinal(a.as_ptr(), a.len() as i32, b.as_ptr(), b.len() as i32, 1) };
     match result {
@@ -327,6 +331,8 @@ fn resolve(
     }
     for get_dir in [GetSystemDirectoryW, GetWindowsDirectoryW] {
         let mut buffer = vec![0u16; 32768];
+        // SAFETY: buffer is a live allocation whose length is passed.
+        #[allow(unsafe_code)]
         let len = unsafe { get_dir(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
         if len > 0 && len < buffer.len() {
             dirs.push(OsString::from_wide(&buffer[..len]).into());

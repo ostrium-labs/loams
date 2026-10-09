@@ -345,6 +345,7 @@ struct PersistedState {
 
 /// The local registry replica. Pure data — no I/O, no async; the transport
 /// (`loams_agentd_store::RegistryClient`) and the engine host drive it under a lock.
+#[derive(Debug)]
 pub struct RegistryDoc {
     device_id: String,
     /// kind → id → row (server truth).

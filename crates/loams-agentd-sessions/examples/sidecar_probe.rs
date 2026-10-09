@@ -1,6 +1,7 @@
 //! Isolate `DocHost::upload_tool_sidecar`: point it at a one-shot local HTTP
 //! listener and report whether the PUT ever arrives. Diagnosing the
 //! zero-blobs-in-prod mystery (refs stamped, uploads absent, no warns).
+#![allow(clippy::unwrap_used)]
 use std::sync::Arc;
 
 use loams_agentd_sessions::doc_host::{DocHost, DocHostConfig, EdgeConfig};

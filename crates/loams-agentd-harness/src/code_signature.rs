@@ -151,6 +151,7 @@ mod authenticode {
 
     /// the embedded authenticode signer of `file`, once windows has verified
     /// the signature and its chain to a trusted root.
+    #[allow(unsafe_code)]
     pub(super) fn signer(file: &Path) -> Result<Signer, String> {
         let path: Vec<u16> = file.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut file_info = WINTRUST_FILE_INFO {
@@ -189,32 +190,52 @@ mod authenticode {
         };
         data.dwStateAction = WTD_STATEACTION_CLOSE;
         // SAFETY: closes the state opened by the verify call above.
-        unsafe { WinVerifyTrust(INVALID_HANDLE_VALUE, &mut action, (&raw mut data).cast()) };
+        #[allow(unsafe_code)]
+        unsafe {
+            WinVerifyTrust(INVALID_HANDLE_VALUE, &mut action, (&raw mut data).cast())
+        };
         signer
     }
 
+    // SAFETY: callers pass WINTRUST_DATA whose verify action succeeded and whose state is not
+    // yet closed.
+    #[allow(unsafe_code)]
     unsafe fn leaf_signer(data: &WINTRUST_DATA) -> Result<Signer, String> {
         let missing = || "the signature has no signer certificate".to_owned();
+        // SAFETY: the state data comes from a successful verify that is still open (this fn's
+        // contract).
+        #[allow(unsafe_code)]
         let provider = unsafe { WTHelperProvDataFromStateData(data.hWVTStateData) };
         if provider.is_null() {
             return Err(missing());
         }
+        // SAFETY: provider is non-null and belongs to that open state.
+        #[allow(unsafe_code)]
         let signer = unsafe { WTHelperGetProvSignerFromChain(provider, 0, 0, 0) };
+        // SAFETY: signer was checked for null first; || short-circuits.
         if signer.is_null() || unsafe { (*signer).csCertChain } == 0 {
             return Err(missing());
         }
+        // SAFETY: csCertChain is non-zero, so pasCertChain points at at least one element.
+        #[allow(unsafe_code)]
         let leaf = unsafe { (*(*signer).pasCertChain).pCert };
         if leaf.is_null() {
             return Err(missing());
         }
+        // SAFETY: leaf is a non-null certificate context owned by the open state.
         Ok(Signer {
             common_name: unsafe { subject_attribute(leaf, szOID_COMMON_NAME) },
             organization: unsafe { subject_attribute(leaf, szOID_ORGANIZATION_NAME) },
         })
     }
 
+    // SAFETY: callers pass a live certificate context and a NUL-terminated OID string.
+    #[allow(unsafe_code)]
     unsafe fn subject_attribute(cert: *const CERT_CONTEXT, oid: *const u8) -> String {
         let mut name = [0u16; 512];
+        // SAFETY: cert and oid are valid (this fn's contract); name is a local buffer whose
+        // length is passed.
+        #[allow(unsafe_code)]
         let written = unsafe {
             CertGetNameStringW(
                 cert,

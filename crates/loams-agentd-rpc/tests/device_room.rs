@@ -6,7 +6,7 @@
 //! closes the predecessor); `client_closed` on client disconnect; `host_closed` broadcast
 //! on host disconnect; `host_offline` bounce when a client sends with no host; nudge
 //! frames delivered to the host.
-
+#![allow(clippy::unwrap_used)]
 // tungstenite's `accept_hdr_async` callback signature fixes the Err type as a full
 // `Response` — its size is not ours to shrink.
 #![allow(clippy::result_large_err)]

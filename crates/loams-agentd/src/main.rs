@@ -117,6 +117,7 @@ fn spawn_malloc_trimmer() {
                 let started = std::time::Instant::now();
                 // SAFETY: malloc_trim takes no pointers and locks each arena
                 // itself, so it is safe to call from any thread at any time.
+                #[allow(unsafe_code)]
                 let released = unsafe { libc::malloc_trim(0) } != 0;
                 tracing::debug!(released, elapsed = ?started.elapsed(), "malloc_trim");
             }
@@ -233,6 +234,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 #[cfg(windows)]
+#[allow(unsafe_code)]
 fn attach_parent_console() {
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
     use windows_sys::Win32::System::Console::{
@@ -244,6 +246,8 @@ fn attach_parent_console() {
     // Reuse an existing parent's console for CLI output and cargo run, without
     // allocating one. Attach before Clap so help and argument errors work too.
     // Preserve redirected pipes/files: attaching may replace standard handles.
+    // SAFETY: GetStdHandle, AttachConsole and SetStdHandle take no pointers; only handles this
+    // process already holds are restored.
     unsafe {
         let saved = [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE]
             .map(|id| (id, GetStdHandle(id)));
@@ -332,6 +336,8 @@ fn open_log_file_in(dir: &std::path::Path, mode: &str) -> Option<std::fs::File> 
             .truncate(false)
             .open(&path)
             .ok()?;
+        // SAFETY: flock on a descriptor this function owns for the call; it touches no memory.
+        #[allow(unsafe_code)]
         let rc = unsafe { libc::flock(existing.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
         if rc != 0 {
             // A live process owns the canonical log — leave it alone.
@@ -348,7 +354,11 @@ fn open_log_file_in(dir: &std::path::Path, mode: &str) -> Option<std::fs::File> 
             let _ = std::fs::rename(&path, dir.join(format!("loams-agentd-{mode}.log.old")));
         }
         let file = std::fs::File::create(&path).ok()?;
-        unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        // SAFETY: flock on a descriptor this function owns for the call; it touches no memory.
+        #[allow(unsafe_code)]
+        unsafe {
+            libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB)
+        };
         sweep_stale_pid_logs(dir, mode);
         Some(file)
     }
