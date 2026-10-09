@@ -213,6 +213,11 @@ fn host_file_io_is_344_everywhere() {
         "INSERT INTO FUNCTION null($$'$$) FROM INFILE '/etc/passwd' --')",
         "INSERT INTO t FROM INFILE $$/etc/passwd$$ FORMAT CSV",
         "SELECT 1 INTO\u{a0}OUTFILE 'x'",
+        // Vertical tab and form feed are ClickHouse whitespace too (re-review).
+        "SELECT 1 INTO\u{0b}OUTFILE 'x'",
+        "SELECT 1 INTO\u{0c}OUTFILE 'x'",
+        "INSERT INTO t FROM\u{0b}INFILE '/etc/passwd' FORMAT CSV",
+        "INSERT INTO t FROM\u{0c}INFILE '/etc/passwd' FORMAT CSV",
         "SELECT 1 INTO\u{3000}OUTFILE 'x'",
         "SELECT 1 /* a /* nested */ comment */ INTO OUTFILE 'x'",
         "SELECT 1 #x\nINTO OUTFILE 'x'",

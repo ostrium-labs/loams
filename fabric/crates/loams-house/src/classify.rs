@@ -234,7 +234,9 @@ fn lexemes(text: &str) -> Vec<Lexeme> {
     while i < n {
         let c = b[i];
         match c {
-            _ if c.is_ascii_whitespace() || c >= 0x80 => i += 1,
+            // ClickHouse's whitespace includes \v (0x0B), which
+            // `is_ascii_whitespace` leaves out: `INTO\vOUTFILE` is one clause.
+            _ if c.is_ascii_whitespace() || c == 0x0B || c >= 0x80 => i += 1,
             b'-' if b.get(i + 1) == Some(&b'-') => i = line_end(i),
             b'#' if matches!(b.get(i + 1), Some(b' ' | b'!')) => i = line_end(i),
             b'/' if b.get(i + 1) == Some(&b'*') => {
