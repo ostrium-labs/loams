@@ -352,13 +352,15 @@ impl GraphCatalog {
         let now = self.now_ms();
         let id = GraphId::new().to_string();
         self.write(ns, |doc| {
+            // This call's own graph, from an attempt whose acknowledgement was lost (I2), under
+            // any key: another writer may already have deleted it (re-review 1). Never a second
+            // record with this id.
+            if let Some(own) = doc.graphs.values().find(|g| g.id == id) {
+                return Ok((None, own.clone()));
+            }
             if let Some(existing) = doc.graphs.get(name)
                 && !existing.is_deleting()
             {
-                // This call's own graph, from an attempt whose acknowledgement was lost (I2).
-                if existing.id == id {
-                    return Ok((None, existing.clone()));
-                }
                 if new.idempotency_key.is_some() && existing.idempotency_key == new.idempotency_key
                 {
                     // AIP-155: a replay must be the same request (review M6).

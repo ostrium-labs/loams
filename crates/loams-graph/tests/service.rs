@@ -1046,6 +1046,34 @@ mod admin {
             "exactly one kg, the one this call made"
         );
 
+        // create, then another writer deletes it on top: the retry answers its own (now
+        // deleting) graph and does not create a second one under the free name.
+        let other = intruder.clone();
+        catalog.set_ack_hook(Some(ack_lost_once(move || {
+            let other = other.clone();
+            async move {
+                other
+                    .mark_deleting("acme", "doomed", None)
+                    .await
+                    .expect("the other writer deletes it");
+            }
+        })));
+        let doomed = catalog
+            .create("acme", "doomed", NewGraph::default())
+            .await
+            .expect("a lost ack is not an error");
+        assert!(
+            matches!(doomed.state, CatalogState::Deleting { .. }),
+            "{doomed:?}"
+        );
+        let page = catalog.list("acme", 0, "").await.expect("list");
+        assert!(
+            page.graphs.iter().all(|g| g.name != "doomed"),
+            "no second doomed"
+        );
+        let deleting = catalog.deleting("acme", u64::MAX).await.expect("deleting");
+        assert_eq!(deleting.iter().filter(|g| g.id == doomed.id).count(), 1);
+
         // update with expected_version: applied once, under the other writer's later change.
         let other = intruder.clone();
         catalog.set_ack_hook(Some(ack_lost_once(move || {
@@ -1093,7 +1121,7 @@ mod admin {
             .expect("a lost ack is not a not-found");
         assert!(matches!(deleted.state, CatalogState::Deleting { .. }));
         let gone = catalog.deleting("acme", u64::MAX).await.expect("deleting");
-        assert_eq!(gone.len(), 1, "one deleting record: {gone:?}");
+        assert_eq!(gone.len(), 2, "doomed and kg, once each: {gone:?}");
         let page = catalog.list("acme", 0, "").await.expect("list");
         let names: Vec<_> = page.graphs.iter().map(|g| g.name.as_str()).collect();
         assert_eq!(names, ["intruder", "late"]);
