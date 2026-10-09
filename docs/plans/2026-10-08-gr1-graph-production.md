@@ -1183,9 +1183,11 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 - Memory for a huge result is Task 26's watchdog's job. A refusal fails the call before any chunk.
 
 **R6.4 Shortest paths (Task 3 review M2).**
-- Grafeo's `ShortestPathOp` ignores the pattern's quantifier: there is no hop bound to check or set without rewriting the statement.
-- What it does is one breadth-first search per input row, each at most O(V+E): polynomial, the same class as a cartesian product. So a single shortest path (`ANY SHORTEST`, `SHORTEST k`, `shortestPath`) is served, bounded by the statement's deadline, slots and detach limit like any other statement.
-- `ALL SHORTEST` and `allShortestPaths` stay refused, by keyword (`ALL` `SHORTEST`) and by plan (`all_paths: true`, subqueries included): `GraphError::AllShortestPaths`, `INVALID_ARGUMENT`/`graph_unbounded_path`. Grafeo answers one row per shortest path, and their count grows exponentially in a layered graph; `vec![depth; count]` can abort the process on allocation.
+(Wording corrected in fix round 1, M1.)
+- Task 6 adds **no hop bound**. Grafeo's translator keeps only the pattern's first edge's types and direction and drops its quantifier, and `ShortestPathOp` has no depth limit, so there is nothing Loams can check or set without rewriting the statement. A `[*1..3]` in a shortest-path pattern is not honoured: a path longer than 3 is answered.
+- What bounds the cost: the operator runs one breadth-first search (bidirectional for a single path) per input row, each O(V+E). Its input is the cross product of the source and target candidates, so one statement can cost O(V²·(V+E)). Nothing in the engine stops it; the statement's deadline answers the client, and the slots, the detach limits and the namespace caps bound how many such statements run.
+- Served: `ANY SHORTEST` and `shortestPath`. `SHORTEST k` and `SHORTEST k GROUPS` are translated to the same single-path search: Grafeo ignores `k` and answers one path per pair.
+- `ALL SHORTEST` and `allShortestPaths` stay refused, by keyword (`ALL` `SHORTEST`) and by plan (`all_paths: true`, subqueries included): `GraphError::AllShortestPaths`, `INVALID_ARGUMENT`/`graph_unbounded_path`. Grafeo counts the shortest paths per pair in a `usize` (exponential in a layered graph: it can overflow, which panics in a debug build and wraps in a release one) and then allocates `vec![depth; count]`, one row per path, which can abort the process on allocation failure: memory, not time, so no deadline bounds it.
 - `grafeo_debug_format_canary` pins `all_paths: true`.
 - Measured: Grafeo 0.5.43 cannot `RETURN p` for a `shortestPath((a)-[*]-(b))` path ("Variable 'p' not found in input"); its path column holds the length. That is an engine gap, not a refusal (Task 32's corpus records it).
 - Upstream ask (add to Q679): honour the quantifier's upper bound in `ShortestPathOp`.
@@ -1194,7 +1196,7 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 - `StatementPool` threads have `PARSE_STACK_BYTES` (256 MiB, virtual) of stack and are marked so `classify::on_big_stack` runs in place, inside `catch_unwind`. A statement no longer starts a thread per parse and per engine call (Task 3 re-review 2c).
 - `GraphAdmin` runs every statement, open and reopen there (Task 4 review M8); closes and purges stay on tokio's blocking pool.
 - Workers start on demand, up to `statement_slots + 2` (the spare covers a direct `GraphAdmin::open`, which holds no slot), and exit after 60 s idle. A worker survives a job's panic.
-- Detached statements are not on tokio's blocking pool, so they no longer delay the runtime's drop: the process exits with them unfinished, and their transactions never commit (their clients were already answered with an error). This amends R5.9's note.
+- Detached statements are not on tokio's blocking pool, so they no longer delay the runtime's drop: the process exits with them unfinished, and one still running then never commits. This amends R5.9's note. A detached write that ends before the exit does commit, after its client was answered `DEADLINE_EXCEEDED`, which (as in gRPC) means the outcome is unknown; Task 11's idempotency key is how a client learns it.
 - The sync `service::*` functions (tests, the mock) still start a big-stack thread per call, as before.
 
 **R6.6 Per-namespace concurrency (§48 §13.2).** At most `GraphConfig.namespace_statements` (config only, default 64) statements of one namespace run at once. Past that the answer is `RESOURCE_EXHAUSTED`/`quota_exceeded` with `metadata.quota = "concurrent_statements"` (D65). Nothing queues. Task 25 moves the number into the §41 limits record.
@@ -1217,3 +1219,27 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 - It uses the guard's scanner (`classify::scan`, which now also reports numbers as Grafeo's `scan_number` reads them), so both agree on where a string or comment ends.
 - `fingerprint` is FNV-1a over the redacted text with whitespace collapsed, stable across processes.
 - No statement text is logged anywhere today. Task 27's spans and audit use these.
+
+**R6.10 Task 6 review, fix round 1** (rebased onto dev 53843d36 first; one commit each, each with a test in `tests/limits.rs`):
+- **I1 (namespace caps).**
+  - The cap in force on one namespace's statements is `min(configured, slots - reserve)`, at least 1. The configured value defaults to 64; the reserve is an eighth of the slots, at least one. One namespace can therefore never take every process slot (`one_namespace_cannot_take_every_process_slot`).
+  - A namespace also caps its detached statements across its graphs (`with_namespace_detached`, default 8). Past that it answers `RESOURCE_EXHAUSTED`/`quota_exceeded` with `quota = detached_statements` (`detached_statements_across_graphs_hit_the_namespace_cap`).
+- **I2 (counting).**
+  - Once one statement of a graph is detached, every statement in flight on it counts against `max_detached`. A new statement is admitted only while detached plus running stays under the limit. The check and the count happen under one lock (`in_flight_statements_count_against_max_detached`).
+  - A graph with nothing detached takes any number of statements; the slots bound them.
+  - What this does not bound: statements already running when the first one detaches. The namespace's detached cap and its slots bound those.
+- **I3 (a commit is never reported as a failure).**
+  - `classify::Verdict` carries the engine's own reading, and `GraphResult.wrote` is set when the engine's plan has a mutation. The guard alone promoting a read (for example `UNWIND … RETURN`) does not count.
+  - A unary write, or an atomic batch that wrote, whose answer passes the byte limit is answered successfully: rows dropped, `truncated`, and a `01000` notification.
+  - In a non-atomic batch, a write past the limit is answered the same way and the batch goes on. A read past it fails the batch at its index, and `committed_through` does not count it.
+  - A read-only answer past the limit is still `graph_result_too_large` (`a_committed_write_is_never_reported_as_too_large`).
+- **I4 (streams).**
+  - The stream holds the statement's process and namespace slots until its last chunk is taken or it is dropped.
+  - `StatementLimits.max_stream_bytes` (default 256 MiB, at most 1 GiB) caps the whole stream whatever `max_rows` says. Past it the stream ends `truncated` (`a_stream_holds_its_slots_and_is_capped_in_bytes`).
+- **M1:** R6.4's wording is corrected above.
+- **M2:** `timeout_returns_statement_timeout` uses 1 000 nodes (a million searches, about 3 s detached in a debug build) and waits for the detached statement to end.
+- **M3:** `Debug` for `GraphRow`, `GraphResult`, `BatchStatement`, `PlanNode` and `ExplainedPlan` is written by hand. Rows print their size, text is redacted, and parameters show their names (`debug_forms_never_print_values`).
+- **M4:** `MAX_STATEMENT_SLOTS` is 256: each slot can hold a worker with a 256 MiB stack reservation (`statement_slots_are_capped`, and the CLI validation test).
+- **M5:** `CreateGraph` and `UpdateGraph` store and answer a graph's timeout as the value in force, at most the engine's `query_timeout` (`a_graph_timeout_is_answered_as_the_value_in_force`).
+- **M6:** a namespace's slot semaphore leaves the map when its last slot is released, so an idle or deleted namespace keeps no entry (`idle_namespaces_leave_no_slot_entry`).
+- **M7:** a row larger than a Connect message (connectrpc's default 4 MiB, less 4 KiB) is refused with `GraphError::RowTooLarge` (`RESOURCE_EXHAUSTED`/`graph_result_too_large`), in a unary answer and as a stream's final error. A statement that committed still gets a successful, `truncated` answer (I3) (`a_row_larger_than_a_message_is_refused`).
