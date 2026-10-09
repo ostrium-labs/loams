@@ -285,6 +285,11 @@ impl GraphAdmin {
     /// Runs `work` on a catalog graph holding a statement slot: the slot is taken before the
     /// graph opens and the blocking work starts, and released only when that work ends, after
     /// the graph handle is dropped.
+    ///
+    /// The open and the work run as one spawned task that owns the slot (fix round 2), so a
+    /// client that disconnects while its graph opens (a disk open and WAL replay on the blocking
+    /// pool) cannot free the slot early: the slot is freed when the open, and the statement it
+    /// leads to, end.
     async fn on_graph<T: Send + 'static>(
         &self,
         namespace: &str,
@@ -292,14 +297,25 @@ impl GraphAdmin {
         work: impl FnOnce(&Graph) -> Result<T, ConnectError> + Send + 'static,
     ) -> Result<T, ConnectError> {
         let slot = self.statement_slot()?;
-        let graph = self.open(namespace, name).await?;
-        blocking(move || {
-            let result = work(&graph);
-            drop(graph);
-            drop(slot);
-            result
+        let (admin, namespace, name) = (self.clone(), namespace.to_string(), name.to_string());
+        let task = tokio::spawn(async move {
+            let graph = admin.open(&namespace, &name).await?;
+            blocking(move || {
+                let result = work(&graph);
+                drop(graph);
+                drop(slot);
+                result
+            })
+            .await
+        });
+        task.await.unwrap_or_else(|err| {
+            tracing::error!(error = %err, "a graph statement task failed");
+            Err(refuse(
+                ErrorCode::Internal,
+                "internal",
+                "internal error running the statement",
+            ))
         })
-        .await
     }
 
     /// The engine.
