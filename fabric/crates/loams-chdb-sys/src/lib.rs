@@ -457,14 +457,50 @@ pub mod ffi {
         value_lengths: Vec<usize>,
     }
 
+    #[cfg(test)]
+    mod params_tests {
+        use super::Params;
+
+        /// Each name goes with its own value (HS1 Task 5 fix round 1: with two
+        /// parameters the names were `[n0, v0]` and the values `[n1, v1]`, so
+        /// `{t:Identifier}` next to another parameter was "not set").
+        #[test]
+        fn each_name_goes_with_its_value() {
+            let pairs = [
+                ("u".to_string(), "http://x/".to_string()),
+                ("t".to_string(), "system.one".to_string()),
+                ("n".to_string(), String::new()),
+            ];
+            let params = Params::of(&pairs).expect("params");
+            assert_eq!(params.count(), 3);
+            let read = |pointer: *const std::ffi::c_char| {
+                // SAFETY: every pointer is into a `CString` that `params` owns
+                // and keeps alive for this call.
+                unsafe { std::ffi::CStr::from_ptr(pointer) }
+                    .to_string_lossy()
+                    .into_owned()
+            };
+            for (at, (name, value)) in pairs.iter().enumerate() {
+                assert_eq!(&read(params.names[at]), name);
+                assert_eq!(params.name_lengths[at], name.len());
+                assert_eq!(&read(params.values[at]), value);
+                assert_eq!(params.value_lengths[at], value.len());
+            }
+        }
+    }
+
     impl Params {
         fn of(params: &[(String, String)]) -> Result<Self, Error> {
+            // Every name, then every value: the two halves are the ABI's two
+            // vectors, in the same order.
             let mut owned = Vec::with_capacity(params.len() * 2);
-            for (name, value) in params {
+            for (name, _) in params {
                 owned.push(c_string("a parameter name", name)?);
+            }
+            for (_, value) in params {
                 owned.push(c_string("a parameter value", value)?);
             }
-            let (names, values) = owned.split_at(owned.len() / 2);
+            let (names, values) = owned.split_at(params.len());
             Ok(Self {
                 names: names.iter().map(|name| name.as_ptr()).collect(),
                 name_lengths: names.iter().map(|name| name.as_bytes().len()).collect(),
