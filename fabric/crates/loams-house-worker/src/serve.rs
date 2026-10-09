@@ -39,6 +39,9 @@ use crate::config::{self, WorkerArgs};
 /// How often a running statement reports `Progress`, at most.
 pub const PROGRESS_EVERY: Duration = Duration::from_millis(100);
 
+/// How often the serve loop sweeps idle sessions when no frame comes.
+pub const SESSION_SWEEP: Duration = Duration::from_secs(1);
+
 /// The most House sessions one worker keeps; past it the least recently used is
 /// dropped (Task 3 review, decision 4).
 pub const MAX_SESSIONS: usize = 64;
@@ -185,10 +188,16 @@ impl Worker {
             return err;
         }
         loop {
-            let frame = match frames.recv() {
+            // Idle sessions expire on a timer too, not only when a statement comes
+            // (fix round 2, N9).
+            let frame = match frames.recv_timeout(SESSION_SWEEP) {
                 Ok(Ok(frame)) => frame,
                 Ok(Err(end)) => return end,
-                Err(_) => return End::Closed,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    self.expire_sessions();
+                    continue;
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => return End::Closed,
             };
             let answer = match frame {
                 Frame::Bind(bind) => self.bind(bind),
@@ -299,14 +308,14 @@ impl Worker {
         let now = Instant::now();
         let Some(spec) = &execute.session else {
             let fresh = self.user_connection(&execute.query_id)?;
-            return statement(&fresh, &bind, execute, frames, writer, input_failure);
+            apply_settings(&fresh, &bind, execute)?;
+            return statement(&fresh, execute, frames, writer, input_failure);
         };
 
         // Sessions on this worker (Task 3 review, decision 4): idle ones expire,
         // the least recently used goes past `MAX_SESSIONS`, and `close` drops one
         // after its statement.
-        self.sessions
-            .retain(|_, slot| now.duration_since(slot.last_used) <= slot.timeout);
+        self.expire_sessions();
         if !self.sessions.contains_key(&spec.key) {
             if self.sessions.len() >= MAX_SESSIONS
                 && let Some(oldest) = self
@@ -333,8 +342,8 @@ impl Worker {
             .ok_or_else(|| Failure::Engine(loams_error("SESSION_LOST", &spec.key)))?;
         slot.timeout = Duration::from_millis(spec.timeout_ms);
 
-        // URL settings and limits are for this statement only: what they replace
-        // is read first and put back after, whatever the statement did.
+        // URL settings and limits are for this statement only: what they replace is
+        // read first and put back after, unless the statement set it itself.
         let names: Vec<String> = execute
             .settings
             .iter()
@@ -343,14 +352,32 @@ impl Worker {
             .map(|(name, _)| name)
             .filter(|name| is_setting_name(name))
             .collect();
-        let saved = snapshot(&slot.session, &names);
-        let result = statement(&slot.session, &bind, execute, frames, writer, input_failure);
-        restore(&slot.session, &saved);
+        let before = snapshot(&slot.session, &names);
+        let applied_ok = apply_settings(&slot.session, &bind, execute);
+        let applied = snapshot(&slot.session, &names);
+        let result = match applied_ok {
+            Ok(()) => statement(&slot.session, execute, frames, writer, input_failure),
+            Err(failure) => Err(failure),
+        };
+        let after = snapshot(&slot.session, &names);
+        let restored = match (&before, &applied, &after) {
+            (Ok(before), Ok(applied), Ok(after)) => restore(&slot.session, before, applied, after),
+            _ => false,
+        };
         slot.last_used = Instant::now();
-        if spec.close {
+        // A session whose settings could not be read or put back is retired rather
+        // than left with the request's settings in it (N9).
+        if spec.close || !restored {
             self.sessions.remove(&spec.key);
         }
         result
+    }
+
+    /// Drops sessions idle past their timeout.
+    fn expire_sessions(&mut self) {
+        let now = Instant::now();
+        self.sessions
+            .retain(|_, slot| now.duration_since(slot.last_used) <= slot.timeout);
     }
 
     /// A user connection: the engine's arguments plus `--readonly=2`.
@@ -373,28 +400,11 @@ enum Failure {
 /// One statement on `session`: the settings, the `INSERT` body if any, the query.
 fn statement<W: Write>(
     session: &Session,
-    bind: &Bind,
     execute: &Execute,
     frames: &mpsc::Receiver<Result<Frame, End>>,
     writer: &mut W,
     input_failure: &mut Option<bool>,
 ) -> Result<Progress, Failure> {
-    let settings = bind
-        .settings
-        .iter()
-        .chain(execute.settings.iter())
-        .cloned()
-        .chain(execute.limits.as_settings());
-    for (name, value) in settings {
-        if !is_setting_name(&name) {
-            return Err(Failure::Engine(bad_setting(&name)));
-        }
-        let escaped = value.replace('\\', "\\\\").replace('\'', "\\'");
-        session
-            .execute_simple(&format!("SET {name} = '{escaped}'"))
-            .map_err(|err| Failure::Engine(engine_error(&err)))?;
-    }
-
     let mut stats = Progress::default();
     if let Some(spec) = &execute.input {
         let mut insert = session
@@ -477,12 +487,32 @@ fn statement<W: Write>(
     Ok(stats)
 }
 
-/// The current values of `names` on a session's connection, to put back after a
-/// statement. A name the engine does not know is simply not saved: its `SET` will
-/// fail the statement with `115` anyway.
-fn snapshot(session: &Session, names: &[String]) -> Vec<(String, String)> {
+/// The namespace's settings, the request's (URL) settings and the limits, one
+/// `SET` each, in that order.
+fn apply_settings(session: &Session, bind: &Bind, execute: &Execute) -> Result<(), Failure> {
+    let settings = bind
+        .settings
+        .iter()
+        .chain(execute.settings.iter())
+        .cloned()
+        .chain(execute.limits.as_settings());
+    for (name, value) in settings {
+        if !is_setting_name(&name) {
+            return Err(Failure::Engine(bad_setting(&name)));
+        }
+        let escaped = value.replace('\\', "\\\\").replace('\'', "\\'");
+        session
+            .execute_simple(&format!("SET {name} = '{escaped}'"))
+            .map_err(|err| Failure::Engine(engine_error(&err)))?;
+    }
+    Ok(())
+}
+
+/// The current values of `names` on a session's connection. A name the engine
+/// does not know is simply absent: its `SET` fails the statement with `115`.
+fn snapshot(session: &Session, names: &[String]) -> Result<Vec<(String, String)>, ChdbError> {
     if names.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let list = names
         .iter()
@@ -490,22 +520,39 @@ fn snapshot(session: &Session, names: &[String]) -> Vec<(String, String)> {
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!("SELECT name, value FROM system.settings WHERE name IN ({list})");
-    let Ok(bytes) = session.query(&sql, "TSVRaw", &[]) else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&bytes)
+    let bytes = session.query(&sql, "TSVRaw", &[])?;
+    Ok(String::from_utf8_lossy(&bytes)
         .lines()
         .filter_map(|line| line.split_once('\t'))
         .map(|(n, v)| (n.to_string(), v.to_string()))
-        .collect()
+        .collect())
 }
 
-/// Puts saved values back, best effort.
-fn restore(session: &Session, saved: &[(String, String)]) {
-    for (name, value) in saved {
-        let escaped = value.replace('\\', "\\\\").replace('\'', "\\'");
-        let _ = session.execute_simple(&format!("SET {name} = '{escaped}'"));
+/// Puts back what the request's settings replaced — but only where the value is
+/// still the one the request set: a `SET` the statement made itself stays, as a
+/// ClickHouse session keeps it (fix round 2, N9). `false` if a `SET` failed.
+fn restore(
+    session: &Session,
+    before: &[(String, String)],
+    applied: &[(String, String)],
+    after: &[(String, String)],
+) -> bool {
+    let value = |list: &[(String, String)], name: &str| {
+        list.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone())
+    };
+    for (name, old) in before {
+        if value(after, name) != value(applied, name) {
+            continue;
+        }
+        let escaped = old.replace('\\', "\\\\").replace('\'', "\\'");
+        if session
+            .execute_simple(&format!("SET {name} = '{escaped}'"))
+            .is_err()
+        {
+            return false;
+        }
     }
+    true
 }
 
 /// `DROP DATABASE default; CREATE DATABASE default ENGINE = Memory`, once.

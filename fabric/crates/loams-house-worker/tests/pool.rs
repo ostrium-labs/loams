@@ -1216,3 +1216,43 @@ async fn worker_sessions_expire_cap_close_and_do_not_keep_url_settings() {
     );
     pool.release(lease, Outcome::Completed);
 }
+
+/// Fix round 2, N9: URL settings are put back after the statement unless the
+/// statement itself `SET` them, as ClickHouse keeps a session's own `SET`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_set_inside_the_statement_survives_its_url_setting() {
+    let pool = pool("set-survives", small(1)).await;
+    let mut lease = pool.acquire("ns").await.expect("worker");
+    let mut set = in_session("SET max_threads = 5", "k", 60_000, false);
+    set.settings = vec![("max_threads".to_string(), "3".to_string())];
+    lease
+        .run(set)
+        .await
+        .expect("SET with a URL setting of the same name");
+    let after = lease
+        .run(in_session(
+            "SELECT getSetting('max_threads')",
+            "k",
+            60_000,
+            false,
+        ))
+        .await
+        .expect("read");
+    assert_eq!(after.bytes, b"5\n", "the statement's SET stays");
+
+    // And a URL setting the statement did not touch is still put back.
+    let mut url_only = in_session("SELECT getSetting('max_block_size')", "k", 60_000, false);
+    url_only.settings = vec![("max_block_size".to_string(), "1234".to_string())];
+    assert_eq!(lease.run(url_only).await.expect("with").bytes, b"1234\n");
+    let after = lease
+        .run(in_session(
+            "SELECT getSetting('max_block_size')",
+            "k",
+            60_000,
+            false,
+        ))
+        .await
+        .expect("read");
+    assert_ne!(after.bytes, b"1234\n");
+    pool.release(lease, Outcome::Completed);
+}
