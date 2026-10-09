@@ -905,9 +905,13 @@ impl GraphAdmin {
     /// 3. It closes each graph on the blocking pool, flushing its WAL.
     ///
     /// A statement still running after `wait` (one whose client went away, R0.8: Grafeo cannot
-    /// stop it) is detached: its graph stays open, logged, and is dropped when the statement
-    /// ends. Its blocking thread still delays the process's exit, because the runtime waits for
-    /// blocking work when it drops; Task 26's watchdog is what bounds such a statement.
+    /// stop it) is detached and logged. Its graph cannot be closed while the statement holds it,
+    /// so it stays registered in the engine until the engine itself drops (the last `Arc` of
+    /// the engine and of the statement's handle). Grafeo's `Drop for GrafeoDB` calls the same
+    /// `close` (WAL sync and checkpoint), so the data is flushed then, but a failure there is
+    /// only logged by Grafeo, not reported to Loams. Its blocking thread still delays the
+    /// process's exit, because the runtime waits for blocking work when it drops; Task 26's
+    /// watchdog is what bounds such a statement.
     pub async fn shutdown(&self, wait: Duration) -> usize {
         self.closed.store(true, Ordering::SeqCst);
         let slots = u32::try_from(self.statement_slots).unwrap_or(u32::MAX);
@@ -923,7 +927,7 @@ impl GraphAdmin {
             tracing::warn!(
                 running,
                 ?wait,
-                "graph statements still running at shutdown are detached; their graphs stay open until they end, and the process exit waits for them"
+                "graph statements still running at shutdown are detached; their graphs stay registered until the engine drops, and the process exit waits for them"
             );
         }
         for graph in self.engine.list(None).unwrap_or_default() {
