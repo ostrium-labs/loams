@@ -748,6 +748,11 @@ jobs:
       - name: TiKV suites
         env:
           LOAMS_TEST_PD: 127.0.0.1:19379
+          # LV1 plan Task 1 (row T1-4): the reactive checker's seeded run is
+          # 2 seeds x 2 000 ops here; live-embedded runs the embedded case at
+          # 10 x 2 000, and the nightly job runs TiKV at 10.
+          LOAMS_CHECKER_SEEDS: "2"
+          LOAMS_CHECKER_OPS: "2000"
         run: |
           cargo test ${{ steps.packages.outputs.args }} --locked
           cargo test -p loams --features tikv --test meta_tikv --locked
@@ -786,6 +791,9 @@ jobs:
         env:
           LOAMS_TEST_PD: ""
           LOAMS_TEST_TMPDIR: ${{ runner.temp }}
+          # The reactive checker's seeded run at full size (row T1-4).
+          LOAMS_CHECKER_SEEDS: "10"
+          LOAMS_CHECKER_OPS: "2000"
         run: cargo test -p loams-kv -p loams-live --locked
 
   # The same suites every night, plus the nightly-only TiKV suites later R1
@@ -834,6 +842,15 @@ jobs:
       - name: start the playground
         if: steps.paths.outputs.run == 'true'
         run: scripts/tikv/playground.sh start --tag loams-ci --timeout 120
+      # LV1 plan Task 1 (row T1-4): the reactive checker runs 10 seeds x
+      # 2 000 ops on TiKV, from a seed offset that moves with the date (days
+      # since the epoch x 10), so each night covers new seeds.
+      - name: the reactive checker's seed offset
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          offset=$(( $(date -u +%s) / 86400 * 10 ))
+          echo "LOAMS_CHECKER_SEED_OFFSET=$offset" >> "$GITHUB_ENV"
+          echo "reactive checker seeds: $offset..$(( offset + 9 ))"
       - name: TiKV suites
         if: steps.paths.outputs.run == 'true'
         env:
@@ -841,6 +858,8 @@ jobs:
           # Nightly-only cases (loams_tikv::testing::nightly), such as
           # old_versions_dropped_after_gc.
           LOAMS_TEST_NIGHTLY: "1"
+          LOAMS_CHECKER_SEEDS: "10"
+          LOAMS_CHECKER_OPS: "2000"
         run: |
           cargo test ${{ steps.packages.outputs.args }} --locked
           cargo test -p loams --features tikv --test meta_tikv --locked
@@ -854,6 +873,12 @@ jobs:
           LOAMS_TEST_PD: 127.0.0.1:19379
           LOAMS_GATE_META: tikv://127.0.0.1:19379/loams_test_meta
         run: cargo test -p loams --features failpoints,tikv --test crash --locked
+      - name: the reactive checker's seeds
+        if: failure() && steps.paths.outputs.run == 'true'
+        run: |
+          echo "The reactive checker ran seeds $LOAMS_CHECKER_SEED_OFFSET..$(( LOAMS_CHECKER_SEED_OFFSET + 9 )) x 2000 ops."
+          echo "A failing seed is named in its assertion; rerun it with"
+          echo "LOAMS_CHECKER_SEED_OFFSET=<seed> LOAMS_CHECKER_SEEDS=1 cargo test -p loams-live --test reactive_checker passes_seeded"
       - name: playground logs
         if: failure() && steps.paths.outputs.run == 'true'
         uses: actions/upload-artifact@v7.0.1

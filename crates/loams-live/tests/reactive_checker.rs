@@ -7,7 +7,7 @@
 use loams_kv::TxnOptions;
 use loams_live::testing::TestStore;
 use loams_live::testing::checker::{Report, SEED_DOCS, ViolationKind, run_reactive_checker};
-use loams_live::testing::workload::{Disturbance, Workload};
+use loams_live::testing::workload::{Disturbance, Sizes, Workload};
 use loams_live::{AppKeys, live_test};
 
 fn first(report: &Report) -> String {
@@ -37,14 +37,19 @@ fn assert_live(report: &Report, sessions: usize) {
     );
 }
 
-/// 10 seeds × 2 000 ops: no violation, and the checker checked something.
+/// No violation, and the checker checked something: 10 seeds × 2 000 ops
+/// on the embedded store and 2 × 2 000 on TiKV by default; the nightly TiKV
+/// job runs 10 seeds from a seed offset derived from the date
+/// (`LOAMS_CHECKER_SEEDS`, `LOAMS_CHECKER_OPS`, `LOAMS_CHECKER_SEED_OFFSET`).
 async fn reactive_checker_passes_seeded_workload(store: TestStore) {
-    for seed in 0..10 {
+    let sizes = Sizes::from_process_env(store.backend()).expect("the checker's sizes");
+    eprintln!("checker sizes on {:?}: {sizes:?}", store.backend());
+    for seed in sizes.offset..sizes.offset + sizes.seeds {
         let w = Workload {
             seed,
             sessions: 4,
             tables: 3,
-            ops: 2_000,
+            ops: sizes.ops,
             disturb: Vec::new(),
         };
         let report = run_reactive_checker(store.fresh_root().await.store(), w).await;
@@ -52,14 +57,20 @@ async fn reactive_checker_passes_seeded_workload(store: TestStore) {
             "seed {seed}: {} transitions, {} checks",
             report.transitions, report.checked
         );
+        let rerun = format!(
+            "seed {seed} on {:?} (rerun it alone with LOAMS_CHECKER_SEED_OFFSET={seed} \
+             LOAMS_CHECKER_SEEDS=1 LOAMS_CHECKER_OPS={})",
+            store.backend(),
+            sizes.ops
+        );
         assert!(
             report.violations.is_empty(),
-            "seed {seed}: {} violations, the first:\n{}",
+            "{rerun}: {} violations, the first:\n{}",
             report.violations.len(),
             first(&report)
         );
-        assert!(report.transitions > 0, "seed {seed}: no Transition");
-        assert!(report.checked > 0, "seed {seed}: nothing checked");
+        assert!(report.transitions > 0, "{rerun}: no Transition");
+        assert!(report.checked > 0, "{rerun}: nothing checked");
         assert_live(&report, 4);
     }
 }
