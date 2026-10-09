@@ -71,6 +71,10 @@ pub const WORKER_SOCKET_FD: i32 = 3;
 /// One `hsw1` frame.
 ///
 /// The variant order is the wire encoding: append, never reorder.
+// `Execute` is the large variant (it carries the statement and the session). A
+// frame is built, encoded and dropped one at a time, never stored in bulk, so the
+// size does not matter, and boxing it would only add an allocation per statement.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Frame {
     /// worker → front, once: the engine is booted and the worker is unbound.
