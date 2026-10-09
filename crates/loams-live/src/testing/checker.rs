@@ -50,7 +50,7 @@ use tokio_util::sync::CancellationToken;
 use super::workload::{Disturbance, Workload};
 use crate::catalog::{self, IndexSpec};
 use crate::session::{ClientState, QueryResult, Session, SessionConfig, Sessions, Start, Version};
-use crate::subs::{SubsConfig, Subscriptions};
+use crate::subs::{SubsConfig, SubsStats, Subscriptions};
 use crate::system::{DELETE, GET, INSERT, PATCH, QUERY};
 use crate::{AppKeys, Function, LiveConfig, LiveError, LiveValue, Runner, deploy, pb, system};
 
@@ -69,6 +69,8 @@ pub struct Report {
     /// the writers finished (the first Transition and a resumed session's
     /// re-sent one excluded).
     pub live_updates: Vec<usize>,
+    /// The subscription manager's counters at the end of the run.
+    pub subs: SubsStats,
     pub violations: Vec<Violation>,
 }
 
@@ -542,6 +544,7 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
     for watcher in &watchers {
         watcher.stop.cancel();
     }
+    report.subs = subs.stats();
     shutdown.cancel();
     for watcher in &mut watchers {
         let consumer = std::mem::replace(&mut watcher.consumer, tokio::spawn(async {}));

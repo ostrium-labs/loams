@@ -162,6 +162,9 @@ pub struct SubsStats {
     pub missed_invalidations: u64,
     /// Ticks that failed (storage errors); the next tick retries.
     pub tick_errors: u64,
+    /// Journal batches acknowledged without matching their writes, through
+    /// the [`Subscriptions::drop_next_batch`] test hook.
+    pub dropped_batches: u64,
     /// Live subscriptions.
     pub subscriptions: u64,
 }
@@ -175,6 +178,7 @@ struct Counters {
     safety_passes: AtomicU64,
     missed: AtomicU64,
     tick_errors: AtomicU64,
+    dropped_batches: AtomicU64,
     subscriptions: AtomicU64,
 }
 
@@ -314,6 +318,7 @@ impl Subscriptions {
             safety_passes: c.safety_passes.load(Ordering::Relaxed),
             missed_invalidations: c.missed.load(Ordering::Relaxed),
             tick_errors: c.tick_errors.load(Ordering::Relaxed),
+            dropped_batches: c.dropped_batches.load(Ordering::Relaxed),
             subscriptions: c.subscriptions.load(Ordering::Relaxed),
         }
     }
@@ -659,7 +664,12 @@ impl Manager {
                 .fetch_add(batch.entries.len() as u64, Ordering::Relaxed);
             let drop = !batch.entries.is_empty()
                 && self.shared.drop_next_batch.swap(false, Ordering::SeqCst);
-            if !drop {
+            if drop {
+                self.shared
+                    .counters
+                    .dropped_batches
+                    .fetch_add(1, Ordering::Relaxed);
+            } else {
                 for (_, _, entry) in &batch.entries {
                     for w in &entry.writes {
                         self.index.stab(w, &mut self.pending);

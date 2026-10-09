@@ -66,29 +66,34 @@ async fn reactive_checker_passes_seeded_workload(store: TestStore) {
 live_test!(reactive_checker_passes_seeded_workload);
 
 /// With the subscription manager dropping batches of the journal (the
-/// `drop_next_batch` hook), the checker reports a violation: it is not
-/// vacuous.
+/// `drop_next_batch` hook), the checker reports a stale result: it is not
+/// vacuous. The same seed without the dropped batches passes, so the
+/// violation comes from the drops.
 async fn reactive_checker_detects_missed_invalidation(store: TestStore) {
     let ops = 400;
-    let w = Workload {
+    let workload = |disturb: Vec<Disturbance>| Workload {
         seed: 7,
         sessions: 3,
         tables: 2,
         ops,
-        disturb: [ops / 4, ops / 2, 3 * ops / 4, ops - 1]
-            .into_iter()
-            .map(|at_op| Disturbance::DropInvalidation { at_op })
-            .collect(),
+        disturb,
     };
-    let report = run_reactive_checker(store.store(), w).await;
-    // A stale result, or a session that never caught up: not a workload
-    // failure.
+    let drops = [ops / 4, ops / 2, 3 * ops / 4, ops - 1]
+        .into_iter()
+        .map(|at_op| Disturbance::DropInvalidation { at_op })
+        .collect();
+    let report = run_reactive_checker(store.fresh_root().await.store(), workload(drops)).await;
+    assert!(
+        report.subs.dropped_batches >= 1,
+        "no journal batch was dropped: {:?}",
+        report.subs
+    );
     assert!(
         report
             .violations
             .iter()
-            .any(|v| matches!(v.kind, ViolationKind::Stale | ViolationKind::NotCaughtUp)),
-        "no reactive violation with invalidations dropped ({} transitions, {} checks): {:?}",
+            .any(|v| v.kind == ViolationKind::Stale),
+        "no stale result with invalidations dropped ({} transitions, {} checks): {:?}",
         report.transitions,
         report.checked,
         report.violations
@@ -100,6 +105,15 @@ async fn reactive_checker_detects_missed_invalidation(store: TestStore) {
             .all(|v| v.kind != ViolationKind::Workload),
         "{:?}",
         report.violations
+    );
+
+    let control =
+        run_reactive_checker(store.fresh_root().await.store(), workload(Vec::new())).await;
+    assert_eq!(control.subs.dropped_batches, 0);
+    assert!(
+        control.violations.is_empty(),
+        "the control run (no dropped batches): {}",
+        first(&control)
     );
 }
 live_test!(reactive_checker_detects_missed_invalidation);
