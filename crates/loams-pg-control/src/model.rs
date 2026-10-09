@@ -67,6 +67,11 @@ pub trait Record: Serialize + DeserializeOwned + Clone + Send + Sync + 'static {
     ///
     /// As [`encode_key`](Self::encode_key).
     fn encode_prefix(prefix: &Self::Prefix) -> Result<Vec<u8>, StoreError>;
+    /// The project this record belongs to, when it names one: a fenced
+    /// write of it needs that project's lease, `e/pg/<project_id>` (R3.11).
+    /// `None` (roles and databases, whose records name only a branch): any
+    /// project's fence may write it.
+    fn project(&self) -> Option<&str>;
 }
 
 /// `tag/part/…/part`; every part checked, the last allowed to hold `/`.
@@ -185,6 +190,9 @@ impl Record for ProjectRec {
     type Key = ProjectKey;
     type Prefix = ProjectPrefix;
     const KIND: &'static str = "project";
+    fn project(&self) -> Option<&str> {
+        Some(&self.id)
+    }
     fn key(&self) -> ProjectKey {
         ProjectKey {
             namespace: self.namespace.clone(),
@@ -223,6 +231,9 @@ impl Record for ProjectNameRec {
     type Key = ProjectNameKey;
     type Prefix = ProjectPrefix;
     const KIND: &'static str = "project name";
+    fn project(&self) -> Option<&str> {
+        Some(&self.project_id)
+    }
     fn key(&self) -> ProjectNameKey {
         ProjectNameKey {
             namespace: self.namespace.clone(),
@@ -292,6 +303,9 @@ impl Record for BranchRec {
     type Key = BranchKey;
     type Prefix = BranchPrefix;
     const KIND: &'static str = "branch";
+    fn project(&self) -> Option<&str> {
+        Some(&self.project_id)
+    }
     fn key(&self) -> BranchKey {
         BranchKey {
             project_id: self.project_id.clone(),
@@ -373,6 +387,9 @@ impl Record for EndpointRec {
     type Key = EndpointKey;
     type Prefix = EndpointPrefix;
     const KIND: &'static str = "endpoint";
+    fn project(&self) -> Option<&str> {
+        Some(&self.project_id)
+    }
     fn key(&self) -> EndpointKey {
         EndpointKey {
             project_id: self.project_id.clone(),
@@ -429,6 +446,9 @@ impl Record for ComputeRec {
     type Key = ComputeKey;
     type Prefix = AllComputes;
     const KIND: &'static str = "compute";
+    fn project(&self) -> Option<&str> {
+        Some(&self.project_id)
+    }
     fn key(&self) -> ComputeKey {
         ComputeKey {
             id: self.id.clone(),
@@ -472,6 +492,9 @@ impl Record for RoleRec {
     type Key = RoleKey;
     type Prefix = BranchScope;
     const KIND: &'static str = "role";
+    fn project(&self) -> Option<&str> {
+        None
+    }
     fn key(&self) -> RoleKey {
         RoleKey {
             branch_id: self.branch_id.clone(),
@@ -505,6 +528,9 @@ impl Record for DatabaseRec {
     type Key = DatabaseKey;
     type Prefix = BranchScope;
     const KIND: &'static str = "database";
+    fn project(&self) -> Option<&str> {
+        None
+    }
     fn key(&self) -> DatabaseKey {
         DatabaseKey {
             branch_id: self.branch_id.clone(),

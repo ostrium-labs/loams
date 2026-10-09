@@ -27,7 +27,10 @@ use loams_kv::Store;
 use super::{
     KvControlStore, Page, PgControlStore, StoreError, StoreEvent, StoreOptions, Versioned,
 };
-use crate::model::{BranchKey, BranchPrefix, BranchRec, BranchState, Record, project_lease};
+use crate::model::{
+    BranchKey, BranchPrefix, BranchRec, BranchState, ComputeKey, ComputeRec, ComputeStatus, Cu,
+    EndpointRec, ProjectRec, ProjectState, Record, WalService, project_lease,
+};
 
 /// Expands to one `#[tokio::test]` per conformance case, each calling
 /// `crate::store::conformance::<case>($factory)` with the factory
@@ -41,6 +44,7 @@ macro_rules! pg_control_store_conformance {
             delete_requires_version,
             list_pages_in_key_order,
             lease_fences_old_holder,
+            fence_covers_only_its_project,
             watch_sees_put_and_delete,
             undetermined_is_surfaced,
             lost_ack_is_resolved_by_its_token
@@ -369,6 +373,142 @@ pub async fn lease_fences_old_holder(factory: Factory) {
     }
     let r = store.acquire_lease(&scope, "b", Duration::ZERO).await;
     assert!(matches!(r, Err(StoreError::InvalidArgument(_))), "{r:?}");
+}
+
+fn project(id: &str) -> ProjectRec {
+    ProjectRec {
+        namespace: "acme".into(),
+        id: id.into(),
+        name: id.into(),
+        tenant_id: [1; 16],
+        pg_version: 17,
+        wal: WalService::LoamsWal {
+            pool: "default".into(),
+        },
+        history_retention_s: 86_400,
+        region: "local".into(),
+        default_branch_id: None,
+        settings: std::collections::BTreeMap::new(),
+        state: ProjectState::Creating,
+        created_at_ms: 1,
+    }
+}
+
+fn endpoint(project: &str, id: &str) -> EndpointRec {
+    EndpointRec {
+        project_id: project.into(),
+        id: id.into(),
+        branch_id: "br-1".into(),
+        kind: crate::model::EndpointType::ReadWrite,
+        min_cu: Cu(1),
+        max_cu: Cu(4),
+        suspend_timeout_s: 300,
+        pool_mode: crate::model::PoolMode::Transaction,
+        pg_settings: std::collections::BTreeMap::new(),
+        desired: crate::model::DesiredState::Running,
+        state: crate::model::EndpointState::Idle,
+        compute_id: None,
+        backend_addr: None,
+        failure: None,
+    }
+}
+
+fn compute(project: &str, id: &str) -> ComputeRec {
+    ComputeRec {
+        id: id.into(),
+        project_id: project.into(),
+        endpoint_id: "ep-1".into(),
+        spec_version: 1,
+        status: ComputeStatus::Pending,
+        jwt_key_id: None,
+        cu: Cu(4),
+        created_at_ms: 1,
+        last_active_ms: None,
+    }
+}
+
+/// A fence covers only its own project's records (`x/`, `X/`, `E/` and
+/// `C/`): prj-A's lease never writes or deletes a record of prj-B, whether
+/// the new record or the stored one names prj-B.
+pub async fn fence_covers_only_its_project(factory: Factory) {
+    let Some(store) = factory.store(options()).await else {
+        return;
+    };
+    let ttl = Duration::from_secs(60);
+    let a = store
+        .acquire_lease(&project_lease("prj-a"), "pg-control-a", ttl)
+        .await
+        .expect("a takes prj-a's lease");
+    let refused = |r: Result<u64, StoreError>, what: &str| {
+        assert!(
+            matches!(r, Err(StoreError::InvalidArgument(_))),
+            "{what}: {r:?}"
+        );
+    };
+
+    store
+        .put(&project("prj-a"), None, &a)
+        .await
+        .expect("own project");
+    store
+        .put(&branch("prj-a", "br-1", "main"), None, &a)
+        .await
+        .expect("own branch");
+    store
+        .put(&endpoint("prj-a", "ep-1"), None, &a)
+        .await
+        .expect("own endpoint");
+    refused(store.put(&project("prj-b"), None, &a).await, "project");
+    refused(
+        store.put(&branch("prj-b", "br-1", "main"), None, &a).await,
+        "branch",
+    );
+    refused(
+        store.put(&endpoint("prj-b", "ep-1"), None, &a).await,
+        "endpoint",
+    );
+    refused(
+        store.put(&compute("prj-b", "cmp-1"), None, &a).await,
+        "compute",
+    );
+
+    // The stored record counts too: a compute of prj-b is not taken over by
+    // a write claiming prj-a, nor deleted under prj-a's fence.
+    let api = store.api_writer();
+    let v = api
+        .put(&compute("prj-b", "cmp-2"), None)
+        .await
+        .expect("an api write");
+    refused(
+        store.put(&compute("prj-a", "cmp-2"), Some(v), &a).await,
+        "compute takeover",
+    );
+    let key = ComputeKey { id: "cmp-2".into() };
+    let r = store.delete::<ComputeRec>(&key, v, &a).await;
+    assert!(
+        matches!(r, Err(StoreError::InvalidArgument(_))),
+        "delete: {r:?}"
+    );
+    let vb = api
+        .put(&branch("prj-b", "br-2", "dev"), None)
+        .await
+        .expect("an api write");
+    let r = store
+        .delete::<BranchRec>(&bkey("prj-b", "br-2"), vb, &a)
+        .await;
+    assert!(
+        matches!(r, Err(StoreError::InvalidArgument(_))),
+        "delete: {r:?}"
+    );
+    assert_eq!(
+        store
+            .get::<ComputeRec>(&key)
+            .await
+            .expect("get")
+            .map(|c| c.record.project_id),
+        Some("prj-b".to_string())
+    );
+    assert!(get(&store, &bkey("prj-b", "br-2")).await.is_some());
 }
 
 /// A watch sends what its prefix holds, `Synced`, then each put and delete

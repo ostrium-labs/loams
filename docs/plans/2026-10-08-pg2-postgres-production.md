@@ -1523,3 +1523,9 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
     - a `no_run` fenced write that compiles.
   - Task 5 holds the `ApiWriter`. Task 7 takes the store generically.
 
+- **R3.11 A fence covers only its own project (review).**
+  - `Record::project()` names a record's project for `x/` (the project and its name index), `X/`, `E/` and `C/` (the compute's `project_id`).
+  - A fenced write needs the lease `e/pg/<that project>`. This is checked against the new record before the transaction, and against the stored record inside it, so a write under prj-A can neither take over nor delete a record of prj-B.
+  - A mismatch is `InvalidArgument`: a reconciler bug, not a retryable condition.
+  - Role and database records name only a branch, so any project's fence may write them. If Task 6 needs the same guard there, it adds `project_id` to those records, with a new format byte.
+  - Test: `fence_covers_only_its_project`.

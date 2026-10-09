@@ -20,7 +20,7 @@ use super::{
     DEFAULT_PAGE_SIZE, Fence, LEASE_SCOPE, MAX_LEASE_TTL, MAX_PAGE_SIZE, Page, PgControlStore,
     StoreError, StoreEvent, Versioned,
 };
-use crate::model::{FORMAT, Record};
+use crate::model::{FORMAT, Record, project_lease};
 
 /// How often a watch rescans its prefix when this handle has not written.
 pub const DEFAULT_POLL: Duration = Duration::from_millis(250);
@@ -180,6 +180,7 @@ impl KvControlStore {
         if let Some(fence) = fence {
             check_scope(fence.scope())?;
         }
+        check_project(fence, rec)?;
         let fence = fence.cloned();
         self.write(OP_PUT, move |txn| {
             let (key, body, fence) = (key.clone(), body.clone(), fence.clone());
@@ -188,8 +189,13 @@ impl KvControlStore {
                     return Ok(Err(e));
                 }
                 let current = match txn.get(&key).await? {
-                    Some(value) => match decode_version(&value) {
-                        Ok((version, _)) => Some(version),
+                    Some(value) => match decode_record::<R>(&value) {
+                        Ok(stored) => {
+                            if let Err(e) = check_project(fence.as_ref(), &stored.record) {
+                                return Ok(Err(e));
+                            }
+                            Some(stored.version)
+                        }
                         Err(e) => return Ok(Err(e)),
                     },
                     None => None,
@@ -231,8 +237,13 @@ impl KvControlStore {
                 let Some(value) = txn.get(&key).await? else {
                     return Ok(Err(StoreError::NotFound));
                 };
-                let current = match decode_version(&value) {
-                    Ok((version, _)) => version,
+                let current = match decode_record::<R>(&value) {
+                    Ok(stored) => {
+                        if let Err(e) = check_project(fence.as_ref(), &stored.record) {
+                            return Ok(Err(e));
+                        }
+                        stored.version
+                    }
                     Err(e) => return Ok(Err(e)),
                 };
                 if current != expected {
@@ -515,6 +526,21 @@ async fn check_fence(
         Ok(Some(lease)) if lease.epoch == fence.epoch() && lease.owner.is_some() => Ok(()),
         Ok(_) => Err(StoreError::Fenced),
     })
+}
+
+/// A fenced write of `rec` needs its project's lease (R3.11): a fence for
+/// prj-A never writes a record of prj-B.
+fn check_project<R: Record>(fence: Option<&Fence>, rec: &R) -> Result<(), StoreError> {
+    match (fence, rec.project()) {
+        (Some(fence), Some(project)) if fence.scope() != project_lease(project) => {
+            Err(StoreError::InvalidArgument(format!(
+                "the fence {} does not cover a {} of {project}",
+                fence.scope(),
+                R::KIND
+            )))
+        }
+        _ => Ok(()),
+    }
 }
 
 /// `e/pg/<id>`, with one part after the scope.
