@@ -495,6 +495,9 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
     }
 
     let shutdown = CancellationToken::new();
+    // An early return (a `?` below) stops the manager, the sessions, the
+    // tick recorder and the consumers (their tokens are children) too.
+    let _stop_all = shutdown.clone().drop_guard();
     let subs = Arc::new(Subscriptions::spawn(
         runner.clone(),
         SubsConfig {
@@ -558,7 +561,7 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
         let session = sessions
             .open(Start::Initial(set.clone()))
             .map_err(|e| format!("opening session {index}: {e}"))?;
-        let stop = CancellationToken::new();
+        let stop = shutdown.child_token();
         let consumer = tokio::spawn(consume(index, session.clone(), log.clone(), stop.clone()));
         watchers.push(Watcher {
             index,
@@ -625,7 +628,7 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
             Disturbance::DropInvalidation { .. } => subs.drop_next_batch(),
             Disturbance::Disconnect { .. } => {
                 for watcher in &mut watchers {
-                    resume(watcher, &sessions).await?;
+                    resume(watcher, &sessions, &shutdown).await?;
                     report.resumes += 1;
                 }
             }
@@ -1108,7 +1111,11 @@ async fn consume(index: usize, session: Session, log: Arc<Mutex<Log>>, stop: Can
 
 /// Disconnects `watcher`'s session and resumes it from the client's last
 /// version with the same query set.
-async fn resume(watcher: &mut Watcher, sessions: &Sessions) -> Result<(), String> {
+async fn resume(
+    watcher: &mut Watcher,
+    sessions: &Sessions,
+    shutdown: &CancellationToken,
+) -> Result<(), String> {
     watcher.stop.cancel();
     watcher.session.outbox.client_gone();
     let consumer = std::mem::replace(&mut watcher.consumer, tokio::spawn(async {}));
@@ -1124,7 +1131,7 @@ async fn resume(watcher: &mut Watcher, sessions: &Sessions) -> Result<(), String
             set: watcher.set.clone(),
         })
         .map_err(|e| format!("resuming session {}: {e}", watcher.index))?;
-    let stop = CancellationToken::new();
+    let stop = shutdown.child_token();
     watcher.consumer = tokio::spawn(consume(
         watcher.index,
         session.clone(),
