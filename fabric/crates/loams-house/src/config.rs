@@ -48,6 +48,8 @@ pub struct HouseConfig {
     pub keep_alive: Duration,
     /// The version rendered into errors.
     pub version: String,
+    /// How far a compressed request body may expand (Task 3 review I3).
+    pub body_limits: crate::compress::BodyLimits,
 }
 
 impl Default for HouseConfig {
@@ -64,6 +66,7 @@ impl Default for HouseConfig {
             progress_interval: Duration::from_millis(100),
             keep_alive: Duration::from_secs(10),
             version: CLICKHOUSE_VERSION.to_string(),
+            body_limits: crate::compress::BodyLimits::default(),
         }
     }
 }

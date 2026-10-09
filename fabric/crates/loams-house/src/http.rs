@@ -647,9 +647,11 @@ impl Conn {
                 "Database {database} does not exist"
             ))));
         }
-        let mut decoder =
-            Decoder::new(compress::content_encoding(head.header("Content-Encoding"))?)
-                .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))?;
+        let mut decoder = Decoder::new(
+            compress::content_encoding(head.header("Content-Encoding"))?,
+            config.body_limits,
+        )
+        .map_err(|err| HouseError::from(ChError::bad_arguments(err.to_string())))?;
 
         // The statement: the parameter, else the body's head.
         let (text, rest_known) = match get("query") {
@@ -705,30 +707,28 @@ impl Conn {
             if let InsertHead::Insert { .. } = insert_head(&text, false) {
                 return Ok(text);
             }
-            match self.body_chunk(body).await {
-                Ok(Some(piece)) => {
-                    let decoded = decoder.feed(&piece).map_err(|err| {
-                        HouseError::from(ChError::bad_arguments(format!(
-                            "Cannot decompress the request body: {err}"
-                        )))
-                    })?;
-                    text.extend_from_slice(&decoded);
-                }
-                Ok(None) => {
-                    let rest = std::mem::replace(decoder, Decoder::Identity)
-                        .finish()
-                        .map_err(|err| {
-                            HouseError::from(ChError::bad_arguments(format!(
-                                "Cannot decompress the request body: {err}"
-                            )))
-                        })?;
-                    text.extend_from_slice(&rest);
-                    return Ok(text);
-                }
-                Err(err) => {
-                    return Err(HouseError::from(ChError::network_error(format!(
-                        "reading the request body: {err}"
-                    ))));
+            let undecodable = |err: std::io::Error| {
+                HouseError::from(ChError::bad_arguments(format!(
+                    "Cannot decompress the request body: {err}"
+                )))
+            };
+            if let Some(piece) = decoder.next_piece().map_err(undecodable)? {
+                text.extend_from_slice(&piece);
+            } else {
+                match self.body_chunk(body).await {
+                    Ok(Some(piece)) => decoder.push(&piece),
+                    Ok(None) => {
+                        decoder.end();
+                        while let Some(piece) = decoder.next_piece().map_err(undecodable)? {
+                            text.extend_from_slice(&piece);
+                        }
+                        return Ok(text);
+                    }
+                    Err(err) => {
+                        return Err(HouseError::from(ChError::network_error(format!(
+                            "reading the request body: {err}"
+                        ))));
+                    }
                 }
             }
             if text.len() > max && !matches!(insert_head(&text, false), InsertHead::Incomplete) {
@@ -756,13 +756,11 @@ impl Conn {
             lease.send_input(Bytes::from(first)).await?;
         }
         loop {
+            while let Some(piece) = decoder.next_piece().map_err(decode_error)? {
+                lease.send_input(Bytes::from(piece)).await?;
+            }
             match self.body_chunk(body).await {
-                Ok(Some(piece)) => {
-                    let decoded = decoder.feed(&piece).map_err(decode_error)?;
-                    if !decoded.is_empty() {
-                        lease.send_input(Bytes::from(decoded)).await?;
-                    }
-                }
+                Ok(Some(piece)) => decoder.push(&piece),
                 Ok(None) => break,
                 Err(err) => {
                     return Err(HouseError::from(ChError::network_error(format!(
@@ -771,11 +769,10 @@ impl Conn {
                 }
             }
         }
-        let rest = std::mem::replace(decoder, Decoder::Identity)
-            .finish()
-            .map_err(decode_error)?;
-        if !rest.is_empty() {
-            lease.send_input(Bytes::from(rest)).await?;
+        decoder.end();
+        // A truncated stream fails here, before `InputEnd`: nothing is committed.
+        while let Some(piece) = decoder.next_piece().map_err(decode_error)? {
+            lease.send_input(Bytes::from(piece)).await?;
         }
         lease.end_input().await
     }
