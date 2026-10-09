@@ -6,6 +6,7 @@
 //! | [`ProjectNameRec`] (the name index) | `x/<ns>/n/<name>` |
 //! | [`BranchRec`] | `X/<project_id>/<branch_id>` |
 //! | [`BranchNameRec`] (the name index) | `X/<project_id>/n/<name>` |
+//! | [`BranchGuardRec`] (children and deletion) | `X/<project_id>/g/<branch_id>` |
 //! | [`EndpointRec`] | `E/<project_id>/<endpoint_id>` |
 //! | [`ComputeRec`] | `C/<compute_id>` |
 //! | [`RoleRec`] | `R/<branch_id>/<role>` |
@@ -365,6 +366,51 @@ impl Record for BranchNameRec {
     }
     fn encode_prefix(p: &BranchPrefix) -> Result<Vec<u8>, StoreError> {
         prefix(b'X', &[&p.project_id, "n"], "")
+    }
+}
+
+/// What a branch's create and delete agree on (Task 5 fix round 1): how
+/// many child branches it has, and whether it is being deleted.
+/// `CreateBranch` writes its parent's guard (`children + 1`, refused while
+/// `deleting`); `DeleteBranch` writes its own (`deleting`, refused while
+/// `children > 0`). Both write the same record, so a child created during
+/// its parent's delete conflicts whichever commits first, and the parent's
+/// [`BranchRec`] (and its version) is untouched. Task 7's reconciler
+/// decrements the parent's `children` in the fenced batch that removes a
+/// child.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BranchGuardRec {
+    pub project_id: String,
+    pub branch_id: String,
+    pub children: u32,
+    pub deleting: bool,
+}
+
+/// `(project_id, branch_id)` of a guard.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BranchGuardKey {
+    pub project_id: String,
+    pub branch_id: String,
+}
+
+impl Record for BranchGuardRec {
+    type Key = BranchGuardKey;
+    type Prefix = BranchPrefix;
+    const KIND: &'static str = "branch guard";
+    fn project(&self) -> Option<&str> {
+        Some(&self.project_id)
+    }
+    fn key(&self) -> BranchGuardKey {
+        BranchGuardKey {
+            project_id: self.project_id.clone(),
+            branch_id: self.branch_id.clone(),
+        }
+    }
+    fn encode_key(k: &BranchGuardKey) -> Result<Vec<u8>, StoreError> {
+        key(b'X', &[&k.project_id, "g", &k.branch_id])
+    }
+    fn encode_prefix(p: &BranchPrefix) -> Result<Vec<u8>, StoreError> {
+        prefix(b'X', &[&p.project_id, "g"], "")
     }
 }
 
@@ -789,6 +835,12 @@ mod tests {
         })
         .expect("a key");
         assert_eq!(bn, b"X/prj-1/n/dev");
+        let guard = BranchGuardRec::encode_key(&BranchGuardKey {
+            project_id: "prj-1".into(),
+            branch_id: "br-2".into(),
+        })
+        .expect("a key");
+        assert_eq!(guard, b"X/prj-1/g/br-2");
         let op = OperationRec::encode_key(&OperationKey {
             project_id: "prj-1".into(),
             id: "op-1".into(),

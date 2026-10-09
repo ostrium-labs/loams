@@ -212,6 +212,10 @@ impl<N: NeonApi> PgService<N> {
                 },
                 None,
             )?;
+            batch.put(
+                &super::branches::new_guard(&main.project_id, &main.id),
+                None,
+            )?;
             batch.put(&main, None)?;
             batch.put(&operation, None)?;
             let taken = ServiceError::new(

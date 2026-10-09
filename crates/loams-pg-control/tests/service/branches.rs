@@ -690,3 +690,166 @@ async fn update_branch_renames_and_sets_a_ttl() {
         .expect_err("staging is taken");
     assert_eq!(e.reason, Reason::AlreadyExists);
 }
+
+/// A child's create leaves its parent's record, and version, as they were:
+/// the count lives in the parent's guard.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_child_create_leaves_the_parent_version() {
+    let h = harness!();
+    let (p, main) = project(&h).await;
+    let before = h
+        .service
+        .get_branch("acme", &p.id, &main)
+        .await
+        .expect("get");
+    h.service
+        .create_branch(&user(), branch(&p.id, "dev", "b1"))
+        .await
+        .expect("a child");
+    let after = h
+        .service
+        .get_branch("acme", &p.id, &main)
+        .await
+        .expect("get");
+    assert_eq!(after.branch, before.branch);
+}
+
+/// A child created between a delete's reads and its commit makes the
+/// delete conflict; on its second try the delete sees the child.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_child_created_during_its_parents_delete_conflicts() {
+    use crate::common::{FakeNeon, fresh_store, harness_with, once_before, plain_service};
+
+    let Some(store) = fresh_store().await else {
+        eprintln!("skipped: no store");
+        return;
+    };
+    let setup = plain_service(&store, &FakeNeon::default());
+    let p = setup
+        .create_project(
+            &user(),
+            CreateProject {
+                namespace: "acme".into(),
+                name: "shop".into(),
+                idempotency_key: "p".into(),
+                ..CreateProject::default()
+            },
+        )
+        .await
+        .expect("project")
+        .project
+        .record;
+    let dev = setup
+        .create_branch(&user(), branch(&p.id, "dev", "b1"))
+        .await
+        .expect("dev")
+        .branch
+        .branch
+        .record
+        .id;
+    let hook = {
+        let (store, pid, dev) = (store.clone(), p.id.clone(), dev.clone());
+        once_before("DeleteBranch", move || {
+            let other = plain_service(&store, &FakeNeon::default());
+            let req = CreateBranch {
+                parent_id: dev.clone(),
+                ..branch(&pid, "feature", "b2")
+            };
+            async move {
+                other.create_branch(&user(), req).await.expect("the child");
+            }
+        })
+    };
+    let h = harness_with(store, Some(hook));
+    let e = h
+        .service
+        .delete_branch(
+            &user(),
+            DeleteBranch {
+                namespace: "acme".into(),
+                project_id: p.id.clone(),
+                branch_id: dev.clone(),
+                expected_version: None,
+                idempotency_key: "d1".into(),
+            },
+        )
+        .await
+        .expect_err("the child won");
+    assert_eq!(e.reason, Reason::BranchHasChildren, "{e}");
+    let got = h
+        .service
+        .get_branch("acme", &p.id, &dev)
+        .await
+        .expect("dev");
+    assert_eq!(got.branch.record.state, BranchState::Creating);
+}
+
+/// A parent deleted between a child create's reads and its commit makes
+/// the create conflict; on its second try it sees the parent deleting.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_parent_deleted_during_a_child_create_conflicts() {
+    use crate::common::{FakeNeon, fresh_store, harness_with, once_before, plain_service};
+
+    let Some(store) = fresh_store().await else {
+        eprintln!("skipped: no store");
+        return;
+    };
+    let setup = plain_service(&store, &FakeNeon::default());
+    let p = setup
+        .create_project(
+            &user(),
+            CreateProject {
+                namespace: "acme".into(),
+                name: "shop".into(),
+                idempotency_key: "p".into(),
+                ..CreateProject::default()
+            },
+        )
+        .await
+        .expect("project")
+        .project
+        .record;
+    let dev = setup
+        .create_branch(&user(), branch(&p.id, "dev", "b1"))
+        .await
+        .expect("dev")
+        .branch
+        .branch
+        .record
+        .id;
+    let hook = {
+        let (store, pid, dev) = (store.clone(), p.id.clone(), dev.clone());
+        once_before("CreateBranch", move || {
+            let other = plain_service(&store, &FakeNeon::default());
+            let req = DeleteBranch {
+                namespace: "acme".into(),
+                project_id: pid.clone(),
+                branch_id: dev.clone(),
+                expected_version: None,
+                idempotency_key: "d1".into(),
+            };
+            async move {
+                other.delete_branch(&user(), req).await.expect("the delete");
+            }
+        })
+    };
+    let h = harness_with(store, Some(hook));
+    let e = h
+        .service
+        .create_branch(
+            &user(),
+            CreateBranch {
+                parent_id: dev.clone(),
+                ..branch(&p.id, "feature", "b2")
+            },
+        )
+        .await
+        .expect_err("the delete won");
+    assert_eq!(e.reason, Reason::FailedPrecondition, "{e}");
+    let (all, _) = h
+        .service
+        .list_branches("acme", &p.id, 0, "")
+        .await
+        .expect("list");
+    assert_eq!(all.len(), 2, "main and dev only");
+}

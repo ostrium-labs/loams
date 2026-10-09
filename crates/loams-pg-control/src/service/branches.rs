@@ -6,10 +6,11 @@
 //!   needs a `ready` parent, and must lie in what the project keeps: a time
 //!   older than the history retention, a time before the oldest WAL, or an
 //!   LSN below the parent's `min_readable_lsn` is `lsn_out_of_retention`.
-//! - **Races.** A create rewrites its parent unchanged, and a delete writes
-//!   the branch it deletes, so a child created while its parent is deleted
-//!   conflicts either way (snapshot isolation sees two writes of one key,
-//!   never a read and a write). `SetDefaultBranch` writes the project and
+//! - **Races.** A create writes its parent's [`BranchGuardRec`]
+//!   (`children + 1`), and a delete writes the branch's own (`deleting`), so
+//!   a child created while its parent is deleted conflicts either way
+//!   (snapshot isolation sees two writes of one key, never a read and a
+//!   write). The parent's record and version are untouched. `SetDefaultBranch` writes the project and
 //!   checks the branch; a delete writes the branch and checks the project.
 //! - **Protection** (§46 §10): deleting a protected branch, or lifting its
 //!   protection, needs `admin` (an agent's approval flow is Task 9's).
@@ -26,8 +27,8 @@ use super::{
 };
 use crate::ids::{BranchId, timeline_id};
 use crate::model::{
-    BranchKey, BranchNameKey, BranchNameRec, BranchPrefix, BranchRec, BranchState, ProjectKey,
-    ProjectRec, ProjectState, Record,
+    BranchGuardKey, BranchGuardRec, BranchKey, BranchNameKey, BranchNameRec, BranchPrefix,
+    BranchRec, BranchState, ProjectKey, ProjectRec, ProjectState, Record,
 };
 use crate::names::validate_name;
 use crate::neon::{Lsn, LsnAtTime, TimelineView, WalHeads};
@@ -134,6 +135,16 @@ fn out_of_retention(oldest: Option<Lsn>, retention_s: u64) -> ServiceError {
     }
 }
 
+/// A new branch's guard: no children, not deleting.
+pub(crate) fn new_guard(project_id: &str, branch_id: &str) -> BranchGuardRec {
+    BranchGuardRec {
+        project_id: project_id.into(),
+        branch_id: branch_id.into(),
+        children: 0,
+        deleting: false,
+    }
+}
+
 fn live(state: BranchState) -> bool {
     matches!(state, BranchState::Creating | BranchState::Ready)
 }
@@ -166,6 +177,23 @@ impl<N: NeonApi> PgService<N> {
             .get::<BranchRec>(&key)
             .await?
             .ok_or_else(|| ServiceError::not_found("branch", branch_id))
+    }
+
+    /// The guard of a branch, and its version (`None`: absent, which reads
+    /// as no children and not deleting).
+    async fn guard(
+        &self,
+        project_id: &str,
+        branch_id: &str,
+    ) -> Result<(BranchGuardRec, Option<u64>), ServiceError> {
+        let key = BranchGuardKey {
+            project_id: project_id.into(),
+            branch_id: branch_id.into(),
+        };
+        Ok(match self.store.get::<BranchGuardRec>(&key).await? {
+            Some(v) => (v.record, Some(v.version)),
+            None => (new_guard(project_id, branch_id), None),
+        })
     }
 
     /// Every branch of a project.
@@ -310,11 +338,14 @@ impl<N: NeonApi> PgService<N> {
             let parent = self
                 .branch(&project.record.id, &parent_id, "parent_id")
                 .await?;
-            if !live(parent.record.state) {
+            let (mut parent_guard, guard_version) =
+                self.guard(&project.record.id, &parent_id).await?;
+            if !live(parent.record.state) || parent_guard.deleting {
                 return Err(ServiceError::failed_precondition(format!(
                     "branch {parent_id} is being deleted or has failed"
                 )));
             }
+            parent_guard.children = parent_guard.children.saturating_add(1);
             let ancestor_lsn = self
                 .resolve(&req.point, &project.record, &parent.record)
                 .await?;
@@ -354,8 +385,9 @@ impl<N: NeonApi> PgService<N> {
                 None,
             )?;
             let branch_at = batch.put(&branch, None)?;
-            // The parent, rewritten unchanged: a delete of it conflicts.
-            batch.put(&parent.record, Some(parent.version))?;
+            batch.put(&new_guard(&branch.project_id, &branch.id), None)?;
+            // The parent's guard: a delete of the parent conflicts with it.
+            batch.put(&parent_guard, guard_version)?;
             batch.check::<ProjectRec>(
                 &ProjectKey {
                     namespace: req.namespace.clone(),
@@ -592,12 +624,13 @@ impl<N: NeonApi> PgService<N> {
                     "the branch is already being deleted or has failed",
                 ));
             }
-            let children = self
-                .all_branches(&req.project_id)
-                .await?
-                .iter()
-                .filter(|b| b.record.parent_id.as_deref() == Some(req.branch_id.as_str()))
-                .count();
+            let (mut guard, guard_version) = self.guard(&req.project_id, &req.branch_id).await?;
+            if guard.deleting {
+                return Err(ServiceError::failed_precondition(
+                    "the branch is already being deleted",
+                ));
+            }
+            let children = guard.children;
             if children > 0 {
                 return Err(ServiceError::new(
                     Reason::BranchHasChildren,
@@ -617,8 +650,11 @@ impl<N: NeonApi> PgService<N> {
                 Some(&branch.id),
                 self.now_ms(),
             );
+            guard.deleting = true;
             let mut batch = Batch::new();
             batch.put(&branch, Some(current.version))?;
+            // The guard: a child created meanwhile conflicts with it.
+            batch.put(&guard, guard_version)?;
             batch.check::<ProjectRec>(
                 &ProjectKey {
                     namespace: req.namespace.clone(),
