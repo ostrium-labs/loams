@@ -690,9 +690,7 @@ const UUID: &str = "0190f5c4-6c1e-7b3a-9d2e-4f5a6b7c8d9e";
 
 /// The M1.6 fixture's six upserts, with no existence reporting.
 fn kb_ops() -> Value {
-    let upsert = |id: Value, source: Value, embedding: Value| {
-        json!({"upsert": {"id": id, "source": source, "vectors": embedding}})
-    };
+    let upsert = |id: Value, source: Value, embedding: Value| json!({"upsert": {"id": id, "source": source, "vectors": embedding}});
     json!([
         upsert(
             id_uint(1),
@@ -746,13 +744,23 @@ fn sp_schema() -> Value {
 
 /// Fixture steps 22–23: three documents in `sp`.
 fn sp_ops() -> Value {
-    let upsert = |id: u64, e: Value, s: Value| {
-        json!({"upsert": {"id": id_uint(id), "source": {}, "vectors": {"e": e}, "sparseVectors": {"s": s}}})
-    };
+    let upsert = |id: u64, e: Value, s: Value| json!({"upsert": {"id": id_uint(id), "source": {}, "vectors": {"e": e}, "sparseVectors": {"s": s}}});
     json!([
-        upsert(1, json!([1.0, 0.0]), json!({"indices": [5, 1], "values": [2.0, 1.0]})),
-        upsert(2, json!([0.0, 1.0]), json!({"indices": [5], "values": [0.5]})),
-        upsert(3, json!([0.8, 0.6]), json!({"indices": [7], "values": [3.0]})),
+        upsert(
+            1,
+            json!([1.0, 0.0]),
+            json!({"indices": [5, 1], "values": [2.0, 1.0]})
+        ),
+        upsert(
+            2,
+            json!([0.0, 1.0]),
+            json!({"indices": [5], "values": [0.5]})
+        ),
+        upsert(
+            3,
+            json!([0.8, 0.6]),
+            json!({"indices": [7], "values": [3.0]})
+        ),
     ])
 }
 
@@ -996,7 +1004,12 @@ fn ir_fixture(name: &'static str, collection: &'static str, rest: Value) -> Fixt
 
 /// A fixture whose two spellings differ by more than the mapping table, so
 /// both are written out (the §05 §4 body, `Query::Ids`).
-fn explicit_fixture(name: &'static str, collection: &'static str, rest: Value, rpc: Value) -> Fixture {
+fn explicit_fixture(
+    name: &'static str,
+    collection: &'static str,
+    rest: Value,
+    rpc: Value,
+) -> Fixture {
     Fixture {
         name,
         collection,
@@ -1038,11 +1051,7 @@ fn section_05_body() -> Fixture {
 /// the IR, so a field that is accepted and then ignored cannot pass here.
 fn fixtures() -> Vec<Fixture> {
     vec![
-        ir_fixture(
-            "the M1.6 hybrid (fixture step 12)",
-            "kb",
-            hybrid_request(),
-        ),
+        ir_fixture("the M1.6 hybrid (fixture step 12)", "kb", hybrid_request()),
         ir_fixture(
             "filter only (fixture step 13)",
             "kb",
@@ -1194,7 +1203,11 @@ async fn hybrid_search_over_http_returns_the_fixture_ranking_rpc() {
     let header = reply.token();
     let body = reply.expect_ok();
     assert_documented_keys(&body, &SEARCH_KEYS, "SearchResponse");
-    assert_eq!(pks(&body), [json!(1u64), json!(3u64), json!(2u64)], "{body}");
+    assert_eq!(
+        pks(&body),
+        [json!(1u64), json!(3u64), json!(2u64)],
+        "{body}"
+    );
     assert_eq!(body["readToken"], header.as_str(), "{body}");
     let scores = scores(&body);
     assert_eq!(scores.len(), 3, "{scores:?}");
@@ -1210,11 +1223,12 @@ async fn hybrid_search_over_http_returns_the_fixture_ranking_rpc() {
     // The same fixture over REST, read at the same instant, answers the same
     // three ids in the same order — the port is of a *behaviour*, not of a
     // spelling.
-    let rest = running
-        .rest_query("w", &hybrid_request())
-        .await
-        .expect_ok();
-    assert_eq!(pks(&rest), [json!(1u64), json!(3u64), json!(2u64)], "{rest}");
+    let rest = running.rest_query("w", &hybrid_request()).await.expect_ok();
+    assert_eq!(
+        pks(&rest),
+        [json!(1u64), json!(3u64), json!(2u64)],
+        "{rest}"
+    );
     assert_eq!(pks(&body), pks(&rest), "{body} vs {rest}");
 
     running.shutdown().await;
@@ -1291,7 +1305,11 @@ async fn sparse_and_hybrid_queries_over_http_rpc() {
         )
         .await
         .expect_ok();
-    assert_eq!(pks(&body), [json!(1u64), json!(2u64), json!(3u64)], "{body}");
+    assert_eq!(
+        pks(&body),
+        [json!(1u64), json!(2u64), json!(3u64)],
+        "{body}"
+    );
 
     // Step 26: the sparse vector of a document, read back sorted by index.
     let reply = running
@@ -1339,7 +1357,11 @@ async fn the_section_05_body_is_accepted_rpc() {
 
     let body = running.connect(SEARCH, &fixture.rpc).await.expect_ok();
     assert_documented_keys(&body, &SEARCH_KEYS, "SearchResponse");
-    assert_eq!(pks(&body), [json!(1u64), json!(3u64), json!(2u64)], "{body}");
+    assert_eq!(
+        pks(&body),
+        [json!(1u64), json!(3u64), json!(2u64)],
+        "{body}"
+    );
     assert_struct_eq(
         &hits(&body)[0]["source"],
         &json!({"body": "refund policy"}),
@@ -1349,7 +1371,11 @@ async fn the_section_05_body_is_accepted_rpc() {
     // The same body over REST answers the same ranking, which is the point of
     // the two spellings being one request.
     let rest = running.rest_query("w", &fixture.rest).await.expect_ok();
-    assert_eq!(pks(&rest), [json!(1u64), json!(3u64), json!(2u64)], "{rest}");
+    assert_eq!(
+        pks(&rest),
+        [json!(1u64), json!(3u64), json!(2u64)],
+        "{rest}"
+    );
     assert_eq!(pks(&body), pks(&rest), "{body} vs {rest}");
 
     // `rerank` arrives in M3: `invalid_argument`, with the same prose, on both
@@ -1392,7 +1418,11 @@ async fn loams_hot_used_is_none_without_a_hot_tier_and_off_is_honoured_rpc() {
     kb(&running, "w").await;
     let body = hybrid_rpc("w");
 
-    for headers in [&[][..], &[("Loams-Hot", "off")][..], &[("Loams-Hot", "ON")][..]] {
+    for headers in [
+        &[][..],
+        &[("Loams-Hot", "off")][..],
+        &[("Loams-Hot", "ON")][..],
+    ] {
         let reply = running.connect_with(SEARCH, headers, &body).await;
         assert_eq!(
             reply.header("loams-hot-used"),
@@ -1401,7 +1431,11 @@ async fn loams_hot_used_is_none_without_a_hot_tier_and_off_is_honoured_rpc() {
         );
         let body = reply.expect_ok();
         assert!(body.get("hotUsed").is_none(), "{body}");
-        assert_eq!(pks(&body), [json!(1u64), json!(3u64), json!(2u64)], "{body}");
+        assert_eq!(
+            pks(&body),
+            [json!(1u64), json!(3u64), json!(2u64)],
+            "{body}"
+        );
     }
 
     // Every route is inside the hot layer: the REST reader of the same header
@@ -1464,7 +1498,11 @@ async fn scroll_streams_pages_with_cursor() {
         "`page_token` and `after` are the same cursor pagination"
     );
 
-    let walked = by_page_token.iter().flatten().cloned().collect::<Vec<Value>>();
+    let walked = by_page_token
+        .iter()
+        .flatten()
+        .cloned()
+        .collect::<Vec<Value>>();
     let every = [
         json!(1u64),
         json!(2u64),
@@ -1604,10 +1642,7 @@ async fn routing_and_ranking_match_rest_for_every_fixture() {
             "{}: the RPC names the collection in a field",
             fixture.name
         );
-        let rest = running
-            .rest_query("w", &fixture.rest)
-            .await
-            .expect_ok();
+        let rest = running.rest_query("w", &fixture.rest).await.expect_ok();
         let rest_ids = pks(&rest);
         let rpc_reply = running.connect(SEARCH, &fixture.rpc).await;
         let rpc_token = rpc_reply.token();
@@ -1625,9 +1660,7 @@ async fn routing_and_ranking_match_rest_for_every_fixture() {
             "{}: how many hits",
             fixture.name
         );
-        for (index, (rest_hit, rpc_hit)) in
-            hits(&rest).iter().zip(hits(&rpc).iter()).enumerate()
-        {
+        for (index, (rest_hit, rpc_hit)) in hits(&rest).iter().zip(hits(&rpc).iter()).enumerate() {
             assert_documented_keys(rpc_hit, &HIT_KEYS, "Hit");
             let (rest_score, rpc_score) = (score(rest_hit), score(rpc_hit));
             assert!(
@@ -1643,7 +1676,8 @@ async fn routing_and_ranking_match_rest_for_every_fixture() {
         }
         assert_eq!(total(&rest), total(&rpc), "{}: the total", fixture.name);
         assert_eq!(
-            rpc["readToken"], rpc_token.as_str(),
+            rpc["readToken"],
+            rpc_token.as_str(),
             "{}: the token is the header and the body",
             fixture.name
         );
@@ -1859,7 +1893,10 @@ async fn filter_ir_is_accepted_in_every_form_the_rest_route_takes() {
     // The two M3 stages are still refused, on both surfaces, and saying so is
     // the half of this that a typed decode would lose.
     for stage in [
-        ("expand", json!({"graph": "kg", "from_field": "entity_id", "hops": 2})),
+        (
+            "expand",
+            json!({"graph": "kg", "from_field": "entity_id", "hops": 2}),
+        ),
         ("rerank", json!({"model": "x"})),
     ] {
         let mut rpc = section_05_body().rpc.clone();
@@ -1877,11 +1914,7 @@ async fn filter_ir_is_accepted_in_every_form_the_rest_route_takes() {
     // silently an RRF. They are only compared against REST, because their
     // ranking is not the fixture's.
     for (name, rest_fusion, rpc_fusion) in [
-        (
-            "dbsf",
-            json!("dbsf"),
-            json!({"dbsf": {}}),
-        ),
+        ("dbsf", json!("dbsf"), json!({"dbsf": {}})),
         (
             "weighted_sum",
             json!({"weighted_sum": {"weights": [1.0, 0.0]}}),
@@ -1946,7 +1979,10 @@ async fn an_empty_result_set_is_an_empty_page_not_an_error() {
         .expect_ok();
     assert_documented_keys(&body, &SEARCH_KEYS, "SearchResponse");
     assert!(absent_or(&body, "hits", json!([])), "{body}");
-    assert!(body.get("total").is_none(), "no total was asked for: {body}");
+    assert!(
+        body.get("total").is_none(),
+        "no total was asked for: {body}"
+    );
     assert!(
         !body["readToken"].as_str().unwrap_or_default().is_empty(),
         "an empty answer still names the state it read at: {body}"
@@ -2051,16 +2087,12 @@ async fn scroll_all(running: &Running, cursor: &str) -> Vec<Vec<Value>> {
     let mut pages = Vec::new();
     let mut after: Option<Value> = None;
     for page_number in 0..8 {
-        let mut extra: Vec<(&str, Value)> = vec![
-            ("limit", json!(2)),
-            ("select", json!({"source": "none"})),
-        ];
+        let mut extra: Vec<(&str, Value)> =
+            vec![("limit", json!(2)), ("select", json!({"source": "none"}))];
         if let Some(value) = &after {
             extra.push((cursor, value.clone()));
         }
-        let reply = running
-            .connect(SCROLL_DOCUMENTS, &kb_request(&extra))
-            .await;
+        let reply = running.connect(SCROLL_DOCUMENTS, &kb_request(&extra)).await;
         let read = reply.token();
         let page = reply.expect_ok();
         assert_documented_keys(&page, &SCROLL_KEYS, "ScrollDocumentsResponse");

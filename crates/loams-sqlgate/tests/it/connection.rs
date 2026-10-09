@@ -303,3 +303,20 @@ fn first_packet_secret_is_not_retained() {
     assert!(feed(&mut p, &frame(&r.encode().expect("enc"), 1)).is_err());
     assert!(p.response().is_none());
 }
+
+/// Task 4: the gate refuses a connection (limits) at the right sequence id,
+/// and the phase then refuses everything.
+#[test]
+fn refuse_frames_an_error_and_fails_the_phase() {
+    use loams_sqlgate::codec::command::ErrPacket;
+    let (mut p, seq) = tls_phase();
+    let r = response(true, CACHING_SHA2, vec![9; 32]);
+    assert!(matches!(
+        feed(&mut p, &frame(&r.encode().expect("enc"), seq)),
+        Ok(Step::CheckFast { .. })
+    ));
+    let out = p.refuse(&ErrPacket::new(1040, *b"08004", "Too many connections"));
+    let pk = packets(&out);
+    assert_eq!((pk[0].0, pk[0].1[0]), (3, 0xff));
+    assert!(p.fast_result(true).is_err());
+}

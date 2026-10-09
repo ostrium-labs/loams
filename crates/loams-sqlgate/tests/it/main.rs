@@ -5,6 +5,7 @@ mod clients;
 mod command;
 mod connection;
 mod fuzz;
+mod gate;
 mod handshake;
 mod licences;
 mod packet;

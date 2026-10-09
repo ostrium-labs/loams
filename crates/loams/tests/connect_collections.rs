@@ -309,7 +309,10 @@ impl Running {
 /// `GetCollection` for a name or an alias.
 async fn collection(running: &Running, ns: &str, name: &str) -> Value {
     running
-        .connect(GET_COLLECTION, &json!({"namespace": ns, "collection": name}))
+        .connect(
+            GET_COLLECTION,
+            &json!({"namespace": ns, "collection": name}),
+        )
         .await
         .expect_ok()
 }
@@ -371,11 +374,17 @@ fn assert_documented_keys(value: &Value, documented: &[&str], what: &str) {
 /// accepted as either.
 fn absent_or(value: &Value, key: &str, expected: Value) -> bool {
     match value.get(key) {
-        None => matches!(
-            expected,
-            Value::Null | Value::Bool(false) | Value::String(_) | Value::Array(_) | Value::Object(_)
-        ) || expected.as_u64() == Some(0)
-            || expected.as_i64() == Some(0),
+        None => {
+            matches!(
+                expected,
+                Value::Null
+                    | Value::Bool(false)
+                    | Value::String(_)
+                    | Value::Array(_)
+                    | Value::Object(_)
+            ) || expected.as_u64() == Some(0)
+                || expected.as_i64() == Some(0)
+        }
         Some(got) => *got == expected,
     }
 }
@@ -481,9 +490,7 @@ const UUID: &str = "0190f5c4-6c1e-7b3a-9d2e-4f5a6b7c8d9e";
 
 /// The M1.6 fixture step 10 upserts.
 fn kb_docs() -> Value {
-    let upsert = |id: Value, source: Value, embedding: Value| {
-        json!({"upsert": {"id": id, "source": source, "vectors": embedding}})
-    };
+    let upsert = |id: Value, source: Value, embedding: Value| json!({"upsert": {"id": id, "source": source, "vectors": embedding}});
     json!({
         "ops": [
             upsert(json!(1), json!({"body": "refund policy", "tenant": "a", "n": 1}), json!({"embedding": [1.0, 0.0, 0.0]})),
@@ -543,7 +550,10 @@ fn hot_state(body: &Value, structure: &str) -> Value {
 async fn collection_routes_speak_the_documented_json_rpc() {
     let running = Running::start().await;
     let create = json!({"namespace": "w", "name": "kb", "schema": kb_schema(), "partitions": 2});
-    let first = running.connect(CREATE_COLLECTION, &create).await.expect_ok();
+    let first = running
+        .connect(CREATE_COLLECTION, &create)
+        .await
+        .expect_ok();
     assert_documented_keys(&first, &INFO_KEYS, "CollectionInfo");
     assert_documented_keys(
         &first["backpressure"],
@@ -559,12 +569,13 @@ async fn collection_routes_speak_the_documented_json_rpc() {
     assert_eq!(first["name"], "kb", "{first}");
     assert_eq!(first["namespace"], "w", "{first}");
     assert_eq!(first["partitions"], 2, "{first}");
-    assert_eq!(struct_number(&first["schema"]["version"]), Some(1.0), "{first}");
-    // 0 before the first commit, which proto3 omits.
-    assert!(
-        absent_or(&first, "manifestVersion", json!(0)),
+    assert_eq!(
+        struct_number(&first["schema"]["version"]),
+        Some(1.0),
         "{first}"
     );
+    // 0 before the first commit, which proto3 omits.
+    assert!(absent_or(&first, "manifestVersion", json!(0)), "{first}");
     assert!(absent_or(&first, "aliases", json!([])), "{first}");
     assert_eq!(
         struct_number(&first["schema"]["vectors"][0]["dim"]),
@@ -574,7 +585,10 @@ async fn collection_routes_speak_the_documented_json_rpc() {
 
     // A retry-safe repeat succeeds with the same id, and a different schema
     // under the name is `already_exists`.
-    let again = running.connect(CREATE_COLLECTION, &create).await.expect_ok();
+    let again = running
+        .connect(CREATE_COLLECTION, &create)
+        .await
+        .expect_ok();
     assert_eq!(again["id"], first["id"], "{again}");
     let mut other = kb_schema();
     other["vectors"][0]["dim"] = json!(4);
@@ -617,11 +631,7 @@ async fn collection_routes_speak_the_documented_json_rpc() {
         .connect(LIST_COLLECTIONS, &json!({"namespace": "w"}))
         .await
         .expect_ok();
-    assert_documented_keys(
-        &list,
-        &["collections", PAGE_KEY],
-        "ListCollectionsResponse",
-    );
+    assert_documented_keys(&list, &["collections", PAGE_KEY], "ListCollectionsResponse");
     let names: Vec<&str> = list["collections"]
         .as_array()
         .expect("collections[]")
@@ -665,25 +675,31 @@ async fn collection_routes_speak_the_documented_json_rpc() {
         .await
         .expect_ok();
     assert_documented_keys(&body, &["schema"], "AddFieldsResponse");
-    assert_eq!(struct_number(&body["schema"]["version"]), Some(2.0), "{body}");
+    assert_eq!(
+        struct_number(&body["schema"]["version"]),
+        Some(2.0),
+        "{body}"
+    );
     assert_eq!(body["schema"]["fields"][3]["name"], "color", "{body}");
     assert_eq!(body["schema"]["annotations"]["loams.team"], "x", "{body}");
 
     // Versions: none before the first commit.
     let body = running
-        .connect(LIST_VERSIONS, &json!({"namespace": "w", "collection": "kb"}))
+        .connect(
+            LIST_VERSIONS,
+            &json!({"namespace": "w", "collection": "kb"}),
+        )
         .await
         .expect_ok();
-    assert_documented_keys(
-        &body,
-        &["versions", PAGE_KEY],
-        "ListVersionsResponse",
-    );
+    assert_documented_keys(&body, &["versions", PAGE_KEY], "ListVersionsResponse");
     assert!(absent_or(&body, "versions", json!([])), "{body}");
 
     // A missing collection is `not_found` with its kind and name.
     let error = running
-        .connect(GET_COLLECTION, &json!({"namespace": "w", "collection": "nope"}))
+        .connect(
+            GET_COLLECTION,
+            &json!({"namespace": "w", "collection": "nope"}),
+        )
         .await
         .expect_error(StatusCode::NOT_FOUND);
     assert_eq!(error["code"], "not_found", "{error}");
@@ -691,12 +707,18 @@ async fn collection_routes_speak_the_documented_json_rpc() {
 
     // Drop twice: the second drop is a success that dropped nothing.
     let body = running
-        .connect(DROP_COLLECTION, &json!({"namespace": "w", "collection": "kb"}))
+        .connect(
+            DROP_COLLECTION,
+            &json!({"namespace": "w", "collection": "kb"}),
+        )
         .await
         .expect_ok();
     assert!(absent_or(&body, "dropped", json!(true)), "{body}");
     let body = running
-        .connect(DROP_COLLECTION, &json!({"namespace": "w", "collection": "kb"}))
+        .connect(
+            DROP_COLLECTION,
+            &json!({"namespace": "w", "collection": "kb"}),
+        )
         .await
         .expect_ok();
     // `dropped: false` is a proto3 default, so it is absent.
@@ -743,17 +765,27 @@ async fn write_get_scroll_count_round_trip_over_http_rpc() {
         .connect(LIST_COLLECTIONS, &json!({"namespace": "w"}))
         .await
         .expect_ok();
-    assert_eq!(list["collections"].as_array().map(Vec::len), Some(1), "{list}");
+    assert_eq!(
+        list["collections"].as_array().map(Vec::len),
+        Some(1),
+        "{list}"
+    );
     assert_eq!(list["collections"][0]["id"], info["id"], "{list}");
     assert_eq!(list["collections"][0]["name"], "kb", "{list}");
 
     // And `GetCollection` reports what the link applied: six live rows at a
     // manifest version above 0, with no lag left.
-    let applied = until(&running, "w", "kb", "the six documents are applied", |info| {
-        int64(&info["liveDocCount"]) == Some(6)
-            && absent_or(info, "linkLagRecords", json!(0))
-            && int64(&info["manifestVersion"]).is_some_and(|version| version > 0)
-    })
+    let applied = until(
+        &running,
+        "w",
+        "kb",
+        "the six documents are applied",
+        |info| {
+            int64(&info["liveDocCount"]) == Some(6)
+                && absent_or(info, "linkLagRecords", json!(0))
+                && int64(&info["manifestVersion"]).is_some_and(|version| version > 0)
+        },
+    )
     .await;
     assert_eq!(applied["id"], info["id"], "{applied}");
     assert_eq!(applied["namespace"], "w", "{applied}");
@@ -977,7 +1009,10 @@ async fn create_collection_repeat_is_safe() {
         "schema": kb_schema(),
         "partitions": 2
     });
-    let first = running.connect(CREATE_COLLECTION, &request).await.expect_ok();
+    let first = running
+        .connect(CREATE_COLLECTION, &request)
+        .await
+        .expect_ok();
     assert!(int64(&first["id"]).is_some(), "{first}");
 
     // The retry: the same request, three times over.
@@ -991,7 +1026,10 @@ async fn create_collection_repeat_is_safe() {
         );
         assert_eq!(again.body["id"], first["id"], "attempt {attempt}");
         assert_eq!(again.body["name"], first["name"], "attempt {attempt}");
-        assert_eq!(again.body["namespace"], first["namespace"], "attempt {attempt}");
+        assert_eq!(
+            again.body["namespace"], first["namespace"],
+            "attempt {attempt}"
+        );
     }
 
     // One collection, not four: the repeat created nothing.
@@ -999,13 +1037,20 @@ async fn create_collection_repeat_is_safe() {
         .connect(LIST_COLLECTIONS, &json!({"namespace": "w"}))
         .await
         .expect_ok();
-    assert_eq!(list["collections"].as_array().map(Vec::len), Some(1), "{list}");
+    assert_eq!(
+        list["collections"].as_array().map(Vec::len),
+        Some(1),
+        "{list}"
+    );
     assert_eq!(list["collections"][0]["id"], first["id"], "{list}");
 
     // And the collection is the one every other RPC resolves.
     assert_eq!(collection(&running, "w", "kb").await["id"], first["id"]);
     let versions = running
-        .connect(LIST_VERSIONS, &json!({"namespace": "w", "collection": "kb"}))
+        .connect(
+            LIST_VERSIONS,
+            &json!({"namespace": "w", "collection": "kb"}),
+        )
         .await
         .expect_ok();
     assert!(absent_or(&versions, "versions", json!([])), "{versions}");
@@ -1042,8 +1087,7 @@ async fn scan_returns_pin_token() {
     assert_eq!(plan["durableToken"], token.as_str(), "{plan}");
     assert!(token.starts_with("v1:"), "{token}");
     assert_eq!(
-        plan["pin"]["manifestVersion"],
-        plan["manifestVersion"],
+        plan["pin"]["manifestVersion"], plan["manifestVersion"],
         "{plan}"
     );
 
@@ -1056,7 +1100,10 @@ async fn scan_returns_pin_token() {
         .await
         .expect_ok();
     assert_eq!(repinned["fragments"], plan["fragments"], "{repinned}");
-    assert_eq!(repinned["manifestVersion"], plan["manifestVersion"], "{repinned}");
+    assert_eq!(
+        repinned["manifestVersion"], plan["manifestVersion"],
+        "{repinned}"
+    );
 
     running.shutdown().await;
 }
@@ -1103,7 +1150,11 @@ async fn collection_names_are_fields_not_paths() {
         .connect(LIST_COLLECTIONS, &json!({"namespace": "w"}))
         .await
         .expect_ok();
-    assert_eq!(list["collections"].as_array().map(Vec::len), Some(2), "{list}");
+    assert_eq!(
+        list["collections"].as_array().map(Vec::len),
+        Some(2),
+        "{list}"
+    );
 
     // A name in the path is not a route: the REST shape under the Connect
     // package, and the Connect shape under `/v1`, are both unrouted. The
@@ -1115,7 +1166,11 @@ async fn collection_names_are_fields_not_paths() {
         "/loams.collection.v1/namespaces/w/collections/kb",
     ] {
         let reply = running
-            .rest(Method::POST, path, Some(json!({"namespace": "w", "collection": "kb"})))
+            .rest(
+                Method::POST,
+                path,
+                Some(json!({"namespace": "w", "collection": "kb"})),
+            )
             .await;
         assert!(
             reply.status().is_client_error(),
@@ -1148,7 +1203,10 @@ async fn unknown_collection_reports_a_reason() {
     seed(&running, "w", "kb", 1).await;
 
     let error = running
-        .connect(GET_COLLECTION, &json!({"namespace": "w", "collection": "nope"}))
+        .connect(
+            GET_COLLECTION,
+            &json!({"namespace": "w", "collection": "nope"}),
+        )
         .await
         .expect_error(StatusCode::NOT_FOUND);
     let info = error_info(&error);
@@ -1172,7 +1230,10 @@ async fn unknown_collection_reports_a_reason() {
             ADD_FIELDS,
             json!({"namespace": "w", "collection": "nope", "fields": [{"name": "color", "kind": "keyword"}]}),
         ),
-        (LIST_VERSIONS, json!({"namespace": "w", "collection": "nope"})),
+        (
+            LIST_VERSIONS,
+            json!({"namespace": "w", "collection": "nope"}),
+        ),
         (SCAN, json!({"namespace": "w", "collection": "nope"})),
         (
             SET_HOT,

@@ -10,6 +10,8 @@ pub mod mysql_wire;
 #[cfg(feature = "pgwire")]
 pub mod pg;
 mod server;
+#[cfg(feature = "sqldb")]
+pub mod sqlgate;
 
 pub use meta_backend::{MetaBackend, NO_TIKV_FEATURE, TIKV_SCHEME};
 pub use server::{ClusterConfig, Server, ServerConfig, ServerError};

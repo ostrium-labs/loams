@@ -1448,8 +1448,8 @@ fn every_component_survives_every_store_fault() {
     let rows = table.clone();
     table.push_str(&format!("\nCells: {} ({counts:?}).\n", 2 * results.len()));
     // Where cargo actually put this build.
-//
-// `CARGO_TARGET_DIR` is the wrong source: cargo does not export it to the
+    //
+    // `CARGO_TARGET_DIR` is the wrong source: cargo does not export it to the
     // processes it runs, so `std::env::var` sees it as unset even when it is
     // what directed the build. `build.target-dir` in a parent
     // `.cargo/config.toml` — which is how this workspace shares one target dir
@@ -1457,8 +1457,8 @@ fn every_component_survives_every_store_fault() {
     // at all, and the old fallback then pointed at a `<manifest>/../../target`
     // that does not exist, so the write below failed with `NotFound` before the
     // comparison it exists to feed ever ran.
-//
-// `CARGO_TARGET_TMPDIR` is the one cargo does bake into an integration test at
+    //
+    // `CARGO_TARGET_TMPDIR` is the one cargo does bake into an integration test at
     // compile time, and it points at `<target>/tmp`, so its parent is the
     // target dir whatever configured it.
     let target = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))

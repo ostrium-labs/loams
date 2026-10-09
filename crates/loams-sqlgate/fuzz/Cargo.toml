@@ -17,7 +17,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-loams-sqlgate = { path = ".." }
+loams-sqlgate = { path = "..", default-features = false }
 
 [[bin]]
 name = "handshake_response"

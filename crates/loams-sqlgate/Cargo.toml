@@ -9,19 +9,38 @@ authors.workspace = true
 publish = false
 
 # The codec (src/codec) is sans-I/O: no tokio, sockets, clocks or randomness.
+# The server (src/{server,auth,upstream,limits}.rs, Task 4) does the I/O.
 # Callers supply bytes, nonces and verdicts; it returns bytes and actions.
 # Untrusted input is parsed with explicit bounds (codec::handshake::Limits,
 # packet::Assembler's maximum) and never panics (tests/it/fuzz.rs, fuzz/).
+[features]
+default = ["server"]
+# The gate server (Task 4). The fuzz crate builds the codec without it.
+server = ["dep:argon2", "dep:async-trait", "dep:getrandom", "dep:rustls", "dep:tokio", "dep:tokio-rustls", "dep:tracing"]
+
 [dependencies]
+argon2 = { version = "0.6.0", optional = true }
+async-trait = { workspace = true, optional = true }
+getrandom = { version = "0.3", optional = true }
+rustls = { workspace = true, features = ["ring", "std", "tls12", "logging"], optional = true }
 sha2.workspace = true
 # Constant-time comparison of auth digests. BSD-3-Clause (deny.toml allows it).
 subtle = "2.6"
 thiserror.workspace = true
+tokio = { workspace = true, optional = true }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"], optional = true }
+tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
+async-trait.workspace = true
 hex.workspace = true
+# The LOAMS_IT_SQLDB test runs real TiDB pools through LocalRuntime.
+loams-sqldb = { path = "../loams-sqldb" }
+mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust", "rustls-tls", "ring", "tls12"] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 proptest.workspace = true
 serde_json.workspace = true
+tokio = { workspace = true }
 
 [[test]]
 name = "it"

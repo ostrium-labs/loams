@@ -66,6 +66,7 @@ opensrv-mysql = { workspace = true, optional = true }
 loams-qdrant = { workspace = true, optional = true }
 loams-query.workspace = true
 loams-store.workspace = true
+loams-sqlgate = { path = "../loams-sqlgate", optional = true }
 loams-stream-grpc = { workspace = true, optional = true }
 loams-tikv = { workspace = true, optional = true }
 loams-worker.workspace = true
@@ -126,6 +127,8 @@ stream-grpc = ["dep:loams-stream-grpc"]
 # `cargo tree -p loams -e normal | grep -c grafeo` = 0) and the graph RPCs answer
 # `feature_not_in_variant`.
 graph = ["dep:loams-graph"]
+# The Loams SQL gate (`--sqlgate-listen`; plan SQ1 Task 4).
+sqldb = ["dep:loams-sqlgate"]
 # Builds the multi-process cluster tests (`tests/cluster.rs`, M1.3 Task 11;
 # E43); CI runs them in their own job.
 cluster-tests = []

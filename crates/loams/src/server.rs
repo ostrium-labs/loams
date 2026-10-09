@@ -216,6 +216,9 @@ pub struct ServerConfig {
     /// Native stream gRPC listener for Dapr protocol adapters.
     #[cfg(feature = "stream-grpc")]
     pub stream_grpc: Option<SocketAddr>,
+    /// The Loams SQL gate (plan SQ1 Task 4).
+    #[cfg(feature = "sqldb")]
+    pub sqlgate: Option<crate::sqlgate::SqlgateConfig>,
     /// How Flight SQL bounds its statements and its ingest.
     pub flight: FlightConfig,
     /// CloudEvents ingest: the dedup window (design §02 §7.4).
@@ -366,6 +369,8 @@ impl ServerConfig {
             flight_sql: None,
             #[cfg(feature = "stream-grpc")]
             stream_grpc: None,
+            #[cfg(feature = "sqldb")]
+            sqlgate: None,
             flight: FlightConfig::default(),
             cloudevents: crate::api::events::EventsConfig::default(),
             #[cfg(feature = "mysql-wire")]
@@ -617,6 +622,13 @@ pub enum ServerError {
         addr: SocketAddr,
         source: std::io::Error,
     },
+    /// The Loams SQL gate could not start (plan SQ1 Task 4).
+    #[cfg(feature = "sqldb")]
+    #[error("Loams SQL gate on {addr}: {source}")]
+    SqlgateListen {
+        addr: SocketAddr,
+        source: std::io::Error,
+    },
     /// A Qdrant gateway listener could not be bound (plan M1.4 Task 2).
     #[cfg(feature = "qdrant")]
     #[error("qdrant listen on {addr}: {source}")]
@@ -787,6 +799,8 @@ pub struct Server {
     pg: Option<crate::pg::PgHandle>,
     #[cfg(feature = "stream-grpc")]
     stream_grpc: Option<StreamGrpc>,
+    #[cfg(feature = "sqldb")]
+    sqlgate: Option<crate::sqlgate::SqlgateHandle>,
     #[cfg(feature = "qdrant")]
     qdrant: Option<Qdrant>,
     /// The embedded durable server (D1).
@@ -966,6 +980,8 @@ struct Assembled {
     pg: Option<crate::pg::PgHandle>,
     #[cfg(feature = "stream-grpc")]
     stream_grpc: Option<StreamGrpc>,
+    #[cfg(feature = "sqldb")]
+    sqlgate: Option<crate::sqlgate::SqlgateHandle>,
     #[cfg(feature = "qdrant")]
     qdrant: Option<Qdrant>,
     /// Started by the caller before `assemble` and handed over here (a
@@ -1449,6 +1465,8 @@ impl Server {
             pg: parts.pg,
             #[cfg(feature = "stream-grpc")]
             stream_grpc: parts.stream_grpc,
+            #[cfg(feature = "sqldb")]
+            sqlgate: parts.sqlgate,
             #[cfg(feature = "qdrant")]
             qdrant: parts.qdrant,
             durable,
@@ -1549,6 +1567,8 @@ impl Server {
                     pg: parts.pg,
                     #[cfg(feature = "stream-grpc")]
                     stream_grpc: parts.stream_grpc,
+                    #[cfg(feature = "sqldb")]
+                    sqlgate: parts.sqlgate,
                     #[cfg(feature = "qdrant")]
                     qdrant: parts.qdrant,
                     durable: parts.durable,
@@ -1828,6 +1848,38 @@ impl Server {
                     return Err(ServerError::StreamGrpcListen { addr, source });
                 }
             },
+            None => None,
+        };
+        // The Loams SQL gate, on gateways only (plan SQ1 Task 4).
+        #[cfg(feature = "sqldb")]
+        let sqlgate_listener = match config.sqlgate.clone().filter(|_| roles.gateway) {
+            Some(gate_config) => match crate::sqlgate::listen(&gate_config).await {
+                Ok((listener, addr)) => Some((listener, addr, gate_config)),
+                Err(source) => {
+                    if let Err(err) = cache.close().await {
+                        tracing::warn!(%err, "closing the cache after a failed start");
+                    }
+                    return Err(ServerError::SqlgateListen {
+                        addr: gate_config.listen,
+                        source,
+                    });
+                }
+            },
+            None => None,
+        };
+        #[cfg(feature = "sqldb")]
+        let sqlgate = match sqlgate_listener {
+            Some((listener, addr, gate_config)) => {
+                match crate::sqlgate::start(listener, addr, &gate_config) {
+                    Ok(handle) => Some(handle),
+                    Err(source) => {
+                        if let Err(err) = cache.close().await {
+                            tracing::warn!(%err, "closing the cache after a failed start");
+                        }
+                        return Err(ServerError::SqlgateListen { addr, source });
+                    }
+                }
+            }
             None => None,
         };
         // The Qdrant gateway's listeners, on gateways only (plan M1.4 Task
@@ -2133,6 +2185,8 @@ impl Server {
             pg,
             #[cfg(feature = "stream-grpc")]
             stream_grpc,
+            #[cfg(feature = "sqldb")]
+            sqlgate,
             #[cfg(feature = "qdrant")]
             qdrant,
             durable: Durable::none(),
@@ -2235,6 +2289,12 @@ impl Server {
     #[cfg(feature = "pgwire")]
     pub fn pg_addr(&self) -> Option<SocketAddr> {
         self.pg.as_ref().map(|pg| pg.addr)
+    }
+
+    /// The Loams SQL gate's address, when configured.
+    #[cfg(feature = "sqldb")]
+    pub fn sqlgate_addr(&self) -> Option<SocketAddr> {
+        self.sqlgate.as_ref().map(|gate| gate.addr)
     }
 
     /// The native stream gRPC listener, when configured.
@@ -2356,6 +2416,10 @@ impl Server {
         #[cfg(feature = "stream-grpc")]
         if let Some(stream_grpc) = self.stream_grpc {
             stream_grpc.stop().await;
+        }
+        #[cfg(feature = "sqldb")]
+        if let Some(sqlgate) = self.sqlgate {
+            sqlgate.stop().await;
         }
         // D1 (T0-6, X8): after Flight (and, in cluster mode, after
         // `late.close()`), before the collection service: the runtime first,

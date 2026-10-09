@@ -1,0 +1,670 @@
+//! The gate server (plan SQ1 Task 4; §47 §12): a tokio listener with
+//! rustls TLS 1.2+ and SNI certificates, the connection phase
+//! ([`crate::codec::connection`]), Argon2id and fast-auth identity, an
+//! upstream login over TLS with PROXY v2, and a relay that refuses
+//! `COM_CHANGE_USER`, replication and admin commands (1235).
+//!
+//! Plaintext is accepted only from loopback peers ([`PlaintextPolicy`]).
+//! Every connection gets a fresh OS-random nonce. The upstream profile is
+//! static ([`TIDB_V8_5_8`]); TiDB's own greeting is never relayed.
+
+use std::collections::HashMap;
+use std::fmt;
+use std::io;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::time::Duration;
+
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::server::{ClientHello as TlsClientHello, ResolvesServerCert};
+use rustls::sign::CertifiedKey;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex;
+use tokio_rustls::{TlsAcceptor, TlsConnector};
+
+use crate::auth::{FastAuthCache, ResolvedUser, UserResolver, decoy_hash, verify_password};
+use crate::codec::command::{Command, ErrPacket, classify};
+use crate::codec::connection::{ConnectionPhase, PhaseError, Step};
+use crate::codec::handshake::{Capabilities, HandshakeV10, Limits, Nonce, TIDB_V8_5_8, advertise};
+use crate::codec::packet::{HEADER_LEN, MAX_FRAME, encode};
+use crate::limits::{ActivitySink, LimitError, Limiter, LimitsConfig, Slot};
+use crate::upstream::{ClientContext, CredentialStore, PoolResolver, Upstream, connect};
+use crate::wire::{ClientStream, Prefixed};
+
+/// The version the gate advertises (Q658, as TiDB's rendered config).
+pub const SERVER_VERSION: &str = "8.0.11-TiDB-v8.5.8-Loams";
+
+/// When plaintext (no TLS) is accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaintextPolicy {
+    /// From loopback peers only (127.0.0.0/8, ::1, v4-mapped loopback).
+    LoopbackOnly,
+    /// Never.
+    Never,
+}
+
+impl PlaintextPolicy {
+    /// Whether a peer at `ip` may skip TLS.
+    pub fn allows(self, ip: IpAddr) -> bool {
+        match self {
+            PlaintextPolicy::Never => false,
+            PlaintextPolicy::LoopbackOnly => match ip {
+                IpAddr::V4(v4) => v4.is_loopback(),
+                IpAddr::V6(v6) => {
+                    v6.is_loopback() || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback())
+                }
+            },
+        }
+    }
+}
+
+/// One certificate and the SNI names it serves.
+pub struct SniCert {
+    /// Host names (SNI) this certificate answers; the first certificate
+    /// also answers clients that send no or an unknown name.
+    pub names: Vec<String>,
+    /// The chain, leaf first.
+    pub chain: Vec<CertificateDer<'static>>,
+    /// The private key.
+    pub key: PrivateKeyDer<'static>,
+}
+
+impl fmt::Debug for SniCert {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SniCert")
+            .field("names", &self.names)
+            .field("key", &"[redacted]")
+            .finish()
+    }
+}
+
+#[derive(Debug)]
+struct SniResolver {
+    by_name: HashMap<String, Arc<CertifiedKey>>,
+    default: Arc<CertifiedKey>,
+}
+
+impl ResolvesServerCert for SniResolver {
+    fn resolve(&self, hello: TlsClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        let by_name = hello
+            .server_name()
+            .and_then(|n| self.by_name.get(&n.to_ascii_lowercase()));
+        Some(by_name.unwrap_or(&self.default).clone())
+    }
+}
+
+/// A TLS 1.2+ server config choosing the certificate by SNI.
+pub fn sni_server_config(certs: Vec<SniCert>) -> Result<Arc<rustls::ServerConfig>, rustls::Error> {
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let mut by_name = HashMap::new();
+    let mut default = None;
+    for c in certs {
+        let key = provider.key_provider.load_private_key(c.key)?;
+        let ck = Arc::new(CertifiedKey::new(c.chain, key));
+        for n in c.names {
+            by_name.insert(n.to_ascii_lowercase(), ck.clone());
+        }
+        default.get_or_insert(ck);
+    }
+    let default = default.ok_or(rustls::Error::General("no certificate".into()))?;
+    let config = rustls::ServerConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])?
+        .with_no_client_auth()
+        .with_cert_resolver(Arc::new(SniResolver { by_name, default }));
+    Ok(Arc::new(config))
+}
+
+/// The gate's settings.
+#[derive(Debug, Clone)]
+pub struct GateConfig {
+    /// Client TLS ([`sni_server_config`]).
+    pub tls: Arc<rustls::ServerConfig>,
+    /// TLS to TiDB (trusting the pool's CA).
+    pub upstream_tls: Arc<rustls::ClientConfig>,
+    /// When plaintext is allowed.
+    pub plaintext: PlaintextPolicy,
+    /// The client handshake deadline (10 s).
+    pub handshake_timeout: Duration,
+    /// The upstream connect and login deadline.
+    pub upstream_timeout: Duration,
+    /// Per-database limits.
+    pub limits: LimitsConfig,
+    /// The static upstream capability profile ([`TIDB_V8_5_8`]).
+    pub profile: Capabilities,
+    /// The advertised server version.
+    pub server_version: String,
+    /// Fast-auth cache size, in users.
+    pub fast_auth_cache: usize,
+}
+
+impl GateConfig {
+    /// Defaults: loopback-only plaintext, 10 s handshake, 30 s upstream,
+    /// default limits, the v8.5.8 profile.
+    pub fn new(tls: Arc<rustls::ServerConfig>, upstream_tls: Arc<rustls::ClientConfig>) -> Self {
+        Self {
+            tls,
+            upstream_tls,
+            plaintext: PlaintextPolicy::LoopbackOnly,
+            handshake_timeout: Duration::from_secs(10),
+            upstream_timeout: Duration::from_secs(30),
+            limits: LimitsConfig::default(),
+            profile: TIDB_V8_5_8,
+            server_version: SERVER_VERSION.into(),
+            fast_auth_cache: 100_000,
+        }
+    }
+}
+
+/// The gate's collaborators (the control plane's RPCs in later tasks).
+pub struct GateDeps {
+    /// `ResolveUser`.
+    pub users: Arc<dyn UserResolver>,
+    /// Internal `ri_<role>` passwords.
+    pub credentials: Arc<dyn CredentialStore>,
+    /// Pool members (`EnsureRunning`).
+    pub pools: Arc<dyn PoolResolver>,
+    /// `ReportActivity`.
+    pub activity: Arc<dyn ActivitySink>,
+}
+
+impl fmt::Debug for GateDeps {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("GateDeps")
+    }
+}
+
+/// Counters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct GateStats {
+    /// Logins that passed the full (Argon2id) check.
+    pub full_auths: u64,
+    /// Logins that passed the fast-auth cache.
+    pub fast_hits: u64,
+}
+
+/// The gate.
+#[derive(Debug)]
+pub struct Gate {
+    config: GateConfig,
+    deps: GateDeps,
+    cache: FastAuthCache,
+    limiter: Arc<Limiter>,
+    next_id: AtomicU32,
+    full_auths: AtomicU64,
+    fast_hits: AtomicU64,
+}
+
+/// A client that passed authentication.
+struct Authenticated {
+    client: ClientStream,
+    peer: SocketAddr,
+    gate: SocketAddr,
+    user: ResolvedUser,
+    agreed: Capabilities,
+    database: Option<String>,
+    charset: u8,
+    done: Vec<u8>,
+}
+
+fn err_access(user: &str) -> ErrPacket {
+    ErrPacket::new(1045, *b"28000", &format!("Access denied for user '{user}'"))
+}
+
+fn err_limit(e: LimitError) -> ErrPacket {
+    match e {
+        LimitError::Cap => ErrPacket::new(1040, *b"08004", "Too many connections"),
+        LimitError::Rate => ErrPacket::new(1040, *b"08004", "Too many connections, retry later"),
+    }
+}
+
+fn err_unavailable() -> ErrPacket {
+    ErrPacket::new(1040, *b"08004", "database is unavailable, retry")
+}
+
+/// The OK bytes of a finished login with the last packet (the OK) replaced
+/// by `err` at the same sequence id.
+fn replace_ok(done: &[u8], err: &ErrPacket) -> Vec<u8> {
+    let mut start = 0;
+    let mut last = 0;
+    while start + HEADER_LEN <= done.len() {
+        last = start;
+        let len = usize::from(done[start])
+            | usize::from(done[start + 1]) << 8
+            | usize::from(done[start + 2]) << 16;
+        start += HEADER_LEN + len;
+    }
+    let mut out = done[..last].to_vec();
+    let mut seq = done.get(last + 3).copied().unwrap_or(2);
+    encode(&err.encode(), &mut seq, &mut out);
+    out
+}
+
+impl Gate {
+    /// A gate with `config` and `deps`.
+    pub fn new(config: GateConfig, deps: GateDeps) -> Arc<Self> {
+        Arc::new(Self {
+            cache: FastAuthCache::new(config.fast_auth_cache),
+            limiter: Limiter::new(config.limits.clone()),
+            config,
+            deps,
+            next_id: AtomicU32::new(1),
+            full_auths: AtomicU64::new(0),
+            fast_hits: AtomicU64::new(0),
+        })
+    }
+
+    /// Counters.
+    pub fn stats(&self) -> GateStats {
+        GateStats {
+            full_auths: self.full_auths.load(Ordering::Relaxed),
+            fast_hits: self.fast_hits.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Serves clients on `listener` until it fails.
+    pub async fn serve(self: Arc<Self>, listener: TcpListener) -> io::Result<()> {
+        loop {
+            let (tcp, peer) = listener.accept().await?;
+            let gate = self.clone();
+            tokio::spawn(async move { gate.handle(tcp, peer).await });
+        }
+    }
+
+    async fn handle(self: Arc<Self>, tcp: TcpStream, peer: SocketAddr) {
+        let _ = tcp.set_nodelay(true);
+        let Ok(local) = tcp.local_addr() else { return };
+        let authed = match tokio::time::timeout(
+            self.config.handshake_timeout,
+            self.handshake(tcp, peer, local),
+        )
+        .await
+        {
+            Ok(Some(a)) => a,
+            Ok(None) => return,
+            Err(_) => {
+                tracing::debug!(%peer, "handshake deadline");
+                return;
+            }
+        };
+        let Authenticated {
+            mut client,
+            user,
+            done,
+            ..
+        } = authed;
+        let ctx = ClientContext {
+            peer: authed.peer,
+            gate: authed.gate,
+            agreed: authed.agreed,
+            database: authed.database.clone(),
+            charset: authed.charset,
+        };
+        let slot = match self.limiter.acquire(&user.branch) {
+            Ok(slot) => slot,
+            Err(e) => {
+                let _ = client.write_all(&replace_ok(&done, &err_limit(e))).await;
+                return;
+            }
+        };
+        let upstream =
+            tokio::time::timeout(self.config.upstream_timeout, self.upstream(&user, &ctx)).await;
+        let upstream = match upstream {
+            Ok(Ok(u)) => u,
+            Ok(Err(e)) => {
+                tracing::warn!(%peer, error = %e, "upstream login failed");
+                let _ = client
+                    .write_all(&replace_ok(&done, &err_unavailable()))
+                    .await;
+                return;
+            }
+            Err(_) => {
+                tracing::warn!(%peer, "upstream deadline");
+                let _ = client
+                    .write_all(&replace_ok(&done, &err_unavailable()))
+                    .await;
+                return;
+            }
+        };
+        if client.write_all(&done).await.is_err() || client.flush().await.is_err() {
+            return;
+        }
+        relay(
+            client,
+            upstream,
+            user.branch.clone(),
+            self.deps.activity.clone(),
+            slot,
+        )
+        .await;
+    }
+
+    async fn upstream(
+        &self,
+        user: &ResolvedUser,
+        ctx: &ClientContext,
+    ) -> Result<Upstream, crate::upstream::UpstreamError> {
+        let password = self
+            .deps
+            .credentials
+            .internal_password(&user.branch, user.role)
+            .await
+            .ok_or(crate::upstream::UpstreamError::NoCredential)?;
+        let members = self.deps.pools.members(&user.branch).await?;
+        if members.is_empty() {
+            return Err(crate::upstream::UpstreamError::Unavailable);
+        }
+        let pick = self.next_id.fetch_add(1, Ordering::Relaxed) as usize % members.len();
+        let connector = TlsConnector::from(self.config.upstream_tls.clone());
+        connect(
+            &members[pick],
+            &connector,
+            ctx,
+            user.role.internal_user(),
+            &password,
+            self.config.profile,
+        )
+        .await
+    }
+
+    async fn resolve(
+        &self,
+        cached: &mut Option<Option<ResolvedUser>>,
+        user: &str,
+    ) -> Option<ResolvedUser> {
+        if cached.is_none() {
+            *cached = Some(self.deps.users.resolve(user).await);
+        }
+        cached.clone().flatten()
+    }
+
+    async fn handshake(
+        &self,
+        tcp: TcpStream,
+        peer: SocketAddr,
+        local: SocketAddr,
+    ) -> Option<Authenticated> {
+        let mut random = [0u8; 20];
+        if getrandom::fill(&mut random).is_err() {
+            tracing::error!("OS randomness unavailable");
+            return None;
+        }
+        let nonce = Nonce::from_random(random);
+        let greeting = HandshakeV10 {
+            server_version: self.config.server_version.clone(),
+            connection_id: self.next_id.fetch_add(1, Ordering::Relaxed),
+            nonce,
+            capabilities: advertise(self.config.profile),
+            charset: 46,
+            status: 0x0002,
+            auth_plugin: crate::codec::auth::CACHING_SHA2.into(),
+        };
+        let plaintext = self.config.plaintext.allows(peer.ip());
+        let (mut phase, hello) = ConnectionPhase::new(greeting, plaintext, Limits::default());
+        let mut io = ClientStream::Plain(tcp);
+        io.write_all(&hello).await.ok()?;
+        let mut buf: Vec<u8> = Vec::new();
+        let mut resolved: Option<Option<ResolvedUser>> = None;
+        let mut admitted = false;
+        let mut pending: Option<Result<Step, PhaseError>> = None;
+        loop {
+            let step = match pending.take() {
+                Some(s) => s,
+                None => match phase.on_bytes(&buf) {
+                    Ok((used, step)) => {
+                        buf.drain(..used);
+                        Ok(step)
+                    }
+                    Err(e) => Err(e),
+                },
+            };
+            let step = match step {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = io.write_all(&phase.error_packet(&e)).await;
+                    return None;
+                }
+            };
+            match step {
+                Step::NeedMore => {
+                    let mut chunk = [0u8; 8192];
+                    let n = io.read(&mut chunk).await.ok()?;
+                    if n == 0 {
+                        return None;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                }
+                Step::StartTls => {
+                    // Bytes after the SSLRequest are the client's TLS
+                    // ClientHello: TLS reads them first.
+                    let ClientStream::Plain(tcp) = io else {
+                        return None;
+                    };
+                    let prefixed = Prefixed::new(std::mem::take(&mut buf), tcp);
+                    let tls = TlsAcceptor::from(self.config.tls.clone())
+                        .accept(prefixed)
+                        .await
+                        .ok()?;
+                    io = ClientStream::Tls(Box::new(tls));
+                    if phase.tls_established().is_err() {
+                        return None;
+                    }
+                }
+                Step::Write(bytes) => io.write_all(&bytes).await.ok()?,
+                Step::CheckFast { user, scramble } => {
+                    let r = self.resolve(&mut resolved, &user).await;
+                    if let Some(refusal) = self.admit(&r, &mut admitted) {
+                        let _ = io.write_all(&phase.refuse(&refusal)).await;
+                        return None;
+                    }
+                    let hit = r.as_ref().is_some_and(|r| {
+                        self.cache
+                            .check(&user, &r.password_hash, nonce.as_bytes(), &scramble)
+                    });
+                    if hit {
+                        self.fast_hits.fetch_add(1, Ordering::Relaxed);
+                    }
+                    pending = Some(phase.fast_result(hit));
+                }
+                Step::CheckFull { user, password } => {
+                    let r = self.resolve(&mut resolved, &user).await;
+                    if let Some(refusal) = self.admit(&r, &mut admitted) {
+                        let _ = io.write_all(&phase.refuse(&refusal)).await;
+                        return None;
+                    }
+                    // Unknown users are checked against a decoy hash so
+                    // they take as long as known ones.
+                    let hash = r
+                        .as_ref()
+                        .map_or_else(|| decoy_hash().to_owned(), |r| r.password_hash.clone());
+                    let ok = verify_password(hash.clone(), password.clone()).await && r.is_some();
+                    if ok {
+                        self.cache.remember(&user, &hash, &password);
+                        self.full_auths.fetch_add(1, Ordering::Relaxed);
+                    }
+                    pending = Some(phase.full_result(ok).map_err(|e| match e {
+                        PhaseError::Auth(_) => {
+                            PhaseError::Auth(crate::codec::auth::AuthError::AccessDenied)
+                        }
+                        other => other,
+                    }));
+                    if !ok {
+                        let _ = io.write_all(&phase.refuse(&err_access(&user))).await;
+                        return None;
+                    }
+                }
+                Step::Done(done) => {
+                    let response = phase.response()?;
+                    let user = resolved.clone().flatten()?;
+                    return Some(Authenticated {
+                        client: io,
+                        peer,
+                        gate: local,
+                        user,
+                        agreed: phase.agreed()?,
+                        database: response.database.clone().filter(|d| !d.is_empty()),
+                        charset: response.charset,
+                        done,
+                    });
+                }
+            }
+        }
+    }
+
+    /// The rate check, once per connection, as soon as the user's database
+    /// is known.
+    fn admit(&self, user: &Option<ResolvedUser>, admitted: &mut bool) -> Option<ErrPacket> {
+        if *admitted {
+            return None;
+        }
+        *admitted = true;
+        let r = user.as_ref()?;
+        self.limiter.admit(&r.branch).err().map(err_limit)
+    }
+}
+
+/// Relays packets until either side closes. Client → TiDB is read frame by
+/// frame: a command's first byte (sequence id 0) is classified, refused
+/// commands are answered with 1235 and never forwarded, and every command
+/// but `COM_PING` is reported as activity. TiDB → client is copied as is.
+async fn relay(
+    client: ClientStream,
+    upstream: Upstream,
+    branch: String,
+    activity: Arc<dyn ActivitySink>,
+    slot: Slot,
+) {
+    let (cr, cw) = tokio::io::split(client);
+    let (mut ur, uw) = tokio::io::split(upstream);
+    let cw = Arc::new(Mutex::new(cw));
+    let down = {
+        let cw = cw.clone();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 64 * 1024];
+            loop {
+                let n = match ur.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => n,
+                };
+                let mut w = cw.lock().await;
+                if w.write_all(&buf[..n]).await.is_err() || w.flush().await.is_err() {
+                    break;
+                }
+            }
+            let _ = cw.lock().await.shutdown().await;
+        })
+    };
+    let _ = client_to_upstream(cr, uw, &cw, &branch, &*activity).await;
+    down.abort();
+    drop(slot);
+}
+
+async fn client_to_upstream(
+    mut cr: ReadHalf<ClientStream>,
+    mut uw: WriteHalf<Upstream>,
+    cw: &Mutex<WriteHalf<ClientStream>>,
+    branch: &str,
+    activity: &dyn ActivitySink,
+) -> io::Result<()> {
+    let mut header = [0u8; HEADER_LEN];
+    let mut buf = vec![0u8; 64 * 1024];
+    // Continuation frames of a refused command are dropped too.
+    let mut dropping = false;
+    loop {
+        cr.read_exact(&mut header).await?;
+        let len =
+            usize::from(header[0]) | usize::from(header[1]) << 8 | usize::from(header[2]) << 16;
+        let seq = header[3];
+        let mut remaining = len;
+        let mut first = None;
+        if seq == 0 && !dropping && len > 0 {
+            cr.read_exact(&mut buf[..1]).await?;
+            first = Some(buf[0]);
+            remaining -= 1;
+        }
+        let command = first.and_then(|b| classify(&[b]));
+        let refused = command.and_then(Command::refusal);
+        if let Some(err) = &refused {
+            dropping = len == MAX_FRAME;
+            discard(&mut cr, remaining, &mut buf).await?;
+            let mut out = Vec::new();
+            let mut s = 1;
+            encode(&err.encode(), &mut s, &mut out);
+            let mut w = cw.lock().await;
+            w.write_all(&out).await?;
+            w.flush().await?;
+            continue;
+        }
+        if dropping {
+            dropping = len == MAX_FRAME;
+            discard(&mut cr, remaining, &mut buf).await?;
+            continue;
+        }
+        if command.is_some_and(Command::is_activity) {
+            activity.command(branch);
+        }
+        uw.write_all(&header).await?;
+        if let Some(b) = first {
+            uw.write_all(&[b]).await?;
+        }
+        while remaining > 0 {
+            let n = remaining.min(buf.len());
+            cr.read_exact(&mut buf[..n]).await?;
+            uw.write_all(&buf[..n]).await?;
+            remaining -= n;
+        }
+        uw.flush().await?;
+        if command == Some(Command::Quit) {
+            return Ok(());
+        }
+    }
+}
+
+async fn discard(cr: &mut ReadHalf<ClientStream>, mut n: usize, buf: &mut [u8]) -> io::Result<()> {
+    while n > 0 {
+        let k = n.min(buf.len());
+        cr.read_exact(&mut buf[..k]).await?;
+        n -= k;
+    }
+    Ok(())
+}
+
+/// A certificate for `names` from PEM files (chain, then key).
+pub fn sni_cert_from_pem(
+    names: Vec<String>,
+    chain: &std::path::Path,
+    key: &std::path::Path,
+) -> io::Result<SniCert> {
+    use rustls::pki_types::pem::PemObject;
+    let bad = |e: rustls::pki_types::pem::Error| {
+        io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+    };
+    let chain = CertificateDer::pem_file_iter(chain)
+        .map_err(bad)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(bad)?;
+    let key = PrivateKeyDer::from_pem_file(key).map_err(bad)?;
+    Ok(SniCert { names, chain, key })
+}
+
+/// A TLS client config for the gate's upstream side trusting the CA
+/// certificates in a PEM file.
+pub fn upstream_tls_from_ca_pem(ca: &std::path::Path) -> io::Result<Arc<rustls::ClientConfig>> {
+    use rustls::pki_types::pem::PemObject;
+    let bad = |e: String| io::Error::new(io::ErrorKind::InvalidData, e);
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in CertificateDer::pem_file_iter(ca).map_err(|e| bad(e.to_string()))? {
+        roots
+            .add(cert.map_err(|e| bad(e.to_string()))?)
+            .map_err(|e| bad(e.to_string()))?;
+    }
+    let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+    .map_err(|e| bad(e.to_string()))?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    Ok(Arc::new(config))
+}

@@ -259,6 +259,13 @@ impl ConnectionPhase {
         self.frame(&packet.encode())
     }
 
+    /// Refuses the connection with `packet` (e.g. 1040 from the gate's
+    /// limits) at the current sequence id; the phase fails.
+    pub fn refuse(&mut self, packet: &ErrPacket) -> Vec<u8> {
+        self.phase = Phase::Failed;
+        self.frame(&packet.encode())
+    }
+
     /// The client's response, once received, without its auth data.
     pub fn response(&self) -> Option<&HandshakeResponse41> {
         self.response.as_ref()

@@ -267,6 +267,22 @@ struct Native {
     #[cfg(feature = "stream-grpc")]
     #[arg(long)]
     stream_grpc_listen: Option<SocketAddr>,
+    /// Loams SQL gate listener (TLS; plaintext only from loopback peers).
+    #[cfg(feature = "sqldb")]
+    #[arg(long, requires_all = ["sqlgate_tls_cert", "sqlgate_tls_key", "sqlgate_upstream_ca"])]
+    sqlgate_listen: Option<SocketAddr>,
+    /// The gate's certificate chain (PEM).
+    #[cfg(feature = "sqldb")]
+    #[arg(long, requires = "sqlgate_listen")]
+    sqlgate_tls_cert: Option<std::path::PathBuf>,
+    /// The gate's private key (PEM).
+    #[cfg(feature = "sqldb")]
+    #[arg(long, requires = "sqlgate_listen")]
+    sqlgate_tls_key: Option<std::path::PathBuf>,
+    /// The CA (PEM) that signs the TiDB pools' certificates.
+    #[cfg(feature = "sqldb")]
+    #[arg(long, requires = "sqlgate_listen")]
+    sqlgate_upstream_ca: Option<std::path::PathBuf>,
     /// Address of the Qdrant REST API [default: 127.0.0.1:6333].
     #[arg(long, conflicts_with = "no_qdrant")]
     qdrant_listen: Option<SocketAddr>,
@@ -555,6 +571,25 @@ impl Native {
         #[cfg(feature = "stream-grpc")]
         {
             config.stream_grpc = self.stream_grpc_listen;
+        }
+        #[cfg(feature = "sqldb")]
+        {
+            config.sqlgate = match (
+                self.sqlgate_listen,
+                &self.sqlgate_tls_cert,
+                &self.sqlgate_tls_key,
+                &self.sqlgate_upstream_ca,
+            ) {
+                (Some(listen), Some(cert), Some(key), Some(ca)) => {
+                    Some(loams::sqlgate::SqlgateConfig {
+                        listen,
+                        tls_cert: cert.clone(),
+                        tls_key: key.clone(),
+                        upstream_ca: ca.clone(),
+                    })
+                }
+                _ => None,
+            };
         }
         self.apply_qdrant(config);
         self.apply_durable(config);
@@ -1345,6 +1380,10 @@ async fn main() -> ExitCode {
     if let Some(addr) = server.stream_grpc_addr() {
         println!("loams stream gRPC listening on grpc://{addr}");
     }
+    #[cfg(feature = "sqldb")]
+    if let Some(addr) = server.sqlgate_addr() {
+        println!("loams SQL gate listening on mysql://{addr}");
+    }
     shutdown_signal().await;
     tracing::info!("shutting down");
     match server.shutdown().await {
@@ -1486,6 +1525,25 @@ mod tests {
     }
 
     #[cfg(feature = "qdrant")]
+    #[cfg(feature = "sqldb")]
+    #[test]
+    fn sqlgate_flags_set_the_config() {
+        assert_eq!(dev_config(&[]).sqlgate, None);
+        let config = dev_config(&[
+            "--sqlgate-listen",
+            "127.0.0.1:3307",
+            "--sqlgate-tls-cert",
+            "/c.pem",
+            "--sqlgate-tls-key",
+            "/k.pem",
+            "--sqlgate-upstream-ca",
+            "/ca.pem",
+        ]);
+        let gate = config.sqlgate.expect("configured");
+        assert_eq!(gate.listen, "127.0.0.1:3307".parse().unwrap());
+        assert_eq!(gate.tls_key, std::path::PathBuf::from("/k.pem"));
+    }
+
     #[cfg(feature = "stream-grpc")]
     #[test]
     fn stream_grpc_flag_sets_the_config() {

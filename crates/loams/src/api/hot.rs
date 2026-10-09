@@ -163,7 +163,8 @@ pub(crate) async fn ask_owner_to_warm(
         .send()
         .await
         .map_err(|err| unavailable(format!("the owner node {node_id} is unreachable: {err}")))?;
-    let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let status =
+        StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let body: Value = response
         .json()
         .await
