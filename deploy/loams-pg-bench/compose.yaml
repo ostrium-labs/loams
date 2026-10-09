@@ -8,8 +8,11 @@
 # runs at a time; scripts/loams-pg-bench/run.sh drives it.
 name: loams-pg-bench
 
-x-neon-image: &neon-image ${NEON_REPOSITORY:-ghcr.io/neondatabase}/neon:${NEON_TAG:-latest}
-x-compute-image: &compute-image ${NEON_REPOSITORY:-ghcr.io/neondatabase}/compute-node-v${PG_VERSION:-16}:${NEON_TAG:-latest}
+# Pinned by digest (PG2 Task 2): Neon's last public build, 2025-08-26, git
+# 77e22e4b (the fork ostrium-labs/neon publishes no images yet; ruling R2.1).
+# Multi-arch index digests; NEON_IMAGE and COMPUTE_IMAGE override them.
+x-neon-image: &neon-image ${NEON_IMAGE:-ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f}
+x-compute-image: &compute-image ${COMPUTE_IMAGE:-ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3}
 x-s3-env: &s3-env
   AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
   AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}

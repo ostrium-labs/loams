@@ -17,7 +17,7 @@ Derived from [`deploy/neon`](../neon) (Apache-2.0, from `neondatabase/neon` `doc
 
 | Tier | Baseline (`--variant safekeepers`) | Candidate (`--variant loams`) |
 |---|---|---|
-| Compute | `compute-node-v16`, `shared_buffers = 2GB`, one per run on a fresh timeline | same |
+| Compute | `compute-node-v17` (pinned by digest in `compose.yaml`), `shared_buffers = 2GB`, one per run on a fresh timeline | same |
 | WAL | `safekeeper1` (`--replicas 1`) or `safekeeper1..3` (`--replicas 3`), fsync on, each on its own volume | `loams-wal-interpreted --store tikv` + a TiKV playground with 1 or 3 stores ([`tikv.toml`](tikv.toml)) |
 | Pageserver feed | the safekeepers | `loams-wal` itself: the pageserver finds it through the storage broker and reads the interpreted protocol from it, in process (PG2 Tasks 31 and 32) |
 | Storage | pageserver, storage broker, RustFS | same |

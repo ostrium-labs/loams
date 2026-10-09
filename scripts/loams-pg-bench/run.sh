@@ -271,7 +271,7 @@ curl -sf -X PUT -H 'Content-Type: application/json' \
   -d '{"mode":"AttachedSingle","generation":1,"tenant_conf":{}}' \
   "localhost:9898/v1/tenant/$TENANT_ID/location_config" >/dev/null
 curl -sf -X POST -H 'Content-Type: application/json' \
-  -d "{\"new_timeline_id\":\"$TIMELINE_ID\",\"pg_version\":${PG_VERSION:-16}}" \
+  -d "{\"new_timeline_id\":\"$TIMELINE_ID\",\"pg_version\":${PG_VERSION:-17}}" \
   "localhost:9898/v1/tenant/$TENANT_ID/timeline/" >/dev/null
 "${COMPOSE[@]}" rm -sf compute >/dev/null 2>&1 || true
 "${COMPOSE[@]}" up -d compute >/dev/null 2>&1
@@ -323,7 +323,8 @@ done
 # 5. The result file.
 sha=$(git -C "$ROOT" rev-parse --short HEAD)
 file=$out/$(date -u +%Y%m%dT%H%M%SZ)-$sha-$variant-rf$replicas${label:+-$label}.json
-neon_image=$("$ENGINE" image inspect --format '{{.Digest}}' "${NEON_REPOSITORY:-ghcr.io/neondatabase}/neon:${NEON_TAG:-latest}" 2>/dev/null || echo unknown)
+# The neon image is pinned by digest in compose.yaml (NEON_IMAGE overrides it).
+neon_image=$("${COMPOSE[@]}" config --images 2>/dev/null | grep -m1 '/neon@' || echo unknown)
 disk=$(lsblk -dno MODEL "$(df --output=source "$HOME" | tail -1 | sed 's/p\?[0-9]*$//')" 2>/dev/null | head -1 || echo unknown)
 wal_fs=$(stat -f -c %T "${disk_root:-$HOME/.local/share/containers}" 2>/dev/null || echo unknown)
 printf '%s\n' "${results[@]}" | V="$variant" R="$replicas" L="$label" SHA="$sha" \

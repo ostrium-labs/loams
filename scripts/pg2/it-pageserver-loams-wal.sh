@@ -78,7 +78,7 @@ curl -sf -X PUT -H 'Content-Type: application/json' \
   -d '{"mode":"AttachedSingle","generation":1,"tenant_conf":{}}' \
   "localhost:9898/v1/tenant/$TENANT_ID/location_config" >/dev/null
 curl -sf -X POST -H 'Content-Type: application/json' \
-  -d "{\"new_timeline_id\":\"$TIMELINE_ID\",\"pg_version\":${PG_VERSION:-16}}" \
+  -d "{\"new_timeline_id\":\"$TIMELINE_ID\",\"pg_version\":${PG_VERSION:-17}}" \
   "localhost:9898/v1/tenant/$TENANT_ID/timeline/" >/dev/null
 start_compute() {
   "${COMPOSE[@]}" rm -sf compute >/dev/null 2>&1 || true
