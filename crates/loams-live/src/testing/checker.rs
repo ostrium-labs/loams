@@ -438,6 +438,14 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
     report.seed = w.seed;
     let mut disturb: Vec<Disturbance> = Vec::new();
     for &d in &w.disturb {
+        if at_op(d) >= w.ops {
+            report.violations.push(Violation::new(
+                ViolationKind::Workload,
+                None,
+                format!("{d:?} is past the workload's last op ({}); skipped", w.ops),
+            ));
+            continue;
+        }
         match unwired(d) {
             Some(task) => report.violations.push(Violation::new(
                 ViolationKind::Unwired,

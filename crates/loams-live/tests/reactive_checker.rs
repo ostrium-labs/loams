@@ -170,12 +170,17 @@ async fn reactive_checker_resume_converges(store: TestStore) {
         report.violations.len(),
         first(&report)
     );
-    assert!(report.resumes >= 3, "{} resumes", report.resumes);
+    assert_eq!(
+        report.resumes,
+        4 * 3,
+        "every session resumes at each disconnect"
+    );
     assert_live(&report, 4);
 }
 live_test!(reactive_checker_resume_converges);
 
-/// A disturbance a later task wires is reported, not silently skipped.
+/// A disturbance a later task wires is reported, not silently skipped, and
+/// a disturbance past the workload's last op is a workload error.
 async fn reactive_checker_reports_unwired_disturbances(store: TestStore) {
     let w = Workload {
         seed: 1,
@@ -184,15 +189,25 @@ async fn reactive_checker_reports_unwired_disturbances(store: TestStore) {
         ops: 20,
         disturb: vec![Disturbance::Deploy { at_op: 5 }],
     };
-    let report = run_reactive_checker(store.store(), w).await;
+    let report = run_reactive_checker(store.fresh_root().await.store(), w).await;
+    let kinds: Vec<ViolationKind> = report.violations.iter().map(|v| v.kind).collect();
+    assert_eq!(kinds, [ViolationKind::Unwired], "{:?}", report.violations);
     assert!(
-        report
-            .violations
-            .iter()
-            .any(|v| format!("{v:?}").contains("Deploy")),
+        report.violations[0].detail.contains("Task 7"),
         "{:?}",
         report.violations
     );
+
+    let w = Workload {
+        seed: 1,
+        sessions: 1,
+        tables: 1,
+        ops: 20,
+        disturb: vec![Disturbance::Disconnect { at_op: 20 }],
+    };
+    let report = run_reactive_checker(store.fresh_root().await.store(), w).await;
+    let kinds: Vec<ViolationKind> = report.violations.iter().map(|v| v.kind).collect();
+    assert_eq!(kinds, [ViolationKind::Workload], "{:?}", report.violations);
 }
 live_test!(reactive_checker_reports_unwired_disturbances);
 
