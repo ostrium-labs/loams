@@ -36,6 +36,7 @@
   const isArray = Array.isArray;
   const stringify = JSON.stringify;
   const fromCharCode = String.fromCharCode;
+  const trunc = Math.trunc;
   const join = Array.prototype.join;
   const method = (value) => ({ value, writable: true, enumerable: false, configurable: true });
 
@@ -46,14 +47,514 @@
   const NO_CRYPTO =
     "crypto randomness is not available in queries and mutations; use an action";
 
+  // Local time is UTC (fix round 1, I1): QuickJS's local-time methods
+  // follow the host's time zone, which differs between nodes. Every
+  // local-time getter and setter is its UTC twin, `getTimezoneOffset` is 0,
+  // the string forms print UTC as "GMT+0000", and a date-time without a
+  // zone (in `new Date(y, m, …)`, `Date.parse` and `new Date(string)`) is
+  // read as UTC. The parser is QuickJS's own (quickjs.c,
+  // js_date_parse_isostring and js_date_parse_otherstring), ported so that
+  // it never consults the host's zone.
+  const DateProto = OriginalDate.prototype;
+  const getTime = DateProto.getTime;
+  const UTC = OriginalDate.UTC;
+  const utc = {};
+  for (const part of ["FullYear", "Month", "Date", "Day", "Hours", "Minutes", "Seconds", "Milliseconds"]) {
+    utc["get" + part] = DateProto["getUTC" + part];
+    if (part !== "Day") {
+      utc["set" + part] = DateProto["setUTC" + part];
+    }
+  }
+  const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const MONTH_CODES = "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC";
+  const ZONES = [
+    ["GMT", 0], ["UTC", 0], ["UT", 0], ["Z", 0],
+    ["EDT", -4 * 60], ["EST", -5 * 60], ["CDT", -5 * 60], ["CST", -6 * 60],
+    ["MDT", -6 * 60], ["MST", -7 * 60], ["PDT", -7 * 60], ["PST", -8 * 60],
+    ["WET", 0], ["WEST", 60], ["CET", 60], ["CEST", 2 * 60], ["EET", 2 * 60], ["EEST", 3 * 60],
+  ];
+  // 400 Gregorian years, in ms: Date.UTC maps years 0-99 to 1900-1999, so
+  // those are computed 400 years later and moved back.
+  const FOUR_CENTURIES_MS = 146097 * 86400000;
+
+  function pad(n, width) {
+    const s = `${n}`;
+    return s.length >= width ? s : "0".repeat(width - s.length) + s;
+  }
+
+  function year(y) {
+    return y < 0 ? "-" + pad(-y, 4) : pad(y, 4);
+  }
+
+  // QuickJS's get_date_string with UTC fields: fmt 1 is toString's form,
+  // fmt 3 toLocaleString's; part 1 the date, 2 the time, 3 both.
+  function dateString(date, fmt, part) {
+    const t = apply(getTime, date, []);
+    if (t !== t) {
+      return "Invalid Date";
+    }
+    const get = (name) => apply(utc[name], date, []);
+    const y = get("getFullYear");
+    const mon = get("getMonth");
+    const d = get("getDate");
+    const h = get("getHours");
+    const m = get("getMinutes");
+    const s = get("getSeconds");
+    let out = "";
+    if (part & 1) {
+      out += fmt === 1
+        ? `${DAYS[get("getDay")]} ${MONTHS[mon]} ${pad(d, 2)} ${year(y)}`
+        : `${pad(mon + 1, 2)}/${pad(d, 2)}/${year(y)}`;
+      if (part === 3) {
+        out += fmt === 1 ? " " : ", ";
+      }
+    }
+    if (part & 2) {
+      out += fmt === 1
+        ? `${pad(h, 2)}:${pad(m, 2)}:${pad(s, 2)} GMT+0000`
+        : `${pad(((h + 11) % 12) + 1, 2)}:${pad(m, 2)}:${pad(s, 2)} ${h < 12 ? "AM" : "PM"}`;
+    }
+    return out;
+  }
+
+  // ---- the date parser, over a NUL-terminated array of char codes ----
+
+  function digits(sp, cur, min, max) {
+    let v = 0;
+    let p = cur.p;
+    const start = p;
+    let c;
+    while ((c = sp[p]) >= 48 && c <= 57) {
+      if (v >= 100000000) {
+        return -1;
+      }
+      v = v * 10 + c - 48;
+      p++;
+      if (p - start === max) {
+        break;
+      }
+    }
+    if (p - start < min) {
+      return -1;
+    }
+    cur.p = p;
+    return v;
+  }
+
+  function skipChar(sp, cur, c) {
+    if (sp[cur.p] === c) {
+      cur.p++;
+      return true;
+    }
+    return false;
+  }
+
+  function milliseconds(sp, cur, f) {
+    let p = cur.p;
+    const c0 = sp[p];
+    if (c0 === 46 || c0 === 44) {
+      p++;
+      const start = p;
+      let mul = 100;
+      let ms = 0;
+      let c;
+      while ((c = sp[p]) >= 48 && c <= 57) {
+        ms += (c - 48) * mul;
+        mul = trunc(mul / 10);
+        p++;
+        if (p - start === 9) {
+          break;
+        }
+      }
+      if (p > start) {
+        f[6] = ms;
+        cur.p = p;
+      }
+    }
+  }
+
+  function tzOffset(sp, cur, f, strict) {
+    let p = cur.p;
+    const sgn = sp[p++];
+    let tz = 0;
+    if (sgn === 43 || sgn === 45) {
+      const at = { p };
+      let hh = digits(sp, at, 1, 0);
+      if (hh < 0) {
+        return false;
+      }
+      let n = at.p - p;
+      p = at.p;
+      if (strict && n !== 2 && n !== 4) {
+        return false;
+      }
+      while (n > 4) {
+        n -= 2;
+        hh = trunc(hh / 100);
+      }
+      let mm = 0;
+      if (n > 2) {
+        mm = hh % 100;
+        hh = trunc(hh / 100);
+      } else if (skipChar(sp, at, 58)) {
+        mm = digits(sp, at, 2, 2);
+        if (mm < 0) {
+          return false;
+        }
+        p = at.p;
+      }
+      if (hh > 23 || mm > 59) {
+        return false;
+      }
+      tz = hh * 60 + mm;
+      if (sgn !== 43) {
+        tz = -tz;
+      }
+    } else if (sgn !== 90) {
+      return false;
+    }
+    cur.p = p;
+    f[8] = tz;
+    return true;
+  }
+
+  function upper(c) {
+    return c >= 97 && c <= 122 ? c - 32 : c;
+  }
+
+  function match(sp, cur, s) {
+    let p = cur.p;
+    for (let i = 0; i < s.length; i++, p++) {
+      if (upper(sp[p]) !== s.charCodeAt(i)) {
+        return false;
+      }
+    }
+    cur.p = p;
+    return true;
+  }
+
+  function month(sp, cur, f) {
+    for (let n = 0; n < 12; n++) {
+      if (match(sp, { p: cur.p }, MONTH_CODES.slice(n * 3, n * 3 + 3))) {
+        f[1] = n + 1;
+        cur.p += 3;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function skipUntil(sp, cur, stops) {
+    let c;
+    while ((c = sp[cur.p]) !== 0 && !stops.includes(fromCharCode(c))) {
+      cur.p++;
+    }
+  }
+
+  function parseIso(sp, f) {
+    for (let i = 0; i < 9; i++) {
+      f[i] = i === 2 ? 1 : 0;
+    }
+    const cur = { p: 0 };
+    const sgn = sp[0];
+    if (sgn === 45 || sgn === 43) {
+      cur.p++;
+      const y = digits(sp, cur, 6, 6);
+      if (y < 0 || (sgn === 45 && y === 0)) {
+        return false;
+      }
+      f[0] = sgn === 45 ? -y : y;
+    } else {
+      const y = digits(sp, cur, 4, 4);
+      if (y < 0) {
+        return false;
+      }
+      f[0] = y;
+    }
+    if (skipChar(sp, cur, 45)) {
+      const m = digits(sp, cur, 2, 2);
+      if (m < 1) {
+        return false;
+      }
+      f[1] = m - 1;
+      if (skipChar(sp, cur, 45)) {
+        const d = digits(sp, cur, 2, 2);
+        if (d < 1) {
+          return false;
+        }
+        f[2] = d;
+      }
+    }
+    if (skipChar(sp, cur, 84)) {
+      const h = digits(sp, cur, 2, 2);
+      if (h >= 0) {
+        f[3] = h;
+      }
+      if (h < 0 || !skipChar(sp, cur, 58)) {
+        f[3] = 100; // rejected by the range check
+        return true;
+      }
+      const mi = digits(sp, cur, 2, 2);
+      if (mi < 0) {
+        f[3] = 100;
+        return true;
+      }
+      f[4] = mi;
+      if (skipChar(sp, cur, 58)) {
+        const sec = digits(sp, cur, 2, 2);
+        if (sec < 0) {
+          return false;
+        }
+        f[5] = sec;
+        milliseconds(sp, cur, f);
+      }
+    }
+    if (sp[cur.p] !== 0 && !tzOffset(sp, cur, f, true)) {
+      return false;
+    }
+    return sp[cur.p] === 0;
+  }
+
+  function century(y) {
+    return y + (y < 100) * 1900 + (y < 50) * 100;
+  }
+
+  function parseOther(sp, f) {
+    f[0] = 2001;
+    f[1] = 1;
+    f[2] = 1;
+    for (let i = 3; i < 9; i++) {
+      f[i] = 0;
+    }
+    const cur = { p: 0 };
+    const num = [];
+    let hasYear = false;
+    let hasMon = false;
+    let hasTime = false;
+    for (;;) {
+      while (sp[cur.p] === 32) {
+        cur.p++;
+      }
+      if (sp[cur.p] === 0) {
+        break;
+      }
+      const start = cur.p;
+      const c = sp[start];
+      let v;
+      if (c === 43 || c === 45) {
+        if (!(hasTime && tzOffset(sp, cur, f, false))) {
+          cur.p++;
+          v = digits(sp, cur, 1, 0);
+          if (v >= 0) {
+            if (c === 45) {
+              if (v === 0) {
+                return false;
+              }
+              v = -v;
+            }
+            f[0] = v;
+            hasYear = true;
+          }
+        }
+      } else if ((v = digits(sp, cur, 1, 0)) >= 0) {
+        if (skipChar(sp, cur, 58)) {
+          f[3] = v;
+          const mi = digits(sp, cur, 1, 2);
+          if (mi < 0) {
+            return false;
+          }
+          f[4] = mi;
+          if (skipChar(sp, cur, 58)) {
+            const sec = digits(sp, cur, 1, 2);
+            if (sec < 0) {
+              return false;
+            }
+            f[5] = sec;
+            milliseconds(sp, cur, f);
+          } else if (sp[cur.p] !== 0 && sp[cur.p] !== 32) {
+            return false;
+          }
+          hasTime = true;
+        } else if (cur.p - start > 2) {
+          f[0] = v;
+          hasYear = true;
+        } else if (v < 1 || v > 31) {
+          f[0] = century(v);
+          hasYear = true;
+        } else {
+          if (num.length === 3) {
+            return false;
+          }
+          num.push(v);
+        }
+      } else if (month(sp, cur, f)) {
+        hasMon = true;
+        skipUntil(sp, cur, "0123456789 -/(");
+      } else if (hasTime && match(sp, cur, "PM")) {
+        if (f[3] !== 12) {
+          f[3] += 12;
+        }
+        continue;
+      } else if (hasTime && match(sp, cur, "AM")) {
+        if (f[3] > 12) {
+          return false;
+        }
+        if (f[3] === 12) {
+          f[3] -= 12;
+        }
+        continue;
+      } else if (ZONES.some(([name, offset]) => match(sp, cur, name) && ((f[8] = offset), true))) {
+        continue;
+      } else if (c === 40) {
+        let level = 0;
+        let ch;
+        while ((ch = sp[cur.p]) !== 0) {
+          cur.p++;
+          level += ch === 40;
+          level -= ch === 41;
+          if (!level) {
+            break;
+          }
+        }
+        if (level > 0) {
+          return false;
+        }
+      } else if (c === 41) {
+        return false;
+      } else {
+        if (hasYear + hasMon + hasTime + num.length) {
+          return false;
+        }
+        skipUntil(sp, cur, " -/(");
+      }
+      let s;
+      while ((s = sp[cur.p]) === 45 || s === 47 || s === 46 || s === 44) {
+        cur.p++;
+      }
+    }
+    if (num.length + hasYear + hasMon > 3) {
+      return false;
+    }
+    switch (num.length) {
+      case 0:
+        if (!hasYear) {
+          return false;
+        }
+        break;
+      case 1:
+        if (hasMon) {
+          f[2] = num[0];
+        } else {
+          f[1] = num[0];
+        }
+        break;
+      case 2:
+        if (hasYear) {
+          f[1] = num[0];
+          f[2] = num[1];
+        } else if (hasMon) {
+          f[0] = century(num[1]);
+          f[2] = num[0];
+        } else {
+          f[1] = num[0];
+          f[2] = num[1];
+        }
+        break;
+      default:
+        f[0] = century(num[2]);
+        f[1] = num[0];
+        f[2] = num[1];
+    }
+    if (f[1] < 1 || f[2] < 1) {
+      return false;
+    }
+    f[1] -= 1;
+    return true;
+  }
+
+  // Date.parse with a zone-less date-time read as UTC.
+  function parse(value) {
+    const s = `${value}`;
+    const sp = [];
+    for (let i = 0; i < s.length && i < 127; i++) {
+      const c = s.charCodeAt(i);
+      sp.push(c > 255 ? (c === 0x2212 ? 45 : 120) : c);
+    }
+    sp.push(0);
+    const f = [0, 0, 1, 0, 0, 0, 0, 0, 0];
+    if (!parseIso(sp, f) && !parseOther(sp, f)) {
+      return NaN;
+    }
+    const max = [0, 11, 31, 24, 59, 59];
+    for (let i = 1; i < 6; i++) {
+      if (f[i] > max[i]) {
+        return NaN;
+      }
+    }
+    if (f[3] === 24 && (f[4] | f[5] | f[6])) {
+      return NaN;
+    }
+    const time = f[0] >= 0 && f[0] <= 99
+      ? UTC(f[0] + 400, f[1], f[2], f[3], f[4], f[5], f[6]) - FOUR_CENTURIES_MS
+      : UTC(f[0], f[1], f[2], f[3], f[4], f[5], f[6]);
+    return time - f[8] * 60000;
+  }
+
+  function isDate(value) {
+    try {
+      apply(getTime, value, []);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ToPrimitive(value, default), once.
+  function toPrimitive(value) {
+    if (value === null || (typeof value !== "object" && typeof value !== "function")) {
+      return value;
+    }
+    const isPrimitive = (r) => r === null || (typeof r !== "object" && typeof r !== "function");
+    const exotic = value[Symbol.toPrimitive];
+    if (exotic !== undefined && exotic !== null) {
+      if (typeof exotic !== "function") {
+        throw new TypeError("Symbol.toPrimitive is not a function");
+      }
+      const r = apply(exotic, value, ["default"]);
+      if (!isPrimitive(r)) {
+        throw new TypeError("cannot convert an object to a primitive value");
+      }
+      return r;
+    }
+    for (const name of ["valueOf", "toString"]) {
+      const f = value[name];
+      if (typeof f === "function") {
+        const r = apply(f, value, []);
+        if (isPrimitive(r)) {
+          return r;
+        }
+      }
+    }
+    throw new TypeError("cannot convert an object to a primitive value");
+  }
+
   function Date(...args) {
     if (new.target === undefined) {
-      return new OriginalDate(now()).toString();
+      return dateString(new OriginalDate(now()), 1, 3);
     }
     if (args.length === 0) {
       return construct(OriginalDate, [now()], new.target);
     }
-    return construct(OriginalDate, args, new.target);
+    if (args.length === 1) {
+      const value = args[0];
+      if (isDate(value)) {
+        return construct(OriginalDate, [value], new.target);
+      }
+      const p = toPrimitive(value);
+      return construct(OriginalDate, [typeof p === "string" ? parse(p) : p], new.target);
+    }
+    return construct(OriginalDate, [apply(UTC, undefined, args)], new.target);
   }
   defineProperty(Date, "length", { value: 7 });
   defineProperty(Date, "prototype", { value: OriginalDate.prototype, writable: false });
@@ -62,9 +563,54 @@
     return now();
   }));
   defineProperty(Date.now, "name", { value: "now" });
-  defineProperty(Date, "parse", method(OriginalDate.parse));
-  defineProperty(Date, "UTC", method(OriginalDate.UTC));
+  defineProperty(Date, "parse", method({ parse(string) { return parse(string); } }.parse));
+  defineProperty(Date, "UTC", method(UTC));
   defineProperty(globalThis, "Date", method(Date));
+
+  function dateMethod(name, length, body) {
+    const shim = { [name]: body }[name];
+    defineProperty(shim, "length", { value: length });
+    defineProperty(DateProto, name, method(shim));
+  }
+  for (const part of ["FullYear", "Month", "Date", "Day", "Hours", "Minutes", "Seconds", "Milliseconds"]) {
+    const get = utc["get" + part];
+    dateMethod("get" + part, 0, function () {
+      return apply(get, this, []);
+    });
+    if (part !== "Day") {
+      const set = utc["set" + part];
+      dateMethod("set" + part, set.length, function (...args) {
+        return apply(set, this, args);
+      });
+    }
+  }
+  dateMethod("getYear", 0, function () {
+    return apply(utc.getFullYear, this, []) - 1900;
+  });
+  dateMethod("setYear", 1, function (y) {
+    apply(getTime, this, []);
+    let value = trunc(Number(y));
+    if (value >= 0 && value <= 99) {
+      value += 1900;
+    }
+    return apply(utc.setFullYear, this, [value]);
+  });
+  dateMethod("getTimezoneOffset", 0, function () {
+    const t = apply(getTime, this, []);
+    return t !== t ? NaN : 0;
+  });
+  for (const [name, fmt, part] of [
+    ["toString", 1, 3],
+    ["toDateString", 1, 1],
+    ["toTimeString", 1, 2],
+    ["toLocaleString", 3, 3],
+    ["toLocaleDateString", 3, 1],
+    ["toLocaleTimeString", 3, 2],
+  ]) {
+    dateMethod(name, 0, function () {
+      return dateString(this, fmt, part);
+    });
+  }
 
   defineProperty(Math, "random", method(function random_() {
     return random();
@@ -190,7 +736,6 @@
     getPrototypeOf(Int8Array).prototype,
     "length",
   ).get;
-  const trunc = Math.trunc;
   const SPREADABLE = Symbol.isConcatSpreadable;
 
   function unsupported(name, what) {

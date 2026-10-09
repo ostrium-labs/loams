@@ -513,3 +513,121 @@ export const top = {};
         Ok(_) => panic!("a bundle that never stops queueing jobs loads"),
     }
 }
+
+const ZONES: &str = r#"
+import { query } from "loams:server";
+
+const UTC = Date.UTC;
+
+export const zones = {
+  read: query(async () => {
+    const d = new Date(UTC(2020, 6, 15, 23, 30, 45, 123));
+    const set = new Date(0);
+    set.setHours(5);
+    set.setMinutes(6);
+    set.setFullYear(2001, 1, 3);
+    set.setMonth(4);
+    set.setDate(9);
+    set.setSeconds(7);
+    set.setMilliseconds(8);
+    const year = new Date(0);
+    year.setYear(99);
+    return {
+      getters: [
+        d.getFullYear(), d.getMonth(), d.getDate(), d.getDay(), d.getHours(),
+        d.getMinutes(), d.getSeconds(), d.getMilliseconds(), d.getYear(),
+      ],
+      offset: d.getTimezoneOffset(),
+      strings: [
+        d.toString(), d.toDateString(), d.toTimeString(), d.toLocaleString(),
+        d.toLocaleDateString(), d.toLocaleTimeString(), `${d}`,
+        String(new Date(NaN)), String(new Date(NaN).getTimezoneOffset()),
+        new Date(UTC(-50, 0, 1)).toString(),
+      ],
+      called: Date().endsWith("GMT+0000") && Date() === new Date().toString(),
+      setters: [set.toISOString(), year.toISOString()],
+      utc: [
+        new Date(2020, 6, 15, 23, 30).getTime() === UTC(2020, 6, 15, 23, 30),
+        new Date(99, 0).getTime() === UTC(1999, 0),
+        Date.parse("2020-07-15T23:30:00") === UTC(2020, 6, 15, 23, 30),
+        Date.parse("2020-07-15T23:30") === UTC(2020, 6, 15, 23, 30),
+        Date.parse("Jul 15 2020 23:30:00") === UTC(2020, 6, 15, 23, 30),
+        Date.parse("Jul 15 2020") === UTC(2020, 6, 15),
+        Date.parse("7/15/2020, 11:30:00 PM") === UTC(2020, 6, 15, 23, 30),
+        Date.parse("2020-07-15") === UTC(2020, 6, 15),
+        Date.parse("2020-07-15T23:30:00+02:00") === UTC(2020, 6, 15, 21, 30),
+        Date.parse("2020-07-15T23:30:00Z") === UTC(2020, 6, 15, 23, 30),
+        Date.parse("Jul 15 2020 23:30:00 EST") === UTC(2020, 6, 16, 4, 30),
+        Date.parse("Wed Jul 15 2020 23:30:45 GMT+0100") === UTC(2020, 6, 15, 22, 30, 45),
+        Date.parse(d.toString()) === UTC(2020, 6, 15, 23, 30, 45),
+        Date.parse(d.toUTCString()) === UTC(2020, 6, 15, 23, 30, 45),
+        Date.parse(d.toISOString()) === d.getTime(),
+        Date.parse("0050-01-01T00:00:00") === new Date("0050-01-01T00:00:00Z").getTime(),
+        new Date("2020-07-15T23:30:00").getTime() === UTC(2020, 6, 15, 23, 30),
+        new Date(new Date(2020, 0, 1).toString()).getTime() === UTC(2020, 0, 1),
+        new Date({ valueOf: () => "2020-07-15T23:30" }).getTime() === UTC(2020, 6, 15, 23, 30),
+        Number.isNaN(Date.parse("not a date")),
+        Number.isNaN(new Date(2020, NaN).getTime()),
+      ],
+    };
+  }),
+};
+"#;
+
+/// I1: the local-time methods of `Date` are UTC whatever the host's time
+/// zone, so every node computes the same values. The body runs in child
+/// processes with `TZ` set, since the time zone is read once per process.
+#[tokio::test]
+async fn local_time_methods_are_utc() {
+    const TEST: &str = "local_time_methods_are_utc";
+    if !is_child(TEST) {
+        for tz in ["America/New_York", "Asia/Kolkata", "Pacific/Chatham"] {
+            run_child(TEST, &[("TZ", tz)]);
+        }
+        return;
+    }
+    let store = TestStore::embedded(option_env!("CARGO_TARGET_TMPDIR")).await;
+    let r = runner(&store).await;
+    let bundle = load(ZONES);
+    let got = query(&r, &function(&bundle, "zones:read"), unit())
+        .await
+        .expect("read")
+        .result;
+    let f = |v: f64| LiveValue::F64(v);
+    assert_eq!(
+        field(&got, "getters"),
+        LiveValue::Array(
+            [2020.0, 6.0, 15.0, 3.0, 23.0, 30.0, 45.0, 123.0, 120.0]
+                .map(f)
+                .to_vec()
+        )
+    );
+    assert_eq!(field(&got, "offset"), f(0.0));
+    assert_eq!(
+        field(&got, "strings"),
+        LiveValue::Array(vec![
+            s("Wed Jul 15 2020 23:30:45 GMT+0000"),
+            s("Wed Jul 15 2020"),
+            s("23:30:45 GMT+0000"),
+            s("07/15/2020, 11:30:45 PM"),
+            s("07/15/2020"),
+            s("11:30:45 PM"),
+            s("Wed Jul 15 2020 23:30:45 GMT+0000"),
+            s("Invalid Date"),
+            s("NaN"),
+            s("Sun Jan 01 -0050 00:00:00 GMT+0000"),
+        ])
+    );
+    assert_eq!(field(&got, "called"), LiveValue::Bool(true));
+    assert_eq!(
+        field(&got, "setters"),
+        LiveValue::Array(vec![
+            s("2001-05-09T05:06:07.008Z"),
+            s("1999-01-01T00:00:00.000Z")
+        ])
+    );
+    let utc = items(&field(&got, "utc"));
+    for (i, v) in utc.iter().enumerate() {
+        assert_eq!(v, &LiveValue::Bool(true), "utc[{i}]");
+    }
+}
