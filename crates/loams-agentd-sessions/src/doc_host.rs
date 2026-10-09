@@ -587,7 +587,11 @@ impl DocHost {
             loop {
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 let Some(inner) = weak.upgrade() else { return };
-                Self { inner }.evict_over_budget();
+                let host = Self { inner };
+                if host.over_budget() {
+                    // The pass saves snapshots: keep it off the async workers.
+                    let _ = tokio::task::spawn_blocking(move || host.evict_over_budget()).await;
+                }
             }
         });
     }
@@ -936,10 +940,12 @@ impl DocHost {
         // Each row needs its own checked expiry wake; otherwise a non-head
         // edit could remain displayed as live indefinitely.
         self.arm_existing_queue_edit_expiries(&handle);
-        // Publish only after the durable subscription is installed.
+        // Publish only after the change subscription (`_sub`) is installed,
+        // so no commit between publication and subscription goes unseen.
         lock(&self.inner.handles).insert(chat_id.to_string(), handle.clone());
         drop(opening);
         self.spawn_worker(chat_task(self.clone(), Arc::downgrade(&handle), changed_rx));
+        // Inline, so an open never leaves the warm set over its cap.
         self.evict_over_budget();
         Ok(handle)
     }
@@ -954,6 +960,10 @@ impl DocHost {
     ///
     /// Eviction flushes a final snapshot, so reopen loses nothing.
     fn evict_over_budget(&self) {
+        // Within budget there is nothing to do: do not queue behind an open.
+        if !self.over_budget() {
+            return;
+        }
         // Do not let a cold reopen race the retiring handle's final flush.
         let _opening = lock(&self.inner.opening);
         let mut by_age: Vec<(i64, String)> = {
@@ -993,6 +1003,35 @@ impl DocHost {
                 self.save_snapshot(&handle);
                 tracing::debug!(chat = %handle.chat_id, "doc evicted (LRU)");
             }
+        }
+    }
+
+    /// The warm set exceeds [`WARM_DOC_CAP`] or the resident estimate
+    /// exceeds `DOC_LRU_BYTE_BUDGET`. Takes only the handle map lock.
+    fn over_budget(&self) -> bool {
+        let handles = lock(&self.inner.handles);
+        handles.len() > WARM_DOC_CAP
+            || handles
+                .values()
+                .map(|h| h.resident_estimate())
+                .sum::<usize>()
+                > loams_agentd_doc::DOC_LRU_BYTE_BUDGET
+    }
+
+    /// Run an eviction pass on the blocking pool when over budget (inline
+    /// without a runtime): its final snapshot saves are blocking I/O.
+    fn schedule_eviction(&self) {
+        if !self.over_budget() {
+            return;
+        }
+        match tokio::runtime::Handle::try_current() {
+            Ok(runtime) => {
+                let host = self.clone();
+                self.spawn_worker_on(&runtime, async move {
+                    let _ = tokio::task::spawn_blocking(move || host.evict_over_budget()).await;
+                });
+            }
+            Err(_) => self.evict_over_budget(),
         }
     }
 
@@ -3199,7 +3238,7 @@ async fn chat_task(host: DocHost, weak: Weak<ChatDocHandle>, mut changed_rx: wat
                 // persister. The legacy worker must not duplicate every export.
                 if handle.persistence.is_none() { host.save_snapshot(&handle); }
                 // Post-quiesce eviction pass: sizes just refreshed.
-                host.evict_over_budget();
+                host.schedule_eviction();
             }
         }
     }
@@ -3269,6 +3308,29 @@ mod publication_eviction_tests {
             "written before eviction"
         );
         drop(reopened);
+        host.shutdown_workers().await;
+    }
+
+    /// The 100 ms eviction tick must not queue behind a slow open: within
+    /// budget it returns without taking the `opening` lock.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_eviction_pass_within_budget_skips_the_opening_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_store, host) = host(dir.path());
+        drop(host.open("warm").unwrap());
+        let opening = lock(&host.inner.opening);
+        let pass = {
+            let host = host.clone();
+            std::thread::spawn(move || host.evict_over_budget())
+        };
+        let started = std::time::Instant::now();
+        while !pass.is_finished() && started.elapsed() < std::time::Duration::from_secs(2) {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let finished = pass.is_finished();
+        drop(opening);
+        pass.join().unwrap();
+        assert!(finished, "a pass within budget waited for the opening lock");
         host.shutdown_workers().await;
     }
 
