@@ -441,3 +441,164 @@ async fn owned_statements_of_later_tasks_are_48() {
     let access = in_session(addr, "alice", "l", "GRANT SELECT ON *.* TO u", &[]).await;
     assert_eq!(code(&access), Some("48"), "{}", access.text());
 }
+
+/// A directory under the worktree's `scratch/` for files a test watches; removed
+/// when dropped.
+struct Scratch(std::path::PathBuf);
+
+impl Scratch {
+    fn new(name: &str) -> Self {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../scratch")
+            .join(format!("{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch directory");
+        Self(dir.canonicalize().expect("absolute"))
+    }
+
+    fn path(&self, name: &str) -> String {
+        self.0.join(name).display().to_string()
+    }
+
+    fn files(&self) -> Vec<String> {
+        std::fs::read_dir(&self.0)
+            .expect("list")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+async fn as_alice(addr: SocketAddr, method: &'static str, sql: &str, body: &[u8]) -> Response {
+    call(
+        addr,
+        method,
+        vec![
+            ("user", "alice".to_string()),
+            ("password", "a".to_string()),
+            ("query", sql.to_string()),
+        ],
+        body.to_vec(),
+    )
+    .await
+}
+
+/// Fix round 1, C1 and C2: `INTO OUTFILE` wrote a host file and `FROM INFILE` read
+/// one, whatever `readonly` and the grants say (R1.10). Both are `344` on every
+/// path — POST, GET, in a session, and with the INSERT's body — and nothing is
+/// written or read.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn host_files_are_never_written_or_read() {
+    let (house, _pool) = house("hostio", per_namespace(1)).await;
+    let addr = house.local_addr();
+    let dir = Scratch::new("t4fix1-hostio");
+    let writes = [
+        format!("SELECT 1 INTO OUTFILE '{}' APPEND", dir.path("select.tsv")),
+        format!("SHOW TABLES INTO OUTFILE '{}'", dir.path("show.tsv")),
+        format!(
+            "DESCRIBE TABLE system.one INTO OUTFILE '{}'",
+            dir.path("describe.tsv")
+        ),
+        format!(
+            "EXPLAIN SELECT 1 INTO OUTFILE '{}'",
+            dir.path("explain.tsv")
+        ),
+        format!(
+            "SELECT $$'$$ INTO OUTFILE '{}' --'",
+            dir.path("heredoc.tsv")
+        ),
+    ];
+    for sql in &writes {
+        for method in ["POST", "GET"] {
+            let response = as_alice(addr, method, sql, b"").await;
+            assert_eq!(
+                code(&response),
+                Some("344"),
+                "{method} {sql}: {}",
+                response.text()
+            );
+        }
+        let response = in_session(addr, "alice", "h", sql, &[]).await;
+        assert_eq!(code(&response), Some("344"), "{sql}: {}", response.text());
+    }
+    assert!(dir.files().is_empty(), "written: {:?}", dir.files());
+
+    let input = dir.path("in.csv");
+    std::fs::write(&input, "7\n").expect("input file");
+    let create = in_session(
+        addr,
+        "alice",
+        "h",
+        "CREATE TEMPORARY TABLE t (a UInt8) ENGINE = Memory",
+        &[],
+    )
+    .await;
+    assert_eq!(create.status, 200, "{}", create.text());
+    for sql in [
+        format!("INSERT INTO t FROM INFILE '{input}' FORMAT CSV"),
+        format!("INSERT INTO t FROM INFILE '{input}'"),
+        format!("INSERT INTO t FROM INFILE '{input}' COMPRESSION 'none' FORMAT CSV"),
+        format!("INSERT INTO FUNCTION null('a UInt8') FROM INFILE '{input}' FORMAT CSV"),
+        format!("INSERT INTO FUNCTION null($$'$$) FROM INFILE '{input}' --')\nFORMAT CSV"),
+    ] {
+        let response = in_session(addr, "alice", "h", &sql, &[]).await;
+        assert_eq!(code(&response), Some("344"), "{sql}: {}", response.text());
+        // The same head with its data in the body.
+        let response = call(
+            addr,
+            "POST",
+            vec![
+                ("user", "alice".to_string()),
+                ("password", "a".to_string()),
+                ("session_id", "h".to_string()),
+                ("query", sql.clone()),
+            ],
+            b"1\n".to_vec(),
+        )
+        .await;
+        assert_eq!(code(&response), Some("344"), "{sql}: {}", response.text());
+    }
+    let count = in_session(addr, "alice", "h", "SELECT count() FROM t", &[]).await;
+    assert_eq!(count.text(), "0\n", "nothing was read into t");
+}
+
+/// Fix round 1, C1: every query is gated by ClickHouse's own class, not only by the
+/// front's keyword route. `SELECT 1 PARALLEL WITH CREATE TEMPORARY TABLE …` opens
+/// with a query keyword and has no `;`, but ClickHouse classes it `Control`: it is
+/// refused on GET and POST, and no table appears.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn every_query_is_gated_by_clickhouse_class() {
+    let (house, _pool) = house("gate", per_namespace(1)).await;
+    let addr = house.local_addr();
+    let sql = "SELECT 1 PARALLEL WITH CREATE TEMPORARY TABLE x (a UInt8) ENGINE = Memory";
+    let get = call(
+        addr,
+        "GET",
+        vec![
+            ("user", "alice".to_string()),
+            ("password", "a".to_string()),
+            ("session_id", "g".to_string()),
+            ("query", sql.to_string()),
+        ],
+        Vec::new(),
+    )
+    .await;
+    assert!(code(&get).is_some(), "refused on GET: {}", get.text());
+    let post = in_session(addr, "alice", "g", sql, &[]).await;
+    assert_eq!(code(&post), Some("62"), "{}", post.text());
+    let read = in_session(addr, "alice", "g", "SELECT count() FROM x", &[]).await;
+    assert_eq!(code(&read), Some("60"), "no table x: {}", read.text());
+    // Reads still run, on GET too.
+    assert_eq!(as_alice(addr, "GET", "SELECT 1", b"").await.text(), "1\n");
+    assert_eq!(
+        as_alice(addr, "GET", "SHOW DATABASES LIKE 'default'", b"")
+            .await
+            .text(),
+        "default\n"
+    );
+}

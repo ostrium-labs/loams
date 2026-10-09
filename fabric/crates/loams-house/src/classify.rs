@@ -18,8 +18,13 @@
 //!
 //! The text chDB runs is the input minus a trailing `FORMAT <f>` — never rewritten
 //! otherwise (`queries_are_never_rewritten`).
+//!
+//! Two checks run before either half (fix round 1): no statement may read or write
+//! a host file ([`check_text`]: `INTO OUTFILE`, `FROM INFILE`, `344`), and every
+//! statement the front sends to chDB as text — queries included — is gated by
+//! ClickHouse's own class ([`decide`]).
 
-use loams_house_ipc::QueryClass;
+use loams_house_ipc::{Classification, QueryClass};
 use sqlparser::ast::{AlterTableOperation, ObjectType, Statement};
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::parser::Parser;
@@ -184,6 +189,201 @@ impl Stmt {
     }
 }
 
+/// `164` for a statement that is not a read on a read-only path (GET, or a
+/// read-only user), with ClickHouse's own text.
+pub fn readonly_error() -> HouseError {
+    HouseError::from(ChError::readonly(
+        "Cannot execute query in readonly mode. For queries over HTTP, method GET implies \
+         readonly. You should use method POST for modifying queries",
+    ))
+}
+
+/// What ClickHouse's lexer makes of a statement, as far as [`check_text`] needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lexeme {
+    /// A bare word (`[A-Za-z0-9_$]+`), as `start..end`.
+    Word(usize, usize),
+    /// `;`.
+    Semicolon,
+    /// A literal, a quoted name, a heredoc, or a symbol.
+    Other,
+}
+
+/// The lexemes of a complete statement, the way ClickHouse's lexer cuts it — not
+/// the request scanner's approximation, which does not know heredocs, nested
+/// comments or `#` comments. Measured on chDB (fix round 1): `$name$ … $name$`
+/// (a name of word characters) is a string, so `SELECT $$'$$ INTO OUTFILE 'x' --'`
+/// writes a file while the scanner sees only a string; `/* /* */ … */` nests; `#`
+/// starts a comment only before a space or `!`. Bytes outside ASCII are skipped:
+/// ClickHouse reads Unicode spaces as whitespace and anything else there fails to
+/// parse, so skipping them can only join words, never hide one.
+fn lexemes(text: &str) -> Vec<Lexeme> {
+    let b = text.as_bytes();
+    let n = b.len();
+    let word = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+    let line_end = |from: usize| {
+        b[from..]
+            .iter()
+            .position(|c| *c == b'\n')
+            .map_or(n, |p| from + p)
+    };
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < n {
+        let c = b[i];
+        match c {
+            _ if c.is_ascii_whitespace() || c >= 0x80 => i += 1,
+            b'-' if b.get(i + 1) == Some(&b'-') => i = line_end(i),
+            b'#' if matches!(b.get(i + 1), Some(b' ' | b'!')) => i = line_end(i),
+            b'/' if b.get(i + 1) == Some(&b'*') => {
+                let mut depth = 1;
+                i += 2;
+                while i < n && depth > 0 {
+                    if b[i..].starts_with(b"/*") {
+                        depth += 1;
+                        i += 2;
+                    } else if b[i..].starts_with(b"*/") {
+                        depth -= 1;
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            b'\'' | b'"' | b'`' => {
+                i += 1;
+                while i < n {
+                    if b[i] == b'\\' {
+                        i += 2;
+                    } else if b[i] == c {
+                        i += 1;
+                        if b.get(i) != Some(&c) {
+                            break;
+                        }
+                        i += 1;
+                    } else {
+                        i += 1;
+                    }
+                }
+                out.push(Lexeme::Other);
+            }
+            b'$' => {
+                let mut j = i + 1;
+                while j < n && word(b[j]) {
+                    j += 1;
+                }
+                let heredoc = (j < n && b[j] == b'$')
+                    .then(|| {
+                        let delimiter = &b[i..=j];
+                        b[j + 1..]
+                            .windows(delimiter.len())
+                            .position(|w| w == delimiter)
+                            .map(|at| j + 1 + at + delimiter.len())
+                    })
+                    .flatten();
+                if let Some(end) = heredoc {
+                    i = end;
+                    out.push(Lexeme::Other);
+                } else if b.get(i + 1).is_some_and(|c| word(*c)) {
+                    let start = i;
+                    i += 1;
+                    while i < n && (word(b[i]) || b[i] == b'$') {
+                        i += 1;
+                    }
+                    out.push(Lexeme::Word(start, i));
+                } else {
+                    i += 1;
+                    out.push(Lexeme::Other);
+                }
+            }
+            _ if word(c) => {
+                let start = i;
+                while i < n && (word(b[i]) || b[i] == b'$') {
+                    i += 1;
+                }
+                out.push(Lexeme::Word(start, i));
+            }
+            b';' => {
+                i += 1;
+                out.push(Lexeme::Semicolon);
+            }
+            _ => {
+                i += 1;
+                out.push(Lexeme::Other);
+            }
+        }
+    }
+    out
+}
+
+/// Refuses what no statement may carry, whatever its kind and wherever it goes
+/// (fix round 1): `INTO OUTFILE` and `FROM INFILE`, which chDB's client layer
+/// carries out on the host whatever `readonly` and the grants say (HS1 R1.10), are
+/// `344`. The words count anywhere ClickHouse's lexer sees them ([`lexemes`]), so
+/// an object named `outfile` or `infile` must be quoted with backticks.
+///
+/// `text` is a statement head: an `INSERT`'s data must not be passed.
+pub fn check_text(text: &str) -> Result<(), HouseError> {
+    let lexemes = lexemes(text);
+    let is = |l: &Lexeme, word: &str| match l {
+        Lexeme::Word(start, end) => {
+            text.as_bytes()[*start..*end].eq_ignore_ascii_case(word.as_bytes())
+        }
+        _ => false,
+    };
+    for pair in lexemes.windows(2) {
+        let clause = if is(&pair[0], "INTO") && is(&pair[1], "OUTFILE") {
+            "INTO OUTFILE (it writes a file on the server; read the result from the response)"
+        } else if is(&pair[0], "FROM") && is(&pair[1], "INFILE") {
+            "FROM INFILE (it reads a file on the server; send the data in the request body)"
+        } else {
+            continue;
+        };
+        return Err(HouseError::from(ChError::support_is_disabled(format!(
+            "{clause} is disabled on the House. A table or column named like the clause's \
+             keyword can be quoted with backticks"
+        ))));
+    }
+    Ok(())
+}
+
+/// What ClickHouse's own class of a statement (`chdb_classify_query_n`, run by the
+/// statement's worker on its control connection) means for the text the front is
+/// about to send to chDB (fix round 1, C1).
+///
+/// * `ReadOnly` runs.
+/// * On a read-only path (`readonly`: GET, or a read-only user), anything else is
+///   refused: a state change is `164`.
+/// * A statement the front routed as a read, or one sqlparser could not parse
+///   (`unparsed` carries sqlparser's message), that ClickHouse says changes state
+///   is `62` with the hint that the form is outside the surface (FL2 Ruling 4).
+pub fn decide(
+    classification: Classification,
+    readonly: bool,
+    unparsed: Option<&str>,
+) -> Result<(), HouseError> {
+    let outside = |what: String| {
+        Err(HouseError::from(ChError::syntax_error(format!(
+            "{what}: {OUTSIDE_SURFACE}"
+        ))))
+    };
+    match classification.class {
+        QueryClass::ReadOnly | QueryClass::Unknown => Ok(()),
+        QueryClass::Mutating | QueryClass::MutatingGlobal | QueryClass::Control => {
+            if readonly {
+                return Err(readonly_error());
+            }
+            match unparsed {
+                Some(message) => outside(message.to_string()),
+                None => outside(format!(
+                    "ClickHouse classes this statement as {:?}, not as a read",
+                    classification.class
+                )),
+            }
+        }
+    }
+}
+
 /// Engines that make a `CREATE TABLE` a pipe.
 const PIPE_ENGINES: &[&str] = &["LoamsStream", "IggyTopic", "S3Queue"];
 
@@ -239,6 +439,13 @@ fn set_value(expr: &sqlparser::ast::Expr) -> String {
 
 /// Classifies one statement (no data after it: an `INSERT … FORMAT f` head only).
 pub fn classify(sql: &str) -> Result<Classified, HouseError> {
+    // The checks every statement gets, on the statement's head (an `INSERT`'s data,
+    // if any came with it, is not SQL).
+    if request::first_keyword(sql) == "INSERT" {
+        check_text(&insert_stmt(sql).text)?;
+    } else {
+        check_text(sql)?;
+    }
     let (text, format) = request::split_format(sql);
     let toks = words(&text);
     let mut keywords = toks.iter().filter(|(_, t)| t.word).map(|(w, _)| w.as_str());
@@ -509,18 +716,17 @@ fn insert_stmt(sql: &str) -> InsertStmt {
 }
 
 /// What to do with a statement sqlparser could not parse, given ClickHouse's own
-/// class for it (FL2 Ruling 6).
+/// class for it (FL2 Ruling 6), on a writing path: [`decide`].
 pub fn decide_unparsed(text: String, message: &str, class: QueryClass) -> Result<Stmt, HouseError> {
-    match class {
-        // A query sqlparser does not know, or not ClickHouse either: chDB runs it,
-        // and answers its own `62` for the latter.
-        QueryClass::ReadOnly | QueryClass::Unknown => Ok(Stmt::Query { text }),
-        QueryClass::Mutating | QueryClass::MutatingGlobal | QueryClass::Control => {
-            Err(HouseError::from(ChError::syntax_error(format!(
-                "{message}: {OUTSIDE_SURFACE}"
-            ))))
-        }
-    }
+    decide(
+        Classification {
+            class,
+            statements: 1,
+        },
+        false,
+        Some(message),
+    )?;
+    Ok(Stmt::Query { text })
 }
 
 #[cfg(test)]

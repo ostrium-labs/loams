@@ -65,7 +65,7 @@ use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::{TokioIo, TokioTimer};
-use loams_house_ipc::{Execute, Limits, Progress, QueryClass};
+use loams_house_ipc::{Execute, Limits, Progress};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, mpsc};
@@ -74,7 +74,7 @@ use tokio::time::Sleep;
 
 use crate::admission::{Event, Outcome, WorkerLease, WorkerPool};
 use crate::auth;
-use crate::classify::{Classified, Stmt, classify, decide_unparsed};
+use crate::classify::{Classified, Stmt, check_text, classify, decide, readonly_error};
 use crate::compress::{self, Decoder, Encoder, Encoding};
 use crate::config::{self, BUFFER_SIZE_RANGE, DISPLAY_NAME, HouseConfig, SPOOL_IN_MEMORY, UserMap};
 use crate::errors::{ChError, HouseError};
@@ -753,8 +753,10 @@ async fn run(
     };
     meta.affinity = session.as_ref().map(SessionGuard::affinity_key);
 
-    // What the front answers itself, and what runs.
-    let (unparsed, pins) = match classified {
+    // What the front answers itself, and what runs. Every statement chDB gets as
+    // text that is not one of the owned writes is gated by ClickHouse's class
+    // below (`gate`: sqlparser's message for a form it could not parse).
+    let (gate, pins) = match classified {
         Classified::Known { stmt, .. } => {
             match front_answer(&stmt, session.as_ref(), &config.session_limits, &known) {
                 Some(Ok(())) => {
@@ -774,10 +776,13 @@ async fn run(
                     let close = !body.drain().await;
                     return meta.error(&err, &Progress::default(), close);
                 }
-                None => (None, matches!(stmt, Stmt::CreateTemporaryTable { .. })),
+                None => (
+                    stmt.is_read().then_some(None),
+                    matches!(stmt, Stmt::CreateTemporaryTable { .. }),
+                ),
             }
         }
-        Classified::Unparsed { text, message, .. } => (Some((text, message)), false),
+        Classified::Unparsed { message, .. } => (Some(Some(message)), false),
     };
 
     let buffer_size = get("buffer_size")
@@ -808,21 +813,11 @@ async fn run(
     };
     meta.worker = Some(lease.worker_id().to_string());
 
-    // ClickHouse's class decides what sqlparser could not parse (FL2 Ruling 6).
-    if let Some((text, message)) = unparsed {
-        let decided = match lease.classify(&text).await {
-            Ok(classification) => {
-                if readonly
-                    && !matches!(
-                        classification.class,
-                        QueryClass::ReadOnly | QueryClass::Unknown
-                    )
-                {
-                    Err(readonly_error())
-                } else {
-                    decide_unparsed(text, &message, classification.class).map(|_| ())
-                }
-            }
+    // ClickHouse's class gates every read and decides what sqlparser could not
+    // parse (FL2 Ruling 6; fix round 1, C1), on exactly the text that runs.
+    if let Some(unparsed) = gate {
+        let decided = match lease.classify(&sql).await {
+            Ok(classification) => decide(classification, readonly, unparsed.as_deref()),
             Err(err) => Err(err),
         };
         if let Err(err) = decided {
@@ -883,13 +878,6 @@ async fn run(
     }
 
     respond(shared, meta, lease, wait_end, buffer_size, session).await
-}
-
-fn readonly_error() -> HouseError {
-    HouseError::from(ChError::readonly(
-        "Cannot execute query in readonly mode. For queries over HTTP, method GET implies \
-         readonly. You should use method POST for modifying queries",
-    ))
 }
 
 /// The task that will serve an owned statement this front does not yet (`48`).
@@ -1073,14 +1061,18 @@ async fn prepare(
         }
     };
     let classified = match &plan.input {
-        Some(spec) => Classified::Known {
-            stmt: Stmt::Insert(crate::classify::InsertStmt {
-                text: spec.insert.clone(),
-                format: Some(spec.format.clone()),
-                table: None,
-            }),
-            format: None,
-        },
+        Some(spec) => {
+            // The head the body streams into gets the checks every statement gets.
+            check_text(&spec.insert)?;
+            Classified::Known {
+                stmt: Stmt::Insert(crate::classify::InsertStmt {
+                    text: spec.insert.clone(),
+                    format: Some(spec.format.clone()),
+                    table: None,
+                }),
+                format: None,
+            }
+        }
         None => classify(&plan.sql)?,
     };
     if readonly && matches!(&classified, Classified::Known { stmt, .. } if !stmt.is_read()) {
