@@ -262,7 +262,7 @@ Steps: write the tests (FAIL: package missing) → write the proto → generate 
   - `lsn_by_timestamp(t, tl, ts)`;
   - `tenant_config(t, TenantConfig{pitr_interval, …})`.
 - The same methods through the storage controller when `NeonEndpoints.storcon` is set (Task 0 records the routes).
-- `WalClient::timeline_status(t, tl)` and `WalClient::create_timeline(...)`: against `loams-wal`'s `GET /v1/tenant/{t}/timeline/{tl}` and `POST /v1/tenant/timeline` (the same routes a stock safekeeper serves, so Task 43's migration tool reuses it).
+- `WalClient::timeline_status(t, tl)` and `WalClient::create_timeline(...)`: against `loams-wal`'s `GET /v1/tenant/{t}/timeline/{tl}` and `POST /v1/tenant/timeline`. *(Corrected by R2.11: the contract is `loams-wal`'s only; no stock safekeeper fleet exists to migrate, and Task 43 does not reuse this client against one.)*
 - `ComputeCtlClient::{status, configure(spec), terminate, promote}`, with a per-compute JWT.
 - `spec::ComputeSpecBuilder`, which builds `ComputeSpec` from records (roles, databases, settings, `safekeeper_connstrings` (the `loams-wal` acceptors or pool Service), `pageserver_connection_info`, `storage_auth_token`, `neon.max_cluster_size`).
 - `NeonError { status, msg }` maps to `loams.errors.v1` reasons.
@@ -555,6 +555,7 @@ Tests:
 - `promote_refused_while_rw_running`
 
 Commit `feat(pg): read-only endpoints`.
+- *(Task 2, R2.13.)* The pinned `compute_ctl` refuses to promote a replica whose local file cache is not prewarmed. A promotion target runs with endpoint storage and `autoprewarm` (`ComputeSpecBuilder::endpoint_storage`, `autoprewarm`), or is prewarmed (`ComputeCtlClient::prewarm`, then `prewarm_state` until `completed`) before `promote`. This task deploys endpoint storage for the stacks that promote, and tests `promote_refuses_an_unprewarmed_replica`.
 
 ### Task 17: The cold-start harness and the PG2b gate
 
@@ -934,6 +935,7 @@ Commit `feat(wal): tls and tenant tokens`.
 - `tikv_instance_kill_is_reconnect`.
 
 Commit `feat(wal): membership, failover and pool moves`.
+- *(Task 2, R2.13.)* A failover that promotes a compute replica needs that replica prewarmed (Task 16's endpoint storage and `autoprewarm`); a refused promotion is `failed_precondition`, and the failover replaces the replica instead.
 
 ### Task 40: Offload, trim, recover-from-bucket and the WAL archive restore
 
@@ -982,7 +984,7 @@ Commit `bench(wal): launch gate run <date>`.
 ### Task 43: Dev data migration, and removing safekeepers from dev
 
 **Files:**
-- `loams pg migrate-wal` in the CLI and `crates/loams-pg-control/src/wal_pool.rs` (the quiesced move from a stock safekeeper);
+- `loams pg migrate-wal` in the CLI and `crates/loams-pg-control/src/wal_pool.rs` (the quiesced move from a stock safekeeper); *(R2.11.)* the only stock safekeeper is a dev stack's `safekeeper1`, so the command reads it with a client of its own, scoped to the migration, and writes through `loams_neon::WalClient`, which is `loams-wal`'s contract only;
 - `deploy/neon/compose.yaml` and its README (`safekeeper1` replaced by `loams-wal --store nvme --features interpreted`, one acceptor, D268's local metadata backend);
 - `deploy/loams-pg-bench/compose.yaml` (stock safekeepers only behind the `sk` reference profile, per Q654);
 - `scripts/ci/no-safekeeper.sh` and a `pg2.yml` step;
@@ -1080,6 +1082,7 @@ Tests (kind, three zones simulated with node labels):
 - `broker_loss_tolerated`
 
 Commit `feat(pg): storage ha`.
+- *(Task 2, R2.14.)* `NeonClient::attach_tenant` through the storage controller sends no placement policy and no shard parameters (unsharded, attached, no secondary). This task adds the placement (`Attached(1)` for a secondary) and records its fixture from a deployed controller.
 
 ### Task 50: Upgrades
 
@@ -1185,7 +1188,7 @@ Tests:
 - `password_never_crosses_ipc_without_reveal`
 
 Commit `feat(desktop): postgres backend contract`.
-- *(Task 2, R2.2.)* `deploy/neon` now runs Postgres 17. A desktop local stack whose timelines were created at 16 needs a fresh volume (`down -v`); the local-stack backend says so when the compute's version and the timeline's differ.
+- *(Task 2, R2.2; done in Task 2's fix round 1, R2.17.)* `deploy/neon` now runs Postgres 17. A desktop local stack whose timelines were created at 16 needs a fresh volume: the stacks manager reports `pg_major_mismatch` and offers "Reset local Postgres data" (`compose down -v` after a native confirmation). The local-stack backend keeps that behaviour.
 
 ### Task 59: The desktop switch end to end
 
@@ -1403,13 +1406,49 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
 
 ### Task 2 rulings (2026-10-09)
 
-- **R2.1 The pinned images are Neon's last public build; the fork publishes none.** `ostrium-labs/neon` has no image registry yet, so `deploy/neon` and `deploy/loams-pg-bench` pin Neon's build of 2025-08-26 (git `77e22e4b`; the pinned `pageserver --version` says so) by multi-arch index digest: `ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f` (amd64 manifest `sha256:ead56a7b…`) and `ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3` (amd64 `sha256:9b86e3ec…`). For the APIs `loams-neon` copies, that build is the fork's code: `git log 77e22e4b..loams-decoder-trim-1` is empty for `libs/pageserver_api/src/{models,controller_api}.rs`, `pageserver/src/http/routes.rs`, `storage_controller/src/http.rs`, `libs/compute_api`, `compute_tools/src/http`, `libs/http-utils/src/error.rs` and `safekeeper/src/http`. `NEON_IMAGE` and `COMPUTE_IMAGE` override the pins; `NEON_TAG`, `NEON_REPOSITORY` and `PG_VERSION` no longer pick images. `PG_HEADERS_IMAGE` (`pg2.yml`, `pg2-e2e.yml`, `loams-pg-bench.yml`) moves to the same index digest (same build as R31.6's manifest, so the headers are unchanged; the cache key changes once). When the fork publishes images, the four places to change are the two compose files and those workflow envs.
+- **R2.1 The pinned images are Neon's last public build; the fork publishes none.** `ostrium-labs/neon` has no image registry yet, so `deploy/neon` and `deploy/loams-pg-bench` pin Neon's build of 2025-08-26 (git `77e22e4b`; the pinned `pageserver --version` says so) by multi-arch index digest: `ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f` (amd64 manifest `sha256:ead56a7b…`) and `ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3` (amd64 `sha256:9b86e3ec…`). For the APIs `loams-neon` copies, that build is the fork's code: `git log 77e22e4b..loams-decoder-trim-1` is empty for `libs/pageserver_api/src/{models,controller_api}.rs`, `pageserver/src/http/routes.rs`, `storage_controller/src/http.rs`, `libs/compute_api`, `compute_tools/src/http`, `libs/http-utils/src/error.rs` and `safekeeper/src/http`. `NEON_IMAGE` and `COMPUTE_IMAGE` override the pins; `NEON_TAG`, `NEON_REPOSITORY` and `PG_VERSION` no longer pick images. `PG_HEADERS_IMAGE` (`pg2.yml`, `pg2-e2e.yml`, `loams-pg-bench.yml`) moves to the same index digest (same build as R31.6's manifest, so the headers are unchanged; the cache key changes once). When the fork publishes images, the four places to change are the two compose files and those workflow envs. *(Review I5: mirroring the pins to a registry Loams controls is pending the owner's answer.)*
 - **R2.2 Postgres 17 (Task 0 ruling 7).** Both stacks run `compute-node-v17`, and the README, `run.sh` and `it-pageserver-loams-wal.sh` create timelines at 17. Checked on 2026-10-09: `deploy/neon`'s `compute1` answers `PostgreSQL 17.5`, and `it-pageserver-loams-wal.sh` passes on the pinned v17 images. A desktop local stack created with 16 needs a fresh volume (`down -v`); Task 58 notes it.
-- **R2.3 `NeonError { status, msg, component }`.** The contract's error gains the component it came from (`pageserver`, `storage_controller`, `loams_wal`, `compute_ctl`), because `storage_unavailable`'s registered metadata is `component` (`docs/api/reasons.md`). `error_info()` carries `component` and `status`, never `msg` (it can name internal hosts).
-- **R2.4 The reason mapping.** As the task says, 404 is `not_found`, 409 `already_exists`, and 5xx (and an unreachable or unreadable component, status 0) `storage_unavailable`; for `compute_ctl`, which is not storage, the same is the generic `unavailable`. Also: 400 `invalid_argument`, 412 `failed_precondition`, 429 `resource_exhausted`. 401 and 403 are `internal`: the refused credential is Loams's own storage token or compute JWT, and `unauthenticated` would tell the caller to sign in again. Any other status is `internal` (Loams sent a request it should not have).
+- **R2.3 `NeonError { status, msg, component }`.** The contract's error gains the component it came from (`pageserver`, `storage_controller`, `loams_wal`, `compute_ctl`), because `storage_unavailable`'s registered metadata is `component` (`docs/api/reasons.md`). `error_info()` carries `component` and `status`, never `msg` (it can name internal hosts). *(Amended by R2.15: `status` is dropped, and `component` is sent with `storage_unavailable` only.)*
+- **R2.4 The reason mapping.** *(Refined by R2.12: the reason depends on the call too.)* As the task says, 404 is `not_found`, 409 `already_exists`, and 5xx (and an unreachable or unreadable component, status 0) `storage_unavailable`; for `compute_ctl`, which is not storage, the same is the generic `unavailable`. Also: 400 `invalid_argument`, 412 `failed_precondition`, 429 `resource_exhausted`. 401 and 403 are `internal`: the refused credential is Loams's own storage token or compute JWT, and `unauthenticated` would tell the caller to sign in again. Any other status is `internal` (Loams sent a request it should not have).
 - **R2.5 Through the storage controller.** `attach_tenant` is `POST /v1/tenant` (`TenantCreateRequest`, unsharded; the controller picks the generation, so the argument is ignored); every other method uses the pageserver's route on the controller, whose timeline create answers `TimelineInfo` flattened with `safekeepers` (ignored) and whose timeline delete waits for the deletion and answers 200. `deploy/neon` runs no controller, so this path is tested against a stand-in server (`storcon_routes`) with the shapes from the fork's source; recorded fixtures wait for the first task that deploys a controller.
 - **R2.6 `compute_ctl`.** Its errors are `{"error": ...}` (`GenericAPIError`), read into `msg`. `promote` is `Ok` only when `PromoteState` is `completed`; a failed promotion is its 500 with the error. The pinned `compute_ctl` reads `{spec, compute_ctl_config}` from its config file (both deploy configs already do), and `configure` sends the same pair.
 - **R2.7 The spec has one line per setting.** The builder's defaults are `shared_preload_libraries = neon`, `restart_after_crash = off`, `password_encryption = scram-sha-256`, `max_replication_write_lag = 500MB`, `max_replication_flush_lag = 10GB` and, for a primary, `synchronous_standby_names = walproposer`. A caller's setting of the same name replaces a default in place, and the quota's `neon.max_cluster_size` replaces a caller's (`spec_settings_are_unique`). `spec_main.json` was checked by running the pinned `compute-node-v17` with it (basebackup from the pageserver, role and database `app` created, `neon.max_cluster_size` set).
 - **R2.8 `Secret<T>` lives in `loams-neon`.** `loams_neon::Secret` is the redacting type the Global Constraints ask for; Task 6's `secrets.rs` re-exports it rather than defining a second one.
 - **R2.9 CI.** `pg2.yml` gains `neon-client` (the fixture tests and clippy). `pg2-e2e.yml` runs `it_deploy_neon_tenant_timeline_branch` on `deploy/neon`, and builds `loams-wal-interpreted` (debug, the default store) to run `scripts/pg2/it-pageserver-loams-wal.sh` on `deploy/loams-pg-bench` (R32.2 is done).
-- **R2.10 `loams-wal`'s create is idempotent by id.** A `POST /v1/tenant/timeline` for an existing timeline answers its head (200) even with other parameters, as a stock safekeeper does; the pageserver answers a conflicting timeline create with 409. Task 43's migration tool must compare the answered head with what it asked for.
+- **R2.10 `loams-wal`'s create is idempotent by id.** *(Corrected by R2.11.)* A `POST /v1/tenant/timeline` for an existing timeline answers its head (200) even with other parameters; the pageserver answers a conflicting timeline create with 409. A caller that cares (`pg-control`'s branch reconciler, Task 7) compares the answered head with what it asked for.
+
+#### Task 2 fix round 1 (review of 2026-10-09)
+
+- **R2.11 `WalClient` is `loams-wal`'s contract only (controller ruling, review I1).** The owner removed stock safekeepers, and no fleet of them exists to migrate. `WalClient` promises nothing about a stock safekeeper; R2.10, the task's interface text and Task 43's text are corrected. Task 43's `migrate-wal` reads a dev stack's `safekeeper1` with a client of its own.
+- **R2.12 The reason depends on the call and the status (review I2).** `NeonError` carries `op` (`Op`), and `reason()` reads it with the status and, where the fork's text tells two cases apart, the message:
+
+  | Status | Call | Reason |
+  |---|---|---|
+  | 400 | any | `invalid_argument` |
+  | 404 | any | `not_found` (`kind`: `timeline` or `tenant`) |
+  | 406 | timeline create | `lsn_out_of_retention` below the ancestor's GC cutoff (`oldest_lsn`); otherwise `failed_precondition` (before the ancestor's own branch point, an archived ancestor, a wait that timed out) |
+  | 408 | any | `unavailable` |
+  | 409 | timeline delete | `aborted` (a deletion in progress; the controller's 25 s wait ran out) |
+  | 409 | other | `already_exists` |
+  | 412 | timeline delete | `branch_has_children` ("child timelines", with `children`), `not_found` ("tenant is missing") |
+  | 412 | other | `failed_precondition` |
+  | 429 | any | `aborted` (the same create, or a second prewarm, already running) |
+  | 200 or 500 | promote | `failed_precondition` (R2.13) |
+  | 401, 403 | any | `internal` (R2.4) |
+  | 0, 5xx | storage | `storage_unavailable` (`component`) |
+  | 0, 5xx | `compute_ctl` | `unavailable` |
+  | other | any | `internal` |
+
+  The bodies the tests use are the pinned pageserver's own where the capture can provoke them (406 below the ancestor's start, both 412s) and the fork's text otherwise (`src_*`: the GC cutoff, a create in progress, the controller's delete timeout).
+- **R2.13 Promotion needs a prewarmed replica (review I3).** The pinned `compute_ctl` refuses `/promote` on a replica whose local file cache is not prewarmed ("compute NotPrewarmed", a 500 `PromoteState::Failed`), and on a primary. `promote` is `Ok` only on `completed`; a refusal, a failure or a 200 that is not `completed` is `failed_precondition`, documented as: replace the replica, or prewarm it and retry. `ComputeCtlClient` gains `prewarm(from_endpoint)` (`POST /lfc/prewarm`) and `prewarm_state()`, and the spec builder `endpoint_storage(addr, token)` and `autoprewarm(bool)` (left out of the spec when unset, so `spec_main.json` is unchanged). Neither stack runs endpoint storage, so **Task 16 (promotion) and Task 39 (HA and failover) own the requirement**: a failover target runs with endpoint storage and `autoprewarm`, or is prewarmed before `promote`; their texts are amended.
+- **R2.14 Attach through the storage controller (review M5).** `attach_tenant` sends `TenantCreateRequest` with no `generation` (the controller owns generations) and no `placement_policy` (the controller's default: attached, no secondary), for an unsharded tenant. Placement policies and shards are not supported until Task 49 (storage HA), whose text is amended.
+- **R2.15 Client hygiene (review M1–M4, M9, M10).**
+  - Timeouts are per call: `configure` and `promote` 300 s, `terminate` 120 s (its `fast` mode holds the answer 30 s), every other call 60 s, and 5 s to connect. A timeout does not mean the call failed: callers poll `/status` and repeat (each of the three is safe to repeat).
+  - The constructors return `Result`: a client whose HTTP client cannot be built is an error (`Op::Setup`, `internal`), not a client without timeouts. This changes the contract's `NeonClient::new(endpoints, auth)` to return `Result<NeonClient, NeonError>`.
+  - A base URL keeps its path prefix (`http://gw/ps` calls `http://gw/ps/v1/...`). A URL with credentials, a query or fragment, or a scheme other than http(s) is refused; the token goes in `auth`.
+  - `tenant_config` is `PATCH /v1/tenant/config` (`TenantConfigPatchRequest`): it sets the settings it names and keeps the others. A typed setting wins over the same name in `extra`, so each name is sent once.
+  - `ErrorInfo` carries only the metadata `docs/api/reasons.md` registers for its reason (`component`, `children`, `oldest_lsn`, `kind`); `status` is dropped.
+  - Fixtures: the 406, both 412s, `compute_ctl`'s `/status` and 401, `/lfc/prewarm` and a refused promote are recorded from `deploy/neon` (`compute-jwt.py` adds a capture key to `compute1`'s JWKS and signs a per-compute token; `compose.capture.yaml` publishes port 3080). Answers the capture cannot provoke are `src_*`, hand-written from the fork's source, which `tests/fixtures/README.md` lists with the source lines. The redaction test puts sentinels in every token and a SCRAM verifier, and checks the `Debug` and `Display` of every client, builder, spec and error.
+- **R2.16 Scripts and CI (review M6–M8).** `run.sh` and `it-pageserver-loams-wal.sh` refuse a `PG_VERSION` other than 17 and a `COMPUTE_IMAGE` that is not `compute-node-v17`. When `NEON_IMAGE` overrides the pin with a tag, `run.sh` records the tag with the digest it resolved to. `pg2-e2e.yml`'s path filters cover every crate and file its builds use; its jobs read the rust caches `pg2.yml` saves on `dev` (`pg2-loams-neon`, `pg2-wal-decoder`) and never save their own; the pinned images are pulled in their own step, with retries.
+- **R2.17 The desktop refuses data of another Postgres major (controller ruling, review I4; it overrides the constraint not to edit `apps/desktop-electron` for these files).** The postgres stack's readiness probe compares every timeline's `pg_version` (`GET /v1/tenant`, then `GET /v1/tenant/{t}/timeline`) with 17. A mismatch is the stack error `pg_major_mismatch` with a plain message. "Reset local Postgres data" (`stacks.reset`) runs `compose down -v` on the stack's own project after a native confirmation whose default is Cancel; a declined reset answers `cancelled` and shows no error. It is offered in Settings > Local stacks and on the stack card; the console's fake bridge implements it (`?pgmismatch` previews the state). Desktop branch names in `branches.json` are keyed by timeline id, so names left by a reset never match a new timeline; they are not deleted.
+- **R2.18 Mirroring the pinned images (controller ruling, review I5): pending.** Whether the pinned Neon images are mirrored to a registry Loams controls waits for the owner's answer; the pins are unchanged until then (R2.1).
