@@ -180,7 +180,7 @@ proptest! {
             prop_assert!(agreed.without(C::SSL).is_subset_of(upstream));
             prop_assert!(agreed.is_subset_of(GATE_SUPPORTED));
             prop_assert!(agreed.is_subset_of(C(client)));
-            let up = upstream_capabilities(agreed);
+            let up = upstream_capabilities(agreed, upstream);
             prop_assert!(up.is_subset_of(upstream));
             prop_assert_eq!(up.intersect(RELAY_SENSITIVE), agreed.intersect(RELAY_SENSITIVE));
             // LOAD DATA LOCAL is never offered and never asked of TiDB.
@@ -208,4 +208,34 @@ fn ssl_is_offered_on_the_gates_terms() {
     // The profile is the captured v8.5.8 greeting's capabilities plus SSL.
     let captured = C(0x051b_a6af);
     assert_eq!(TIDB_V8_5_8, captured | C::SSL);
+}
+
+/// R3.7: the upstream leg is the client's relay-sensitive flags plus the
+/// gate's own connection flags, limited to TiDB's profile. A plaintext
+/// loopback client still gets TLS (and plugin auth, attributes) upstream.
+#[test]
+fn upstream_leg_is_the_gates_own_connection() {
+    let client = C::PROTOCOL_41
+        | C::SECURE_CONNECTION
+        | C::PLUGIN_AUTH
+        | C::DEPRECATE_EOF
+        | C::MULTI_RESULTS;
+    let agreed = negotiate(client, advertise(TIDB_V8_5_8)).expect("agreed");
+    assert!(!agreed.contains(C::SSL), "a plaintext loopback client");
+    let up = upstream_capabilities(agreed, TIDB_V8_5_8);
+    for own in [
+        C::SSL,
+        C::PLUGIN_AUTH,
+        C::CONNECT_ATTRS,
+        C::PROTOCOL_41,
+        C::SECURE_CONNECTION,
+    ] {
+        assert!(up.contains(own), "{own:?} missing upstream: {up:?}");
+    }
+    assert!(up.contains(C::DEPRECATE_EOF | C::MULTI_RESULTS));
+    assert!(
+        !up.contains(C::MULTI_STATEMENTS),
+        "not the client's: not upstream"
+    );
+    assert!(up.is_subset_of(TIDB_V8_5_8));
 }

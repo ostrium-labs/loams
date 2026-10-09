@@ -206,17 +206,24 @@ pub fn negotiate(
     Ok(agreed)
 }
 
+/// The gate's own flags on its connection to TiDB: 4.1, plugin auth (with
+/// length-encoded data where TiDB has it), TLS, attributes and the database.
+pub const GATE_OWN_UPSTREAM: Capabilities = Capabilities(
+    REQUIRED.0
+        | Capabilities::SSL.0
+        | Capabilities::LONG_PASSWORD.0
+        | Capabilities::CONNECT_WITH_DB.0
+        | Capabilities::PLUGIN_AUTH_LENENC_CLIENT_DATA.0
+        | Capabilities::CONNECT_ATTRS.0,
+);
+
 /// The capabilities the gate sends TiDB for a client that agreed to
-/// `agreed`: the same relay-sensitive flags, the gate's own connection
-/// (TLS, plugin auth, attributes), and nothing else.
-pub fn upstream_capabilities(agreed: Capabilities) -> Capabilities {
-    let own = REQUIRED
-        | Capabilities::SSL
-        | Capabilities::LONG_PASSWORD
-        | Capabilities::CONNECT_WITH_DB
-        | Capabilities::PLUGIN_AUTH_LENENC_CLIENT_DATA
-        | Capabilities::CONNECT_ATTRS;
-    agreed.intersect(RELAY_SENSITIVE | own)
+/// `agreed`: the client's relay-sensitive flags (so result framing matches
+/// on both legs) plus [`GATE_OWN_UPSTREAM`], limited to TiDB's `profile`.
+/// Nothing else of the client's reaches TiDB; a plaintext loopback client
+/// still gets TLS upstream.
+pub fn upstream_capabilities(agreed: Capabilities, profile: Capabilities) -> Capabilities {
+    (agreed.intersect(RELAY_SENSITIVE) | GATE_OWN_UPSTREAM).intersect(profile)
 }
 
 /// A 20-byte authentication nonce, every byte in `1..=127` (it is sent
