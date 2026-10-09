@@ -1737,4 +1737,51 @@ mod admin {
             .expect("schema");
         assert!(schema.labels.is_empty(), "{schema:?}");
     }
+
+    /// Canary for upstream Q679 (R0.8, R5.8): Grafeo's `query_timeout` does not apply to a
+    /// statement with parameters (`execute_with_params` has no deadline), so a parameterised
+    /// statement streaming rows runs past it while the same statement without parameters is
+    /// stopped. When this fails, Grafeo bounds the parameterised path: route every statement
+    /// through it again and drop `run_on_session`'s split.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn canary_query_timeout_does_not_stop_a_parameterised_statement() {
+        let fixture = Fixture::start().await;
+        let admin = GraphAdmin::new(
+            Arc::new(
+                Engine::with_data_dir(fixture.data_dir.path())
+                    .with_query_timeout(Some(Duration::from_millis(20))),
+            ),
+            GraphCatalog::new(fixture.meta.clone(), fixture.store.clone()),
+        );
+        graph_with_nodes(&admin, 80).await;
+        let err = admin
+            .execute(execute(
+                "acme",
+                "kg",
+                "MATCH (a:T), (b:T), (c:T) WHERE a.i > -1 RETURN a.i, b.i, c.i",
+            ))
+            .await
+            .expect_err("unparameterised: stopped");
+        assert_eq!(reason(&err), "graph_statement_timeout", "{err:?}");
+        let started = std::time::Instant::now();
+        let answer = admin
+            .execute(execute_with(
+                "acme",
+                "kg",
+                "MATCH (a:T), (b:T), (c:T) WHERE a.i > $min RETURN a.i, b.i, c.i",
+                "min",
+                -1,
+            ))
+            .await
+            .expect("parameterised: not stopped by query_timeout (Q679 still open)");
+        assert_eq!(
+            answer.rows.as_option().expect("rows").rows.len(),
+            80 * 80 * 80
+        );
+        assert!(
+            started.elapsed() > Duration::from_millis(20),
+            "{:?}",
+            started.elapsed()
+        );
+    }
 }
