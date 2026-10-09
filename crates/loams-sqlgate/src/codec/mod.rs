@@ -13,6 +13,7 @@
 
 pub mod auth;
 pub mod command;
+pub mod connection;
 pub mod handshake;
 pub mod packet;
 

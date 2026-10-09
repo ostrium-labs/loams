@@ -2,6 +2,7 @@
 mod auth;
 mod clients;
 mod command;
+mod connection;
 mod fuzz;
 mod handshake;
 mod licences;

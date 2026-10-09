@@ -2,6 +2,7 @@
 # (it needs nightly and libFuzzer):
 #   cargo +nightly-2026-09-24 fuzz run handshake_response -- -max_total_time=60
 #   cargo +nightly-2026-09-24 fuzz run packet_framing -- -max_total_time=60
+#   (and connection_phase, auth_server, decoders the same way)
 # The invariants live in loams_sqlgate::fuzz; tests/it/fuzz.rs runs them
 # under proptest on stable.
 [package]
@@ -28,6 +29,28 @@ bench = false
 [[bin]]
 name = "packet_framing"
 path = "fuzz_targets/packet_framing.rs"
+test = false
+doc = false
+bench = false
+
+
+[[bin]]
+name = "connection_phase"
+path = "fuzz_targets/connection_phase.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "auth_server"
+path = "fuzz_targets/auth_server.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decoders"
+path = "fuzz_targets/decoders.rs"
 test = false
 doc = false
 bench = false
