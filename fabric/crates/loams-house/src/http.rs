@@ -74,7 +74,7 @@ use tokio::time::Sleep;
 
 use crate::admission::{Event, Outcome, WorkerLease, WorkerPool};
 use crate::auth;
-use crate::classify::{Classified, Stmt, check_text, classify, decide, readonly_error};
+use crate::classify::{Classified, Expect, Stmt, check_text, classify, decide, readonly_error};
 use crate::compress::{self, Decoder, Encoder, Encoding};
 use crate::config::{self, BUFFER_SIZE_RANGE, DISPLAY_NAME, HouseConfig, SPOOL_IN_MEMORY, UserMap};
 use crate::errors::{ChError, HouseError};
@@ -753,10 +753,10 @@ async fn run(
     };
     meta.affinity = session.as_ref().map(SessionGuard::affinity_key);
 
-    // What the front answers itself, and what runs. Every statement chDB gets as
-    // text that is not one of the owned writes is gated by ClickHouse's class
-    // below (`gate`: sqlparser's message for a form it could not parse).
-    let (gate, pins) = match classified {
+    // What the front answers itself, and what runs. Every statement chDB gets is
+    // gated by ClickHouse's class below (`expect`, and sqlparser's message for a
+    // form it could not parse).
+    let (expect, unparsed, pins) = match classified {
         Classified::Known { stmt, .. } => {
             match front_answer(&stmt, session.as_ref(), &config.session_limits, &known) {
                 Some(Ok(())) => {
@@ -777,12 +777,14 @@ async fn run(
                     return meta.error(&err, &Progress::default(), close);
                 }
                 None => (
-                    stmt.is_read().then_some(None),
+                    // What reaches here runs in chDB: a read or an owned write.
+                    stmt.expect().unwrap_or(Expect::Read),
+                    None,
                     matches!(stmt, Stmt::CreateTemporaryTable { .. }),
                 ),
             }
         }
-        Classified::Unparsed { message, .. } => (Some(Some(message)), false),
+        Classified::Unparsed { message, .. } => (Expect::Read, Some(message), false),
     };
 
     let buffer_size = get("buffer_size")
@@ -813,18 +815,22 @@ async fn run(
     };
     meta.worker = Some(lease.worker_id().to_string());
 
-    // ClickHouse's class gates every read and decides what sqlparser could not
-    // parse (FL2 Ruling 6; fix round 1, C1), on exactly the text that runs.
-    if let Some(unparsed) = gate {
-        let decided = match lease.classify(&sql).await {
-            Ok(classification) => decide(classification, readonly, unparsed.as_deref()),
-            Err(err) => Err(err),
-        };
-        if let Err(err) = decided {
-            pool.release(lease, Outcome::Completed);
-            let close = !body.drain().await;
-            return meta.error(&err, &Progress::default(), close);
-        }
+    // ClickHouse's class gates every statement, on exactly the text chDB will
+    // parse (an `INSERT` whose data streams: its head and format, as chDB joins
+    // them), and decides what sqlparser could not parse (FL2 Ruling 6; fix round
+    // 1, C1, I1, I2).
+    let parsed_text = match &input {
+        Some(spec) => format!("{} FORMAT {}", spec.insert, spec.format),
+        None => sql.clone(),
+    };
+    let decided = match lease.classify(&parsed_text).await {
+        Ok(classification) => decide(classification, expect, readonly, unparsed.as_deref()),
+        Err(err) => Err(err),
+    };
+    if let Err(err) = decided {
+        pool.release(lease, Outcome::Completed);
+        let close = !body.drain().await;
+        return meta.error(&err, &Progress::default(), close);
     }
 
     // Settings: the session's, then the request's (which win); Loams's own stay here.

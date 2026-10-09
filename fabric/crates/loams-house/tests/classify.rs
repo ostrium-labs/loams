@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use loams_house::classify::{
-    Classified, OUTSIDE_SURFACE, Stmt, check_text, classify, decide, decide_unparsed,
+    Classified, Expect, OUTSIDE_SURFACE, Stmt, check_text, classify, decide, decide_unparsed,
 };
 use loams_house_ipc::{Classification, QueryClass};
 
@@ -107,10 +107,10 @@ fn unparseable_ddl_is_62_with_hint() {
         decide_unparsed(text.clone(), &message, QueryClass::ReadOnly).expect("a read"),
         Stmt::Query { text: text.clone() }
     );
-    assert_eq!(
-        decide_unparsed(text.clone(), &message, QueryClass::Unknown).expect("let through"),
-        Stmt::Query { text: text.clone() }
-    );
+    // Fix round 1, I2: what ClickHouse cannot parse either is refused too.
+    let err = decide_unparsed(text.clone(), &message, QueryClass::Unknown).expect_err("unknown");
+    assert_eq!(err.code(), 62);
+    assert!(err.message().contains(OUTSIDE_SURFACE), "{err}");
 }
 
 /// The text chDB runs is the input minus a trailing `FORMAT` — no other rewrite.
@@ -141,6 +141,43 @@ fn queries_are_never_rewritten() {
 fn one_statement_per_request() {
     let err = classify("SET a = 1; SET b = 2").expect_err("two statements");
     assert_eq!(err.code(), 62);
+    // Fix round 1, I1: keyword-routed statements too, and wherever ClickHouse's
+    // lexer sees the `;`.
+    for sql in [
+        "DROP TEMPORARY TABLE t; DROP TABLE x",
+        "DROP TEMPORARY TABLE t;DROP TABLE x;",
+        "SELECT 1; SELECT 2",
+        "SELECT 1;;SELECT 2",
+        "WITH 1 AS a SELECT a; SYSTEM SHUTDOWN",
+        "(SELECT 1); CREATE DATABASE d",
+        "SHOW TABLES; CREATE DATABASE d",
+        "DESCRIBE t; CREATE DATABASE d",
+        "EXISTS t; CREATE DATABASE d",
+        "EXPLAIN SELECT 1; CREATE DATABASE d",
+        "KILL QUERY WHERE query_id = 'x'; CREATE DATABASE d",
+        "UNDROP TABLE t; CREATE DATABASE d",
+        "INSERT INTO t VALUES (1); CREATE DATABASE d",
+        "SELECT $$'$$; CREATE DATABASE d --'",
+        "SELECT 1 /* /* */ ; */ ; CREATE DATABASE d",
+        "SELECT 1 #x\n; CREATE DATABASE d",
+    ] {
+        let err = classify(sql).expect_err(sql);
+        assert_eq!(err.code(), 62, "{sql}: {err}");
+        assert!(err.message().contains("Multi-statements"), "{sql}: {err}");
+    }
+    for sql in [
+        "SELECT 1;",
+        "SELECT 1 ; ;",
+        "SELECT 1; -- a comment",
+        "SELECT 1; /* a comment */",
+        "SELECT ';'",
+        "SELECT $$;$$",
+        "SELECT 1 -- ; SELECT 2",
+        "SELECT `a;b`",
+        "DROP TEMPORARY TABLE t;",
+    ] {
+        classify(sql).unwrap_or_else(|err| panic!("{sql}: {err}"));
+    }
 }
 
 /// HS1 Task 4 fix round 1, C1 and C2: chDB's client layer writes `INTO OUTFILE`
@@ -212,22 +249,97 @@ fn class(class: QueryClass, statements: u32) -> Classification {
 /// says changes state is refused.
 #[test]
 fn clickhouse_class_gates_what_runs() {
-    decide(class(QueryClass::ReadOnly, 1), true, None).expect("a read");
-    decide(class(QueryClass::ReadOnly, 1), false, None).expect("a read");
+    decide(class(QueryClass::ReadOnly, 1), Expect::Read, true, None).expect("a read");
+    decide(class(QueryClass::ReadOnly, 1), Expect::Read, false, None).expect("a read");
     for c in [
         QueryClass::Mutating,
         QueryClass::MutatingGlobal,
         QueryClass::Control,
     ] {
         assert_eq!(
-            decide(class(c, 1), true, None)
+            decide(class(c, 1), Expect::Read, true, None)
                 .expect_err("read-only")
                 .code(),
             164,
             "{c:?}"
         );
-        let err = decide(class(c, 1), false, None).expect_err("not a read");
+        let err = decide(class(c, 1), Expect::Read, false, None).expect_err("not a read");
         assert_eq!(err.code(), 62, "{c:?}");
         assert!(err.message().contains(OUTSIDE_SURFACE), "{err}");
+    }
+    // An owned write must be what ClickHouse calls a write, and nothing more.
+    for (sql, wanted) in [
+        (
+            "INSERT INTO t VALUES (1)",
+            &[QueryClass::Mutating, QueryClass::Control][..],
+        ),
+        (
+            "INSERT INTO FUNCTION null('a UInt8') SELECT 1",
+            &[QueryClass::Mutating, QueryClass::Control][..],
+        ),
+        (
+            "CREATE TEMPORARY TABLE t (a UInt8) ENGINE = Memory",
+            &[QueryClass::Control][..],
+        ),
+        ("DROP TEMPORARY TABLE t", &[QueryClass::Control][..]),
+    ] {
+        let Ok(Classified::Known { stmt, .. }) = classify(sql) else {
+            panic!("{sql}");
+        };
+        let expect = stmt.expect().expect("runs in chDB");
+        assert_eq!(expect, Expect::Write(wanted), "{sql}");
+        for c in [
+            QueryClass::ReadOnly,
+            QueryClass::Mutating,
+            QueryClass::MutatingGlobal,
+            QueryClass::Control,
+        ] {
+            if wanted.contains(&c) {
+                decide(class(c, 1), expect, false, None).expect("the write");
+                // PARALLEL WITH's arms count as statements.
+                assert_eq!(
+                    decide(class(c, 2), expect, false, None)
+                        .expect_err("two")
+                        .code(),
+                    62
+                );
+                continue;
+            }
+            let err = decide(class(c, 1), expect, false, None).expect_err("not the write");
+            assert_eq!(err.code(), 62, "{sql} {c:?}");
+            assert!(err.message().contains(OUTSIDE_SURFACE), "{err}");
+        }
+    }
+}
+
+/// Fix round 1, I1 and I2: more than one statement by ClickHouse's count is `62`,
+/// and so is what ClickHouse cannot parse (with the hint), on every path —
+/// read-only ones included — and for either expectation.
+#[test]
+fn multi_statement_and_unknown_are_refused() {
+    for expect in [
+        Expect::Read,
+        Expect::Write(&[QueryClass::Mutating, QueryClass::Control]),
+        Expect::Write(&[QueryClass::Control]),
+    ] {
+        for readonly in [true, false] {
+            for c in [QueryClass::ReadOnly, QueryClass::Mutating] {
+                let err = decide(class(c, 2), expect, readonly, None).expect_err("two statements");
+                assert_eq!(err.code(), 62);
+                assert!(err.message().contains("Multi-statements"), "{err}");
+            }
+            let err =
+                decide(class(QueryClass::Unknown, 0), expect, readonly, None).expect_err("unknown");
+            assert_eq!(err.code(), 62, "{expect:?} {readonly}");
+            assert!(err.message().contains(OUTSIDE_SURFACE), "{err}");
+            let err = decide(
+                class(QueryClass::Unknown, 0),
+                expect,
+                readonly,
+                Some("sqlparser's"),
+            )
+            .expect_err("unknown");
+            assert!(err.message().starts_with("sqlparser's"), "{err}");
+        }
     }
 }

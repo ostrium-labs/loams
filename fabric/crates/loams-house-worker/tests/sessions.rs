@@ -407,13 +407,23 @@ async fn unparsed_statements_are_decided_by_clickhouse() {
         "{}",
         refused.text()
     );
-    // Not ClickHouse either: chDB answers its own 62.
+    // Not ClickHouse either (fix round 1, I2): refused before chDB runs it, with
+    // the hint, on POST and GET alike.
     let garbage = in_session(addr, "alice", "u", "SELEC 1", &[]).await;
     assert_eq!(code(&garbage), Some("62"), "{}", garbage.text());
     assert!(
-        !garbage
+        garbage
             .text()
-            .contains(loams_house::classify::OUTSIDE_SURFACE)
+            .contains(loams_house::classify::OUTSIDE_SURFACE),
+        "{}",
+        garbage.text()
+    );
+    let get = as_alice(addr, "GET", "SELEC 1", b"").await;
+    assert_eq!(code(&get), Some("62"), "{}", get.text());
+    assert!(
+        get.text().contains(loams_house::classify::OUTSIDE_SURFACE),
+        "{}",
+        get.text()
     );
 }
 
@@ -601,4 +611,77 @@ async fn every_query_is_gated_by_clickhouse_class() {
             .text(),
         "default\n"
     );
+}
+
+/// Fix round 1, I1: one statement per request, keyword-routed ones included. A `;`
+/// followed by more is `62` (a heredoc does not hide it), and so is anything
+/// ClickHouse counts as more than one statement; nothing of it runs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn one_statement_per_request_on_every_route() {
+    let (house, _pool) = house("multi", per_namespace(1)).await;
+    let addr = house.local_addr();
+    let create = in_session(
+        addr,
+        "alice",
+        "m",
+        "CREATE TEMPORARY TABLE t (a UInt8) ENGINE = Memory",
+        &[],
+    )
+    .await;
+    assert_eq!(create.status, 200, "{}", create.text());
+    for sql in [
+        "DROP TEMPORARY TABLE t; CREATE DATABASE evil",
+        "DROP TEMPORARY TABLE t;CREATE DATABASE evil;",
+        "SELECT 1; CREATE DATABASE evil",
+        "SELECT $$'$$; CREATE DATABASE evil --'",
+        "SHOW TABLES; CREATE DATABASE evil",
+        "INSERT INTO t VALUES (1); CREATE DATABASE evil",
+        "CREATE TEMPORARY TABLE u (a UInt8) ENGINE = Memory; CREATE DATABASE evil",
+    ] {
+        let response = in_session(addr, "alice", "m", sql, &[]).await;
+        assert_eq!(code(&response), Some("62"), "{sql}: {}", response.text());
+    }
+    // A write that carries another statement ClickHouse's way, with no `;`.
+    let parallel = in_session(
+        addr,
+        "alice",
+        "m",
+        "INSERT INTO t SELECT 1 PARALLEL WITH CREATE DATABASE evil",
+        &[],
+    )
+    .await;
+    assert_eq!(code(&parallel), Some("62"), "{}", parallel.text());
+    // Nothing ran: t is still there and empty, and there is no database evil.
+    let count = in_session(addr, "alice", "m", "SELECT count() FROM t", &[]).await;
+    assert_eq!(count.text(), "0\n", "{}", count.text());
+    let evil = in_session(addr, "alice", "m", "EXISTS DATABASE evil", &[]).await;
+    assert_eq!(evil.text(), "0\n", "{}", evil.text());
+    // One statement with trailing `;`s and comments still runs, and so does each
+    // owned write, as ClickHouse classes it.
+    let one = in_session(addr, "alice", "m", "SELECT 1; -- done\n;", &[]).await;
+    assert_eq!(one.text(), "1\n", "{}", one.text());
+    let values = in_session(addr, "alice", "m", "INSERT INTO t VALUES (1)", &[]).await;
+    assert_eq!(values.status, 200, "{}", values.text());
+    for (sql, body) in [
+        ("INSERT INTO t FORMAT CSV", &b"2\n"[..]),
+        ("INSERT INTO t VALUES", &b"(3)"[..]),
+    ] {
+        let streamed = call(
+            addr,
+            "POST",
+            vec![
+                ("user", "alice".to_string()),
+                ("password", "a".to_string()),
+                ("session_id", "m".to_string()),
+                ("query", sql.to_string()),
+            ],
+            body.to_vec(),
+        )
+        .await;
+        assert_eq!(streamed.status, 200, "{sql}: {}", streamed.text());
+    }
+    let sum = in_session(addr, "alice", "m", "SELECT sum(a) FROM t", &[]).await;
+    assert_eq!(sum.text(), "6\n", "{}", sum.text());
+    let drop = in_session(addr, "alice", "m", "DROP TEMPORARY TABLE t", &[]).await;
+    assert_eq!(drop.status, 200, "{}", drop.text());
 }

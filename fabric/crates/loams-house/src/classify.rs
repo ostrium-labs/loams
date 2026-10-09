@@ -332,6 +332,9 @@ pub fn check_text(text: &str) -> Result<(), HouseError> {
         _ => false,
     };
     for pair in lexemes.windows(2) {
+        if pair[0] == Lexeme::Semicolon && pair[1] != Lexeme::Semicolon {
+            return Err(multi_statement());
+        }
         let clause = if is(&pair[0], "INTO") && is(&pair[1], "OUTFILE") {
             "INTO OUTFILE (it writes a file on the server; read the result from the response)"
         } else if is(&pair[0], "FROM") && is(&pair[1], "INFILE") {
@@ -347,18 +350,61 @@ pub fn check_text(text: &str) -> Result<(), HouseError> {
     Ok(())
 }
 
+/// What the front expects of a statement it sends to chDB as text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Expect {
+    /// A read: a query, `SHOW`, `DESCRIBE`, `EXISTS`, `EXPLAIN`, or a form
+    /// sqlparser could not parse (which runs only if ClickHouse calls it a read).
+    Read,
+    /// One of the owned writes chDB carries out itself, with the classes ClickHouse
+    /// gives its kind (measured, fix round 1; `chdb.h`'s `chdb_query_class`): an
+    /// `INSERT` is `Mutating`, or `Control` into a table function; a `CREATE` or
+    /// `DROP TEMPORARY TABLE` (session-local) is `Control`. Never
+    /// `MutatingGlobal`, and never more than one statement (`PARALLEL WITH`'s arms
+    /// count).
+    Write(&'static [QueryClass]),
+}
+
+/// An `INSERT`'s classes.
+const INSERT_CLASSES: &[QueryClass] = &[QueryClass::Mutating, QueryClass::Control];
+/// A temporary table's `CREATE` or `DROP`.
+const TEMPORARY_CLASSES: &[QueryClass] = &[QueryClass::Control];
+
+impl Stmt {
+    /// What the front expects ClickHouse to make of this statement when chDB runs
+    /// it as text; `None` for what never reaches chDB.
+    pub fn expect(&self) -> Option<Expect> {
+        match self {
+            // The front answers `USE` itself (ClickHouse classes it `Control`).
+            Self::Use(_) => None,
+            _ if self.is_read() => Some(Expect::Read),
+            Self::Insert(_) => Some(Expect::Write(INSERT_CLASSES)),
+            Self::CreateTemporaryTable { .. }
+            | Self::Drop(DropStmt {
+                temporary: true, ..
+            }) => Some(Expect::Write(TEMPORARY_CLASSES)),
+            _ => None,
+        }
+    }
+}
+
 /// What ClickHouse's own class of a statement (`chdb_classify_query_n`, run by the
 /// statement's worker on its control connection) means for the text the front is
-/// about to send to chDB (fix round 1, C1).
+/// about to send to chDB (fix round 1, C1, I1, I2). Every statement that runs as
+/// text is decided here, on exactly that text.
 ///
-/// * `ReadOnly` runs.
-/// * On a read-only path (`readonly`: GET, or a read-only user), anything else is
-///   refused: a state change is `164`.
-/// * A statement the front routed as a read, or one sqlparser could not parse
-///   (`unparsed` carries sqlparser's message), that ClickHouse says changes state
-///   is `62` with the hint that the form is outside the surface (FL2 Ruling 4).
+/// * More than one statement is `62` (I1).
+/// * A statement ClickHouse cannot parse (`Unknown`) is `62` with the hint that the
+///   form is outside the surface, on every path (I2): chDB is never asked to run
+///   what its own parser rejects.
+/// * On a read-only path (`readonly`: GET, or a read-only user), anything but
+///   `ReadOnly` is `164`.
+/// * A read must be `ReadOnly`, and an owned write of the class its kind has;
+///   anything else is `62` with the hint (FL2 Ruling 4). `unparsed` carries sqlparser's message for
+///   a form it could not parse.
 pub fn decide(
     classification: Classification,
+    expect: Expect,
     readonly: bool,
     unparsed: Option<&str>,
 ) -> Result<(), HouseError> {
@@ -367,21 +413,44 @@ pub fn decide(
             "{what}: {OUTSIDE_SURFACE}"
         ))))
     };
-    match classification.class {
-        QueryClass::ReadOnly | QueryClass::Unknown => Ok(()),
-        QueryClass::Mutating | QueryClass::MutatingGlobal | QueryClass::Control => {
-            if readonly {
-                return Err(readonly_error());
-            }
-            match unparsed {
-                Some(message) => outside(message.to_string()),
-                None => outside(format!(
-                    "ClickHouse classes this statement as {:?}, not as a read",
-                    classification.class
-                )),
-            }
-        }
+    if classification.statements > 1 {
+        return Err(multi_statement());
     }
+    let class = classification.class;
+    if class == QueryClass::Unknown {
+        return outside(
+            unparsed
+                .unwrap_or("ClickHouse's parser cannot parse this statement")
+                .to_string(),
+        );
+    }
+    let wanted: &[QueryClass] = match expect {
+        Expect::Read => &[QueryClass::ReadOnly],
+        Expect::Write(classes) => classes,
+    };
+    if readonly && class != QueryClass::ReadOnly {
+        return Err(readonly_error());
+    }
+    if wanted.contains(&class) {
+        return Ok(());
+    }
+    match unparsed {
+        Some(message) => outside(message.to_string()),
+        None => outside(format!(
+            "ClickHouse classes this statement as {class:?}, not as {}",
+            match expect {
+                Expect::Read => "a read",
+                Expect::Write(_) => "the write it opens with",
+            }
+        )),
+    }
+}
+
+/// `62` for more than one statement in a request.
+fn multi_statement() -> HouseError {
+    HouseError::from(ChError::syntax_error(
+        "Multi-statements are not allowed: send one statement per request",
+    ))
 }
 
 /// Engines that make a `CREATE TABLE` a pipe.
@@ -521,11 +590,7 @@ pub fn classify(sql: &str) -> Result<Classified, HouseError> {
         Ok(statements) if statements.is_empty() => {
             return Err(HouseError::from(ChError::syntax_error("Empty query")));
         }
-        Ok(_) => {
-            return Err(HouseError::from(ChError::syntax_error(
-                "Multi-statements are not allowed: send one statement per request",
-            )));
-        }
+        Ok(_) => return Err(multi_statement()),
         Err(err) => {
             return Ok(Classified::Unparsed {
                 text,
@@ -723,6 +788,7 @@ pub fn decide_unparsed(text: String, message: &str, class: QueryClass) -> Result
             class,
             statements: 1,
         },
+        Expect::Read,
         false,
         Some(message),
     )?;
