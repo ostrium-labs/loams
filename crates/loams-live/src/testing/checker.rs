@@ -199,7 +199,7 @@ fn late_ticks(records: &[Arrival], ticks: &[(u64, Instant)], bound: Duration) ->
 
 /// Fresh evaluations, shared between sessions watching the same query at
 /// the same tick.
-type Fresh = HashMap<(&'static str, String, u64), Result<LiveValue, String>>;
+type Fresh = HashMap<(&'static str, String, u64), Result<LiveValue, pb::LiveError>>;
 
 /// `q`'s fresh result at `ts`.
 async fn fresh_at<'a>(
@@ -207,7 +207,7 @@ async fn fresh_at<'a>(
     runner: &Runner,
     q: &Query,
     ts: u64,
-) -> Result<&'a Result<LiveValue, String>, String> {
+) -> Result<&'a Result<LiveValue, pb::LiveError>, String> {
     Ok(
         match fresh.entry((q.function, format!("{:?}", q.args), ts)) {
             Entry::Occupied(found) => found.into_mut(),
@@ -217,18 +217,19 @@ async fn fresh_at<'a>(
                     .query(&*f, q.args.clone(), Ts(ts))
                     .await
                     .map(|r| r.result)
-                    .map_err(|e| e.to_string());
+                    .map_err(|e| e.to_proto());
                 slot.insert(got)
             }
         },
     )
 }
 
-/// Whether a held result is the fresh one.
-fn same(held: Option<&QueryResult>, want: &Result<LiveValue, String>) -> bool {
+/// Whether a held result is the fresh one: the same value, or an error
+/// with the same code (messages may name a timestamp or a key).
+fn same(held: Option<&QueryResult>, want: &Result<LiveValue, pb::LiveError>) -> bool {
     match (held, want) {
         (Some(QueryResult::Value(v)), Ok(f)) => v == f,
-        (Some(QueryResult::Error(_)), Err(_)) => true,
+        (Some(QueryResult::Error(e)), Err(f)) => e.code == f.code,
         _ => false,
     }
 }
@@ -574,6 +575,18 @@ async fn run(store: Store, w: &Workload, report: &mut Report) -> Result<(), Stri
         report.violations.extend(log.violations);
         report.transitions += log.records.len();
         for record in &log.records {
+            if record.results.len() != watcher.queries.len() {
+                report.violations.push(Violation::new(
+                    ViolationKind::Stale,
+                    Some(watcher.index),
+                    format!(
+                        "at ts {}: {} results held for {} queries",
+                        record.end.ts,
+                        record.results.len(),
+                        watcher.queries.len()
+                    ),
+                ));
+            }
             for q in &watcher.queries {
                 let want = fresh_at(&mut fresh, &runner, q, record.end.ts).await?;
                 report.checked += 1;
@@ -1005,6 +1018,17 @@ mod tests {
             arrival(30, at(base, 2_400), false),
         ];
         assert_eq!(late_ticks(&stalled, &ticks, LATE_BOUND), vec![(1, 20)]);
+    }
+
+    /// A held error matches a fresh one with the same code only.
+    #[test]
+    fn held_errors_compare_by_code() {
+        let not_found = LiveError::NotFound("a".into()).to_proto();
+        let invalid = LiveError::InvalidArgument("b".into()).to_proto();
+        let held = |e: &pb::LiveError| Some(QueryResult::Error(e.clone()));
+        assert!(same(held(&not_found).as_ref(), &Err(not_found.clone())));
+        assert!(!same(held(&invalid).as_ref(), &Err(not_found.clone())));
+        assert!(!same(None, &Err(not_found)));
     }
 
     /// Repeated tick timestamps count once, at their first arrival.
