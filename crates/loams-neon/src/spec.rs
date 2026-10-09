@@ -148,6 +148,16 @@ pub struct ComputeSpec {
     pub mode: ComputeMode,
     #[serde(serialize_with = "expose")]
     pub storage_auth_token: Option<Secret<String>>,
+    /// Endpoint storage (`host:port`), where `compute_ctl` keeps and reads
+    /// the local file cache's state; needed to prewarm (R2.13).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_storage_addr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "expose")]
+    pub endpoint_storage_token: Option<Secret<String>>,
+    /// Fill the local file cache from endpoint storage at start, so a
+    /// replica can be promoted (`compute_ctl` refuses an unprewarmed one).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub autoprewarm: bool,
 }
 
 /// Builds a [`ComputeSpec`] from records.
@@ -168,6 +178,8 @@ pub struct ComputeSpecBuilder {
     max_cluster_size_mb: Option<u64>,
     suspend_timeout_seconds: i64,
     mode: ComputeMode,
+    endpoint_storage: Option<(String, Secret<String>)>,
+    autoprewarm: bool,
 }
 
 impl ComputeSpecBuilder {
@@ -188,7 +200,23 @@ impl ComputeSpecBuilder {
             max_cluster_size_mb: None,
             suspend_timeout_seconds: -1,
             mode: ComputeMode::Primary,
+            endpoint_storage: None,
+            autoprewarm: false,
         }
+    }
+
+    /// Endpoint storage (`host:port`) and its token, for the local file
+    /// cache's state.
+    pub fn endpoint_storage(mut self, addr: &str, token: Secret<String>) -> Self {
+        self.endpoint_storage = Some((addr.to_owned(), token));
+        self
+    }
+
+    /// Prewarm the local file cache from endpoint storage at start (a
+    /// failover target, R2.13). Needs [`Self::endpoint_storage`].
+    pub fn autoprewarm(mut self, on: bool) -> Self {
+        self.autoprewarm = on;
+        self
     }
 
     /// The Loams ids (`prj-`, `br-`, `ep-`), which `compute_ctl` exposes as
@@ -347,6 +375,9 @@ impl ComputeSpecBuilder {
             safekeeper_connstrings: self.safekeepers,
             mode: self.mode,
             storage_auth_token: self.storage_auth_token,
+            endpoint_storage_addr: self.endpoint_storage.as_ref().map(|(a, _)| a.clone()),
+            endpoint_storage_token: self.endpoint_storage.map(|(_, t)| t),
+            autoprewarm: self.autoprewarm,
         }
     }
 }

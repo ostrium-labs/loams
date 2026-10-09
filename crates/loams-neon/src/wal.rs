@@ -1,11 +1,12 @@
-//! `loams-wal`'s timeline API (`crates/loams-safekeeper/src/http.rs`), the
-//! same routes and shapes a stock safekeeper serves, so PG2 Task 43's
-//! migration tool can use it against either.
+//! `loams-wal`'s timeline API (`crates/loams-safekeeper/src/http.rs`). The
+//! contract is `loams-wal`'s alone (PG2 ruling R2.11): stock safekeepers are
+//! gone, so nothing here promises to speak to one.
 
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+use crate::error::Op;
 use crate::http::Http;
 use crate::{Component, Lsn, NeonError, Secret, TenantId, TimelineId};
 
@@ -52,20 +53,29 @@ pub struct WalTimelineStatus {
 }
 
 impl WalClient {
-    /// `auth` is `loams-wal`'s `--auth-token`, sent as a bearer token.
-    pub fn new(base: Url, auth: Option<Secret<String>>) -> Self {
-        Self {
-            http: Http::new(Component::Wal, base, auth),
-        }
+    /// `auth` is `loams-wal`'s `--auth-token`, sent as a bearer token. A URL
+    /// with credentials is refused.
+    pub fn new(base: Url, auth: Option<Secret<String>>) -> Result<Self, NeonError> {
+        Ok(Self {
+            http: Http::new(Component::Wal, base, auth)?,
+        })
     }
 
-    /// Create the timeline, or answer the existing one's head unchanged.
+    /// `POST /v1/tenant/timeline`: create the timeline, or answer the
+    /// existing one's head unchanged (200), even when the request's
+    /// parameters differ (R2.10). A caller that cares compares the answer
+    /// with what it asked for.
     pub async fn create_timeline(
         &self,
         create: &WalTimelineCreate,
     ) -> Result<WalTimelineStatus, NeonError> {
         self.http
-            .json(Method::POST, "/v1/tenant/timeline", create)
+            .json(
+                Op::WalCreateTimeline,
+                Method::POST,
+                "/v1/tenant/timeline",
+                create,
+            )
             .await
     }
 
@@ -76,7 +86,10 @@ impl WalClient {
         tl: TimelineId,
     ) -> Result<WalTimelineStatus, NeonError> {
         self.http
-            .get(&format!("/v1/tenant/{t}/timeline/{tl}"))
+            .get(
+                Op::WalTimelineStatus,
+                &format!("/v1/tenant/{t}/timeline/{tl}"),
+            )
             .await
     }
 }

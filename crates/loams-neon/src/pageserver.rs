@@ -1,7 +1,7 @@
 //! The pageserver's management API, or the same through the storage
 //! controller. The request and response shapes are the fork's
 //! `libs/pageserver_api/src/models.rs` (`LocationConfig`,
-//! `TimelineCreateRequest`, `TenantConfigRequest`, `TimelineInfo`) and
+//! `TimelineCreateRequest`, `TenantConfigPatchRequest`, `TimelineInfo`) and
 //! `pageserver/src/http/routes.rs`, checked against the pinned image in
 //! `tests/fixtures/` (PG2 Task 2).
 
@@ -12,7 +12,8 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize, Serializer};
 use url::Url;
 
-use crate::http::Http;
+use crate::error::Op;
+use crate::http::{DEFAULT_TIMEOUT, Http};
 use crate::storcon::TenantCreateRequest;
 use crate::{Component, Lsn, NeonError, Secret, TenantId, TimelineId};
 
@@ -35,23 +36,29 @@ pub struct NeonClient {
 }
 
 /// A tenant's settings (`TenantConfig`); only the ones Loams sets are typed,
-/// any other goes in `extra` under its Neon name.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+/// any other goes in `extra` under its Neon name. A typed setting wins over
+/// the same name in `extra`, so each name is sent once.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct TenantConfig {
     /// How far back a branch can be made or a timeline restored.
-    #[serde(
-        skip_serializing_if = "Option::is_none",
-        serialize_with = "humantime_opt"
-    )]
     pub pitr_interval: Option<Duration>,
-    #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
 }
 
-fn humantime_opt<S: Serializer>(d: &Option<Duration>, s: S) -> Result<S::Ok, S::Error> {
-    match d {
-        Some(d) => s.collect_str(&humantime::format_duration(*d)),
-        None => s.serialize_none(),
+impl Serialize for TenantConfig {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        let mut map: BTreeMap<&str, serde_json::Value> = self
+            .extra
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.clone()))
+            .collect();
+        if let Some(d) = self.pitr_interval {
+            map.insert(
+                "pitr_interval",
+                humantime::format_duration(d).to_string().into(),
+            );
+        }
+        map.serialize(s)
     }
 }
 
@@ -112,7 +119,10 @@ impl Serialize for TimelineCreate {
     }
 }
 
-/// `TimelineInfo`, the fields Loams reads (the rest are ignored).
+/// `TimelineInfo`, the fields Loams reads (the rest are ignored). The
+/// storage controller's create answers the same flattened with
+/// `safekeepers` (`TimelineCreateResponseStorcon`), which Loams does not use:
+/// `loams-wal` is configured by Loams, not by the controller.
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct TimelineInfo {
     pub tenant_id: TenantId,
@@ -150,9 +160,10 @@ struct LocationConfig<'a> {
     tenant_conf: &'a TenantConfig,
 }
 
-/// `TenantConfigRequest`.
+/// `TenantConfigPatchRequest`: a name set to a value is upserted, a name
+/// left out is kept.
 #[derive(Serialize)]
-struct TenantConfigRequest<'a> {
+struct TenantConfigPatchRequest<'a> {
     tenant_id: &'a TenantId,
     #[serde(flatten)]
     config: &'a TenantConfig,
@@ -160,83 +171,96 @@ struct TenantConfigRequest<'a> {
 
 impl NeonClient {
     /// `auth` is the storage token (a pageserver or controller JWT), sent as
-    /// a bearer token when set.
-    pub fn new(endpoints: NeonEndpoints, auth: Option<Secret<String>>) -> Self {
+    /// a bearer token when set. A URL with credentials, a query or a scheme
+    /// other than http(s) is refused (`Op::Setup`, reason `internal`).
+    pub fn new(endpoints: NeonEndpoints, auth: Option<Secret<String>>) -> Result<Self, NeonError> {
         let (component, base) = match endpoints.storcon {
             Some(url) => (Component::StorageController, url),
             None => (Component::Pageserver, endpoints.pageserver),
         };
-        let storcon = component == Component::StorageController;
-        Self {
-            http: Http::new(component, base, auth),
-            storcon,
-        }
+        Ok(Self {
+            http: Http::new(component, base, auth)?,
+            storcon: component == Component::StorageController,
+        })
     }
 
-    /// Attach (create) a tenant: `PUT /v1/tenant/{t}/location_config` in
-    /// `AttachedSingle` mode at `generation` on a pageserver; through the
-    /// storage controller, `POST /v1/tenant`, which picks the generation
-    /// itself.
+    /// Attach (create) a tenant.
+    ///
+    /// On a pageserver: `PUT /v1/tenant/{t}/location_config` in
+    /// `AttachedSingle` mode at `generation`, with `conf` as its whole
+    /// config. Through the storage controller: `POST /v1/tenant`
+    /// (`TenantCreateRequest`) for an unsharded tenant with the controller's
+    /// default placement (attached, no secondary). The controller owns
+    /// generations, so `generation` is not sent; placement policies and
+    /// shards are not supported yet (R2.14: storage HA, Task 49).
     pub async fn attach_tenant(
         &self,
         t: TenantId,
         generation: u32,
         conf: &TenantConfig,
     ) -> Result<(), NeonError> {
+        let op = Op::AttachTenant;
         if self.storcon {
             let body = TenantCreateRequest {
                 new_tenant_id: &t,
                 config: conf,
             };
-            let _: serde_json::Value = self.http.json(Method::POST, "/v1/tenant", &body).await?;
+            let _: serde_json::Value = self
+                .http
+                .json(op, Method::POST, "/v1/tenant", &body)
+                .await?;
         } else {
             let body = LocationConfig {
                 mode: "AttachedSingle",
                 generation,
                 tenant_conf: conf,
             };
-            let _: serde_json::Value = self
-                .http
-                .json(
-                    Method::PUT,
-                    &format!("/v1/tenant/{t}/location_config"),
-                    &body,
-                )
-                .await?;
+            let path = format!("/v1/tenant/{t}/location_config");
+            let _: serde_json::Value = self.http.json(op, Method::PUT, &path, &body).await?;
         }
         Ok(())
     }
 
-    /// `POST /v1/tenant/{t}/timeline`.
+    /// `POST /v1/tenant/{t}/timeline`. The same id with the same parameters
+    /// answers the existing timeline; with other parameters it is a 409.
     pub async fn create_timeline(
         &self,
         t: TenantId,
         create: &TimelineCreate,
     ) -> Result<TimelineInfo, NeonError> {
+        let path = format!("/v1/tenant/{t}/timeline");
         self.http
-            .json(Method::POST, &format!("/v1/tenant/{t}/timeline"), create)
+            .json(Op::CreateTimeline, Method::POST, &path, create)
             .await
     }
 
     /// `GET /v1/tenant/{t}/timeline`.
     pub async fn list_timelines(&self, t: TenantId) -> Result<Vec<TimelineInfo>, NeonError> {
-        self.http.get(&format!("/v1/tenant/{t}/timeline")).await
+        self.http
+            .get(Op::ListTimelines, &format!("/v1/tenant/{t}/timeline"))
+            .await
     }
 
     /// `GET /v1/tenant/{t}/timeline/{tl}`.
     pub async fn timeline(&self, t: TenantId, tl: TimelineId) -> Result<TimelineInfo, NeonError> {
         self.http
-            .get(&format!("/v1/tenant/{t}/timeline/{tl}"))
+            .get(Op::GetTimeline, &format!("/v1/tenant/{t}/timeline/{tl}"))
             .await
     }
 
-    /// `DELETE /v1/tenant/{t}/timeline/{tl}`: accepted (202); the deletion
-    /// finishes in the background, and a repeat is `not_found` once it has.
+    /// `DELETE /v1/tenant/{t}/timeline/{tl}`. `Ok` means accepted, not done.
+    ///
+    /// A pageserver answers 202 and finishes in the background; a repeat is
+    /// 404 (`not_found`) once it has, 409 (`aborted`) while it runs, and 412
+    /// for a timeline with children (`branch_has_children`) or a missing
+    /// tenant (`not_found`). The storage controller retries for up to 25 s
+    /// and answers 200 once the timeline is gone, or 409 (`aborted`) if it is
+    /// still going. Either way the caller polls [`Self::timeline`] until it
+    /// is `not_found`.
     pub async fn delete_timeline(&self, t: TenantId, tl: TimelineId) -> Result<(), NeonError> {
-        let req = self
-            .http
-            .request(Method::DELETE, &format!("/v1/tenant/{t}/timeline/{tl}"))?;
-        let _: serde_json::Value = self.http.send(req).await?;
+        let path = format!("/v1/tenant/{t}/timeline/{tl}");
+        let req = self.http.request(Method::DELETE, &path, DEFAULT_TIMEOUT);
+        let _: serde_json::Value = self.http.send(Op::DeleteTimeline, req).await?;
         Ok(())
     }
 
@@ -248,29 +272,34 @@ impl NeonClient {
         tl: TimelineId,
         at: time::OffsetDateTime,
     ) -> Result<LsnByTimestamp, NeonError> {
+        let op = Op::LsnByTimestamp;
         let ts = at
             .to_offset(time::UtcOffset::UTC)
             .format(&time::format_description::well_known::Rfc3339)
-            .map_err(|e| NeonError::transport(self.http.component, e))?;
+            .map_err(|e| NeonError {
+                status: 400,
+                msg: format!("timestamp: {e}"),
+                component: self.http.component,
+                op,
+            })?;
+        let path = format!("/v1/tenant/{t}/timeline/{tl}/get_lsn_by_timestamp");
         let req = self
             .http
-            .request(
-                Method::GET,
-                &format!("/v1/tenant/{t}/timeline/{tl}/get_lsn_by_timestamp"),
-            )?
+            .request(Method::GET, &path, DEFAULT_TIMEOUT)
             .query(&[("timestamp", ts)]);
-        self.http.send(req).await
+        self.http.send(op, req).await
     }
 
-    /// `PUT /v1/tenant/config`: replaces the tenant's settings.
+    /// `PATCH /v1/tenant/config`: sets the settings in `conf` and keeps every
+    /// other (the pageserver's `TenantConfigPatch`).
     pub async fn tenant_config(&self, t: TenantId, conf: &TenantConfig) -> Result<(), NeonError> {
-        let body = TenantConfigRequest {
+        let body = TenantConfigPatchRequest {
             tenant_id: &t,
             config: conf,
         };
         let _: serde_json::Value = self
             .http
-            .json(Method::PUT, "/v1/tenant/config", &body)
+            .json(Op::TenantConfig, Method::PATCH, "/v1/tenant/config", &body)
             .await?;
         Ok(())
     }

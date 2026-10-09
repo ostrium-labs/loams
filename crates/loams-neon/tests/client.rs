@@ -18,7 +18,7 @@ use loams_neon::compute_ctl::{ComputeCtlClient, ComputeCtlConfig, ComputeStatus,
 use loams_neon::pageserver::{NeonClient, NeonEndpoints, TenantConfig, TimelineCreate};
 use loams_neon::spec::{ComputeMode, ComputeSpecBuilder, DatabaseRec, RoleRec, Setting};
 use loams_neon::wal::{WalClient, WalTimelineCreate};
-use loams_neon::{Component, Lsn, NeonError, Secret, TenantId, TimelineId};
+use loams_neon::{Component, Lsn, Op, Secret, TenantId, TimelineId};
 use serde_json::Value;
 
 const T: &str = "4c6f616d734e656f6e54656e616e7431";
@@ -136,6 +136,7 @@ fn pageserver(url: &str) -> NeonClient {
         },
         None,
     )
+    .unwrap()
 }
 
 fn t() -> TenantId {
@@ -213,7 +214,8 @@ async fn tenant_config_body_matches_fixture() {
     };
     pageserver(&url).tenant_config(t(), &conf).await.unwrap();
     let seen = fake.last();
-    assert_eq!(seen.method, "PUT");
+    // A patch: the settings sent are set, the others kept.
+    assert_eq!(seen.method, "PATCH");
     assert_eq!(seen.path_and_query, "/v1/tenant/config");
     assert_eq!(
         canonical(&seen.body),
@@ -273,7 +275,9 @@ async fn timeline_info_parses_fixture() {
 
 /// Through the storage controller: tenants are created with `POST
 /// /v1/tenant` (it chooses the generation), everything else goes to the
-/// same routes on the controller.
+/// same routes on the controller. Its create answers `TimelineInfo` with
+/// `safekeepers`; its delete waits and answers 200, or 409 when the deletion
+/// is still going after 25 s (`storage_controller/src/http.rs`).
 #[tokio::test]
 async fn storcon_routes() {
     let (ps, ps_url) = serve().await;
@@ -284,32 +288,49 @@ async fn storcon_routes() {
             storcon: Some(sc_url.parse().unwrap()),
         },
         None,
-    );
+    )
+    .unwrap();
     sc.answer(
         201,
-        r#"{"shards":[{"shard_id":"4c6f616d734e656f6e54656e616e7431","node_id":1}]}"#,
+        r#"{"shards":[{"shard_id":"4c6f616d734e656f6e54656e616e7431","node_id":1,"generation":1}]}"#,
     );
-    client
-        .attach_tenant(t(), 1, &TenantConfig::default())
-        .await
-        .unwrap();
+    let conf = TenantConfig {
+        pitr_interval: Some(Duration::from_secs(7 * 24 * 3600)),
+        ..TenantConfig::default()
+    };
+    client.attach_tenant(t(), 1, &conf).await.unwrap();
     let seen = sc.last();
     assert_eq!(
         (seen.method.as_str(), seen.path_and_query.as_str()),
         ("POST", "/v1/tenant")
     );
+    // No generation: the controller owns them.
     assert_eq!(
         canonical(&seen.body),
-        canonical(&format!(r#"{{"new_tenant_id":"{T}"}}"#))
+        canonical(&format!(
+            r#"{{"new_tenant_id":"{T}","pitr_interval":"7days"}}"#
+        ))
     );
-    sc.answer(201, &fixture("create_timeline.response.json"));
-    client
+
+    sc.answer(201, &fixture("src_storcon_create_timeline.response.json"));
+    let info = client
         .create_timeline(t(), &TimelineCreate::bootstrap(tl(), 17))
         .await
         .unwrap();
+    assert_eq!(info.timeline_id, tl());
     assert_eq!(sc.last().path_and_query, format!("/v1/tenant/{T}/timeline"));
+
     sc.answer(200, &fixture("timeline_get.response.json"));
     client.timeline(t(), tl()).await.unwrap();
+
+    sc.answer(200, "null");
+    client.delete_timeline(t(), br()).await.unwrap();
+    assert_eq!(sc.last().method, "DELETE");
+    sc.answer(409, &fixture("src_storcon_delete_timeout.response.json"));
+    let e = client.delete_timeline(t(), br()).await.unwrap_err();
+    assert_eq!((e.status, e.reason()), (409, "aborted"));
+    assert_eq!(e.component, Component::StorageController);
+
     assert!(
         ps.seen.lock().unwrap().is_empty(),
         "the pageserver is not called directly"
@@ -317,38 +338,99 @@ async fn storcon_routes() {
 }
 
 /// Errors carry the status and the component's `msg`, and map to
-/// `loams.errors.v1` reasons.
+/// `loams.errors.v1` reasons by status and call. The bodies are the pinned
+/// pageserver's (`*.response.json`) or, where the capture cannot provoke
+/// them, the fork's text (`src_*.response.json`, README.md).
 #[tokio::test]
 async fn neon_error_maps_to_reason() {
     let (fake, url) = serve().await;
     let client = pageserver(&url);
-    fake.answer(409, &fixture("conflict.response.json"));
-    let e = client
-        .create_timeline(t(), &TimelineCreate::bootstrap(br(), 17))
-        .await
-        .unwrap_err();
-    assert_eq!(e.status, 409);
-    assert_eq!(e.msg, "timeline already exists with different parameters");
-    assert_eq!(e.reason(), "already_exists");
+    let create = TimelineCreate::bootstrap(br(), 17);
+    let branch = TimelineCreate::branch(br(), tl(), Some("0/14E8F90".parse().unwrap()));
 
+    // 409 on a create: the id is taken with other parameters.
+    fake.answer(409, &fixture("conflict.response.json"));
+    let e = client.create_timeline(t(), &create).await.unwrap_err();
+    assert_eq!(e.msg, "timeline already exists with different parameters");
+    assert_eq!(
+        (e.status, e.op, e.reason()),
+        (409, Op::CreateTimeline, "already_exists")
+    );
+
+    // 406 on a branch: below the ancestor's own start, or its GC cutoff.
+    fake.answer(406, &fixture("branch_below_ancestor.response.json"));
+    let e = client.create_timeline(t(), &branch).await.unwrap_err();
+    assert_eq!(e.reason(), "failed_precondition", "{e}");
+    fake.answer(406, &fixture("src_branch_gc_cutoff.response.json"));
+    let e = client.create_timeline(t(), &branch).await.unwrap_err();
+    assert_eq!(e.reason(), "lsn_out_of_retention");
+    let info = e.error_info();
+    assert_eq!(
+        info.metadata.get("oldest_lsn").map(String::as_str),
+        Some("0/14E8F98")
+    );
+
+    // 429: the same create is already running.
+    fake.answer(429, &fixture("src_create_in_progress.response.json"));
+    let e = client.create_timeline(t(), &create).await.unwrap_err();
+    assert_eq!(e.reason(), "aborted");
+
+    // 404 on a read.
     fake.answer(404, &fixture("not_found.response.json"));
     let e = client.timeline(t(), tl()).await.unwrap_err();
     assert_eq!((e.status, e.reason()), (404, "not_found"));
     assert!(e.msg.starts_with("NotFound: Timeline"));
+    assert_eq!(
+        e.error_info().metadata.get("kind").map(String::as_str),
+        Some("timeline")
+    );
+
+    // 412 on a delete: children, or a missing tenant.
+    fake.answer(412, &fixture("delete_with_children.response.json"));
+    let e = client.delete_timeline(t(), tl()).await.unwrap_err();
+    assert_eq!(e.reason(), "branch_has_children");
+    assert_eq!(
+        e.error_info().metadata.get("children").map(String::as_str),
+        Some("1")
+    );
+    fake.answer(412, &fixture("delete_tenant_missing.response.json"));
+    let e = client.delete_timeline(t(), tl()).await.unwrap_err();
+    assert_eq!(e.reason(), "not_found");
+    assert_eq!(
+        e.error_info().metadata.get("kind").map(String::as_str),
+        Some("tenant")
+    );
+
+    // 408 is the component's own timeout.
+    fake.answer(408, r#"{"msg":"Timeout"}"#);
+    assert_eq!(
+        client.timeline(t(), tl()).await.unwrap_err().reason(),
+        "unavailable"
+    );
 
     for status in [500, 502, 503] {
-        fake.answer(status, r#"{"msg":"down"}"#);
+        fake.answer(
+            status,
+            r#"{"msg":"Resource temporarily unavailable: down"}"#,
+        );
         let e = client.timeline(t(), tl()).await.unwrap_err();
         assert_eq!(e.reason(), "storage_unavailable", "{status}");
+        let info = e.error_info();
+        assert_eq!(
+            info.metadata.get("component").map(String::as_str),
+            Some("pageserver")
+        );
+        // Only registered metadata: no `status`.
+        assert_eq!(info.metadata.len(), 1, "{:?}", info.metadata);
     }
     // A component that cannot be reached is unavailable too.
     let gone = pageserver("http://127.0.0.1:1");
     let e = gone.timeline(t(), tl()).await.unwrap_err();
     assert_eq!((e.status, e.reason()), (0, "storage_unavailable"));
 
-    // The component refusing Loams's own storage token is a misconfiguration,
-    // not the caller's: never `unauthenticated`, which tells a client to sign
-    // in again.
+    // The component refusing Loams's own token is a misconfiguration, not
+    // the caller's: never `unauthenticated`, which tells a client to sign in
+    // again.
     for status in [401, 403] {
         fake.answer(status, r#"{"msg":"Unauthorized: malformed jwt token"}"#);
         let e = client.timeline(t(), tl()).await.unwrap_err();
@@ -358,18 +440,6 @@ async fn neon_error_maps_to_reason() {
     fake.answer(405, "");
     let e = client.timeline(t(), tl()).await.unwrap_err();
     assert_eq!(e.reason(), "internal");
-
-    let info = NeonError {
-        status: 503,
-        msg: "x".into(),
-        component: Component::Pageserver,
-    }
-    .error_info();
-    assert_eq!(info.reason, "storage_unavailable");
-    let meta = |k: &str| info.metadata.get(k).map(String::as_str);
-    assert_eq!(meta("component"), Some("pageserver"));
-    assert_eq!(meta("status"), Some("503"));
-    assert_eq!(e.component, Component::Pageserver);
 }
 
 /// Each client names its component, and only the storage components'
@@ -377,46 +447,69 @@ async fn neon_error_maps_to_reason() {
 /// plain `unavailable`. compute_ctl's errors are `{"error": ...}`.
 #[tokio::test]
 async fn errors_name_their_component() {
-    let wal = WalClient::new("http://127.0.0.1:1".parse().unwrap(), None);
+    let wal = WalClient::new("http://127.0.0.1:1".parse().unwrap(), None).unwrap();
     let e = wal.timeline_status(t(), tl()).await.unwrap_err();
     assert_eq!(
         (e.component, e.reason()),
         (Component::Wal, "storage_unavailable")
     );
-
-    let sc = NeonClient::new(
-        NeonEndpoints {
-            pageserver: "http://127.0.0.1:1".parse().unwrap(),
-            storcon: Some("http://127.0.0.1:1".parse().unwrap()),
-        },
-        None,
-    );
-    let e = sc.timeline(t(), tl()).await.unwrap_err();
-    assert_eq!(e.component, Component::StorageController);
     assert_eq!(
         e.error_info().metadata.get("component").map(String::as_str),
-        Some("storage_controller")
+        Some("loams_wal")
     );
 
     let (fake, url) = serve().await;
-    let ctl = ComputeCtlClient::new(url.parse().unwrap(), Secret::new("jwt".into()));
-    fake.answer(412, r#"{"error":"invalid compute status: running"}"#);
+    let ctl = ComputeCtlClient::new(url.parse().unwrap(), Secret::new("jwt".into())).unwrap();
+    fake.answer(401, &fixture("compute_unauthorized.response.json"));
     let e = ctl.status().await.unwrap_err();
     assert_eq!(e.component, Component::ComputeCtl);
-    assert_eq!(e.msg, "invalid compute status: running");
-    assert_eq!(e.reason(), "failed_precondition");
+    assert_eq!(e.msg, "failed to verify authorization token");
+    assert_eq!(e.reason(), "internal");
     let gone = ComputeCtlClient::new(
         "http://127.0.0.1:1".parse().unwrap(),
         Secret::new("jwt".into()),
-    );
+    )
+    .unwrap();
     assert_eq!(gone.status().await.unwrap_err().reason(), "unavailable");
 }
 
-/// loams-wal's timeline API, as a stock safekeeper's.
+/// A base URL keeps its path prefix, and one with credentials, a query or
+/// another scheme is refused before any call.
+#[tokio::test]
+async fn base_urls() {
+    let (fake, url) = serve().await;
+    let client = pageserver(&format!("{url}/gateway/ps/"));
+    fake.answer(200, &fixture("timeline_get.response.json"));
+    client.timeline(t(), tl()).await.unwrap();
+    assert_eq!(
+        fake.last().path_and_query,
+        format!("/gateway/ps/v1/tenant/{T}/timeline/{TL}")
+    );
+    for bad in [
+        "http://user:hunter2@127.0.0.1:9898",
+        "http://user@127.0.0.1:9898",
+        "http://127.0.0.1:9898/?token=x",
+        "file:///etc/passwd",
+    ] {
+        let e = NeonClient::new(
+            NeonEndpoints {
+                pageserver: bad.parse().unwrap(),
+                storcon: None,
+            },
+            None,
+        )
+        .unwrap_err();
+        assert_eq!((e.op, e.reason()), (Op::Setup, "internal"), "{bad}");
+        assert!(!e.msg.contains("hunter2"), "{e}");
+        assert!(WalClient::new(bad.parse().unwrap(), None).is_err(), "{bad}");
+    }
+}
+
+/// loams-wal's timeline API.
 #[tokio::test]
 async fn wal_client_matches_fixtures() {
     let (fake, url) = serve().await;
-    let wal = WalClient::new(url.parse().unwrap(), Some(Secret::new("wal-token".into())));
+    let wal = WalClient::new(url.parse().unwrap(), Some(Secret::new("wal-token".into()))).unwrap();
     fake.answer(200, &fixture("wal_create_timeline.response.json"));
     let st = wal
         .create_timeline(&WalTimelineCreate {
@@ -484,13 +577,13 @@ async fn wal_client_matches_fixtures() {
 #[tokio::test]
 async fn compute_ctl_calls() {
     let (fake, url) = serve().await;
-    let ctl = ComputeCtlClient::new(url.parse().unwrap(), Secret::new("compute-jwt".into()));
-    fake.answer(
-        200,
-        r#"{"start_time":"2026-10-09T02:41:46Z","tenant":null,"timeline":null,"status":"empty","last_active":null,"error":null}"#,
-    );
+    let ctl =
+        ComputeCtlClient::new(url.parse().unwrap(), Secret::new("compute-jwt".into())).unwrap();
+    // compute1's own answer (recorded).
+    fake.answer(200, &fixture("compute_status.response.json"));
     let st = ctl.status().await.unwrap();
-    assert_eq!(st.status, ComputeStatus::Empty);
+    assert_eq!(st.status, ComputeStatus::Running);
+    assert_eq!(st.tenant.as_deref(), Some(T));
     let seen = fake.last();
     assert_eq!(
         (seen.method.as_str(), seen.path_and_query.as_str()),
@@ -536,17 +629,23 @@ async fn compute_ctl_calls() {
     assert_eq!(body["wal_flush_lsn"], "0/14E8F98");
     assert_eq!(body["spec"]["mode"], "Primary");
 
-    // A failed promotion is a 500 whose `PromoteState` names the error.
-    fake.answer(
-        500,
-        r#"{"status":"failed","error":"compute mode \"primary\" is not replica"}"#,
-    );
+    // compute_ctl refuses to promote a primary (recorded from compute1),
+    // and a replica whose cache is not prewarmed (the fork's text): both are
+    // `failed_precondition`.
+    fake.answer(500, &fixture("promote_primary.response.json"));
     let e = ctl
         .promote(&spec, "0/14E8F98".parse().unwrap())
         .await
         .unwrap_err();
-    assert_eq!(e.status, 500);
     assert_eq!(e.msg, r#"compute mode "primary" is not replica"#);
+    assert_eq!((e.status, e.reason()), (500, "failed_precondition"));
+    fake.answer(500, &fixture("src_promote_not_prewarmed.response.json"));
+    let e = ctl
+        .promote(&spec, "0/14E8F98".parse().unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(e.msg, "compute NotPrewarmed");
+    assert_eq!(e.reason(), "failed_precondition");
     // A 200 that is not `completed` is not a promotion either.
     fake.answer(200, r#"{"status":"not_promoted"}"#);
     let e = ctl
@@ -554,6 +653,53 @@ async fn compute_ctl_calls() {
         .await
         .unwrap_err();
     assert!(e.msg.contains("not_promoted"), "{e}");
+    assert_eq!(e.reason(), "failed_precondition");
+
+    // Prewarming: start it (202), read its state (recorded from compute1).
+    fake.answer(202, "");
+    ctl.prewarm(Some("ep-01J9Z8Q4XWQ3T8F2D4G6H8J0KP"))
+        .await
+        .unwrap();
+    let seen = fake.last();
+    assert_eq!(
+        (seen.method.as_str(), seen.path_and_query.as_str()),
+        (
+            "POST",
+            "/lfc/prewarm?from_endpoint=ep-01J9Z8Q4XWQ3T8F2D4G6H8J0KP"
+        )
+    );
+    fake.answer(200, &fixture("prewarm_state.response.json"));
+    let st = ctl.prewarm_state().await.unwrap();
+    assert_eq!(st.status, "not_prewarmed");
+    fake.answer(
+        429,
+        r#"{"error":"Multiple requests for prewarm are not allowed"}"#,
+    );
+    assert_eq!(ctl.prewarm(None).await.unwrap_err().reason(), "aborted");
+}
+
+/// A failover target prewarms from endpoint storage: the spec carries its
+/// address, token and `autoprewarm` (left out when unset, as in the golden).
+#[test]
+fn spec_prewarm_fields() {
+    let spec = golden_builder()
+        .mode(ComputeMode::Replica)
+        .endpoint_storage("endpoint-storage:9993", Secret::new("es-token".into()))
+        .autoprewarm(true)
+        .build();
+    let v = serde_json::to_value(&spec).unwrap();
+    assert_eq!(v["endpoint_storage_addr"], "endpoint-storage:9993");
+    assert_eq!(v["endpoint_storage_token"], "es-token");
+    assert_eq!(v["autoprewarm"], true);
+    assert_eq!(v["mode"], "Replica");
+    let plain = serde_json::to_value(golden_builder().build()).unwrap();
+    for k in [
+        "endpoint_storage_addr",
+        "endpoint_storage_token",
+        "autoprewarm",
+    ] {
+        assert!(plain.get(k).is_none(), "{k}");
+    }
 }
 
 fn golden_builder() -> ComputeSpecBuilder {
@@ -621,24 +767,61 @@ fn spec_settings_are_unique() {
     assert_eq!(value("neon.max_cluster_size"), "10240");
 }
 
-/// Secrets never show in `Debug` or `Display`.
-#[test]
-fn secrets_are_redacted() {
-    let s = Secret::new("hunter2".to_string());
+/// Secrets never show in `Debug`, `Display` or an error: not the storage
+/// token, the `loams-wal` token, the compute JWT, the endpoint-storage token
+/// nor a role's SCRAM verifier.
+#[tokio::test]
+async fn secrets_are_redacted() {
+    const SECRETS: [&str; 5] = [
+        "sentinel-storage-token",
+        "sentinel-wal-token",
+        "sentinel-compute-jwt",
+        "sentinel-es-token",
+        "SCRAM-SHA-256$4096:c2FsdA==$c3RvcmVk:c2VydmVy",
+    ];
+    let s = Secret::new(SECRETS[0].to_string());
     assert_eq!(format!("{s:?}"), "[redacted]");
     assert_eq!(format!("{s}"), "[redacted]");
-    let ctl = ComputeCtlClient::new(
-        "http://x:1".parse().unwrap(),
-        Secret::new("jwt-value".into()),
-    );
-    assert!(!format!("{ctl:?}").contains("jwt-value"));
-    let wal = WalClient::new(
-        "http://x:1".parse().unwrap(),
-        Some(Secret::new("tok".into())),
-    );
-    assert!(!format!("{wal:?}").contains("tok\""));
-    let spec = golden_builder().build();
-    assert!(!format!("{spec:?}").contains("storage-jwt"));
+    let (fake, url) = serve().await;
+    let ps = NeonClient::new(
+        NeonEndpoints {
+            pageserver: url.parse().unwrap(),
+            storcon: None,
+        },
+        Some(Secret::new(SECRETS[0].into())),
+    )
+    .unwrap();
+    let wal = WalClient::new(url.parse().unwrap(), Some(Secret::new(SECRETS[1].into()))).unwrap();
+    let ctl = ComputeCtlClient::new(url.parse().unwrap(), Secret::new(SECRETS[2].into())).unwrap();
+    let builder = golden_builder()
+        .endpoint_storage("es:1", Secret::new(SECRETS[3].into()))
+        .storage_auth_token(Secret::new(SECRETS[0].into()));
+    let spec = builder.clone().build();
+    // Errors from each client, with the token on the wire.
+    fake.answer(401, r#"{"msg":"Unauthorized: malformed jwt token"}"#);
+    let e1 = ps.timeline(t(), tl()).await.unwrap_err();
+    assert_eq!(fake.last().auth, Some(format!("Bearer {}", SECRETS[0])));
+    fake.answer(401, r#"{"msg":"Unauthorized"}"#);
+    let e2 = wal.timeline_status(t(), tl()).await.unwrap_err();
+    fake.answer(401, &fixture("compute_unauthorized.response.json"));
+    let e3 = ctl.status().await.unwrap_err();
+    let shown = [
+        format!("{ps:?}"),
+        format!("{wal:?}"),
+        format!("{ctl:?}"),
+        format!("{builder:?}"),
+        format!("{spec:?}"),
+        format!("{e1:?} {e1}"),
+        format!("{e2:?} {e2}"),
+        format!("{e3:?} {e3} {:?}", e3.error_info()),
+    ];
+    for text in &shown {
+        for secret in SECRETS {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
+        // The SCRAM verifier's pieces too.
+        assert!(!text.contains("c3RvcmVk"), "{text}");
+    }
 }
 
 /// The id and LSN text forms Neon uses.

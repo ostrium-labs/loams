@@ -38,7 +38,8 @@ async fn it_deploy_neon_tenant_timeline_branch() {
             storcon: None,
         },
         None,
-    );
+    )
+    .unwrap();
     let t = TenantId(fresh(1));
     let main = TimelineId(fresh(2));
     let branch = TimelineId(fresh(3));
@@ -88,6 +89,11 @@ async fn it_deploy_neon_tenant_timeline_branch() {
         .unwrap_err();
     assert_eq!(e.reason(), "already_exists", "{e}");
 
+    // A timeline with a child cannot go first.
+    let e = client.delete_timeline(t, main).await.unwrap_err();
+    assert_eq!(e.reason(), "branch_has_children", "{e}");
+
+    // A patch keeps the other settings.
     client.tenant_config(t, &conf).await.unwrap();
 
     for tl in [branch, main] {

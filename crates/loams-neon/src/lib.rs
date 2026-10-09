@@ -19,6 +19,6 @@ pub mod spec;
 pub mod storcon;
 pub mod wal;
 
-pub use error::{Component, NeonError};
+pub use error::{Component, NeonError, Op};
 pub use ids::{Lsn, TenantId, TimelineId};
 pub use secret::Secret;
