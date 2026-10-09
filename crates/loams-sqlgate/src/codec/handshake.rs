@@ -447,8 +447,12 @@ impl fmt::Debug for HandshakeResponse41 {
 }
 
 impl HandshakeResponse41 {
-    /// Encodes the payload, laid out by `self.capabilities`.
-    pub fn encode(&self) -> Vec<u8> {
+    /// Encodes the payload, laid out by `self.capabilities`. Without
+    /// `CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA` the auth response has a
+    /// one-byte length, so one longer than 255 bytes is refused rather than
+    /// truncated (long tokens go in the auth-switch response instead; see
+    /// [`crate::codec::auth::client_auth_response`]).
+    pub fn encode(&self) -> Result<Vec<u8>, EncodeError> {
         let caps = self.capabilities;
         let mut out = Vec::with_capacity(128);
         put_fixed_header(&mut out, caps, self.max_packet, self.charset);
@@ -457,9 +461,14 @@ impl HandshakeResponse41 {
         if caps.contains(Capabilities::PLUGIN_AUTH_LENENC_CLIENT_DATA) {
             put_lenenc_bytes(&mut out, &self.auth_response);
         } else if caps.contains(Capabilities::SECURE_CONNECTION) {
-            out.push(u8::try_from(self.auth_response.len()).unwrap_or(u8::MAX));
-            out.extend_from_slice(&self.auth_response[..self.auth_response.len().min(255)]);
+            let n = u8::try_from(self.auth_response.len())
+                .map_err(|_| EncodeError::AuthResponseTooLong)?;
+            out.push(n);
+            out.extend_from_slice(&self.auth_response);
         } else {
+            if self.auth_response.contains(&0) {
+                return Err(EncodeError::AuthResponseHasNul);
+            }
             out.extend_from_slice(&self.auth_response);
             out.push(0);
         }
@@ -483,8 +492,19 @@ impl HandshakeResponse41 {
         if caps.contains(Capabilities::ZSTD_COMPRESSION) {
             out.push(self.zstd_level.unwrap_or(3));
         }
-        out
+        Ok(out)
     }
+}
+
+/// A response the chosen capabilities cannot carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum EncodeError {
+    /// Over 255 bytes without `CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA`.
+    #[error("auth response longer than 255 bytes needs CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA")]
+    AuthResponseTooLong,
+    /// A NUL inside a NUL-terminated (pre-secure-connection) auth response.
+    #[error("auth response contains NUL")]
+    AuthResponseHasNul,
 }
 
 /// The client's first packet: an `SSLRequest` or a full response.

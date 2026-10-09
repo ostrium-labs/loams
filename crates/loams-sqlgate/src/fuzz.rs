@@ -10,7 +10,8 @@ pub fn handshake_response(data: &[u8]) {
     let limits = Limits::default();
     match decode_client_hello(data, &limits) {
         Ok(ClientHello::Response(r)) => {
-            let again = decode_client_hello(&r.encode(), &limits);
+            let bytes = r.encode().expect("a decoded response is encodable");
+            let again = decode_client_hello(&bytes, &limits);
             assert_eq!(again, Ok(ClientHello::Response(r)), "response re-encodes");
         }
         Ok(ClientHello::Ssl(s)) => {

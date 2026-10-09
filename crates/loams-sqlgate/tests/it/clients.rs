@@ -80,7 +80,7 @@ fn handshake_response_decodes_captured_clients() {
         assert_eq!(attr("_client_version"), version, "{name}");
         // Re-encoding gives the client's bytes back.
         assert_eq!(
-            r.encode(),
+            r.encode().expect("encodable"),
             p[1].payload,
             "{name}: response re-encodes exactly"
         );

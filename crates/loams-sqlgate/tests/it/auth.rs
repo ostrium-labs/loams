@@ -134,17 +134,25 @@ fn client_side_responses() {
     let n = nonce();
     assert_eq!(
         client_auth_response(CACHING_SHA2, &Password::new(b"pw".to_vec()), n.as_bytes())
-            .expect("sha2"),
+            .expect("sha2")
+            .expose(),
         scramble_caching_sha2(b"pw", n.as_bytes())
     );
-    // mysql_clear_password (tidb_auth_token, R2.12) sends the secret with a NUL.
+    // mysql_clear_password (tidb_auth_token, R2.12) sends the secret with a
+    // NUL. Responses are Passwords: redacted and zeroed on drop.
+    let r =
+        client_auth_response(CLEAR, &Password::new(b"jwt".to_vec()), n.as_bytes()).expect("clear");
+    assert_eq!(format!("{r:?}"), "[redacted]");
     assert_eq!(
-        client_auth_response(CLEAR, &Password::new(b"jwt".to_vec()), n.as_bytes()).expect("clear"),
+        client_auth_response(CLEAR, &Password::new(b"jwt".to_vec()), n.as_bytes())
+            .expect("clear")
+            .expose(),
         b"jwt\0"
     );
     assert!(
         client_auth_response(CACHING_SHA2, &Password::new(Vec::new()), n.as_bytes())
             .expect("empty")
+            .expose()
             .is_empty()
     );
     assert!(
@@ -176,4 +184,27 @@ fn auth_more_data_and_switch_codecs() {
         data: [nonce().as_bytes().as_slice(), &[0]].concat(),
     };
     assert_eq!(AuthSwitchRequest::decode(&r.encode()), Ok(r));
+}
+
+/// R3.8: `tidb_auth_token` (R2.12) travels in the auth-switch response, a
+/// raw packet: a JWT longer than 255 bytes goes through whole.
+#[test]
+fn tidb_auth_token_jwt_travels_in_the_switch_response() {
+    use loams_sqlgate::codec::packet::{Assembler, encode};
+    let switch = AuthSwitchRequest {
+        plugin: CLEAR.into(),
+        data: Vec::new(),
+    };
+    let decoded = AuthSwitchRequest::decode(&switch.encode()).expect("switch");
+    assert_eq!(decoded.plugin, CLEAR);
+    let jwt = vec![b'e'; 2048];
+    let response = client_auth_response(CLEAR, &Password::new(jwt.clone()), &[]).expect("clear");
+    assert_eq!(response.expose().len(), 2049);
+    let mut seq = 3;
+    let mut framed = Vec::new();
+    encode(response.expose(), &mut seq, &mut framed);
+    let mut a = Assembler::new(64 * 1024);
+    a.expect_seq(3);
+    let (_, m) = a.push(&framed).expect("frames");
+    assert_eq!(m.expect("message").payload, [jwt.as_slice(), &[0]].concat());
 }

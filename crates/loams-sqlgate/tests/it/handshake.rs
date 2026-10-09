@@ -71,7 +71,7 @@ fn response() -> HandshakeResponse41 {
 #[test]
 fn handshake_response_roundtrips_and_is_bounded() {
     let r = response();
-    let bytes = r.encode();
+    let bytes = r.encode().expect("encodable");
     assert_eq!(
         decode_client_hello(&bytes, &Limits::default()),
         Ok(ClientHello::Response(r.clone()))
@@ -122,7 +122,7 @@ fn handshake_response_roundtrips_and_is_bounded() {
     // Invalid UTF-8 in the user name is refused.
     let mut bad = response();
     bad.username = "ab".into();
-    let mut b = bad.encode();
+    let mut b = bad.encode().expect("encodable");
     let at = 32;
     b[at] = 0xff;
     assert!(decode_client_hello(&b, &Limits::default()).is_err());
@@ -238,4 +238,22 @@ fn upstream_leg_is_the_gates_own_connection() {
         "not the client's: not upstream"
     );
     assert!(up.is_subset_of(TIDB_V8_5_8));
+}
+
+/// R3.8: without CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA (TiDB v8.5.8 does not
+/// offer it) the auth response has a one-byte length: longer ones are an
+/// error, never silently truncated.
+#[test]
+fn long_auth_response_needs_lenenc() {
+    let mut r = response();
+    r.auth_response = vec![b'j'; 300];
+    assert!(r.encode().is_ok(), "length-encoded: any length");
+    r.capabilities = r.capabilities.without(C::PLUGIN_AUTH_LENENC_CLIENT_DATA);
+    assert!(r.encode().is_err(), "one-byte length: at most 255");
+    r.auth_response.truncate(255);
+    let bytes = r.encode().expect("255 fits");
+    assert!(
+        matches!(decode_client_hello(&bytes, &Limits::default()), Ok(ClientHello::Response(d)) if d.auth_response.len() == 255)
+    );
+    assert!(!TIDB_V8_5_8.contains(C::PLUGIN_AUTH_LENENC_CLIENT_DATA));
 }
