@@ -1353,3 +1353,24 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
   - `standby_horizon` from replica feedback: Task 16.
   - Replacing the feeder text in §46 and §28's as-built descriptions: Task 60.
 
+
+### Task 1 rulings (2026-10-09)
+
+- **R1.1 `WatchProject` is `NO_SIDE_EFFECTS`.** The contract snippet left it unmarked. It is a read (AP0: reads are `NO_SIDE_EFFECTS`), and `every_mutation_has_idempotency_key` would otherwise require a key on a watch.
+- **R1.2 Console routes.** `docs/api/route-map.md` gains a "Planned: `loams.postgres.v1`" section that puts the route first in each row. `route_map_covers_every_route` holds every method-first row to what the binary serves, so these rows only become method-first rows in the main tables when PG2 Task 9 serves them. Until then, `every_rpc_has_a_planned_console_route` checks the section both ways: every row names one of the service's RPCs, and every RPC has a row.
+  - §46 §4.2's pattern does not route `UpgradeProject`, `WatchProject`, `RestoreBranch`, `SetDefaultBranch`, `ResetRolePassword`, `GetConnectionInfo` or `IssueConnectCredential`. They get AIP-136 custom methods (`:upgrade`, `:watch`, `:restore`, `:set_default`, `:reset_password`, `:issue_credential`) or a `connection_info` sub-resource.
+  - Roles and databases are per branch (§46 §3) but sit under the project, as §4.2 writes them, with the branch in the body or the query (default: the project's default branch).
+- **R1.3 SDK exposure waits.**
+  - `PostgresService` carries `ModuleOptions` (`postgres`, stable, because `buf breaking` covers it). No method carries `FacadeOptions` yet, so the generated SDK facades expose no `postgres` module.
+  - A module with calls needs every SDK template's package map to name the package. The Go SDK's committed stubs (an explicit path list) and `@loams/proto` would need generating, which belongs with serving the API (Task 9) and the API advertisement (Task 57).
+  - The facades change only in their package list and the new reasons: the Python, Rust and TypeScript facades are regenerated, and the Go SDK's hand-written fallback `reason.go` is updated by hand (its `TestReasonRegistryMatchesDocs` passes).
+- **R1.4 The types are in `loams-proto`'s default build; the service is not served.** As the plan's file list says, `loams/postgres/v1/postgres.proto` joins `loams-proto`'s `FILES`. The default `loams` registers no `PostgresService`; that is Task 9's, behind the feature `postgres`. gRPC reflection advertises every service of the descriptor set (`Reflector` is not curated), as it already does for the unserved `loams.operations.v1.OperationsService`. Task 9 should curate reflection with `Reflector::with_services(served_services())`, so that only served services are listed.
+- **R1.5 Reasons.** The nine §46 §4.1 reasons are registered with these codes:
+  - `project_not_found` (not_found);
+  - `branch_has_children`, `branch_protected` and `secret_already_issued` (failed_precondition);
+  - `lsn_out_of_retention` (out_of_range);
+  - `endpoint_exists_for_branch` (already_exists);
+  - `compute_start_failed` and `storage_unavailable` (unavailable);
+  - `quota_exceeded` (resource_exhausted).
+
+  A create under a taken name with another key uses the generic `already_exists`. `loams.postgres.v1` is added to §44 §7.2's module catalogue, which `no_proto_declares_a_package_the_design_does_not_enumerate` requires.

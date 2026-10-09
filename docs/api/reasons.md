@@ -41,6 +41,15 @@ The rules, in the order they bite:
 | `push_target_unknown` | not_found | UnregisterPushTarget | |
 | `not_implemented` | unimplemented | a stub handler whose service has not landed yet | |
 | `feature_not_in_variant` | unimplemented | any RPC of a catalogue package whose engine is not in this build variant (§44 §4, §30 §9) | `variant` |
+| `project_not_found` | not_found | every `loams.postgres.v1` RPC that names a project | `project` |
+| `branch_has_children` | failed_precondition | DeleteBranch | `children` (count) |
+| `branch_protected` | failed_precondition | DeleteBranch, RestoreBranch (an agent's goes through `loams.approvals.v1` instead) | `branch` |
+| `lsn_out_of_retention` | out_of_range | CreateBranch, RestoreBranch | `oldest_lsn`, `history_retention` |
+| `endpoint_exists_for_branch` | already_exists | CreateEndpoint (a second read-write endpoint), RestartEndpoint with `promote` | `endpoint` |
+| `compute_start_failed` | unavailable | StartEndpoint, RestartEndpoint (the Operation's error) | `compute` |
+| `quota_exceeded` | resource_exhausted | any `loams.postgres.v1` create or resize past a limit (§46 §14) | `quota`, `limit` |
+| `storage_unavailable` | unavailable | any `loams.postgres.v1` RPC that needs the pageserver, `loams-wal` or the storage controller while it is down | `component` |
+| `secret_already_issued` | failed_precondition | CreateRole, ResetRolePassword, IssueConnectCredential replayed with the same `idempotency_key` (the secret is answered once) | |
 | `invalid_argument` | invalid_argument | any RPC: a malformed field, an unparseable value | `field` |
 | `not_found` | not_found | any RPC: the named resource does not exist | `kind`, `name` |
 | `already_exists` | already_exists | any RPC that creates a named resource | |
@@ -53,6 +62,8 @@ The rules, in the order they bite:
 | `deadline_exceeded` | deadline_exceeded | the caller's deadline passed | |
 | `aborted` | aborted | a concurrent write won; the caller retries | |
 | `internal` | internal | a bug; the message and `request_id` go to the log | |
+
+The `loams.postgres.v1` rows (`project_not_found` to `secret_already_issued`) are design §46 §4.1's, registered by PG2 Task 1 before `pg-control` raises them (PG2 Task 9); `reasons_registered` (`crates/loams-proto/tests/postgres.rs`) fails if one §46 §4.1 names is missing. A replayed create under a taken name with another key answers the generic `already_exists`.
 
 The generic rows (`invalid_argument` and below) are the code-to-class mapping of D611's error hierarchy: they are what an SDK turns into its own `InvalidArgument`, `NotFound`, ... types. They carry no Loams-specific semantics, so they were already the native REST API's `error` values (`crates/loams/src/api/errors.rs`) and become the RPC `reason` unchanged. The rows above them are the specific causes AP0 registered; the specific causes API1 Tasks 2–8 add are appended as their services land, and `unavailable_service_reports_reason` covers the variant case.
 

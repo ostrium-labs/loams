@@ -187,6 +187,7 @@ Language idiom rules (D606): module and method names are the proto names in the 
 | `loams.instance`, `loams.devices`, `loams.notifications` | AP0 packages | exists |
 | `loams.admin` (`.org`, `.projects`, `.agents`, `.keys`, `.audit`), `loams.auth` | `loams.admin.v1`, `loams.auth.v1` | API1 |
 | `loams.console` | `loams.console.v1` `PluginService` | AP1a |
+| `loams.postgres` | `loams.postgres.v1` `PostgresService`: projects, branches, endpoints, roles, databases, connect (§46 §4) | PG2 (protos in Task 1; served by `pg-control` behind the `loams` feature `postgres` from Task 9) |
 
 Not in the public protos or SDKs: `loams.internal.v1`, the meter protocol (private), connector-specific admin.
 

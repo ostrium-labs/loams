@@ -154,6 +154,46 @@ The real server does not serve `/api/v1` yet (the gateway work is AP4/MT1); only
 | GET | `/.well-known/oauth-authorization-server` | protocol | kept (RFC 8414, D602) | console mock seed | console mock contract tests |
 | GET | `/.well-known/jwks.json` | protocol | kept (RFC 7517, D602) | console mock seed | console mock contract tests |
 
+## Planned: `loams.postgres.v1` (PG2 Task 1; served from PG2 Task 9)
+
+Design §46 §4.2's console REST for Loams Postgres. Nothing serves these yet: `pg-control` registers `PostgresService` behind the `loams` feature `postgres` in PG2 Task 9, and this table becomes method-first rows of the main tables then, so that `route_map_covers_every_route` holds them to what is served. Until then the rows put the route first, which that test skips, and `every_rpc_has_a_planned_console_route` (`crates/loams-proto/tests/postgres.rs`) checks that every row names an RPC of the service and every RPC has a row.
+
+§46 §4.2 writes the pattern `/v1/namespaces/{ns}/postgres/projects[/{project}[/branches[/{branch}]|/endpoints[/{endpoint}][:start|:suspend|:restart]|/roles|/databases]]`. Rows marked "beyond §46 §4.2's pattern" are the RPCs it does not route, given AIP-136 custom methods (`:verb`) or a sub-resource in the same style (PG2 Task 1 ruling R1.2). Roles and databases are per branch (§46 §3) but sit under the project, as §4.2 writes them, with the branch in the body or the query, defaulting to the project's default branch. `Idempotency-Key` carries `idempotency_key` (§44 §5.2).
+
+| Route | Method | Target RPC | Notes |
+|---|---|---|---|
+| `/v1/namespaces/{ns}/postgres/projects` | POST | `loams.postgres.v1.PostgresService/CreateProject` | returns an `Operation` |
+| `/v1/namespaces/{ns}/postgres/projects` | GET | `loams.postgres.v1.PostgresService/ListProjects` | `page_size`, `page_token` query |
+| `/v1/namespaces/{ns}/postgres/projects/{project}` | GET | `loams.postgres.v1.PostgresService/GetProject` |  |
+| `/v1/namespaces/{ns}/postgres/projects/{project}` | PATCH | `loams.postgres.v1.PostgresService/UpdateProject` | `update_mask` from the body's fields |
+| `/v1/namespaces/{ns}/postgres/projects/{project}` | DELETE | `loams.postgres.v1.PostgresService/DeleteProject` | returns an `Operation` |
+| `/v1/namespaces/{ns}/postgres/projects/{project}:upgrade` | POST | `loams.postgres.v1.PostgresService/UpgradeProject` | beyond §46 §4.2's pattern (PG2 Task 51) |
+| `/v1/namespaces/{ns}/postgres/projects/{project}:watch` | GET | `loams.postgres.v1.PostgresService/WatchProject` | server stream; beyond §46 §4.2's pattern |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/branches` | POST | `loams.postgres.v1.PostgresService/CreateBranch` | returns an `Operation` |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/branches` | GET | `loams.postgres.v1.PostgresService/ListBranches` |  |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/branches/{branch}` | GET | `loams.postgres.v1.PostgresService/GetBranch` |  |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/branches/{branch}` | PATCH | `loams.postgres.v1.PostgresService/UpdateBranch` |  |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/branches/{branch}` | DELETE | `loams.postgres.v1.PostgresService/DeleteBranch` | returns an `Operation` |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/branches/{branch}:restore` | POST | `loams.postgres.v1.PostgresService/RestoreBranch` | returns an `Operation`; beyond §46 §4.2's pattern |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/branches/{branch}:set_default` | POST | `loams.postgres.v1.PostgresService/SetDefaultBranch` | beyond §46 §4.2's pattern |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/endpoints` | POST | `loams.postgres.v1.PostgresService/CreateEndpoint` |  |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/endpoints` | GET | `loams.postgres.v1.PostgresService/ListEndpoints` | `branch` query |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/endpoints/{endpoint}` | GET | `loams.postgres.v1.PostgresService/GetEndpoint` |  |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/endpoints/{endpoint}` | PATCH | `loams.postgres.v1.PostgresService/UpdateEndpoint` |  |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/endpoints/{endpoint}` | DELETE | `loams.postgres.v1.PostgresService/DeleteEndpoint` | returns an `Operation` |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/endpoints/{endpoint}:start` | POST | `loams.postgres.v1.PostgresService/StartEndpoint` | returns an `Operation` |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/endpoints/{endpoint}:suspend` | POST | `loams.postgres.v1.PostgresService/SuspendEndpoint` | returns an `Operation` |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/endpoints/{endpoint}:restart` | POST | `loams.postgres.v1.PostgresService/RestartEndpoint` | returns an `Operation`; `promote` in the body |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/roles` | POST | `loams.postgres.v1.PostgresService/CreateRole` | `branch` in the body (default: the default branch); answers the password once |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/roles` | GET | `loams.postgres.v1.PostgresService/ListRoles` | `branch` query |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/roles/{role}:reset_password` | POST | `loams.postgres.v1.PostgresService/ResetRolePassword` | answers the password once; beyond §46 §4.2's pattern |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/roles/{role}` | DELETE | `loams.postgres.v1.PostgresService/DeleteRole` | `branch` query |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/databases` | POST | `loams.postgres.v1.PostgresService/CreateDatabase` | `branch` in the body |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/databases` | GET | `loams.postgres.v1.PostgresService/ListDatabases` | `branch` query |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/databases/{database}` | DELETE | `loams.postgres.v1.PostgresService/DeleteDatabase` | `branch` query |
+| `/v1/namespaces/{ns}/postgres/projects/{project}/connection_info` | GET | `loams.postgres.v1.PostgresService/GetConnectionInfo` | `branch`, `endpoint`, `role`, `database`, `read_only` query; never a password; beyond §46 §4.2's pattern |
+| `/v1/namespaces/{ns}/postgres/projects/{project}:issue_credential` | POST | `loams.postgres.v1.PostgresService/IssueConnectCredential` | answers the credential once; beyond §46 §4.2's pattern |
+
 ## Out of scope: compatibility surfaces (D603)
 
 Not mapped and not changed: the Qdrant REST and gRPC gateway (`loams-qdrant`), the Elasticsearch gateway (`loams-es`), Flight SQL (`server.rs`, `--flight-sql-listen`), Postgres wire (`pg`), MySQL wire (`mysql_wire`), the Resonate HTTP protocol (`loams-durable`), and the tonic `loams.stream.v1` listener for Dapr adapters (`loams-stream-grpc`, `--stream-grpc-listen`), which Task 6 moves onto connect-rust without changing its wire contract.

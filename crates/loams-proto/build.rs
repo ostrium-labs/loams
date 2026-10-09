@@ -13,7 +13,8 @@
 //! and §8 put it. Task 4 adds the third — the search IR and its answer, i.e.
 //! §8's `Query` — and `page_token` on `ScrollDocumentsRequest`. Tasks 5–8
 //! append `loams.sql.v1`, `loams.link.v1`, `loams.admin.v1`, `loams.auth.v1`
-//! and `loams.internal.v1`. GR1 Task 1 adds `loams.graph.v1` (design §48).
+//! and `loams.internal.v1`. GR1 Task 1 adds `loams.graph.v1` (design §48),
+//! and PG2 Task 1 `loams.postgres.v1` (design §46 §4).
 //!
 //! `loams.live.v1` is **not** here: R1's `loams-live-proto` already
 //! generates it, and a proto package's Rust types are generated exactly
@@ -37,6 +38,10 @@ const FILES: &[&str] = &[
     // GR1 Task 1 and reworked by Task 2. Its Rust types used to come from
     // `fabric/`'s `loams-graph-proto`.
     "loams/graph/v1/graph.proto",
+    // Loams Postgres (design §46 §4, PG2 Task 1). The types only: the
+    // service is served by `pg-control` behind the `loams` feature
+    // `postgres` (PG2 Task 9), so the default server does not register it.
+    "loams/postgres/v1/postgres.proto",
 ];
 
 fn main() {

@@ -6976,6 +6976,8 @@ dependencies = [
  "buffa-types",
  "connectrpc",
  "connectrpc-build",
+ "prost 0.14.4",
+ "prost-types",
  "serde",
 ]
 

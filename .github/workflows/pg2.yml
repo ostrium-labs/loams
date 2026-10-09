@@ -1,11 +1,15 @@
-# PG2 (docs/plans/2026-10-08-pg2-postgres-production.md): loams-wal's
-# in-process interpreted sender (Task 31). crates/loams-wal-decoder is a
+# PG2 (docs/plans/2026-10-08-pg2-postgres-production.md).
+#
+# postgres-protos (Task 1): `loams.postgres.v1` passes `buf lint` (STANDARD)
+# and `buf breaking` (FILE, against dev), and its descriptor tests.
+#
+# wal-decoder: loams-wal's in-process interpreted sender (Task 31). crates/loams-wal-decoder is a
 # workspace of its own that links the Neon fork's crates; their
 # postgres_ffi generates bindings from the Postgres 14..17 server headers,
 # which are extracted from a `neon` image pinned by digest and cached per
 # digest. Its golden tests compare loams-wal's stream with the fork's
 # safekeeper's (tests/fixtures).
-name: PG2 loams-wal decoder
+name: PG2
 
 on:
   workflow_dispatch:
@@ -20,6 +24,12 @@ on:
       - "crates/loams-tikv/**"
       - "crates/loams-wal-decoder/**"
       - "scripts/pg2/**"
+      - "proto/**"
+      - "buf.yaml"
+      - "crates/loams-proto/**"
+      - "docs/api/reasons.md"
+      - "docs/api/route-map.md"
+      - "docs/design/46-loams-postgres-production.md"
       - ".github/workflows/pg2.yml"
   pull_request:
     paths:
@@ -30,6 +40,12 @@ on:
       - "crates/loams-tikv/**"
       - "crates/loams-wal-decoder/**"
       - "scripts/pg2/**"
+      - "proto/**"
+      - "buf.yaml"
+      - "crates/loams-proto/**"
+      - "docs/api/reasons.md"
+      - "docs/api/route-map.md"
+      - "docs/design/46-loams-postgres-production.md"
       - ".github/workflows/pg2.yml"
 
 permissions:
@@ -43,6 +59,37 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
+  postgres-protos:
+    name: loams.postgres.v1 (buf lint, buf breaking against dev, descriptor tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # buf is pinned as a devDependency of @loams/proto, as in ci.yml's
+      # app-protos job.
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: buf lint (STANDARD)
+        run: web/packages/proto/node_modules/.bin/buf lint
+      - name: buf breaking (FILE, against dev)
+        run: |
+          git fetch --no-tags origin dev
+          web/packages/proto/node_modules/.bin/buf breaking --against ".git#branch=origin/dev"
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: the descriptor, reasons and route-map tests
+        run: cargo test -p loams-proto --test postgres --locked
+
   wal-decoder:
     name: loams-wal-decoder (golden tests against the fork's sender)
     runs-on: ubuntu-24.04

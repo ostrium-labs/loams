@@ -25,6 +25,11 @@ connectrpc.workspace = true
 # feature).
 serde.workspace = true
 
+[dev-dependencies]
+# tests/postgres.rs walks FILE_DESCRIPTOR_SET (as loams-graph's tests do).
+prost.workspace = true
+prost-types.workspace = true
+
 [build-dependencies]
 connectrpc-build.workspace = true
 
