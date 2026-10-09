@@ -100,9 +100,9 @@ same revision. crates/loams-safekeeper/src/send.rs follows Neon's safekeeper/src
 wal_reader_stream.rs (the interpreted sender's batching and framing), and
 crates/loams-wal-decoder links Neon's wal_decoder, postgres_ffi, utils and
 pageserver_api from the fork at fa504217c61bbcaf5c512d75830564541f917f8f
-plus one commit of Loams' (branch loams/decoder-trim,
-1218fb7a6a37e1b4c268bad5c2952c238d81d368: a feature that lets consumers
-leave out the storage clients and pprof), and Neon's rust-postgres fork
+plus two commits of Loams' (branch loams/decoder-trim-2,
+80356b2998710722020134d81102d810f921fe6b: a feature that lets consumers
+leave out the storage clients and pprof, and the tarball helpers optional), and Neon's rust-postgres fork
 through https://github.com/ostrium-labs/rust-postgres;
 its golden fixtures were recorded from Neon's safekeeper (revision
 77e22e4b above). crates/loams-safekeeper/proto/storage_broker/broker.proto is

@@ -45,10 +45,10 @@ tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread"] }
 # loams/decoder-trim that lets wal_decoder's consumers leave out the storage
 # clients and pprof (PG2 ruling R31.12). pageserver_api without its default
 # features (storage-clients).
-pageserver_api = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "1218fb7a6a37e1b4c268bad5c2952c238d81d368", default-features = false }
-postgres_ffi = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "1218fb7a6a37e1b4c268bad5c2952c238d81d368" }
-utils = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "1218fb7a6a37e1b4c268bad5c2952c238d81d368" }
-wal_decoder = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "1218fb7a6a37e1b4c268bad5c2952c238d81d368" }
+pageserver_api = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "80356b2998710722020134d81102d810f921fe6b", default-features = false }
+postgres_ffi = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "80356b2998710722020134d81102d810f921fe6b" }
+utils = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "80356b2998710722020134d81102d810f921fe6b", default-features = false, features = ["rename_noreplace"] }
+wal_decoder = { git = "https://github.com/ostrium-labs/loams-postgres", rev = "80356b2998710722020134d81102d810f921fe6b" }
 
 [dev-dependencies]
 serde_json = "=1.0.151"
