@@ -116,7 +116,8 @@ impl fmt::Debug for Capabilities {
 }
 
 /// What the gate implements. Not offered, whatever TiDB supports:
-/// compression (the gate relays uncompressed frames), multi-factor auth,
+/// `LOAD DATA LOCAL` (`CLIENT_LOCAL_FILES`: it lets the server read client
+/// files), compression (the gate relays uncompressed frames), multi-factor auth,
 /// optional result-set metadata and query attributes (they change packet
 /// layouts the gate does not track), and the client-only and
 /// extension flags.
@@ -127,7 +128,6 @@ pub const GATE_SUPPORTED: Capabilities = Capabilities(
         | Capabilities::CONNECT_WITH_DB.0
         | Capabilities::NO_SCHEMA.0
         | Capabilities::ODBC.0
-        | Capabilities::LOCAL_FILES.0
         | Capabilities::IGNORE_SPACE.0
         | Capabilities::PROTOCOL_41.0
         | Capabilities::INTERACTIVE.0
@@ -153,7 +153,6 @@ pub const RELAY_SENSITIVE: Capabilities = Capabilities(
     Capabilities::FOUND_ROWS.0
         | Capabilities::LONG_FLAG.0
         | Capabilities::NO_SCHEMA.0
-        | Capabilities::LOCAL_FILES.0
         | Capabilities::IGNORE_SPACE.0
         | Capabilities::INTERACTIVE.0
         | Capabilities::TRANSACTIONS.0

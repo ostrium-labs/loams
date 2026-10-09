@@ -180,7 +180,11 @@ proptest! {
             let up = upstream_capabilities(agreed);
             prop_assert!(up.is_subset_of(upstream));
             prop_assert_eq!(up.intersect(RELAY_SENSITIVE), agreed.intersect(RELAY_SENSITIVE));
+            // LOAD DATA LOCAL is never offered and never asked of TiDB.
+            prop_assert!(!agreed.contains(C::LOCAL_FILES));
+            prop_assert!(!up.contains(C::LOCAL_FILES));
         }
+        prop_assert!(!offered.contains(C::LOCAL_FILES));
     }
 }
 
