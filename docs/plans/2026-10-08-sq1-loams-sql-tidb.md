@@ -224,6 +224,7 @@ Commit `feat(sqlgate): sans-io mysql handshake and framing`.
 - **Listener and TLS.** A tokio listener with `rustls` TLS 1.2+ and SNI certificates. Plaintext only on loopback.
 - **Identity.** `ResolveUser(user) -> {branch, role, argon2 hash}`, with the fast-auth cache keyed by user and SHA-256 of the password.
 - **Upstream.** Connect to one pool member over TLS with a PROXY v2 header, as `ri_<role>` with the internal password from the credential store.
+- **Upstream TLS (R3.16).** The gate refuses to log in upstream without TLS. `upstream_capabilities` always sets `CLIENT_SSL`, and `client_auth_response` and `client_full_auth_reply` refuse any cleartext secret when `tls` is false. Test: `upstream_login_refused_without_tls`.
 - **Relay.** Relay with refusals (`COM_CHANGE_USER` → 1235; replication commands → 1235).
 - **Limits.** Per-database connection cap and rate (1040), a 10 s handshake deadline, `ReportActivity` counting every command except `COM_PING`.
 
@@ -851,3 +852,8 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - **The new `--tls-sha2` proxy mode.** The proxy offers TLS and `caching_sha2_password`, terminates the client's TLS and relays in plaintext. It captured mysql 8.4's and Connector/J's SHA-2 first response and their full-auth cleartext password, and those bytes drive `ConnectionPhase` to `Done`.
   - **A TiDB finding.** TiDB v8.5.8 accepted the cleartext password from the plaintext relay with an OK. It does not require TLS for cleartext full authentication itself; the gate does (R3.13).
 - **R3.15 The CI fuzz job is pinned.** `cargo-fuzz@0.13.2`, `nightly-2026-09-24`, `fuzz/Cargo.lock` checked with `--locked`, `timeout-minutes: 20`, artifacts uploaded on failure, all five targets. `ci_fuzzes_every_target_pinned` keeps the job and `fuzz/Cargo.toml` in sync.
+- **R3.16 The upstream-TLS contract (fix round 2).** The gate never logs in to TiDB without TLS:
+  - `upstream_capabilities` always ORs in `CLIENT_SSL` after the profile intersection, as `advertise` does (`upstream_always_asks_for_ssl`, `capabilities_never_exceed_upstream`);
+  - `client_auth_response(plugin, password, nonce, tls)` and `client_full_auth_reply(password, tls)` return `SecureTransportRequired` for a cleartext secret (the `tidb_auth_token` JWT, or the reply to `0x01 0x04`) when `tls` is false (`upstream_cleartext_requires_tls`).
+
+  This is carried into Task 4's interfaces. Task 4 adds `upstream_login_refused_without_tls`.

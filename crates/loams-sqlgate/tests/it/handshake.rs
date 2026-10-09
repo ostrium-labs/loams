@@ -181,7 +181,8 @@ proptest! {
             prop_assert!(agreed.is_subset_of(GATE_SUPPORTED));
             prop_assert!(agreed.is_subset_of(C(client)));
             let up = upstream_capabilities(agreed, upstream);
-            prop_assert!(up.is_subset_of(upstream));
+            prop_assert!(up.contains(C::SSL));
+            prop_assert!(up.without(C::SSL).is_subset_of(upstream));
             prop_assert_eq!(up.intersect(RELAY_SENSITIVE), agreed.intersect(RELAY_SENSITIVE));
             // LOAD DATA LOCAL is never offered and never asked of TiDB.
             prop_assert!(!agreed.contains(C::LOCAL_FILES));
@@ -275,4 +276,14 @@ fn attributes_are_bytes_names_are_utf8() {
     let at = bytes.windows(3).position(|w| w == b"db\0").expect("db");
     bytes[at] = 0xc3; // a lone UTF-8 lead byte
     assert!(decode_client_hello(&bytes, &Limits::default()).is_err());
+}
+
+/// R3.16: SSL is always on the upstream leg, even against a profile that
+/// lacks it (the gate then fails at TLS, never logs in in clear).
+#[test]
+fn upstream_always_asks_for_ssl() {
+    let profile = TIDB_V8_5_8.without(C::SSL);
+    let client = C::PROTOCOL_41 | C::SECURE_CONNECTION | C::PLUGIN_AUTH;
+    let agreed = negotiate(client, advertise(profile)).expect("agreed");
+    assert!(upstream_capabilities(agreed, profile).contains(C::SSL));
 }

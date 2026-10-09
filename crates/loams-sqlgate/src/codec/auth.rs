@@ -107,9 +107,9 @@ pub fn verify_caching_sha2(cached: &[u8; 32], nonce: &[u8], scramble: &[u8]) -> 
 /// The gate's upstream login (Task 4): the auth response for `plugin`,
 /// as a [`Password`] (redacted, zeroed on drop).
 /// - `caching_sha2_password` scrambles.
-/// - `mysql_clear_password` sends the secret NUL-terminated, over TLS only
-///   (the caller's duty). `tidb_auth_token` users (R2.12) get it this way:
-///   TiDB answers the `HandshakeResponse41` with an `AuthSwitchRequest` to
+/// - `mysql_clear_password` sends the secret NUL-terminated, and only when
+///   `tls` is true; otherwise [`AuthError::SecureTransportRequired`]
+///   (R3.16). `tidb_auth_token` users (R2.12) get it this way: TiDB answers the `HandshakeResponse41` with an `AuthSwitchRequest` to
 ///   `mysql_clear_password`, and the JWT travels in the auth-switch
 ///   response, a raw packet with no 255-byte limit. TiDB v8.5.8 does not
 ///   offer `CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA`, so a JWT never fits the
@@ -118,20 +118,29 @@ pub fn client_auth_response(
     plugin: &str,
     password: &Password,
     nonce: &[u8],
+    tls: bool,
 ) -> Result<Password, AuthError> {
     match plugin {
         CACHING_SHA2 => Ok(Password::new(scramble_caching_sha2(
             password.expose(),
             nonce,
         ))),
-        CLEAR => {
-            let mut v = Vec::with_capacity(password.expose().len() + 1);
-            v.extend_from_slice(password.expose());
-            v.push(0);
-            Ok(Password::new(v))
-        }
+        CLEAR => client_full_auth_reply(password, tls),
         _ => Err(AuthError::UnsupportedPlugin),
     }
+}
+
+/// The gate's upstream reply to `AuthMoreData::PerformFullAuthentication`
+/// (or to a `mysql_clear_password` switch): the secret NUL-terminated.
+/// Refused without TLS (R3.16): the gate never sends a secret in clear.
+pub fn client_full_auth_reply(password: &Password, tls: bool) -> Result<Password, AuthError> {
+    if !tls {
+        return Err(AuthError::SecureTransportRequired);
+    }
+    let mut v = Vec::with_capacity(password.expose().len() + 1);
+    v.extend_from_slice(password.expose());
+    v.push(0);
+    Ok(Password::new(v))
 }
 
 /// `AuthSwitchRequest` (`0xFE`, plugin name, plugin data).

@@ -220,10 +220,12 @@ pub const GATE_OWN_UPSTREAM: Capabilities = Capabilities(
 /// The capabilities the gate sends TiDB for a client that agreed to
 /// `agreed`: the client's relay-sensitive flags (so result framing matches
 /// on both legs) plus [`GATE_OWN_UPSTREAM`], limited to TiDB's `profile`.
-/// Nothing else of the client's reaches TiDB; a plaintext loopback client
-/// still gets TLS upstream.
+/// Nothing else of the client's reaches TiDB; `CLIENT_SSL` is always set,
+/// so a plaintext loopback client still gets TLS upstream (R3.16).
 pub fn upstream_capabilities(agreed: Capabilities, profile: Capabilities) -> Capabilities {
-    (agreed.intersect(RELAY_SENSITIVE) | GATE_OWN_UPSTREAM).intersect(profile)
+    // SSL is always asked for, whatever the profile says (R3.16): the gate
+    // never logs in to TiDB without TLS.
+    (agreed.intersect(RELAY_SENSITIVE) | GATE_OWN_UPSTREAM).intersect(profile) | Capabilities::SSL
 }
 
 /// A 20-byte authentication nonce, every byte in `1..=127` (it is sent

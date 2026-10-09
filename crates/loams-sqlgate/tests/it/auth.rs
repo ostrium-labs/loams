@@ -1,7 +1,7 @@
 use loams_sqlgate::codec::auth::{
     Action, AuthError, AuthMoreData, AuthSwitchRequest, CACHING_SHA2, CLEAR, CachingSha2Server,
-    NATIVE, Password, client_auth_response, double_sha256, scramble_caching_sha2,
-    verify_caching_sha2,
+    NATIVE, Password, client_auth_response, client_full_auth_reply, double_sha256,
+    scramble_caching_sha2, verify_caching_sha2,
 };
 use loams_sqlgate::codec::handshake::Nonce;
 
@@ -149,24 +149,29 @@ fn empty_password_is_denied() {
 fn client_side_responses() {
     let n = nonce();
     assert_eq!(
-        client_auth_response(CACHING_SHA2, &Password::new(b"pw".to_vec()), n.as_bytes())
-            .expect("sha2")
-            .expose(),
+        client_auth_response(
+            CACHING_SHA2,
+            &Password::new(b"pw".to_vec()),
+            n.as_bytes(),
+            true
+        )
+        .expect("sha2")
+        .expose(),
         scramble_caching_sha2(b"pw", n.as_bytes())
     );
     // mysql_clear_password (tidb_auth_token, R2.12) sends the secret with a
     // NUL. Responses are Passwords: redacted and zeroed on drop.
-    let r =
-        client_auth_response(CLEAR, &Password::new(b"jwt".to_vec()), n.as_bytes()).expect("clear");
+    let r = client_auth_response(CLEAR, &Password::new(b"jwt".to_vec()), n.as_bytes(), true)
+        .expect("clear");
     assert_eq!(format!("{r:?}"), "[redacted]");
     assert_eq!(
-        client_auth_response(CLEAR, &Password::new(b"jwt".to_vec()), n.as_bytes())
+        client_auth_response(CLEAR, &Password::new(b"jwt".to_vec()), n.as_bytes(), true)
             .expect("clear")
             .expose(),
         b"jwt\0"
     );
     assert!(
-        client_auth_response(CACHING_SHA2, &Password::new(Vec::new()), n.as_bytes())
+        client_auth_response(CACHING_SHA2, &Password::new(Vec::new()), n.as_bytes(), true)
             .expect("empty")
             .expose()
             .is_empty()
@@ -175,7 +180,8 @@ fn client_side_responses() {
         client_auth_response(
             "mysql_old_password",
             &Password::new(b"x".to_vec()),
-            n.as_bytes()
+            n.as_bytes(),
+            true
         )
         .is_err()
     );
@@ -214,7 +220,8 @@ fn tidb_auth_token_jwt_travels_in_the_switch_response() {
     let decoded = AuthSwitchRequest::decode(&switch.encode()).expect("switch");
     assert_eq!(decoded.plugin, CLEAR);
     let jwt = vec![b'e'; 2048];
-    let response = client_auth_response(CLEAR, &Password::new(jwt.clone()), &[]).expect("clear");
+    let response =
+        client_auth_response(CLEAR, &Password::new(jwt.clone()), &[], true).expect("clear");
     assert_eq!(response.expose().len(), 2049);
     let mut seq = 3;
     let mut framed = Vec::new();
@@ -268,4 +275,29 @@ fn actions_print_no_secret() {
         password: Password::new(b"hunter2".to_vec()),
     };
     assert!(!format!("{a:?}").contains("hunter2"));
+}
+
+/// R3.16: the gate never sends a secret to TiDB in clear: cleartext auth
+/// (the token, or the reply to `0x01 0x04`) without TLS is refused.
+#[test]
+fn upstream_cleartext_requires_tls() {
+    let n = nonce();
+    let jwt = Password::new(b"eyJ.token".to_vec());
+    assert_eq!(
+        client_auth_response(CLEAR, &jwt, n.as_bytes(), false),
+        Err(AuthError::SecureTransportRequired)
+    );
+    assert!(client_auth_response(CLEAR, &jwt, n.as_bytes(), true).is_ok());
+    // A scramble reveals no secret: allowed either way.
+    assert!(client_auth_response(CACHING_SHA2, &jwt, n.as_bytes(), false).is_ok());
+    // The reply to perform-full-authentication.
+    let pw = Password::new(b"pw".to_vec());
+    assert_eq!(
+        client_full_auth_reply(&pw, false),
+        Err(AuthError::SecureTransportRequired)
+    );
+    assert_eq!(
+        client_full_auth_reply(&pw, true).expect("tls").expose(),
+        b"pw\0"
+    );
 }
