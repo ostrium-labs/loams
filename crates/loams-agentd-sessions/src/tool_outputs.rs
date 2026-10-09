@@ -15,6 +15,7 @@
 //! count body bytes after it. Reads are paged: one read returns at most
 //! [`TOOL_OUTPUT_MAX_FRAME`] bytes.
 
+use std::collections::HashSet;
 use std::io::{Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -90,6 +91,10 @@ struct State {
     limits: ToolOutputLimits,
     /// Bytes on disk; `None` until the first write scans the store.
     used: Option<u64>,
+    /// Chats deleted in this process. A write still queued for one of them
+    /// (the run's last tool result racing DeleteChat) is dropped instead of
+    /// recreating the chat's directory.
+    deleted: HashSet<String>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -103,6 +108,7 @@ impl ToolOutputs {
             state: Arc::new(Mutex::new(State {
                 limits: ToolOutputLimits::default(),
                 used: None,
+                deleted: HashSet::new(),
             })),
         }
     }
@@ -128,6 +134,9 @@ impl ToolOutputs {
             .transpose()
             .map_err(|e| EngineError::Other(format!("diff encode: {e}")))?;
         let mut state = lock(&self.state);
+        if state.deleted.contains(chat_id) {
+            return Ok(());
+        }
         let mut used = match state.used {
             Some(used) => used,
             None => self.files().iter().map(|f| f.len).sum(),
@@ -254,6 +263,7 @@ impl ToolOutputs {
             return;
         }
         let mut state = lock(&self.state);
+        state.deleted.insert(chat_id.to_string());
         let dir = self.root.join(chat_id);
         if let Err(error) = std::fs::remove_dir_all(&dir)
             && error.kind() != std::io::ErrorKind::NotFound
@@ -698,5 +708,16 @@ mod tests {
         let stored: loams_agentd_proto::ToolDiff =
             serde_json::from_str(&whole(&outputs, "chat-1/x.diff")).expect("json");
         assert_eq!(stored, diff);
+    }
+
+    #[test]
+    fn a_write_after_the_chat_is_deleted_stores_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outputs = ToolOutputs::new(dir.path().to_path_buf());
+        outputs.write("chat-1", &output("p1", "before"));
+        outputs.purge_chat("chat-1");
+        outputs.write("chat-1", &output("p2", "after"));
+        assert!(outputs.read("chat-1/p2", 0, None).is_err());
+        assert!(!dir.path().join("chat-1").exists());
     }
 }
