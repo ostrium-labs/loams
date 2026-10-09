@@ -14,6 +14,24 @@ pub(crate) fn refuse(code: ErrorCode, reason: &str, message: impl Into<String>) 
     ))
 }
 
+/// [`refuse`], with `metadata` in the `ErrorInfo` (a quota's name, D65).
+pub(crate) fn refuse_with(
+    code: ErrorCode,
+    reason: &str,
+    message: impl Into<String>,
+    metadata: &[(&str, &str)],
+) -> ConnectError {
+    let mut info = error_info(reason);
+    for (key, value) in metadata {
+        info.metadata
+            .insert((*key).to_string(), (*value).to_string());
+    }
+    ConnectError::new(code, message).with_detail(ErrorDetail::from_message(
+        "loams.errors.v1.ErrorInfo",
+        &info,
+    ))
+}
+
 pub(crate) fn error_info(reason: &str) -> ErrorInfo {
     ErrorInfo {
         reason: reason.to_owned(),
@@ -34,7 +52,10 @@ pub(crate) fn code_of(err: &GraphError) -> ErrorCode {
         | GraphError::InvalidValue(_)
         | GraphError::TransactionStatement
         | GraphError::UnboundedPath { .. }
-        | GraphError::TooComplex { .. } => ErrorCode::InvalidArgument,
+        | GraphError::TooComplex { .. }
+        | GraphError::OverLimit(_)
+        | GraphError::AllShortestPaths => ErrorCode::InvalidArgument,
+        GraphError::ResultTooLarge { .. } => ErrorCode::ResourceExhausted,
         GraphError::ReadOnly
         | GraphError::StatementNotAllowed {
             file_access: true, ..

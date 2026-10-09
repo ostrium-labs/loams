@@ -51,6 +51,9 @@ bytes.workspace = true
 tokio = { workspace = true, features = ["time", "rt", "sync"] }
 # `gr_<ULID>` graph ids (shared contract `GraphId`).
 ulid.workspace = true
+# `ExecuteStream`'s chunks, as the `connectrpc::ServiceStream` the handler answers (GR1 Task 6).
+# Already in the tree through `connectrpc`.
+futures.workspace = true
 
 [features]
 # `engine_panic_poisons_one_graph`: `cargo test -p loams-graph --features failpoints`.

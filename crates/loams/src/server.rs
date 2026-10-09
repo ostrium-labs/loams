@@ -309,16 +309,24 @@ pub struct GraphConfig {
     pub maintenance_every: Duration,
     /// The cap on graph statements running at once in this process (`--graph-statement-slots`;
     /// default twice the cores, at most 32). Past it a statement is refused with
-    /// `RESOURCE_EXHAUSTED` (an interim cap until Task 6's per-graph pool).
+    /// `RESOURCE_EXHAUSTED`. It also sizes the statement pool (GR1 Task 6).
     pub statement_slots: usize,
+    /// The cap on one namespace's graph statements at once (config only; default 64, §48
+    /// §13.2). Past it a statement is refused with `RESOURCE_EXHAUSTED`/`quota_exceeded`.
+    pub namespace_statements: usize,
+    /// The server's per-statement limits (config only; §48 §13.1's defaults, each capped at
+    /// its maximum). A graph's own `GraphLimits` apply on top (GR1 Task 6).
+    pub limits: loams_graph::limits::StatementLimits,
     /// Grafeo's own statement time limit (`--graph-query-timeout-ms`; default 30 s, at most
     /// 300 s). A backstop only: Grafeo checks it between pipeline chunks of a statement without
-    /// parameters, so a statement inside one long operator runs on (R0.8).
+    /// parameters, so a statement inside one long operator runs on (R0.8). It is also the
+    /// largest deadline a request may ask for (R0.8 (a), GR1 Task 6); Loams's own deadline
+    /// answers the client at the request's limit either way.
     pub query_timeout: Duration,
     /// How long the shutdown phase `graph` waits for running statements (config only; default
     /// 10 s), and again for a maintenance pass in progress. A statement still running then is
-    /// detached: its graph stays open and the process exit waits for its blocking thread, which
-    /// nothing can stop before Task 26's watchdog (R0.8).
+    /// detached: its graph stays open until it ends or the process exits (it runs on a
+    /// statement pool thread, which the exit does not wait for; GR1 Task 6, R6.5).
     pub shutdown_wait: Duration,
 }
 
@@ -334,6 +342,8 @@ impl GraphConfig {
             sweep_grace: loams_graph::catalog::DOCUMENT_GRACE,
             maintenance_every: Duration::from_secs(600),
             statement_slots: loams_graph::service::admin::default_statement_slots(),
+            namespace_statements: loams_graph::limits::DEFAULT_NAMESPACE_STATEMENTS,
+            limits: loams_graph::limits::StatementLimits::DEFAULT,
             query_timeout: loams_graph::engine::DEFAULT_QUERY_TIMEOUT,
             shutdown_wait: loams_graph::service::admin::DEFAULT_SHUTDOWN_WAIT,
         }
@@ -1017,11 +1027,14 @@ impl GraphRuntime {
             (Some(dir), _) => Engine::with_data_dir(dir),
             (None, _) => Engine::new(),
         }
-        .with_query_timeout(Some(config.query_timeout));
+        .with_query_timeout(Some(config.query_timeout))
+        .with_max_property_bytes(config.limits.max_property_bytes);
         let admin = Arc::new(
             GraphAdmin::new(Arc::new(engine), GraphCatalog::new(meta, store))
                 .with_retention_hold(config.retention_hold)
-                .with_statement_slots(config.statement_slots),
+                .with_statement_slots(config.statement_slots)
+                .with_namespace_statements(config.namespace_statements)
+                .with_limits(config.limits),
         );
         let stop = CancellationToken::new();
         let sweeps = Arc::new(std::sync::atomic::AtomicU64::new(0));

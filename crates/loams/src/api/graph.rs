@@ -11,8 +11,12 @@
 //! tell "not in this build" from a missing route, and reflection never lists a service no route
 //! answers.
 //!
-//! Not served yet, answered `not_implemented`: `ExecuteStream` (Task 6), and `RestoreGraph`,
-//! `ExportGraph`, `ImportGraph` (Task 29).
+//! A statement's deadline is the earlier of its own limit (`timeout_ms`, or the graph's) and the
+//! client's Connect timeout ([`GraphAdmin::for_call`](loams_graph::service::admin::GraphAdmin::for_call),
+//! GR1 Task 6).
+//!
+//! Not served yet, answered `not_implemented`: `RestoreGraph`, `ExportGraph`, `ImportGraph`
+//! (Task 29).
 
 use std::sync::Arc;
 
@@ -237,10 +241,15 @@ impl GraphAdminService for Served {
     }
     async fn get_schema(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, pb::GetSchemaRequest>,
     ) -> ServiceResult<pb::GraphSchema> {
-        Response::ok(self.admin.get_schema(request.to_owned_message()).await?)
+        Response::ok(
+            self.admin
+                .for_call(ctx.deadline())
+                .get_schema(request.to_owned_message())
+                .await?,
+        )
     }
     async fn restore_graph(
         &self,
@@ -275,31 +284,51 @@ impl GraphAdminService for Served {
 impl GraphService for Served {
     async fn execute(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, pb::ExecuteRequest>,
     ) -> ServiceResult<pb::ExecuteResponse> {
-        Response::ok(self.admin.execute(request.to_owned_message()).await?)
+        Response::ok(
+            self.admin
+                .for_call(ctx.deadline())
+                .execute(request.to_owned_message())
+                .await?,
+        )
     }
     async fn execute_batch(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, pb::ExecuteBatchRequest>,
     ) -> ServiceResult<pb::ExecuteBatchResponse> {
-        Response::ok(self.admin.execute_batch(request.to_owned_message()).await?)
+        Response::ok(
+            self.admin
+                .for_call(ctx.deadline())
+                .execute_batch(request.to_owned_message())
+                .await?,
+        )
     }
     async fn explain(
         &self,
-        _ctx: RequestContext,
+        ctx: RequestContext,
         request: ServiceRequest<'_, pb::ExplainRequest>,
     ) -> ServiceResult<pb::Plan> {
-        Response::ok(self.admin.explain(request.to_owned_message()).await?)
+        Response::ok(
+            self.admin
+                .for_call(ctx.deadline())
+                .explain(request.to_owned_message())
+                .await?,
+        )
     }
 
     async fn execute_stream(
         &self,
-        _ctx: RequestContext,
-        _request: ServiceRequest<'_, pb::ExecuteStreamRequest>,
+        ctx: RequestContext,
+        request: ServiceRequest<'_, pb::ExecuteStreamRequest>,
     ) -> ServiceResult<ServiceStream<pb::ResultChunk>> {
-        Err(not_implemented("loams.graph.v1.GraphService/ExecuteStream"))
+        Response::ok(
+            self.admin
+                .for_call(ctx.deadline())
+                .execute_stream(request.to_owned_message())
+                .await?,
+        )
     }
 }

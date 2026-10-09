@@ -365,6 +365,94 @@ async fn instance_advertises_graph_when_feature_on() {
     running.server.shutdown().await.expect("shutdown");
 }
 
+/// GR1 Task 6: `ExecuteStream` answers its rows in chunks over Connect, ending with an
+/// end-of-stream message and no error; `Explain` answers a plan; and the client's Connect timeout
+/// bounds a statement.
+#[cfg(feature = "graph")]
+#[tokio::test]
+async fn execute_stream_and_explain_reach_the_client() {
+    let running = Running::start().await;
+    let (status, graph) = running
+        .connect(
+            "/loams.graph.v1.GraphAdminService/CreateGraph",
+            &json!({"namespace": "acme", "name": "kg", "idempotencyKey": "k1"}),
+        )
+        .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{graph}");
+    let (status, messages) = running
+        .connect_stream(
+            "/loams.graph.v1.GraphService/ExecuteStream",
+            &json!({
+                "request": {"namespace": "acme", "graph": "kg",
+                            "statement": "UNWIND range(1, 2500) AS i RETURN i"},
+                "chunkRows": 1000
+            }),
+        )
+        .await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    let (end, chunks) = messages.split_last().expect("an end-of-stream message");
+    assert_eq!(end.0 & 0x02, 0x02, "the last frame ends the stream");
+    assert!(end.1.get("error").is_none(), "{}", end.1);
+    let rows: Vec<i64> = chunks
+        .iter()
+        .flat_map(|(_, chunk)| chunk["rows"].as_array().cloned().unwrap_or_default())
+        .map(|row| {
+            row["values"][0]["int64"]
+                .as_str()
+                .and_then(|n| n.parse().ok())
+                .expect("an int64")
+        })
+        .collect();
+    assert_eq!(chunks.len(), 3, "{chunks:?}");
+    assert_eq!(rows, (1..=2500).collect::<Vec<_>>());
+    assert_eq!(chunks[2].1["last"], true);
+
+    let (status, plan) = running
+        .connect(
+            "/loams.graph.v1.GraphService/Explain",
+            &json!({"namespace": "acme", "graph": "kg", "statement": "MATCH (n) RETURN n"}),
+        )
+        .await;
+    assert_eq!(status, reqwest::StatusCode::OK, "{plan}");
+    assert!(
+        plan["text"].as_str().is_some_and(|t| !t.is_empty()),
+        "{plan}"
+    );
+
+    // A cartesian aggregate the engine cannot interrupt, under a 300 ms Connect timeout.
+    let (status, _) = running
+        .connect(
+            "/loams.graph.v1.GraphService/Execute",
+            &json!({"namespace": "acme", "graph": "kg",
+                    "statement": "UNWIND range(1, 200) AS i INSERT (:T {i: i})"}),
+        )
+        .await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    let started = std::time::Instant::now();
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/loams.graph.v1.GraphService/Execute",
+            running.base
+        ))
+        .header("content-type", "application/json")
+        .header("connect-timeout-ms", "300")
+        .body(
+            json!({"namespace": "acme", "graph": "kg", "statement":
+                   "MATCH (a:T), (b:T), (c:T) WHERE a.i + b.i + c.i < 0 RETURN count(*)"})
+            .to_string(),
+        )
+        .send()
+        .await
+        .expect("call");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    let body: Value = response.json().await.expect("an error body");
+    assert_eq!(body["code"], "deadline_exceeded", "{body}");
+}
+
 /// One statement over each protocol the main port speaks: Connect JSON, gRPC (HTTP/2) and
 /// gRPC-Web (HTTP/1.1).
 #[cfg(feature = "graph")]

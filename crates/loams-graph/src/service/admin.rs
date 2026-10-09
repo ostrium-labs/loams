@@ -15,12 +15,15 @@ use connectrpc::{ConnectError, ErrorCode};
 use loams_proto::loams::graph::v1 as pb;
 use loams_proto::loams::operations::v1 as ops;
 
-use super::errors::{map_catalog, map_engine, refuse};
-use super::{data, engine_info};
+use super::errors::{map_catalog, map_engine, refuse, refuse_with};
+use super::{data, engine_info, stream};
 use crate::catalog::{
     CatalogError, CatalogState, GraphCatalog, GraphLimits, GraphMeta, GraphMode, NewGraph,
 };
 use crate::engine::{Engine, Graph, GraphState, OpenSpec};
+use crate::limits::{
+    DEFAULT_NAMESPACE_STATEMENTS, Detached, NamespaceSlots, StatementLimits, StatementPool, Watch,
+};
 
 /// How long a deleted graph's storage is kept before it is purged, by default.
 pub const DEFAULT_RETENTION_HOLD: Duration = Duration::from_secs(24 * 3600);
@@ -35,14 +38,19 @@ pub const MAX_STATEMENT_SLOTS: usize = 4096;
 pub const MAX_REPLICAS: u32 = 8;
 /// The longest idempotency key accepted (review M6).
 pub const MAX_IDEMPOTENCY_KEY: usize = 128;
-/// The server's per-statement maximums (§48 §13.1); a graph's limits are capped to them.
+/// The server's per-statement maximums (§48 §13.1, [`StatementLimits::MAXIMUM`]); a graph's
+/// limits are capped to them.
 pub const MAX_LIMITS: GraphLimits = GraphLimits {
-    timeout_ms: 300_000,
-    max_rows: 100_000,
-    max_result_bytes: 64 << 20,
+    timeout_ms: StatementLimits::MAXIMUM.timeout.as_millis() as u32,
+    max_rows: StatementLimits::MAXIMUM.max_rows,
+    max_result_bytes: StatementLimits::MAXIMUM.max_result_bytes,
     memory_bytes: 64 << 30,
-    max_path_hops: crate::classify::MAX_PATH_HOPS,
+    max_path_hops: StatementLimits::MAXIMUM.max_path_hops,
 };
+
+/// Pool workers beyond the statement slots, for opens that hold no slot (a direct
+/// [`GraphAdmin::open`]).
+const POOL_SPARE: usize = 2;
 
 fn check_replicas(replicas: u32) -> Result<(), ConnectError> {
     if replicas > MAX_REPLICAS {
@@ -78,11 +86,21 @@ pub struct GraphAdmin {
     engine: Arc<Engine>,
     catalog: GraphCatalog,
     retention_hold: Duration,
-    /// The process-wide cap on graph statements running at once (review fix 1, I1; an interim
-    /// cap until Task 6's per-graph pool). A permit is taken before the blocking work starts and
-    /// released when it ends, so a statement whose client went away still holds its slot.
+    /// The process-wide cap on graph statements running at once (review fix 1, I1). A permit is
+    /// taken before the graph opens and released when the statement's work ends, so a statement
+    /// whose client went away, or that ran past its deadline, still holds its slot.
     statements: Arc<tokio::sync::Semaphore>,
     statement_slots: usize,
+    /// The threads statements and opens run on (GR1 Task 6), sized to the slots.
+    pool: Arc<StatementPool>,
+    /// The server's statement limits; a graph's own are applied on top (GR1 Task 6).
+    limits: StatementLimits,
+    /// Statements of one namespace at once (§48 §13.2).
+    namespaces: Arc<NamespaceSlots>,
+    /// Statements running on past their deadline or their client (R0.8 (a)).
+    detached: Arc<Detached>,
+    /// The client's own deadline for the call this handle serves ([`GraphAdmin::for_call`]).
+    client_deadline: Option<std::time::Instant>,
     /// Set when [`GraphAdmin::shutdown`] starts: from then on no graph opens and no statement
     /// starts; each answers `UNAVAILABLE` (review fix 1, I3).
     closed: Arc<AtomicBool>,
@@ -97,6 +115,8 @@ impl std::fmt::Debug for GraphAdmin {
             .field("catalog", &self.catalog)
             .field("retention_hold", &self.retention_hold)
             .field("statement_slots", &self.statement_slots)
+            .field("limits", &self.limits)
+            .field("namespace_statements", &self.namespaces.per_namespace())
             .finish_non_exhaustive()
     }
 }
@@ -162,8 +182,8 @@ fn limits_to(limits: &GraphLimits) -> pb::GraphLimits {
     }
 }
 
-/// Runs blocking engine work (a disk open, a statement) on the blocking pool, off the async
-/// runtime (review M8; Task 6 replaces this with its statement pool).
+/// Runs blocking engine work (a close, a purge) on the blocking pool, off the async runtime
+/// (review M8). Opens and statements run on the statement pool ([`GraphAdmin::on_pool`]).
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, ConnectError> + Send + 'static,
 ) -> Result<T, ConnectError> {
@@ -214,6 +234,11 @@ impl GraphAdmin {
             retention_hold: DEFAULT_RETENTION_HOLD,
             statements: Arc::new(tokio::sync::Semaphore::new(statement_slots)),
             statement_slots,
+            pool: Arc::new(StatementPool::new(statement_slots + POOL_SPARE)),
+            limits: StatementLimits::DEFAULT,
+            namespaces: Arc::new(NamespaceSlots::new(DEFAULT_NAMESPACE_STATEMENTS)),
+            detached: Arc::default(),
+            client_deadline: None,
             closed: Arc::default(),
             #[cfg(feature = "test-hooks")]
             after_open_hook: Arc::default(),
@@ -234,7 +259,82 @@ impl GraphAdmin {
         let slots = slots.clamp(1, MAX_STATEMENT_SLOTS);
         self.statements = Arc::new(tokio::sync::Semaphore::new(slots));
         self.statement_slots = slots;
+        self.pool = Arc::new(StatementPool::new(slots + POOL_SPARE));
         self
+    }
+
+    /// The same admin with other server statement limits (each capped at
+    /// [`StatementLimits::MAXIMUM`]); a graph's own limits apply on top.
+    #[must_use]
+    pub fn with_limits(mut self, limits: StatementLimits) -> Self {
+        self.limits = limits.capped();
+        self
+    }
+
+    /// The server's statement limits.
+    #[must_use]
+    pub fn limits(&self) -> StatementLimits {
+        self.limits
+    }
+
+    /// The same admin with another cap on one namespace's statements at once (§48 §13.2;
+    /// default [`DEFAULT_NAMESPACE_STATEMENTS`]).
+    #[must_use]
+    pub fn with_namespace_statements(mut self, per_namespace: usize) -> Self {
+        self.namespaces = Arc::new(NamespaceSlots::new(per_namespace));
+        self
+    }
+
+    /// The cap on one namespace's statements at once.
+    #[must_use]
+    pub fn namespace_statements(&self) -> usize {
+        self.namespaces.per_namespace()
+    }
+
+    /// This admin for one call whose client set its own deadline (Connect's timeout header):
+    /// the call's statement ends at the earlier of that and its own limit.
+    #[must_use]
+    pub fn for_call(&self, client_deadline: Option<std::time::Instant>) -> Self {
+        Self {
+            client_deadline,
+            ..self.clone()
+        }
+    }
+
+    /// Statements running on past their deadline or their client, on every graph (R0.8 (a);
+    /// Task 27's `loams_graph_detached_statements`).
+    #[must_use]
+    pub fn detached_statements(&self) -> usize {
+        self.detached.total()
+    }
+
+    /// The largest deadline a request may ask for: [`StatementLimits::MAXIMUM`]'s, or the
+    /// engine's own `query_timeout` when that is lower, since the engine may end the statement
+    /// then anyway (R0.8 (a)).
+    fn timeout_ceiling(&self) -> Duration {
+        self.engine
+            .query_timeout()
+            .map_or(StatementLimits::MAXIMUM.timeout, |engine| {
+                engine.min(StatementLimits::MAXIMUM.timeout)
+            })
+    }
+
+    /// Runs `work` on the statement pool (GR1 Task 6): a statement, or a disk open.
+    async fn on_pool<T: Send + 'static>(
+        &self,
+        work: impl FnOnce() -> Result<T, ConnectError> + Send + 'static,
+    ) -> Result<T, ConnectError> {
+        match self.pool.run(work).await {
+            Ok(Ok(result)) => result,
+            _ => {
+                tracing::error!("a graph statement failed on its worker");
+                Err(refuse(
+                    ErrorCode::Internal,
+                    "internal",
+                    "internal error running the statement",
+                ))
+            }
+        }
     }
 
     /// The cap on statements running at once.
@@ -282,40 +382,105 @@ impl GraphAdmin {
         self.closed.load(Ordering::SeqCst)
     }
 
-    /// Runs `work` on a catalog graph holding a statement slot: the slot is taken before the
-    /// graph opens and the blocking work starts, and released only when that work ends, after
-    /// the graph handle is dropped.
+    /// Runs `work` on a catalog graph within its limits (GR1 Task 6).
     ///
-    /// The open and the work run as one spawned task that owns the slot (fix round 2), so a
-    /// client that disconnects while its graph opens (a disk open and WAL replay on the blocking
-    /// pool) cannot free the slot early: the slot is freed when the open, and the statement it
-    /// leads to, end.
+    /// 1. The graph's catalog record gives its limits, and the request's `timeout_ms` (or the
+    ///    graph's timeout) and the client's own deadline give the statement's deadline, counted
+    ///    from now.
+    /// 2. It takes a slot of its namespace (`quota_exceeded` when none is free, §48 §13.2), is
+    ///    refused when the graph already has `max_detached` statements running past their
+    ///    deadline, and takes a process slot (`resource_exhausted`). Nothing queues.
+    /// 3. The open and the work run as one spawned task on the statement pool that owns both
+    ///    slots, so a client that goes away cannot free them early (fix round 2): they are freed
+    ///    when the work ends.
+    /// 4. At the deadline the RPC answers `graph_statement_timeout`. Grafeo cannot stop the
+    ///    statement (R0.8), so it runs on, detached and counted, until it ends; a client that
+    ///    disconnects detaches it the same way.
     async fn on_graph<T: Send + 'static>(
         &self,
         namespace: &str,
         name: &str,
-        work: impl FnOnce(&Graph) -> Result<T, ConnectError> + Send + 'static,
+        timeout_ms: u32,
+        work: impl FnOnce(&Graph, &StatementLimits) -> Result<T, ConnectError> + Send + 'static,
     ) -> Result<T, ConnectError> {
-        let slot = self.statement_slot()?;
-        let (admin, namespace, name) = (self.clone(), namespace.to_string(), name.to_string());
-        let task = tokio::spawn(async move {
-            let graph = admin.open(&namespace, &name).await?;
-            blocking(move || {
-                let result = work(&graph);
-                drop(graph);
-                drop(slot);
-                result
-            })
+        let started = tokio::time::Instant::now();
+        if self.is_shutting_down() {
+            return Err(shutting_down());
+        }
+        let meta = self
+            .catalog
+            .get_by_name(namespace, name)
             .await
-        });
-        task.await.unwrap_or_else(|err| {
-            tracing::error!(error = %err, "a graph statement task failed");
-            Err(refuse(
-                ErrorCode::Internal,
-                "internal",
-                "internal error running the statement",
-            ))
-        })
+            .map_err(map_catalog)?;
+        let limits = self.limits.for_graph(&meta.limits);
+        let timeout = limits.timeout_for(timeout_ms, self.timeout_ceiling());
+        let mut deadline = started + timeout;
+        if let Some(client) = self.client_deadline {
+            deadline = deadline.min(tokio::time::Instant::from_std(client));
+        }
+        let namespace_slot = self.namespaces.try_acquire(namespace).ok_or_else(|| {
+            refuse_with(
+                ErrorCode::ResourceExhausted,
+                "quota_exceeded",
+                format!(
+                    "namespace {namespace} already runs {} graph statements at once; retry",
+                    self.namespaces.per_namespace()
+                ),
+                &[("quota", "concurrent_statements")],
+            )
+        })?;
+        let detached = self.detached.of(namespace, name);
+        if detached >= limits.max_detached {
+            return Err(refuse(
+                ErrorCode::ResourceExhausted,
+                "resource_exhausted",
+                format!(
+                    "graph {namespace}/{name} has {detached} statements still running past their \
+                     deadline; retry when they end"
+                ),
+            ));
+        }
+        let slot = self.statement_slot()?;
+        let watch = Watch::new(Arc::clone(&self.detached), namespace, name);
+        let task = {
+            let admin = self.clone();
+            let watch = watch.clone();
+            tokio::spawn(async move {
+                // Settles the detached count however the task ends.
+                let _finished = Finished(watch);
+                let _slots = (slot, namespace_slot);
+                let graph = admin.open_meta(&meta).await?;
+                admin
+                    .on_pool(move || {
+                        let result = work(&graph, &limits);
+                        drop(graph);
+                        result
+                    })
+                    .await
+            })
+        };
+        // Dropped when this call ends, however it ends: a call whose client went away (this
+        // future dropped) or that timed out leaves the statement detached.
+        let _waiting = Waiting(watch);
+        match tokio::time::timeout_at(deadline, task).await {
+            Ok(joined) => joined.unwrap_or_else(|err| {
+                tracing::error!(error = %err, "a graph statement task failed");
+                Err(refuse(
+                    ErrorCode::Internal,
+                    "internal",
+                    "internal error running the statement",
+                ))
+            }),
+            Err(_) => Err(refuse(
+                ErrorCode::DeadlineExceeded,
+                "graph_statement_timeout",
+                format!(
+                    "the statement ran past its {} ms deadline; it is detached and ends on its \
+                     own (Loams cannot stop a running graph statement yet)",
+                    deadline.saturating_duration_since(started).as_millis()
+                ),
+            )),
+        }
     }
 
     /// The engine.
@@ -401,7 +566,21 @@ impl GraphAdmin {
         if self.is_shutting_down() {
             return Err(shutting_down());
         }
-        let graph = self.open_catalog_graph(namespace, name).await?;
+        let meta = self
+            .catalog
+            .get_by_name(namespace, name)
+            .await
+            .map_err(map_catalog)?;
+        self.open_meta(&meta).await
+    }
+
+    /// [`GraphAdmin::open`] for a catalog record the caller has just read.
+    async fn open_meta(&self, meta: &GraphMeta) -> Result<Arc<Graph>, ConnectError> {
+        let (namespace, name) = (meta.namespace.as_str(), meta.name.as_str());
+        if self.is_shutting_down() {
+            return Err(shutting_down());
+        }
+        let graph = self.open_catalog_graph(meta).await?;
         // A shutdown that started while this graph opened may already have closed the others:
         // close this one too rather than leave it open (review fix 1, I3). A statement holds a
         // slot across its open, so shutdown waits for it; this covers any other caller.
@@ -422,17 +601,10 @@ impl GraphAdmin {
         Ok(graph)
     }
 
-    /// [`GraphAdmin::open`] without the shutdown checks.
-    async fn open_catalog_graph(
-        &self,
-        namespace: &str,
-        name: &str,
-    ) -> Result<Arc<Graph>, ConnectError> {
-        let meta = self
-            .catalog
-            .get_by_name(namespace, name)
-            .await
-            .map_err(map_catalog)?;
+    /// [`GraphAdmin::open_meta`] without the shutdown checks. Opens run on the statement pool
+    /// (Task 4 review M8, GR1 Task 6).
+    async fn open_catalog_graph(&self, meta: &GraphMeta) -> Result<Arc<Graph>, ConnectError> {
+        let (namespace, name) = (meta.namespace.as_str(), meta.name.as_str());
         let id = meta.graph_id().map_err(map_catalog)?;
         // Already open with this id: the one up-to-date catalog read above (a pointer read; the
         // document is cached by pointer version) is the whole cost of a statement, and a delete
@@ -445,7 +617,9 @@ impl GraphAdmin {
                 return Ok(graph);
             }
             let engine = Arc::clone(&self.engine);
-            return blocking(move || engine.reopen_if_poisoned(graph).map_err(map_engine)).await;
+            return self
+                .on_pool(move || engine.reopen_if_poisoned(graph).map_err(map_engine))
+                .await;
         }
         for _ in 0..2 {
             let graph = {
@@ -454,7 +628,7 @@ impl GraphAdmin {
                     namespace.to_string(),
                     name.to_string(),
                 );
-                blocking(move || {
+                self.on_pool(move || {
                     Graph::open_or_existing(&engine, &ns, &nm, || {
                         OpenSpec::for_catalog(&engine, id)
                     })
@@ -490,7 +664,8 @@ impl GraphAdmin {
                     });
                 }
                 let engine = Arc::clone(&self.engine);
-                return blocking(move || engine.reopen_if_poisoned(graph).map_err(map_engine))
+                return self
+                    .on_pool(move || engine.reopen_if_poisoned(graph).map_err(map_engine))
                     .await;
             }
             // An older graph of this name is still open: close it and open this one.
@@ -732,7 +907,7 @@ impl GraphAdmin {
         req: pb::GetSchemaRequest,
     ) -> Result<pb::GraphSchema, ConnectError> {
         let summary = self
-            .on_graph(&req.namespace, &req.name, |graph| {
+            .on_graph(&req.namespace, &req.name, 0, |graph, _| {
                 graph.schema().map_err(map_engine)
             })
             .await?;
@@ -779,9 +954,40 @@ impl GraphAdmin {
         &self,
         req: pb::ExecuteRequest,
     ) -> Result<pb::ExecuteResponse, ConnectError> {
-        let (namespace, name) = (req.namespace.clone(), req.graph.clone());
-        self.on_graph(&namespace, &name, move |graph| data::execute_on(graph, req))
-            .await
+        let (namespace, name, timeout) = (req.namespace.clone(), req.graph.clone(), req.timeout_ms);
+        self.on_graph(&namespace, &name, timeout, move |graph, limits| {
+            data::execute_on(graph, req, limits)
+        })
+        .await
+    }
+
+    /// `ExecuteStream` on a catalog graph: every row of the statement, in chunks of at most
+    /// 1 000 rows (or `chunk_rows`) and 1 MiB (GR1 Task 6). The request's `max_rows` caps the
+    /// whole stream (0: no cap); the unary row and byte limits do not apply. The statement runs
+    /// to its end, within its deadline, before the first chunk (R6.3).
+    ///
+    /// # Errors
+    ///
+    /// As [`GraphAdmin::execute`], before any chunk.
+    pub async fn execute_stream(
+        &self,
+        req: pb::ExecuteStreamRequest,
+    ) -> Result<connectrpc::ServiceStream<pb::ResultChunk>, ConnectError> {
+        let request = req.request.as_option().cloned().unwrap_or_default();
+        let (namespace, name, timeout) = (
+            request.namespace.clone(),
+            request.graph.clone(),
+            request.timeout_ms,
+        );
+        let max_rows = (request.max_rows > 0).then_some(request.max_rows as usize);
+        let result = self
+            .on_graph(&namespace, &name, timeout, move |graph, limits| {
+                data::run_statement(graph, &request, limits, max_rows)
+            })
+            .await?;
+        Ok(Box::pin(futures::stream::iter(
+            stream::Chunks::new(result, req.chunk_rows).map(Ok),
+        )))
     }
 
     /// `ExecuteBatch` on a catalog graph, opening it lazily.
@@ -793,9 +999,9 @@ impl GraphAdmin {
         &self,
         req: pb::ExecuteBatchRequest,
     ) -> Result<pb::ExecuteBatchResponse, ConnectError> {
-        let (namespace, name) = (req.namespace.clone(), req.graph.clone());
-        self.on_graph(&namespace, &name, move |graph| {
-            data::execute_batch_on(graph, req)
+        let (namespace, name, timeout) = (req.namespace.clone(), req.graph.clone(), req.timeout_ms);
+        self.on_graph(&namespace, &name, timeout, move |graph, limits| {
+            data::execute_batch_on(graph, req, limits)
         })
         .await
     }
@@ -806,9 +1012,11 @@ impl GraphAdmin {
     ///
     /// As [`data::explain`].
     pub async fn explain(&self, req: pb::ExplainRequest) -> Result<pb::Plan, ConnectError> {
-        let (namespace, name) = (req.namespace.clone(), req.graph.clone());
-        self.on_graph(&namespace, &name, move |graph| data::explain_on(graph, req))
-            .await
+        let (namespace, name, timeout) = (req.namespace.clone(), req.graph.clone(), req.timeout_ms);
+        self.on_graph(&namespace, &name, timeout, move |graph, limits| {
+            data::explain_on(graph, req, limits)
+        })
+        .await
     }
 
     /// Purges every deleted graph whose retention hold (`hold`, or the admin's own when `None`)
@@ -909,9 +1117,11 @@ impl GraphAdmin {
     /// so it stays registered in the engine until the engine itself drops (the last `Arc` of
     /// the engine and of the statement's handle). Grafeo's `Drop for GrafeoDB` calls the same
     /// `close` (WAL sync and checkpoint), so the data is flushed then, but a failure there is
-    /// only logged by Grafeo, not reported to Loams. Its blocking thread still delays the
-    /// process's exit, because the runtime waits for blocking work when it drops; Task 26's
-    /// watchdog is what bounds such a statement.
+    /// only logged by Grafeo, not reported to Loams. It runs on a statement pool thread, not
+    /// tokio's blocking pool, so it no longer delays the runtime's drop (GR1 Task 6, R6.5):
+    /// the process exits with it unfinished, and its transaction never commits (its client
+    /// was already answered with an error). Task 26's watchdog is what bounds such a statement
+    /// while the process runs.
     pub async fn shutdown(&self, wait: Duration) -> usize {
         self.closed.store(true, Ordering::SeqCst);
         let slots = u32::try_from(self.statement_slots).unwrap_or(u32::MAX);
@@ -927,7 +1137,7 @@ impl GraphAdmin {
             tracing::warn!(
                 running,
                 ?wait,
-                "graph statements still running at shutdown are detached; their graphs stay registered until the engine drops, and the process exit waits for them"
+                "graph statements still running at shutdown are detached; their graphs stay registered until the engine drops, and they end with the process"
             );
         }
         for graph in self.engine.list(None).unwrap_or_default() {
@@ -940,5 +1150,24 @@ impl GraphAdmin {
         }
         drop(drained);
         running
+    }
+}
+
+/// Held by a statement's task: settles its [`Watch`] when the task ends, however it ends.
+struct Finished(Watch);
+
+impl Drop for Finished {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
+}
+
+/// Held by the caller waiting for a statement: when the wait ends without the statement having
+/// ended (its deadline, or its client went away), the statement is detached.
+struct Waiting(Watch);
+
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        self.0.abandon();
     }
 }

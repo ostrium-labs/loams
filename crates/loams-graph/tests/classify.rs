@@ -365,23 +365,40 @@ fn read_only_refuses_lexer_and_call_payloads() {
     );
 }
 
-/// Security review M2: shortest-path searches have no hop bound Loams can check, so they are
-/// refused until Task 6 adds one.
+/// Security review M2, as Task 6 settles it (R6.4): a single shortest-path search is served
+/// (one breadth-first search per input row, bounded by the statement's deadline), and ALL
+/// SHORTEST, whose answer can grow exponentially with the graph, is refused by keyword and by
+/// plan, subqueries included.
 #[test]
-fn shortest_path_searches_are_refused() {
+fn shortest_path_searches_are_bounded() {
     let engine = Engine::new();
     let graph = Graph::open(&engine, "acme", "sp", OpenSpec::default()).expect("open");
+    // Admitted. (Grafeo 0.5.43 cannot `RETURN p` for a `shortestPath` path, "Variable 'p' not
+    // found in input", so these count.)
     for statement in [
-        "MATCH (a), (b) MATCH p = shortestPath((a)-[*]-(b)) RETURN p",
-        "MATCH (a), (b) MATCH p = allShortestPaths((a)-[*]-(b)) RETURN p",
-        "MATCH p = ANY SHORTEST (a)-[*]-(b) RETURN p",
-        "MATCH p = ALL SHORTEST (a)-[*]-(b) RETURN p",
-        "MATCH p = ANY SHORTEST (a)-[*1..3]-(b) RETURN p",
+        "MATCH (a), (b) MATCH p = shortestPath((a)-[*]-(b)) RETURN count(*)",
+        "MATCH p = ANY SHORTEST (a)-[*]-(b) RETURN count(*)",
+        "MATCH p = ANY SHORTEST (a)-[*1..3]-(b) RETURN count(*)",
         "MATCH (a) WHERE EXISTS { MATCH p = ANY SHORTEST (a)-[*]-(b) } RETURN a",
     ] {
+        graph.execute(statement, true).expect(statement);
+    }
+    for statement in [
+        "MATCH (a), (b) MATCH p = allShortestPaths((a)-[*]-(b)) RETURN p",
+        "MATCH p = ALL SHORTEST (a)-[*]-(b) RETURN p",
+        "MATCH (a) WHERE EXISTS { MATCH p = ALL SHORTEST (a)-[*]-(b) } RETURN a",
+        "MATCH (a) WHERE EXISTS { MATCH p = ALL\n  SHORTEST (a)-[*]-(b) } RETURN a",
+    ] {
         let err = graph.execute(statement, true).expect_err("refused");
+        assert_eq!(err, GraphError::AllShortestPaths, "{statement}");
         assert_eq!(err.reason(), "graph_unbounded_path", "{statement}: {err}");
     }
+    // The plan check alone, without the keyword: a `ShortestPath` operator with `all_paths`.
+    let err = loams_graph::classify::engine_classify(
+        "MATCH (a), (b) MATCH p = allShortestPaths((a)-[*]-(b)) RETURN p",
+    )
+    .expect_err("refused by plan");
+    assert_eq!(err, GraphError::AllShortestPaths);
 }
 
 /// Security review M7: GQL's own quantifier spellings are held to the same bound.
@@ -441,6 +458,12 @@ fn grafeo_debug_format_canary() {
     assert!(
         load.contains("LoadData("),
         "{CHANGED}: no `LoadData(` in {load}"
+    );
+    // GR1 Task 6 (R6.4): ALL SHORTEST is found by `all_paths: true` inside a subquery too.
+    let all = render("MATCH (a) WHERE EXISTS { MATCH p = ALL SHORTEST (a)-[*]-(b) } RETURN a");
+    assert!(
+        all.contains("ShortestPath(") && all.contains("all_paths: true"),
+        "{CHANGED}: no `ShortestPath(` with `all_paths: true` in {all}"
     );
 }
 

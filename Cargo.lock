@@ -7458,6 +7458,7 @@ dependencies = [
  "bytes",
  "connectrpc",
  "fail 0.5.1",
+ "futures",
  "grafeo",
  "grafeo-adapters",
  "grafeo-common",

@@ -25,13 +25,17 @@
 pub mod catalog;
 pub mod classify;
 pub mod engine;
+pub mod limits;
+pub mod redact;
 pub mod service;
 pub mod value;
 
 pub use classify::Access;
 pub use engine::{
-    BatchStatement, Engine, Graph, GraphError, GraphRow, GraphState, OpenSpec, SchemaSummary,
+    BatchStatement, Engine, ExplainedPlan, Graph, GraphError, GraphRow, GraphState, OpenSpec,
+    PlanNode, SchemaSummary,
 };
+pub use limits::StatementLimits;
 pub use service::GraphServiceImpl;
 
 /// The GQL standard this crate's surface targets: ISO/IEC 39075.

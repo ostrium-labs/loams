@@ -9,7 +9,6 @@
 //! * the catalog (versions, AIP-158 pages, `GetSchema`, deleting through an operation that purges
 //!   storage): Task 4. Until then `ListGraphs` answers every graph in one page and `DeleteGraph`
 //!   closes the graph and answers a finished operation with no id;
-//! * limits, `truncated`, `ExecuteStream` and `Explain`'s plan: Task 6;
 //! * consistency tokens, commit epochs, counters and idempotency: Tasks 11 and 15;
 //! * LINKED graphs: Task 17. Restore, export and import: Task 29.
 //!
@@ -23,6 +22,7 @@
 pub mod admin;
 pub mod data;
 pub(crate) mod errors;
+pub mod stream;
 
 use std::sync::Arc;
 

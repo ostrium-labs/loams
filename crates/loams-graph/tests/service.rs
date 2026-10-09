@@ -1587,7 +1587,17 @@ mod admin {
         .expect_err("past the time limit");
         assert_eq!(err.code, ErrorCode::DeadlineExceeded, "{err:?}");
         assert_eq!(reason(&err), "graph_statement_timeout");
-        assert_eq!(admin.statements_in_flight(), 0);
+        // Task 6: Loams's own deadline answers at the same 200 ms (the engine's time limit is
+        // also the largest a request may ask for); the engine then stops the statement itself,
+        // between chunks, and its slot frees.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        while admin.statements_in_flight() != 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the engine never stopped it"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 
     /// Waits until `admin` runs a statement.
@@ -1743,41 +1753,34 @@ mod admin {
     /// statement streaming rows runs past it while the same statement without parameters is
     /// stopped. When this fails, Grafeo bounds the parameterised path: route every statement
     /// through it again and drop `run_on_session`'s split.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn canary_query_timeout_does_not_stop_a_parameterised_statement() {
-        let fixture = Fixture::start().await;
-        let admin = GraphAdmin::new(
-            Arc::new(
-                Engine::with_data_dir(fixture.data_dir.path())
-                    .with_query_timeout(Some(Duration::from_millis(20))),
-            ),
-            GraphCatalog::new(fixture.meta.clone(), fixture.store.clone()),
-        );
-        graph_with_nodes(&admin, 80).await;
-        let err = admin
-            .execute(execute(
-                "acme",
-                "kg",
+    ///
+    /// Run on the engine directly: through `GraphAdmin`, Loams's own deadline (Task 6) would
+    /// answer both at the same 20 ms and hide what the engine does.
+    #[test]
+    fn canary_query_timeout_does_not_stop_a_parameterised_statement() {
+        let engine = Engine::new().with_query_timeout(Some(Duration::from_millis(20)));
+        let graph =
+            loams_graph::Graph::open(&engine, "acme", "kg", loams_graph::OpenSpec::default())
+                .expect("open");
+        graph
+            .execute("UNWIND range(1, 80) AS i INSERT (:T {i: i})", false)
+            .expect("insert");
+        let err = graph
+            .execute(
                 "MATCH (a:T), (b:T), (c:T) WHERE a.i > -1 RETURN a.i, b.i, c.i",
-            ))
-            .await
+                true,
+            )
             .expect_err("unparameterised: stopped");
-        assert_eq!(reason(&err), "graph_statement_timeout", "{err:?}");
+        assert_eq!(err.reason(), "graph_statement_timeout", "{err:?}");
         let started = std::time::Instant::now();
-        let answer = admin
-            .execute(execute_with(
-                "acme",
-                "kg",
+        let answer = graph
+            .execute_with_params(
                 "MATCH (a:T), (b:T), (c:T) WHERE a.i > $min RETURN a.i, b.i, c.i",
-                "min",
-                -1,
-            ))
-            .await
+                [("min".to_string(), grafeo::Value::Int64(-1))].into(),
+                true,
+            )
             .expect("parameterised: not stopped by query_timeout (Q679 still open)");
-        assert_eq!(
-            answer.rows.as_option().expect("rows").rows.len(),
-            80 * 80 * 80
-        );
+        assert_eq!(answer.rows.len(), 80 * 80 * 80);
         assert!(
             started.elapsed() > Duration::from_millis(20),
             "{:?}",

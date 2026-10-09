@@ -11,8 +11,8 @@ use loams_proto::loams::graph::v1 as pb;
 
 use super::errors::{code_of, error_info, map_engine, refuse};
 use super::find_serving;
-use crate::classify::{Access, gate};
-use crate::engine::{BatchStatement, Engine, GraphResult};
+use crate::engine::{BatchStatement, Engine, GraphError, GraphResult, PlanNode};
+use crate::limits::StatementLimits;
 use crate::value::{from_proto, to_proto};
 
 /// Refuses a query language this build does not have.
@@ -39,37 +39,82 @@ pub(crate) fn check_language(
     }
 }
 
-/// Converts an engine result into its protobuf row set.
-fn to_pb_rows(result: &GraphResult) -> pb::RowSet {
-    pb::RowSet {
-        columns: result.columns.clone(),
-        column_types: result.column_types.clone(),
-        rows: result
-            .rows
-            .iter()
-            .map(|row| pb::Row {
-                values: row.values.iter().map(to_proto).collect(),
-                ..Default::default()
-            })
-            .collect(),
+/// One engine row on the wire.
+pub(crate) fn to_pb_row(row: &crate::engine::GraphRow) -> pb::Row {
+    pb::Row {
+        values: row.values.iter().map(to_proto).collect(),
         ..Default::default()
     }
+}
+
+/// What a row adds to its message: its encoded length, plus at most 6 bytes of field tag and
+/// length prefix.
+pub(crate) fn row_bytes(row: &pb::Row) -> u64 {
+    use buffa::Message as _;
+    u64::from(row.try_encoded_len().unwrap_or(u32::MAX)) + 6
+}
+
+/// The bytes a unary answer may still carry (§48 §13.1's `max_result_bytes`), across every
+/// result of a batch.
+pub(crate) struct ByteBudget {
+    limit: u64,
+    used: u64,
+}
+
+impl ByteBudget {
+    pub(crate) fn new(limit: u64) -> Self {
+        Self { limit, used: 0 }
+    }
+
+    fn spend(&mut self, bytes: u64) -> Result<(), ConnectError> {
+        self.used = self.used.saturating_add(bytes);
+        if self.used > self.limit {
+            return Err(map_engine(GraphError::ResultTooLarge { limit: self.limit }));
+        }
+        Ok(())
+    }
+}
+
+/// Converts an engine result into its protobuf row set, within `budget`: the conversion stops
+/// with `graph_result_too_large` at the first row past it.
+fn to_pb_rows(result: &GraphResult, budget: &mut ByteBudget) -> Result<pb::RowSet, ConnectError> {
+    let mut rows = Vec::with_capacity(result.rows.len());
+    for row in &result.rows {
+        let row = to_pb_row(row);
+        budget.spend(row_bytes(&row))?;
+        rows.push(row);
+    }
+    Ok(pb::RowSet {
+        columns: result.columns.clone(),
+        column_types: result.column_types.clone(),
+        rows,
+        ..Default::default()
+    })
 }
 
 /// Fills one `ExecuteResponse` from an engine result. `counters`, the token and the commit epoch
 /// come with the durable write path (Task 11).
-fn to_pb_response(result: &GraphResult) -> pb::ExecuteResponse {
-    pb::ExecuteResponse {
-        rows: to_pb_rows(result).into(),
+fn to_pb_response(
+    result: &GraphResult,
+    budget: &mut ByteBudget,
+) -> Result<pb::ExecuteResponse, ConnectError> {
+    Ok(pb::ExecuteResponse {
+        rows: to_pb_rows(result, budget)?.into(),
+        truncated: result.truncated,
         elapsed_nanos: result.elapsed_nanos.unwrap_or_default(),
         ..Default::default()
-    }
+    })
 }
 
-/// Decodes a parameter map into the engine's values.
-fn to_parameters(
+/// Decodes a parameter map into the engine's values, refusing more than the limit allows before
+/// any is decoded.
+pub(crate) fn to_parameters(
     parameters: &::buffa::__private::HashMap<String, pb::Value>,
+    limits: &StatementLimits,
 ) -> Result<HashMap<String, grafeo::Value>, ConnectError> {
+    limits
+        .check_parameters(parameters.len())
+        .map_err(map_engine)?;
     parameters
         .iter()
         .map(|(name, value)| {
@@ -92,27 +137,37 @@ pub fn execute(
     req: pb::ExecuteRequest,
 ) -> Result<pb::ExecuteResponse, ConnectError> {
     let graph = find_serving(engine, &req.namespace, &req.graph)?;
-    execute_on(&graph, req)
+    execute_on(&graph, req, &StatementLimits::DEFAULT)
 }
 
 /// `Execute` on a graph the caller has already found and validated (review M1: the catalog path
-/// hands over the graph it checked, rather than having it looked up again by name).
+/// hands over the graph it checked, rather than having it looked up again by name), within the
+/// graph's limits: at most `max_rows` rows (`truncated` past them) and `max_result_bytes`
+/// (`graph_result_too_large`).
 pub fn execute_on(
     graph: &crate::engine::Graph,
     req: pb::ExecuteRequest,
+    limits: &StatementLimits,
 ) -> Result<pb::ExecuteResponse, ConnectError> {
+    let max_rows = limits.rows_for(req.max_rows) as usize;
+    let result = run_statement(graph, &req, limits, Some(max_rows))?;
+    to_pb_response(&result, &mut ByteBudget::new(limits.max_result_bytes))
+}
+
+/// Checks and runs one statement of an `ExecuteRequest`, keeping at most `max_rows` rows: what
+/// `Execute` and `ExecuteStream` share.
+pub(crate) fn run_statement(
+    graph: &crate::engine::Graph,
+    req: &pb::ExecuteRequest,
+    limits: &StatementLimits,
+    max_rows: Option<usize>,
+) -> Result<GraphResult, ConnectError> {
     check_language(req.language.as_known(), req.language)?;
-    let result = if req.parameters.is_empty() {
-        graph.execute(&req.statement, req.read_only)
-    } else {
-        graph.execute_with_params(
-            &req.statement,
-            to_parameters(&req.parameters)?,
-            req.read_only,
-        )
-    }
-    .map_err(map_engine)?;
-    Ok(to_pb_response(&result))
+    limits.check_statement(&req.statement).map_err(map_engine)?;
+    let parameters = to_parameters(&req.parameters, limits)?;
+    graph
+        .execute_within(&req.statement, parameters, req.read_only, limits, max_rows)
+        .map_err(map_engine)
 }
 
 /// `ExecuteBatch`: runs statements as one transaction (`atomic`) or one transaction each.
@@ -125,14 +180,25 @@ pub fn execute_batch(
     req: pb::ExecuteBatchRequest,
 ) -> Result<pb::ExecuteBatchResponse, ConnectError> {
     let graph = find_serving(engine, &req.namespace, &req.graph)?;
-    execute_batch_on(&graph, req)
+    execute_batch_on(&graph, req, &StatementLimits::DEFAULT)
 }
 
-/// `ExecuteBatch` on a graph the caller has already found and validated (review M1).
+/// `ExecuteBatch` on a graph the caller has already found and validated (review M1), within the
+/// graph's limits: at most `max_batch_statements` statements, each checked before any runs;
+/// each result cut at `max_rows`; and `max_result_bytes` across the whole answer.
 pub fn execute_batch_on(
     graph: &crate::engine::Graph,
     req: pb::ExecuteBatchRequest,
+    limits: &StatementLimits,
 ) -> Result<pb::ExecuteBatchResponse, ConnectError> {
+    limits
+        .check_batch(req.statements.len())
+        .map_err(map_engine)?;
+    for statement in &req.statements {
+        limits
+            .check_statement(&statement.statement)
+            .map_err(map_engine)?;
+    }
     // A statement's own language wins over the batch's (`Statement.language`); the batch's
     // applies to a statement that names none, and is checked when no statement names one (an
     // empty batch included) so a batch in a language this build lacks is still refused.
@@ -153,16 +219,23 @@ pub fn execute_batch_on(
         .map(|statement| {
             Ok(BatchStatement {
                 text: statement.statement.clone(),
-                parameters: to_parameters(&statement.parameters)?,
+                parameters: to_parameters(&statement.parameters, limits)?,
             })
         })
         .collect::<Result<Vec<_>, ConnectError>>()?;
+    let max_rows = limits.max_rows as usize;
     if req.atomic {
         // Grafeo's own transaction, not a Loams-side emulation. `commit_epoch` comes with the
         // write lane (Task 11, R0.5).
-        let results = graph.execute_batch(&statements).map_err(map_engine)?;
+        let results = graph
+            .execute_batch_within(&statements, limits, Some(max_rows))
+            .map_err(map_engine)?;
+        let mut budget = ByteBudget::new(limits.max_result_bytes);
         Ok(pb::ExecuteBatchResponse {
-            results: results.iter().map(to_pb_response).collect(),
+            results: results
+                .iter()
+                .map(|result| to_pb_response(result, &mut budget))
+                .collect::<Result<_, _>>()?,
             committed: true,
             committed_through: u32::try_from(results.len()).unwrap_or(u32::MAX),
             ..Default::default()
@@ -172,17 +245,41 @@ pub fn execute_batch_on(
         // batch and leaves its predecessors committed.
         let mut results = Vec::with_capacity(statements.len());
         let mut error = None;
+        let mut budget = ByteBudget::new(limits.max_result_bytes);
         for (index, statement) in statements.iter().enumerate() {
-            match graph.execute_with_params(&statement.text, statement.parameters.clone(), false) {
-                Ok(result) => results.push(to_pb_response(&result)),
+            match graph.execute_within(
+                &statement.text,
+                statement.parameters.clone(),
+                false,
+                limits,
+                Some(max_rows),
+            ) {
+                Ok(result) => match to_pb_response(&result, &mut budget) {
+                    Ok(response) => results.push(response),
+                    // This statement committed, but its answer does not fit: it is answered
+                    // without rows (`truncated`), and the batch stops here, so a retry from
+                    // `committed_through` repeats nothing.
+                    Err(_) => {
+                        results.push(pb::ExecuteResponse {
+                            rows: pb::RowSet {
+                                columns: result.columns.clone(),
+                                column_types: result.column_types.clone(),
+                                ..Default::default()
+                            }
+                            .into(),
+                            truncated: true,
+                            elapsed_nanos: result.elapsed_nanos.unwrap_or_default(),
+                            ..Default::default()
+                        });
+                        let err = GraphError::ResultTooLarge {
+                            limit: limits.max_result_bytes,
+                        };
+                        error = Some(statement_error(index, &err));
+                        break;
+                    }
+                },
                 Err(err) => {
-                    error = Some(pb::StatementError {
-                        index: u32::try_from(index).unwrap_or(u32::MAX),
-                        code: code_of(&err).as_str().to_string(),
-                        message: err.to_string(),
-                        info: error_info(err.reason()).into(),
-                        ..Default::default()
-                    });
+                    error = Some(statement_error(index, &err));
                     break;
                 }
             }
@@ -197,34 +294,73 @@ pub fn execute_batch_on(
     }
 }
 
+/// A non-atomic batch's failed statement.
+fn statement_error(index: usize, err: &GraphError) -> pb::StatementError {
+    pb::StatementError {
+        index: u32::try_from(index).unwrap_or(u32::MAX),
+        code: code_of(err).as_str().to_string(),
+        message: err.to_string(),
+        info: error_info(err.reason()).into(),
+        ..Default::default()
+    }
+}
+
 /// `Explain`: the plan of a statement, or its profile.
 ///
-/// The statement is gated like any other (file access, graph management and unbounded paths are
-/// refused). A PROFILE runs the statement, so one that writes is refused with `graph_read_only`
-/// before anything runs. The plan itself is Task 6's; until then a statement that passes is
-/// answered `not_implemented`.
+/// The statement is gated like any other (its limits, file access, graph management and
+/// unbounded paths are refused). An EXPLAIN plans without running, so a write's plan is
+/// answered. A PROFILE runs the statement, which must itself begin with `PROFILE` (Loams never
+/// rewrites a statement, D634); one that writes is refused with `graph_read_only` before anything
+/// runs.
 pub fn explain(engine: &Engine, req: pb::ExplainRequest) -> Result<pb::Plan, ConnectError> {
     let graph = find_serving(engine, &req.namespace, &req.graph)?;
-    explain_on(&graph, req)
+    explain_on(&graph, req, &StatementLimits::DEFAULT)
 }
 
 /// `Explain` on a graph the caller has already found and validated (review M1).
 pub fn explain_on(
-    _graph: &crate::engine::Graph,
+    graph: &crate::engine::Graph,
     req: pb::ExplainRequest,
+    limits: &StatementLimits,
 ) -> Result<pb::Plan, ConnectError> {
     check_language(req.language.as_known(), req.language)?;
-    let access = gate(&req.statement, pb::QueryLanguage::Gql).map_err(map_engine)?;
-    if req.profile && access != Access::Read {
-        return Err(refuse(
+    limits.check_statement(&req.statement).map_err(map_engine)?;
+    let plan = if req.profile {
+        let parameters = to_parameters(&req.parameters, limits)?;
+        graph.profile_within(&req.statement, parameters, limits)
+    } else {
+        graph.explain_within(&req.statement, limits)
+    }
+    .map_err(|err| match err {
+        // A PROFILE that writes: the refusal Task 2 named (`profile_refuses_a_write`).
+        GraphError::ReadOnly => refuse(
             ErrorCode::PermissionDenied,
             "graph_read_only",
             "PROFILE runs the statement, and this statement writes; use EXPLAIN for its plan",
-        ));
+        ),
+        err => map_engine(err),
+    })?;
+    Ok(pb::Plan {
+        root: to_pb_plan(&plan.root).into(),
+        text: plan.text,
+        ..Default::default()
+    })
+}
+
+fn to_pb_plan(node: &PlanNode) -> pb::PlanOperator {
+    let mut details = ::buffa::__private::HashMap::default();
+    if !node.label.is_empty() {
+        details.insert("label".to_string(), node.label.clone());
     }
-    Err(refuse(
-        ErrorCode::Unimplemented,
-        "not_implemented",
-        "loams.graph.v1.GraphService/Explain is not implemented yet (GR1 Task 6)",
-    ))
+    if !node.line.is_empty() {
+        details.insert("operator".to_string(), node.line.clone());
+    }
+    pb::PlanOperator {
+        name: node.name.clone(),
+        details,
+        children: node.children.iter().map(to_pb_plan).collect(),
+        rows: node.rows.unwrap_or_default(),
+        elapsed_nanos: node.elapsed_nanos.unwrap_or_default(),
+        ..Default::default()
+    }
 }

@@ -236,8 +236,8 @@ struct Native {
     #[arg(long)]
     graph_statement_slots: Option<usize>,
     /// Loams Graph: the engine's own statement time limit, a backstop (it
-    /// does not stop a statement inside one long operator) [default: 30000;
-    /// at most 300000].
+    /// does not stop a statement inside one long operator), and the largest
+    /// timeout a request may ask for [default: 30000; at most 300000].
     #[arg(long)]
     graph_query_timeout_ms: Option<u64>,
     /// Address of the Arrow Flight SQL listener [default: 127.0.0.1:8082

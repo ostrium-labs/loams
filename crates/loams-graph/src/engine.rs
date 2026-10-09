@@ -27,7 +27,8 @@ use std::time::Duration;
 use grafeo::{Error as GrafeoError, GrafeoDB, QueryResult, Value};
 use loams_proto::loams::graph::v1::QueryLanguage;
 
-use crate::classify::{Access, gate};
+use crate::classify::{Access, gate_within};
+use crate::limits::StatementLimits;
 use grafeo_common::types::PropertyKey;
 
 /// What this crate can be wrong about, all of it recoverable by the caller.
@@ -113,9 +114,26 @@ pub enum GraphError {
     /// The graph is poisoned by an earlier panic and has not been reopened yet.
     #[error("the graph is reloading after an engine failure; retry")]
     Reloading,
-    /// The engine's own `query_timeout` stopped the statement (the backstop, R0.8 (a)).
-    #[error("the statement ran past the graph engine's time limit")]
+    /// The statement ran past its time limit: Loams's deadline, or the engine's own
+    /// `query_timeout` backstop (R0.8 (a)).
+    #[error("the statement ran past its time limit")]
     StatementTimeout,
+    /// A statement, its parameters or a batch is over a limit (§48 §13.1, GR1 Task 6).
+    #[error("{0}")]
+    OverLimit(String),
+    /// A unary answer is larger than its byte limit (§48 §13.1, GR1 Task 6).
+    #[error(
+        "the answer is larger than {limit} bytes; use ExecuteStream, or ask for fewer rows or columns"
+    )]
+    ResultTooLarge {
+        /// The limit, in encoded bytes.
+        limit: u64,
+    },
+    /// An ALL SHORTEST search: its answer can grow exponentially with the graph (R6.4).
+    #[error(
+        "ALL SHORTEST path searches are not served: their answer can grow exponentially with the graph; use ANY SHORTEST"
+    )]
+    AllShortestPaths,
     /// An engine panic lost the graph and it cannot be reopened from storage (an in-memory graph,
     /// or a poisoned engine that would not close cleanly). It is never served again empty, so an
     /// acknowledged write is never silently lost (security review I2).
@@ -135,13 +153,15 @@ impl GraphError {
             | Self::EmptyStatement
             | Self::UnboundParameter { .. }
             | Self::InvalidValue(_)
-            | Self::TooComplex { .. } => "invalid_argument",
+            | Self::TooComplex { .. }
+            | Self::OverLimit(_) => "invalid_argument",
             Self::Conflict { .. } => "already_exists",
             Self::ReadOnly => "graph_read_only",
             Self::LanguageUnavailable(_) => "graph_language_disabled",
             Self::TransactionStatement => "graph_transaction_statement",
             Self::StatementNotAllowed { .. } => "graph_statement_not_allowed",
-            Self::UnboundedPath { .. } => "graph_unbounded_path",
+            Self::UnboundedPath { .. } | Self::AllShortestPaths => "graph_unbounded_path",
+            Self::ResultTooLarge { .. } => "graph_result_too_large",
             Self::EnginePanic | Self::Failed => "graph_engine_panic",
             Self::Reloading => "graph_reloading",
             Self::StatementTimeout => "graph_statement_timeout",
@@ -302,6 +322,9 @@ pub struct GraphResult {
     pub elapsed_nanos: Option<u64>,
     /// Rows the statement changed. Always `None` on Grafeo 0.5.43; see the table above.
     pub rows_affected: Option<u64>,
+    /// The engine answered more rows than the caller's cap; `rows` holds the first ones
+    /// (GR1 Task 6).
+    pub truncated: bool,
 }
 
 /// One graph, open in this process.
@@ -409,12 +432,7 @@ impl Graph {
         }
         #[cfg(feature = "test-hooks")]
         engine.open_hook.call(OpenPoint::BeforeOpen, name);
-        let fresh = Arc::new(Graph::open_db(
-            namespace,
-            name,
-            spec(),
-            engine.query_timeout,
-        )?);
+        let fresh = Arc::new(Graph::open_db(namespace, name, spec(), engine)?);
         let graph = {
             let mut graphs = engine
                 .graphs
@@ -449,14 +467,15 @@ impl Graph {
     /// Opens the engine for a spec. An embedded engine, so this is a directory and never a URL:
     /// there is no connection to make and nothing to authenticate (D634 (b)).
     ///
-    /// `query_timeout` is the engine's own statement time limit: a backstop only, because Grafeo
-    /// checks it between pipeline chunks, so it stops a statement that streams rows but not one
-    /// stuck in a single operator (a cartesian aggregate, an expand), which runs on (R0.8).
+    /// The engine's `query_timeout` is its own statement time limit: a backstop only, because
+    /// Grafeo checks it between pipeline chunks, so it stops a statement that streams rows but
+    /// not one stuck in a single operator (a cartesian aggregate, an expand), which runs on
+    /// (R0.8). Its `max_property_bytes` is Grafeo's `max_property_size` (§48 §13.1).
     fn open_db(
         namespace: &str,
         name: &str,
         spec: OpenSpec,
-        query_timeout: Option<Duration>,
+        engine: &Engine,
     ) -> Result<Graph, GraphError> {
         let config = match spec.database_file() {
             None => grafeo::Config::in_memory(),
@@ -473,10 +492,11 @@ impl Graph {
                 grafeo::Config::persistent(file)
             }
         };
-        let config = match query_timeout {
+        let config = match engine.query_timeout {
             Some(limit) => config.with_query_timeout(limit),
             None => config.without_query_timeout(),
-        };
+        }
+        .with_max_property_size(engine.max_property_bytes);
         let db = GrafeoDB::with_config(config).map_err(as_engine_error)?;
         Ok(Graph {
             namespace: namespace.to_string(),
@@ -620,10 +640,15 @@ impl Graph {
     /// a statement without parameters takes for the engine's time limit, runs it directly, with
     /// no Loams authorisation and outside CDC; the parameterised path is refused the same way so
     /// the answer does not depend on the bindings.
-    fn admit(&self, statement: &str, read_only: bool) -> Result<Access, GraphError> {
+    fn admit(
+        &self,
+        statement: &str,
+        read_only: bool,
+        limits: &StatementLimits,
+    ) -> Result<Access, GraphError> {
         #[cfg(feature = "failpoints")]
         fail::fail_point!("loams_graph::gate");
-        let access = gate(statement, QueryLanguage::Gql)?;
+        let access = gate_within(statement, QueryLanguage::Gql, limits)?;
         if access == Access::Admin {
             return Err(GraphError::StatementNotAllowed {
                 file_access: false,
@@ -694,11 +719,36 @@ impl Graph {
         parameters: HashMap<String, Value>,
         read_only: bool,
     ) -> Result<GraphResult, GraphError> {
+        self.execute_within(
+            statement,
+            parameters,
+            read_only,
+            &StatementLimits::DEFAULT,
+            None,
+        )
+    }
+
+    /// [`Graph::execute_with_params`] within a statement's limits (GR1 Task 6): its size,
+    /// parameters, operator chains and paths are checked before it runs, and at most `max_rows`
+    /// rows are kept (the rest are dropped before any path is resolved, and `truncated` is set).
+    ///
+    /// # Errors
+    ///
+    /// As [`Graph::execute_with_params`], and [`GraphError::OverLimit`].
+    pub fn execute_within(
+        &self,
+        statement: &str,
+        parameters: HashMap<String, Value>,
+        read_only: bool,
+        limits: &StatementLimits,
+        max_rows: Option<usize>,
+    ) -> Result<GraphResult, GraphError> {
+        limits.check_parameters(parameters.len())?;
         // The gate and the row building run inside the same panic containment as the engine
         // call (security review M5).
         self.call(|| {
-            let access = self.admit(statement, read_only)?;
-            self.run_engine(access, statement, parameters)
+            let access = self.admit(statement, read_only, limits)?;
+            self.run_engine(access, statement, parameters, max_rows)
         })
     }
 
@@ -709,11 +759,12 @@ impl Graph {
         access: Access,
         statement: &str,
         parameters: HashMap<String, Value>,
+        max_rows: Option<usize>,
     ) -> Result<GraphResult, GraphError> {
         let result = run_on_session(&self.session_for(access), statement, parameters)
             .map_err(as_engine_error)?;
         self.statements_executed.fetch_add(1, Ordering::Relaxed);
-        Ok(self.resolved(GraphResult::from(result)))
+        Ok(self.resolved(GraphResult::from_engine(result, max_rows)))
     }
 
     /// **Tests only** (feature `test-hooks`): runs a statement on Loams's own execution path with
@@ -727,7 +778,96 @@ impl Graph {
         statement: &str,
         parameters: HashMap<String, Value>,
     ) -> Result<GraphResult, GraphError> {
-        self.call(|| self.run_engine(access, statement, parameters))
+        self.call(|| self.run_engine(access, statement, parameters, None))
+    }
+
+    /// The plan of a statement, without running it (`Explain`, GR1 Task 6).
+    ///
+    /// The statement is gated like any other (its limits, file access, graph management,
+    /// unbounded paths), then translated, bound and optimised the way the engine's own `EXPLAIN`
+    /// does, from the caller's text as it is: nothing is prefixed to it (D634) and nothing runs,
+    /// so a write's plan is answered too.
+    ///
+    /// # Errors
+    ///
+    /// A refusal of [`crate::classify::gate_within`], or the engine's error.
+    pub fn explain_within(
+        &self,
+        statement: &str,
+        limits: &StatementLimits,
+    ) -> Result<ExplainedPlan, GraphError> {
+        use grafeo_engine::query::Optimizer;
+        use grafeo_engine::query::binder::Binder;
+        use grafeo_engine::query::translators::gql::{GqlTranslationResult, translate_full};
+        self.call(|| {
+            gate_within(statement, QueryLanguage::Gql, limits)?;
+            let plan = match translate_full(statement) {
+                Ok(GqlTranslationResult::Plan(plan)) => plan,
+                Ok(_) => {
+                    return Err(GraphError::Engine(
+                        "the statement is a command, not a query; it has no plan".to_string(),
+                    ));
+                }
+                Err(err) => return Err(GraphError::Engine(err.to_string())),
+            };
+            Binder::new().bind(&plan).map_err(as_engine_error)?;
+            let optimized = Optimizer::from_store(self.db.store())
+                .optimize(plan)
+                .map_err(as_engine_error)?;
+            Ok(ExplainedPlan {
+                text: optimized.root.explain_tree(),
+                root: plan_node(&optimized.root),
+            })
+        })
+    }
+
+    /// Runs a `PROFILE` statement and answers its plan with what each operator produced
+    /// (`Explain` with `profile`, GR1 Task 6).
+    ///
+    /// The caller's statement must itself be a `PROFILE`: Loams never adds the keyword (D634).
+    /// It runs as a read, so a statement that writes is refused with `graph_read_only` before
+    /// anything runs (Task 2).
+    ///
+    /// # Errors
+    ///
+    /// [`GraphError::InvalidValue`] without the keyword, [`GraphError::ReadOnly`] for a write, or
+    /// what [`Graph::execute_within`] answers.
+    pub fn profile_within(
+        &self,
+        statement: &str,
+        parameters: HashMap<String, Value>,
+        limits: &StatementLimits,
+    ) -> Result<ExplainedPlan, GraphError> {
+        use grafeo_engine::query::translators::gql::{GqlTranslationResult, translate_full};
+        // Its limits and refusals first, before the translation below parses it; a write is
+        // refused whether or not it says PROFILE (Task 2's `profile_refuses_a_write`).
+        if gate_within(statement, QueryLanguage::Gql, limits)? != Access::Read {
+            return Err(GraphError::ReadOnly);
+        }
+        let is_profile = crate::classify::on_big_stack(|| {
+            matches!(translate_full(statement), Ok(GqlTranslationResult::Plan(plan)) if plan.profile)
+        })
+        .unwrap_or(false);
+        if !is_profile {
+            return Err(GraphError::InvalidValue(
+                "a profile runs the statement as written: begin it with PROFILE (Loams does not \
+                 rewrite a statement, D634)"
+                    .to_string(),
+            ));
+        }
+        let result = self.execute_within(statement, parameters, true, limits, None)?;
+        let text = match result.rows.first().and_then(|row| row.values.first()) {
+            Some(Value::String(text)) => text.to_string(),
+            _ => {
+                return Err(GraphError::Engine(
+                    "the engine answered no profile".to_string(),
+                ));
+            }
+        };
+        Ok(ExplainedPlan {
+            root: parse_profile(&text),
+            text,
+        })
     }
 
     /// Runs statements as one engine transaction, so a write batch lands whole or not at all.
@@ -745,13 +885,33 @@ impl Graph {
         &self,
         statements: &[BatchStatement],
     ) -> Result<Vec<GraphResult>, GraphError> {
+        self.execute_batch_within(statements, &StatementLimits::DEFAULT, None)
+    }
+
+    /// [`Graph::execute_batch`] within a statement's limits (GR1 Task 6): the batch's length
+    /// and every statement are checked before any runs, and each result keeps at most
+    /// `max_rows` rows.
+    ///
+    /// # Errors
+    ///
+    /// As [`Graph::execute_batch`], and [`GraphError::OverLimit`].
+    pub fn execute_batch_within(
+        &self,
+        statements: &[BatchStatement],
+        limits: &StatementLimits,
+        max_rows: Option<usize>,
+    ) -> Result<Vec<GraphResult>, GraphError> {
+        limits.check_batch(statements.len())?;
+        for statement in statements {
+            limits.check_parameters(statement.parameters.len())?;
+        }
         // Gate, engine and row building all inside the panic containment (M5).
         self.call(|| {
             // Every statement is gated before any runs, so a refused one leaves nothing
             // half-applied.
             let mut access = Access::Read;
             for statement in statements {
-                access = access.max(self.admit(&statement.text, false)?);
+                access = access.max(self.admit(&statement.text, false, limits)?);
             }
             let mut session = self.session_for(access);
             session.begin_transaction().map_err(as_engine_error)?;
@@ -762,7 +922,7 @@ impl Graph {
                 match run_on_session(&session, &statement.text, bound) {
                     Ok(result) => {
                         self.statements_executed.fetch_add(1, Ordering::Relaxed);
-                        out.push(GraphResult::from(result));
+                        out.push(GraphResult::from_engine(result, max_rows));
                     }
                     Err(err) => {
                         // Nothing before the failure becomes durable, so a retry of the whole
@@ -898,6 +1058,106 @@ impl Graph {
     }
 }
 
+/// One operator of a statement's plan (`Explain`, GR1 Task 6).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlanNode {
+    /// The operator, for example `NodeScan`.
+    pub name: String,
+    /// What it works on, as the engine labels it (for example `n:Person`).
+    pub label: String,
+    /// The engine's one-line rendering of it.
+    pub line: String,
+    /// Its inputs.
+    pub children: Vec<PlanNode>,
+    /// PROFILE only: the rows it produced.
+    pub rows: Option<u64>,
+    /// PROFILE only: its own time, in nanoseconds.
+    pub elapsed_nanos: Option<u64>,
+}
+
+/// A statement's plan (`Explain`, GR1 Task 6).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExplainedPlan {
+    /// The operator tree.
+    pub root: PlanNode,
+    /// The engine's own rendering.
+    pub text: String,
+}
+
+/// A logical operator and its inputs, as a [`PlanNode`] tree.
+fn plan_node(op: &grafeo_engine::query::LogicalOperator) -> PlanNode {
+    let tree = op.explain_tree();
+    let line = tree.lines().next().unwrap_or_default().trim().to_string();
+    let name = line
+        .split([' ', '('])
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    PlanNode {
+        name,
+        label: op.display_label(),
+        line,
+        children: op.children().into_iter().map(plan_node).collect(),
+        rows: None,
+        elapsed_nanos: None,
+    }
+}
+
+/// Reads Grafeo 0.5.43's PROFILE text (`grafeo-engine` `query/profile.rs`): one line per
+/// operator, `{indent}{name} ({label})  rows={n}  time={ms}ms`, two spaces of indent per level,
+/// then a blank line and the total.
+fn parse_profile(text: &str) -> PlanNode {
+    let mut stack: Vec<(usize, PlanNode)> = Vec::new();
+    let mut roots = Vec::new();
+    let attach = |stack: &mut Vec<(usize, PlanNode)>, roots: &mut Vec<PlanNode>, node| match stack
+        .last_mut()
+    {
+        Some((_, parent)) => parent.children.push(node),
+        None => roots.push(node),
+    };
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            break;
+        }
+        let depth = (line.len() - line.trim_start().len()) / 2;
+        let body = line.trim();
+        let (head, stats) = body.rsplit_once("  rows=").unwrap_or((body, ""));
+        let (rows, time) = stats.split_once("  time=").unwrap_or((stats, ""));
+        let (name, label) = match head.split_once(" (") {
+            Some((name, rest)) => (name, rest.strip_suffix(')').unwrap_or(rest)),
+            None => (head, ""),
+        };
+        let node = PlanNode {
+            name: name.to_string(),
+            label: label.to_string(),
+            line: body.to_string(),
+            children: Vec::new(),
+            rows: rows.trim().parse().ok(),
+            elapsed_nanos: time
+                .trim()
+                .strip_suffix("ms")
+                .and_then(|ms| ms.parse::<f64>().ok())
+                .map(|ms| (ms * 1_000_000.0) as u64),
+        };
+        while stack.last().is_some_and(|(d, _)| *d >= depth) {
+            let (_, done) = stack.pop().expect("checked");
+            attach(&mut stack, &mut roots, done);
+        }
+        stack.push((depth, node));
+    }
+    while let Some((_, done)) = stack.pop() {
+        attach(&mut stack, &mut roots, done);
+    }
+    match roots.len() {
+        1 => roots.pop().expect("one root"),
+        _ => PlanNode {
+            name: "Profile".to_string(),
+            children: roots,
+            ..PlanNode::default()
+        },
+    }
+}
+
 /// The engine's own statement time limit (Grafeo's `query_timeout`), set on every graph as a
 /// backstop (R0.8 (a); §48 §13.1's 30 s default). Grafeo checks it between pipeline chunks only,
 /// so it ends a statement that streams rows but not one inside a single long operator; Task 6's
@@ -989,6 +1249,8 @@ pub struct Engine {
     opening: Mutex<HashMap<(String, String), Latch>>,
     /// The engine's own statement time limit for every graph it opens (R0.8 (a)), or `None`.
     query_timeout: Option<Duration>,
+    /// The largest property value a graph stores (Grafeo's `max_property_size`; §48 §13.1).
+    max_property_bytes: usize,
     #[cfg(feature = "test-hooks")]
     open_hook: OpenHookSlot,
     /// Where persistent graphs live: `<data_dir>/graphs/<graph_id>/`. `None` keeps every graph in
@@ -1014,6 +1276,7 @@ impl Engine {
             graphs: Mutex::new(HashMap::new()),
             opening: Mutex::new(HashMap::new()),
             query_timeout: Some(DEFAULT_QUERY_TIMEOUT),
+            max_property_bytes: StatementLimits::DEFAULT.max_property_bytes,
             #[cfg(feature = "test-hooks")]
             open_hook: OpenHookSlot::default(),
             data_dir: None,
@@ -1069,6 +1332,20 @@ impl Engine {
     pub fn with_query_timeout(mut self, limit: Option<Duration>) -> Self {
         self.query_timeout = limit;
         self
+    }
+
+    /// The same engine with another largest property value for the graphs it opens from now
+    /// on, within [`StatementLimits::MAXIMUM`] (§48 §13.1: default 1 MiB, at most 16 MiB).
+    #[must_use]
+    pub fn with_max_property_bytes(mut self, bytes: usize) -> Self {
+        self.max_property_bytes = bytes.clamp(1, StatementLimits::MAXIMUM.max_property_bytes);
+        self
+    }
+
+    /// The largest property value graphs are opened with.
+    #[must_use]
+    pub fn max_property_bytes(&self) -> usize {
+        self.max_property_bytes
     }
 
     /// The statement time limit graphs are opened with.
@@ -1138,7 +1415,7 @@ impl Engine {
             return Err(GraphError::Failed);
         }
         drop(old);
-        let fresh = Arc::new(Graph::open_db(&namespace, &name, spec, self.query_timeout)?);
+        let fresh = Arc::new(Graph::open_db(&namespace, &name, spec, self)?);
         graphs.insert(key, Arc::clone(&fresh));
         tracing::info!(%namespace, %name, "reopened a poisoned graph");
         Ok(fresh)
@@ -1284,34 +1561,42 @@ fn as_engine_error(err: GrafeoError) -> GraphError {
 /// Converts one engine result into Loams's shape.
 impl From<QueryResult> for GraphResult {
     fn from(result: QueryResult) -> Self {
-        // Read the engine's own counters before borrowing the rows: `rows_scanned` is set to the
+        Self::from_engine(result, None)
+    }
+}
+
+impl GraphResult {
+    /// Converts one engine result, keeping at most `max_rows` rows (GR1 Task 6). The rows are
+    /// moved, not copied, and the ones past the cap are dropped here, before any path in them is
+    /// resolved.
+    fn from_engine(result: QueryResult, max_rows: Option<usize>) -> Self {
+        // Read the engine's own counters before taking the rows: `rows_scanned` is set to the
         // number of rows *returned* (`session/mod.rs`), so it is a real measurement but not of rows
         // read from storage, and it is named here rather than at the call site.
         let rows_read = result.rows_scanned;
         let elapsed_nanos = result.execution_time_ms.map(|ms| (ms * 1_000_000.0) as u64);
-
-        let rows = result
-            .rows()
+        // `LogicalType`'s own rendering (`INT64`, `STRING`, `NODE`), which is a type *name*
+        // rather than a GQL type tag: the surface is GQL, not SQL.
+        let column_types = result
+            .column_types
             .iter()
-            .map(|row| GraphRow {
-                values: row.to_vec(),
-            })
+            .map(|ty| ty.to_string())
             .collect();
-
+        let columns = result.columns.clone();
+        let mut rows = result.into_rows();
+        let truncated = max_rows.is_some_and(|max| rows.len() > max);
+        if let Some(max) = max_rows {
+            rows.truncate(max);
+        }
         Self {
-            // `LogicalType`'s own rendering (`INT64`, `STRING`, `NODE`), which is a type *name*
-            // rather than a GQL type tag: the surface is GQL, not SQL.
-            column_types: result
-                .column_types
-                .iter()
-                .map(|ty| ty.to_string())
-                .collect(),
-            columns: result.columns.clone(),
-            rows,
+            column_types,
+            columns,
+            rows: rows.into_iter().map(|values| GraphRow { values }).collect(),
             rows_read,
             bytes_read: None,
             elapsed_nanos,
             rows_affected: None,
+            truncated,
         }
     }
 }

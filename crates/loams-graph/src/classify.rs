@@ -22,9 +22,10 @@ use grafeo_engine::query::translators::gql::{GqlTranslationResult, translate_ful
 use loams_proto::loams::graph::v1::QueryLanguage;
 
 use crate::engine::GraphError;
+use crate::limits::StatementLimits;
 
-/// The longest variable-length path a statement may ask for (R0.8 (b)). Task 6's
-/// `StatementLimits.max_path_hops` makes it per graph.
+/// The longest variable-length path a statement may ask for (R0.8 (b)): the default and the
+/// maximum of [`StatementLimits::max_path_hops`], which a graph may lower (GR1 Task 6).
 pub const MAX_PATH_HOPS: u32 = 10;
 
 /// What a statement needs, least to most. Ordered, so the stricter of two answers is `max`.
@@ -65,8 +66,18 @@ pub fn classify(statement: &str, _language: QueryLanguage) -> Access {
 ///   `SESSION SET GRAPH`, projections; one Loams graph is one Grafeo database's default graph,
 ///   R0.10 (b)) and for file access (`LOAD DATA` and the plan operators that load a graph; R0.11);
 /// * [`GraphError::UnboundedPath`] for a variable-length pattern with no upper bound or one above
-///   [`MAX_PATH_HOPS`] (R0.8 (b)).
+///   [`MAX_PATH_HOPS`] (R0.8 (b)), and [`GraphError::AllShortestPaths`] (R6.4).
 pub fn engine_classify(statement: &str) -> Result<Access, GraphError> {
+    engine_classify_within(statement, MAX_PATH_HOPS)
+}
+
+/// [`engine_classify`] with another bound on variable-length patterns (a graph's own
+/// `max_path_hops`, GR1 Task 6).
+///
+/// # Errors
+///
+/// As [`engine_classify`].
+pub fn engine_classify_within(statement: &str, max_hops: u32) -> Result<Access, GraphError> {
     // On a large stack: the parser recurses per operator-chain link (re-review 2c).
     let translated = on_big_stack(|| translate_full(statement))
         .map_err(|_| GraphError::Engine("the statement could not be parsed".to_string()))?
@@ -75,7 +86,7 @@ pub fn engine_classify(statement: &str) -> Result<Access, GraphError> {
         GqlTranslationResult::Plan(plan) => {
             // Rendered once, for both the plan check and the procedure-call test.
             let text = format!("{:?}", plan.root);
-            check_plan(&plan.root, &text)?;
+            check_plan(&plan.root, &text, max_hops)?;
             // A procedure can read or write, and nothing in the plan says which, so a call
             // anywhere in it (subqueries included, through the plan's `Debug` rendering) is at
             // least a write (security review I1).
@@ -105,15 +116,30 @@ pub fn engine_classify(statement: &str) -> Result<Access, GraphError> {
 ///
 /// [`GraphError::EmptyStatement`], or any refusal of [`engine_classify`] except a parse error.
 pub fn gate(statement: &str, language: QueryLanguage) -> Result<Access, GraphError> {
+    gate_within(statement, language, &StatementLimits::DEFAULT)
+}
+
+/// [`gate`] within a statement's limits (GR1 Task 6): its size, its operator chains and its
+/// variable-length patterns.
+///
+/// # Errors
+///
+/// As [`gate`], and [`GraphError::OverLimit`] for a statement over `max_statement_bytes`.
+pub fn gate_within(
+    statement: &str,
+    language: QueryLanguage,
+    limits: &StatementLimits,
+) -> Result<Access, GraphError> {
+    limits.check_statement(statement)?;
     if statement.trim().is_empty() {
         return Err(GraphError::EmptyStatement);
     }
     // Before anything parses it: a chain long enough to overflow the parser's stack is refused.
     let links = nesting_estimate(statement);
-    if links > MAX_CHAIN_TOKENS {
+    if links > limits.max_chain_tokens {
         return Err(GraphError::TooComplex {
             links,
-            limit: MAX_CHAIN_TOKENS,
+            limit: limits.max_chain_tokens,
         });
     }
     if names_file_access(&all_words(statement)) {
@@ -122,18 +148,19 @@ pub fn gate(statement: &str, language: QueryLanguage) -> Result<Access, GraphErr
             what: "LOAD reads server files".to_string(),
         });
     }
-    // Shortest-path searches have no hop bound Loams can check (Grafeo's `ShortestPathOp` has
-    // none): refused by keyword and by operator until Task 6 bounds them (security review M2).
-    if bare_words(statement)
-        .iter()
-        .any(|w| matches!(w.as_str(), "SHORTEST" | "SHORTESTPATH" | "ALLSHORTESTPATHS"))
+    // ALL SHORTEST answers one row per shortest path, and their number can grow exponentially
+    // with the graph: refused by keyword and by operator (R6.4). A single shortest path is
+    // served: one breadth-first search per input row, bounded by the statement's deadline.
+    let words = bare_words(statement);
+    if words.iter().any(|w| w == "ALLSHORTESTPATHS")
+        || words
+            .windows(2)
+            .any(|pair| pair[0] == "ALL" && pair[1] == "SHORTEST")
     {
-        return Err(GraphError::UnboundedPath {
-            max_hops: MAX_PATH_HOPS,
-        });
+        return Err(GraphError::AllShortestPaths);
     }
     let guard = classify(statement, language);
-    match engine_classify(statement) {
+    match engine_classify_within(statement, limits.max_path_hops) {
         Ok(engine) => Ok(guard.max(engine)),
         Err(GraphError::Engine(_)) => Ok(guard),
         Err(refused) => Err(refused),
@@ -184,8 +211,8 @@ fn session_command(command: &SessionCommand) -> Result<Access, GraphError> {
 /// `text` is `format!("{root:?}")`. The test `grafeo_debug_format_canary` pins that the rendering
 /// still names `ExistsSubquery(`, `CallProcedure(` and `max_hops: None`; a Grafeo bump (D759) that
 /// changes it fails that test before it can weaken this check.
-fn check_plan(root: &LogicalOperator, text: &str) -> Result<(), GraphError> {
-    check_operator(root)?;
+fn check_plan(root: &LogicalOperator, text: &str, max_hops: u32) -> Result<(), GraphError> {
+    check_operator(root, max_hops)?;
     if text.contains("LoadData(") || text.contains("LoadGraph(") {
         return Err(GraphError::StatementNotAllowed {
             file_access: true,
@@ -208,10 +235,9 @@ fn check_plan(root: &LogicalOperator, text: &str) -> Result<(), GraphError> {
             });
         }
     }
-    if text.contains("ShortestPath(") {
-        return Err(GraphError::UnboundedPath {
-            max_hops: MAX_PATH_HOPS,
-        });
+    // A `ShortestPathOp` prints `all_paths: true` for ALL SHORTEST (R6.4).
+    if text.contains("ShortestPath(") && text.contains("all_paths: true") {
+        return Err(GraphError::AllShortestPaths);
     }
     // Every `ExpandOp` prints `max_hops: None` or `max_hops: Some(<n>)`.
     for (at, _) in text.match_indices("max_hops: ") {
@@ -220,18 +246,16 @@ fn check_plan(root: &LogicalOperator, text: &str) -> Result<(), GraphError> {
             .strip_prefix("Some(")
             .and_then(|tail| tail.split(')').next())
             .and_then(|n| n.trim().parse::<u32>().ok())
-            .is_some_and(|max| max <= MAX_PATH_HOPS);
+            .is_some_and(|max| max <= max_hops);
         if !bounded {
-            return Err(GraphError::UnboundedPath {
-                max_hops: MAX_PATH_HOPS,
-            });
+            return Err(GraphError::UnboundedPath { max_hops });
         }
     }
     Ok(())
 }
 
 /// Walks a plan's operator tree for operators no caller may run.
-fn check_operator(operator: &LogicalOperator) -> Result<(), GraphError> {
+fn check_operator(operator: &LogicalOperator, max_hops: u32) -> Result<(), GraphError> {
     match operator {
         LogicalOperator::LoadData(_) | LogicalOperator::LoadGraph(_) => {
             return Err(GraphError::StatementNotAllowed {
@@ -252,22 +276,16 @@ fn check_operator(operator: &LogicalOperator) -> Result<(), GraphError> {
             });
         }
         LogicalOperator::Expand(expand) => match expand.max_hops {
-            None => {
-                return Err(GraphError::UnboundedPath {
-                    max_hops: MAX_PATH_HOPS,
-                });
-            }
-            Some(max) if max > MAX_PATH_HOPS => {
-                return Err(GraphError::UnboundedPath {
-                    max_hops: MAX_PATH_HOPS,
-                });
-            }
-            Some(_) => {}
+            Some(max) if max <= max_hops => {}
+            _ => return Err(GraphError::UnboundedPath { max_hops }),
         },
+        LogicalOperator::ShortestPath(search) if search.all_paths => {
+            return Err(GraphError::AllShortestPaths);
+        }
         _ => {}
     }
     for child in operator.children() {
-        check_operator(child)?;
+        check_operator(child, max_hops)?;
     }
     Ok(())
 }
@@ -350,29 +368,99 @@ pub(crate) fn bare_words(statement: &str) -> Vec<String> {
 /// [`bare_words`], and the number of operator characters outside strings and comments
 /// (`+ - * / % ^ < > = | [`), for [`nesting_estimate`].
 fn lex(statement: &str) -> (Vec<String>, usize) {
+    let chars: Vec<char> = statement.chars().collect();
     let mut operators = 0;
     let mut words = Vec::new();
-    let mut word = String::new();
-    let chars: Vec<char> = statement.chars().collect();
+    scan(&chars, |piece, range| match piece {
+        Piece::Word => words.push(chars[range].iter().flat_map(|c| c.to_uppercase()).collect()),
+        Piece::Other
+            if matches!(
+                chars[range.start],
+                '+' | '-' | '*' | '/' | '%' | '^' | '<' | '>' | '=' | '|' | '['
+            ) =>
+        {
+            operators += 1;
+        }
+        _ => {}
+    });
+    (words, operators)
+}
+
+/// Where a number literal starting at `i` ends, as Grafeo 0.5.43's `scan_number` reads it:
+/// `0x`/`0o`/`0b` with their digits, or digits, a fraction only when a digit follows the `.`
+/// (so `1..5` is two numbers), and an exponent with an optional sign. Letters after it start a
+/// word, so `3SET` is `3` and then `SET`, as the engine reads it.
+fn number_end(chars: &[char], mut i: usize) -> usize {
+    let at = |i: usize| chars.get(i).copied().unwrap_or('\0');
+    let digits = |mut i: usize, ok: fn(&char) -> bool| {
+        while chars.get(i).is_some_and(ok) {
+            i += 1;
+        }
+        i
+    };
+    if at(i) == '0' {
+        match at(i + 1) {
+            'x' | 'X' => return digits(i + 2, char::is_ascii_hexdigit),
+            'o' | 'O' => return digits(i + 2, |c| ('0'..='7').contains(c)),
+            'b' | 'B' => return digits(i + 2, |c| matches!(c, '0' | '1')),
+            _ => {}
+        }
+    }
+    i = digits(i, char::is_ascii_digit);
+    if at(i) == '.' && at(i + 1).is_ascii_digit() {
+        i = digits(i + 1, char::is_ascii_digit);
+    }
+    if matches!(at(i), 'e' | 'E') {
+        i += 1;
+        if matches!(at(i), '+' | '-') {
+            i += 1;
+        }
+        i = digits(i, char::is_ascii_digit);
+    }
+    i
+}
+
+/// What [`scan`] found at a span of a statement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Piece {
+    /// A word: a letter or `_`, then letters, digits and `_` (Unicode).
+    Word,
+    /// A number literal: a digit outside a word, read as [`number_end`] does (`1.5e-3`, `0x1F`).
+    Number,
+    /// A string literal, quotes included (`'…'` or `"…"`, backslash escapes).
+    Text,
+    /// A backquoted identifier, backquotes included.
+    Identifier,
+    /// A comment: `/* … */`, or `-- ` to the end of the line.
+    Comment,
+    /// Any other single character (punctuation, whitespace, an operator).
+    Other,
+}
+
+/// Reads a statement the way Grafeo 0.5.43's GQL lexer does (see [`bare_words`]), calling
+/// `visit` with each piece and its span of `chars`, in order and without gaps. Shared by the
+/// keyword guard and [`crate::redact`], so both agree on where a string or a comment ends.
+pub(crate) fn scan(chars: &[char], mut visit: impl FnMut(Piece, std::ops::Range<usize>)) {
+    let len = chars.len();
     let mut i = 0;
-    while i < chars.len() {
+    while i < len {
+        let start = i;
         let c = chars[i];
-        match c {
+        let piece = match c {
             '\'' | '"' => {
-                push_word(&mut word, &mut words);
                 i += 1;
-                while i < chars.len() && chars[i] != c {
+                while i < len && chars[i] != c {
                     if chars[i] == '\\' {
                         i += 1;
                     }
                     i += 1;
                 }
                 i += 1;
+                Piece::Text
             }
             '`' => {
-                push_word(&mut word, &mut words);
                 i += 1;
-                while i < chars.len() {
+                while i < len {
                     if chars[i] == '`' {
                         if chars.get(i + 1) == Some(&'`') {
                             i += 2;
@@ -383,43 +471,43 @@ fn lex(statement: &str) -> (Vec<String>, usize) {
                     i += 1;
                 }
                 i += 1;
+                Piece::Identifier
             }
             '/' if chars.get(i + 1) == Some(&'*') => {
-                push_word(&mut word, &mut words);
                 i += 2;
-                while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                while i < len && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
                     i += 1;
                 }
                 i += 2;
+                Piece::Comment
             }
             // `<--` and `---` are edges, whatever follows (re-review 2a).
             '-' if chars.get(i + 1) == Some(&'-')
                 && matches!(chars.get(i + 2), Some(' ' | '\t' | '\n' | '\r'))
                 && !matches!(i.checked_sub(1).map(|p| chars[p]), Some('<' | '-')) =>
             {
-                push_word(&mut word, &mut words);
-                while i < chars.len() && chars[i] != '\n' {
+                while i < len && chars[i] != '\n' {
                     i += 1;
                 }
+                Piece::Comment
             }
-            c if c.is_alphabetic() || c == '_' || (!word.is_empty() && c.is_alphanumeric()) => {
-                word.extend(c.to_uppercase());
-                i += 1;
+            c if c.is_alphabetic() || c == '_' => {
+                while i < len && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                    i += 1;
+                }
+                Piece::Word
+            }
+            c if c.is_ascii_digit() => {
+                i = number_end(chars, i);
+                Piece::Number
             }
             _ => {
-                if matches!(
-                    c,
-                    '+' | '-' | '*' | '/' | '%' | '^' | '<' | '>' | '=' | '|' | '['
-                ) {
-                    operators += 1;
-                }
-                push_word(&mut word, &mut words);
                 i += 1;
+                Piece::Other
             }
-        }
+        };
+        visit(piece, start..i.min(len));
     }
-    push_word(&mut word, &mut words);
-    (words, operators)
 }
 
 /// The most chained operators a statement may hold (re-review 2c). Grafeo's GQL parser recurses
@@ -459,17 +547,38 @@ fn nesting_estimate(statement: &str) -> usize {
             .count()
 }
 
-/// Runs `f` on a thread with [`PARSE_STACK_BYTES`] of stack and answers its result, or
+thread_local! {
+    /// Set on a thread with [`PARSE_STACK_BYTES`] of stack: a statement pool worker
+    /// ([`crate::limits::StatementPool`]) or a thread [`on_big_stack`] started.
+    static BIG_STACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Marks the current thread as having [`PARSE_STACK_BYTES`] of stack, so [`on_big_stack`] runs
+/// on it directly. Only for a thread spawned with that stack size.
+pub(crate) fn mark_big_stack() {
+    BIG_STACK.with(|flag| flag.set(true));
+}
+
+/// Runs `f` with [`PARSE_STACK_BYTES`] of stack and answers its result, or
 /// `Err(panic payload)` when it panicked.
+///
+/// On a thread that already has that stack (a statement pool worker, GR1 Task 6) it runs in
+/// place, inside `catch_unwind`; anywhere else it starts a thread for the call (re-review 2c),
+/// whose join contains the panic the same way.
 pub(crate) fn on_big_stack<T: Send>(
     f: impl FnOnce() -> T + Send,
 ) -> Result<T, Box<dyn std::any::Any + Send + 'static>> {
+    if BIG_STACK.with(std::cell::Cell::get) {
+        return std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    }
     std::thread::scope(|scope| {
         match std::thread::Builder::new()
             .name("loams-graph-stmt".to_string())
             .stack_size(PARSE_STACK_BYTES)
-            .spawn_scoped(scope, f)
-        {
+            .spawn_scoped(scope, || {
+                mark_big_stack();
+                f()
+            }) {
             Ok(handle) => handle.join(),
             Err(err) => Err(
                 Box::new(format!("could not start a statement thread: {err}"))
@@ -477,10 +586,4 @@ pub(crate) fn on_big_stack<T: Send>(
             ),
         }
     })
-}
-
-fn push_word(word: &mut String, words: &mut Vec<String>) {
-    if !word.is_empty() {
-        words.push(std::mem::take(word));
-    }
 }

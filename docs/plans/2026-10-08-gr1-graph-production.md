@@ -1156,3 +1156,64 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 - A graph RPC is served only on a loopback `--listen`; `0.0.0.0`, `::` and the IPv4-mapped `::ffff:127.0.0.1` are refused (`Ipv6Addr::is_loopback` is `::1` only).
 - `deploy/dapr/loams-stream.yaml` runs `loams dev --listen 0.0.0.0:8080`. Its image is not built with `graph` today; if it ever is, that deployment must pass `--no-graph` (until MT1's authorizer), or it will not start.
 
+
+### Task 6 (2026-10-09, on `backend/gr1`)
+
+**R6.1 `StatementLimits` (`src/limits.rs`).**
+- `StatementLimits::DEFAULT` and `::MAXIMUM` are §48 §13.1's columns: timeout 30 s / 300 s, unary rows 10 000 / 100 000, unary bytes 16 MiB / 64 MiB, statement 1 MiB / 1 MiB, parameters 1 000 / 10 000, batch statements 1 000 / 10 000, property value 1 MiB / 16 MiB. They also hold `max_path_hops` (10, was `classify::MAX_PATH_HOPS`), `max_chain_tokens` (4000, was `MAX_CHAIN_TOKENS`) and `max_detached` (2 / 64).
+- How a statement's limits are chosen: the server's (`GraphConfig.limits`, config only), then each nonzero field of the graph's `GraphLimits`, all capped at `MAXIMUM`. A request's `timeout_ms` and `max_rows` (0 = the graph's) are capped at the server's maximum, as the proto says. A graph may lower `max_path_hops` (`a_graphs_max_path_hops_applies`).
+- The largest timeout a request may ask for is `min(300 s, --graph-query-timeout-ms)`. Grafeo's `query_timeout` is per database, not per request (R0.8), so a longer request deadline would be cut by the engine anyway.
+- The property limit is Grafeo's `max_property_size`, set by `Engine::with_max_property_bytes` on every graph it opens (default 1 MiB; Grafeo's own default was 16 MiB, R0.22).
+- Size, parameter and batch checks run before anything parses and answer `INVALID_ARGUMENT`/`invalid_argument` (`GraphError::OverLimit`). This applies to `Execute`, `ExecuteBatch` (atomic or not, nothing runs), `ExecuteStream` and `Explain`.
+
+**R6.2 Deadlines and detached statements (R0.8 (a), (c), (d)).**
+- A statement's deadline runs from when the RPC arrives. It is the earlier of its limit and the client's Connect timeout (`GraphAdmin::for_call(ctx.deadline())`).
+- At the deadline the RPC answers `DEADLINE_EXCEEDED`/`graph_statement_timeout` (`timeout_returns_statement_timeout`: 200 ms, answered in under 1 s). The statement runs on, because Grafeo cannot stop it.
+- A client that disconnects detaches its statement the same way. The test is `client_cancel_answers_and_detaches`, the name R0.8 (c) gives the plan's `client_cancel_stops_statement`.
+- A detached statement is counted per graph (`GraphAdmin::detached_statements`, for Task 27's `loams_graph_detached_statements`). It keeps its process slot and namespace slot until it ends.
+- A graph with `max_detached` (2) statements detached refuses new ones with `RESOURCE_EXHAUSTED`/`resource_exhausted` until one ends.
+- Grafeo's `query_timeout` stays as the backstop (R5.8).
+
+**R6.3 `ExecuteStream`** (`src/service/stream.rs`).
+- The statement runs to its end, within its deadline, before the first chunk. Grafeo 0.5.43's `execute_streaming` refuses parameters, writes, `ORDER BY`, aggregates and `DISTINCT`, and `QueryResult` holds every row anyway.
+- The stream converts rows to the wire a chunk at a time and frees each engine row as it goes.
+- A chunk holds at most 1 000 rows (or the smaller `chunk_rows`) and at most 1 MiB, unless one row alone is larger.
+- The first chunk carries the columns. The last chunk carries `last`, `truncated` and `elapsed_nanos`. An empty result is one last chunk.
+- The request's `max_rows` caps the whole stream; 0 means no cap. The unary row and byte limits do not apply.
+- Memory for a huge result is Task 26's watchdog's job. A refusal fails the call before any chunk.
+
+**R6.4 Shortest paths (Task 3 review M2).**
+- Grafeo's `ShortestPathOp` ignores the pattern's quantifier: there is no hop bound to check or set without rewriting the statement.
+- What it does is one breadth-first search per input row, each at most O(V+E): polynomial, the same class as a cartesian product. So a single shortest path (`ANY SHORTEST`, `SHORTEST k`, `shortestPath`) is served, bounded by the statement's deadline, slots and detach limit like any other statement.
+- `ALL SHORTEST` and `allShortestPaths` stay refused, by keyword (`ALL` `SHORTEST`) and by plan (`all_paths: true`, subqueries included): `GraphError::AllShortestPaths`, `INVALID_ARGUMENT`/`graph_unbounded_path`. Grafeo answers one row per shortest path, and their count grows exponentially in a layered graph; `vec![depth; count]` can abort the process on allocation.
+- `grafeo_debug_format_canary` pins `all_paths: true`.
+- Measured: Grafeo 0.5.43 cannot `RETURN p` for a `shortestPath((a)-[*]-(b))` path ("Variable 'p' not found in input"); its path column holds the length. That is an engine gap, not a refusal (Task 32's corpus records it).
+- Upstream ask (add to Q679): honour the quantifier's upper bound in `ShortestPathOp`.
+
+**R6.5 The statement pool.**
+- `StatementPool` threads have `PARSE_STACK_BYTES` (256 MiB, virtual) of stack and are marked so `classify::on_big_stack` runs in place, inside `catch_unwind`. A statement no longer starts a thread per parse and per engine call (Task 3 re-review 2c).
+- `GraphAdmin` runs every statement, open and reopen there (Task 4 review M8); closes and purges stay on tokio's blocking pool.
+- Workers start on demand, up to `statement_slots + 2` (the spare covers a direct `GraphAdmin::open`, which holds no slot), and exit after 60 s idle. A worker survives a job's panic.
+- Detached statements are not on tokio's blocking pool, so they no longer delay the runtime's drop: the process exits with them unfinished, and their transactions never commit (their clients were already answered with an error). This amends R5.9's note.
+- The sync `service::*` functions (tests, the mock) still start a big-stack thread per call, as before.
+
+**R6.6 Per-namespace concurrency (§48 §13.2).** At most `GraphConfig.namespace_statements` (config only, default 64) statements of one namespace run at once. Past that the answer is `RESOURCE_EXHAUSTED`/`quota_exceeded` with `metadata.quota = "concurrent_statements"` (D65). Nothing queues. Task 25 moves the number into the §41 limits record.
+
+**R6.7 Unary answers.**
+- Rows past `max_rows` are dropped before path resolution, and `truncated` is set. That covers each result of a batch too.
+- The answer's encoded rows (protobuf length plus 6 bytes per row) are summed. Past `max_result_bytes` the answer is `RESOURCE_EXHAUSTED`/`graph_result_too_large`; for a batch the sum is across the whole answer.
+- In a non-atomic batch, the statement whose answer overflows has already committed. It is answered with no rows and `truncated`, `committed_through` counts it, and the batch stops there with `error` = `graph_result_too_large`. A retry from `committed_through` repeats nothing.
+- `canary_query_timeout_does_not_stop_a_parameterised_statement` now runs on the engine directly: through `GraphAdmin`, the Loams deadline (capped at the engine's `query_timeout`, R6.1) answers both forms at the same 20 ms and would hide what the engine does. `a_statement_over_the_engine_timeout_fails_without_hanging` now waits for the slot to free, since the Loams deadline answers first and the engine stops the statement just after.
+
+**R6.8 `Explain`.**
+- An EXPLAIN translates, binds and optimises the caller's statement as Grafeo's own `EXPLAIN` does, and runs nothing. Nothing is prefixed to the statement (D634).
+- The answer is `Plan.text` (`explain_tree`) and a `PlanOperator` tree. Each operator's `name` comes from the first word of its line; `details` holds `label` and `operator`. Grafeo's crate-private pushdown hint annotation is skipped.
+- A write's plan is answered.
+- A PROFILE runs the statement as a read, so a write is refused with `graph_read_only` (Task 2). The caller's statement must itself begin with `PROFILE`; Loams does not add the keyword. Without it the answer is `INVALID_ARGUMENT`.
+- The profile text (`name (label)  rows=N  time=Xms`, two spaces of indent per level) is parsed into `rows` and `elapsed_nanos`.
+
+**R6.9 Redaction (`src/redact.rs`).**
+- `redact_literals` replaces string and number literals with `?` and drops comments. Words, `$parameters`, backquoted identifiers and punctuation stay.
+- It uses the guard's scanner (`classify::scan`, which now also reports numbers as Grafeo's `scan_number` reads them), so both agree on where a string or comment ends.
+- `fingerprint` is FNV-1a over the redacted text with whitespace collapsed, stable across processes.
+- No statement text is logged anywhere today. Task 27's spans and audit use these.

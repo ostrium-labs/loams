@@ -1269,12 +1269,27 @@ fn profile_refuses_a_write() {
     );
     assert_eq!(number(&count, 0), 0, "nothing was written");
 
-    // EXPLAIN of a write, and PROFILE of a read, pass the guard (the plan itself is Task 6's).
-    for (statement, profile) in [("INSERT (:Doc)", false), ("MATCH (d:Doc) RETURN d", true)] {
-        let err = explain(statement, profile).expect_err("not implemented yet");
-        assert_eq!(err.code, ErrorCode::Unimplemented, "{err:?}");
-        assert_eq!(reason(&err), "not_implemented");
+    // EXPLAIN of a write, and PROFILE of a read, pass the guard and are answered (Task 6).
+    for (statement, profile) in [
+        ("INSERT (:Doc)", false),
+        ("PROFILE MATCH (d:Doc) RETURN d", true),
+    ] {
+        let plan = explain(statement, profile).expect(statement);
+        assert!(!plan.text.is_empty(), "{statement}: {plan:?}");
     }
+    assert_eq!(
+        number(
+            &ok(
+                &engine,
+                "acme",
+                "explain",
+                "MATCH (d:Doc) RETURN count(d) AS c"
+            ),
+            0
+        ),
+        0,
+        "EXPLAIN of a write wrote nothing"
+    );
 }
 
 /// A user property named like one of the engine's reserved keys (`_id`, `_labels`, `_type`,
