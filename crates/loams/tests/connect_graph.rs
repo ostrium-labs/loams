@@ -222,9 +222,10 @@ fn descriptor_methods() -> Vec<(String, Vec<(String, bool)>)> {
     out
 }
 
-/// Packages `loams-proto` compiles only because a served package imports them; reflection
-/// lists their services, which no route answers yet (GR1 Task 5, R2.3).
-const IMPORT_ONLY: &[&str] = &["loams.operations.v1"];
+/// Packages `loams-proto` compiles whose services no route answers yet: imported-only
+/// packages (GR1 Task 5, R2.3) and `loams.postgres.v1`, compiled since PG2 Task 1 and served
+/// from PG2 Task 9, which also lists only served services in reflection (PG2 R1.x).
+const IMPORT_ONLY: &[&str] = &["loams.operations.v1", "loams.postgres.v1"];
 
 /// `reflection_lists_only_served_or_stubbed_services`, for whichever build this is: every
 /// service reflection lists answers every one of its methods with something other than a
