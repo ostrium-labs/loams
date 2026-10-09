@@ -143,13 +143,15 @@ async fn until<F: Fn() -> bool>(what: &str, done: F) {
 
 /// R0.8 (a), (d): a statement past its deadline is answered `graph_statement_timeout` within a
 /// second, whatever the engine is doing. The statement is a shortest-path search with no hop
-/// bound over a 10k-node graph (served since Task 6, R6.4): one search per pair of nodes, 10^8
-/// searches, inside one operator the engine's own time limit never interrupts.
+/// bound (served since Task 6, R6.4) over 1 000 nodes: one search per pair of nodes, a million
+/// searches inside one operator, which the engine's own time limit never interrupts. It runs
+/// on, detached, for a few seconds; the test waits for it to end (review fix 1, M2) so it does
+/// not burn a core under the rest of the suite.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn timeout_returns_statement_timeout() {
     let fixture = Fixture::start().await;
     let admin = fixture.admin();
-    graph_with_nodes(&admin, 10_000).await;
+    graph_with_nodes(&admin, 1_000).await;
     let started = Instant::now();
     let err = admin
         .execute(pb::ExecuteRequest {
@@ -178,7 +180,18 @@ async fn timeout_returns_statement_timeout() {
         .execute(execute("acme", "kg", "MATCH (n:T) RETURN count(n)"))
         .await
         .expect("still serving");
-    assert_eq!(int(&rows(&answer)[0].values[0]), 10_000);
+    assert_eq!(int(&rows(&answer)[0].values[0]), 1_000);
+    // Bounded: it ends on its own, and its slot frees.
+    let ran = Instant::now();
+    until("the detached statement ends", || {
+        admin.detached_statements() == 0 && admin.statements_in_flight() == 0
+    })
+    .await;
+    assert!(
+        ran.elapsed() < Duration::from_secs(30),
+        "{:?}",
+        ran.elapsed()
+    );
 }
 
 /// The client's own deadline (Connect's timeout header) bounds the statement too.
