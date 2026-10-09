@@ -1378,3 +1378,106 @@ async fn keep_alive_header_uses_the_config() {
         "{answer}"
     );
 }
+
+/// Fix round 2, N1: `receive_timeout` bounds the *client's* silence while it sends
+/// a request body — not the time a statement takes. Every way a slow statement is
+/// answered (held, streamed, spooled) and a slow `INSERT` finish outlive it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn slow_statements_outlive_the_receive_timeout() {
+    let house = house("slow-statements", |config| {
+        config.receive_timeout = Duration::from_millis(500);
+    })
+    .await;
+    let addr = house.local_addr();
+    let slow = "SELECT number, sleepEachRow(0.2) FROM numbers(5) SETTINGS max_block_size = 1";
+    for (mode, extra) in [
+        ("held", vec![]),
+        ("streamed", vec![("buffer_size", "1")]),
+        ("spooled", vec![("wait_end_of_query", "1")]),
+    ] {
+        let mut params = vec![("query", slow)];
+        params.extend(extra);
+        let response = get(addr, &params).await;
+        assert_eq!(response.status, 200, "{mode}: {}", response.text());
+        assert!(response.complete, "{mode}");
+        assert_eq!(response.text().lines().count(), 5, "{mode}");
+    }
+}
+
+/// Fix round 2, N1: the body arrives at once, then the `INSERT` takes about a
+/// second to finish (a `DEFAULT` that sleeps per row) — twice `receive_timeout`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn slow_insert_finish_outlives_the_receive_timeout() {
+    let pool_config = loams_house::PoolConfig {
+        max_workers_per_namespace: 1,
+        ..common::small(2)
+    };
+    let (house, _pool) = house_with_pool("slow-insert", pool_config, |config| {
+        config.receive_timeout = Duration::from_millis(500);
+    })
+    .await;
+    let addr = house.local_addr();
+    let session = |query: &'static str| vec![("session_id", "slow"), ("query", query)];
+    let created = post(
+        addr,
+        &session("CREATE TEMPORARY TABLE t (n UInt64, s UInt8 DEFAULT sleepEachRow(0.2)) ENGINE = Memory"),
+        b"",
+    )
+    .await;
+    assert_eq!(created.status, 200, "{}", created.text());
+    let started = std::time::Instant::now();
+    let insert = post(
+        addr,
+        &session("INSERT INTO t (n) FORMAT TSV"),
+        b"1\n2\n3\n4\n5\n",
+    )
+    .await;
+    assert_eq!(insert.status, 200, "{}", insert.text());
+    assert!(
+        started.elapsed() >= Duration::from_millis(900),
+        "it was slow: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(summary(&insert)["written_rows"], "5");
+}
+
+/// Fix round 2, N4: an idle keep-alive connection is closed at the `Keep-Alive`
+/// timeout the House advertises — one config value for both.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn idle_keep_alive_closes_at_the_advertised_timeout() {
+    let house = house("idle-close", |config| {
+        config.keep_alive = Duration::from_secs(1)
+    })
+    .await;
+    let addr = house.local_addr();
+    let (advertised, closed_after) = tokio::task::spawn_blocking(move || {
+        let mut stream = std::net::TcpStream::connect(addr).expect("connect");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .expect("timeout");
+        stream
+            .write_all(b"GET /ping HTTP/1.1\r\nHost: x\r\n\r\n")
+            .expect("write");
+        let mut answer = Vec::new();
+        let mut piece = [0u8; 4096];
+        while !answer.ends_with(b"Ok.\n") {
+            let n = stream.read(&mut piece).expect("read");
+            assert!(n > 0, "closed before the answer");
+            answer.extend_from_slice(&piece[..n]);
+        }
+        let started = std::time::Instant::now();
+        let n = stream.read(&mut piece).unwrap_or(0);
+        assert_eq!(n, 0, "nothing more is sent; the server closes");
+        (
+            String::from_utf8_lossy(&answer).to_ascii_lowercase(),
+            started.elapsed(),
+        )
+    })
+    .await
+    .expect("client");
+    assert!(advertised.contains("keep-alive: timeout=1"), "{advertised}");
+    assert!(
+        closed_after >= Duration::from_millis(800) && closed_after < Duration::from_secs(3),
+        "closed after {closed_after:?}"
+    );
+}

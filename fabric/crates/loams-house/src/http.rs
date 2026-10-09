@@ -10,9 +10,11 @@
 //! and the connection closes after it, RFC 9112 §6.3, so nothing can be smuggled
 //! behind it: R3.9), HTTP/1.0, HEAD, pipelining,
 //! keep-alive and `Expect: 100-continue` (the `100` goes out only when the body is
-//! first read, which is after authentication). Every read and write has an idle
-//! timeout ([`IdleIo`]), connections are capped by a semaphore, and a connection
-//! ends with a lingering close.
+//! first read, which is after authentication). The client's silence is bounded per
+//! request-body frame (`receive_timeout`) and per head and idle gap (hyper's header
+//! timer, at the advertised `keep_alive`); writes have an idle timeout
+//! ([`IdleIo`]); connections are capped by a semaphore; a connection ends with a
+//! lingering close.
 //!
 //! # A request
 //!
@@ -173,15 +175,14 @@ pub async fn serve(config: HouseConfig, pool: WorkerPool) -> Result<HouseHandle,
 async fn connection(stream: TcpStream, shared: Arc<Shared>) {
     let _ = stream.set_nodelay(true);
     let config = &shared.config;
-    let io = TokioIo::new(IdleIo::new(
-        stream,
-        config.receive_timeout,
-        config.send_timeout,
-    ));
+    let io = TokioIo::new(IdleIo::new(stream, config.send_timeout));
     let mut builder = http1::Builder::new();
     builder
         .timer(TokioTimer::new())
-        .header_read_timeout(config.header_read_timeout)
+        // hyper's header timer runs whenever it waits for a head — between
+        // requests too — so it is the keep-alive idle limit as well (N4): the
+        // value `Keep-Alive: timeout=` advertises is the one enforced.
+        .header_read_timeout(head_timeout(config))
         .max_headers(config.max_headers)
         .max_buf_size(config.max_head_bytes.max(8192))
         .half_close(false)
@@ -214,25 +215,36 @@ async fn connection(stream: TcpStream, shared: Arc<Shared>) {
     }
 }
 
-/// A socket whose reads and writes each time out when idle (review I1): a client
-/// that stops sending a body, or stops reading a response, is cut off rather than
-/// holding a worker.
+/// How long a connection may wait for a request head, idle time included: the
+/// advertised keep-alive, or `receive_timeout` when keep-alive is off.
+fn head_timeout(config: &HouseConfig) -> Duration {
+    if config.keep_alive.is_zero() {
+        config.receive_timeout
+    } else {
+        config.keep_alive
+    }
+}
+
+/// A socket whose writes time out when they stall (review I1): a client that stops
+/// reading a response is cut off rather than holding a worker. Reads have no timer
+/// here (fix round 2, N1): hyper keeps a read pending for the whole exchange
+/// (`half_close(false)` watches for the client going away), so a read timer would
+/// fire during any statement longer than it. The client's silence is bounded where
+/// it matters instead: each request-body frame ([`RequestBody::next`],
+/// `receive_timeout`) and each head and idle gap (hyper's header timer,
+/// `keep_alive`).
 #[derive(Debug)]
 struct IdleIo {
     stream: TcpStream,
-    read_idle: Duration,
     write_idle: Duration,
-    read_deadline: Option<Pin<Box<Sleep>>>,
     write_deadline: Option<Pin<Box<Sleep>>>,
 }
 
 impl IdleIo {
-    fn new(stream: TcpStream, read_idle: Duration, write_idle: Duration) -> Self {
+    fn new(stream: TcpStream, write_idle: Duration) -> Self {
         Self {
             stream,
-            read_idle,
             write_idle,
-            read_deadline: None,
             write_deadline: None,
         }
     }
@@ -241,13 +253,12 @@ impl IdleIo {
         deadline: &mut Option<Pin<Box<Sleep>>>,
         idle: Duration,
         cx: &mut Context<'_>,
-        what: &str,
     ) -> Poll<io::Error> {
         let sleep = deadline.get_or_insert_with(|| Box::pin(tokio::time::sleep(idle)));
         match sleep.as_mut().poll(cx) {
             Poll::Ready(()) => Poll::Ready(io::Error::new(
                 io::ErrorKind::TimedOut,
-                format!("the client {what} nothing for {idle:?}"),
+                format!("the client read nothing for {idle:?}"),
             )),
             Poll::Pending => Poll::Pending,
         }
@@ -260,19 +271,7 @@ impl AsyncRead for IdleIo {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        match Pin::new(&mut this.stream).poll_read(cx, buf) {
-            Poll::Ready(result) => {
-                this.read_deadline = None;
-                Poll::Ready(result)
-            }
-            Poll::Pending => {
-                match Self::timed_out(&mut this.read_deadline, this.read_idle, cx, "sent") {
-                    Poll::Ready(err) => Poll::Ready(Err(err)),
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-        }
+        Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
     }
 }
 
@@ -288,12 +287,10 @@ impl AsyncWrite for IdleIo {
                 this.write_deadline = None;
                 Poll::Ready(result)
             }
-            Poll::Pending => {
-                match Self::timed_out(&mut this.write_deadline, this.write_idle, cx, "read") {
-                    Poll::Ready(err) => Poll::Ready(Err(err)),
-                    Poll::Pending => Poll::Pending,
-                }
-            }
+            Poll::Pending => match Self::timed_out(&mut this.write_deadline, this.write_idle, cx) {
+                Poll::Ready(err) => Poll::Ready(Err(err)),
+                Poll::Pending => Poll::Pending,
+            },
         }
     }
 
@@ -304,12 +301,10 @@ impl AsyncWrite for IdleIo {
                 this.write_deadline = None;
                 Poll::Ready(result)
             }
-            Poll::Pending => {
-                match Self::timed_out(&mut this.write_deadline, this.write_idle, cx, "read") {
-                    Poll::Ready(err) => Poll::Ready(Err(err)),
-                    Poll::Pending => Poll::Pending,
-                }
-            }
+            Poll::Pending => match Self::timed_out(&mut this.write_deadline, this.write_idle, cx) {
+                Poll::Ready(err) => Poll::Ready(Err(err)),
+                Poll::Pending => Poll::Pending,
+            },
         }
     }
 
@@ -411,19 +406,27 @@ impl HttpBody for HouseBody {
 struct RequestBody {
     body: Incoming,
     done: bool,
+    idle: Duration,
 }
 
 impl RequestBody {
-    fn new(body: Incoming) -> Self {
+    fn new(body: Incoming, idle: Duration) -> Self {
         let done = body.is_end_stream();
-        Self { body, done }
+        Self { body, done, idle }
     }
 
-    /// The next data, or `None` at the end. A read that fails (a timeout, broken
-    /// framing) is `210`.
+    /// The next data, or `None` at the end. A read that fails (broken framing) or a
+    /// client silent for `receive_timeout` between frames is `210`.
     async fn next(&mut self) -> Result<Option<Bytes>, HouseError> {
         while !self.done {
-            match self.body.frame().await {
+            let Ok(frame) = tokio::time::timeout(self.idle, self.body.frame()).await else {
+                self.done = true;
+                return Err(HouseError::from(ChError::network_error(format!(
+                    "Cannot read the request body: the client sent nothing for {:?}",
+                    self.idle
+                ))));
+            };
+            match frame {
                 Some(Ok(frame)) => {
                     if let Ok(data) = frame.into_data()
                         && !data.is_empty()
@@ -655,7 +658,7 @@ async fn run(
         version: config.version.clone(),
         send_progress: get("send_progress_in_http_headers") == Some("1"),
     };
-    let mut body = RequestBody::new(body);
+    let mut body = RequestBody::new(body, config.receive_timeout);
 
     // Everything before a worker: who, what, and how.
     let prepared = prepare(

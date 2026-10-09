@@ -45,14 +45,14 @@ pub struct HouseConfig {
     /// `max_query_size` default, 256 KiB. Data after an `INSERT … FORMAT` line is
     /// streamed, not counted.
     pub max_query_size: usize,
-    /// How long a connection may wait for the next bytes of a request (or between
-    /// requests) before it is closed: ClickHouse's `http_receive_timeout`, 30 s.
+    /// How long a client may go silent while it sends a request body (per frame):
+    /// ClickHouse's `http_receive_timeout`, 30 s. It never bounds a statement.
     pub receive_timeout: Duration,
     /// How long a write to the client may stall: ClickHouse's `http_send_timeout`.
     pub send_timeout: Duration,
-    /// How long a request head may take to arrive.
-    pub header_read_timeout: Duration,
-    /// Keep-alive between requests (`Keep-Alive: timeout=…`); zero turns it off.
+    /// Keep-alive between requests: advertised as `Keep-Alive: timeout=…` and
+    /// enforced (with the time a request head may take) by hyper's header timer, so
+    /// the two never differ (fix round 2, N4); zero turns keep-alive off.
     pub keep_alive: Duration,
     /// Connections served at once; more wait in the listen backlog (review I1).
     pub max_connections: usize,
@@ -87,7 +87,6 @@ impl Default for HouseConfig {
             max_query_size: 256 * 1024,
             receive_timeout: Duration::from_secs(30),
             send_timeout: Duration::from_secs(30),
-            header_read_timeout: Duration::from_secs(30),
             keep_alive: Duration::from_secs(10),
             max_connections: 1024,
             max_headers: 100,
