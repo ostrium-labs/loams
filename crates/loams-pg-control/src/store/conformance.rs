@@ -25,7 +25,8 @@ use futures::StreamExt;
 use loams_kv::Store;
 
 use super::{
-    KvControlStore, Page, PgControlStore, StoreError, StoreEvent, StoreOptions, Versioned,
+    Batch, BatchError, KvControlStore, Page, PgControlStore, StoreError, StoreEvent, StoreOptions,
+    Versioned,
 };
 use crate::model::{
     BranchKey, BranchPrefix, BranchRec, BranchState, ComputeKey, ComputeRec, ComputeStatus, Cu,
@@ -47,7 +48,8 @@ macro_rules! pg_control_store_conformance {
             fence_covers_only_its_project,
             watch_sees_put_and_delete,
             undetermined_is_surfaced,
-            lost_ack_is_resolved_by_its_token
+            lost_ack_is_resolved_by_its_token,
+            batch_applies_all_or_nothing
         );
     };
     (@cases $factory:expr; $($case:ident),* $(,)?) => {
@@ -733,4 +735,125 @@ pub async fn lost_ack_is_resolved_by_its_token(factory: Factory) {
             assert_eq!(got.version, v, "{point:?}");
         }
     }
+}
+
+/// A batch applies every operation or none: a failed expectation anywhere
+/// writes nothing and names its index; a derived put sees the versions the
+/// same transaction assigned; a check fails when its key moved.
+pub async fn batch_applies_all_or_nothing(factory: Factory) {
+    let Some(store) = factory.store(options()).await else {
+        return;
+    };
+    let writer = store.api_writer();
+    let v1 = writer
+        .put(&branch("prj-1", "br-1", "main"), None)
+        .await
+        .expect("create");
+
+    // The second put expects br-1 absent: nothing applies.
+    let mut batch = Batch::new();
+    batch
+        .put(&branch("prj-1", "br-2", "dev"), None)
+        .expect("a put");
+    batch
+        .put(&branch("prj-1", "br-1", "main"), None)
+        .expect("a put");
+    assert_eq!(
+        writer.commit(batch).await,
+        Err(BatchError {
+            index: Some(1),
+            error: StoreError::Conflict { current: Some(v1) },
+        })
+    );
+    assert!(get(&store, &bkey("prj-1", "br-2")).await.is_none());
+
+    // A delete of an absent record, likewise.
+    let mut batch = Batch::new();
+    batch
+        .put(&branch("prj-1", "br-2", "dev"), None)
+        .expect("a put");
+    batch
+        .delete::<BranchRec>(&bkey("prj-1", "br-9"), 1)
+        .expect("a delete");
+    assert_eq!(
+        writer.commit(batch).await.map_err(|e| e.error),
+        Err(StoreError::NotFound)
+    );
+    assert!(get(&store, &bkey("prj-1", "br-2")).await.is_none());
+
+    // A key twice is refused when it is added.
+    let mut batch = Batch::new();
+    batch
+        .put(&branch("prj-1", "br-2", "dev"), None)
+        .expect("a put");
+    assert!(matches!(
+        batch.check::<BranchRec>(&bkey("prj-1", "br-2"), None),
+        Err(StoreError::InvalidArgument(_))
+    ));
+
+    // All hold: every write applies, the derived record names the version
+    // its batch gave br-2, and the check reports br-1's.
+    let mut batch = Batch::new();
+    let at = batch
+        .put(&branch("prj-1", "br-2", "dev"), None)
+        .expect("a put");
+    batch
+        .check::<BranchRec>(&bkey("prj-1", "br-1"), Some(v1))
+        .expect("a check");
+    batch
+        .put_derived::<BranchRec>(&bkey("prj-1", "br-3"), None, move |out| {
+            let mut rec = branch("prj-1", "br-3", "qa");
+            rec.ancestor_lsn = out[at];
+            rec
+        })
+        .expect("a derived put");
+    let out = writer.commit(batch).await.expect("commit");
+    let v2 = get(&store, &bkey("prj-1", "br-2"))
+        .await
+        .expect("br-2")
+        .version;
+    assert_eq!(out[0], Some(v2));
+    assert_eq!(out[1], Some(v1));
+    let derived = get(&store, &bkey("prj-1", "br-3")).await.expect("br-3");
+    assert_eq!(derived.record.ancestor_lsn, Some(v2));
+    assert_eq!(out[2], Some(derived.version));
+
+    // A derived record must name its own key.
+    let mut batch = Batch::new();
+    batch
+        .put_derived::<BranchRec>(&bkey("prj-1", "br-4"), None, |_| {
+            branch("prj-1", "br-5", "other")
+        })
+        .expect("a derived put");
+    assert!(matches!(
+        writer.commit(batch).await,
+        Err(BatchError {
+            index: Some(0),
+            error: StoreError::InvalidArgument(_),
+        })
+    ));
+
+    // A check of a record that moved fails, and deletes apply with puts.
+    writer
+        .put(&branch("prj-1", "br-1", "main2"), Some(v1))
+        .await
+        .expect("move br-1");
+    let mut batch = Batch::new();
+    batch
+        .check::<BranchRec>(&bkey("prj-1", "br-1"), Some(v1))
+        .expect("a check");
+    assert!(matches!(
+        writer.commit(batch).await,
+        Err(BatchError {
+            index: Some(0),
+            error: StoreError::Conflict { .. },
+        })
+    ));
+    let mut batch = Batch::new();
+    batch
+        .delete::<BranchRec>(&bkey("prj-1", "br-2"), v2)
+        .expect("a delete");
+    let out = writer.commit(batch).await.expect("delete");
+    assert_eq!(out, vec![None]);
+    assert!(get(&store, &bkey("prj-1", "br-2")).await.is_none());
 }

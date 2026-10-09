@@ -5,10 +5,13 @@
 //! | [`ProjectRec`] | `x/<ns>/<project_id>` |
 //! | [`ProjectNameRec`] (the name index) | `x/<ns>/n/<name>` |
 //! | [`BranchRec`] | `X/<project_id>/<branch_id>` |
+//! | [`BranchNameRec`] (the name index) | `X/<project_id>/n/<name>` |
 //! | [`EndpointRec`] | `E/<project_id>/<endpoint_id>` |
 //! | [`ComputeRec`] | `C/<compute_id>` |
 //! | [`RoleRec`] | `R/<branch_id>/<role>` |
 //! | [`DatabaseRec`] | `D/<branch_id>/<db>` |
+//! | [`OperationRec`] | `O/<project_id>/<operation_id>` |
+//! | [`IdempotencyRec`] (the idempotency ledger) | `I/<hex(SHA-256(principal, rpc, key))>` |
 //!
 //! Keys are relative to the store's root: on TiKV, the metastore's keyspace
 //! and root, beside `loams-meta-tikv`'s own keys, whose tags these never
@@ -16,7 +19,9 @@
 //! tag, `/`, then its parts joined by `/`. Every part but the last is an id
 //! or a namespace and may not contain `/`; the last (a name) may. A project
 //! listing's prefix is `x/<ns>/prj-`, so it never meets the name index
-//! `x/<ns>/n/` (Task 4's ids all start with `prj-`).
+//! `x/<ns>/n/` (Task 4's ids all start with `prj-`); likewise a branch
+//! listing's is `X/<project_id>/br-`, apart from the branch name index
+//! `X/<project_id>/n/` (Task 5).
 //!
 //! A stored value is a format byte ([`FORMAT`]), the record's version as a
 //! postcard varint, then the record's postcard encoding (`store::encode`).
@@ -37,8 +42,9 @@ use crate::store::StoreError;
 /// The format byte in front of every stored record.
 pub const FORMAT: u8 = 1;
 
-/// The tags of `pg-control`'s keys (§46 §6.2), and its lease scope's.
-pub const TAGS: [u8; 6] = *b"xXECRD";
+/// The tags of `pg-control`'s keys (§46 §6.2, plus Task 5's operations `O`
+/// and idempotency ledger `I`).
+pub const TAGS: [u8; 8] = *b"xXECRDOI";
 
 /// The longest part of a key, in bytes.
 pub const MAX_PART_LEN: usize = 255;
@@ -313,10 +319,52 @@ impl Record for BranchRec {
         }
     }
     fn encode_key(k: &BranchKey) -> Result<Vec<u8>, StoreError> {
+        if !k.id.starts_with("br-") {
+            return Err(StoreError::InvalidArgument(
+                "a branch id starts with 'br-'".into(),
+            ));
+        }
         key(b'X', &[&k.project_id, &k.id])
     }
     fn encode_prefix(p: &BranchPrefix) -> Result<Vec<u8>, StoreError> {
-        prefix(b'X', &[&p.project_id], "")
+        prefix(b'X', &[&p.project_id], "br-")
+    }
+}
+
+/// The name index of a project's branches: a branch name is unique in its
+/// project (Task 5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BranchNameRec {
+    pub project_id: String,
+    pub name: String,
+    pub branch_id: String,
+}
+
+/// `(project_id, name)`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct BranchNameKey {
+    pub project_id: String,
+    pub name: String,
+}
+
+impl Record for BranchNameRec {
+    type Key = BranchNameKey;
+    type Prefix = BranchPrefix;
+    const KIND: &'static str = "branch name";
+    fn project(&self) -> Option<&str> {
+        Some(&self.project_id)
+    }
+    fn key(&self) -> BranchNameKey {
+        BranchNameKey {
+            project_id: self.project_id.clone(),
+            name: self.name.clone(),
+        }
+    }
+    fn encode_key(k: &BranchNameKey) -> Result<Vec<u8>, StoreError> {
+        key(b'X', &[&k.project_id, "n", &k.name])
+    }
+    fn encode_prefix(p: &BranchPrefix) -> Result<Vec<u8>, StoreError> {
+        prefix(b'X', &[&p.project_id, "n"], "")
     }
 }
 
@@ -545,6 +593,158 @@ impl Record for DatabaseRec {
     }
 }
 
+// ---- Operation ----
+
+/// What a long-running RPC's operation does (the proto's kinds).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum OperationKind {
+    ProjectCreate,
+    ProjectDelete,
+    BranchCreate,
+    BranchDelete,
+}
+
+impl OperationKind {
+    /// The kind's name on the wire: `postgres.project.create`, ...
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OperationKind::ProjectCreate => "postgres.project.create",
+            OperationKind::ProjectDelete => "postgres.project.delete",
+            OperationKind::BranchCreate => "postgres.branch.create",
+            OperationKind::BranchDelete => "postgres.branch.delete",
+        }
+    }
+}
+
+/// Where an operation is (`loams.operations.v1.OperationState`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum OperationState {
+    Pending,
+    Running,
+    Succeeded,
+    Failed,
+}
+
+/// Why an operation failed: a registered reason and a message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationError {
+    pub reason: String,
+    pub message: String,
+}
+
+/// A long-running RPC's operation (`loams.operations.v1.Operation`). The
+/// API service writes it `Pending` with the record it acts on; the project's
+/// reconciler (Task 7) moves it on under its lease.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationRec {
+    /// "op-" and 26 hex characters (D146).
+    pub id: String,
+    pub kind: OperationKind,
+    pub namespace: String,
+    pub project_id: String,
+    pub branch_id: Option<String>,
+    pub state: OperationState,
+    pub error: Option<OperationError>,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+}
+
+/// `(project_id, operation_id)`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OperationKey {
+    pub project_id: String,
+    pub id: String,
+}
+
+/// The operations of a project.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OperationPrefix {
+    pub project_id: String,
+}
+
+impl Record for OperationRec {
+    type Key = OperationKey;
+    type Prefix = OperationPrefix;
+    const KIND: &'static str = "operation";
+    fn project(&self) -> Option<&str> {
+        Some(&self.project_id)
+    }
+    fn key(&self) -> OperationKey {
+        OperationKey {
+            project_id: self.project_id.clone(),
+            id: self.id.clone(),
+        }
+    }
+    fn encode_key(k: &OperationKey) -> Result<Vec<u8>, StoreError> {
+        key(b'O', &[&k.project_id, &k.id])
+    }
+    fn encode_prefix(p: &OperationPrefix) -> Result<Vec<u8>, StoreError> {
+        prefix(b'O', &[&p.project_id], "")
+    }
+}
+
+// ---- Idempotency ledger ----
+
+/// One entry of the idempotency ledger (Task 5): the first answer to
+/// `(principal, rpc, key)`, kept until `expires_at_ms`. Written in the same
+/// transaction as the records the call wrote (R3.14).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdempotencyRec {
+    pub principal: String,
+    pub rpc: String,
+    pub key: String,
+    /// SHA-256 of the request, so a key reused for another request is told
+    /// apart from a replay.
+    pub fingerprint: [u8; 32],
+    /// The first answer, postcard-encoded by the service.
+    pub answer: Vec<u8>,
+    pub created_at_ms: u64,
+    pub expires_at_ms: u64,
+}
+
+/// `hex(SHA-256(principal ‖ 0 ‖ rpc ‖ 0 ‖ key))`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IdempotencyKey {
+    pub digest: String,
+}
+
+impl IdempotencyKey {
+    /// The key of `(principal, rpc, key)`.
+    pub fn of(principal: &str, rpc: &str, key: &str) -> Self {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        for part in [principal, rpc, key] {
+            h.update(part.as_bytes());
+            h.update([0]);
+        }
+        IdempotencyKey {
+            digest: hex::encode(h.finalize()),
+        }
+    }
+}
+
+/// The whole ledger.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AllIdempotency;
+
+impl Record for IdempotencyRec {
+    type Key = IdempotencyKey;
+    type Prefix = AllIdempotency;
+    const KIND: &'static str = "idempotency entry";
+    fn project(&self) -> Option<&str> {
+        None
+    }
+    fn key(&self) -> IdempotencyKey {
+        IdempotencyKey::of(&self.principal, &self.rpc, &self.key)
+    }
+    fn encode_key(k: &IdempotencyKey) -> Result<Vec<u8>, StoreError> {
+        key(b'I', &[&k.digest])
+    }
+    fn encode_prefix(_: &AllIdempotency) -> Result<Vec<u8>, StoreError> {
+        prefix(b'I', &[], "")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -583,6 +783,41 @@ mod tests {
             b"C/"
         );
         assert_eq!(project_lease("prj-1"), "e/pg/prj-1");
+        let bn = BranchNameRec::encode_key(&BranchNameKey {
+            project_id: "prj-1".into(),
+            name: "dev".into(),
+        })
+        .expect("a key");
+        assert_eq!(bn, b"X/prj-1/n/dev");
+        let op = OperationRec::encode_key(&OperationKey {
+            project_id: "prj-1".into(),
+            id: "op-1".into(),
+        })
+        .expect("a key");
+        assert_eq!(op, b"O/prj-1/op-1");
+        let ledger = IdempotencyKey::of("user:a", "CreateProject", "k");
+        assert_eq!(ledger.digest.len(), 64);
+        assert_ne!(ledger, IdempotencyKey::of("user:a", "CreateProjec", "tk"));
+        let mut expected = b"I/".to_vec();
+        expected.extend_from_slice(ledger.digest.as_bytes());
+        assert_eq!(
+            IdempotencyRec::encode_key(&ledger).expect("a key"),
+            expected
+        );
+    }
+
+    #[test]
+    fn branch_listing_never_meets_the_name_index() {
+        let p = BranchPrefix {
+            project_id: "prj-1".into(),
+        };
+        let listing = BranchRec::encode_prefix(&p).expect("a prefix");
+        let index = BranchNameRec::encode_prefix(&p).expect("a prefix");
+        assert!(!index.starts_with(&listing) && !listing.starts_with(&index));
+        assert!(
+            bkey_checked("prj-1", "n").is_err(),
+            "a branch id starts with br-"
+        );
     }
 
     #[test]

@@ -28,6 +28,7 @@ pub const DEFAULT_POLL: Duration = Duration::from_millis(250);
 pub(crate) const OP_GET: &str = "pg.get";
 pub(crate) const OP_PUT: &str = "pg.put";
 pub(crate) const OP_DELETE: &str = "pg.delete";
+pub(crate) const OP_BATCH: &str = "pg.batch";
 pub(crate) const OP_LIST: &str = "pg.list";
 pub(crate) const OP_LEASE: &str = "pg.lease";
 pub(crate) const OP_WATCH: &str = "pg.watch";
@@ -97,6 +98,190 @@ impl ApiWriter {
     pub fn store(&self) -> &KvControlStore {
         &self.store
     }
+
+    /// Applies every operation of `batch` in one transaction, or none of
+    /// them (Task 5: a create writes its records, its operation and its
+    /// idempotency entry together, R3.14). Returns, per operation, the new
+    /// version of a put, the checked version of a check, and `None` for a
+    /// delete.
+    ///
+    /// # Errors
+    ///
+    /// The first operation (in batch order) whose expectation fails, with
+    /// its index: `Conflict` or `NotFound` as for a single write. A store
+    /// failure (`Unavailable`, `Undetermined`) has no index.
+    pub async fn commit(&self, batch: Batch) -> Result<Vec<Option<u64>>, BatchError> {
+        self.store.commit_batch(batch).await
+    }
+}
+
+/// Writes that [`ApiWriter::commit`] applies together. Each operation names
+/// the version it expects; nothing applies unless all hold.
+#[derive(Debug, Clone, Default)]
+pub struct Batch {
+    ops: Vec<BatchOp>,
+}
+
+#[derive(Debug, Clone)]
+struct BatchOp {
+    key: Vec<u8>,
+    action: BatchAction,
+}
+
+/// Makes a derived put's record body from the versions of the operations
+/// before it.
+type Derive = Arc<dyn Fn(&[Option<u64>]) -> Result<Vec<u8>, StoreError> + Send + Sync>;
+
+#[derive(Clone)]
+enum BatchAction {
+    /// Write `body` if the record is at `expected` (`None`: absent).
+    Put {
+        expected: Option<u64>,
+        body: Vec<u8>,
+    },
+    /// Delete the record if it is at `expected`.
+    Delete { expected: u64 },
+    /// Write nothing, but fail unless the record is at `expected` (`None`:
+    /// absent); the key is locked, so a write of it committed after this
+    /// transaction began fails the batch.
+    Check { expected: Option<u64> },
+    /// As `Put`, with the body made inside the transaction from the
+    /// outcomes of the operations before it.
+    Derived {
+        expected: Option<u64>,
+        derive: Derive,
+    },
+}
+
+impl BatchAction {
+    fn expected(&self) -> Option<u64> {
+        match self {
+            BatchAction::Put { expected, .. }
+            | BatchAction::Check { expected }
+            | BatchAction::Derived { expected, .. } => *expected,
+            BatchAction::Delete { expected } => Some(*expected),
+        }
+    }
+}
+
+impl std::fmt::Debug for BatchAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            BatchAction::Put { .. } => "Put",
+            BatchAction::Delete { .. } => "Delete",
+            BatchAction::Check { .. } => "Check",
+            BatchAction::Derived { .. } => "Derived",
+        };
+        f.debug_struct(name)
+            .field("expected", &self.expected())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Batch {
+    /// An empty batch.
+    pub fn new() -> Self {
+        Batch::default()
+    }
+
+    /// The number of operations.
+    pub fn len(&self) -> usize {
+        self.ops.len()
+    }
+
+    /// Whether the batch is empty.
+    pub fn is_empty(&self) -> bool {
+        self.ops.is_empty()
+    }
+
+    fn push(&mut self, key: Vec<u8>, action: BatchAction) -> Result<usize, StoreError> {
+        if self.ops.iter().any(|op| op.key == key) {
+            return Err(StoreError::InvalidArgument(
+                "a batch names a key twice".into(),
+            ));
+        }
+        self.ops.push(BatchOp { key, action });
+        Ok(self.ops.len() - 1)
+    }
+
+    /// Adds a put of `rec` at `expected`; returns its index.
+    ///
+    /// # Errors
+    ///
+    /// `InvalidArgument` for a bad key or a key already in the batch.
+    pub fn put<R: Record>(&mut self, rec: &R, expected: Option<u64>) -> Result<usize, StoreError> {
+        let key = R::encode_key(&rec.key())?;
+        let body = postcard::to_stdvec(rec)
+            .map_err(|e| StoreError::InvalidArgument(format!("{} encodes: {e}", R::KIND)))?;
+        self.push(key, BatchAction::Put { expected, body })
+    }
+
+    /// Adds a delete of `key` at `expected`; returns its index.
+    ///
+    /// # Errors
+    ///
+    /// As [`put`](Self::put).
+    pub fn delete<R: Record>(&mut self, key: &R::Key, expected: u64) -> Result<usize, StoreError> {
+        self.push(R::encode_key(key)?, BatchAction::Delete { expected })
+    }
+
+    /// Adds a put at `expected` of the record `derive` makes, inside the
+    /// transaction, from the outcomes (as [`ApiWriter::commit`] returns
+    /// them) of the operations added before it; returns its index. This is
+    /// how a write records an answer that names versions the same
+    /// transaction assigns (the idempotency ledger, R3.14). `derive` may run
+    /// more than once (the runner retries), and must name `key`.
+    ///
+    /// # Errors
+    ///
+    /// As [`put`](Self::put).
+    pub fn put_derived<R: Record>(
+        &mut self,
+        key: &R::Key,
+        expected: Option<u64>,
+        derive: impl Fn(&[Option<u64>]) -> R + Send + Sync + 'static,
+    ) -> Result<usize, StoreError> {
+        let encoded = R::encode_key(key)?;
+        let check = encoded.clone();
+        let derive: Derive = Arc::new(move |before: &[Option<u64>]| {
+            let rec = derive(before);
+            if R::encode_key(&rec.key())? != check {
+                return Err(StoreError::InvalidArgument(format!(
+                    "a derived {} names another key",
+                    R::KIND
+                )));
+            }
+            postcard::to_stdvec(&rec)
+                .map_err(|e| StoreError::InvalidArgument(format!("{} encodes: {e}", R::KIND)))
+        });
+        self.push(encoded, BatchAction::Derived { expected, derive })
+    }
+
+    /// Adds a check that `key` is at `expected` (`None`: absent); returns
+    /// its index. A check fails the batch when a write of the key commits
+    /// first, but a check commits no version of its own: a writer that only
+    /// reads a checked key does not notice it. Where both sides must see
+    /// each other, both write (a put of the unchanged record).
+    ///
+    /// # Errors
+    ///
+    /// As [`put`](Self::put).
+    pub fn check<R: Record>(
+        &mut self,
+        key: &R::Key,
+        expected: Option<u64>,
+    ) -> Result<usize, StoreError> {
+        self.push(R::encode_key(key)?, BatchAction::Check { expected })
+    }
+}
+
+/// Why a [`Batch`] did not apply: the operation at `index` (in batch order)
+/// failed its expectation, or (`index: None`) the store failed.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("batch operation {index:?}: {error}")]
+pub struct BatchError {
+    pub index: Option<usize>,
+    pub error: StoreError,
 }
 
 /// The lease record: the metastore's `Lease` field for field, so its
@@ -256,6 +441,104 @@ impl KvControlStore {
             })
         })
         .await
+    }
+
+    async fn commit_batch(&self, batch: Batch) -> Result<Vec<Option<u64>>, BatchError> {
+        let ops = Arc::new(batch.ops);
+        let out = self
+            .write(OP_BATCH, move |txn| {
+                let ops = ops.clone();
+                Box::pin(async move {
+                    // Every expectation first, so a refusal writes nothing.
+                    let mut current = Vec::with_capacity(ops.len());
+                    for (i, op) in ops.iter().enumerate() {
+                        let version = match txn.get(&op.key).await? {
+                            Some(value) => match decode_version(&value) {
+                                Ok((v, _)) => Some(v),
+                                Err(error) => {
+                                    return Ok(Ok(Err(BatchError {
+                                        index: Some(i),
+                                        error,
+                                    })));
+                                }
+                            },
+                            None => None,
+                        };
+                        let refused = match op.action {
+                            BatchAction::Put { expected, .. }
+                            | BatchAction::Derived { expected, .. }
+                            | BatchAction::Check { expected } => (version != expected)
+                                .then_some(StoreError::Conflict { current: version }),
+                            BatchAction::Delete { expected } => match version {
+                                None => Some(StoreError::NotFound),
+                                Some(v) if v != expected => {
+                                    Some(StoreError::Conflict { current: version })
+                                }
+                                Some(_) => None,
+                            },
+                        };
+                        if let Some(error) = refused {
+                            return Ok(Ok(Err(BatchError {
+                                index: Some(i),
+                                error,
+                            })));
+                        }
+                        current.push(version);
+                    }
+                    // Every outcome, then every derived body, before any
+                    // write: a refusal here still writes nothing.
+                    let start = txn.start_ts().0;
+                    let out: Vec<Option<u64>> = ops
+                        .iter()
+                        .zip(&current)
+                        .map(|(op, version)| match op.action {
+                            BatchAction::Put { .. } | BatchAction::Derived { .. } => {
+                                Some(start.max(version.map_or(0, |c| c.saturating_add(1))))
+                            }
+                            BatchAction::Delete { .. } => None,
+                            BatchAction::Check { .. } => *version,
+                        })
+                        .collect();
+                    let mut derived = Vec::new();
+                    for (i, op) in ops.iter().enumerate() {
+                        if let BatchAction::Derived { derive, .. } = &op.action {
+                            match derive(&out[..i]) {
+                                Ok(body) => derived.push(body),
+                                Err(error) => {
+                                    return Ok(Ok(Err(BatchError {
+                                        index: Some(i),
+                                        error,
+                                    })));
+                                }
+                            }
+                        }
+                    }
+                    let mut derived = derived.into_iter();
+                    for (op, outcome) in ops.iter().zip(&out) {
+                        match &op.action {
+                            BatchAction::Put { body, .. } => {
+                                let v = outcome.unwrap_or_default();
+                                txn.put(&op.key, encode_value(v, body)).await?;
+                            }
+                            BatchAction::Derived { .. } => {
+                                let v = outcome.unwrap_or_default();
+                                let body = derived.next().unwrap_or_default();
+                                txn.put(&op.key, encode_value(v, &body)).await?;
+                            }
+                            BatchAction::Delete { .. } => txn.delete(&op.key).await?,
+                            BatchAction::Check { .. } => {
+                                txn.lock_keys([op.key.as_slice()]).await?;
+                            }
+                        }
+                    }
+                    Ok(Ok(Ok(out)))
+                })
+            })
+            .await;
+        match out {
+            Ok(inner) => inner,
+            Err(error) => Err(BatchError { index: None, error }),
+        }
     }
 
     /// The version of every record under `prefix`, in one snapshot.
@@ -598,7 +881,7 @@ fn check_watch_prefix(prefix: &[u8]) -> Result<(), StoreError> {
     match prefix {
         [tag, b'/', ..] if TAGS.contains(tag) => Ok(()),
         _ => Err(StoreError::InvalidArgument(
-            "a watch prefix starts with one of pg-control's tags (x/ X/ E/ C/ R/ D/)".into(),
+            "a watch prefix starts with one of pg-control's tags (x/ X/ E/ C/ R/ D/ O/ I/)".into(),
         )),
     }
 }

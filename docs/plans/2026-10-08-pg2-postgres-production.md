@@ -1546,3 +1546,57 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
     - the `IdempotencyLedger`, written in the same transaction as the record, or claimed before it. A retry with the same `idempotency_key` then finds the operation and answers it.
     - a writer id kept in the record: the operation id, or the idempotency key's hash. On `Conflict`, the service reads the record and treats it as its own when the id matches.
   - Task 5's text gains the test `create_project_undetermined_then_retry_returns_same_operation`, using the conformance suite's injected lost ack.
+
+
+### Task 5 rulings (2026-10-09)
+
+- **R5.1 One transaction per mutation: `Batch` on `ApiWriter`.**
+  - `ApiWriter::commit(Batch)` applies puts, deletes and checks in one `loams-kv` transaction (op `pg.batch`), or none of them.
+  - Every expectation is checked, and every outcome and derived body is computed, before the first write. A refusal names the index of the operation that failed (`BatchError { index, error }`).
+  - `Batch::put_derived` makes a record inside the transaction from the versions the earlier operations get. The idempotency entry uses it, because its answer has to name versions that only the transaction assigns.
+  - `Batch::check` locks a key and fails if the key moved, but it commits no version of its own. On the embedded store a `Lock` mutation is not stored, so a later writer of the key does not notice the check. Where both sides must see each other, both write the key.
+  - The conformance case `batch_applies_all_or_nothing` passes on both backends.
+  - The batch is on `ApiWriter` only. If a reconciler needs one (Task 7: deleting a branch with its name index), it adds a fenced variant.
+- **R5.2 R3.14 is resolved by the ledger, written in the same transaction.**
+  - Ledger key: `IdempotencyRec` at `I/<hex(SHA-256(principal ‖ 0 ‖ rpc ‖ 0 ‖ key))>`.
+  - The entry holds the principal, rpc, key, the request's SHA-256 fingerprint, the postcard-encoded first answer, and a 24 h expiry.
+  - An entry exists exactly when the call's writes applied. A replay answers the entry. The same key on another request is `invalid_argument` (field `idempotency_key`), the rule Task 0 took from `connect_idempotency.rs`. An empty key is never recorded.
+  - After `Undetermined`, the service reads the entry: if it is there, the call answers it. Otherwise the call answers `unavailable` ("retry with the same idempotency_key").
+  - After a `Conflict` at any index, the service also reads the entry first, and answers it if a concurrent call under the same key won. Only then does the conflict mean `already_exists` (a name index) or another try (up to 5, then `aborted`).
+  - Tests:
+    - `create_project_undetermined_then_retry_returns_same_operation` (LoseAck after and before the commit, with no commit tokens);
+    - `a_conflict_on_the_ledger_answers_the_winner` (a delayed commit loses to a second call under the same key; a probe confirmed it takes the store-conflict path).
+  - `IdempotencyLedger::prune(now)` deletes expired entries. Task 9 runs it on a timer.
+- **R5.3 New records and tags.**
+  - New records:
+    - `BranchNameRec` at `X/<project_id>/n/<name>` (a branch name is unique in its project, race-free);
+    - `OperationRec` at `O/<project_id>/<op_id>`;
+    - `IdempotencyRec` at `I/…`.
+  - `TAGS` is now `xXECRDOI`, and `tags_are_disjoint_from_the_metastore` covers `O` and `I`.
+  - A branch id must start with `br-`, and a branch listing's prefix is `X/<project_id>/br-`, so a listing never meets the name index (as projects do).
+  - No existing record changed, so `FORMAT` stays 1.
+  - Operation ids are `op-` and 26 lower-case hex characters (D146): the first 104 bits of a ULID.
+  - The reconciler (Task 7) finds a project's pending operations by listing `O/<project_id>/`, and moves them on under its lease (`OperationRec::project()` is the project's).
+- **R5.4 Races, handled without a read-write conflict check (snapshot isolation sees only write-write conflicts).**
+  - `CreateBranch` rewrites its parent unchanged (`put` at its version). `DeleteBranch` writes the branch. So a child created while its parent is being deleted conflicts whichever commits first. The cost: creating a child moves the parent's `version`, so an `expected_version` the client read before that is answered `aborted`.
+  - `DeleteBranch` writes the branch and checks the project. `SetDefaultBranch` writes the project and checks the branch.
+  - `CreateBranch` checks the project. A branch created while the project is being deleted is still removed by the project's reconciler.
+- **R5.5 `NeonApi` lives in `pg-control` (`src/neon.rs`).**
+  - The trait has three calls: `timeline` (head, `min_readable_lsn`, logical size), `lsn_by_timestamp` (`Present | Future | Past | NoData`) and `wal_heads`. It uses its own `Lsn` (`X/Y` text), and an error already mapped to a reason (`NeonApiError { reason, component, message }`).
+  - `loams-postgres` (the renamed `loams-neon`) does not implement it yet, because Task 5 ran during NF1's rename. Task 7 adds the implementation, over `NeonClient` and `WalClient`, together with the storage-changing calls.
+- **R5.6 Branch points and retention.**
+  - A point needs a `ready` parent (`failed_precondition` otherwise).
+  - These are `lsn_out_of_retention` (metadata `oldest_lsn` when known, and `history_retention` as `"<s>s"`): a time older than the project's `history_retention`, a time Neon answers `Past` for, or an LSN below the parent's `min_readable_lsn`.
+  - An LSN past the parent's head is `invalid_argument`. `Future` resolves to the head LSN Neon returns. `NoData` is `failed_precondition`.
+  - The head (no point) leaves `ancestor_lsn` unset, and the reconciler branches at the head.
+  - `parent_time` is not kept: `BranchRec` has no field for it, and adding one needs a new format byte. A later task that needs it adds the field.
+- **R5.7 The service's shape.**
+  - `PgService<N: NeonApi>` takes and answers plain Rust types (`service::{projects, branches}`). Task 9 maps them to the proto.
+  - `Caller { principal, admin }`: the principal scopes the ledger, and `admin` (from Task 9's `Authorizer`) gates deleting a protected branch, lifting a branch's protection, and deleting a project that has a protected branch.
+  - Defaults (`ServiceConfig`): Postgres 17 (the only major offered), region `local`, WAL pool `default`, retention 7 days, clamped to 30 days (Task 47 takes the limit from the namespace's limits record).
+  - `GetBranch` reads WAL heads and logical size only for a `ready` branch. A component that does not answer leaves its part empty, and is logged. `ListBranches` reads neither.
+  - The default branch cannot be deleted (`failed_precondition`). A branch that is already deleting is `failed_precondition`, and so is deleting a project that is already deleting.
+- **R5.8 Not in Task 5.**
+  - `RestoreBranch` belongs to Task 44.
+  - Agents' approvals for protected branches belong to Task 9.
+  - The reconciler's own steps (`ready`, the operation's end, removing the records and the name indexes on delete) belong to Task 7.

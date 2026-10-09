@@ -40,7 +40,7 @@ use std::time::Duration;
 
 use futures::stream::BoxStream;
 
-pub use kv::{ApiWriter, DEFAULT_POLL, KvControlStore, StoreOptions};
+pub use kv::{ApiWriter, Batch, BatchError, DEFAULT_POLL, KvControlStore, StoreOptions};
 
 use crate::model::Record;
 
@@ -95,7 +95,7 @@ pub enum StoreError {
 }
 
 /// A record and its version.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Versioned<R> {
     pub record: R,
     pub version: u64,
