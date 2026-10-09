@@ -1148,4 +1148,62 @@ Commit `docs(nf1): exit, as built and status`.
 
 ## Rulings made during execution
 
-*(None yet. Task 0 records the first ones.)*
+### Task 0 rulings (2026-10-09, reconciled at `dev` `1cd3d5dc`)
+
+Checked with `git` in this repository, the read-only Neon clone at `~/Documents/Ostriumlabs/neon` (HEAD `1218fb7a`), `gh api` (account `dina-kar`), anonymous `ghcr.io` manifest `HEAD` requests, and postgresql.org. Nothing was cloned or fetched.
+
+1. **PG2 Task 2 has merged into `dev`.** `backend/pg2` (tip `6deaa2c8`, "task 2 fix round 1 rulings R2.11–R2.18") is an ancestor of `dev`; `git log dev..backend/pg2` is empty, and `1cd3d5dc` (this plan) sits directly on it. On `dev`:
+   - `deploy/neon/compose.yaml` (lines 10–11) and `deploy/loams-pg-bench/compose.yaml` (lines 14–15) define `x-neon-image` = `ghcr.io/neondatabase/neon@sha256:7a4f1249…434c761f` and `x-compute-image` = `ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d…5c70e26c3`, each overridable by `NEON_IMAGE` / `COMPUTE_IMAGE`;
+   - `PG_HEADERS_IMAGE` is that `neon` digest in `.github/workflows/pg2.yml:64`, `pg2-e2e.yml:70` and `loams-pg-bench.yml:40`;
+   - no `neondatabase/*:latest` remains under `deploy/` or `.github/`.
+
+   So Tasks 2 and 14 branch from `dev`, not `backend/pg2`; their PRs do not need the "builds on `backend/pg2`" note. These are exactly the five consumers `pins.py check` must cover first. §51 §14's "Loams pins" row ("`dev`: `deploy/neon` still uses `latest`") is stale; Task 41 corrects it (this task edits rulings only).
+2. **Both pinned source digests still resolve.** `HEAD https://ghcr.io/v2/neondatabase/{neon,compute-node-v17}/manifests/<digest>` returns 200 with `application/vnd.oci.image.index.v1+json` for both (2026-10-09). Task 1 can still copy them unchanged; it stays first in NF1a.
+3. **§51 §14 is otherwise still true for `ostrium-labs/neon`.**
+   - Default branch `main`, at `fa504217`; `compare main...neondatabase:neon:main` is `identical` (0/0).
+   - **Upstream has not moved since 2026-08-31:** `neondatabase/neon` `main` is `fa504217` ("docs: fix typo proccess -> process (#12940)", 2026-08-31), `pushed_at` 2026-08-31, not archived. Task 19's weekly sync has nothing to merge today. If upstream stays still, it is the fork that carries every Postgres minor (Tasks 17 and 18), and the plan already assumes that.
+   - 1,488 branches; the only `loams/*` branch is `loams/decoder-trim` at `1218fb7a` (one commit on `fa504217`, 2026-10-08).
+   - 283 tags; the only `loams-*` tag is `loams-decoder-trim-1`, which is annotated (tag object `882f8b41`) and points at `1218fb7a`. No `nf-*` tags.
+   - Actions: `actions/permissions` is `enabled: true`, `allowed_actions: all`; `actions/workflows` reports `total_count: 0` (no workflow registered). `ostrium-labs/postgres` is the same (`enabled: true`, `all`, 0 workflows); Task 3 disables its Actions. No task narrows `allowed_actions`; SHA pinning stays enforced by the Global Constraints and review.
+4. **§51 §14 is still true for `ostrium-labs/postgres`, with versions added.**
+   - 322 branches, none `loams/*`. Default branch `main` holds only `README.md` (`0061a6b2`, 2025-09-22), which is why GitHub reports no licence; `COPYRIGHT` is on the `REL_*` branches.
+   - `_neon` branches: `REL_14_STABLE_neon` (`74c6ea95`), `REL_15_STABLE_neon` (`6056289b`), `REL_16_STABLE_neon` (`59027122`, 16.12), `REL_17_STABLE_neon` (`56692dfb`, 17.8), `REL_18_STABLE_neon` (`a616eefe`, 18.2), plus `REL_14_{6,7,8}_neon`, `REL_15_{1,2,3}_neon`, `anastasia/REL_17_STABLE_neon` and `rename_contrib_zenith_to_neon`. The versions are from each branch's `configure.ac` `AC_INIT`.
+   - `REL_16/17/18_STABLE_neon` are `identical` to `neondatabase/postgres`'s branches of the same name.
+   - Neon `fa504217`'s submodule revisions (`vendor/revisions.json`: 17.5 `1e01fcea`, 16.9 `a42351fc`, 15.13 `2aaab3bb`, 14.18 `2155cb16`) exist in the fork, and the 17 and 16 ones are ancestors of their `_neon` heads (475 and 387 commits behind). Task 3 can tag them in place; no branch has to be created to keep them reachable.
+5. **The eight forks' licences match §51 §3.1.** From `gh api repos/ostrium-labs/<repo>` and each default branch's root:
+
+   | Fork | Default branch | GitHub licence | Root licence files |
+   |---|---|---|---|
+   | `neon` | `main` | Apache-2.0 | `LICENSE`, `NOTICE` |
+   | `postgres` | `main` | none | none on `main`; `COPYRIGHT` on `REL_*` |
+   | `rust-postgres` | `neon` | NOASSERTION (two licences) | `LICENSE-APACHE`, `LICENSE-MIT` |
+   | `azure-sdk-for-rust` | `main` (branch `neon` exists) | MIT | `LICENSE.txt`, `NOTICE.txt` |
+   | `framed-websockets` | `main` | Apache-2.0 | `LICENSE` |
+   | `tokio-epoll-uring` | `main` | none | none |
+   | `pg_session_jwt` | `main` | Apache-2.0 | `LICENSE` |
+   | `autoscaling` | `main` | Apache-2.0 | `LICENSE` |
+
+   All eight are public, unarchived forks of their `neondatabase` parents. `rust-postgres` `f3cf448f` (the decoder's pin) is `neon`'s head. The organisation also has forks NF1 does not cover (`resonate`, `client-rust`, `sqlx`, `wesql`, `loams-desktop`).
+6. **`tokio-epoll-uring`'s licence: §51 §11 is confirmed; the original brief was wrong.**
+   - `tokio-epoll-uring/Cargo.toml`: `license = "MIT OR Apache-2.0"`; `uring-common/Cargo.toml`: `license = "MIT" # the same as tokio-uring at the time we forked it`. The same at `main` and at `781989bb`, in both `ostrium-labs` and `neondatabase`.
+   - No licence, copying or notice file anywhere in the tree (`git/trees/main?recursive=1`: 0 paths match). GitHub reports no licence for either repository.
+   - Fork `main` is `478ab1a3` (2026-09-21), `identical` to upstream. Neon's lock pins `781989bb` (2024-10-29) through `branch = "main"` in Neon's `Cargo.toml`. Task 7 (NF-0005) moves it to `ostrium-labs` by rev with a `loams-*` tag. Q716 is still open.
+   - **Ruling for Task 8.** `781989bb..main` is 5 commits (`7adcb121`…`478ab1a3`, 2026-09-17 to 09-21, upstream PR #76) that fix a file-descriptor leak when an `open` future is cancelled; they touch only `tokio-epoll-uring/src/{ops/open_at.rs,system/slots.rs,system/submission/op_fut.rs,system/tests.rs}`. Task 8's "move NF-0005's rev to the commit with the texts" therefore also takes this fix, because `loams/main` starts from `main`. That is wanted (a real bug fix), but it is a code change, not only a licence change: Task 8's commit message names the 5 commits, and its PR in the `neon` fork runs G1 with both I/O engines.
+7. **Upstream Postgres matches §51 §14.**
+   - Latest minors: `REL_18_6` (`724edf9b`, tagged 2026-08-11), `REL_17_11` (`083ac033`, 2026-08-10), `REL_16_15` (`7d3e000c`, 2026-08-10).
+   - `REL_19_STABLE` is at `1ecc48b9` (2026-10-09). Its latest tag is `REL_19_BETA4` (`b73d13c3`, tagged 2026-09-21, announced 2026-09-24). There is no `REL_19_RC1` yet.
+   - postgresql.org: the wiki's "PostgreSQL 19 Open Items" gives "RC 1: October 15, 2026" and "GA: (Planned) October 29, 2026"; the roadmap says "planned for October 2026", and lists the next minors on 2026-11-12, 2027-02-11, 2027-05-13 and 2027-08-12. Task 31 starts on 2026-10-15 and checks the RC1 tag that day. Task 17's 17.12 date (2026-11-12) is confirmed.
+8. **Cloning `ostrium-labs/postgres`: waiting on owner.** No approval has been given (the 2026-10-09 answers cover Q715, Q717, Q719 and the mode only). Until it is given, Tasks 15, 17, 24, 31 and 32 work through `gh api` and the fork's CI only. When approved, the clone is blobless at `~/Documents/Ostriumlabs/postgres` (Global Constraints).
+9. **Owner actions outstanding (waiting on owner).** Checked with `gh api`:
+   - **GitHub App `ostrium-labs-fork-bot`:** does not exist (`apps/ostrium-labs-fork-bot` returns 404). The organisation's installations are `coderabbitai`, `blacksmith-sh`, `depot-managed-runners` and `cloudflare-workers-and-pages`. Named as an owner action in Task 3. Its token is used by Task 9 (the `build-tools` digest PR), Task 13 (the pin PR on `ostrium-labs/loams`), Task 16 (dispatching `nf1-candidate.yml` here) and Task 18 (pushes to `ostrium-labs/postgres`). The fast-forward of `neon` `main` uses `GITHUB_TOKEN` and does not need it.
+   - **Teams:** the organisation has `committers` and `maintainers` (members `dina-kar`, `Kesh3805`). `neon-maintainers`, `postgres-maintainers` and `security` do not exist. Needed by Task 5.
+   - **A packages token:** `gh auth status` shows scopes `admin:public_key`, `gist`, `read:org`, `repo`, `workflow`. There is no `read:packages` (listing the organisation's packages returns 403) and no `write:packages`. The owner runs `gh auth refresh -h github.com -s write:packages,read:packages` before Task 1 can push. `admin:org` is also missing, so this session cannot read Actions billing or org-level Actions permissions.
+   - **Package visibility (Q715): answered.** The mirrored packages stay **private** until Task 1's audit, whatever it finds. Changing a package to public is an owner action after the audit report.
+   - **Runner budget (Q721): open.** The owner chose full maintenance mode (Q722's mode). Neither the $150-a-month cap for larger runners nor who holds billing has been answered. The organisation is on the `free` plan. Tasks 10 and 11 start on standard hosted runners (free for public repositories), which needs no budget. Any use of `RUNNER_HEAVY` (Blacksmith or Depot, both already installed) waits for Q721.
+10. **Owner answers of 2026-10-09, recorded for the tasks that use them.**
+    - **Q715:** mirrored images stay private until audited (Task 1; the plan's default).
+    - **Q717:** Postgres 17 is the default at GA. 18 follows after its gate (Task 30); this is read as Q717's default, that 18 becomes the default for new projects once Task 30's gate passes, and Task 30 confirms it with the owner before flipping `default`. 19 stays beta until 2027 (consistent with NF1f's "GA no earlier than 2027-03" and Q718). The second half of Q717 (16 in maintenance until PG2 GA plus 6 months) was not addressed; Task 30 asks.
+    - **Q719:** drop `pgrag`, `pg_mooncake` and `pg_duckdb` (Task 21, tier `dropped`). The other two parts (`plv8` and `rdkit` as `included`; GPL extensions with source artifacts) were not addressed; Task 21 uses the defaults and lists them as unconfirmed.
+    - **Q722:** full maintenance mode. The named maintainers and CODEOWNERS teams are still open (Task 5).
+11. **D800–D819 and Q715–Q729 belong to NF1 and nothing else.** `docs/design/13-decision-log.md` on `dev` has exactly one row for each ID. `git log --all -G` over the decision log finds them added only by `357d9ce2` (§51). No branch adds D820+ or Q730+. The next free IDs are **D820** and **Q730**.
+
