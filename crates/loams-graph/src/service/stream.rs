@@ -9,10 +9,13 @@
 //! call refuses parameters, writes, `ORDER BY`, aggregates and `DISTINCT`, and its `QueryResult`
 //! holds every row anyway. What the stream adds is that no answer is cut at the unary limits:
 //! rows are converted to the wire a chunk at a time, and the request's `max_rows` (0: none) caps
-//! the whole stream.
+//! the whole stream. `max_stream_bytes` caps it in bytes whatever `max_rows` says: past it the
+//! stream ends `truncated`. The stream holds the statement's process and namespace slots until
+//! its last chunk is taken or it is dropped (review fix 1, I4).
 
 use loams_proto::loams::graph::v1 as pb;
 
+use super::admin::Slots;
 use super::data::{row_bytes, to_pb_row};
 use crate::engine::GraphResult;
 
@@ -31,16 +34,22 @@ pub(crate) struct Chunks {
     result: GraphResult,
     next: usize,
     chunk_rows: usize,
+    /// The most encoded bytes the whole stream may carry (`max_stream_bytes`, review fix 1, I4).
+    max_bytes: u64,
+    /// What the stream has carried so far.
+    sent_bytes: u64,
     sent_first: bool,
     done: bool,
     /// A row converted for a chunk it did not fit in, for the next one.
     pending: Option<pb::Row>,
+    /// The statement's slots, held until the stream ends or is dropped (review fix 1, I4).
+    slots: Option<Slots>,
 }
 
 impl Chunks {
     /// `result`'s rows in chunks of at most `chunk_rows` (0, or more than [`MAX_CHUNK_ROWS`],
-    /// takes [`MAX_CHUNK_ROWS`]).
-    pub(crate) fn new(result: GraphResult, chunk_rows: u32) -> Self {
+    /// takes [`MAX_CHUNK_ROWS`]), at most `max_bytes` in all.
+    pub(crate) fn new(result: GraphResult, chunk_rows: u32, max_bytes: u64) -> Self {
         let chunk_rows = if chunk_rows == 0 {
             MAX_CHUNK_ROWS
         } else {
@@ -50,10 +59,27 @@ impl Chunks {
             result,
             next: 0,
             chunk_rows: chunk_rows as usize,
+            max_bytes,
+            sent_bytes: 0,
             sent_first: false,
             done: false,
             pending: None,
+            slots: None,
         }
+    }
+
+    /// The same chunks, keeping `slots` until the last chunk is taken or the stream is dropped.
+    pub(crate) fn holding(mut self, slots: Slots) -> Self {
+        self.slots = Some(slots);
+        self
+    }
+
+    fn finish(&mut self, chunk: &mut pb::ResultChunk, truncated: bool) {
+        self.done = true;
+        self.slots = None;
+        chunk.last = true;
+        chunk.truncated = truncated;
+        chunk.elapsed_nanos = self.result.elapsed_nanos.unwrap_or_default();
     }
 }
 
@@ -90,6 +116,11 @@ impl Iterator for Chunks {
                 None => break,
             };
             let size = row_bytes(&row);
+            if self.sent_bytes + bytes + size > self.max_bytes {
+                // The whole stream's byte limit: it ends here, `truncated` (I4).
+                self.finish(&mut chunk, true);
+                return Some(chunk);
+            }
             if !chunk.rows.is_empty() && bytes + size > MAX_CHUNK_BYTES {
                 self.pending = Some(row);
                 break;
@@ -97,11 +128,10 @@ impl Iterator for Chunks {
             bytes += size;
             chunk.rows.push(row);
         }
+        self.sent_bytes += bytes;
         if self.pending.is_none() && self.next >= self.result.rows.len() {
-            self.done = true;
-            chunk.last = true;
-            chunk.truncated = self.result.truncated;
-            chunk.elapsed_nanos = self.result.elapsed_nanos.unwrap_or_default();
+            let truncated = self.result.truncated;
+            self.finish(&mut chunk, truncated);
         }
         Some(chunk)
     }

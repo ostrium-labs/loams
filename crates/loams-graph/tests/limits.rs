@@ -1044,3 +1044,58 @@ async fn a_committed_write_is_never_reported_as_too_large() {
     assert_eq!(answer.committed_through, 0);
     assert_eq!(count("Z").await, 0, "nothing after the failed read ran");
 }
+
+/// Review fix 1, I4: a stream holds its statement's slots until it is dropped, and its total
+/// size is capped in bytes even with `max_rows` 0 (it then ends `truncated`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stream_holds_its_slots_and_is_capped_in_bytes() {
+    let fixture = Fixture::start().await;
+    let admin = fixture.admin().with_limits(StatementLimits {
+        max_stream_bytes: 100_000,
+        ..StatementLimits::DEFAULT
+    });
+    create(&admin, "acme", "kg", None).await;
+    let request = || pb::ExecuteStreamRequest {
+        request: execute("acme", "kg", "UNWIND range(1, 25000) AS i RETURN i").into(),
+        ..Default::default()
+    };
+    let mut stream = admin.execute_stream(request()).await.expect("stream");
+    let first = stream.next().await.expect("a chunk").expect("ok");
+    assert!(!first.last);
+    assert_eq!(
+        admin.statements_in_flight(),
+        1,
+        "the open stream holds its slot"
+    );
+    drop(stream);
+    assert_eq!(
+        admin.statements_in_flight(),
+        0,
+        "dropping it frees the slot"
+    );
+    // Read to the end: capped in bytes, so truncated well short of 25 000 rows.
+    let chunks: Vec<pb::ResultChunk> = admin
+        .execute_stream(request())
+        .await
+        .expect("stream")
+        .map(|chunk| chunk.expect("chunk"))
+        .collect()
+        .await;
+    let total: usize = chunks.iter().map(|c| c.rows.len()).sum();
+    let last = chunks.last().expect("a last chunk");
+    assert!(last.last && last.truncated, "{total} rows");
+    assert!(total > 1000 && total < 25_000, "{total}");
+    let bytes: u64 = chunks
+        .iter()
+        .map(|c| {
+            use buffa::Message as _;
+            u64::from(c.encoded_len())
+        })
+        .sum();
+    assert!(bytes <= 100_000, "{bytes}");
+    assert_eq!(
+        admin.statements_in_flight(),
+        0,
+        "a finished stream frees its slot"
+    );
+}

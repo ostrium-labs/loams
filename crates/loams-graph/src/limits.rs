@@ -33,6 +33,9 @@ pub struct StatementLimits {
     pub max_rows: u32,
     /// Encoded bytes of a unary answer's rows; past it `graph_result_too_large`.
     pub max_result_bytes: u64,
+    /// Encoded bytes of a whole `ExecuteStream`; past it the stream ends `truncated`, whatever
+    /// its `max_rows` (review fix 1, I4).
+    pub max_stream_bytes: u64,
     /// Bytes of statement text (`INVALID_ARGUMENT` past it).
     pub max_statement_bytes: usize,
     /// Parameters of one statement (`INVALID_ARGUMENT` past it).
@@ -57,6 +60,7 @@ impl StatementLimits {
         timeout: Duration::from_secs(30),
         max_rows: 10_000,
         max_result_bytes: 16 << 20,
+        max_stream_bytes: 256 << 20,
         max_statement_bytes: 1 << 20,
         max_parameters: 1_000,
         max_batch_statements: 1_000,
@@ -71,6 +75,7 @@ impl StatementLimits {
         timeout: Duration::from_secs(300),
         max_rows: 100_000,
         max_result_bytes: 64 << 20,
+        max_stream_bytes: 1 << 30,
         max_statement_bytes: 1 << 20,
         max_parameters: 10_000,
         max_batch_statements: 10_000,
@@ -88,6 +93,7 @@ impl StatementLimits {
             timeout: self.timeout.clamp(Duration::from_millis(1), max.timeout),
             max_rows: self.max_rows.clamp(1, max.max_rows),
             max_result_bytes: self.max_result_bytes.clamp(1, max.max_result_bytes),
+            max_stream_bytes: self.max_stream_bytes.clamp(1, max.max_stream_bytes),
             max_statement_bytes: self.max_statement_bytes.clamp(1, max.max_statement_bytes),
             max_parameters: self.max_parameters.min(max.max_parameters),
             max_batch_statements: self.max_batch_statements.clamp(1, max.max_batch_statements),

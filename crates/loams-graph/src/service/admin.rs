@@ -431,6 +431,20 @@ impl GraphAdmin {
         timeout_ms: u32,
         work: impl FnOnce(&Graph, &StatementLimits) -> Result<T, ConnectError> + Send + 'static,
     ) -> Result<T, ConnectError> {
+        self.on_graph_held(namespace, name, timeout_ms, work)
+            .await
+            .map(|(result, _slots)| result)
+    }
+
+    /// [`GraphAdmin::on_graph`], answering the statement's slots with its result, so a caller
+    /// that goes on using the result (a stream) keeps them (review fix 1, I4).
+    async fn on_graph_held<T: Send + 'static>(
+        &self,
+        namespace: &str,
+        name: &str,
+        timeout_ms: u32,
+        work: impl FnOnce(&Graph, &StatementLimits) -> Result<T, ConnectError> + Send + 'static,
+    ) -> Result<(T, Slots), ConnectError> {
         let started = tokio::time::Instant::now();
         if self.is_shutting_down() {
             return Err(shutting_down());
@@ -497,15 +511,20 @@ impl GraphAdmin {
             tokio::spawn(async move {
                 // Settles the detached count however the task ends.
                 let _finished = Finished(watch);
-                let _slots = (slot, namespace_slot);
+                // Freed when the task ends, unless the result carries them on.
+                let slots = Slots {
+                    _process: slot,
+                    _namespace: namespace_slot,
+                };
                 let graph = admin.open_meta(&meta).await?;
-                admin
+                let result = admin
                     .on_pool(move || {
                         let result = work(&graph, &limits);
                         drop(graph);
                         result
                     })
-                    .await
+                    .await?;
+                Ok((result, slots))
             })
         };
         // Dropped when this call ends, however it ends: a call whose client went away (this
@@ -1029,13 +1048,17 @@ impl GraphAdmin {
             request.timeout_ms,
         );
         let max_rows = (request.max_rows > 0).then_some(request.max_rows as usize);
-        let result = self
-            .on_graph(&namespace, &name, timeout, move |graph, limits| {
+        let ((result, max_bytes), slots) = self
+            .on_graph_held(&namespace, &name, timeout, move |graph, limits| {
                 data::run_statement(graph, &request, limits, max_rows)
+                    .map(|result| (result, limits.max_stream_bytes))
             })
             .await?;
+        // The stream keeps the statement's slots until it ends or is dropped (I4).
         Ok(Box::pin(futures::stream::iter(
-            stream::Chunks::new(result, req.chunk_rows).map(Ok),
+            stream::Chunks::new(result, req.chunk_rows, max_bytes)
+                .holding(slots)
+                .map(Ok),
         )))
     }
 
@@ -1219,4 +1242,10 @@ impl Drop for Waiting {
     fn drop(&mut self) {
         self.0.abandon();
     }
+}
+
+/// A statement's process and namespace slots, freed when dropped.
+pub(crate) struct Slots {
+    _process: tokio::sync::OwnedSemaphorePermit,
+    _namespace: tokio::sync::OwnedSemaphorePermit,
 }
