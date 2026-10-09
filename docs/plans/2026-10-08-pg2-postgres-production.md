@@ -328,6 +328,7 @@ Commit `feat(pg): ids and routed names`.
 **Interfaces:**
 - The project and branch RPCs. Create writes the record in state `creating` and returns an `Operation`. The reconciler (Task 7) does the Neon calls.
 - `IdempotencyLedger`, unless Task 0 found an existing one: key `(principal, rpc, idempotency_key)`, value the first response, TTL 24 h.
+- *(Amended by R3.14.)* A create whose store write was `Undetermined` and is then retried gets `Conflict` from the store when the first write applied. The ledger, or a writer id kept in the record, must turn that into the first call's answer, not `already_exists`. Test: `create_project_undetermined_then_retry_returns_same_operation`.
 
 Tests:
 - `create_project_replay_returns_same_operation`
@@ -1538,3 +1539,10 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
   - `watch(prefix)` now returns `Result<BoxStream, StoreError>`. It refuses, with `InvalidArgument`, a prefix that does not start with `<tag>/` for a tag of `TAGS` (`x X E C R D`). So it never scans the metastore's records under the same root.
   - An undecodable value under a valid prefix is skipped, and reported once per key. The report repeats only if the key decoded or disappeared in between.
   - Scans no longer log from inside the transaction body, which can rerun.
+- **R3.14 An undetermined create, retried, is a conflict at the store (review; a note for Task 5).**
+  - Commit tokens resolve most lost acknowledgements (R3.8), but not all. When `put(rec, None, …)` answers `Undetermined`, the write may have applied.
+  - If it applied, a plain retry gets `Conflict { current: Some(v) }`, which the service would report as `already_exists`, although the record is the caller's own.
+  - Task 5 must resolve this, through one of two ways:
+    - the `IdempotencyLedger`, written in the same transaction as the record, or claimed before it. A retry with the same `idempotency_key` then finds the operation and answers it.
+    - a writer id kept in the record: the operation id, or the idempotency key's hash. On `Conflict`, the service reads the record and treats it as its own when the id matches.
+  - Task 5's text gains the test `create_project_undetermined_then_retry_returns_same_operation`, using the conformance suite's injected lost ack.
