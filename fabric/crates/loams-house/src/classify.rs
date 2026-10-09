@@ -339,6 +339,31 @@ pub(crate) fn lex(text: &str) -> Vec<(Lexeme, std::ops::Range<usize>)> {
     out.into_iter().zip(spans).collect()
 }
 
+/// The statement without what follows its last lexeme: `;`s, whitespace and
+/// comments, found with ClickHouse's lexing (HS1 Task 5 fix round 1). The worker
+/// ends the text it explains with `FORMAT TabSeparated`, which a trailing `;`
+/// would make a second statement; the text that runs is the same one. An
+/// `INSERT` is left whole (what follows its head may be data), and so is a
+/// trailer with an unclosed comment, which ClickHouse refuses.
+pub fn without_trailer(sql: &str) -> &str {
+    if route_words(sql).0 == "INSERT" {
+        return sql;
+    }
+    let lexemes = lex(sql);
+    let Some((_, last)) = lexemes
+        .iter()
+        .rev()
+        .find(|(lexeme, _)| *lexeme != Lexeme::Semicolon)
+    else {
+        return sql;
+    };
+    let end = last.end.min(sql.len());
+    let closed = lex(&format!("{}\nX", &sql[end..]))
+        .iter()
+        .any(|(lexeme, _)| matches!(lexeme, Lexeme::Word(..)));
+    if closed { &sql[..end] } else { sql }
+}
+
 /// The first two words of a statement and whether it opens with `(`, as
 /// ClickHouse's lexer reads it ([`lexemes`]): what the keyword routes go by, so a
 /// heredoc or a nested comment cannot show the route one statement and chDB
@@ -911,6 +936,27 @@ mod tests {
         match classify(sql).expect("classifies") {
             Classified::Known { stmt, .. } => stmt,
             other => panic!("{sql}: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn trailers_are_cut_at_the_last_lexeme() {
+        for (sql, cut) in [
+            ("SELECT 1; -- done\n;", "SELECT 1"),
+            ("SELECT 1 -- c", "SELECT 1"),
+            ("SELECT 1 /* a /* b */ c */ ;", "SELECT 1"),
+            ("SELECT 1 # c\n", "SELECT 1"),
+            ("SELECT 'a;' ;", "SELECT 'a;'"),
+            ("SELECT $$ -- $$", "SELECT $$ -- $$"),
+            ("SELECT 1; SELECT 2;", "SELECT 1; SELECT 2"),
+            ("SELECT 1 /* open", "SELECT 1 /* open"),
+            (
+                "INSERT INTO t FORMAT CSV\na -- b",
+                "INSERT INTO t FORMAT CSV\na -- b",
+            ),
+            ("", ""),
+        ] {
+            assert_eq!(without_trailer(sql), cut, "{sql:?}");
         }
     }
 

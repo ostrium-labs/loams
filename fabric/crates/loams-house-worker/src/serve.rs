@@ -47,6 +47,11 @@ pub const SESSION_SWEEP: Duration = Duration::from_secs(1);
 /// refused (`36`), never run unchecked.
 pub const MAX_ANALYSIS_BYTES: usize = 8 * 1024 * 1024;
 
+/// What the worker ends a statement's text with before explaining it, so that
+/// the explains are TSV whatever the statement says (HS1 Task 5 fix round 1). On
+/// a line of its own: a trailing `--` comment cannot swallow it.
+pub const PINNED_FORMAT: &str = "\nFORMAT TabSeparated";
+
 /// The most House sessions one worker keeps; past it the least recently used is
 /// dropped (Task 3 review, decision 4).
 pub const MAX_SESSIONS: usize = 64;
@@ -429,19 +434,40 @@ impl Worker {
             // The front refuses these on the class alone (`62`).
             return vec![Frame::Analyzed(analysis)];
         }
+        // The explains are TSV, always (fix round 1): a statement's own
+        // top-level `FORMAT` (one the front did not strip, as in `… FORMAT JSON
+        // SETTINGS …`) would be the explain's output format, and the deny list
+        // would read JSON. The worker ends the text with `FORMAT TabSeparated`;
+        // a statement that already has one no longer parses, and is refused.
+        // An `INSERT`'s `FORMAT` names its data, never the explain's (measured):
+        // it is explained as it came.
+        let pinned = format!("{}{PINNED_FORMAT}", analyze.sql);
+        let parses = matches!(
+            self.classify(&pinned).pop(),
+            Some(Frame::Classified(c)) if c.statements == 1 && c.class != QueryClass::Unknown
+        );
+        let text = if parses { &pinned } else { &analyze.sql };
         let explain = |kind: &str| {
             self.control
-                .query(
-                    &format!("EXPLAIN {kind} {}", analyze.sql),
-                    "TSV",
-                    &analyze.params,
-                )
+                .query(&format!("EXPLAIN {kind} {text}"), "TSV", &analyze.params)
                 .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
         };
         analysis.ast = match explain("AST") {
             Ok(ast) => ast,
             Err(err) => return vec![error_frame(engine_error(&err), false)],
         };
+        if !parses && !analysis.ast.starts_with("InsertQuery ") {
+            return vec![error_frame(
+                EngineError {
+                    code: 62,
+                    name: "SYNTAX_ERROR".to_string(),
+                    message: "FORMAT is read only as a statement's last clause on the House \
+                              (put SETTINGS before FORMAT)"
+                        .to_string(),
+                },
+                false,
+            )];
+        }
         if classification.class == QueryClass::ReadOnly {
             // Only a query has a query tree; `SHOW`, `DESCRIBE` and `EXPLAIN`
             // fail to parse here and keep their AST alone.

@@ -55,6 +55,35 @@ pub const PINNED_OFF: &[&str] = &[
     // `INTO OUTFILE` is refused by L1; this keeps it from making directories if
     // L1 is ever bypassed.
     "into_outfile_create_parent_directories",
+    // Fix round 1 (`path_like_settings_are_denied`): the request's headers
+    // carry the credentials; secrets stay hidden in `SHOW` and `SELECT`; the
+    // Iceberg writers' other names; functions that reach an AI endpoint, run
+    // Python, evaluate text or read Keeper; other dialects, which the deny list
+    // would not parse as chDB does; and the memory profiler.
+    "allow_get_client_http_header",
+    "format_display_secrets_in_show_and_select",
+    "allow_experimental_insert_into_iceberg",
+    "allow_experimental_expire_snapshots",
+    "allow_experimental_cleanup_old_data_files_compaction",
+    "allow_experimental_ai_functions",
+    "ai_function_allow_insecure_endpoint",
+    "allow_experimental_eval_table_function",
+    "allow_python_table_function",
+    "allow_fuzz_query_functions",
+    "allow_unrestricted_reads_from_keeper",
+    "allow_experimental_kusto_dialect",
+    "allow_experimental_prql_dialect",
+    "allow_experimental_polyglot_dialect",
+    "jemalloc_enable_profiler",
+    "jemalloc_collect_profile_samples_in_trace_log",
+];
+
+/// Switches the profile pins at their defaults with `<readonly/>` constraints
+/// (fix round 1): what they open is refused already, and turning them off would
+/// change nothing the House does.
+pub const PINNED_SWITCHES: &[&str] = &[
+    "allow_named_collection_override_by_default",
+    "allow_distributed_ddl",
 ];
 
 /// Settings the profile pins to a value with `<readonly/>` constraints.
@@ -83,6 +112,7 @@ pub const PINNED_PATHS: &[&str] = &[
     "format_avro_schema_registry_url",
     "rename_files_after_processing",
     "s3queue_default_zookeeper_path",
+    "url_base",
 ];
 
 /// The largest `max_memory_usage` a statement may set: §49 §12's 4 GiB per query
@@ -115,6 +145,7 @@ pub fn pinned() -> impl Iterator<Item = &'static str> {
         .copied()
         .chain(PINNED_VALUES.iter().map(|(name, _)| *name))
         .chain(PINNED_PATHS.iter().copied())
+        .chain(PINNED_SWITCHES.iter().copied())
 }
 
 #[cfg(test)]

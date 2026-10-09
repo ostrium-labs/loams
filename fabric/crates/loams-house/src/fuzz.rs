@@ -65,8 +65,11 @@ pub fn fuzz_request(data: &[u8]) {
     };
     let rewritten = crate::deny::rewrite_host_functions(&text, &host);
     assert!(rewritten.len() >= text.len(), "a rewrite only adds");
-    let tree = crate::deny::QueryTree::from_explain(&text, Some(&text));
+    let tree = crate::deny::QueryTree::from_explain(&text, Some(&text)).statement(&text);
     let _ = crate::deny::check(&tree);
+    // The trailer cut (fix round 1) only ever shortens the text, to a prefix.
+    let cut = crate::classify::without_trailer(&text);
+    assert!(text.starts_with(cut), "the cut is a prefix");
     let _ = crate::deny::is_denied_setting(&text);
     let limits = crate::settings::SessionLimits::default();
     let known = std::collections::HashSet::from(["max_threads".to_string()]);

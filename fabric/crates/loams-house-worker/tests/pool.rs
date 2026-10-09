@@ -645,6 +645,9 @@ async fn env_inner() {
     let dir = tmp_root_of(&cmdline);
     for file in ["config.xml", "users.xml"] {
         let text = std::fs::read_to_string(dir.join(file)).expect(file);
+        // The profile pins `format_display_secrets_in_show_and_select` off (HS1
+        // Task 5 fix round 1): a setting's name, not a secret.
+        let text = text.replace("format_display_secrets_in_show_and_select", "");
         assert!(!text.contains(&canary), "{file}");
         assert!(!text.to_lowercase().contains("secret"), "{file}");
     }

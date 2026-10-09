@@ -741,6 +741,9 @@ async fn run(
         user: &user.user,
     };
     let sql = deny::rewrite_host_functions(&sql, &host);
+    // What runs is what the worker explains, which it ends with its own
+    // `FORMAT`: no trailing `;` or comment (fix round 1).
+    let sql = crate::classify::without_trailer(&sql).to_string();
     if let Some(spec) = input.as_mut() {
         spec.insert = deny::rewrite_host_functions(&spec.insert, &host);
     }
@@ -916,7 +919,8 @@ fn admit(
         // it, or `decide` refuses the form): its engine is held to the denied
         // engines, not to a temporary table's Memory or Null.
         let tree = deny::QueryTree::from_explain(&analysis.ast, analysis.query_tree.as_deref())
-            .shared_create(crate::classify::creates_shared_object(sql));
+            .shared_create(crate::classify::creates_shared_object(sql))
+            .statement(sql);
         deny::check(&tree).map_err(HouseError::from)?;
     }
     decide(classification, expect, readonly, unparsed)

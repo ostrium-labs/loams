@@ -211,6 +211,68 @@ pub const DENIED_ENGINES: &[&str] = &[
     "KeeperMap",
     "YTsaurus",
     "ArrowFlight",
+    // Fix round 1: another table's data under a new name (`Merge` over
+    // `system`, `Alias`, `Buffer`'s destination), object stores under other
+    // names, and the rest chDB 26.9 has (`the_engine_lists_follow_chdb`).
+    // `ExternalDistributed` is ClickHouse's, not in chDB 26.9: listed for the
+    // next version.
+    "Merge",
+    "Buffer",
+    "Alias",
+    "ExternalDistributed",
+    "COSN",
+    "OSS",
+    "GCS",
+    "DeltaLakeS3",
+    "TimeSeries",
+    "Remote",
+    "RemoteSecure",
+    "ArrowStream",
+    "BigQuery",
+    "Paimon",
+    "PaimonS3",
+    "PaimonAzure",
+    "PaimonHDFS",
+    "PaimonLocal",
+    "QueryRunner",
+    "Loop",
+    "FuzzJSON",
+    "FuzzQuery",
+];
+
+/// The engines chDB has that are not on [`DENIED_ENGINES`], reviewed (fix round
+/// 1): a `CREATE` may name them, and `the_engine_lists_follow_chdb` fails when a
+/// version adds an engine on neither list. In chDB a temporary table is still
+/// held to [`ALLOWED_TEMPORARY_ENGINES`]; a lake table's engine (the MergeTree
+/// family) is the front's, mapped onto Iceberg (HS1 Task 10); views are the
+/// front's own (HS1 Tasks 11 and 17); the rest keep their data in the session.
+pub const ALLOWED_ENGINES: &[&str] = &[
+    "Memory",
+    "Null",
+    "View",
+    "MaterializedView",
+    "MergeTree",
+    "ReplacingMergeTree",
+    "SummingMergeTree",
+    "AggregatingMergeTree",
+    "CollapsingMergeTree",
+    "VersionedCollapsingMergeTree",
+    "CoalescingMergeTree",
+    "GraphiteMergeTree",
+    "ReplicatedMergeTree",
+    "ReplicatedReplacingMergeTree",
+    "ReplicatedSummingMergeTree",
+    "ReplicatedAggregatingMergeTree",
+    "ReplicatedCollapsingMergeTree",
+    "ReplicatedVersionedCollapsingMergeTree",
+    "ReplicatedCoalescingMergeTree",
+    "ReplicatedGraphiteMergeTree",
+    "Log",
+    "TinyLog",
+    "StripeLog",
+    "Set",
+    "Join",
+    "GenerateRandom",
 ];
 
 /// Functions no statement may call (`344`): they read a file (`file`, a model's
@@ -282,6 +344,35 @@ pub const DENIED_SETTINGS: &[&str] = &[
     "default_temporary_table_engine",
     "default_table_engine",
     "allow_introspection_functions",
+    // Fix round 1 (`path_like_settings_are_denied`): the request's headers,
+    // which carry the credentials; secrets in `SHOW` and `SELECT`; the scripts
+    // directory (a server setting: refused, never unknown); every switch the
+    // worker pins (a pinned setting is a denied one); and the switches that
+    // open the host, the network or another dialect.
+    "allow_get_client_http_header",
+    "format_display_secrets_in_show_and_select",
+    "user_scripts_path",
+    "url_base",
+    "allow_insert_into_iceberg",
+    "allow_experimental_insert_into_iceberg",
+    "allow_experimental_iceberg_compaction",
+    "allow_iceberg_remove_orphan_files",
+    "allow_experimental_expire_snapshots",
+    "allow_experimental_cleanup_old_data_files_compaction",
+    "allow_custom_error_code_in_throwif",
+    "allow_experimental_ai_functions",
+    "ai_function_allow_insecure_endpoint",
+    "allow_experimental_eval_table_function",
+    "allow_python_table_function",
+    "allow_fuzz_query_functions",
+    "allow_unrestricted_reads_from_keeper",
+    "allow_named_collection_override_by_default",
+    "allow_distributed_ddl",
+    "allow_experimental_kusto_dialect",
+    "allow_experimental_prql_dialect",
+    "allow_experimental_polyglot_dialect",
+    "jemalloc_enable_profiler",
+    "jemalloc_collect_profile_samples_in_trace_log",
 ];
 
 /// What a host function answers on the House.
@@ -330,6 +421,9 @@ pub const HOST_FUNCTIONS: &[HostFunction] = &[
     host("user", true, Host::User),
     host("current_user", true, Host::User),
     host("session_user", true, Host::User),
+    host("authenticatedUser", false, Host::User),
+    host("uptime", false, Host::Disabled),
+    host("logTrace", false, Host::Disabled),
     host("getMacro", false, Host::Disabled),
     host("filesystemAvailable", false, Host::Disabled),
     host("filesystemCapacity", false, Host::Disabled),
@@ -394,6 +488,51 @@ pub const ALLOWED_SYSTEM_TABLES: &[&str] = &[
 /// The database a session reads, which `merge()` may name: `default` until HS1
 /// Task 10 maps databases onto the namespace's catalog.
 pub const OWN_DATABASE: &str = "default";
+
+/// The statements an `EXPLAIN AST` may open with (fix round 1): what the surface
+/// sends to chDB. The first line of the explain must be one of these, as chDB
+/// prints it in TSV, or nothing in the output is trusted: a `FORMAT` the front
+/// did not strip would print JSON, CSV or one raw line instead, and the check
+/// would read none of it. `SHOW` forms are [`ALLOWED_SHOW_QUERIES`].
+pub const STATEMENT_ROOTS: &[&str] = &[
+    "SelectWithUnionQuery",
+    "InsertQuery",
+    "CreateQuery",
+    "Explain",
+    "DescribeQuery",
+    "ExistsTableQuery",
+    "ExistsDatabaseQuery",
+    "ExistsViewQuery",
+    "ExistsDictionaryQuery",
+    "DropQuery",
+];
+
+/// The `SHOW` forms a statement may use, by the label chDB's `EXPLAIN AST` gives
+/// them (fix round 1, measured on chDB 26.9). Each is rewritten by the engine
+/// into a read of a `system` table, which no explain shows, so the form itself is
+/// held to what [`ALLOWED_SYSTEM_TABLES`] allows: tables, databases, columns and
+/// indexes, `CREATE` of a table, database or view, settings, engines, functions
+/// and the process list. The access forms (`ACCESS`, `GRANTS`, `USERS`, `ROLES`,
+/// `PROFILES`, `QUOTAS`, `POLICIES`, `PRIVILEGES`, `CREATE USER` …) and `SHOW
+/// CREATE DICTIONARY` are `344`. `ShowTables` also covers `CLUSTERS`,
+/// `FILESYSTEM CACHES`, `MERGES` and `DICTIONARIES`: its form is read from the
+/// text ([`ALLOWED_SHOW_LISTS`]).
+pub const ALLOWED_SHOW_QUERIES: &[&str] = &[
+    "ShowTables",
+    "ShowColumns",
+    "ShowIndexes",
+    "ShowCreateTableQuery",
+    "ShowCreateDatabaseQuery",
+    "ShowCreateViewQuery",
+    "ShowSetting",
+    "ShowEngineQuery",
+    "ShowFunctions",
+    "ShowProcesslistQuery",
+];
+
+/// What a `ShowTables` statement may list: the word after `SHOW` (and `FULL`,
+/// `EXTENDED`, `TEMPORARY` or `CHANGED`).
+pub const ALLOWED_SHOW_LISTS: &[&str] = &["TABLES", "DATABASES", "SETTINGS"];
 
 /// Whether a setting is on [`DENIED_SETTINGS`].
 pub fn is_denied_setting(name: &str) -> bool {
@@ -507,6 +646,13 @@ pub struct QueryTree {
     /// engine is held to [`DENIED_ENGINES`] only (the AST does not say
     /// `TEMPORARY`; the front reads it from the text).
     shared_create: bool,
+    /// How many entries the `EXPLAIN AST` gave (the query tree's follow).
+    ast_entries: usize,
+    /// Whether a query tree was given.
+    has_query_tree: bool,
+    /// What a `SHOW` lists (`TABLES`, `CLUSTERS` …), read from the statement's
+    /// text, when it is one: `ShowTables` does not say.
+    show_list: Option<String>,
 }
 
 impl QueryTree {
@@ -522,10 +668,19 @@ impl QueryTree {
             .is_some_and(
                 |e| matches!(&e.node, Node::Other(label) if label.starts_with("InsertQuery")),
             );
+        tree.ast_entries = tree.entries.len();
         if let Some(text) = query_tree {
+            tree.has_query_tree = true;
             tree.push_lines(text, Format::QueryTree);
         }
         tree
+    }
+
+    /// The statement's text, for what its trees do not say: the list a `SHOW`
+    /// names. Without it a `ShowTables` node is refused.
+    pub fn statement(mut self, sql: &str) -> Self {
+        self.show_list = show_list(sql);
+        self
     }
 
     /// Marks the statement as a `CREATE` of something other than a temporary
@@ -739,6 +894,7 @@ pub fn check(tree: &QueryTree) -> Result<(), ChError> {
             "the statement could not be analysed, and the House runs nothing unchecked".to_string(),
         ));
     }
+    check_shape(tree)?;
     for (at, entry) in tree.entries.iter().enumerate() {
         match &entry.node {
             Node::Other(label) => {
@@ -747,6 +903,9 @@ pub fn check(tree: &QueryTree) -> Result<(), ChError> {
                     .find(|(prefix, _)| label.starts_with(prefix))
                 {
                     return Err(denied_statement(what));
+                }
+                if is_show(label) {
+                    check_show(tree, at, label)?;
                 }
             }
             Node::TableFunction(names) => {
@@ -770,6 +929,136 @@ pub fn check(tree: &QueryTree) -> Result<(), ChError> {
         }
     }
     Ok(())
+}
+
+/// The explains are what the worker asked for, or nothing in them is read (fix
+/// round 1): the AST opens with a statement root as chDB prints it in TSV — the
+/// bare label, or the label and its `(children n)` with those children on the
+/// lines after it — and a query tree opens with its `QUERY` or `UNION` node.
+fn check_shape(tree: &QueryTree) -> Result<(), ChError> {
+    let unreadable = || {
+        disabled(
+            "the statement's syntax tree is not in the form the House reads, and the House \
+             runs nothing unchecked"
+                .to_string(),
+        )
+    };
+    let ast = &tree.entries[..tree.ast_entries];
+    let Some(Entry {
+        node: Node::Other(root),
+        depth: 0,
+        ..
+    }) = ast.first()
+    else {
+        return Err(unreadable());
+    };
+    if let Some((_, what)) = DENIED_AST_LABELS
+        .iter()
+        .find(|(prefix, _)| root.starts_with(prefix))
+    {
+        return Err(denied_statement(what));
+    }
+    let known = STATEMENT_ROOTS.iter().any(|name| is_label(root, name)) || is_show(root);
+    let children = root
+        .rsplit_once(" (children ")
+        .and_then(|(_, n)| n.strip_suffix(')'))
+        .map(|n| n.parse::<usize>());
+    let whole = match children {
+        // A bare root (`ShowTables`): nothing more on its line. An access
+        // form's `SHOW USERS query` is refused as a `SHOW` below.
+        None => !root.contains(' ') || root.starts_with("SHOW "),
+        Some(Ok(n)) => n > 0 && ast.iter().skip(1).any(|e| e.depth > 0),
+        Some(Err(_)) => false,
+    };
+    if !known || !whole {
+        return Err(unreadable());
+    }
+    if tree.has_query_tree {
+        let first = tree.entries.get(tree.ast_entries);
+        let is_root = first.is_some_and(|e| {
+            e.depth == 0
+                && matches!(&e.node, Node::Other(kind) if kind == "QUERY" || kind == "UNION")
+        });
+        if !is_root {
+            return Err(unreadable());
+        }
+    }
+    Ok(())
+}
+
+/// `label` is the node `name`: the name alone, or followed by a space.
+fn is_label(label: &str, name: &str) -> bool {
+    label
+        .strip_prefix(name)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+}
+
+/// A `SHOW` statement's node (`ShowTables`, `SHOW USERS query`).
+fn is_show(label: &str) -> bool {
+    label.starts_with("Show") || label.starts_with("SHOW ")
+}
+
+/// `344` for a `SHOW` form outside [`ALLOWED_SHOW_QUERIES`] and
+/// [`ALLOWED_SHOW_LISTS`]; a `SHOW CREATE` of a `system` table is held to
+/// [`ALLOWED_SYSTEM_TABLES`].
+fn check_show(tree: &QueryTree, at: usize, label: &str) -> Result<(), ChError> {
+    let refused = |what: &str| {
+        disabled(format!(
+            "SHOW {what} is disabled on the House: it describes the host, its access or the \
+             engine's internals (see the surface page)"
+        ))
+    };
+    let Some(form) = ALLOWED_SHOW_QUERIES
+        .iter()
+        .find(|name| is_label(label, name))
+    else {
+        return Err(refused(label));
+    };
+    if *form == "ShowTables" {
+        match &tree.show_list {
+            Some(list) if listed(ALLOWED_SHOW_LISTS, list) => {}
+            Some(list) => return Err(refused(list)),
+            None => return Err(refused("(a form the House could not read)")),
+        }
+    }
+    if form.starts_with("ShowCreate") {
+        // `SHOW CREATE TABLE system.disks` names its database and table as two
+        // identifiers.
+        let names: Vec<&str> = tree
+            .entries
+            .iter()
+            .filter(|e| e.parent == Some(at))
+            .filter_map(|e| match &e.node {
+                Node::Identifier(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        for pair in names.windows(2) {
+            check_identifier(&format!("{}.{}", pair[0], pair[1]))?;
+        }
+    }
+    Ok(())
+}
+
+/// The list a `SHOW` names: the first word after `SHOW` other than `FULL`,
+/// `EXTENDED`, `TEMPORARY` and `CHANGED`, upper-cased, found with ClickHouse's
+/// lexing. None when the text is no `SHOW`, or the list is not a bare word.
+fn show_list(sql: &str) -> Option<String> {
+    let lexemes = lex(sql);
+    let word = |lexeme: &Lexeme| match lexeme {
+        Lexeme::Word(start, end) => Some(sql[*start..*end].to_ascii_uppercase()),
+        _ => None,
+    };
+    let at = lexemes
+        .iter()
+        .position(|(l, _)| word(l).as_deref() == Some("SHOW"))?;
+    for (lexeme, _) in &lexemes[at + 1..] {
+        let next = word(lexeme)?;
+        if !matches!(next.as_str(), "FULL" | "EXTENDED" | "TEMPORARY" | "CHANGED") {
+            return Some(next);
+        }
+    }
+    None
 }
 
 fn check_table_function(tree: &QueryTree, at: usize, name: &str) -> Result<(), ChError> {
@@ -1211,6 +1500,192 @@ mod tests {
         assert_eq!(as_setting_refusal(pinned).code(), 164);
         let capped = engine("Setting max_memory_usage shouldn't be greater than 4294967296");
         assert_eq!(as_setting_refusal(capped).code(), 452);
+    }
+
+    #[test]
+    fn explain_output_is_held_to_its_shape() {
+        // chDB's explains as the worker asks for them: TSV, a statement root
+        // first. JSON, CSV or a one-line RawBLOB (a top-level FORMAT the front
+        // did not strip) is refused, not read.
+        let json = "{\n\t\"meta\":\n\t[\n\t\t{\n\t\t\t\"explain\": \"  Function url (children 1)\"";
+        assert_eq!(code(check(&tree(json, None))), Some(344));
+        let csv = "\"SelectWithUnionQuery (children 1)\"\n\" TableExpression (children 1)\"";
+        assert_eq!(code(check(&tree(csv, None))), Some(344));
+        let vertical = "Row 1:\n──────\nexplain: SelectWithUnionQuery (children 1)";
+        assert_eq!(code(check(&tree(vertical, None))), Some(344));
+        assert_eq!(code(check(&tree("SettingsQuery x", None))), Some(344));
+        // A one-line RawBLOB: a root that claims children it does not have, or
+        // ends on a leaf.
+        let raw = "SelectWithUnionQuery (children 1) ExpressionList (children 1) Literal UInt64_1";
+        assert_eq!(code(check(&tree(raw, None))), Some(344));
+        let claims = "SelectWithUnionQuery (children 1) TableIdentifier `x (children 1)";
+        assert_eq!(code(check(&tree(claims, None))), Some(344));
+        // A query tree that is not one (the AST was TSV, the query tree JSON).
+        let ok_ast = "SelectWithUnionQuery (children 1)";
+        let json_qt = "{\"explain\":\"QUERY id: 0\"}\n{\"explain\":\"    TABLE_FUNCTION id: 3, table_function_name: url\"}";
+        assert_eq!(code(check(&tree(ok_ast, Some(json_qt)))), Some(344));
+        assert_eq!(code(check(&tree(ok_ast, Some("")))), Some(344));
+        // Every root the surface reaches is known.
+        for (ast, query_tree) in [
+            ("SelectWithUnionQuery (children 1)", Some("QUERY id: 0")),
+            (
+                "SelectWithUnionQuery (children 1)",
+                Some("UNION id: 0, union_mode: INTERSECT_ALL"),
+            ),
+            ("InsertQuery   (children 1)\n Identifier t", None),
+            ("CreateQuery x (children 2)\n Identifier x", None),
+            ("Explain EXPLAIN AST (children 1)", None),
+            ("DescribeQuery (children 1)", None),
+            ("ExistsTableQuery  t (children 1)", None),
+            ("ExistsDatabaseQuery default  (children 1)", None),
+            ("DropQuery  t (children 1)", None),
+            ("ShowColumns", None),
+            ("ShowCreateTableQuery  t (children 1)\n Identifier t", None),
+        ] {
+            let ast = if ast.contains("(children") && !ast.contains('\n') {
+                format!("{ast}\n ExpressionList")
+            } else {
+                ast.to_string()
+            };
+            assert_eq!(code(check(&tree(&ast, query_tree))), None, "{ast}");
+        }
+    }
+
+    #[test]
+    fn show_forms_follow_the_allow_list() {
+        let show = |label: &str, sql: &str| check(&tree(label, None).statement(sql));
+        for sql in [
+            "SHOW TABLES",
+            "show full tables from default like 't%'",
+            "SHOW TEMPORARY TABLES",
+            "SHOW DATABASES",
+            "SHOW SETTINGS LIKE 'max%'",
+            "/* c */ SHOW CHANGED SETTINGS ILIKE '%x'",
+        ] {
+            assert_eq!(code(show("ShowTables", sql)), None, "{sql}");
+        }
+        for sql in [
+            "SHOW CLUSTERS",
+            "SHOW CLUSTER 'default'",
+            "SHOW FILESYSTEM CACHES",
+            "SHOW MERGES",
+            "SHOW DICTIONARIES",
+            "SHOW `TABLES`",
+        ] {
+            assert_eq!(code(show("ShowTables", sql)), Some(344), "{sql}");
+        }
+        assert_eq!(
+            code(check(&tree("ShowTables", None))),
+            Some(344),
+            "a SHOW whose text is unknown"
+        );
+        for label in [
+            "ShowColumns",
+            "ShowIndexes",
+            "ShowCreateTableQuery  t (children 1)",
+            "ShowCreateDatabaseQuery default  (children 1)",
+            "ShowCreateViewQuery  v (children 1)",
+            "ShowSetting",
+            "ShowEngineQuery",
+            "ShowFunctions",
+            "ShowProcesslistQuery",
+        ] {
+            let ast = if label.contains("(children") {
+                format!("{label}\n Identifier t")
+            } else {
+                label.to_string()
+            };
+            assert_eq!(code(check(&tree(&ast, None))), None, "{label}");
+        }
+        for label in [
+            "ShowAccessQuery",
+            "ShowGrantsQuery",
+            "ShowPrivilegesQuery",
+            "SHOW USERS query",
+            "SHOW ROLES query",
+            "SHOW SETTINGS PROFILES query",
+            "SHOW QUOTAS query",
+            "SHOW CURRENT QUOTA query",
+            "SHOW ROW POLICIES query",
+            "SHOW CREATE USER query",
+            "SHOW CURRENT ROLES query",
+            "ShowCreateDictionaryQuery  d (children 1)",
+            "ShowSomethingNew",
+        ] {
+            assert_eq!(code(check(&tree(label, None))), Some(344), "{label}");
+        }
+        // Inside an EXPLAIN, too.
+        let explain = "Explain EXPLAIN AST (children 1)\n ShowTables";
+        assert_eq!(
+            code(check(
+                &tree(explain, None).statement("EXPLAIN AST SHOW CLUSTERS")
+            )),
+            Some(344)
+        );
+        // SHOW CREATE TABLE of a system table is held to the system allow-list.
+        let create = |db: &str, t: &str| {
+            format!("ShowCreateTableQuery {db} {t} (children 2)\n Identifier {db}\n Identifier {t}")
+        };
+        assert_eq!(
+            code(check(&tree(&create("system", "disks"), None))),
+            Some(344)
+        );
+        assert_eq!(code(check(&tree(&create("system", "one"), None))), None);
+        assert_eq!(code(check(&tree(&create("default", "disks"), None))), None);
+        let substituted =
+            "ShowCreateTableQuery  system.disks (children 1)\n Identifier system.disks";
+        assert_eq!(code(check(&tree(substituted, None))), Some(344));
+    }
+
+    #[test]
+    fn host_functions_cover_uptime_logs_and_the_authenticated_user() {
+        assert_eq!(
+            rewrite_host_functions("SELECT authenticatedUser()", &VALUES),
+            "SELECT ('alice' AS `authenticatedUser()`)"
+        );
+        for name in ["uptime", "logTrace"] {
+            let qt = format!(
+                "QUERY id: 0\n  PROJECTION\n    FUNCTION id: 1, function_name: {name}, function_type: ordinary"
+            );
+            assert_eq!(
+                code(check(&tree("SelectWithUnionQuery", Some(&qt)))),
+                Some(344),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn denied_settings_include_the_headers_secrets_and_scripts() {
+        for name in [
+            "allow_get_client_http_header",
+            "format_display_secrets_in_show_and_select",
+            "user_scripts_path",
+            "allow_custom_error_code_in_throwif",
+            "allow_insert_into_iceberg",
+        ] {
+            assert!(is_denied_setting(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn engines_include_the_merge_buffer_and_object_store_ones() {
+        for engine in [
+            "Merge",
+            "Buffer",
+            "Alias",
+            "ExternalDistributed",
+            "COSN",
+            "OSS",
+            "GCS",
+            "DeltaLakeS3",
+            "TimeSeries",
+        ] {
+            assert_eq!(code(check_engine(engine, false)), Some(344), "{engine}");
+        }
+        for engine in ALLOWED_ENGINES {
+            assert!(!listed(DENIED_ENGINES, engine), "{engine}");
+        }
     }
 
     #[test]

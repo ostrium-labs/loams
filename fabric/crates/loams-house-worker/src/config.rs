@@ -8,7 +8,7 @@
 //! At boot it writes two files into its private temporary directory:
 //!
 //! * `config.xml`, the engine's `--config-file`: the users file, `user_files_path`,
-//!   the House's `display_name`, a `user_scripts_path` that never exists (HS1
+//!   the House's `display_name`, a `user_scripts_path` that cannot exist (HS1
 //!   Task 5) and the three in-memory metadata caches sized from the memory limit
 //!   (HS1 R1.4).
 //! * `users.xml`, which **redefines `default`** with explicit grants instead of
@@ -30,13 +30,14 @@ pub const GRANTS: &str = "GRANT SELECT, SHOW, CREATE TEMPORARY TABLE, CREATE VIE
 
 pub use crate::settings::{
     MAX_EXECUTION_TIME_S, MAX_QUERY_MEMORY, MIN_EXECUTION_TIME_S, PINNED_OFF, PINNED_PATHS,
-    PINNED_VALUES, max_threads_cap,
+    PINNED_SWITCHES, PINNED_VALUES, max_threads_cap,
 };
 
-/// `user_scripts_path`: a directory under the worker's own that is never
-/// created, so `executable()` and executable UDFs find no script even with L1
-/// bypassed (HS1 Task 5).
-pub const NO_USER_SCRIPTS: &str = "no-user-scripts";
+/// `user_scripts_path`: a directory that cannot exist, so `executable()` and
+/// executable UDFs find no script even with L1 bypassed (HS1 Task 5). It is
+/// under a file, outside the worker's writable directory (fix round 1): nothing,
+/// the worker included, can create it.
+pub const NO_USER_SCRIPTS: &str = "/dev/null/loams-no-user-scripts";
 
 /// The worker's command line.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -165,7 +166,7 @@ pub fn config_xml(args: &WorkerArgs) -> String {
         users = xml_text(&args.users_file().display().to_string()),
         files = xml_text(&args.files_dir().display().to_string()),
         display = xml_text(crate::settings::DISPLAY_NAME),
-        scripts = xml_text(&args.tmp_dir.join(NO_USER_SCRIPTS).display().to_string()),
+        scripts = xml_text(NO_USER_SCRIPTS),
         iceberg = caches.iceberg_metadata,
         parquet = caches.parquet_metadata,
         condition = caches.query_condition,
@@ -193,7 +194,7 @@ pub fn users_xml(args: &WorkerArgs) -> String {
         let _ = writeln!(pinned, "      <{name}>{value}</{name}>");
         let _ = writeln!(constraints, "        <{name}><readonly/></{name}>");
     }
-    for name in PINNED_PATHS {
+    for name in PINNED_PATHS.iter().chain(PINNED_SWITCHES) {
         let _ = writeln!(constraints, "        <{name}><readonly/></{name}>");
     }
     // The caps of FL2 Ruling 10, enforced by the engine after its own parsing and
@@ -340,7 +341,16 @@ mod tests {
     fn config_names_the_house_and_no_scripts() {
         let config = config_xml(&args());
         assert!(config.contains("<display_name>loams-house</display_name>"));
-        assert!(config.contains("<user_scripts_path>/w/7/no-user-scripts/</user_scripts_path>"));
+        // Outside the worker's writable directory, under a file: nothing, not even
+        // the worker itself, can create it (fix round 1).
+        assert!(config.contains(&format!(
+            "<user_scripts_path>{NO_USER_SCRIPTS}/</user_scripts_path>"
+        )));
+        assert!(
+            NO_USER_SCRIPTS.starts_with("/dev/null/"),
+            "{NO_USER_SCRIPTS}"
+        );
+        assert!(!Path::new(NO_USER_SCRIPTS).starts_with(&args().tmp_dir));
     }
 
     #[test]
