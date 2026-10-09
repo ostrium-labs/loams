@@ -7,6 +7,7 @@
 //! opening any of them up front.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use buffa_types::google::protobuf::Timestamp;
@@ -23,6 +24,12 @@ use crate::engine::{Engine, Graph, GraphState, OpenSpec};
 
 /// How long a deleted graph's storage is kept before it is purged, by default.
 pub const DEFAULT_RETENTION_HOLD: Duration = Duration::from_secs(24 * 3600);
+
+/// How long [`GraphAdmin::shutdown`] waits for running statements, by default.
+pub const DEFAULT_SHUTDOWN_WAIT: Duration = Duration::from_secs(10);
+
+/// The largest statement cap [`GraphAdmin::with_statement_slots`] accepts.
+pub const MAX_STATEMENT_SLOTS: usize = 4096;
 
 /// The most followers a graph may ask for (review M6).
 pub const MAX_REPLICAS: u32 = 8;
@@ -76,6 +83,9 @@ pub struct GraphAdmin {
     /// released when it ends, so a statement whose client went away still holds its slot.
     statements: Arc<tokio::sync::Semaphore>,
     statement_slots: usize,
+    /// Set when [`GraphAdmin::shutdown`] starts: from then on no graph opens and no statement
+    /// starts; each answers `UNAVAILABLE` (review fix 1, I3).
+    closed: Arc<AtomicBool>,
     #[cfg(feature = "test-hooks")]
     after_open_hook: Arc<std::sync::Mutex<Option<crate::catalog::AckHook>>>,
 }
@@ -178,6 +188,15 @@ pub fn default_statement_slots() -> usize {
         .min(32)
 }
 
+/// `UNAVAILABLE` once [`GraphAdmin::shutdown`] has started.
+fn shutting_down() -> ConnectError {
+    refuse(
+        ErrorCode::Unavailable,
+        "unavailable",
+        "the graph service is shutting down",
+    )
+}
+
 /// A short operation id: `op-` and 26 hex characters (D146).
 fn operation_id() -> String {
     let hex = format!("{:032x}", u128::from(ulid::Ulid::generate()));
@@ -195,6 +214,7 @@ impl GraphAdmin {
             retention_hold: DEFAULT_RETENTION_HOLD,
             statements: Arc::new(tokio::sync::Semaphore::new(statement_slots)),
             statement_slots,
+            closed: Arc::default(),
             #[cfg(feature = "test-hooks")]
             after_open_hook: Arc::default(),
         }
@@ -207,10 +227,11 @@ impl GraphAdmin {
         self
     }
 
-    /// The same admin with another cap on statements running at once (at least 1).
+    /// The same admin with another cap on statements running at once (1 to
+    /// [`MAX_STATEMENT_SLOTS`]).
     #[must_use]
     pub fn with_statement_slots(mut self, slots: usize) -> Self {
-        let slots = slots.max(1);
+        let slots = slots.clamp(1, MAX_STATEMENT_SLOTS);
         self.statements = Arc::new(tokio::sync::Semaphore::new(slots));
         self.statement_slots = slots;
         self
@@ -232,7 +253,10 @@ impl GraphAdmin {
     /// A statement slot, or `RESOURCE_EXHAUSTED` when every one is taken: the caller retries,
     /// rather than queueing behind work that may never end (R0.8).
     fn statement_slot(&self) -> Result<tokio::sync::OwnedSemaphorePermit, ConnectError> {
-        Arc::clone(&self.statements)
+        if self.is_shutting_down() {
+            return Err(shutting_down());
+        }
+        let slot = Arc::clone(&self.statements)
             .try_acquire_owned()
             .map_err(|err| match err {
                 tokio::sync::TryAcquireError::NoPermits => refuse(
@@ -243,12 +267,19 @@ impl GraphAdmin {
                         self.statement_slots
                     ),
                 ),
-                tokio::sync::TryAcquireError::Closed => refuse(
-                    ErrorCode::Unavailable,
-                    "unavailable",
-                    "the graph service is shutting down",
-                ),
-            })
+                tokio::sync::TryAcquireError::Closed => shutting_down(),
+            })?;
+        // Shutdown may have started meanwhile; it waits for this slot, but need not.
+        if self.is_shutting_down() {
+            return Err(shutting_down());
+        }
+        Ok(slot)
+    }
+
+    /// Whether [`GraphAdmin::shutdown`] has started.
+    #[must_use]
+    pub fn is_shutting_down(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
     }
 
     /// Runs `work` on a catalog graph holding a statement slot: the slot is taken before the
@@ -351,6 +382,36 @@ impl GraphAdmin {
     ///
     /// `NOT_FOUND`/`graph_not_found` when the catalog has no such graph, or the engine's error.
     pub async fn open(&self, namespace: &str, name: &str) -> Result<Arc<Graph>, ConnectError> {
+        if self.is_shutting_down() {
+            return Err(shutting_down());
+        }
+        let graph = self.open_catalog_graph(namespace, name).await?;
+        // A shutdown that started while this graph opened may already have closed the others:
+        // close this one too rather than leave it open (review fix 1, I3). A statement holds a
+        // slot across its open, so shutdown waits for it; this covers any other caller.
+        if self.is_shutting_down() {
+            drop(graph);
+            let (engine, ns, nm) = (
+                Arc::clone(&self.engine),
+                namespace.to_string(),
+                name.to_string(),
+            );
+            let _ = blocking(move || {
+                let _ = engine.close(&ns, &nm);
+                Ok(())
+            })
+            .await;
+            return Err(shutting_down());
+        }
+        Ok(graph)
+    }
+
+    /// [`GraphAdmin::open`] without the shutdown checks.
+    async fn open_catalog_graph(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Result<Arc<Graph>, ConnectError> {
         let meta = self
             .catalog
             .get_by_name(namespace, name)
@@ -819,14 +880,45 @@ impl GraphAdmin {
         self.retention_hold
     }
 
-    /// Closes every open graph, releasing its storage (for a shutdown or a test restart).
-    pub async fn shutdown(&self) {
+    /// Stops serving and closes every open graph, releasing its storage (for a shutdown or a test
+    /// restart; review fix 1, I3). Answers how many statements were still running when it gave
+    /// up waiting.
+    ///
+    /// 1. From the start, `open` and every statement answer `UNAVAILABLE`.
+    /// 2. It waits, at most `wait`, for running statements to end and free their slots.
+    /// 3. It closes each graph on the blocking pool, flushing its WAL.
+    ///
+    /// A statement still running after `wait` (one whose client went away, R0.8: Grafeo cannot
+    /// stop it) is detached: its graph stays open, logged, and is dropped when the statement
+    /// ends. Its blocking thread still delays the process's exit, because the runtime waits for
+    /// blocking work when it drops; Task 26's watchdog is what bounds such a statement.
+    pub async fn shutdown(&self, wait: Duration) -> usize {
+        self.closed.store(true, Ordering::SeqCst);
+        let slots = u32::try_from(self.statement_slots).unwrap_or(u32::MAX);
+        // Every slot, so nothing is running; held until the graphs are closed.
+        let drained =
+            tokio::time::timeout(wait, Arc::clone(&self.statements).acquire_many_owned(slots))
+                .await;
+        let running = match &drained {
+            Ok(Ok(_)) => 0,
+            _ => self.statements_in_flight(),
+        };
+        if running > 0 {
+            tracing::warn!(
+                running,
+                ?wait,
+                "graph statements still running at shutdown are detached; their graphs stay open until they end, and the process exit waits for them"
+            );
+        }
         for graph in self.engine.list(None).unwrap_or_default() {
             let (namespace, name) = (graph.namespace().to_string(), graph.name().to_string());
             drop(graph);
-            if let Err(err) = self.engine.close(&namespace, &name) {
+            let (engine, ns, nm) = (Arc::clone(&self.engine), namespace.clone(), name.clone());
+            if let Err(err) = blocking(move || engine.close(&ns, &nm).map_err(map_engine)).await {
                 tracing::warn!(%namespace, %name, error = %err, "closing a graph at shutdown failed");
             }
         }
+        drop(drained);
+        running
     }
 }

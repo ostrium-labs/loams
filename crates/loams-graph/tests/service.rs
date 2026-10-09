@@ -710,7 +710,7 @@ mod admin {
                 .execute(execute("acme", "kg", "INSERT (:Kept {v: 1})"))
                 .await
                 .expect("write");
-            admin.shutdown().await;
+            admin.shutdown(Duration::from_secs(10)).await;
             graph.id
         };
         // A new engine and a new catalog over the same metastore, bucket and data dir.
@@ -1588,5 +1588,86 @@ mod admin {
         assert_eq!(err.code, ErrorCode::DeadlineExceeded, "{err:?}");
         assert_eq!(reason(&err), "graph_statement_timeout");
         assert_eq!(admin.statements_in_flight(), 0);
+    }
+
+    /// Waits until `admin` runs a statement.
+    async fn until_running(admin: &GraphAdmin) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while admin.statements_in_flight() == 0 {
+            assert!(tokio::time::Instant::now() < deadline, "never started");
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+
+    /// GR1 Task 5 fix round 1 (I1, I3): a long cartesian statement whose client went away does
+    /// not hold shutdown past its bound; the statement is detached and counted.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_detached_statement_does_not_block_shutdown_past_the_bound() {
+        let fixture = Fixture::start().await;
+        let admin = Arc::new(fixture.admin());
+        graph_with_nodes(&admin, 90).await;
+        let client = {
+            let admin = admin.clone();
+            tokio::spawn(async move { admin.execute(execute("acme", "kg", LONG)).await })
+        };
+        until_running(&admin).await;
+        // The client disconnects: its call is dropped, the blocking statement runs on.
+        client.abort();
+        let _ = client.await;
+        assert_eq!(admin.statements_in_flight(), 1);
+        let wait = Duration::from_millis(200);
+        let started = std::time::Instant::now();
+        let detached = tokio::time::timeout(Duration::from_secs(5), admin.shutdown(wait))
+            .await
+            .expect("shutdown is bounded");
+        assert!(
+            started.elapsed() < wait + Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
+        assert_eq!(detached, 1);
+        let err = admin
+            .execute(execute("acme", "kg", "RETURN 1"))
+            .await
+            .expect_err("shut down");
+        assert_eq!(err.code, ErrorCode::Unavailable, "{err:?}");
+    }
+
+    /// GR1 Task 5 fix round 1 (I3): once shutdown starts, a request answers `UNAVAILABLE`;
+    /// shutdown waits for the statement already running, and no graph is left open.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_request_during_shutdown_is_unavailable_and_no_graph_stays_open() {
+        let fixture = Fixture::start().await;
+        let admin = Arc::new(fixture.admin());
+        graph_with_nodes(&admin, 70).await;
+        let running = {
+            let admin = admin.clone();
+            tokio::spawn(async move { admin.execute(execute("acme", "kg", LONG)).await })
+        };
+        until_running(&admin).await;
+        let shutdown = {
+            let admin = admin.clone();
+            tokio::spawn(async move { admin.shutdown(Duration::from_secs(60)).await })
+        };
+        while !admin.is_shutting_down() {
+            tokio::task::yield_now().await;
+        }
+        let err = admin
+            .execute(execute("acme", "kg", "MATCH (n) RETURN count(n)"))
+            .await
+            .expect_err("shutting down");
+        assert_eq!(err.code, ErrorCode::Unavailable, "{err:?}");
+        assert_eq!(reason(&err), "unavailable");
+        let err = admin.open("acme", "kg").await.expect_err("shutting down");
+        assert_eq!(err.code, ErrorCode::Unavailable, "{err:?}");
+        running
+            .await
+            .expect("task")
+            .expect("the running statement ends normally");
+        assert_eq!(shutdown.await.expect("task"), 0, "nothing detached");
+        assert!(
+            admin.engine().list(None).expect("list").is_empty(),
+            "no graph stays open"
+        );
     }
 }

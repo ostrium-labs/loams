@@ -311,6 +311,11 @@ pub struct GraphConfig {
     /// 300 s). A backstop only: Grafeo checks it between pipeline chunks of a statement without
     /// parameters, so a statement inside one long operator runs on (R0.8).
     pub query_timeout: Duration,
+    /// How long the shutdown phase `graph` waits for running statements (config only; default
+    /// 10 s), and again for a maintenance pass in progress. A statement still running then is
+    /// detached: its graph stays open and the process exit waits for its blocking thread, which
+    /// nothing can stop before Task 26's watchdog (R0.8).
+    pub shutdown_wait: Duration,
 }
 
 #[cfg(feature = "graph")]
@@ -326,6 +331,7 @@ impl GraphConfig {
             maintenance_every: Duration::from_secs(600),
             statement_slots: loams_graph::service::admin::default_statement_slots(),
             query_timeout: loams_graph::engine::DEFAULT_QUERY_TIMEOUT,
+            shutdown_wait: loams_graph::service::admin::DEFAULT_SHUTDOWN_WAIT,
         }
     }
 }
@@ -480,10 +486,11 @@ impl ServerConfig {
         if !self.listen.ip().is_loopback() {
             return Err(ServerError::GraphListenNotLoopback { addr: self.listen });
         }
-        if self.graph.statement_slots == 0 {
-            return Err(ServerError::Config(
-                "--graph-statement-slots must be at least 1".to_string(),
-            ));
+        let max_slots = loams_graph::service::admin::MAX_STATEMENT_SLOTS;
+        if !(1..=max_slots).contains(&self.graph.statement_slots) {
+            return Err(ServerError::Config(format!(
+                "--graph-statement-slots must be between 1 and {max_slots}"
+            )));
         }
         if self.graph.query_timeout.is_zero() || self.graph.query_timeout > MAX_GRAPH_QUERY_TIMEOUT
         {
@@ -965,6 +972,7 @@ struct GraphRuntime {
     data_dir: Option<PathBuf>,
     stop: CancellationToken,
     maintenance: JoinHandle<()>,
+    shutdown_wait: Duration,
 }
 
 #[cfg(feature = "graph")]
@@ -1015,13 +1023,25 @@ impl GraphRuntime {
             data_dir: config.data_dir.clone(),
             stop,
             maintenance,
+            shutdown_wait: config.shutdown_wait,
         }
     }
 
+    /// Stops the maintenance task, then the admin (review fix 1, I3): new requests answer
+    /// `UNAVAILABLE`, running statements get `shutdown_wait` to end, and every graph is closed.
+    /// Each wait is bounded; a statement still running after it is detached (see
+    /// [`GraphConfig::shutdown_wait`]).
     async fn stop(self) {
         self.stop.cancel();
-        let _ = self.maintenance.await;
-        self.admin.shutdown().await;
+        let mut maintenance = self.maintenance;
+        if tokio::time::timeout(self.shutdown_wait, &mut maintenance)
+            .await
+            .is_err()
+        {
+            tracing::warn!("a graph maintenance pass outlasted the shutdown wait; abandoned");
+            maintenance.abort();
+        }
+        self.admin.shutdown(self.shutdown_wait).await;
     }
 }
 
