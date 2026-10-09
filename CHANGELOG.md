@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Changed
 - **Loams Live runs on the embedded store by default** (LV1 plan Task 23, design §45 §8). The `live` feature is in `loams`'s default set and has no `tikv-client`. `loams dev` and `loams standalone` serve Live on 127.0.0.1:7710, with data in an embedded MVCC store at `<data-dir>/live/store.redb` (redb), and need no PD.
   - **TiKV is the new `live-tikv` feature:** `--live-store tikv://<pd>[,<pd>]/<keyspace>` selects it. A build without `live-tikv` refuses that flag.
-  - **`--live-pd` and `--live-keyspace` are deprecated**, and stay one release as aliases of `--live-store tikv://…` with a warning. A build without `live-tikv` ignores them, with a warning, and runs Live embedded.
+  - **`--live-pd` and `--live-keyspace` are deprecated**, and stay one release as aliases of `--live-store tikv://…` with a warning. A build without `live-tikv` refuses them, as it refuses `--live-store tikv://…`. It never runs Live on local data when a cluster was asked for. The desktop's engine builds add `live-tikv`.
   - `--no-live` is unchanged.
   - "Loam Live" is now "Loams Live" in messages and docs.
   - The embedded store: snapshot isolation with first-committer-wins, group commit, an oracle that survives restarts, and incremental GC (LV1 Tasks 21 to 23).

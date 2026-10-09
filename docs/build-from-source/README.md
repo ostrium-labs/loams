@@ -78,9 +78,10 @@ Live and no `tikv-client`.
 | `mysql-wire`, `pgwire`, `stream-grpc` | no | Optional listeners. |
 | `failpoints`, `cluster-tests` | no | Test-only. |
 
-A build without `live-tikv` refuses `--live-store tikv://…` ("needs a build
-with the live-tikv feature"), and ignores the deprecated `--live-pd` and
-`--live-keyspace` with a warning, running Live on the embedded store.
+A build without `live-tikv` refuses `--live-store tikv://…` and the deprecated
+`--live-pd` and `--live-keyspace` ("needs a build with the live-tikv
+feature"): it never runs Live on local data when a cluster was asked for.
+Loams Desktop's engine builds use `--features live,durable,live-tikv`.
 
 ## The commands CI runs
 

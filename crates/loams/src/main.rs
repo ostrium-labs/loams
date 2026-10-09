@@ -649,12 +649,14 @@ struct LiveArgs {
     #[arg(long, value_parser = parse_live_store, conflicts_with_all = ["live_pd", "live_keyspace"])]
     live_store: Option<LiveStore>,
     /// Deprecated: use --live-store tikv://<pd>/<keyspace>. PD endpoints of
-    /// a Live TiKV cluster, comma-separated.
-    #[arg(long, value_delimiter = ',')]
+    /// a Live TiKV cluster, comma-separated (a build with the live-tikv
+    /// feature).
+    #[arg(long, value_delimiter = ',', value_parser = parse_live_tikv_alias)]
     live_pd: Vec<String>,
     /// Deprecated: use --live-store tikv://<pd>/<keyspace>. The Live app's
-    /// TiKV keyspace [default: loams_live_<app>].
-    #[arg(long)]
+    /// TiKV keyspace [default: loams_live_<app>] (a build with the
+    /// live-tikv feature).
+    #[arg(long, value_parser = parse_live_tikv_alias)]
     live_keyspace: Option<String>,
     /// The Live app.
     #[arg(long, default_value = "dev", value_parser = parse_live_app)]
@@ -689,6 +691,25 @@ enum LiveStore {
 /// playground's.
 #[cfg(feature = "live-tikv")]
 const LIVE_PD_DEFAULT: &str = "127.0.0.1:19379";
+
+/// `--live-pd` and `--live-keyspace`: they select Live on TiKV, so a build
+/// without the live-tikv feature refuses them rather than running Live on
+/// the embedded store a user did not ask for (row T23-7).
+#[cfg(feature = "live")]
+fn parse_live_tikv_alias(value: &str) -> Result<String, String> {
+    #[cfg(feature = "live-tikv")]
+    {
+        Ok(value.to_string())
+    }
+    #[cfg(not(feature = "live-tikv"))]
+    {
+        let _ = value;
+        Err("--live-pd and --live-keyspace select Live on TiKV and need a build with the \
+             live-tikv feature; this build runs Live on the embedded store (drop the flag, \
+             or build with --features live-tikv)"
+            .to_string())
+    }
+}
 
 /// `--live-store`: `embedded` or `tikv://<pd>[,<pd>][/<keyspace>]`; the
 /// latter only in a build with the live-tikv feature.
@@ -744,8 +765,8 @@ impl LiveArgs {
     }
 
     /// The store the flags name: `--live-store`, else the deprecated
-    /// `--live-pd`/`--live-keyspace` (TiKV with the live-tikv feature,
-    /// ignored without it, row T23-4), else the embedded store.
+    /// `--live-pd`/`--live-keyspace` (TiKV; refused at parsing without the
+    /// live-tikv feature, row T23-7), else the embedded store.
     fn store(&self, data_dir: &std::path::Path) -> loams_live::StoreConfig {
         let embedded = || {
             loams_live::StoreConfig::Embedded(loams_live::EmbeddedConfig::new(
@@ -753,7 +774,6 @@ impl LiveArgs {
                 loams_live::keyspace_of(&self.live_app),
             ))
         };
-        let aliased = !self.live_pd.is_empty() || self.live_keyspace.is_some();
         match &self.live_store {
             Some(LiveStore::Embedded) => embedded(),
             #[cfg(feature = "live-tikv")]
@@ -765,36 +785,24 @@ impl LiveArgs {
                         .unwrap_or_else(|| loams_live::keyspace_of(&self.live_app)),
                 ))
             }
-            None if !aliased => embedded(),
-            None => {
-                #[cfg(feature = "live-tikv")]
-                {
-                    eprintln!(
-                        "loams: warning: --live-pd and --live-keyspace are deprecated; use \
-                         --live-store tikv://<pd>[,<pd>]/<keyspace>"
-                    );
-                    let pd = if self.live_pd.is_empty() {
-                        vec![LIVE_PD_DEFAULT.to_string()]
-                    } else {
-                        self.live_pd.clone()
-                    };
-                    let keyspace = self
-                        .live_keyspace
-                        .clone()
-                        .unwrap_or_else(|| loams_live::keyspace_of(&self.live_app));
-                    loams_live::StoreConfig::Tikv(loams_tikv::TikvConfig::new(pd, keyspace))
-                }
-                #[cfg(not(feature = "live-tikv"))]
-                {
-                    eprintln!(
-                        "loams: warning: --live-pd and --live-keyspace are deprecated and \
-                         ignored: this build has no TiKV backend for Live (the live-tikv \
-                         feature is off); Live runs on the embedded store under {}",
-                        data_dir.join("live").display()
-                    );
-                    embedded()
-                }
+            #[cfg(feature = "live-tikv")]
+            None if !self.live_pd.is_empty() || self.live_keyspace.is_some() => {
+                eprintln!(
+                    "loams: warning: --live-pd and --live-keyspace are deprecated; use \
+                     --live-store tikv://<pd>[,<pd>]/<keyspace>"
+                );
+                let pd = if self.live_pd.is_empty() {
+                    vec![LIVE_PD_DEFAULT.to_string()]
+                } else {
+                    self.live_pd.clone()
+                };
+                let keyspace = self
+                    .live_keyspace
+                    .clone()
+                    .unwrap_or_else(|| loams_live::keyspace_of(&self.live_app));
+                loams_live::StoreConfig::Tikv(loams_tikv::TikvConfig::new(pd, keyspace))
             }
+            None => embedded(),
         }
     }
 }
@@ -1791,18 +1799,21 @@ mod tests {
         );
     }
 
-    /// LV1 row T23-4: in a build without `live-tikv`, the deprecated
-    /// `--live-pd` and `--live-keyspace` (which the desktop app passes) are
-    /// ignored with a warning, and Live runs on the embedded store.
+    /// LV1 row T23-7: a build without `live-tikv` refuses the deprecated
+    /// `--live-pd` and `--live-keyspace` (they ask for TiKV) instead of
+    /// running Live on the embedded store.
     #[cfg(all(feature = "live", not(feature = "live-tikv")))]
     #[test]
-    fn live_pd_alias_without_live_tikv_runs_embedded() {
-        let config = dev_config(&["--live-pd", "127.0.0.1:19379", "--live-keyspace", "ks"]);
-        let live = config.live.expect("on");
-        assert_eq!(
-            live_embedded(&live).path,
-            config.data_dir.join("live").join("store.redb")
-        );
+    fn live_pd_requires_live_tikv() {
+        for args in [
+            ["loams", "dev", "--live-pd", "127.0.0.1:19379"],
+            ["loams", "dev", "--live-keyspace", "loams_live_dev"],
+        ] {
+            let err = Cli::try_parse_from(args)
+                .expect_err("no TiKV backend in this build")
+                .to_string();
+            assert!(err.contains("need a build with the live-tikv feature"), "{err}");
+        }
     }
 
     /// R1 plan Task 12 semantics 7 and the loopback rule (D111): a
