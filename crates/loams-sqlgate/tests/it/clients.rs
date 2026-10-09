@@ -142,3 +142,98 @@ fn ssl_requests_decode_from_captured_clients() {
         ));
     }
 }
+
+/// R3.14: mysql 8.4 and Connector/J against a greeting that offers TLS and
+/// `caching_sha2_password` (the proxy terminates TLS, see the README): their
+/// first response is a SHA-2 scramble of the greeting nonce, and on full
+/// authentication they send the password in clear over TLS. The captured
+/// client bytes drive `ConnectionPhase` to `Done`.
+#[test]
+fn tls_sha2_captures_drive_the_connection_phase() {
+    use loams_sqlgate::codec::auth::CachingSha2Server;
+    use loams_sqlgate::codec::auth::{Action, double_sha256};
+    use loams_sqlgate::codec::connection::{ConnectionPhase, Step};
+    use loams_sqlgate::codec::packet::encode;
+
+    for name in ["mysql84", "connector-j"] {
+        let p = load(&format!("{name}-tls-sha2"));
+        let greeting = HandshakeV10::decode(&p[0].payload).expect("greeting");
+        assert_eq!(greeting.auth_plugin, CACHING_SHA2, "{name}");
+        assert!(greeting.capabilities.contains(C::SSL), "{name}");
+        let nonce = *greeting.nonce.as_bytes();
+
+        let ClientHello::Ssl(ssl) =
+            decode_client_hello(&p[1].payload, &Limits::default()).expect("ssl")
+        else {
+            panic!("{name}: SSLRequest first")
+        };
+        let ClientHello::Response(r) =
+            decode_client_hello(&p[2].payload, &Limits::default()).expect("response")
+        else {
+            panic!("{name}: response after TLS")
+        };
+        assert_eq!(
+            r.capabilities, ssl.capabilities,
+            "{name}: same capabilities before and after TLS"
+        );
+        assert_eq!(r.auth_plugin.as_deref(), Some(CACHING_SHA2), "{name}");
+        assert_eq!(
+            r.auth_response,
+            scramble_caching_sha2(b"capture", &nonce),
+            "{name}: SHA-2 first response"
+        );
+        assert!(verify_caching_sha2(
+            &double_sha256(b"capture"),
+            &nonce,
+            &r.auth_response
+        ));
+
+        // TiDB asked for full authentication; the client sent its password
+        // in clear (over TLS to the proxy).
+        let clear = p
+            .iter()
+            .find(|x| x.dir == "c2s" && x.payload == b"capture\0")
+            .expect("cleartext password");
+        let mut s = CachingSha2Server::new(greeting.nonce, true);
+        assert!(matches!(
+            s.start(r.auth_plugin.as_deref(), &r.auth_response),
+            Action::CheckFast { .. }
+        ));
+        s.fast_result(false);
+        let Ok(Action::CheckFull { password }) = s.on_packet(&clear.payload) else {
+            panic!("{name}: full")
+        };
+        assert_eq!(password.expose(), b"capture");
+
+        // The same client bytes through the connection phase (TLS required).
+        let (mut phase, _) = ConnectionPhase::new(greeting.clone(), false, Limits::default());
+        let framed = |payload: &[u8], seq: u8| {
+            let mut s = seq;
+            let mut out = Vec::new();
+            encode(payload, &mut s, &mut out);
+            out
+        };
+        assert!(matches!(
+            phase.on_bytes(&framed(&p[1].payload, 1)),
+            Ok((_, Step::StartTls))
+        ));
+        phase.tls_established().expect("tls");
+        let Ok((_, Step::CheckFast { scramble, .. })) = phase.on_bytes(&framed(&p[2].payload, 2))
+        else {
+            panic!("{name}: fast check")
+        };
+        assert!(verify_caching_sha2(
+            &double_sha256(b"capture"),
+            &nonce,
+            &scramble
+        ));
+        assert!(matches!(phase.fast_result(false), Ok(Step::Write(_))));
+        let Ok((_, Step::CheckFull { password, .. })) = phase.on_bytes(&framed(&clear.payload, 4))
+        else {
+            panic!("{name}: full check")
+        };
+        assert_eq!(password.expose(), b"capture");
+        assert!(matches!(phase.full_result(true), Ok(Step::Done(_))));
+        assert!(phase.is_tls() && phase.is_done());
+    }
+}
