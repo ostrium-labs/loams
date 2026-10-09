@@ -1232,6 +1232,18 @@ mod admin {
         );
     }
 
+    /// Controller ruling M5: `ListGraphs` requires a namespace.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn list_requires_a_namespace() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        let err = admin
+            .list_graphs(pb::ListGraphsRequest::default())
+            .await
+            .expect_err("no namespace");
+        assert_eq!(err.code, ErrorCode::InvalidArgument);
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn invalid_names_refused() {
         let fixture = Fixture::start().await;

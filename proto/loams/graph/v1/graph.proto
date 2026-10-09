@@ -276,6 +276,9 @@ message GetGraphRequest {
 }
 
 message ListGraphsRequest {
+  // Required: graphs are listed one namespace at a time (an empty namespace
+  // is `invalid_argument`). Listing across namespaces would be a separate
+  // RPC.
   string namespace = 1;
   // AIP-158 page size; 0 takes the server's default.
   int32 page_size = 2;

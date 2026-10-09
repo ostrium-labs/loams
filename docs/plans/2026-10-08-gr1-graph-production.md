@@ -498,7 +498,7 @@ Commit `docs(graph): GraphRAG example and harness`.
 
 **Files:** `src/authz.rs`, the OpenFGA model file MT1 owns (add `type graph`, §48 §11.1), RBAC role expansion, `tests/authz.rs`. Depends on MT1's interceptor; until it lands, test against the `Authorizer` trait with the built-in RBAC.
 
-**Interfaces produced:** per-RPC checks per §48 §11.1's table; `Access` from `classify` + engine; Grafeo session role from the caller's strongest relation; agent scopes `graph:read|write|admin`; `ListGraphs` through `filter_visible`; `graph_classifier_disagreement` logged and counted.
+**Interfaces produced:** per-RPC checks per §48 §11.1's table; `Access` from `classify` + engine; Grafeo session role from the caller's strongest relation; agent scopes `graph:read|write|admin`; `ListGraphs` (which requires a namespace, controller ruling M5) through `filter_visible` over that namespace's graphs; `graph_classifier_disagreement` logged and counted.
 
 Tests: `reader_cannot_write_any_corpus_write`, `writer_cannot_ddl`, `writer_cannot_delete_graph`, `admin_can_delete`, `cross_namespace_denied`, `agent_scope_graph_read_blocks_writes`, `protected_environment_requires_project_admin`, `list_filters_invisible_graphs`, `denials_are_audited`.
 

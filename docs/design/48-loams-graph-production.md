@@ -373,7 +373,7 @@ type graph
 | `Execute`, `ExecuteStream`, `Explain` with a read statement | `can_read` |
 | The same with a write statement, `ExecuteBatch` with any write | `can_write` |
 | DDL statements (index, type, constraint) | `can_admin` |
-| `GetGraph`, `GetSchema`, `ListGraphs` | `can_read` (`ListGraphs` filters with `filter_visible`) |
+| `GetGraph`, `GetSchema`, `ListGraphs` | `can_read` (`ListGraphs` requires a namespace and filters that namespace's graphs with `filter_visible`; listing across namespaces would be a separate RPC, if one is ever needed. Controller ruling, GR1 Task 4 review M5) |
 | `CreateGraph` | `admin` on the namespace |
 | `UpdateGraph`, `DeleteGraph`, `RestoreGraph`, `ExportGraph`, `ImportGraph` | `can_admin`; protected environments (§19 §2) require the project `admin` role |
 
