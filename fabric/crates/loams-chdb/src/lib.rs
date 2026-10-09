@@ -84,4 +84,4 @@ pub use arrow::{ArrowHandle, ArrowStream, RecordBatchReader};
 pub use engine::{Engine, EngineConfig, SessionId, Settings};
 pub use error::ChdbError;
 pub use query::{QueryStats, QueryStream};
-pub use session::{InsertStream, InsertSummary, Session};
+pub use session::{Analysis, InsertStream, InsertSummary, QueryClass, Session};

@@ -129,3 +129,38 @@ fn stream_insert_reports_a_bad_body() {
     let err = insert.finish().expect_err("a truncated Parquet body fails");
     assert_ne!(err.code, 0, "the engine's own code comes through: {err:?}");
 }
+
+/// HS1 Task 4 (FL2 Ruling 6): ClickHouse's own parser classifies what Loams's
+/// classifier does not own. Measured classes for the pinned library.
+#[test]
+fn chdb_classifies_statements() {
+    use loams_chdb::QueryClass;
+    let engine = engine();
+    let session = engine
+        .session(SessionId::new("classify"), &Settings::new())
+        .expect("session");
+    for (sql, class, statements) in [
+        ("SELECT 1", QueryClass::ReadOnly, 1),
+        ("SHOW TABLES", QueryClass::ReadOnly, 1),
+        ("EXISTS TABLE t", QueryClass::ReadOnly, 1),
+        ("INSERT INTO t VALUES (1)", QueryClass::Mutating, 1),
+        (
+            "CREATE TABLE t (a Int8) ENGINE = Memory",
+            QueryClass::Mutating,
+            1,
+        ),
+        ("CREATE USER u", QueryClass::MutatingGlobal, 1),
+        ("SET max_threads = 1", QueryClass::Control, 1),
+        ("SYSTEM DROP DNS CACHE", QueryClass::Control, 1),
+        ("SELEC 1", QueryClass::Unknown, 0),
+    ] {
+        let analysis = session
+            .classify(sql)
+            .unwrap_or_else(|err| panic!("{sql}: {err}"));
+        assert_eq!(
+            (analysis.class, analysis.statements),
+            (class, statements),
+            "{sql}"
+        );
+    }
+}

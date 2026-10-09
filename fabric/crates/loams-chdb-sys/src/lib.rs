@@ -622,6 +622,54 @@ pub mod ffi {
         }
     }
 
+    /// What `chdb_classify_query_n` says about a statement (HS1 Task 4, FL2
+    /// Ruling 6): its `chdb_query_class`, how many statements it holds, and its
+    /// `chdb_query_analysis_flag`s.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub struct Analysis {
+        /// `chdb_query_class`: 0 read-only … 4 unknown.
+        pub class: u32,
+        /// Executable statements (0 when it does not parse).
+        pub statements: u32,
+        /// `chdb_query_analysis_flag`s, OR-ed.
+        pub flags: u32,
+    }
+
+    impl Connection {
+        /// Classifies `sql` with ClickHouse's own parser. Text that does not parse
+        /// is class 4 (`CHDB_QUERY_UNKNOWN`) with no statements, not an error.
+        pub fn classify(&self, sql: &str) -> Result<Analysis, Error> {
+            let mut out = chdb_query_analysis_v1 {
+                struct_size: std::mem::size_of::<chdb_query_analysis_v1>() as u32,
+                statement_count: 0,
+                flags: 0,
+                query_class: chdb_query_class_CHDB_QUERY_UNKNOWN,
+            };
+            // SAFETY: `sql` is valid for `sql.len()` bytes for the call (the ABI is
+            // length-based, so interior NULs are fine); no target database is
+            // passed; `out` is a live, correctly sized struct whose `struct_size`
+            // is set as the header requires.
+            let state = unsafe {
+                chdb_classify_query_n(
+                    self.handle(),
+                    sql.as_ptr() as *const std::ffi::c_char,
+                    sql.len(),
+                    ptr::null(),
+                    0,
+                    &mut out,
+                )
+            };
+            if state != CHDBSuccess {
+                return Err(Error::new("chdb_classify_query_n refused the call"));
+            }
+            Ok(Analysis {
+                class: out.query_class,
+                statements: out.statement_count,
+                flags: out.flags,
+            })
+        }
+    }
+
     /// One block of a streamed result, with the counters the block carries.
     #[derive(Clone, Debug, Default, PartialEq)]
     pub struct Block {

@@ -156,6 +156,17 @@ impl Session {
         connection.query(sql, format, params).map_err(engine_error)
     }
 
+    /// Classifies `sql` with ClickHouse's own parser, without running it (HS1
+    /// Task 4, FL2 Ruling 6).
+    pub fn classify(&self, sql: &str) -> Result<Analysis, ChdbError> {
+        let raw = self.connection()?.classify(sql).map_err(engine_error)?;
+        Ok(Analysis {
+            class: QueryClass::from_raw(raw.class),
+            statements: raw.statements,
+            flags: raw.flags,
+        })
+    }
+
     /// Runs a statement that produces no rows: `SET`, `USE`, and the `SET`s this
     /// session applies to itself.
     pub fn execute_simple(&self, sql: &str) -> Result<(), ChdbError> {
@@ -323,4 +334,42 @@ impl InsertStream {
     pub fn finish(self) -> Result<InsertSummary, ChdbError> {
         self.inner.finish().map_err(engine_error)
     }
+}
+
+/// ClickHouse's class of a statement: what it does to state that outlives it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QueryClass {
+    /// `SELECT`, `SHOW`, `DESCRIBE`, `EXPLAIN`, `EXISTS`, `CHECK`.
+    ReadOnly,
+    /// `INSERT`, `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `RENAME`, `OPTIMIZE`, …
+    Mutating,
+    /// Functions, named collections, access management, `system` writes.
+    MutatingGlobal,
+    /// `USE`, `SET`, `SYSTEM`, `KILL`, `INTO OUTFILE`, `INSERT INTO FUNCTION`, …
+    Control,
+    /// Did not parse.
+    Unknown,
+}
+
+impl QueryClass {
+    fn from_raw(raw: u32) -> Self {
+        match raw {
+            0 => Self::ReadOnly,
+            1 => Self::Mutating,
+            2 => Self::MutatingGlobal,
+            3 => Self::Control,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// What [`Session::classify`] reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Analysis {
+    /// The class.
+    pub class: QueryClass,
+    /// Executable statements (0 when it does not parse).
+    pub statements: u32,
+    /// `chdb_query_analysis_flag`s.
+    pub flags: u32,
 }
