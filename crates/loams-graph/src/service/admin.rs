@@ -73,9 +73,7 @@ pub struct GraphAdmin {
     retention_hold: Duration,
     /// `(namespace, name)` → the catalog id it was last read with, and when (review I4): an
     /// open graph whose id matches a read younger than [`VALIDATION_TTL`] skips the catalog.
-    validated: Arc<
-        std::sync::Mutex<std::collections::HashMap<(String, String), (String, std::time::Instant)>>,
-    >,
+    validated: Arc<std::sync::Mutex<Validations>>,
     #[cfg(feature = "test-hooks")]
     after_open_hook: Arc<std::sync::Mutex<Option<crate::catalog::AckHook>>>,
 }
@@ -89,6 +87,9 @@ impl std::fmt::Debug for GraphAdmin {
             .finish_non_exhaustive()
     }
 }
+
+/// `(namespace, name)` → `(catalog id, when it was read)`.
+type Validations = std::collections::HashMap<(String, String), (String, std::time::Instant)>;
 
 /// How long a catalog read vouches for an open graph (review I4). A delete on this node clears
 /// it at once; one on another node is seen within this window (Task 12 makes it exact).
