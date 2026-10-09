@@ -814,7 +814,7 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
 - **R3.3 Authentication.**
   - **Method.** Every client is authenticated with `caching_sha2_password`. Other plugins get an `AuthSwitchRequest`.
   - **Full auth.** It happens only over TLS. Without TLS it fails with `SecureTransportRequired`, which becomes 3159 in Task 4. A request for the RSA public key (`0x02`) is always refused.
-  - **Empty passwords** are checked in full.
+  - **Empty passwords** are denied outright (R3.10, as amended by the Task 3 review).
   - **Secrets.** `Password` prints `[redacted]` and is zeroed on drop. `HandshakeResponse41`'s `Debug` redacts the auth response.
   - **The gate's upstream login** (`client_auth_response`) speaks `caching_sha2_password` and `mysql_clear_password`, the latter for `tidb_auth_token` (R2.12).
 - **R3.4 Captured fixtures.** `scripts/sqlgate/capture/` (a recording proxy plus client drivers) captured mysql 8.4.10, Connector/J 9.7.0, mysql2 3.15.3 and, as an extra, libmariadb 3.4.10 against TiDB v8.5.8.
@@ -825,3 +825,29 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - **Named tests.** `fuzz_handshake_response` and `fuzz_packet_framing` run the same invariants under proptest in `cargo test`.
   - **CI.** A new `sqlgate-fuzz` job in `ci.yml` (toolchain pinned to `nightly-2026-09-24`, `cargo-fuzz`) runs each target for 60 s, and the `CI required` job depends on it.
   - **Local run.** Each target ran 60 s on the pinned stable toolchain (`RUSTC_BOOTSTRAP=1 cargo fuzz run -s none`): 25.0 M and 40.0 M executions, with no crash.
+- **R3.6 Capabilities after the Task 3 review.**
+  - **`CLIENT_LOCAL_FILES` is never offered or forwarded.** `LOAD DATA LOCAL` lets the server read client files.
+  - **`advertise(profile)` adds `CLIENT_SSL` on the gate's own terms.**
+  - **`profile` is static.** It is `TIDB_V8_5_8`: the captured v8.5.8 greeting's capabilities (`0x051ba6af`) plus SSL. It is not a live greeting, because wake-on-connect greets the client before the branch is known. A TiDB upgrade means re-capturing it.
+- **R3.7 The upstream leg.** `upstream_capabilities(agreed, profile)` = (`agreed` ∩ `RELAY_SENSITIVE`) ∪ `GATE_OWN_UPSTREAM` (4.1, secure connection, plugin auth, LENENC data, TLS, attributes, database), ∩ `profile`. A plaintext loopback client still gets TLS upstream.
+- **R3.8 Long auth responses.** `HandshakeResponse41::encode` returns `EncodeError` rather than truncating an auth response over 255 bytes without LENENC. TiDB v8.5.8 does not offer LENENC, so the `tidb_auth_token` JWT (R2.12) travels in the auth-switch response (`mysql_clear_password`), a raw packet. This is tested with a 2 KiB JWT.
+- **R3.9 Connection attributes are bytes.** User and database names stay strict UTF-8.
+- **R3.10 Empty passwords.** An empty auth response, or a lone `0x00`, is `AuthError::AccessDenied` (1045) with no lookup, because the gate never issues empty passwords. `AuthError::error_code` maps errors to 3159 or 1045.
+- **R3.11 Constant time and nonces.** Digests are compared with `subtle::ConstantTimeEq` (BSD-3-Clause, allowed by `deny.toml`), and the derived `SHA256(password)` is zeroed. **Contract for Task 4:** every connection gets a fresh nonce drawn from `OsRng`.
+- **R3.12 Secret hygiene.**
+  - `client_auth_response` returns a `Password`.
+  - `Action`'s and `Step`'s `Debug` redact the scramble and the password.
+  - The reassembled auth payload is zeroed after use in `ConnectionPhase`. The caller's socket buffers are Task 4's to zero.
+- **R3.13 `codec::connection::ConnectionPhase` (controller ruling, Task 3 review).** A sans-I/O connection phase that enforces:
+  - TLS is required unless the caller allows plaintext (loopback only);
+  - at most one `SSLRequest`;
+  - after TLS, the response must carry `CLIENT_SSL` and exactly the `SSLRequest`'s capabilities;
+  - a plaintext response with `CLIENT_SSL` is refused;
+  - handshake messages are capped at 96 KiB.
+
+  Errors map to ERR 3159, 1045 or 1043. Fuzz targets `connection_phase` (stateful: greeting → `SSLRequest` → response → switch → full auth), `auth_server` and `decoders` were added. Each ran 60 s locally with no crash, and each also runs under proptest.
+- **R3.14 Pinned recapture.**
+  - **Pins.** `capture.sh` requires digest-pinned images and checks every client version: mysql 8.4.10, Connector/J 9.7.0, MariaDB 12.3.3. mysql2 3.15.3 comes from `node/package.json` + `package-lock.json` (resolved `--before=2026-09-25`), run with `npm ci` in `node@sha256:c385ec44…` (Node 22.20.0, 2025-09-24).
+  - **The new `--tls-sha2` proxy mode.** The proxy offers TLS and `caching_sha2_password`, terminates the client's TLS and relays in plaintext. It captured mysql 8.4's and Connector/J's SHA-2 first response and their full-auth cleartext password, and those bytes drive `ConnectionPhase` to `Done`.
+  - **A TiDB finding.** TiDB v8.5.8 accepted the cleartext password from the plaintext relay with an OK. It does not require TLS for cleartext full authentication itself; the gate does (R3.13).
+- **R3.15 The CI fuzz job is pinned.** `cargo-fuzz@0.13.2`, `nightly-2026-09-24`, `fuzz/Cargo.lock` checked with `--locked`, `timeout-minutes: 20`, artifacts uploaded on failure, all five targets. `ci_fuzzes_every_target_pinned` keeps the job and `fuzz/Cargo.toml` in sync.
