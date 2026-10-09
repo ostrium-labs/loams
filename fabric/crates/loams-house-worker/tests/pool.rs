@@ -1059,3 +1059,64 @@ async fn run_output_is_capped() {
     assert_eq!(out.bytes, b"1\n");
     pool.release(next, Outcome::Completed);
 }
+
+/// Task 3 review I4: input larger than one frame is split into `CHUNK_BYTES`
+/// pieces, and a frame that cannot be encoded is the caller's error — never a
+/// worker crash.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn oversized_frames_are_split_or_refused_not_crashes() {
+    let pool = pool("frame-limits", small(1)).await;
+    let mut lease = pool.acquire("ns").await.expect("worker");
+    let pid = lease.pid();
+
+    // One 20 MiB body handed over in a single call: split, streamed, committed.
+    let row = b"1234567890\n";
+    let body: Vec<u8> = row
+        .iter()
+        .copied()
+        .cycle()
+        .take(row.len() * 2_000_000)
+        .collect();
+    let mut insert = statement("", "TSV");
+    insert.input = Some(InputSpec {
+        insert: "INSERT INTO FUNCTION null('n UInt64')".to_string(),
+        format: "TSV".to_string(),
+    });
+    lease.start(insert).await.expect("started");
+    lease
+        .send_input(Bytes::from(body))
+        .await
+        .expect("split into frames");
+    lease.end_input().await.expect("InputEnd");
+    let stats = loop {
+        match lease.next_event().await.expect("event") {
+            loams_house::Event::Done(stats) => break stats,
+            _ => continue,
+        }
+    };
+    assert_eq!(stats.written_rows, 2_000_000);
+
+    // A statement over the frame limit cannot be sent: the caller's error.
+    let huge = format!("SELECT '{}'", "x".repeat(17 * 1024 * 1024));
+    let err = lease
+        .start(statement(&huge, "TSV"))
+        .await
+        .expect_err("over MAX_FRAME_BYTES");
+    assert_eq!(err.code(), 36, "{err}");
+    assert_eq!(
+        lease
+            .run(statement("SELECT 1", "TSV"))
+            .await
+            .expect("the worker is fine")
+            .bytes,
+        b"1\n"
+    );
+    assert_eq!(lease.pid(), pid);
+    pool.release(lease, Outcome::Completed);
+    assert_eq!(
+        pool.stats().kills.values().sum::<u64>(),
+        0,
+        "{:?}",
+        pool.stats()
+    );
+}

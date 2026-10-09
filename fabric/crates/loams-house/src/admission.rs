@@ -27,7 +27,10 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
 use bytes::Bytes;
-use loams_house_ipc::{Bind, Chunk, Execute, Frame, FrameCodec, PROTOCOL_VERSION, Progress, Ready};
+use loams_house_ipc::{
+    Bind, CHUNK_BYTES, Chunk, CodecError, Execute, Frame, FrameCodec, PROTOCOL_VERSION, Progress,
+    Ready,
+};
 use tokio::net::UnixStream;
 use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::runtime::Handle;
@@ -435,6 +438,14 @@ fn too_many(namespace: &str, waited: Duration) -> HouseError {
     )))
 }
 
+/// A frame the front could not encode: the request's fault (too large), never the
+/// worker's (review I4).
+fn unsendable(query_id: &str, err: &CodecError) -> HouseError {
+    HouseError::from(ChError::bad_arguments(format!(
+        "query {query_id}: the statement cannot be sent to a worker: {err}"
+    )))
+}
+
 fn network(message: String) -> HouseError {
     HouseError::from(ChError::network_error(message))
 }
@@ -793,16 +804,29 @@ impl WorkerLease {
         worker.queries += 1;
         // A new statement: a handle taken for the previous one goes stale.
         worker.shared.bump_epoch();
-        let sent = FrameCodec::write_async(&mut worker.writer, &Frame::Execute(execute)).await;
-        match sent {
+        match FrameCodec::write_async(&mut worker.writer, &Frame::Execute(execute)).await {
             Ok(()) => Ok(()),
-            Err(_) => Err(self.died()),
+            Err(CodecError::Io(_)) => Err(self.died()),
+            Err(err) => {
+                // Nothing was written: the frame could not be encoded (review I4).
+                // The worker is untouched and the statement never started.
+                worker.in_flight = false;
+                worker.queries -= 1;
+                worker.shared.bump_epoch();
+                Err(unsendable(&query_id, &err))
+            }
         }
     }
 
-    /// Sends a piece of the statement's `INSERT` body.
+    /// Sends a piece of the statement's `INSERT` body, split into frames of at most
+    /// [`CHUNK_BYTES`] (review I4).
     pub async fn send_input(&mut self, bytes: Bytes) -> Result<(), HouseError> {
-        self.send_body(Frame::Input(bytes)).await
+        let mut rest = bytes;
+        while !rest.is_empty() {
+            let piece = rest.split_to(CHUNK_BYTES.min(rest.len()));
+            self.send_body(Frame::Input(piece)).await?;
+        }
+        Ok(())
     }
 
     /// Ends the statement's `INSERT` body.
@@ -811,10 +835,13 @@ impl WorkerLease {
     }
 
     async fn send_body(&mut self, frame: Frame) -> Result<(), HouseError> {
+        let query_id = self.query_id.clone();
         let worker = self.worker()?;
         match FrameCodec::write_async(&mut worker.writer, &frame).await {
             Ok(()) => Ok(()),
-            Err(_) => Err(self.died()),
+            // Only a socket failure means the worker went away.
+            Err(CodecError::Io(_)) => Err(self.died()),
+            Err(err) => Err(unsendable(&query_id, &err)),
         }
     }
 
