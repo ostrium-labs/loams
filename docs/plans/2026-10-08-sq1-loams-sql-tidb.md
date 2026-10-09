@@ -895,4 +895,6 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
 - **R4.4 Later tasks (Task 4 re-review).**
   - **N4, done in Task 4.** During the drain, a session whose client spoke last (a command awaiting TiDB) is busy.
   - **N5, done in Task 4.** A full fast-auth cache evicts expired entries, then the oldest tenth, never all of them.
-  - **N6–N8.** Their text did not reach the implementer; the controller adds them here.
+  - **N6 (Task 11).** The decoy hash uses `config.argon2`. If the control plane hashes role passwords with other Argon2 parameters, the time a check takes reveals whether a user exists, so Task 11 hashes with the gate's configured parameters, and a test asserts they match. `Gate::new` computes the decoy on the async runtime; move it to the blocking pool there.
+  - **N7 (Task 12).** With pipelined commands, a gate-originated ERR can land between the result packets of an earlier command. Task 12 orders gate refusals after outstanding responses, by tracking requests in flight.
+  - **N8 (Task 12).** The 8 h idle timer counts a long, silent query as idle. Task 12 resets idleness while a command awaits TiDB, the same rule as N4.
