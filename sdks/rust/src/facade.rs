@@ -155,7 +155,7 @@ pub const REASON_CODES: &[(Reason, &str)] = &[
     ("project_not_found", "not_found"),
     ("branch_has_children", "failed_precondition"),
     ("branch_protected", "failed_precondition"),
-    ("lsn_out_of_retention", "out_of_range"),
+    ("lsn_out_of_retention", "failed_precondition"),
     ("endpoint_exists_for_branch", "already_exists"),
     ("compute_start_failed", "unavailable"),
     ("quota_exceeded", "resource_exhausted"),

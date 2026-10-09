@@ -120,7 +120,7 @@ var ReasonCodes = map[Reason]string{
 	ReasonProjectNotFound:         "not_found",
 	ReasonBranchHasChildren:       "failed_precondition",
 	ReasonBranchProtected:         "failed_precondition",
-	ReasonLsnOutOfRetention:       "out_of_range",
+	ReasonLsnOutOfRetention:       "failed_precondition",
 	ReasonEndpointExistsForBranch: "already_exists",
 	ReasonComputeStartFailed:      "unavailable",
 	ReasonQuotaExceeded:           "resource_exhausted",

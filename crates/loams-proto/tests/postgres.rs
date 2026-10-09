@@ -477,3 +477,34 @@ fn removed_kind_is_an_enum() {
     assert_eq!(kind.r#type(), Type::Enum);
     assert_eq!(kind.type_name(), ".loams.postgres.v1.ResourceKind");
 }
+
+/// Each `loams.postgres.v1` reason is registered under its Connect code
+/// (PG2 Task 1 rulings R1.5 and R1.8).
+#[test]
+fn reasons_have_their_connect_codes() {
+    let registry: BTreeMap<String, String> = read("docs/api/reasons.md")
+        .lines()
+        .filter_map(|l| {
+            let cells: Vec<&str> = l.split('|').map(str::trim).collect();
+            let reason = cells.get(1)?.strip_prefix('`')?.strip_suffix('`')?;
+            Some((reason.to_string(), cells.get(2)?.to_string()))
+        })
+        .collect();
+    for (reason, code) in [
+        ("project_not_found", "not_found"),
+        ("branch_has_children", "failed_precondition"),
+        ("branch_protected", "failed_precondition"),
+        ("lsn_out_of_retention", "failed_precondition"),
+        ("endpoint_exists_for_branch", "already_exists"),
+        ("compute_start_failed", "unavailable"),
+        ("quota_exceeded", "resource_exhausted"),
+        ("storage_unavailable", "unavailable"),
+        ("secret_already_issued", "failed_precondition"),
+    ] {
+        assert_eq!(
+            registry.get(reason).map(String::as_str),
+            Some(code),
+            "{reason} in docs/api/reasons.md"
+        );
+    }
+}
