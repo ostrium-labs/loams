@@ -873,14 +873,7 @@ impl GraphCatalog {
     /// [`CatalogError::Unavailable`] when the namespaces cannot be listed; a failure in one
     /// namespace is logged and the sweep goes on.
     pub async fn sweep_documents(&self, grace: std::time::Duration) -> Result<usize, CatalogError> {
-        let now_ms = u64::try_from(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
-        )
-        .unwrap_or(u64::MAX);
-        let cutoff = now_ms.saturating_sub(u64::try_from(grace.as_millis()).unwrap_or(u64::MAX));
+        let grace_ms = u64::try_from(grace.as_millis()).unwrap_or(u64::MAX);
         let namespaces = self
             .meta
             .namespaces(Consistency::Linearizable)
@@ -888,7 +881,7 @@ impl GraphCatalog {
             .map_err(unavailable)?;
         let mut deleted = 0;
         for ns in namespaces {
-            match self.sweep_namespace(ns.id, cutoff).await {
+            match self.sweep_namespace(ns.id, grace_ms).await {
                 Ok(n) => deleted += n,
                 Err(err) => {
                     tracing::warn!(namespace = %ns.name, error = %err, "sweeping a graph catalog failed");
@@ -898,32 +891,48 @@ impl GraphCatalog {
         Ok(deleted)
     }
 
+    /// One namespace's sweep (re-review 3). An object is deleted only when it is **older than the
+    /// pointer's current target in upload order** (its ULID is smaller) **and** was written at
+    /// least `grace_ms` before the target, both read from the bucket and the object names, never
+    /// from this node's clock. So an object newer than the target (a write whose CAS is still in
+    /// flight) is never deleted. A write's put precedes its CAS by at most its retry budget
+    /// (`MAX_ATTEMPTS` CASes with at most 200 ms backoff, about 7 s plus metastore timeouts),
+    /// well under the 5-minute grace floor, which is what keeps a write from another node with
+    /// a skewed clock (a smaller ULID) safe too.
     async fn sweep_namespace(
         &self,
         namespace: NamespaceId,
-        cutoff_ms: u64,
+        grace_ms: u64,
     ) -> Result<usize, CatalogError> {
-        let objects = self
-            .store
-            .list(&format!("graphs/{namespace}/catalog/"))
-            .await
-            .map_err(unavailable)?;
-        if objects.is_empty() {
-            return Ok(0);
-        }
-        // Read the pointer after listing: a document written after this read is newer than the
-        // cutoff anyway, and one the pointer moved to before it is kept.
-        let current = self
+        let prefix = format!("graphs/{namespace}/catalog/");
+        let objects = self.store.list(&prefix).await.map_err(unavailable)?;
+        // The pointer after the listing: an object written after this read is not in the list.
+        let Some(current) = self
             .meta
             .pointer(Consistency::Linearizable, namespace, CATALOG_POINTER)
             .await
             .map_err(unavailable)?
-            .map(|p| p.value);
+            .map(|p| p.value)
+        else {
+            return Ok(0);
+        };
+        let ulid_of = |path: &str| {
+            path.strip_prefix(&prefix)
+                .and_then(|name| name.strip_suffix(".json"))
+                .and_then(|id| id.parse::<ulid::Ulid>().ok())
+        };
+        let (Some(target_ulid), Some(target)) = (
+            ulid_of(&current),
+            objects.iter().find(|o| o.path == current),
+        ) else {
+            return Ok(0);
+        };
+        let target_written = target.last_modified_ms;
         let mut deleted = 0;
-        for object in objects {
-            if current.as_deref() == Some(object.path.as_str())
-                || object.last_modified_ms > cutoff_ms
-            {
+        for object in &objects {
+            let older = ulid_of(&object.path).is_some_and(|u| u < target_ulid);
+            let aged = object.last_modified_ms.saturating_add(grace_ms) <= target_written;
+            if object.path == current || !older || !aged {
                 continue;
             }
             match self.store.delete(&object.path).await {

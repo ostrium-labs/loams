@@ -1382,6 +1382,56 @@ mod admin {
         );
     }
 
+    /// Re-review 3: the sweep never deletes an object newer than the pointer's target (a write
+    /// whose CAS is in flight), whatever the grace.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn sweep_keeps_documents_newer_than_the_target() {
+        let fixture = Fixture::start().await;
+        let admin = fixture.admin();
+        admin
+            .create_graph(create("acme", "a", "a"))
+            .await
+            .expect("create");
+        admin
+            .create_graph(create("acme", "b", "b"))
+            .await
+            .expect("create");
+        let catalog_objects = || async {
+            let mut paths: Vec<String> = fixture
+                .store
+                .list("graphs/")
+                .await
+                .expect("list")
+                .into_iter()
+                .map(|o| o.path)
+                .filter(|p| p.contains("/catalog/"))
+                .collect();
+            paths.sort();
+            paths
+        };
+        let before = catalog_objects().await;
+        assert_eq!(before.len(), 2);
+        let prefix = before[0].rsplit_once('/').expect("a path").0.to_string();
+        // A write that has put its document and not yet CASed the pointer.
+        let in_flight = format!("{prefix}/{}.json", ulid::Ulid::generate());
+        fixture
+            .store
+            .put(&in_flight, bytes::Bytes::from_static(b"{\"graphs\":{}}"))
+            .await
+            .expect("put");
+        assert_eq!(
+            admin.sweep_documents(Duration::ZERO).await.expect("sweep"),
+            1
+        );
+        let after = catalog_objects().await;
+        assert!(
+            after.contains(&in_flight),
+            "the in-flight document is kept: {after:?}"
+        );
+        assert!(after.contains(&before[1]), "the target is kept");
+        assert!(!after.contains(&before[0]), "the superseded one is swept");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn invalid_names_refused() {
         let fixture = Fixture::start().await;
