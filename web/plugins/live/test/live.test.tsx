@@ -113,6 +113,7 @@ const stacksFake = (phase: 'stopped' | 'running' = 'stopped') => {
         start,
         stop: vi.fn(async () => ({ ok: true as const, value: undefined })),
         onState: () => () => {},
+        openLogs: vi.fn(async () => ({ ok: true as const, value: undefined })),
       },
     },
   };
@@ -306,6 +307,31 @@ describe('live page behaviour', () => {
     s.queryError = new ConnectError(LIVE_NOT_RUNNING, Code.Unavailable);
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     expect(await screen.findByText('Live needs the TiKV stack')).toBeTruthy();
+  });
+
+  it('shows_the_engines_live_notice', async () => {
+    // Ruling T23-8: TiKV chosen but down, so Live shows local data and says so.
+    const notice = 'Live on TiKV is unavailable; showing local data.';
+    const desktop = {
+      ...stacksFake().desktop,
+      engine: {
+        state: async () =>
+          ({
+            phase: 'ready',
+            url: 'http://127.0.0.1:1',
+            esUrl: '',
+            flightUrl: '',
+            durableUrl: '',
+            liveUrl: 'http://127.0.0.1:2',
+            liveNotice: notice,
+            pid: 1,
+          }) as const,
+        onState: () => () => {},
+      },
+    };
+    render(<LivePage api={apiWith()} desktop={desktop} />);
+    await screen.findByRole('table', { name: 'Tables' });
+    expect(await screen.findByText(notice)).toBeTruthy();
   });
 
   it('watch_clears_on_table_change_and_reports_a_closed_stream', async () => {

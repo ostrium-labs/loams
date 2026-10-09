@@ -138,6 +138,27 @@ describe("engine", () => {
 		expect(helpSupportsLive("  --no-live  disable")).toBe(true);
 		expect(helpSupportsLive("--no-durable")).toBe(false);
 		expect(liveSupportFromHelp("--no-durable")).toBe("none");
+		// The `--live-store` block names tikv:// only in a live-tikv build
+		// (ruling T23-9); tikv:// elsewhere in the help does not count.
+		const help = (store: string) =>
+			[
+				"      --durable-store <S>",
+				"          Where durable state lives: sqlite:<path>, tikv://<pd>/<ks>",
+				"      --live-listen <A>",
+				"          Address",
+				"      --live-store <LIVE_STORE>",
+				`          ${store}`,
+				"      --no-live",
+				"          Serve no Live",
+			].join("\n");
+		expect(
+			liveSupportFromHelp(help("`embedded` or `tikv://<pd>/<keyspace>`")),
+		).toBe("embedded+tikv");
+		expect(
+			liveSupportFromHelp(
+				help("`embedded`, a store (this build has no other)"),
+			),
+		).toBe("embedded");
 		expect(
 			liveSupportFromHelp("--live-listen <A>\n --live-pd <P>\n --no-live"),
 		).toBe("tikv");
@@ -203,7 +224,7 @@ describe("engine", () => {
 		expect(seen[2]?.join(" ")).not.toMatch(/live/);
 	});
 
-	it("embedded_live_runs_without_a_pd", async () => {
+	it("an_engine_without_live_tikv_ignores_the_pd_with_a_notice", async () => {
 		const seen: string[][] = [];
 		const sup = new EngineSupervisor(
 			deps({
@@ -213,6 +234,99 @@ describe("engine", () => {
 				}),
 				fetch: (async () => ({ ok: true })) as unknown as typeof fetch,
 				liveSupported: async () => "embedded" as const,
+				livePd: "127.0.0.1:19379",
+			}),
+		);
+		sup.start();
+		await until(() => sup.state().phase === "ready");
+		expect(seen[0]).toContain("--live-listen");
+		expect(seen[0]?.join(" ")).not.toMatch(/--live-store|--live-pd|19379/);
+		const s = sup.state();
+		expect(s.phase === "ready" && s.liveUrl).toMatch(/^http:\/\/127/);
+		expect(s.phase === "ready" && s.liveNotice).toMatch(/without Live on TiKV/);
+		await sup.stop();
+	});
+
+	it("a_live_tikv_refusal_restarts_on_the_embedded_store", async () => {
+		const seen: string[][] = [];
+		const sup = new EngineSupervisor(
+			deps({
+				spawn: asSpawn((_c: string, a: string[]) => {
+					seen.push(a);
+					const child = new FakeChild();
+					if (seen.length === 1) {
+						// The engine refuses the TiKV store and exits.
+						setTimeout(() => {
+							child.stderr.write(
+								"error: invalid value 'tikv://127.0.0.1:19379' for '--live-store <LIVE_STORE>': --live-store tikv:// needs a build with the live-tikv feature\n",
+							);
+							setTimeout(() => child.die(2), 5);
+						}, 5);
+					}
+					return child;
+				}),
+				fetch: (async () => {
+					if (seen.length < 2) throw new Error("down");
+					return { ok: true };
+				}) as unknown as typeof fetch,
+				sleep: (ms: number) =>
+					new Promise((r) => setTimeout(r, Math.min(ms, 5))),
+				liveSupported: async () => "embedded+tikv" as const,
+				livePd: "127.0.0.1:19379",
+			}),
+		);
+		sup.start();
+		await until(() => sup.state().phase === "ready");
+		expect(seen).toHaveLength(2);
+		expect(seen[0]).toContain("tikv://127.0.0.1:19379");
+		expect(seen[1]).toContain("--live-listen");
+		expect(seen[1]?.join(" ")).not.toMatch(/--live-store|--live-pd/);
+		const s = sup.state();
+		expect(s.phase === "ready" && s.liveNotice).toMatch(/without Live on TiKV/);
+		// The next start remembers it: no second refusal.
+		await sup.stop();
+		sup.start();
+		await until(() => seen.length === 3 && sup.state().phase === "ready");
+		expect(seen[2]?.join(" ")).not.toMatch(/--live-store/);
+		await sup.stop();
+	});
+
+	it("set_live_notice_updates_a_ready_engine_without_a_restart", async () => {
+		const seen: string[][] = [];
+		const sup = new EngineSupervisor(
+			deps({
+				spawn: asSpawn((_c: string, a: string[]) => {
+					seen.push(a);
+					return new FakeChild();
+				}),
+				fetch: (async () => ({ ok: true })) as unknown as typeof fetch,
+				liveSupported: async () => "embedded+tikv" as const,
+			}),
+		);
+		sup.setLiveNotice("Live on TiKV is unavailable; showing local data.");
+		sup.start();
+		await until(() => sup.state().phase === "ready");
+		let s = sup.state();
+		expect(s.phase === "ready" && s.liveNotice).toBe(
+			"Live on TiKV is unavailable; showing local data.",
+		);
+		sup.setLiveNotice(null);
+		s = sup.state();
+		expect(s.phase === "ready" && s.liveNotice).toBeFalsy();
+		expect(seen).toHaveLength(1);
+		await sup.stop();
+	});
+
+	it("embedded_live_runs_without_a_pd", async () => {
+		const seen: string[][] = [];
+		const sup = new EngineSupervisor(
+			deps({
+				spawn: asSpawn((_c: string, a: string[]) => {
+					seen.push(a);
+					return new FakeChild();
+				}),
+				fetch: (async () => ({ ok: true })) as unknown as typeof fetch,
+				liveSupported: async () => "embedded+tikv" as const,
 			}),
 		);
 		sup.start();

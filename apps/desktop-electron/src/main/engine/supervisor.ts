@@ -27,6 +27,12 @@ export interface SupervisorDeps {
 }
 
 const BACKOFF_S = [1, 2, 4, 8, 16, 30];
+
+/** What an engine prints when it refuses a TiKV store it was built without. */
+const LIVE_TIKV_REFUSAL = /needs? a build with the live-tikv feature/;
+/** The Live notice when the engine cannot run Live on TiKV (ruling T23-9). */
+export const ENGINE_WITHOUT_TIKV =
+	"This engine was built without Live on TiKV (the live-tikv feature); Live runs on local data.";
 const MAX_RESTARTS = 5;
 const WINDOW_MS = 10 * 60 * 1000;
 const SECRET_NAME = /(^LOAMS_.*_TOKEN$)|(_SECRET$)|(_API_KEY$)/i;
@@ -44,6 +50,12 @@ export class EngineSupervisor extends EventEmitter {
 	private generation = 0;
 	private restarts: number[] = [];
 	private livePd: string | null;
+	/** The notice of the Live store binding (ruling T23-8). */
+	private liveNotice: string | null = null;
+	/** The engine's own notice (it cannot run Live on TiKV), set by a run. */
+	private engineNotice: string | null = null;
+	/** The engine refused a TiKV store: later runs leave it out. */
+	private tikvRefused = false;
 	private readonly log: RotatingLog;
 	private stopping: Promise<void> | null = null;
 	/** Set by dispose() (app quit): start and restarts are ignored from then on. */
@@ -112,6 +124,16 @@ export class EngineSupervisor extends EventEmitter {
 		await this.stop();
 	}
 
+	/** Sets the Live notice; a ready engine's state shows it at once, without a restart. */
+	setLiveNotice(notice: string | null): void {
+		this.liveNotice = notice;
+		if (this.cur.phase === "ready") {
+			const { liveNotice: _old, ...rest } = this.cur;
+			const shown = this.engineNotice ?? notice;
+			this.set(shown && rest.liveUrl ? { ...rest, liveNotice: shown } : rest);
+		}
+	}
+
 	/** Changes the live PD endpoint; restarts a running engine so the flags take effect. */
 	async setLivePd(pd: string | null): Promise<void> {
 		if (this.disposed || pd === this.livePd) return;
@@ -151,14 +173,21 @@ export class EngineSupervisor extends EventEmitter {
 		}
 		let ports: number[];
 		let support: LiveSupport = "none";
-		const pd = this.livePd ?? undefined;
-		// Live runs with a PD on any engine that has it, and with none on an
-		// engine with the embedded store (LV1 Task 23).
+		let pd: string | undefined;
+		// Live runs on TiKV when a PD is set and the engine can, and on the
+		// embedded store of an engine that has one (LV1 Task 23).
 		const liveOn = (): boolean =>
-			support !== "none" && (!!pd || support === "embedded");
+			support !== "none" && (!!pd || support.startsWith("embedded"));
 		try {
 			const probed = (await d.liveSupported?.(bin)) ?? "none";
 			support = probed === true ? "tikv" : probed === false ? "none" : probed;
+			const wanted = this.livePd ?? undefined;
+			const tikvOk =
+				support === "tikv" ||
+				(support === "embedded+tikv" && !this.tikvRefused);
+			pd = tikvOk ? wanted : undefined;
+			this.engineNotice =
+				wanted && !pd && support !== "none" ? ENGINE_WITHOUT_TIKV : null;
 			ports = await reservePorts(liveOn() ? 5 : 4);
 		} catch (e) {
 			if (!alive()) return;
@@ -178,7 +207,7 @@ export class EngineSupervisor extends EventEmitter {
 			ports: { http, flight, es, durable, live },
 			live: {
 				supported: support !== "none",
-				embedded: support === "embedded",
+				embedded: support.startsWith("embedded"),
 				pd,
 			},
 		});
@@ -197,7 +226,11 @@ export class EngineSupervisor extends EventEmitter {
 		this.child = child;
 		this.log.write(`[supervisor] spawn ${bin} ${args.join(" ")}\n`);
 		child.stdout?.on("data", (c: Buffer) => this.log.write(c));
-		child.stderr?.on("data", (c: Buffer) => this.log.write(c));
+		let stderrTail = "";
+		child.stderr?.on("data", (c: Buffer) => {
+			this.log.write(c);
+			stderrTail = (stderrTail + c.toString()).slice(-4096);
+		});
 		let exitCode: number | null | undefined;
 		const exited = new Promise<void>((r) => {
 			child.once("error", (e) => {
@@ -246,6 +279,11 @@ export class EngineSupervisor extends EventEmitter {
 				...(live !== undefined && liveOn()
 					? { liveUrl: `http://127.0.0.1:${live}` }
 					: {}),
+				...(live !== undefined &&
+				liveOn() &&
+				(this.engineNotice ?? this.liveNotice)
+					? { liveNotice: (this.engineNotice ?? this.liveNotice) as string }
+					: {}),
 				pid: child.pid ?? 0,
 			});
 			await exited;
@@ -258,6 +296,17 @@ export class EngineSupervisor extends EventEmitter {
 			return;
 		}
 		this.child = null;
+
+		// The engine refused the TiKV store (a build without live-tikv): run
+		// it again on its embedded store at once, with the notice; not a crash.
+		if (!ready && pd && LIVE_TIKV_REFUSAL.test(stderrTail)) {
+			this.tikvRefused = true;
+			this.log.write(
+				"[supervisor] the engine has no Live on TiKV; restarting on its embedded store\n",
+			);
+			await this.run(gen, attempt); // errors reach guardedRun
+			return;
+		}
 
 		// Crashed (before or after ready).
 		const t = d.now();

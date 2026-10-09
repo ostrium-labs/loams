@@ -9,11 +9,18 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+	LIVE_STORE_KEY,
+	readLiveStore,
+	readSetting,
+	writeSetting,
+} from "../src/main/settings";
 import { resolveRuntime } from "../src/main/stacks/ipc.electron";
 import { detectRuntime } from "../src/main/stacks/runtime";
 import {
 	bindLiveToTikv,
 	composeArgs,
+	LIVE_TIKV_UNAVAILABLE,
 	parsePs,
 	type RunFn,
 	StackManager,
@@ -236,7 +243,7 @@ describe("stacks", () => {
 				return { code: 0, stdout: "" };
 			},
 		);
-		bindLiveToTikv(m, engine);
+		bindLiveToTikv(m, engine, () => "tikv-stack");
 		await m.start("tikv");
 		expect(pds).toEqual([TIKV_PD_ADDR]);
 		expect(TIKV_PD_ADDR).toBe("127.0.0.1:19379");
@@ -247,7 +254,7 @@ describe("stacks", () => {
 		expect(pds).toEqual([TIKV_PD_ADDR, null]);
 		// Other stacks and non-terminal phases never touch the engine.
 		const em = new EventEmitter();
-		bindLiveToTikv(em, engine);
+		bindLiveToTikv(em, engine, () => "tikv-stack");
 		em.emit("observed", "wesql", { phase: "running", services: [] });
 		em.emit("observed", "tikv", { phase: "starting" });
 		em.emit("observed", "tikv", { phase: "error", message: "x" });
@@ -255,7 +262,11 @@ describe("stacks", () => {
 		// stopped, running, stopped never reaches two consecutive stops
 		const pds2: (string | null)[] = [];
 		const em2 = new EventEmitter();
-		bindLiveToTikv(em2, { setLivePd: async (p) => void pds2.push(p) });
+		bindLiveToTikv(
+			em2,
+			{ setLivePd: async (p) => void pds2.push(p) },
+			() => "tikv-stack",
+		);
 		const run = { phase: "running", services: [] };
 		for (const s of [{ phase: "stopped" }, run, { phase: "stopped" }])
 			em2.emit("observed", "tikv", s);
@@ -266,11 +277,67 @@ describe("stacks", () => {
 		bindLiveToTikv(
 			em3,
 			{ setLivePd: () => Promise.reject(new Error("boom")) },
+			() => "tikv-stack",
 			(e) => errs.push(e),
 		);
 		em3.emit("observed", "tikv", run);
 		await new Promise((r) => setTimeout(r, 5));
 		expect(errs).toHaveLength(1);
+	});
+
+	it("live_uses_tikv_only_when_chosen_and_the_stack_runs", async () => {
+		// Ruling T23-8: the desktop never switches Live's store implicitly.
+		const pds: (string | null)[] = [];
+		const notices: (string | null)[] = [];
+		const engine = {
+			setLivePd: async (p: string | null) => void pds.push(p),
+			setLiveNotice: (n: string | null) => void notices.push(n),
+		};
+		let choice: "embedded" | "tikv-stack" = "embedded";
+		const em = new EventEmitter();
+		const live = bindLiveToTikv(em, engine, () => choice);
+		const run = { phase: "running", services: [] };
+		const stopped = { phase: "stopped" };
+		// A running stack alone means nothing.
+		em.emit("observed", "tikv", run);
+		expect(pds.filter((p) => p !== null)).toEqual([]);
+		expect(notices.at(-1)).toBeNull();
+		// Chosen and running: TiKV.
+		choice = "tikv-stack";
+		live.refresh();
+		expect(pds.at(-1)).toBe(TIKV_PD_ADDR);
+		expect(notices.at(-1)).toBeNull();
+		// Chosen but the stack is down: embedded, with the notice.
+		em.emit("observed", "tikv", stopped);
+		em.emit("observed", "tikv", stopped);
+		expect(pds.at(-1)).toBeNull();
+		expect(notices.at(-1)).toBe(LIVE_TIKV_UNAVAILABLE);
+		expect(LIVE_TIKV_UNAVAILABLE).toBe(
+			"Live on TiKV is unavailable; showing local data.",
+		);
+		// Back up: TiKV again, no notice.
+		em.emit("observed", "tikv", run);
+		expect(pds.at(-1)).toBe(TIKV_PD_ADDR);
+		expect(notices.at(-1)).toBeNull();
+		// Switched back to embedded: no PD whatever the stack does.
+		choice = "embedded";
+		live.refresh();
+		expect(pds.at(-1)).toBeNull();
+		em.emit("observed", "tikv", run);
+		expect(pds.at(-1)).toBeNull();
+		expect(notices.at(-1)).toBeNull();
+	});
+
+	it("live_store_choice_persists_in_settings", () => {
+		const dir = mkdtempSync(join(tmpdir(), "settings-"));
+		const file = join(dir, "settings.json");
+		expect(readLiveStore(file)).toBe("embedded");
+		writeSetting(file, "engine.autoStart", false);
+		writeSetting(file, LIVE_STORE_KEY, "tikv-stack");
+		expect(readLiveStore(file)).toBe("tikv-stack");
+		expect(readSetting(file, "engine.autoStart", true)).toBe(false);
+		writeSetting(file, LIVE_STORE_KEY, "nonsense");
+		expect(readLiveStore(file)).toBe("embedded");
 	});
 
 	it("poll_ps_is_not_logged_on_success", async () => {

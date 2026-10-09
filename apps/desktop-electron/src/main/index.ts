@@ -36,7 +36,12 @@ import { createLocalShim } from "./protocol/local-shim";
 import { secureWindow } from "./security/install.electron";
 import { registerServerIpc } from "./servers/ipc.electron";
 import { ServerRegistry } from "./servers/registry";
-import { readSetting } from "./settings";
+import {
+	LIVE_STORE_KEY,
+	readLiveStore,
+	readSetting,
+	writeSetting,
+} from "./settings";
 import { getMainWindow, setMainWindow } from "./shell/main-window";
 import { installAppMenu } from "./shell/menu.electron";
 import { DOCS_URL } from "./shell/menu-model";
@@ -232,7 +237,6 @@ const singleInstance = initSingleInstance({
 				registry.setLocalUrl(st.phase === "ready" ? st.url : "");
 				tray?.refresh();
 			});
-			registerEngineIpc(engine, logFile);
 			// Compose runs from a per-user copy: no bind mount points into the app resources.
 			const stacks = createStackManager({
 				sourceDir: paths.stacksDir,
@@ -241,13 +245,26 @@ const singleInstance = initSingleInstance({
 				alwaysCopy: !app.isPackaged,
 				logsDir: paths.logs,
 			});
-			bindLiveToTikv(stacks, engine, (e) =>
-				console.error("[stacks] setLivePd failed:", e),
+			// Live's store follows the user's choice in Settings, never the
+			// stack alone (ruling T23-8).
+			const liveStore = bindLiveToTikv(
+				stacks,
+				engine,
+				() => readLiveStore(settingsFile()),
+				(e) => console.error("[stacks] setLivePd failed:", e),
 			);
+			registerEngineIpc(engine, logFile, {
+				get: () => readLiveStore(settingsFile()),
+				set: (choice) => {
+					writeSetting(settingsFile(), LIVE_STORE_KEY, choice);
+					liveStore.refresh();
+				},
+			});
 			registerStacksIpc(stacks, paths.logs);
 			registerSqlIpc(sql);
-			// A tikv stack left running from last time starts the engine with Live directly,
-			// but a slow or absent runtime must not hold the engine back for long.
+			// With the TiKV stack chosen, a stack left running from last time starts the engine
+			// with Live on it directly, but a slow or absent runtime must not hold the engine
+			// back for long.
 			await Promise.race([
 				stacks.state("tikv"),
 				new Promise((r) => setTimeout(r, 2000)),

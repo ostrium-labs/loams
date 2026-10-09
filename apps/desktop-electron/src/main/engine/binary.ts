@@ -27,8 +27,12 @@ export interface EngineArgsOpts {
 	live: { supported: boolean; embedded?: boolean; pd?: string };
 }
 
-/** What a `loams` binary offers for Live, read from `loams dev --help`. */
-export type LiveSupport = "none" | "tikv" | "embedded";
+/**
+ * What a `loams` binary offers for Live, read from `loams dev --help`: `none`; `tikv`, an older
+ * engine whose Live needs a PD; `embedded`, Live on its embedded store only; `embedded+tikv`, the
+ * embedded store or TiKV (a `live-tikv` build, ruling T23-9).
+ */
+export type LiveSupport = "none" | "tikv" | "embedded" | "embedded+tikv";
 
 export function engineArgs({ dataDir, ports, live }: EngineArgsOpts): string[] {
 	const a = [
@@ -65,14 +69,29 @@ export function helpSupportsLive(help: string): boolean {
 	return /--(no-live|live-listen)\b/.test(help);
 }
 
+/** A flag's line in `--help` output and its description, up to the next flag; null if absent. */
+function flagHelp(help: string, flag: string): string | null {
+	const lines = help.split("\n");
+	const at = lines.findIndex((l) => l.trimStart().startsWith(flag));
+	if (at < 0) return null;
+	const block = [lines[at] ?? ""];
+	for (const l of lines.slice(at + 1)) {
+		if (l.trimStart().startsWith("-")) break;
+		block.push(l);
+	}
+	return block.join("\n");
+}
+
 /**
- * The binary's Live support from its `dev --help`: `embedded` when it lists
- * `--live-store` (Live runs on its embedded store with no PD), `tikv` for an
- * older engine whose Live needs a PD, `none` without Live.
+ * The binary's Live support from its `dev --help`: `none` without Live; `tikv` for an older
+ * engine without `--live-store` (its Live needs a PD); else `embedded+tikv` when the
+ * `--live-store` help names `tikv://` (only a `live-tikv` build's does), `embedded` otherwise.
  */
 export function liveSupportFromHelp(help: string): LiveSupport {
 	if (!helpSupportsLive(help)) return "none";
-	return /--live-store\b/.test(help) ? "embedded" : "tikv";
+	const store = flagHelp(help, "--live-store");
+	if (store === null) return "tikv";
+	return /tikv:\/\//.test(store) ? "embedded+tikv" : "embedded";
 }
 
 const probeCache = new Map<string, LiveSupport>();

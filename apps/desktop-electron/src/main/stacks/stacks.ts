@@ -9,7 +9,12 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import type { IpcResult, StackId, StackState } from "../../shared/contracts";
+import type {
+	IpcResult,
+	LiveStoreChoice,
+	StackId,
+	StackState,
+} from "../../shared/contracts";
 import { RotatingLog } from "../engine/log-rotate";
 import type { ComposeRuntime } from "./runtime";
 
@@ -497,26 +502,50 @@ function unavailable(): IpcResult<void> {
 	};
 }
 
-/** Consecutive polls that must see tikv stopped before the engine drops Live. */
+/** Consecutive polls that must see tikv stopped before the engine drops TiKV. */
 export const STOPPED_POLLS = 2;
 
+/** What the Live page and Settings show when the TiKV stack was chosen but is down. */
+export const LIVE_TIKV_UNAVAILABLE =
+	"Live on TiKV is unavailable; showing local data.";
+
 /**
- * The engine runs with Live while the tikv stack is up, and without it once it has been seen
- * stopped on two consecutive observations (a single missed `ps` must not restart the engine).
+ * Live's store follows the user's choice, never the stack alone (ruling T23-8): with `tikv-stack`
+ * chosen, the engine runs Live on the TiKV stack while it is up, and on its embedded store, with
+ * {@link LIVE_TIKV_UNAVAILABLE} as the notice, once the stack has been seen stopped on two
+ * consecutive observations (a single missed `ps` must not restart the engine). With `embedded`
+ * chosen, a running stack changes nothing. `refresh` re-applies after the choice changes.
  */
 export function bindLiveToTikv(
 	manager: EventEmitter,
-	engine: { setLivePd(pd: string | null): Promise<void> },
+	engine: {
+		setLivePd(pd: string | null): Promise<void>;
+		setLiveNotice?(notice: string | null): void;
+	},
+	choice: () => LiveStoreChoice,
 	onError: (e: unknown) => void = () => {},
-): void {
+): { refresh(): void } {
 	let stopped = 0;
+	let running = false;
+	const apply = (): void => {
+		const tikv = choice() === "tikv-stack";
+		engine.setLivePd(tikv && running ? TIKV_PD_ADDR : null).catch(onError);
+		engine.setLiveNotice?.(tikv && !running ? LIVE_TIKV_UNAVAILABLE : null);
+	};
 	manager.on("observed", (id: StackId, s: StackState) => {
 		if (id !== "tikv") return;
 		if (s.phase === "stopped") {
-			if (++stopped >= STOPPED_POLLS) engine.setLivePd(null).catch(onError);
+			if (++stopped >= STOPPED_POLLS) {
+				running = false;
+				apply();
+			}
 			return;
 		}
 		stopped = 0;
-		if (s.phase === "running") engine.setLivePd(TIKV_PD_ADDR).catch(onError);
+		if (s.phase === "running") {
+			running = true;
+			apply();
+		}
 	});
+	return { refresh: apply };
 }

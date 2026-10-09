@@ -5,6 +5,12 @@ export interface ServerEntry {
 	kind: ServerKind;
 	url: string;
 } // url = origin
+/**
+ * Where the desktop's engine keeps Live (ruling T23-8): its embedded store (the default), or the
+ * local TiKV stack. The stack alone never switches it.
+ */
+export type LiveStoreChoice = "embedded" | "tikv-stack";
+
 export type EngineState =
 	| { phase: "stopped" }
 	| { phase: "starting"; attempt: number }
@@ -15,6 +21,8 @@ export type EngineState =
 			flightUrl: string;
 			durableUrl: string;
 			liveUrl?: string;
+			/** Why Live runs on local data although TiKV was chosen (shown on the Live page and in Settings). */
+			liveNotice?: string;
 			pid: number;
 	  }
 	| { phase: "failed"; reason: string; logPath: string };
@@ -128,6 +136,10 @@ export interface LoamsDesktopApi {
 		stop(): Promise<void>;
 		openLogs(): Promise<void>;
 		onState(cb: (s: EngineState) => void): () => void;
+		/** The user's Live store choice (`live.store` in settings.json). */
+		liveStore(): Promise<LiveStoreChoice>;
+		/** Saves the choice; the engine restarts when that changes Live's store. */
+		setLiveStore(choice: LiveStoreChoice): Promise<IpcResult<void>>;
 	};
 	factory: {
 		list(): Promise<FactoryAppInfo[]>;
@@ -257,6 +269,8 @@ export const CH = {
 	engineStop: "engine:stop",
 	engineLogs: "engine:logs",
 	engineEvent: "engine:event",
+	engineLiveStore: "engine:live-store",
+	engineSetLiveStore: "engine:set-live-store",
 	factoryList: "factory:list",
 	factoryConfigure: "factory:configure",
 	factoryTest: "factory:test",

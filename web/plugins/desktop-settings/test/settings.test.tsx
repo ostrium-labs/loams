@@ -19,7 +19,14 @@ afterEach(cleanup);
 
 type Update = Awaited<ReturnType<LoamsDesktopApi['update']['state']>>;
 
-function fake(init: { stacks?: Partial<Record<StackId, StackState>>; update?: Update } = {}) {
+function fake(
+  init: {
+    stacks?: Partial<Record<StackId, StackState>>;
+    update?: Update;
+    liveStore?: 'embedded' | 'tikv-stack';
+    liveNotice?: string;
+  } = {},
+) {
   const calls: string[] = [];
   const stacks: Record<string, StackState> = {
     postgres: { phase: 'stopped' },
@@ -32,7 +39,28 @@ function fake(init: { stacks?: Partial<Record<StackId, StackState>>; update?: Up
   const api = {
     version: '1.2.3',
     platform: 'linux',
-    engine: { openLogs: async () => void calls.push('openLogs') },
+    engine: {
+      openLogs: async () => void calls.push('openLogs'),
+      liveStore: async () => init.liveStore ?? 'embedded',
+      setLiveStore: async (c: string) => {
+        calls.push(`setLiveStore:${c}`);
+        return ok;
+      },
+      state: async () =>
+        init.liveNotice
+          ? {
+              phase: 'ready',
+              url: 'http://127.0.0.1:1',
+              esUrl: '',
+              flightUrl: '',
+              durableUrl: '',
+              liveUrl: 'http://127.0.0.1:2',
+              liveNotice: init.liveNotice,
+              pid: 1,
+            }
+          : { phase: 'stopped' },
+      onState: () => () => undefined,
+    },
     stacks: {
       state: async (id: string) => stacks[id],
       start: async (id: string) => {
@@ -225,5 +253,27 @@ describe('about section', () => {
   it('bundles_the_repository_notice_by_default', () => {
     render(<AboutSection desktop={fake().api} />);
     expect(screen.getByLabelText('Licences').textContent).toContain('dsh-desktop');
+  });
+});
+
+describe('live store', () => {
+  it('chooses_where_live_keeps_its_data', async () => {
+    // Ruling T23-8: a persisted choice, embedded by default.
+    const { api, calls } = fake();
+    render(<StacksSection desktop={api} />);
+    const select = (await screen.findByLabelText('Live store')) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('embedded'));
+    fireEvent.change(select, { target: { value: 'tikv-stack' } });
+    await waitFor(() => expect(calls).toContain('setLiveStore:tikv-stack'));
+    expect(select.value).toBe('tikv-stack');
+  });
+
+  it('shows_the_notice_when_tikv_is_chosen_but_unavailable', async () => {
+    const notice = 'Live on TiKV is unavailable; showing local data.';
+    const { api } = fake({ liveStore: 'tikv-stack', liveNotice: notice });
+    render(<StacksSection desktop={api} />);
+    expect(await screen.findByText(notice)).toBeTruthy();
+    const select = (await screen.findByLabelText('Live store')) as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('tikv-stack'));
   });
 });

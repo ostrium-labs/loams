@@ -15,6 +15,7 @@ import { StacksSection } from './stacks.js';
 import { UpdatesSection } from './updates.js';
 
 export { AboutSection } from './about.js';
+export { LiveStoreCard, useLiveNotice } from './live-store.js';
 export { SettingsPage } from './settings-page.js';
 export { StacksSection, useStacks } from './stacks.js';
 export { UpdatesSection } from './updates.js';

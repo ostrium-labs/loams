@@ -35,6 +35,8 @@ const api: LoamsDesktopApi = {
 		stop: () => invoke(CH.engineStop),
 		openLogs: () => invoke(CH.engineLogs),
 		onState: (cb) => subscribe(CH.engineEvent, cb),
+		liveStore: () => invoke(CH.engineLiveStore),
+		setLiveStore: (choice) => invoke(CH.engineSetLiveStore, choice),
 	},
 	factory: {
 		list: () => invoke(CH.factoryList),

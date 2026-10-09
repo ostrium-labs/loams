@@ -1,6 +1,7 @@
 import type { IpcResult, LoamsDesktopApi, StackId, StackState } from '@loams/desktop/contracts';
 import { Button, Card, Notice, StatusTag, Table } from '@loams/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { LiveStoreCard } from './live-store.js';
 
 export const STACKS: { id: StackId; label: string; note: string }[] = [
   { id: 'postgres', label: 'Postgres', note: 'Branchable Postgres' },
@@ -160,6 +161,7 @@ export function StacksSection({ desktop }: { desktop: LoamsDesktopApi }) {
           ]}
         />
       </Card>
+      <LiveStoreCard desktop={desktop} />
     </div>
   );
 }

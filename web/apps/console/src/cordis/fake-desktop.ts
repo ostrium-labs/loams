@@ -24,6 +24,7 @@ import type {
   FactoryAppInfo,
   FactoryQuery,
   IpcResult,
+  LiveStoreChoice,
   LoamsDesktopApi,
   ServerEntry,
   SqlResult,
@@ -93,7 +94,7 @@ function save(s: Saved) {
   }
 }
 
-const readyState = (): EngineState => ({
+const readyState = (): Extract<EngineState, { phase: 'ready' }> => ({
   phase: 'ready',
   url: 'http://127.0.0.1:8080',
   esUrl: 'http://127.0.0.1:9200',
@@ -302,6 +303,13 @@ function previewInfo({ fields, ...a }: (typeof PREVIEW_FACTORY_APPS)[number]): F
 export function createFakeDesktop(): LoamsDesktopApi {
   const data = load();
   let engine: EngineState = readyState();
+  // Ruling T23-8: the preview's TiKV stack never really runs, so choosing it
+  // shows Live on local data with the notice, as the real app does.
+  let liveStore: LiveStoreChoice = 'embedded';
+  const liveState = (): EngineState =>
+    liveStore === 'tikv-stack'
+      ? { ...readyState(), liveNotice: 'Live on TiKV is unavailable; showing local data.' }
+      : readyState();
   const listeners = new Set<(s: EngineState) => void>();
   const setEngine = (s: EngineState) => {
     engine = s;
@@ -349,13 +357,19 @@ export function createFakeDesktop(): LoamsDesktopApi {
       state: async () => engine,
       start: async () => {
         setEngine({ phase: 'starting', attempt: 1 });
-        later(900, () => setEngine(readyState()));
+        later(900, () => setEngine(liveState()));
       },
       stop: async () => setEngine({ phase: 'stopped' }),
       openLogs: async () => undefined,
       onState: (cb) => {
         listeners.add(cb);
         return () => void listeners.delete(cb);
+      },
+      liveStore: async () => liveStore,
+      setLiveStore: async (choice) => {
+        liveStore = choice;
+        if (engine.phase === 'ready') setEngine(liveState());
+        return { ok: true, value: undefined };
       },
     },
     factory: {

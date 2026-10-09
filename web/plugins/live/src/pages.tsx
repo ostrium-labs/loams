@@ -2,6 +2,7 @@
 // When the engine runs without Live it shows the TiKV stack card instead.
 
 import { Code, ConnectError } from '@connectrpc/connect';
+import type { EngineState } from '@loams/desktop/contracts';
 import type { LoamsDesktopApi } from '@loams/platform-electron';
 import {
   Badge,
@@ -603,6 +604,32 @@ export function MutateTab({ api, tables, sel, onGone }: TabProps) {
   );
 }
 
+// ---- the engine's Live notice ---------------------------------------------------------
+
+/** Why Live runs on local data although TiKV was chosen (ruling T23-8), from the engine state. */
+function useLiveNotice(
+  engine?: Partial<Pick<LoamsDesktopApi['engine'], 'state' | 'onState'>>,
+): string | undefined {
+  const [notice, setNotice] = useState<string>();
+  useEffect(() => {
+    if (!engine?.state || !engine.onState) return;
+    let live = true;
+    const take = (s: EngineState) => {
+      if (live) setNotice(s.phase === 'ready' ? s.liveNotice : undefined);
+    };
+    engine
+      .state()
+      .then(take)
+      .catch(() => undefined);
+    const off = engine.onState(take);
+    return () => {
+      live = false;
+      off();
+    };
+  }, [engine]);
+  return notice;
+}
+
 // ---- the page -----------------------------------------------------------------------
 
 export interface TabProps {
@@ -634,7 +661,10 @@ export function LivePage({
   retryMs = 2000,
 }: {
   api: LiveApi;
-  desktop: Pick<LoamsDesktopApi, 'stacks'>;
+  /** `engine`, when given, carries the Live notice (ruling T23-8). */
+  desktop: Pick<LoamsDesktopApi, 'stacks'> & {
+    engine?: Partial<Pick<LoamsDesktopApi['engine'], 'state' | 'onState'>>;
+  };
   retryMs?: number;
 }) {
   const [tab, setTab] = useState<TabId>('documents');
@@ -642,6 +672,7 @@ export function LivePage({
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' });
   const [tick, setTick] = useState(0);
   const gone = useCallback(() => setLoaded({ state: 'needs-tikv' }), []);
+  const notice = useLiveNotice(desktop.engine);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` is the reload trigger
   useEffect(() => {
@@ -696,6 +727,11 @@ export function LivePage({
           </Button>
         </span>
       </header>
+      {notice && (
+        <Notice tone="warn" title="Live on TiKV">
+          {notice}
+        </Notice>
+      )}
       {loaded.state === 'loading' && <Loading what="tables" />}
       {loaded.state === 'needs-tikv' && (
         <div className="flex flex-col gap-4">
