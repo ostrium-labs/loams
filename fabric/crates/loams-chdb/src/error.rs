@@ -69,6 +69,13 @@ impl ChdbError {
         // prefix is stripped when it is there and tolerated when it is not.
         let rest = rest.strip_prefix(EXCEPTION_PREFIX).unwrap_or(rest);
 
+        // Some paths (`chdb_stream_insert`) append the server version; the House
+        // renders its own, so it is not part of the message or the name.
+        let rest = rest.trim_end();
+        let rest = match rest.rsplit_once(" (version ") {
+            Some((before, version)) if version.ends_with(')') && !version.contains('(') => before,
+            _ => rest,
+        };
         // The name is the last parenthesised group: the message may contain
         // others, as `In scope SELECT nosuchfunc(1)` shows.
         let (message, tail) = rest.rsplit_once(" (")?;
@@ -164,6 +171,22 @@ mod tests {
             err.message,
             "Unknown table expression identifier 'nope'. Maybe you meant system.one? In scope SELECT * FROM nope"
         );
+    }
+
+    #[test]
+    fn a_trailing_version_group_is_not_the_name() {
+        // Measured (HS1 Task 3 fix round 2): errors from `chdb_stream_insert` end in
+        // the server version, which the House renders itself.
+        let text = "Code: 44. DB::Exception: The argument of function sleep must be constant: \
+                    While executing ValuesBlockInputFormat. (ILLEGAL_COLUMN) (version 26.9.2.1)";
+        let err = ChdbError::parse(text).expect("parses");
+        assert_eq!(err.code, 44);
+        assert_eq!(err.name, "ILLEGAL_COLUMN");
+        assert_eq!(
+            err.message,
+            "The argument of function sleep must be constant: While executing ValuesBlockInputFormat"
+        );
+        assert!(!err.to_clickhouse_text().contains("version"));
     }
 
     #[test]
