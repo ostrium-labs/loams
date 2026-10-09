@@ -11,6 +11,12 @@
 //! stops a call that the host aborted (a storage error or a dropped
 //! caller).
 //!
+//! **Memory.** Each runtime allocates through `loams-live-js-alloc`'s
+//! counting allocator; past the limit it refuses the allocation and raises
+//! a flag, which the interrupt handler turns into an uncatchable stop (LV1
+//! row T3-6). The call is out of memory by that flag, never by an error's
+//! text.
+//!
 //! **Console.** At most `lines` lines per call, each cut to `line_bytes`
 //! bytes at a character boundary; later lines are dropped and counted.
 

@@ -217,6 +217,7 @@ loams-link = { path = "crates/loams-link", version = "0.0.1" }
 loams-kv = { path = "crates/loams-kv", version = "0.0.1" }
 loams-live = { path = "crates/loams-live", version = "0.0.1" }
 loams-live-js = { path = "crates/loams-live-js", version = "0.0.1" }
+loams-live-js-alloc = { path = "crates/loams-live-js-alloc", version = "0.0.1" }
 loams-live-proto = { path = "crates/loams-live-proto", version = "0.0.1" }
 # The public `loams.*.v1` packages of the unified Connect API and their
 # descriptor set for reflection (design §44, API1 Task 1).

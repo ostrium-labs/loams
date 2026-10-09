@@ -371,7 +371,7 @@ jobs:
           cargo doc
           -p loams-qdrant -p loams-common -p loams-store -p loams-cache
           -p loams-log -p loams-hnsw -p loams-worker
-          -p loams-kv -p loams-live -p loams-live-js
+          -p loams-kv -p loams-live -p loams-live-js -p loams-live-js-alloc
           --no-deps --locked
         env:
           RUSTDOCFLAGS: "-D warnings"
@@ -816,7 +816,7 @@ jobs:
           # The reactive checker's seeded run at full size (row T1-4).
           LOAMS_CHECKER_SEEDS: "10"
           LOAMS_CHECKER_OPS: "2000"
-        run: cargo test -p loams-kv -p loams-live -p loams-live-js --locked
+        run: cargo test -p loams-kv -p loams-live -p loams-live-js -p loams-live-js-alloc --locked
 
   # The same suites every night, plus the nightly-only TiKV suites later R1
   # tasks add.

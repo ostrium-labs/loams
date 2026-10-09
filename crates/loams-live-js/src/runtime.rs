@@ -56,6 +56,8 @@ use rquickjs::{
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc as tmpsc;
 
+use loams_live_js_alloc::MemoryMeter;
+
 use crate::limits::{Console, CpuMeter};
 
 /// The largest bundle (16 MiB, D682).
@@ -147,6 +149,9 @@ const BUNDLE: &str = "<bundle>";
 const SLOT_STACK_BYTES: usize = 8 * 1024 * 1024;
 /// QuickJS's stack limit: deeper recursion is a `RangeError`.
 const JS_STACK_BYTES: usize = 1024 * 1024;
+/// What may be allocated past the memory limit after the interrupt handler
+/// stops a call: enough for QuickJS to build the error that stops it.
+const MEMORY_GRACE_BYTES: usize = 64 * 1024;
 /// The deepest value converted between JavaScript and Rust; deeper (or
 /// cyclic) values are refused. Documents allow 16 (`Limits::max_depth`).
 const MAX_VALUE_DEPTH: usize = 64;
@@ -599,6 +604,8 @@ struct Link {
 /// The per-call state the natives and the interrupt handler share.
 struct SlotState {
     meter: CpuMeter,
+    /// The runtime's memory account (its allocator counts against it).
+    memory: MemoryMeter,
     abort: Cell<bool>,
     now_ms: Cell<f64>,
     rng: RefCell<ChaCha8Rng>,
@@ -611,9 +618,10 @@ struct SlotState {
 }
 
 impl SlotState {
-    fn new(config: &JsConfig) -> Self {
+    fn new(config: &JsConfig, memory: MemoryMeter) -> Self {
         SlotState {
             meter: CpuMeter::new(),
+            memory,
             abort: Cell::new(false),
             now_ms: Cell::new(0.0),
             rng: RefCell::new(ChaCha8Rng::from_seed([0; 32])),
@@ -646,9 +654,21 @@ impl SlotState {
         self.meter.start(self.config.cpu_limit);
     }
 
+    /// Whether the call has been stopped (aborted, out of memory or past
+    /// its CPU limit): no more of its jobs may run.
+    fn halted(&self) -> bool {
+        self.abort.get() || self.memory.exceeded() || self.meter.timed_out()
+    }
+
     /// Whether the interrupt handler stops the running code.
     fn interrupt(&self) -> bool {
         if self.abort.get() {
+            return true;
+        }
+        if self.memory.exceeded() {
+            // QuickJS allocates the error that stops the call right after
+            // this returns, past the limit.
+            self.memory.top_up_grace(MEMORY_GRACE_BYTES);
             return true;
         }
         let gone = self
@@ -700,11 +720,14 @@ impl Phase<'_> {
 
 impl Engine {
     fn new(config: &JsConfig) -> Result<Self, LiveError> {
-        let rt = Runtime::new()
+        // The memory limit is the allocator's, not QuickJS's: QuickJS's own
+        // out-of-memory error is catchable, the allocator's flag is not
+        // (row T3-6).
+        let memory = MemoryMeter::new(config.memory_limit);
+        let rt = Runtime::new_with_alloc(memory.allocator())
             .map_err(|e| LiveError::Internal(format!("creating a JavaScript runtime: {e}")))?;
-        rt.set_memory_limit(config.memory_limit);
         rt.set_max_stack_size(JS_STACK_BYTES);
-        let state = Rc::new(SlotState::new(config));
+        let state = Rc::new(SlotState::new(config, memory));
         let handler_state = state.clone();
         rt.set_interrupt_handler(Some(Box::new(move || handler_state.interrupt())));
         rt.set_loader(
@@ -743,10 +766,10 @@ impl Engine {
                 globals.set(SERVER_GLOBAL, internals.get::<_, Object>("server")?)?;
                 let (_, done) =
                     Module::declare(ctx.clone(), SERVER_MODULE, SERVER_SOURCE)?.eval()?;
-                done.finish::<()>()?;
+                self.settle::<()>(&ctx, &done)?;
                 globals.remove(SERVER_GLOBAL)?;
                 let (module, done) = Module::declare(ctx.clone(), BUNDLE_MODULE, source)?.eval()?;
-                done.finish::<()>()?;
+                self.settle::<()>(&ctx, &done)?;
                 let namespace = module.namespace()?;
                 let collect: rquickjs::Function = internals.get("collect")?;
                 let metas: Vec<Vec<String>> = collect.call((namespace,))?;
@@ -758,7 +781,7 @@ impl Engine {
                     // now, within the load's limits, so none is left for
                     // the first call (C1). A top level that never stops
                     // queueing jobs is stopped by the CPU limit.
-                    while ctx.execute_pending_job() {}
+                    while !self.state.halted() && ctx.execute_pending_job() {}
                     if let Some(stopped) = self.stopped(Phase::Load) {
                         return Err(stopped);
                     }
@@ -860,7 +883,7 @@ impl Engine {
                 let invoke: rquickjs::Function = internals.get("invoke")?;
                 let args = to_js(&ctx, &args)?;
                 let done: Promise = invoke.call((path.as_str(), args))?;
-                done.finish::<Value>()
+                self.settle::<Value>(&ctx, &done)
             };
             let phase = Phase::Call(&path);
             match call() {
@@ -909,8 +932,14 @@ impl Engine {
         // call's `finish`, with its host link: its transaction, its
         // console and its CPU. They belong to this call's context, so the
         // runtime is replaced with them (C1).
-        let poisoned = self.state.abort.get()
-            || self.state.meter.timed_out()
+        // Out of memory is the allocator's flag, whatever the call did
+        // after it: a handler that caught QuickJS's error and returned still
+        // ran out (row T3-6).
+        let result = match result {
+            Ok(_) if self.state.memory.exceeded() => Err(self.out_of_memory(Phase::Call(&path))),
+            other => other,
+        };
+        let poisoned = self.state.halted()
             || matches!(result, Err(LiveError::FunctionOutOfMemory { .. }))
             || self.rt.is_job_pending();
         drop(ctx);
@@ -923,11 +952,39 @@ impl Engine {
         poisoned
     }
 
-    /// The error of a call the host stopped: aborted or past its CPU
-    /// limit.
+    /// Runs the runtime's jobs until `promise` settles, as
+    /// `Promise::finish` does, but runs none once the call is halted: a
+    /// stopped call's jobs are dropped with its runtime.
+    fn settle<'js, T: rquickjs::FromJs<'js>>(
+        &self,
+        ctx: &Ctx<'js>,
+        promise: &Promise<'js>,
+    ) -> rquickjs::Result<T> {
+        loop {
+            if let Some(settled) = promise.result() {
+                return settled;
+            }
+            if self.state.halted() || !ctx.execute_pending_job() {
+                return Err(rquickjs::Error::WouldBlock);
+            }
+        }
+    }
+
+    fn out_of_memory(&self, phase: Phase<'_>) -> LiveError {
+        LiveError::FunctionOutOfMemory {
+            function: phase.function(),
+            limit: self.state.config.memory_limit,
+        }
+    }
+
+    /// The error of a call the host stopped: aborted, out of memory (the
+    /// allocator's flag) or past its CPU limit.
     fn stopped(&self, phase: Phase<'_>) -> Option<LiveError> {
         if self.state.abort.get() {
             return Some(LiveError::Internal("the call was aborted".into()));
+        }
+        if self.state.memory.exceeded() {
+            return Some(self.out_of_memory(phase));
         }
         if self.state.meter.timed_out() {
             return Some(LiveError::FunctionTimeout {
@@ -952,12 +1009,7 @@ impl Engine {
             }
             return stopped;
         }
-        let out_of_memory = || LiveError::FunctionOutOfMemory {
-            function: phase.function(),
-            limit: self.state.config.memory_limit,
-        };
         let thrown = match error {
-            rquickjs::Error::Allocation => return out_of_memory(),
             e if e.is_exception() => ctx.catch(),
             other => return LiveError::FunctionError(other.to_string()),
         };
@@ -980,20 +1032,17 @@ impl Engine {
                 }
             }
         }
-        let (text, oom) = describe(ctx, &thrown);
+        let text = describe(ctx, &thrown);
         if let Some(stopped) = self.stopped(phase) {
             return stopped;
-        }
-        if oom {
-            return out_of_memory();
         }
         LiveError::FunctionError(text)
     }
 }
 
-/// The text of a thrown value, and whether it is QuickJS's out-of-memory
-/// error.
-fn describe<'js>(ctx: &Ctx<'js>, thrown: &Value<'js>) -> (String, bool) {
+/// The text of a thrown value. Never the basis of a classification: a
+/// function can throw any text (out of memory is the allocator's flag).
+fn describe<'js>(ctx: &Ctx<'js>, thrown: &Value<'js>) -> String {
     if let Some(e) = thrown
         .as_object()
         .and_then(|o| Exception::from_object(o.clone()))
@@ -1012,19 +1061,13 @@ fn describe<'js>(ctx: &Ctx<'js>, thrown: &Value<'js>) -> (String, bool) {
                 ctx.catch();
                 String::new()
             });
-        let oom = name == "InternalError" && message == "out of memory";
-        return (format!("{name}: {message}"), oom);
-    }
-    if thrown.type_of() == Type::Null {
-        // QuickJS throws null when it cannot even allocate its
-        // out-of-memory error.
-        return ("Uncaught null".to_string(), true);
+        return format!("{name}: {message}");
     }
     match thrown.get::<Coerced<String>>() {
-        Ok(s) => (format!("Uncaught {}", s.0), false),
+        Ok(s) => format!("Uncaught {}", s.0),
         Err(_) => {
             ctx.catch();
-            ("Uncaught exception".to_string(), false)
+            "Uncaught exception".to_string()
         }
     }
 }
@@ -1040,7 +1083,7 @@ fn host_call<'js>(
     helpers: &Helpers<'js>,
 ) -> rquickjs::Result<Object<'js>> {
     let reply = Object::new(ctx.clone())?;
-    if s.abort.get() {
+    if s.halted() {
         reply.set("abort", true)?;
         return Ok(reply);
     }
@@ -1193,7 +1236,7 @@ impl<'m> Budget<'m> {
     /// Counts a node; every 1 024 nodes, stops a call past its CPU limit.
     fn tick(&mut self) -> Result<(), Conv> {
         self.nodes = self.nodes.wrapping_add(1);
-        if self.nodes % 1024 == 0 && self.meter.check() {
+        if self.nodes.is_multiple_of(1024) && self.meter.check() {
             return Err(Conv::Stopped);
         }
         Ok(())

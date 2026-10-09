@@ -51,6 +51,28 @@ export const hogs = {
       return String(e);
     }
   }),
+  bombCaughtForever: query(async () => {
+    const keep = [];
+    for (;;) {
+      try {
+        for (let i = 0; ; i++) keep.push("x".repeat(1 << 16) + i);
+      } catch (e) {
+        keep.length = 0;
+      }
+    }
+  }),
+  bombThenWrite: mutation(async (ctx) => {
+    const keep = [];
+    try {
+      for (let i = 0; ; i++) keep.push("x".repeat(1 << 16) + i);
+    } catch (e) {
+      keep.length = 0;
+      await ctx.db.insert("hogs", { after: 1n });
+      return "wrote";
+    }
+  }),
+  spoofOom: query(async () => { throw new InternalError("out of memory"); }),
+  throwNull: query(async () => { throw null; }),
   recurse: query(async () => { const f = (n) => f(n + 1) + 1; return f(0); }),
   ok: query(async () => "fine"),
   log: query(async (ctx, { lines }) => {
@@ -117,12 +139,33 @@ async fn allocation_bomb_hits_memory_limit(store: TestStore) {
         }
         other => panic!("out of memory, not {other:?}"),
     }
-    // QuickJS's out-of-memory error is catchable (LV1 row T3-6): a handler
-    // that catches it keeps running, still under the limit.
-    match query(&r, &function(&bundle, "hogs:bombCaught"), unit()).await {
+    // Catching QuickJS's out-of-memory error does not help (LV1 row T3-6):
+    // the limit stops the call uncatchably, and nothing it does after the
+    // limit is kept.
+    for path in ["hogs:bombCaught", "hogs:bombCaughtForever"] {
+        let started = Instant::now();
+        match query(&r, &function(&bundle, path), unit()).await {
+            Err(LiveError::FunctionOutOfMemory { function, .. }) => assert_eq!(function, path),
+            other => panic!("{path}: out of memory, not {other:?}"),
+        }
+        assert!(started.elapsed() < CPU, "{path}: stopped at the limit");
+    }
+    match mutate(&r, &function(&bundle, "hogs:bombThenWrite"), unit()).await {
         Err(LiveError::FunctionOutOfMemory { .. }) => {}
-        Ok(q) => assert_eq!(q.result, s("InternalError: out of memory")),
         other => panic!("out of memory, not {other:?}"),
+    }
+    let all = loams_live::system::lookup(loams_live::system::QUERY).expect("query");
+    let hogs = query(&r, &all, obj(&[("table", s("hogs"))]))
+        .await
+        .expect("hogs");
+    assert!(items(&hogs.result).is_empty(), "nothing written after the limit");
+    // The code is the runtime's, never the message's: a thrown error that
+    // looks like QuickJS's, or a thrown null, is a function error.
+    for path in ["hogs:spoofOom", "hogs:throwNull"] {
+        match query(&r, &function(&bundle, path), unit()).await {
+            Err(LiveError::FunctionError(_)) => {}
+            other => panic!("{path}: a function error, not {other:?}"),
+        }
     }
     // Deep recursion is a stack overflow, a plain function error.
     match query(&r, &function(&bundle, "hogs:recurse"), unit()).await {

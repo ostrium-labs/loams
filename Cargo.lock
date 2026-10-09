@@ -7615,12 +7615,20 @@ dependencies = [
  "futures",
  "loams-kv",
  "loams-live",
+ "loams-live-js-alloc",
  "rand 0.9.5",
  "rand_chacha 0.9.0",
  "rquickjs",
  "sha2 0.11.0",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "loams-live-js-alloc"
+version = "0.0.1"
+dependencies = [
+ "rquickjs",
 ]
 
 [[package]]
