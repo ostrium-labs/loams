@@ -804,20 +804,20 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
     - Fixed limits: `AuthSwitchRequest` data 1 KiB, a cleartext password or token 1 KiB, OK and ERR info 64 KiB.
   - **Strictness.**
     - Trailing bytes are refused after a `HandshakeResponse41` and after a greeting.
-    - Strings must be UTF-8.
+    - User, database and plugin names must be UTF-8; connection attributes are kept as bytes (R3.9).
     - Pre-4.1 clients are refused.
     - The 23-byte filler is skipped unchecked, because MariaDB keeps extended capabilities there.
 - **R3.2 Capabilities.**
-  - **Offered:** `GATE_SUPPORTED ∩ upstream`.
-  - **Never offered:** compression (zlib or zstd), multi-factor auth, query attributes, optional result-set metadata, and the extension and client-only flags.
+  - **Offered:** (`GATE_SUPPORTED` ∩ the static `TIDB_V8_5_8` profile) ∪ `CLIENT_SSL` (R3.6).
+  - **Never offered:** `CLIENT_LOCAL_FILES` (R3.6), compression (zlib or zstd), multi-factor auth, query attributes, optional result-set metadata, and the extension and client-only flags.
   - **Required of clients:** 4.1, secure connection and plugin auth.
-  - **The upstream leg** carries the same `RELAY_SENSITIVE` flags, so result framing matches on both legs for the byte relay (`capabilities_never_exceed_upstream`, a proptest).
+  - **The upstream leg** carries the same `RELAY_SENSITIVE` flags, so result framing matches on both legs for the byte relay. It also carries the gate's own flags and always `CLIENT_SSL` (R3.7, R3.16; `capabilities_never_exceed_upstream`, a proptest).
 - **R3.3 Authentication.**
   - **Method.** Every client is authenticated with `caching_sha2_password`. Other plugins get an `AuthSwitchRequest`.
   - **Full auth.** It happens only over TLS. Without TLS it fails with `SecureTransportRequired`, which becomes 3159 in Task 4. A request for the RSA public key (`0x02`) is always refused.
   - **Empty passwords** are denied outright (R3.10, as amended by the Task 3 review).
   - **Secrets.** `Password` prints `[redacted]` and is zeroed on drop. `HandshakeResponse41`'s `Debug` redacts the auth response.
-  - **The gate's upstream login** (`client_auth_response`) speaks `caching_sha2_password` and `mysql_clear_password`, the latter for `tidb_auth_token` (R2.12).
+  - **The gate's upstream login** (`client_auth_response`) speaks `caching_sha2_password` and `mysql_clear_password`, the latter for `tidb_auth_token` (R2.12), and only over TLS (R3.16).
 - **R3.4 Captured fixtures.** `scripts/sqlgate/capture/` (a recording proxy plus client drivers) captured mysql 8.4.10, Connector/J 9.7.0, mysql2 3.15.3 and, as an extra, libmariadb 3.4.10 against TiDB v8.5.8.
   - **What the tests check.** Greetings and responses re-encode byte for byte. The SHA-2 scramble of each client matches `scramble_caching_sha2` for the test password.
   - **go-sql-driver** (controller approval, 2026-10-09). go-sql-driver/mysql v1.9.3 (2025-06-13) was captured with `go run` inside `golang@sha256:ebd54034…` (Go 1.25.0, 2025-08-21). The module was downloaded only in the container, and `scripts/sqlgate/capture/go/{go.mod,go.sum}` pin it.
@@ -857,3 +857,13 @@ Task 1 numbers are in [`docs/sqldb/performance.md`](../sqldb/performance.md) (on
   - `client_auth_response(plugin, password, nonce, tls)` and `client_full_auth_reply(password, tls)` return `SecureTransportRequired` for a cleartext secret (the `tidb_auth_token` JWT, or the reply to `0x01 0x04`) when `tls` is false (`upstream_cleartext_requires_tls`).
 
   This is carried into Task 4's interfaces. Task 4 adds `upstream_login_refused_without_tls`.
+- **R3.17 Fix round 2.**
+  - **The first packet's auth response.** `HandshakeResponse41::auth_response` is a zeroing `Password`, also on decode errors and refusals. `ConnectionPhase` uses it once and keeps an empty one (`first_packet_secret_is_not_retained`).
+  - **Empty full-auth passwords.** An empty packet or a lone `0x00` after `0x01 0x04` is denied without a lookup (`empty_full_auth_password_is_denied`).
+  - **The stateful fuzz target** (`connection_phase`) now asserts:
+    - that every entry point refuses after an error;
+    - that out-of-order calls (a chaos byte) are refused;
+    - that a full password check happens only over TLS;
+    - that no first-packet secret is kept (`out_of_order_calls_are_refused_at_every_step`).
+
+    A 60 s run made 10.6 M executions with no crash.
