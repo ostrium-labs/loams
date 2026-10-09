@@ -52,6 +52,19 @@ pub const MAX_EXECUTION_TIME_S: u64 = 300;
 /// to 0 (unlimited) is under it (measured, fix round 1).
 pub const MIN_EXECUTION_TIME_S: &str = "0.000001";
 
+/// Settings that name a file, a directory or a URL the engine would read or write:
+/// pinned with `<readonly/>` (HS1 Task 4 fix round 1, I4), so a query's `SETTINGS`
+/// clause, which the front does not parse, cannot set them either (`452`).
+pub const PINNED_PATHS: &[&str] = &[
+    "format_schema",
+    "output_format_schema",
+    "input_format_record_errors_file_path",
+    "format_template_resultset",
+    "format_template_row",
+    "format_avro_schema_registry_url",
+    "rename_files_after_processing",
+];
+
 /// The `max_threads` cap: the node's cores, as the front's (FL2 Ruling 10).
 pub fn max_threads_cap() -> u64 {
     std::thread::available_parallelism().map_or(1, |n| n.get() as u64)
@@ -202,6 +215,9 @@ pub fn users_xml(args: &WorkerArgs) -> String {
     let mut constraints = String::new();
     for name in PINNED_OFF {
         let _ = writeln!(pinned, "      <{name}>0</{name}>");
+        let _ = writeln!(constraints, "        <{name}><readonly/></{name}>");
+    }
+    for name in PINNED_PATHS {
         let _ = writeln!(constraints, "        <{name}><readonly/></{name}>");
     }
     // The caps of FL2 Ruling 10, enforced by the engine after its own parsing and
@@ -380,7 +396,7 @@ mod tests {
                 "{absent} must not be granted:\n{users}"
             );
         }
-        for name in PINNED_OFF {
+        for name in PINNED_OFF.iter().chain(PINNED_PATHS) {
             assert!(users.contains(&format!("<{name}><readonly/></{name}>")));
         }
         assert!(

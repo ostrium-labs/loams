@@ -36,15 +36,31 @@ pub const ALLOWED_SETTINGS: &[&str] = &[
     "extremes",
 ];
 
-/// Prefixes allowed whole (§32 §8.5): output and input format options, the CSV
-/// and TSV options, and analyzer experiments chDB enables by default.
-/// `format_schema*` and `format_template_*` name files and are not here.
+/// Prefixes allowed whole (§32 §8.5): output and input format options, and the
+/// CSV and TSV options, less [`DENIED_SETTINGS`]. `format_schema*` and
+/// `format_template_*` name files and are not here.
 pub const ALLOWED_PREFIXES: &[&str] = &[
     "output_format_",
     "input_format_",
     "format_csv_",
     "format_tsv_",
-    "allow_experimental_",
+];
+
+/// The analyzer experiments a query may switch (fix round 1, M3). An explicit
+/// list, not the `allow_experimental_` prefix, which also opens `eval`, AI and
+/// URL-wildcard functions, catalogs and writers.
+pub const ALLOWED_EXPERIMENTS: &[&str] = &[
+    "allow_experimental_analyzer",
+    "allow_experimental_correlated_subqueries",
+    "allow_experimental_join_right_table_sorting",
+];
+
+/// Settings under an allowed prefix that name a file the engine would read or
+/// write (fix round 1, I4): never settable. The worker's profile pins them too,
+/// for the `SETTINGS` clause.
+pub const DENIED_SETTINGS: &[&str] = &[
+    "input_format_record_errors_file_path",
+    "output_format_schema",
 ];
 
 /// Loams's settings (HS1 Shared contracts): the front's own.
@@ -103,7 +119,9 @@ pub fn is_loams(name: &str) -> bool {
 pub fn is_allowed(name: &str) -> bool {
     is_loams(name)
         || ALLOWED_SETTINGS.contains(&name)
-        || ALLOWED_PREFIXES.iter().any(|p| name.starts_with(p))
+        || ALLOWED_EXPERIMENTS.contains(&name)
+        || (ALLOWED_PREFIXES.iter().any(|p| name.starts_with(p))
+            && !DENIED_SETTINGS.contains(&name))
 }
 
 /// Checks one setting: `115`, `164`, or fine.
@@ -447,6 +465,33 @@ mod tests {
         ] {
             assert_eq!(code("max_threads", value), expected, "{value:?}");
         }
+    }
+
+    /// Fix round 1, I4 and M3: file-naming settings under allowed prefixes, and
+    /// experiments outside the explicit list, are refused.
+    #[test]
+    fn path_settings_and_other_experiments_are_refused() {
+        let limits = SessionLimits::default();
+        let known: HashSet<String> = [
+            "input_format_record_errors_file_path",
+            "output_format_schema",
+            "allow_experimental_eval_table_function",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        for name in known.iter() {
+            assert!(!is_allowed(name), "{name}");
+            assert_eq!(
+                check(name, "/abs/path/x", &limits, &known)
+                    .expect_err("refused")
+                    .code(),
+                164,
+                "{name}"
+            );
+        }
+        assert!(is_allowed("allow_experimental_analyzer"));
+        assert!(is_allowed("input_format_skip_unknown_fields"));
     }
 
     #[test]

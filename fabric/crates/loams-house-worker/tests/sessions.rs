@@ -769,6 +769,9 @@ async fn setting_caps_hold_on_every_route() {
         "max_execution_time = 301",
         "max_threads = 100000",
         "max_memory_usage = 1, max_execution_time = 0",
+        "output_format_schema = '/abs/path/x.proto'",
+        "input_format_record_errors_file_path = 'errors.log'",
+        "format_schema = 'x.proto:M'",
     ] {
         let sql = format!("SELECT 1 SETTINGS {clause}");
         let response = in_session(addr, "alice", "c", &sql, &[]).await;
@@ -783,4 +786,57 @@ async fn setting_caps_hold_on_every_route() {
     )
     .await;
     assert_eq!(within.text(), "1073741824\n", "{}", within.text());
+}
+
+/// Fix round 1, I4: no setting a client may set names a file. Every setting of
+/// chDB whose name says path, file or schema is either refused by the front or of
+/// a type that cannot hold a path.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn no_allowed_setting_names_a_file() {
+    let (house, _pool) = house("paths", per_namespace(1)).await;
+    let addr = house.local_addr();
+    let listed = as_alice(
+        addr,
+        "GET",
+        "SELECT name, type FROM system.settings WHERE name LIKE '%path%' OR name LIKE '%file%' \
+         OR name LIKE '%schema%' ORDER BY name",
+        b"",
+    )
+    .await;
+    assert_eq!(listed.status, 200, "{}", listed.text());
+    let text = listed.text();
+    let rows: Vec<(&str, &str)> = text
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+        .collect();
+    assert!(rows.len() > 20, "the scan sees chDB's settings: {text}");
+    let scalar = [
+        "Bool",
+        "UInt64",
+        "Int64",
+        "UInt32",
+        "Float",
+        "Double",
+        "Seconds",
+        "Milliseconds",
+        "NonZeroUInt64",
+    ];
+    let named: Vec<_> = rows
+        .iter()
+        .filter(|(name, kind)| loams_house::settings::is_allowed(name) && !scalar.contains(kind))
+        .collect();
+    assert!(
+        named.is_empty(),
+        "allowed settings that can hold a path: {named:?}"
+    );
+    for name in [
+        "input_format_record_errors_file_path",
+        "output_format_schema",
+    ] {
+        assert!(
+            rows.iter().any(|(n, _)| *n == name),
+            "{name} is still chDB's"
+        );
+        assert!(!loams_house::settings::is_allowed(name), "{name}");
+    }
 }
