@@ -67,3 +67,11 @@ The first 10 took a median of 19699.5 ms and the last 10 12724.5 ms.
 | 100 | 337 | 337 / 0 | 0.77 | 0.77 | 117 | 336 | 113 | 397 |
 
 Marginal cost: **2 regions per bootstrapped empty database** (from the first to the last checkpoint). Heartbeat rates are averaged over a 30 s window after the region count settled.
+
+## 4. Wake on connect through the gate (SQ1 Task 5)
+
+A branch suspended by the lifecycle host (`Lifecycles`, `LocalRuntime` scaled to 0) and woken by a client connecting through `loams-sqlgate`: the time from the client's TCP connect to the first result of `SELECT 1`. It covers the gate's TLS and login, `EnsureRunning`, `scale(branch, 1)`, TiDB's warm start, the resume probe and the upstream login (`resume_p95_under_5s_on_spike_stack`, 20 cycles on one keyspace).
+
+| Cycles | median (ms) | p95 (ms) | max (ms) |
+|---:|---:|---:|---:|
+| 20 | 775.5 | 1149 | 2153 |

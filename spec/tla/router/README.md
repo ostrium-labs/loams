@@ -2,7 +2,7 @@
 
 # Router specs (TLA+)
 
-The formal specifications of the Loams router's sharding control plane (design [§31](../../../docs/design/31-loams-router-and-verification.md) §11, D310). Plan: [RT0](../../../docs/plans/2026-10-01-rt0-foundations-and-specs.md) Tasks 1–4.
+The formal specifications of the Loams router's sharding control plane (design [§31](../../../docs/design/31-loams-router-and-verification.md) §11, D310). Plan: [RT0](../../../docs/plans/2026-10-01-rt0-foundations-and-specs.md) Tasks 1–4. `Lifecycle` is Loams SQL's branch lifecycle (design [§47](../../../docs/design/47-loams-sql-production.md) §14, D733; plan [SQ1](../../../docs/plans/2026-10-08-sq1-loams-sql-tidb.md) Task 5).
 
 Run them with `scripts/spec/check.sh` (needs Java 21+ and Python 3.11+; it downloads the pinned tools into `~/.cache/loams/spec-tools/` and checks their SHA-256):
 
@@ -31,6 +31,11 @@ Variants and their expected outcome live in [`specs.toml`](specs.toml). An `expe
 | `ReshardCutover` | `CrashSaga` (PR) | `Small` with 2 saga crashes | ok | 13,541 | 1 s |
 | `ReshardCutover` | `NoFence` (PR) | `Small` with no backend fence | `violation:SingleWriterRange` | 772 | 1 s |
 | `ReshardCutover` | `Nightly` | 2 keys, 3 instances, 4 writes | ok | 791,265 | 24 s |
+| `Lifecycle` | `Small` (PR) | 3 connections, 1 replica; with `HeldIsAnswered`, `HeldIsServed`, `SuspendEnds` | ok | 378 | 2 s |
+| `Lifecycle` | `LateAbort` (PR) | `Small` with an abort allowed during the scale-down | `violation:NoSessionOnStoppedPool` | 306 | 1 s |
+| `Lifecycle` | `Nightly` | 4 connections, 2 replicas | ok | 1,332 | 1 s |
+| `LifecycleTrace` | `Sample` (PR) | the Rust machine's committed sample run (34 events) | ok | 34 | 1 s |
+| `LifecycleTrace` | `Mutated` (PR) | the sample with a session admitted during the scale-down | `violation:temporal` | 16 | 1 s |
 | `CrossShardCommit`, `PrimaryFailover`, `RouterSession` | parse only | — | parses | — | — |
 
 A first `ShardMap` nightly at three keys and three instances passed 37 million distinct states without finishing, so the nightly bounds keep two keys and add the third instance and generation.
@@ -39,6 +44,8 @@ A first `ShardMap` nightly at three keys and three instances passed 37 million d
 
 - **`ShardMap` / `UnsafeConfigMap`.** Publish generation 1, which moves `k1` from `s2` to `s1`, then write the ConfigMap at once. Now generation 0 (still loaded by both instances) and generation 1 (in the ConfigMap, so loaded by any instance that restarts) both route `k1` to an unfenced shard: two writers. The safe order fences `s2` and catches `s1` up first.
 - **`ReshardCutover` / `NoFence`.** The cutover finishes on both instances, then the designated instance is partitioned and the saga rolls back: the reachable instance returns to the source while the partitioned one still writes to the destination. Without the fence nothing stops either. With the fence the same schedule is safe, because `RollBack` fences the destination and the forward path fences the source.
+
+- **`Lifecycle` / `LateAbort`.** A suspend closes the last session and scales the pool to zero; a connection arrives and, allowed to abort the suspend at this step, is admitted: a session on a stopped pool. The safe spec lets a connection abort only before the scale-down; after it the suspend finishes and the connection wakes the branch.
 
 ## Mutation checks
 
@@ -49,6 +56,10 @@ Run by hand when an invariant or guard changes, to confirm the invariants are no
 | `ShardMap`: `Unfence` once the ConfigMap is current, before every instance reloads | `SingleWriter` violated |
 | `ShardMap`: `WriteConfigMap` without the catch-up check | `ConfigMapSafe` violated |
 | `ShardMap`: `CopyKey` without its fence guard | no violation: `WriteConfigMap` re-checks the fence and the catch-up, so the guard is redundant (kept, and commented) |
+| `Lifecycle`: `Quiesced` without `sessions = {}` | `NoSessionOnStoppedPool` violated |
+| `Lifecycle`: `Admit` while suspending | `NoSessionOnStoppedPool` violated |
+| `Lifecycle`: `ScaledUp` and `Resumed` without their member guards | `NoSessionOnStoppedPool` violated |
+| `Lifecycle`: no fairness on `StartResume`, or on `Kill` | temporal properties violated |
 
 ## Modelling choices
 
@@ -85,5 +96,9 @@ Every action is emitted as a `SpecEvent` by the code that performs it (§31 §11
 | `ClientWrite(i, k)` | workload clients | `client.write {key, instance, store, result}` |
 | `Partition(i)`, `Heal(i)` | the simulator's network and the nemesis | `net.partition {instance, on}` |
 | `SagaCrash`, `SagaRestart` | the nemesis; the durable saga's restart | `saga.crash {}`, `saga.restart {step}` |
+
+### `Lifecycle`
+
+`loams_sqlrouter::machines::lifecycle::Lifecycle` emits every action as `{spec: "Lifecycle", action, fields: [conn, state, step]}`; the spec's header maps each to its input. `LifecycleTrace.tla` validates the machine's traces (TLC 1.7.4 has no `Json` module, so traces are TLA+ definitions written by `crates/loams-sqlrouter/tests/it/lifecycle.rs`); `every_spec_action_has_an_emitter` checks the action list both ways. The production driver (`loams_sqldb::sagas::Lifecycles`) writes the events to `tracing` target `loams::spec`.
 
 The skeletons' headers carry their own tables, with `code = "RT2"` or `"RT4"` placeholders.

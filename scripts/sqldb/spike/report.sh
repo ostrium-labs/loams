@@ -98,5 +98,16 @@ jq -rs 'map(select(.keyspaces > 0)) | if length >= 2 then
   (.[-1].cluster_regions - .[0].cluster_regions) / (.[-1].keyspaces - .[0].keyspaces)
   | "Marginal cost: **\(. * 100 | round / 100) regions per bootstrapped empty database** (from the first to the last checkpoint). Heartbeat rates are averaged over a \(env.HB_WINDOW // "30") s window after the region count settled."
   else empty end' "$J/density.jsonl"
+# SQ1 Task 5: written by the LOAMS_IT_SQLDB test resume_p95_under_5s_on_spike_stack.
+if [[ -s "$J/resume-through-gate.jsonl" ]]; then
+  echo
+  cat <<'TXT'
+## 4. Wake on connect through the gate (SQ1 Task 5)
+
+A branch suspended by the lifecycle host (`Lifecycles`, `LocalRuntime` scaled to 0) and woken by a client connecting through `loams-sqlgate`: the time from the client's TCP connect to the first result of `SELECT 1`. It covers the gate's TLS and login, `EnsureRunning`, `scale(branch, 1)`, TiDB's warm start, the resume probe and the upstream login (`resume_p95_under_5s_on_spike_stack`, 20 cycles on one keyspace).
+
+TXT
+  jq -rs "$STATS"'map(.connect_to_first_result_ms) | "| Cycles | median (ms) | p95 (ms) | max (ms) |\n|---:|---:|---:|---:|\n| \(length) | \(median | r) | \(p95 | r) | \(max | r) |"' "$J/resume-through-gate.jsonl"
+fi
 } > "$DOC"
 log "wrote $DOC"

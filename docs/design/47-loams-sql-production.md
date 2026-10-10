@@ -174,7 +174,8 @@ These are Go, kept as a patch queue on `ostrium-labs/tidb` against v8.5.x tags, 
 2. **Candidates if the spike shows a need:**
    - (a) registering the minimum start ts in a place Loams' GC loop reads, if keyspace-mode TiDB publishes it under a path the loop cannot see (§7.2, source);
    - (b) refusing `SET GLOBAL` of variables that must stay Loams-managed;
-   - (c) an idle-timeout hint to the gate.
+   - (c) an idle-timeout hint to the gate;
+   - (d) **needed, pending the owner's decision:** the keyspace etcd prefix for the global DDL owner manager (upstream pingcap/tidb#60403, not in release-8.5). Without it every keyspace's TiDB on one PD elects one DDL owner between them, and DDL in the other keyspaces waits forever (SQ1 R5.3).
 
 ## 6. Storage: the shared TiKV, a keyspace per branch (D723)
 
