@@ -1,0 +1,123 @@
+// PLACEHOLDER (loams-mobile). Written from the AP0 plan
+// (docs/plans/2026-10-01-ap0-app-protos.md in ostrium-labs/loams) before
+// AP0's protos exist upstream. Replace this file with the upstream one
+// through scripts/sync-protos.sh as soon as AP0 merges, then fix the apps
+// against the real contract. Do not extend it here: change AP0 instead.
+//
+// What an instance is, how to sign in to it, and who the caller is
+// (§37 §8.2, AP0 Task 1).
+syntax = "proto3";
+
+package loams.instance.v1;
+
+service InstanceService {
+  // No auth: what this instance is and how to sign in to it.
+  rpc GetInstance(GetInstanceRequest) returns (GetInstanceResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // The calling principal, its org, and the environments it can reach.
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+enum Edition {
+  EDITION_UNSPECIFIED = 0;
+  EDITION_OSS = 1;
+  EDITION_CLOUD = 2;
+  EDITION_BYOC = 3;
+}
+
+enum SignInMethod {
+  SIGN_IN_METHOD_UNSPECIFIED = 0;
+  // A QR or typed pairing code redeemed at the Loams gateway.
+  SIGN_IN_METHOD_PAIRING = 1;
+  // OIDC with PKCE in the system browser at the instance's Authentik.
+  SIGN_IN_METHOD_BROWSER = 2;
+  // Authentik's device authorization flow (RFC 8628).
+  SIGN_IN_METHOD_DEVICE_CODE = 3;
+}
+
+message GetInstanceRequest {}
+
+message GetInstanceResponse {
+  // ULID, stable for the install.
+  string instance_id = 1;
+  Edition edition = 2;
+  string server_version = 3;
+  // The services this instance serves, e.g. "loams.approvals.v1".
+  repeated string api_versions = 4;
+  map<string, bool> features = 5;
+  // The Loams gateway: the OAuth authorization server for Loams tokens.
+  string issuer = 6;
+  string jwks_uri = 7;
+  repeated SignInMethod sign_in_methods = 8;
+  // Absent when push is off.
+  PushConfig push = 9;
+  // "ios", "android", "desktop" to a minimum version.
+  map<string, string> min_app_versions = 10;
+  // A compact JWS signed by the instance key listing the current and next
+  // TLS SPKI pins (§37 §7.2.3). Empty for publicly trusted certificates.
+  string tls_pins = 11;
+  // PLACEHOLDER addition, not in the AP0 plan: the Authentik issuer and the
+  // public client ids the apps use for browser sign-in (§37 §7.2.2 path 2).
+  IdentityProvider identity_provider = 12;
+}
+
+message PushConfig {
+  string gateway_url = 1;
+  // Platform ("ios", "android") to the app id (bundle id or package name).
+  map<string, string> app_ids = 2;
+}
+
+message IdentityProvider {
+  // The OIDC issuer, e.g. https://auth.acme.example/application/o/loams/.
+  string issuer = 1;
+  string android_client_id = 2;
+  string ios_client_id = 3;
+}
+
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  Principal principal = 1;
+  // RFC 8693 `act`: who acts for whom, outermost first.
+  repeated Principal actor_chain = 2;
+  Org org = 3;
+  repeated Environment environments = 4;
+  // Set when the caller's token was issued to a paired device.
+  DeviceRef device = 5;
+}
+
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  PRINCIPAL_KIND_USER = 1;
+  PRINCIPAL_KIND_SERVICE_ACCOUNT = 2;
+  PRINCIPAL_KIND_AGENT = 3;
+}
+
+message Principal {
+  string id = 1;
+  PrincipalKind kind = 2;
+  string display_name = 3;
+  string email = 4;
+}
+
+message Org {
+  string id = 1;
+  string name = 2;
+}
+
+message Environment {
+  string id = 1;
+  string project = 2;
+  string name = 3;
+  string namespace = 4;
+  // Protected environments need typed confirmation for destructive actions.
+  bool protected = 5;
+}
+
+message DeviceRef {
+  string id = 1;
+  string name = 2;
+}

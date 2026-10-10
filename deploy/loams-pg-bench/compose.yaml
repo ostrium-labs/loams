@@ -1,0 +1,131 @@
+# Loams WAL vs stock safekeepers: the P4b benchmark topology on one host
+# (docs/design/28-loams-postgres.md §7). Derived from deploy/loams-postgres-dev (Apache-2.0,
+# from neondatabase/neon docker-compose/).
+#
+# Everything runs on host networking so that the compute reaches both the
+# safekeepers (containers) and the Loams WAL service and TiKV (host processes,
+# started by scripts/loams-pg-bench/run.sh) the same way. Only one variant
+# runs at a time; scripts/loams-pg-bench/run.sh drives it.
+name: loams-pg-bench
+
+# Pinned by digest (PG2 Task 2): Neon's last public build, 2025-08-26, git
+# 77e22e4b (the fork ostrium-labs/loams-postgres publishes no images yet; ruling R2.1).
+# Multi-arch index digests; NEON_IMAGE and COMPUTE_IMAGE override them.
+x-neon-image: &neon-image ${NEON_IMAGE:-ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f}
+x-compute-image: &compute-image ${COMPUTE_IMAGE:-ghcr.io/neondatabase/compute-node-v17@sha256:13ab146d3e7bbabb25a8532f315ac443e7512351d1ede0bab586def5c70e26c3}
+x-s3-env: &s3-env
+  AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+  AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+  AWS_REGION: us-east-1
+x-safekeeper: &safekeeper
+  image: *neon-image
+  network_mode: host
+  environment: *s3-env
+  entrypoint: ["/bin/sh", "-c"]
+  depends_on: [storage_broker]
+
+services:
+  rustfs:
+    image: docker.io/rustfs/rustfs:1.0.0
+    network_mode: host
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 127.0.0.1:9000
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
+    volumes:
+      - rustfs-data:/data
+
+  create-bucket:
+    image: *neon-image
+    network_mode: host
+    depends_on: [rustfs]
+    restart: "no"
+    environment: *s3-env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        until curl -sf -o /dev/null -H "x-amz-content-sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        --aws-sigv4 aws:amz:us-east-1:s3 --user "$${AWS_ACCESS_KEY_ID}:$${AWS_SECRET_ACCESS_KEY}"
+        -X PUT http://127.0.0.1:9000/neon
+        || curl -sf -o /dev/null -H "x-amz-content-sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        --aws-sigv4 aws:amz:us-east-1:s3 --user "$${AWS_ACCESS_KEY_ID}:$${AWS_SECRET_ACCESS_KEY}"
+        -I http://127.0.0.1:9000/neon;
+        do echo waiting for rustfs; sleep 1; done; echo bucket ready
+
+  storage_broker:
+    image: *neon-image
+    network_mode: host
+    command: ["storage_broker", "--listen-addr=127.0.0.1:50051"]
+
+  pageserver:
+    image: *neon-image
+    network_mode: host
+    environment: *s3-env
+    volumes:
+      - pageserver-data:/data/.neon
+      - ./pageserver.toml:/data/.neon/pageserver.toml:ro
+      - ./identity.toml:/data/.neon/identity.toml:ro
+    depends_on:
+      storage_broker:
+        condition: service_started
+      create-bucket:
+        condition: service_completed_successfully
+
+  # The baseline: stock safekeepers, each on its own volume (fsync on).
+  # SK1_DATA..SK3_DATA may name host directories instead, to
+  # put every WAL tier on one chosen filesystem (run.sh --disk-root).
+  safekeeper1:
+    <<: *safekeeper
+    profiles: ["sk"]
+    volumes: ["${SK1_DATA:-sk1-data}:/data"]
+    command:
+      - >
+        safekeeper --listen-pg=127.0.0.1:5454 --listen-http=127.0.0.1:7676 --id=1
+        --broker-endpoint=http://127.0.0.1:50051 -D /data
+        --remote-storage="{endpoint='http://127.0.0.1:9000', bucket_name='neon', bucket_region='us-east-1', prefix_in_bucket='/safekeeper/'}"
+  safekeeper2:
+    <<: *safekeeper
+    profiles: ["sk3"]
+    volumes: ["${SK2_DATA:-sk2-data}:/data"]
+    command:
+      - >
+        safekeeper --listen-pg=127.0.0.1:5455 --listen-http=127.0.0.1:7677 --id=2
+        --broker-endpoint=http://127.0.0.1:50051 -D /data
+        --remote-storage="{endpoint='http://127.0.0.1:9000', bucket_name='neon', bucket_region='us-east-1', prefix_in_bucket='/safekeeper/'}"
+  safekeeper3:
+    <<: *safekeeper
+    profiles: ["sk3"]
+    volumes: ["${SK3_DATA:-sk3-data}:/data"]
+    command:
+      - >
+        safekeeper --listen-pg=127.0.0.1:5456 --listen-http=127.0.0.1:7678 --id=3
+        --broker-endpoint=http://127.0.0.1:50051 -D /data
+        --remote-storage="{endpoint='http://127.0.0.1:9000', bucket_name='neon', bucket_region='us-east-1', prefix_in_bucket='/safekeeper/'}"
+
+  # One compute; SAFEKEEPERS picks the variant (the safekeepers, or the Loams
+  # WAL service at 127.0.0.1:5460, which the pageserver finds through the
+  # broker). pgbench runs inside it.
+  compute:
+    image: *compute-image
+    network_mode: host
+    environment:
+      TENANT_ID: ${TENANT_ID:-}
+      TIMELINE_ID: ${TIMELINE_ID:-}
+      SAFEKEEPERS: ${SAFEKEEPERS:-127.0.0.1:5454}
+      SHARED_BUFFERS: ${SHARED_BUFFERS:-2GB}
+      COMPUTE_FSYNC: ${COMPUTE_FSYNC:-off}
+    volumes:
+      - ./compute/config.json:/var/db/postgres/configs/config.json:ro
+      - ./compute/start.sh:/shell/start.sh:ro
+      - ../../scripts/loams-pg-bench:/bench:ro
+    entrypoint: ["/bin/bash", "/shell/start.sh"]
+    depends_on: [pageserver]
+
+volumes:
+  rustfs-data:
+  pageserver-data:
+  sk1-data:
+  sk2-data:
+  sk3-data:

@@ -1,0 +1,72 @@
+{
+  "name": "mock_status_notifications",
+  "kind": "status",
+  "about": "The one inbox item the seed carries, recorded so a suite can assert on a real `CloudEvent` `type` (`io.loams.dev.…`) without inventing one.",
+  "transport": "connect",
+  "required": false,
+  "pinnedBy": [
+    "R6"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:12.492Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/loams.notifications.v1.NotificationService/ListNotifications",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "notifications": [
+            {
+              "id": "01J9ZNOTE0000000000000001",
+              "category": "NOTIFICATION_CATEGORY_APPROVALS",
+              "cloudeventType": "io.loams.dev.approval.requested.v1",
+              "subject": "apr_01J9ZDROPDOCS",
+              "title": "Approval needed",
+              "body": "Drop the collection docs in production",
+              "environment": "env_prod",
+              "createdAt": "2026-10-04T05:52:12.485820687Z",
+              "approvalId": "apr_01J9ZDROPDOCS"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "itemCount": 1
+      }
+    }
+  ]
+}

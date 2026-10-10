@@ -1,0 +1,54 @@
+# PD plus one TiKV store (API v2 with TTL, Loams keyspaces) for Loams Desktop's local TiKV stack
+# (AP1e Task 21). Same configs and PD port as scripts/tikv/playground.sh (the engine's --live-pd default): PD answers on
+# 127.0.0.1:19379. Host networking keeps the advertised addresses reachable from the engine.
+#
+# Why network_mode: host (reviewed for AP1e): PD hands clients the addresses the members
+# advertise, so every advertised address must be one the engine on the host can dial.
+# With host networking they are all 127.0.0.1 and match what each process listens on:
+#   PD   client 127.0.0.1:19379 (= --client-urls = --advertise-client-urls, the engine's --live-pd)
+#        peer   127.0.0.1:19380 (= --peer-urls  = --advertise-peer-urls = --initial-cluster)
+#   TiKV       127.0.0.1:20160 (= --addr = --advertise-addr), status 127.0.0.1:20180
+# Published ports on a bridge network would make TiKV advertise a container address the
+# host cannot reach. Host networking needs Linux (Loams Desktop ships for Linux only);
+# Docker Desktop on macOS/Windows needs its host-networking option turned on.
+# Nothing listens beyond loopback. Loams Desktop counts the stack ready only when
+# /pd/api/v1/health is healthy and a store is Up (running containers are not enough).
+name: loams-tikv
+
+services:
+  pd:
+    image: docker.io/pingcap/pd:${TIKV_TAG:-v8.5.0}
+    network_mode: host
+    restart: "no"
+    command:
+      - --name=pd
+      - --data-dir=/data/pd
+      - --config=/etc/pd.toml
+      - --client-urls=http://127.0.0.1:19379
+      - --advertise-client-urls=http://127.0.0.1:19379
+      - --peer-urls=http://127.0.0.1:19380
+      - --advertise-peer-urls=http://127.0.0.1:19380
+      - --initial-cluster=pd=http://127.0.0.1:19380
+    volumes:
+      - pd-data:/data/pd
+      - ./pd.toml:/etc/pd.toml:ro
+
+  tikv:
+    image: docker.io/pingcap/tikv:${TIKV_TAG:-v8.5.0}
+    network_mode: host
+    restart: "no"
+    command:
+      - --pd-endpoints=127.0.0.1:19379
+      - --addr=127.0.0.1:20160
+      - --advertise-addr=127.0.0.1:20160
+      - --status-addr=127.0.0.1:20180
+      - --data-dir=/data/tikv
+      - --config=/etc/tikv.toml
+    volumes:
+      - tikv-data:/data/tikv
+      - ./tikv.toml:/etc/tikv.toml:ro
+    depends_on: [pd]
+
+volumes:
+  pd-data:
+  tikv-data:

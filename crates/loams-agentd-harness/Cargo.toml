@@ -1,0 +1,67 @@
+[package]
+name = "loams-agentd-harness"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+publish = false
+
+[features]
+# Synthetic native protocol peer for subprocess tests; never part of a normal build.
+native-fixture = []
+# Explicit installer injection for integration tests; never enabled in the app.
+installer-fixture = []
+
+[[bin]]
+name = "harness-native-fixture"
+path = "tests/fixtures/native_agent.rs"
+required-features = ["native-fixture"]
+
+[[bin]]
+name = "harness-pi-fixture"
+path = "tests/fixtures/pi_rpc.rs"
+required-features = ["native-fixture"]
+
+[dependencies]
+loams-agentd-proto.workspace = true
+# The fork is on base64 0.22; the workspace key is 0.23.
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
+tokio.workspace = true
+tokio-util = { workspace = true, features = ["io-util"] }
+uuid = { workspace = true, features = ["serde"] }
+futures.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+deser-hjson.workspace = true
+serde_yaml_ng = "0.10"
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+sha2 = "0.10"
+semver = "1"
+zip.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_Security_Cryptography", "Win32_Security_Cryptography_Catalog", "Win32_Security_Cryptography_Sip", "Win32_Security_WinTrust", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_SystemInformation", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile.workspace = true
+
+# The workspace policy, except `unsafe_code` is `deny` rather than `forbid`: this crate
+# has audited FFI and process sites, each under `#[allow(unsafe_code)]` with a SAFETY
+# comment (plan DD1 ruling T1-13). Cargo cannot combine `workspace = true` with an
+# override, so the rest of `[workspace.lints]` is repeated here; keep them in step.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

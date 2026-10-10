@@ -1,0 +1,5 @@
+source "https://rubygems.org"
+
+gem "google-protobuf", "4.36.2"
+gem "rake", "13.4.2"
+gem "minitest", "6.0.6"

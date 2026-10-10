@@ -1,0 +1,118 @@
+{
+  "description": "Run, rendered as a table (§48 §18.2): the page's call (max_rows 1000, timeout_ms 30000, consistency strong, read_only on) and typed cells: STRING, INT64 (a decimal string in JSON), FLOAT64 and LIST.",
+  "exchanges": [
+    {
+      "method": "loams.graph.v1.GraphService/Execute",
+      "request": {
+        "namespace": "default",
+        "graph": "movies",
+        "statement": "MATCH (p:Person)-[r:ACTED_IN]->(m:Movie) RETURN p.name AS actor, r.roles AS roles, m.title AS movie, m.released AS released, m.rating AS rating ORDER BY released, actor",
+        "readOnly": true,
+        "consistency": {
+          "strong": {}
+        },
+        "timeoutMs": 30000,
+        "maxRows": 1000
+      },
+      "ignore": [
+        "elapsedNanos"
+      ],
+      "response": {
+        "elapsedNanos": "1157267",
+        "rows": {
+          "columnTypes": [
+            "ANY",
+            "ANY",
+            "ANY",
+            "ANY",
+            "ANY"
+          ],
+          "columns": [
+            "actor",
+            "roles",
+            "movie",
+            "released",
+            "rating"
+          ],
+          "rows": [
+            {
+              "values": [
+                {
+                  "string": "Carrie-Anne Moss"
+                },
+                {
+                  "list": {
+                    "values": [
+                      {
+                        "string": "Trinity"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "string": "The Matrix"
+                },
+                {
+                  "int64": "1999"
+                },
+                {
+                  "float64": 8.7
+                }
+              ]
+            },
+            {
+              "values": [
+                {
+                  "string": "Keanu Reeves"
+                },
+                {
+                  "list": {
+                    "values": [
+                      {
+                        "string": "Neo"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "string": "The Matrix"
+                },
+                {
+                  "int64": "1999"
+                },
+                {
+                  "float64": 8.7
+                }
+              ]
+            },
+            {
+              "values": [
+                {
+                  "string": "Keanu Reeves"
+                },
+                {
+                  "list": {
+                    "values": [
+                      {
+                        "string": "John Wick"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "string": "John Wick"
+                },
+                {
+                  "int64": "2014"
+                },
+                {
+                  "float64": 7.4
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

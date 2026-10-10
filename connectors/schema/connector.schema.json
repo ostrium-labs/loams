@@ -1,0 +1,435 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/connector.schema.json",
+  "title": "Loams connector manifest (loams.flow/v1 Connector)",
+  "description": "One versioned manifest per connector, at connectors/registry/<id>.yaml, loaded at start and served by FlowService.ListConnectors/DescribeConnector (design §33 D352). Every connector declares its capabilities — direction, modes, delivery, transactional and upsert/delete support, ordering, formats, schema handling, bulk Arrow support, backpressure, auth methods, config schema, secret fields and limits — and ValidateRoute refuses a route that uses an undeclared one (design §33 D353, §4 rule 1). A capability removed or narrowed bumps specVersion's major (§33 §4 rule 4). CN1 Task 1 owns this file; the protobuf mirror is fabric/proto/loams/flow/v1/connector.proto, the YAML is the source and CI checks that the two agree (§33 §4, last paragraph).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "id",
+    "name",
+    "specVersion",
+    "category",
+    "priority",
+    "starred",
+    "status",
+    "runtime",
+    "licence",
+    "capabilities",
+    "auth",
+    "config",
+    "secrets",
+    "envelope",
+    "limits",
+    "conformance"
+  ],
+  "properties": {
+    "apiVersion": {
+      "description": "The manifest's API version. Constant in CN1: the only shape is loams.flow/v1 (design §33 §4).",
+      "const": "loams.flow/v1"
+    },
+    "kind": {
+      "description": "The manifest's kind. Constant in CN1: the only shape is Connector (design §33 §4).",
+      "const": "Connector"
+    },
+    "id": {
+      "description": "The connector's registry key, unique across the registry; matches the file name connectors/registry/<id>.yaml (design §33 §4, D352).",
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,48}$"
+    },
+    "name": {
+      "description": "The connector's display name, for example \"Apache Kafka\" (design §33 §4).",
+      "type": "string",
+      "minLength": 1
+    },
+    "specVersion": {
+      "description": "The version of this manifest, not of the connector; bumps on every capability change, and a removal or narrowing bumps the major (§33 §4 rule 4). Semver, kept as a string so the manifest needs no semver library to read; loams-flow parses it (CN1 Task 1).",
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "category": {
+      "description": "The kind of system the connector speaks to (§33 §4's category comment; the registry is grouped by it).",
+      "type": "string",
+      "enum": [
+        "messaging",
+        "relational",
+        "nosql",
+        "search",
+        "vector",
+        "graph",
+        "warehouse",
+        "lakehouse",
+        "object-storage",
+        "format",
+        "cdc",
+        "integration",
+        "saas",
+        "observability",
+        "infra",
+        "identity",
+        "ai",
+        "protocol"
+      ]
+    },
+    "priority": {
+      "description": "The rollout phase, which for CN1 is also the build order: P1 is the ★ set of CN1, P2 is CN2 through stock Camel components and Iggy plugins, P3 is CN3's long tail through OpenAPI-generated connectors (§33 §8, D358).",
+      "type": "string",
+      "enum": ["P1", "P2", "P3"]
+    },
+    "starred": {
+      "description": "True for the 21 ★ connectors Loams owns and ships in CN1 (§33 §8, D358). CN1's semantic rules imply priority = P1 from starred.",
+      "type": "boolean"
+    },
+    "status": {
+      "description": "The connector's maturity. \"planned\" is a generated stub with no capability detail yet (CN1 Ruling 1); \"deprecated\" keeps its major so routes pinned to it keep running (§33 §4 rule 4).",
+      "type": "string",
+      "enum": ["planned", "preview", "stable", "deprecated"]
+    },
+    "runtime": {
+      "description": "Which runtime runs this connector (design §33 §5, D354): native Rust in loams-flow, Iggy's connectors runtime, unmodified Camel in loams-connect, Debezium Server, or a native connector generated from an OpenAPI spec.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": {
+          "description": "The runtime (§33 §5, D354). A connector exists once per runtime it is shipped as; the manifest describes the runtime Loams ships (§33 §4 rule 2).",
+          "type": "string",
+          "enum": ["native", "iggy", "camel", "debezium", "openapi"]
+        },
+        "ref": {
+          "description": "What the runtime points at, per kind: a crate path (loams_flow::connectors::kafka), an Iggy plugin name, a Camel URI scheme, a Debezium connector class, or an OpenAPI spec URL (§33 §4's runtime.ref comment).",
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "description": "The pinned driver or library version behind ref, free-form because it spans crates and native builds, for example \"rdkafka 0.39 / librdkafka 2.x (verify)\" (§33 §4).",
+          "type": "string"
+        }
+      }
+    },
+    "licence": {
+      "description": "The licences the gate checks: the runtime component's own, and every library or driver it loads (design §33 D359). CI refuses AGPL, BSL, SSPL, ELv2, NOASSERTION and unknown ids for anything in the image; a SaaS service used through its public API is not a licence question, so its dependencies may be empty.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component"],
+      "properties": {
+        "component": {
+          "description": "An SPDX id for the runtime component, for example \"Apache-2.0\" (design §33 D359).",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9.+-]+$"
+        },
+        "dependencies": {
+          "description": "Every library or driver the connector loads, by name, with its SPDX id (design §33 D359). Optional, because a component with no loaded dependency declares none.",
+          "type": "object",
+          "additionalProperties": {
+            "description": "An SPDX id for one loaded dependency.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9.+-]+$"
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "description": "What the connector can do, declared rather than inferred (design §33 D353). delivery, ordering, formats, schema, bulk and backpressure are required of every connector; source and sink are optional, because a connector may be one direction only (a webhook source, a JDBC sink), and which of the two is present says which. A route that uses an undeclared capability is refused by name, capability and manifest version (§33 §4 rule 1).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "delivery",
+        "ordering",
+        "formats",
+        "schema",
+        "bulk",
+        "backpressure"
+      ],
+      "properties": {
+        "source": {
+          "description": "What the connector does as a source. Omit for a sink-only connector.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "streaming",
+            "batch",
+            "cdc",
+            "webhook",
+            "resumable",
+            "position"
+          ],
+          "properties": {
+            "streaming": {
+              "description": "Continuous, low-latency delivery.",
+              "type": "boolean"
+            },
+            "batch": {
+              "description": "Bulk or scheduled transfer.",
+              "type": "boolean"
+            },
+            "cdc": {
+              "description": "Row-level change capture (design §33 §7, D357). CN1's semantic rules require source.streaming and a non-empty position when this is true.",
+              "type": "boolean"
+            },
+            "webhook": {
+              "description": "Receives webhooks as a source (CN1 Task 4's HMAC, GitHub, Stripe, Slack and Shopify schemes).",
+              "type": "boolean"
+            },
+            "resumable": {
+              "description": "Restarts from a committed position, which is what makes an at-least-once source safe to kill and restart (CN1 Ruling 4).",
+              "type": "boolean"
+            },
+            "position": {
+              "description": "What the source checkpoints, for example \"kafka-offsets\" (§33 §4). Free-form, because each system names its own position; empty when the source has none.",
+              "type": "string"
+            }
+          }
+        },
+        "sink": {
+          "description": "What the connector does as a sink. Omit for a source-only connector.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "streaming",
+            "batch",
+            "transactional",
+            "upsert",
+            "delete",
+            "idempotent"
+          ],
+          "properties": {
+            "streaming": {
+              "description": "Continuous, low-latency delivery.",
+              "type": "boolean"
+            },
+            "batch": {
+              "description": "Bulk or scheduled writes.",
+              "type": "boolean"
+            },
+            "transactional": {
+              "description": "The sink writes inside the target system's transaction.",
+              "type": "boolean"
+            },
+            "upsert": {
+              "description": "The sink upserts by a key it declares in its config schema. A route that upserts needs this (§33 §4 rule 1).",
+              "type": "boolean"
+            },
+            "delete": {
+              "description": "The sink applies deletes, which a CDC route needs.",
+              "type": "boolean"
+            },
+            "idempotent": {
+              "description": "The sink itself dedupes retries, for example Kafka's idempotent producer. CN1's semantic rules require this or transactional before delivery.sink may be exactly_once.",
+              "type": "boolean"
+            }
+          }
+        },
+        "delivery": {
+          "description": "The delivery guarantee per direction. Every runtime is at-least-once underneath (§33 §6), and the target's dedup key or primary key makes it effectively once where the target dedupes (§33 §2.2).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "sink"],
+          "properties": {
+            "source": {
+              "description": "The source's guarantee: re-delivery after a crash is expected.",
+              "$ref": "#/$defs/delivery"
+            },
+            "sink": {
+              "description": "The sink's guarantee. exactly_once is a claim only where the external system deduplicates (§33 §2.2).",
+              "$ref": "#/$defs/delivery"
+            }
+          }
+        },
+        "ordering": {
+          "description": "The order events keep. A route that relies on per-partition order needs at least per_partition here (§33 §4 rule 1).",
+          "type": "string",
+          "enum": ["none", "per_key", "per_partition", "total"]
+        },
+        "formats": {
+          "description": "The wire and payload formats the connector emits or consumes (§33 §4). CloudEvents is the envelope for everything else (D355), and Avro appears only at Kafka and schema-registry boundaries (D356).",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "description": "One format slug.",
+            "type": "string",
+            "enum": [
+              "cloudevents-binary",
+              "cloudevents-structured",
+              "json",
+              "avro",
+              "protobuf",
+              "bytes",
+              "arrow",
+              "parquet",
+              "csv",
+              "ndjson"
+            ]
+          }
+        },
+        "schema": {
+          "description": "Schema handling: whether a schema registry is involved, and how the connector evolves a schema on it (§33 §4).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["registry", "evolution"],
+          "properties": {
+            "registry": {
+              "description": "Whether the connector needs a schema registry. Avro at a registry boundary is the only registry-shaped case (D356).",
+              "type": "string",
+              "enum": ["none", "optional", "required"]
+            },
+            "evolution": {
+              "description": "The compatibility rule the connector holds its schemas to (§33 §4).",
+              "type": "string",
+              "enum": ["none", "backward", "backward_transitive", "full"]
+            }
+          }
+        },
+        "bulk": {
+          "description": "Bulk path. Bulk data moves as Arrow, never row by row (design §33 D356); max_batch_rows is the batch size CN1 Ruling 3 defaults to 65536.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["arrow", "max_batch_rows"],
+          "properties": {
+            "arrow": {
+              "description": "The connector takes or produces Arrow IPC batches (design §33 D356).",
+              "type": "boolean"
+            },
+            "max_batch_rows": {
+              "description": "Rows per Arrow batch; at least 1, 65536 by default (CN1 Ruling 3).",
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "backpressure": {
+          "description": "How the sink tells the Fabric to slow down (§33 §4).",
+          "type": "string",
+          "enum": ["pull", "push-with-ack", "push-rate-limited"]
+        }
+      }
+    },
+    "auth": {
+      "description": "The auth methods the connector accepts, as the slugs of §33 Appendix A's legend. CN1's semantic rules require every value to be one of them; secrets for these are named in secrets and resolved through the namespace's secret store (D189), never stored in the instance.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "description": "One auth-method slug.",
+        "type": "string",
+        "enum": [
+          "none",
+          "basic",
+          "key",
+          "oauth2",
+          "jwt",
+          "hmac",
+          "mtls",
+          "sasl",
+          "sasl-plain",
+          "sasl-scram-256",
+          "sasl-scram-512",
+          "aws-msk-iam",
+          "iam",
+          "sa",
+          "aad",
+          "ssh",
+          "kerb",
+          "cs",
+          "per-driver",
+          "per-spec",
+          "per-component"
+        ]
+      }
+    },
+    "config": {
+      "description": "Where the connector's instance-config JSON Schema lives. The manifest declares the shape of an instance's settings (design §33 D353); it does not inline them, so one schema serves every instance of the connector.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$ref"],
+      "properties": {
+        "$ref": {
+          "description": "A repository-relative path to the connector's instance-config JSON Schema (draft 2020-12) under connectors/, for example schemas/kafka.config.json. Resolved and applied by loams-flow at load time; CI checks that the file exists, so a manifest cannot point at a schema that is not there.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "secrets": {
+      "description": "The config fields that hold secrets, named. Resolved through the namespace's secret store (D189) and never stored in the instance; CN1's semantic rules require every name to appear in the config schema with \"writeOnly\": true.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "description": "One config field's name, for example \"sasl.password\".",
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "envelope": {
+      "description": "The CloudEvents contract this connector emits and consumes (design §33 D355): one CloudEvent per record, row change or file, with type io.loams.dev.flow.<connector>.<event>.v1 and source /connectors/<instance>/<resource>.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["emits", "consumes"],
+      "properties": {
+        "emits": {
+          "description": "The CloudEvents type this connector emits, for example io.loams.dev.flow.kafka.record.v1, or \"\" when it emits none (a sink-only connector). Never \"*\": an emitted type is concrete.",
+          "type": "string"
+        },
+        "consumes": {
+          "description": "The CloudEvents type this connector consumes, or \"*\" for any type (§33 §4's kafka example, which sinks to any topic).",
+          "type": "string"
+        },
+        "passthrough": {
+          "description": "Input that already is a valid CloudEvent keeps its producer's type, source and id, and the connector adds only the loamsconnector and loamsinstance extensions (§33 §6). A manifest that passes events through declares this, and its contract test checks both the pass-through and the wrapped case.",
+          "type": "boolean"
+        }
+      }
+    },
+    "limits": {
+      "description": "The bounds the runtime enforces on this connector's records and batches (§33 §4). An omitted bound leaves the runtime's default; batch_bytes defaults to 8 MiB (CN1 Ruling 3, Iggy's message size limit).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_record_bytes": {
+          "description": "The largest single record the connector accepts or emits, in bytes; at least 1.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "batch_rows": {
+          "description": "Rows per batch for a batch connector, at least 1; the Arrow default is 65536 (CN1 Ruling 3).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "batch_bytes": {
+          "description": "The largest batch the connector sends, in bytes, at least 1; Ruling 3's default is 8 MiB.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "conformance": {
+      "description": "The suites the connector passes (§33 §4 rule 3): contract exercises each declared capability, roundtrip sends sink → source and reads the events back, kill-restart kills the runtime mid-batch, dup-check bounds duplicates by the declared delivery, bulk runs the Arrow path at 1 M rows, cdc exercises inserts, updates, deletes, DDL and slot or binlog resume. CI fails a ★ connector whose declared capabilities have no test.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "description": "One suite slug.",
+        "type": "string",
+        "enum": [
+          "contract",
+          "roundtrip",
+          "kill-restart",
+          "dup-check",
+          "bulk",
+          "cdc"
+        ]
+      }
+    },
+    "docs": {
+      "description": "A repository-relative path to the connector's guide page; null when it has none. Optional because a generated stub has none (CN1 Ruling 1).",
+      "type": ["string", "null"]
+    }
+  },
+  "$defs": {
+    "delivery": {
+      "description": "One direction's delivery guarantee (§33 §4's capabilities.delivery, D355).",
+      "type": "string",
+      "enum": ["at_most_once", "at_least_once", "exactly_once"]
+    }
+  }
+}

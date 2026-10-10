@@ -1,0 +1,48 @@
+apiVersion: loams.flow/v1
+kind: Connector
+id: kafka                          # [a-z0-9-]{1,48}, unique
+name: Apache Kafka
+specVersion: 1.0.0                 # of this manifest; bumps on capability changes
+category: messaging                # messaging | relational | nosql | search | vector | graph | warehouse | lakehouse
+                                   # | object-storage | format | cdc | integration | saas | observability | infra | identity | ai | protocol
+priority: P1                       # P1 = CN1 (★), P2 = CN2, P3 = CN3
+starred: true
+status: preview                    # planned | preview | stable | deprecated
+runtime:
+  kind: native                     # native | iggy | camel | debezium | openapi
+  ref: loams_flow::connectors::kafka   # crate path | Iggy plugin name | Camel URI scheme | Debezium connector class | OpenAPI spec URL
+  version: "rdkafka 0.39 / librdkafka 2.x (verify)"
+licence:
+  component: Apache-2.0
+  dependencies: { librdkafka: BSD-2-Clause }
+capabilities:
+  source:
+    streaming: true
+    batch: false
+    cdc: false
+    webhook: false
+    resumable: true                # restarts from a committed position
+    position: kafka-offsets        # what the source checkpoints
+  sink:
+    streaming: true
+    batch: true
+    transactional: false
+    upsert: false
+    delete: false
+    idempotent: true               # the sink itself dedupes retries (Kafka idempotent producer)
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_partition          # none | per_key | per_partition | total
+  formats: [cloudevents-binary, cloudevents-structured, json, avro, protobuf, bytes]
+  schema: { registry: optional, evolution: backward }
+  bulk: { arrow: false, max_batch_rows: 65536 }
+  backpressure: pull               # pull | push-with-ack | push-rate-limited
+auth: [none, sasl-plain, sasl-scram-256, sasl-scram-512, mtls, aws-msk-iam]
+config:                            # JSON Schema 2020-12 for an instance's settings
+  $ref: schemas/kafka.config.json
+secrets: [sasl.password, tls.key_pem]   # resolved through Dapr secret stores (D189); never stored in the instance
+envelope:
+  emits: io.loams.dev.flow.kafka.record.v1
+  consumes: "*"
+limits: { max_record_bytes: 16777216 }
+conformance: [contract, roundtrip, kill-restart, dup-check]
+docs: docs/guides/connectors/kafka.md

@@ -1,0 +1,92 @@
+{
+  "description": "Explain and Profile (§48 §18.2): the plan tree and the engine's text. A PROFILE runs the statement, which must itself begin with PROFILE (R6.8); each operator's `rows` is compared, its time (`elapsedNanos`, and the engine's text, which prints the times) is not.",
+  "exchanges": [
+    {
+      "method": "loams.graph.v1.GraphService/Explain",
+      "request": {
+        "namespace": "default",
+        "graph": "movies",
+        "statement": "MATCH (m:Movie) RETURN m.title AS title ORDER BY title"
+      },
+      "response": {
+        "root": {
+          "children": [
+            {
+              "children": [
+                {
+                  "details": {
+                    "label": "m:Movie",
+                    "operator": "NodeScan (m:Movie)"
+                  },
+                  "name": "NodeScan"
+                }
+              ],
+              "details": {
+                "label": "title",
+                "operator": "Return (m.title AS title)"
+              },
+              "name": "Return"
+            }
+          ],
+          "details": {
+            "label": "title ASC",
+            "operator": "Sort (title ASC)"
+          },
+          "name": "Sort"
+        },
+        "text": "Sort (title ASC)\n  Return (m.title AS title)\n    NodeScan (m:Movie)\n"
+      }
+    },
+    {
+      "method": "loams.graph.v1.GraphService/Explain",
+      "request": {
+        "namespace": "default",
+        "graph": "movies",
+        "statement": "PROFILE MATCH (m:Movie) RETURN m.title AS title ORDER BY title",
+        "profile": true,
+        "timeoutMs": 30000,
+        "consistency": {
+          "strong": {}
+        }
+      },
+      "ignore": [
+        "text",
+        "**.elapsedNanos"
+      ],
+      "response": {
+        "root": {
+          "children": [
+            {
+              "children": [
+                {
+                  "details": {
+                    "label": "m:Movie",
+                    "operator": "Scan (m:Movie)"
+                  },
+                  "elapsedNanos": "30000",
+                  "name": "Scan",
+                  "rows": "2"
+                }
+              ],
+              "details": {
+                "label": "title",
+                "operator": "Project (title)"
+              },
+              "elapsedNanos": "70000",
+              "name": "Project",
+              "rows": "2"
+            }
+          ],
+          "details": {
+            "label": "title ASC",
+            "operator": "Sort (title ASC)"
+          },
+          "elapsedNanos": "10000",
+          "name": "Sort",
+          "rows": "2"
+        },
+        "text": "Sort (title ASC)  rows=2  time=0.01ms\n  Project (title)  rows=2  time=0.07ms\n    Scan (m:Movie)  rows=2  time=0.03ms\n\nTotal time: 0.44ms"
+      }
+    }
+  ]
+}

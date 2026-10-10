@@ -1,0 +1,50 @@
+[package]
+name = "loams-flow-proto"
+description = "The loams.flow.v1 protos of Loams Flow: the connector and instance manifests, generated at build time."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# Not published: build.rs reads the protos from the workspace's fabric/proto/
+# directory, which a crate archive would not contain — the same reason
+# `loams-live-proto` is unpublished for the root `proto/` tree (R1 plan row
+# T8-1). Publishing is decided at the Loams rename with the TiKV crates: ship
+# the protos in the crate then, or the generated code.
+publish = false
+
+[features]
+# The generated `FlowServiceClient` (connect-rust's client transport), which
+# CN1 Task 3's `flow.proto` brings with `FlowService`. Empty until then:
+# neither `connector.proto` nor `instance.proto` declares a service, so no
+# connect-rust code is generated and the gate has nothing to gate. Task 3 makes
+# this `client = ["connectrpc/client"]` and adds the `connectrpc` dependency,
+# as `loams-live-proto` does for `LiveService`.
+client = []
+
+[dependencies]
+# The generated message types are buffa's, not `prost`'s: `connectrpc-build`
+# 0.9's generator emits buffa message types with their borrowed views, and the
+# `json` feature is what puts the proto3 JSON mapping on them — the mapping
+# CN1 Task 1's `proto_and_yaml_agree` test reads (D352: the YAML manifest is
+# canonical and the protobuf form mirrors it key for key).
+buffa = { version = "0.9.2", features = ["json"] }
+# `instance.proto`'s `google.protobuf.Struct` (`config`, the user-authored
+# JSON settings): the well-known types come from `buffa-types`, as
+# `loams-proto` takes it for the same import in `loams.operations.v1`. Both
+# are pinned inline rather than through `[workspace.dependencies]`, because
+# they are this crate's codegen runtime, not a shared dependency — the same
+# split `loams-proto` makes.
+buffa-types = { version = "0.9.2", features = ["json"] }
+# The generated JSON mapping derives serde, through the `::serde` paths buffa's
+# emit writes.
+serde.workspace = true
+
+[build-dependencies]
+connectrpc-build.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

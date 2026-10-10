@@ -1,0 +1,88 @@
+[package]
+name = "loams-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Loams's embedded graph engine: Grafeo behind loams.graph.v1, GQL over Connect-RPC (D634)"
+publish = false
+
+[dependencies]
+# The engine, embedded (D634 (b), D741). Version and features are the root workspace's, set by
+# GR1 Task 0 (R0.2, R0.3): `=0.5.43`, `default-features = false`, and the narrow set that keeps
+# LPG + GQL + WAL + CDC + spill + algorithms + metrics + tracing. Apache-2.0 across all six grafeo
+# crates (`connectors/licences.toml`, root `NOTICE`).
+grafeo.workspace = true
+# Named for its `lpg` feature only: grafeo's own `lpg` turns on `cypher`, `gremlin` and `sql-pgq`
+# too (R0.2), so the data model is switched on one crate down.
+grafeo-engine.workspace = true
+# Named because it is forced, not chosen: `PropertyKey`, the temporal types (`Date`, `Time`,
+# `Timestamp`, `ZonedDatetime`, `Duration`) and `NodeId`/`EdgeId` live below the `grafeo` facade,
+# which does not re-export them, and `value.rs` and the path resolution in `engine.rs` build and
+# read them. Already in the tree at the same version as `grafeo`.
+grafeo-common.workspace = true
+# The GQL AST's `SessionCommand`, for statement classification (`classify.rs`, R0.10).
+grafeo-adapters.workspace = true
+# The generated `loams.graph.v1` types, from the root `proto/` tree like every other public
+# package (design §44, D741). `fabric/`'s `loams-graph-proto` is gone (GR1 Task 1).
+loams-proto.workspace = true
+
+# `google.protobuf.NullValue`, the type of `loams.graph.v1.Value.null`. Already in the tree through
+# `loams-proto`.
+buffa-types = { version = "0.9.2", features = ["json"] }
+# The generated map fields are buffa's own `HashMap`; `value.rs` names the type.
+buffa.workspace = true
+connectrpc.workspace = true
+# Named failpoints for the panic-containment test (GR1 Task 3). Off by default: without the
+# `failpoints` feature they compile to nothing.
+fail = { workspace = true, optional = true }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+# The graph catalog (GR1 Task 4): a document per namespace in the bucket, committed by a metastore
+# pointer CAS.
+loams-common.workspace = true
+loams-store.workspace = true
+serde.workspace = true
+base64.workspace = true
+bytes.workspace = true
+# Backoff between catalog CAS retries (review M4).
+tokio = { workspace = true, features = ["time", "rt", "sync"] }
+# `gr_<ULID>` graph ids (shared contract `GraphId`).
+ulid.workspace = true
+# `ExecuteStream`'s chunks, as the `connectrpc::ServiceStream` the handler answers (GR1 Task 6).
+# Already in the tree through `connectrpc`.
+futures.workspace = true
+
+[features]
+# `engine_panic_poisons_one_graph`: `cargo test -p loams-graph --features failpoints`.
+failpoints = ["dep:fail", "fail/failpoints"]
+# `Graph::execute_forced`, a gate bypass for tests (security review I4). Enabled for this crate's
+# own tests by the self dev-dependency below; never by a server build.
+test-hooks = []
+# GR1 Task 9 spike only: Grafeo's per-epoch property and label versions, measured by
+# `cargo test -p loams-graph --features grafeo-temporal --test capture_spike_temporal` and ruled out
+# (R9.6). Never enabled by a server build.
+grafeo-temporal = ["grafeo/temporal"]
+
+[dev-dependencies]
+# A single-node metastore for the catalog tests (GR1 Task 4).
+loams-meta.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+loams-graph = { path = ".", features = ["test-hooks"] }
+# `licences_cover_every_grafeo_crate` reads `Cargo.lock` and `connectors/licences.toml`.
+toml.workspace = true
+# `proto_has_no_path_fields` walks `loams_proto::FILE_DESCRIPTOR_SET`.
+prost.workspace = true
+prost-types.workspace = true
+# The desktop contract (GR1 Task 7): the fixtures' reader and comparison, and the seeded mock the
+# page also runs against, called over Connect JSON.
+loams-apps-mock = { path = "../loams-apps-mock" }
+reqwest.workspace = true
+# The change-capture spike's model-based test (GR1 Task 9).
+proptest.workspace = true
+
+[lints]
+workspace = true

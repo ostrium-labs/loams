@@ -1,0 +1,5 @@
+repo: dina-kar/operon (becomes ostrium-labs/loams)
+ref: bc3e55999f4b596cf21bcead109b1e1b69fa8354
+branch: ap0-app-protos (AP0, local branch at the time of writing; not yet on main)
+files: loams/instance/v1/instance.proto loams/errors/v1/errors.proto
+note: replace with a published ref via scripts/loams/sync-protos.sh once AP0 merges

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/redis.config.json",
+  "title": "Redis connector instance config (loams.flow/v1)",
+  "description": "One Redis connector instance's settings: the server URL, the stream and consumer group the source reads with XREADGROUP, the acknowledgement mode, and the key template the sink writes by. CN1 Task 13 names the group loams-<instance>. `password` and `tls.key_pem` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["url"],
+  "properties": {
+    "url": {
+      "description": "The redis:// or rediss:// URL, host and port.",
+      "type": "string",
+      "minLength": 1
+    },
+    "user": {
+      "description": "The ACL user, for Redis 6 and later.",
+      "type": "string",
+      "minLength": 1
+    },
+    "password": {
+      "description": "The password or ACL secret. Resolved through the secret store (D189); never stored in the instance.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "database": {
+      "description": "The logical database index.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 0
+    },
+    "stream": {
+      "description": "The stream key the source reads with XREADGROUP.",
+      "type": "string",
+      "minLength": 1
+    },
+    "consumer_group": {
+      "description": "The consumer group; CN1 Task 13 names it loams-<instance>, derived from the instance when omitted.",
+      "type": "string",
+      "minLength": 1
+    },
+    "consumer_name": {
+      "description": "The consumer name inside the group; the instance name is used when omitted.",
+      "type": "string",
+      "minLength": 1
+    },
+    "ack_mode": {
+      "description": "When the source acknowledges: after the Fabric acknowledges the batch (Ruling 4), or immediately on read. `after-ack` is the only mode that makes an at-least-once read safe.",
+      "type": "string",
+      "enum": ["after-ack", "on-read"],
+      "default": "after-ack"
+    },
+    "block_ms": {
+      "description": "How long XREADGROUP blocks before returning empty.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 5000
+    },
+    "count": {
+      "description": "Entries per XREADGROUP call.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 100
+    },
+    "pending_idle_ms": {
+      "description": "Claim another consumer's entries after this idle time, so a killed consumer's entries are not stranded.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "sink_mode": {
+      "description": "The sink's write (CN1 Task 13's redis_sink_templates): XADD, SET/HSET by a key template, or PUBLISH.",
+      "type": "string",
+      "enum": ["xadd", "set", "hset", "publish"],
+      "default": "xadd"
+    },
+    "key_template": {
+      "description": "The key template for the `set` and `hset` modes, with {ce_id}, {subject} and {partitionkey} placeholders. Including {ce_id} is what makes the write idempotent.",
+      "type": "string",
+      "minLength": 1
+    },
+    "field_template": {
+      "description": "The hash field template, for the `hset` mode.",
+      "type": "string",
+      "minLength": 1
+    },
+    "channel": {
+      "description": "The pub/sub channel, for the `publish` mode.",
+      "type": "string",
+      "minLength": 1
+    },
+    "max_len": {
+      "description": "An approximate trim length applied by XADD, so a stream does not grow without bound.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "tls": {
+      "description": "TLS material, for a rediss:// URL (the manifest's `mtls` auth slug).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ca_pem": { "description": "The CA bundle, as PEM.", "type": "string" },
+        "key_pem": {
+          "description": "The client certificate's private key. Resolved through the secret store (D189).",
+          "type": "string",
+          "writeOnly": true
+        },
+        "verify_full": { "description": "Whether the server certificate's hostname is verified.", "type": "boolean", "default": true }
+      }
+    }
+  }
+}

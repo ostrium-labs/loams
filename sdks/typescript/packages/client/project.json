@@ -1,0 +1,11 @@
+{
+  "name": "@loams/client",
+  "tags": ["scope:sdk", "language:typescript"],
+  "targets": {
+    "test": {
+      "cache": false,
+      "inputs": ["default", "^default", "{workspaceRoot}/sdks/fixtures/**/*", "!{workspaceRoot}/sdks/fixtures/results/**/*", "{workspaceRoot}/sdks/conformance/**/*"],
+      "outputs": ["{workspaceRoot}/sdks/fixtures/results/typescript.json"]
+    }
+  }
+}

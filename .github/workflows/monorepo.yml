@@ -1,0 +1,384 @@
+name: Monorepo CI
+
+# Do not event-filter paths: branch protection always receives the summary check.
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monorepo-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+env:
+  CI: 'true'
+  NX_DAEMON: 'false'
+  NX_NO_CLOUD: 'true'
+  NX_TASKS_RUNNER_DYNAMIC_OUTPUT: 'false'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  changes:
+    name: monorepo changed paths
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      plugins: ${{ steps.filter.outputs.plugins }}
+      android: ${{ steps.filter.outputs.android }}
+      ios: ${{ steps.filter.outputs.ios }}
+      mock: ${{ steps.filter.outputs.mock }}
+      conformance: ${{ steps.filter.outputs.conformance }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Empty token forces local Git comparison, including fork PRs; no PR API permission.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          token: ''
+          base: ${{ github.event.pull_request.base.sha || github.event.before }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          filters: |
+            workspace: &workspace
+              - 'package.json'
+              - 'project.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.npmrc'
+              - '.pnpmfile.*'
+              - '.node-version'
+              - '.nvmrc'
+              - 'nx.json'
+              - 'tsconfig*.json'
+              - 'biome*.json'
+              - 'eslint.config.*'
+              - 'vitest.config.*'
+              - 'vite.config.*'
+              - 'patches/**'
+              - 'tools/monorepo/**'
+              - 'scripts/monorepo/**'
+              - '.github/workflows/monorepo.yml'
+            web:
+              - *workspace
+              - 'web/**'
+              - 'sdks/typescript/**'
+              - 'api/console/**'
+              - 'proto/**'
+              - 'buf*.yaml'
+            plugins:
+              - *workspace
+              - 'plugins/**'
+            mobile-shared: &mobile-shared
+              - 'apps/mobile/proto/**'
+              - 'apps/mobile/buf*.yaml'
+              - 'apps/mobile/conformance/**'
+              - 'apps/mobile/scripts/**'
+              - 'apps/mobile/project.json'
+              - '.github/workflows/monorepo.yml'
+            android:
+              - *mobile-shared
+              - 'apps/mobile/android/**'
+              - 'apps/mobile/.github/workflows/mobile-android.yml'
+            ios:
+              - *mobile-shared
+              - 'apps/mobile/ios/**'
+              - 'apps/mobile/.github/workflows/mobile-ios.yml'
+            mock:
+              - *mobile-shared
+              - 'apps/mobile/mock/**'
+              - 'apps/mobile/.github/workflows/mobile-mock.yml'
+            conformance:
+              - *mobile-shared
+              - 'apps/mobile/android/core/**'
+              - 'apps/mobile/android/proto/**'
+              - 'apps/mobile/android/transport/**'
+              - 'apps/mobile/android/conformance/**'
+              - 'apps/mobile/android/project.json'
+              - 'apps/mobile/android/*.gradle.kts'
+              - 'apps/mobile/android/gradle.properties'
+              - 'apps/mobile/android/gradlew*'
+              - 'apps/mobile/android/gradle/**'
+              - 'apps/mobile/mock/**'
+              - 'apps/mobile/.github/workflows/mobile-conformance.yml'
+            contracts:
+              - *mobile-shared
+              - 'apps/mobile/android/proto/src/generated/**'
+              - 'apps/mobile/ios/Packages/LoamsProto/Sources/LoamsProto/Generated/**'
+              - 'apps/mobile/mock/gen/**'
+              - 'apps/mobile/.github/workflows/mobile-protos.yml'
+
+  web:
+    name: monorepo web build, typecheck and tests
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Check monorepo boundaries
+        run: |
+          pnpm check:monorepo
+          python3 -m unittest discover -s tools/monorepo -v
+      # Inferred Nx package names must retain the web package.json names.
+      - name: Build and typecheck web packages
+        run: pnpm nx run-many --projects='@loams/*' --targets=build,typecheck --parallel=2 --outputStyle=static
+      - name: Console UI and deployment-unit tests (no deployment)
+        run: pnpm nx run @loams/console:test --outputStyle=static
+      - name: Other web tests, including UI where a test target exists
+        run: pnpm nx run-many --projects='@loams/*' --exclude='@loams/console' --targets=test --parallel=2 --outputStyle=static
+
+  plugins:
+    name: monorepo plugin build and tests
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.plugins == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm nx run plugins:build --outputStyle=static
+      - run: pnpm nx run plugins:test --outputStyle=static
+      - run: pnpm nx run plugins-dashboard-ui:typecheck --outputStyle=static
+      - run: pnpm nx run plugins-dashboard-ui:build --outputStyle=static
+
+  mobile-mock:
+    name: monorepo mobile mock vet, test and build (Linux)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.mock == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/mobile/mock/go.mod
+          cache-dependency-path: apps/mobile/mock/go.sum
+      - run: pnpm nx run mobile-mock:vet --outputStyle=static
+      - run: pnpm nx run mobile-mock:test --outputStyle=static
+      - run: pnpm nx run mobile-mock:build --outputStyle=static
+
+  mobile-android:
+    name: monorepo mobile Android build, test and lint (Linux)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      # Use the runner SDK with the project's compileSdk; AGP installs its build tools.
+      - name: Prepare Android SDK (API 37)
+        run: |
+          test -d "$ANDROID_HOME"
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          # yes may exit with SIGPIPE once sdkmanager finishes reading licenses.
+          set +o pipefail
+          yes | "$sdkmanager" --licenses > /dev/null
+          set -o pipefail
+          "$sdkmanager" 'platforms;android-37'
+      - uses: gradle/actions/setup-gradle@v6
+      - run: pnpm nx run mobile-android:build --outputStyle=static
+      - run: pnpm nx run mobile-android:test --outputStyle=static
+      - run: pnpm nx run mobile-android:lint --outputStyle=static
+
+  mobile-conformance:
+    name: monorepo mobile mock-backed conformance (Linux)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.conformance == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/mobile/mock/go.mod
+          cache-dependency-path: apps/mobile/mock/go.sum
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Prepare Android SDK (API 37)
+        run: |
+          test -d "$ANDROID_HOME"
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          # yes may exit with SIGPIPE once sdkmanager finishes reading licenses.
+          set +o pipefail
+          yes | "$sdkmanager" --licenses > /dev/null
+          set -o pipefail
+          "$sdkmanager" 'platforms;android-37'
+      - uses: gradle/actions/setup-gradle@v6
+      # This target executes apps/mobile/scripts/conformance.py, which owns the
+      # mock process, readiness checks and cleanup. Do not depend on another job's mock.
+      - run: pnpm nx run mobile-android:conformance --outputStyle=static
+      - name: Conformance diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: monorepo-mobile-conformance-reports
+          path: |
+            apps/mobile/.cache/conformance.log
+            apps/mobile/android/conformance/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  mobile-ios:
+    name: monorepo mobile iOS simulator tests (macOS)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.ios == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Xcode and Swift
+        run: xcodebuild -version && swift --version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      # The test target generates the project, tests LoamsCore/LoamsData, selects
+      # an available iPhone, and runs unsigned xcodebuild test (which builds the app).
+      - run: pnpm nx run mobile-ios:test --outputStyle=static
+
+  mobile-contracts:
+    name: monorepo mobile proto lock and generated-code drift (Linux)
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.0
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: 1.73.0
+          setup_only: true
+      - run: pnpm nx run mobile-contracts:lint --outputStyle=static
+      # Remote Buf plugins are anonymous/rate-limited; the generator retries.
+      - run: pnpm nx run mobile-contracts:drift --outputStyle=static
+
+  summary:
+    name: monorepo CI summary
+    if: always()
+    needs: [changes, web, plugins, mobile-mock, mobile-android, mobile-conformance, mobile-ios, mobile-contracts]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require selected jobs to pass
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          jobs = json.loads(os.environ['NEEDS_JSON'])
+          filters = jobs['changes']['outputs']
+          selections = {
+              'web': 'web', 'plugins': 'plugins',
+              'mobile-mock': 'mock', 'mobile-android': 'android',
+              'mobile-conformance': 'conformance', 'mobile-ios': 'ios',
+              'mobile-contracts': 'contracts',
+          }
+          manual = '${{ github.event_name }}' == 'workflow_dispatch'
+          failed = []
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as report:
+              report.write('| Job | Result |\n| --- | --- |\n')
+              for name, job in jobs.items():
+                  result = job['result']
+                  report.write(f'| {name} | {result} |\n')
+                  selected = name == 'changes' or manual or filters.get(selections[name]) == 'true'
+                  if result not in ('success', 'skipped') or (selected and result != 'success'):
+                      failed.append(f'{name}: {result}')
+          if failed:
+              print('Monorepo CI failed: ' + ', '.join(failed), file=sys.stderr)
+              sys.exit(1)
+          print('All selected monorepo checks passed; unrelated jobs were skipped.')
+          PY

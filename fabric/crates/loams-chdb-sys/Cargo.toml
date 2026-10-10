@@ -1,0 +1,60 @@
+[package]
+name = "loams-chdb-sys"
+description = "Loams's own FFI over libchdb: bindgen bindings over the pinned chdb.h, linked against the digest-pinned libchdb.so (FL2 Rulings 1 and 2)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# Only this crate provides the native `chdb` library, which is what `links`
+# declares; it is also what lets `build.rs` hand the resolved library directory
+# to a dependent crate's build script as `DEP_CHDB_LIB_DIR` (Ruling 2's rpath
+# has to reach every binary, and `cargo:rustc-link-arg` does not propagate out
+# of the package that emits it).
+links = "chdb"
+# Ruling 2's own machinery: fetch the library, verify its digest, link it, and
+# run bindgen over the vendored header.
+build = "build.rs"
+# Not published: `build.rs` reads `chdb.h` from the crate directory (the v26.9.0
+# release tarball ships `libchdb.so` and no header, FL2 Task 0 §2), so a crate
+# archive would carry no header and the bindings would have nothing to bind.
+publish = false
+
+[dependencies]
+# arrow 59 with `ffi`, because the ABI's Arrow direction *is* arrow's C data
+# interface: converting between chDB's `internal_data` pointer and arrow-rs's
+# `FFI_ArrowArrayStream` needs `unsafe`, and this is the one crate in the
+# workspace the workspace's `forbid` makes room for (FL2 Ruling 1). Without the
+# dependency the safe layer below could not hand a caller an arrow-rs reader, and
+# the caller would have to hold the `unsafe` itself. Apache-2.0.
+arrow.workspace = true
+
+# `fcntl`, `fstat`, `recvmsg`, `capset` and `_exit` for `inherited`,
+# `capabilities` and `process` (HS1 Tasks 2 and 6): the worker's only `unsafe`
+# needs, kept in this crate (FL2 Ruling 8).
+libc.workspace = true
+
+[build-dependencies]
+bindgen.workspace = true
+flate2.workspace = true
+sha2.workspace = true
+tar.workspace = true
+ureq.workspace = true
+
+# The workspace's `[workspace.lints]` sets `unsafe_code = "forbid"`, which
+# reaches rustc as `-F unsafe_code` on the command line, and rustc refuses to
+# let a crate attribute lower a `forbid` level: `#![allow(unsafe_code)]` fails
+# with E0453 "overruled by previous forbid". Ruling 1 needs this crate to hold
+# the only `unsafe` in the workspace — the generated declarations are the FFI
+# surface and `loams-chdb` calls them from safe code — so this crate restates
+# the workspace lint set with `unsafe_code` at `allow` instead of `forbid`.
+# Nothing else is weakened: `missing_debug_implementations` and the three
+# clippy lints are the workspace's own values, copied verbatim.
+[lints.rust]
+missing_debug_implementations = "warn"
+unsafe_code = "allow"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

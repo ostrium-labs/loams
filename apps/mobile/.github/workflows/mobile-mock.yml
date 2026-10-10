@@ -1,0 +1,70 @@
+# Historical source-CI template; inactive here. Root .github/workflows/monorepo.yml owns mobile CI.
+# Do not activate alongside monorepo.yml; current Nx projects use the mobile-* names.
+name: mobile-mock
+
+on:
+  pull_request:
+    paths:
+      - apps/mobile/mock/**
+      - apps/mobile/conformance/fixtures/**
+      - apps/mobile/**/project.json
+      - apps/mobile/scripts/**
+      - apps/mobile/.github/workflows/mobile-mock.yml
+      - .github/workflows/mobile-mock.yml
+  push:
+    branches: [main, dev]
+    paths:
+      - apps/mobile/mock/**
+      - apps/mobile/conformance/fixtures/**
+      - apps/mobile/**/project.json
+      - apps/mobile/scripts/**
+      - apps/mobile/.github/workflows/mobile-mock.yml
+      - .github/workflows/mobile-mock.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+jobs:
+  test:
+    name: vet, test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/mobile/mock
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/mobile/mock/go.mod
+          cache-dependency-path: apps/mobile/mock/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l cmd internal)" || { gofmt -l cmd internal; exit 1; }
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - name: fixtures are reproducible in shape
+        run: |
+          mkdir -p ../.cache
+          cp ../conformance/fixtures/push/sealed.json ../.cache/sealed.json.backup
+          trap 'cp ../.cache/sealed.json.backup ../conformance/fixtures/push/sealed.json; rm -f ../.cache/sealed.json.backup' EXIT
+          go run ./cmd/fixtures
+          # HPKE sealing is randomized, so the bytes change; check the fixture still opens.
+          go test -count=1 -run 'Fixture|Golden' ./internal/server/
+      - name: build binaries
+        run: |
+          for target in linux/amd64 windows/amd64 darwin/arm64; do
+            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 \
+              go build -trimpath -buildvcs=false -ldflags=-s -o "bin/loams-mock-${target%/*}-${target#*/}$([[ $target == windows/* ]] && echo .exe)" ./cmd/loams-mock
+          done
+          ls -l bin
+      - uses: actions/upload-artifact@v7
+        with:
+          name: loams-mock
+          path: apps/mobile/mock/bin/
+          retention-days: 30

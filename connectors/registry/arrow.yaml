@@ -1,0 +1,58 @@
+# Arrow IPC / Flight — ★ connector 10 of §33 §8; CN1 plan Task 5.
+# Runtime: native Rust, loams_flow::formats::arrow (design §33 §5, D354) —
+# arrow-ipc for the codecs and arrow-flight for DoGet/DoPut, including Loams's
+# own Flight SQL endpoint for collections and streams (CN1 Task 5).
+# §33 Appendix A.6: a format's Source is decode and Sink is encode.
+apiVersion: loams.flow/v1
+kind: Connector
+id: arrow
+name: Arrow IPC / Flight
+specVersion: 1.0.0
+category: format
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::formats::arrow
+  version: "arrow-ipc 59 / arrow-flight 59"
+licence:
+  component: Apache-2.0
+  dependencies:
+    arrow: Apache-2.0                # arrow-ipc and arrow-flight, one crate
+    adbc-driver-flightsql: Apache-2.0   # the Flight SQL endpoint, including Loams's own
+capabilities:
+  source:                          # decode, and Flight DoGet with a ticket
+    streaming: true               # §33 Appendix A.6 marks Streaming Y; Flight DoGet streams
+    batch: true
+    cdc: false
+    webhook: false
+    resumable: false              # a codec holds no position
+    position: ""
+  sink:                            # encode, and Flight DoPut
+    streaming: true
+    batch: true
+    transactional: false
+    upsert: false
+    delete: false
+    idempotent: true               # a DoPut of the same batches appends the same bytes
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: none
+  formats: [arrow]                 # §33 Appendix A.6: only its own format
+  schema: { registry: none, evolution: none }
+    # An Arrow IPC stream carries its schema inline; there is no registry (D356).
+  bulk: { arrow: true, max_batch_rows: 65536 }
+    # arrow: true — Arrow IPC is the wire format here, which is exactly what the
+    # bulk flag means (D356, Ruling 3).
+  backpressure: pull               # Flight's DoGet is pull-based and DoPut is flow-controlled
+auth: [none, mtls, jwt]            # §33 Appendix A.6: none, mtls, jwt
+config:
+  $ref: schemas/arrow.config.json
+secrets: []
+envelope:
+  emits: ""                        # a format is a codec, not a source (§33 Appendix A.6, Ruling 2)
+  consumes: "*"
+  passthrough: false
+limits: { batch_rows: 65536, batch_bytes: 8388608 }
+conformance: [contract, roundtrip, bulk]
+docs: docs/guides/connectors/arrow.md

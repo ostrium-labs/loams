@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title desc">
+  <title id="title">Loams — Your data. Your bucket.</title>
+  <desc id="desc">The Loams strata mark above layered soil. Hybrid retrieval, reactive data and durable execution on object storage.</desc>
+  <defs>
+    <linearGradient id="sky" x2="1" y2="1"><stop stop-color="#182d38"/><stop offset="1" stop-color="#304b4d"/></linearGradient>
+    <pattern id="grain" width="32" height="32" patternUnits="userSpaceOnUse"><circle cx="4" cy="8" r="1" fill="#e9d4b3" opacity=".12"/><circle cx="22" cy="24" r="1.5" fill="#e9d4b3" opacity=".08"/></pattern>
+  </defs>
+  <rect width="1280" height="360" rx="16" fill="url(#sky)"/>
+  <path d="M0 265 Q190 236 360 268 T730 263 T1040 257 T1280 262 V360 H0Z" fill="#687c53"/>
+  <path d="M0 284 Q230 264 430 291 T800 283 T1280 285 V360 H0Z" fill="#8b704c"/>
+  <path d="M0 310 Q180 294 380 316 T750 310 T1280 312 V360 H0Z" fill="#63503d"/>
+  <path d="M0 335 Q260 318 520 338 T1000 333 T1280 336 V360 H0Z" fill="#403d37"/>
+  <rect width="1280" height="360" rx="16" fill="url(#grain)"/>
+  <g transform="translate(70 68)" fill="#f0e8d9"><path d="M0 0H16V70H0Z M0 54H70V70H0Z M25 36H62V47H25Z M25 19H49V27H25Z"/><rect x="25" width="11" height="11" fill="#d9ad61"/></g>
+  <g fill="#f0e8d9" font-family="Arial, Helvetica, sans-serif">
+    <text x="165" y="125" font-size="68" font-weight="700" letter-spacing="-2">Loams</text>
+    <text x="70" y="194" font-size="34" font-weight="600">Your data. Your bucket.</text>
+    <text x="70" y="233" font-size="20" fill="#d8dfd7">Hybrid retrieval · Reactive data · Durable execution</text>
+    <text x="1195" y="88" font-size="17" text-anchor="end" fill="#d8dfd7">Built in Rust</text>
+    <text x="1195" y="116" font-size="17" text-anchor="end" fill="#d8dfd7">Open formats</text>
+    <text x="1195" y="144" font-size="17" text-anchor="end" fill="#d8dfd7">Object storage</text>
+  </g>
+</svg>

@@ -1,0 +1,36 @@
+[package]
+name = "loams-sqldb"
+description = "The Loams SQL control plane (design §47): image pins, tidb-server config rendering, the compute runtime drivers and the lifecycle (suspend, resume, wake on connect)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# Licences (D11, D126; docs/sqldb/licensing.md): TiDB, TiKV, PD and BR run as
+# images and nothing Go is linked. tests/it/licences.rs runs a scoped
+# `cargo deny check licenses` over this crate's graph.
+[dependencies]
+async-trait.workspace = true
+# The Lifecycle machine (sans-I/O; plan SQ1 Task 5).
+loams-sqlrouter = { path = "../loams-sqlrouter" }
+rand_core = "0.10"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true }
+toml.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust"] }
+proptest.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[lints]
+workspace = true

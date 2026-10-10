@@ -1,0 +1,38 @@
+[package]
+name = "loams-house-ipc"
+description = "The `hsw1` frame protocol between the Loams House front and its chDB worker processes: frame types and their codec, with no libchdb (HS1 Task 2, design §49 §4.2)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+# `Frame::Abort`, which makes a worker `abort()`: what `crash_does_not_reach_the_front`
+# needs to cause a crash on demand; and `Frame::Probe`, which makes a worker try one
+# thing natively (exec, read, write, connect) for the sandbox tests (HS1 Task 6).
+# Off in every shipped build. The variants are the last ones, so a front built with
+# them and a worker built without them disagree only on those: the worker cannot
+# decode them and exits with the protocol error code, which is a crash the front
+# already handles.
+test-hooks = []
+
+[dependencies]
+# `Chunk` and `Input` carry their bytes as `Bytes`, whose serde form is a byte
+# string, so postcard writes them as one length and a memcpy rather than one
+# varint per byte.
+bytes.workspace = true
+postcard.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+# The async read and write halves the front uses; the worker uses the blocking
+# ones. Only `io-util` is needed beyond the workspace's set.
+tokio = { workspace = true, features = ["io-util"] }
+
+[dev-dependencies]
+proptest.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "rt", "macros"] }
+
+[lints]
+workspace = true

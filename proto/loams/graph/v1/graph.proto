@@ -1,0 +1,739 @@
+// Loams Graph: a stored property graph Loams owns, queried and written with
+// GQL (ISO/IEC 39075) over Connect (design §48 §8, D746; GR1 Task 2).
+//
+// The engine is Grafeo, linked into the `loams` binary behind the cargo
+// feature `graph` (D741). A statement reaches the engine byte for byte as the
+// client sent it (D634); Loams reads it only to classify it and to redact its
+// literals for logs.
+//
+// Rules this package keeps (AP0, design §44, §48 §8.1):
+//
+// - **Unstable until GR1e.** Both services carry `ModuleOptions.unstable`,
+//   so `buf breaking` and the SDKs treat the package as experimental. It is
+//   frozen at GA (GR1 Task 39). Nothing published a client of the fabric-era
+//   proto, so it was reworked in place rather than versioned.
+// - **Reads are `NO_SIDE_EFFECTS`**, so a Connect client may send them as an
+//   HTTP GET. `Execute` is not marked: a statement may write.
+// - **Every mutation takes an `idempotency_key`.** `ExecuteRequest` takes one
+//   too, and it is required when the statement writes (§48 §7.3).
+// - **No client-chosen path or URL.** No field names a file, a directory or a
+//   URL. Import and export take an object key (prefix) under the namespace's
+//   own import/export prefix; the server resolves it. The test
+//   `proto_has_no_path_fields` walks the package's descriptors and fails on
+//   any field whose name contains `path`, `url`, `dir` or `file`, except
+//   `ImportGraphRequest.object_key`, `ExportGraphRequest.object_prefix` and
+//   four that name no filesystem object: `ExplainRequest.profile` and
+//   `EngineInfo.gql_profile` (GQL's PROFILE), `Value.path` (the GQL PATH
+//   type) and `GraphLimits.max_path_hops`.
+// - **Typed values.** `Value` carries every type Grafeo has without loss: a
+//   64-bit integer is `int64` (a decimal string in proto3 JSON, so it stays
+//   exact in JavaScript), temporal values keep their parts, and nodes,
+//   relationships and paths are their own messages. The fabric-era
+//   `google.protobuf.Value` turned every number into a double.
+// - **Errors** carry one `loams.errors.v1.ErrorInfo` whose `reason` is one of
+//   §48 §8.3's, with `gqlstatus` (and `line`, `column`, `length` for a syntax
+//   error) in `metadata`: `gql_syntax_error`, `gql_feature_unsupported`,
+//   `graph_not_found`, `graph_is_linked`, `graph_read_only`,
+//   `graph_write_conflict`, `graph_version_mismatch`,
+//   `graph_catalog_version_mismatch`, `graph_statement_timeout`,
+//   `graph_memory_limit`, `graph_result_too_large`,
+//   `graph_transaction_statement`, `graph_language_disabled`,
+//   `graph_statement_not_allowed`, `graph_unbounded_path`,
+//   `graph_reloading`, `graph_engine_panic`, `consistency_wait_timeout` and
+//   `feature_not_in_variant`, plus the generic `invalid_argument`,
+//   `not_found`, `already_exists`, `not_implemented` and `internal` (a
+//   server fault that is not an engine panic).
+//
+// buf lint: RPC_RESPONSE_STANDARD_NAME and RPC_REQUEST_RESPONSE_UNIQUE are
+// excepted for this file in buf.yaml. §48 §8.2 answers a graph's own
+// document (`Graph`) from CreateGraph, GetGraph and UpdateGraph, a
+// `loams.operations.v1.Operation` from the four slow RPCs, and streams
+// `ResultChunk` from `ExecuteStream`, as `loams.collection.v1` answers
+// `CollectionInfo`.
+syntax = "proto3";
+
+package loams.graph.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "loams/errors/v1/errors.proto";
+import "loams/operations/v1/operations.proto";
+import "loams/options/v1/options.proto";
+
+// The graph catalog and the operations on a whole graph.
+service GraphAdminService {
+  option (loams.options.v1.module) = {
+    name: "graph"
+    summary: "Loams Graph: stored property graphs, queried with GQL."
+    unstable: true
+  };
+
+  // The engine's version, the query languages this build has, and the
+  // statement limits it enforces.
+  rpc GetEngineInfo(GetEngineInfoRequest) returns (EngineInfo) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Creates a graph. Idempotent by `idempotency_key`: a repeat answers the
+  // graph the first call made. A different graph under a taken name is
+  // `already_exists`.
+  rpc CreateGraph(CreateGraphRequest) returns (Graph) {}
+  // One graph, by namespace and name.
+  rpc GetGraph(GetGraphRequest) returns (Graph) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // The namespace's graphs, by name (AIP-158).
+  rpc ListGraphs(ListGraphsRequest) returns (ListGraphsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Changes `languages`, `limits` or `replicas`, named by `update_mask`.
+  rpc UpdateGraph(UpdateGraphRequest) returns (Graph) {}
+  // Closes the graph and, after the retention hold, purges its storage.
+  rpc DeleteGraph(DeleteGraphRequest) returns (loams.operations.v1.Operation) {}
+  // Labels, edge types, property keys, counts and indexes.
+  rpc GetSchema(GetSchemaRequest) returns (GraphSchema) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Restores a graph, at a consistency token or a time, into a new graph.
+  rpc RestoreGraph(RestoreGraphRequest) returns (loams.operations.v1.Operation) {}
+  // Writes the graph as portable Parquet under the namespace's export prefix.
+  rpc ExportGraph(ExportGraphRequest) returns (loams.operations.v1.Operation) {}
+  // Loads Parquet, CSV or JSONL from the namespace's import prefix.
+  rpc ImportGraph(ImportGraphRequest) returns (loams.operations.v1.Operation) {}
+}
+
+// Statements against one graph.
+service GraphService {
+  option (loams.options.v1.module) = {
+    name: "graph"
+    summary: "Loams Graph: stored property graphs, queried with GQL."
+    unstable: true
+  };
+
+  // Runs one statement as one transaction.
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse) {}
+  // Runs statements, as one transaction (`atomic`) or one each.
+  rpc ExecuteBatch(ExecuteBatchRequest) returns (ExecuteBatchResponse) {}
+  // Runs one statement and streams its rows in chunks (server streaming
+  // only, D420), for results past the unary row cap.
+  rpc ExecuteStream(ExecuteStreamRequest) returns (stream ResultChunk) {}
+  // The plan of a statement (`EXPLAIN`), or its profile (`PROFILE`) when
+  // `profile` is set. A profile runs the statement.
+  rpc Explain(ExplainRequest) returns (Plan) {}
+}
+
+// ---------------------------------------------------------------------------
+// The catalog
+// ---------------------------------------------------------------------------
+
+// A query language a graph accepts.
+enum QueryLanguage {
+  // Read as GQL.
+  QUERY_LANGUAGE_UNSPECIFIED = 0;
+  // ISO/IEC 39075, the `gql-1` profile (§48 §9.1).
+  QUERY_LANGUAGE_GQL = 1;
+  // openCypher, as a compatibility dialect behind the `graph-cypher`
+  // feature (D748).
+  QUERY_LANGUAGE_CYPHER = 2;
+  // SQL:2023 GRAPH_TABLE. Not built.
+  QUERY_LANGUAGE_SQL_PGQ = 3;
+  // Not built.
+  QUERY_LANGUAGE_GREMLIN = 4;
+  // Not built.
+  QUERY_LANGUAGE_GRAPHQL = 5;
+  // Not built.
+  QUERY_LANGUAGE_SPARQL = 6;
+}
+
+// Whether the graph's data is its own or derived from collections.
+enum GraphMode {
+  // Read as OWNED.
+  GRAPH_MODE_UNSPECIFIED = 0;
+  // Written with GQL; the graph is the source of truth.
+  GRAPH_MODE_OWNED = 1;
+  // Fed by links from collections or streams through `mapping`; read-only
+  // to GQL (`graph_is_linked`).
+  GRAPH_MODE_LINKED = 2;
+}
+
+// Where a graph is in its life.
+enum GraphState {
+  // Never sent.
+  GRAPH_STATE_UNSPECIFIED = 0;
+  // Serving.
+  GRAPH_STATE_READY = 1;
+  // Being opened or recovered.
+  GRAPH_STATE_OPENING = 2;
+  // Closed to free memory; the next statement reopens it.
+  GRAPH_STATE_EVICTED = 3;
+  // Being reloaded after an engine fault (`graph_reloading`).
+  GRAPH_STATE_RELOADING = 4;
+  // Deleted; storage is purged after the retention hold.
+  GRAPH_STATE_DELETING = 5;
+  // An engine failure lost the graph's in-memory state and it cannot be
+  // reopened from storage (an in-memory graph, or a close that failed).
+  // Statements answer `graph_engine_panic`; delete and create it again.
+  GRAPH_STATE_FAILED = 6;
+}
+
+// One graph.
+message Graph {
+  string namespace = 1;
+  // Unique in the namespace: `[a-z][a-z0-9_-]{0,62}`.
+  string name = 2;
+  // `gr_<ULID>`, stable for the life of the graph.
+  string id = 3;
+  GraphMode mode = 4;
+  // The languages the graph accepts. Empty means `[GQL]`.
+  repeated QueryLanguage languages = 5;
+  // LINKED only: how collections map to labels and edge types (§07 §2.1).
+  GraphMapping mapping = 6;
+  GraphLimits limits = 7;
+  // Followers kept beside the owner, for `eventual` and `at_least` reads.
+  uint32 replicas = 8;
+  GraphState state = 9;
+  GraphStats stats = 10;
+  google.protobuf.Timestamp create_time = 11;
+  // The catalog entry's version, for `UpdateGraphRequest.expected_version`.
+  uint64 version = 12;
+}
+
+// What a graph holds, as of its durable offset.
+message GraphStats {
+  uint64 nodes = 1;
+  uint64 edges = 2;
+  uint64 stored_bytes = 3;
+  // The last offset of the graph's implicit stream that is durable.
+  uint64 durable_offset = 4;
+}
+
+// Per-statement limits (§48 §13.1). Zero takes the server's default; a value
+// above the server's maximum is capped to it.
+message GraphLimits {
+  uint32 timeout_ms = 1;
+  uint32 max_rows = 2;
+  uint64 max_result_bytes = 3;
+  uint64 memory_bytes = 4;
+  // The longest variable-length path a statement may ask for (R0.8 (b)).
+  uint32 max_path_hops = 5;
+}
+
+// How collections feed a LINKED graph (design §07 §2.1).
+message GraphMapping {
+  repeated VertexMapping vertices = 1;
+  repeated EdgeMapping edges = 2;
+}
+
+// `VERTEX <label> KEY (<key_field>) FROM COLLECTION <collection>`.
+message VertexMapping {
+  string label = 1;
+  string collection = 2;
+  string key_field = 3;
+}
+
+// `EDGE <type> SOURCE <label>(<field>) DESTINATION <label>(<field>)
+// [TYPE FROM (<type_field>)] FROM COLLECTION <collection>`.
+message EdgeMapping {
+  string type = 1;
+  string collection = 2;
+  string source_label = 3;
+  string source_field = 4;
+  string destination_label = 5;
+  string destination_field = 6;
+  // When set, each row's edge type is this field's value.
+  string type_field = 7;
+}
+
+message GetEngineInfoRequest {}
+
+// What this build's engine is.
+message EngineInfo {
+  // The Grafeo version linked into this binary.
+  string engine_version = 1;
+  // The languages this build can parse.
+  repeated QueryLanguage languages = 2;
+  // The GQL profile the server conforms to, for example `gql-1`.
+  string gql_profile = 3;
+  // The server's per-statement maximums.
+  GraphLimits max_limits = 4;
+}
+
+message CreateGraphRequest {
+  string namespace = 1;
+  string name = 2;
+  GraphMode mode = 3;
+  repeated QueryLanguage languages = 4;
+  // LINKED only.
+  GraphMapping mapping = 5;
+  GraphLimits limits = 6;
+  uint32 replicas = 7;
+  string idempotency_key = 8;
+}
+
+message GetGraphRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+message ListGraphsRequest {
+  // Required: graphs are listed one namespace at a time (an empty namespace
+  // is `invalid_argument`). Listing across namespaces would be a separate
+  // RPC.
+  string namespace = 1;
+  // AIP-158 page size; 0 takes the server's default.
+  int32 page_size = 2;
+  // The `next_page_token` of the previous page; absent starts at the first.
+  string page_token = 3;
+}
+
+message ListGraphsResponse {
+  // By name.
+  repeated Graph graphs = 1;
+  // Absent on the last page.
+  string next_page_token = 2;
+}
+
+message UpdateGraphRequest {
+  // Named by `namespace` and `name`; the fields in `update_mask` are taken
+  // from it.
+  Graph graph = 1;
+  // `languages`, `limits` and `replicas` only.
+  google.protobuf.FieldMask update_mask = 2;
+  // When set, the update applies only at this `Graph.version`; otherwise
+  // `ABORTED` with the reason `graph_catalog_version_mismatch`.
+  optional uint64 expected_version = 3;
+  string idempotency_key = 4;
+}
+
+message DeleteGraphRequest {
+  string namespace = 1;
+  string name = 2;
+  string idempotency_key = 3;
+}
+
+message GetSchemaRequest {
+  string namespace = 1;
+  string name = 2;
+}
+
+// A graph's shape.
+message GraphSchema {
+  repeated LabelInfo labels = 1;
+  repeated EdgeTypeInfo edge_types = 2;
+  // Every property key in use, sorted.
+  repeated string property_keys = 3;
+  repeated IndexInfo indexes = 4;
+}
+
+message LabelInfo {
+  string label = 1;
+  uint64 count = 2;
+}
+
+message EdgeTypeInfo {
+  string type = 1;
+  uint64 count = 2;
+}
+
+message IndexInfo {
+  string name = 1;
+  // The label or edge type the index is on.
+  string target = 2;
+  repeated string properties = 3;
+  // The engine's own index kind, for example `hash` or `btree`.
+  string kind = 4;
+}
+
+message RestoreGraphRequest {
+  string namespace = 1;
+  // The graph to restore from.
+  string name = 2;
+  // The new graph the restore creates.
+  string target_name = 3;
+  // The point to restore to. Neither set means the latest durable state.
+  oneof point {
+    string consistency_token = 4;
+    google.protobuf.Timestamp time = 5;
+  }
+  string idempotency_key = 6;
+}
+
+// A data format for import and export.
+enum DataFormat {
+  DATA_FORMAT_UNSPECIFIED = 0;
+  DATA_FORMAT_PARQUET = 1;
+  DATA_FORMAT_CSV = 2;
+  DATA_FORMAT_JSONL = 3;
+}
+
+message ExportGraphRequest {
+  string namespace = 1;
+  string name = 2;
+  // An object key prefix under the namespace's export prefix, never a
+  // filesystem path or a URL. Keys outside it are refused.
+  string object_prefix = 3;
+  // Parquet only in v1.
+  DataFormat format = 4;
+  string idempotency_key = 5;
+}
+
+message ImportGraphRequest {
+  string namespace = 1;
+  string name = 2;
+  // An object key under the namespace's import prefix, never a filesystem
+  // path or a URL. Keys outside it are refused.
+  string object_key = 3;
+  DataFormat format = 4;
+  string idempotency_key = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Statements
+// ---------------------------------------------------------------------------
+
+// How fresh a read must be (§48 §7.2).
+message Consistency {
+  oneof level {
+    // Read on the owner at its durable epoch (the default).
+    Strong strong = 1;
+    // Read whatever a replica has applied.
+    Eventual eventual = 2;
+    // Wait until a replica has applied this token, then read.
+    string at_least = 3;
+  }
+}
+
+message Strong {}
+
+message Eventual {}
+
+message ExecuteRequest {
+  string namespace = 1;
+  string graph = 2;
+  // Sent to the engine unchanged.
+  string statement = 3;
+  QueryLanguage language = 4;
+  // Bound as `$name`. A value is never interpolated into the statement.
+  map<string, Value> parameters = 5;
+  // An assertion: a statement that writes is refused (`graph_read_only`).
+  bool read_only = 6;
+  Consistency consistency = 7;
+  // Zero takes the graph's limit; capped by the server's maximum.
+  uint32 timeout_ms = 8;
+  uint32 max_rows = 9;
+  // Required when the statement writes.
+  string idempotency_key = 10;
+}
+
+message ExecuteStreamRequest {
+  // The statement, as `Execute` takes it. `max_rows` caps the whole stream.
+  ExecuteRequest request = 1;
+  // Rows per chunk; zero takes the server's default.
+  uint32 chunk_rows = 2;
+}
+
+message ExecuteResponse {
+  RowSet rows = 1;
+  // More rows existed than `max_rows` allowed. `ExecuteStream` returns more
+  // rows than one unary answer may carry (its own `max_rows` caps the whole
+  // stream).
+  bool truncated = 2;
+  Counters counters = 3;
+  // Read at least this state on a later request (`Consistency.at_least`).
+  string consistency_token = 4;
+  // The engine epoch the write committed at; 0 for a read.
+  uint64 commit_epoch = 5;
+  uint64 elapsed_nanos = 6;
+  // GQLSTATUS warnings and notes, for example `01xxx`.
+  repeated Notification notifications = 7;
+}
+
+// What a write changed, counted exactly from its change set.
+message Counters {
+  uint64 nodes_created = 1;
+  uint64 nodes_deleted = 2;
+  uint64 relationships_created = 3;
+  uint64 relationships_deleted = 4;
+  uint64 properties_set = 5;
+  uint64 labels_added = 6;
+  uint64 labels_removed = 7;
+}
+
+// A GQLSTATUS that is not an error.
+message Notification {
+  // The five-character GQLSTATUS code.
+  string gqlstatus = 1;
+  string message = 2;
+}
+
+// A positional result: a graph result can repeat a key, so rows are not
+// maps.
+message RowSet {
+  repeated string columns = 1;
+  // The engine's type name per column, for example `INT64` or `NODE`.
+  repeated string column_types = 2;
+  repeated Row rows = 3;
+}
+
+message Row {
+  // One value per column.
+  repeated Value values = 1;
+}
+
+// Isolation for a batch (§48 §7.3).
+enum Isolation {
+  // Read as SNAPSHOT.
+  ISOLATION_UNSPECIFIED = 0;
+  ISOLATION_SNAPSHOT = 1;
+  ISOLATION_SERIALIZABLE = 2;
+}
+
+message ExecuteBatchRequest {
+  string namespace = 1;
+  string graph = 2;
+  repeated Statement statements = 3;
+  // One transaction for every statement, or one each.
+  bool atomic = 4;
+  // The language of a statement that names none.
+  QueryLanguage language = 5;
+  Isolation isolation = 6;
+  // When set, the batch runs only if the graph's last durable offset is
+  // this one (`graph_version_mismatch`).
+  optional uint64 if_version = 7;
+  uint32 timeout_ms = 8;
+  string idempotency_key = 9;
+}
+
+message Statement {
+  string statement = 1;
+  map<string, Value> parameters = 2;
+  // Overrides the batch's language for this statement.
+  QueryLanguage language = 3;
+}
+
+// The answer to a batch.
+//
+// Atomic: every statement ran in one transaction. A failure of any statement
+// fails the RPC itself and nothing is written; on success `committed` is set,
+// `results` has one entry per statement and `commit_epoch` is the
+// transaction's.
+//
+// Non-atomic: each statement is its own transaction, run in order. The batch
+// stops at the first statement that fails, and the RPC still succeeds:
+// `results` holds the statements before it (all committed),
+// `committed_through` is their count, and `error` describes the failed one.
+// Statements after it did not run. A batch with no `error` ran every
+// statement.
+message ExecuteBatchResponse {
+  // One per statement that committed, in order.
+  repeated ExecuteResponse results = 1;
+  // Atomic: whether the transaction committed.
+  bool committed = 2;
+  // How many statements, from the first, committed.
+  uint32 committed_through = 3;
+  string consistency_token = 4;
+  // Non-atomic only: the statement that failed and stopped the batch.
+  StatementError error = 5;
+  // Atomic: the engine epoch the transaction committed at.
+  uint64 commit_epoch = 6;
+}
+
+// Why one statement of a non-atomic batch failed.
+message StatementError {
+  // The statement's position in `ExecuteBatchRequest.statements`.
+  uint32 index = 1;
+  // The Connect code the statement would have failed `Execute` with, in
+  // its wire spelling (`invalid_argument`).
+  string code = 2;
+  string message = 3;
+  loams.errors.v1.ErrorInfo info = 4;
+}
+
+// One piece of a streamed result. The first chunk carries the columns; the
+// last (`last` set) carries what `ExecuteResponse` carries besides rows:
+// counters, the token, the commit epoch, `truncated` and notifications.
+message ResultChunk {
+  repeated string columns = 1;
+  repeated string column_types = 2;
+  repeated Row rows = 3;
+  bool last = 4;
+  Counters counters = 5;
+  string consistency_token = 6;
+  uint64 elapsed_nanos = 7;
+  // More rows existed than `max_rows` allowed.
+  bool truncated = 8;
+  uint64 commit_epoch = 9;
+  repeated Notification notifications = 10;
+}
+
+message ExplainRequest {
+  string namespace = 1;
+  string graph = 2;
+  string statement = 3;
+  QueryLanguage language = 4;
+  map<string, Value> parameters = 5;
+  // PROFILE: run the statement and report what each operator did. A
+  // PROFILE runs the statement, so a statement that writes is refused with
+  // `graph_read_only`; use EXPLAIN for a write's plan.
+  bool profile = 6;
+  // PROFILE only, as `ExecuteRequest.timeout_ms`.
+  uint32 timeout_ms = 7;
+  // PROFILE only, as `ExecuteRequest.consistency`.
+  Consistency consistency = 8;
+}
+
+// A statement's plan, as a tree of operators.
+message Plan {
+  PlanOperator root = 1;
+  // The engine's own rendering of the plan.
+  string text = 2;
+}
+
+message PlanOperator {
+  string name = 1;
+  // Operator details, for example the label scanned.
+  map<string, string> details = 2;
+  repeated PlanOperator children = 3;
+  // PROFILE only.
+  uint64 rows = 4;
+  uint64 elapsed_nanos = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Values
+// ---------------------------------------------------------------------------
+
+// One GQL value, typed (§48 §8.2). `crates/loams-graph/src/value.rs` maps it
+// to and from the engine's value without loss.
+message Value {
+  oneof kind {
+    google.protobuf.NullValue null = 1;
+    bool boolean = 2;
+    int64 int64 = 3;
+    // Grafeo has no unsigned integer: a value up to 2^63-1 is stored as
+    // INT64 and answered as `int64`; a larger one is refused.
+    uint64 uint64 = 4;
+    double float64 = 5;
+    string string = 6;
+    bytes bytes = 7;
+    // Grafeo has no decimal type; a decimal parameter is refused.
+    Decimal decimal = 8;
+    Date date = 9;
+    LocalTime local_time = 10;
+    ZonedTime zoned_time = 11;
+    LocalDateTime local_datetime = 12;
+    ZonedDateTime zoned_datetime = 13;
+    Duration duration = 14;
+    ListValue list = 15;
+    MapValue map = 16;
+    Node node = 17;
+    Relationship relationship = 18;
+    Path path = 19;
+    // A fixed-size float32 vector (an embedding).
+    Vector vector = 20;
+    // A conflict-free replicated counter.
+    Counter counter = 21;
+  }
+}
+
+// An exact decimal, as its canonical text (`-12.340`).
+message Decimal {
+  string value = 1;
+}
+
+// A calendar date.
+message Date {
+  int32 year = 1;
+  uint32 month = 2;
+  uint32 day = 3;
+}
+
+// A time of day with no offset.
+message LocalTime {
+  uint32 hour = 1;
+  uint32 minute = 2;
+  uint32 second = 3;
+  uint32 nanosecond = 4;
+}
+
+// A time of day at a UTC offset. `|offset_seconds|` is at most 64800.
+message ZonedTime {
+  LocalTime time = 1;
+  int32 offset_seconds = 2;
+}
+
+// A date and time with no offset. Grafeo's TIMESTAMP (what `datetime()` and
+// `localdatetime()` produce) is microseconds since the Unix epoch, and is
+// answered as its **UTC** wall clock. Microsecond precision: a nanosecond
+// part that is not a whole number of microseconds is refused.
+message LocalDateTime {
+  Date date = 1;
+  LocalTime time = 2;
+}
+
+// A wall-clock date and time at a UTC offset: `local` is the clock at the
+// offset, so the instant is `local - offset_seconds`. Microsecond precision;
+// `|offset_seconds|` is at most 64800 (18 hours).
+message ZonedDateTime {
+  LocalDateTime local = 1;
+  int32 offset_seconds = 2;
+}
+
+// An ISO 8601 duration: months, days and nanoseconds, kept apart because a
+// month and a day have no fixed length.
+message Duration {
+  int64 months = 1;
+  int64 days = 2;
+  int64 nanos = 3;
+}
+
+message ListValue {
+  repeated Value values = 1;
+}
+
+message MapValue {
+  map<string, Value> entries = 1;
+}
+
+message Node {
+  uint64 id = 1;
+  repeated string labels = 2;
+  map<string, Value> properties = 3;
+}
+
+message Relationship {
+  uint64 id = 1;
+  string type = 2;
+  // The source node's id.
+  uint64 src = 3;
+  // The destination node's id.
+  uint64 dst = 4;
+  map<string, Value> properties = 5;
+}
+
+// Alternating nodes and relationships: `relationships[i]` joins `nodes[i]`
+// and `nodes[i + 1]`, in the path's own order, and keeps its stored
+// direction (`src` and `dst`), so a path walked against an edge has
+// `relationships[i].dst == nodes[i].id`. Every element is full: labels,
+// type, endpoints and properties. Grafeo 0.5.43 builds a path of element
+// ids, and the server resolves each id when it builds the row. Until the
+// durable read path (GR1 Task 11) pins a read's epoch, an element's labels
+// and properties are those current when the row is built, which a write
+// committed between the statement and the row can change; an element
+// deleted in that window is answered with its `id` only.
+message Path {
+  repeated Node nodes = 1;
+  repeated Relationship relationships = 2;
+}
+
+message Vector {
+  repeated float values = 1;
+}
+
+// A grow-only counter (`negative` empty and `grow_only` set) or a
+// positive-negative counter, by replica.
+message Counter {
+  map<string, uint64> positive = 1;
+  map<string, uint64> negative = 2;
+  bool grow_only = 3;
+}

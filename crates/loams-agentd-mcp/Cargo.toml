@@ -1,0 +1,24 @@
+[package]
+name = "loams-agentd-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+publish = false
+
+[dependencies]
+loams-agentd-proto.workspace = true
+loams-agentd-doc.workspace = true
+loams-agentd-rpc.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+chrono.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+
+[lints]
+workspace = true

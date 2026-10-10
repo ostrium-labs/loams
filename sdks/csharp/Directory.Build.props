@@ -1,0 +1,26 @@
+<Project>
+  <!--
+    One set of compiler settings for every project in the C# SDK, so a build that
+    is strict in `src/` is strict in `tests/` too.
+
+    `Nullable` and `TreatWarningsAsErrors` are the two that matter here. An SDK
+    whose public surface is `string?` in one place and `string` in another is a
+    nullability contract nobody can rely on, and `TreatWarningsAsErrors` is what
+    stops a warning from being a thing CI has to remember to look at. `LangVersion`
+    is left at the SDK default so a `net8.0` toolchain does the deciding.
+  -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!--
+      `InvariantGlobalization` is on because every string the SDK formats is a
+      proto3 JSON value, and proto3 JSON is defined over ASCII field names and
+      RFC 3339 timestamps: a machine whose locale formats a number with a comma
+      would otherwise produce a body the corpus has never seen.
+    -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+</Project>

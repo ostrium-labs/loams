@@ -1,0 +1,115 @@
+// PLACEHOLDER (loams-mobile). Written from the AP0 plan
+// (docs/plans/2026-10-01-ap0-app-protos.md in ostrium-labs/loams) before
+// AP0's protos exist upstream. Replace this file with the upstream one
+// through scripts/sync-protos.sh as soon as AP0 merges, then fix the apps
+// against the real contract. Do not extend it here: change AP0 instead.
+//
+// The Connect face of D146's operations API (§37 §8.2, AP0 Task 4).
+syntax = "proto3";
+
+package loams.operations.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+service OperationsService {
+  rpc GetOperation(GetOperationRequest) returns (GetOperationResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListOperations(ListOperationsRequest) returns (ListOperationsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // A snapshot, then changes, then a heartbeat every 15 s; resumable.
+  rpc WatchOperations(WatchOperationsRequest) returns (stream WatchOperationsResponse);
+  rpc CancelOperation(CancelOperationRequest) returns (CancelOperationResponse);
+}
+
+enum OperationState {
+  OPERATION_STATE_UNSPECIFIED = 0;
+  OPERATION_STATE_PENDING = 1;
+  OPERATION_STATE_RUNNING = 2;
+  OPERATION_STATE_AWAITING_APPROVAL = 3;
+  OPERATION_STATE_SUCCEEDED = 4;
+  OPERATION_STATE_FAILED = 5;
+  OPERATION_STATE_CANCELED = 6;
+}
+
+message Progress {
+  // 0.0 to 1.0; absent when unknown (show an indeterminate indicator).
+  optional double fraction = 1;
+  uint64 done = 2;
+  uint64 total = 3;
+  string message = 4;
+}
+
+message OperationError {
+  string code = 1;
+  string message = 2;
+}
+
+message Operation {
+  string id = 1;
+  string kind = 2;
+  string namespace = 3;
+  map<string, string> target = 4;
+  OperationState state = 5;
+  Progress progress = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  google.protobuf.Struct result = 9;
+  OperationError error = 10;
+  // Set while the state is AWAITING_APPROVAL.
+  string approval_id = 11;
+}
+
+message GetOperationRequest {
+  string operation_id = 1;
+}
+
+message GetOperationResponse {
+  Operation operation = 1;
+}
+
+message ListOperationsRequest {
+  repeated string namespaces = 1;
+  repeated OperationState states = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListOperationsResponse {
+  repeated Operation operations = 1;
+  string next_page_token = 2;
+}
+
+message WatchOperationsRequest {
+  repeated string namespaces = 1;
+  repeated OperationState states = 2;
+  string resume_cursor = 3;
+}
+
+message OperationSnapshot {
+  repeated Operation operations = 1;
+}
+
+message Heartbeat {}
+
+message WatchOperationsResponse {
+  oneof event {
+    OperationSnapshot snapshot = 1;
+    Operation upsert = 2;
+    string remove = 3;
+    Heartbeat heartbeat = 4;
+  }
+  string cursor = 5;
+  bool snapshot_reset = 6;
+}
+
+message CancelOperationRequest {
+  string operation_id = 1;
+  string idempotency_key = 2;
+}
+
+message CancelOperationResponse {
+  Operation operation = 1;
+}

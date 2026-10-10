@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/zulip.config.json",
+  "title": "Zulip connector instance config (loams.flow/v1)",
+  "description": "One Zulip connector instance's settings: the realm's base URL, the stream and topic the sink posts into, and the paging the source walks. Zulip's REST prefix is `/api/v1` and is never `/json/`; the adapter reaches it over that prefix only. `api_key` resolves through the namespace's secret store (D189) and is exactly the manifest's `secrets` list. CN1 Task 15, D628.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["base_url"],
+  "properties": {
+    "base_url": {
+      "description": "The realm's base URL, for example https://acme.zulipchat.com. The connector appends `/api/v1` itself; do not include it here.",
+      "type": "string",
+      "minLength": 1,
+      "default": "https://zulip.zulipchat.com"
+    },
+    "api_key": {
+      "description": "The realm API key. Zulip API keys carry no scopes, so the same credential reads and writes; it authenticates as HTTP basic with the delivery email below. Resolved through the secret store (D189); never stored in the instance.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "delivery_email": {
+      "description": "The delivery email of the account the API key belongs to. Zulip's basic auth is (delivery-email, api-key), and this is not the account's login email.",
+      "type": "string",
+      "minLength": 1,
+      "format": "email"
+    },
+    "stream": {
+      "description": "The stream the sink posts into, by name. The source ignores it.",
+      "type": "string",
+      "minLength": 1
+    },
+    "topic": {
+      "description": "The topic the sink posts into. A Slack import sets this per Slack thread, so a route may override it; this is the default.",
+      "type": "string",
+      "minLength": 1
+    },
+    "poll_interval_secs": {
+      "description": "How long the source waits between anchor reads when it has drained the page it was given. Zulip's budget is 200 requests per 60 seconds shared across every endpoint with no read-only tier, so the default is deliberately long.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600,
+      "default": 30
+    },
+    "messages_per_page": {
+      "description": "The `num_before`/`num_after` page size for GET /messages. Zulip's own maximum is 1000.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 100
+    },
+    "max_pages": {
+      "description": "How many anchored pages one read may walk before the source raises rather than silently truncating. Zulip's pagination is anchor-based, so a bounded walk is the only way a partial read can be made visible.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 50
+    },
+    "rate_limit_floor": {
+      "description": "Remaining requests below which the sink stops issuing calls until X-RateLimit-Reset. Zulip publishes X-RateLimit-Limit, -Remaining and -Reset on every response; the connector self-throttles from those headers rather than waiting for a 429.",
+      "type": "integer",
+      "minimum": 0,
+      "default": 10
+    },
+    "projection": {
+      "description": "The jq or jsonata projection applied to each fetched message before it becomes a CloudEvent, so a Slack or GitHub payload does not cross the wire whole (D356).",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

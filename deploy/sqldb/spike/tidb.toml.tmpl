@@ -1,0 +1,14 @@
+# keyspace-mode TiDB for the Loams SQL spike stack (SQ1 Task 1).
+# Rendered by scripts/sqldb/spike/lib.sh (envsubst) with:
+#   KEYSPACE_NAME     the PD keyspace this TiDB serves (never empty: D260)
+#   SPLIT_TABLE       true | false
+#   FORCE_INIT_STATS  true | false (the v8.5.8 default is true)
+keyspace-name = "${KEYSPACE_NAME}"
+split-table = ${SPLIT_TABLE}
+
+[performance]
+force-init-stats = ${FORCE_INIT_STATS}
+lite-init-stats = true
+
+[log]
+level = "warn"

@@ -1,0 +1,61 @@
+# ADBC (generic) — ★ connector 15 of §33 §8; CN1 plan Task 11.
+# Runtime: native Rust, loams_flow::connectors::adbc, with any driver the
+# namespace's admin allows (Flight SQL, SQLite, DuckDB, Postgres — §33 §8 row
+# 15).  Ruling 9: a driver is native code in the Loams process, so it loads by
+# path from an allowlist with a SHA-256 check, and Task 11's
+# driver_outside_allowlist_is_refused and driver_checksum_mismatch_is_refused
+# prove it.
+# category is `protocol`: §33 Appendix A.17 lists ★ ADBC under generic
+# protocols beside ★ JDBC and ★ HTTP / REST, not under warehouse.
+apiVersion: loams.flow/v1
+kind: Connector
+id: adbc
+name: ADBC
+specVersion: 1.0.0
+category: protocol
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::connectors::adbc
+  version: "adbc_driver_manager 0.24"
+licence:
+  component: Apache-2.0
+  dependencies:
+    adbc_core: Apache-2.0
+    adbc_driver_manager: Apache-2.0
+    # The per-driver licences live in connectors/licences.toml (CN1 Ruling 9,
+    # Q349): this manifest declares the loader, not the loadable.
+capabilities:
+  source:
+    streaming: false              # §33 Appendix A.17 marks Streaming · for ADBC
+    batch: true
+    cdc: false
+    webhook: false
+    resumable: true
+    position: the query as-of position
+  sink:
+    streaming: false
+    batch: true
+    transactional: true           # bulk_ingest per Arrow batch, one statement per batch (CN1 Task 11)
+    upsert: false                 # staged MERGE is declared only where the driver proves it
+    delete: false
+    idempotent: false
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: per_key
+  formats: [cloudevents-binary, cloudevents-structured, json, arrow]
+  schema: { registry: none, evolution: backward }
+  bulk: { arrow: true, max_batch_rows: 65536 }
+  backpressure: pull
+auth: [per-driver]                # §33 Appendix A.17 says "per driver"
+config:
+  $ref: schemas/adbc.config.json
+secrets: [password, token]
+envelope:
+  emits: io.loams.dev.flow.adbc.rows.v1
+  consumes: "*"
+  passthrough: false
+limits: { batch_rows: 65536, batch_bytes: 8388608 }
+conformance: [contract, roundtrip, bulk]
+docs: docs/guides/connectors/adbc.md

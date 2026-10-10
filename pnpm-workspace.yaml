@@ -1,0 +1,28 @@
+packages:
+  - web
+  - web/apps/*
+  - web/packages/*
+  - web/plugins/*
+  - web/examples/*
+  - sdks/typescript/packages/*
+  - plugins
+  - plugins/apps/*
+  - plugins/core/*
+  - plugins/packages/*
+  - apps/desktop-electron
+
+# Keep Vite+ isolated from the console's ordinary Vite/Vitest toolchain.
+overrides:
+  'vite-plus@1.0.0>vite': npm:@voidzero-dev/vite-plus-core@1.0.0
+  'vite-plus@1.0.0>vitest': '5.0.1'
+  'vitest@5.0.1>vite': npm:@voidzero-dev/vite-plus-core@1.0.0
+  '@vitest/mocker@5.0.1>vite': npm:@voidzero-dev/vite-plus-core@1.0.0
+
+allowBuilds:
+  esbuild: true
+  nx: true
+  '@bufbuild/buf': false
+  vite-plus: true
+  msw: false
+  electron: true
+  electron-winstaller: false

@@ -1,0 +1,62 @@
+# The loams.live.v1 protos (R1 plan Task 7), the app protos (design §37 §8,
+# AP0) and the application packages of the unified Connect API (design §44
+# §7, API1 Task 1, Task 2 and Task 3). `buf lint` runs the STANDARD rules. `buf
+# breaking` is enforced for the app packages (CI job `app-protos`);
+# loams.live.v1 is ignored, as breaking changes are not enforced in R1 (the
+# API is unstable).
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  ignore_only:
+    # Watch streams `Transition`, the protocol's unit (design §20 §7.1),
+    # rather than a `WatchResponse` wrapper (plan row T7-4).
+    #
+    # `loams.collection.v1` is here for the same reason: `CreateCollection`
+    # and `GetCollection` answer `CollectionInfo` and `Scan` answers
+    # `ScanPlan` (design §44 §5.1), because a collection's own document is
+    # the answer and `ListCollections` embeds the same `CollectionInfo`, so a
+    # `…Response` wrapper would exist only to be unwrapped (API1 Task 2).
+    RPC_RESPONSE_STANDARD_NAME:
+      - proto/loams/live/v1/live.proto
+      - proto/loams/collection/v1/collection.proto
+      - proto/loams/collection/v1/document.proto
+      # `loams.graph.v1` (GR1 Task 2, design §48 §8.2): CreateGraph, GetGraph
+      # and UpdateGraph answer the graph's own `Graph`, GetEngineInfo answers
+      # `EngineInfo`, GetSchema `GraphSchema` and Explain `Plan`; the four
+      # slow RPCs answer `loams.operations.v1.Operation` and ExecuteStream
+      # streams `ResultChunk`.
+      - proto/loams/graph/v1/graph.proto
+    # For the same reason: `CreateCollection` and `GetCollection` both answer
+    # `CollectionInfo`, the collection's own document, and `ListCollections`
+    # embeds it. A per-RPC response message would make every caller unwrap
+    # (API1 Task 2).
+    #
+    # `document.proto` is here for the same reason one file over: it is the
+    # other file of `loams.collection.v1`, so the ignore is per file rather
+    # than per package. `DeleteByFilter` and `PatchByFilter` both answer
+    # `FilterWriteResponse`, because every number in it is the same question
+    # either way — how much the filter matched, how much this call wrote, and
+    # the state it wrote at. Two per-RPC response messages would hold identical
+    # fields and differ only in their names, and a caller branching on a partial
+    # write would have to know which of the two it is reading (API1 Task 3).
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - proto/loams/collection/v1/collection.proto
+      - proto/loams/collection/v1/document.proto
+      # `loams.graph.v1`: `Graph` and `loams.operations.v1.Operation` each
+      # answer several RPCs (see above, §48 §8.2).
+      - proto/loams/graph/v1/graph.proto
+breaking:
+  use:
+    - FILE
+  ignore:
+    - proto/loams/live
+    # `loams.graph.v1` is `unstable: true` until GR1e (design §48 §8.1): the
+    # SDKs and `buf breaking` treat it as experimental, and GR1 Task 39
+    # removes this line when the package is frozen at GA.
+    - proto/loams/graph
+    # `loams.postgres.v1` is `unstable: true` until Loams Postgres GA (PG2
+    # Task 1 ruling R1.6); PG2 Task 60 removes this line and the option.
+    - proto/loams/postgres

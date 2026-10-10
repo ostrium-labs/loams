@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/parquet.config.json",
+  "title": "Parquet codec instance config (loams.flow/v1)",
+  "description": "One Parquet codec instance's settings: where the schema comes from, how files are written and how large a row group is. A format is a codec used by other connectors, not a source, so this config names no endpoint and holds no secrets (§33 Appendix A.6; CN1 plan Task 5; design §33 §8 row 8). The manifest's `secrets` list is empty because no property here carries a secret.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_source"],
+  "properties": {
+    "schema_source": {
+      "description": "Where the Arrow schema comes from. An explicit schema is required for encode; a Parquet footer supplies it for decode.",
+      "type": "string",
+      "enum": ["footer", "explicit", "infer", "registry"],
+      "default": "footer"
+    },
+    "schema": {
+      "description": "The Arrow schema as its JSON form, when schema_source is `explicit`.",
+      "type": "object"
+    },
+    "schema_url": {
+      "description": "A URL the Arrow schema is fetched from, when schema_source is `registry` or `infer` over a served schema.",
+      "type": "string",
+      "minLength": 1
+    },
+    "compression": {
+      "description": "The Parquet compression codec.",
+      "type": "string",
+      "enum": ["uncompressed", "snappy", "gzip", "brotli", "lz4", "zstd"],
+      "default": "zstd"
+    },
+    "compression_level": {
+      "description": "The codec's level, where the codec takes one.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 22
+    },
+    "row_group_rows": {
+      "description": "Rows per row group on write (CN1 Task 5: Parquet files and row groups).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536
+    },
+    "row_group_bytes": {
+      "description": "The byte target per row group on write.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 8388608
+    },
+    "dictionary_enabled": {
+      "description": "Whether dictionary encoding is on.",
+      "type": "boolean",
+      "default": true
+    },
+    "write_statistics": {
+      "description": "Whether per-column statistics are written.",
+      "type": "boolean",
+      "default": true
+    },
+    "created_by": {
+      "description": "The `created_by` string written into the file footer.",
+      "type": "string",
+      "default": "loams-flow"
+    }
+  }
+}

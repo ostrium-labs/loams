@@ -1,0 +1,15 @@
+# The upstream proto tree that proto/ is vendored from (design §37 §9, D439).
+# Both apps and the mock generate from proto/; scripts/check-drift.sh and the
+# apps' proto_ref_matches_lock tests check tree_sha256 against proto/.
+#
+# repo         the main repository (moves to ostrium-labs/loams with D406)
+# ref          the upstream commit last synced with scripts/sync-protos.sh
+# packages     the proto packages the phones use (Live and Stream are not)
+# placeholder  packages that do not exist upstream yet and are local
+#              placeholders written from the AP0 plan; empty once AP0 merges
+# tree_sha256  scripts/proto-hash.sh over proto/
+repo=https://github.com/dina-kar/operon.git
+ref=ea07202d200c7b8a68544e7eb024c93a25a060d7
+packages=loams/errors/v1 loams/instance/v1 loams/devices/v1 loams/approvals/v1 loams/operations/v1 loams/notifications/v1
+placeholder=loams/errors/v1 loams/instance/v1 loams/devices/v1 loams/approvals/v1 loams/operations/v1 loams/notifications/v1
+tree_sha256=e95a196d20db0cc57cdc938f5ea5033c675bba407055660dd08bb0773aed4b20

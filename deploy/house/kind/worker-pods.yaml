@@ -1,0 +1,156 @@
+# The worker-pods fallback of L3 (design §49 §13.2, HS1 Task 6), on kind.
+#
+# Where a pod cannot make its own user namespace (Kubernetes' RuntimeDefault
+# seccomp profile refuses unshare(CLONE_NEWUSER); HS1 R6.3), a House worker runs
+# with `--sandbox=pods`: Landlock and seccomp as in the `netns` mode, but no
+# namespaces of its own. Its network boundary is then this manifest's: the
+# worker's pod may open TCP connections to the front's forwarder port (9180,
+# `loams_house_ipc::FORWARDER_PORT`) and nothing else, not the front's other
+# ports, not the cluster, not the internet, not DNS.
+#
+# This file is the policy and the pod shape, with stand-ins for the two
+# binaries (python's http.server listening where the front listens, an idle
+# container where the worker runs), so
+# `cargo test -p loams-house-worker --test sandbox -- --ignored
+# pods_fallback_network_policy` (LOAMS_HOUSE_KIND=1) can show on a kind
+# cluster that the policy holds. A kind cluster enforces NetworkPolicy with
+# kindnet from kind 0.24. The House's own chart (HS1 Task 26) carries the same
+# policy, with images by digest.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loams-house-pods-test
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+# Nothing goes in or out of any pod in the namespace unless a policy below
+# allows it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: loams-house-pods-test
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# A worker reaches only the front's forwarder port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: house-worker-egress
+  namespace: loams-house-pods-test
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: house-worker
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: house-front
+      ports:
+        - protocol: TCP
+          port: 9180
+---
+# The front's forwarder port takes connections from its workers only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: house-front-forwarder-ingress
+  namespace: loams-house-pods-test
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: house-front
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: house-worker
+      ports:
+        - protocol: TCP
+          port: 9180
+---
+# Stand-in for the front: the forwarder port and the HTTP port (8123, which a
+# worker must not reach).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: loams-house-front
+  namespace: loams-house-pods-test
+  labels:
+    app.kubernetes.io/name: loams-house
+    app.kubernetes.io/component: house-front
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: forwarder
+      image: docker.io/library/python:3.13-alpine
+      command: ["python3", "-m", "http.server", "9180", "--bind", "0.0.0.0"]
+      ports:
+        - containerPort: 9180
+      readinessProbe:
+        tcpSocket:
+          port: 9180
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+    - name: http
+      image: docker.io/library/python:3.13-alpine
+      command: ["python3", "-m", "http.server", "8123", "--bind", "0.0.0.0"]
+      ports:
+        - containerPort: 8123
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+---
+# Stand-in for a worker pod: `loams-house-worker --sandbox pods
+# --s3-endpoint http://<front>:9180/` in the chart. Its own user, no service
+# account token, no privilege, a read-only root, and an emptyDir for its private
+# directory, the only place it may write (Landlock enforces the same inside).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: loams-house-worker
+  namespace: loams-house-pods-test
+  labels:
+    app.kubernetes.io/name: loams-house
+    app.kubernetes.io/component: house-worker
+spec:
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65533
+    runAsGroup: 65533
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: worker
+      image: docker.io/library/python:3.13-alpine
+      command: ["sleep", "infinity"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+      volumeMounts:
+        - name: private
+          mountPath: /var/lib/loams-house-worker
+  volumes:
+    - name: private
+      emptyDir:
+        sizeLimit: 8Gi

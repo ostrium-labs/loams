@@ -1,0 +1,33 @@
+# Loams SQL images, pinned by digest (design §47 §4; SQ1 Task 1).
+# Every runtime (deploy/sqldb/spike, the local and Kubernetes drivers) pulls
+# `<image>@<digest>`, never the tag alone. The tag is informational.
+# Digests are the multi-arch index digests (linux/amd64 and linux/arm64) that
+# Docker Hub's v8.5.8 tags resolved to on 2026-10-08. Task 1 pulled tidb, tikv
+# and pd by digest and checked each binary's `-V` (TiDB and PD
+# `Release Version: v8.5.8`, TiKV `8.5.8`), and checked the ticdc and br
+# manifests (both platforms) without pulling them.
+
+[tidb]
+image = "docker.io/pingcap/tidb"
+tag = "v8.5.8"
+digest = "sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5"
+
+[tikv]
+image = "docker.io/pingcap/tikv"
+tag = "v8.5.8"
+digest = "sha256:ab84580b6795868940231aa778a34b082d19e4417e6d66f755c609bebdbbfd69"
+
+[pd]
+image = "docker.io/pingcap/pd"
+tag = "v8.5.8"
+digest = "sha256:424e896800e42e1b7eb585b604c8daa3454110d0f0df5ab41f7c5f49164d3aef"
+
+[ticdc]
+image = "docker.io/pingcap/ticdc"
+tag = "v8.5.8"
+digest = "sha256:e77e206caedf5fe03eb48f10ae3f92b4e32582d375708c660aead9291ce6d4e8"
+
+[br]
+image = "docker.io/pingcap/br"
+tag = "v8.5.8"
+digest = "sha256:15beb655d3276fe64aa6a353f9bf3d828d34272d2470abdf5026457b754f1c45"

@@ -1,0 +1,20 @@
+{
+  "about": "Canonical DecisionClaims bytes (design §37 §7.3, AP0 Ruling 7): keys in byte order, no whitespace, integers in decimal, strings escaped as RFC 8785. Android :core, iOS LoamsCore and the mock must produce `canonical` exactly.",
+  "cases": [
+    {
+      "name": "approve",
+      "claims": {"approval_id": "apr_drop_logs", "revision": 1, "decision": "approve", "iat": 1790899500, "jti": "01J9Z4A7B8C9D0E1F2G3H4J5K6"},
+      "canonical": "{\"approval_id\":\"apr_drop_logs\",\"decision\":\"approve\",\"iat\":1790899500,\"jti\":\"01J9Z4A7B8C9D0E1F2G3H4J5K6\",\"revision\":1}"
+    },
+    {
+      "name": "reject_large_revision",
+      "claims": {"approval_id": "apr_restore", "revision": 18446744073709551615, "decision": "reject", "iat": 0, "jti": "x"},
+      "canonical": "{\"approval_id\":\"apr_restore\",\"decision\":\"reject\",\"iat\":0,\"jti\":\"x\",\"revision\":18446744073709551615}"
+    },
+    {
+      "name": "escapes",
+      "claims": {"approval_id": "a\"b\\c", "revision": 7, "decision": "approve", "iat": 1, "jti": "tab\there\nnl\u0001ctl é"},
+      "canonical": "{\"approval_id\":\"a\\\"b\\\\c\",\"decision\":\"approve\",\"iat\":1,\"jti\":\"tab\\there\\nnl\\u0001ctl é\",\"revision\":7}"
+    }
+  ]
+}

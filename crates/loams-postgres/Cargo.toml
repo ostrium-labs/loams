@@ -1,0 +1,28 @@
+[package]
+name = "loams-postgres"
+description = "Loams Postgres's client of the storage and compute components (design §46 §6): the pageserver and storage controller, loams-wal, compute_ctl and the compute spec. A plain HTTP client; no Neon code."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# Reached only through `loams`'s feature `postgres` (PG2 Task 9).
+publish = false
+
+[dependencies]
+hex.workspace = true
+humantime.workspace = true
+loams-proto.workspace = true
+reqwest = { workspace = true, features = ["query"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

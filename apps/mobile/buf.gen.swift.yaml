@@ -1,0 +1,19 @@
+# iOS: SwiftProtobuf messages and connect-swift clients, written to the
+# LoamsProto package and committed (docs/protos.md). Run scripts/generate.sh.
+version: v2
+inputs:
+  - directory: proto
+plugins:
+  - remote: buf.build/apple/swift:v1.38.1
+    out: ios/Packages/LoamsProto/Sources/LoamsProto/Generated
+    opt:
+      - Visibility=Public
+      - FileNaming=PathToUnderscores
+  - remote: buf.build/connectrpc/swift:v1.2.3
+    out: ios/Packages/LoamsProto/Sources/LoamsProto/Generated
+    opt:
+      - Visibility=Public
+      - FileNaming=PathToUnderscores
+      - GenerateAsyncMethods=true
+      - GenerateCallbackMethods=false
+clean: true

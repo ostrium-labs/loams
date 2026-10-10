@@ -3,7 +3,7 @@
 all-features = true
 
 [licenses]
-# Permissive licenses only. AGPL/GPL/LGPL/BSL/SSPL/ELv2 and proprietary licenses are not allowed.
+# Permissive licenses only. AGPL/GPL/LGPL/BUSL-1.1/SSPL/ELv2 and proprietary licenses are not allowed.
 allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
@@ -16,20 +16,54 @@ allow = [
     "Unicode-3.0",
     "MPL-2.0",
     "CDLA-Permissive-2.0",
+    # Boost Software License 1.0 (xxhash-rust), not the Business Source License
+    "BSL-1.0",
+    # libbz2-rs-sys, via datafusion-datasource
+    "bzip2-1.0.6",
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"
+# The desktop agent daemon (design §50 §4.1, DD1 plan T0-4, T0-10a): the code
+# moved from the zeron fork into crates/loams-agentd* is MIT, except
+# loams-agentd-link (Apache-2.0, Loams-authored). Its new dependencies need no
+# entry beyond the list above: CC0-1.0 (notify), MPL-2.0 (nucleo-matcher) and
+# MPL-2.0+ (im, bitmaps and sized-chunks, through loro; the `+` is satisfied
+# by MPL-2.0, so no [[licenses.clarify]] is needed). `cargo deny check
+# licenses` passed on 2026-10-10 with no change here.
+
+# stringmetrics (via httpmock, dev tooling in loams-console-mock) states its
+# license only as a LICENSE file: Apache-2.0.
+[[licenses.clarify]]
+crate = "stringmetrics"
+expression = "Apache-2.0"
+license-files = [{ path = "LICENSE", hash = 0x0fb72a18 }]
 
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"
 allow-wildcard-paths = true
+# Prefix variants are rejected by scripts/ci/no-metering.sh; cargo-deny package
+# selectors are exact names (https://embarkstudios.github.io/cargo-deny/checks/cfg.html).
+deny = [{ name = "loam-platform", reason = "The OSS engine cannot depend on the private platform (D551)" }]
 
 [advisories]
 yanked = "deny"
 # Only fail on unmaintained crates we depend on directly; transitive ones are tracked upstream.
 unmaintained = "workspace"
+ignore = [
+    # No fixed rsa release exists (the Marvin timing attack). It is reached
+    # only through sqlx-mysql, which uses it for the RSA password exchange of
+    # caching_sha2_password/sha256_password on a non-TLS connection.
+    { id = "RUSTSEC-2023-0071", reason = "rsa via sqlx-mysql: used only for RSA password exchange on non-TLS MySQL connections; Loams connects to TiDB over TLS or the cluster network with mysql_native_password (§21 §11.2)" },
+]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# tikv-client is pinned by rev to Loams's fork, branch `loam` (R1 plan rows R4
+# and F1). Resonate is pinned by rev to the fork's loam/0.10.1 (D1 plan Task
+# 1, D140).
+# The Neon fork is not allowed here: only crates/loams-wal-decoder, a
+# workspace of its own with its own deny.toml, may use it, and
+# scripts/pg2/check-decoder-deny.py fails if this lockfile names it.
+allow-git = ["https://github.com/ostrium-labs/client-rust", "https://github.com/ostrium-labs/resonate"]

@@ -1,0 +1,15 @@
+[package]
+name = "workspace_hack"
+version = "0.1.0"
+description = "An empty stand-in for Neon's cargo-hakari workspace_hack crate."
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+# Only the features of Neon's real workspace_hack that the crates linked
+# here rely on without declaring them.
+[dependencies]
+bytes = { version = "1", features = ["serde"] }

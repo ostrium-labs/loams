@@ -1,0 +1,17 @@
+{
+  "name": "@loams-plugins/plugin-zulip-adapter",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "pnpm --filter @loams-plugins/root build",
+    "test": "pnpm --filter @loams-plugins/root test packages/plugin-zulip-adapter/tests"
+  },
+  "dependencies": {
+    "@loams-core/host": "workspace:*",
+    "@loams-core/http": "workspace:*",
+    "cordis": "^4.0.0-rc.10"
+  }
+}

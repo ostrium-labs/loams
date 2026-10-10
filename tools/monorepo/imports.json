@@ -1,0 +1,10 @@
+{
+  "importedAt": "2026-10-06",
+  "strategy": "Tracked-file snapshot import; original repositories and Git histories remain untouched. No nested Git repositories are required.",
+  "base": {"repository": "loams", "revision": "f274ad91564f587adf73dba5be14984b8bf8d035"},
+  "sources": [
+    {"repository": "loams-plugins", "revision": "60795b742519f658729d207209df845b7fa414fb", "destination": "plugins", "trackedFilesImported": 257},
+    {"repository": "loams-mobile", "revision": "5a7b9e24c097442ec4d571d7e5053d97fb4f5f3e", "destination": "apps/mobile", "trackedFilesImported": 389},
+    {"repository": "loams-desktop", "revision": "c9205f8f949711c3315af551c804c56452d2fbd7", "destination": "apps/desktop/native", "trackedFilesImported": 1073, "details": "crates/loams-agentd/import-provenance.json", "movedTo": "crates/loams-agentd* (design 50, D783)"}
+  ]
+}

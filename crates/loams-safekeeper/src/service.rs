@@ -1,0 +1,1414 @@
+//! The WAL service: the safekeeper's Postgres-protocol listener over a
+//! [`WalStore`] (§28 §6.3, §6.7, §6.9).
+//!
+//! - `START_WAL_PUSH` (walproposer): a reader task queues the proposer's
+//!   CopyData messages; the acceptor task takes every `AppendRequest` queued
+//!   while its previous store write was in flight as one group commit, and
+//!   answers with one `AppendResponse`.
+//! - `START_REPLICATION` (vanilla protocol): streams WAL up to `commit_lsn`,
+//!   or up to `flush_lsn` within a term for walproposer's recovery reader,
+//!   and records the pageserver's `remote_consistent_lsn` from its feedback.
+//!   The pageserver's *interpreted* protocol (decoded, sharded records) is
+//!   served by [`crate::send`] when the service has an interpreter
+//!   (Neon's `wal_decoder`, Q112), and refused otherwise.
+//! - `IDENTIFY_SYSTEM`, `TIMELINE_STATUS`.
+//!
+//! The service is stateless: every instance can serve any timeline, and the
+//! store's term fence orders concurrent proposers. Readers on the same
+//! instance as the proposer are woken by an in-process registry; others poll
+//! the store.
+
+use std::collections::{HashMap, VecDeque};
+use std::future::Future;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use bytes::{BufMut, BytesMut};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, BufWriter};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::{broadcast, mpsc, watch};
+use tracing::{debug, info, warn};
+
+use crate::acceptor::{Acceptor, Appends, PendingAppends};
+use crate::pgwire::{self, Startup};
+use crate::proto::{AcceptorMessage, AppendResponse, Command, PROTO_VERSION, ProposerMessage};
+use crate::store::WalStore;
+use crate::types::{Id, Lsn, NodeId, PageserverFeedback, Term, TimelineId};
+use crate::{AcceptorState, Error};
+
+/// Bytes of queued `AppendRequest`s folded into one store write (8 requests
+/// of 128 KiB: TiKV's `raft-max-size-per-msg`, §28 §6.5).
+pub const MAX_BATCH_BYTES: usize = 1 << 20;
+/// Proposer messages queued per connection.
+const QUEUE: usize = 256;
+
+/// Settings of a [`WalService`].
+#[derive(Clone, Debug)]
+pub struct WalServiceConfig {
+    /// The node id walproposer sees (the pool's logical id).
+    pub node_id: NodeId,
+    /// How often a heartbeat-only commit LSN is persisted.
+    pub commit_flush_interval: Duration,
+    /// Keepalive interval on replication streams.
+    pub keepalive_interval: Duration,
+    /// How often a reader polls the store when no local proposer wakes it.
+    pub poll_interval: Duration,
+    /// When set, clients must send this token as their password (walproposer:
+    /// `NEON_AUTH_TOKEN`), and the HTTP API requires it as a bearer token.
+    pub auth_token: Option<String>,
+    /// Hand `START_WAL_PUSH` connections to the timeline's compio shard
+    /// after the startup packet and authentication (§28 §7.2, D263).
+    pub handoff: Option<Handoff>,
+    /// Serve the pageserver's interpreted protocol with this decoder
+    /// ([`crate::send`]); without one the protocol is refused.
+    pub interpreter: Option<crate::send::Interpreter>,
+}
+
+/// Takes a connection whose next message is `START_WAL_PUSH` for the
+/// timeline, with startup and authentication done.
+#[derive(Clone)]
+pub struct Handoff(
+    pub Arc<dyn Fn(TimelineId, std::net::TcpStream) -> Result<(), Error> + Send + Sync>,
+);
+
+impl std::fmt::Debug for Handoff {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Handoff")
+    }
+}
+
+impl Default for WalServiceConfig {
+    fn default() -> Self {
+        Self {
+            node_id: 1,
+            commit_flush_interval: Duration::from_secs(1),
+            keepalive_interval: Duration::from_secs(1),
+            poll_interval: Duration::from_millis(20),
+            auth_token: None,
+            handoff: None,
+            interpreter: None,
+        }
+    }
+}
+
+/// The in-memory view readers wait on: the proposer's latest state.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Progress {
+    pub term: Term,
+    pub flush_lsn: Lsn,
+    pub commit_lsn: Lsn,
+    pub peer_horizon_lsn: Lsn,
+    /// A proposer is streaming to this instance: the fields are current.
+    /// Otherwise readers take the state from the store.
+    pub active: bool,
+}
+
+impl Progress {
+    fn of(st: &AcceptorState) -> Self {
+        Self {
+            term: st.term,
+            flush_lsn: st.wal_end(),
+            commit_lsn: st.commit_lsn,
+            peer_horizon_lsn: st.peer_horizon_lsn,
+            active: true,
+        }
+    }
+}
+
+/// The in-memory tail of recently appended WAL (§28 §6.7, source 1), so that
+/// readers on this instance do not go to the store for WAL just written.
+#[derive(Debug, Default)]
+struct Tail {
+    chunks: std::collections::VecDeque<(Lsn, bytes::Bytes)>,
+    bytes: usize,
+}
+
+/// The tail keeps at most this much WAL per timeline.
+const TAIL_BYTES: usize = 64 << 20;
+
+impl Tail {
+    fn end(&self) -> Option<Lsn> {
+        self.chunks.back().map(|(l, b)| Lsn(l.0 + b.len() as u64))
+    }
+
+    fn push(&mut self, begin: Lsn, data: bytes::Bytes) {
+        if data.is_empty() {
+            return;
+        }
+        match self.end() {
+            Some(end) if end == begin => {}
+            Some(end) if end > begin => {
+                // A retried prefix: keep what is new.
+                let skip = (end.0 - begin.0) as usize;
+                if skip >= data.len() {
+                    return;
+                }
+                return self.push(end, data.slice(skip..));
+            }
+            _ => {
+                self.chunks.clear();
+                self.bytes = 0;
+            }
+        }
+        self.bytes += data.len();
+        self.chunks.push_back((begin, data));
+        while self.bytes > TAIL_BYTES {
+            match self.chunks.pop_front() {
+                Some((_, b)) => self.bytes -= b.len(),
+                None => break,
+            }
+        }
+    }
+
+    fn truncate(&mut self, at: Lsn) {
+        while let Some((l, b)) = self.chunks.back_mut() {
+            if *l >= at {
+                self.bytes -= b.len();
+                self.chunks.pop_back();
+            } else {
+                let keep = (at.0 - l.0) as usize;
+                if keep < b.len() {
+                    self.bytes -= b.len() - keep;
+                    *b = b.slice(..keep);
+                }
+                break;
+            }
+        }
+    }
+
+    /// WAL from `from`, if the tail covers it.
+    fn read(&self, from: Lsn, max: usize) -> Option<Vec<(Lsn, bytes::Bytes)>> {
+        let (first, _) = self.chunks.front()?;
+        if from < *first || Some(from) > self.end() {
+            return None;
+        }
+        let mut out = Vec::new();
+        let mut at = from.0;
+        let mut budget = max;
+        for (l, b) in &self.chunks {
+            let end = l.0 + b.len() as u64;
+            if end <= at {
+                continue;
+            }
+            if budget == 0 {
+                break;
+            }
+            let lo = (at - l.0) as usize;
+            let hi = b.len().min(lo.saturating_add(budget));
+            out.push((Lsn(at), b.slice(lo..hi)));
+            budget -= hi - lo;
+            at = l.0 + hi as u64;
+        }
+        Some(out)
+    }
+}
+
+#[derive(Debug, Default)]
+struct Registry {
+    timelines: Mutex<HashMap<TimelineId, watch::Sender<Progress>>>,
+    sessions: Mutex<HashMap<TimelineId, u32>>,
+    /// Replication readers (pageservers, replicas) streaming each timeline
+    /// from this instance.
+    readers: Mutex<HashMap<TimelineId, u32>>,
+    tails: Mutex<HashMap<TimelineId, Tail>>,
+    /// Pageserver feedback per timeline, as it arrives on this instance's
+    /// replication connections (every shard's), for the walproposers
+    /// connected here (their `max_replication_*_lag` backpressure). Nothing
+    /// is kept: when the pageserver's connection closes, feedback stops.
+    feedback: Mutex<HashMap<TimelineId, broadcast::Sender<PageserverFeedback>>>,
+}
+
+impl Registry {
+    fn sender(&self, tl: TimelineId) -> watch::Sender<Progress> {
+        let mut m = self.timelines.lock().unwrap_or_else(|p| p.into_inner());
+        m.entry(tl)
+            .or_insert_with(|| watch::channel(Progress::default()).0)
+            .clone()
+    }
+
+    fn publish(&self, tl: TimelineId, p: Progress) {
+        self.sender(tl).send_if_modified(|cur| {
+            if p.term < cur.term {
+                return false;
+            }
+            let next = Progress {
+                commit_lsn: if p.term == cur.term {
+                    cur.commit_lsn.max(p.commit_lsn)
+                } else {
+                    p.commit_lsn
+                },
+                active: cur.active,
+                ..p
+            };
+            let changed = next != *cur;
+            *cur = next;
+            changed
+        });
+    }
+
+    /// A proposer session starts (`+1`) or ends (`-1`) on this instance.
+    fn session(&self, tl: TimelineId, delta: i32) {
+        let n = {
+            let mut m = self.sessions.lock().unwrap_or_else(|p| p.into_inner());
+            let n = m.entry(tl).or_default();
+            *n = n.saturating_add_signed(delta);
+            let n = *n;
+            if n == 0 {
+                m.remove(&tl);
+            }
+            n
+        };
+        if n == 0 {
+            // No local proposer: the tail can go stale, so drop it (this also
+            // bounds memory to the timelines being written here).
+            self.tails
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .remove(&tl);
+        }
+        self.sender(tl).send_if_modified(|cur| {
+            let active = n > 0;
+            let changed = cur.active != active;
+            cur.active = active;
+            changed
+        });
+    }
+
+    fn feedback(&self, tl: TimelineId) -> broadcast::Sender<PageserverFeedback> {
+        let mut m = self.feedback.lock().unwrap_or_else(|p| p.into_inner());
+        m.entry(tl)
+            .or_insert_with(|| broadcast::channel(FEEDBACK_CAPACITY).0)
+            .clone()
+    }
+
+    fn tail<T>(&self, tl: TimelineId, f: impl FnOnce(&mut Tail) -> T) -> T {
+        let mut m = self.tails.lock().unwrap_or_else(|p| p.into_inner());
+        f(m.entry(tl).or_default())
+    }
+}
+
+/// The WAL service over a store.
+#[derive(Debug)]
+pub struct WalService<S> {
+    store: Arc<S>,
+    config: WalServiceConfig,
+    registry: Registry,
+}
+
+impl<S: WalStore> WalService<S> {
+    pub fn new(store: Arc<S>, config: WalServiceConfig) -> Arc<Self> {
+        Arc::new(Self {
+            store,
+            config,
+            registry: Registry::default(),
+        })
+    }
+
+    pub fn store(&self) -> &Arc<S> {
+        &self.store
+    }
+
+    pub fn config(&self) -> &WalServiceConfig {
+        &self.config
+    }
+
+    /// The latest progress this instance has seen for `tl`.
+    pub fn progress(&self, tl: TimelineId) -> Progress {
+        *self.registry.sender(tl).borrow()
+    }
+
+    /// WAL from `from` (at most `max` bytes): from the in-memory tail when
+    /// it covers `from`, else from the store.
+    pub async fn read_wal(
+        &self,
+        tl: TimelineId,
+        from: Lsn,
+        max: usize,
+    ) -> Result<Vec<(Lsn, bytes::Bytes)>, Error> {
+        // The tail is only current while a proposer streams to this
+        // instance: another instance's proposer may have truncated and
+        // rewritten what it holds. An empty answer (at the tail's end) goes
+        // to the store too, which may hold more.
+        if self.progress(tl).active
+            && let Some(out) = self.registry.tail(tl, |t| t.read(from, max))
+            && !out.is_empty()
+        {
+            return Ok(out);
+        }
+        self.store.read(&tl, from, max).await
+    }
+
+    /// The timeline's progress: this instance's in-memory view while a
+    /// proposer streams here, else the store's head.
+    pub async fn current(&self, tl: TimelineId) -> Result<Progress, Error> {
+        let local = self.progress(tl);
+        if local.active {
+            return Ok(local);
+        }
+        let st = self.store.load(&tl).await?.ok_or(Error::NotFound(tl))?;
+        Ok(Progress {
+            active: false,
+            ..Progress::of(&st)
+        })
+    }
+
+    /// Pageserver feedback for `tl` as it arrives on this instance, from
+    /// now on.
+    pub fn subscribe_feedback(&self, tl: TimelineId) -> broadcast::Receiver<PageserverFeedback> {
+        self.registry.feedback(tl).subscribe()
+    }
+
+    /// Start reading a replication client's feedback: it never blocks (the
+    /// latest value wins), so a client that writes feedback while it waits
+    /// to read cannot stall the stream.
+    pub(crate) fn feedback_reader<R>(
+        &self,
+        tl: TimelineId,
+        rd: R,
+    ) -> (tokio::task::JoinHandle<()>, Feedback)
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+    {
+        let (conn, rx) = watch::channel(None);
+        let task = tokio::spawn(read_feedback(rd, conn, self.registry.feedback(tl)));
+        (
+            task,
+            Feedback {
+                rx,
+                pending: None,
+                last_write: tokio::time::Instant::now(),
+            },
+        )
+    }
+
+    /// The timelines active on this instance now: a proposer streams to it,
+    /// or a pageserver or replica reads from it (the broker publishes them).
+    pub fn active_timelines(&self) -> Vec<TimelineId> {
+        let mut out: Vec<TimelineId> = {
+            let m = self
+                .registry
+                .sessions
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            m.iter().filter(|(_, n)| **n > 0).map(|(t, _)| *t).collect()
+        };
+        let m = self
+            .registry
+            .readers
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        out.extend(m.iter().filter(|(_, n)| **n > 0).map(|(t, _)| *t));
+        out.sort_unstable_by_key(|t| (t.tenant.0, t.timeline.0));
+        out.dedup();
+        out
+    }
+
+    /// Whether a pageserver or replica streams `tl` from this instance.
+    pub fn has_readers(&self, tl: TimelineId) -> bool {
+        let m = self
+            .registry
+            .readers
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        m.get(&tl).is_some_and(|n| *n > 0)
+    }
+
+    /// Count a replication reader of `tl` until the guard drops.
+    pub(crate) fn reader(self: &Arc<Self>, tl: TimelineId) -> ReaderGuard<S> {
+        {
+            let mut m = self
+                .registry
+                .readers
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            *m.entry(tl).or_default() += 1;
+        }
+        ReaderGuard {
+            svc: self.clone(),
+            tl,
+        }
+    }
+
+    /// Wakes on every change of this instance's view of `tl`.
+    pub fn subscribe(&self, tl: TimelineId) -> watch::Receiver<Progress> {
+        self.registry.sender(tl).subscribe()
+    }
+
+    /// A proposer session starts (`+1`) or ends (`-1`) on this process (for
+    /// front ends outside this module: the compio shards).
+    #[cfg(feature = "compio")]
+    pub(crate) fn session(&self, tl: TimelineId, delta: i32) {
+        self.registry.session(tl, delta);
+    }
+
+    /// Publish a proposer's progress to local readers.
+    #[cfg(feature = "compio")]
+    pub(crate) fn publish(&self, tl: TimelineId, st: &AcceptorState) {
+        self.registry.publish(tl, Progress::of(st));
+    }
+
+    /// Keep WAL just written in the in-memory tail for local readers.
+    #[cfg(feature = "compio")]
+    pub(crate) fn tail_push(&self, tl: TimelineId, begin: Lsn, data: bytes::Bytes) {
+        self.registry.tail(tl, |t| t.push(begin, data));
+    }
+
+    /// Drop tail WAL at and above `at` (an election truncated it).
+    #[cfg(feature = "compio")]
+    pub(crate) fn tail_truncate(&self, tl: TimelineId, at: Lsn) {
+        self.registry.tail(tl, |t| t.truncate(at));
+    }
+
+    /// Accept connections until `shutdown` resolves.
+    pub async fn serve(
+        self: Arc<Self>,
+        listener: TcpListener,
+        shutdown: impl Future<Output = ()>,
+    ) -> Result<(), Error> {
+        tokio::pin!(shutdown);
+        loop {
+            tokio::select! {
+                _ = &mut shutdown => return Ok(()),
+                acc = listener.accept() => {
+                    let (stream, peer) = acc.map_err(|e| Error::Io(e.to_string()))?;
+                    let svc = self.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = svc.handle(stream).await {
+                            debug!(%peer, error = %e, "connection ended");
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    async fn handle(self: Arc<Self>, mut stream: TcpStream) -> Result<(), Error> {
+        let _ = stream.set_nodelay(true);
+        // The prelude reads the socket directly (no read-ahead), so that a
+        // WAL push can still be handed to a shard with its bytes unread.
+        let Some(startup) = ({
+            let (mut rd, mut wr) = stream.split();
+            pgwire::read_startup(&mut rd, &mut wr).await?
+        }) else {
+            return Ok(());
+        };
+        let tl = timeline_of(&startup)?;
+        let mut buf = BytesMut::new();
+        if let Some(token) = &self.config.auth_token {
+            // walproposer and the pageserver send their token as the password
+            // (NEON_AUTH_TOKEN), which libpq answers a cleartext request with.
+            pgwire::put_message(&mut buf, b'R', &3u32.to_be_bytes());
+            send(&mut stream, &mut buf).await?;
+            let ok = match pgwire::read_message(&mut stream).await? {
+                Some((b'p', body)) => {
+                    let got = body.strip_suffix(b"\0").unwrap_or(&body);
+                    constant_time_eq(got, token.as_bytes())
+                }
+                _ => false,
+            };
+            if !ok {
+                pgwire::put_error(&mut buf, "28P01", "authentication failed");
+                let _ = send(&mut stream, &mut buf).await;
+                return Err(Error::Protocol("authentication failed".into()));
+            }
+        }
+        pgwire::put_login_ok(&mut buf);
+        send(&mut stream, &mut buf).await?;
+        if let (Some(h), Some(tl)) = (&self.config.handoff, tl)
+            && next_is_wal_push(&stream).await?
+        {
+            let std = stream.into_std().map_err(|e| Error::Io(e.to_string()))?;
+            return (h.0)(tl, std);
+        }
+        let (rd, wr) = stream.into_split();
+        let mut rd = BufReader::new(rd);
+        let mut wr = BufWriter::new(wr);
+
+        loop {
+            let Some((tag, body)) = pgwire::read_message(&mut rd).await? else {
+                return Ok(());
+            };
+            match tag {
+                b'X' => return Ok(()),
+                b'Q' => {}
+                other => {
+                    return Err(Error::Protocol(format!(
+                        "unexpected message {:?}",
+                        other as char
+                    )));
+                }
+            }
+            let q = String::from_utf8_lossy(body.strip_suffix(b"\0").unwrap_or(&body)).into_owned();
+            let cmd = match Command::parse(&q) {
+                Ok(c) => c,
+                Err(e) => {
+                    pgwire::put_error(&mut buf, "0A000", &e.to_string());
+                    pgwire::put_ready(&mut buf);
+                    send(&mut wr, &mut buf).await?;
+                    continue;
+                }
+            };
+            let res = match cmd {
+                Command::SetDatestyle => {
+                    pgwire::put_command_complete(&mut buf, "SELECT 1");
+                    Ok(())
+                }
+                Command::IdentifySystem => self.identify_system(tl, &mut buf).await,
+                Command::TimelineStatus => self.timeline_status(tl, &mut buf).await,
+                Command::StartWalPush {
+                    proto_version,
+                    allow_timeline_creation,
+                } => {
+                    // Takes over the connection until the stream ends.
+                    return self
+                        .wal_push(tl, proto_version, allow_timeline_creation, rd, wr)
+                        .await;
+                }
+                Command::StartReplication { start_lsn, term } => {
+                    let tl = tl.ok_or_else(|| Error::Protocol("no timeline_id".into()))?;
+                    match self.replication_protocol(&startup) {
+                        Err(e) => Err(e),
+                        Ok(None) => return self.replicate(tl, start_lsn, term, rd, wr).await,
+                        Ok(Some((interp, protocol, shard))) => {
+                            // Takes over the connection, as the vanilla
+                            // stream does.
+                            return crate::send::stream(
+                                self.clone(),
+                                &*interp.0,
+                                tl,
+                                start_lsn,
+                                protocol,
+                                shard,
+                                rd,
+                                wr,
+                            )
+                            .await;
+                        }
+                    }
+                }
+            };
+            if let Err(e) = res {
+                pgwire::put_error(&mut buf, "XX000", &e.to_string());
+            }
+            pgwire::put_ready(&mut buf);
+            send(&mut wr, &mut buf).await?;
+        }
+    }
+
+    /// The replication protocol the client's startup options ask for:
+    /// `None` for vanilla, else the interpreter, its arguments and the shard.
+    #[allow(clippy::type_complexity)]
+    fn replication_protocol(
+        &self,
+        startup: &Startup,
+    ) -> Result<
+        Option<(
+            crate::send::Interpreter,
+            crate::send::InterpretedProtocol,
+            crate::send::ShardSpec,
+        )>,
+        Error,
+    > {
+        use crate::send::{ClientProtocol, ShardSpec};
+        let opts = startup.options();
+        match ClientProtocol::from_option(opts.get("protocol").map(String::as_str))? {
+            ClientProtocol::Vanilla => {
+                ShardSpec::refuse_on_vanilla(&opts)?;
+                Ok(None)
+            }
+            ClientProtocol::Interpreted(protocol) => {
+                let interp = self.config.interpreter.clone().ok_or_else(|| {
+                    Error::Protocol(
+                        "this loams-wal has no interpreted WAL sender (run \
+                         loams-wal-interpreted, crates/loams-wal-decoder; §28 Q112)"
+                            .into(),
+                    )
+                })?;
+                Ok(Some((interp, protocol, ShardSpec::from_options(&opts)?)))
+            }
+        }
+    }
+
+    async fn identify_system(
+        &self,
+        tl: Option<TimelineId>,
+        buf: &mut BytesMut,
+    ) -> Result<(), Error> {
+        let tl = tl.ok_or_else(|| Error::Protocol("no timeline_id".into()))?;
+        let st = self.store.load(&tl).await?.ok_or(Error::NotFound(tl))?;
+        let commit = st.commit_lsn.max(self.progress(tl).commit_lsn);
+        pgwire::put_row_description(
+            buf,
+            &["systemid", "timeline", "xlogpos", "dbname"],
+            &["timeline"],
+        );
+        let sysid = st.server.system_id.to_string();
+        let lsn = commit.to_string();
+        pgwire::put_data_row(buf, &[Some(&sysid), Some("1"), Some(&lsn), None]);
+        pgwire::put_command_complete(buf, "IDENTIFY_SYSTEM");
+        Ok(())
+    }
+
+    async fn timeline_status(
+        &self,
+        tl: Option<TimelineId>,
+        buf: &mut BytesMut,
+    ) -> Result<(), Error> {
+        let tl = tl.ok_or_else(|| Error::Protocol("no timeline_id".into()))?;
+        pgwire::put_row_description(buf, &["flush_lsn", "commit_lsn"], &[]);
+        if let Some(st) = self.store.load(&tl).await? {
+            let commit = st.commit_lsn.max(self.progress(tl).commit_lsn);
+            pgwire::put_data_row(
+                buf,
+                &[Some(&st.wal_end().to_string()), Some(&commit.to_string())],
+            );
+        }
+        pgwire::put_command_complete(buf, "TIMELINE_STATUS");
+        Ok(())
+    }
+
+    async fn wal_push<R, W>(
+        self: Arc<Self>,
+        tl: Option<TimelineId>,
+        proto_version: u32,
+        allow_timeline_creation: bool,
+        rd: R,
+        mut wr: W,
+    ) -> Result<(), Error>
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+        W: AsyncWrite + Unpin,
+    {
+        let mut buf = BytesMut::new();
+        if proto_version != PROTO_VERSION {
+            pgwire::put_error(
+                &mut buf,
+                "0A000",
+                &format!(
+                    "safekeeper protocol {proto_version} is not served; set neon.safekeeper_proto_version = 3"
+                ),
+            );
+            send(&mut wr, &mut buf).await?;
+            return Ok(());
+        }
+        pgwire::put_copy_both(&mut buf);
+        send(&mut wr, &mut buf).await?;
+
+        let (tx, mut rx) = mpsc::channel::<ProposerMessage>(QUEUE);
+        let reader = tokio::spawn(read_proposer(rd, tx));
+        let mut session: Option<TimelineId> = None;
+
+        let res = async {
+            let Some(ProposerMessage::Greeting(g)) = rx.recv().await else {
+                return Err(Error::Protocol("expected ProposerGreeting first".into()));
+            };
+            if let Some(tl) = tl
+                && tl != g.timeline()
+            {
+                return Err(Error::Protocol(format!(
+                    "greeting for {} on a connection for {tl}",
+                    g.timeline()
+                )));
+            }
+            let (mut acc, reply) = Acceptor::greet(
+                self.store.clone(),
+                self.config.node_id,
+                &g,
+                allow_timeline_creation,
+            )
+            .await?;
+            reply_to(&mut wr, &mut buf, &reply).await?;
+            let tl = acc.timeline();
+            session = Some(tl);
+            self.registry.session(tl, 1);
+            self.registry.publish(tl, Progress::of(&acc.state()));
+
+            let mut tick = tokio::time::interval(self.config.commit_flush_interval);
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // Pageserver feedback goes out as it arrives, in a copy of the
+            // last AppendResponse (the fork's `network_write`); other replies
+            // carry none.
+            let mut feedback = self.subscribe_feedback(tl);
+            let mut last_resp: Option<AppendResponse> = None;
+            let mut pending: Option<ProposerMessage> = None;
+            let mut stats = PushStats::default();
+            // Appends in flight, oldest first: they are issued in LSN order
+            // and answered in that order, so every response's flush LSN
+            // covers only completed writes (§28 §7.3).
+            let depth = self.store.max_in_flight().max(1);
+            let mut flights: VecDeque<Flight> = VecDeque::new();
+            loop {
+                // A message that cannot be handled while writes are in flight
+                // (or an append beyond the pipeline's depth) waits for them.
+                let must_land = match &pending {
+                    Some(ProposerMessage::Append(_)) => flights.len() >= depth,
+                    Some(_) => !flights.is_empty(),
+                    None => false,
+                };
+                if must_land {
+                    let (f, res) = land(&mut flights).await;
+                    self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats, &mut last_resp)
+                        .await?;
+                    continue;
+                }
+                let msg = match pending.take() {
+                    Some(m) => m,
+                    None => {
+                        let ev = tokio::select! {
+                            biased;
+                            landed = land(&mut flights), if !flights.is_empty() => Event::Landed(Box::new(landed)),
+                            m = rx.recv(), if flights.len() < depth => Event::Msg(m),
+                            _ = tick.tick() => Event::Tick,
+                            fb = feedback.recv() => Event::Feedback(fb),
+                        };
+                        match ev {
+                            Event::Landed(landed) => {
+                                let (f, res) = *landed;
+                                self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats, &mut last_resp)
+                                    .await?;
+                                continue;
+                            }
+                            Event::Msg(Some(m)) => m,
+                            Event::Msg(None) => break,
+                            Event::Tick => {
+                                acc.refresh().await?;
+                                acc.persist_commit_lsn().await?;
+                                continue;
+                            }
+                            Event::Feedback(fb) => {
+                                // A lagging receiver skips what it missed (the
+                                // fork's broadcast does the same).
+                                if let (Some(resp), Ok(fb)) = (&last_resp, fb) {
+                                    let mut r = resp.clone();
+                                    r.pageserver_feedback = Some(fb);
+                                    reply_to(&mut wr, &mut buf, &AcceptorMessage::AppendResponse(r))
+                                        .await?;
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                };
+                match msg {
+                    ProposerMessage::Greeting(_) => {
+                        return Err(Error::Protocol("a second ProposerGreeting".into()));
+                    }
+                    ProposerMessage::VoteRequest(v) => {
+                        let r = acc.handle_vote(&v).await?;
+                        reply_to(&mut wr, &mut buf, &r).await?;
+                    }
+                    ProposerMessage::Elected(e) => {
+                        acc.handle_elected(&e).await?;
+                        if acc.state().term == e.term {
+                            self.registry.tail(tl, |t| t.truncate(e.start_streaming_at));
+                        }
+                    }
+                    ProposerMessage::Append(first) => {
+                        // Group commit: everything queued behind this one.
+                        let term = first.h.term;
+                        let mut bytes = first.wal.len();
+                        let mut batch = vec![first];
+                        while bytes < MAX_BATCH_BYTES {
+                            match rx.try_recv() {
+                                Ok(ProposerMessage::Append(a)) if a.h.term == term => {
+                                    bytes += a.wal.len();
+                                    batch.push(a);
+                                }
+                                Ok(other) => {
+                                    pending = Some(other);
+                                    break;
+                                }
+                                Err(_) => break,
+                            }
+                        }
+                        let t0 = std::time::Instant::now();
+                        acc.observe_term(self.progress(tl).term);
+                        match acc.begin_appends(&batch)? {
+                            Appends::Reply(r) => {
+                                // Answers stay in order: after the writes in flight.
+                                while !flights.is_empty() {
+                                    let (f, res) = land(&mut flights).await;
+                                    self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats, &mut last_resp)
+                                        .await?;
+                                }
+                                remember_response(&r, &mut last_resp);
+                                reply_to(&mut wr, &mut buf, &r).await?;
+                            }
+                            Appends::Pending(p) => {
+                                let task = p.batch.clone().map(|b| {
+                                    let store = self.store.clone();
+                                    tokio::spawn(async move { store.append(&tl, &b).await })
+                                });
+                                flights.push_back(Flight {
+                                    pending: p,
+                                    reqs: batch,
+                                    bytes,
+                                    t0,
+                                    task,
+                                });
+                            }
+                        }
+                    }
+                }
+                self.registry.publish(tl, Progress::of(&acc.state()));
+            }
+            while !flights.is_empty() {
+                let (f, res) = land(&mut flights).await;
+                self.answer(tl, &mut acc, f, res, &mut wr, &mut buf, &mut stats, &mut last_resp)
+                    .await?;
+            }
+            acc.persist_commit_lsn().await?;
+            Ok(())
+        }
+        .await;
+        reader.abort();
+        if let Some(tl) = session {
+            self.registry.session(tl, -1);
+        }
+        if let Err(e) = &res {
+            warn!(error = %e, "WAL push ended");
+            pgwire::put_error(&mut buf, "XX000", &e.to_string());
+            let _ = send(&mut wr, &mut buf).await;
+        }
+        res
+    }
+
+    /// Answer one landed append: adopt its outcome, refresh the tail
+    /// readers use, and reply.
+    #[allow(clippy::too_many_arguments)]
+    async fn answer<W: AsyncWrite + Unpin>(
+        &self,
+        tl: TimelineId,
+        acc: &mut Acceptor<S>,
+        f: Flight,
+        res: Option<StoreAppend>,
+        wr: &mut W,
+        buf: &mut BytesMut,
+        stats: &mut PushStats,
+        last_resp: &mut Option<AppendResponse>,
+    ) -> Result<(), Error> {
+        let term = f.pending.term();
+        let r = acc.finish_appends(f.pending, res).await?;
+        remember_response(&r, last_resp);
+        if let AcceptorMessage::AppendResponse(resp) = &r
+            && resp.term == term
+        {
+            self.registry.tail(tl, |t| {
+                for a in f.reqs.iter().filter(|a| a.h.end_lsn <= resp.flush_lsn) {
+                    t.push(a.h.begin_lsn, a.wal.clone());
+                }
+            });
+        }
+        reply_to(wr, buf, &r).await?;
+        if f.bytes > 0 {
+            stats.record(tl, f.reqs.len(), f.bytes, f.t0.elapsed());
+        }
+        self.registry.publish(tl, Progress::of(&acc.state()));
+        Ok(())
+    }
+
+    /// The vanilla `START_REPLICATION`: a pageserver or replica (no term),
+    /// or the compute's recovery reader (a term).
+    async fn replicate<R, W>(
+        self: Arc<Self>,
+        tl: TimelineId,
+        start_lsn: Lsn,
+        term: Option<Term>,
+        rd: R,
+        mut wr: W,
+    ) -> Result<(), Error>
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+        W: AsyncWrite + Unpin,
+    {
+        let mut buf = BytesMut::new();
+        let head = self.store.load(&tl).await?.ok_or(Error::NotFound(tl))?;
+        if start_lsn < head.trimmed_lsn {
+            return Err(Error::Trimmed {
+                from: start_lsn,
+                trimmed: head.trimmed_lsn,
+            });
+        }
+        pgwire::put_copy_both(&mut buf);
+        send(&mut wr, &mut buf).await?;
+        info!(%tl, start = %start_lsn, ?term, "replication started");
+
+        // A pageserver or replica keeps the timeline published (the
+        // compute's recovery reader, with a term, does not).
+        let _reading = term.is_none().then(|| self.reader(tl));
+        let (reader, mut fb) = self.feedback_reader(tl, rd);
+        let mut watch = self.registry.sender(tl).subscribe();
+        let mut keepalive = tokio::time::interval(self.config.keepalive_interval);
+        let mut at = start_lsn;
+
+        let res: Result<(), Error> = async {
+            loop {
+                // The readable end: committed WAL, or the term's WAL for the
+                // compute's recovery reader.
+                watch.borrow_and_update();
+                let st = self.current(tl).await?;
+                let end = match term {
+                    None => st.commit_lsn.min(st.flush_lsn),
+                    Some(t) if st.term == t => st.flush_lsn,
+                    Some(_) => return Ok(()), // the term moved on: done
+                };
+                if at < end {
+                    for (lsn, bytes) in self.read_wal(tl, at, MAX_BATCH_BYTES).await? {
+                        let take = bytes.len().min(end.0.saturating_sub(lsn.0) as usize);
+                        if take == 0 {
+                            break;
+                        }
+                        let mut msg = BytesMut::with_capacity(25 + take);
+                        msg.put_u8(b'w');
+                        msg.put_u64(lsn.0);
+                        msg.put_u64(end.0);
+                        msg.put_i64(pgwire::pg_now_us());
+                        msg.put_slice(&bytes[..take]);
+                        pgwire::put_copy_data(&mut buf, &msg);
+                        at = Lsn(lsn.0 + take as u64);
+                    }
+                    send(&mut wr, &mut buf).await?;
+                    // Feedback is taken during a catch-up too.
+                    if fb.fold() {
+                        return Ok(()); // the reader hung up
+                    }
+                    fb.persist_if_due(&*self.store, tl).await?;
+                    continue;
+                }
+                tokio::select! {
+                    _ = watch.changed() => {}
+                    _ = tokio::time::sleep(self.config.poll_interval) => {}
+                    _ = keepalive.tick() => {
+                        let mut msg = BytesMut::with_capacity(18);
+                        msg.put_u8(b'k');
+                        msg.put_u64(end.0);
+                        msg.put_i64(pgwire::pg_now_us());
+                        // request_reply, as the fork's send_wal.rs sets it.
+                        msg.put_u8(1);
+                        pgwire::put_copy_data(&mut buf, &msg);
+                        send(&mut wr, &mut buf).await?;
+                    }
+                    closed = fb.changed() => if closed {
+                        return Ok(()); // the reader hung up
+                    },
+                }
+                fb.persist_if_due(&*self.store, tl).await?;
+            }
+        }
+        .await;
+        reader.abort();
+        fb.finish(&*self.store, tl).await;
+        res
+    }
+}
+
+/// Append latency on one WAL push stream, logged every 10 s.
+/// A store append's outcome.
+type StoreAppend = Result<Result<AcceptorState, crate::store::Deposed>, Error>;
+
+/// One append between issue and answer.
+struct Flight {
+    pending: PendingAppends,
+    reqs: Vec<crate::proto::AppendRequest>,
+    bytes: usize,
+    t0: std::time::Instant,
+    /// The store write; `None` for heartbeats, which land at once.
+    task: Option<tokio::task::JoinHandle<StoreAppend>>,
+}
+
+enum Event {
+    Landed(Box<(Flight, Option<StoreAppend>)>),
+    Msg(Option<ProposerMessage>),
+    Tick,
+    Feedback(Result<PageserverFeedback, broadcast::error::RecvError>),
+}
+
+/// A replication reader of a timeline, counted until dropped.
+pub(crate) struct ReaderGuard<S: WalStore> {
+    svc: Arc<WalService<S>>,
+    tl: TimelineId,
+}
+
+impl<S: WalStore> Drop for ReaderGuard<S> {
+    fn drop(&mut self) {
+        let mut m = self
+            .svc
+            .registry
+            .readers
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if let Some(n) = m.get_mut(&self.tl) {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                m.remove(&self.tl);
+            }
+        }
+    }
+}
+
+/// Pageserver feedback events queued per walproposer before the oldest are
+/// dropped (a receiver that lags skips them).
+const FEEDBACK_CAPACITY: usize = 64;
+
+/// Keep the last `AppendResponse` sent, which feedback is sent in.
+pub(crate) fn remember_response(msg: &AcceptorMessage, last: &mut Option<AppendResponse>) {
+    if let AcceptorMessage::AppendResponse(r) = msg {
+        *last = Some(r.clone());
+    }
+}
+
+/// Waits for the oldest append in flight and takes it off the queue.
+/// Cancel-safe: the queue only changes once the write has completed.
+async fn land(flights: &mut VecDeque<Flight>) -> (Flight, Option<StoreAppend>) {
+    let res = match flights.front_mut().and_then(|f| f.task.as_mut()) {
+        Some(task) => Some(
+            task.await
+                .unwrap_or_else(|e| Err(Error::Store(format!("append task: {e}")))),
+        ),
+        None => None,
+    };
+    let f = flights
+        .pop_front()
+        .unwrap_or_else(|| unreachable!("land() on an empty queue"));
+    (f, res)
+}
+
+#[derive(Debug, Default)]
+struct PushStats {
+    since: Option<std::time::Instant>,
+    micros: Vec<u64>,
+    requests: usize,
+    bytes: usize,
+}
+
+impl PushStats {
+    fn record(&mut self, tl: TimelineId, requests: usize, bytes: usize, took: Duration) {
+        let since = *self.since.get_or_insert_with(std::time::Instant::now);
+        self.micros.push(took.as_micros() as u64);
+        self.requests += requests;
+        self.bytes += bytes;
+        if since.elapsed() >= Duration::from_secs(10) {
+            self.micros.sort_unstable();
+            let q = |f: f64| {
+                self.micros[((self.micros.len() as f64 * f) as usize).min(self.micros.len() - 1)]
+            };
+            info!(
+                %tl,
+                writes = self.micros.len(),
+                requests = self.requests,
+                kib = self.bytes / 1024,
+                p50_us = q(0.5),
+                p99_us = q(0.99),
+                max_us = q(1.0),
+                "append latency (store write + ack)"
+            );
+            *self = PushStats::default();
+        }
+    }
+}
+
+/// Compare secrets without an early exit on the first differing byte.
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+pub(crate) async fn send<W: AsyncWrite + Unpin>(
+    wr: &mut W,
+    buf: &mut BytesMut,
+) -> Result<(), Error> {
+    wr.write_all(buf)
+        .await
+        .map_err(|e| Error::Io(e.to_string()))?;
+    wr.flush().await.map_err(|e| Error::Io(e.to_string()))?;
+    buf.clear();
+    Ok(())
+}
+
+async fn reply_to<W: AsyncWrite + Unpin>(
+    wr: &mut W,
+    buf: &mut BytesMut,
+    msg: &AcceptorMessage,
+) -> Result<(), Error> {
+    let mut payload = BytesMut::with_capacity(128);
+    msg.serialize(&mut payload);
+    pgwire::put_copy_data(buf, &payload);
+    send(wr, buf).await
+}
+
+/// The proposer's CopyData stream into the queue; ends on CopyDone, EOF or
+/// a malformed message (the connection is then dropped).
+async fn read_proposer<R: AsyncRead + Unpin>(mut rd: R, tx: mpsc::Sender<ProposerMessage>) {
+    loop {
+        match pgwire::read_message(&mut rd).await {
+            Ok(Some((b'd', body))) => match ProposerMessage::parse(body) {
+                Ok(m) => {
+                    if tx.send(m).await.is_err() {
+                        return;
+                    }
+                }
+                Err(e) => {
+                    warn!(error = %e, "bad proposer message");
+                    return;
+                }
+            },
+            Ok(Some((b'c', _))) | Ok(Some((b'X', _))) | Ok(None) => return,
+            Ok(Some((tag, _))) => {
+                warn!(tag = %(tag as char), "unexpected message in WAL push");
+                return;
+            }
+            Err(e) => {
+                debug!(error = %e, "proposer connection closed");
+                return;
+            }
+        }
+    }
+}
+
+/// Replication feedback: `'r'` standby status, `'h'` hot standby, and the
+/// pageserver's `'z'` status update, which is published to this connection
+/// (`conn`, the latest value wins) and broadcast to the walproposers on this
+/// instance (`shared`, every update; a lagging receiver skips). Publishing
+/// never waits.
+async fn read_feedback<R: AsyncRead + Unpin>(
+    mut rd: R,
+    conn: watch::Sender<Option<PageserverFeedback>>,
+    shared: broadcast::Sender<PageserverFeedback>,
+) {
+    loop {
+        match pgwire::read_message(&mut rd).await {
+            Ok(Some((b'd', body))) => match body.first() {
+                Some(b'z') if body.len() > 9 => {
+                    if let Ok(fb) = PageserverFeedback::parse(body.slice(9..)) {
+                        conn.send_replace(Some(fb));
+                        // No walproposer here is not an error.
+                        let _ = shared.send(fb);
+                    }
+                }
+                Some(b'r') | Some(b'h') => {}
+                _ => debug!("unexpected replication feedback"),
+            },
+            Ok(Some((b'c', _))) | Ok(Some((b'X', _))) | Ok(None) | Err(_) => return,
+            Ok(Some(_)) => {}
+        }
+    }
+}
+
+/// One replication connection's feedback, as the stream loop sees it:
+/// `remote_consistent_lsn` is written to the store at most once a second.
+#[derive(Debug)]
+pub(crate) struct Feedback {
+    rx: watch::Receiver<Option<PageserverFeedback>>,
+    pending: Option<Lsn>,
+    last_write: tokio::time::Instant,
+}
+
+impl Feedback {
+    fn take(&mut self) {
+        if let Some(fb) = *self.rx.borrow_and_update() {
+            let lsn = fb.remote_consistent_lsn;
+            self.pending = Some(self.pending.map_or(lsn, |p| p.max(lsn)));
+        }
+    }
+
+    /// Take the latest feedback without waiting; `true` once the client's
+    /// side has closed and everything it sent has been taken.
+    pub(crate) fn fold(&mut self) -> bool {
+        match self.rx.has_changed() {
+            Ok(true) => {
+                self.take();
+                false
+            }
+            Ok(false) => false,
+            Err(_) => {
+                self.take();
+                true
+            }
+        }
+    }
+
+    /// Wait for new feedback; `true` when the client's side has closed.
+    pub(crate) async fn changed(&mut self) -> bool {
+        match self.rx.changed().await {
+            Ok(()) => {
+                self.take();
+                false
+            }
+            Err(_) => {
+                self.take();
+                true
+            }
+        }
+    }
+
+    /// Write the pending `remote_consistent_lsn` if a second has passed.
+    pub(crate) async fn persist_if_due<S: WalStore + ?Sized>(
+        &mut self,
+        store: &S,
+        tl: TimelineId,
+    ) -> Result<(), Error> {
+        if let Some(lsn) = self.pending
+            && self.last_write.elapsed() >= Duration::from_secs(1)
+        {
+            store.record_remote_consistent_lsn(&tl, lsn).await?;
+            self.pending = None;
+            self.last_write = tokio::time::Instant::now();
+        }
+        Ok(())
+    }
+
+    /// The stream ends: write what is pending.
+    pub(crate) async fn finish<S: WalStore + ?Sized>(&mut self, store: &S, tl: TimelineId) {
+        self.fold();
+        if let Some(lsn) = self.pending.take() {
+            let _ = store.record_remote_consistent_lsn(&tl, lsn).await;
+        }
+    }
+}
+
+/// Whether the next message on the socket is a `START_WAL_PUSH` query,
+/// without consuming it.
+async fn next_is_wal_push(stream: &TcpStream) -> Result<bool, Error> {
+    // A peer that stalls before sending its query is left to the ordinary
+    // path, which has its own read handling.
+    match tokio::time::timeout(PEEK_DEADLINE, peek_wal_push(stream)).await {
+        Ok(r) => r,
+        Err(_) => Ok(false),
+    }
+}
+
+/// How long [`next_is_wal_push`] waits for the next message to arrive.
+const PEEK_DEADLINE: Duration = Duration::from_secs(5);
+
+async fn peek_wal_push(stream: &TcpStream) -> Result<bool, Error> {
+    let mut head = [0u8; 5];
+    loop {
+        let n = stream
+            .peek(&mut head)
+            .await
+            .map_err(|e| Error::Io(e.to_string()))?;
+        if n == 0 {
+            return Ok(false);
+        }
+        if n == head.len() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    if head[0] != b'Q' {
+        return Ok(false);
+    }
+    let len = u32::from_be_bytes([head[1], head[2], head[3], head[4]]) as usize;
+    if len < 4 {
+        return Ok(false);
+    }
+    let want = (1 + len).min(64);
+    let mut msg = vec![0u8; want];
+    loop {
+        let n = stream
+            .peek(&mut msg)
+            .await
+            .map_err(|e| Error::Io(e.to_string()))?;
+        if n == 0 {
+            return Ok(false);
+        }
+        if n == want {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    let text = String::from_utf8_lossy(&msg[5..]);
+    Ok(text
+        .trim_start()
+        .to_ascii_uppercase()
+        .starts_with("START_WAL_PUSH"))
+}
+
+/// The timeline named in the startup options (`tenant_id` / `ztenantid`,
+/// `timeline_id` / `ztimelineid`).
+fn timeline_of(startup: &Startup) -> Result<Option<TimelineId>, Error> {
+    let opts = startup.options();
+    let get = |a: &str, b: &str| opts.get(a).or_else(|| opts.get(b)).cloned();
+    match (
+        get("tenant_id", "ztenantid"),
+        get("timeline_id", "ztimelineid"),
+    ) {
+        (Some(t), Some(l)) => Ok(Some(TimelineId::new(t.parse::<Id>()?, l.parse::<Id>()?))),
+        _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+
+    fn b(s: &'static [u8]) -> Bytes {
+        Bytes::from_static(s)
+    }
+
+    fn flat(v: Option<Vec<(Lsn, Bytes)>>) -> Option<Vec<u8>> {
+        v.map(|v| v.into_iter().flat_map(|(_, b)| b.to_vec()).collect())
+    }
+
+    #[test]
+    fn tail_reads_truncates_and_skips_retries() {
+        let mut t = Tail::default();
+        t.push(Lsn(10), b(b"abc"));
+        t.push(Lsn(13), b(b"def"));
+        t.push(Lsn(12), b(b"cdefg")); // retried prefix
+        assert_eq!(flat(t.read(Lsn(11), usize::MAX)).unwrap(), b"bcdefg");
+        assert_eq!(flat(t.read(Lsn(11), 3)).unwrap(), b"bcd");
+        assert_eq!(flat(t.read(Lsn(17), 10)).unwrap(), b"");
+        assert!(t.read(Lsn(9), 10).is_none());
+        assert!(t.read(Lsn(18), 10).is_none());
+        t.truncate(Lsn(14));
+        assert_eq!(flat(t.read(Lsn(10), usize::MAX)).unwrap(), b"abcd");
+        // A gap resets the tail.
+        t.push(Lsn(100), b(b"z"));
+        assert!(t.read(Lsn(10), 1).is_none());
+        assert_eq!(flat(t.read(Lsn(100), 1)).unwrap(), b"z");
+    }
+
+    #[test]
+    fn registry_progress_follows_terms_and_sessions() {
+        let r = Registry::default();
+        let tl = TimelineId::default();
+        let p = |term, flush, commit| Progress {
+            term,
+            flush_lsn: Lsn(flush),
+            commit_lsn: Lsn(commit),
+            peer_horizon_lsn: Lsn(0),
+            active: true,
+        };
+        r.session(tl, 1);
+        r.publish(tl, p(1, 10, 5));
+        r.publish(tl, p(1, 12, 4)); // commit never goes back within a term
+        assert_eq!(*r.sender(tl).borrow(), p(1, 12, 5));
+        r.publish(tl, p(0, 99, 99)); // an older term is ignored
+        assert_eq!(r.sender(tl).borrow().flush_lsn, Lsn(12));
+        r.publish(tl, p(2, 8, 3)); // a new term replaces the view
+        assert_eq!(*r.sender(tl).borrow(), p(2, 8, 3));
+        r.session(tl, -1);
+        assert!(!r.sender(tl).borrow().active);
+    }
+
+    #[test]
+    fn the_tail_is_dropped_when_the_last_local_session_ends() {
+        let r = Registry::default();
+        let tl = TimelineId::default();
+        r.session(tl, 1);
+        r.session(tl, 1);
+        r.tail(tl, |t| t.push(Lsn(10), b(b"abc")));
+        r.session(tl, -1);
+        assert!(
+            r.tail(tl, |t| t.read(Lsn(10), 10)).is_some(),
+            "one session left"
+        );
+        r.session(tl, -1);
+        assert!(
+            r.tail(tl, |t| t.read(Lsn(10), 10)).is_none(),
+            "stale after the last one"
+        );
+    }
+}

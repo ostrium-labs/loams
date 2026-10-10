@@ -1,0 +1,856 @@
+syntax = "proto3";
+
+// Loams Postgres (design §46 §3–§4, D701–D702; PG2 Task 1): serverless
+// Postgres on the bucket. A project is a Neon tenant, a branch a timeline,
+// an endpoint a stable address with settings, a compute one disposable
+// Postgres behind it. `pg-control` serves this package from PG2 Task 9.
+//
+// - **Ids.** "prj-", "br-", "ep-" and "cmp-" followed by a 26-character
+//   Crockford ULID. Names are unique per namespace (projects) or per project
+//   (branches); roles and databases are named per branch.
+// - **Addressing.** Every request names its namespace in a top-level
+//   `namespace`, then the project by `project_id` and a child by its id. An
+//   update carries the resource, whose `id` names it. `project_id` (and the
+//   console's `{project}`) is always the "prj-" id, never the name: ids never
+//   change, names can (`UpdateProject`).
+// - **Defaults.** Where a request's `branch_id` may be empty, its comment
+//   says so, and empty takes the project's default branch.
+// - **Updates** change exactly the fields named in `update_mask`; an empty
+//   mask is `invalid_argument` (field `update_mask`), never "every field".
+//   With `expected_version`, an update or delete applies only at that
+//   version of the resource (otherwise `aborted`).
+// - **Idempotency.** Every mutating request has `string idempotency_key = 15`
+//   (a client ULID). A replay within 24 h answers the first response,
+//   including the same `Operation` id. `CreateRole`, `ResetRolePassword` and
+//   `IssueConnectCredential` answer a secret once: the idempotency ledger
+//   never stores the secret, only that one was issued, so a replay answers
+//   the reason `secret_already_issued` instead of the secret. A create under a
+//   taken name with another key is `already_exists`.
+// - **Operations.** The long-running RPCs answer a
+//   `loams.operations.v1.Operation` (watch it with `WatchOperations`), whose
+//   `target` is `{project, branch?, endpoint?}`. The kinds:
+//   `postgres.project.create`, `postgres.project.delete`,
+//   `postgres.project.upgrade`, `postgres.branch.create`,
+//   `postgres.branch.delete`, `postgres.branch.restore`,
+//   `postgres.endpoint.start`, `postgres.endpoint.suspend`,
+//   `postgres.endpoint.restart` and `postgres.endpoint.delete`.
+// - **LSNs** are Postgres's "X/Y" text form.
+// - **Secrets.** A role's password is answered once, by `CreateRole` and
+//   `ResetRolePassword`; an issued connect credential once, by
+//   `IssueConnectCredential`. `GetConnectionInfo` never carries a password.
+// - **Errors** carry a `loams.errors.v1.ErrorInfo` whose `reason` is in
+//   `docs/api/reasons.md`: `project_not_found`, `branch_has_children`,
+//   `branch_protected`, `lsn_out_of_retention`, `endpoint_exists_for_branch`,
+//   `compute_start_failed`, `quota_exceeded`, `storage_unavailable`,
+//   `secret_already_issued` and the shared `already_exists`.
+package loams.postgres.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "loams/operations/v1/operations.proto";
+import "loams/options/v1/options.proto";
+
+// Projects, branches, endpoints, roles, databases and how to connect.
+service PostgresService {
+  option (loams.options.v1.module) = {
+    name: "postgres"
+    summary: "Loams Postgres: serverless Postgres on the bucket, with branches and scale to zero."
+    // Until Loams Postgres GA: `buf breaking` skips the package (buf.yaml)
+    // and SDKs mark the module experimental. PG2 Task 60 removes both.
+    unstable: true
+  };
+  // No method carries `loams.options.v1.facade` yet, so the SDK facades
+  // expose no `postgres` module: that waits for the service to be served
+  // (PG2 Task 9) and the SDKs' package maps to name this package (PG2 Task 1
+  // ruling R1.3).
+
+  // Creates a project with its default branch `main`. Operation
+  // `postgres.project.create`.
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // `name` and `history_retention`.
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse);
+  // Deletes the project, its branches, endpoints and storage. Operation
+  // `postgres.project.delete`.
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+
+  // Creates a branch from a parent at an LSN, a time, or the parent's head.
+  // Operation `postgres.branch.create`.
+  rpc CreateBranch(CreateBranchRequest) returns (CreateBranchResponse);
+  // With the WAL heads and the logical size.
+  rpc GetBranch(GetBranchRequest) returns (GetBranchResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListBranches(ListBranchesRequest) returns (ListBranchesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // `name`, `expire_time` and `protected`.
+  rpc UpdateBranch(UpdateBranchRequest) returns (UpdateBranchResponse);
+  // `branch_has_children` while it has children, `branch_protected` when
+  // protected. Operation `postgres.branch.delete`.
+  rpc DeleteBranch(DeleteBranchRequest) returns (DeleteBranchResponse);
+  // Resets a branch to a point in its own or another branch's history
+  // (§46 §10). Operation `postgres.branch.restore`.
+  rpc RestoreBranch(RestoreBranchRequest) returns (RestoreBranchResponse);
+  rpc SetDefaultBranch(SetDefaultBranchRequest) returns (SetDefaultBranchResponse);
+
+  // At most one read-write endpoint per branch (`endpoint_exists_for_branch`).
+  rpc CreateEndpoint(CreateEndpointRequest) returns (CreateEndpointResponse);
+  rpc GetEndpoint(GetEndpointRequest) returns (GetEndpointResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListEndpoints(ListEndpointsRequest) returns (ListEndpointsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // `min_cu`, `max_cu`, `suspend_timeout`, `pool_mode` and `pg_settings`.
+  rpc UpdateEndpoint(UpdateEndpointRequest) returns (UpdateEndpointResponse);
+  // Operation `postgres.endpoint.start`.
+  rpc StartEndpoint(StartEndpointRequest) returns (StartEndpointResponse);
+  // Operation `postgres.endpoint.suspend`.
+  rpc SuspendEndpoint(SuspendEndpointRequest) returns (SuspendEndpointResponse);
+  // Operation `postgres.endpoint.restart`; with `promote`, a read-only
+  // endpoint becomes the branch's read-write one (PG2 Task 16), and while
+  // that read-write endpoint is running the promote is `failed_precondition`.
+  rpc RestartEndpoint(RestartEndpointRequest) returns (RestartEndpointResponse);
+  // Operation `postgres.endpoint.delete`.
+  rpc DeleteEndpoint(DeleteEndpointRequest) returns (DeleteEndpointResponse);
+
+  // Answers the password once.
+  rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse);
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Answers the new password once.
+  rpc ResetRolePassword(ResetRolePasswordRequest) returns (ResetRolePasswordResponse);
+  rpc DeleteRole(DeleteRoleRequest) returns (DeleteRoleResponse);
+
+  rpc CreateDatabase(CreateDatabaseRequest) returns (CreateDatabaseResponse);
+  rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc DeleteDatabase(DeleteDatabaseRequest) returns (DeleteDatabaseResponse);
+
+  // Where and as whom to connect, through PgDog. Never a password. A read
+  // (`NO_SIDE_EFFECTS`): for a caller with the `connect` relation it may
+  // also start a suspended endpoint, as a best-effort hint that the
+  // connection follows (D709); never for a caller with only `viewer`, and
+  // never an error when the start does not happen.
+  rpc GetConnectionInfo(GetConnectionInfoRequest) returns (GetConnectionInfoResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Exchanges the caller's identity (an OIDC or agent token) for a
+  // short-lived Postgres credential (D711), answered once.
+  rpc IssueConnectCredential(IssueConnectCredentialRequest) returns (IssueConnectCredentialResponse);
+
+  // A major-version upgrade (PG2 Task 51). Operation
+  // `postgres.project.upgrade`.
+  rpc UpgradeProject(UpgradeProjectRequest) returns (UpgradeProjectResponse);
+
+  // A snapshot of the project's branches, endpoints and computes, then their
+  // changes, then a heartbeat every 15 s; resumes from a cursor. A read
+  // (AP0: reads are `NO_SIDE_EFFECTS`), so it takes no `idempotency_key`.
+  rpc WatchProject(WatchProjectRequest) returns (stream WatchProjectResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Resources
+// ---------------------------------------------------------------------------
+
+// One Postgres cluster: a Neon tenant with its branches.
+message Project {
+  // "prj-" + ULID.
+  string id = 1;
+  string namespace = 2;
+  // Unique in the namespace.
+  string name = 3;
+  // The Postgres major version, for example 17.
+  uint32 pg_version = 4;
+  string region = 5;
+  // How far back branches can be created or restored.
+  google.protobuf.Duration history_retention = 6;
+  string default_branch_id = 7;
+  // The `loams-wal` pool the project's WAL goes to.
+  string wal_pool = 8;
+  ProjectState state = 9;
+  google.protobuf.Timestamp create_time = 10;
+  google.protobuf.Timestamp update_time = 11;
+  // The record's version, for `expected_version`.
+  uint64 version = 12;
+}
+
+enum ProjectState {
+  PROJECT_STATE_UNSPECIFIED = 0;
+  PROJECT_STATE_CREATING = 1;
+  PROJECT_STATE_READY = 2;
+  PROJECT_STATE_UPGRADING = 3;
+  PROJECT_STATE_DELETING = 4;
+  PROJECT_STATE_FAILED = 5;
+}
+
+// A copy-on-write branch: a Neon timeline.
+message Branch {
+  // "br-" + ULID.
+  string id = 1;
+  string project_id = 2;
+  // Unique in the project.
+  string name = 3;
+  // Empty for the project's first branch.
+  string parent_id = 4;
+  // Where the branch starts in its parent's history.
+  string parent_lsn = 5;
+  // The time `parent_lsn` was chosen for, when the branch was made at a time.
+  google.protobuf.Timestamp parent_time = 6;
+  bool is_default = 7;
+  // Refuses deletion and restore without approval (§46 §10).
+  bool protected = 8;
+  // Deleted after this time, when set.
+  google.protobuf.Timestamp expire_time = 9;
+  BranchState state = 10;
+  WalHeads wal = 11;
+  uint64 logical_size_bytes = 12;
+  google.protobuf.Timestamp create_time = 13;
+  google.protobuf.Timestamp update_time = 14;
+  uint64 version = 15;
+}
+
+enum BranchState {
+  BRANCH_STATE_UNSPECIFIED = 0;
+  BRANCH_STATE_CREATING = 1;
+  BRANCH_STATE_READY = 2;
+  BRANCH_STATE_RESTORING = 3;
+  BRANCH_STATE_DELETING = 4;
+  BRANCH_STATE_FAILED = 5;
+}
+
+// The branch's WAL heads, from `loams-wal` and the pageserver ("X/Y").
+message WalHeads {
+  string commit_lsn = 1;
+  string flush_lsn = 2;
+  string remote_consistent_lsn = 3;
+  string backup_lsn = 4;
+}
+
+// A stable address with settings; computes come and go behind it.
+message Endpoint {
+  // "ep-" + ULID.
+  string id = 1;
+  string project_id = 2;
+  string branch_id = 3;
+  EndpointType type = 4;
+  EndpointState state = 5;
+  // Compute units: the autoscaler's floor and ceiling.
+  double min_cu = 6;
+  double max_cu = 7;
+  // Idle time before the compute is suspended; zero never suspends.
+  google.protobuf.Duration suspend_timeout = 8;
+  PoolMode pool_mode = 9;
+  map<string, string> pg_settings = 10;
+  // The address clients connect to (PgDog's).
+  string host = 11;
+  // The running compute ("cmp-" + ULID), when there is one.
+  string compute_id = 12;
+  // The running compute's size.
+  double current_cu = 13;
+  google.protobuf.Timestamp create_time = 14;
+  google.protobuf.Timestamp update_time = 15;
+  uint64 version = 16;
+}
+
+enum EndpointType {
+  ENDPOINT_TYPE_UNSPECIFIED = 0;
+  ENDPOINT_TYPE_READ_WRITE = 1;
+  ENDPOINT_TYPE_READ_ONLY = 2;
+}
+
+enum EndpointState {
+  ENDPOINT_STATE_UNSPECIFIED = 0;
+  ENDPOINT_STATE_IDLE = 1;
+  ENDPOINT_STATE_STARTING = 2;
+  ENDPOINT_STATE_RUNNING = 3;
+  ENDPOINT_STATE_SUSPENDING = 4;
+  ENDPOINT_STATE_SUSPENDED = 5;
+  ENDPOINT_STATE_FAILED = 6;
+  ENDPOINT_STATE_DELETING = 7;
+}
+
+// PgDog's pooling mode for the endpoint.
+enum PoolMode {
+  POOL_MODE_UNSPECIFIED = 0;
+  POOL_MODE_TRANSACTION = 1;
+  POOL_MODE_SESSION = 2;
+  POOL_MODE_STATEMENT = 3;
+}
+
+// One Postgres process behind an endpoint, replaced rather than changed.
+message Compute {
+  // "cmp-" + ULID.
+  string id = 1;
+  string endpoint_id = 2;
+  ComputeState state = 3;
+  double cu = 4;
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp update_time = 6;
+}
+
+enum ComputeState {
+  COMPUTE_STATE_UNSPECIFIED = 0;
+  COMPUTE_STATE_STARTING = 1;
+  COMPUTE_STATE_RUNNING = 2;
+  COMPUTE_STATE_STOPPING = 3;
+  COMPUTE_STATE_STOPPED = 4;
+  COMPUTE_STATE_FAILED = 5;
+}
+
+// A Postgres role of a branch. Its secret is never stored in clear.
+message Role {
+  string name = 1;
+  string branch_id = 2;
+  // A role Loams manages (for example the read-only role agents use).
+  bool system = 3;
+  google.protobuf.Timestamp create_time = 4;
+}
+
+// A database of a branch.
+message Database {
+  string name = 1;
+  string branch_id = 2;
+  // A role of the same branch.
+  string owner_role = 3;
+  google.protobuf.Timestamp create_time = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Projects
+// ---------------------------------------------------------------------------
+
+message CreateProjectRequest {
+  string namespace = 1;
+  string name = 2;
+  // 0 takes the server's default (17).
+  uint32 pg_version = 3;
+  // Empty takes the namespace's region.
+  string region = 4;
+  // Unset takes the namespace's default.
+  google.protobuf.Duration history_retention = 5;
+  // Empty takes the namespace's default pool.
+  string wal_pool = 6;
+  string idempotency_key = 15;
+}
+
+message CreateProjectResponse {
+  loams.operations.v1.Operation operation = 1;
+  // The project as created (`PROJECT_STATE_CREATING`).
+  Project project = 2;
+}
+
+message GetProjectRequest {
+  string namespace = 1;
+  string project_id = 2;
+}
+
+message GetProjectResponse {
+  Project project = 1;
+}
+
+message ListProjectsRequest {
+  string namespace = 1;
+  // AIP-158 page size; 0 takes the server's default.
+  int32 page_size = 2;
+  // The `next_page_token` of the previous page; empty starts at the first.
+  string page_token = 3;
+}
+
+message ListProjectsResponse {
+  repeated Project projects = 1;
+  // Empty on the last page.
+  string next_page_token = 2;
+}
+
+message UpdateProjectRequest {
+  string namespace = 1;
+  // Named by its `id`; the fields in `update_mask` are taken from it.
+  Project project = 2;
+  // `name` and `history_retention`; empty is `invalid_argument`.
+  google.protobuf.FieldMask update_mask = 3;
+  // When set, the update applies only at this `Project.version`.
+  optional uint64 expected_version = 4;
+  string idempotency_key = 15;
+}
+
+message UpdateProjectResponse {
+  Project project = 1;
+}
+
+message DeleteProjectRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // When set, the delete applies only at this `Project.version`.
+  optional uint64 expected_version = 3;
+  string idempotency_key = 15;
+}
+
+message DeleteProjectResponse {
+  loams.operations.v1.Operation operation = 1;
+}
+
+message UpgradeProjectRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // The target major version.
+  uint32 pg_version = 3;
+  string idempotency_key = 15;
+}
+
+message UpgradeProjectResponse {
+  loams.operations.v1.Operation operation = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Branches
+// ---------------------------------------------------------------------------
+
+message CreateBranchRequest {
+  string namespace = 1;
+  string project_id = 2;
+  string name = 3;
+  // Empty takes the project's default branch.
+  string parent_id = 4;
+  // Where in the parent's history; neither takes the parent's head. A point
+  // older than the retention is `lsn_out_of_retention`.
+  oneof point {
+    // "X/Y".
+    string lsn = 5;
+    google.protobuf.Timestamp time = 6;
+  }
+  bool protected = 7;
+  // Deleted after this long, when set.
+  google.protobuf.Duration ttl = 8;
+  string idempotency_key = 15;
+}
+
+message CreateBranchResponse {
+  loams.operations.v1.Operation operation = 1;
+  // The branch as created (`BRANCH_STATE_CREATING`).
+  Branch branch = 2;
+}
+
+message GetBranchRequest {
+  string namespace = 1;
+  string project_id = 2;
+  string branch_id = 3;
+}
+
+message GetBranchResponse {
+  Branch branch = 1;
+}
+
+message ListBranchesRequest {
+  string namespace = 1;
+  string project_id = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListBranchesResponse {
+  repeated Branch branches = 1;
+  string next_page_token = 2;
+}
+
+message UpdateBranchRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Named by its `id`; the fields in `update_mask` are taken from it.
+  Branch branch = 3;
+  // `name`, `expire_time` and `protected`; empty is `invalid_argument`.
+  google.protobuf.FieldMask update_mask = 4;
+  // When set, the update applies only at this `Branch.version`.
+  optional uint64 expected_version = 5;
+  string idempotency_key = 15;
+}
+
+message UpdateBranchResponse {
+  Branch branch = 1;
+}
+
+message DeleteBranchRequest {
+  string namespace = 1;
+  string project_id = 2;
+  string branch_id = 3;
+  // When set, the delete applies only at this `Branch.version`.
+  optional uint64 expected_version = 4;
+  string idempotency_key = 15;
+}
+
+message DeleteBranchResponse {
+  loams.operations.v1.Operation operation = 1;
+}
+
+message RestoreBranchRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // The branch to reset.
+  string branch_id = 3;
+  // Whose history to take; empty takes the branch's own.
+  string source_branch_id = 4;
+  // Which point of it; neither takes the source's head.
+  oneof point {
+    string lsn = 5;
+    google.protobuf.Timestamp time = 6;
+  }
+  // The name the branch's state before the restore is kept under; empty
+  // lets the server choose one.
+  string preserve_as = 7;
+  string idempotency_key = 15;
+}
+
+message RestoreBranchResponse {
+  loams.operations.v1.Operation operation = 1;
+}
+
+message SetDefaultBranchRequest {
+  string namespace = 1;
+  string project_id = 2;
+  string branch_id = 3;
+  // When set, the change applies only at this `Project.version`.
+  optional uint64 expected_version = 4;
+  string idempotency_key = 15;
+}
+
+message SetDefaultBranchResponse {
+  Project project = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Endpoints
+// ---------------------------------------------------------------------------
+
+message CreateEndpointRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  EndpointType type = 4;
+  double min_cu = 5;
+  double max_cu = 6;
+  google.protobuf.Duration suspend_timeout = 7;
+  PoolMode pool_mode = 8;
+  map<string, string> pg_settings = 9;
+  string idempotency_key = 15;
+}
+
+message CreateEndpointResponse {
+  Endpoint endpoint = 1;
+}
+
+message GetEndpointRequest {
+  string namespace = 1;
+  string project_id = 2;
+  string endpoint_id = 3;
+}
+
+message GetEndpointResponse {
+  Endpoint endpoint = 1;
+}
+
+message ListEndpointsRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty lists every branch's.
+  string branch_id = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListEndpointsResponse {
+  repeated Endpoint endpoints = 1;
+  string next_page_token = 2;
+}
+
+message UpdateEndpointRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Named by its `id`; the fields in `update_mask` are taken from it.
+  Endpoint endpoint = 3;
+  // `min_cu`, `max_cu`, `suspend_timeout`, `pool_mode` and `pg_settings`;
+  // empty is `invalid_argument`.
+  google.protobuf.FieldMask update_mask = 4;
+  // When set, the update applies only at this `Endpoint.version`.
+  optional uint64 expected_version = 5;
+  string idempotency_key = 15;
+}
+
+message UpdateEndpointResponse {
+  Endpoint endpoint = 1;
+}
+
+message StartEndpointRequest {
+  string namespace = 1;
+  string project_id = 2;
+  string endpoint_id = 3;
+  string idempotency_key = 15;
+}
+
+message StartEndpointResponse {
+  loams.operations.v1.Operation operation = 1;
+}
+
+message SuspendEndpointRequest {
+  string namespace = 1;
+  string project_id = 2;
+  string endpoint_id = 3;
+  string idempotency_key = 15;
+}
+
+message SuspendEndpointResponse {
+  loams.operations.v1.Operation operation = 1;
+}
+
+message RestartEndpointRequest {
+  string namespace = 1;
+  string project_id = 2;
+  string endpoint_id = 3;
+  // A read-only endpoint whose branch's read-write endpoint is down becomes
+  // the read-write one (PG2 Task 16).
+  bool promote = 4;
+  string idempotency_key = 15;
+}
+
+message RestartEndpointResponse {
+  loams.operations.v1.Operation operation = 1;
+}
+
+message DeleteEndpointRequest {
+  string namespace = 1;
+  string project_id = 2;
+  string endpoint_id = 3;
+  // When set, the delete applies only at this `Endpoint.version`.
+  optional uint64 expected_version = 4;
+  string idempotency_key = 15;
+}
+
+message DeleteEndpointResponse {
+  loams.operations.v1.Operation operation = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Roles and databases
+// ---------------------------------------------------------------------------
+
+message CreateRoleRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  string name = 4;
+  string idempotency_key = 15;
+}
+
+message CreateRoleResponse {
+  Role role = 1;
+  // Answered once; a replay is `secret_already_issued`.
+  string password = 2;
+}
+
+message ListRolesRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListRolesResponse {
+  repeated Role roles = 1;
+  string next_page_token = 2;
+}
+
+message ResetRolePasswordRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  string name = 4;
+  string idempotency_key = 15;
+}
+
+message ResetRolePasswordResponse {
+  Role role = 1;
+  // Answered once; a replay is `secret_already_issued`.
+  string password = 2;
+}
+
+message DeleteRoleRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  string name = 4;
+  string idempotency_key = 15;
+}
+
+message DeleteRoleResponse {}
+
+message CreateDatabaseRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  string name = 4;
+  string owner_role = 5;
+  string idempotency_key = 15;
+}
+
+message CreateDatabaseResponse {
+  Database database = 1;
+}
+
+message ListDatabasesRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListDatabasesResponse {
+  repeated Database databases = 1;
+  string next_page_token = 2;
+}
+
+message DeleteDatabaseRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  string name = 4;
+  string idempotency_key = 15;
+}
+
+message DeleteDatabaseResponse {}
+
+// ---------------------------------------------------------------------------
+// Connecting
+// ---------------------------------------------------------------------------
+
+message GetConnectionInfoRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  // Empty takes the branch's read-write endpoint.
+  string endpoint_id = 4;
+  // Empty takes the branch's owner role.
+  string role = 5;
+  // Empty takes the branch's first database.
+  string database = 6;
+  // The branch's read-only endpoints (PgDog's `__ro` name).
+  bool read_only = 7;
+}
+
+message GetConnectionInfoResponse {
+  ConnectionInfo connection = 1;
+}
+
+// Where and as whom to connect. No password: a role's is answered once by
+// `CreateRole` or `ResetRolePassword`, and a short-lived one by
+// `IssueConnectCredential`.
+message ConnectionInfo {
+  // PgDog's address for the namespace.
+  string host = 1;
+  uint32 port = 2;
+  // The routed name: project[__branch[.database|__ro]] (§46 §8.1).
+  string database = 3;
+  string user = 4;
+  // "verify-full".
+  string sslmode = 5;
+  // The CA bundle that signs `host`'s certificate, PEM.
+  string ca_pem = 6;
+  // The same as a libpq URI, without a password.
+  string uri = 7;
+}
+
+message IssueConnectCredentialRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // Empty takes the project's default branch.
+  string branch_id = 3;
+  // Empty takes the branch's read-write endpoint.
+  string endpoint_id = 4;
+  // The role the issued login is a member of; empty takes the caller's
+  // default (an agent's is the read-only role).
+  string role = 5;
+  // How long the credential lives: unset takes 15 minutes, and anything
+  // longer than 1 hour is cut to 1 hour (§46 §8.6).
+  google.protobuf.Duration ttl = 6;
+  string idempotency_key = 15;
+}
+
+// The short-lived login (§46 §8.6's `{user, password, expire_time}`).
+message IssueConnectCredentialResponse {
+  // Where and as whom to connect; `user` is the issued login role.
+  ConnectionInfo connection = 1;
+  // Answered once; never stored for a replay, and never in an `Operation`,
+  // a log or a metric.
+  string password = 2;
+  // When the login stops working; the reconciler drops it after that.
+  google.protobuf.Timestamp expire_time = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Watching a project
+// ---------------------------------------------------------------------------
+
+message WatchProjectRequest {
+  string namespace = 1;
+  string project_id = 2;
+  // A `cursor` from an earlier response; empty starts with a snapshot.
+  string resume_cursor = 3;
+}
+
+message WatchProjectResponse {
+  oneof event {
+    ProjectSnapshot snapshot = 1;
+    Project project = 2;
+    Branch branch = 3;
+    Endpoint endpoint = 4;
+    Compute compute = 5;
+    Removed removed = 6;
+    // Every 15 s while nothing else is sent.
+    Heartbeat heartbeat = 7;
+  }
+  string cursor = 8;
+  // The cursor was too old: this snapshot replaces everything held.
+  bool snapshot_reset = 9;
+}
+
+message ProjectSnapshot {
+  Project project = 1;
+  repeated Branch branches = 2;
+  repeated Endpoint endpoints = 3;
+  repeated Compute computes = 4;
+}
+
+// A branch, endpoint or compute that no longer exists.
+message Removed {
+  ResourceKind kind = 1;
+  string id = 2;
+}
+
+enum ResourceKind {
+  RESOURCE_KIND_UNSPECIFIED = 0;
+  RESOURCE_KIND_BRANCH = 1;
+  RESOURCE_KIND_ENDPOINT = 2;
+  RESOURCE_KIND_COMPUTE = 3;
+}
+
+message Heartbeat {}

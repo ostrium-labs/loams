@@ -1,0 +1,12 @@
+-- The `movies` graph every desktop contract fixture reads (design §48 §18.2, GR1 Task 7).
+-- One statement per line, run in order on an empty graph, so node and relationship ids are the
+-- same on every run. Lines starting with `--` are comments.
+INSERT (:Person {name: 'Keanu Reeves', born: 1964})
+INSERT (:Person {name: 'Carrie-Anne Moss', born: 1967})
+INSERT (:Person {name: 'Lana Wachowski', born: 1965})
+INSERT (:Movie {title: 'The Matrix', released: 1999, rating: 8.7})
+INSERT (:Movie {title: 'John Wick', released: 2014, rating: 7.4})
+MATCH (p:Person {name: 'Keanu Reeves'}), (m:Movie {title: 'The Matrix'}) INSERT (p)-[:ACTED_IN {roles: ['Neo']}]->(m)
+MATCH (p:Person {name: 'Carrie-Anne Moss'}), (m:Movie {title: 'The Matrix'}) INSERT (p)-[:ACTED_IN {roles: ['Trinity']}]->(m)
+MATCH (p:Person {name: 'Keanu Reeves'}), (m:Movie {title: 'John Wick'}) INSERT (p)-[:ACTED_IN {roles: ['John Wick']}]->(m)
+MATCH (p:Person {name: 'Lana Wachowski'}), (m:Movie {title: 'The Matrix'}) INSERT (p)-[:DIRECTED]->(m)

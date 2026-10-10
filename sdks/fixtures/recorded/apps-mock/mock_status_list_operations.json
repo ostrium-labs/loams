@@ -1,0 +1,89 @@
+{
+  "name": "mock_status_list_operations",
+  "kind": "status",
+  "about": "The running import in the seed, which is also the `WatchOperations` subject.",
+  "transport": "connect",
+  "required": false,
+  "pinnedBy": [
+    "R6"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:12.524Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/loams.operations.v1.OperationsService/ListOperations",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "operations": [
+            {
+              "id": "op-1122334455667788990011223344556",
+              "kind": "collection.import",
+              "namespace": "search-dev",
+              "target": {
+                "collection": "articles"
+              },
+              "state": "OPERATION_STATE_RUNNING",
+              "progress": {
+                "done": "41000",
+                "total": "100000",
+                "unit": "documents",
+                "phase": "indexing"
+              },
+              "createdAt": "2026-10-04T05:49:12.517719933Z",
+              "updatedAt": "2026-10-04T05:54:12.517719933Z"
+            },
+            {
+              "id": "op-5f0c1e2d3b4a59687766554433221100",
+              "kind": "collection.drop",
+              "namespace": "search-prod",
+              "target": {
+                "collection": "docs"
+              },
+              "state": "OPERATION_STATE_AWAITING_APPROVAL",
+              "createdAt": "2026-10-04T05:52:12.517719933Z",
+              "updatedAt": "2026-10-04T05:52:12.517719933Z",
+              "approvalId": "apr_01J9ZDROPDOCS"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

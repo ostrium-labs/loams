@@ -1,0 +1,204 @@
+name: Fabric
+
+# This workflow file is shared with FL1 (issue #209), which introduces the
+# `fabric/` workspace; CN1 (issue #211, plan 2026-10-01-cn1-starred-connectors)
+# adds the connector registry on top of it. Jobs owned by CN1:
+#   connectors-unit  — fmt, clippy, tests and cargo-deny over `fabric/`
+#   connectors-drift — the weekly network-dependent catalog drift checks
+#   connect-routes   — declared, gated off until CN1 Task 12 lands
+# Jobs FL1 owns and adds here separately: connectors-it (the ★ contract suites
+# against the `connectors` compose profile, from CN1 Tasks 3–13), and the
+# `fabric` workspace's own build/publish steps. Keep this file minimal and
+# additive: a job belongs here once more than one plan needs it.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly: the two catalog drift scripts need the network (CN1 plan Task 2:
+    # "both run weekly and on demand, not on every PR"), so they cannot be a
+    # pull-request gate. Off the hour ci.yml's nightly runs on (17 2 * * *).
+    - cron: "41 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fabric-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Which parts of the tree a pull request touches; the jobs below run on a pull
+  # request only when their filter matches, and on a push to main they all run
+  # (this job is skipped there). dorny/paths-filter is MIT-licensed; pinned to
+  # v4.0.3, as in ci.yml.
+  changes:
+    name: changed paths
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      fabric: ${{ steps.filter.outputs.fabric }}
+      drift: ${{ steps.filter.outputs.drift }}
+      connect-routes: ${{ steps.filter.outputs.connect-routes }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            # Every Rust filter includes these.
+            toolchain: &toolchain
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "rust-toolchain*"
+              - ".cargo/**"
+              - ".github/workflows/**"
+            # The fabric/ workspace, the registry data and its drift scripts.
+            # A new crate under fabric/crates/** is covered by fabric/**.
+            fabric: &fabric
+              - *toolchain
+              - "fabric/**"
+              - "connectors/**"
+              - "scripts/connectors/**"
+            # The generated appendix and the two scripts that check the Camel
+            # and Kestra columns against their catalogs (design §33 CN-R1).
+            drift:
+              - *fabric
+              - "docs/design/33-connectors.md"
+            # `connect/` holds the generated Camel YAML routes for
+            # `loams-connect` (design §33 §10, Q353). Declared for CN1 Task 12.
+            connect-routes:
+              - ".github/workflows/**"
+              - "connect/**"
+              - "fabric/crates/loams-flow/**"
+              - "fabric/crates/loams-fabric/**"
+
+  # CN1 owns this job. FL1 owns the `lints_match_root` test that proves the
+  # fabric workspace's lint table equals the root workspace's; it runs in FL1's
+  # own job and is not repeated here.
+  connectors-unit:
+    name: fabric workspace (fmt, clippy, tests, deny)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.fabric == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      # The flow protos are compiled by build.rs, exactly as ci.yml's `check`
+      # job does it for the root workspace.
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: fabric -> target
+      - name: rustfmt
+        working-directory: fabric
+        run: cargo fmt --all --check
+      - name: clippy
+        working-directory: fabric
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: tests
+        working-directory: fabric
+        run: cargo test --workspace --locked
+      # The licence gate for the fabric image (design §33 D359) reads
+      # fabric/deny.toml; taiki-e/install-action is the pin ci.yml already uses.
+      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
+        with:
+          tool: cargo-deny
+      - name: licenses, advisories, sources
+        working-directory: fabric
+        run: cargo deny check
+
+  # CN1 Task 2's drift checks (design §33 CN-R1): the appendix is regenerated
+  # from connectors/registry/catalog.csv and diffed against the design doc, and
+  # the Camel and Kestra columns are checked against those projects' own
+  # catalogs. Both catalog checks need the network, so this runs on the weekly
+  # schedule and on demand only, and each script skips cleanly when its catalog
+  # is not there.
+  connectors-drift:
+    name: connector catalog drift (Camel, Kestra, appendix)
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    env:
+      # A literal path under the runner's temp directory, not `runner.temp` and
+      # not `env.RUNNER_TEMP`: neither context is available in a job-level `env:`
+      # block. Referencing one made GitHub reject the whole file at parse time,
+      # so all 93 runs of this workflow since it was added failed with zero jobs
+      # created and nothing ever reported a cause. The path is fixed per step
+      # below rather than interpolated here.
+      CATALOG_DIR: /tmp/connector-drift
+      # Apache Camel 4.22.1 (Apache-2.0), the version design §33 §5 records and
+      # CN1 Task 0 pins. Apache-2.0, so the D359 licence gate is satisfied.
+      CAMEL_CATALOG_URL: https://repo1.maven.org/maven2/org/apache/camel/camel-catalog/4.22.1/camel-catalog-4.22.1.jar
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Each catalog is best-effort: Maven Central or the GitHub API being down
+      # must not fail the run, so the step continues and the script skips.
+      - name: camel-catalog 4.22.1
+        continue-on-error: true
+        run: |
+          mkdir -p "$CATALOG_DIR"
+          curl -sSfL --retry 3 -o "$CATALOG_DIR/camel-catalog-4.22.1.jar" "$CAMEL_CATALOG_URL"
+      - name: kestra-io plugin repositories
+        continue-on-error: true
+        run: gh repo list kestra-io --limit 1000 --json name --jq '.[].name' > "$CATALOG_DIR/kestra-repos.txt"
+      - name: point the scripts at what downloaded
+        run: |
+          if [ -f "$CATALOG_DIR/camel-catalog-4.22.1.jar" ]; then
+            echo "LOAMS_CAMEL_CATALOG=$CATALOG_DIR/camel-catalog-4.22.1.jar" >> "$GITHUB_ENV"
+          else
+            echo "camel-catalog did not download; camel_catalog.py will skip"
+          fi
+          if [ -s "$CATALOG_DIR/kestra-repos.txt" ]; then
+            echo "LOAMS_KESTRA_REPOS=$CATALOG_DIR/kestra-repos.txt" >> "$GITHUB_ENV"
+          else
+            echo "the kestra-io repository list is empty; kestra_catalog.py will skip"
+          fi
+      - name: the appendix matches connectors/registry/catalog.csv
+        run: |
+          python3 scripts/connectors/matrix.py --check \
+            --json "$CATALOG_DIR/matrix.json"
+      - name: the Camel column against camel-catalog
+        run: |
+          # --tag pins the module tree to the same Camel version as the jar above.
+          # --check is also what lets the script read that tree from the GitHub
+          # API (components/* and the group sub-module directories); with no
+          # catalog and no --check it would skip instead of spending the calls.
+          python3 scripts/connectors/camel_catalog.py --check --tag 4.22.1 \
+            --json "$CATALOG_DIR/camel-catalog.json"
+      - name: the Kestra column against the kestra-io repositories
+        run: |
+          python3 scripts/connectors/kestra_catalog.py --check \
+            --json "$CATALOG_DIR/kestra-catalog.json"
+      # The summaries, so a drift finding can be read after the fact without
+      # re-running the checks. actions/upload-artifact is Apache-2.0.
+      - name: the drift summaries
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: connector-catalog-drift
+          path: ${{ env.CATALOG_DIR }}/*.json
+          if-no-files-found: ignore
+
+  # CN1 Task 12 adds `loams-connect` and its generated Camel YAML routes under
+  # `connect/`, and this job validates them (`camel validate`, the rendered-route
+  # YAML-DSL test). Until then the filter has no consumer, so the job is
+  # declared and switched off rather than written as an empty shell: Loams
+  # writes no Java (owner, 2026-10-01), so there is nothing to build here yet.
+  connect-routes:
+    name: loams-connect routes (connect/**)
+    needs: changes
+    if: false
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      # Replaced by CN1 Task 12: checkout, a Camel JBang `camel validate` over
+      # connect/routes/**/*.yaml, and `rendered_routes_are_valid_yaml_dsl`.
+      - name: not implemented yet (CN1 Task 12)
+        run: echo "connect-routes is declared for CN1 Task 12 and is switched off"

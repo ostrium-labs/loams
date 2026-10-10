@@ -1,0 +1,26 @@
+[package]
+name = "loams-live-js-alloc"
+description = "The counting allocator behind Loams Live's JavaScript memory limit: QuickJS's runtimes allocate through it, and a limit it sees exceeded becomes an uncatchable stop (LV1 plan row T3-6)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+rquickjs.workspace = true
+
+# The workspace policy, except `unsafe_code` is `deny` rather than `forbid`:
+# implementing rquickjs's `Allocator` trait takes `unsafe` (LV1 plan fix round
+# 1, I2). Each site is under `#[allow(unsafe_code)]` with a SAFETY comment.
+# Cargo cannot combine `workspace = true` with an override, so the rest of
+# `[workspace.lints]` is repeated here; keep them in step.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

@@ -1,0 +1,37 @@
+[Unit]
+Description=Loams server (%i)
+Documentation=https://github.com/ostrium-labs/loams
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The instance name is the subcommand: `loams@dev`, `loams@standalone`,
+# `loams@cluster`, `loams@warm`, `loams@durable`. Extra arguments for a
+# subcommand that needs them (a bucket for `standalone`, peers for `cluster`)
+# go in /etc/default/loams as LOAMS_ARGS, which systemd word-splits into
+# separate arguments. See docs/release/packaging.md.
+EnvironmentFile=-/etc/default/loams
+ExecStart=/usr/bin/loams %i $LOAMS_ARGS
+StateDirectory=loams
+# `loams dev`'s default --data-dir is `.loams`, relative to the working
+# directory, so the unit puts the working directory inside the state directory.
+WorkingDirectory=/var/lib/loams
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# Deliberately no MemoryDenyWriteExecute: the query engine's expression
+# evaluation and the vector index build are not this unit's to constrain, and
+# a hardening directive that silently breaks a query is worse than none.
+
+[Install]
+WantedBy=multi-user.target

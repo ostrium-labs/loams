@@ -1,0 +1,192 @@
+name: Desktop signing (SignPath, called)
+
+# Reusable signing step for the Loams Desktop release (desktop-electron-release.yml, plan AP1e
+# Task 31). It reuses release-sign.yml's SignPath pattern -- the same organisation, project and API
+# token, a GitHub-hosted runner, signpath-artifacts.py deciding what is eligible, the same pinned
+# submit action -- but takes its input from an artifact of the CALLING run instead of a published
+# vX.Y.Z release, because the desktop release is a draft on a `desktop-v*` tag and release-sign.yml's
+# guard (published release, vX.Y.Z, on the release branch) cannot hold for it.
+#
+#   kind: rpm      one .rpm, signed with the GPG-certificate policy (`<rpm-sign>`), config
+#                  signpath/artifact-configuration.rpm.xml (variable SIGNPATH_ARTIFACT_CONFIGURATION_SLUG).
+#   kind: windows            the unpacked app (a ZIP of PE files), Authenticode policy, config
+#                            signpath/artifact-configuration.desktop-windows.xml
+#                            (variable SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG).
+#   kind: windows-installer  the NSIS installer, same policy, config
+#                            signpath/artifact-configuration.desktop-windows-installer.xml
+#                            (variable SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG).
+#
+# The job runs in the protected `desktop-release` environment (required reviewers, tag rule:
+# docs/release/desktop.md), and SIGNPATH_API_TOKEN is read here as an environment secret of it. The
+# callers pass no secrets: a `uses:` job cannot declare an environment, so a caller-side
+# `secrets.SIGNPATH_API_TOKEN` would be empty. The first real run must confirm the token resolves.
+#
+# Not configured: with require_signing false it warns and outputs signed=false (the release then
+# names the files "unsigned"); with require_signing true it fails and names what is missing.
+# docs/release/desktop.md lists every secret and variable.
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: 'Artifact of the calling run holding the unsigned files.'
+        required: true
+        type: string
+      kind:
+        description: 'rpm, windows or windows-installer'
+        required: true
+        type: string
+      require_signing:
+        required: false
+        type: boolean
+        default: false
+    outputs:
+      signed:
+        description: 'true when SignPath signed the files; they are in the artifact `<artifact_name>-signed`.'
+        value: ${{ jobs.sign.outputs.signed }}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  sign:
+    name: SignPath (${{ inputs.kind }}, ${{ inputs.artifact_name }})
+    environment: desktop-release
+    runs-on: ubuntu-latest # SignPath's OSS connector needs GitHub-hosted runners (signpath/pipeline-policy.md)
+    timeout-minutes: 60
+    outputs:
+      signed: ${{ steps.final.outputs.signed }}
+    env:
+      KIND: ${{ inputs.kind }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+      SIGNPATH_PROJECT_SLUG: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+    steps:
+      - name: decide whether this run signs
+        id: decide
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          REQUIRE_SIGNING: ${{ inputs.require_signing }}
+          RPM_POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          WIN_POLICY: ${{ vars.SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG }}
+          RPM_CONFIG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          WIN_CONFIG: ${{ vars.SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG }}
+          WIN_INSTALLER_CONFIG: ${{ vars.SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
+        run: |
+          set -euo pipefail
+          case "$KIND" in
+            rpm) policy="$RPM_POLICY"; config="$RPM_CONFIG"; policy_name=SIGNPATH_SIGNING_POLICY_SLUG; config_name=SIGNPATH_ARTIFACT_CONFIGURATION_SLUG ;;
+            windows) policy="$WIN_POLICY"; config="$WIN_CONFIG"; policy_name=SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG; config_name=SIGNPATH_DESKTOP_WINDOWS_ARTIFACT_CONFIGURATION_SLUG ;;
+            windows-installer) policy="$WIN_POLICY"; config="$WIN_INSTALLER_CONFIG"; policy_name=SIGNPATH_WINDOWS_SIGNING_POLICY_SLUG; config_name=SIGNPATH_DESKTOP_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG ;;
+            *) echo "::error::kind must be rpm, windows or windows-installer, got '$KIND'"; exit 1 ;;
+          esac
+          missing=()
+          [[ -n "${SIGNPATH_API_TOKEN:-}" ]] || missing+=("secret SIGNPATH_API_TOKEN")
+          [[ -n "${SIGNPATH_ORGANIZATION_ID:-}" ]] || missing+=("variable SIGNPATH_ORGANIZATION_ID")
+          [[ -n "${SIGNPATH_PROJECT_SLUG:-}" ]] || missing+=("variable SIGNPATH_PROJECT_SLUG")
+          [[ -n "$policy" ]] || missing+=("variable $policy_name")
+          [[ -n "$config" ]] || missing+=("variable $config_name")
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+            echo "slug=$config" >> "$GITHUB_OUTPUT"
+            echo "policy=$policy" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "signed=false" >> "$GITHUB_OUTPUT"
+          if [ "$REQUIRE_SIGNING" = true ]; then
+            echo "::error::SignPath is not configured for $KIND and signing is required. Missing: ${missing[*]}"
+            exit 1
+          fi
+          echo "::warning title=SignPath ($KIND) is not configured::Nothing is signed; the files stay unsigned. Missing: ${missing[*]}"
+
+      - if: steps.decide.outputs.signed == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - if: steps.decide.outputs.signed == 'true'
+        name: fetch the unsigned files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}/unsigned
+
+      - if: steps.decide.outputs.signed == 'true'
+        name: only eligible files
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/signpath-artifacts.py --self-test
+          scope=desktop-windows; [ "$KIND" = rpm ] && scope=linux
+          python3 scripts/ci/signpath-artifacts.py --scope "$scope" "$RUNNER_TEMP/unsigned" | tee "$RUNNER_TEMP/scope.txt"
+          if [ "$KIND" = rpm ]; then
+            [ "$(grep -c '^rpm-sign' "$RUNNER_TEMP/scope.txt")" -eq "$(grep -c . "$RUNNER_TEMP/scope.txt")" ] \
+              || { echo "::error::the rpm submission must hold only .rpm files"; exit 1; }
+          fi
+
+      - if: steps.decide.outputs.signed == 'true'
+        name: store the unsigned files, because SignPath signs no other kind
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signpath-request-${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}/unsigned/${{ inputs.kind == 'rpm' && '*.rpm' || '' }}
+          # rpm: the package itself, not a ZIP wrapper (as in release-sign.yml). windows: a ZIP of the
+          # PE files, which signpath/artifact-configuration.desktop-windows.xml describes.
+          archive: ${{ inputs.kind != 'rpm' }}
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+      - if: steps.decide.outputs.signed == 'true'
+        name: submit for signing and wait for the approver
+        id: submit
+        # Required: a rejection fails the run. Not required: the files stay unsigned and are released as -unsigned.
+        continue-on-error: ${{ !inputs.require_signing }}
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ steps.decide.outputs.policy }}
+          artifact-configuration-slug: ${{ steps.decide.outputs.slug }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          github-token: ${{ github.token }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: '3000'
+          output-artifact-directory: ${{ runner.temp }}/signed
+          # rpm: keep the signed file's own name. windows: unzip, so the tree can be re-uploaded.
+          skip-decompress: ${{ inputs.kind == 'rpm' }}
+
+      - name: did SignPath sign
+        id: final
+        env:
+          PLANNED: ${{ steps.decide.outputs.signed }}
+          OUTCOME: ${{ steps.submit.outcome }}
+        run: |
+          if [ "$PLANNED" = true ] && [ "$OUTCOME" = success ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            [ "$PLANNED" != true ] || echo "::warning title=SignPath did not sign $KIND::the request failed or was rejected; the files are released unsigned"
+          fi
+
+      - if: steps.final.outputs.signed == 'true'
+        name: store the signed files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.artifact_name }}-signed
+          path: ${{ runner.temp }}/signed
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+      - if: steps.final.outputs.signed == 'true'
+        name: what was signed
+        env:
+          REQUEST_URL: ${{ steps.submit.outputs.signing-request-web-url }}
+        run: |
+          {
+            echo "### Desktop signing: $KIND"
+            echo "- artifact: \`${{ inputs.artifact_name }}\`"
+            echo "- signing request: ${REQUEST_URL:-<not reported by the action>}"
+            find "$RUNNER_TEMP/signed" -type f -printf '- `%P`\n' | head -40
+          } >> "$GITHUB_STEP_SUMMARY"

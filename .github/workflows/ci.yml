@@ -1,33 +1,1859 @@
 name: CI
 
+# Docs-only changes still run the required CI summary. The nightly schedule is unfiltered.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
+  schedule:
+    # Nightly: the long simulation sweep (M0.4 plan Task 6), the tail-merge
+    # property test (M1.2 plan Task 15), the TiKV suites (R1 plan Task 1) and
+    # the durable store on TiDB (D1 plan Task 5).
+    - cron: "17 2 * * *"
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
-    name: fmt, clippy, test
-    runs-on: ubuntu-latest
+  # Which parts of the tree a pull request touches. The jobs below run on a
+  # pull request only when their filter matches; on a push to main and on the
+  # nightly schedule the relevant jobs run (this job is skipped there).
+  # dorny/paths-filter is MIT-licensed; pinned to v4.0.3.
+  changes:
+    name: changed paths
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      engine: ${{ steps.filter.outputs.engine }}
+      es: ${{ steps.filter.outputs.es }}
+      sim: ${{ steps.filter.outputs.sim }}
+      tikv: ${{ steps.filter.outputs.tikv }}
+      live-embedded: ${{ steps.filter.outputs.live-embedded }}
+      durable: ${{ steps.filter.outputs.durable }}
+      deny: ${{ steps.filter.outputs.deny }}
+      agentd: ${{ steps.filter.outputs.agentd }}
+      graph: ${{ steps.filter.outputs.graph }}
+      sqlgate: ${{ steps.filter.outputs.sqlgate }}
+      protos: ${{ steps.filter.outputs.protos }}
+      app-protos: ${{ steps.filter.outputs.app-protos }}
+      sdk-typescript: ${{ steps.filter.outputs.sdk-typescript }}
+      sdk-rust: ${{ steps.filter.outputs.sdk-rust }}
+      sdk-python: ${{ steps.filter.outputs.sdk-python }}
+      sdk-go: ${{ steps.filter.outputs.sdk-go }}
+      sdk-cpp: ${{ steps.filter.outputs.sdk-cpp }}
+      sdk-csharp: ${{ steps.filter.outputs.sdk-csharp }}
+      sdk-swift: ${{ steps.filter.outputs.sdk-swift }}
+      web: ${{ steps.filter.outputs.web }}
+      dapr-edge: ${{ steps.filter.outputs.dapr-edge }}
+      spec: ${{ steps.filter.outputs.spec }}
+      router: ${{ steps.filter.outputs.router }}
+      specview: ${{ steps.filter.outputs.specview }}
+      lean: ${{ steps.filter.outputs.lean }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            # Every Rust filter includes these.
+            toolchain: &toolchain
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "rust-toolchain*"
+              - ".cargo/**"
+              - ".github/workflows/**"
+            # Any Rust change: fmt, clippy, the workspace tests.
+            # loams-apps-mock embeds api/console/openapi.json through
+            # loams-console-mock.
+            rust:
+              - *toolchain
+              - "crates/**"
+              - "proto/**"
+              - "api/**"
+              - "clippy.toml"
+              - "rustfmt.toml"
+            # The crates in loams's default build (no tikv, no durable):
+            # the crash gate, the cluster tests and the client suites.
+            # A new crate the binary depends on must be added here.
+            engine: &engine
+              - *toolchain
+              - "crates/loams/**"
+              - "crates/loams-cache/**"
+              - "crates/loams-collection/**"
+              - "crates/loams-common/**"
+              - "crates/loams-es/**"
+              - "crates/loams-hnsw/**"
+              - "crates/loams-hot/**"
+              - "crates/loams-link/**"
+              - "crates/loams-log/**"
+              - "crates/loams-meta/**"
+              - "crates/loams-meta-conformance/**"
+              - "crates/loams-pk/**"
+              - "crates/loams-qdrant/**"
+              - "crates/loams-query/**"
+              - "crates/loams-quickwit/**"
+              - "crates/loams-store/**"
+              - "crates/loams-text/**"
+              - "crates/loams-worker/**"
+            es:
+              - *engine
+              - "conformance/es-client/**"
+            # loams-sim and the crates it depends on.
+            sim:
+              - *toolchain
+              - "crates/loams-sim/**"
+              - "crates/loams-cache/**"
+              - "crates/loams-collection/**"
+              - "crates/loams-common/**"
+              - "crates/loams-link/**"
+              - "crates/loams-log/**"
+              - "crates/loams-meta/**"
+              - "crates/loams-meta-conformance/**"
+              - "crates/loams-pk/**"
+              - "crates/loams-query/**"
+              - "crates/loams-quickwit/**"
+              - "crates/loams-store/**"
+              - "crates/loams-text/**"
+              - "crates/loams-worker/**"
+            tikv:
+              - *toolchain
+              - "crates/loams-tikv/**"
+              - "crates/loams-kv/**"
+              - "crates/loams-tuple/**"
+              - "crates/loams-meta-tikv/**"
+              - "crates/loams-meta/**"
+              - "crates/loams-meta-conformance/**"
+              - "crates/loams-common/**"
+              - "crates/loams-live*/**"
+              # The transaction checker's elle (LV1 plan Task 2).
+              - "crates/loams-sim/**"
+              - "crates/loams-durable/**"
+              - "crates/loams-safekeeper/**"
+              - "crates/loams-pg-control/**"
+              - "crates/loams-postgres/**"
+              - "crates/loams/Cargo.toml"
+              - "crates/loams/src/server.rs"
+              - "crates/loams/src/meta_backend.rs"
+              - "crates/loams/src/main.rs"
+              - "crates/loams/tests/meta_tikv.rs"
+              - "deploy/tikv/**"
+              - "scripts/tikv/**"
+              - "proto/loams/**"
+            # LV1 plan Task 22: the store seam and the Live suites, which run
+            # on the embedded store with no cluster.
+            live-embedded:
+              - *toolchain
+              - "crates/loams-kv/**"
+              - "crates/loams-tuple/**"
+              - "crates/loams-live*/**"
+              # The transaction checker's elle (LV1 plan Task 2).
+              - "crates/loams-sim/**"
+              - "proto/loams/live/**"
+            durable:
+              - *toolchain
+              - "crates/loams-durable/**"
+              - "crates/loams/src/api/operations.rs"
+              - "crates/loams/src/api/import.rs"
+              - "crates/loams/src/main.rs"
+              - "crates/loams/src/server.rs"
+              - "crates/loams/Cargo.toml"
+              - "crates/loams/tests/durable.rs"
+              - "scripts/durable/**"
+            deny:
+              - *toolchain
+              - "crates/*/Cargo.toml"
+              - "deny.toml"
+            # The desktop agent daemon (design §50, DD1 Task 4): the headless
+            # guard (D782) and the loams-agentd* clippy and test suites.
+            agentd:
+              - *toolchain
+              - "crates/loams-agentd*/**"
+              - "scripts/ci/agentd-*"
+              - ".config/nextest.toml"
+            # Loams Graph (GR1, design §48): the engine crate, its proto, the
+            # licence gate input it is checked against, and loams's manifest,
+            # whose default build must not link Grafeo.
+            sqlgate:
+              - *toolchain
+              - "crates/loams-sqlgate/**"
+            graph:
+              - *toolchain
+              - "crates/loams-graph/**"
+              - "crates/loams-proto/**"
+              - "proto/loams/graph/**"
+              - "crates/loams/Cargo.toml"
+              - "crates/loams/src/api/graph.rs"
+              - "crates/loams/src/api/connect.rs"
+              - "crates/loams/src/server.rs"
+              - "crates/loams/tests/connect_graph.rs"
+              - "connectors/licences.toml"
+              - "fabric/Cargo.lock"
+            # Shared pnpm tooling uses the root workspace and lockfile.
+            pnpm-workspace: &pnpm-workspace
+              - "package.json"
+              - "pnpm-workspace.yaml"
+              - "pnpm-lock.yaml"
+              - "nx.json"
+            protos:
+              - *pnpm-workspace
+              - ".github/workflows/**"
+              - "proto/**"
+              - "buf.yaml"
+              - "buf.gen.yaml"
+              - "sdks/typescript/buf.gen.live.yaml"
+              - "sdks/typescript/packages/live/**"
+            # The app protos (design §37 §8, AP0) and @loams/proto.
+            app-protos:
+              - *pnpm-workspace
+              - ".github/workflows/**"
+              - "proto/**"
+              - "buf.yaml"
+              - "buf.gen.*.yaml"
+              - "web/packages/proto/**"
+            # SDK2 Task 0: the TypeScript SDK (@loams/client, @loams/live), its
+            # generator (crates/loams-facade-gen), and the conformance corpus.
+            sdk-typescript:
+              - *pnpm-workspace
+              - ".github/workflows/**"
+              - "proto/**"
+              - "buf.yaml"
+              - "buf.gen.*.yaml"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "crates/loams-facade-gen/**"
+              - "scripts/sdk/**"
+              - "sdks/**"
+            # SDK2 Task 3: the Rust SDK. It is its own cargo workspace, so the
+            # server's "Rust tests" jobs never compile or run it -- which is how
+            # PR #340 merged with four failing tests and a green board.
+            sdk-rust:
+              - *pnpm-workspace
+              - ".github/workflows/**"
+              - "rust-toolchain*"
+              - "crates/loams-proto/**"
+              - "crates/loams-live-proto/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/rust/**"
+              - "sdks/conformance/**"
+            # SDK2 Task 1: the Python SDK. CI's Python jobs are the qdrant smoke
+            # and static analysis, neither of which imports the SDK.
+            sdk-python:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/python/**"
+              - "sdks/conformance/**"
+            # SDK2 Task 2: the Go SDK, whose module sits outside the web
+            # workspace and so had no job of its own.
+            sdk-go:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/go/**"
+              - "sdks/conformance/**"
+            # The C++ SDK (#295). Its buf.gen.yaml pins the protoc release, so a
+            # proto edit has to re-run the job even when no C++ file moved.
+            sdk-cpp:
+              - *pnpm-workspace
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/cpp/**"
+              - "sdks/conformance/**"
+            # The C# SDK (#297). Its stubs are generated and committed, so a
+            # proto edit has to re-run the job even when no C# file moved: the
+            # committed stubs are the surface the suite tests.
+            sdk-csharp:
+              - *pnpm-workspace
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/csharp/**"
+              - "sdks/conformance/**"
+            # The Swift SDK (#288). It has no local toolchain on the machines
+            # that develop this repo, so macOS is the only thing that can
+            # compile it. Without this job it merges as unverified source.
+            sdk-swift:
+              - ".github/workflows/**"
+              - "docs/api/reasons.md"
+              - "docs/sdk/**"
+              - "proto/**"
+              - "sdks/swift/**"
+              - "sdks/conformance/**"
+            web:
+              - *pnpm-workspace
+              - ".github/workflows/**"
+              - "web/**"
+              - "api/**"
+            # deploy/dapr/edge is its own crate and lock, outside the
+            # workspace; it compiles loams-stream-grpc's stream.proto.
+            dapr-edge:
+              - ".github/workflows/**"
+              - "rust-toolchain*"
+              - "deploy/dapr/**"
+              - "crates/loams-stream-grpc/proto/**"
+            # The router's TLA+ specs and their checker (RT0, D310).
+            spec:
+              - ".github/workflows/**"
+              - "spec/**"
+              - "scripts/spec/**"
+            # The Lean proofs and the Rust code they are the oracle for (RT0 Task 8, D312).
+            lean:
+              - *toolchain
+              - "crates/loams-sqlrouter/Cargo.toml"
+              - "crates/loams-sqlrouter/tests/it/lean_oracle.rs"
+              - "spec/lean/**"
+              - "crates/loams-sqlrouter/src/ranges.rs"
+              - "crates/loams-sqlrouter/src/reference/**"
+            # The router's kernel crate and compatibility inventory (RT0).
+            router:
+              - ".github/workflows/**"
+              - "crates/loams-sqlrouter/**"
+              - "crates/loams-compat/**"
+              - "conformance/**"
+            # loams-specview, the browser view of the spec and test runs. Its
+            # live test runs the Selftest spec, so spec changes count too.
+            specview:
+              - *toolchain
+              - "crates/loams-specview/**"
+              - "scripts/spec/**"
+              - "spec/tla/**"
+
+  check:
+    name: fmt and clippy
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: rustfmt
         run: cargo fmt --all --check
       - name: clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: test
-        run: cargo test --workspace --locked
+      # Owner ruling T7-3: the TiKV metastore is behind loams's `tikv`
+      # feature (off by default), so lint that code too, and keep the default
+      # build free of the git-pinned tikv-client.
+      - name: clippy (loams with the tikv, graph and optional listener features)
+        run: cargo clippy -p loams --all-targets --features tikv,live-tikv,durable-tikv,stream-grpc,pgwire,mysql-wire,graph --locked -- -D warnings
+      - name: clippy (loams-live without TiKV, as the default build has it)
+        run: cargo clippy -p loams-live --lib --locked -- -D warnings
+      - name: clippy (loams-durable with the native TiKV store)
+        run: cargo clippy -p loams-durable --all-targets --features tikv --locked -- -D warnings
+      - name: clippy (loams-safekeeper with the service, the TiKV store and the NVMe store)
+        run: cargo clippy -p loams-safekeeper --all-targets --features server,tikv,nvme --locked -- -D warnings
+      # LV1 plan Task 23 (default_build_has_no_tikv_client): Live is in the
+      # default build on the embedded store; TiKV for Live is `live-tikv`.
+      - name: loams's default build has Live and no tikv-client
+        run: |
+          tree=$(cargo tree -p loams -e normal --prefix none --locked)
+          if grep -q '^tikv-client v' <<< "$tree"; then
+            echo "loams's default features depend on tikv-client (owner ruling T7-3, LV1 plan Task 23)"; exit 1
+          fi
+          grep -q '^loams-live v' <<< "$tree" || {
+            echo "loams's default build lacks Loams Live (the live feature, LV1 plan Task 23)"; exit 1
+          }
+      # Intra-doc links must resolve in every crate that names its peers, or a
+      # renamed type leaves a broken link nobody notices (#133). The gateway's
+      # module doc holds its divergences from Qdrant (M1.4 Task 11).
+      - name: rustdoc links
+        run: >-
+          cargo doc
+          -p loams-qdrant -p loams-common -p loams-store -p loams-cache
+          -p loams-log -p loams-hnsw -p loams-worker
+          -p loams-kv -p loams-live -p loams-live-js -p loams-live-js-alloc
+          --no-deps --locked
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+      - name: metastore boundary
+        run: |
+          for c in loams-worker loams-log loams-link loams-collection loams-query loams-hnsw loams-hot; do
+            if cargo tree -p "$c" -e normal --prefix none --locked | grep -q '^loams-meta v'; then
+              echo "$c depends on loams-meta outside dev-dependencies (D47)"; exit 1
+            fi
+          done
+          deps=$(cargo tree -p loams-common -e normal --depth 1 --prefix none --locked | tail -n +2 | awk '{print $1}' | sort -u | tr '\n' ' ')
+          test "$deps" = "async-trait serde thiserror tracing " || { echo "loams-common dependencies changed: $deps"; exit 1; }
+          # A missing path must fail the step: grep exits 2 for it, which an
+          # `if` would read as "no match" (row 0.87).
+          paths="crates/loams-worker/src crates/loams-log/src crates/loams-link/src crates/loams-collection/src crates/loams-query/src crates/loams-hnsw/src crates/loams-hot/src crates/loams/src/api"
+          for p in $paths; do
+            test -e "$p" || { echo "metastore boundary path $p does not exist"; exit 1; }
+          done
+          status=0
+          grep -rnwE 'MetaClient|MetaNode|MetaState|PartitionState' $paths || status=$?
+          case $status in
+            0) echo "downstream source names an openraft type (D47)"; exit 1 ;;
+            1) ;;
+            *) echo "the boundary grep failed ($status)"; exit 1 ;;
+          esac
+      # nextest does not run doctests; keep the Cargo doc-test pass.
+      - name: doc tests
+        run: cargo test --workspace --doc --locked
+
+  rust-tests:
+    name: Rust tests (${{ matrix.partition }}/2)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    # A hung test fails its partition instead of holding the runner; nextest
+    # also terminates a loams-agentd* test after 3 minutes (.config/nextest.toml).
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
+      # The loams-agentd-harness tests run `#!/usr/bin/env node` and
+      # `#!/usr/bin/env python3` fixtures (harness stand-ins). The runner images
+      # ship both; pin Node here so the fixtures do not depend on the image.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: workspace tests
+        run: cargo nextest run --workspace --locked --partition hash:${{ matrix.partition }}/2
+
+  # The desktop agent daemon (design §50, DD1 Task 4). The headless guard
+  # (D782) fails if a GUI, webview or audio crate enters loams-agentd's tree on
+  # any target; its self-test runs first so a broken filter cannot pass. Then
+  # clippy and each loams-agentd* crate's own tests, one crate at a time, so
+  # every crate builds with only its own features (the workspace `check` and
+  # `rust-tests` jobs unify features across the whole workspace).
+  agentd:
+    name: loams-agentd (headless guard, clippy, tests)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.agentd == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    # PTY, shell and harness-fixture tests; a hung one fails the job.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # The loams-agentd-harness tests run `#!/usr/bin/env node` and
+      # `#!/usr/bin/env python3` fixtures (harness stand-ins).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: headless guard self-test
+        run: bash scripts/ci/agentd-deps.test.sh
+      - name: headless guard (D782)
+        run: bash scripts/ci/agentd-deps.sh
+      - name: clippy
+        run: cargo clippy -p 'loams-agentd*' --all-targets --locked -- -D warnings
+      - name: tests, crate by crate
+        run: |
+          set -euo pipefail
+          crates=$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[].name | select(startswith("loams-agentd"))' | sort)
+          test -n "$crates" || { echo "no loams-agentd* crates found"; exit 1; }
+          failed=()
+          for crate in $crates; do
+            echo "::group::cargo test -p $crate"
+            cargo test -p "$crate" --locked || failed+=("$crate")
+            echo "::endgroup::"
+          done
+          if ((${#failed[@]})); then
+            echo "tests failed in: ${failed[*]}"; exit 1
+          fi
+
+  feature-tests:
+    name: Rust feature tests
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: loams's MySQL wire listener (mysql-wire feature)
+        run: 'cargo test -p loams --features mysql-wire --lib --locked mysql_wire::'
+      - name: loams's PostgreSQL wire listener (pgwire feature)
+        run: 'cargo test -p loams --features pgwire --lib --locked pg::'
+      - name: ProduceCloudEvents over gRPC
+        run: cargo test -p loams --features stream-grpc --test stream_grpc_events --locked
+      - name: metastore encoding
+        run: 'cargo test -p loams-meta --test it encoding:: --locked'
+      - name: metastore conformance
+        run: 'cargo test -p loams-meta --test it conformance:: --locked'
+      - name: log with failpoints
+        run: cargo test -p loams-log --features failpoints --locked
+      - name: link with failpoints
+        run: cargo test -p loams-link --features failpoints --locked
+      - name: collection with failpoints
+        run: cargo test -p loams-collection --features failpoints --locked
+      - name: WAL service over TCP and the NVMe store (loams-safekeeper, features server, nvme)
+        run: cargo test -p loams-safekeeper --features server,nvme --locked
+      - name: WAL restart regression (20 consecutive runs, no retries)
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          # Fail if a rename removes the exact tests from the repeated gate.
+          cargo test -p loams-safekeeper --features server,nvme --lib --locked -- --list | grep -Fx 'journal::tests::records_are_durable_readable_and_replayed: test'
+          cargo test -p loams-safekeeper --features server,nvme --test nvme_service --locked -- --list | grep -Fx 'pipelined_appends_are_acknowledged_when_durable_and_survive_a_restart: test'
+          for run in $(seq 1 20); do
+            echo "WAL restart regression run $run/20"
+            cargo test -p loams-safekeeper --features server,nvme --lib --locked journal::tests::records_are_durable_readable_and_replayed -- --exact
+            cargo test -p loams-safekeeper --features server,nvme --test nvme_service --locked pipelined_appends_are_acknowledged_when_durable_and_survive_a_restart -- --exact
+          done
+
+  crash-gate:
+    name: kill -9 crash gate
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.base_ref == 'main' && needs.changes.outputs.engine == 'true')) }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: clippy with failpoints
+        run: cargo clippy -p loams --all-targets --features failpoints --locked -- -D warnings
+      - name: crash gate
+        run: cargo test -p loams --features failpoints --test crash --locked
+
+  cluster:
+    name: multi-process cluster
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.base_ref == 'main' && needs.changes.outputs.engine == 'true')) }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: build
+        run: cargo build -p loams --locked
+      - name: clippy with cluster tests
+        run: cargo clippy -p loams --all-targets --features cluster-tests --locked -- -D warnings
+      # Each test starts five or six `loams` processes: one at a time.
+      - name: cluster tests
+        run: cargo test -p loams --features cluster-tests --test cluster --locked -- --test-threads=1
+
+  qdrant-client:
+    name: Python qdrant-client smoke
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.engine == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: build
+        run: cargo build -p loams --locked
+      - name: start loams dev
+        run: |
+          nohup target/debug/loams dev --data-dir "$RUNNER_TEMP/loams" \
+            --qdrant-listen 127.0.0.1:6333 --qdrant-grpc-listen 127.0.0.1:6334 --no-es \
+            > "$RUNNER_TEMP/loams.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:6333/ && exit 0
+            sleep 1
+          done
+          echo "loams dev did not answer on 6333 within 60 s"; exit 1
+      - uses: astral-sh/setup-uv@v7
+      # Each run prints `qdrant-client <version> <mode>: <n> checks passed`
+      # last; the step fails unless it does.
+      - name: qdrant-client 1.15.1 (legacy)
+        run: |
+          crates/loams-qdrant/tests/python/run.sh 1.15.1 legacy | tee "$RUNNER_TEMP/legacy.log"
+          grep -q '^qdrant-client 1.15.1 legacy: [0-9]* checks passed$' "$RUNNER_TEMP/legacy.log"
+      - name: qdrant-client 1.19.1 (modern)
+        run: |
+          crates/loams-qdrant/tests/python/run.sh 1.19.1 modern | tee "$RUNNER_TEMP/modern.log"
+          grep -q '^qdrant-client 1.19.1 modern: [0-9]* checks passed$' "$RUNNER_TEMP/modern.log"
+      - name: loams log
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/loams.log" || true
+
+  es-client:
+    name: Elasticsearch client suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.es == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    # The Elasticsearch 8.19 oracle (plan M1.5 Task 11, owner ruling
+    # O-M15-6): a CI-only test oracle, never vendored or shipped (R14).
+    services:
+      elasticsearch:
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.19.22
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: "false"
+          xpack.license.self_generated.type: trial
+          ES_JAVA_OPTS: -Xms512m -Xmx512m
+        ports:
+          - 9250:9200
+        options: >-
+          --health-cmd "curl -sf http://127.0.0.1:9200/_cluster/health"
+          --health-interval 5s --health-timeout 5s --health-retries 40
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: build
+        run: cargo build -p loams --locked
+      - uses: astral-sh/setup-uv@v7
+      # The suite starts `loams dev` on ephemeral ports (conftest.py) and
+      # runs the oracle checks against the service above.
+      - name: elasticsearch-py 8.19.3 against loams dev
+        env:
+          LOAMS_BIN: target/debug/loams
+          ES_ORACLE_URL: http://127.0.0.1:9250
+        run: conformance/es-client/run.sh
+
+  # The remaining light jobs (docs, TLA+, Lean, the boundary guard and the
+  # required summary) run the same light expression as `changes`: main takes
+  # RUNNER_MAIN, dev takes RUNNER_LIGHT. Until #268's routing reached them they
+  # pinned ubuntu-latest, so a single change to RUNNER_MAIN left five jobs
+  # behind on the default pool (ruling 6).
+  docs:
+    name: decision log IDs
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Decision ID checker self-test
+        run: scripts/docs/check-decision-ids.sh --self-test
+      - name: Unique decision and question declarations
+        run: scripts/docs/check-decision-ids.sh
+
+  # RT0 Task 1 (D310): model-check the router's TLA+ specs. Pull requests run
+  # the PR variants; the nightly schedule runs the larger bounds. Every result
+  # must match its `expect` in spec/tla/*/specs.toml, so the unsafe variants
+  # must fail for the declared reason. Then the PgDog provenance check (D318).
+  tla:
+    name: TLA+ specs
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.spec == 'true' || needs.changes.outputs.router == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/loam/spec-tools
+          key: spec-tools-${{ hashFiles('scripts/spec/tools.lock') }}
+      - name: checker self-test
+        run: scripts/spec/check.sh --self-test
+      - name: specs (PR bounds)
+        if: github.event_name != 'schedule'
+        run: scripts/spec/check.sh --all
+      - name: specs (nightly bounds)
+        if: github.event_name == 'schedule'
+        run: scripts/spec/check.sh --all --nightly
+      - name: PgDog provenance
+        run: scripts/spec/provenance.sh
+
+  # RT0 Task 8 (D312): build the Lean proofs (building checks every theorem),
+  # run the randomised properties, then run loams-sqlrouter's ranges against
+  # the Lean oracle on 10 000 random cases.
+  lean:
+    name: Lean proofs
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.lean == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    defaults:
+      run:
+        working-directory: spec/lean
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The job runs downloaded tooling (elan, lake); keep the token out of .git/config.
+          persist-credentials: false
+      - name: elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          sh /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.elan/toolchains
+            spec/lean/.lake
+          key: lean-${{ hashFiles('spec/lean/lean-toolchain') }}-${{ hashFiles('spec/lean/lake-manifest.json', 'spec/lean/**/*.lean') }}
+          restore-keys: lean-${{ hashFiles('spec/lean/lean-toolchain') }}-
+      - name: build (checks the theorems)
+        run: lake build
+      - name: properties
+        run: lake test
+      - name: no sorry
+        run: '! grep -rn --include=*.lean -w sorry LoamsRouter Main.lean PropTest.lean'
+      - uses: Swatinem/rust-cache@v2
+      - name: Rust against the Lean oracle (10 000 cases)
+        working-directory: .
+        run: cargo test -p loams-sqlrouter --locked --test it lean_oracle -- --nocapture
+
+  # loams-specview (dev tool): the server and its tests, including the live
+  # SSE test that runs TLC on the Selftest spec, then the Leptos frontend built
+  # with trunk. trunk is a prebuilt release (Apache-2.0/MIT) pinned by checksum;
+  # it fetches the wasm-bindgen CLI that matches Cargo.lock.
+  specview:
+    name: loams-specview
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.specview == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/loam/spec-tools
+          key: spec-tools-${{ hashFiles('scripts/spec/tools.lock') }}
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy (server)
+        run: cargo clippy -p loams-specview --all-targets --locked -- -D warnings
+      - name: tests (the live ones need Java and the pinned tools)
+        run: cargo test -p loams-specview --locked -- --include-ignored
+      - name: wasm target
+        run: rustup target add wasm32-unknown-unknown
+      - name: clippy (frontend)
+        run: cargo clippy -p loams-specview --no-default-features --features web --target wasm32-unknown-unknown --bin loams-specview-web --locked -- -D warnings
+      - name: trunk
+        run: |
+          curl -sSfL -o trunk.tar.gz https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz
+          echo "f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b  trunk.tar.gz" | sha256sum -c -
+          tar xzf trunk.tar.gz -C "$HOME/.cargo/bin" trunk
+      - name: build the frontend
+        working-directory: crates/loams-specview
+        run: trunk build --release --locked
+
+  sim:
+    name: simulation seed sweep
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sim == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: simulation (32 seeds x 300 steps)
+        if: github.event_name != 'schedule'
+        run: cargo test -p loams-sim --release --locked
+      - name: simulation (1000 seeds x 300 steps, nightly)
+        if: github.event_name == 'schedule'
+        run: 'cargo test -p loams-sim --release --locked --test it sim::'
+        env:
+          SIM_SEEDS: "1000"
+      - name: tail merge against a full rebuild (256 cases, nightly)
+        if: github.event_name == 'schedule'
+        run: 'cargo test -p loams-query --release --locked --test it tail_vs_rebuild::'
+        env:
+          TAIL_PROP_CASES: "256"
+
+  # R1 plan Task 1: the TiKV-backed suites against a tiup playground (PD and
+  # TiKV v8.5.8 on API v2, port offset 17000). Promotion PRs run it only when
+  # they touch the TiKV crates, their cluster config or scripts, or the Live
+  # protos (the `tikv` filter in the changes job). Nightly has its own job.
+  tikv:
+    name: TiKV suites
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'schedule' && (github.event_name != 'pull_request' || (github.base_ref == 'main' && needs.changes.outputs.tikv == 'true')) }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: packages
+        id: packages
+        # The TiKV crates that exist so far (later R1 tasks add the rest).
+        run: |
+          args=
+          for c in loams-tikv loams-kv loams-meta-tikv loams-live loams-live-js; do
+            if [ -d "crates/$c" ]; then args="$args -p $c"; fi
+          done
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+      - name: build the suites
+        run: |
+          cargo test ${{ steps.packages.outputs.args }} --locked --no-run
+          cargo test -p loams --features tikv --test meta_tikv --locked --no-run
+          cargo test -p loams --features live-tikv --test live --locked --no-run
+          cargo test -p loams --features live-tikv --bin loams live --locked --no-run
+          cargo test -p loams-durable --features tikv --lib --test tikv --locked --no-run
+          cargo test -p loams-safekeeper --features tikv --test tikv --locked --no-run
+          cargo test -p loams-pg-control --features tikv --test store_tikv --test service_tikv --test reconcile_tikv --locked --no-run
+      - uses: actions/cache@v6
+        with:
+          path: ~/.tiup/components
+          key: tiup-components-v8.5.8-${{ runner.os }}
+      - name: install tiup and the v8.5.8 components
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://tiup-mirrors.pingcap.com/install.sh | sh
+          echo "$HOME/.tiup/bin" >> "$GITHUB_PATH"
+          "$HOME/.tiup/bin/tiup" install playground pd:v8.5.8 tikv:v8.5.8
+      - name: start the playground
+        run: scripts/tikv/playground.sh start --tag loams-ci --timeout 120
+      - name: TiKV suites
+        env:
+          LOAMS_TEST_PD: 127.0.0.1:19379
+          # LV1 plan Task 1 (row T1-4): the reactive checker's seeded run is
+          # 2 seeds x 2 000 ops here; live-embedded runs the embedded case at
+          # 10 x 2 000, and the nightly job runs TiKV at 10. The transaction
+          # checker reads the same variables (row T2-4).
+          LOAMS_CHECKER_SEEDS: "2"
+          LOAMS_CHECKER_OPS: "2000"
+        run: |
+          cargo test ${{ steps.packages.outputs.args }} --locked
+          cargo test -p loams --features tikv --test meta_tikv --locked
+          cargo test -p loams --features live-tikv --test live --locked
+          cargo test -p loams --features live-tikv --bin loams live --locked
+          cargo test -p loams-durable --features tikv --lib --test tikv --locked
+          cargo test -p loams-safekeeper --features tikv --test tikv --locked
+          cargo test -p loams-pg-control --features tikv --test store_tikv --test service_tikv --test reconcile_tikv --locked
+      - name: playground logs
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tikv-playground-logs-${{ github.job }}
+          path: |
+            target/tikv-playground/*.log
+            ~/.tiup/data/loams-ci/**/*.log
+          if-no-files-found: ignore
+      - name: stop the playground
+        if: always()
+        run: scripts/tikv/playground.sh stop --tag loams-ci
+
+  # LV1 plan Task 22: the store seam's and Live's suites with no cluster, so
+  # every `live_test!` runs its `::embedded` case (the `::tikv` cases skip;
+  # the TiKV job runs them). `parity::every_live_suite_runs_on_embedded`
+  # fails a suite that opens a store outside `live_test!`.
+  live-embedded:
+    name: Live suites on the embedded store
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.live-embedded == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: the suites, embedded only
+        env:
+          LOAMS_TEST_PD: ""
+          LOAMS_TEST_TMPDIR: ${{ runner.temp }}
+          # The reactive checker's seeded run at full size (row T1-4).
+          LOAMS_CHECKER_SEEDS: "10"
+          LOAMS_CHECKER_OPS: "2000"
+        run: cargo test -p loams-kv -p loams-live -p loams-live-js -p loams-live-js-alloc --locked
+
+  # The same suites every night, plus the nightly-only TiKV suites later R1
+  # tasks add.
+  tikv-nightly:
+    name: TiKV suites (nightly)
+    if: github.event_name == 'schedule'
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: paths
+        id: paths
+        run: echo "run=true" >> "$GITHUB_OUTPUT"
+      - name: protoc
+        if: steps.paths.outputs.run == 'true'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: steps.paths.outputs.run == 'true'
+      - name: packages
+        id: packages
+        if: steps.paths.outputs.run == 'true'
+        # The TiKV crates that exist so far (later R1 tasks add the rest).
+        run: |
+          args=
+          for c in loams-tikv loams-kv loams-meta-tikv loams-live loams-live-js; do
+            if [ -d "crates/$c" ]; then args="$args -p $c"; fi
+          done
+          echo "args=$args" >> "$GITHUB_OUTPUT"
+      - name: build the suites
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          cargo test ${{ steps.packages.outputs.args }} --locked --no-run
+          cargo test -p loams --features tikv --test meta_tikv --locked --no-run
+          cargo test -p loams --features failpoints,tikv --test crash --locked --no-run
+      - uses: actions/cache@v6
+        if: steps.paths.outputs.run == 'true'
+        with:
+          path: ~/.tiup/components
+          key: tiup-components-v8.5.8-${{ runner.os }}
+      - name: install tiup and the v8.5.8 components
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://tiup-mirrors.pingcap.com/install.sh | sh
+          echo "$HOME/.tiup/bin" >> "$GITHUB_PATH"
+          "$HOME/.tiup/bin/tiup" install playground pd:v8.5.8 tikv:v8.5.8
+      - name: start the playground
+        if: steps.paths.outputs.run == 'true'
+        run: scripts/tikv/playground.sh start --tag loams-ci --timeout 120
+      # LV1 plan Task 1 (row T1-4): the reactive checker runs 10 seeds x
+      # 2 000 ops on TiKV, from a seed offset that moves with the date (days
+      # since the epoch x 10), so each night covers new seeds.
+      - name: the reactive checker's seed offset
+        if: steps.paths.outputs.run == 'true'
+        run: |
+          offset=$(( $(date -u +%s) / 86400 * 10 ))
+          echo "LOAMS_CHECKER_SEED_OFFSET=$offset" >> "$GITHUB_ENV"
+          echo "reactive checker seeds: $offset..$(( offset + 9 ))"
+      - name: TiKV suites
+        if: steps.paths.outputs.run == 'true'
+        env:
+          LOAMS_TEST_PD: 127.0.0.1:19379
+          # Nightly-only cases (loams_tikv::testing::nightly), such as
+          # old_versions_dropped_after_gc.
+          LOAMS_TEST_NIGHTLY: "1"
+          LOAMS_CHECKER_SEEDS: "10"
+          LOAMS_CHECKER_OPS: "2000"
+        run: |
+          cargo test ${{ steps.packages.outputs.args }} --locked
+          cargo test -p loams --features tikv --test meta_tikv --locked
+      # R1 plan Task 6: the M1.1 gates on the TiKV metastore. The kill -9
+      # crash gate runs `loams dev --meta tikv://…` (its snapshot rows are
+      # openraft-only and skip); the object-store fault matrix and the
+      # simulation stay on openraft (row T6-8).
+      - name: crash gate on the TiKV metastore
+        if: steps.paths.outputs.run == 'true'
+        env:
+          LOAMS_TEST_PD: 127.0.0.1:19379
+          LOAMS_GATE_META: tikv://127.0.0.1:19379/loams_test_meta
+        run: cargo test -p loams --features failpoints,tikv --test crash --locked
+      - name: the reactive checker's seeds
+        if: failure() && steps.paths.outputs.run == 'true'
+        run: |
+          echo "The reactive and transaction checkers ran seeds $LOAMS_CHECKER_SEED_OFFSET..$(( LOAMS_CHECKER_SEED_OFFSET + 9 )) x 2000 ops."
+          echo "A failing seed is named in its assertion; rerun it with"
+          echo "LOAMS_CHECKER_SEED_OFFSET=<seed> LOAMS_CHECKER_SEEDS=1 LOAMS_CHECKER_OPS=2000 cargo test -p loams-live --test reactive_checker passes_seeded"
+          echo "or, for the transaction checker (LV1 plan Task 2), with"
+          echo "LOAMS_CHECKER_SEED_OFFSET=<seed> LOAMS_CHECKER_SEEDS=1 LOAMS_CHECKER_OPS=2000 cargo test -p loams-live --test txn_checker snapshot_isolated"
+      - name: playground logs
+        if: failure() && steps.paths.outputs.run == 'true'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tikv-playground-logs-${{ github.job }}
+          path: |
+            target/tikv-playground/*.log
+            ~/.tiup/data/loams-ci/**/*.log
+          if-no-files-found: ignore
+      - name: stop the playground
+        if: always() && steps.paths.outputs.run == 'true'
+        run: scripts/tikv/playground.sh stop --tag loams-ci
+
+  # D1 plan Task 5: the embedded durable server's tests and Resonate's
+  # linearizability check (porcupine) against `loams dev` on SQLite. Pull
+  # requests run it only when they touch the durable crate, its routes or
+  # scripts, the workflows, or the workspace manifests (the `durable` filter
+  # in the changes job). `durable` is an opt-in feature (O1).
+  durable:
+    name: durable execution (SQLite linearizability)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'schedule' && (github.event_name != 'pull_request' || needs.changes.outputs.durable == 'true')) }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    timeout-minutes: 120
+    env:
+      DURABLE_FORK_TARGET_DIR: ${{ github.workspace }}/target/durable-fork-build
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: durable
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.24"
+          cache: false
+      - name: loams-durable tests
+        run: cargo test -p loams-durable --locked
+      - name: loams durable tests
+        # The binary's tests also cover the optional listener flags (the
+        # extra feature reuses this build).
+        run: cargo test -p loams --features durable,stream-grpc --test durable --bin loams --locked
+      - name: checker self-test
+        run: scripts/durable/conformance.sh --self-test
+      - name: linearizability on SQLite (8 clients x 600 ops)
+        run: scripts/durable/conformance.sh --store sqlite --clients 8 --ops 600
+      - name: conformance output
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: durable-conformance-sqlite
+          path: target/durable-conformance/
+          if-no-files-found: ignore
+
+  # D1 plan Task 5, nightly: the TiDB backend's suite and the linearizability
+  # check against `loams dev --durable-store mysql://…` on a throwaway TiDB
+  # v8.5.8 (the optimistic-mode test flips a global variable). The TiDB leg
+  # drops 503 answers as not applied (porc-503.sh) until upstream PR 0b; the
+  # job summary shows how many there were.
+  durable-tidb:
+    name: durable execution on TiDB (nightly)
+    if: github.event_name == 'schedule'
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    timeout-minutes: 180
+    env:
+      DURABLE_FORK_TARGET_DIR: ${{ github.workspace }}/target/durable-fork-build
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc and the mysql client
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler mysql-client
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: durable
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.24"
+          cache: false
+      # Everything is built before TiDB starts.
+      - name: build the TiDB suite and loams
+        run: |
+          cargo test -p loams-durable --features mysql --test tidb --locked --no-run
+          cargo build --release --locked -p loams --features durable-mysql
+      - uses: actions/cache@v6
+        with:
+          path: ~/.tiup/components
+          key: tiup-components-tidb-v8.5.8-${{ runner.os }}
+      - name: install tiup and the v8.5.8 components
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://tiup-mirrors.pingcap.com/install.sh | sh
+          echo "$HOME/.tiup/bin" >> "$GITHUB_PATH"
+          "$HOME/.tiup/bin/tiup" install playground pd:v8.5.8 tikv:v8.5.8 tidb:v8.5.8
+      - name: start TiDB
+        run: |
+          scripts/durable/tidb.sh up --tag loams-ci-durable --port-offset 27000 --timeout 180 | tee "$RUNNER_TEMP/tidb.out"
+          sed -n 's/^export \(LOAMS_TEST_TIDB=.*\)$/\1/p' "$RUNNER_TEMP/tidb.out" >> "$GITHUB_ENV"
+      - name: TiDB suite
+        run: cargo test -p loams-durable --features mysql --test tidb --locked
+      - name: linearizability on TiDB (8 clients x 600 ops)
+        run: scripts/durable/conformance.sh --store tidb --clients 8 --ops 600 --loams-bin target/release/loams
+      - name: linearizability on TiDB (16 clients x 400 ops, seeds 11, 12, 13)
+        run: |
+          for seed in 11 12 13; do
+            scripts/durable/conformance.sh --store tidb --clients 16 --ops 400 --seed "$seed" \
+              --loams-bin target/release/loams
+          done
+      - name: conformance output and TiDB logs
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: durable-tidb-logs
+          path: |
+            target/durable-conformance/
+            target/durable-tidb/*.log
+            ~/.tiup/data/loams-ci-durable/**/*.log
+          if-no-files-found: ignore
+      - name: stop TiDB
+        if: always()
+        run: scripts/durable/tidb.sh down --tag loams-ci-durable
+
+  # R1 plan Task 7: the loams.live.v1 protos pass `buf lint` (STANDARD), and
+  # the checked-in TypeScript in sdks/typescript/packages/live/src/gen is what
+  # `buf generate` writes from them. buf and protoc-gen-es are pinned in
+  # sdks/typescript/packages/live/package.json. The Rust code is generated at build
+  # time (loams-live-proto's build.rs), so the check job covers it.
+  live-protos:
+    name: loams.live.v1 protos and generated TypeScript
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.protos == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          # The TypeScript SDK is a root workspace package (design §44
+          # §10.2), so its pinned buf and protoc-gen-es install with the root
+          # lockfile rather than one of their own.
+          cache-dependency-path: pnpm-lock.yaml
+      - name: install
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+      - name: buf lint
+        run: web/packages/proto/node_modules/.bin/buf lint
+      - name: regenerate the TypeScript
+        run: ./scripts/sdk/gen.sh typescript-live
+      - name: the generated code is up to date
+        run: |
+          git add -N sdks/typescript/packages/live/src/gen
+          git diff --exit-code -- sdks/typescript/packages/live/src/gen || {
+            echo "sdks/typescript/packages/live/src/gen is stale: run 'scripts/sdk/gen.sh typescript-live' and commit the result"; exit 1;
+          }
+
+  # AP0 Task 6: the app protos (loams.instance, devices, approvals,
+  # operations, notifications and errors v1) pass `buf lint`, make no
+  # breaking change against main, and the checked-in TypeScript in
+  # web/packages/proto/src/gen (@loams/proto) is what `buf generate` writes.
+  # The Swift and Kotlin templates that ostrium-labs/loams-mobile runs are
+  # smoke-generated into the runner's temp directory (nothing is compiled
+  # here). The Rust side is loams-apps-mock's build.rs, covered by `check`.
+  app-protos:
+    name: app protos, @loams/proto and the mobile templates
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.app-protos == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: install
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+      - name: buf lint
+        run: web/packages/proto/node_modules/.bin/buf lint
+      # buf.yaml ignores loams.live.v1 for breaking changes (R1).
+      - name: buf breaking (against main)
+        run: web/packages/proto/node_modules/.bin/buf breaking --against ".git#branch=origin/main"
+      - name: regenerate @loams/proto
+        working-directory: web
+        run: pnpm --filter @loams/proto generate
+      - name: the generated code is up to date
+        run: |
+          git add -N web/packages/proto/src/gen
+          git diff --exit-code -- web/packages/proto/src/gen || {
+            echo "web/packages/proto/src/gen is stale: run 'pnpm --filter @loams/proto generate' in web/ and commit the result"; exit 1;
+          }
+      - name: typecheck and test @loams/proto
+        working-directory: web
+        run: pnpm --filter @loams/proto typecheck && pnpm --filter @loams/proto test
+      # Remote plugins on buf.build are rate-limited without a token, so a
+      # transient BSR failure does not fail the job; a template error shows
+      # in the step log.
+      - name: the Swift and Kotlin templates generate
+        continue-on-error: true
+        run: |
+          out="$RUNNER_TEMP/mobile-gen"
+          mkdir -p "$out" && cp buf.gen.swift.yaml buf.gen.kotlin.yaml "$out/"
+          web/packages/proto/node_modules/.bin/buf generate --template buf.gen.swift.yaml -o "$out"
+          web/packages/proto/node_modules/.bin/buf generate --template buf.gen.kotlin.yaml -o "$out"
+          find "$out/gen" -type f | sort
+
+  # SDK2 Task 0: the TypeScript SDK. The facade is generated from the
+  # loams.options.v1 annotations by crates/loams-facade-gen and committed, so
+  # this job regenerates and fails on a diff; the runtime suite replays the
+  # recorded conformance corpus (design §44 §10.4), which needs no server.
+  sdk-typescript:
+    name: the TypeScript SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-typescript == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: install
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+      # The facade generator reads the descriptors and writes the SDK's
+      # generated module surface; `strategy: all` in the template is what makes
+      # buf invoke it once with the whole proto module.
+      - name: regenerate the SDK facade
+        run: ./scripts/sdk/gen.sh typescript
+      - name: the generated facade is up to date
+        run: |
+          git add -N sdks/typescript/packages/client/src/gen
+          git diff --exit-code -- sdks/typescript/packages/client/src/gen || {
+            echo "sdks/typescript/packages/client/src/gen is stale: run 'scripts/sdk/gen.sh typescript' and commit the result"; exit 1;
+          }
+      # The golden test compares the committed facade against the generator's
+      # output over the real proto/ tree, so a proto edit that changed the SDK
+      # surface cannot pass with a stale file.
+      - name: the facade generator's tests
+        run: cargo test -j 4 -p loams-facade-gen
+      - name: lint the facade generator
+        run: |
+          cargo fmt -p loams-facade-gen -- --check
+          cargo clippy -j 4 -p loams-facade-gen --all-targets -- -D warnings
+      - name: typecheck the SDK
+        working-directory: web
+        run: |
+          pnpm --filter @loams/client typecheck
+          pnpm --filter @loams/live typecheck
+          pnpm --filter @loams/proto typecheck
+      - name: the SDK conformance suite
+        working-directory: web
+        run: pnpm --filter @loams/client test
+      # The 100% required-fixture bar (design §44 §10.4, D617), which
+      # `check-languages.mjs --check` is the only thing that enforces. It reads
+      # `sdks/fixtures/results/typescript.json`, which the suite above just
+      # wrote, and the report is generated rather than committed (D640) — so this
+      # runs immediately after the suite and fails the job if the coverage is
+      # short.
+      #
+      # It exited 2 with "nothing can be checked" on every language until the
+      # TypeScript suite started writing one, which is how a gate written to
+      # enforce a 100% bar enforced nothing at all. Exit codes: 0 covered, 1
+      # short of the bar, 2 no report — all non-zero fail this step.
+      - name: the suite meets the 100% required-fixture bar
+        run: node sdks/conformance/check-languages.mjs --check typescript
+      # The same suite against a real server. This is the job that can afford
+      # it, and it is what catches a recorded corpus that has drifted from the
+      # API (design §44 §10.4). A live `loams dev` does not serve the app
+      # packages, so this run writes no report and the check above is the one
+      # that has to have passed.
+      - name: the conformance suite against a live server
+        run: ./sdks/conformance/run.sh typescript
+      # A generation difference must be a dependency bump in a PR, not whatever
+      # the runner happened to have. The pins are exact versions for that
+      # reason, and this fails if one is ever loosened to a range.
+      - name: the generation tools are pinned to exact versions
+        run: |
+          for pin in '"@bufbuild/buf": "1.73.0"' '"@bufbuild/protoc-gen-es": "2.16.0"' '"@bufbuild/protobuf": "2.16.0"'; do
+            grep -qF "$pin" sdks/typescript/packages/client/package.json || {
+              echo "sdks/typescript/packages/client/package.json is missing the exact pin $pin"; exit 1;
+            }
+          done
+          sdks/typescript/packages/client/node_modules/.bin/buf --version
+
+  # SDK2 Task 3: the Rust SDK (design section 44 row 4). sdks/rust is its own
+  # cargo workspace, so the server's Rust jobs never touch it -- PR #340 merged
+  # with four failing tests because nothing ran them. This job is what makes a
+  # green board mean something for a language SDK.
+  #
+  # sdk-rust, sdk-python, sdk-go and sdk-swift are required as of 2026-10-05,
+  # which is the condition the earlier note set out: they were left out only
+  # because they were red, and #361 (Swift) and #356 (Python) made them green.
+  # All five language SDK jobs now gate `dev`, which is what makes a green board
+  # mean something for a language SDK.
+  sdk-rust:
+    name: the Rust SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-rust == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      # crates/loams-live-proto/build.rs shells out to the system protoc
+      # (connectrpc_build), so without this the SDK build dies in the build
+      # script before a single test runs. The other 13 jobs that build the
+      # workspace install it here; sdk-rust was missed.
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # -j 4: the SDK path-depends on loams-proto and loams-live-proto, and the
+      # runners are 4 vCPU.
+      - name: the Rust SDK's tests
+        working-directory: sdks/rust
+        run: cargo test -j 4 --locked
+      - name: lint the Rust SDK
+        working-directory: sdks/rust
+        run: |
+          cargo fmt -- --check
+          cargo clippy -j 4 --all-targets -- -D warnings
+      # `scripts/sdk/gen.sh` resolves buf from web's node_modules, so the
+      # drift check below cannot run without this. sdk-rust had no pnpm setup at
+      # all, so the step died before checking anything:
+      #   sdks/typescript/packages/client/node_modules/.bin/buf is missing:
+      #   run 'pnpm install' in web/ first
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: install
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+      # The generated facade is protoc-gen-loams-facade's output verbatim and is
+      # committed, so a proto edit that moved the SDK surface cannot pass with a
+      # stale file.
+      #
+      # `scripts/sdk/drift.sh` rather than a hand-written `git diff` on a path:
+      # the path is read out of `sdks/templates/rust/template.env` (FACADE_OUT),
+      # so this step cannot go stale the way the one it replaces did. That step
+      # checked `sdks/rust/gen`, a directory that does not exist, and
+      # `git diff --exit-code` against a path matching no tracked file exits 0 —
+      # so the gate passed unconditionally and the facade was in fact stale
+      # (issue #374).
+      - name: the Rust SDK's generated code is not stale
+        run: ./scripts/sdk/drift.sh rust
+
+  # SDK2 Task 1: the Python SDK. CI's existing Python jobs are the qdrant
+  # smoke and static analysis, neither of which imports this package.
+  sdk-python:
+    name: the Python SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-python == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - name: install the SDK
+        working-directory: sdks/python
+        run: uv sync --frozen --all-extras --dev
+      - name: the Python SDK's tests
+        working-directory: sdks/python
+        run: uv run pytest -q
+      - name: the SDK typechecks under --strict
+        working-directory: sdks/python
+        run: uv run mypy --strict src
+      # A generation difference must be a dependency bump, not whatever the
+      # runner resolved, so the runtime pins stay exact.
+      - name: the SDK's runtime dependencies are exact pins
+        working-directory: sdks/python
+        run: |
+          for pin in 'connect-python==' 'protobuf=='; do
+            grep -qF "$pin" pyproject.toml || {
+              echo "pyproject.toml must pin $pin exactly, not a range"; exit 1;
+            }
+          done
+
+  # The Swift SDK (issue #288). Report-only like the other SDK gates: it must
+  # build and test on a runner that actually has a Swift toolchain, because no
+  # machine that develops this repo does. `Package.swift` declares no package
+  # dependencies, so this needs no resolution step and no cache.
+  sdk-swift:
+    name: the Swift SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-swift == 'true') }}
+    # macOS, not the Linux runner: the SDK is written against Foundation's
+    # async URLSession, and macos-latest ships a Swift toolchain preinstalled.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: the Swift toolchain's version
+        run: swift --version
+      # The filter also matches `.github/workflows/**`, so this job runs on the
+      # PR that adds it, when sdks/swift may not be on the base yet. `hashFiles`
+      # rather than a `test -f` step, because a failing step fails the job.
+      - name: the Swift SDK builds
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        working-directory: sdks/swift
+        run: swift build
+      - name: the Swift SDK's tests
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        working-directory: sdks/swift
+        run: swift test
+
+  # SDK2 Task 2: the Go SDK, whose module sits outside the web workspace.
+  sdk-go:
+    name: the Go SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-go == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # Must be >= sdks/go/go.mod's `go 1.25.0`. This job also sets
+          # GOTOOLCHAIN=local, so Go cannot self-upgrade past what setup-go
+          # installed and the mismatch is a hard failure:
+          #   go: go.mod requires go >= 1.25.0 (running go 1.24.0;
+          #       GOTOOLCHAIN=local)
+          # It was the only job pinning an exact 1.24.0; the others use "1.24".
+          go-version: '1.25.0'
+          cache-dependency-path: sdks/go/go.sum
+      - name: the Go SDK's tests
+        working-directory: sdks/go
+        run: go test -count=1 ./...
+      - name: vet the Go SDK
+        working-directory: sdks/go
+        run: go vet ./...
+
+  # SDK2 Task 11 (#295): the C++ SDK. protobuf 36.1.0 and libcurl 8.x are
+  # preinstalled on the runner, and the pinned `buf.build/protocolbuffers/cpp`
+  # release **must** match the installed protobuf: the committed gencode carries
+  # `#if PROTOBUF_VERSION != <gencode>`, which is protobuf's own cross-version
+  # guarantee rather than a choice. A protobuf bump and a buf.gen.yaml bump are
+  # therefore one commit (D643).
+  sdk-cpp:
+    name: the C++ SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-cpp == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      # `pkg-config` is what protobuf's link line comes from: the SDK parses
+      # Connect error bodies with protobuf's JSON helpers, which return an
+      # absl::Status, so Abseil's libraries are only on the link line via
+      # protobuf's own .pc (D643).
+      - name: the C++ SDK's toolchain and dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build clang protobuf-compiler libprotobuf-dev libcurl4-openssl-dev pkg-config
+      - name: the protobuf release the stubs were generated from
+        run: |
+          installed=$(pkg-config --modversion protobuf)
+          echo "libprotobuf $installed"
+          grep -q "PROTOBUF_VERSION != 7036001" sdks/cpp/gen/loams/errors/v1/errors.pb.h || {
+            echo "sdks/cpp/gen was generated for a different protobuf release than the"; \
+            echo "one installed here. Regenerate with buf.gen.yaml's pin, or bump the"; \
+            echo "pin and the stubs together."; exit 1;
+          }
+      - name: the C++ SDK's conformance suite
+        working-directory: sdks/cpp
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
+          cmake --build build -j 4
+          ctest --test-dir build --output-on-failure
+      # A proto edit that moved the SDK surface must not pass with stale stubs.
+      # `scripts/sdk/drift.sh` has no C++ case yet -- it would ask the Rust
+      # `protoc-gen-loams-facade` for a facade it cannot render (D644) -- so the
+      # equivalent is buf here, resolved from the same pinned devDependency the
+      # sdk-rust job uses rather than from whatever the runner happens to have.
+      # `ubuntu-latest` ships no buf at all, so without this the step would fail
+      # on a missing binary rather than on drift.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: install
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+      - name: the C++ SDK's generated code is not stale
+        run: |
+          sdks/typescript/packages/client/node_modules/.bin/buf generate --template sdks/cpp/buf.gen.yaml
+          git diff --exit-code -- sdks/cpp/gen || {
+            echo "sdks/cpp/gen is stale: regenerate with sdks/cpp/buf.gen.yaml and commit"; exit 1;
+          }
+
+  # SDK2 Task 7 (#297): the C# SDK. `setup-dotnet` installs the channel, not the
+  # patch, so `global.json` pins the exact SDK: `TreatWarningsAsErrors` is on, and
+  # a runner that rolled the 8.0.4xx band forward would change the compiler every
+  # warning is judged by. `rollForward: latestPatch` keeps that from becoming a
+  # hard pin, so a retired patch does not fail the job outright.
+  #
+  # No `cache:` on setup-dotnet: NuGet's cache keys on a `packages.lock.json` and
+  # this SDK does not set `RestorePackagesWithLockFile`, so a cache declaration
+  # would reference a path that does not exist. Closing that is its own commit
+  # rather than something to fake here.
+  sdk-csharp:
+    name: the C# SDK and its conformance suite
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sdk-csharp == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: sdks/csharp/global.json
+      - name: the C# SDK's build
+        working-directory: sdks/csharp
+        # Warnings are errors here (`TreatWarningsAsErrors` in Directory.Build.props),
+        # so a nullable-annotation warning fails the job rather than scrolling past.
+        run: dotnet build Loams.sln -c Release
+      - name: the C# SDK's conformance suite
+        working-directory: sdks/csharp
+        run: dotnet test Loams.sln -c Release
+      # A proto edit that moved the SDK surface must not pass with stale stubs.
+      # `scripts/sdk/drift.sh` has no C# case -- there is no `protoc-gen-loams-facade`
+      # template for C#, since the facade is hand-written (D650) -- so the check is
+      # buf here, resolving the same pinned devDependency the sdk-rust job installs.
+      # The runner ships no buf, so without this the step fails on a missing binary
+      # rather than on drift.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: install
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+      - name: the C# SDK's generated code is not stale
+        run: |
+          sdks/typescript/packages/client/node_modules/.bin/buf generate --template sdks/csharp/buf.gen.proto.yaml
+          git diff --exit-code -- sdks/csharp/src/Loams/Gen || {
+            echo "the committed stubs are stale: regenerate with sdks/csharp/buf.gen.proto.yaml"; exit 1;
+          }
+
+  # GR1 Task 1 (design §48, D741): Loams Graph's engine crate, and the rule
+  # that `loams` links Grafeo only with the `graph` feature (GR1 Global
+  # Constraints). `cargo test -p loams-graph` includes
+  # `licences_cover_every_grafeo_crate`, which fails when a grafeo* crate in a
+  # Cargo.lock has no connectors/licences.toml stanza.
+  graph:
+    name: Loams Graph (loams-graph, no grafeo by default)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.graph == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # loams_default_build_has_no_grafeo: `cargo build -p loams` without
+      # `graph` must not compile Grafeo.
+      - name: loams's default build has no grafeo
+        run: |
+          set -euo pipefail
+          # Capture first: a failing `cargo tree` must fail the step, not
+          # read as "no grafeo".
+          tree=$(cargo tree -p loams -e normal --prefix none --locked)
+          if ! grep -q '^loams v' <<< "$tree"; then
+            echo "cargo tree -p loams printed no 'loams v' root line; the check cannot run"; exit 1
+          fi
+          count=$(grep -c grafeo <<< "$tree" || true)
+          if [ "$count" != 0 ]; then
+            echo "loams's default features depend on grafeo ($count lines); it belongs behind the graph feature (GR1, D741)"
+            cargo tree -p loams -e normal --locked -i grafeo || true
+            exit 1
+          fi
+      - name: loams-graph tests
+        run: cargo test -p loams-graph --locked
+      # GR1 Task 3: panic containment (`engine_panic_poisons_one_graph`) behind a failpoint.
+      - name: loams-graph with failpoints
+        run: cargo test -p loams-graph --features failpoints --locked --test failpoints
+      # GR1 Task 5: loams.graph.v1 on the main port, in both builds (the default build answers
+      # feature_not_in_variant; the graph build serves it).
+      - name: loams serves loams.graph.v1 (graph feature)
+        run: cargo test -p loams --features graph --locked --test connect_graph --test connect_api
+      - name: loams answers feature_not_in_variant (default build)
+        run: cargo test -p loams --locked --test connect_graph
+
+  # SQ1 Task 3: the gate's sans-I/O MySQL codec parses untrusted client
+  # packets. Each cargo-fuzz target runs 60 s from its seed corpus; the same
+  # invariants run under proptest in `cargo test`.
+  sqlgate-fuzz:
+    name: Loams SQL gate codec fuzzing
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.sqlgate == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    # Five targets x 60 s plus the build.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      # A dated nightly (14+ days old when pinned, 2026-10-09), not a floating one.
+      - name: nightly toolchain (libFuzzer instrumentation)
+        run: rustup toolchain install nightly-2026-09-24 --profile minimal
+      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
+        with:
+          tool: cargo-fuzz@0.13.2
+      # cargo-fuzz has no --locked: check fuzz/Cargo.lock is current first.
+      - name: fuzz lock file is current (--locked)
+        working-directory: crates/loams-sqlgate
+        run: cargo +nightly-2026-09-24 metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml > /dev/null
+      # Keep in sync with fuzz/Cargo.toml (tests/it/ci.rs checks it).
+      - name: fuzz every target for 60 s
+        working-directory: crates/loams-sqlgate
+        run: |
+          set -euo pipefail
+          for t in handshake_response packet_framing connection_phase auth_server decoders; do
+            mkdir -p "fuzz/corpus/$t"
+            cargo +nightly-2026-09-24 fuzz run "$t" "fuzz/corpus/$t" -- -max_total_time=60 -rss_limit_mb=2048
+          done
+      - name: upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: sqlgate-fuzz-artifacts
+          path: crates/loams-sqlgate/fuzz/artifacts
+          if-no-files-found: ignore
 
   deny:
     name: licenses, advisories, sources
-    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.deny == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  web:
+    name: console and @loams/ui
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+      - name: the generated API types match the contract
+        run: pnpm gen:api && git diff --exit-code -- apps/console/src/api/schema.d.ts
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: the Cloudflare deploy scripts (issue #269)
+        run: node --test apps/console/deploy/*.test.mjs
+      - run: pnpm build
+      - name: the build stages for Workers static assets
+        run: node apps/console/deploy/stage.mjs
+
+  # The console's WebMCP feature detection in a real browser (AP1d Task 4;
+  # design §42 §5, D635, D638).
+  #
+  # Separate from `web:` on purpose. This is the repository's first browser
+  # harness, it needs a Chrome binary that the other jobs never ask for, and it
+  # must not be able to hold up a lint, typecheck or build. Same path filter, so
+  # a change to the console runs both.
+  #
+  # What it asserts, and what it deliberately does not: `document.modelContext`
+  # is `[SecureContext]`, so it does not exist under jsdom and the vitest suite
+  # can only ever compare the module against an object the test built.
+  #
+  # The API's availability **moves with the Chrome channel**, which is the whole
+  # reason this job asserts an invariant rather than one browser's answer.
+  # Measured 2026-10-05 under the same flags: on Chrome 149.0.7827.155
+  # `document.modelContext` is absent and the decoy spellings
+  # `navigator.modelContext` / `navigator.modelContextTesting` are present; on
+  # Chrome 154.0.8037.57 it is the other way round — the real attribute is
+  # present, as a real `ModelContext`, and both decoys are gone. So what is
+  # asserted is that **the console agrees with whatever the browser reports**,
+  # in both directions: absent → `not-exposed` and a `register` that resolves
+  # `undefined` (D568's path, and per D635 the production one, since WebKit's
+  # standards position is closed and `oppose`); present → detection available, a
+  # handle returned, and `exposedTo` carrying only potentially-trustworthy
+  # origins.
+  #
+  # Unconditionally, on every channel: the `navigator` decoys are never mistaken
+  # for `document.modelContext`; a plaintext `http://` origin never reaches
+  # `registerTool`; `clear()` is idempotent and unregisters one abort per tool;
+  # and a partial registration failure keeps the working tools.
+  #
+  # Every assertion holds whether or not the flags still work, so a Chrome that
+  # renames or drops them cannot turn this job red — the browser's real answer
+  # is logged as diagnostics instead, so a channel change is visible in this job's
+  # log rather than only as a red build.
+  web-browser:
+    name: console in a real Chrome (WebMCP detection)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The job installs dependencies and runs browser tests from this
+          # checkout, so the token must not stay in the git config afterwards.
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      # A browser job that finds no browser must fail, not skip, so the browser
+      # is resolved and printed before anything else runs. The candidate list
+      # and the order are `findChrome()`'s own — the job must not pass on a
+      # browser the harness would have refused, nor fail on a runner where the
+      # harness would have found one.
+      - name: the Chrome under test
+        run: |
+          set -euo pipefail
+          if [ -n "${LOAMS_CHROME:-}" ]; then
+            # `findChrome()` treats an explicit LOAMS_CHROME as the only answer
+            # and errors rather than falling back, so this step must too.
+            "$LOAMS_CHROME" --version
+            exit 0
+          fi
+          candidates=""
+          for name in google-chrome-stable google-chrome chromium chromium-browser chrome; do
+            path="$(command -v "$name" || true)"
+            [ -n "$path" ] && candidates="$candidates $path"
+          done
+          for path in /opt/google/chrome/chrome; do
+            [ -x "$path" ] && candidates="$candidates $path"
+          done
+          for path in $candidates; do
+            if "$path" --version; then exit 0; fi
+          done
+          echo '::error::no Chrome or Chromium on this runner image; this job refuses to skip'
+          exit 1
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+      - name: WebMCP feature detection, in a real browser (D638)
+        run: pnpm --filter @loams/console test:browser
+
+  # The Dapr trigger edge (deploy/dapr/edge): a standalone crate with its own
+  # Cargo.lock, so the workspace jobs never build it.
+  dapr-edge:
+    name: Dapr trigger edge
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.dapr-edge == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    defaults:
+      run:
+        working-directory: deploy/dapr/edge
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: deploy/dapr/edge -> target
+      - name: rustfmt
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: test
+        run: cargo test --locked
+      - name: the manifests render
+        working-directory: .
+        run: kubectl kustomize deploy/dapr > /dev/null
+
+  no-metering:
+    name: open-core boundary (no metering)
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: boundary guard regression fixtures
+        run: python3 scripts/ci/test-no-metering.py
+      - name: audit all tracked files and Cargo packages
+        run: scripts/ci/no-metering.sh
+
+  # The Linux signing scope (issue #253, PR: SignPath). scripts/ci/
+  # signpath-artifacts.py is what refuses to submit a Windows or macOS artifact
+  # to SignPath, and the owner's ruling of 2026-10-03 is that those platforms
+  # stay unsigned. An unconditional job with no path filter on purpose: the
+  # invariant is "no artifact outside Linux is ever submitted", so it should be
+  # checked on every pull request rather than only on ones that touch the
+  # script. The self-test is pure-python fixtures and takes about a second.
+  signing:
+    name: Linux signing scope
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: the SignPath artifact guard self-test
+        run: python3 scripts/ci/signpath-artifacts.py --self-test
+
+  # release/nfpm.yaml and scripts/release/*.py define the .deb, the .rpm and the
+  # .pkg.tar.zst. nFPM is the only thing that validates a packager field, so a
+  # definition it rejects is invisible to every other gate here -- and the same
+  # is true of the apt repository layout, which is generated in Python. Both
+  # self-tests build real packages from fixtures and read every field back.
+  #
+  # Unconditional, no path filter, for the reason the `signing` job above gives:
+  # the invariant is "the packaging definitions are valid on every pull request",
+  # so it is checked on all of them. nFPM is installed by the repo's own pinned,
+  # SHA-256-checked script; createrepo_c is not installed, so that one repository
+  # layout is reported as skipped by the self-test rather than passing silently.
+  packaging:
+    name: Linux packaging definitions
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: PyYAML
+        run: python3 -m pip install --quiet --disable-pip-version-check PyYAML
+      - name: nFPM
+        run: |
+          bash scripts/release/install-nfpm.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: the artifact builder self-test
+        run: python3 scripts/release/build-artifacts.py --self-test
+      - name: the repository builder self-test
+        run: python3 scripts/release/make-repo.py --self-test
+
+  required:
+    name: CI required
+    if: always()
+    needs:
+      - changes
+      - no-metering
+      - signing
+      - packaging
+      - docs
+      - check
+      - rust-tests
+      - agentd
+      - feature-tests
+      - crash-gate
+      - cluster
+      - qdrant-client
+      - es-client
+      - tla
+      - lean
+      - specview
+      - sim
+      - tikv
+      - tikv-nightly
+      - live-embedded
+      - durable
+      - durable-tidb
+      - live-protos
+      - app-protos
+      - sdk-typescript
+      - sdk-rust
+      - sdk-python
+      - sdk-go
+      - sdk-cpp
+      - sdk-csharp
+      - sdk-swift
+      - graph
+      - sqlgate-fuzz
+      - deny
+      - web
+      - dapr-edge
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    steps:
+      - name: Require all selected CI jobs to pass
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          if jq -e '[.[] | .result] | any(. == "failure" or . == "cancelled")' <<< "$NEEDS_JSON"; then
+            echo "A CI job failed or was cancelled" >&2
+            exit 1
+          fi

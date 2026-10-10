@@ -1,0 +1,63 @@
+#! refused=graph_transaction_statement
+START TRANSACTION
+
+#! refused=graph_transaction_statement
+START TRANSACTION READ ONLY
+
+#! refused=graph_transaction_statement
+COMMIT
+
+#! refused=graph_transaction_statement
+ROLLBACK
+
+#! refused=graph_statement_not_allowed
+CREATE GRAPH g3
+
+#! refused=graph_statement_not_allowed
+DROP GRAPH g3
+
+#! refused=graph_statement_not_allowed
+USE GRAPH g3
+
+#! refused=graph_statement_not_allowed
+SESSION SET GRAPH g3
+
+#! refused=graph_statement_not_allowed
+SESSION RESET GRAPH
+
+#! refused=graph_statement_not_allowed
+SESSION SET TIME ZONE 'UTC'
+
+#! refused=graph_statement_not_allowed
+LOAD DATA FROM '/etc/hostname' FORMAT CSV AS row RETURN row
+
+#! refused=graph_statement_not_allowed
+/* a comment first */ LOAD DATA FROM '/etc/hostname' FORMAT JSONL AS row RETURN row
+
+#! refused=graph_statement_not_allowed
+MATCH (n) RETURN n NEXT LOAD DATA FROM '/etc/hostname' FORMAT CSV WITH HEADERS AS row RETURN row
+
+#! refused=graph_unbounded_path
+MATCH p = (a)-[*]->(b) RETURN p
+
+#! refused=graph_unbounded_path
+MATCH p = (a)-[:KNOWS*2..]->(b) RETURN p
+
+#! refused=graph_unbounded_path
+MATCH p = (a)-[:KNOWS*1..20]->(b) RETURN p
+
+#! parse_error
+// a line comment GQL 0.5.43 does not parse
+INSERT (:X)
+
+#! refused=graph_unbounded_path
+MATCH (a) WHERE a.v = 1 AND EXISTS { MATCH (a)-[*]->(b:Nope) } RETURN count(a)
+
+#! refused=graph_unbounded_path
+MATCH (x) WHERE COUNT { MATCH (x)-[*]->(y:Nope) } > 0 RETURN x
+
+#! refused=graph_unbounded_path
+MATCH (a) RETURN COUNT { MATCH (a)-[*]->(b) } AS c
+
+#! refused=graph_unbounded_path
+RETURN VALUE { MATCH (a)-[*1..50]->(b) RETURN count(b) }

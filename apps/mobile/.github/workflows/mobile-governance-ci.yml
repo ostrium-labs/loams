@@ -1,0 +1,42 @@
+# Historical source-CI template; inactive here. Root .github/workflows/monorepo.yml owns mobile CI.
+# Do not activate alongside monorepo.yml; current Nx projects use the mobile-* names.
+name: mobile-governance CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  required:
+    name: CI required
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check patch whitespace
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          base=HEAD^
+          if [[ "$GITHUB_EVENT_NAME" == push && -n "$BEFORE_SHA" &&
+                "$BEFORE_SHA" != 0000000000000000000000000000000000000000 ]]; then
+            base=$BEFORE_SHA
+          fi
+          git diff --check "$base" HEAD
+      - name: Test required-workflow selection
+        run: python3 apps/mobile/scripts/ci/test_required_workflows.py
+      - name: Require applicable GitHub Actions workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 apps/mobile/scripts/ci/required_workflows.py

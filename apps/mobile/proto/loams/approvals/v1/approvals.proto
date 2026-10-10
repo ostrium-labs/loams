@@ -1,0 +1,165 @@
+// PLACEHOLDER (loams-mobile). Written from the AP0 plan
+// (docs/plans/2026-10-01-ap0-app-protos.md in ostrium-labs/loams) before
+// AP0's protos exist upstream. Replace this file with the upstream one
+// through scripts/sync-protos.sh as soon as AP0 merges, then fix the apps
+// against the real contract. Do not extend it here: change AP0 instead.
+//
+// Approvals over §21 §6.5's approval promises (§37 §7.3, AP0 Task 3).
+//
+// A decision carries `decision_proof`: a compact JWS (ES256 from the Secure
+// Enclave or Android Keystore; EdDSA allowed for software keys) over the
+// canonical DecisionClaims JSON {approval_id, decision, iat, jti, revision}
+// (keys sorted, no whitespace), signed by the device's decision key.
+syntax = "proto3";
+
+package loams.approvals.v1;
+
+import "google/protobuf/timestamp.proto";
+import "loams/instance/v1/instance.proto";
+
+service ApprovalService {
+  rpc ListApprovals(ListApprovalsRequest) returns (ListApprovalsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc GetApproval(GetApprovalRequest) returns (GetApprovalResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // A snapshot of the approvals the caller may decide, then changes, then a
+  // heartbeat every 15 s. Resumes from `resume_cursor`.
+  rpc WatchApprovals(WatchApprovalsRequest) returns (stream WatchApprovalsResponse);
+  rpc DecideApproval(DecideApprovalRequest) returns (DecideApprovalResponse);
+}
+
+enum Risk {
+  RISK_UNSPECIFIED = 0;
+  RISK_LOW = 1;
+  RISK_MEDIUM = 2;
+  RISK_HIGH = 3;
+  // Needs the target's name typed before approving.
+  RISK_DESTRUCTIVE = 4;
+}
+
+enum ApprovalState {
+  APPROVAL_STATE_UNSPECIFIED = 0;
+  APPROVAL_STATE_PENDING = 1;
+  APPROVAL_STATE_APPROVED = 2;
+  APPROVAL_STATE_REJECTED = 3;
+  APPROVAL_STATE_EXPIRED = 4;
+  APPROVAL_STATE_CANCELED = 5;
+}
+
+enum DecisionKind {
+  DECISION_KIND_UNSPECIFIED = 0;
+  DECISION_KIND_APPROVE = 1;
+  DECISION_KIND_REJECT = 2;
+}
+
+enum StepUp {
+  STEP_UP_UNSPECIFIED = 0;
+  // A proof from a paired device's decision key.
+  STEP_UP_DEVICE = 1;
+  // A session younger than 5 minutes.
+  STEP_UP_SESSION = 2;
+  STEP_UP_NONE = 3;
+}
+
+message ApprovalPolicy {
+  uint32 required_approvals = 1;
+  repeated string approver_roles = 2;
+  bool requester_may_approve = 3;
+  StepUp step_up = 4;
+}
+
+message Decision {
+  loams.instance.v1.Principal by = 1;
+  DecisionKind decision = 2;
+  string reason = 3;
+  google.protobuf.Timestamp at = 4;
+  string device_id = 5;
+}
+
+message Approval {
+  string id = 1;
+  // Bumps on every change; a decision names the revision it saw.
+  uint64 revision = 2;
+  string operation_id = 3;
+  string promise_id = 4;
+  // "collection.drop", "namespace.drop", "erasure", "restore", "agent.action", ...
+  string kind = 5;
+  loams.instance.v1.Environment environment = 6;
+  loams.instance.v1.Principal requested_by = 7;
+  repeated loams.instance.v1.Principal actor_chain = 8;
+  // Server-rendered in the caller's locale.
+  string summary = 9;
+  repeated string detail_lines = 10;
+  map<string, string> target = 11;
+  Risk risk = 12;
+  ApprovalPolicy policy = 13;
+  repeated Decision decisions = 14;
+  ApprovalState state = 15;
+  google.protobuf.Timestamp created_at = 16;
+  google.protobuf.Timestamp expires_at = 17;
+  // The name a DESTRUCTIVE approval asks the user to type.
+  string confirm_text = 18;
+}
+
+message ListApprovalsRequest {
+  repeated string environments = 1;
+  // Defaults to PENDING.
+  repeated ApprovalState states = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListApprovalsResponse {
+  repeated Approval approvals = 1;
+  string next_page_token = 2;
+}
+
+message GetApprovalRequest {
+  string approval_id = 1;
+}
+
+message GetApprovalResponse {
+  Approval approval = 1;
+}
+
+message WatchApprovalsRequest {
+  repeated string environments = 1;
+  repeated ApprovalState states = 2;
+  string resume_cursor = 3;
+}
+
+message ApprovalSnapshot {
+  repeated Approval approvals = 1;
+}
+
+message Heartbeat {}
+
+message WatchApprovalsResponse {
+  oneof event {
+    ApprovalSnapshot snapshot = 1;
+    Approval upsert = 2;
+    // The id of an approval that left the watched set.
+    string remove = 3;
+    Heartbeat heartbeat = 4;
+  }
+  string cursor = 5;
+  // True when `resume_cursor` was too old and this is a fresh snapshot.
+  bool snapshot_reset = 6;
+}
+
+message DecideApprovalRequest {
+  string approval_id = 1;
+  uint64 revision = 2;
+  DecisionKind decision = 3;
+  // Required for REJECT and for DESTRUCTIVE approvals.
+  string reason = 4;
+  // Compact JWS over the canonical DecisionClaims.
+  string decision_proof = 5;
+  string idempotency_key = 6;
+}
+
+message DecideApprovalResponse {
+  Approval approval = 1;
+}

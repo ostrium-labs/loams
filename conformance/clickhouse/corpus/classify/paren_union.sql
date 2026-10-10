@@ -1,0 +1,2 @@
+-- kind: Query
+(SELECT 1) UNION ALL (SELECT 2)

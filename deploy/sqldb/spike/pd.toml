@@ -1,0 +1,5 @@
+# PD for the Loams SQL spike stack (SQ1 Task 1). Copied from deploy/tikv/pd.toml
+# without the pre-allocated keyspaces: every SQL keyspace is created through
+# PD's HTTP API (POST /pd/api/v2/keyspaces), as the control plane will do.
+[keyspace]
+pre-alloc = []

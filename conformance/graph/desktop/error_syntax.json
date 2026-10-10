@@ -1,0 +1,33 @@
+{
+  "description": "A syntax error (§48 §8.3, §18.2): `invalid_argument`, reason `gql_syntax_error`, and the GQLSTATUS and the statement's line, column and length (1-based, in characters) in ErrorInfo.metadata, so the editor underlines it. The message is the engine's own text and is not compared.",
+  "exchanges": [
+    {
+      "method": "loams.graph.v1.GraphService/Execute",
+      "request": {
+        "namespace": "default",
+        "graph": "movies",
+        "statement": "MATCH (m:Movie)\nMATCH (p:Person RETURN p",
+        "readOnly": true,
+        "consistency": {
+          "strong": {}
+        },
+        "timeoutMs": 30000,
+        "maxRows": 1000
+      },
+      "ignore": [
+        "message"
+      ],
+      "error": {
+        "code": "invalid_argument",
+        "message": "the graph engine refused the statement: syntax error: [GQL] Expected RParen\n  --> query:2:17\n   |\n 2 | MATCH (p:Person RETURN p\n   |                 ^^^^^^",
+        "reason": "gql_syntax_error",
+        "metadata": {
+          "column": "17",
+          "gqlstatus": "42001",
+          "length": "6",
+          "line": "2"
+        }
+      }
+    }
+  ]
+}

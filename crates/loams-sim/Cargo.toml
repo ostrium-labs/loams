@@ -1,0 +1,65 @@
+[package]
+name = "loams-sim"
+description = "Loams's seeded cluster simulation and linearizability checker (test-only)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+# Everything but `elle` is the simulation, behind the default `sim` feature,
+# so a crate that only needs the list-append checker (loams-live's
+# txn_checker suite, LV1 plan Task 2) builds without the cluster.
+bytes = { workspace = true, optional = true }
+object_store = { workspace = true, optional = true }
+loams-cache = { workspace = true, optional = true }
+loams-collection = { workspace = true, features = ["test-util"], optional = true }
+loams-common = { workspace = true, optional = true }
+loams-link = { workspace = true, optional = true }
+loams-log = { workspace = true, optional = true }
+loams-meta = { workspace = true, optional = true }
+loams-meta-conformance = { workspace = true, optional = true }
+loams-query = { workspace = true, optional = true }
+loams-store = { workspace = true, optional = true }
+loams-worker = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+rand_chacha = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+
+[features]
+default = ["sim"]
+# The seeded cluster simulation and the re-exported linearizability checker.
+sim = [
+    "dep:bytes",
+    "dep:object_store",
+    "dep:loams-cache",
+    "dep:loams-collection",
+    "dep:loams-common",
+    "dep:loams-link",
+    "dep:loams-log",
+    "dep:loams-meta",
+    "dep:loams-meta-conformance",
+    "dep:loams-query",
+    "dep:loams-store",
+    "dep:loams-worker",
+    "dep:rand",
+    "dep:rand_chacha",
+    "dep:serde_json",
+    "dep:tempfile",
+    "dep:tokio",
+    "dep:tracing",
+]
+
+# The simulation's suite needs the simulation.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+required-features = ["sim"]
+
+[lints]
+workspace = true

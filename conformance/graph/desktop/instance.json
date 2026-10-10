@@ -1,0 +1,27 @@
+{
+  "description": "Detection (§48 §18.2): the page shows the Graph page when GetInstance.services[] has a loams.graph.v1 row with available = true. `contains`: the server's answer has these fields and this row among others.",
+  "exchanges": [
+    {
+      "method": "loams.instance.v1.InstanceService/GetInstance",
+      "request": {},
+      "contains": true,
+      "response": {
+        "apiVersions": [
+          "loams.graph.v1"
+        ],
+        "services": [
+          {
+            "package": "loams.graph.v1",
+            "version": "v1",
+            "available": true,
+            "services": [
+              "loams.graph.v1.GraphAdminService",
+              "loams.graph.v1.GraphService"
+            ],
+            "unstable": true
+          }
+        ]
+      }
+    }
+  ]
+}

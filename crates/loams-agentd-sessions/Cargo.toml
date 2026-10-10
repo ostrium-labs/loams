@@ -1,0 +1,63 @@
+[package]
+name = "loams-agentd-sessions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+publish = false
+
+[dependencies]
+loams-agentd-preview.workspace = true
+loams-agentd-proto.workspace = true
+loams-agentd-doc.workspace = true
+loams-agentd-store.workspace = true
+loams-agentd-harness.workspace = true
+loams-agentd-rpc.workspace = true
+loro.workspace = true
+tokio.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+chrono.workspace = true
+notify.workspace = true
+portable-pty.workspace = true
+# The fork is on base64 0.22; the workspace key is 0.23.
+base64 = "0.22"
+toml.workspace = true
+libc.workspace = true
+gethostname.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
+ignore.workspace = true
+nucleo-matcher.workspace = true
+
+tempfile.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Threading"] }
+
+[dev-dependencies]
+loams-agentd-harness = { workspace = true, features = ["installer-fixture"] }
+zip.workspace = true
+# 0.24 as in the fork; loams-web-bridge is on 0.30 (not a workspace key).
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
+# The workspace policy, except `unsafe_code` is `deny` rather than `forbid`: this crate
+# has audited FFI and process sites, each under `#[allow(unsafe_code)]` with a SAFETY
+# comment (plan DD1 ruling T1-13). Cargo cannot combine `workspace = true` with an
+# override, so the rest of `[workspace.lints]` is repeated here; keep them in step.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

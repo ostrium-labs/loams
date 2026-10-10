@@ -4,18 +4,72 @@
 *.rs.bk
 *.pdb
 
-# Operon local dev data
-/.operon/
+# Loams local dev data
+/.loams/
 /data/
 *.wal
 *.seg
 
-# Editors / OS
+# Local run artifacts (dev/CLI scratch output, never committed)
+/run.history
+/run.ndjson
+*.log
+/cargo-metadata.json
+
+# Product/marketing docs live in the private dina-kar/loam-cloud repo
+/docs/product/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Editors / OS / Backups
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
+*.bak
+*.orig
+*.rej
 .DS_Store
+Thumbs.db
+*.swiftdeps~
+
+# AI tooling and local assistant state
+.claude/
+.superpowers/
 
 # Env
 .env
 .env.*
+
+# Node / Nx
+node_modules/
+.nx/
+.pnpm-store/
+*.tsbuildinfo
+
+# Local linked worktrees are never part of the monorepo import
+/.worktrees/
+
+# What a conformance suite reports it ran (D640). Generated, never committed:
+# a committed report is a claim about the corpus that a later corpus or a
+# failing suite invalidates without touching the file, and `check-languages.mjs`
+# would then read the previous run's answer and call it coverage. The suite
+# writes one when it runs and CI generate-then-checks.
+sdks/fixtures/results/
+
+# Language SDK build outputs
+.dart_tool/
+.build/
+vendor/
+.phpunit.result.cache
+
+
+# SQ1 Task 1 spike measurements and throwaway files
+/target-spike/
+/scratch/

@@ -1,0 +1,60 @@
+# Avro — ★ connector 9 of §33 §8; CN1 plan Task 5.
+# Runtime: native Rust, loams_flow::formats::avro (design §33 §5, D354).
+# Avro is the one format with a schema-registry boundary too: CN1 Task 5 encodes
+# the Confluent wire format (magic byte + schema id) when a registry is
+# configured, with a registry client stub until Q344.  D356 keeps Avro at the
+# Kafka and registry boundaries only, so no other connector lists it.
+apiVersion: loams.flow/v1
+kind: Connector
+id: avro
+name: Avro
+specVersion: 1.0.0
+category: format
+priority: P1
+starred: true
+status: preview
+runtime:
+  kind: native
+  ref: loams_flow::formats::avro
+  version: "apache-avro 0.22"
+licence:
+  component: Apache-2.0
+  dependencies:
+    apache-avro: Apache-2.0
+capabilities:
+  source:                          # decode: object container files, single-object encoding, Confluent framing
+    streaming: false
+    batch: true
+    cdc: false
+    webhook: false
+    resumable: false              # a codec holds no position
+    position: ""
+  sink:                            # encode, optionally with the Confluent wire format
+    streaming: true                # §33 Appendix A.6 marks Streaming Y for Avro
+    batch: true
+    transactional: false
+    upsert: false
+    delete: false
+    idempotent: true               # a pure encode against a fixed schema
+  delivery: { source: at_least_once, sink: at_least_once }
+  ordering: none
+  formats: [avro]
+  schema: { registry: none, evolution: none }
+    # registry: none because the Confluent client is a stub until Q344, so CN1
+    # declares no registry dependency; evolution: none because a subject's schema
+    # is fixed in CN1 and CN1 ships no compatibility checker (D356, Q344).
+  bulk: { arrow: false, max_batch_rows: 65536 }
+    # Reviewer decision noted: CN1 Task 5 decodes Avro to a RecordBatch stream,
+    # so `arrow: true` is defensible; kept false because Avro is the payload here.
+  backpressure: pull
+auth: [none]                       # §33 Appendix A.6
+config:
+  $ref: schemas/avro.config.json
+secrets: []
+envelope:
+  emits: ""                        # a format is a codec, not a source (§33 Appendix A.6, Ruling 2)
+  consumes: "*"
+  passthrough: false
+limits: { batch_rows: 65536, batch_bytes: 8388608 }
+conformance: [contract, roundtrip, bulk]
+docs: docs/guides/connectors/avro.md

@@ -1,0 +1,12 @@
+# TiKV for the Loams SQL spike stack (SQ1 Task 1). Copied from
+# deploy/tikv/tikv.toml (API v2 with TTL: keyspaces need both), with tighter
+# memory because the spike shares a 15 GiB host with other work. The
+# container's own limit is set in compose.yaml.
+memory-usage-limit = "2GB"
+
+[storage]
+api-version = 2
+enable-ttl = true
+
+[storage.block-cache]
+capacity = "512MB"

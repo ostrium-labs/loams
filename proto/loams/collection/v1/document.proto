@@ -1,0 +1,522 @@
+// Documents: the write, the three reads and the two filter writes (design §44
+// §5.1, D602; API1 Task 3).
+//
+// This package replaces the M1.2/M1.5 native REST routes under
+// `/v1/namespaces/{ns}/collections/{c}/documents` with RPCs on the one port
+// (design §44 §4), and the plan's rulings are visible on the wire:
+//
+// - **Names are fields, not path segments.** A Connect path is
+//   `/<package>.<Service>/<Method>`, so `namespace` and `collection` travel
+//   in every request message and one path serves every collection (plan
+//   ruling 4). A collection is named by its name or by an alias, exactly as
+//   the REST route named it.
+// - **proto3 JSON is the wire form**: field names are `lowerCamelCase`
+//   (`report_existence` is `reportExistence`, `max_rows` is `maxRows`), an
+//   enum answers its proto name in `UPPER_SNAKE`, a 64-bit integer answers a
+//   decimal string (so it stays lossless in JavaScript), and a field at its
+//   default is *absent* rather than `0`, `false`, `""` or `[]`.
+// - **Unknown fields are ignored, not refused.** proto3 JSON says to skip a
+//   field the message does not declare, so the REST routes' `deny_unknown_fields`
+//   refusal (`{"patch": {}}` on a delete) has no spelling here. What a caller
+//   can still be refused for is a *known* field of the wrong JSON type, and the
+//   codec answers `invalid_argument` for it before a handler runs.
+// - **Every failure carries a reason.** A failed RPC carries one
+//   `loams.errors.v1.ErrorInfo` in its details whose `reason` is registered
+//   in `docs/api/reasons.md`; a caller branches on the reason, never on the
+//   message (D611). `index` names the op of a rejected write and `matched`
+//   and `limit` the numbers a filter write refused on, so neither needs the
+//   prose. Every reason this package raises is a registry row already.
+//
+// ## `WriteDocuments` is the first RPC that needs an idempotency key
+//
+// Every RPC in `loams.collection.v1` is idempotent by construction, so none
+// of them carries one (plan ruling 2.4). A write is not: a client that
+// retries after a lost answer would write twice. `idempotency_key` makes the
+// retry a *replay* — the same token, the same per-op results and the same
+// positions, which is what makes the operation safe to repeat at all (D610).
+// The window is the immediate retry, and it is documented as such in
+// `crates/loams/src/api/connect_documents.rs`; a caller that needs a longer
+// window than the server keeps gets a `not_found`-shaped miss (a fresh write),
+// not a wrong answer.
+//
+// ## The payload is JSON, deliberately
+//
+// A document's `source` is `google.protobuf.Struct`, and its vectors are
+// `map<string, google.protobuf.Value>`. A document's payload is an open
+// document: a new source key per application, and a vector shape no proto can
+// enumerate (dense, sparse, multi-vector, learned). A `Struct` and a `Value`
+// keep the native REST route's document JSON exactly, so moving a caller onto
+// this RPC changes the envelope it posts in, not the document it posts — the
+// same call `loams.collection.v1` made for a schema (plan ruling 2.1). The
+// one cost is a `null`: a patch removes a vector by writing
+// `{"embedding": null}`, and that is representable at all only because the
+// value is a `Value` rather than a `ListValue`.
+//
+// `Document.fields` is a `Value` per name for the same reason: a field value
+// is one of a string, a bool, an integer, a float or `{"date": "…"}` (Ruling
+// 9), and the REST JSON already spells all five.
+//
+// ## A document id is a typed oneof
+//
+// `DocumentId` is a oneof of `uint` / `string` / `uuid`, not a
+// `google.protobuf.Value`. A `Value` holds every number in a `double`, so a
+// `u64` id would come back as `18446744073709552000` — a different document.
+// The three arms are the three `PrimaryKey` variants, and `uuid` keeps the
+// REST spelling `{"uuid": "0190f5c4-…"}` verbatim, which is why it is a
+// separate arm rather than the `string` one.
+//
+// The proto3 JSON of a oneof is `{"uint": "1"}` / `{"string": "k-str"}` /
+// `{"uuid": "…"}`: a bare JSON `1` has no oneof spelling, so each arm is named
+// on the wire. Setting two arms at once is a decode failure.
+//
+// ## `filter` is a `Value`, not the typed IR
+//
+// The typed filter IR is API1 Task 4. Until it lands, `filter` is the native
+// query JSON verbatim (`{"term": {"field": "tenant", "value": "c"}}`,
+// `"match_all"`), which is what the REST route took and what a caller already
+// has. `select` is a `Struct` for the same reason and because a projection's
+// `source` has a JSON object form (`{"include": [], "exclude": []}`) that a
+// `string` cannot hold.
+//
+// ## Where the tokens and the backlog live
+//
+// A write answers its consistency token in `token` and in the
+// `loams-consistency-token` response header; a read answers `readToken` and
+// the same header. The unapplied-data backlog (`loams-unapplied-records`,
+// `loams-unapplied-bytes`) stays response headers, because that is the REST
+// behaviour and a response half is headers by rule (design §44 §7.4). The one
+// request header that stays is `loams-backpressure: off`, the write-budget
+// override (M1.3 Task 15 rule 5): it is a transport-level switch with no
+// message-level meaning, and an unrecognised value is `invalid_argument`.
+//
+// ## The handlers are thin
+//
+// Each one calls the same `CollectionService` entry point the REST route it
+// replaces calls — `write`, `get_with_token`, `scroll_with_token`,
+// `count_with_token`, `delete_by_filter`, `patch_by_filter` — and reuses the
+// REST request's own parsing (`op_from_json`, `patch_spec_from_json`) by
+// turning the request message back into the JSON those parse, so the two
+// surfaces cannot drift. The behaviour is the behaviour
+// `crates/loams/tests/it/` already pins; the REST routes stay until Task 9.
+//
+// ## Why this is a second file in `loams.collection.v1`, not its own package
+//
+// §44 §7.2's module catalogue puts both services in one package —
+// `loams.collections`, `loams.documents` ⇢ `loams.collection.v1`
+// `CollectionService`, `DocumentService` — and §8's `New protos:` sentence
+// enumerates `loams.collection.v1` as covering Namespace, Collection,
+// **Document** and Query. One package, four concerns, several files: the same
+// shape `proto/loams/live/v1/` already uses with its five files. An earlier
+// draft gave documents a `loams.document.v1` of their own, which no design
+// section mentions; `crates/loams/tests/route_map.rs` now fails if any proto or
+// `CATALOGUE` row declares a package §44 does not enumerate.
+//
+// Splitting the files still matters — `collection.proto` is the schema and scan
+// plan, this file is the document data path, and they are read separately — but
+// the package is the unit on the wire, in the SDK stubs and in `CATALOGUE`, and
+// §44 fixes it.
+//
+// ## The SDK module, and why no method is in the SDK facade yet
+//
+// The service carries `loams.options.v1.ModuleOptions` (`loams.documents`),
+// which is what §44 §7.3 asks of every public package. Note this file is in
+// `loams.collection.v1`, so the module a caller reaches is named by the
+// `module` option here, not by the package name.
+//
+// No method carries `FacadeOptions`, which is plan ruling 2.5's shape again:
+// a `facade` option makes `protoc-gen-loams-facade` emit a call, and the call
+// imports the package's message types from the generated stubs, which means
+// every SDK mirror has to generate `loams.collection.v1` first. That is SDK1's
+// stub task. Sharing the package also means the generated facades barely move:
+// `PROTO_PACKAGES` already listed `loams.collection.v1`, so what changed is that
+// a `loams.document.v1` line went away. `facade.ts`, `facade.py`, `facade.rs`
+// and the three goldens are regenerated with it.
+syntax = "proto3";
+
+package loams.collection.v1;
+
+import "google/protobuf/struct.proto";
+import "loams/options/v1/options.proto";
+
+service DocumentService {
+  option (loams.options.v1.module) = {
+    name: "documents"
+    summary: "Documents: write, get, scroll, count, delete by filter and patch by filter."
+  };
+
+  // An atomic write: every op of a request is applied or none is (Ruling 16).
+  //
+  // This is the one RPC here that is not naturally idempotent, so it carries
+  // `idempotency_key`; a repeat of a keyed write replays the first answer
+  // instead of writing again. The write is refused with `resource_exhausted`
+  // when it would take the collection's unapplied-data budget over its
+  // ceiling, and every answer to an admitted *or* a refused write carries the
+  // backlog headers.
+  rpc WriteDocuments(WriteDocumentsRequest) returns (WriteDocumentsResponse) {
+  }
+  // The documents of `ids`, in request order.
+  //
+  // A document that is not there is an **entry with no fields**, which sits at
+  // the requested id's position: proto3 JSON has no `null` for an element of a
+  // `repeated` field of messages, and an empty entry is the same information
+  // — the entry is there and it is empty.
+  rpc GetDocuments(GetDocumentsRequest) returns (GetDocumentsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // One page of the collection's documents in primary-key order, and the id to
+  // continue after. `next` is absent on the last page.
+  rpc ScrollDocuments(ScrollDocumentsRequest) returns (ScrollDocumentsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // How many documents match, which is a read and not a free one.
+  rpc CountDocuments(CountDocumentsRequest) returns (CountDocumentsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Deletes every document matching `filter`, in batches, at one pinned
+  // snapshot (M1.5 Task 9a, D87).
+  //
+  // A call matching more than `max_rows` fails with `invalid_argument` and
+  // deletes nothing unless `allow_partial`, in which case it writes what fits
+  // and answers the `cursor` that finishes it at the same pin. The pin travels
+  // in `consistency` too: an `at_least` token makes the pin at least as new as
+  // the token.
+  rpc DeleteByFilter(DeleteByFilterRequest) returns (FilterWriteResponse) {
+  }
+  // The same as `DeleteByFilter` with a `patch` applied to each match.
+  //
+  // A filter write patches the documents the filter matched and never creates
+  // one, so `patch.upsert` is refused.
+  rpc PatchByFilter(PatchByFilterRequest) returns (FilterWriteResponse) {
+  }
+}
+
+message WriteDocumentsRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+  // Applied in order, and all of them or none of them.
+  repeated WriteOp ops = 3;
+  // Whether `results` reports what each op did to an existing document
+  // (`created`, `updated`, `deleted`, `not_found`, `noop`) rather than
+  // `accepted`. Absent is `false`, which is the cheaper answer.
+  bool report_existence = 4;
+  // The key that makes a retry a replay (D610). Absent means the caller is not
+  // retrying and every call is a new write.
+  string idempotency_key = 5;
+}
+
+message WriteDocumentsResponse {
+  // The writes' consistency token: at least these writes are acknowledged.
+  // The same value is the `loams-consistency-token` response header.
+  string token = 1;
+  // One per op, in request order.
+  repeated OpResult results = 2;
+  // One per op: where it was appended. An op that was not placed answers an
+  // entry with no fields, which is how a `noop` reports itself.
+  repeated OpPosition positions = 3;
+  // The unapplied-data backlog measured at admission, before this write's own
+  // records. Also the `loams-unapplied-records` / `loams-unapplied-bytes`
+  // response headers, which is where a non-Connect reader reads them.
+  optional uint64 unapplied_records = 4;
+  optional uint64 unapplied_bytes = 5;
+}
+
+// One document change. A proto oneof, so the JSON is the REST route's
+// `{"upsert": {…}}` / `{"delete": {…}}` / `{"patch": {…}}` unchanged, and an
+// op that is none of the three is `invalid_argument`.
+message WriteOp {
+  oneof op {
+    // Writes the document under its id, replacing it if it is there.
+    WriteDocument upsert = 1;
+    // Removes the document. Removing one that is not there is a `not_found`,
+    // which is only reported with `report_existence`.
+    DeleteDocument delete = 2;
+    // Changes part of a document, and may create one (see `Patch.upsert`).
+    Patch patch = 3;
+  }
+}
+
+message WriteDocument {
+  DocumentId id = 1;
+  // The document's payload, as the native REST route's `_source` JSON. Absent
+  // is an empty document.
+  google.protobuf.Struct source = 2;
+  // Dense vectors by name, as the REST route's JSON (`[1.0, 0.0, 0.0]`).
+  map<string, google.protobuf.Value> vectors = 3;
+  // Sparse vectors by name, as the REST route's JSON (`{"indices": [1],
+  // "values": [1.0]}`).
+  map<string, google.protobuf.Struct> sparse_vectors = 4;
+}
+
+message DeleteDocument {
+  DocumentId id = 1;
+}
+
+// One document's change. `mode` and every other spelling here are the REST
+// route's, because a reader switches on them verbatim (the same call
+// `loams.collection.v1` made for `ScanColumn.role`).
+message Patch {
+  DocumentId id = 1;
+  // `merge_deep` (the default), `merge_top` or `replace`. A string rather than
+  // an enum so the REST spelling survives verbatim; any other value is
+  // `invalid_argument`.
+  string mode = 2;
+  // The keys to merge. `merge_deep` merges nested objects, `merge_top`
+  // replaces them and `replace` replaces the document.
+  google.protobuf.Struct source = 3;
+  // The top-level source keys to remove.
+  repeated string delete_keys = 4;
+  // Vectors to set, by name. A `null` value **removes** the vector, which is
+  // why the value is a `Value` and not a `ListValue` (see the header).
+  map<string, google.protobuf.Value> vectors = 5;
+  // Sparse vectors to set, by name; a `null` value removes one.
+  map<string, google.protobuf.Struct> sparse_vectors = 6;
+  // The document to write when the patched document is not there. Absent
+  // leaves a missing document missing, which is what a `patch_by_filter`
+  // never does (it patches what the filter matched).
+  WriteDocument upsert = 7;
+}
+
+// One document's id, as the three `PrimaryKey` variants (see the header).
+message DocumentId {
+  oneof id {
+    // An id in `0..=2^64−1`, as a decimal string in JSON.
+    uint64 uint = 1;
+    string string = 2;
+    // The REST spelling, `8-4-4-4-12` in any case.
+    string uuid = 3;
+  }
+}
+
+// The outcome of one op (Ruling 10).
+enum OpResult {
+  OP_RESULT_UNSPECIFIED = 0;
+  // The document was not there and now is.
+  OP_RESULT_CREATED = 1;
+  // The document was there and now holds this write.
+  OP_RESULT_UPDATED = 2;
+  // The document was there and now is not.
+  OP_RESULT_DELETED = 3;
+  // There was no such document (only reported with `report_existence`).
+  OP_RESULT_NOT_FOUND = 4;
+  // A patch whose result equals the document that is already there.
+  OP_RESULT_NOOP = 5;
+  // Written, without existence reporting.
+  OP_RESULT_ACCEPTED = 6;
+}
+
+// Where one op was appended.
+//
+// An op that was not placed answers an entry with **no `seqNo` at all**, which
+// is why `seq_no` is `optional` and not a plain `uint64`: offset 0 is the
+// first record of a partition and a real answer, and proto3 JSON omitting a
+// zero would make it indistinguishable from "this op was not placed".
+message OpPosition {
+  uint32 partition = 1;
+  optional uint64 seq_no = 2;
+}
+
+message GetDocumentsRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+  // The documents to get. The answer has one entry per id, in this order.
+  repeated DocumentId ids = 3;
+  // What to return of each document, as the REST route's projection JSON
+  // (`{"source": "all" | "none" | {"include": [], "exclude": []},
+  // "vectors": [], "fields": []}`). Absent is everything.
+  google.protobuf.Struct select = 4;
+  Consistency consistency = 5;
+}
+
+message GetDocumentsResponse {
+  // One per requested id, in request order. An entry with no fields is a
+  // document that is not there.
+  repeated Document documents = 1;
+  // The state the documents were read at, and a `consistency.at_least` that
+  // reads this state again. The same value is the
+  // `loams-consistency-token` response header.
+  string read_token = 2;
+}
+
+message ScrollDocumentsRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+  // The native query JSON, as the REST route takes it. Absent is every
+  // document. This stays a `Value` while `query.proto` types the filter IR for
+  // `QueryService/Search`: the tests that shipped this RPC send the bare string
+  // `"match_all"`, which a typed oneof cannot spell, and `SearchRequest.filter`
+  // is where a typed filter lands (API1 Task 4).
+  google.protobuf.Value filter = 3;
+  // The last document of the previous page; absent starts at the first.
+  DocumentId after = 4;
+  // The page size; absent or `0` is the server's default.
+  optional uint32 limit = 5;
+  google.protobuf.Struct select = 6;
+  Consistency consistency = 7;
+  // The AIP-158 spelling of `after`, and the **same cursor**: a `DocumentId`,
+  // encoded exactly as `after` and `ScrollDocumentsResponse.next` encode it, so
+  // there is one cursor on the wire and the two fields are interchangeable —
+  // a `next` handed straight back as a `page_token` reads the same page. A
+  // request that sets both names different cursors is `invalid_argument`.
+  //
+  // It is an addition rather than a change of shape: plan ruling 2 offers
+  // `page_token` as an alternative to server-streaming `ScrollDocuments`, and
+  // Q614 — which of the two the method is — is unanswered, so the shipped
+  // unary RPC keeps its shape rather than breaking for an open question. True
+  // server-streaming, if Q614 says so, is a separate additive RPC.
+  DocumentId page_token = 8;
+}
+
+message ScrollDocumentsResponse {
+  // In primary-key order.
+  repeated Document documents = 1;
+  // The id to continue after; absent on the last page.
+  DocumentId next = 2;
+  string read_token = 3;
+}
+
+message CountDocumentsRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+  google.protobuf.Value filter = 3;
+  Consistency consistency = 4;
+}
+
+message CountDocumentsResponse {
+  // How many documents matched, as a decimal string in JSON. `optional` and
+  // always set: "nothing matched" is a count, not an absent field, and proto3
+  // JSON omitting a zero would make an empty result read as "unanswered".
+  optional uint64 count = 1;
+  string read_token = 2;
+}
+
+message DeleteByFilterRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+  // The native query JSON, as the REST route takes it. Required: there is no
+  // "delete everything" spelling, and `match_all` is the caller's to write.
+  google.protobuf.Value filter = 3;
+  // The most rows this call may write. Absent is the kind's ceiling; `0` is
+  // `invalid_argument`, because a call that may write nothing is a mistake
+  // rather than a no-op.
+  optional uint64 max_rows = 4;
+  // Whether a call matching more than `max_rows` writes what fits and answers a
+  // cursor instead of failing. Absent is `false`: a call over its limit fails
+  // before writing anything.
+  bool allow_partial = 5;
+  // The `cursor` of the previous partial call, which resumes at the same pin.
+  FilterWriteCursor cursor = 6;
+  Consistency consistency = 7;
+}
+
+message PatchByFilterRequest {
+  string namespace = 1;
+  // A collection name or an alias.
+  string collection = 2;
+  google.protobuf.Value filter = 3;
+  // What to change on each match, in the REST route's form. `id` and `upsert`
+  // are refused: a filter write patches what the filter matched and never
+  // creates a document.
+  Patch patch = 4;
+  optional uint64 max_rows = 5;
+  bool allow_partial = 6;
+  FilterWriteCursor cursor = 7;
+  Consistency consistency = 8;
+}
+
+// The answer to one filter write. Both filter writes answer this, because
+// every number in it is the same question either way: how much the filter
+// matched, how much this call wrote, and the state it wrote at.
+message FilterWriteResponse {
+  // Documents matching `filter` at the pin. The four counters are `optional`
+  // and always set, for the reason `CountDocumentsResponse.count` gives: a
+  // count of zero is a count, and proto3 JSON omitting it would read as
+  // "unanswered".
+  optional uint64 matched = 1;
+  // Documents this call deleted or patched.
+  optional uint64 affected = 2;
+  // Keys this call's batches wrote: `affected`, and the keys found deleted
+  // since the pin or (for a patch) already patched. It is what a caller's own
+  // row budget counts.
+  optional uint64 written = 3;
+  // How many batches this call wrote.
+  optional uint64 batches = 4;
+  // Whether the filter still matches rows this call did not reach.
+  bool rows_remaining = 5;
+  // The cursor that finishes the write at the same pin. Present exactly when
+  // `rows_remaining`.
+  FilterWriteCursor cursor = 6;
+  // Covers the pin and every batch of this call, so a read at it sees this
+  // write. The same value is the `loams-consistency-token` response header.
+  string token = 7;
+  // The snapshot the filter was evaluated at, which the `cursor` resumes at.
+  Pin pin = 8;
+  // How long to wait, when the call stopped at its deadline on a batch refused
+  // for backpressure. Absent when the call finished. The same number is the
+  // `Retry-After` header of the call that carries it.
+  optional uint64 retry_after_ms = 9;
+}
+
+message FilterWriteCursor {
+  // The last key written; the next call starts after it.
+  DocumentId after = 1;
+  // The snapshot the first call pinned, so the next call evaluates the same
+  // filter against the same state.
+  uint64 manifest_version = 2;
+  string token = 3;
+}
+
+// One document, as a get or a scroll answers it.
+message Document {
+  // Absent only on the entry of an id that is not there.
+  DocumentId id = 1;
+  // Absent when the projection leaves the source out, rather than an empty
+  // object: "no source" and "an empty source" are different answers.
+  google.protobuf.Struct source = 2;
+  // Dense vectors by name, `map<string, google.protobuf.Value>` for the same
+  // reason a `WriteDocument`'s are.
+  map<string, google.protobuf.Value> vectors = 3;
+  map<string, google.protobuf.Struct> sparse_vectors = 4;
+  // The typed field values by name, as the REST route's JSON (see the header).
+  map<string, google.protobuf.Value> fields = 5;
+  // Where the document's last write was appended. `optional` and always set
+  // for the same reason as `OpPosition.seq_no`: the first write to a partition
+  // is at 0, and "0" must not read as "no position".
+  optional uint64 seq_no = 6;
+  uint32 partition = 7;
+}
+
+// How much of a read's freshness the caller asks for (rule 1).
+message Consistency {
+  // Absent is `FRESHNESS_STRONG`: every write acknowledged before the read
+  // began is visible. `FRESHNESS_EVENTUAL` is whatever the tail holds.
+  Freshness freshness = 1;
+  // At least the writes this token names: the read **waits** for them and then
+  // reads exactly the state up to them, which is what makes this a wait and
+  // not a hint. A token this server cannot read is `invalid_argument`.
+  string at_least = 2;
+  // Exactly one retained manifest plus the token's writes after it, which is
+  // what a filter write pins. A pinned read is not a free one.
+  Pin pin = 3;
+}
+
+enum Freshness {
+  FRESHNESS_UNSPECIFIED = 0;
+  // Every write acknowledged before the read began.
+  FRESHNESS_STRONG = 1;
+  // Whatever the tail holds right now.
+  FRESHNESS_EVENTUAL = 2;
+}
+
+// One pinned state of a collection: a manifest version and the token that
+// covers it. `Consistency.pin` names the state to read and
+// `FilterWriteResponse.pin` reports the one a filter write read.
+message Pin {
+  uint64 manifest_version = 1;
+  // A `consistency.at_least` that reads this state again.
+  string token = 2;
+}

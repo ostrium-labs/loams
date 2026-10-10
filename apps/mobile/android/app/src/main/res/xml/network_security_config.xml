@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release: no cleartext anywhere and system CAs only, never user-installed CAs (AP2). Pinned
+     instances replace CA validation in code (PinnedTrustManager), for that host only. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

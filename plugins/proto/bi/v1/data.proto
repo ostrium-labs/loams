@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+import "google/protobuf/struct.proto";
+
+package bi.v1;
+
+// ---------------------------------------------------------------------------
+// Dataset catalog and query transport.
+//
+// These mirror the Superset REST surface the adapter already speaks, expressed
+// as a contract so UI apps talk to the BI gateway over ConnectRPC instead of
+// hand-rolled `fetch` calls. Superset itself is REST-only; the gateway
+// terminates ConnectRPC and translates to Superset's `/api/v1/*` endpoints
+// behind the adapter. Nothing in this file claims Superset speaks gRPC.
+// ---------------------------------------------------------------------------
+
+message DatasetRef {
+  int64 id = 1;
+  string table_name = 2;
+  string label = 3;
+}
+
+message ListDatasetsRequest {}
+
+message ListDatasetsResponse {
+  repeated DatasetRef datasets = 1;
+  int32 count = 2;
+}
+
+message DescribeDatasetRequest {
+  int64 id = 1;
+}
+
+message Column {
+  string column_name = 1;
+  string type = 2;
+  // Chart-spec semantic type ("Quantity", "Price", "DateTime", "Category", ...).
+  string semantic_type = 3;
+  bool is_dttm = 4;
+}
+
+message DescribeDatasetResponse {
+  int64 id = 1;
+  string table_name = 2;
+  repeated Column columns = 3;
+}
+
+message QueryFilter {
+  string col = 1;
+  // Superset filter operator, e.g. "==", "IN", ">=".
+  string op = 2;
+  repeated string values = 3;
+}
+
+message QueryRequest {
+  int64 dataset_id = 1;
+  repeated string columns = 2;
+  repeated QueryFilter filters = 3;
+  repeated string orderby = 4;
+  int32 row_limit = 5;
+}
+
+message QueryResponse {
+  // Superset returns a column-keyed row list; preserved verbatim rather than
+  // reshaped, so no information is lost at the transport boundary.
+  repeated Row rows = 1;
+  int32 rowcount = 2;
+}
+
+message Row {
+  // Column name to value, as a `google.protobuf.Value`.
+  //
+  // This is the WKT rather than a hand-rolled oneof because it already models
+  // exactly the problem here -- a column whose type is not known until runtime
+  // -- and because it round-trips to plain JSON. A `map<string, double>` would
+  // coerce string and boolean columns to numbers and silently corrupt a
+  // dashboard; a custom `{number,text,bool,null}` oneof would force every
+  // client to special-case a null sentinel. `Value` gives them JSON.
+  map<string, google.protobuf.Value> values = 1;
+}
+
+message Empty {}
+
+service DataService {
+  rpc ListDatasets(ListDatasetsRequest) returns (ListDatasetsResponse);
+  rpc DescribeDataset(DescribeDatasetRequest) returns (DescribeDatasetResponse);
+  rpc Query(QueryRequest) returns (QueryResponse);
+}

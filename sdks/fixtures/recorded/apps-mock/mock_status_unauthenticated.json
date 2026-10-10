@@ -1,0 +1,61 @@
+{
+  "name": "mock_status_unauthenticated",
+  "kind": "status",
+  "about": "R1 and R8's third case: a failure from **below the API** — no credential at all. The mock answers `unauthenticated` with **no** `ErrorInfo` detail, so there is no `reason` to branch on. An SDK must not invent one: this is the shape R8 says is distinct from a mapped reason, and conflating it with `token_expired` would make a refresh loop on a request that has no credential to refresh.",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R1",
+    "R8"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:12.434Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/ListApprovals",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{}"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "unauthenticated",
+          "message": "a bearer token is required"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "reason": null
+      }
+    }
+  ]
+}

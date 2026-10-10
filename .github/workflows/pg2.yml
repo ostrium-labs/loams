@@ -1,0 +1,198 @@
+# PG2 (docs/plans/2026-10-08-pg2-postgres-production.md).
+#
+# postgres-protos (Task 1): `loams.postgres.v1` passes `buf lint` (STANDARD)
+# and `buf breaking` (FILE, against dev), and its descriptor tests.
+#
+# wal-decoder: loams-wal's in-process interpreted sender (Task 31). crates/loams-wal-decoder is a
+# workspace of its own that links the Neon fork's crates; their
+# postgres_ffi generates bindings from the Postgres 14..17 server headers,
+# which are extracted from a `neon` image pinned by digest and cached per
+# digest. Its golden tests compare loams-wal's stream with the fork's
+# safekeeper's (tests/fixtures).
+#
+# neon-client (Task 2): loams-postgres's fixture tests (the request bodies and
+# answers recorded from deploy/loams-postgres-dev at its pinned digests).
+#
+# pg-control (Task 3 onward): loams-pg-control's tests on the local store, and
+# clippy on the default and the tikv build. Its TiKV conformance runs in
+# ci.yml's TiKV suites job, against the playground.
+name: PG2
+
+on:
+  workflow_dispatch:
+  # On dev too, so that the caches pull requests restore are warm.
+  push:
+    branches: [dev]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "crates/loams-safekeeper/**"
+      - "crates/loams-tikv/**"
+      - "crates/loams-wal-decoder/**"
+      - "crates/loams-postgres/**"
+      - "crates/loams-pg-control/**"
+      - "crates/loams-kv/**"
+      - "scripts/pg2/**"
+      - "proto/**"
+      - "buf.yaml"
+      - "crates/loams-proto/**"
+      - "docs/api/reasons.md"
+      - "docs/api/route-map.md"
+      - "docs/design/46-loams-postgres-production.md"
+      - ".github/workflows/pg2.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "deny.toml"
+      - "crates/loams-safekeeper/**"
+      - "crates/loams-tikv/**"
+      - "crates/loams-wal-decoder/**"
+      - "crates/loams-postgres/**"
+      - "crates/loams-pg-control/**"
+      - "crates/loams-kv/**"
+      - "scripts/pg2/**"
+      - "proto/**"
+      - "buf.yaml"
+      - "crates/loams-proto/**"
+      - "docs/api/reasons.md"
+      - "docs/api/route-map.md"
+      - "docs/design/46-loams-postgres-production.md"
+      - ".github/workflows/pg2.yml"
+
+permissions:
+  contents: read
+
+env:
+  # The headers' source: the `neon` image deploy/loams-postgres-dev and deploy/loams-pg-bench
+  # pin (Neon 77e22e4b, the build the golden fixtures' safekeeper came from; no
+  # header changes up to the fork's tag loams-decoder-trim-1). The fork
+  # publishes no image yet (PG2 Task 2, R2.1); this is its multi-arch index.
+  PG_HEADERS_IMAGE: ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+jobs:
+  postgres-protos:
+    name: loams.postgres.v1 (buf lint, buf breaking against dev, descriptor tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # buf is pinned as a devDependency of @loams/proto, as in ci.yml's
+      # app-protos job.
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: buf lint (STANDARD)
+        run: web/packages/proto/node_modules/.bin/buf lint
+      - name: buf breaking (FILE, against dev)
+        run: |
+          git fetch --no-tags origin dev
+          web/packages/proto/node_modules/.bin/buf breaking --against ".git#branch=origin/dev"
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: the descriptor, reasons and route-map tests
+        run: cargo test -p loams-proto --test postgres --locked
+
+  neon-client:
+    name: loams-postgres (fixture tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      # Shared with pg2-e2e.yml's neon-deploy, which only reads it.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: pg2-loams-postgres
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: test
+        run: cargo test -p loams-postgres --locked
+      - name: clippy
+        run: cargo clippy -p loams-postgres --all-targets --locked -- -D warnings
+
+  wal-decoder:
+    name: loams-wal-decoder (golden tests against the fork's sender)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+      - name: the Neon fork stays out of the main workspace
+        run: python3 scripts/pg2/check-decoder-deny.py .
+      - name: header cache
+        id: headers
+        uses: actions/cache@v6
+        with:
+          path: crates/loams-wal-decoder/pg_install
+          key: pg-server-headers-${{ env.PG_HEADERS_IMAGE }}
+      - name: extract the server headers
+        if: steps.headers.outputs.cache-hit != 'true'
+        run: scripts/pg2/pg-headers.sh "$PG_HEADERS_IMAGE" crates/loams-wal-decoder/pg_install
+      - name: build tools (protoc, libclang for bindgen)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev libclang-dev
+      # Shared with pg2-e2e.yml's pageserver-loams-wal, which only reads it.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: crates/loams-wal-decoder
+          cache-directories: ~/.cargo/git/db
+          shared-key: pg2-wal-decoder
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      # One commit per Postgres submodule instead of the full history: the
+      # build reads the headers from POSTGRES_INSTALL_DIR, never the sources.
+      - name: seed the fork's Postgres submodules (shallow)
+        run: scripts/pg2/seed-neon-submodules.sh crates/loams-wal-decoder/Cargo.lock
+      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # the pin fabric.yml uses (2026-10-02)
+        with:
+          tool: cargo-deny
+      - name: licences, advisories, bans, sources (the decoder's own policy)
+        working-directory: crates/loams-wal-decoder
+        run: cargo deny check
+      - name: test
+        working-directory: crates/loams-wal-decoder
+        run: |
+          export POSTGRES_INSTALL_DIR="$GITHUB_WORKSPACE/crates/loams-wal-decoder/pg_install"
+          cargo test --locked
+      - name: build loams-wal-interpreted (nvme)
+        working-directory: crates/loams-wal-decoder
+        run: |
+          export POSTGRES_INSTALL_DIR="$GITHUB_WORKSPACE/crates/loams-wal-decoder/pg_install"
+          cargo build --locked --bin loams-wal-interpreted --features nvme
+      - name: build loams-wal-interpreted (tikv)
+        working-directory: crates/loams-wal-decoder
+        run: |
+          export POSTGRES_INSTALL_DIR="$GITHUB_WORKSPACE/crates/loams-wal-decoder/pg_install"
+          cargo build --locked --bin loams-wal-interpreted --features tikv
+
+  pg-control:
+    name: loams-pg-control (local store, clippy default, tikv, kubernetes and keyring)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: pg2-loams-pg-control
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+      - name: test
+        env:
+          LOAMS_TEST_PD: ""
+          LOAMS_TEST_TMPDIR: ${{ runner.temp }}
+        run: cargo test -p loams-pg-control --locked
+      - name: clippy (default)
+        run: cargo clippy -p loams-pg-control --all-targets --locked -- -D warnings
+      - name: clippy (tikv)
+        run: cargo clippy -p loams-pg-control --all-targets --features tikv --locked -- -D warnings
+      - name: test (the Kubernetes secret store, against a stand-in API)
+        run: cargo test -p loams-pg-control --features kubernetes --test secrets_kube --locked
+      - name: clippy (kubernetes, keyring)
+        run: cargo clippy -p loams-pg-control --all-targets --features kubernetes,keyring --locked -- -D warnings

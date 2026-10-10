@@ -1,0 +1,2 @@
+-- kind: Show
+SHOW TABLES

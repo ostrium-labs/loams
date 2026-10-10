@@ -1,0 +1,47 @@
+# PD plus one TiKV store for the Loams SQL spike (SQ1 Task 1) and the
+# LOAMS_IT_SQLDB tests. Own ports so it runs beside deploy/tikv (19379/20160):
+# PD client 29379, peer 29380; TiKV 30160, status 30180. TiDB containers are
+# started per measurement by scripts/sqldb/spike/*.sh on 24000+N / 25000+N.
+# Images come by digest from release/sqldb-images.toml (scripts/sqldb/spike/up.sh
+# exports PD_IMAGE and TIKV_IMAGE).
+name: loams-sqldb-spike
+
+services:
+  pd:
+    image: ${PD_IMAGE:?run scripts/sqldb/spike/up.sh}
+    network_mode: host
+    restart: "no"
+    mem_limit: 1g
+    command:
+      - --name=pd
+      - --data-dir=/data/pd
+      - --config=/etc/pd.toml
+      - --client-urls=http://127.0.0.1:29379
+      - --advertise-client-urls=http://127.0.0.1:29379
+      - --peer-urls=http://127.0.0.1:29380
+      - --advertise-peer-urls=http://127.0.0.1:29380
+      - --initial-cluster=pd=http://127.0.0.1:29380
+    volumes:
+      - pd-data:/data/pd
+      - ./pd.toml:/etc/pd.toml:ro,Z
+
+  tikv:
+    image: ${TIKV_IMAGE:?run scripts/sqldb/spike/up.sh}
+    network_mode: host
+    restart: "no"
+    mem_limit: 3g
+    command:
+      - --pd-endpoints=127.0.0.1:29379
+      - --addr=127.0.0.1:30160
+      - --advertise-addr=127.0.0.1:30160
+      - --status-addr=127.0.0.1:30180
+      - --data-dir=/data/tikv
+      - --config=/etc/tikv.toml
+    volumes:
+      - tikv-data:/data/tikv
+      - ./tikv.toml:/etc/tikv.toml:ro,Z
+    depends_on: [pd]
+
+volumes:
+  pd-data:
+  tikv-data:

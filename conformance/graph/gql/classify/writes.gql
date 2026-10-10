@@ -1,0 +1,53 @@
+#! engine=write
+INSERT (:X)
+
+#! engine=write
+MATCH (n) SET n.x = 1
+
+#! engine=write
+MATCH (n) SET n:Foo
+
+#! engine=write
+MATCH (n) REMOVE n.name
+
+#! engine=write
+MATCH (n) DELETE n
+
+#! engine=write
+MATCH (n) DETACH DELETE n
+
+#! engine=write
+MATCH (n) /* read */ SET n.y = 2
+
+#! engine=write
+MATCH (n) SET n.s = 'RETURN'
+
+#! engine=write
+MATCH (n) FILTER n.name = 'a' SET n.z = 1
+
+#! engine=write
+MERGE (:Person {name: 'zz'})
+
+#! engine=write
+MATCH (a:Person {name: 'a'}), (b:Person {name: 'b'}) MERGE (a)-[:K2]->(b)
+
+#! engine=write
+INSERT (:X) NEXT MATCH (n) RETURN n
+
+#! engine=write
+MATCH (n) RETURN n NEXT INSERT (:Y)
+
+#! engine=write
+UNWIND [1, 2] AS i INSERT (:U {i: i})
+
+#! engine=write
+FOR i IN [1, 2] INSERT (:U {i: i})
+
+#! engine=write
+CREATE (:Cy)
+
+#! engine=write
+MATCH (n) CALL { INSERT (:Sub) } RETURN n
+
+#! engine=write
+PROFILE INSERT (:X)

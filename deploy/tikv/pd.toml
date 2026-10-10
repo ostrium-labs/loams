@@ -1,0 +1,8 @@
+# PD for Loams's dev playground and CI (R1 plan Task 1).
+# Keyspaces created at bootstrap. Loams: loams_meta (the metastore),
+# loams_live_dev (the dev Live app), sql_dev (the dev TiDB), loams_pgwal (the
+# Loams Postgres WAL hot tier, design §28 §6.5). Tests:
+# loams_test_meta, loams_test_live, loams_test_sql; tests isolate by a random
+# root prefix and never create or delete a keyspace.
+[keyspace]
+pre-alloc = ["loams_meta", "loams_live_dev", "sql_dev", "loams_pgwal", "loams_test_meta", "loams_test_live", "loams_test_sql"]

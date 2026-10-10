@@ -1,0 +1,21 @@
+{
+  "about": "HPKE base mode, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305 (design §37 §7.4). info = \"loams-push-v1\" 0x00 instance_id 0x00 notification_id, empty AAD; sealed = enc (32 bytes) || ciphertext. The plaintext is a serialized loams.notifications.v1.Notification. Keys are test-only. Regenerate with `go run ./cmd/fixtures` in mock/.",
+  "expect": {
+    "approval_id": "apr_drop_logs",
+    "body": "Bob Example wants to drop logs-2026 in production",
+    "title": "Approval needed"
+  },
+  "info": "bG9hbXMtcHVzaC12MQAwMUo5WjNNT0NLMDAwMDAwMDAwMDAwMDAwMABudGZfZml4dHVyZV8wMDAx",
+  "instance_id": "01J9Z3MOCK0000000000000000",
+  "message": {
+    "i": "01J9Z3MOCK0000000000000000",
+    "n": "ntf_fixture_0001",
+    "s": "x4r6LqJT8XoB7deaaQB8A4rCEYMh7CJrJs/7egoDZWoay6qhLBHqWOrej1Lvub5YwZMvdIRSz9nKGJQYBNSenbdKSg2kxnoH69GkA4n4kwDmPYrNpDXqKQ9fRjEKI/p84m9/8Lvex4/wJKPtVminq0xpwtGivNdaPVbcJym5g1MwPBtHPm2MrDE8Cb+LpsOW6Wq1WDoYr4gb9WyvOF14dkVb2g9+TfLuutZFcNg5MoZFNKEH7C2ex+pDJ0zMslQQraR941s4PMqQuVYwBynHpCuHLbuvOeMC0VOO+Q==",
+    "v": "1"
+  },
+  "notification_id": "ntf_fixture_0001",
+  "plaintext": "ChBudGZfZml4dHVyZV8wMDAxEAEaImlvLmxvYW1zLmRldi5hcHByb3ZhbC5yZXF1ZXN0ZWQudjEiDWFwcl9kcm9wX2xvZ3MqD0FwcHJvdmFsIG5lZWRlZDIxQm9iIEV4YW1wbGUgd2FudHMgdG8gZHJvcCBsb2dzLTIwMjYgaW4gcHJvZHVjdGlvbloIZW52X3Byb2RiBgiA6PvVBjoNYXByX2Ryb3BfbG9ncw==",
+  "recipient_private_key": "sqlEfTls0ZUtroyb3ZMzj6ChO/CK8Xai0iSdHXSTp8U=",
+  "recipient_public_key": "it6so2iOg7DJyDJjC6OGwTzem+TyOZ0PGLGQzM19Xls=",
+  "sealed": "x4r6LqJT8XoB7deaaQB8A4rCEYMh7CJrJs/7egoDZWoay6qhLBHqWOrej1Lvub5YwZMvdIRSz9nKGJQYBNSenbdKSg2kxnoH69GkA4n4kwDmPYrNpDXqKQ9fRjEKI/p84m9/8Lvex4/wJKPtVminq0xpwtGivNdaPVbcJym5g1MwPBtHPm2MrDE8Cb+LpsOW6Wq1WDoYr4gb9WyvOF14dkVb2g9+TfLuutZFcNg5MoZFNKEH7C2ex+pDJ0zMslQQraR941s4PMqQuVYwBynHpCuHLbuvOeMC0VOO+Q=="
+}

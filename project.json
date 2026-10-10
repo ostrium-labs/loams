@@ -1,0 +1,16 @@
+{
+  "name": "loams-engine",
+  "projectType": "application",
+  "sourceRoot": "crates",
+  "tags": ["scope:engine", "platform:server", "language:rust"],
+  "implicitDependencies": ["loams-contracts"],
+  "targets": {
+    "build": {"executor": "nx:run-commands", "cache": false, "options": {"cwd": ".", "command": "cargo build --locked -p loams"}},
+    "check": {"executor": "nx:run-commands", "cache": false, "options": {"cwd": ".", "command": "cargo check --locked --workspace --all-targets"}},
+    "test": {"executor": "nx:run-commands", "cache": false, "options": {"cwd": ".", "command": "cargo test --locked --workspace"}},
+    "format-check": {"executor": "nx:run-commands", "cache": false, "options": {"cwd": ".", "command": "cargo fmt --all -- --check"}},
+    "clippy": {"executor": "nx:run-commands", "cache": false, "options": {"cwd": ".", "command": "cargo clippy --locked --workspace --all-targets -- -D warnings"}},
+    "serve": {"executor": "nx:run-commands", "cache": false, "options": {"cwd": ".", "command": "cargo run --locked -p loams -- dev"}},
+    "check-monorepo": {"executor": "nx:run-commands", "cache": false, "options": {"cwd": ".", "command": "python3 tools/monorepo/check.py"}}
+  }
+}

@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: loams-trigger-edge
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: loams-trigger-edge-dapr-guard
+rules:
+  - apiGroups: [dapr.io]
+    resources: [configurations]
+    verbs: [get]
+  - apiGroups: [dapr.io]
+    resources: [components]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: loams-trigger-edge-dapr-guard
+subjects:
+  - kind: ServiceAccount
+    name: loams-trigger-edge
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: loams-trigger-edge-dapr-guard
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loams-trigger-edge
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: loams-trigger-edge
+  template:
+    metadata:
+      labels:
+        app: loams-trigger-edge
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id: loams-trigger-edge
+        dapr.io/app-port: "8080"
+        dapr.io/app-protocol: http
+        dapr.io/config: loams-trigger-edge
+    spec:
+      serviceAccountName: loams-trigger-edge
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      initContainers:
+        - name: reject-dapr-workflow
+          image: loams-trigger-edge:dev
+          args: [--check-config]
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DAPR_CONFIG_NAME
+              value: loams-trigger-edge
+      containers:
+        - name: edge
+          image: loams-trigger-edge:dev
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DAPR_CONFIG_NAME
+              value: loams-trigger-edge
+            - name: DAPR_GRPC_ENDPOINT
+              value: http://127.0.0.1:50001
+            - name: DAPR_GRPC_PROXY_ENDPOINT
+              value: 127.0.0.1:50001
+            - name: LOAMS_STREAM_APP_ID
+              value: loams-stream
+            - name: LOAMS_TRIGGER_STREAM
+              value: workflow-triggers
+            # The webhook route answers 401 unless this token is set and the
+            # caller sends `Authorization: Bearer <token>`.
+            - name: EDGE_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: loams-trigger-edge-webhook
+                  key: token
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loams-trigger-edge
+spec:
+  selector:
+    app: loams-trigger-edge
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

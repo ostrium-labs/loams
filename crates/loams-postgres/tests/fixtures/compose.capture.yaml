@@ -1,0 +1,10 @@
+# Re-recording only (PG2 Task 2): compute1 with a known hostname (its
+# compute id is compute-${HOSTNAME}), the config compute-jwt.py wrote, and
+# compute_ctl's port published on loopback.
+services:
+  compute1:
+    hostname: capture
+    volumes:
+      - ${CAPTURE_CONFIG:?run compute-jwt.py first}:/var/db/postgres/configs/config.json:ro
+    ports:
+      - 127.0.0.1:3080:3080

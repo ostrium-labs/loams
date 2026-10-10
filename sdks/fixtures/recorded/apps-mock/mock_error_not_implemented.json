@@ -1,0 +1,68 @@
+{
+  "name": "mock_error_not_implemented",
+  "kind": "error",
+  "about": "A stub handler that has not landed: `unimplemented` with reason `not_implemented`. This is the reason R8 says is distinct from `feature_not_in_variant` — one means \"never built\", the other \"not in this build variant\", and an SDK that conflates them cannot tell whether to offer a feature or report the binary as wrong.",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R8"
+  ],
+  "reason": "not_implemented",
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:11.137Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "about": "SendTestNotification is a declared RPC whose handler is a stub.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.devices.v1.DeviceService/SendTestNotification",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{}"
+      },
+      "response": {
+        "status": 501,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "unimplemented",
+          "message": "SendTestNotification is not implemented in loams-apps-mock yet",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "Cg9ub3RfaW1wbGVtZW50ZWQ"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 501,
+        "reason": "not_implemented"
+      }
+    }
+  ]
+}

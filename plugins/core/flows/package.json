@@ -1,0 +1,18 @@
+{
+  "name": "@loams-core/flows",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@loams-core/data": "workspace:*",
+    "@loams-core/charts": "workspace:*",
+    "@loams-core/chart-specs": "workspace:*",
+    "@loams-core/types": "workspace:*",
+    "cordis": "^4.0.0-rc.10",
+    "flint-chart": "~0.5.1"
+  },
+  "scripts": {
+    "build": "pnpm --filter @loams-plugins/root build"
+  }
+}

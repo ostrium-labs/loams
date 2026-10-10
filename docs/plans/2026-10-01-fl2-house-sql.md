@@ -1,0 +1,387 @@
+# FL2 — Loams House SQL Phase 1 (chDB, ClickHouse HTTP, Tier 1 Engines, the Differential Harness) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute task by task, test first. Each task lists the interfaces it must produce and the tests that must exist and pass before it is done. Where this plan gives exact values (names, paths, codes, headers, constants), use them verbatim. The code is not pre-written in this plan (M0.3 Ruling 1).
+
+> **Status: Absorbed into HS1 from Task 2** (2026-10-08; Tasks 0, 1 and 3 are merged and stand, Task 2 onward is built under [HS1](2026-10-08-hs1-house-production.md), mapped by its Task 0 ruling R0.1). Earlier status: In progress (2026-10-04). Track FL (§32 D351), after FL1. Branches `fl2-t<N>`, stacked; PRs target `dev`, which is what the issue's gates ask for ("Branch from `dev` (or `main` until `dev` exists)"). FL2 adds crates to the `fabric/` workspace and the `house` role to `loams-fabric`; it changes no engine code. **Owner gate: cleared.** Q333 was answered 2026-10-02 — the owner approved the recommended default, so D347 reverses D45 for the House and `chsurface-1` is scoped as §32 §8 lists it. The gate no longer blocks Task 2. **Tasks 0 and 1 are in review on `fl2-t0-chdb-spike`**, stacked on `cn1-t1-registry`; their measurements are in [`fl2-dependency-spike.md`](fl2-dependency-spike.md) and their rulings in the table at the end.
+
+**Goal:** Serve the declared ClickHouse surface `chsurface-1.0` of [§32](../design/32-loams-flow-fabric-house.md) §8 over the ClickHouse HTTP interface on `127.0.0.1:8123`, executed by chDB over the Fabric's Fluss tables and their tiered Iceberg snapshots:
+- `loams-chdb-sys` and `loams-chdb`: a Loams-owned FFI over `libchdb` (`chdb-core` 26.9.x);
+- `loams-house`: the HTTP interface, statement classifier, sessions and settings, the catalog over Fluss, DDL and `INSERT` into Fluss, union reads (Iceberg snapshot ∪ Fluss tail) with consistency tokens, system tables, errors, and the security deny list;
+- Tier 1 engines: `MergeTree`, `ReplacingMergeTree`, `SummingMergeTree`, with `Replicated*` and `ON CLUSTER` accepted;
+- `loams-house-conformance`: the differential harness against a pinned reference `clickhouse-server`, the declared-surface corpus, the strict allowlist, the per-build report, the upstream stateless subset, ClickBench and TPC-H correctness, and the Rust and Python driver suites;
+- the FL2 gate: 100 % of the declared corpus passes minus approved allowlist entries, and the surface page is generated from code.
+
+**Architecture:**
+- **One process, many sessions.** `loams-fabric house` starts one chDB `Engine` (process-global, as libchdb requires) and serves each HTTP request in a chDB session (per `session_id`, or a throwaway one). Isolation between namespaces is per session: its own temporary database of views over that namespace's tables, settings capped by the namespace's limits, and the deny list (§32 §7.8). A process per namespace is Q336's alternative.
+- **The classifier decides who executes.** Statements Loams owns (DDL, `INSERT`, `USE`, `SET`, `SHOW`/`DESCRIBE`/`EXISTS`, `KILL QUERY`, `OPTIMIZE`) are handled by `loams-house` against Fluss; everything else is a query executed by chDB over per-query views (§32 §7.5). The user's query text is passed to chDB unchanged.
+- **No House state.** Table metadata lives in Fluss table properties (`loams.ch.ddl`, `loams.ch.engine`, `loams.ch.types`); Iceberg in Lakekeeper; nothing on the worker's disk except chDB's filesystem cache and temporary files.
+
+**Tech Stack:**
+- Rust 1.97.1, edition 2024, the `fabric/` workspace (FL1 Task 1). New dependencies (Task 0 verifies): `bindgen` 0.72 (build), `libchdb` from `chdb-core` v26.9.x fetched by SHA-256 in `build.rs` (or `LIBCHDB_DIR`), `arrow` 59 with the `ffi` feature, `sqlparser` 0.63 (Apache-2.0, `ClickHouseDialect`), `flate2`, `zstd`, `axum` 0.8, `http-body-util`, `fluss-rs` 1.0.0, `iceberg` 0.10 (metadata reads only: snapshot ids, metadata file paths), `reqwest` 0.12 (Lakekeeper REST).
+- Test tools: the reference server `clickhouse/clickhouse-server:<version>` (Apache-2.0, CI-only, pinned by digest to the ClickHouse version `chdb-core` carries); `clickhouse` crate (Apache-2.0, the Rust HTTP client) as a dev-dependency; Python 3.13 with `uv` and `clickhouse-connect` (Apache-2.0); `toxiproxy` 2.x (MIT) for S3 faults.
+- Data: ClickBench's `hits` dataset, the first ten files of the partitioned Parquet set (`https://datasets.clickhouse.com/hits_compatible/athena_partitioned/hits_{0..9}.parquet`, about 10 M rows; Task 0 records each file's SHA-256 and exact row count), and the 43 ClickBench queries from `github.com/ClickHouse/ClickBench`, which is licensed **CC BY-NC-SA 4.0** (attribution, non-commercial use only, share-alike). The queries are fetched at test time from a pinned commit, never vendored, and credited in the report; the owner ruled on 2026-10-02 (D414) that they run for internal correctness and benchmarking only: never committed, modified or redistributed, and no results published as ClickBench results (the dataset's own terms are still checked in Task 0). TPC-H SF1 generated by `tpchgen` 3.0 (crate of `tpchgen-rs`, Apache-2.0) or `dbgen`.
+
+**Spec:**
+- [`docs/design/32-loams-flow-fabric-house.md`](../design/32-loams-flow-fabric-house.md): §7, §8 (the surface), §9, §10, §13, §14.
+- [FL1](2026-10-01-fl1-fabric-foundation.md) as built: `loams-fabric-envelope`, `TableSpec`, provisioning, the stack.
+- [`docs/design/13-decision-log.md`](../design/13-decision-log.md): D11, D45 (reversed by D347), D88 (the limits-page pattern), D111; D342–D349 once merged.
+
+## Global Constraints
+
+- **Loopback only (D111).** `--house-listen` (default `127.0.0.1:8123`) accepts only loopback addresses; any other fails with `house listen on <addr>: only loopback addresses are served until the unified auth plan (D111)`.
+- **Never ClickHouse storage.** No `MergeTree` table is ever created inside chDB; only session-local `Memory`/`Null` temporary tables and views. A test asserts it (Task 7).
+- **Deny by default** (§32 §7.8): every disabled function or engine has a test that it answers code 344.
+- **Pinned versions move together.** `chdb-core`, the reference server and the corpus's expected outputs carry one ClickHouse version, recorded in `fabric/crates/loams-house/src/versions.rs`; a bump is one PR that regenerates the expected outputs.
+- **The build machine.** One cargo build at a time; `libchdb` is linked dynamically (never statically: the static archive is 328 MB); the FL1 stack is stopped during builds.
+- **Names (owner rulings, 2026-10-01).** Crates here are `loams-*` (crates.io, PyPI when published) and npm packages `@loams/*`, Go modules `loams.dev/...`; Loams-defined CloudEvents types use `io.loams.dev.<domain>.<name>.v1`.
+- **Commit areas:** `house`, `chdb`, `conformance`, `ci`, `docs`.
+
+## Rulings made while writing this plan
+
+| # | Ruling | Why | Cost if wrong |
+|---|---|---|---|
+| 1 | **Loams’ own FFI** (`loams-chdb-sys`, bindgen over the pinned `chdb.h`) with a small safe wrapper; `chdb-rust` 2.0 is read as the reference | `chdb-rust` is "experimental, unstable"; it pins its own arrow; Loams needs Arrow input registration and cancellation exactly as the C ABI offers them | Some wrapper code duplicates `chdb-rust`; Q337 may switch |
+| 2 | **Dynamic linking, fetched by digest**: `build.rs` downloads `linux-<arch>-libchdb.tar.gz` from the `chdb-core` release, checks its SHA-256 against `versions.rs`, unpacks into `OUT_DIR`, and sets an rpath to `$ORIGIN/../lib`; the container image ships `libchdb.so` next to the binary. `LIBCHDB_DIR` overrides for offline builds | Reproducible, no 1.5 GB debuginfo, no C++ build | A download in `build.rs` is unusual; CI caches it; offline builds set the variable |
+| 3 | **A ClickHouse database maps to a Fluss database `ns_<id>__<db>`** (two underscores), and `default` maps to `ns_<id>` | Several ClickHouse databases per namespace; one Fluss database each | Identifier length limits; Task 0 checks Fluss's |
+| 4 | **The classifier is sqlparser 0.63's `ClickHouseDialect` for the statements Loams owns**; a statement that parses as a query, or that sqlparser cannot parse and whose first keyword is `SELECT`, `WITH`, `EXPLAIN`, `DESCRIBE`/`DESC` of a subquery or `(`, goes to chDB unchanged; a statement sqlparser cannot parse whose first keyword is `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `RENAME`, `INSERT`, `OPTIMIZE`, `SET`, `USE`, `KILL`, `SYSTEM`, `GRANT`, `REVOKE` or anything else answers code 62 with sqlparser's message and the hint "this DDL form is outside chsurface-1" | Loams must understand DDL to map it to Fluss; queries need no parsing | sqlparser gaps on valid ClickHouse DDL show up as 62; each is an allowlist entry (`unsupported`) or an upstream sqlparser PR |
+| 5 | **`FINAL` is accepted everywhere and changes nothing** (Fluss has merged); `OPTIMIZE TABLE … [FINAL] [DEDUPLICATE]` answers `Ok.` and does nothing | §32 D345 | Apps that rely on non-merged duplicates see merged data; category `merge-timing` |
+| 6 | **The reference comparison for Replacing and Summing runs the reference with `OPTIMIZE TABLE t FINAL` after each load and every query with `FINAL`** | ClickHouse's merged state is the state Loams always has; the comparison is then exact | Non-`FINAL` queries on unmerged reference data are not compared; documented |
+| 7 | **Union-read freshness without a token** is "as of now": the tail up to the high watermark read at the start of the query | Read-your-writes within one session without the client sending tokens: the session keeps its last write's token and reads at least that (as PG1 Ruling 2) | None |
+| 8 | **The consistency token is `loamsfx1.<base64url(postcard(Vec<(table_id u64, bucket u32, offset u64)>))>`** in `X-Loams-Consistency-Token`, and the setting `loams_consistency_token` | One opaque, versioned string, like the engine's tokens | None |
+| 9 | **Output is streamed** from chDB's streaming query into the HTTP body; errors after the first byte follow ClickHouse's behaviour (the exception text appended to the body and the connection closed, verify the 26.9 behaviour with `http_write_exception_in_output_format`) | Large results without buffering | A client that reads partial output as success; same as ClickHouse |
+| 10 | **Session limits**: 64 concurrent queries per process (202 past it), `max_memory_usage` ≤ 4 GiB per query, `max_execution_time` ≤ 300 s, `max_threads` ≤ the node's cores, `session_timeout` ≤ 3 600 s, 1 024 live sessions | Bounded resources on a shared process (Q336) | Tuned in Task 13 from measurements |
+
+## Carried in
+
+FL1's rulings during execution (its Task 0 spike and the gap table for `fluss-rs`). If `fluss-rs` lacks the lake-snapshot offsets or log scans from offsets (FL1 Task 0 gap table), Task 7 uses the fallback of §32 FL-R5: reads of tiered data only, with `X-Loams-Staleness-Ms` reporting the tiering lag, and a contribution PR is opened per §32 §5.9.
+
+## Review Focus
+
+1. **The deny list is airtight**: `file`, `url`, `remote`, `s3`, `mysql`, `postgresql`, `executable`, the queue engines, `system.*` writes, and table functions inside subqueries, views and `INSERT … SELECT`. Tests: Task 8 (`denied_functions_answer_344`, `denied_inside_subquery_and_view`).
+2. **No ClickHouse storage is ever created** (Global Constraints). Test: Task 7 (`no_mergetree_in_chdb`).
+3. **Union reads are correct at every boundary**: rows exactly once across the Iceberg/tail boundary, deletes honoured, PK latest-wins, after tiering advances mid-query. Tests: Task 7.
+4. **The allowlist is strict** (unexpected passes fail). Test: Task 10 (`unexpected_pass_fails`).
+5. **Errors look like ClickHouse's** to drivers: code, name, HTTP status, header. Tests: Task 3 and Task 12.
+
+## File structure
+
+```
+fabric/crates/loams-chdb-sys/{Cargo.toml,build.rs,wrapper.h,src/lib.rs}
+fabric/crates/loams-chdb/{Cargo.toml,src/{lib.rs,engine.rs,session.rs,query.rs,arrow.rs,error.rs}}
+fabric/crates/loams-chdb/tests/{engine.rs,arrow.rs,cancel.rs}
+fabric/crates/loams-house/{Cargo.toml,src/{lib.rs,config.rs,versions.rs,http.rs,auth.rs,compress.rs,errors.rs,classify.rs,session.rs,settings.rs,
+                         catalog.rs,types.rs,ddl.rs,insert.rs,read.rs,views.rs,token.rs,system.rs,deny.rs,surface.rs,limits.rs}}
+fabric/crates/loams-house/tests/{http.rs,errors.rs,classify.rs,ddl.rs,insert.rs,read.rs,system.rs,deny.rs,surface.rs,drivers_rs.rs,faults.rs}
+fabric/crates/loams-house-conformance/{Cargo.toml,src/{lib.rs,main.rs,runner.rs,reference.rs,canon.rs,allowlist.rs,report.rs,stateless.rs}}
+conformance/clickhouse/{allowlist.toml,surface.toml,corpus/**,stateless/manifest.toml,clickbench/,tpch/,README.md}
+scripts/house/{reference.sh,clickbench.sh,tpch.sh,drivers_py.sh,clickhouse_connect_probe.py}
+deploy/fabric/compose.yaml                      # + clickhouse-reference (profile "conformance"), toxiproxy
+.github/workflows/fabric.yml                    # jobs house-unit, house-conformance (path-filtered), house-nightly
+docs/guides/clickhouse-surface.md (generated)  docs/guides/house.md  docs/plans/fl2-dependency-spike.md  docs/plans/fl2-exit-report.md
+```
+
+### Task 0: Reconcile and measure
+
+**Files:** read FL1 as built; write `docs/plans/fl2-dependency-spike.md`; fill "Rulings made during execution".
+
+**Checks** (each recorded with the command and output):
+- The `chdb-core` release to pin, the ClickHouse version it carries (`SELECT version()` through the C ABI), the reference server image digest of that exact version, and the libchdb SHA-256 per architecture.
+- **The C ABI**: list every exported symbol of the pinned `chdb.h` and map the wrapper's operations (Task 1) to them: connect/close, buffered query, streaming query and fetch, result buffer, error, rows/bytes read, elapsed; **Arrow input** (registering an Arrow C stream as a table function argument, as `chdb-rust`'s `ArrowStream('name')` does); **Arrow output**; query cancellation; declining signal handlers; parameterized queries. A missing operation is a gap with a workaround (for Arrow input without an ABI call: write the tail as an Arrow IPC file in the worker's temp directory and read it with `file()` from Loams’ own code path only, outside the user's session deny list).
+- **Iceberg from chDB**: `icebergS3` (or `iceberg`) over RustFS with Lakekeeper-written tables from FL1 Task 9, pinned by `iceberg_metadata_file_path` (or `iceberg_snapshot_id`, verify the setting names in 26.9); position and equality deletes as Fluss's PK tiering writes them (Q341); partition pruning on `day(_ce_time)`.
+- **`fluss-rs`**: the APIs Task 7 needs (lake snapshot and its per-bucket offsets; log scan from offsets to a high watermark as Arrow; PK-table changelog scan with row kinds; write acknowledgements with offsets). Each missing one: a contribution issue and the fallback.
+- **sqlparser 0.63 `ClickHouseDialect`**: parse every statement of `conformance/clickhouse/corpus/ddl/*.sql` (Task 10 seeds it with 120 DDL forms); record failures.
+- **Drivers**: capture (through a logging proxy) the requests `clickhouse` (Rust, RowBinary), `clickhouse-connect` (Python, Native over HTTP), `clickhouse-go` v2 (HTTP) and `clickhouse-java` v2 send at connect and on a simple query and insert, against the reference; save them as `conformance/clickhouse/drivers/*.http`.
+- **Resources**: libchdb's load time and idle RSS; RSS under 8 concurrent ClickBench queries on the 10 M sample.
+- ClickBench: the SHA-256 and row count of `hits_0.parquet` … `hits_9.parquet`; the dataset's terms; and confirm that `conformance/clickhouse/clickbench/` holds only the pin, the SHA-256s and the fetch script, never query text (D414: the CC BY-NC-SA 4.0 queries are fetched at CI time for internal use only). TPC-H: the generation tool and the TPC query text's licence.
+
+**Commit:** `docs: reconcile FL2 with FL1 and record the chDB spike`.
+
+### Task 1: `loams-chdb-sys` and `loams-chdb`
+
+**Files:** `fabric/crates/loams-chdb-sys/**`, `fabric/crates/loams-chdb/**`.
+
+**Produces:**
+
+```rust
+// loams-chdb
+pub struct Engine { /* the one libchdb connection set; process-global */ }
+impl Engine {
+    pub fn start(cfg: EngineConfig) -> Result<&'static Engine, ChdbError>;    // second call returns the same engine or AlreadyStarted with a different cfg
+    pub fn version(&self) -> &str;                                            // ClickHouse version string
+    pub fn session(&self, id: SessionId, settings: &Settings) -> Result<Session, ChdbError>;
+}
+pub struct EngineConfig { pub tmp_dir: PathBuf, pub cache_dir: PathBuf, pub cache_bytes: u64 /* 20 GiB */,
+                          pub max_server_memory: u64, pub install_signal_handlers: bool /* false */ }
+pub struct Session { /* a chDB session: its own current database and settings */ }
+impl Session {
+    pub fn execute(&self, sql: &str, format: &str, params: &[(String, String)]) -> Result<QueryStream, ChdbError>; // streaming
+    pub fn execute_arrow(&self, sql: &str) -> Result<ArrowStream, ChdbError>;            // RecordBatch stream (arrow 59)
+    pub fn register_arrow(&self, name: &str, stream: Box<dyn RecordBatchReader + Send>) -> Result<ArrowHandle, ChdbError>; // usable as ArrowStream('name') until the handle drops
+    pub fn cancel(&self, query_id: &str) -> Result<(), ChdbError>;
+}
+pub struct QueryStream; impl QueryStream { pub fn next_chunk(&mut self) -> Result<Option<Bytes>, ChdbError>; pub fn stats(&self) -> QueryStats; }
+pub struct QueryStats { pub rows_read: u64, pub bytes_read: u64, pub result_rows: u64, pub result_bytes: u64, pub elapsed: Duration }
+pub struct ChdbError { pub code: i32 /* ClickHouse error code */, pub name: String, pub message: String }
+```
+
+**Semantics:** `ChdbError` parses chDB's exception text (`Code: <n>. DB::Exception: <msg>. (<NAME>)`) into its parts; every FFI call runs on a blocking thread (`tokio::task::spawn_blocking`) from the async callers; `QueryStream` releases chDB results on drop; `register_arrow` exports through the Arrow C stream interface and keeps the reader alive until the handle drops.
+
+**Tests:** `tests/engine.rs`: `select_one_in_every_format` (TSV, CSV, JSONEachRow, RowBinary, Native, Parquet, ArrowStream bytes non-empty and decodable where Rust can decode them); `error_has_code_and_name` (`SELECT * FROM nope` → 60 `UNKNOWN_TABLE`); `sessions_are_isolated` (a `SET` and a temporary table in one session are invisible in another); `engine_is_process_global`. `tests/arrow.rs`: `registered_arrow_reads_back` (1 M rows, all Arrow types the envelope uses); `arrow_output_matches_input_types`. `tests/cancel.rs`: `cancel_stops_a_long_query` (`SELECT count() FROM numbers(1e12)` cancelled within 1 s → 394).
+
+**Commit:** `chdb: add a Loams-owned FFI over libchdb`.
+
+### Task 2: The HTTP interface
+
+**Files:** `fabric/crates/loams-house/src/{lib.rs,config.rs,http.rs,auth.rs,compress.rs}`, `fabric/crates/loams-fabric/src/main.rs` (`house` role), `fabric/crates/loams-house/tests/http.rs`.
+
+**Produces:**
+
+```rust
+pub struct HouseConfig { pub listen: SocketAddr /* 127.0.0.1:8123 */, pub users: Vec<UserMap>, pub limits: SessionLimits, pub engine: EngineConfig }
+pub struct UserMap { pub user: String, pub password_sha256: String, pub namespace: u64, pub readonly: bool }   // dev only; API keys with Q30
+pub async fn serve(cfg: HouseConfig, clients: StackClients) -> Result<HouseHandle, HouseError>;
+pub struct HttpRequest { pub method: Method, pub query: Option<String>, pub body: BodyStream, pub database: Option<String>,
+                         pub format: Option<String>, pub query_id: Option<String>, pub session: Option<SessionParams>,
+                         pub settings: Vec<(String, String)>, pub user: Credentials, pub accept_encoding: Vec<Encoding>, pub content_encoding: Option<Encoding> }
+pub fn parse(req: http::Request<Body>) -> Result<HttpRequest, HouseError>;
+```
+
+**Semantics (§32 §8.1):** `GET /` and `GET /ping` → `Ok.\n`. The query comes from `?query=`, else the POST body; with both, the parameter is the statement and the body is its data (for `INSERT`). GET is read-only (an `INSERT`, DDL or `SET` through GET answers 164 `READONLY`). Credentials from `X-ClickHouse-User`/`X-ClickHouse-Key`, Basic auth or `user`/`password` parameters (in that order); unknown user or wrong password → 516 `AUTHENTICATION_FAILED`. Every other parameter that is not `query`, `database`, `default_format`, `query_id`, `session_id`, `session_timeout`, `session_check`, `user`, `password`, `compress`, `decompress`, `enable_http_compression`, `wait_end_of_query`, `buffer_size`, `send_progress_in_http_headers`, or `param_<name>` (query parameters), is a setting. Response headers: `X-ClickHouse-Query-Id` (generated UUID v4 when absent), `X-ClickHouse-Format`, `X-ClickHouse-Timezone` (`UTC` unless `session_timezone`), `X-ClickHouse-Server-Display-Name: loams-house`, `X-ClickHouse-Summary` (JSON with `read_rows`, `read_bytes`, `written_rows`, `written_bytes`, `total_rows_to_read`, `result_rows`, `result_bytes`, `elapsed_ns`), and on errors `X-ClickHouse-Exception-Code`. Compression: request bodies with `Content-Encoding: gzip|deflate|zstd`; responses compressed when `enable_http_compression=1` and the client accepts gzip, deflate or zstd.
+
+**Tests:** `ping_and_root_answer_ok`; `query_param_and_body_forms`; `insert_with_query_param_and_data_body`; `get_is_readonly_164`; `auth_header_basic_and_params`; `bad_password_is_516`; `settings_from_params`; `query_id_echoed_or_generated`; `summary_header_is_json`; `gzip_and_zstd_both_ways`; `non_loopback_is_refused`.
+
+**Commit:** `house: serve the ClickHouse HTTP interface on 127.0.0.1:8123`.
+
+### Task 3: Errors
+
+**Files:** `fabric/crates/loams-house/src/errors.rs`, `fabric/crates/loams-house/tests/errors.rs`.
+
+**Produces:**
+
+```rust
+pub struct ChError { pub code: i32, pub name: &'static str, pub message: String }
+impl ChError { pub fn http_status(&self) -> StatusCode; pub fn render(&self, version: &str) -> String; }   // "Code: 60. DB::Exception: … (UNKNOWN_TABLE) (version 26.9.…)\n"
+pub const CODES: &[(i32, &str, u16 /* status */)];   // 36, 48, 57, 60, 62, 73, 81, 115, 159, 164, 202, 210, 241, 344, 372, 373, 394, 497, 516 (§32 §8.8; checked in ErrorCodes.cpp at v26.9.8.3-stable)
+```
+
+**Semantics:** every Loams-raised error is a `ChError` from `CODES`; chDB errors pass through with their own code and name. The HTTP status per code follows ClickHouse's `HTTPHandler` mapping at the pinned version (Task 0 records it: 400 for syntax and bad-argument classes, 401 or 403 for auth, 404 for unknown table and database, 500 otherwise; verify). Errors in the middle of a streamed result follow Ruling 9.
+
+**Tests:** `codes_match_reference` (for each code, a statement that triggers it on the reference and on Loams; the code, name and status are equal, the message compared after normalizing names and versions); `render_format_is_exact`; `mid_stream_error_matches_reference`.
+
+**Commit:** `house: render ClickHouse errors and status codes`.
+
+### Task 4: Classifier, sessions and settings
+
+**Files:** `fabric/crates/loams-house/src/{classify.rs,session.rs,settings.rs}`, `fabric/crates/loams-house/tests/classify.rs`.
+
+**Produces:**
+
+```rust
+pub enum Stmt { Query { text: String }, Insert(InsertStmt), CreateDatabase(CreateDb), CreateTable(CreateTable),
+                CreateTableAs(CreateTable, String), Drop(DropStmt), Truncate(TableRef), AlterAddColumns(TableRef, Vec<ColumnDef>),
+                Show(ShowStmt), Describe(TableRef), Exists(TableRef), Use(String), Set(Vec<(String, String)>),
+                Optimize(TableRef), KillQuery(String), Explain { text: String }, Unsupported { kind: String } }
+pub fn classify(sql: &str) -> Result<Stmt, ChError>;                         // Ruling 4
+pub struct HouseSession { pub id: SessionId, pub namespace: u64, pub database: String, pub settings: Settings,
+                          pub last_token: Option<Token>, pub expires: Instant }
+pub struct SessionTable;  impl SessionTable { pub fn get_or_create(&self, p: &SessionParams, user: &UserMap) -> Result<Arc<Mutex<HouseSession>>, ChError>; }
+pub struct Settings; impl Settings { pub fn apply(&mut self, k: &str, v: &str, limits: &SessionLimits) -> Result<(), ChError>; }
+pub const ALLOWED_SETTINGS: &[&str];                                        // §32 §8.5, with caps
+```
+
+**Semantics:** `classify` strips comments and a trailing `FORMAT <fmt>` clause for queries (the format is passed to chDB, overriding `default_format`); `INSERT … FORMAT <fmt>` keeps the format for Task 6. `session_id` sessions persist settings, the current database and `last_token` until `session_timeout` (default 60 s, max 3 600 s); `session_check=1` on an unknown session answers 372 `SESSION_NOT_FOUND`; a session is used by one query at a time (373 `SESSION_IS_LOCKED`). Unknown settings → 115; disallowed → 164; a value over its cap is refused with 164 naming the cap, never clamped silently (Ruling 10).
+
+**Tests:** `classify_corpus` (every file under `corpus/classify/` with its expected `Stmt` kind); `trailing_format_is_extracted`; `insert_format_kept`; `unparseable_ddl_is_62_with_hint`; `queries_are_never_rewritten` (the text passed to chDB equals the input minus `FORMAT`); `session_persists_settings_and_database`; `session_check_unknown`; `session_locked`; `unknown_setting_is_115`; `setting_over_cap_is_164`.
+
+**Commit:** `house: classify statements and keep sessions and settings`.
+
+### Task 5: Catalog and DDL on Fluss
+
+**Files:** `fabric/crates/loams-house/src/{catalog.rs,types.rs,ddl.rs}`, `fabric/crates/loams-house/tests/ddl.rs`.
+
+**Produces:**
+
+```rust
+pub struct ChTable { pub db: String, pub name: String, pub fluss: FlussTablePath, pub engine: ChEngine, pub columns: Vec<ChColumn>,
+                     pub order_by: Vec<String>, pub primary_key: Vec<String>, pub partition_by: Option<PartitionExpr>, pub ddl: String }
+pub enum ChEngine { MergeTree, Replacing { ver: Option<String>, is_deleted: Option<String> }, Summing { columns: Option<Vec<String>> } }
+pub struct ChColumn { pub name: String, pub ch_type: String, pub fluss_type: FlussType, pub default: Option<String> }
+pub fn map_type(ch: &str) -> Result<(FlussType, Option<String> /* stored ch type */), ChError>;
+pub async fn create_table(cat: &Catalog, ns: u64, stmt: &CreateTable) -> Result<(), ChError>;   // → FL1's TableSpec + loams.ch.* properties
+pub async fn load_table(cat: &Catalog, ns: u64, db: &str, name: &str) -> Result<ChTable, ChError>;
+```
+
+**Type mapping (`types.rs`, one table, tested both ways):** `UInt8/16/32` → `INT`/`BIGINT` widened with the ClickHouse type kept; `UInt64` → `DECIMAL(20,0)`; `Int8..Int64` → `TINYINT..BIGINT`; `Float32/64` → `FLOAT`/`DOUBLE`; `Decimal(P,S)` → `DECIMAL(P,S)` (P ≤ 38); `String`, `FixedString(n)` → `STRING`/`BINARY(n)`; `Date`, `Date32` → `DATE`; `DateTime`, `DateTime64(p[, tz])` → `TIMESTAMP_LTZ(p)` (tz kept); `UUID` → `STRING` (kept); `Bool` → `BOOLEAN`; `Array(T)` → `ARRAY<T>`; `Map(K,V)` → `MAP<K,V>`; `Tuple(...)` named → `ROW<...>`; `Nullable(T)` → nullable; `LowCardinality(T)` → `T` (kept); `Enum8/16` → `STRING` (kept); `IPv4/IPv6` → `STRING` (kept); `JSON`, `Object`, `Variant`, `Dynamic`, `AggregateFunction`, `SimpleAggregateFunction`, `Nested` → refused with 48 in `chsurface-1`. (Verify every Fluss type name against Fluss 1.0 in Task 0.)
+
+**Semantics:** §32 §7.4 and §7.6. `CREATE TABLE … AS SELECT` creates the table from the `SELECT`'s output schema (chDB `DESCRIBE (SELECT …)`) and then runs Task 6's `INSERT … SELECT`. `IF NOT EXISTS` and `IF EXISTS` as ClickHouse. `SHOW CREATE TABLE` returns `loams.ch.ddl` verbatim. `DESCRIBE` returns ClickHouse's columns (`name`, `type`, `default_type`, `default_expression`, `comment`, `codec_expression`, `ttl_expression`). `TRUNCATE` on a PK table answers 48 unless Fluss supports it (Task 0). A `PARTITION BY` outside §32 §7.4's list answers 36. `SETTINGS` in DDL: `index_granularity` and other storage settings accepted and recorded but ignored; unknown ones 115.
+
+**Tests:** `create_each_tier1_engine` (and `SHOW CREATE` roundtrip); `replicated_and_on_cluster_accepted`; `partition_by_supported_transforms`; `partition_by_other_is_36`; `type_mapping_roundtrip` (every row of the table through Fluss and back to the ClickHouse type in `DESCRIBE`); `unsupported_type_is_48`; `ctas_creates_and_fills`; `if_exists_and_if_not_exists`; `alter_add_column`; `drop_database_cascades`.
+
+**Commit:** `house: map ClickHouse DDL onto Fluss tables`.
+
+### Task 6: `INSERT`
+
+**Files:** `fabric/crates/loams-house/src/{insert.rs,token.rs}`, `fabric/crates/loams-house/tests/insert.rs`.
+
+**Produces:**
+
+```rust
+pub struct InsertStmt { pub table: TableRef, pub columns: Option<Vec<String>>, pub source: InsertSource }
+pub enum InsertSource { Values(String), Format { format: String, inline: Option<Bytes> }, Select(String) }
+pub async fn insert(ctx: &QueryCtx, stmt: InsertStmt, body: BodyStream) -> Result<InsertResult, ChError>;
+pub struct InsertResult { pub written_rows: u64, pub written_bytes: u64, pub token: Token }
+pub struct Token(Vec<(u64 /* table id */, u32 /* bucket */, u64 /* offset */)>);   // Ruling 8
+impl Token { pub fn encode(&self) -> String; pub fn decode(s: &str) -> Result<Self, ChError>; pub fn merge(&mut self, other: &Token); }
+```
+
+**Semantics:** parse with chDB into Arrow batches of the target's ClickHouse schema: the body is streamed into a session-local `Memory` temporary table of that schema through chDB's streaming insert (`INSERT INTO _loams_in FORMAT <fmt>`), then read back as Arrow in batches of 65 536 rows (or through the C ABI's direct input-format parsing if Task 0 found one); `VALUES` and `SELECT` run as `SELECT … FORMAT ArrowStream` directly. Column defaults (`DEFAULT` expressions) are applied by chDB because the temporary table carries them. Batches are converted to Fluss rows (ClickHouse types → Fluss types, Task 5) and written with `fluss-rs`: append for `MergeTree`; for `Replacing`, upserts, and deletes for rows with `is_deleted = 1`; for `Summing`, upserts (Fluss aggregates). The answer is sent after Fluss acknowledges every batch; a failure after some batches answers the error with `written_rows` so far in the summary (ClickHouse's own non-atomic insert behaviour for multi-block inserts). The session's `last_token` is merged with the result's token, and the header `X-Loams-Consistency-Token` carries it. `insert_deduplicate` accepted (no effect), `async_insert=1` served synchronously.
+
+**Tests:** `insert_values_formats_and_select` (VALUES, JSONEachRow, CSV, TSV, RowBinary, Native, Parquet, ArrowStream bodies all land identical rows); `defaults_applied`; `replacing_deletes_with_is_deleted`; `summing_adds_on_merge`; `large_insert_is_streamed` (5 M rows, bounded RSS); `partial_failure_reports_written_rows`; `token_header_and_session_token`; `insert_into_unknown_table_is_60`.
+
+**Commit:** `house: insert into Fluss tables in every declared format`.
+
+### Task 7: Union reads
+
+**Files:** `fabric/crates/loams-house/src/{read.rs,views.rs}`, `fabric/crates/loams-house/tests/read.rs`.
+
+**Produces:**
+
+```rust
+pub struct ReadPin { pub table: ChTable, pub lake: Option<LakeSnapshot>, pub tail_from: Vec<(u32, u64)>, pub tail_to: Vec<(u32, u64)> }
+pub struct LakeSnapshot { pub metadata_file: String, pub snapshot_id: i64, pub covered: Vec<(u32, u64)> }
+pub async fn pin(ctx: &QueryCtx, tables: &[ChTable], at_least: Option<&Token>) -> Result<Vec<ReadPin>, ChError>;  // waits ≤ loams_consistency_wait_ms
+pub fn view_sql(pin: &ReadPin, tail_stream: &str) -> String;     // CREATE TEMPORARY VIEW … AS <lake> UNION ALL <tail> [PK merge]
+pub async fn run_query(ctx: &QueryCtx, text: &str, format: &str) -> Result<QueryStream, ChError>;
+```
+
+**Semantics (§32 §7.5):** table references are found with chDB's own analysis (`EXPLAIN QUERY TREE` or `EXPLAIN SYNTAX` output, Task 0 decides which is stable) rather than by Loams parsing the query; unknown tables answer 60 before execution. Per table: the lake part `icebergS3('<warehouse path>', …, SETTINGS iceberg_metadata_file_path = '<pinned>')` with Loams’ RustFS credentials (generated SQL, never visible to the user; the deny list applies only to user text); the tail part `ArrowStream('<name>')` registered from a `fluss-rs` log scan between `covered` and `tail_to`; both projected to the table's ClickHouse types with `CAST`s; for PK tables, the union keeps the last row per key by `(_lake_rank, _bucket, _offset)` and drops delete rows. The view is created in a session-local database `_loams_<query_id>` and the user's query runs with `database` set so that unqualified names resolve to the views; qualified names `db.t` resolve because the session database set includes one view database per referenced ClickHouse database, named as the ClickHouse database (temporary, session-scoped; verify chDB supports temporary databases or use per-query schema rewriting of database names as the fallback). Views and registered streams are dropped when the query ends.
+
+**Tests:** `merge_tree_union_has_each_row_once` (rows straddling the Iceberg/tail boundary); `replacing_latest_wins_across_boundary` (a key updated in Iceberg and again in the tail); `replacing_delete_in_tail_hides_lake_row`; `summing_sums_across_boundary`; `tiering_advance_mid_query_is_consistent` (tiering commits during a long query; the query's pin is unchanged); `token_wait_sees_own_insert`; `token_wait_times_out_with_159`; `final_is_noop`; `qualified_and_unqualified_names`; `no_mergetree_in_chdb` (after the whole test file, `SELECT count() FROM system.tables WHERE engine LIKE '%MergeTree%'` in every session is 0).
+
+**Commit:** `house: read Iceberg snapshots and the Fluss tail as one table`.
+
+### Task 8: System tables, deny list, functions
+
+**Files:** `fabric/crates/loams-house/src/{system.rs,deny.rs}`, `fabric/crates/loams-house/tests/{system.rs,deny.rs}`.
+
+**Semantics:** §32 §8.7 and §7.8. `system.databases`, `system.tables`, `system.columns`, `system.parts` are views over Arrow streams built from the catalog for the session's namespace (columns as ClickHouse 26.9's, verify the column list; tools read `name`, `database`, `engine`, `total_rows`, `total_bytes`, `create_table_query`, `metadata_modification_time`); `system.settings`, `system.functions`, `system.formats`, `system.data_type_families`, `system.one`, `system.numbers`, `system.build_options`, `system.contributors` are chDB's own; `system.processes` and `system.query_log` are Loams’ (own namespace only). The deny list is enforced twice: chDB settings that disable table functions and engines where they exist (verify: `allow_*`/`readonly`/`table_function_*` controls in 26.9), and a check of chDB's query analysis output against `DENIED_FUNCTIONS` and `DENIED_ENGINES` before execution.
+
+**Tests:** `system_tables_list_namespace_tables_only`; `system_tables_engine_is_clickhouse_engine` (shows `ReplacingMergeTree`, not `Memory` or `View`); `system_columns_types_are_clickhouse_types`; `denied_functions_answer_344` (one case per function and engine of §32 §7.8); `denied_inside_subquery_and_view` (also in `INSERT … SELECT`, `CREATE TABLE … AS SELECT`, `WITH`, `JOIN`, `IN (…)`); `allowed_table_functions_work` (`numbers`, `values`, `generateRandom`, `format`); `host_functions_return_loams_values`.
+
+**Commit:** `house: system tables and the table-function deny list`.
+
+### Task 9: The surface in code and its page
+
+**Files:** `fabric/crates/loams-house/src/{surface.rs,limits.rs}`, `conformance/clickhouse/surface.toml`, `docs/guides/clickhouse-surface.md` (generated), `fabric/crates/loams-house/tests/surface.rs`.
+
+**Produces:**
+
+```rust
+pub const SURFACE_VERSION: &str = "1.0";
+pub struct SurfaceEntry { pub area: Area, pub item: &'static str, pub status: Support, pub note: &'static str, pub tests: &'static [&'static str] }
+pub enum Area { Http, Statement, Engine, Format, Setting, Function, TableFunction, SystemTable, Error }
+pub enum Support { Yes, Accepted, SessionOnly, Planned(&'static str /* FL3 … */), Never }
+pub const SURFACE: &[SurfaceEntry];
+pub fn render_markdown() -> String;
+```
+
+**Semantics:** one entry per row of §32 §8; each `Yes`/`Accepted` entry names the corpus tests that prove it; the page is generated from `SURFACE` with the limits of Ruling 10 and the pass rates of the latest report; `surface.toml` is the same data for the harness.
+
+**Tests:** `page_matches_code` (the checked-in page equals `render_markdown()`); `every_supported_entry_has_tests` (each named test file exists in the corpus); `surface_toml_matches_code`.
+
+**Commit:** `house: declare chsurface-1.0 in code and generate its page`.
+
+### Task 10: The differential harness and the allowlist
+
+**Files:** `fabric/crates/loams-house-conformance/**`, `conformance/clickhouse/{allowlist.toml,corpus/**,README.md}`, `scripts/house/reference.sh`, `deploy/fabric/compose.yaml` (profile `conformance`: `clickhouse-reference` on `127.0.0.1:18123`).
+
+**Produces:**
+
+```rust
+pub struct Case { pub path: PathBuf, pub setup: Vec<String>, pub statements: Vec<String>, pub mode: CompareMode, pub tags: Vec<String> }
+pub enum CompareMode { Exact, Unordered /* multiset of rows */, ErrorCode, Bytes { format: String }, Merged /* Ruling 6 */ }
+pub struct Outcome { pub case: PathBuf, pub status: Status, pub diff: Option<String> }
+pub enum Status { Pass, Fail, AllowedFail(String /* deviation id */), UnexpectedPass(String) }
+pub async fn run(cases: &[Case], loams: &Endpoint, reference: &Endpoint, allow: &Allowlist, mode: RunMode) -> Report;
+pub struct Report { pub surface: String, pub sha: String, pub totals: BTreeMap<String /* category or corpus */, (u32, u32)>, pub outcomes: Vec<Outcome> }
+impl Report { pub fn to_json(&self) -> String; pub fn to_markdown(&self) -> String; pub fn gate(&self) -> Result<(), GateFailure>; }
+```
+
+**Case format** (`corpus/<area>/<name>.sql`): leading comments set the mode and tags (`-- mode: unordered`, `-- tags: replacing,final`); a `-- setup` section runs on both sides (DDL and inserts, written once against a fresh database named per case); the statements after `-- test` are compared one by one. Canonicalization: `Unordered` sorts rows by their TSV bytes; floats compared with 1e-9 relative tolerance unless `-- exact-floats`; `X-ClickHouse-Server-Display-Name`, query ids, timings and `version()` normalized. `Merged` runs `OPTIMIZE TABLE <t> FINAL` on the reference after setup.
+
+**Allowlist (§32 §8.10):** the TOML of §32 with validation (ids unique, categories known, `approved` present for `semantic`, every `tests` glob matches at least one case). `gate()` fails on any `Fail`, any `UnexpectedPass`, or an allowlist entry without matching cases.
+
+**Seed corpus** (written in this task, ~400 cases): `ddl/` (120 forms: every Tier 1 engine, argument shapes, partitions, settings, errors), `engines/` (insert orders, versions, equal versions, deletes, summing columns, nulls), `types/` (each mapped type, insert and select), `formats/` (each declared format, `Bytes` mode), `errors/` (each Loams-raised code), `select/` (joins, aggregates, window functions, arrays, maps, JSON functions over String, dates and time zones), `system/`, `deny/` (each denied function, `ErrorCode` mode), `http/` (parameters, sessions, compression, `Bytes` mode on whole responses).
+
+**Tests:** `allowlist_validation`; `unexpected_pass_fails`; `unordered_compare_is_multiset`; `float_tolerance`; `merged_mode_optimizes_reference`; `report_json_schema_is_stable`; and the CI job `house-conformance` running the whole corpus (blocking).
+
+**Commit:** `conformance: add the ClickHouse differential harness, corpus and allowlist`.
+
+### Task 11: Upstream stateless tests, ClickBench and TPC-H
+
+**Files:** `fabric/crates/loams-house-conformance/src/stateless.rs`, `conformance/clickhouse/stateless/manifest.toml`, `conformance/clickhouse/{clickbench,tpch}/**`, `scripts/house/{clickbench.sh,tpch.sh}`.
+
+**Semantics:**
+- **Stateless subset.** At the pinned ClickHouse tag, `stateless.rs` scans `tests/queries/0_stateless/*.sql` (fetched as a pinned tarball in CI, Apache-2.0, not vendored) and selects tests whose statements classify inside the surface and whose tables use only Tier 1 engines; `manifest.toml` lists the selected ids and the excluded ones with reasons. Each selected test runs on Loams and is compared to its `.reference` file (upstream's expected output), with `MergeTree`-family setup DDL kept as is (Loams maps it). The pass rate is reported, not gated, in FL2 (gated from FL3, §32 §10).
+- **ClickBench.** `hits_0.parquet` … `hits_9.parquet` (the pinned files of the Data entry, in file order) loaded through `INSERT … FORMAT Parquet`; the run fails if a file's SHA-256 or the total row count differs from Task 0's record; the rows are loaded into the ClickBench `MergeTree` DDL (unchanged); the 43 queries compared with the reference (`Unordered` where the query has no `ORDER BY`); timings recorded for both sides, not gated.
+- **TPC-H SF1.** Schema with `MergeTree` DDL, data through `INSERT … FORMAT CSV`, the 22 queries in ClickHouse syntax (the ClickHouse documentation's TPC-H query set, verify licence) compared with the reference.
+
+**Tests:** `stateless_manifest_is_reproducible` (the selector over the pinned tarball produces the checked-in manifest); the nightly job `house-nightly` (stateless, ClickBench, TPC-H) publishing `house-compat-<sha>.json`.
+
+**Commit:** `conformance: run the upstream stateless subset, ClickBench and TPC-H`.
+
+### Task 12: Driver suites
+
+**Files:** `fabric/crates/loams-house/tests/drivers_rs.rs`, `scripts/house/{drivers_py.sh,clickhouse_connect_probe.py}`, `.github/workflows/fabric.yml`.
+
+**Semantics:** `clickhouse` (Rust, RowBinary over HTTP): connect, `query`/`fetch_all` into typed rows for every mapped type, `insert` with the `Row` derive, `inserter` batches, errors as `clickhouse::error::Error::BadResponse` with the code. `clickhouse-connect` (Python, `uv`): `get_client`, `query`, `query_df` (Arrow), `insert`, `insert_df`, `command`, server version detection, sessions, compression; the probe asserts results and fails on any warning about unsupported server features it can detect. The requests recorded in Task 0 (`conformance/clickhouse/drivers/*.http`) are replayed as `Bytes`-mode cases so a driver upgrade that changes requests is noticed.
+
+**Tests:** `rust_driver_roundtrip_every_type`; `rust_driver_inserter_batches`; `rust_driver_error_codes`; the Python probe in CI (`drivers_py.sh`).
+
+**Commit:** `house: pass the Rust and Python ClickHouse driver suites`.
+
+### Task 13: Fault modes, limits, exit report and docs
+
+**Files:** `fabric/crates/loams-house/tests/faults.rs`, `deploy/fabric/compose.yaml` (toxiproxy between House and RustFS), `docs/guides/house.md`, `docs/plans/fl2-exit-report.md`, `CHANGELOG.md`.
+
+**Semantics:** with toxiproxy on the House's S3 path: latency (200 ms), 503 bursts, partial reads (connection reset after N bytes), slow bandwidth; the whole declared corpus runs under each toxic (the CI job runs `latency` and `reset` on PRs, all nightly) and must give the same outcomes as without (errors are retried by chDB's S3 client; a query that fails answers a ClickHouse error, never wrong data). Kill tests: kill `loams-fabric house` mid-query (the client sees a connection error; a retry succeeds; no state is left); kill the Fluss tablet server during a large `INSERT` (the client gets an error with `written_rows` so far; retrying the remainder converges for PK tables). Ruling 10's limits measured and set. The exit report: corpus pass rate by area and category, allowlist entries with reasons, stateless pass rate, ClickBench and TPC-H correctness and timings beside the reference, driver results, RSS and query concurrency measurements, the `fluss-rs` and chDB gaps found and their upstream issues.
+
+**Tests:** `corpus_under_s3_latency`, `corpus_under_s3_resets`, `kill_house_mid_query`, `kill_fluss_during_insert`, `limits_enforced` (concurrency 202, memory 241, time 159).
+
+**Commit:** `house: fault modes, limits, the FL2 exit report and docs`.
+
+## PR grouping
+
+| PR | Tasks | Title | Size (estimate) |
+|---|---|---|---|
+| A | 0 | FL2 (1/10): chDB spike and reconciliation | docs only |
+| B | 1 | FL2 (2/10): `loams-chdb-sys` and `loams-chdb` | ~1 200 lines |
+| C | 2, 3 | FL2 (3/10): the HTTP interface and errors | ~1 400 lines |
+| D | 4 | FL2 (4/10): classifier, sessions, settings | ~1 000 lines |
+| E | 5 | FL2 (5/10): DDL on Fluss | ~1 300 lines |
+| F | 6 | FL2 (6/10): `INSERT` | ~900 lines |
+| G | 7 | FL2 (7/10): union reads | ~1 300 lines |
+| H | 8, 9 | FL2 (8/10): system tables, deny list, the surface page | ~1 200 lines |
+| I | 10 | FL2 (9/10): the differential harness, corpus and allowlist | ~1 500 lines plus ~400 corpus files |
+| J | 11, 12, 13 | FL2 (10/10): stateless/ClickBench/TPC-H, drivers, faults, exit | ~1 200 lines |
+
+## Rulings made during execution
+
+Rows 1–14 come from Tasks 0–1. Later tasks append their own.
+
+| # | Ruling | Why | Cost if wrong |
+|---|---|---|---|
+| 1 | **The pinned C header is vendored at `fabric/crates/loams-chdb-sys/chdb.h`** (chDB's own `programs/local/chdb.h` at tag `v26.9.0`, 1 176 lines plus a provenance banner), and `build.rs` binds against it | The v26.9.0 release tarball contains exactly one file — `libchdb.so` — and **no header at all**. bindgen needs one, so without vendoring the header and the `.so` drift apart silently. Ruling 2's SHA-256 covers the binary; the header is covered by review | Re-vendoring on a version bump is one file copy and a review. Not vendoring means a build that compiles against a header nobody in the repository has read |
+| 2 | **The repository is `chdb-io/chdb-core`**, and `chdb-core` / `libchdb` are **not crates.io crates** (checked 2026-10-04; the `chdb` crate at 0.1.2 is an unrelated third-party binding) | The plan names `chdb-core` 26.9.x without naming where it lives. Ruling 2's download URL and digest check need the real repository | None; it is a URL |
+| 3 | **`build.rs` must fail closed on a digest mismatch, and CI caches by digest rather than by tag** | A plain `curl` of the v26.9.0 x86-64 tarball truncated at 76 MB and produced a **mismatching** digest; it verified only after three resumed transfers. A tag is not an immutable reference | Nothing; a failed build instead of a wrong `.so` |
+| 4 | **The `fabric/` workspace's Arrow pin applies here too: arrow 59, not 60** | CN1 Ruling 4 established it for this workspace — `adbc_core` 0.24 constrains `arrow-array` to `>=58, <60`. FL2's Tech Stack says arrow 59 independently, so the two plans agree | If FL1 lands on a different Arrow major for the Fluss/Iggy bridge, both must move together (CN1 Ruling 4's cost column) |
+| 5 | **No ABI gaps. Arrow input, Arrow output, cancellation, signal-handler control and parameterised queries are all first-class calls** | Task 0 measured **52 exported symbols** against the pinned `.so` and mapped every one of Task 1's operations. The plan's contingency — "for Arrow input without an ABI call: write the tail as an Arrow IPC file and read it with `file()`" — is **not needed** | Removes the plan's most unpleasant contingency and one reason the `file()` deny list had to be so careful. If a future chDB drops an ABI call, this row is where to look |
+| 6 | **Ruling 4 stands, but `chdb_classify_query_n` owns the negative half of Task 4's classifier** | chDB ships ClickHouse's *own* classifier. Loams cannot use it for the DDL it owns — it must *map* DDL onto Fluss, extracting engine, partition key, sorting key, column types and TTL, which a classifier cannot produce — but for deciding "this statement is **not** one Loams owns, so chDB runs it unchanged", ClickHouse's own answer is authoritative and sqlparser's is a guess. The surface page must record which half decided each statement | If Task 4 finds sqlparser unreliable even on the negative half, the fallback is one function call: drop the `chdb_classify_query_n` check |
+| 7 | **`bindgen` 0.72.1 is BSD-3-Clause**, not MIT OR Apache-2.0 | Read from crates.io and the crate's shipped LICENSE, 2026-10-04. The common assumption is wrong, and `fabric/Cargo.toml` had it wrong until Task 1's build corrected it | None: BSD-3-Clause is already in `fabric/deny.toml`'s allow-list. It matters because D359 asks for each dependency's provenance to be recorded, and a wrong SPDX id is a wrong record |
+| 8 | **`#![allow(unsafe_code)]` cannot lift the workspace's `forbid`**; `loams-chdb-sys` restates the workspace lint set with `unsafe_code = "allow"` | Cargo passes `unsafe_code = "forbid"` as `-F`, which rustc answers with E0453, "overruled by previous forbid". Every other lint value is copied verbatim, and the workspace's own lint set is untouched | None; the `-sys` crate is the sanctioned exception (Ruling 1) and the sys-crate boundary keeps `unsafe` out of `loams-chdb` — `grep -rn unsafe loams-chdb/src/` is empty |
+| 9 | **`loams-chdb-sys` needs `arrow` as a dependency, not just `loams-chdb`** | Reading chDB's `internal_data` into an `FFI_ArrowArrayStream` is `unsafe`, and `unsafe` may live only in the `-sys` crate. Without arrow there, `loams-chdb` would have to hold `unsafe` itself, breaking the sys-crate boundary | None |
+| 10 | **Arrow is unusable at v26.9.0, so `loams-chdb`'s Arrow tests run the FFI in a child process and report what it did.** `chdb_arrow_scan` never returns (45 s, under every `internal_data` convention, including a stream chDB itself produced); `chdb_stream_query_arrow`'s stream hangs in `get_schema`; and with `install_signal_handlers = false` either one **SIGSEGVs**. arrow-rs's own `ArrowArrayStreamReader` additionally copies the stream before invoking its callbacks, which segfaults, so the sys layer drives chDB's callbacks with chDB's own pointer | Measured, not inferred. **A reviewer must rule on whether Task 2 can rely on Arrow at all.** It revises Ruling 5: the ABI calls exist, but at this version they do not work, so Ruling 5's "no gaps" is true of the *symbols* and false of the *behaviour* | High, and it is the reason this row exists. If Arrow is unusable, `execute_arrow` and `register_arrow` are declared-but-unproven, the Arrow bulk path needs another route, and Task 7's union reads lose their columnar shape |
+| 11 | **Cancellation is Loams' own, not chDB's.** `chdb_stream_cancel_query` does not interrupt a statement: `SELECT count() FROM numbers(1e12)` blocked 274 s and the next fetch returned the **result**. There is no `query_id` setting at all (115 `UNKNOWN_SETTING`), so cross-connection `KILL QUERY` has nothing to match. `cancel_stops_a_long_query` passes because `Session::cancel` answers 394 within 1 s itself, with the engine told in the background. A cancellation also **poisons its connection** ("No active streaming query" on the next stream), so a cancelled session opens a fresh connection with identical argv | Measured. The plan's Task 1 wording — "cancelled within 1 s → 394" — is satisfied in Loams' terms and not in chDB's | High for FL2's later tasks: `KILL QUERY` (§32's surface) cannot be implemented as ClickHouse implements it, so either the surface declares it as Loams-cooperative or the plan's Task 8 changes |
+| 12 | **One connection shape per process.** A second `chdb_connect` whose argv differs from the first's returns null, so sessions are one connection each carrying the engine's exact argv, and per-session settings are applied as a `SET` before each statement rather than as connect arguments (the header invites the connect-argument path; it is refused) | Measured; the header's `chdb_connect(int argc, char **argv)` does not say this | Task 4's sessions-and-settings design, which must not assume per-session connect arguments |
+| 13 | **Ruling 2's cache settings are wrong for 26.9.0.** The real server setting is `filesystem_caches_path` (plural); `filesystem_cache_size_limit` is **not a setting at all** in 26.9.0, so the 20 GiB limit cannot be set through the C ABI; and unknown server options are silently accepted and ignored, which is why the wrong name did not fail loudly | Measured against the running library | Task 1's `EngineConfig.cache_bytes` cannot be honoured from the C ABI. Either it is dropped, or it is applied out of process, or FL2 accepts an unbounded cache — and a silently-ignored setting is the worst of the three, so the code must stop passing it |
+| 14 | **Arrow is usable as a buffered output format at v26.9.0; only the Arrow C stream *interface* is broken.** Measured against the pinned library: `chdb_query(sql, "Arrow")` returns 698 bytes beginning `ARROW1` (the Arrow IPC magic), `"ArrowStream"` returns 480 bytes beginning `ff ff ff ff a0 00` (a valid IPC stream continuation), `"Parquet"` returns 776 bytes beginning `PAR1`, `"Native"` 22 bytes and `"TSV"` 4. **Task 2 is therefore unblocked and uses the buffered path.** What is genuinely unusable is `chdb_arrow_scan` (Arrow *input*: registering a RecordBatch as a table function, which never returns) and `chdb_stream_query_arrow` (streaming output, which hangs in `get_schema`) | Ruling 10 had Task 2 stream from chDB, and Ruling 11's contingency was written for Arrow *input* only. Neither survives contact with the library. But Ruling 9's *reason* — "large results without buffering" — does not require the C stream interface: ClickHouse's own HTTP protocol returns `FORMAT Arrow` as response bytes, so an HTTP surface reads bytes either way. The C stream interface is an in-process zero-copy path Task 2 has no use for | **High if ignored**, and it was nearly ignored: Ruling 10 as written asks Task 2 to stream from chDB, which at this version means the path that hangs. Arrow *input* and streaming Arrow are genuinely blocked and need a substitute — the plan's own contingency (an Arrow IPC file in the worker's temp directory, read by Loams' own code, outside the user's session deny list) is now the fallback for output streaming too, not only for input |

@@ -1,0 +1,33 @@
+The Loams Swift SDK
+Copyright the Loams contributors
+
+This product includes software developed at Loams (https://loams.dev).
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy is in LICENSE, or at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+This package depends on NO third-party software. See DEPENDENCIES.md for why, and
+for what is planned instead.
+
+--------------------------------------------------------------------------------
+Generated code
+--------------------------------------------------------------------------------
+
+There is none in this package, and that is a gap rather than a design choice.
+
+Every other SDK's module surface is generated from the `loams.options.v1`
+annotations on the protos by `protoc-gen-loams-facade`
+(`crates/loams-facade-gen`). That crate ships renderers for TypeScript, Python,
+Go and Rust. It ships no Swift renderer, so there is nothing that could generate a
+Swift facade, and `scripts/sdk/gen.sh` accepts only
+`typescript|typescript-live|python|go|rust`.
+
+`Sources/Loams/Facade.swift`, `Sources/Loams/Reason.swift` and
+`Sources/Loams/Messages.swift` are therefore NOT generated. They are the
+hand-written Q604 fallback that design §44 §7.3 and D606 explicitly allow ("If the
+plugin proves too costly for a language, that language falls back to a hand-written
+facade checked by the same conformance suite"), and they carry the same
+provenance note the Go SDK's facade does. When a Swift renderer lands they are
+deleted and replaced with the same exported names.

@@ -1,0 +1,8 @@
+{
+  "name": "@loams/proto",
+  "tags": ["scope:web", "type:generated"],
+  "implicitDependencies": ["loams-contracts"],
+  "targets": {
+    "generate": {"cache": false}
+  }
+}

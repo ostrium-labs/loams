@@ -1,0 +1,74 @@
+[package]
+name = "loams-house"
+description = "The Loams House front's library: ClickHouse errors rendered code for code (FL2 Task 3) and the supervisor of the chDB worker processes (HS1 Task 2). Links no libchdb."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# The rpath for this package's test binaries when `inproc-worker` links libchdb;
+# see the file.
+build = "build.rs"
+publish = false
+
+[features]
+# `InprocWorker`: the worker's serve loop on a thread of the front, chDB in the
+# front's process (`--workers=inproc`, §49 §4.1, Q686). It brings libchdb into the
+# front, which is exactly what D761 forbids in a release image, so it is off by
+# default and `no_libchdb_in_front` checks the default graph.
+inproc-worker = ["dep:loams-house-worker", "dep:loams-chdb-sys"]
+# `WorkerLease::abort_for_test` and `probe_for_test`, which send the test-only
+# `Frame::Abort` and `Frame::Probe`.
+test-hooks = ["loams-house-ipc/test-hooks"]
+
+[dependencies]
+# HS1 Task 2: the House front links no libchdb (D761). Engine errors arrive in
+# `hsw1` `Error` frames as `loams_house_ipc::EngineError`, already taken apart by
+# the worker, so this crate renders them without depending on `loams-chdb`.
+loams-house-ipc = { path = "../loams-house-ipc" }
+# `posix_spawn` of workers with their socket on fd 3 and an empty environment,
+# `SIGKILL`, and `waitid` without reaping, all without `unsafe` here; `sendmsg`
+# with `SCM_RIGHTS` for the sandboxed worker's forwarder (HS1 Task 6).
+nix = { workspace = true, features = ["socket", "uio"] }
+# `HouseError`'s `Display`/`Error`, which the HTTP layer surfaces to the
+# per-request error handler. Apache-2.0 OR MIT.
+thiserror.workspace = true
+# The HTTP interface (HS1 Task 3): hyper, Basic credentials, the dev
+# users' password digests, request and response compression, query ids and the
+# `wait_end_of_query` spool.
+base64.workspace = true
+flate2.workspace = true
+http.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+sha2.workspace = true
+# The classifier (HS1 Task 4).
+sqlparser.workspace = true
+tempfile.workspace = true
+uuid.workspace = true
+zstd.workspace = true
+# The pool is async: the worker sockets are tokio Unix streams, and the deadline,
+# the reaper and the warm-up are tasks.
+tokio = { workspace = true, features = ["io-util", "net", "rt", "sync", "time"] }
+bytes.workspace = true
+
+# Only with `inproc-worker`: the worker's serve loop, and the `links = "chdb"`
+# package whose `DEP_CHDB_LIB_DIR` this package's `build.rs` turns into an rpath.
+loams-house-worker = { path = "../loams-house-worker", optional = true, features = ["inproc-worker"] }
+loams-chdb-sys = { path = "../loams-chdb-sys", optional = true }
+
+[dev-dependencies]
+# `tests/request_fuzz.rs`: the `request_parse` fuzz target's body on stable.
+proptest.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
+
+# The fuzz target's body (`src/fuzz.rs`) exists only with `test-hooks`; a
+# workspace test run turns it on (the worker's dev-dependency asks for it).
+[[test]]
+name = "request_fuzz"
+required-features = ["test-hooks"]
+
+[lints]
+workspace = true

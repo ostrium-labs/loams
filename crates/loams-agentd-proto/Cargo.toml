@@ -1,0 +1,18 @@
+[package]
+name = "loams-agentd-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+uuid = { workspace = true, features = ["serde"] }
+chrono.workspace = true
+# The fork renders with 0.12; the rest of the workspace is on 0.13 (not a workspace key).
+pulldown-cmark = "0.12"
+
+[lints]
+workspace = true

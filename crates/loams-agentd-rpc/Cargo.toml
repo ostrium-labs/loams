@@ -1,0 +1,26 @@
+[package]
+name = "loams-agentd-rpc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+publish = false
+
+[dependencies]
+tokio.workspace = true
+# 0.24 as in the fork; loams-web-bridge is on 0.30 (not a workspace key).
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+
+# Deterministic stalled-transport deadlines.
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

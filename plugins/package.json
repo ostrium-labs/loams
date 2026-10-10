@@ -1,0 +1,39 @@
+{
+  "name": "@loams-plugins/root",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "test": "vp test --config vitest.config.ts",
+    "test:watch": "vp test --config vitest.config.ts --watch",
+    "test:coverage": "vp test --config vitest.config.ts --coverage",
+    "lint": "vp lint --config vite.config.ts",
+    "format": "vp fmt",
+    "mcp": "ENABLE_MCP=true tsx apps/server/src/index.ts",
+    "dev:server": "tsx apps/server/src/index.ts",
+    "dev:ui": "pnpm --filter @loams-core/dashboard-ui dev",
+    "dev": "tsx apps/server/src/index.ts",
+    "check:workspace": "node scripts/run-python.mjs scripts/check-workspace.py",
+    "proto:lint": "node scripts/run-python.mjs scripts/proto.py lint",
+    "proto:gen": "node scripts/run-python.mjs scripts/proto.py generate",
+    "proto:drift": "node scripts/run-python.mjs scripts/proto.py drift"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.16.0",
+    "@connectrpc/connect": "^2.2.0"
+  },
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "2.16.0",
+    "@connectrpc/connect-web": "^2.2.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "5.0.1",
+    "eslint": "^9.0.0",
+    "msw": "^2.15.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0",
+    "vite-plus": "1.0.0",
+    "vitest": "5.0.1",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"
+  }
+}

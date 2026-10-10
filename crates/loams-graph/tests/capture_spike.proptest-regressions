@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 628abbc127878dcc67b333cfe680698a6b60bbc09fdb2192ba45647ec376f25f # shrinks to txns = [([InsertNode { k: 2, labels: [], x: None, s: None }], false), ([Merge { k: 1 }], false), ([InsertEdge { from: 1, to: 1, ty: "R", w: None }, DeleteNode { k: 1, detach: true }], false)]
+cc bf3513e8e38c1913b33617a58a002f787ab58c94c7a16845e25365127e74208b # shrinks to txns = [([InsertPath { from: 0, to: 0, ty: "R" }], false), ([SetEdgeProp { from: 0, ty: "R", w: 0 }, DeleteNode { k: 0, detach: true }], false)]
+cc 09d5398fa571e6b38286af3f6b3825e544563371578c44fecc5247de55f00019 # shrinks to txns = [([InsertNode { k: 3, labels: [], x: None, s: None }], false), ([SetProp { k: 3, key: "x", value: "0" }, DeleteNode { k: 3, detach: false }], false)]

@@ -1,0 +1,21 @@
+// PLACEHOLDER (loams-mobile). Written from the AP0 plan
+// (docs/plans/2026-10-01-ap0-app-protos.md in ostrium-labs/loams) before
+// AP0's protos exist upstream. Replace this file with the upstream one
+// through scripts/sync-protos.sh as soon as AP0 merges, then fix the apps
+// against the real contract. Do not extend it here: change AP0 instead.
+//
+// The error detail every app service attaches to a Connect error (AP0
+// Ruling 6). Apps branch on `reason`, never on the message text.
+syntax = "proto3";
+
+package loams.errors.v1;
+
+message ErrorInfo {
+  // Stable snake_case: approval_expired, approval_already_decided,
+  // decision_proof_invalid, step_up_required, pairing_expired, pairing_used,
+  // device_revoked, push_target_unknown.
+  string reason = 1;
+  map<string, string> metadata = 2;
+  // A human hint, in the caller's locale. Never parsed.
+  string hint = 3;
+}

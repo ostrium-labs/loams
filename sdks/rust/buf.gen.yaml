@@ -1,0 +1,52 @@
+# The Rust SDK facade of design §44 §7.3 (D606): protoc-gen-loams-facade reads
+# the `loams.options.v1` annotations off the descriptors and writes crate
+# `loams`'s generated facade — one trait per annotated service, one method per
+# `FacadeOptions` call, the binding table the hand-written runtime dispatches
+# through, and the reason constants generated from `docs/api/reasons.md`.
+#
+# **There is no `buf.gen.proto.yaml` for Rust, and that is deliberate.** D128
+# made the Rust SDK the server's stack: `crates/loams-proto/build.rs` already
+# generates the `loams.*.v1` messages, the service traits and the Connect
+# clients from `proto/` with `connectrpc-build` 0.9.0 and the system `protoc`,
+# and §44 §9 row 4 says "no buf remote plugin" for Rust for that reason. The SDK
+# crate's `build.rs` does the same over the same protos. `tonic` is not used
+# (`golden_rust` checks the generated file for it).
+#
+# Run `scripts/sdk/gen.sh rust`, which builds the plugin, substitutes the path
+# into a copy of this template and runs buf on that. buf does not expand
+# environment variables in a `local:` plugin path, and the path cannot be
+# committed either: the repository's cargo config sends build output outside the
+# tree. CI regenerates and fails on a diff.
+#
+# `clean` is off here: `sdks/rust/src` is the crate's source directory and holds
+# the hand-written runtime as well as this file, so buf must not empty it. One
+# generated file with a fixed name is overwritten in place, which is what the
+# stale check in `scripts/sdk/drift.sh` compares.
+#
+# The package map names each proto package's generated types by the crate path
+# `connectrpc-build` produces — the proto package's segments as nested Rust
+# modules under the proto crate, which is how
+# `crates/loams-live-proto/tests/roundtrip.rs` imports them today
+# (`loams_live_proto::loams::live::v1`).
+version: v2
+inputs:
+  # The whole proto module, as one image, so the plugin is invoked once with
+  # every file: the facade is one aggregate file, not one file per proto.
+  - directory: proto
+plugins:
+  # Substituted by scripts/sdk/gen.sh. The default is the plain cargo layout.
+  - local: ${LOAMS_FACADE_PLUGIN}
+    out: sdks/rust/src
+    strategy: all
+    opt:
+      - lang=rust
+      - reasons=docs/api/reasons.md
+      # The proto revision this SDK declares (§44 §10.3).
+      - proto_rev=v1
+      - package=loams.instance.v1=loams_proto::loams::instance::v1
+      - package=loams.devices.v1=loams_proto::loams::devices::v1
+      - package=loams.approvals.v1=loams_proto::loams::approvals::v1
+      - package=loams.operations.v1=loams_proto::loams::operations::v1
+      - package=loams.notifications.v1=loams_proto::loams::notifications::v1
+      - package=loams.live.v1=loams_live_proto::loams::live::v1
+clean: false

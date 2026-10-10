@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+contact_links:
+  # Link directly to the current repository location.
+  - name: Report a security vulnerability
+    url: https://github.com/ostrium-labs/loams/security/advisories/new
+    about: Please report security issues privately, never in a public issue.
+  - name: Read the design documents
+    url: https://github.com/ostrium-labs/loams/tree/main/docs/design
+    about: Most "how does this work" questions are answered in docs/design.

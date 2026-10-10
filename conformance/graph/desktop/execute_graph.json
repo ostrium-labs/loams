@@ -1,0 +1,263 @@
+{
+  "description": "Run, rendered as a graph (§48 §18.2): Node, Relationship and Path values, every element full (labels, type, endpoints, properties). An id of 0 is absent, as proto3 JSON leaves out a zero. No ORDER BY: Grafeo 0.5.43 answers a relationship as INT64 0 in an ordered result (`canary_order_by_answers_a_relationship_as_zero`); unordered, the rows come in insertion order.",
+  "exchanges": [
+    {
+      "method": "loams.graph.v1.GraphService/Execute",
+      "request": {
+        "namespace": "default",
+        "graph": "movies",
+        "statement": "MATCH p = (a:Person)-[r:ACTED_IN]->(m:Movie {title: 'The Matrix'}) RETURN a, r, m, p",
+        "readOnly": true,
+        "consistency": {
+          "strong": {}
+        },
+        "timeoutMs": 30000,
+        "maxRows": 1000
+      },
+      "ignore": [
+        "elapsedNanos"
+      ],
+      "response": {
+        "elapsedNanos": "1263914",
+        "rows": {
+          "columnTypes": [
+            "ANY",
+            "ANY",
+            "ANY",
+            "ANY"
+          ],
+          "columns": [
+            "a",
+            "r",
+            "m",
+            "p"
+          ],
+          "rows": [
+            {
+              "values": [
+                {
+                  "node": {
+                    "labels": [
+                      "Person"
+                    ],
+                    "properties": {
+                      "born": {
+                        "int64": "1964"
+                      },
+                      "name": {
+                        "string": "Keanu Reeves"
+                      }
+                    }
+                  }
+                },
+                {
+                  "relationship": {
+                    "dst": "3",
+                    "properties": {
+                      "roles": {
+                        "list": {
+                          "values": [
+                            {
+                              "string": "Neo"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "type": "ACTED_IN"
+                  }
+                },
+                {
+                  "node": {
+                    "id": "3",
+                    "labels": [
+                      "Movie"
+                    ],
+                    "properties": {
+                      "rating": {
+                        "float64": 8.7
+                      },
+                      "released": {
+                        "int64": "1999"
+                      },
+                      "title": {
+                        "string": "The Matrix"
+                      }
+                    }
+                  }
+                },
+                {
+                  "path": {
+                    "nodes": [
+                      {
+                        "labels": [
+                          "Person"
+                        ],
+                        "properties": {
+                          "born": {
+                            "int64": "1964"
+                          },
+                          "name": {
+                            "string": "Keanu Reeves"
+                          }
+                        }
+                      },
+                      {
+                        "id": "3",
+                        "labels": [
+                          "Movie"
+                        ],
+                        "properties": {
+                          "rating": {
+                            "float64": 8.7
+                          },
+                          "released": {
+                            "int64": "1999"
+                          },
+                          "title": {
+                            "string": "The Matrix"
+                          }
+                        }
+                      }
+                    ],
+                    "relationships": [
+                      {
+                        "dst": "3",
+                        "properties": {
+                          "roles": {
+                            "list": {
+                              "values": [
+                                {
+                                  "string": "Neo"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "type": "ACTED_IN"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "values": [
+                {
+                  "node": {
+                    "id": "1",
+                    "labels": [
+                      "Person"
+                    ],
+                    "properties": {
+                      "born": {
+                        "int64": "1967"
+                      },
+                      "name": {
+                        "string": "Carrie-Anne Moss"
+                      }
+                    }
+                  }
+                },
+                {
+                  "relationship": {
+                    "dst": "3",
+                    "id": "1",
+                    "properties": {
+                      "roles": {
+                        "list": {
+                          "values": [
+                            {
+                              "string": "Trinity"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "src": "1",
+                    "type": "ACTED_IN"
+                  }
+                },
+                {
+                  "node": {
+                    "id": "3",
+                    "labels": [
+                      "Movie"
+                    ],
+                    "properties": {
+                      "rating": {
+                        "float64": 8.7
+                      },
+                      "released": {
+                        "int64": "1999"
+                      },
+                      "title": {
+                        "string": "The Matrix"
+                      }
+                    }
+                  }
+                },
+                {
+                  "path": {
+                    "nodes": [
+                      {
+                        "id": "1",
+                        "labels": [
+                          "Person"
+                        ],
+                        "properties": {
+                          "born": {
+                            "int64": "1967"
+                          },
+                          "name": {
+                            "string": "Carrie-Anne Moss"
+                          }
+                        }
+                      },
+                      {
+                        "id": "3",
+                        "labels": [
+                          "Movie"
+                        ],
+                        "properties": {
+                          "rating": {
+                            "float64": 8.7
+                          },
+                          "released": {
+                            "int64": "1999"
+                          },
+                          "title": {
+                            "string": "The Matrix"
+                          }
+                        }
+                      }
+                    ],
+                    "relationships": [
+                      {
+                        "dst": "3",
+                        "id": "1",
+                        "properties": {
+                          "roles": {
+                            "list": {
+                              "values": [
+                                {
+                                  "string": "Trinity"
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "src": "1",
+                        "type": "ACTED_IN"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

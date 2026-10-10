@@ -1,0 +1,20 @@
+# Rust for the desktop (design 37 section 21): buffa messages and connect-rust
+# client/server stubs, committed under src/gen. Needs protoc-gen-buffa,
+# protoc-gen-buffa-packaging and protoc-gen-connect-rust on PATH
+# (scripts/install-proto-plugins.sh). CI regenerates and fails on a diff.
+version: v2
+plugins:
+  - local: protoc-gen-buffa
+    out: src/gen/buffa
+    opt: [views=true, json=true]
+  - local: protoc-gen-buffa-packaging
+    out: src/gen/buffa
+    strategy: all
+  - local: protoc-gen-connect-rust
+    out: src/gen/connect
+    opt: [buffa_module=crate::proto]
+  - local: protoc-gen-buffa-packaging
+    out: src/gen/connect
+    strategy: all
+    opt: [filter=services]
+clean: true

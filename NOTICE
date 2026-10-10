@@ -1,12 +1,147 @@
-Operon
-Copyright 2026 The Operon Authors
+Loams
+Copyright 2026 The Loams Authors
 
-This product includes software developed by The Operon Authors.
+This product includes software developed by The Loams Authors.
 
 Portions of this product may be derived from third-party open-source
 projects. Each such portion is identified in the source file header and
 listed below together with its license and attribution notice.
 
+Imported application license scope
+----------------------------------
+The desktop agent daemon under crates/loams-agentd* includes MIT-licensed
+code inherited from zeron (https://github.com/zeronsh/zeron), Copyright (c)
+2026 Wing, together with Loams additions. The crates that carry
+`license = "MIT"` derive from zeron through the Loams Desktop fork, at the
+commit recorded in crates/loams-agentd/import-provenance.json. The other
+loams-agentd* crates are Apache-2.0. crates/loams-agentd/README.md lists the
+licence of each crate. crates/loams-agentd/ holds the daemon's LICENSE, NOTICE,
+THIRD_PARTY_NOTICES.md and SCOPED_NOTICE.md. Those files remain authoritative
+for the MIT crates and must accompany distributions as applicable. The root
+license does not relicense inherited daemon code. Mobile and plugin notices
+are retained under apps/mobile/ and plugins/ respectively.
+
 Third-party attributions
 ------------------------
-(none yet)
+Quickwit (https://github.com/quickwit-oss/quickwit), Apache License 2.0.
+Files under crates/loams-quickwit/ are derived from Quickwit revision
+af0591a36e16831af9a2ad9484e12465f511ef84. Quickwit's NOTICE:
+  Datadog Quickwit
+  Copyright 2021-Present Datadog, Inc.
+  This product includes software developed at Datadog (<https://www.datadoghq.com/).>
+
+The Porter stemming algorithm (https://tartarus.org/martin/PorterStemmer/),
+by Martin Porter. crates/loams-text/src/porter.rs is a port of his ANSI C
+reference implementation (release 3, 25 Mar 2014), and
+crates/loams-text/tests/data/porter_voc.txt and porter_output.txt are his
+published test vocabulary and its stems. The site states that all the
+software there "is completely free for any purpose", free of charge.
+
+Archivo (https://github.com/Omnibus-Type/Archivo), Copyright 2020 The
+Archivo Project Authors, and Martian Mono
+(https://github.com/evilmartians/mono), Copyright 2020 The Martian Mono
+Project Authors, are bundled in the console build (web/apps/console) through
+Fontsource under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org).
+
+Qdrant gRPC protocol definitions (crates/loams-qdrant/proto/*.proto),
+copied from qdrant/qdrant v1.19.1 (https://github.com/qdrant/qdrant, commit
+6ab21cac18ebb6f4ae29102c7f8f5cc11affd5de, lib/api/src/grpc/proto/),
+Copyright Qdrant Solutions GmbH, Apache License 2.0. qdrant.proto is
+modified (internal-service imports removed); the other files are unchanged.
+
+TiKV kvproto protocol definitions (crates/loams-tikv/proto/kvproto/),
+copied unchanged from pingcap/kvproto branch release-8.5 at commit
+07aa8c6a46fab0a4cd577119c249c9c8e718c553 (https://github.com/pingcap/kvproto),
+Copyright TiKV Project Authors, Apache License 2.0 (the LICENSE file beside
+them): pdpb.proto and the files it imports (metapb, raft_serverpb,
+replication_modepb, encryptionpb, kvrpcpb, disk_usage, errorpb, deadlock,
+tracepb, resource_manager, and eraftpb from kvproto's include/). kvproto's
+include/ also supplies two option files, kept as distributed there:
+gogoproto/gogo.proto, Copyright (c) 2013 The GoGo Authors, BSD 3-Clause
+License (its notice is in the file), and rustproto.proto from rust-protobuf
+(MIT License).
+
+Resonate (https://github.com/resonatehq/resonate), Apache License 2.0.
+loams-durable links the Resonate server plugins and the Resonate Rust SDK
+from the fork https://github.com/ostrium-labs/resonate, branch loam/0.10.1
+(upstream revision 28dfd016aa970332dc283e2431c406845e2ccc8f plus the
+patches listed in docs/plans/d1-dependency-spike.md), pinned by revision in
+Cargo.toml. Copyright 2026 Resonate HQ, Inc.
+
+TiKV Rust client (https://github.com/tikv/client-rust), Apache License 2.0.
+loams-tikv, loams-meta-tikv and loams-live link tikv-client from the fork
+https://github.com/ostrium-labs/client-rust, branch loam (upstream revision
+ab4be1c2cdd58d4e593202991fb520221c83bdfd plus the patches listed in
+docs/plans/r1-dependency-spike.md), pinned by revision in Cargo.toml. Its
+generated protobuf code comes from pingcap/kvproto (Apache License 2.0).
+Copyright TiKV Project Authors.
+
+Grafeo (https://github.com/GrafeoDB/grafeo), Apache License 2.0, Copyright
+2025-2026 S.T. Grond. crates/loams-graph links the grafeo, grafeo-engine,
+grafeo-core, grafeo-adapters, grafeo-common and grafeo-storage crates at
+version 0.5.43 (crates.io), compiled into loams only with the `graph` cargo
+feature. No Grafeo source is copied. The crate archives ship no NOTICE; the
+NOTICE below is the repository's at tag v0.5.43, reproduced verbatim (indented):
+  Grafeo
+  Copyright 2025-2026 S.T. Grond
+
+  This product includes software developed at
+  https://github.com/GrafeoDB/grafeo
+
+  Licensed under the Apache License, Version 2.0.
+
+Neon (https://github.com/neondatabase/neon), Apache License 2.0, Copyright
+Databricks/Neon Inc. Loams Postgres (https://github.com/ostrium-labs/loams-postgres)
+is a hard fork of Neon. crates/loams-safekeeper/ ports the safekeeper wire protocol (v3)
+and the acceptor state machine from Neon's safekeeper/src/safekeeper.rs,
+safekeeper/src/handler.rs, safekeeper/src/receive_wal.rs,
+libs/utils/src/pageserver_feedback.rs and pgxn/neon/walproposer.c, revision
+77e22e4bf09d88b70b4a83a38c2f6de6301816b4 (the last published images), via
+the fork https://github.com/ostrium-labs/loams-postgres (Loams Postgres).
+deploy/loams-postgres-dev/ is derived from Neon's docker-compose/ at the
+same revision. crates/loams-safekeeper/src/send.rs follows Neon's safekeeper/src/send_interpreted_wal.rs and
+wal_reader_stream.rs (the interpreted sender's batching and framing), and
+crates/loams-wal-decoder links Neon's wal_decoder, postgres_ffi, utils and
+pageserver_api from the fork at fa504217c61bbcaf5c512d75830564541f917f8f
+plus two commits of Loams' (branch loams/decoder-trim-2,
+80356b2998710722020134d81102d810f921fe6b: a feature that lets consumers
+leave out the storage clients and pprof, and the tarball helpers optional), and Neon's rust-postgres fork
+through https://github.com/ostrium-labs/rust-postgres;
+its golden fixtures were recorded from Neon's safekeeper (revision
+77e22e4b above). crates/loams-safekeeper/proto/storage_broker/broker.proto is
+Neon's storage_broker/proto/broker.proto, vendored unchanged from the fork
+at 1218fb7a6a37e1b4c268bad5c2952c238d81d368, and
+crates/loams-safekeeper/src/broker.rs follows Neon's
+safekeeper/src/broker.rs (publication every second, discovery answers).
+
+cordis (https://github.com/cordiverse/cordis), MIT License, Copyright (c)
+Shigma and the cordis contributors. The cordis console (web/packages/cordis and the
+packages and plugins built on it) depends on cordis 4.0.0-rc.10 and bundles
+it into the console build. No cordis source is copied. Its MIT notice:
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to
+  deal in the Software without restriction, including without limitation the
+  rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+  sell copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions: The above
+  copyright notice and this permission notice shall be included in all copies
+  or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS",
+  WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+The console's plugin model follows the patterns of DeepSeek Harness's
+client (https://github.com/dina-kar/deepseek-harness-desktop, MIT,
+Copyright (c) 2026 DeepSeek); no file of it is copied.
+
+Obscura (https://github.com/h4ckf0r0day/obscura), Apache License 2.0, Copyright
+the Obscura contributors. The docked sidebar browser
+(crates/loams-sidebar-browser) runs Obscura as a separate process and drives it
+over the Chrome DevTools Protocol; it is not vendored, forked or linked, and no
+Obscura source is copied. Loams therefore does not redistribute Obscura's
+Apache-2.0 notice with this file. The release asset an operator installs is
+Obscura's own, under its own licence, and the pinned version is recorded in
+crates/loams-sidebar-browser/src/engine.rs.
+
+dsh-desktop (https://github.com/dataelement/dsh-desktop), MIT License,
+Copyright (c) 2026 DataElement. apps/desktop-electron adapts parts of its
+Electron shell (build configuration and main-process patterns); each adapted
+file carries an attribution header. See apps/desktop-electron/NOTICE.

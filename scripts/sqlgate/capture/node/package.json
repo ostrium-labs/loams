@@ -1,0 +1,9 @@
+{
+  "name": "loams-sqlgate-capture",
+  "private": true,
+  "description": "mysql2 client for the gate codec fixtures (SQ1 Task 3); run by capture.sh in the pinned node image",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "mysql2": "3.15.3"
+  }
+}

@@ -1,0 +1,25 @@
+{
+    "name": "loams/loams",
+    "description": "Official PHP client for Loams",
+    "type": "library",
+    "license": "Apache-2.0",
+    "require": {
+        "php": ">=8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.5 || ^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Loams\\": "src/"
+        },
+        "classmap": [
+            "src/"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Loams\\Tests\\": "tests/"
+        }
+    }
+}

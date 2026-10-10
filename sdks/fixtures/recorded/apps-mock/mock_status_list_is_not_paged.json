@@ -1,0 +1,157 @@
+{
+  "name": "mock_status_list_is_not_paged",
+  "kind": "status",
+  "about": "Recorded to pin a **fact about the corpus**: `ListApprovals` declares `page_size` and answers `next_page_token` in its response message, but the mock honours neither — it returns every matching approval and no token, whatever `page_size` says. So there is still **no paged RPC anywhere** and R6 remains pinned against a stub. This fixture is what turns that claim from an assertion into a recording: when API1 Task 2 lands a real `ListCollections`, this case starts returning a token and the fixture changes.",
+  "transport": "connect",
+  "required": false,
+  "pinnedBy": [
+    "R6"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:12.475Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at"
+  ],
+  "steps": [
+    {
+      "about": "page_size 1 against a two-approval seed: both come back.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.approvals.v1.ApprovalService/ListApprovals",
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer mock-access-usr_omar"
+        },
+        "body": "{\"pageSize\":1}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "approvals": [
+            {
+              "id": "apr_01J9ZCREATEKEY",
+              "revision": "1",
+              "operationId": "op-0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+              "promiseId": "prm_create_key",
+              "kind": "key.create",
+              "environment": {
+                "id": "env_dev",
+                "project": "prj_search",
+                "name": "development",
+                "namespace": "search-dev"
+              },
+              "requestedBy": {
+                "id": "usr_dana",
+                "kind": "PRINCIPAL_KIND_USER",
+                "displayName": "Dana",
+                "email": "dana@example.com"
+              },
+              "actorChain": [
+                {
+                  "id": "usr_dana",
+                  "kind": "PRINCIPAL_KIND_USER",
+                  "displayName": "Dana",
+                  "email": "dana@example.com"
+                }
+              ],
+              "summary": "Create an API key for search-dev",
+              "detailLines": [
+                "Scopes: collections:read, query"
+              ],
+              "risk": "RISK_LOW",
+              "policy": {
+                "requiredApprovals": 1,
+                "approverRoles": [
+                  "project_admin"
+                ],
+                "stepUp": "STEP_UP_NONE"
+              },
+              "state": "APPROVAL_STATE_PENDING",
+              "createdAt": "2026-10-04T05:53:42.461146005Z",
+              "expiresAt": "2026-10-07T05:54:12.461146005Z"
+            },
+            {
+              "id": "apr_01J9ZDROPDOCS",
+              "revision": "1",
+              "operationId": "op-5f0c1e2d3b4a59687766554433221100",
+              "promiseId": "prm_drop_docs",
+              "kind": "collection.drop",
+              "environment": {
+                "id": "env_prod",
+                "project": "prj_search",
+                "name": "production",
+                "namespace": "search-prod",
+                "protected": true
+              },
+              "requestedBy": {
+                "id": "agt_claude",
+                "kind": "PRINCIPAL_KIND_AGENT",
+                "displayName": "Claude (for Dana)"
+              },
+              "actorChain": [
+                {
+                  "id": "agt_claude",
+                  "kind": "PRINCIPAL_KIND_AGENT",
+                  "displayName": "Claude (for Dana)"
+                },
+                {
+                  "id": "usr_dana",
+                  "kind": "PRINCIPAL_KIND_USER",
+                  "displayName": "Dana",
+                  "email": "dana@example.com"
+                }
+              ],
+              "summary": "Drop the collection docs in production",
+              "detailLines": [
+                "Collection: docs (1 204 331 documents)",
+                "Requested by Claude, acting for Dana",
+                "This cannot be undone."
+              ],
+              "target": {
+                "name": "docs"
+              },
+              "risk": "RISK_DESTRUCTIVE",
+              "policy": {
+                "requiredApprovals": 1,
+                "approverRoles": [
+                  "project_admin"
+                ],
+                "stepUp": "STEP_UP_SESSION"
+              },
+              "state": "APPROVAL_STATE_PENDING",
+              "createdAt": "2026-10-04T05:52:12.461146005Z",
+              "expiresAt": "2026-10-07T05:54:12.461146005Z"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "itemCount": 2,
+        "nextPageToken": null
+      }
+    }
+  ]
+}

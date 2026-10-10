@@ -1,0 +1,380 @@
+// The connector manifest in protobuf (design §33 §4, D352 and D353; CN1 plan
+// Task 1).
+//
+// One versioned manifest per connector, held as YAML under
+// `connectors/registry/<id>.yaml` and validated by CI (D352). The YAML is the
+// source: §33 §4's last paragraph says the protobuf form mirrors it one to one
+// and CI checks that both agree, so every message, field and enum value below
+// has a YAML counterpart with the same meaning. YAML camelCase keys map to
+// lower_snake_case field names; the JSON/YAML mapping is the canonical name
+// mapping, so `specVersion` is `spec_version` and so on.
+//
+// Two YAML keys have no field here at all: `apiVersion` and `kind` are `const`
+// in `connectors/schema/connector.schema.json` and are checked when the
+// manifest is read, because they say which file shape the rest of it has rather
+// than anything about the connector. Two more are renamed to say what they
+// hold: `specVersion` is `spec_version`, and `config: {$ref: …}` is the single
+// key `config_ref`.
+//
+// Buf wiring is not this task's. The root `buf.yaml` declares
+// `modules: - path: proto`, so `fabric/proto` is outside the module today; CN1
+// Task 3's `flow.proto` (which owns `FlowService`, and with it
+// `ListConnectors` and `DescribeConnector` — D352's serving API) and FL1's
+// `.github/workflows/fabric.yml` job are what add this tree to the module. The
+// file is kept lint-clean against the STANDARD rules by inspection until then:
+// PascalCase message names, lower_snake_case fields, UPPER_SNAKE_CASE enum
+// values each prefixed with their enum's name and with an `_UNSPECIFIED` zero
+// value, no `optional` scalars (optional submessages are message fields, where
+// presence is the signal), and `package loams.flow.v1` matching the directory.
+//
+// That prefix rule shows in the values, which carry their enum's name in full —
+// `CATEGORY_MESSAGING`, `SUITE_CONTRACT`, `ORDERING_NONE`,
+// `REGISTRY_REQUIREMENT_NONE`, `AUTH_METHOD_KEY` — as every enum under `proto/`
+// already does (`loams.instance.v1`'s `SIGN_IN_KIND_NONE`,
+// `loams.operations.v1`'s `OPERATION_STATE_*`). Each value's comment gives the
+// YAML spelling it mirrors, so the one-to-one mapping stays legible; the
+// numbering is the YAML declaration order in every enum.
+syntax = "proto3";
+
+package loams.flow.v1;
+
+// One connector's manifest: what it is, which runtime runs it (D354), what it
+// can do (D353) and what it is licensed under (D359).
+message ConnectorSpec {
+  // `id`: the connector's registry key, unique across the registry
+  // ([a-z0-9-]{1,48}); `kafka` in §33 §4.
+  string id = 1;
+  // `name`: the display name, for example "Apache Kafka".
+  string name = 2;
+  // `specVersion`: the version of *this manifest*, as semver in a string. A
+  // capability removed or narrowed bumps the major (§33 §4 rule 4); routes
+  // pinned to the old major keep running until migrated. A string, not a
+  // message: `semver` is a crate, not a wire type, and the loader parses it.
+  string spec_version = 3;
+  Category category = 4;
+  // P1 = the ★ set of CN1, P2 = CN2's stock Camel and Iggy connectors, P3 =
+  // CN3's long tail (§33 §8, D358).
+  Priority priority = 5;
+  // True for the ★ connectors of §33 §8 (D358). CN1's semantic rules imply
+  // `priority = P1` from `starred`.
+  bool starred = 6;
+  Status status = 7;
+  // Which runtime runs this connector, and the pinned version (D354).
+  RuntimeRef runtime = 8;
+  // The licences the licence gate checks (D359). SaaS services reached through
+  // their public API are not a licence question, so their `component` names the
+  // service and `dependencies` is empty.
+  Licence licence = 9;
+  // What the connector can do (D353). Every field is declared, never inferred:
+  // `ValidateRoute` refuses a route that uses an undeclared capability
+  // (§33 §4 rule 1) and the contract tests prove each declared one (rule 3).
+  Capabilities capabilities = 10;
+  // The auth methods the connector accepts (§33 Appendix A's legend).
+  repeated AuthMethod auth = 11;
+  // `config.$ref`: the repository-relative path of the JSON Schema 2020-12 that
+  // validates an *instance's* settings, under `connectors/schemas/`. The YAML
+  // spells this as the single-key object `config: {$ref: …}`; the protobuf form
+  // flattens that one-key object to its value, which is the only key the
+  // manifest's own schema allows.
+  string config_ref = 12;
+  // The config fields that hold secrets, named; resolved through the
+  // namespace's secret store (D189) and never stored in the instance (CN1's
+  // Global Constraints: no secret in a manifest, an instance spec, a rendered
+  // config, a log line or an error).
+  repeated string secrets = 13;
+  // The CloudEvents types the connector emits and consumes (D355). `consumes`
+  // is "*" for a sink that takes any type; `passthrough` marks a source whose
+  // input already is a CloudEvent and keeps its producer's type, source and id.
+  EnvelopeDecl envelope = 14;
+  // The bounds the runtime enforces on this connector's records and batches
+  // (Ruling 3's `batch_bytes`, D356's Arrow batches).
+  Limits limits = 15;
+  // The conformance suites this connector passes (§33 §4 rule 3).
+  repeated Suite conformance = 16;
+  // `docs`: the guide page for this connector; empty when there is none.
+  string docs = 17;
+}
+
+// §33 §4's `category` comment: the kind of system the connector speaks to.
+enum Category {
+  CATEGORY_UNSPECIFIED = 0;
+  CATEGORY_MESSAGING = 1;         // `messaging`
+  CATEGORY_RELATIONAL = 2;        // `relational`
+  CATEGORY_NOSQL = 3;             // `nosql`
+  CATEGORY_SEARCH = 4;            // `search`
+  CATEGORY_VECTOR = 5;            // `vector`
+  CATEGORY_GRAPH = 6;             // `graph`
+  CATEGORY_WAREHOUSE = 7;         // `warehouse`
+  CATEGORY_LAKEHOUSE = 8;         // `lakehouse`
+  CATEGORY_OBJECT_STORAGE = 9;    // `object-storage`
+  CATEGORY_FORMAT = 10;           // `format`
+  CATEGORY_CDC = 11;              // `cdc`
+  CATEGORY_INTEGRATION = 12;      // `integration`
+  CATEGORY_SAAS = 13;             // `saas`
+  CATEGORY_OBSERVABILITY = 14;    // `observability`
+  CATEGORY_INFRA = 15;            // `infra`
+  CATEGORY_IDENTITY = 16;         // `identity`
+  CATEGORY_AI = 17;               // `ai`
+  CATEGORY_PROTOCOL = 18;         // `protocol`
+}
+
+// §33 §4's `priority`: the rollout phase, which is also the build order within
+// CN1 (§33 §8, D358).
+enum Priority {
+  PRIORITY_UNSPECIFIED = 0;
+  PRIORITY_P1 = 1;            // `P1`: the 21 ★ connectors of CN1 (D358)
+  PRIORITY_P2 = 2;            // `P2`: CN2, through stock Camel components or Iggy plugins
+  PRIORITY_P3 = 3;            // `P3`: CN3, the long tail through OpenAPI-generated connectors
+}
+
+// §33 §4's `status`.
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_PLANNED = 1;        // `planned`: a generated stub with no capability detail yet
+  STATUS_PREVIEW = 2;        // `preview`
+  STATUS_STABLE = 3;         // `stable`
+  STATUS_DEPRECATED = 4;     // `deprecated`: superseded; the major is kept for pinned routes
+}
+
+// §33 §5's runtimes (D354): `native` Rust in `loams-flow`, Iggy's connectors
+// runtime, `loams-connect` (unmodified Camel), Debezium Server, or a native
+// connector generated from an OpenAPI spec.
+enum RuntimeKind {
+  RUNTIME_KIND_UNSPECIFIED = 0;
+  RUNTIME_KIND_NATIVE = 1;        // `native`: `loams_flow::connectors::<id>` in the `flow` process
+  RUNTIME_KIND_IGGY = 2;          // `iggy`: a plugin of Iggy's connectors runtime
+  RUNTIME_KIND_CAMEL = 3;         // `camel`: a Camel URI scheme in `loams-connect`
+  RUNTIME_KIND_DEBEZIUM = 4;      // `debezium`: a Debezium connector class in Debezium Server
+  RUNTIME_KIND_OPENAPI = 5;       // `openapi`: a generated native connector
+}
+
+// §33 §4's `capabilities.ordering`.
+enum Ordering {
+  ORDERING_UNSPECIFIED = 0;
+  ORDERING_NONE = 1;             // `none`
+  ORDERING_PER_KEY = 2;          // `per_key`
+  ORDERING_PER_PARTITION = 3;    // `per_partition`
+  ORDERING_TOTAL = 4;            // `total`
+}
+
+// The delivery guarantee one direction of a connector offers (§33 §4's
+// `capabilities.delivery`, D355). Every runtime is at-least-once underneath;
+// `EXACTLY_ONCE` is a claim only where the external system deduplicates
+// (§33 §2.2).
+enum Delivery {
+  DELIVERY_UNSPECIFIED = 0;
+  DELIVERY_AT_MOST_ONCE = 1;      // `at_most_once`
+  DELIVERY_AT_LEAST_ONCE = 2;     // `at_least_once`
+  DELIVERY_EXACTLY_ONCE = 3;      // `exactly_once`
+}
+
+// The wire and payload formats a connector emits or consumes (§33 §4's
+// `capabilities.formats`). CloudEvents is the envelope for everything else
+// (D355), and Avro appears only at Kafka and schema-registry boundaries (D356).
+enum Format {
+  FORMAT_UNSPECIFIED = 0;
+  FORMAT_CLOUDEVENTS_BINARY = 1;      // `cloudevents-binary`
+  FORMAT_CLOUDEVENTS_STRUCTURED = 2;  // `cloudevents-structured`
+  FORMAT_JSON = 3;                    // `json`
+  FORMAT_AVRO = 4;                    // `avro`
+  FORMAT_PROTOBUF = 5;                // `protobuf`
+  FORMAT_BYTES = 6;                   // `bytes`
+  FORMAT_ARROW = 7;                   // `arrow`: Arrow IPC stream bytes (Ruling 3)
+  FORMAT_PARQUET = 8;                 // `parquet`
+  FORMAT_CSV = 9;                     // `csv`
+  FORMAT_NDJSON = 10;                 // `ndjson`
+}
+
+// §33 §4's `capabilities.schema.registry`: whether a schema registry is
+// needed, optional or part of the contract.
+enum RegistryRequirement {
+  REGISTRY_REQUIREMENT_UNSPECIFIED = 0;
+  REGISTRY_REQUIREMENT_NONE = 1;  // `none`
+  REGISTRY_REQUIREMENT_OPTIONAL = 2;  // `optional`
+  REGISTRY_REQUIREMENT_REQUIRED = 3;  // `required`
+}
+
+// §33 §4's `capabilities.schema.evolution`.
+enum Evolution {
+  EVOLUTION_UNSPECIFIED = 0;
+  EVOLUTION_NONE = 1;                 // `none`
+  EVOLUTION_BACKWARD = 2;             // `backward`
+  EVOLUTION_BACKWARD_TRANSITIVE = 3;  // `backward_transitive`
+  EVOLUTION_FULL = 4;                 // `full`
+}
+
+// §33 §4's `capabilities.backpressure`: how a sink tells the Fabric to slow
+// down.
+enum Backpressure {
+  BACKPRESSURE_UNSPECIFIED = 0;
+  BACKPRESSURE_PULL = 1;                // `pull`
+  BACKPRESSURE_PUSH_WITH_ACK = 2;       // `push-with-ack`
+  BACKPRESSURE_PUSH_RATE_LIMITED = 3;   // `push-rate-limited`
+}
+
+// The auth methods a connector takes (§33 Appendix A's legend, §33 §4's `auth`).
+enum AuthMethod {
+  AUTH_METHOD_UNSPECIFIED = 0;
+  AUTH_METHOD_NONE = 1;             // `none`
+  AUTH_METHOD_BASIC = 2;            // `basic`: user and password
+  AUTH_METHOD_KEY = 3;              // `key`: API key or token
+  AUTH_METHOD_OAUTH2 = 4;           // `oauth2`
+  AUTH_METHOD_JWT = 5;              // `jwt`
+  AUTH_METHOD_HMAC = 6;             // `hmac`: signed payloads
+  AUTH_METHOD_MTLS = 7;             // `mtls`
+  AUTH_METHOD_SASL = 8;             // `sasl`: PLAIN or SCRAM
+  AUTH_METHOD_SASL_PLAIN = 9;       // `sasl-plain`
+  AUTH_METHOD_SASL_SCRAM_256 = 10;  // `sasl-scram-256`
+  AUTH_METHOD_SASL_SCRAM_512 = 11;  // `sasl-scram-512`
+  AUTH_METHOD_AWS_MSK_IAM = 12;     // `aws-msk-iam`
+  AUTH_METHOD_IAM = 13;             // `iam`: AWS
+  AUTH_METHOD_SA = 14;              // `sa`: GCP service account or workload identity
+  AUTH_METHOD_AAD = 15;             // `aad`: Entra ID
+  AUTH_METHOD_SSH = 16;             // `ssh`
+  AUTH_METHOD_KERB = 17;            // `kerb`: Kerberos
+  AUTH_METHOD_CS = 18;              // `cs`: connection string
+  AUTH_METHOD_PER_DRIVER = 19;      // `per-driver`: a credential per driver instance (ADBC, Ruling 9)
+  AUTH_METHOD_PER_SPEC = 20;        // `per-spec`: a credential per OpenAPI operation
+  AUTH_METHOD_PER_COMPONENT = 21;   // `per-component`: a credential per Camel component
+}
+
+// §33 §4's `conformance`: the suites a connector passes (rule 3).
+enum Suite {
+  SUITE_UNSPECIFIED = 0;
+  SUITE_CONTRACT = 1;         // `contract`: one check per declared capability
+  SUITE_ROUNDTRIP = 2;        // `roundtrip`: sink → source returns the events
+  SUITE_KILL_RESTART = 3;     // `kill-restart`: no loss after killing the runtime mid-batch
+  SUITE_DUP_CHECK = 4;        // `dup-check`: duplicates bounded by the declared delivery
+  SUITE_BULK = 5;             // `bulk`: the Arrow path at 1 M rows
+  SUITE_CDC = 6;              // `cdc`: inserts, updates, deletes, DDL, slot or binlog resume
+}
+
+// §33 §4's `runtime`: which runtime runs the connector and what it points at.
+// A message, not an enum with a variant per runtime: the plan's Rust
+// `RuntimeRef` enum has the same five shapes, and a message keeps one shape on
+// the wire for all of them (so `ref` stays a plain string in generated code).
+message RuntimeRef {
+  RuntimeKind kind = 1;
+  // Crate path (`loams_flow::connectors::kafka`), Iggy plugin name, Camel URI
+  // scheme, Debezium connector class or OpenAPI spec URL, per runtime kind
+  // (§33 §4's `runtime.ref` comment).
+  string ref = 2;
+  // The pinned driver or library version behind `ref`, free-form because it
+  // spans crates and native builds, for example
+  // "rdkafka 0.39 / librdkafka 2.x".
+  string version = 3;
+}
+
+// §33 §4's `licence`, as the D359 gate reads it: the runtime component's own
+// licence, and the licence of every library or driver it loads.
+message Licence {
+  // An SPDX id, for example "Apache-2.0". The gate refuses AGPL, BSL, SSPL,
+  // ELv2, `NOASSERTION` and unknown ids for anything in the image (D359).
+  string component = 1;
+  // Loaded dependencies by name, for example {"librdkafka": "BSD-2-Clause"}.
+  map<string, string> dependencies = 2;
+}
+
+// §33 §4's `capabilities` (D353). `source` and `sink` are optional, because a
+// connector may be one direction only (a webhook source, a JDBC sink); presence
+// of the message is the declaration, which is why these are message fields and
+// not wrapped in `optional`.
+message Capabilities {
+  SourceCaps source = 1;
+  SinkCaps sink = 2;
+  // The delivery guarantee per direction (§33 §6: every runtime is
+  // at-least-once underneath, and the target's own dedup makes it effectively
+  // once).
+  DeliveryCaps delivery = 3;
+  Ordering ordering = 4;
+  repeated Format formats = 5;
+  SchemaCaps schema = 6;
+  // Bulk is Arrow, never row by row (D356); `max_batch_rows` is the batch size
+  // Ruling 3 defaults to 65 536.
+  BulkCaps bulk = 7;
+  Backpressure backpressure = 8;
+}
+
+// §33 §4's `capabilities.source`. `cdc: true` implies `streaming` and a
+// non-empty `position` (CN1 Task 1's semantic rules).
+message SourceCaps {
+  // `streaming`: continuous, low-latency delivery.
+  bool streaming = 1;
+  // `batch`: bulk or scheduled transfer.
+  bool batch = 2;
+  // `cdc`: row-level change capture (§33 §7, D357).
+  bool cdc = 3;
+  // `webhook`: receives webhooks as a source (CN1 Task 4's signed schemes).
+  bool webhook = 4;
+  // `resumable`: restarts from a committed position, which is what makes the
+  // at-least-once source safe to restart (Ruling 4).
+  bool resumable = 5;
+  // `position`: what the source checkpoints, for example "kafka-offsets" or a
+  // binlog position; free-form, since each system names its own.
+  string position = 6;
+}
+
+// §33 §4's `capabilities.sink`.
+message SinkCaps {
+  bool streaming = 1;
+  bool batch = 2;
+  // `transactional`: the sink writes in the target's transaction.
+  bool transactional = 3;
+  // `upsert`: the sink upserts by a declared key, which a route needs before
+  // it may upsert (§33 §4 rule 1).
+  bool upsert = 4;
+  // `delete`: the sink applies deletes, which CDC routes need.
+  bool delete = 5;
+  // `idempotent`: the sink dedupes retries itself, for example Kafka's
+  // idempotent producer. `delivery.sink = exactly_once` requires this or
+  // `transactional` (CN1 Task 1's semantic rules).
+  bool idempotent = 6;
+}
+
+// §33 §4's `capabilities.delivery`, one guarantee per direction.
+message DeliveryCaps {
+  Delivery source = 1;
+  Delivery sink = 2;
+}
+
+// §33 §4's `capabilities.schema`: whether a registry is involved, and how the
+// connector evolves a schema on it.
+message SchemaCaps {
+  RegistryRequirement registry = 1;
+  Evolution evolution = 2;
+}
+
+// §33 §4's `capabilities.bulk`.
+message BulkCaps {
+  // `arrow`: the connector takes or produces Arrow batches (D356).
+  bool arrow = 1;
+  // `max_batch_rows`: rows per Arrow batch; 65 536 by default (Ruling 3).
+  int64 max_batch_rows = 2;
+}
+
+// §33 §4's `envelope` (D355). A source emits one CloudEvent per record, row
+// change or file with `type` = `io.loams.dev.flow.<connector>.<event>.v1` and
+// `source` = `/connectors/<instance>/<resource>`.
+message EnvelopeDecl {
+  // The CloudEvents type this connector emits, for example
+  // "io.loams.dev.flow.kafka.record.v1"; empty when it emits none.
+  string emits = 1;
+  // The type it consumes, or "*" for any type.
+  string consumes = 2;
+  // `passthrough`: input that already is a valid CloudEvent keeps its
+  // producer's `type`, `source` and `id`, and the connector adds only the
+  // `loamsconnector` and `loamsinstance` extensions (§33 §6). Such a manifest
+  // declares it, and its contract test checks both the pass-through and the
+  // wrapped case.
+  bool passthrough = 3;
+}
+
+// §33 §4's `limits`. Absent bounds mean the runtime's defaults apply.
+message Limits {
+  // The largest single record the connector accepts or emits, in bytes.
+  int64 max_record_bytes = 1;
+  int64 batch_rows = 2;
+  // The largest batch the connector sends; Ruling 3's default is 8 MiB, which
+  // Iggy's message size limit caps.
+  int64 batch_bytes = 3;
+}

@@ -1,0 +1,2 @@
+# The CI variant of tidb.toml: the TiDB serves the test keyspace.
+keyspace-name = "loams_test_sql"

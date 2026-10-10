@@ -1,0 +1,10 @@
+# The vendored app protos (see docs/protos.md). Lint is STANDARD, as upstream.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

@@ -1,0 +1,112 @@
+{
+  "name": "mock_status_get_instance",
+  "kind": "status",
+  "about": "`GetInstance` with **no credential at all**, which is the R9 contract: the version check must work before a caller has a token, and the SDK reports `api_versions` beside its own `PROTO_REV`. Note what is absent: there is no `services[]` here, so the R5 catalogue half is still unexercised outside `loams dev` (D600 has not landed in the mock).",
+  "transport": "connect",
+  "required": true,
+  "pinnedBy": [
+    "R9"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams-apps-mock",
+    "commit": "unknown",
+    "recordedAt": "2026-10-04T05:54:12.418Z",
+    "heartbeatSecs": 1
+  },
+  "volatile": [
+    "createdAt",
+    "updatedAt",
+    "expiresAt",
+    "decidedAt",
+    "startedAt",
+    "finishedAt",
+    "lastSeenAt",
+    "at",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "decided_at",
+    "started_at",
+    "finished_at",
+    "last_seen_at",
+    "response.bodyBase64"
+  ],
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/loams.instance.v1.InstanceService/GetInstance",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "instanceId": "01J9Z3MOCKINSTANCE00000000",
+          "name": "Loams (mock)",
+          "edition": "EDITION_OSS",
+          "serverVersion": "0.0.1",
+          "apiVersions": [
+            "loams.instance.v1",
+            "loams.devices.v1",
+            "loams.approvals.v1",
+            "loams.operations.v1",
+            "loams.notifications.v1"
+          ],
+          "features": {
+            "passkeys": true,
+            "billing": false
+          },
+          "issuer": "https://mock.loams.invalid",
+          "jwksUri": "https://mock.loams.invalid/.well-known/jwks.json",
+          "signInMethods": [
+            {
+              "kind": "SIGN_IN_KIND_AUTHENTIK",
+              "issuer": "https://authentik.mock.loams.invalid/application/o/loams/",
+              "clientId": "loams-desktop",
+              "displayName": "Sign in with Authentik"
+            }
+          ],
+          "minAppVersions": {
+            "android": "0.1.0",
+            "desktop": "0.1.0",
+            "ios": "0.1.0"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "apiVersions": [
+          "loams.instance.v1"
+        ]
+      }
+    },
+    {
+      "about": "The same call in binary protobuf: the fields must agree.",
+      "request": {
+        "method": "POST",
+        "path": "/loams.instance.v1.InstanceService/GetInstance",
+        "headers": {
+          "content-type": "application/proto"
+        },
+        "bodyBase64": ""
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/proto"
+        },
+        "bodyBase64": "ChowMUo5WjNNT0NLSU5TVEFOQ0UwMDAwMDAwMBIMTG9hbXMgKG1vY2spGAEiBTAuMC4xKhFsb2Ftcy5pbnN0YW5jZS52MSoQbG9hbXMuZGV2aWNlcy52MSoSbG9hbXMuYXBwcm92YWxzLnYxKhNsb2Ftcy5vcGVyYXRpb25zLnYxKhZsb2Ftcy5ub3RpZmljYXRpb25zLnYxMgwKCHBhc3NrZXlzEAEyCwoHYmlsbGluZxAAOhpodHRwczovL21vY2subG9hbXMuaW52YWxpZEIwaHR0cHM6Ly9tb2NrLmxvYW1zLmludmFsaWQvLndlbGwta25vd24vandrcy5qc29uSmQIAhI5aHR0cHM6Ly9hdXRoZW50aWsubW9jay5sb2Ftcy5pbnZhbGlkL2FwcGxpY2F0aW9uL28vbG9hbXMvGg1sb2Ftcy1kZXNrdG9wIhZTaWduIGluIHdpdGggQXV0aGVudGlrYhAKB2FuZHJvaWQSBTAuMS4wYhAKB2Rlc2t0b3ASBTAuMS4wYgwKA2lvcxIFMC4xLjA="
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

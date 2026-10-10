@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Loams console WebMCP detection — a real Chrome</title>
+  </head>
+  <body>
+    <!--
+      AP1d Task 4. Loaded only by browser/harness.mjs, which serves it from
+      loopback so the page is in a secure context — `document.modelContext` is
+      `[SecureContext]`, and a page that is not secure would make the
+      absent-API assertion pass for the wrong reason.
+    -->
+    <p id="status">running the WebMCP detection scenarios…</p>
+    <script type="module" src="/page.mjs"></script>
+  </body>
+</html>

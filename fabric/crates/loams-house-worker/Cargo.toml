@@ -1,0 +1,69 @@
+[package]
+name = "loams-house-worker"
+description = "The Loams House worker: the only binary that links libchdb. It speaks `hsw1` to the front over the socket it inherits as fd 3, serves one namespace, and holds no credentials (HS1 Task 2, design §49 §4)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# The rpath to the digest-pinned `libchdb.so` (FL2 Ruling 2), for the binary and
+# this package's test binaries; see the file.
+build = "build.rs"
+publish = false
+
+[[bin]]
+name = "loams-house-worker"
+path = "src/main.rs"
+
+[features]
+# The worker's serve loop as a library call, for `loams-house`'s `InprocWorker`
+# (`--workers=inproc`): chDB in the front's own process, for development and the
+# desktop only (§49 §4.1, Q686). Nothing extra is compiled for it today; the
+# feature names the dependency edge so `cargo tree` shows who asked for libchdb.
+inproc-worker = []
+
+[dependencies]
+bytes.workspace = true
+loams-chdb = { path = "../loams-chdb" }
+# The `links = "chdb"` package: its build script hands `DEP_CHDB_LIB_DIR` to this
+# package's `build.rs` for the rpath, and `inherited::take_socket` is the one
+# `unsafe` call the worker needs (fd 3 to an `OwnedFd`), kept in the workspace's
+# only `unsafe` crate (FL2 Ruling 8).
+loams-chdb-sys = { path = "../loams-chdb-sys" }
+loams-house-ipc = { path = "../loams-house-ipc" }
+# L3 (HS1 Task 6): Landlock rules and the seccomp filter, both with safe APIs.
+landlock.workspace = true
+seccompiler.workspace = true
+# L3: the user and network namespaces (`unshare`), `lo` raised over rtnetlink,
+# `RLIMIT_CORE`, and the thread count check, without `unsafe` in Loams code.
+nix = { workspace = true, features = ["sched", "socket", "resource", "user", "signal"] }
+# The system call numbers and constants the seccomp filter names.
+libc.workspace = true
+
+[dev-dependencies]
+# Reading the Arrow, ArrowStream and Parquet bytes back with real readers in
+# `worker_answers_select_one_in_every_format`.
+# chDB writes `Arrow`/`ArrowStream` LZ4-compressed by default
+# (`output_format_arrow_compression_method = lz4_frame`), so the reader needs
+# arrow's IPC compression.
+arrow = { workspace = true, features = ["ipc_compression"] }
+bytes.workspace = true
+# The supervisor the tests drive this binary through.
+loams-house = { path = "../loams-house", features = ["test-hooks"] }
+# `Frame::Abort` for `crash_does_not_reach_the_front`. A dev-dependency feature
+# reaches the binary only in a test build, never in `cargo build`.
+loams-house-ipc = { path = "../loams-house-ipc", features = ["test-hooks"] }
+# `tests/http.rs`: the summary and progress headers are JSON, and bodies are
+# compressed both ways.
+flate2.workspace = true
+serde_json.workspace = true
+zstd.workspace = true
+# `fd3.rs` starts the worker with a wrong fd 3, which needs `posix_spawn`.
+nix.workspace = true
+parquet.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
+# `classify_oracle.rs`: statement-shaped text for the classifier oracle.
+proptest.workspace = true
+
+[lints]
+workspace = true

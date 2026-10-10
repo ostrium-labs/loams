@@ -1,0 +1,111 @@
+# The router specs and their model-checking variants (RT0 Task 1; format in spec/tla/router/README.md).
+# expect = "ok" | "violation:<Invariant>" | "violation:temporal"; pr = run on PRs; nightly = run on schedule.
+
+[[spec]]
+name = "ShardMap"
+model = "MCShardMap.tla"
+
+[[spec.variant]]
+cfg = "MCShardMap_Small.cfg"
+expect = "ok"
+pr = true
+nightly = true
+apalache = ["SingleWriter"]
+apalache_cinit = "CInitSmall"
+apalache_length = 8
+
+[[spec.variant]]
+cfg = "MCShardMap_UnsafeConfigMap.cfg"
+expect = "violation:SingleWriter"
+pr = true
+nightly = true
+
+[[spec.variant]]
+cfg = "MCShardMap_Nightly.cfg"
+expect = "ok"
+nightly = true
+
+[[spec]]
+name = "ReshardCutover"
+model = "MCReshardCutover.tla"
+
+[[spec.variant]]
+cfg = "MCReshardCutover_Small.cfg"
+expect = "ok"
+pr = true
+nightly = true
+apalache = ["SingleWriterRange"]
+apalache_cinit = "CInitSmall"
+apalache_length = 10
+
+[[spec.variant]]
+cfg = "MCReshardCutover_CrashSaga.cfg"
+expect = "ok"
+pr = true
+nightly = true
+
+[[spec.variant]]
+cfg = "MCReshardCutover_NoFence.cfg"
+expect = "violation:SingleWriterRange"
+pr = true
+nightly = true
+
+[[spec.variant]]
+cfg = "MCReshardCutover_Nightly.cfg"
+expect = "ok"
+nightly = true
+
+[[spec]]
+name = "Lifecycle"
+model = "MCLifecycle.tla"
+
+[[spec.variant]]
+cfg = "MCLifecycle_Small.cfg"
+expect = "ok"
+pr = true
+nightly = true
+
+[[spec.variant]]
+cfg = "MCLifecycle_LateAbort.cfg"
+expect = "violation:NoSessionOnStoppedPool"
+pr = true
+nightly = true
+
+[[spec.variant]]
+cfg = "MCLifecycle_Nightly.cfg"
+expect = "ok"
+nightly = true
+
+# The Lifecycle machine's committed sample trace (Task 5, D311); the Rust
+# test lifecycle_trace_validates keeps it equal to the machine's run.
+[[spec]]
+name = "LifecycleTrace"
+model = "MCLifecycleTrace.tla"
+
+[[spec.variant]]
+cfg = "MCLifecycleTrace_Sample.cfg"
+expect = "ok"
+pr = true
+nightly = true
+
+[[spec.variant]]
+cfg = "MCLifecycleTrace_Mutated.cfg"
+expect = "violation:temporal"
+pr = true
+nightly = true
+
+# Skeletons: parsed (SANY) on every PR, model-checked from the phase named in each header.
+[[spec]]
+name = "CrossShardCommit"
+model = "CrossShardCommit.tla"
+parse_only = true
+
+[[spec]]
+name = "PrimaryFailover"
+model = "PrimaryFailover.tla"
+parse_only = true
+
+[[spec]]
+name = "RouterSession"
+model = "RouterSession.tla"
+parse_only = true

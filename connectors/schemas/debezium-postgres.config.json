@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loams.dev/schemas/debezium-postgres.config.json",
+  "title": "Debezium-Postgres connector instance config (loams.flow/v1)",
+  "description": "One Debezium-Postgres CDC instance's settings: the source database and the properties loams-fabric renders into Debezium Server's application.properties. This is a source-only connector (design §33 §8 row 4; CN1 plan Task 8, §33 §7 D357). `password` and `tls.key_pem` resolve through the namespace's secret store (D189) and are exactly the manifest's `secrets` list; the rendered properties file reads them from files mounted at run time, never from this config (CN1 Ruling 6, Global Constraints).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["connector_class", "hostname", "database", "topic_prefix"],
+  "properties": {
+    "connector_class": {
+      "description": "The Debezium connector class, matching the manifest's runtime.ref.",
+      "type": "string",
+      "const": "io.debezium.connector.postgresql.PostgresConnector"
+    },
+    "hostname": { "description": "The source Postgres host.", "type": "string", "minLength": 1 },
+    "port": { "description": "The source Postgres port.", "type": "integer", "minimum": 1, "default": 5432 },
+    "database": { "description": "The source database name.", "type": "string", "minLength": 1 },
+    "user": { "description": "The replication role Debezium connects as; it needs REPLICATION and SELECT.", "type": "string", "minLength": 1 },
+    "password": {
+      "description": "The replication role's password. Resolved through the secret store (D189); the rendered properties file reads it from a mounted file.",
+      "type": "string",
+      "minLength": 1,
+      "writeOnly": true
+    },
+    "topic_prefix": {
+      "description": "The Debezium topic prefix; topics become <prefix>.<schema>.<table> (§33 §7).",
+      "type": "string",
+      "minLength": 1
+    },
+    "slot_name": {
+      "description": "The logical replication slot. CN1 Task 8 names slots loams_<instance>; derived from the instance when omitted.",
+      "type": "string",
+      "minLength": 1
+    },
+    "publication_name": {
+      "description": "The publication Debezium subscribes to. CN1 Task 8 names publications loams_<instance>; derived from the instance when omitted.",
+      "type": "string",
+      "minLength": 1
+    },
+    "publication_autocreate_mode": {
+      "description": "Whether Debezium creates the publication when it is absent (Debezium's filtered mode).",
+      "type": "string",
+      "enum": ["all_tables", "disabled", "filtered"],
+      "default": "filtered"
+    },
+    "snapshot_mode": {
+      "description": "The initial snapshot mode (CN1 Task 8: snapshot.mode=initial; incremental snapshots go through the signal table).",
+      "type": "string",
+      "enum": ["initial", "initial_only", "no_data", "always", "never", "no_data_only"],
+      "default": "initial"
+    },
+    "table_include_list": {
+      "description": "Tables to capture, as a regex; all tables when omitted.",
+      "type": "string",
+      "default": ".*"
+    },
+    "signal_table": {
+      "description": "The incremental-snapshot signal table (CN1 Task 8, §33 §7).",
+      "type": "string",
+      "minLength": 1
+    },
+    "plugin_name": {
+      "description": "The logical decoding output plugin; wal2json for a server without test_decoding.",
+      "type": "string",
+      "enum": ["pgoutput", "decoderbufs", "wal2json"],
+      "default": "pgoutput"
+    },
+    "ingest_url": {
+      "description": "The HTTP sink URL, http://<ingest>/v1/namespaces/{ns}/fabric/topics/{topic}/events (CN1 Ruling 6). Derived from the instance's Fabric binding when omitted.",
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_history_store": {
+      "description": "Debezium's schema history store (Q350: file on a PVC in CN1).",
+      "type": "string",
+      "enum": ["file"],
+      "default": "file"
+    },
+    "offset_store": {
+      "description": "Debezium's offset store (Q350: file on a PVC in CN1; Redis is a later option).",
+      "type": "string",
+      "enum": ["file"],
+      "default": "file"
+    },
+    "slot_lag_alert_bytes": {
+      "description": "The retained-WAL threshold that raises an alert (§33 §7: default 10 GiB, an estimate).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 10737418240
+    },
+    "tls": {
+      "description": "TLS material for the source connection.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "description": "Whether TLS is on at all.", "type": "boolean", "default": false },
+        "ca_pem": { "description": "The CA bundle, as PEM.", "type": "string" },
+        "key_pem": {
+          "description": "The client certificate's private key. Resolved through the secret store (D189).",
+          "type": "string",
+          "writeOnly": true
+        },
+        "verify_full": { "description": "Whether the server certificate's hostname is verified.", "type": "boolean", "default": true }
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+mod common;
+
+mod aggs;
+mod aliases;
+mod ann;
+mod backlog;
+mod coerce_kinds;
+mod compile;
+mod determinism;
+mod filter_write;
+mod flight;
+mod flight_ingest;
+mod hot_hooks;
+mod ir_json;
+mod merge;
+mod pinned;
+mod reads;
+mod scan;
+mod search;
+mod service;
+mod sparse;
+mod sql;
+mod strong_reads;
+mod tail;
+mod tail_vs_rebuild;
+mod text;

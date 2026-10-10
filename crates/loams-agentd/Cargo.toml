@@ -1,0 +1,50 @@
+[package]
+name = "loams-agentd"
+description = "Loams Desktop's per-user agent daemon: the headless sessions engine and harnesses from the zeron fork (design §50)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "loams-agentd"
+path = "src/main.rs"
+
+[dependencies]
+loams-agentd-sessions.workspace = true
+loams-agentd-rpc.workspace = true
+loams-agentd-mcp.workspace = true
+loams-agentd-link.workspace = true
+tokio.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+libc.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# The custom allocator is macOS-only (see main.rs): glibc measured flat on the
+# same streaming workloads, so Linux keeps the system allocator.
+[target.'cfg(target_os = "macos")'.dependencies]
+mimalloc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+toml.workspace = true
+
+# The workspace policy, except `unsafe_code` is `deny` rather than `forbid`: this crate
+# has audited FFI and process sites, each under `#[allow(unsafe_code)]` with a SAFETY
+# comment (plan DD1 ruling T1-13). Cargo cannot combine `workspace = true` with an
+# override, so the rest of `[workspace.lints]` is repeated here; keep them in step.
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

@@ -1,0 +1,83 @@
+# The P4b merge gate for the Loams WAL (docs/design/28-loams-postgres.md §7):
+# pgbench against stock safekeepers vs the Loams WAL service on TiKV, on a
+# dedicated runner. Manual only: shared runners are too noisy for p99s.
+name: Loams WAL benchmark (P4b)
+
+on:
+  workflow_dispatch:
+    inputs:
+      replicas:
+        description: "Safekeepers / TiKV stores"
+        type: choice
+        options: ["3", "1"]
+        default: "3"
+      repeats:
+        description: "Interleaved repeats of each variant"
+        default: "3"
+      duration:
+        description: "Seconds per workload"
+        default: "300"
+      workloads:
+        description: "Workloads (scripts/loams-pg-bench/workload.sh)"
+        default: "commit-1 commit-16 tpcb-16 tpcb-64 bulk bulk-burst"
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: [self-hosted, loam-bench]
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: command -v protoc || { sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev; }
+      # loams-wal with the interpreted sender (PG2 Task 31): the pageserver
+      # reads WAL from it, found through the broker (Task 32); no feeder.
+      - name: build loams-wal-interpreted
+        env:
+          # deploy/loams-pg-bench's pinned `neon` image (PG2 Task 2, R2.1).
+          PG_HEADERS_IMAGE: ghcr.io/neondatabase/neon@sha256:7a4f124917bb929964b2d696d710f19584f80bb9bd51b2af4a6e2425434c761f
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: |
+          scripts/pg2/pg-headers.sh "$PG_HEADERS_IMAGE" crates/loams-wal-decoder/pg_install
+          scripts/pg2/seed-neon-submodules.sh crates/loams-wal-decoder/Cargo.lock
+          cd crates/loams-wal-decoder
+          POSTGRES_INSTALL_DIR=$PWD/pg_install cargo build --release --locked --features tikv --bin loams-wal-interpreted
+          # The decoder workspace's own target dir (it is not the main
+          # workspace's unless a shared target-dir is configured).
+          target=$(cargo metadata --format-version 1 --no-deps --offline |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+          echo "LOAMS_WAL=$target/release/loams-wal-interpreted" >> "$GITHUB_ENV"
+      - name: tiup components
+        run: |
+          command -v tiup || curl --proto '=https' --tlsv1.2 -sSf https://tiup-mirrors.pingcap.com/install.sh | sh
+          echo "$HOME/.tiup/bin" >> "$GITHUB_PATH"
+          "$HOME/.tiup/bin/tiup" install playground pd:v8.5.8 tikv:v8.5.8
+      - name: gate
+        env:
+          REPLICAS: ${{ inputs.replicas }}
+          REPEATS: ${{ inputs.repeats }}
+          DURATION: ${{ inputs.duration }}
+          WORKLOADS: ${{ inputs.workloads }}
+        run: |
+          case "$REPEATS$DURATION" in *[!0-9]*) echo "repeats and duration must be numbers" >&2; exit 2 ;; esac
+          scripts/loams-pg-bench/gate.sh --replicas "$REPLICAS" --repeats "$REPEATS" \
+            --duration "$DURATION" --warmup 60 --scale 50 --workloads "$WORKLOADS" --force
+      - name: results
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: loams-pg-bench-rf${{ inputs.replicas }}
+          path: bench/results/
+      - name: stop
+        if: always()
+        run: |
+          scripts/tikv/playground.sh stop --tag loams-bench || true
+          # The same endpoint and compose binary run.sh uses.
+          if [ -z "${DOCKER_HOST:-}" ] && [ -S "/run/user/$(id -u)/podman/podman.sock" ]; then
+            export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+          fi
+          compose=(docker-compose); command -v docker-compose >/dev/null || compose=(docker compose)
+          "${compose[@]}" -f deploy/loams-pg-bench/compose.yaml \
+            --profile sk --profile sk3 down -v || true
