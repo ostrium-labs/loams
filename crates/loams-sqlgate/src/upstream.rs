@@ -235,7 +235,14 @@ pub async fn probe(
     }
     // A result set: column definitions, rows, then EOF or OK (0xfe).
     let eof_after_columns = !caps.contains(Capabilities::DEPRECATE_EOF);
-    let columns = usize::from(first[0]);
+    let columns = crate::codec::Reader::new(&first)
+        .lenenc("column count")
+        .map_err(protocol)?;
+    if columns > 4096 {
+        return Err(protocol(format_args!(
+            "SELECT 1 returned {columns} columns"
+        )));
+    }
     for _ in 0..columns {
         io.read().await.map_err(protocol)?;
     }

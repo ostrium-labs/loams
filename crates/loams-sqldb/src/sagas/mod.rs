@@ -656,7 +656,19 @@ impl Actor {
             self.restarts.fetch_add(1, Ordering::SeqCst);
             let stored = loop {
                 match self.deps.store.load(&self.branch).await {
-                    Ok(r) => break r.unwrap_or_else(|| *self.record.borrow()),
+                    Ok(Some(r)) => break r,
+                    // The store lost the record: write back the last one
+                    // this actor stored, so the store and the machine agree.
+                    Ok(None) => {
+                        let last = *self.record.borrow();
+                        match self.deps.store.save(&self.branch, &last).await {
+                            Ok(()) => break last,
+                            Err(e) => {
+                                tracing::warn!(branch = %self.branch, error = %e, "lifecycle record missing and not stored; retrying");
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                            }
+                        }
+                    }
                     Err(e) => {
                         tracing::warn!(branch = %self.branch, error = %e, "lifecycle record unreadable; retrying");
                         tokio::time::sleep(Duration::from_secs(1)).await;

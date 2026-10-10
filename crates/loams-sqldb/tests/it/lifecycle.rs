@@ -467,3 +467,77 @@ async fn unknown_branch_and_other_states() {
     assert_eq!(s.host.record(&br(1)).map(|r| r.state), Some(State::Running));
     let _ = Record::new(State::Running);
 }
+
+/// A store that has lost every record once asked to.
+#[derive(Debug, Default)]
+struct Forgetful {
+    inner: MemoryStore,
+    forget: std::sync::atomic::AtomicBool,
+    /// Records saved after the loss, in order.
+    after_loss: Mutex<Option<Vec<Record>>>,
+}
+
+#[async_trait]
+impl loams_sqldb::sagas::LifecycleStore for Forgetful {
+    async fn load(&self, b: &BranchId) -> Result<Option<Record>, loams_sqldb::sagas::StoreError> {
+        if self.forget.swap(false, Ordering::SeqCst) {
+            *self.after_loss.lock().expect("loss") = Some(Vec::new());
+            return Ok(None);
+        }
+        self.inner.load(b).await
+    }
+    async fn save(&self, b: &BranchId, r: &Record) -> Result<(), loams_sqldb::sagas::StoreError> {
+        if let Some(v) = self.after_loss.lock().expect("loss").as_mut() {
+            v.push(*r);
+        }
+        self.inner.save(b, r).await
+    }
+}
+
+/// A restart that finds no stored record writes back the last one it
+/// stored, then goes on from it (CodeRabbit, PR #392).
+#[tokio::test(start_paused = true)]
+async fn restart_writes_back_a_lost_record() {
+    let rt = Arc::new(FakeRuntime::new());
+    rt.ensure_pool(&br(1), Class::Xs, 1).await.expect("pool");
+    let store = Arc::new(Forgetful::default());
+    let host = Lifecycles::new(
+        rt.clone(),
+        store.clone(),
+        Arc::new(FakeProber::default()),
+        quick(),
+    );
+    host.register(&br(1), State::Running)
+        .await
+        .expect("register");
+    let crashed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let c = crashed.clone();
+    let s = store.clone();
+    host.set_fault(Arc::new(move |p: &FaultPoint| {
+        let first = matches!(p, FaultPoint::Before(_)) && !c.swap(true, Ordering::SeqCst);
+        if first {
+            s.forget.store(true, Ordering::SeqCst);
+        }
+        first
+    }));
+    host.suspend_now(&br(1));
+    wait_state(&host, &br(1), State::Suspended).await;
+    assert_eq!(host.restarts(&br(1)), 1);
+    // The record in force at the crash is written back before anything else.
+    let saved = store
+        .after_loss
+        .lock()
+        .expect("loss")
+        .clone()
+        .expect("lost");
+    assert_eq!(
+        saved.first().map(|r| (r.state, r.step)),
+        Some((State::Suspending, Step::ScaleDown)),
+        "{saved:?}"
+    );
+    assert_eq!(
+        store.inner.get(&br(1)).map(|r| r.state),
+        Some(State::Suspended)
+    );
+    assert_eq!(replicas(&rt), 0);
+}
