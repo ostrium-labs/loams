@@ -1704,3 +1704,40 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
   - **Task 24.** `reset_password_rotates_and_invalidates_old` checks the store's side. That the old password stops working at the compute and at PgDog is Task 24's check.
   - **Task 9.** Map `RoleRec` to `Role` (`system`, `create_time`). Wire `PgService::new`'s `SecretStore`: the file store in single-node mode, the Kubernetes store under `--runtime kubernetes`.
   - **Task 47.** Limits on roles and databases per branch.
+
+### Task 7 rulings (2026-10-10)
+
+- **R7.1 The reconciler's shape.**
+  - `Reconciler::new(store, neon, secrets, ReconcilerConfig)` and `Reconciler::run(&self, shutdown)`, with `kicker()` (`Kick::Project(id)`), `reconcile_project(namespace, id)` (one pass; the run loop's and the tests') and `sweep_secrets()`. It is generic over `S: PgControlStore` and `N: NeonWrite` (R3.10).
+  - It takes the `SecretStore` (removing a branch deletes its roles' secrets; the sweep) and no `runtime`: `ComputeRuntime` is Task 10's, and endpoints are reconciled in Task 11. Until then a branch or project delete **waits** until the endpoints on it are gone. Task 11's endpoint reconciler removes the endpoints of a `deleting` branch or project (the cascade); its text should say so.
+- **R7.2 Triggers and scheduling.**
+  - Watches on `x/` (projects; the name index is skipped), `X/` (branches, name index, guards) and `E/` (endpoints) mark a project; so do the resync (30 s) and kicks. A kick for a project the watch has not reported is dropped (the watch reports it).
+  - One pass per project at a time, at most 8 at once. A failed pass is retried after 1 s, doubling to 30 s; a pass that waits on something outside (endpoints, a parent, a timeline being deleted) comes back after 1 s. `Held` (another instance's lease) is retried at the resync, so a dead holder's projects move within `lease_ttl` plus one resync.
+  - The run loop's `namespace` comes from the `x/<ns>/<project_id>` key. It is used only to build `ProjectKey`, so CP-R7's re-key (`NamespaceId` in place of the name) changes no reconciler code. Task 7 adds no record keyed by a name.
+- **R7.3 The lease.** TTL 60 s (configurable). A pass reads without the lease, and takes it only when there is something to do, then reads again under it. The held fence is renewed (same epoch) before every Neon call and every write; it is acquired again only after `LeaseLost` (a new epoch, R3.12). A write that a lapse beat to it fails `Fenced` at the store. The test seam `ReconcilerConfig::before_write` runs between the renewal and the write.
+- **R7.4 `PgControlStore::commit(batch, fence)`: the fenced batch.** As `ApiWriter::commit`, inside one transaction that first checks and locks the lease (`Fenced`, with no index, when it moved). Each batch operation now carries its record's project, and a stored value's project is decoded inside the transaction, so a fenced batch, like a fenced write, cannot write, delete or check another project's record (`InvalidArgument` at the operation's index, R3.11). Conformance case: `fenced_batch_is_fenced_and_scoped`.
+- **R7.5 Neon steps.**
+  - Project: `attach_tenant` with `pitr_interval` (generation 1 against a pageserver; the storage controller picks its own, R2.14), then `tenant_config` with it again (the controller's create answers 409 for an attached tenant), then `main`'s timeline, then one batch (project and `main` `ready`, operation succeeded).
+  - Timeline: the pageserver's create (bootstrap at the project's major, or a branch of the parent's timeline at `ancestor_lsn`, or its head when none is recorded); a 409 is done, and the timeline is read instead. Then `loams-wal`'s create with `start_lsn` = the pageserver's `last_record_lsn`, as Neon's control plane does; a 409 or an existing timeline is done (R2.10).
+  - Delete: `not_found` is done; `aborted` (a deletion in progress) and `branch_has_children` wait. The pageserver deletes in the background, so the records go only once a read of the timeline answers `not_found`.
+  - A refusal is **transient** (`storage_unavailable`, `unavailable`, `aborted`, `internal`: retried with backoff) or **final** (any other reason: the operation fails with it). An operation's error message names the step and the reason, never the component's text (it can name hosts).
+- **R7.6 Operations and progress.**
+  - `OperationRec` gains `progress: Option<OperationProgress { done, total, unit, phase }>` (`loams.operations.v1.Progress`), `serde(default)`. `FORMAT` stays 1, by R5.11's precedent (no operation exists outside tests).
+  - Steps: project create 3 (`attaching_tenant`, `creating_timeline`, `done`); branch create 2 (`creating_timeline`, `done`); branch delete 3 (`waiting_for_endpoints` or `waiting_for_children`, `deleting_timeline`, `removing_records`, `done`); project delete one per branch plus one (`waiting_for_endpoints`, `deleting_branches`, `done`).
+  - An operation is `Running` from its first step, and ends in the batch that finishes its work. The open create operation of a branch or project removed before it was ready ends `Failed` with `aborted`.
+  - R5.10's "stamps `updated_at_ms`": the batch stamps every record it writes (the operations, the parent's guard has no such field). The parent's `BranchRec` is not written (R5.10).
+- **R7.7 Final refusals.**
+  - Project create: the project, its `creating` branches and their operations fail in one batch; `DeleteProject` takes a failed project.
+  - Branch create: the branch and its operation fail.
+  - Branch delete: the branch fails, its guard's `deleting` is cleared and the operation fails, so `DeleteBranch` can be asked again.
+  - During a project delete, a final refusal of a timeline delete is retried instead (the project is going regardless).
+- **R7.8 The sweep (R6.1).**
+  - `SecretStore` gains `list() -> Vec<SecretRef>` (a change to the shared contract's trait). `FileSecretStore` lists its map; `KubeSecretStore` lists metadata only (`list_metadata`), selected by its two labels, page by page (500). **The Kubernetes store's Role needs `list` on `secrets`**, which Task 48's chart grants.
+  - The sweep runs from the resync every 10 minutes. It deletes a role reference (`pg-role-<project>-<ulid>`) older than 15 minutes (the second ULID's time) that no role of its project's branches names; a project that is gone has no branches. Other names are never touched. It needs no lease: a record only names a reference made for it moments before it commits, so an old unnamed reference is never named later.
+- **R7.9 A changed retention.** The reconciler keeps, in memory, the `pitr_interval` it last set per project, and sets it again when `history_retention` differs. So `UpdateProject`'s retention reaches the tenant, and each instance sets it once per project after a restart.
+- **R7.10 Gaps for later tasks (owner to place).**
+  - **No tenant delete.** `loams-postgres` has no tenant delete (or detach), so a deleted project's tenant stays attached, with its remote data. Adding it needs a fork fixture (Global Constraints). Candidates: Task 44 (PITR and protection) or Task 52 (`kill_pg_control_during_100_creates_leaves_no_orphans`).
+  - **No `loams-wal` timeline delete.** `WalClient` has none (R2.11), so a removed branch's WAL stays on `loams-wal`. Same placement.
+  - **Operations pile up.** Each pass under the lease lists the project's operations, which nothing collects until Task 9 (R5.13).
+  - **A child's roles are copied as of now** (R6.4), not as of the branch point; unchanged, and now documented where the copy is made (`service::branches`, `PgService::inherit`).
+- **R7.11 Tests.** `tests/reconcile.rs` (local store) and `tests/reconcile_tikv.rs` (feature `tikv`; CI's TiKV suites job runs it) share `tests/reconcile/cases.rs`. The named cases are there, plus `project_delete_removes_every_record`, `neon_refusals_fail_or_retry`, `failed_project_create_can_be_deleted`, `retention_change_reaches_the_tenant` and `resync_sweeps_orphan_secrets`. The test fake's `NeonWrite` keeps tenants and timelines and answers 409 for an existing timeline.
