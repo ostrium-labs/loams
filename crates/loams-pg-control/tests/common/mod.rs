@@ -4,13 +4,14 @@
 
 #![allow(dead_code)]
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use loams_pg_control::model::{BranchKey, BranchRec, BranchState};
 use loams_pg_control::neon::{
-    Component, LsnAtTime, NeonApiError, NeonRead, TenantId, TimelineId, TimelineView, WalHeads,
+    Component, Lsn, LsnAtTime, NeonApiError, NeonRead, NeonWrite, TenantConfig, TenantId,
+    TimelineCreate, TimelineId, TimelineView, WalHeads, WalTimelineCreate,
 };
 use loams_pg_control::secrets::{Secret, SecretError, SecretRef, SecretStore};
 use loams_pg_control::service::Reason;
@@ -28,7 +29,16 @@ struct Inner {
     wal: HashMap<Tl, WalHeads>,
     by_time: HashMap<Tl, LsnAtTime>,
     calls: Vec<String>,
+    /// Attached tenants (`NeonWrite`).
+    tenants: HashSet<[u8; 16]>,
+    /// Each created timeline's ancestor (`NeonWrite`).
+    ancestors: HashMap<Tl, Option<[u8; 16]>>,
+    /// Failures to answer, per call name, in order.
+    failures: HashMap<&'static str, VecDeque<NeonApiError>>,
 }
+
+/// Where a bootstrapped timeline of the fake starts: initdb's end.
+pub const INITDB_LSN: Lsn = Lsn(0x0169_6F10);
 
 /// A fake of Neon's components: answers what the test set, records calls.
 #[derive(Debug, Clone, Default)]
@@ -55,6 +65,47 @@ impl FakeNeon {
 
     pub fn calls(&self) -> Vec<String> {
         self.lock().calls.clone()
+    }
+
+    /// How many calls start with `prefix`.
+    pub fn count(&self, prefix: &str) -> usize {
+        self.lock()
+            .calls
+            .iter()
+            .filter(|c| c.starts_with(prefix))
+            .count()
+    }
+
+    /// The next call named `call` (`attach`, `tenant_config`,
+    /// `create_timeline`, `delete_timeline`, `wal_create_timeline`) fails
+    /// with `reason`, before it changes anything.
+    pub fn fail_next(&self, call: &'static str, reason: Reason) {
+        self.lock()
+            .failures
+            .entry(call)
+            .or_default()
+            .push_back(NeonApiError {
+                reason,
+                component: Some(Component::Pageserver),
+                message: format!("injected {}", reason.as_str()),
+            });
+    }
+
+    /// Whether the fake holds the timeline.
+    pub fn has_timeline(&self, t: [u8; 16], tl: [u8; 16]) -> bool {
+        self.lock().timelines.contains_key(&(t, tl))
+    }
+}
+
+impl Inner {
+    fn injected(&mut self, call: &'static str) -> Result<(), NeonApiError> {
+        match self.failures.get_mut(call).and_then(VecDeque::pop_front) {
+            Some(e) => {
+                self.calls.push(format!("{call} -> {}", e.reason.as_str()));
+                Err(e)
+            }
+            None => Ok(()),
+        }
     }
 }
 
@@ -104,6 +155,133 @@ impl NeonRead for FakeNeon {
                 component: Some(Component::Wal),
                 message: "no such timeline".into(),
             })
+    }
+}
+
+fn already_exists(what: &str) -> NeonApiError {
+    NeonApiError {
+        reason: Reason::AlreadyExists,
+        component: Some(Component::Pageserver),
+        message: format!("{what} already exists"),
+    }
+}
+
+/// The fake's storage: tenants and timelines it keeps, as the pageserver
+/// and `loams-wal` would. A create of an existing timeline is a 409
+/// (`already_exists`); a delete of a timeline with children is
+/// `branch_has_children`, of a missing one `not_found`.
+impl NeonWrite for FakeNeon {
+    async fn attach_tenant(
+        &self,
+        t: TenantId,
+        generation: u32,
+        _config: &TenantConfig,
+    ) -> Result<(), NeonApiError> {
+        let mut inner = self.lock();
+        inner.injected("attach")?;
+        inner
+            .calls
+            .push(format!("attach {t} generation={generation}"));
+        inner.tenants.insert(t.0);
+        Ok(())
+    }
+
+    async fn tenant_config(&self, t: TenantId, config: &TenantConfig) -> Result<(), NeonApiError> {
+        let mut inner = self.lock();
+        inner.injected("tenant_config")?;
+        let pitr = config.pitr_interval.map_or(0, |d| d.as_secs());
+        inner.calls.push(format!("tenant_config {t} pitr={pitr}"));
+        if !inner.tenants.contains(&t.0) {
+            return Err(missing("tenant"));
+        }
+        Ok(())
+    }
+
+    async fn create_timeline(
+        &self,
+        t: TenantId,
+        create: &TimelineCreate,
+    ) -> Result<TimelineView, NeonApiError> {
+        let mut inner = self.lock();
+        inner.injected("create_timeline")?;
+        let tl = create.new_timeline_id;
+        let line = format!(
+            "create_timeline {tl} ancestor={} at={} pg={}",
+            create.ancestor.map_or("-".to_string(), |a| a.to_string()),
+            create
+                .ancestor_start_lsn
+                .map_or("-".to_string(), |l| l.to_string()),
+            create.pg_version.map_or("-".to_string(), |v| v.to_string()),
+        );
+        if !inner.tenants.contains(&t.0) {
+            inner.calls.push(format!("{line} -> not_found"));
+            return Err(missing("tenant"));
+        }
+        if inner.timelines.contains_key(&(t.0, tl.0)) {
+            inner.calls.push(format!("{line} -> already_exists"));
+            return Err(already_exists("timeline"));
+        }
+        let start = match create.ancestor {
+            None => INITDB_LSN,
+            Some(a) => match inner.timelines.get(&(t.0, a.0)) {
+                Some(parent) => create.ancestor_start_lsn.unwrap_or(parent.last_record_lsn),
+                None => {
+                    inner.calls.push(format!("{line} -> not_found"));
+                    return Err(missing("ancestor timeline"));
+                }
+            },
+        };
+        inner.calls.push(line);
+        let view = TimelineView {
+            last_record_lsn: start,
+            min_readable_lsn: start,
+            logical_size_bytes: 0,
+        };
+        inner.timelines.insert((t.0, tl.0), view.clone());
+        inner
+            .ancestors
+            .insert((t.0, tl.0), create.ancestor.map(|a| a.0));
+        Ok(view)
+    }
+
+    async fn delete_timeline(&self, t: TenantId, tl: TimelineId) -> Result<(), NeonApiError> {
+        let mut inner = self.lock();
+        inner.injected("delete_timeline")?;
+        inner.calls.push(format!("delete_timeline {tl}"));
+        if !inner.timelines.contains_key(&(t.0, tl.0)) {
+            return Err(missing("timeline"));
+        }
+        if inner.ancestors.values().any(|a| *a == Some(tl.0)) {
+            return Err(NeonApiError {
+                reason: Reason::BranchHasChildren,
+                component: Some(Component::Pageserver),
+                message: "timeline has child timelines".into(),
+            });
+        }
+        inner.timelines.remove(&(t.0, tl.0));
+        inner.ancestors.remove(&(t.0, tl.0));
+        inner.wal.remove(&(t.0, tl.0));
+        Ok(())
+    }
+
+    async fn wal_create_timeline(
+        &self,
+        create: &WalTimelineCreate,
+    ) -> Result<WalHeads, NeonApiError> {
+        let mut inner = self.lock();
+        inner.injected("wal_create_timeline")?;
+        inner.calls.push(format!(
+            "wal_create_timeline {} start={} pg={}",
+            create.timeline_id, create.start_lsn, create.pg_version
+        ));
+        let key = (create.tenant_id.0, create.timeline_id.0);
+        let heads = inner.wal.entry(key).or_insert(WalHeads {
+            commit_lsn: create.start_lsn,
+            flush_lsn: create.start_lsn,
+            remote_consistent_lsn: create.start_lsn,
+            backup_lsn: create.start_lsn,
+        });
+        Ok(heads.clone())
     }
 }
 
@@ -173,6 +351,14 @@ impl SecretStore for MemorySecrets {
     async fn delete(&self, r: &SecretRef) -> Result<(), SecretError> {
         self.map().remove(r.as_str());
         Ok(())
+    }
+
+    async fn list(&self) -> Result<Vec<SecretRef>, SecretError> {
+        Ok(self
+            .map()
+            .keys()
+            .filter_map(|k| SecretRef::parse(k).ok())
+            .collect())
     }
 }
 

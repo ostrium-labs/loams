@@ -88,6 +88,18 @@ impl SecretRef {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// For a role password's reference (`pg-role-<project ulid>-<ulid>`):
+    /// its project, and when it was issued (ms since the Unix epoch, the
+    /// second ULID's time). `None` for any other name, which the sweep
+    /// never deletes.
+    pub fn role_parts(&self) -> Option<(ProjectId, u64)> {
+        let rest = self.0.strip_prefix("pg-role-")?;
+        let (project, issued) = rest.split_once('-')?;
+        let project = Ulid::from_string(&project.to_ascii_uppercase()).ok()?;
+        let issued = Ulid::from_string(&issued.to_ascii_uppercase()).ok()?;
+        Some((ProjectId::from_ulid(project), issued.timestamp_ms()))
+    }
 }
 
 impl std::fmt::Display for SecretRef {
@@ -139,6 +151,10 @@ pub trait SecretStore: Send + Sync + 'static {
     async fn get(&self, r: &SecretRef) -> Result<Secret<Vec<u8>>, SecretError>;
     /// Deletes the secret under `r`; an absent one is not an error.
     async fn delete(&self, r: &SecretRef) -> Result<(), SecretError>;
+    /// Every reference the store holds (Task 7's sweep of secrets no
+    /// record names, R6.1). A name outside [`SecretRef`]'s grammar is left
+    /// out.
+    async fn list(&self) -> Result<Vec<SecretRef>, SecretError>;
 }
 
 /// A new role password: [`PASSWORD_BYTES`] bytes from the operating
@@ -183,6 +199,17 @@ mod tests {
         assert!(a.as_str().starts_with("pg-role-"));
         for bad in ["", "-a", "a-", "A", "a/b", "a_b", &"a".repeat(254)] {
             assert!(SecretRef::parse(bad).is_err(), "{bad:?}");
+        }
+        let (project, issued) = a.role_parts().expect("a role reference");
+        assert_eq!(project, p);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_millis();
+        assert!(u128::from(issued).abs_diff(now) < 60_000, "{issued} {now}");
+        for other in ["not-a-role-secret", "pg-role-x-y", "pg-role-a"] {
+            let r = SecretRef::parse(other).expect("a ref");
+            assert_eq!(r.role_parts(), None, "{other}");
         }
         let json = serde_json::to_string(&a).expect("json");
         assert_eq!(serde_json::from_str::<SecretRef>(&json).expect("back"), a);

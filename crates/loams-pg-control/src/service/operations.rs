@@ -4,13 +4,16 @@
 //!
 //! The API service writes an operation `Pending`, with its indexes
 //! (`Q/i/<id>` for `GetOperation`, `Q/n/<ns>/<id>` for `ListOperations` and
-//! `WatchOperations`), in the same batch as the record it acts on. The project's reconciler (Task 7) finds it by listing
-//! the project's operations and moves it to `Running`, then `Succeeded` or
-//! `Failed`, under its lease.
+//! `WatchOperations`), in the same batch as the record it acts on. The
+//! project's reconciler (Task 7) finds it by listing the project's
+//! operations and moves it to `Running`, then `Succeeded` or `Failed`, with
+//! its progress, under its lease.
 
 use ulid::Ulid;
 
-pub use crate::model::{OperationError, OperationKind, OperationRec, OperationState};
+pub use crate::model::{
+    OperationError, OperationKind, OperationProgress, OperationRec, OperationState,
+};
 
 use super::{NeonRead, PgService, ServiceError, check_namespace, list_error, page};
 use crate::model::{
@@ -43,6 +46,7 @@ pub(crate) fn pending(
         error: None,
         created_at_ms: now_ms,
         updated_at_ms: now_ms,
+        progress: None,
     }
 }
 

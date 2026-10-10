@@ -66,6 +66,7 @@ async fn file_store_round_trips_and_survives_reopen() {
         Err(SecretError::NotFound(r)) if r == a.as_str()
     ));
     assert_eq!(store.get(&b).await.expect("b stays").expose(), b"other");
+    assert_eq!(store.list().await.expect("list"), vec![b.clone()]);
 
     // The file holds ciphertext only, and neither file is readable by others.
     let on_disk = std::fs::read(d.path().join("secrets.age")).expect("the file");

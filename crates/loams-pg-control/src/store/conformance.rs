@@ -50,7 +50,8 @@ macro_rules! pg_control_store_conformance {
             undetermined_is_surfaced,
             lost_ack_is_resolved_by_its_token,
             batch_applies_all_or_nothing,
-            concurrent_batches_lose_no_update
+            concurrent_batches_lose_no_update,
+            fenced_batch_is_fenced_and_scoped
         );
     };
     (@cases $factory:expr; $($case:ident),* $(,)?) => {
@@ -933,4 +934,115 @@ pub async fn concurrent_batches_lose_no_update(factory: Factory) {
         (1..=TASKS * STEPS).collect::<Vec<_>>(),
         "each step once"
     );
+}
+
+/// A fenced batch (Task 7) applies under its lease like a fenced write: all
+/// or nothing; refused, with the operation's index, when a record it
+/// writes, deletes or checks (new or stored) belongs to another project;
+/// and `Fenced`, writing nothing, once the lease moved on.
+pub async fn fenced_batch_is_fenced_and_scoped(factory: Factory) {
+    let Some(store) = factory.store(options()).await else {
+        return;
+    };
+    let long = Duration::from_secs(60);
+    let scope = project_lease("prj-1");
+    let a = store
+        .acquire_lease(&scope, "pg-control-a", long)
+        .await
+        .expect("a takes the lease");
+
+    let mut batch = Batch::new();
+    batch
+        .put(&branch("prj-1", "br-1", "main"), None)
+        .expect("a put");
+    batch.put(&project("prj-1"), None).expect("a put");
+    let out = store.commit(batch, &a).await.expect("a's batch");
+    let v1 = get(&store, &bkey("prj-1", "br-1"))
+        .await
+        .expect("br-1")
+        .version;
+    assert_eq!(out[0], Some(v1));
+
+    // Another project's record, new: refused before the transaction.
+    let mut batch = Batch::new();
+    batch
+        .put(&branch("prj-1", "br-2", "dev"), None)
+        .expect("a put");
+    batch
+        .put(&branch("prj-2", "br-3", "other"), None)
+        .expect("a put");
+    let r = store.commit(batch, &a).await;
+    assert!(
+        matches!(
+            r,
+            Err(BatchError {
+                index: Some(1),
+                error: StoreError::InvalidArgument(_)
+            })
+        ),
+        "{r:?}"
+    );
+    // Stored: a delete or a check of prj-2's record under prj-1's fence.
+    let vb = store
+        .api_writer()
+        .put(&branch("prj-2", "br-9", "theirs"), None)
+        .await
+        .expect("an api write");
+    for check in [false, true] {
+        let mut batch = Batch::new();
+        batch
+            .put(&branch("prj-1", "br-2", "dev"), None)
+            .expect("a put");
+        if check {
+            batch
+                .check::<BranchRec>(&bkey("prj-2", "br-9"), Some(vb))
+                .expect("a check");
+        } else {
+            batch
+                .delete::<BranchRec>(&bkey("prj-2", "br-9"), vb)
+                .expect("a delete");
+        }
+        let r = store.commit(batch, &a).await;
+        assert!(
+            matches!(
+                r,
+                Err(BatchError {
+                    index: Some(1),
+                    error: StoreError::InvalidArgument(_)
+                })
+            ),
+            "check {check}: {r:?}"
+        );
+    }
+    assert!(get(&store, &bkey("prj-1", "br-2")).await.is_none());
+    assert!(get(&store, &bkey("prj-2", "br-9")).await.is_some());
+
+    // Once a's lease lapses and b holds it, a's batch writes nothing.
+    let short = Duration::from_millis(200);
+    assert_eq!(store.renew_lease(&a, short).await, Ok(a.clone()));
+    tokio::time::sleep(short * 3).await;
+    let b = store
+        .acquire_lease(&scope, "pg-control-b", long)
+        .await
+        .expect("b takes the lease");
+    let mut batch = Batch::new();
+    batch
+        .put(&branch("prj-1", "br-2", "dev"), None)
+        .expect("a put");
+    batch
+        .delete::<BranchRec>(&bkey("prj-1", "br-1"), v1)
+        .expect("a delete");
+    let stale = batch.clone();
+    assert_eq!(
+        store.commit(stale, &a).await,
+        Err(BatchError {
+            index: None,
+            error: StoreError::Fenced
+        })
+    );
+    assert!(get(&store, &bkey("prj-1", "br-2")).await.is_none());
+    assert!(get(&store, &bkey("prj-1", "br-1")).await.is_some());
+    store.commit(batch, &b).await.expect("b's batch");
+    assert!(get(&store, &bkey("prj-1", "br-2")).await.is_some());
+    assert!(get(&store, &bkey("prj-1", "br-1")).await.is_none());
 }

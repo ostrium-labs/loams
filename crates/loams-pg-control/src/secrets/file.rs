@@ -151,6 +151,18 @@ impl SecretStore for FileSecretStore {
         })
         .await
     }
+
+    async fn list(&self) -> Result<Vec<SecretRef>, SecretError> {
+        self.with_map(|map| {
+            let refs = map
+                .0
+                .keys()
+                .filter_map(|k| SecretRef::parse(k).ok())
+                .collect();
+            Ok((refs, false))
+        })
+        .await
+    }
 }
 
 /// The map in `path`; empty when the file does not exist yet.

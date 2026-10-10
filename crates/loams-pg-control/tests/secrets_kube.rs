@@ -98,6 +98,55 @@ async fn delete(
     }
 }
 
+/// The namespace's Secrets' metadata, two per page whatever the `limit`,
+/// so `list` has to follow `continue`.
+async fn list(
+    State(s): State<Shared>,
+    Path(ns): Path<String>,
+    RawQuery(q): RawQuery,
+    headers: HeaderMap,
+) -> Response {
+    let mut api = s.lock().expect("lock");
+    if record(&mut api, "LIST", q.as_deref(), &headers) {
+        return status(500, "InternalError", "etcd is down");
+    }
+    let mut names: Vec<String> = api
+        .objects
+        .keys()
+        .filter(|(n, _)| *n == ns)
+        .map(|(_, name)| name.clone())
+        .collect();
+    names.sort();
+    let from: usize = q
+        .as_deref()
+        .unwrap_or("")
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("continue="))
+        .map_or(0, |c| c.parse().expect("a continue token"));
+    let page: Vec<Value> = names
+        .iter()
+        .skip(from)
+        .take(2)
+        .map(|n| {
+            json!({
+                "apiVersion": "meta.k8s.io/v1", "kind": "PartialObjectMetadata",
+                "metadata": {"name": n, "namespace": ns},
+            })
+        })
+        .collect();
+    let next = if from + 2 < names.len() {
+        (from + 2).to_string()
+    } else {
+        String::new()
+    };
+    let body = json!({
+        "apiVersion": "meta.k8s.io/v1", "kind": "PartialObjectMetadataList",
+        "metadata": {"continue": next, "resourceVersion": "1"},
+        "items": page,
+    });
+    (StatusCode::OK, axum::Json(body)).into_response()
+}
+
 /// A stand-in API server, and a store in namespace `loams-pg-acme` on it.
 async fn stand_in() -> (Shared, KubeSecretStore) {
     let shared: Shared = Arc::default();
@@ -106,6 +155,7 @@ async fn stand_in() -> (Shared, KubeSecretStore) {
             "/api/v1/namespaces/{ns}/secrets/{name}",
             get(read).patch(patch).delete(delete),
         )
+        .route("/api/v1/namespaces/{ns}/secrets", get(list))
         .with_state(shared.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -187,5 +237,36 @@ async fn kube_store_failures_are_unavailable_and_carry_no_secret() {
         store.delete(&r).await,
         Err(SecretError::Unavailable(_))
     ));
+    assert!(matches!(
+        store.list().await,
+        Err(SecretError::Unavailable(_))
+    ));
     assert!(!format!("{store:?}").is_empty());
+}
+
+#[tokio::test]
+async fn kube_store_lists_role_secrets_by_label_page_by_page() {
+    let (api, store) = stand_in().await;
+    let mut refs: Vec<SecretRef> = (0..5).map(|_| new_ref()).collect();
+    for r in &refs {
+        store.put(r, Secret::new(b"x".to_vec())).await.expect("put");
+    }
+    let mut listed = store.list().await.expect("list");
+    listed.sort();
+    refs.sort();
+    assert_eq!(listed, refs);
+    let api = api.lock().expect("lock");
+    let lists: Vec<&String> = api
+        .calls
+        .iter()
+        .filter(|c| c.starts_with("LIST "))
+        .collect();
+    assert_eq!(lists.len(), 3, "five secrets, two a page: {lists:?}");
+    for call in &lists {
+        assert!(
+            call.contains("labelSelector=app.kubernetes.io%2Fmanaged-by%3Dloams-pg-control%2Capp.kubernetes.io%2Fcomponent%3Dpostgres-role-secret"),
+            "{call}"
+        );
+    }
+    assert!(lists[1].contains("continue=2"), "{}", lists[1]);
 }

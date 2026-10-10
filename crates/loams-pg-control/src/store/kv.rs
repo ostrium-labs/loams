@@ -111,7 +111,7 @@ impl ApiWriter {
     /// its index: `Conflict` or `NotFound` as for a single write. A store
     /// failure (`Unavailable`, `Undetermined`) has no index.
     pub async fn commit(&self, batch: Batch) -> Result<Vec<Option<u64>>, BatchError> {
-        self.store.commit_batch(batch).await
+        self.store.commit_batch(batch, None).await
     }
 }
 
@@ -126,18 +126,33 @@ pub struct Batch {
 struct BatchOp {
     key: Vec<u8>,
     action: BatchAction,
+    /// The record's kind, for errors.
+    kind: &'static str,
+    /// The project a stored value of the key names: a fenced batch checks
+    /// it against its fence (R3.11), as a single fenced write does.
+    stored_project: StoredProject,
 }
 
-/// Makes a derived put's record body from the versions of the operations
-/// before it.
-type Derive = Arc<dyn Fn(&[Option<u64>]) -> Result<Vec<u8>, StoreError> + Send + Sync>;
+/// Makes a derived put's record body, and the project it names, from the
+/// versions of the operations before it.
+type Derive =
+    Arc<dyn Fn(&[Option<u64>]) -> Result<(Vec<u8>, Option<String>), StoreError> + Send + Sync>;
+
+/// Decodes a stored value of one record type to the project it names.
+type StoredProject = fn(&[u8]) -> Result<Option<String>, StoreError>;
+
+fn stored_project<R: Record>(value: &[u8]) -> Result<Option<String>, StoreError> {
+    decode_record::<R>(value).map(|v| v.record.project().map(str::to_string))
+}
 
 #[derive(Clone)]
 enum BatchAction {
-    /// Write `body` if the record is at `expected` (`None`: absent).
+    /// Write `body` (a record of `project`) if the record is at `expected`
+    /// (`None`: absent).
     Put {
         expected: Option<u64>,
         body: Vec<u8>,
+        project: Option<String>,
     },
     /// Delete the record if it is at `expected`.
     Delete { expected: u64 },
@@ -194,13 +209,18 @@ impl Batch {
         self.ops.is_empty()
     }
 
-    fn push(&mut self, key: Vec<u8>, action: BatchAction) -> Result<usize, StoreError> {
+    fn push<R: Record>(&mut self, key: Vec<u8>, action: BatchAction) -> Result<usize, StoreError> {
         if self.ops.iter().any(|op| op.key == key) {
             return Err(StoreError::InvalidArgument(
                 "a batch names a key twice".into(),
             ));
         }
-        self.ops.push(BatchOp { key, action });
+        self.ops.push(BatchOp {
+            key,
+            action,
+            kind: R::KIND,
+            stored_project: stored_project::<R>,
+        });
         Ok(self.ops.len() - 1)
     }
 
@@ -213,7 +233,15 @@ impl Batch {
         let key = R::encode_key(&rec.key())?;
         let body = postcard::to_stdvec(rec)
             .map_err(|e| StoreError::InvalidArgument(format!("{} encodes: {e}", R::KIND)))?;
-        self.push(key, BatchAction::Put { expected, body })
+        let project = rec.project().map(str::to_string);
+        self.push::<R>(
+            key,
+            BatchAction::Put {
+                expected,
+                body,
+                project,
+            },
+        )
     }
 
     /// Adds a delete of `key` at `expected`; returns its index.
@@ -222,7 +250,7 @@ impl Batch {
     ///
     /// As [`put`](Self::put).
     pub fn delete<R: Record>(&mut self, key: &R::Key, expected: u64) -> Result<usize, StoreError> {
-        self.push(R::encode_key(key)?, BatchAction::Delete { expected })
+        self.push::<R>(R::encode_key(key)?, BatchAction::Delete { expected })
     }
 
     /// Adds a put at `expected` of the record `derive` makes, inside the
@@ -251,10 +279,11 @@ impl Batch {
                     R::KIND
                 )));
             }
-            postcard::to_stdvec(&rec)
-                .map_err(|e| StoreError::InvalidArgument(format!("{} encodes: {e}", R::KIND)))
+            let body = postcard::to_stdvec(&rec)
+                .map_err(|e| StoreError::InvalidArgument(format!("{} encodes: {e}", R::KIND)))?;
+            Ok((body, rec.project().map(str::to_string)))
         });
-        self.push(encoded, BatchAction::Derived { expected, derive })
+        self.push::<R>(encoded, BatchAction::Derived { expected, derive })
     }
 
     /// Adds a check that `key` is at `expected` (`None`: absent); returns
@@ -271,7 +300,7 @@ impl Batch {
         key: &R::Key,
         expected: Option<u64>,
     ) -> Result<usize, StoreError> {
-        self.push(R::encode_key(key)?, BatchAction::Check { expected })
+        self.push::<R>(R::encode_key(key)?, BatchAction::Check { expected })
     }
 }
 
@@ -443,25 +472,55 @@ impl KvControlStore {
         .await
     }
 
-    async fn commit_batch(&self, batch: Batch) -> Result<Vec<Option<u64>>, BatchError> {
+    /// Applies `batch`, fenced by `fence` or (only for [`ApiWriter`]) by
+    /// nothing. A fenced batch checks the lease first and, as a single
+    /// fenced write, that every record it writes, deletes or checks (new
+    /// and stored) belongs to the fence's project (R3.11).
+    async fn commit_batch(
+        &self,
+        batch: Batch,
+        fence: Option<&Fence>,
+    ) -> Result<Vec<Option<u64>>, BatchError> {
+        let refuse = |index: Option<usize>, error: StoreError| BatchError { index, error };
+        if let Some(fence) = fence {
+            check_scope(fence.scope()).map_err(|e| refuse(None, e))?;
+            for (i, op) in batch.ops.iter().enumerate() {
+                if let BatchAction::Put { project, .. } = &op.action {
+                    check_project_of(Some(fence), project.as_deref(), op.kind)
+                        .map_err(|e| refuse(Some(i), e))?;
+                }
+            }
+        }
         let ops = Arc::new(batch.ops);
+        let fence = fence.cloned();
         let out = self
             .write(OP_BATCH, move |txn| {
-                let ops = ops.clone();
+                let (ops, fence) = (ops.clone(), fence.clone());
                 Box::pin(async move {
+                    if let Err(error) = check_fence(txn, fence.as_ref()).await? {
+                        return Ok(Ok(Err(BatchError { index: None, error })));
+                    }
                     // Every expectation first, so a refusal writes nothing.
                     let mut current = Vec::with_capacity(ops.len());
                     for (i, op) in ops.iter().enumerate() {
                         let version = match txn.get(&op.key).await? {
-                            Some(value) => match decode_version(&value) {
-                                Ok((v, _)) => Some(v),
-                                Err(error) => {
-                                    return Ok(Ok(Err(BatchError {
-                                        index: Some(i),
-                                        error,
-                                    })));
+                            Some(value) => {
+                                let checked = match &fence {
+                                    Some(_) => (op.stored_project)(&value).and_then(|p| {
+                                        check_project_of(fence.as_ref(), p.as_deref(), op.kind)
+                                    }),
+                                    None => Ok(()),
+                                };
+                                match checked.and_then(|()| decode_version(&value)) {
+                                    Ok((v, _)) => Some(v),
+                                    Err(error) => {
+                                        return Ok(Ok(Err(BatchError {
+                                            index: Some(i),
+                                            error,
+                                        })));
+                                    }
                                 }
-                            },
+                            }
                             None => None,
                         };
                         let refused = match op.action {
@@ -502,7 +561,11 @@ impl KvControlStore {
                     let mut derived = Vec::new();
                     for (i, op) in ops.iter().enumerate() {
                         if let BatchAction::Derived { derive, .. } = &op.action {
-                            match derive(&out[..i]) {
+                            let made = derive(&out[..i]).and_then(|(body, project)| {
+                                check_project_of(fence.as_ref(), project.as_deref(), op.kind)
+                                    .map(|()| body)
+                            });
+                            match made {
                                 Ok(body) => derived.push(body),
                                 Err(error) => {
                                     return Ok(Ok(Err(BatchError {
@@ -609,6 +672,10 @@ impl PgControlStore for KvControlStore {
         fence: &Fence,
     ) -> Result<(), StoreError> {
         self.delete_record::<R>(key, expected, Some(fence)).await
+    }
+
+    async fn commit(&self, batch: Batch, fence: &Fence) -> Result<Vec<Option<u64>>, BatchError> {
+        self.commit_batch(batch, Some(fence)).await
     }
 
     async fn list<R: Record>(
@@ -901,12 +968,20 @@ fn check_ttl(ttl: Duration) -> Result<u64, StoreError> {
 /// A fenced write of `rec` needs its project's lease (R3.11): a fence for
 /// prj-A never writes a record of prj-B.
 fn check_project<R: Record>(fence: Option<&Fence>, rec: &R) -> Result<(), StoreError> {
-    match (fence, rec.project()) {
+    check_project_of(fence, rec.project(), R::KIND)
+}
+
+/// As [`check_project`], for a record of `kind` naming `project`.
+fn check_project_of(
+    fence: Option<&Fence>,
+    project: Option<&str>,
+    kind: &str,
+) -> Result<(), StoreError> {
+    match (fence, project) {
         (Some(fence), Some(project)) if fence.scope() != project_lease(project) => {
             Err(StoreError::InvalidArgument(format!(
-                "the fence {} does not cover a {} of {project}",
+                "the fence {} does not cover a {kind} of {project}",
                 fence.scope(),
-                R::KIND
             )))
         }
         _ => Ok(()),

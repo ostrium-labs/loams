@@ -18,9 +18,10 @@
 //!   reference.
 //! - **Branches.** A child branch copies its parent's roles and databases
 //!   when it is created ([`PgService::inherit`]), each role with a copy of
-//!   its secret under the child's own reference: the timeline's catalog has
-//!   the same roles and passwords, and from then on each branch's roles
-//!   change on their own.
+//!   its secret under the child's own reference, and from then on each
+//!   branch's roles change on their own. The copies are the parent's
+//!   records as they are now, not as of the branch point (R6.4): a branch
+//!   at an older LSN gets today's roles, which its compute spec applies.
 //! - Passwords never reach a log line, an error, a record or the ledger;
 //!   references (not secrets) are logged.
 
@@ -558,6 +559,12 @@ impl<N: NeonRead> PgService<N> {
     /// to `copies` as it is stored, so the caller can discard them), and
     /// the databases whose owner it copied. `None`: a parent role moved
     /// while it was copied; the caller tries again.
+    ///
+    /// The copies are the parent's records **as they are now**, not as of
+    /// the branch point: `pg-control` keeps no history of roles (R6.4). A
+    /// branch at an older LSN therefore gets today's roles and passwords,
+    /// and the compute spec (Tasks 11, 24), which treats the records as
+    /// authoritative, makes its catalog match them.
     ///
     /// # Errors
     ///

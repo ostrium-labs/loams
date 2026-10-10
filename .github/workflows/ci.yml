@@ -806,7 +806,7 @@ jobs:
           cargo test -p loams --features live-tikv --bin loams live --locked --no-run
           cargo test -p loams-durable --features tikv --lib --test tikv --locked --no-run
           cargo test -p loams-safekeeper --features tikv --test tikv --locked --no-run
-          cargo test -p loams-pg-control --features tikv --test store_tikv --test service_tikv --locked --no-run
+          cargo test -p loams-pg-control --features tikv --test store_tikv --test service_tikv --test reconcile_tikv --locked --no-run
       - uses: actions/cache@v6
         with:
           path: ~/.tiup/components
@@ -834,7 +834,7 @@ jobs:
           cargo test -p loams --features live-tikv --bin loams live --locked
           cargo test -p loams-durable --features tikv --lib --test tikv --locked
           cargo test -p loams-safekeeper --features tikv --test tikv --locked
-          cargo test -p loams-pg-control --features tikv --test store_tikv --test service_tikv --locked
+          cargo test -p loams-pg-control --features tikv --test store_tikv --test service_tikv --test reconcile_tikv --locked
       - name: playground logs
         if: failure()
         uses: actions/upload-artifact@v7.0.1

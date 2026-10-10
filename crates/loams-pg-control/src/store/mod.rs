@@ -233,6 +233,24 @@ pub trait PgControlStore: Send + Sync + 'static {
         fence: &Fence,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;
 
+    /// Applies every operation of `batch` in one transaction fenced by
+    /// `fence`, or none of them (Task 7: removing a branch with its name
+    /// index, guard, roles and databases, and its parent's guard). As
+    /// [`ApiWriter::commit`], and as a fenced [`put`](Self::put): the lease
+    /// must still be at the fence's epoch (`Fenced`, with no index,
+    /// otherwise), and every record the batch writes, deletes or checks,
+    /// new or stored, must belong to the fence's project (`InvalidArgument`
+    /// at its index).
+    ///
+    /// # Errors
+    ///
+    /// As [`ApiWriter::commit`], plus `Fenced` and `InvalidArgument`.
+    fn commit(
+        &self,
+        batch: Batch,
+        fence: &Fence,
+    ) -> impl Future<Output = Result<Vec<Option<u64>>, BatchError>> + Send;
+
     /// One page of the records under `prefix`, in key order, and the token
     /// of the next page (`None`: the last page).
     fn list<R: Record>(

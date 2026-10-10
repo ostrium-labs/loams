@@ -15,7 +15,8 @@
 //!   write). The parent's record and version are untouched. `SetDefaultBranch` writes the project and
 //!   checks the branch; a delete writes the branch and checks the project.
 //! - **Inheritance** (Task 6): a child copies its parent's roles, with
-//!   copies of their secrets, and databases, in the batch that creates it.
+//!   copies of their secrets, and databases, in the batch that creates it:
+//!   the records as they are now, not as of the branch point (R6.4).
 //! - **Protection** (§46 §10): deleting a protected branch, or lifting its
 //!   protection, needs `admin` (an agent's approval flow is Task 9's).
 
@@ -430,7 +431,8 @@ impl<N: NeonRead> PgService<N> {
                 return Err(taken);
             }
             // The parent's roles (with copies of their secrets) and
-            // databases, as the timeline's catalog has them (Task 6).
+            // databases as they are now, not as of the branch point
+            // (R6.4; Task 6).
             let mut copies = Vec::new();
             let inherited = match self
                 .inherit(&parent.record, &branch.id, now, &mut copies)

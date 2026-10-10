@@ -68,6 +68,10 @@ name = "service_tikv"
 required-features = ["tikv"]
 
 [[test]]
+name = "reconcile_tikv"
+required-features = ["tikv"]
+
+[[test]]
 name = "secrets_kube"
 required-features = ["kubernetes"]
 

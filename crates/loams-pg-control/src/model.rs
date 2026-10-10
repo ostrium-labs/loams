@@ -712,6 +712,17 @@ pub struct OperationError {
     pub message: String,
 }
 
+/// How far an operation is (`loams.operations.v1.Progress`): `done` of
+/// `total` `unit`s (0: unknown), in the phase `phase`. The reconciler
+/// (Task 7) counts `steps`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperationProgress {
+    pub done: u64,
+    pub total: u64,
+    pub unit: String,
+    pub phase: String,
+}
+
 /// A long-running RPC's operation (`loams.operations.v1.Operation`). The
 /// API service writes it `Pending` with the record it acts on; the project's
 /// reconciler (Task 7) moves it on under its lease.
@@ -727,6 +738,11 @@ pub struct OperationRec {
     pub error: Option<OperationError>,
     pub created_at_ms: u64,
     pub updated_at_ms: u64,
+    /// Set by the reconciler (Task 7). `serde(default)` keeps ledger
+    /// answers recorded before it readable; `FORMAT` stays 1, as for
+    /// R5.11's fields (no operation exists outside tests).
+    #[serde(default)]
+    pub progress: Option<OperationProgress>,
 }
 
 /// `(project_id, operation_id)`.

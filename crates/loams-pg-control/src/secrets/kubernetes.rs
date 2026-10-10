@@ -5,8 +5,9 @@
 //!
 //! Writes are server-side apply with the field manager `loams-pg-control`,
 //! so a put creates or replaces in one call and a repeated put is a no-op.
-//! The ServiceAccount needs `get`, `patch` and `delete` on `secrets` in that
-//! namespace (§46 §7.2), nothing cluster-wide. Encryption at rest is the
+//! The ServiceAccount needs `get`, `list`, `patch` and `delete` on `secrets`
+//! in that namespace (§46 §7.2), nothing cluster-wide; `list` is the sweep's
+//! (Task 7), which reads only metadata, selected by the component label. Encryption at rest is the
 //! cluster's: an `EncryptionConfiguration` with a KMS provider for
 //! `secrets`.
 
@@ -16,7 +17,7 @@ use std::fmt;
 use async_trait::async_trait;
 use k8s_openapi::ByteString;
 use k8s_openapi::api::core::v1::Secret as KubeSecret;
-use kube::api::{Api, DeleteParams, ObjectMeta, Patch, PatchParams};
+use kube::api::{Api, DeleteParams, ListParams, ObjectMeta, Patch, PatchParams};
 
 use super::{Secret, SecretError, SecretRef, SecretStore};
 
@@ -25,6 +26,12 @@ pub const DATA_KEY: &str = "secret";
 
 /// The server-side apply field manager.
 pub const FIELD_MANAGER: &str = "loams-pg-control";
+
+/// The component label every role Secret carries; `list` selects by it.
+pub const COMPONENT: &str = "postgres-role-secret";
+
+/// Secrets a `list` page holds.
+const LIST_PAGE: u32 = 500;
 
 /// Role secrets in one Kubernetes namespace.
 #[derive(Clone)]
@@ -82,7 +89,7 @@ impl SecretStore for KubeSecretStore {
                     ),
                     (
                         "app.kubernetes.io/component".to_string(),
-                        "postgres-role-secret".to_string(),
+                        COMPONENT.to_string(),
                     ),
                 ])),
                 ..ObjectMeta::default()
@@ -128,6 +135,38 @@ impl SecretStore for KubeSecretStore {
             Ok(_) => Ok(()),
             Err(e) if not_found(&e) => Ok(()),
             Err(e) => Err(self.error("deleting", r, &e)),
+        }
+    }
+
+    /// The names of the namespace's role Secrets (metadata only, so no
+    /// secret's bytes are read), page by page.
+    async fn list(&self) -> Result<Vec<SecretRef>, SecretError> {
+        let selector = format!(
+            "app.kubernetes.io/managed-by={FIELD_MANAGER},app.kubernetes.io/component={COMPONENT}"
+        );
+        let mut params = ListParams::default().labels(&selector).limit(LIST_PAGE);
+        let mut out = Vec::new();
+        loop {
+            let page = self.api.list_metadata(&params).await.map_err(|e| {
+                let why = match &e {
+                    kube::Error::Api(status) => format!("{} {}", status.code, status.reason),
+                    other => other.to_string(),
+                };
+                SecretError::Unavailable(format!(
+                    "listing secrets in {}: kubernetes answered {why}",
+                    self.namespace
+                ))
+            })?;
+            out.extend(
+                page.items
+                    .iter()
+                    .filter_map(|o| o.metadata.name.as_deref())
+                    .filter_map(|n| SecretRef::parse(n).ok()),
+            );
+            match page.metadata.continue_.filter(|c| !c.is_empty()) {
+                Some(token) => params = params.continue_token(&token),
+                None => return Ok(out),
+            }
         }
     }
 }
