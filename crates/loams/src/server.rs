@@ -281,6 +281,10 @@ pub struct ServerConfig {
     /// the `graph` role in Task 12).
     #[cfg(feature = "graph")]
     pub graph: GraphConfig,
+    /// `[house]`: the Loams House front the main port proxies
+    /// `/loams.house.v1.*` to (HS1 Task 7, design §49 §18.1). No endpoint (the
+    /// default) answers `house_not_configured`.
+    pub house: crate::api::house_proxy::HouseProxyConfig,
 }
 
 /// The largest engine statement time limit (§48 §13.1's maximum statement timeout).
@@ -402,6 +406,7 @@ impl ServerConfig {
             live: None,
             #[cfg(feature = "graph")]
             graph: GraphConfig::under(data_dir_for_graph),
+            house: crate::api::house_proxy::HouseProxyConfig::default(),
         }
     }
 
@@ -2153,6 +2158,10 @@ impl Server {
             reflection: config.reflection,
             #[cfg(feature = "graph")]
             graph: graph.as_ref().map(|g| g.admin.clone()),
+            house: roles
+                .gateway
+                .then(|| crate::api::house_proxy::HouseProxy::start(&config.house))
+                .flatten(),
         };
         let app = match roles.gateway {
             true => api::router(state),

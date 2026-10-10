@@ -37,6 +37,8 @@ datafusion-postgres = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 fail = { workspace = true, optional = true }
 http.workspace = true
+# The `loams.house.v1` proxy's streamed request body (HS1 Task 7).
+http-body.workspace = true
 loams-cache.workspace = true
 loams-cloudevents.workspace = true
 loams-collection.workspace = true
@@ -76,6 +78,7 @@ loams-worker.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sync_wrapper.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util = { workspace = true, features = ["rt"] }
@@ -163,9 +166,13 @@ prost.workspace = true
 prost-types.workspace = true
 # HTTP/2 with prior knowledge, so `connect_api.rs` can put a gRPC frame on the
 # main port the way `grpcurl` does (h2c, not TLS ALPN).
-reqwest = { workspace = true, features = ["http2"] }
+# `stream`: `connect_api.rs` sends a request body chunk by chunk through the
+# House proxy (HS1 Task 7).
+reqwest = { workspace = true, features = ["http2", "stream"] }
 tempfile.workspace = true
 time.workspace = true
+# The stand-in House front's streamed answer in `connect_api.rs` (HS1 Task 7).
+tokio-stream.workspace = true
 # The client of the PostgreSQL wire listener's tests (`pg::tests`).
 tokio-postgres = "0.7"
 tonic = { workspace = true, features = ["gzip"] }

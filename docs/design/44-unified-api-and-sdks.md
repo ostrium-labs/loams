@@ -181,6 +181,7 @@ Language idiom rules (D606): module and method names are the proto names in the 
 | `loams.durable`, `loams.operations`, `loams.approvals` | durable engine control (start/signal/inspect) in `loams.durable.v1`; `loams.operations.v1`; `loams.approvals.v1` | partial (D1, AP0) |
 | `loams.jobs` | `loams.jobs.v1` (§26) | when J1 lands |
 | `loams.flow` | `loams.flow.v1` (§32) | when FL lands |
+| `loams.house` | `loams.house.v1` `HouseService` (§49 §18) | served by `loams-fabric house`; the main port proxies `/loams.house.v1.*` to `[house] endpoint` and lists it as available while that endpoint is healthy, `house_not_configured` otherwise (HS1 Task 7); RPCs in HS1 Task 8; unstable until HS1 Task 38 |
 | `loams.git` | `loams.git.v1` control plane: repos, refs, tokens, mirrors, caches (data path stays Git Smart HTTP, D603) | when GT lands |
 | `loams.systemone` | `loams.systemone.v1` `SystemOneService` (`Decide`, `DecideBatch`, `ListBackends`, `SelfTest`) | SO1 |
 | `loams.collab`, `loams.bot`, `loams.factory` | `loams.collab.v1`, `loams.bot.v1`, `loams.factory.v1` (§39) | SF |

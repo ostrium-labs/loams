@@ -247,6 +247,11 @@ struct Native {
     /// Serve no Flight SQL.
     #[arg(long)]
     no_flight_sql: bool,
+    /// The Loams House front (`loams-fabric house`) this port proxies
+    /// `/loams.house.v1.*` to, such as http://127.0.0.1:8123 (design §49
+    /// §18.1). Without it, loams.house.v1 answers house_not_configured.
+    #[arg(long, value_parser = parse_house_endpoint)]
+    house_endpoint: Option<url::Url>,
     /// MySQL wire listener for collection queries (loopback only).
     #[cfg(feature = "mysql-wire")]
     #[arg(long)]
@@ -501,6 +506,17 @@ fn parse_durable_listen(text: &str) -> Result<SocketAddr, String> {
     text.parse().map_err(|err| format!("{err}"))
 }
 
+/// `--house-endpoint`: an `http` or `https` URL with a host.
+fn parse_house_endpoint(text: &str) -> Result<url::Url, String> {
+    let url = url::Url::parse(text).map_err(|err| format!("--house-endpoint {text:?}: {err}"))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
+        return Err(format!(
+            "--house-endpoint {text:?}: expected http://host:port or https://host:port"
+        ));
+    }
+    Ok(url)
+}
+
 /// `--durable-set key=value`.
 fn parse_key_value(text: &str) -> Result<(String, String), String> {
     match text.split_once('=') {
@@ -546,6 +562,7 @@ impl Native {
     }
 
     fn apply(&self, config: &mut ServerConfig, default_flight: SocketAddr) {
+        config.house.endpoint = self.house_endpoint.clone();
         config.flight_sql = if self.no_flight_sql {
             None
         } else {
@@ -1542,6 +1559,24 @@ mod tests {
                 .validate()
                 .is_err()
         );
+    }
+
+    /// HS1 Task 7: `--house-endpoint` is `[house] endpoint`; without it the
+    /// House is not configured, and only an http(s) URL with a host is taken.
+    #[test]
+    fn house_endpoint_is_the_house_proxy_target() {
+        assert_eq!(dev_config(&[]).house.endpoint, None);
+        let config = dev_config(&["--house-endpoint", "http://127.0.0.1:8123"]);
+        assert_eq!(
+            config.house.endpoint.as_ref().map(url::Url::as_str),
+            Some("http://127.0.0.1:8123/")
+        );
+        for bad in ["127.0.0.1:8123", "unix:///run/house.sock", "http://"] {
+            assert!(
+                Cli::try_parse_from(["loams", "dev", "--house-endpoint", bad]).is_err(),
+                "{bad}"
+            );
+        }
     }
 
     /// Q603's proposed default: `loams dev` publishes the Connect schema on

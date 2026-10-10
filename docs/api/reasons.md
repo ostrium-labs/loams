@@ -41,6 +41,7 @@ The rules, in the order they bite:
 | `push_target_unknown` | not_found | UnregisterPushTarget | |
 | `not_implemented` | unimplemented | a stub handler whose service has not landed yet | |
 | `feature_not_in_variant` | unimplemented | any RPC of a catalogue package whose engine is not in this build variant (§44 §4, §30 §9) | `variant` |
+| `house_not_configured` | unimplemented | any `loams.house.v1` RPC on a server with no `[house] endpoint` (`--house-endpoint`): the main port has no Loams House front to proxy to (HS1 Task 7, §49 §18.1). A front that is configured but unreachable answers `unavailable` | |
 | `project_not_found` | not_found | every `loams.postgres.v1` RPC that names a project | `project` |
 | `branch_has_children` | failed_precondition | DeleteBranch | `children` (count) |
 | `branch_protected` | failed_precondition | DeleteBranch, RestoreBranch (an agent's goes through `loams.approvals.v1` instead) | `branch` |

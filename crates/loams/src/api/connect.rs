@@ -151,22 +151,49 @@ const CATALOGUE: &[Package] = &[
         available: cfg!(feature = "graph"),
         unstable: true,
     },
+    Package {
+        // Loams House (HS1 Task 7, design §49 §18, D778): served by a separate
+        // `loams-fabric house` front and proxied by this port
+        // (`super::house_proxy`), so `available` here only says "this binary can
+        // proxy it": the row is available while `[house] endpoint` is configured
+        // **and** its health check passes ([`Served`]). Unstable until HS1 Task 38.
+        package: "loams.house.v1",
+        services: &["loams.house.v1.HouseService"],
+        available: true,
+        unstable: true,
+    },
 ];
 
+/// What this running server serves beyond the build's catalogue: the graph
+/// runtime, and a healthy House front behind the proxy.
+#[derive(Clone, Copy, Debug)]
+struct Served {
+    /// The graph runtime is on (not `--no-graph`, not a cluster node).
+    graph: bool,
+    /// `[house] endpoint` is configured and answered its last health check.
+    house: bool,
+}
+
 /// Whether a catalogue package is served by this running server: the build's `available`, and
-/// for `loams.graph.v1` also whether the graph runtime is on (`--no-graph`, cluster nodes).
-fn is_available(entry: &Package, graph_served: bool) -> bool {
-    entry.available && (entry.package != "loams.graph.v1" || graph_served)
+/// for `loams.graph.v1` also whether the graph runtime is on (`--no-graph`, cluster nodes), for
+/// `loams.house.v1` whether the House front is configured and healthy.
+fn is_available(entry: &Package, served: Served) -> bool {
+    entry.available
+        && match entry.package {
+            "loams.graph.v1" => served.graph,
+            super::house_proxy::PACKAGE => served.house,
+            _ => true,
+        }
 }
 
 /// The catalogue as `GetInstance.services[]`.
-fn statuses(graph_served: bool) -> Vec<ServiceStatus> {
+fn statuses(served: Served) -> Vec<ServiceStatus> {
     CATALOGUE
         .iter()
         .map(|entry| ServiceStatus {
             package: entry.package.to_owned(),
             version: "v1".to_owned(),
-            available: is_available(entry, graph_served),
+            available: is_available(entry, served),
             services: entry
                 .services
                 .iter()
@@ -180,11 +207,17 @@ fn statuses(graph_served: bool) -> Vec<ServiceStatus> {
 
 /// The services a `grpc.health.v1` probe may ask about. The whole-process
 /// entry (the empty name) is pre-registered by `connectrpc-health` and is not
-/// repeated here.
+/// repeated here. The registration is static, so `loams.house.v1`, whose
+/// health is another process's and changes while this one runs, is never in
+/// it: the catalogue's `available` is the place to ask.
 fn served_services(graph_served: bool) -> Vec<&'static str> {
+    let served = Served {
+        graph: graph_served,
+        house: false,
+    };
     CATALOGUE
         .iter()
-        .filter(|entry| is_available(entry, graph_served))
+        .filter(|entry| is_available(entry, served))
         .flat_map(|entry| entry.services.iter().copied())
         .collect()
 }
@@ -199,6 +232,18 @@ static INSTANCE_ID: LazyLock<String> = LazyLock::new(|| Ulid::generate().to_stri
 struct Instance {
     /// Whether `loams.graph.v1` is served by this running server.
     graph_served: bool,
+    /// The House proxy, whose health decides `loams.house.v1`'s row.
+    house: Option<Arc<super::house_proxy::HouseProxy>>,
+}
+
+impl Instance {
+    /// What is served right now (the House's health changes while the server runs).
+    fn served(&self) -> Served {
+        Served {
+            graph: self.graph_served,
+            house: self.house.as_ref().is_some_and(|house| house.healthy()),
+        }
+    }
 }
 
 impl InstanceService for Instance {
@@ -208,6 +253,7 @@ impl InstanceService for Instance {
         _ctx: RequestContext,
         _request: ServiceRequest<'_, GetInstanceRequest>,
     ) -> ServiceResult<GetInstanceResponse> {
+        let served = self.served();
         Response::ok(GetInstanceResponse {
             instance_id: INSTANCE_ID.clone(),
             name: INSTANCE_NAME.to_owned(),
@@ -219,7 +265,7 @@ impl InstanceService for Instance {
             // `rpc.<service>` (AP1a Ruling 6); `services` is the long form.
             api_versions: CATALOGUE
                 .iter()
-                .filter(|entry| is_available(entry, self.graph_served))
+                .filter(|entry| is_available(entry, served))
                 .map(|entry| entry.package.to_owned())
                 .collect(),
             sign_in_methods: vec![SignInMethod {
@@ -227,7 +273,7 @@ impl InstanceService for Instance {
                 display_name: "No sign-in".to_owned(),
                 ..Default::default()
             }],
-            services: statuses(self.graph_served),
+            services: statuses(served),
             // Empty until their plans land, not because they are off: `issuer`
             // and `jwks_uri` with the auth plan (MT), `tls_pins` and `push`
             // with the phone plans (§37 §7), `min_app_versions` with release
@@ -387,7 +433,11 @@ fn reflector(state: &AppState) -> Option<connectrpc_reflection::Reflector> {
 pub(crate) fn routes(state: &AppState, hot_default: bool) -> AxumRouter {
     let graph_served = super::graph::served(state);
     let mut rpc = Router::new();
-    rpc = Arc::new(Instance { graph_served }).register(rpc);
+    rpc = Arc::new(Instance {
+        graph_served,
+        house: state.house.clone(),
+    })
+    .register(rpc);
     rpc = Arc::new(LiveAbsent).register(rpc);
     rpc = super::graph::register(rpc, state);
     rpc = super::connect_collections::register(rpc, state);
