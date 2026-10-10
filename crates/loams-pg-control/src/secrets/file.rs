@@ -100,9 +100,12 @@ impl FileSecretStore {
         &self,
         f: impl FnOnce(&mut Plain) -> Result<(T, bool), SecretError> + Send + 'static,
     ) -> Result<T, SecretError> {
-        let _guard = self.lock.lock().await;
+        // An owned guard, moved into the blocking task: it is released when
+        // the file work ends, even if the caller's future is dropped first.
+        let guard = self.lock.clone().lock_owned().await;
         let (path, identity) = (self.path.clone(), self.identity.clone());
         tokio::task::spawn_blocking(move || {
+            let _guard = guard;
             let mut map = load(&path, &identity)?;
             let (out, changed) = f(&mut map)?;
             if changed {
@@ -184,22 +187,34 @@ fn save(path: &Path, identity: &Identity, map: &Plain) -> Result<(), SecretError
     plain.extend_from_slice(&body);
     let sealed = age::encrypt(&identity.to_public(), &plain)
         .map_err(|e| SecretError::Unavailable(format!("encrypting the secrets: {e}")))?;
-    let dir = path.parent().filter(|d| !d.as_os_str().is_empty());
-    if let Some(dir) = dir {
-        fs::create_dir_all(dir).map_err(|e| io(dir, &e))?;
-    }
+    let dir = parent(path);
+    fs::create_dir_all(dir).map_err(|e| io(dir, &e))?;
     let tmp = path.with_extension("tmp");
     let mut f = private_file(&tmp, true).map_err(|e| io(&tmp, &e))?;
     f.write_all(&sealed).map_err(|e| io(&tmp, &e))?;
     f.sync_all().map_err(|e| io(&tmp, &e))?;
     drop(f);
     fs::rename(&tmp, path).map_err(|e| io(path, &e))?;
-    if let Some(dir) = dir {
-        // The rename is durable once the directory is.
-        fs::File::open(dir)
-            .and_then(|d| d.sync_all())
-            .map_err(|e| io(dir, &e))?;
-    }
+    // The rename is durable once the directory is.
+    sync_dir(dir)
+}
+
+/// The directory `path` is in (`.` for a bare file name).
+fn parent(path: &Path) -> &Path {
+    path.parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."))
+}
+
+/// Makes the entries of `dir` durable (a no-op where directories cannot be
+/// opened for that).
+fn sync_dir(dir: &Path) -> Result<(), SecretError> {
+    #[cfg(unix)]
+    fs::File::open(dir)
+        .and_then(|d| d.sync_all())
+        .map_err(|e| io(dir, &e))?;
+    #[cfg(not(unix))]
+    let _ = dir;
     Ok(())
 }
 
@@ -237,9 +252,8 @@ fn key_from_file(path: &Path) -> Result<Identity, SecretError> {
             parse_identity(&text, &path.display().to_string())
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-                fs::create_dir_all(dir).map_err(|e| io(dir, &e))?;
-            }
+            let dir = parent(path);
+            fs::create_dir_all(dir).map_err(|e| io(dir, &e))?;
             let identity = Identity::generate();
             let mut f = private_file(path, false).map_err(|e| io(path, &e))?;
             let text = identity.to_string();
@@ -247,6 +261,9 @@ fn key_from_file(path: &Path) -> Result<Identity, SecretError> {
                 .and_then(|()| f.write_all(b"\n"))
                 .and_then(|()| f.sync_all())
                 .map_err(|e| io(path, &e))?;
+            // Durable before any secret is encrypted to it: a key lost to a
+            // crash would leave the secret file unreadable.
+            sync_dir(dir)?;
             Ok(identity)
         }
         Err(e) => Err(io(path, &e)),
