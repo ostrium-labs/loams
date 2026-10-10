@@ -31,7 +31,7 @@ README.md lists each crate's licence and origin. The workspace test
 
 The Loams identity strings in loams-agentd-proto (src/brand.rs) came from the
 fork's Apache-2.0 loams-desktop-brand crate, which the Loams Authors wrote.
-The Loams Authors place those lines under that crate's MIT License.
+The Loams Authors place those lines under loams-agentd-proto's MIT License.
 
 "Zeron" names the upstream project and is used here only to say where this
 code comes from. "Loams", "Loams Desktop" and "loams-agentd" name this
