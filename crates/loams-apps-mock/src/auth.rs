@@ -72,11 +72,9 @@ pub(crate) fn caller_from_header(
             .map(|(head, _)| head.to_owned())
             .unwrap_or_else(|| id.to_owned()),
     };
-    let principal = seed
-        .principal(&principal_id)
-        .ok_or_else(|| {
-            ConnectError::unauthenticated(format!("no seed principal `{principal_id}`"))
-        })?;
+    let principal = seed.principal(&principal_id).ok_or_else(|| {
+        ConnectError::unauthenticated(format!("no seed principal `{principal_id}`"))
+    })?;
     if seed.revoked_principals.iter().any(|p| p == &principal_id) {
         return Err(refuse(
             ErrorCode::Unauthenticated,
@@ -115,7 +113,8 @@ mod tests {
         // hands out; the hand-written `mock-access-<principal>` still works.
         let seed = Seed::demo();
         let now = SystemTime::now();
-        let issued = caller_from_header(&seed, "Bearer mock-access-usr_omar-01HQZX9K7T", now).unwrap();
+        let issued =
+            caller_from_header(&seed, "Bearer mock-access-usr_omar-01HQZX9K7T", now).unwrap();
         assert_eq!(issued.principal.id, "usr_omar");
         assert_eq!(issued.authenticated_at, now);
         // And an unknown principal with a suffix is still refused.

@@ -99,22 +99,43 @@ mod tests {
         async fn open(&self, _request: OpenRequest) -> Result<PageRef, BridgeError> {
             unimplemented!()
         }
-        async fn navigate(&self, _page: &PageRef, _url: &url::Url) -> Result<Navigation, BridgeError> {
+        async fn navigate(
+            &self,
+            _page: &PageRef,
+            _url: &url::Url,
+        ) -> Result<Navigation, BridgeError> {
             unimplemented!()
         }
-        async fn snapshot(&self, _page: &PageRef, _request: &SnapshotRequest) -> Result<Snapshot, BridgeError> {
+        async fn snapshot(
+            &self,
+            _page: &PageRef,
+            _request: &SnapshotRequest,
+        ) -> Result<Snapshot, BridgeError> {
             unimplemented!()
         }
-        async fn find(&self, _page: &PageRef, _query: &FindQuery) -> Result<Vec<crate::tool::SnapshotNode>, BridgeError> {
+        async fn find(
+            &self,
+            _page: &PageRef,
+            _query: &FindQuery,
+        ) -> Result<Vec<crate::tool::SnapshotNode>, BridgeError> {
             unimplemented!()
         }
         async fn click(&self, _page: &PageRef, _uid: &Uid) -> Result<ActionOutcome, BridgeError> {
             unimplemented!()
         }
-        async fn fill(&self, _page: &PageRef, _uid: &Uid, _value: &FillValue) -> Result<ActionOutcome, BridgeError> {
+        async fn fill(
+            &self,
+            _page: &PageRef,
+            _uid: &Uid,
+            _value: &FillValue,
+        ) -> Result<ActionOutcome, BridgeError> {
             unimplemented!()
         }
-        async fn wait_for(&self, _page: &PageRef, _request: &WaitRequest) -> Result<WaitOutcome, BridgeError> {
+        async fn wait_for(
+            &self,
+            _page: &PageRef,
+            _request: &WaitRequest,
+        ) -> Result<WaitOutcome, BridgeError> {
             unimplemented!()
         }
         async fn screenshot(&self, _page: &PageRef) -> Result<Screenshot, BridgeError> {
@@ -131,7 +152,7 @@ mod tests {
     #[test]
     fn test_select() {
         let mut registry = ProviderRegistry::new();
-        
+
         let local_caps = Capabilities {
             core: true,
             screenshots: true,
@@ -145,7 +166,7 @@ mod tests {
             kind: ProviderKind::Local,
             capabilities: local_caps,
         }));
-        
+
         let remote_caps = Capabilities {
             core: true,
             screenshots: true,
@@ -159,7 +180,7 @@ mod tests {
             kind: ProviderKind::BrowserRun,
             capabilities: remote_caps,
         }));
-        
+
         // Requirements matching local
         let req1 = Capabilities {
             credentials_stay_local: true,
@@ -167,7 +188,7 @@ mod tests {
         };
         let p1 = registry.select(&req1).unwrap();
         assert_eq!(p1.kind(), ProviderKind::Local);
-        
+
         // Requirements matching remote (guardrails)
         let req2 = Capabilities {
             guardrails: true,
@@ -175,7 +196,7 @@ mod tests {
         };
         let p2 = registry.select(&req2).unwrap();
         assert_eq!(p2.kind(), ProviderKind::BrowserRun);
-        
+
         // Requirements matching none
         let req3 = Capabilities {
             guardrails: true,
@@ -188,18 +209,21 @@ mod tests {
     #[test]
     fn test_select_by_kind_and_default() {
         let mut registry = ProviderRegistry::new();
-        
+
         assert!(registry.default().is_none());
         assert!(registry.select_by_kind(ProviderKind::Local).is_none());
-        
+
         let local = Arc::new(MockProvider {
             kind: ProviderKind::Local,
             capabilities: Capabilities::default(),
         });
         registry.register(local);
-        
+
         assert_eq!(registry.default().unwrap().kind(), ProviderKind::Local);
-        assert_eq!(registry.select_by_kind(ProviderKind::Local).unwrap().kind(), ProviderKind::Local);
+        assert_eq!(
+            registry.select_by_kind(ProviderKind::Local).unwrap().kind(),
+            ProviderKind::Local
+        );
         assert!(registry.select_by_kind(ProviderKind::BrowserRun).is_none());
     }
 }

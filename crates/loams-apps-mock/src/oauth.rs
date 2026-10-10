@@ -642,9 +642,7 @@ mod tests {
         assert_ne!(first, second, "both devices were handed the same token");
 
         // The point of distinct tokens: each still names its own device.
-        let device_of = |token: &str| {
-            store.lock().issued.get(token).cloned().unwrap_or_default()
-        };
+        let device_of = |token: &str| store.lock().issued.get(token).cloned().unwrap_or_default();
         assert_ne!(device_of(&first), device_of(&second));
         assert_eq!(device_of(&first), first_device);
         assert_eq!(device_of(&second), second_device);
@@ -687,7 +685,8 @@ mod tests {
             access.starts_with("mock-access-usr_omar-"),
             "unexpected access token {access}"
         );
-        let principal = caller_from_header(&store.seed, &format!("Bearer {access}"), SystemTime::now());
+        let principal =
+            caller_from_header(&store.seed, &format!("Bearer {access}"), SystemTime::now());
         assert_eq!(principal.unwrap().principal.id, "usr_omar");
         assert_eq!(
             body["token_type"], "DPoP",

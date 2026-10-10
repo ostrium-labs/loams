@@ -85,8 +85,8 @@ fn the_imports_come_from_the_sdk_crate() {
     // Every imported module must be a module the SDK crate actually declares.
     // `sdks/rust/src/lib.rs` is the list; a generated import of a module that
     // does not exist is E0433 the moment the trait is implemented.
-    let lib = std::fs::read_to_string(root().join("sdks/rust/src/lib.rs"))
-        .expect("sdks/rust/src/lib.rs");
+    let lib =
+        std::fs::read_to_string(root().join("sdks/rust/src/lib.rs")).expect("sdks/rust/src/lib.rs");
     for line in &uses {
         let Some(rest) = line.strip_prefix("use ").map(|r| r.trim_end_matches(';')) else {
             continue;
@@ -316,7 +316,10 @@ pub trait DemoModule {
     // filtered by `PRELUDE` at the call site, which is what this next line
     // reproduces for the three that resolve without an import.
     for excluded in ["Output", "Future", "MODULE"] {
-        assert!(!bare.contains(excluded), "{excluded} should not be bare: {bare:?}");
+        assert!(
+            !bare.contains(excluded),
+            "{excluded} should not be bare: {bare:?}"
+        );
     }
     for present in ["Result", "Send", "LoamsError"] {
         assert!(

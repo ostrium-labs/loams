@@ -71,9 +71,12 @@ fn mappings() -> Vec<Mapping> {
             else {
                 continue;
             };
-            let (package, value) = rest
-                .split_once('=')
-                .unwrap_or_else(|| panic!("{}: a package= line with no value: {line}", template.display()));
+            let (package, value) = rest.split_once('=').unwrap_or_else(|| {
+                panic!(
+                    "{}: a package= line with no value: {line}",
+                    template.display()
+                )
+            });
             found.push(Mapping {
                 language: language.clone(),
                 package: package.trim().to_owned(),
@@ -370,14 +373,15 @@ fn every_annotated_package_is_in_every_map() {
         annotated.contains(&"loams.live.v1".to_owned()),
         "the descriptor set no longer carries loams.live.v1, so this test reads the wrong input"
     );
-    let by_language: BTreeMap<String, Vec<String>> = mappings()
-        .into_iter()
-        .fold(BTreeMap::new(), |mut acc, mapping| {
-            acc.entry(mapping.language)
-                .or_default()
-                .push(mapping.package);
-            acc
-        });
+    let by_language: BTreeMap<String, Vec<String>> =
+        mappings()
+            .into_iter()
+            .fold(BTreeMap::new(), |mut acc, mapping| {
+                acc.entry(mapping.language)
+                    .or_default()
+                    .push(mapping.package);
+                acc
+            });
     for (language, packages) in &by_language {
         // TypeScript's map carries `loams.errors.v1`, which no annotated service
         // needs; every other language maps exactly the annotated set.
@@ -419,7 +423,10 @@ fn the_crate_ownership_check_rejects_the_defect_it_was_written_for() {
     );
     // And it must fail crate ownership, naming the crate that does own it.
     let error = crate_ownership_error(&owners, &shipped).unwrap_or_else(|| {
-        panic!("crate ownership accepted {} — the guard cannot fail", shipped.value)
+        panic!(
+            "crate ownership accepted {} — the guard cannot fail",
+            shipped.value
+        )
     });
     assert!(
         error.contains("loams_live_proto"),
@@ -456,14 +463,20 @@ fn crate_is_a_dependency(dependencies: &[String], crate_name: &str) -> bool {
 
 /// The crate-ownership check as a function, so the anti-vacuity test can drive
 /// it with a planted defect. `None` is clean.
-fn crate_ownership_error(owners: &BTreeMap<String, Vec<String>>, mapping: &Mapping) -> Option<String> {
+fn crate_ownership_error(
+    owners: &BTreeMap<String, Vec<String>>,
+    mapping: &Mapping,
+) -> Option<String> {
     let (crate_name, module_path) = mapping.value.split_once("::")?;
     let crate_name = crate_name.replace('-', "_");
     let claiming = owners.get(&mapping.package)?;
     if !claiming.contains(&crate_name) {
         return Some(format!(
             "{} maps {} to {}, but {} does",
-            mapping.language, mapping.package, mapping.value, claiming.join(", ")
+            mapping.language,
+            mapping.package,
+            mapping.value,
+            claiming.join(", ")
         ));
     }
     if module_path != mapping.package.replace('.', "::") {
