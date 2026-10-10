@@ -1,0 +1,50 @@
+{
+  "description": "The graphs list (§48 §18.2): ListGraphs with page size 50 in the namespace `default`, which holds `kg` (LINKED) and `movies` (OWNED). Ids and creation times differ per server and are not compared.",
+  "exchanges": [
+    {
+      "method": "loams.graph.v1.GraphAdminService/ListGraphs",
+      "request": {
+        "namespace": "default",
+        "pageSize": 50
+      },
+      "ignore": [
+        "graphs[].id",
+        "graphs[].createTime"
+      ],
+      "response": {
+        "graphs": [
+          {
+            "createTime": "2026-10-10T05:49:04.835Z",
+            "id": "gr_01M4J5Q5Y3KFT4KWTE3Y1D4ZR1",
+            "languages": [
+              "QUERY_LANGUAGE_GQL"
+            ],
+            "limits": {},
+            "mode": "GRAPH_MODE_LINKED",
+            "name": "kg",
+            "namespace": "default",
+            "state": "GRAPH_STATE_READY",
+            "version": "1"
+          },
+          {
+            "createTime": "2026-10-10T05:49:04.806Z",
+            "id": "gr_01M4J5Q5X6X5MZZVBSZ8GR8WA8",
+            "languages": [
+              "QUERY_LANGUAGE_GQL"
+            ],
+            "limits": {},
+            "mode": "GRAPH_MODE_OWNED",
+            "name": "movies",
+            "namespace": "default",
+            "state": "GRAPH_STATE_READY",
+            "stats": {
+              "edges": "4",
+              "nodes": "5"
+            },
+            "version": "1"
+          }
+        ]
+      }
+    }
+  ]
+}

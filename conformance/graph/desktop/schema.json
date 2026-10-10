@@ -1,0 +1,42 @@
+{
+  "description": "The schema sidebar (§48 §18.2): GetSchema of `movies`.",
+  "exchanges": [
+    {
+      "method": "loams.graph.v1.GraphAdminService/GetSchema",
+      "request": {
+        "namespace": "default",
+        "name": "movies"
+      },
+      "response": {
+        "edgeTypes": [
+          {
+            "count": "3",
+            "type": "ACTED_IN"
+          },
+          {
+            "count": "1",
+            "type": "DIRECTED"
+          }
+        ],
+        "labels": [
+          {
+            "count": "2",
+            "label": "Movie"
+          },
+          {
+            "count": "3",
+            "label": "Person"
+          }
+        ],
+        "propertyKeys": [
+          "born",
+          "name",
+          "rating",
+          "released",
+          "roles",
+          "title"
+        ]
+      }
+    }
+  ]
+}

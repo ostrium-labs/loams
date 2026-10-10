@@ -2,7 +2,7 @@
 
 # loams-apps-mock
 
-A stateful mock of the Loams app protos (design [§37](../../docs/design/37-desktop-and-mobile-apps.md) §12, plan [AP0](../../docs/plans/2026-10-01-ap0-app-protos.md) Task 5): `loams.instance.v1`, `loams.devices.v1`, `loams.approvals.v1`, `loams.operations.v1` and `loams.notifications.v1`, over Connect (binary and JSON), gRPC and gRPC-Web on one loopback listener. The console, Loams Desktop and the phone apps (`ostrium-labs/loams-mobile`) develop and test against it until the server side (AP4) exists.
+A stateful mock of the Loams app protos (design [§37](../../docs/design/37-desktop-and-mobile-apps.md) §12, plan [AP0](../../docs/plans/2026-10-01-ap0-app-protos.md) Task 5): `loams.instance.v1`, `loams.devices.v1`, `loams.approvals.v1`, `loams.operations.v1` and `loams.notifications.v1`, plus a seeded `loams.graph.v1` for the desktop Graph page (plan [GR1](../../docs/plans/2026-10-08-gr1-graph-production.md) Task 7), over Connect (binary and JSON), gRPC and gRPC-Web on one loopback listener. The console, Loams Desktop and the phone apps (`ostrium-labs/loams-mobile`) develop and test against it until the server side (AP4) exists.
 
 ```bash
 cargo run -p loams-apps-mock                        # http://127.0.0.1:8084
@@ -41,6 +41,9 @@ Seed principals: `usr_dana` (a developer), `usr_omar` (an approver), `agt_claude
 | Push targets, notification preferences, test notifications | **Stub** (`unimplemented`, reason `not_implemented`) |
 | Operations: get, list | Real, from the seed; `WatchOperations` is a snapshot then heartbeats; `CancelOperation` is a stub |
 | Notifications: list, mark read | Real; `WatchNotifications` is a snapshot then heartbeats |
+| Graph catalog: `CreateGraph` (OWNED), `GetGraph`, `ListGraphs` (AIP-158 pages), `DeleteGraph` | Real, in memory; namespace `default` starts with `movies` (OWNED) and `kg` (LINKED). No token needed, as on a loopback `loams dev` |
+| Graph statements: `Execute`, `ExecuteStream`, `Explain`, `GetSchema` | Canned: a request equal to one in [`conformance/graph/desktop`](../../conformance/graph/desktop/README.md) gets that fixture's answer (the same as the server's); any other statement answers `unimplemented`, reason `not_implemented` |
+| Graph: `UpdateGraph`, `ExecuteBatch`, restore, export, import | **Stub** (`unimplemented`, reason `not_implemented`) |
 | YAML scenarios (AP0 Ruling 9) | **Not yet**: the seed is fixed |
 | The pairing grant and the RFC 8693 exchange | Not here: they belong to the unified auth plan |
 

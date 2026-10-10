@@ -2,7 +2,8 @@
 //! §12, AP0 Task 5).
 //!
 //! It serves `loams.instance.v1`, `loams.devices.v1`, `loams.approvals.v1`,
-//! `loams.operations.v1` and `loams.notifications.v1` over Connect, gRPC and
+//! `loams.operations.v1`, `loams.notifications.v1` and a seeded
+//! `loams.graph.v1` ([`graph`], GR1 Task 7) over Connect, gRPC and
 //! gRPC-Web on one loopback listener (connect-rust), with seed data
 //! ([`seed::Seed::demo`]). The console, the desktop and the phone apps
 //! develop and test against it until the server side (AP4) exists.
@@ -31,6 +32,7 @@ pub mod acceptance;
 mod auth;
 mod console;
 mod cors;
+pub mod graph;
 mod oauth;
 pub mod seed;
 mod services;
@@ -198,6 +200,7 @@ pub async fn serve(config: MockConfig) -> anyhow::Result<MockHandle> {
 fn router(config: &MockConfig) -> (Router, Arc<store::Store>) {
     use proto::loams::approvals::v1::ApprovalServiceExt as _;
     use proto::loams::devices::v1::DeviceServiceExt as _;
+    use proto::loams::graph::v1::{GraphAdminServiceExt, GraphServiceExt};
     use proto::loams::instance::v1::InstanceServiceExt as _;
     use proto::loams::notifications::v1::NotificationServiceExt as _;
     use proto::loams::operations::v1::OperationsServiceExt as _;
@@ -213,6 +216,9 @@ fn router(config: &MockConfig) -> (Router, Arc<store::Store>) {
     let router = Arc::new(services::Devices(store.clone())).register(router);
     let router = Arc::new(services::Operations(store.clone())).register(router);
     let router = Arc::new(services::Notifications(store.clone())).register(router);
+    let graph = Arc::new(graph::GraphMock::seeded());
+    let router = GraphAdminServiceExt::register(Arc::clone(&graph), router);
+    let router = GraphServiceExt::register(graph, router);
     (router, store)
 }
 

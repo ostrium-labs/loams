@@ -39,9 +39,15 @@ use grafeo_common::types::PropertyKey;
 pub enum GraphError {
     /// The engine refused a statement. Grafeo's own error text, kept whole: it carries the syntax
     /// span and a hint, and dropping either makes a GQL mistake much harder to fix than a message
-    /// alone would.
-    #[error("the graph engine refused the statement: {0}")]
-    Engine(String),
+    /// alone would. The span and the GQLSTATUS also travel apart, in `diagnostic`, so an editor
+    /// can underline the error without reading the text (§48 §8.3, GR1 Task 7).
+    #[error("the graph engine refused the statement: {message}")]
+    Engine {
+        /// The engine's text.
+        message: String,
+        /// Where the statement broke and its GQLSTATUS, when the engine said.
+        diagnostic: Diagnostic,
+    },
     /// A namespace and name pair was opened with a different configuration than an existing graph,
     /// which would mean two callers disagree about the same graph's storage.
     #[error("graph {namespace}/{name} is already open with a different configuration")]
@@ -154,13 +160,42 @@ pub enum GraphError {
     Failed,
 }
 
+/// What the engine said about a statement it refused, besides its text (§48 §8.3, GR1 Task 7).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Diagnostic {
+    /// The five-character GQLSTATUS (ISO/IEC 39075 §23), as Grafeo maps its error.
+    pub gqlstatus: Option<String>,
+    /// Where in the statement, for a syntax or semantic error that has a span.
+    pub position: Option<Position>,
+}
+
+/// A place in a statement: a 1-based `line`, a 1-based `column` in characters from the start of
+/// that line, and a `length` in characters (what an editor underlines).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Position {
+    /// 1-based line.
+    pub line: u32,
+    /// 1-based column.
+    pub column: u32,
+    /// How many characters the span covers; at least 1.
+    pub length: u32,
+}
+
 impl GraphError {
+    /// An engine refusal with no diagnostic beyond its text.
+    pub(crate) fn engine(message: impl Into<String>) -> Self {
+        Self::Engine {
+            message: message.into(),
+            diagnostic: Diagnostic::default(),
+        }
+    }
+
     /// The `loams.errors.v1.ErrorInfo.reason` this error is answered with (§48 §8.3).
     #[must_use]
     pub fn reason(&self) -> &'static str {
         match self {
-            Self::Engine(text) if text.contains("syntax error") => "gql_syntax_error",
-            Self::Engine(_)
+            Self::Engine { message, .. } if message.contains("syntax error") => "gql_syntax_error",
+            Self::Engine { .. }
             | Self::EmptyStatement
             | Self::UnboundParameter { .. }
             | Self::InvalidValue(_)
@@ -501,7 +536,7 @@ impl Graph {
             Some(file) => {
                 if let Some(dir) = &spec.dir {
                     std::fs::create_dir_all(dir).map_err(|err| {
-                        GraphError::Engine(format!("creating the graph's storage: {err}"))
+                        GraphError::engine(format!("creating the graph's storage: {err}"))
                     })?;
                 }
                 grafeo::Config::persistent(file)
@@ -822,11 +857,11 @@ impl Graph {
             let plan = match translate_full(statement) {
                 Ok(GqlTranslationResult::Plan(plan)) => plan,
                 Ok(_) => {
-                    return Err(GraphError::Engine(
-                        "the statement is a command, not a query; it has no plan".to_string(),
+                    return Err(GraphError::engine(
+                        "the statement is a command, not a query; it has no plan",
                     ));
                 }
-                Err(err) => return Err(GraphError::Engine(err.to_string())),
+                Err(err) => return Err(as_engine_error(err)),
             };
             Binder::new().bind(&plan).map_err(as_engine_error)?;
             let optimized = Optimizer::from_store(self.db.store())
@@ -877,9 +912,7 @@ impl Graph {
         let text = match result.rows.first().and_then(|row| row.values.first()) {
             Some(Value::String(text)) => text.to_string(),
             _ => {
-                return Err(GraphError::Engine(
-                    "the engine answered no profile".to_string(),
-                ));
+                return Err(GraphError::engine("the engine answered no profile"));
             }
         };
         Ok(ExplainedPlan {
@@ -1154,7 +1187,9 @@ fn parse_profile(text: &str) -> PlanNode {
         let node = PlanNode {
             name: name.to_string(),
             label: label.to_string(),
-            line: body.to_string(),
+            // The operator alone: its row count and time are `rows` and `elapsed_nanos`, so the
+            // line stays the same from run to run (GR1 Task 7's `explain.json`).
+            line: head.to_string(),
             children: Vec::new(),
             rows: rows.trim().parse().ok(),
             elapsed_nanos: time
@@ -1540,7 +1575,7 @@ impl Engine {
             return Ok(false);
         };
         if Arc::strong_count(graph) > 1 {
-            return Err(GraphError::Engine(format!(
+            return Err(GraphError::engine(format!(
                 "graph {namespace}/{name} is still in use by another holder"
             )));
         }
@@ -1594,7 +1629,7 @@ pub fn validate_names(namespace: &str, name: &str) -> Result<(), GraphError> {
 
 /// A poisoned registry lock. Named so the message does not carry a `PoisonError`'s debug form.
 fn poisoned(what: &str) -> GraphError {
-    GraphError::Engine(what.to_string())
+    GraphError::engine(what)
 }
 
 /// Runs one GQL statement on a session, the way Grafeo's own `execute_language` routes it:
@@ -1637,8 +1672,57 @@ fn as_engine_error(err: GrafeoError) -> GraphError {
                 name: name.trim().to_string(),
             }
         }
-        _ => GraphError::Engine(text),
+        _ => GraphError::Engine {
+            message: text,
+            diagnostic: diagnostic_of(&err),
+        },
     }
+}
+
+/// The GQLSTATUS Grafeo maps the error to, and the error's place in the statement when it has a
+/// span (GR1 Task 7).
+///
+/// The place is computed from the span's byte offsets over the statement Grafeo attached, so
+/// `column` and `length` count characters (what an editor underlines), not bytes. A span with no
+/// statement attached keeps Grafeo's own line and column.
+fn diagnostic_of(err: &GrafeoError) -> Diagnostic {
+    let gqlstatus = grafeo_common::utils::GqlStatus::from(err)
+        .as_str()
+        .to_string();
+    let position = match err {
+        GrafeoError::Query(query) => query.span.and_then(|span| match &query.source_query {
+            Some(source) => position_in(source, span.start, span.end),
+            None => Some(Position {
+                line: span.line,
+                column: span.column,
+                length: u32::try_from(span.end.saturating_sub(span.start))
+                    .unwrap_or(u32::MAX)
+                    .max(1),
+            }),
+        }),
+        _ => None,
+    };
+    Diagnostic {
+        gqlstatus: Some(gqlstatus),
+        position,
+    }
+}
+
+/// The 1-based line and column of byte `start` in `source`, and the characters up to byte `end`
+/// (at least 1, so an error at the end of the statement still underlines something). `None` when
+/// the offsets are not character boundaries of `source`.
+fn position_in(source: &str, start: usize, end: usize) -> Option<Position> {
+    let before = source.get(..start)?;
+    let spanned = source.get(start..end.max(start))?;
+    let line_start = before.rfind('\n').map_or(0, |at| at + 1);
+    let count = |text: &str| u32::try_from(text.chars().count()).unwrap_or(u32::MAX);
+    Some(Position {
+        line: u32::try_from(before.matches('\n').count())
+            .unwrap_or(u32::MAX)
+            .saturating_add(1),
+        column: count(&before[line_start..]).saturating_add(1),
+        length: count(spanned).max(1),
+    })
 }
 
 /// Converts one engine result into Loams's shape.

@@ -11,20 +11,52 @@ use buffa_types::google::protobuf::Timestamp;
 use crate::proto::loams::approvals::v1::{Approval, ApprovalPolicy, ApprovalState, Risk, StepUp};
 use crate::proto::loams::devices::v1::{Device, NotificationCategory, Platform};
 use crate::proto::loams::instance::v1::{
-    Edition, Environment, GetInstanceResponse, Org, Principal, PrincipalKind, SignInKind,
-    SignInMethod,
+    Edition, Environment, GetInstanceResponse, Org, Principal, PrincipalKind, ServiceStatus,
+    SignInKind, SignInMethod,
 };
 use crate::proto::loams::notifications::v1::__buffa::oneof::notification::Ref;
 use crate::proto::loams::notifications::v1::Notification;
 use crate::proto::loams::operations::v1::{Operation, OperationState, Progress};
 
-/// The proto packages the mock serves, as `GetInstance.api_versions` lists them.
-pub const API_VERSIONS: [&str; 5] = [
-    "loams.instance.v1",
-    "loams.devices.v1",
-    "loams.approvals.v1",
-    "loams.operations.v1",
-    "loams.notifications.v1",
+/// The proto packages the mock serves, their services, and whether each is
+/// `unstable`: `GetInstance.services` lists them all, and `api_versions` names
+/// them.
+pub const SERVICES: [(&str, &[&str], bool); 6] = [
+    (
+        "loams.instance.v1",
+        &["loams.instance.v1.InstanceService"],
+        false,
+    ),
+    (
+        "loams.devices.v1",
+        &["loams.devices.v1.DeviceService"],
+        false,
+    ),
+    (
+        "loams.approvals.v1",
+        &["loams.approvals.v1.ApprovalService"],
+        false,
+    ),
+    (
+        "loams.operations.v1",
+        &["loams.operations.v1.OperationsService"],
+        false,
+    ),
+    (
+        "loams.notifications.v1",
+        &["loams.notifications.v1.NotificationService"],
+        false,
+    ),
+    // GR1 Task 7: the desktop Graph page detects Loams Graph from this row
+    // (design §48 §18.2).
+    (
+        "loams.graph.v1",
+        &[
+            "loams.graph.v1.GraphAdminService",
+            "loams.graph.v1.GraphService",
+        ],
+        true,
+    ),
 ];
 
 /// Everything the mock starts with.
@@ -214,7 +246,18 @@ impl Seed {
             name: "Loams (mock)".into(),
             edition: Edition::EDITION_OSS.into(),
             server_version: env!("CARGO_PKG_VERSION").into(),
-            api_versions: API_VERSIONS.iter().map(|s| (*s).to_owned()).collect(),
+            api_versions: SERVICES.iter().map(|(p, ..)| (*p).to_owned()).collect(),
+            services: SERVICES
+                .iter()
+                .map(|(package, services, unstable)| ServiceStatus {
+                    package: (*package).into(),
+                    version: "v1".into(),
+                    available: true,
+                    services: services.iter().map(|s| (*s).to_owned()).collect(),
+                    unstable: *unstable,
+                    ..Default::default()
+                })
+                .collect(),
             features: [("billing".to_owned(), false), ("passkeys".to_owned(), true)]
                 .into_iter()
                 .collect(),

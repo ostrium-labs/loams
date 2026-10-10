@@ -1064,3 +1064,100 @@ async fn non_loopback_is_refused() {
     .unwrap_err();
     assert!(err.to_string().contains("loopback"), "{err}");
 }
+
+/// GR1 Task 7: the seeded `loams.graph.v1` keeps a real catalog: `default` starts with `kg` and
+/// `movies`, a created graph is listed by name in AIP-158 pages, and a deleted one is gone. A
+/// statement no fixture has is refused rather than invented.
+#[tokio::test]
+async fn graph_catalog_creates_lists_pages_and_deletes() {
+    use loams_apps_mock::proto::loams::graph::v1::{
+        CreateGraphRequest, DeleteGraphRequest, ExecuteRequest, GetGraphRequest,
+        GraphAdminServiceClient, GraphMode, GraphServiceClient, ListGraphsRequest,
+    };
+    let mock = start(Duration::from_secs(15)).await;
+    let admin =
+        GraphAdminServiceClient::new(HttpClient::plaintext(), config(&mock, Protocol::Connect));
+    let names = |page: &loams_apps_mock::proto::loams::graph::v1::ListGraphsResponse| {
+        page.graphs
+            .iter()
+            .map(|g| g.name.clone())
+            .collect::<Vec<_>>()
+    };
+    let list = |token: &str| ListGraphsRequest {
+        namespace: "default".into(),
+        page_size: 2,
+        page_token: token.into(),
+        ..Default::default()
+    };
+    let first = admin.list_graphs(list("")).await.unwrap().into_owned();
+    assert_eq!(names(&first), ["kg", "movies"]);
+    assert!(first.next_page_token.is_empty());
+
+    let created = admin
+        .create_graph(CreateGraphRequest {
+            namespace: "default".into(),
+            name: "notes".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .into_owned();
+    assert!(created.id.starts_with("gr_"), "{}", created.id);
+    assert_eq!(created.mode.as_known(), Some(GraphMode::GRAPH_MODE_OWNED));
+    let err = admin
+        .create_graph(CreateGraphRequest {
+            namespace: "default".into(),
+            name: "notes".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::AlreadyExists);
+    assert_eq!(reason(&err), "already_exists");
+
+    let first = admin.list_graphs(list("")).await.unwrap().into_owned();
+    assert_eq!(names(&first), ["kg", "movies"]);
+    let second = admin
+        .list_graphs(list(&first.next_page_token))
+        .await
+        .unwrap()
+        .into_owned();
+    assert_eq!(names(&second), ["notes"]);
+    assert!(second.next_page_token.is_empty());
+
+    let statements =
+        GraphServiceClient::new(HttpClient::plaintext(), config(&mock, Protocol::Connect));
+    let err = statements
+        .execute(ExecuteRequest {
+            namespace: "default".into(),
+            graph: "notes".into(),
+            statement: "MATCH (n) RETURN count(n)".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Unimplemented);
+    assert_eq!(reason(&err), "not_implemented");
+
+    let operation = admin
+        .delete_graph(DeleteGraphRequest {
+            namespace: "default".into(),
+            name: "notes".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .into_owned();
+    assert_eq!(operation.target.get("graph_id"), Some(&created.id));
+    let err = admin
+        .get_graph(GetGraphRequest {
+            namespace: "default".into(),
+            name: "notes".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+    assert_eq!(reason(&err), "graph_not_found");
+    mock.stop().await;
+}

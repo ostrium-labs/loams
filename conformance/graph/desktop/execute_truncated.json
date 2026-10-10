@@ -1,0 +1,109 @@
+{
+  "description": "The truncated banner and Stream all (§48 §18.2): an Execute that hits max_rows answers `truncated`, and ExecuteStream of the same statement answers every row in chunks. max_rows is 2 here (the page sends 1000) so the fixture stays small; chunk_rows 2 makes two chunks.",
+  "exchanges": [
+    {
+      "method": "loams.graph.v1.GraphService/Execute",
+      "request": {
+        "namespace": "default",
+        "graph": "movies",
+        "statement": "MATCH (p:Person) RETURN p.name AS name ORDER BY name",
+        "readOnly": true,
+        "consistency": {
+          "strong": {}
+        },
+        "timeoutMs": 30000,
+        "maxRows": 2
+      },
+      "ignore": [
+        "elapsedNanos"
+      ],
+      "response": {
+        "elapsedNanos": "479045",
+        "rows": {
+          "columnTypes": [
+            "ANY"
+          ],
+          "columns": [
+            "name"
+          ],
+          "rows": [
+            {
+              "values": [
+                {
+                  "string": "Carrie-Anne Moss"
+                }
+              ]
+            },
+            {
+              "values": [
+                {
+                  "string": "Keanu Reeves"
+                }
+              ]
+            }
+          ]
+        },
+        "truncated": true
+      }
+    },
+    {
+      "method": "loams.graph.v1.GraphService/ExecuteStream",
+      "request": {
+        "request": {
+          "namespace": "default",
+          "graph": "movies",
+          "statement": "MATCH (p:Person) RETURN p.name AS name ORDER BY name",
+          "readOnly": true,
+          "consistency": {
+            "strong": {}
+          },
+          "timeoutMs": 30000,
+          "maxRows": 0
+        },
+        "chunkRows": 2
+      },
+      "ignore": [
+        "[].elapsedNanos"
+      ],
+      "chunks": [
+        {
+          "columnTypes": [
+            "ANY"
+          ],
+          "columns": [
+            "name"
+          ],
+          "rows": [
+            {
+              "values": [
+                {
+                  "string": "Carrie-Anne Moss"
+                }
+              ]
+            },
+            {
+              "values": [
+                {
+                  "string": "Keanu Reeves"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "elapsedNanos": "368067",
+          "last": true,
+          "rows": [
+            {
+              "values": [
+                {
+                  "string": "Lana Wachowski"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

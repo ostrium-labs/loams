@@ -73,6 +73,10 @@ toml.workspace = true
 # `proto_has_no_path_fields` walks `loams_proto::FILE_DESCRIPTOR_SET`.
 prost.workspace = true
 prost-types.workspace = true
+# The desktop contract (GR1 Task 7): the fixtures' reader and comparison, and the seeded mock the
+# page also runs against, called over Connect JSON.
+loams-apps-mock = { path = "../loams-apps-mock" }
+reqwest.workspace = true
 
 [lints]
 workspace = true

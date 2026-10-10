@@ -1,6 +1,6 @@
 [package]
 name = "loams-apps-mock"
-description = "A stateful mock of the Loams app protos (loams.instance, devices, approvals, operations and notifications v1) over Connect, gRPC and gRPC-Web, with seed data, for the console, the desktop and the phone apps before the server side exists (design §37 §12, AP0 Task 5)."
+description = "A stateful mock of the Loams app protos (loams.instance, devices, approvals, operations and notifications v1, and a seeded loams.graph.v1) over Connect, gRPC and gRPC-Web, with seed data, for the console, the desktop and the phone apps before the server side exists (design §37 §12, AP0 Task 5)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

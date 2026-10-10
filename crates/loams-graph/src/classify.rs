@@ -80,8 +80,8 @@ pub fn engine_classify(statement: &str) -> Result<Access, GraphError> {
 pub fn engine_classify_within(statement: &str, max_hops: u32) -> Result<Access, GraphError> {
     // On a large stack: the parser recurses per operator-chain link (re-review 2c).
     let translated = on_big_stack(|| translate_full(statement))
-        .map_err(|_| GraphError::Engine("the statement could not be parsed".to_string()))?
-        .map_err(|err| GraphError::Engine(err.to_string()))?;
+        .map_err(|_| GraphError::engine("the statement could not be parsed"))?
+        .map_err(|err| GraphError::engine(err.to_string()))?;
     match translated {
         GqlTranslationResult::Plan(plan) => {
             // Rendered once, for both the plan check and the procedure-call test.
@@ -199,7 +199,7 @@ pub fn gate_verdict(
             access: guard.max(engine),
             engine: Some(engine),
         }),
-        Err(GraphError::Engine(_)) => Ok(Verdict {
+        Err(GraphError::Engine { .. }) => Ok(Verdict {
             access: guard,
             engine: None,
         }),

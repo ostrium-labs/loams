@@ -365,6 +365,45 @@ async fn instance_advertises_graph_when_feature_on() {
     running.server.shutdown().await.expect("shutdown");
 }
 
+/// GR1 Task 7: `GetInstance` answers what the desktop's `conformance/graph/desktop/instance.json`
+/// pins: its `loams.graph.v1` row, and the package in `apiVersions`. (The graph calls' fixtures are
+/// checked by `loams-graph`'s `desktop_contract` test; this crate serves `GetInstance`.)
+#[cfg(feature = "graph")]
+#[tokio::test]
+async fn instance_matches_desktop_fixture() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../conformance/graph/desktop/instance.json"
+    );
+    let fixture: Value =
+        serde_json::from_str(&std::fs::read_to_string(path).expect("instance.json")).expect("JSON");
+    let exchange = &fixture["exchanges"][0];
+    assert_eq!(
+        exchange["method"],
+        "loams.instance.v1.InstanceService/GetInstance"
+    );
+    let want = &exchange["response"];
+    let running = Running::start().await;
+    let info = running.instance().await;
+    for row in want["services"].as_array().expect("services") {
+        let got = info["services"]
+            .as_array()
+            .expect("services")
+            .iter()
+            .find(|s| s["package"] == row["package"]);
+        assert_eq!(got, Some(row), "{info}");
+    }
+    for package in want["apiVersions"].as_array().expect("apiVersions") {
+        assert!(
+            info["apiVersions"]
+                .as_array()
+                .is_some_and(|list| list.contains(package)),
+            "{package} not in {info}"
+        );
+    }
+    running.server.shutdown().await.expect("shutdown");
+}
+
 /// GR1 Task 6: `ExecuteStream` answers its rows in chunks over Connect, ending with an
 /// end-of-stream message and no error; `Explain` answers a plan; and the client's Connect timeout
 /// bounds a statement.

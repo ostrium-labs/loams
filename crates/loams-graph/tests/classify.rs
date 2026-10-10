@@ -111,7 +111,10 @@ fn guard_and_engine_agree_on_corpus() {
             }
             (None, None, true) => {
                 let err = engine_classify(&case.statement).expect_err("does not parse");
-                assert!(matches!(err, GraphError::Engine(_)), "{case:?}: {err:?}");
+                assert!(
+                    matches!(err, GraphError::Engine { .. }),
+                    "{case:?}: {err:?}"
+                );
                 // The guard still says Write for anything it cannot read as a read.
                 assert_ne!(guard, Access::Read, "{case:?}");
             }

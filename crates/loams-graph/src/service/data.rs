@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use connectrpc::{ConnectError, ErrorCode};
 use loams_proto::loams::graph::v1 as pb;
 
-use super::errors::{code_of, error_info, map_engine, refuse};
+use super::errors::{code_of, engine_error_info, map_engine, refuse};
 use super::find_serving;
 use crate::engine::{BatchStatement, Engine, GraphError, GraphResult, PlanNode};
 use crate::limits::StatementLimits;
@@ -334,7 +334,7 @@ fn statement_error(index: usize, err: &GraphError) -> pb::StatementError {
         index: u32::try_from(index).unwrap_or(u32::MAX),
         code: code_of(err).as_str().to_string(),
         message: err.to_string(),
-        info: error_info(err.reason()).into(),
+        info: engine_error_info(err).into(),
         ..Default::default()
     }
 }

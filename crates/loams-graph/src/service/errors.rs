@@ -46,7 +46,7 @@ pub(crate) fn error_info(reason: &str) -> ErrorInfo {
 /// fixable.
 pub(crate) fn code_of(err: &GraphError) -> ErrorCode {
     match err {
-        GraphError::Engine(_)
+        GraphError::Engine { .. }
         | GraphError::EmptyStatement
         | GraphError::UnboundParameter { .. }
         | GraphError::InvalidValue(_)
@@ -74,9 +74,35 @@ pub(crate) fn code_of(err: &GraphError) -> ErrorCode {
     }
 }
 
+/// The `ErrorInfo` of an engine failure: its reason, and for an engine refusal the GQLSTATUS and
+/// the statement's `line`, `column` and `length` (1-based, in characters) in `metadata`, so an
+/// editor can underline the error (§48 §8.3, §18.2; GR1 Task 7).
+pub(crate) fn engine_error_info(err: &GraphError) -> ErrorInfo {
+    let mut info = error_info(err.reason());
+    if let GraphError::Engine { diagnostic, .. } = err {
+        if let Some(status) = &diagnostic.gqlstatus {
+            info.metadata
+                .insert("gqlstatus".to_string(), status.clone());
+        }
+        if let Some(at) = diagnostic.position {
+            for (key, value) in [
+                ("line", at.line),
+                ("column", at.column),
+                ("length", at.length),
+            ] {
+                info.metadata.insert(key.to_string(), value.to_string());
+            }
+        }
+    }
+    info
+}
+
 /// Maps an engine failure onto a Connect-RPC error.
 pub(crate) fn map_engine(err: GraphError) -> ConnectError {
-    refuse(code_of(&err), err.reason(), err.to_string())
+    ConnectError::new(code_of(&err), err.to_string()).with_detail(ErrorDetail::from_message(
+        "loams.errors.v1.ErrorInfo",
+        &engine_error_info(&err),
+    ))
 }
 
 /// Maps a registry failure onto `INTERNAL`, never `InvalidArgument`.

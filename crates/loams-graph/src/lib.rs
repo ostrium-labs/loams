@@ -32,8 +32,8 @@ pub mod value;
 
 pub use classify::Access;
 pub use engine::{
-    BatchStatement, Engine, ExplainedPlan, Graph, GraphError, GraphRow, GraphState, OpenSpec,
-    PlanNode, SchemaSummary,
+    BatchStatement, Diagnostic, Engine, ExplainedPlan, Graph, GraphError, GraphRow, GraphState,
+    OpenSpec, PlanNode, Position, SchemaSummary,
 };
 pub use limits::StatementLimits;
 pub use service::GraphServiceImpl;

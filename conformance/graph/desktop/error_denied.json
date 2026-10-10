@@ -1,0 +1,24 @@
+{
+  "description": "A refusal (§48 §18.2): a write with read_only on is `permission_denied` with reason `graph_read_only`, and nothing is written.",
+  "exchanges": [
+    {
+      "method": "loams.graph.v1.GraphService/Execute",
+      "request": {
+        "namespace": "default",
+        "graph": "movies",
+        "statement": "INSERT (:Person {name: 'Agent Smith'})",
+        "readOnly": true,
+        "consistency": {
+          "strong": {}
+        },
+        "timeoutMs": 30000,
+        "maxRows": 1000
+      },
+      "error": {
+        "code": "permission_denied",
+        "message": "the statement writes, and this request is read-only",
+        "reason": "graph_read_only"
+      }
+    }
+  ]
+}
