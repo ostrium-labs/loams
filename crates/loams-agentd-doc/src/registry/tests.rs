@@ -504,6 +504,20 @@ fn future_harness_chat_rows_stay_visible_as_unsupported() {
     assert_eq!(config.model.as_deref(), Some("novel/model"));
     // The well-formed sibling keeps its config untouched.
     assert!(chats.iter().any(|c| c.id == "chat-1" && c.config.is_some()));
+
+    // Writing the row back (an activity stamp, a host change, a config set)
+    // keeps the stored name instead of rewriting it as "unsupported".
+    let mut renamed = newcomer.clone();
+    renamed.title = Some("Still here".into());
+    let config = config.clone();
+    ws.upsert_chat(&renamed).unwrap();
+    assert!(ws.set_chat_config("chat-2", &config).unwrap());
+    let stored = ws.overlay_row("chats", "chat-2").unwrap();
+    assert_eq!(
+        stored.fields["config"]["harness"],
+        "harness-from-the-future"
+    );
+    assert_eq!(stored.fields["title"], "Still here");
 }
 
 #[test]

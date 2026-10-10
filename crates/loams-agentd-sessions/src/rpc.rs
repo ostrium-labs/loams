@@ -812,6 +812,15 @@ impl EngineRpc {
 
     fn mutate(&self, params: MutateParams) -> Result<(), RpcError> {
         let failed = |e: crate::EngineError| RpcError::Failed(e.to_string());
+        // A client may not pick a harness this daemon does not ship.
+        let picked = match &params {
+            MutateParams::CreateChat { config, .. } => config.as_ref(),
+            MutateParams::SetChatConfig { config, .. } => Some(config),
+            _ => None,
+        };
+        if picked.is_some_and(|config| config.harness == HarnessId::Unsupported) {
+            return Err(RpcError::BadParams("unknown harness".into()));
+        }
         match params {
             MutateParams::CreateChat {
                 chat_id,

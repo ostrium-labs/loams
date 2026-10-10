@@ -875,7 +875,8 @@ impl RegistryDoc {
             Some(config) => serde_json::to_value(config)?,
             None => Value::Null,
         };
-        let set = fields([
+        let keep_stored_config = self.keeps_stored_config(&chat.id, chat.config.as_ref());
+        let mut set = fields([
             ("id", json!(chat.id)),
             ("deviceId", json!(chat.device_id)),
             ("title", opt_str(chat.title.as_deref())),
@@ -915,6 +916,9 @@ impl RegistryDoc {
             ),
             ("parentChatId", opt_str(chat.parent_chat_id.as_deref())),
         ]);
+        if keep_stored_config {
+            set.remove("config");
+        }
         self.write(KIND_CHATS, &chat.id.clone(), OpKind::Upsert, set);
         Ok(())
     }
@@ -1099,6 +1103,9 @@ impl RegistryDoc {
         if !self.row_exists(KIND_CHATS, chat_id) {
             return Ok(false);
         }
+        if self.keeps_stored_config(chat_id, Some(config)) {
+            return Ok(true);
+        }
         let value = serde_json::to_value(config)?;
         self.write(
             KIND_CHATS,
@@ -1107,6 +1114,15 @@ impl RegistryDoc {
             fields([("config", value)]),
         );
         Ok(true)
+    }
+
+    /// A config whose harness reads as `Unsupported` stands for a name this
+    /// build does not know (a removed agent's `"cursor"`, plan DD1 Task 3).
+    /// Writing it back would replace that name with `"unsupported"`, so an
+    /// existing row keeps the config it has.
+    fn keeps_stored_config(&self, chat_id: &str, config: Option<&ChatConfig>) -> bool {
+        config.is_some_and(|config| config.harness == loams_agentd_proto::HarnessId::Unsupported)
+            && self.row_exists(KIND_CHATS, chat_id)
     }
 
     /// Host-side resume continuity. An empty `session_id` is the explicit

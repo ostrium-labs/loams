@@ -125,6 +125,28 @@ async fn old_cursor_session_opens_read_only() {
         .expect_err("a queued message to an unsupported agent's chat");
     assert_unsupported(error);
 
+    // A client cannot pick an unknown harness for a new or existing chat.
+    let config = serde_json::json!({
+        "harness": "cursor",
+        "model": null,
+        "reasoning": null,
+        "sandbox": "workspace-write",
+    });
+    for params in [
+        serde_json::json!({ "op": "createChat", "chatId": "chat-new", "config": config }),
+        serde_json::json!({ "op": "setChatConfig", "chatId": CHAT, "config": config }),
+    ] {
+        let error = client
+            .call(methods::MUTATE, params.clone())
+            .await
+            .expect_err("an unknown harness is refused");
+        assert!(
+            error.to_string().contains("unknown harness"),
+            "{params}: {error}"
+        );
+    }
+    assert!(core.workspace.chat("chat-new").unwrap().is_none());
+
     // A Run an older build left pending in the doc is rejected by the drain
     // with the same answer, and nothing runs.
     let handle = core.doc_host.open(CHAT).unwrap();

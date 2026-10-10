@@ -21,19 +21,45 @@ impl Source {
 }
 
 /// The code part of a line: everything before a `//` comment that is not
-/// inside a string literal (so `"ws://127.0.0.1"` stays code).
+/// inside a string literal (so `"ws://127.0.0.1"` stays code). Raw strings
+/// (`r"…"`, `r#"…"#`, `br#"…"#`) end only at their own delimiter, and a
+/// `'"'` character literal opens no string.
 pub fn code(line: &str) -> &str {
     let bytes = line.as_bytes();
-    let mut in_string = false;
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
     let mut i = 0;
     while i < bytes.len() {
         match bytes[i] {
-            b'\\' if in_string => i += 1,
-            b'"' => in_string = !in_string,
-            b'/' if !in_string && bytes.get(i + 1) == Some(&b'/') => return &line[..i],
-            _ => {}
+            b'/' if bytes.get(i + 1) == Some(&b'/') => return &line[..i],
+            b'r' if i == 0
+                || !ident(bytes[i - 1])
+                || (bytes[i - 1] == b'b' && (i < 2 || !ident(bytes[i - 2]))) =>
+            {
+                let hashes = bytes[i + 1..].iter().take_while(|&&b| b == b'#').count();
+                if bytes.get(i + 1 + hashes) == Some(&b'"') {
+                    let close: Vec<u8> = std::iter::once(b'"')
+                        .chain(std::iter::repeat_n(b'#', hashes))
+                        .collect();
+                    let body = i + 2 + hashes;
+                    match bytes[body..].windows(close.len()).position(|w| w == close) {
+                        Some(end) => i = body + end + close.len(),
+                        // The raw string continues on the next line.
+                        None => return line,
+                    }
+                    continue;
+                }
+                i += 1;
+            }
+            b'\'' if bytes.get(i + 1) == Some(&b'"') && bytes.get(i + 2) == Some(&b'\'') => i += 3,
+            b'"' => {
+                i += 1;
+                while i < bytes.len() && bytes[i] != b'"' {
+                    i += if bytes[i] == b'\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            _ => i += 1,
         }
-        i += 1;
     }
     line
 }

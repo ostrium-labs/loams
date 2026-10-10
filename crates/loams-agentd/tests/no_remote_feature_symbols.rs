@@ -99,3 +99,29 @@ fn whole_word_matching() {
     assert!(!contains_word("UpdateStatusRow", "UpdateStatus"));
     assert!(!contains_word("update_status", "UpdateStatus"));
 }
+
+#[test]
+fn code_stops_at_comments_outside_strings() {
+    use source_scan::code;
+    assert_eq!(code("let a = 1; // note"), "let a = 1; ");
+    assert_eq!(
+        code(r#"dial("ws://127.0.0.1"); // note"#),
+        r#"dial("ws://127.0.0.1"); "#
+    );
+    // A raw string's inner quotes do not end it, so a call after it stays code.
+    let raw = r##"let j = r#"{"url":"ws://x"}"#; connect_async(u); // note"##;
+    assert!(code(raw).contains("connect_async("), "{}", code(raw));
+    assert!(!code(raw).contains("note"));
+    assert_eq!(
+        code(r#"let b = br"a//b"; // note"#),
+        r#"let b = br"a//b"; "#
+    );
+    assert_eq!(
+        code(r#"if c == '"' { f() } // note"#),
+        r#"if c == '"' { f() } "#
+    );
+    assert_eq!(
+        code(r#"let s = "a\"//b"; // note"#),
+        r#"let s = "a\"//b"; "#
+    );
+}
