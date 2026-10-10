@@ -1302,3 +1302,42 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 - The mock's `GetInstance` now fills `services[]` for its six packages, with `loams.graph.v1` `unstable`, and lists `loams.graph.v1` in `api_versions`.
 
 **R7.9 Desktop paths.** The desktop is the Electron app, `apps/desktop-electron`, and the page is `web/plugins/graph`, so R0.20 and Task 8's paths hold. Task 7 changes no desktop code.
+
+### Task 8 (2026-10-10, on `backend/gr1`)
+
+**R8.1 Detection.** The console's `flags` service reads `GetInstance.api_versions` only (R0.20), so the page calls `GetInstance` itself over the injected `transport` and passes the answer to `detect.ts` `graphAvailability`.
+- `not_in_variant`: the page then calls `GetEngineInfo` and shows `ErrorInfo.metadata.variant` from its `feature_not_in_variant` refusal. Without a variant it says the build lacks the package.
+- The plugin still injects `flags`, so it restarts and detects again when the server's packages change (the desktop's engine came up).
+- `@loams/console-host` is unchanged.
+
+**R8.2 The page's requests are the fixtures' requests.**
+- `Execute`: `max_rows` 1000, `timeout_ms` 30000, `consistency` strong, `read_only` from the toggle (on by default). For GQL `language` is left unset, the server's default. For Cypher it is `QUERY_LANGUAGE_CYPHER`, offered only when the graph lists Cypher.
+- `Explain`: only `namespace`, `graph`, `statement`, `language` and `parameters`.
+- Profile: the same, plus `profile`, `timeout_ms` 30000 and `consistency` strong. The statement must begin with `PROFILE` (R6.8), so the page adds the keyword to what it sends when the editor's text lacks it. This is the client composing its own statement. The server still rewrites nothing (D634).
+- Because these equal the fixtures' requests, the page works against `loams-apps-mock`, which answers by exact request (R7.8).
+
+**R8.3 "Stream all"** re-sends the shown statement as `ExecuteStream` with `max_rows` = 100 000 (the page's cap, §48 §18.2) and the default `chunk_rows`. If the stream ends `truncated`, the banner says the page holds at most 100 000 rows. The table draws 1 000 rows a page.
+
+**R8.4 Files (deviation).**
+- Beside the planned nine files there is `src/values.ts`: cell text and type, parameters from JSON, and element collection.
+- AP1e's `src/graph-page.tsx` and its test are replaced.
+- The tests are `test/graph.test.tsx`, plus `test/fixtures.ts`, a Connect router transport that answers from `conformance/graph/desktop/*.json` and records each request in proto3 JSON.
+- Three tests were added beyond the planned ten: `values_fixture_formats_every_case`, `order_by_relationship_as_int64_renders` and `explain_and_profile_render_plan`. `schema_sidebar_lists_labels_and_types` and `manifest_injects_transport` are also new.
+- `@loams/proto` gains `./graph` (`buf.gen.apps.yaml` adds `proto/loams/graph/v1`), and its smoke test round-trips `values.json`.
+
+**R8.5 Wire details (R7.6, R7.7).**
+- protobuf-es reads a missing `id` as `0n`, so the element with id 0 needs no special case.
+- `ANY` column types are not shown, and any other column type is shown beside the column name.
+- A relationship answered as `INT64 0` under ORDER BY stays a number in the table. It adds nothing to the graph view (`order_by_relationship_as_int64_renders`).
+- A relationship whose endpoint the result lacks is drawn to a dashed stub node, which counts toward the 500 cap. A node the cap left out takes its edges with it.
+
+**R8.6 History** is keyed by `GetInstance.instance_id` (`loams.graph.history.v1:<id>` in local storage). It holds 100 statements, newest first and de-duplicated, text only.
+
+**R8.7 Parameters** are a JSON object. An integral number is INT64, any other number FLOAT64, an array a LIST and an object a MAP. `{"$int64": "…"}` carries an integer past 2^53.
+
+**R8.8 Admin actions.** Create and Delete are shown until `CreateGraph` or `DeleteGraph` answers `PERMISSION_DENIED`, then hidden for the session. A refused statement (`graph_read_only`) does not hide them.
+
+**R8.9 The desktop engine is built with `graph`.**
+- `--features live,durable,live-tikv,graph` is now used in `fetch-engine.mjs`, the README, both desktop workflows (Windows included, whose engine step already tolerates failure), `docs/build-from-source` and `docs/release/desktop.md`.
+- The E2E check `graph_page_runs_query_against_loams_dev` is a `test.step` in the Electron smoke's real-engine branch, so it needs only one app launch. It creates `movies` through the page, runs `MATCH (n) RETURN count(n)` and sees one row.
+- It was not run locally, because it needs a release `loams` built with those features.
