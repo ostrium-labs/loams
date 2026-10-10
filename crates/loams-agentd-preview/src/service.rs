@@ -11,7 +11,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, PoisonError,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -87,6 +87,11 @@ impl ProbeMemory {
 }
 #[derive(Clone)]
 pub struct PreviewService(Arc<Inner>);
+impl std::fmt::Debug for PreviewService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreviewService").finish_non_exhaustive()
+    }
+}
 struct Inner {
     catalog: Catalog,
     stop: CancellationToken,
@@ -143,7 +148,11 @@ impl PreviewService {
                 tokio::select! { _ = proxy_stop.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(2)) => {} }
             }
         });
-        self.0.tasks.lock().unwrap().push(listener_task);
+        self.0
+            .tasks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(listener_task);
         let catalog = self.0.catalog.clone();
         let stop = self.0.stop.clone();
         let scanner = tokio::spawn(async move {
@@ -206,14 +215,19 @@ impl PreviewService {
                 tokio::select! { _ = stop.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(2)) => {} }
             }
         });
-        self.0.tasks.lock().unwrap().push(scanner);
+        self.0
+            .tasks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(scanner);
     }
     pub fn stop(&self) {
         self.0.stop.cancel();
     }
     pub async fn shutdown(&self) {
         self.stop();
-        let tasks = std::mem::take(&mut *self.0.tasks.lock().unwrap());
+        let tasks =
+            std::mem::take(&mut *self.0.tasks.lock().unwrap_or_else(PoisonError::into_inner));
         for task in tasks {
             let _ = task.await;
         }

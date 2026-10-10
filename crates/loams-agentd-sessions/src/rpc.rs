@@ -593,6 +593,12 @@ pub struct EngineRpc {
     engine_info: EngineInfo,
 }
 
+impl std::fmt::Debug for EngineRpc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineRpc").finish_non_exhaustive()
+    }
+}
+
 impl EngineRpc {
     #[allow(clippy::too_many_arguments)] // engine assembly seam, not a public API
     pub fn new(

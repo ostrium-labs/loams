@@ -185,6 +185,12 @@ pub struct SessionsEngine {
     inner: Arc<Inner>,
 }
 
+impl std::fmt::Debug for SessionsEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionsEngine").finish_non_exhaustive()
+    }
+}
+
 impl SessionsEngine {
     pub fn new(
         device_id: String,

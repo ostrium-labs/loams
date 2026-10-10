@@ -172,6 +172,12 @@ pub struct Repos {
     inner: std::sync::Arc<ReposInner>,
 }
 
+impl std::fmt::Debug for Repos {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Repos").finish_non_exhaustive()
+    }
+}
+
 impl Repos {
     pub(crate) fn data_dir(&self) -> &Path {
         &self.inner.data_dir

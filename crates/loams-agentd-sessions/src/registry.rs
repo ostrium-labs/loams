@@ -140,6 +140,12 @@ pub struct HarnessRegistry {
     update_generation: tokio::sync::watch::Sender<u64>,
 }
 
+impl std::fmt::Debug for HarnessRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HarnessRegistry").finish_non_exhaustive()
+    }
+}
+
 impl Default for HarnessRegistry {
     fn default() -> Self {
         Self::new()

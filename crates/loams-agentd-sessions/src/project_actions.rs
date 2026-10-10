@@ -68,6 +68,13 @@ pub struct ProjectActionsStore {
     inner: Arc<ProjectActionsStoreInner>,
 }
 
+impl std::fmt::Debug for ProjectActionsStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProjectActionsStore")
+            .finish_non_exhaustive()
+    }
+}
+
 impl ProjectActionsStore {
     pub fn open(profile_store_root: &Path) -> Result<Self, EngineError> {
         std::fs::create_dir_all(profile_store_root)?;

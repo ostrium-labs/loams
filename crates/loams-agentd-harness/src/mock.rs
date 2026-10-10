@@ -11,6 +11,7 @@ use loams_agentd_proto::{
 
 use crate::{Harness, HarnessError, RunControls};
 
+#[derive(Debug)]
 pub struct MockHarness {
     pub script: Vec<AgentEvent>,
 }

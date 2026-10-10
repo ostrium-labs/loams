@@ -51,15 +51,10 @@ pub fn summarize_tool_output(text: &str) -> Option<String> {
         .find(|l| !l.trim().is_empty())
         .unwrap_or(stripped)
         .trim_end();
-    let mut chars = 0usize;
-    let mut end = line.len();
-    for (i, _) in line.char_indices() {
-        if chars == TOOL_OUTPUT_SUMMARY_MAX {
-            end = i;
-            break;
-        }
-        chars += 1;
-    }
+    let end = line
+        .char_indices()
+        .nth(TOOL_OUTPUT_SUMMARY_MAX)
+        .map_or(line.len(), |(i, _)| i);
     let mut out = line[..end].to_owned();
     out.push('…');
     Some(out)
@@ -122,6 +117,8 @@ pub enum SubagentStatus {
 /// One rendered part of an assistant message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+// `Tool` is the common part, not an outlier; boxing it would add an allocation per part.
+#[allow(clippy::large_enum_variant)]
 pub enum MessagePart {
     Text {
         id: String,

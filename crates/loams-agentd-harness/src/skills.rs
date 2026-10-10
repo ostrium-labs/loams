@@ -285,7 +285,10 @@ fn scan_root(
             };
             if let Some(mut skill) = skill {
                 if legacy_commands {
-                    let relative = path.strip_prefix(root).unwrap().with_extension("");
+                    let relative = path
+                        .strip_prefix(root)
+                        .expect("the walk only yields paths under its root")
+                        .with_extension("");
                     skill.name = relative.to_string_lossy().replace(['/', '\\'], ":");
                 }
                 skill.name = format!("{namespace}{}", skill.name);

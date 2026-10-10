@@ -6,11 +6,6 @@
 //! Uninstalled/unauthenticated agents are skipped. For mandatory live Pi
 //! regression coverage with an injected delay, use real_acp_lifecycle.rs.
 
-// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
-// workspace clippy already runs with -D warnings, so this list keeps it green until
-// Tasks 2-4 delete or fix the code and drop it.
-#![allow(clippy::type_complexity)]
-
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -194,6 +189,9 @@ fn is_auth_or_missing(o: &ProbeOutcome) -> bool {
         || msg.contains("no such file")
 }
 
+/// Builds one agent's harness.
+type HarnessCtor = fn() -> Box<dyn Harness>;
+
 #[tokio::test]
 #[ignore = "runs every installed+authenticated agent CLI; costs a few small prompts each"]
 async fn real_all_harnesses_quiet_survey() {
@@ -201,7 +199,7 @@ async fn real_all_harnesses_quiet_survey() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(3);
-    let agents: Vec<(&str, fn() -> Box<dyn Harness>)> = vec![
+    let agents: Vec<(&str, HarnessCtor)> = vec![
         ("devin", || Box::new(AcpHarness::devin())),
         ("grok", || Box::new(AcpHarness::grok())),
         ("hermes", || Box::new(AcpHarness::hermes())),

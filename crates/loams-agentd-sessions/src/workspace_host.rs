@@ -73,6 +73,12 @@ pub struct WorkspaceHost {
     inner: Arc<WorkspaceHostInner>,
 }
 
+impl std::fmt::Debug for WorkspaceHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkspaceHost").finish_non_exhaustive()
+    }
+}
+
 impl WorkspaceHost {
     /// Load (or migrate, or init) the registry, upsert this device's row, and
     /// start the change-driven task.

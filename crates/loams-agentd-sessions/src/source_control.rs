@@ -113,6 +113,13 @@ pub struct ChangeRequestResolver {
     github: GitHubCli,
 }
 
+impl std::fmt::Debug for ChangeRequestResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChangeRequestResolver")
+            .finish_non_exhaustive()
+    }
+}
+
 impl ChangeRequestResolver {
     pub fn new() -> Self {
         let runner: Arc<dyn ProcessRunner> = Arc::new(SystemProcessRunner);
@@ -184,6 +191,12 @@ impl CheckoutChangeRequestLookup for ChangeRequestResolver {
 #[derive(Clone)]
 pub struct GitHubCli {
     runner: Arc<dyn ProcessRunner>,
+}
+
+impl std::fmt::Debug for GitHubCli {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GitHubCli").finish_non_exhaustive()
+    }
 }
 
 impl GitHubCli {

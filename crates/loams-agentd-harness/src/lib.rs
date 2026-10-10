@@ -13,16 +13,6 @@
 //! first uncorrelated idle), manufacturing done-status bugs the native
 //! wires don't have (decision record: docs/research/acp.md).
 
-// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
-// workspace clippy already runs with -D warnings, so this list keeps it green until
-// Tasks 2-4 delete or fix the code and drop it.
-#![allow(
-    clippy::type_complexity,
-    clippy::too_many_arguments,
-    clippy::unwrap_used,
-    missing_debug_implementations
-)]
-
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use tokio::sync::{mpsc, oneshot};
@@ -50,6 +40,7 @@ pub enum HarnessError {
 }
 
 /// A steer prompt pushed into a live run; delivered at the harness's steering boundary.
+#[derive(Debug)]
 pub struct SteerMessage {
     pub prompt: String,
     pub message_id: Option<String>,
@@ -72,6 +63,15 @@ pub struct RunControls {
     /// interrupt, then escalates to SIGTERM/SIGKILL on the child after a grace
     /// period. The run's stream ends with `Done { status: Interrupted }`.
     pub interrupt: CancellationToken,
+}
+
+impl std::fmt::Debug for RunControls {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunControls")
+            .field("execution_lease", &self.execution_lease)
+            .field("interrupt", &self.interrupt)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Catalog provenance stays internal; RPC clients retain the Vec<Model> shape.

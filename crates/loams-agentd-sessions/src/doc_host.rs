@@ -137,6 +137,12 @@ pub struct DocHost {
     inner: Arc<DocHostInner>,
 }
 
+impl std::fmt::Debug for DocHost {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DocHost").finish_non_exhaustive()
+    }
+}
+
 /// How a taken queue row reaches the agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum QueueSend {
@@ -245,6 +251,14 @@ pub struct TranscriptSnapshot {
     pub replay_baseline: Arc<loams_agentd_doc::TranscriptBaseline>,
 }
 
+impl std::fmt::Debug for TranscriptSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TranscriptSnapshot")
+            .field("entries", &self.entries.len())
+            .finish_non_exhaustive()
+    }
+}
+
 /// One open chat doc: the `SessionDoc` and its change plumbing.
 pub struct ChatDocHandle {
     chat_id: String,
@@ -299,11 +313,23 @@ pub struct ChatDocHandle {
     _sub: loro::Subscription,
 }
 
+impl std::fmt::Debug for ChatDocHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChatDocHandle").finish_non_exhaustive()
+    }
+}
+
 /// A running agent explicitly owns a writer lease until its final cleanup.
 /// Reference counting remains a conservative compatibility guard for read APIs.
 pub struct DocWriter {
     doc: Arc<SessionDoc>,
     writers: Arc<AtomicUsize>,
+}
+
+impl std::fmt::Debug for DocWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DocWriter").finish_non_exhaustive()
+    }
 }
 impl std::ops::Deref for DocWriter {
     type Target = SessionDoc;
@@ -1408,6 +1434,8 @@ impl DocHost {
         .await
     }
 
+    // One parameter per field of the `FinishQueuedMessageEdit` RPC request.
+    #[allow(clippy::too_many_arguments)]
     pub async fn finish_queued_message_edit_with_attachments(
         &self,
         chat_id: &str,

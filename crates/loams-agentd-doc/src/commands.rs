@@ -36,6 +36,8 @@ pub enum SessionCommandStatus {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+// `Run` is the common command; a command is built once per user action, so its size is moot.
+#[allow(clippy::large_enum_variant)]
 pub enum SessionCommandPayload {
     #[serde(rename_all = "camelCase")]
     Run {

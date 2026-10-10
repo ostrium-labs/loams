@@ -123,6 +123,14 @@ pub struct CodexHarness {
     kill_grace: Duration,
 }
 
+impl std::fmt::Debug for CodexHarness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CodexHarness")
+            .field("executable", &self.executable)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Default for CodexHarness {
     fn default() -> Self {
         Self {
@@ -602,11 +610,11 @@ impl Harness for CodexHarness {
         static_models()
     }
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
-        self.model_context()?.unwrap().log();
+        crate::model_context::required(self.model_context())?.log();
         self.models_cache
             .get_with(
                 force,
-                || self.model_context().map(|c| c.unwrap().key()),
+                || crate::model_context::required(self.model_context()).map(|c| c.key()),
                 || self.discover_models(),
             )
             .await
@@ -1062,7 +1070,7 @@ async fn run_session(session: Session) {
                 let overrides = start_params
                     .get_mut("config")
                     .and_then(Value::as_object_mut)
-                    .unwrap();
+                    .expect("title-only start params carry a config object");
                 for name in servers.keys() {
                     overrides.insert(format!("mcp_servers.{name}.enabled"), false.into());
                 }

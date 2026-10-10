@@ -34,6 +34,16 @@ pub struct PiHarness {
     interrupt_grace: Duration,
     kill_grace: Duration,
 }
+impl std::fmt::Debug for PiHarness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PiHarness")
+            .field("executable", &self.executable)
+            .field("session_store", &self.session_store)
+            .field("agent_dir", &self.agent_dir)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Default for PiHarness {
     fn default() -> Self {
         Self {
@@ -101,7 +111,7 @@ impl PiHarness {
         tokio::spawn(async move {
             let result = tokio::select! {
                 result=tokio::time::timeout(Duration::from_secs(60),async {
-                    if models {Ok(serde_json::to_value(catalog::models(&mut process).await?).unwrap())}
+                    if models {serde_json::to_value(catalog::models(&mut process).await?).map_err(|e|HarnessError::Protocol(format!("Pi models: {e}")))}
                     else {process.query(json!({"type":"get_commands"}),&mut vec![]).await}
                 })=>result.unwrap_or_else(|_|Err(HarnessError::Protocol("Pi discovery timed out".into()))),
                 _=tx.closed()=>Err(HarnessError::Protocol("Pi discovery cancelled".into())),
@@ -564,10 +574,9 @@ impl Runner {
                 "off".to_string()
             } else {
                 serde_json::to_value(self.request.reasoning)
-                    .unwrap()
-                    .as_str()
-                    .unwrap_or("medium")
-                    .to_owned()
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    .unwrap_or_else(|| "medium".to_owned())
             };
             let order = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
             let rank = order
@@ -861,7 +870,7 @@ impl Runner {
                     let text = if data.is_null() {
                         "Pi command completed.".into()
                     } else {
-                        serde_json::to_string_pretty(&data).unwrap()
+                        serde_json::to_string_pretty(&data).unwrap_or_else(|_| data.to_string())
                     };
                     self.emit(AgentEvent::TextDelta { text }).await?;
                     let id = self

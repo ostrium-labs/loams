@@ -39,6 +39,7 @@ const MAX_ARCHIVE_ENTRIES: usize = 4_096;
 
 /// an archive release whose integrity is proven after extraction (by a
 /// vendor code signature) rather than by a digest pinned in loams-desktop's source.
+#[derive(Debug)]
 pub struct VerifiedRelease<'a> {
     pub name: &'a str,
     pub version: &'a str,

@@ -741,6 +741,12 @@ pub struct AgentAccounts {
     inner: Arc<Inner>,
 }
 
+impl std::fmt::Debug for AgentAccounts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentAccounts").finish_non_exhaustive()
+    }
+}
+
 impl AgentAccounts {
     pub fn new(config: AgentAccountsConfig) -> Self {
         Self::with_endpoints(config, ProbeEndpoints::default())

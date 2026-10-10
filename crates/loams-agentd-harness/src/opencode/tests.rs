@@ -86,6 +86,7 @@ impl TurnWire {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn start_fixture(
         queued: bool,
         v2: bool,

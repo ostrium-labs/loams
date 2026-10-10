@@ -62,7 +62,9 @@ impl Store {
             return Ok(());
         }
         let temp = self.root.join(format!("{}.tmp", uuid::Uuid::new_v4()));
-        std::fs::write(&temp, serde_json::to_vec(value).unwrap())?;
+        let bytes = serde_json::to_vec(value)
+            .map_err(|e| HarnessError::Protocol(format!("Pi session record: {e}")))?;
+        std::fs::write(&temp, bytes)?;
         let result = std::fs::rename(&temp, &path);
         if result.is_err() {
             let _ = std::fs::remove_file(&temp);
@@ -110,11 +112,14 @@ impl Store {
                 {
                     return Err(error);
                 }
+                let Some(session_dir) = file.and_then(Path::parent) else {
+                    return Err(error);
+                };
                 let mut args = vec![
                     "--session-id".into(),
                     id.into(),
                     "--session-dir".into(),
-                    file.unwrap().parent().unwrap().display().to_string(),
+                    session_dir.display().to_string(),
                 ];
                 for (flag, value) in [
                     ("--provider", &state["model"]["provider"]),

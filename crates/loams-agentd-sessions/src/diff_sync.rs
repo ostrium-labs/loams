@@ -158,6 +158,12 @@ pub struct CheckoutDiffSync {
     inner: Arc<DiffSyncInner>,
 }
 
+impl std::fmt::Debug for CheckoutDiffSync {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CheckoutDiffSync").finish_non_exhaustive()
+    }
+}
+
 impl CheckoutDiffSync {
     /// Build and start the sync loop: follows the workspace chat watch and runs the
     /// 2-minute repair tick. Requires a tokio runtime.

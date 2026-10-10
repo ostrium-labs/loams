@@ -4,15 +4,6 @@
 //! Spec: ARCHITECTURE.md §5 and docs/research/feature-inventory.md §3. The engine is
 //! local-only (D781): one device, one local profile, no edge sync, relay or sign-in.
 
-// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
-// workspace clippy already runs with -D warnings, so this list keeps it green until
-// Tasks 2-4 delete or fix the code and drop it.
-#![allow(
-    clippy::doc_lazy_continuation,
-    clippy::too_many_arguments,
-    missing_debug_implementations
-)]
-
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -146,6 +137,12 @@ pub struct EngineCore {
     workspace_scope: WorkspaceScope,
     /// Exclusive data-dir lock — held for the engine's lifetime (single-instance).
     _instance_lock: InstanceLock,
+}
+
+impl std::fmt::Debug for EngineCore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineCore").finish_non_exhaustive()
+    }
 }
 
 impl EngineCore {
@@ -333,9 +330,21 @@ pub struct Engine {
     pub config: EngineConfig,
 }
 
+impl std::fmt::Debug for Engine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Engine").finish_non_exhaustive()
+    }
+}
+
 /// A fully assembled engine for the local profile, served by `loams-agentd run`.
 pub struct EngineRuntime {
     core: EngineCore,
+}
+
+impl std::fmt::Debug for EngineRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineRuntime").finish_non_exhaustive()
+    }
 }
 
 /// IPC-only lifecycle control owned by `loams-agentd run`. The regular

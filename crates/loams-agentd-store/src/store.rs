@@ -88,6 +88,12 @@ pub struct DocsStore {
     pub snapshot_writer: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
+impl std::fmt::Debug for DocsStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DocsStore").finish_non_exhaustive()
+    }
+}
+
 impl DocsStore {
     /// Open (creating directory, database, and schema as needed).
     pub fn open(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {

@@ -366,6 +366,13 @@ pub struct HarnessUpdateCoordinator {
     inner: Arc<Inner>,
 }
 
+impl std::fmt::Debug for HarnessUpdateCoordinator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HarnessUpdateCoordinator")
+            .finish_non_exhaustive()
+    }
+}
+
 /// Cancellation-safety for an RPC/app task disappearing mid-update. Dropping
 /// the future must never leave the registry's pending marker set forever.
 struct UpdateIntentGuard {

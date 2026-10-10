@@ -1,8 +1,4 @@
 #![allow(clippy::unwrap_used)]
-// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
-// workspace clippy already runs with -D warnings, so this list keeps it green until
-// Tasks 2-4 delete or fix the code and drop it.
-#![allow(clippy::type_complexity)]
 use async_trait::async_trait;
 use futures::{StreamExt, stream::BoxStream};
 use loams_agentd_doc::{MessagePart, MessageRole, MessageStatus, SessionMessageEntry};
@@ -695,8 +691,11 @@ async fn warm_side_chat_sends_owed_fork_history_once() {
 
 /// A runtime that answers its first turn, then exits once released without
 /// reading its mailbox: sends routed into it are orphaned and re-dispatched.
+/// Each run's prompt and the provider session it resumed, if any.
+type Runs = Arc<Mutex<Vec<(String, Option<String>)>>>;
+
 struct Dropping {
-    runs: Arc<Mutex<Vec<(String, Option<String>)>>>,
+    runs: Runs,
     release: Arc<tokio::sync::Notify>,
 }
 #[async_trait]

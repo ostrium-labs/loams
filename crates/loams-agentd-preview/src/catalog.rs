@@ -7,12 +7,17 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 use tokio::sync::watch;
 
 #[derive(Clone)]
 pub struct Catalog(Arc<Inner>);
+impl std::fmt::Debug for Catalog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Catalog").finish_non_exhaustive()
+    }
+}
 struct Inner {
     file: PathBuf,
     device_id: String,
@@ -26,7 +31,7 @@ struct State {
     proxy_port: u16,
     error: Option<String>,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LocalRoute {
     pub service: PreviewService,
     pub listener: Listener,
@@ -139,11 +144,7 @@ impl Catalog {
     }
     pub fn local_services(&self) -> Vec<PreviewService> {
         {
-            let mut services: Vec<_> = self
-                .0
-                .state
-                .lock()
-                .unwrap()
+            let mut services: Vec<_> = lock(&self.0.state)
                 .routes
                 .values()
                 .map(|r| r.service.clone())
@@ -153,10 +154,10 @@ impl Catalog {
         }
     }
     pub fn local_route(&self, id: &str) -> Option<LocalRoute> {
-        self.0.state.lock().unwrap().routes.get(id).cloned()
+        lock(&self.0.state).routes.get(id).cloned()
     }
     pub fn by_hostname(&self, hostname: &str) -> Option<PreviewService> {
-        let state = self.0.state.lock().unwrap();
+        let state = lock(&self.0.state);
         state
             .routes
             .values()
@@ -164,7 +165,7 @@ impl Catalog {
             .map(|route| route.service.clone())
     }
     pub fn set_proxy_status(&self, port: u16, error: Option<String>) {
-        let mut state = self.0.state.lock().unwrap();
+        let mut state = lock(&self.0.state);
         state.proxy_port = port;
         state.error = error;
         self.publish(&state);
@@ -230,7 +231,7 @@ impl Catalog {
                 l.address,
             )
         });
-        let mut state = self.0.state.lock().unwrap();
+        let mut state = lock(&self.0.state);
         let mut used_labels: HashSet<String> = state
             .names
             .projects
@@ -292,7 +293,11 @@ impl Catalog {
                 })
                 .map(|r| r.service.id.clone());
             let device_label = state.names.device_label.clone();
-            let project = state.names.projects.get_mut(&cwd).unwrap();
+            let project = state
+                .names
+                .projects
+                .get_mut(&cwd)
+                .expect("the project's names were inserted above");
             let existing = project
                 .services
                 .iter()
@@ -328,7 +333,11 @@ impl Catalog {
                 changed_names = true;
                 id
             };
-            let service_name = project.services.iter().find(|s| s.id == id).unwrap();
+            let service_name = project
+                .services
+                .iter()
+                .find(|s| s.id == id)
+                .expect("the service's name was found or pushed above");
             let service = PreviewService {
                 id: id.clone(),
                 project_id: project.id.clone(),
@@ -381,6 +390,10 @@ fn service_role(listener: &Listener, framework_name: &str) -> String {
     framework_name.into()
 }
 
+/// Locks `mutex`, recovering the data if a panicking holder poisoned it.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 #[cfg(test)]
 mod tests {
     use super::*;

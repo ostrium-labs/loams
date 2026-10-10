@@ -21,7 +21,7 @@ fn tunnel_slot() -> anyhow::Result<tokio::sync::SemaphorePermit<'static>> {
     static TUNNELS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(128);
     Ok(TUNNELS.try_acquire()?)
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Router {
     pub catalog: Catalog,
     pub local: Mux,
@@ -134,7 +134,8 @@ impl Router {
         if response.status() == StatusCode::SWITCHING_PROTOCOLS {
             anyhow::ensure!(upgrade, "unsolicited server upgrade");
             let server_upgrade = hyper::upgrade::on(&mut response);
-            let browser_upgrade = browser_upgrade.unwrap();
+            let browser_upgrade =
+                browser_upgrade.ok_or_else(|| anyhow::anyhow!("unsolicited server upgrade"))?;
             let lifecycle = self.local.clone();
             tokio::spawn(async move {
                 let _guard = guard;

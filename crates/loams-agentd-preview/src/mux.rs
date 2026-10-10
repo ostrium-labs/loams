@@ -6,7 +6,7 @@ use std::{
     io,
     pin::Pin,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard, PoisonError,
         atomic::{AtomicU32, AtomicUsize, Ordering},
     },
     task::{Context, Poll},
@@ -43,6 +43,7 @@ pub trait Transport: Send + Sync + 'static {
     async fn receive(&self) -> anyhow::Result<Vec<u8>>;
 }
 
+#[derive(Debug)]
 pub struct SocketTransport<R, W> {
     read: tokio::sync::Mutex<R>,
     write: tokio::sync::Mutex<W>,
@@ -121,6 +122,11 @@ struct Inner {
 }
 #[derive(Clone)]
 pub struct Mux(Arc<Inner>);
+impl std::fmt::Debug for Mux {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Mux").finish_non_exhaustive()
+    }
+}
 impl Mux {
     pub fn start(
         transport: Arc<dyn Transport>,
@@ -159,7 +165,7 @@ impl Mux {
     }
     pub fn close(&self) {
         self.0.stop.cancel();
-        for (_, slot) in self.0.slots.lock().unwrap().drain() {
+        for (_, slot) in lock(&self.0.slots).drain() {
             slot.cancel.cancel();
         }
     }
@@ -177,7 +183,7 @@ impl Mux {
         id: u32,
         websocket: bool,
     ) -> anyhow::Result<(Stream, oneshot::Receiver<bool>)> {
-        let mut slots = self.0.slots.lock().unwrap();
+        let mut slots = lock(&self.0.slots);
         anyhow::ensure!(
             slots.len() < MAX_STREAMS && !slots.contains_key(&id),
             "preview stream limit reached"
@@ -241,7 +247,7 @@ impl Mux {
                 anyhow::bail!("preview stream closed")
             };
             let graceful = tokio::select! { _ = cancel.cancelled() => false, result = async { tokio::try_join!(sending, receiving) } => result.is_ok() };
-            mux.0.slots.lock().unwrap().remove(&id);
+            lock(&mux.0.slots).remove(&id);
             // Queue cancellation with backpressure; closing the connection also
             // interrupts this send. No unbounded task/frame queue on stream drop.
             if !graceful {
@@ -302,25 +308,26 @@ impl Mux {
             });
             return Ok(());
         }
-        let slot = self.0.slots.lock().unwrap().get(&frame.id).cloned();
+        let slot = lock(&self.0.slots).get(&frame.id).cloned();
         let Some(slot) = slot else {
             return Ok(());
         }; // late frames after cancellation
         match frame.kind {
             READY => {
-                if let Some(ready) = slot.ready.lock().unwrap().take() {
+                if let Some(ready) = lock(&slot.ready).take() {
                     let _ = ready.send(true);
                 }
             }
             CANCEL => {
                 slot.cancel.cancel();
-                if let Some(ready) = slot.ready.lock().unwrap().take() {
+                if let Some(ready) = lock(&slot.ready).take() {
                     let _ = ready.send(false);
                 }
             }
             CREDIT => {
-                anyhow::ensure!(frame.data.len() == 4, "invalid preview credit");
-                let count = u32::from_be_bytes(frame.data.try_into().unwrap()) as usize;
+                let count = <[u8; 4]>::try_from(frame.data.as_slice())
+                    .map_err(|_| anyhow::anyhow!("invalid preview credit"))?;
+                let count = u32::from_be_bytes(count) as usize;
                 anyhow::ensure!(
                     count > 0
                         && count <= WINDOW
@@ -353,6 +360,7 @@ impl Mux {
     }
 }
 
+#[derive(Debug)]
 pub struct Stream {
     io: DuplexStream,
     cancel: CancellationToken,
@@ -422,4 +430,9 @@ pub fn local(connector: Arc<dyn Connector>, stop: CancellationToken) -> Mux {
         stop.child_token(),
     );
     client
+}
+
+/// Locks `mutex`, recovering the data if a panicking holder poisoned it.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

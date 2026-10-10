@@ -48,6 +48,12 @@ pub struct RunJournal {
     open_files: Mutex<HashMap<String, ChatJournal>>,
 }
 
+impl std::fmt::Debug for RunJournal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunJournal").finish_non_exhaustive()
+    }
+}
+
 impl RunJournal {
     pub fn open(dir: impl AsRef<Path>) -> Result<Self, JournalError> {
         let dir = dir.as_ref().to_path_buf();

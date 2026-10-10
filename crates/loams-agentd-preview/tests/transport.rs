@@ -1,7 +1,3 @@
-// Lints the zeron fork never ran clippy against; plan DD1 rulings T1-12 and T1-13. ci.yml's
-// workspace clippy already runs with -D warnings, so this list keeps it green until
-// Tasks 2-4 delete or fix the code and drop it.
-#![allow(clippy::while_let_loop)]
 use loams_agentd_preview::mux::{self, BoxIo, Connector};
 use std::{
     sync::{
@@ -22,14 +18,8 @@ impl Connector for Echo {
         active.fetch_add(1, Ordering::SeqCst);
         tokio::spawn(async move {
             let mut bytes = [0; 8192];
-            loop {
-                let Ok(length) = server.read(&mut bytes).await else {
-                    break;
-                };
-                if length == 0 {
-                    break;
-                }
-                if server.write_all(&bytes[..length]).await.is_err() {
+            while let Ok(length) = server.read(&mut bytes).await {
+                if length == 0 || server.write_all(&bytes[..length]).await.is_err() {
                     break;
                 }
             }

@@ -66,6 +66,12 @@ pub struct SpacesSync {
     inner: Arc<SpacesSyncInner>,
 }
 
+impl std::fmt::Debug for SpacesSync {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpacesSync").finish_non_exhaustive()
+    }
+}
+
 impl SpacesSync {
     /// Build and start the sync loop: follows the workspace spaces watch and
     /// runs the repair tick. Requires a tokio runtime.

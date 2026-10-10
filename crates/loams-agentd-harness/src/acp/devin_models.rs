@@ -107,11 +107,14 @@ struct Member {
     fast: bool,
 }
 
+/// When a probe finished, and the models and groups it found.
+type Probe = (Instant, Vec<Model>, Vec<Group>);
+
 #[derive(Default)]
 pub(super) struct Catalog {
     // Only overlapping callers share a result. A later picker open always
     // probes again, including after errors, login changes, or model rollouts.
-    latest: Mutex<Option<(Instant, Vec<Model>, Vec<Group>)>>,
+    latest: Mutex<Option<Probe>>,
 }
 
 impl Catalog {

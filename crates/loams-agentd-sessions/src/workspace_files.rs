@@ -50,6 +50,12 @@ pub struct WorkspaceFiles {
     inner: Arc<WorkspaceFilesInner>,
 }
 
+impl std::fmt::Debug for WorkspaceFiles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkspaceFiles").finish_non_exhaustive()
+    }
+}
+
 struct WorkspaceFilesInner {
     repos: Repos,
     workspace: WorkspaceHost,
@@ -83,6 +89,13 @@ pub struct WorkspaceFileSubscription {
     watch: Arc<CheckoutWatch>,
     owner: Weak<WorkspaceFilesInner>,
     initial: Option<WorkspaceFileChanges>,
+}
+
+impl std::fmt::Debug for WorkspaceFileSubscription {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WorkspaceFileSubscription")
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

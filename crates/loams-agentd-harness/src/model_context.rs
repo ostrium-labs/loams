@@ -147,6 +147,14 @@ fn hash_files<'a>(
     Ok(())
 }
 
+/// The model context of a harness whose `model_context` always answers `Some`
+/// (every harness with a model cache does); a `None` is a protocol error, not a panic.
+pub(crate) fn required(
+    context: Result<Option<ModelContext>, HarnessError>,
+) -> Result<ModelContext, HarnessError> {
+    context?.ok_or_else(|| HarnessError::Protocol("the harness reported no model context".into()))
+}
+
 impl ModelContext {
     pub(crate) fn key(&self) -> [u8; 32] {
         Sha256::digest(self.hash.as_bytes()).into()

@@ -20,6 +20,7 @@ pub struct Job(OwnedHandle);
 
 /// Creation-time job and inherited-handle lists. Values are borrowed until
 /// CreateProcessW returns; the opaque attribute buffer is word-aligned and owned.
+#[derive(Debug)]
 pub struct Attributes<'a> {
     buffer: Vec<usize>,
     initialized: bool,

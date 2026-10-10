@@ -1251,6 +1251,15 @@ pub struct AcpHarness {
     devin_models: devin_models::Catalog,
 }
 
+impl std::fmt::Debug for AcpHarness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AcpHarness")
+            .field("executable", &self.executable)
+            .field("sessions_root", &self.sessions_root)
+            .finish_non_exhaustive()
+    }
+}
+
 impl AcpHarness {
     fn with_spec(spec: AcpAgentSpec) -> Self {
         Self {
@@ -2233,12 +2242,12 @@ impl Harness for AcpHarness {
         (self.spec.models)()
     }
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
-        self.model_context()?.unwrap().log();
+        crate::model_context::required(self.model_context())?.log();
         self.models_cache
             .get_with_timeout(
                 force,
                 self.model_discovery_timeout * 3 + Duration::from_secs(1),
-                || self.model_context().map(|c| c.unwrap().key()),
+                || crate::model_context::required(self.model_context()).map(|c| c.key()),
                 || async {
                     if self.id() == HarnessId::Devin {
                         let (exe, _) = self.resolve_program(false).await?;

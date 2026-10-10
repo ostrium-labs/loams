@@ -112,6 +112,14 @@ pub struct ClaudeHarness {
     workspace_commands: crate::skills::CommandDiscovery,
 }
 
+impl std::fmt::Debug for ClaudeHarness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClaudeHarness")
+            .field("executable", &self.executable)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Default for ClaudeHarness {
     fn default() -> Self {
         Self {
@@ -247,7 +255,7 @@ impl ClaudeHarness {
     async fn initialize(&self) -> Result<Value, HarnessError> {
         self.initialize
             .get(
-                || self.model_context().map(|c| c.unwrap().key()),
+                || crate::model_context::required(self.model_context()).map(|c| c.key()),
                 || self.probe_initialize(None),
             )
             .await
@@ -420,12 +428,12 @@ impl Harness for ClaudeHarness {
         catalog::configured_models()
     }
     async fn model_catalog(&self, force: bool) -> Result<crate::ModelCatalog, HarnessError> {
-        self.model_context()?.unwrap().log();
+        crate::model_context::required(self.model_context())?.log();
         self.models_cache
             .get_with_timeout(
                 force,
                 Duration::from_secs(35),
-                || self.model_context().map(|c| c.unwrap().key()),
+                || crate::model_context::required(self.model_context()).map(|c| c.key()),
                 || async {
                     let response = self.initialize().await?;
                     catalog::with_discovered_models(catalog::configured_models(), &response)
