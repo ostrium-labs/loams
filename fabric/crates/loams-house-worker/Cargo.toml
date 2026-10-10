@@ -36,7 +36,7 @@ landlock.workspace = true
 seccompiler.workspace = true
 # L3: the user and network namespaces (`unshare`), `lo` raised over rtnetlink,
 # `RLIMIT_CORE`, and the thread count check, without `unsafe` in Loams code.
-nix = { workspace = true, features = ["sched", "socket", "resource", "user"] }
+nix = { workspace = true, features = ["sched", "socket", "resource", "user", "signal"] }
 # The system call numbers and constants the seccomp filter names.
 libc.workspace = true
 

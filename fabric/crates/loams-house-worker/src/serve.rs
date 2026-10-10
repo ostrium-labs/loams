@@ -716,6 +716,12 @@ fn probe(probe: &SandboxProbe) -> Vec<Frame> {
                 std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map(drop)
             }),
         SandboxProbe::UnixConnect(path) => std::os::unix::net::UnixStream::connect(path).map(drop),
+        SandboxProbe::Signal(pid) => i32::try_from(*pid)
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))
+            .and_then(|pid| {
+                nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
+                    .map_err(std::io::Error::from)
+            }),
     };
     match outcome {
         Ok(()) => vec![Frame::Done],

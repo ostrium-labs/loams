@@ -364,7 +364,7 @@ async fn worker_reaches_only_its_forwarder() {
     pool.release(lease, Outcome::Completed);
 }
 
-/// No `execve`, no new process: seccomp. `executable()` fails for that reason as
+/// No `execve`, no new process, no signal to another process: seccomp. `executable()` fails for that reason as
 /// well as its missing scripts directory (L2). The worker runs with no new
 /// privileges and no capabilities.
 #[cfg(target_os = "linux")]
@@ -389,6 +389,18 @@ async fn worker_cannot_exec() {
             "{program}: {err}"
         );
     }
+    // No signal leaves the worker (PR #391 review): not to the front, and not
+    // to any other process of its user; to itself it still may.
+    let front = std::process::id();
+    let err = lease
+        .probe_for_test(SandboxProbe::Signal(front))
+        .await
+        .expect_err("a signal to the front");
+    assert!(err.to_string().contains("Operation not permitted"), "{err}");
+    lease
+        .probe_for_test(SandboxProbe::Signal(pid))
+        .await
+        .expect("a signal to itself");
     let err = run(
         &mut lease,
         "SELECT * FROM executable('cat', TSV, 'a String')",

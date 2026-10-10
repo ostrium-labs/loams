@@ -108,9 +108,18 @@ fn mapped_files() -> BTreeSet<PathBuf> {
         .collect()
 }
 
-/// Puts the rules in force for this thread and every thread it starts. Returns
-/// what was enforced: `full` or `partial (ABI n)`.
-pub fn restrict(rules: &Rules) -> Result<String, SandboxError> {
+/// What Landlock put in force.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Enforced {
+    /// `full`, or `partial (…)` with the kernel's status.
+    pub description: String,
+    /// Whether signals to processes outside the worker's domain are refused
+    /// (`Scope::Signal`, ABI 6): then seccomp may leave `tkill` to chDB.
+    pub scoped_signals: bool,
+}
+
+/// Puts the rules in force for this thread and every thread it starts.
+pub fn restrict(rules: &Rules) -> Result<Enforced, SandboxError> {
     let step = "landlock";
     let fail = |err: landlock::RulesetError| SandboxError::new(step, err);
     let read = AccessFs::from_read(WRITTEN_FOR);
@@ -166,14 +175,21 @@ pub fn restrict(rules: &Rules) -> Result<String, SandboxError> {
             .map_err(fail)?;
     }
     let status = ruleset.restrict_self().map_err(fail)?;
-    match status.ruleset {
-        RulesetStatus::FullyEnforced => Ok("full".to_string()),
-        RulesetStatus::PartiallyEnforced => Ok(format!("partial ({:?})", status.landlock)),
-        RulesetStatus::NotEnforced => Err(SandboxError::new(
-            step,
-            "the kernel enforced none of the rules",
-        )),
-    }
+    let scoped_signals = ABI::from(status.landlock) >= ABI::V6;
+    let description = match status.ruleset {
+        RulesetStatus::FullyEnforced => "full".to_string(),
+        RulesetStatus::PartiallyEnforced => format!("partial ({:?})", status.landlock),
+        RulesetStatus::NotEnforced => {
+            return Err(SandboxError::new(
+                step,
+                "the kernel enforced none of the rules",
+            ));
+        }
+    };
+    Ok(Enforced {
+        description,
+        scoped_signals,
+    })
 }
 
 #[cfg(test)]

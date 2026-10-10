@@ -149,7 +149,7 @@ impl Sandbox {
             .map_err(|err| SandboxError::new("capabilities", err))?;
         let rules = landlock::Rules::new(&config.tmp_dir, &connect_ports);
         let enforced = landlock::restrict(&rules)?;
-        seccomp::install()?;
+        seccomp::install(enforced.scoped_signals)?;
         let forwarder = match listener {
             Some((listener, channel)) => Some(
                 Forwarder::start(listener, channel)
@@ -159,7 +159,7 @@ impl Sandbox {
         };
         Ok(Self {
             mode: config.mode,
-            landlock: Some(enforced),
+            landlock: Some(enforced.description),
             forwarder,
         })
     }

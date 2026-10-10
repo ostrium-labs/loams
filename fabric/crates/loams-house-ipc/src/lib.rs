@@ -249,6 +249,8 @@ pub enum SandboxProbe {
     Connect(String),
     /// Connect to the Unix socket at this path.
     UnixConnect(String),
+    /// `kill(pid, 0)`: whether a signal could reach this process.
+    Signal(u32),
 }
 
 /// What a worker says when it is ready to be bound.

@@ -12,6 +12,12 @@
 //!   flags a filter can read (`clone3` keeps them in memory, where it cannot).
 //! * **No way out of the namespaces or the rules**: `unshare`, `setns`, the mount
 //!   family, `pivot_root`, `chroot`.
+//! * **No signals to anyone else**: `kill`, `tgkill` and `rt_(tg)sigqueueinfo`
+//!   only to the worker's own pid; the pidfd calls not at all. `tkill` names a
+//!   thread id, which a filter cannot tell apart from another process's, but
+//!   chDB's fatal-signal path re-raises with it (measured: without it a crashed
+//!   worker lingers): it is allowed only where Landlock scopes signals (ABI 6),
+//!   which refuses it outside the worker, and refused otherwise.
 //! * **No reaching into other processes or the kernel**: `ptrace`,
 //!   `process_vm_readv`/`writev`, `pidfd_getfd`, `kcmp`, `bpf`,
 //!   `perf_event_open`, `userfaultfd`, the key ring, module loading, `kexec`,
@@ -56,6 +62,8 @@ pub fn denied() -> Vec<(&'static str, i64)> {
         ("process_vm_readv", libc::SYS_process_vm_readv),
         ("process_vm_writev", libc::SYS_process_vm_writev),
         ("pidfd_getfd", libc::SYS_pidfd_getfd),
+        ("pidfd_open", libc::SYS_pidfd_open),
+        ("pidfd_send_signal", libc::SYS_pidfd_send_signal),
         ("kcmp", libc::SYS_kcmp),
         ("bpf", libc::SYS_bpf),
         ("perf_event_open", libc::SYS_perf_event_open),
@@ -116,6 +124,12 @@ fn condition(arg: u8, op: SeccompCmpOp, value: u64) -> Result<SeccompCondition, 
         .map_err(|err| SandboxError::new("seccomp", err))
 }
 
+/// A condition on a `pid_t` argument, which is 32 bits wide.
+fn pid_condition(arg: u8, op: SeccompCmpOp, value: u64) -> Result<SeccompCondition, SandboxError> {
+    SeccompCondition::new(arg, SeccompCmpArgLen::Dword, op, value)
+        .map_err(|err| SandboxError::new("seccomp", err))
+}
+
 fn rule(conditions: Vec<SeccompCondition>) -> Result<SeccompRule, SandboxError> {
     SeccompRule::new(conditions).map_err(|err| SandboxError::new("seccomp", err))
 }
@@ -133,11 +147,31 @@ fn compile(rules: BTreeMap<i64, Vec<SeccompRule>>, errno: i32) -> Result<BpfProg
 }
 
 /// The two filters: `EPERM` for [`denied`] and the argument rules, `ENOSYS` for
-/// [`unavailable`].
-pub fn filters() -> Result<[BpfProgram; 2], SandboxError> {
+/// [`unavailable`]. `tkill` is refused unless `scoped_signals` (Landlock already
+/// keeps signals inside the worker).
+pub fn filters(scoped_signals: bool) -> Result<[BpfProgram; 2], SandboxError> {
     let mut refused: BTreeMap<i64, Vec<SeccompRule>> = BTreeMap::new();
     for (_, number) in denied() {
         refused.insert(number, Vec::new());
+    }
+    if !scoped_signals {
+        refused.insert(libc::SYS_tkill, Vec::new());
+    }
+    // Signals only to the worker itself (its own threads included): without a
+    // PID namespace, and with Landlock's signal scoping only from ABI 6, a
+    // `kill(-1, SIGKILL)` would otherwise reach every process of the front's
+    // user (PR #391 review). `kill(0, …)` and negative pids are refused too.
+    let own = u64::from(std::process::id());
+    for call in [
+        libc::SYS_kill,
+        libc::SYS_tgkill,
+        libc::SYS_rt_sigqueueinfo,
+        libc::SYS_rt_tgsigqueueinfo,
+    ] {
+        refused.insert(
+            call,
+            vec![rule(vec![pid_condition(0, SeccompCmpOp::Ne, own)?])?],
+        );
     }
     // `clone` that makes a process rather than a thread.
     refused.insert(
@@ -169,8 +203,8 @@ pub fn filters() -> Result<[BpfProgram; 2], SandboxError> {
 
 /// Installs the filters on every thread of the process (`TSYNC`); threads
 /// started later inherit them.
-pub fn install() -> Result<(), SandboxError> {
-    for filter in filters()? {
+pub fn install(scoped_signals: bool) -> Result<(), SandboxError> {
+    for filter in filters(scoped_signals)? {
         seccompiler::apply_filter_all_threads(&filter)
             .map_err(|err| SandboxError::new("seccomp", err))?;
     }
@@ -183,7 +217,12 @@ mod tests {
 
     #[test]
     fn filters_compile_for_this_machine() {
-        let [refused, missing] = filters().expect("the filters compile");
+        let [refused, missing] = filters(false).expect("the filters compile");
+        let [scoped, _] = filters(true).expect("the filters compile");
+        assert!(
+            scoped.len() < refused.len(),
+            "tkill is refused only unscoped"
+        );
         assert!(!refused.is_empty());
         assert!(!missing.is_empty());
         let names: Vec<&str> = denied().iter().map(|(name, _)| *name).collect();
