@@ -48,7 +48,7 @@ Main-process pieces:
 
 ```sh
 pnpm install
-cargo build --release -p loams --features live,durable,live-tikv   # the engine; the default build lacks durable and live-tikv
+cargo build --release -p loams --features live,durable,live-tikv,graph   # the engine; the default build lacks durable, live-tikv and graph
 pnpm --filter @loams/desktop dev                         # builds the connector catalog, then electron-vite dev
 ```
 
@@ -128,7 +128,7 @@ pnpm nx run loams-desktop-electron:package-linux     # or package-macos / packag
 
 - `scripts/fetch-engine.mjs` copies the engine (`LOAMS_BIN`, else `<cargo target_directory>/release/loams`)
   into `resources/bin/` and strips the copy. Build it with
-  `cargo build --release -p loams --features live,durable,live-tikv`; the default build lacks `durable` and `live-tikv` (Live on TiKV).
+  `cargo build --release -p loams --features live,durable,live-tikv,graph`; the default build lacks `durable`, `live-tikv` (Live on TiKV) and `graph` (the Graph page, loams.graph.v1).
 - Config: `electron-builder.config.cjs`. Output goes to `dist/` (git-ignored). Targets: Linux AppImage, deb,
   rpm, pacman (x64 and arm64, built natively on each runner); Windows NSIS x64; macOS dmg and zip (arm64 and x64),
   unsigned. Linux rpm needs `rpmbuild`; pacman needs `bsdtar`; deb and rpm need a glibc with `libcrypt.so.1`
@@ -139,7 +139,7 @@ pnpm nx run loams-desktop-electron:package-linux     # or package-macos / packag
   electron-vite `define`; `LOAMS_UPDATE_FEED` also turns on the generic `publish` block (writes `latest*.yml`).
 - Windows signing: set `WINDOWS_SIGN_KEYSTORE` (+ `WINDOWS_SIGN_STOREPASS`, optional `_ALIAS`, `_STORETYPE`,
   `_TSA`) to sign through Jsign (`scripts/windows-sign.cjs`). SignPath submission is a release-workflow step.
-- The package ships the console build (`web/apps/console/dist`), the stripped engine (built with `live,durable,live-tikv`) in `resources/bin/`, `stacks/` (the compose files), `connectors.json`, and the tray icons (inside the asar).
+- The package ships the console build (`web/apps/console/dist`), the stripped engine (built with `live,durable,live-tikv,graph`) in `resources/bin/`, `stacks/` (the compose files), `connectors.json`, and the tray icons (inside the asar).
 - AppImage on a host without FUSE: `./Loams*.AppImage --appimage-extract-and-run`.
 - CI: `.github/workflows/desktop-electron.yml` (unsigned artifacts; macOS and Windows are `continue-on-error`).
 

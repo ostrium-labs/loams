@@ -2,7 +2,7 @@
   "name": "@loams/plugin-graph",
   "version": "0.1.0",
   "private": true,
-  "description": "Loams Desktop: the Graph page (GQL over loams.graph.v1).",
+  "description": "Loams Desktop: the Graph page. GQL editor, results table and graph view, schema and graphs list over loams.graph.v1.",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -22,6 +22,7 @@
         "desktop",
         "router",
         "slots",
+        "transport",
         "flags"
       ],
       "provides": [],
@@ -43,11 +44,14 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "2.16.0",
+    "@connectrpc/connect": "2.2.0",
     "@loams/console-host": "workspace:*",
     "@loams/cordis": "workspace:*",
+    "@loams/desktop-ui": "workspace:*",
+    "@loams/proto": "workspace:*",
     "@loams/slots": "workspace:*",
-    "@loams/ui": "workspace:*",
-    "lucide-react": "1.48.0"
+    "@loams/ui": "workspace:*"
   },
   "peerDependencies": {
     "react": ">=19"

@@ -154,7 +154,7 @@ jobs:
         with:
           key: desktop-release-linux-${{ matrix.arch }}
       - name: engine (live and durable)
-        run: cargo build --release -p loams --features live,durable,live-tikv
+        run: cargo build --release -p loams --features live,durable,live-tikv,graph
       - name: package
         run: pnpm nx run loams-desktop-electron:package-linux --outputStyle=static
       - name: split the rpm (SignPath) from the rest
@@ -228,7 +228,7 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add x86_64-pc-windows-msvc
-          cargo build --release -p loams --features live,durable,live-tikv --target x86_64-pc-windows-msvc
+          cargo build --release -p loams --features live,durable,live-tikv,graph --target x86_64-pc-windows-msvc
           exe=target/x86_64-pc-windows-msvc/release/loams.exe
           # smoke test: the binary starts and reports its version
           "$exe" --version
@@ -405,7 +405,7 @@ jobs:
         with:
           key: desktop-release-macos-${{ matrix.arch }}
       - name: engine (live and durable)
-        run: cargo build --release -p loams --features live,durable,live-tikv
+        run: cargo build --release -p loams --features live,durable,live-tikv,graph
       # identity: null in electron-builder.config.cjs: no signing, no notarization (D677).
       - name: package (unsigned)
         run: pnpm nx run loams-desktop-electron:package-macos --outputStyle=static

@@ -1,8 +1,9 @@
 // Copies the engine binary into resources/bin/ for electron-builder (extraResources) and strips it.
 // Source: LOAMS_BIN, else <cargo target_directory>/release/loams[.exe] from `cargo metadata`.
-// Set LOAMS_BUILD_ENGINE=1 to run `cargo build --release -p loams --features live,durable,live-tikv` first
+// Set LOAMS_BUILD_ENGINE=1 to run `cargo build --release -p loams --features live,durable,live-tikv,graph` first
 // (the default build has live, on the embedded store, but lacks durable and live-tikv, which the
-// desktop needs for durable execution and Live on the TiKV stack; ruling T23-7).
+// desktop needs for durable execution and Live on the TiKV stack, ruling T23-7, and graph, which
+// serves loams.graph.v1 to the Graph page, GR1 Task 8).
 // Never sets CARGO_TARGET_DIR: the shared target dir comes from the cargo config.
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
@@ -26,7 +27,7 @@ const exe = process.platform === "win32" ? "loams.exe" : "loams";
 if (process.env.LOAMS_BUILD_ENGINE === "1") {
 	execFileSync(
 		"cargo",
-		["build", "--release", "-p", "loams", "--features", "live,durable,live-tikv"],
+		["build", "--release", "-p", "loams", "--features", "live,durable,live-tikv,graph"],
 		{ cwd: repo, stdio: "inherit" },
 	);
 }
@@ -44,7 +45,7 @@ if (!src) {
 if (!existsSync(src)) {
 	console.error(
 		`engine binary not found at ${src}\n` +
-			"Build it: cargo build --release -p loams --features live,durable,live-tikv (or set LOAMS_BIN / LOAMS_BUILD_ENGINE=1).",
+			"Build it: cargo build --release -p loams --features live,durable,live-tikv,graph (or set LOAMS_BIN / LOAMS_BUILD_ENGINE=1).",
 	);
 	process.exit(1);
 }

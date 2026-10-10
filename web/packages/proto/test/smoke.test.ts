@@ -2,7 +2,13 @@
 // round trip through an in-memory router keeps the watch-stream shape of
 // AP0 Ruling 3 (snapshot, then changes, then heartbeats, each with a cursor).
 
-import { create, type MessageInitShape } from '@bufbuild/protobuf';
+import {
+  create,
+  fromJson,
+  type JsonValue,
+  type MessageInitShape,
+  toJson,
+} from '@bufbuild/protobuf';
 import { Code, ConnectError, createClient, createRouterTransport } from '@connectrpc/connect';
 import { describe, expect, it } from 'vitest';
 import {
@@ -13,6 +19,11 @@ import {
   type WatchApprovalsResponseSchema,
 } from '../src/gen/loams/approvals/v1/approvals_pb.js';
 import { DeviceService } from '../src/gen/loams/devices/v1/devices_pb.js';
+import {
+  GraphAdminService,
+  GraphService,
+  ValueSchema as GraphValueSchema,
+} from '../src/gen/loams/graph/v1/graph_pb.js';
 import { Edition, InstanceService } from '../src/gen/loams/instance/v1/instance_pb.js';
 import { NotificationService } from '../src/gen/loams/notifications/v1/notifications_pb.js';
 import { OperationsService } from '../src/gen/loams/operations/v1/operations_pb.js';
@@ -116,5 +127,34 @@ describe('@loams/proto', () => {
       decision: DecisionKind.APPROVE,
     });
     expect(decided.approval?.state).toBe(ApprovalState.APPROVED);
+  });
+
+  it('generates loams.graph.v1 and reads the desktop value fixtures', async () => {
+    const transport = createRouterTransport(() => {});
+    for (const service of [GraphAdminService, GraphService]) {
+      const client = createClient(service, transport);
+      for (const name of Object.keys(service.method)) {
+        expect(typeof (client as Record<string, unknown>)[name]).toBe('function');
+      }
+    }
+    expect(GraphService.method.executeStream.methodKind).toBe('server_streaming');
+    // conformance/graph/desktop/values.json (GR1 Tasks 2 and 7): every case decodes with
+    // the generated Value and encodes back unchanged.
+    const fsId = 'node:fs';
+    const { readFileSync } = (await import(/* @vite-ignore */ fsId)) as {
+      readFileSync(url: URL, enc: 'utf8'): string;
+    };
+    const fixture = JSON.parse(
+      readFileSync(
+        new URL('../../../../conformance/graph/desktop/values.json', import.meta.url),
+        'utf8',
+      ),
+    ) as { cases: { name: string; value: JsonValue }[] };
+    expect(fixture.cases.length).toBeGreaterThan(10);
+    for (const c of fixture.cases) {
+      expect(toJson(GraphValueSchema, fromJson(GraphValueSchema, c.value)), c.name).toEqual(
+        c.value,
+      );
+    }
   });
 });

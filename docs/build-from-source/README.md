@@ -81,7 +81,7 @@ Live and no `tikv-client`.
 A build without `live-tikv` refuses `--live-store tikv://…` and the deprecated
 `--live-pd` and `--live-keyspace` ("needs a build with the live-tikv
 feature"): it never runs Live on local data when a cluster was asked for.
-Loams Desktop's engine builds use `--features live,durable,live-tikv`.
+Loams Desktop's engine builds use `--features live,durable,live-tikv,graph`.
 
 ## The commands CI runs
 

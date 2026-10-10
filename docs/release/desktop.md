@@ -32,9 +32,9 @@ the run prints a warning. Set the variable `DESKTOP_REQUIRE_SIGNING` to `true` a
 fails instead, naming what is missing.
 
 The Windows engine is bundled only if `cargo build --release -p loams --target
-x86_64-pc-windows-msvc --features live,durable,live-tikv` builds and the binary runs `--version`. Otherwise
+x86_64-pc-windows-msvc --features live,durable,live-tikv,graph` builds and the binary runs `--version`. Otherwise
 the build sets `LOAMS_DESKTOP_NO_LOCAL_ENGINE=1` and the app shows its "not available on Windows
-yet" engine state. The engine is always built with `--features live,durable,live-tikv`.
+yet" engine state. The engine is always built with `--features live,durable,live-tikv,graph`.
 
 ## What the owner must add
 

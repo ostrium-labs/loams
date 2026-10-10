@@ -1505,21 +1505,30 @@ importers:
 
   web/plugins/graph:
     dependencies:
+      '@bufbuild/protobuf':
+        specifier: 2.16.0
+        version: 2.16.0
+      '@connectrpc/connect':
+        specifier: 2.2.0
+        version: 2.2.0(@bufbuild/protobuf@2.16.0)
       '@loams/console-host':
         specifier: workspace:*
         version: link:../../packages/console-host
       '@loams/cordis':
         specifier: workspace:*
         version: link:../../packages/cordis
+      '@loams/desktop-ui':
+        specifier: workspace:*
+        version: link:../../packages/desktop-ui
+      '@loams/proto':
+        specifier: workspace:*
+        version: link:../../packages/proto
       '@loams/slots':
         specifier: workspace:*
         version: link:../../packages/slots
       '@loams/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      lucide-react:
-        specifier: 1.48.0
-        version: 1.48.0(react@19.3.0)
     devDependencies:
       '@loams/desktop':
         specifier: workspace:*

@@ -53,7 +53,7 @@ function resolveEngine(): string | undefined {
 	}
 	if (!found && mode === "real")
 		throw new Error(
-			"LOAMS_E2E_ENGINE=real but no release `loams` was found (build with --features live,durable,live-tikv or set LOAMS_BIN)",
+			"LOAMS_E2E_ENGINE=real but no release `loams` was found (build with --features live,durable,live-tikv,graph or set LOAMS_BIN)",
 		);
 	return found;
 }
@@ -300,6 +300,28 @@ test("electron smoke", async () => {
 				)
 				.toBeGreaterThanOrEqual(1);
 			timings.data = Date.now() - t0;
+
+			// 3b. Graph page (GR1 Task 8): the bundled engine is built with `graph`, so the page
+			// creates `movies`, runs a count and shows one row.
+			await test.step("graph_page_runs_query_against_loams_dev", async () => {
+				await ev(page, () => {
+					(globalThis as unknown as PageGlobal).location.hash = "#/graph";
+				});
+				await page.getByRole("button", { name: "New graph" }).click();
+				const dialog = page.getByRole("dialog", { name: "New graph" });
+				await dialog.getByLabel("Name").fill("movies");
+				await dialog.getByRole("button", { name: "Create" }).click();
+				await expect(
+					page.getByRole("heading", { name: /^movies/ }),
+				).toBeVisible();
+				await page.getByLabel("Statement").fill("MATCH (n) RETURN count(n)");
+				await page.getByRole("button", { name: "Run" }).click();
+				const table = page.getByRole("table");
+				await expect(table).toBeVisible();
+				// A header row and one data row.
+				await expect(table.getByRole("row")).toHaveCount(2);
+				timings.graph = Date.now() - t0;
+			});
 		}
 
 		// 4. Software Factory: all eight apps start unconfigured.

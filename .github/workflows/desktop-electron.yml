@@ -77,10 +77,10 @@ jobs:
         with:
           key: desktop-${{ matrix.name }}
 
-      # The desktop engine needs durable and live-tikv (Live on the TiKV stack, ruling T23-7);
-      # the default build has live (the embedded store) but lacks both.
+      # The desktop engine needs durable, live-tikv (Live on the TiKV stack, ruling T23-7) and
+      # graph (the Graph page, GR1 Task 8); the default build has live (the embedded store) only.
       - name: engine
-        run: cargo build --release -p loams --features live,durable,live-tikv
+        run: cargo build --release -p loams --features live,durable,live-tikv,graph
 
       - name: package (unsigned)
         run: pnpm nx run loams-desktop-electron:${{ matrix.target }} --outputStyle=static
