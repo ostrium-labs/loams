@@ -26,7 +26,10 @@
 //! `Cargo.toml`: `-F unsafe_code` cannot be lowered from inside a crate, so the
 //! workspace's `forbid` is restated as `allow` here and nowhere else). Every
 //! `unsafe` block in Loams is a direct call into one of the declarations
-//! `build.rs` generates from that header.
+//! `build.rs` generates from that header, or one of the few libc calls the House
+//! worker's process needs and no safe crate offers: adopting its inherited
+//! sockets and receiving the forwarder's ([`inherited`]), dropping its
+//! capabilities ([`capabilities`], HS1 Task 6) and `_exit` ([`process`]).
 //!
 //! The [`ffi`] module below is the safe layer: it owns every `unsafe` block in
 //! the workspace and hands out [`ffi::Connection`], [`ffi::Stream`],
@@ -1153,27 +1156,38 @@ pub mod ffi {
     }
 }
 
-/// Taking ownership of the socket the House worker inherits (HS1 Task 2).
+/// Taking ownership of the sockets the House worker inherits (HS1 Tasks 2 and 6).
 ///
-/// The worker finds its `hsw1` socket on fd 3, put there by the front's
-/// `posix_spawn`. Turning a raw fd into an `OwnedFd` is `unsafe` in Rust (the
+/// The worker finds its `hsw1` socket on fd 3 and, in the `netns` sandbox, its
+/// forwarder socket on fd 4, both put there by the front's `posix_spawn`; the
+/// forwarder then receives one connected socket per connection over fd 4
+/// (`SCM_RIGHTS`). Turning a raw fd into an `OwnedFd` is `unsafe` in Rust (the
 /// caller asserts that nothing else owns it), and the workspace forbids `unsafe`
-/// outside this crate (FL2 Ruling 8), so the call lives here. It takes no fd
-/// argument: there is exactly one fd it may adopt, and at most once per process.
+/// outside this crate (FL2 Ruling 8), so the calls live here. The adopting calls
+/// take no fd argument: there is exactly one fd each may adopt, at most once per
+/// process.
 pub mod inherited {
     use std::io;
     use std::mem::MaybeUninit;
-    use std::os::fd::{FromRawFd, OwnedFd, RawFd};
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+    use std::os::unix::net::UnixStream;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     /// The fd the worker's socket is on (`loams_house_ipc::WORKER_SOCKET_FD`).
     pub const WORKER_SOCKET_FD: RawFd = 3;
 
+    /// The fd the sandboxed worker's forwarder socket is on
+    /// (`loams_house_ipc::FORWARDER_SOCKET_FD`).
+    pub const FORWARDER_SOCKET_FD: RawFd = 4;
+
     /// Whether [`take_worker_socket`] has run, successfully or not.
     static TAKEN: AtomicBool = AtomicBool::new(false);
 
-    fn refuse(kind: io::ErrorKind, why: impl Into<String>) -> io::Error {
-        io::Error::new(kind, format!("fd {WORKER_SOCKET_FD}: {}", why.into()))
+    /// Whether [`take_forwarder_socket`] has run, successfully or not.
+    static FORWARDER_TAKEN: AtomicBool = AtomicBool::new(false);
+
+    fn refuse(fd: RawFd, kind: io::ErrorKind, why: impl Into<String>) -> io::Error {
+        io::Error::new(kind, format!("fd {fd}: {}", why.into()))
     }
 
     /// Takes ownership of fd 3, once.
@@ -1182,41 +1196,196 @@ pub mod inherited {
     /// opened itself, as everything Rust and libchdb open is, has it set) and a
     /// socket (`fstat`, `S_ISSOCK`). A second call fails, whatever the first did.
     pub fn take_worker_socket() -> io::Result<OwnedFd> {
-        if TAKEN.swap(true, Ordering::SeqCst) {
-            return Err(refuse(io::ErrorKind::AlreadyExists, "already taken"));
+        take(WORKER_SOCKET_FD, &TAKEN)
+    }
+
+    /// Takes ownership of fd 4, once, on the same terms as
+    /// [`take_worker_socket`] (HS1 Task 6).
+    pub fn take_forwarder_socket() -> io::Result<OwnedFd> {
+        take(FORWARDER_SOCKET_FD, &FORWARDER_TAKEN)
+    }
+
+    fn take(fd: RawFd, taken: &AtomicBool) -> io::Result<OwnedFd> {
+        if taken.swap(true, Ordering::SeqCst) {
+            return Err(refuse(fd, io::ErrorKind::AlreadyExists, "already taken"));
         }
-        let fd = WORKER_SOCKET_FD;
         // SAFETY: `fcntl(F_GETFD)` reads the fd's flags and touches no memory; on
         // a closed fd it answers -1 with EBADF.
         let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
         if flags < 0 {
             let err = io::Error::last_os_error();
-            return Err(refuse(err.kind(), format!("not open: {err}")));
+            return Err(refuse(fd, err.kind(), format!("not open: {err}")));
         }
         if flags & libc::FD_CLOEXEC != 0 {
             return Err(refuse(
+                fd,
                 io::ErrorKind::InvalidInput,
                 "close-on-exec is set, so this process opened it; it was not inherited",
             ));
         }
+        is_socket(fd)?;
+        // SAFETY: the fd is open, inherited across `exec` (close-on-exec clear), so
+        // no Rust object in this process owns it, and `taken` makes this the only
+        // `OwnedFd` ever made from it here.
+        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+    }
+
+    fn is_socket(fd: RawFd) -> io::Result<()> {
         let mut stat = MaybeUninit::<libc::stat>::uninit();
         // SAFETY: `stat` is a properly sized, writable buffer for the call.
         if unsafe { libc::fstat(fd, stat.as_mut_ptr()) } < 0 {
             let err = io::Error::last_os_error();
-            return Err(refuse(err.kind(), format!("fstat failed: {err}")));
+            return Err(refuse(fd, err.kind(), format!("fstat failed: {err}")));
         }
         // SAFETY: `fstat` returned 0, so it filled the buffer.
         let mode = unsafe { stat.assume_init() }.st_mode;
         if mode & libc::S_IFMT != libc::S_IFSOCK {
             return Err(refuse(
+                fd,
                 io::ErrorKind::InvalidInput,
                 format!("not a socket (mode {mode:o})"),
             ));
         }
-        // SAFETY: fd 3 is open, inherited across `exec` (close-on-exec clear), so
-        // no Rust object in this process owns it, and `TAKEN` makes this the only
-        // `OwnedFd` ever made from it here.
-        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+        Ok(())
+    }
+
+    /// Receives one byte and the one socket that comes with it (`SCM_RIGHTS`)
+    /// over `channel`: the forwarder's connection from the front (HS1 Task 6).
+    ///
+    /// `Ok(None)` is the end of the channel. A message with no descriptor, more
+    /// than one, or one that is not a socket is an error, and every descriptor
+    /// it carried is closed.
+    pub fn receive_socket(channel: &UnixStream) -> io::Result<Option<OwnedFd>> {
+        const SPACE: usize = 64;
+        let mut byte = [0u8; 1];
+        // u64 words: a control buffer must be aligned for `cmsghdr`.
+        let mut control = [0u64; SPACE / 8];
+        let mut iov = libc::iovec {
+            iov_base: byte.as_mut_ptr().cast(),
+            iov_len: byte.len(),
+        };
+        // SAFETY: an all-zero `msghdr` is a valid empty header; the fields set
+        // below point at buffers that outlive the call.
+        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+        msg.msg_iov = &mut iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = control.as_mut_ptr().cast();
+        msg.msg_controllen = SPACE as _;
+        let received = loop {
+            // SAFETY: `msg` describes writable buffers of the stated sizes, and
+            // `MSG_CMSG_CLOEXEC` marks any received descriptor close-on-exec.
+            let n = unsafe { libc::recvmsg(channel.as_raw_fd(), &mut msg, libc::MSG_CMSG_CLOEXEC) };
+            if n >= 0 {
+                break n;
+            }
+            let err = io::Error::last_os_error();
+            if err.kind() != io::ErrorKind::Interrupted {
+                return Err(err);
+            }
+        };
+        // Every descriptor the kernel installed is owned here first, so an
+        // error below closes them all.
+        let mut fds = Vec::new();
+        // SAFETY: the CMSG_* macros walk the control buffer the kernel just
+        // filled, within `msg_controllen`.
+        let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(&msg) };
+        while !cmsg.is_null() {
+            // SAFETY: `cmsg` is a header inside the filled control buffer.
+            let header = unsafe { &*cmsg };
+            if header.cmsg_level == libc::SOL_SOCKET && header.cmsg_type == libc::SCM_RIGHTS {
+                // SAFETY: as above; the data length is what the header says.
+                let data = unsafe { libc::CMSG_DATA(cmsg) };
+                let len = header.cmsg_len as usize - unsafe { libc::CMSG_LEN(0) } as usize;
+                for at in 0..len / std::mem::size_of::<RawFd>() {
+                    // SAFETY: `at` is within the header's data; the read is
+                    // unaligned because `CMSG_DATA` promises no alignment.
+                    let fd = unsafe { data.cast::<RawFd>().add(at).read_unaligned() };
+                    // SAFETY: the kernel installed this descriptor in this
+                    // process for this message; nothing else owns it.
+                    fds.push(unsafe { OwnedFd::from_raw_fd(fd) });
+                }
+            }
+            // SAFETY: as for `CMSG_FIRSTHDR`.
+            cmsg = unsafe { libc::CMSG_NXTHDR(&msg, cmsg) };
+        }
+        if received == 0 && fds.is_empty() {
+            return Ok(None);
+        }
+        if msg.msg_flags & libc::MSG_CTRUNC != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "the control message was truncated",
+            ));
+        }
+        if fds.len() != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("expected one socket, received {}", fds.len()),
+            ));
+        }
+        let fd = fds.remove(0);
+        is_socket(fd.as_raw_fd())?;
+        Ok(Some(fd))
+    }
+}
+
+/// Dropping the House worker's capabilities (HS1 Task 6).
+///
+/// A worker in the `netns` sandbox makes its own user namespace, which gives it
+/// every capability *in that namespace*: it needs `CAP_NET_ADMIN` there to raise
+/// `lo`, and nothing after. `capset(2)` has no safe wrapper in the workspace's
+/// dependencies, so the call lives here (FL2 Ruling 8).
+pub mod capabilities {
+    use std::io;
+
+    /// `_LINUX_CAPABILITY_VERSION_3`.
+    const VERSION_3: u32 = 0x2008_0522;
+
+    #[repr(C)]
+    struct Header {
+        version: u32,
+        pid: i32,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy, Default)]
+    struct Data {
+        effective: u32,
+        permitted: u32,
+        inheritable: u32,
+    }
+
+    /// Clears the effective, permitted and inheritable sets of the calling
+    /// thread, and the ambient set. Threads started afterwards inherit the empty
+    /// sets; call it while the process has one thread.
+    pub fn drop_all() -> io::Result<()> {
+        // SAFETY: `prctl(PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL)` takes no
+        // pointers.
+        let rc = unsafe {
+            libc::prctl(
+                libc::PR_CAP_AMBIENT,
+                libc::PR_CAP_AMBIENT_CLEAR_ALL,
+                0,
+                0,
+                0,
+            )
+        };
+        if rc != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut header = Header {
+            version: VERSION_3,
+            pid: 0,
+        };
+        let data = [Data::default(); 2];
+        // SAFETY: `header` and `data` are the version-3 layout `capset` reads
+        // (one header, two data words), and both outlive the call.
+        let rc =
+            unsafe { libc::syscall(libc::SYS_capset, &mut header as *mut Header, data.as_ptr()) };
+        if rc != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
     }
 }
 
