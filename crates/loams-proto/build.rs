@@ -45,7 +45,12 @@ const FILES: &[&str] = &[
 ];
 
 fn main() {
-    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../proto");
+    // Read at run time, not with `env!`: the shared target directory reuses
+    // a compiled build script across worktrees, and a path baked in at
+    // compile time would point into whichever worktree compiled it first.
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .expect("cargo sets CARGO_MANIFEST_DIR for build scripts");
+    let root = format!("{manifest_dir}/../../proto");
     let files: Vec<String> = FILES.iter().map(|f| format!("{root}/{f}")).collect();
     for file in &files {
         println!("cargo:rerun-if-changed={file}");
