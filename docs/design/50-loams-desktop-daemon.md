@@ -152,11 +152,11 @@ The fork's seventeen packages (sixteen crates and the binary) become ten; five n
 |---|---|---|
 | Edge sync and relay | `DEFAULT_EDGE_URL`, `EngineConfig.edge_url`/`edge_token`, `rpc/src/device_room.rs`, the room clients of `sync` (`chat_client*`, `registry*`, `socket*`, `dial.rs`, `wake.rs`, `net_path.rs`, `sync_jobs.rs`, `budget.rs`), the edge parts of `doc_host.rs`, `workspace_host.rs`, `chat2_host.rs`, `diff_sync.rs` (sidecar upload), `preview/src/signaling.rs`, `native/edge` | None. Device sync is Q700 |
 | WorkOS | `engine/src/auth.rs`, `apps/loams-desktop/src/auth_cli.rs`, `DEFAULT_WORKOS_CLIENT_ID`, `EngineProfile::synced`, `local_import.rs`, the UI references (deleted with `ui`) | Authentik through `loams-agentd-link` when a server sign-in is needed (Q703) |
-| Cursor | `harness/src/cursor` (the `@cursor/sdk` Node shim), `HarnessId::Cursor` | None. The wire name `cursor` is rejected when read back from an old doc |
+| Cursor | `harness/src/cursor` (the `@cursor/sdk` Node shim), `HarnessId::Cursor` | None. The wire name `cursor` (like any unknown name) reads back from an old doc as `HarnessId::Unsupported`, and the session opens read-only: a send answers `harness_unsupported` ("This agent is no longer supported") |
 | Update checks | `crates/update`, `update_cli.rs`, the engine's `Updater`, `UpdateStatus` and `ApplyUpdate` RPCs, the Windows image cleanup in `main.rs` | Electron's updater (§6) |
-| Push and nudge | Edge device relay, status and nudge (`NudgeHandler`, `PeerLiveness`, `RETRY_DELIVERY`, `RELAY_COMMAND`, `FOCUS_CHAT` and the connectivity RPCs) | Local OS notifications for pending approvals (§5.5) |
+| Push and nudge | Edge device relay, status and nudge (`NudgeHandler`, `PeerLiveness`, `RELAY_COMMAND`, `FOCUS_CHAT` and the connectivity RPCs; `RETRY_DELIVERY` keeps only its local re-send, plan DD1 ruling T2-12) | Local OS notifications for pending approvals (§5.5) |
 
-**Kept on purpose:** the harness CLI installer (`InstallHarness`) and enablement, because Claude Code and Codex must be installable from the UI. The automatic update polling of `harness_updates.rs` is removed; a manual "update" button stays (it is an explicit user action, not an update check of the daemon).
+**Kept on purpose:** the harness CLI installer (`InstallHarness`) and enablement, because Claude Code and Codex must be installable from the UI. The automatic update polling and the update policies of `harness_updates.rs` are removed; the manual check (`CheckHarnessUpdates`) and "update" button (`ApplyHarnessUpdate`) stay (it is an explicit user action, not an update check of the daemon).
 
 ### 4.3 Headless only (D782)
 
