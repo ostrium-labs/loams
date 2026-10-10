@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # loams-agentd must stay headless (D782, design §50 §4.3): no GUI, webview or
-# audio crate may enter its normal or build dependency tree on any target.
+# audio crate may enter its normal or build dependency tree on any target. The
+# pattern is §50's, plus the egui (eframe) and iced toolkits.
 #
 #   scripts/ci/agentd-deps.sh            check the workspace's loams-agentd
 #   scripts/ci/agentd-deps.sh --filter   check `cargo tree --format '{p}'`
@@ -14,7 +15,7 @@
 # invisible on a Linux runner.
 set -euo pipefail
 
-gui='^(gpui[a-z_-]*|zed[a-z_-]*|wry|webkit2gtk[a-z0-9_-]*|javascriptcore[a-z0-9_-]*|soup[0-9]*[a-z_-]*|gtk[a-z0-9_-]*|gdk[a-z0-9_-]*|cpal|alsa[a-z_-]*) '
+gui='^(gpui[a-z_-]*|zed[a-z_-]*|wry|webkit2gtk[a-z0-9_-]*|javascriptcore[a-z0-9_-]*|soup[0-9]*[a-z_-]*|gtk[a-z0-9_-]*|gdk[a-z0-9_-]*|cpal|alsa[a-z_-]*|egui[a-z_-]*|eframe|iced[a-z_-]*) '
 tree_args=(-p loams-agentd -e normal,build --target all)
 
 # Prints the GUI packages among the `{p}` lines on stdin, one `name vX.Y.Z`

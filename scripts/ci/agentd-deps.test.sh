@@ -53,12 +53,14 @@ expect 1 "wry" "$scratch/wry"
 expect_output "wry is named" "wry v0.50.0"
 expect_output "the decision is cited" "D782"
 
-# Every family the design names (§50 §4.3), as cargo prints it.
+# Every family the design names (§50 §4.3), plus egui, eframe and iced (PR
+# #393 review), as cargo prints it.
 for pkg in "gpui v0.2.0" "gpui_macros v0.1.0" "zed-font-kit v0.14.1" \
   "webkit2gtk v2.0.1" "webkit2gtk-sys v2.0.1" "javascriptcore-rs v1.1.2" \
   "soup3 v0.5.0" "soup3-sys v0.5.0" "gtk v0.18.2" "gtk-sys v0.18.2" \
   "gdk v0.18.2" "gdk-pixbuf-sys v0.18.0" "cpal v0.15.3" "alsa-sys v0.3.1" \
-  "WRY v0.50.0"; do
+  "egui v0.33.0" "egui_extras v0.33.0" "eframe v0.33.0" "iced v0.13.1" \
+  "iced_winit v0.13.0" "WRY v0.50.0"; do
   { cat "$scratch/clean"; echo "$pkg"; } > "$scratch/one"
   expect 1 "$pkg" "$scratch/one"
   expect_output "$pkg is named" "$pkg"
