@@ -345,11 +345,24 @@ fn inproc(_dir: &Path) -> Result<Arc<dyn Launcher>, HouseError> {
 }
 
 /// The single node's local password: read from `path`, or generated (128 random
-/// bits, hex) and written there with mode 0600 on first start. Never printed.
+/// bits, hex) and written there with mode 0600 on first start. An existing file
+/// is put back to 0600 before it is used, so a key another local user could read
+/// is not served. Never printed.
 pub fn local_key(path: &Path) -> Result<String, HouseError> {
+    use std::os::unix::fs::PermissionsExt as _;
     let failed = |err: io::Error| bad(format!("the local key {}: {err}", path.display()));
     match std::fs::read_to_string(path) {
-        Ok(text) if !text.trim().is_empty() => return Ok(text.trim().to_string()),
+        Ok(text) if !text.trim().is_empty() => {
+            let mode = std::fs::metadata(path)
+                .map_err(failed)?
+                .permissions()
+                .mode();
+            if mode & 0o077 != 0 {
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                    .map_err(failed)?;
+            }
+            return Ok(text.trim().to_string());
+        }
         Ok(_) => return Err(failed(io::Error::other("the file is empty"))),
         Err(err) if err.kind() != io::ErrorKind::NotFound => return Err(failed(err)),
         Err(_) => {}

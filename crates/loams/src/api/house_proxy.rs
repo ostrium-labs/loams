@@ -66,7 +66,8 @@ pub const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 /// `[house]`: where the House front is (design §49 §18.1).
 #[derive(Clone, Debug)]
 pub struct HouseProxyConfig {
-    /// The front's base URL, such as `http://127.0.0.1:8123`. `None` (the
+    /// The front's base URL, such as `http://127.0.0.1:8123`: `http` only, as
+    /// the engine's HTTP client has no TLS (HS1 Task 20 adds it). `None` (the
     /// default): `loams.house.v1` answers `house_not_configured`.
     pub endpoint: Option<Url>,
     /// How often the front's health is checked. Default 5 s.
@@ -94,13 +95,15 @@ impl HouseProxy {
     /// A proxy to `config.endpoint` with its health check running every
     /// `config.health_interval`, or `None` when no endpoint is configured. The
     /// check stops when the last reference is dropped. Must be called inside a
-    /// tokio runtime.
-    pub fn start(config: &HouseProxyConfig) -> Option<Arc<Self>> {
-        let endpoint = config.endpoint.clone()?;
+    /// tokio runtime. Fails when the HTTP client cannot be built, so a server
+    /// with a House endpoint never starts with a proxy that cannot proxy.
+    pub fn start(config: &HouseProxyConfig) -> Result<Option<Arc<Self>>, reqwest::Error> {
+        let Some(endpoint) = config.endpoint.clone() else {
+            return Ok(None);
+        };
         let client = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
-            .build()
-            .unwrap_or_default();
+            .build()?;
         let proxy = Arc::new(Self {
             endpoint,
             client,
@@ -118,7 +121,7 @@ impl HouseProxy {
                 proxy.healthy.store(healthy, Ordering::Relaxed);
             }
         });
-        Some(proxy)
+        Ok(Some(proxy))
     }
 
     /// Whether the front answered its last health check.

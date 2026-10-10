@@ -2134,6 +2134,12 @@ impl Server {
         let graph = config
             .serves_graph()
             .then(|| GraphRuntime::start(&config.graph, meta_store.clone(), store.clone()));
+        let house = match roles.gateway {
+            true => crate::api::house_proxy::HouseProxy::start(&config.house).map_err(|err| {
+                ServerError::Config(format!("the House proxy's HTTP client: {err}"))
+            })?,
+            false => None,
+        };
         let state = AppState {
             meta: meta_store.clone(),
             writer: writer.clone(),
@@ -2158,10 +2164,7 @@ impl Server {
             reflection: config.reflection,
             #[cfg(feature = "graph")]
             graph: graph.as_ref().map(|g| g.admin.clone()),
-            house: roles
-                .gateway
-                .then(|| crate::api::house_proxy::HouseProxy::start(&config.house))
-                .flatten(),
+            house,
         };
         let app = match roles.gateway {
             true => api::router(state),

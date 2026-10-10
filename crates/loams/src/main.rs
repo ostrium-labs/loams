@@ -506,12 +506,20 @@ fn parse_durable_listen(text: &str) -> Result<SocketAddr, String> {
     text.parse().map_err(|err| format!("{err}"))
 }
 
-/// `--house-endpoint`: an `http` or `https` URL with a host.
+/// `--house-endpoint`: an `http` URL with a host. `https` is refused by name:
+/// the engine's HTTP client has no TLS until HS1 Task 20, and accepting it would
+/// only turn into "unreachable" on every call.
 fn parse_house_endpoint(text: &str) -> Result<url::Url, String> {
     let url = url::Url::parse(text).map_err(|err| format!("--house-endpoint {text:?}: {err}"))?;
-    if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
+    if url.scheme() == "https" {
         return Err(format!(
-            "--house-endpoint {text:?}: expected http://host:port or https://host:port"
+            "--house-endpoint {text:?}: https is not supported yet (this build has no TLS \
+             client; HS1 Task 20); use http:// on loopback or a private network"
+        ));
+    }
+    if url.scheme() != "http" || url.host().is_none() {
+        return Err(format!(
+            "--house-endpoint {text:?}: expected http://host:port"
         ));
     }
     Ok(url)
@@ -1562,7 +1570,7 @@ mod tests {
     }
 
     /// HS1 Task 7: `--house-endpoint` is `[house] endpoint`; without it the
-    /// House is not configured, and only an http(s) URL with a host is taken.
+    /// House is not configured, and only an http URL with a host is taken.
     #[test]
     fn house_endpoint_is_the_house_proxy_target() {
         assert_eq!(dev_config(&[]).house.endpoint, None);
@@ -1571,7 +1579,12 @@ mod tests {
             config.house.endpoint.as_ref().map(url::Url::as_str),
             Some("http://127.0.0.1:8123/")
         );
-        for bad in ["127.0.0.1:8123", "unix:///run/house.sock", "http://"] {
+        for bad in [
+            "127.0.0.1:8123",
+            "unix:///run/house.sock",
+            "http://",
+            "https://house:8443",
+        ] {
             assert!(
                 Cli::try_parse_from(["loams", "dev", "--house-endpoint", bad]).is_err(),
                 "{bad}"

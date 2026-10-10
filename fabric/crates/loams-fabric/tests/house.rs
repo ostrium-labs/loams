@@ -159,6 +159,20 @@ fn house_role_starts_and_serves_ping() {
     drop(fabric);
 }
 
+/// An existing local key that others can read is put back to 0600 before use
+/// (PR #398 review).
+#[test]
+fn existing_local_key_is_tightened() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = scratch("key-mode");
+    let path = dir.join(house::LOCAL_KEY_FILE);
+    let first = house::local_key(&path).expect("generated");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+    assert_eq!(house::local_key(&path).expect("reused"), first);
+    let mode = std::fs::metadata(&path).expect("key").permissions().mode();
+    assert_eq!(mode & 0o777, 0o600);
+}
+
 #[test]
 fn single_node_defaults() {
     let dir = scratch("defaults");
@@ -211,7 +225,7 @@ fn single_node_defaults() {
         listen = "127.0.0.1:18123"
         [[house.users]]
         user = "alice"
-        password_sha256 = "00"
+        password_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
         namespace = 3
         [house.pool]
         min_idle_workers = 1

@@ -495,11 +495,23 @@ pub struct TlsSection {
 impl HouseFile {
     /// Parses a configuration file's text.
     pub fn parse(text: &str) -> Result<Self, HouseError> {
-        toml::from_str(text).map_err(|err| {
+        let file: Self = toml::from_str(text).map_err(|err| {
             HouseError::from(ChError::bad_arguments(format!(
                 "the house configuration file: {err}"
             )))
-        })
+        })?;
+        // A malformed digest would load and then never match (PR #398 review).
+        for user in &file.house.users {
+            let digest = &user.password_sha256;
+            if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return Err(HouseError::from(ChError::bad_arguments(format!(
+                    "the house configuration file: user {:?}: password_sha256 must be 64 hex \
+                     digits (the SHA-256 of the password)",
+                    user.user
+                ))));
+            }
+        }
+        Ok(file)
     }
 
     /// Reads and parses `path`.
@@ -537,7 +549,7 @@ mod tests {
 
             [[house.users]]
             user = "alice"
-            password_sha256 = "AB"
+            password_sha256 = "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
             namespace = 7
 
             [house.limits]
@@ -565,7 +577,10 @@ mod tests {
         let house = &file.house;
         assert_eq!(house.listen, Some("127.0.0.1:18123".parse().expect("addr")));
         assert_eq!(house.single_node, Some(true));
-        assert_eq!(UserMap::from(&house.users[0]).password_sha256, "ab");
+        assert_eq!(
+            UserMap::from(&house.users[0]).password_sha256,
+            "ab".repeat(32)
+        );
         let mut config = HouseConfig::default();
         house.limits.apply(&mut config);
         assert_eq!(config.max_query_size, 1024);
@@ -584,13 +599,15 @@ mod tests {
             Some(Ok(CatalogSpec::Local("/srv/house/catalog.sqlite".into())))
         );
         assert!(
-            !format!("{file:?}").contains("AB"),
+            !format!("{file:?}").contains("ABAB"),
             "the digest is redacted"
         );
 
         for bad in [
             "[house]\nlisten_typo = \"127.0.0.1:1\"",
             "[house.limits]\nmax_memory = 1",
+            "[[house.users]]\nuser = \"bob\"\npassword_sha256 = \"abc\"\nnamespace = 1",
+            "[[house.users]]\nuser = \"bob\"\npassword_sha256 = \"\"\nnamespace = 1",
             "[housee]",
         ] {
             let err = HouseFile::parse(bad).expect_err(bad);
