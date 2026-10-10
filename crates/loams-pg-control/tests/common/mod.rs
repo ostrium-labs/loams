@@ -304,6 +304,7 @@ impl TestClock {
 pub struct MemorySecrets {
     map: Mutex<BTreeMap<String, Vec<u8>>>,
     fail_puts: AtomicBool,
+    fail_deletes: AtomicBool,
 }
 
 impl MemorySecrets {
@@ -330,6 +331,11 @@ impl MemorySecrets {
     pub fn fail_puts(&self, fail: bool) {
         self.fail_puts.store(fail, Ordering::SeqCst);
     }
+
+    /// Makes every delete fail (`unavailable`), or not.
+    pub fn fail_deletes(&self, fail: bool) {
+        self.fail_deletes.store(fail, Ordering::SeqCst);
+    }
 }
 
 #[async_trait::async_trait]
@@ -349,6 +355,9 @@ impl SecretStore for MemorySecrets {
     }
 
     async fn delete(&self, r: &SecretRef) -> Result<(), SecretError> {
+        if self.fail_deletes.load(Ordering::SeqCst) {
+            return Err(SecretError::Unavailable("injected".into()));
+        }
         self.map().remove(r.as_str());
         Ok(())
     }

@@ -49,7 +49,7 @@ pub use idempotency::{ANSWER_JSON, IdempotencyLedger, LEDGER_TTL};
 
 use crate::model::Record;
 use crate::neon::NeonRead;
-use crate::secrets::{SecretError, SecretStore};
+use crate::secrets::{SecretError, SecretRef, SecretStore};
 use crate::store::{
     ApiWriter, Batch, BatchError, DEFAULT_PAGE_SIZE, KvControlStore, MAX_PAGE_SIZE, Page,
     PgControlStore, StoreError, Versioned,
@@ -59,6 +59,13 @@ use idempotency::{Begin, Claim};
 /// How many times a mutation is redone after its batch met a concurrent
 /// write, before answering `aborted`.
 const ATTEMPTS: usize = 5;
+
+/// How long after a secret reference was issued a batch may still commit a
+/// record naming it. Past this the call answers `unavailable` and commits
+/// nothing, so the reconciler's sweep, which deletes only unnamed
+/// references older than its grace (at least twice this), never deletes
+/// a secret whose record could still commit (Task 7, R7.8).
+pub const ISSUE_WINDOW: Duration = Duration::from_secs(300);
 
 /// Who calls, as the authorizer (Task 9) established it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -362,6 +369,9 @@ pub(crate) struct Mutation<T> {
     pub batch: Batch,
     pub answer: Answer<T>,
     pub on_conflict: Vec<(usize, ServiceError)>,
+    /// Secret references issued for this call that its records name: the
+    /// batch commits only within [`ISSUE_WINDOW`] of their issue.
+    pub issued: Vec<SecretRef>,
 }
 
 impl<T> Mutation<T> {
@@ -370,7 +380,14 @@ impl<T> Mutation<T> {
             batch,
             answer: Arc::new(answer),
             on_conflict: Vec::new(),
+            issued: Vec::new(),
         }
+    }
+
+    /// The batch names these freshly issued secret references.
+    pub fn names_issued(mut self, refs: impl IntoIterator<Item = SecretRef>) -> Self {
+        self.issued.extend(refs);
+        self
     }
 
     /// A conflict at `index` answers `error`.
@@ -471,6 +488,7 @@ impl<N: NeonRead> PgService<N> {
             mut batch,
             answer,
             on_conflict,
+            issued,
         } = mutation;
         let now = self.now_ms();
         if let Some(claim) = claim {
@@ -481,6 +499,7 @@ impl<N: NeonRead> PgService<N> {
         if let Some(hook) = &self.config.before_commit {
             hook(rpc).await;
         }
+        self.within_issue_window(&issued)?;
         match self.writer.commit(batch).await {
             Ok(out) => Ok(Applied::Done(answer(&out))),
             Err(BatchError {
@@ -513,6 +532,25 @@ impl<N: NeonRead> PgService<N> {
             }
             Err(e) => Err(e.error.into()),
         }
+    }
+
+    /// Refuses a commit naming a reference issued more than
+    /// [`ISSUE_WINDOW`] ago (by this service's clock).
+    fn within_issue_window(&self, issued: &[SecretRef]) -> Result<(), ServiceError> {
+        let window = u64::try_from(ISSUE_WINDOW.as_millis()).unwrap_or(u64::MAX);
+        let now = self.now_ms();
+        for r in issued {
+            if let Some((_, at)) = r.role_parts()
+                && now.saturating_sub(at) > window
+            {
+                tracing::warn!(secret_ref = %r, "a call outlasted its secret's issue window");
+                return Err(ServiceError::new(
+                    Reason::Unavailable,
+                    "the call took too long to commit; retry with a new idempotency_key",
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Every record under `prefix`, every page.

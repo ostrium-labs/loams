@@ -379,7 +379,8 @@ impl<N: NeonRead> PgService<N> {
                 record: rec.clone(),
                 version: out[at].unwrap_or_default(),
             })
-            .conflict_means(at, role_exists(&req.name));
+            .conflict_means(at, role_exists(&req.name))
+            .names_issued([secret_ref.clone()]);
             if let Applied::Done(first) = self.apply("CreateRole", claim.as_ref(), mutation).await?
             {
                 return mine(first, &secret_ref);
@@ -494,7 +495,8 @@ impl<N: NeonRead> PgService<N> {
             let mutation = Mutation::new(batch, move |out| Versioned {
                 record: rec.clone(),
                 version: out[at].unwrap_or_default(),
-            });
+            })
+            .names_issued([secret_ref.clone()]);
             if let Applied::Done(first) = self
                 .apply("ResetRolePassword", claim.as_ref(), mutation)
                 .await?

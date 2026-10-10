@@ -12,13 +12,17 @@
 //! is gone has no branches, so its references go too. Names outside the
 //! role grammar are never touched.
 //!
-//! **Why no lease.** A record only ever names a reference made for it, a
-//! moment before it commits (one call, far shorter than the grace). So a
-//! reference older than the grace that no record names now will never be
-//! named, and deleting it races with nothing. Two instances sweeping at
-//! once delete the same secrets, which is harmless.
+//! **Why no lease.** A record only ever names a reference made for its own
+//! call, and the service commits it only within
+//! [`ISSUE_WINDOW`](crate::service::ISSUE_WINDOW) of the reference's issue.
+//! The grace is at least [`MIN_SECRET_GRACE`] (twice that window, which
+//! leaves the commit itself minutes). So a reference older than the grace
+//! that no record names now will never be named, and deleting it races
+//! with nothing. Two instances sweeping at once delete the same secrets,
+//! which is harmless.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Duration;
 
 use super::{Ctx, ReconcileError, all};
 use crate::ids::ProjectId;
@@ -26,11 +30,20 @@ use crate::model::{BranchPrefix, BranchRec, BranchScope, RoleRec};
 use crate::secrets::SecretRef;
 use crate::store::PgControlStore;
 
-/// Sweeps; answers how many secrets it deleted.
+/// The least grace the sweep allows, whatever the configuration says:
+/// twice the service's issue window.
+pub const MIN_SECRET_GRACE: Duration = Duration::from_secs(2 * 300);
+
+const _: () = assert!(MIN_SECRET_GRACE.as_secs() >= 2 * crate::service::ISSUE_WINDOW.as_secs());
+
+/// Sweeps; answers how many secrets it deleted. A secret it could not
+/// delete does not stop it: it goes on with the others, then answers the
+/// first such failure.
 pub(crate) async fn sweep<S: PgControlStore, N>(ctx: &Ctx<S, N>) -> Result<usize, ReconcileError> {
     let refs = ctx.secrets.list().await.map_err(ReconcileError::Secrets)?;
     let now = ctx.now_ms();
-    let grace = u64::try_from(ctx.config.secret_grace.as_millis()).unwrap_or(u64::MAX);
+    let grace = ctx.config.secret_grace.max(MIN_SECRET_GRACE);
+    let grace = u64::try_from(grace.as_millis()).unwrap_or(u64::MAX);
     let mut old: BTreeMap<ProjectId, Vec<SecretRef>> = BTreeMap::new();
     for r in refs {
         if let Some((project, issued)) = r.role_parts()
@@ -40,6 +53,7 @@ pub(crate) async fn sweep<S: PgControlStore, N>(ctx: &Ctx<S, N>) -> Result<usize
         }
     }
     let mut deleted = 0;
+    let mut failed = None;
     for (project, candidates) in old {
         let named = named(ctx, &project.to_string()).await?;
         for r in candidates.into_iter().filter(|r| !named.contains(r)) {
@@ -49,12 +63,16 @@ pub(crate) async fn sweep<S: PgControlStore, N>(ctx: &Ctx<S, N>) -> Result<usize
                     deleted += 1;
                 }
                 Err(e) => {
-                    tracing::warn!(secret_ref = %r, error = %e, "an unused secret was not deleted")
+                    tracing::warn!(secret_ref = %r, error = %e, "an unused secret was not deleted");
+                    failed.get_or_insert(e);
                 }
             }
         }
     }
-    Ok(deleted)
+    match failed {
+        Some(e) => Err(ReconcileError::Secrets(e)),
+        None => Ok(deleted),
+    }
 }
 
 /// Every reference a role of the project's branches names.

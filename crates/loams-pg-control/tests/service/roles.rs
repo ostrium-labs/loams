@@ -735,6 +735,54 @@ async fn a_failed_secret_write_writes_no_role() {
     assert!(h.secrets.value(&out.role.record.secret_ref).is_some());
 }
 
+/// A call that outlasts the issue window of the secrets it wrote commits
+/// nothing and deletes them again (Task 7, R7.8): the reconciler's sweep
+/// relies on it. Covered: a role's create and a branch's copies.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_call_past_its_issue_window_commits_nothing() {
+    let h = harness!();
+    let (p, main) = project(&h).await;
+    h.service
+        .create_role(&user(), role(&p.id, &main, "app", "r1"))
+        .await
+        .expect("a role, in time");
+    assert_eq!(h.secrets.len(), 1);
+    // Every secret issued from here on looks older than the window by the
+    // service's clock.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("time")
+        .as_millis();
+    let late = loams_pg_control::service::ISSUE_WINDOW.as_millis() + 60_000;
+    h.clock.0.store(
+        u64::try_from(now + late).expect("ms"),
+        std::sync::atomic::Ordering::SeqCst,
+    );
+    let e = h
+        .service
+        .create_role(&user(), role(&p.id, &main, "other", "r2"))
+        .await
+        .expect_err("past the window");
+    assert_eq!(e.reason, Reason::Unavailable, "{e}");
+    let e = h
+        .service
+        .create_branch(
+            &user(),
+            CreateBranch {
+                namespace: "acme".into(),
+                project_id: p.id.clone(),
+                name: "dev".into(),
+                idempotency_key: "b1".into(),
+                ..CreateBranch::default()
+            },
+        )
+        .await
+        .expect_err("past the window");
+    assert_eq!(e.reason, Reason::Unavailable, "{e}");
+    assert_eq!(roles(&h, &p, &main).await.len(), 1);
+    assert_eq!(h.secrets.len(), 1, "the late calls' secrets are deleted");
+}
+
 /// A create whose batch outcome is lost: resolved through the ledger when it
 /// applied (the caller gets its password), and otherwise answered
 /// `unavailable` with the secret kept (its use is unknown).

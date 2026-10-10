@@ -88,8 +88,10 @@ pub struct ReconcilerConfig {
     /// How often the resync sweeps unused secrets (default 10 minutes).
     pub sweep_every: Duration,
     /// How old an unused secret must be before the sweep deletes it
-    /// (default 15 minutes): far longer than any API call between writing a
-    /// secret and committing the record that names it.
+    /// (default 15 minutes; never less than
+    /// [`MIN_SECRET_GRACE`](resync::MIN_SECRET_GRACE), twice the service's
+    /// [`ISSUE_WINDOW`](crate::service::ISSUE_WINDOW), within which a
+    /// record naming a new secret must commit).
     pub secret_grace: Duration,
     /// The generation a tenant is attached with to a pageserver directly
     /// (single pageserver; the storage controller picks its own, R2.14).
@@ -455,8 +457,9 @@ impl<S: PgControlStore, N: NeonWrite> Reconciler<S, N> {
     ///
     /// # Errors
     ///
-    /// The credential or the control store failed (nothing more was
-    /// deleted after that).
+    /// `Secrets` when listing failed, or when a delete failed (the sweep
+    /// still tried the others); `Store` when the records could not be read
+    /// (nothing more was deleted after that).
     pub async fn sweep_secrets(&self) -> Result<usize, ReconcileError> {
         resync::sweep(&self.ctx).await
     }

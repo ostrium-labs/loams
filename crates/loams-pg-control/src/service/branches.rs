@@ -492,7 +492,8 @@ impl<N: NeonRead> PgService<N> {
                     logical_size_bytes: None,
                 },
             })
-            .conflict_means(name_at, taken);
+            .conflict_means(name_at, taken)
+            .names_issued(copies.iter().map(|(_, r)| r.clone()));
             match self.apply("CreateBranch", claim.as_ref(), mutation).await {
                 Ok(Applied::Done(created)) => {
                     // A concurrent call under the same key created it: this

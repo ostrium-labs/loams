@@ -966,6 +966,12 @@ async fn resync_sweeps_orphan_secrets() {
         u64::try_from(now).expect("ms") + 86_400_000,
         Ordering::SeqCst,
     );
+    // A delete the credential store refuses is reported, not skipped.
+    h.secrets.fail_deletes(true);
+    let e = r.sweep_secrets().await.expect_err("deletes refused");
+    assert!(matches!(e, ReconcileError::Secrets(_)), "{e}");
+    assert_eq!(h.secrets.len(), 4);
+    h.secrets.fail_deletes(false);
     assert_eq!(r.sweep_secrets().await.expect("sweep"), 2);
     assert!(h.secrets.value(&role.role.record.secret_ref).is_some());
     assert!(h.secrets.value(&foreign).is_some());
