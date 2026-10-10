@@ -92,6 +92,9 @@ grafeo-common = { version = "=0.5.43", default-features = false }
 # under grafeo-engine with the features above; this adds none.
 grafeo-adapters = { version = "=0.5.43", default-features = false }
 hex = "0.4"
+# Live pagination cursors are HMAC-SHA256 tagged with the app's key (LV1
+# Task 4); 0.13 is the line on sha2 0.11's digest.
+hmac = "0.13"
 http = "1"
 http-body = "1"
 httpmock = { version = "0.8.3", default-features = false, features = ["remote"] }

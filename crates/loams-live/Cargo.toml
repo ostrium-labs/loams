@@ -20,6 +20,8 @@ connectrpc = { workspace = true, features = ["axum"] }
 crc.workspace = true
 data-encoding.workspace = true
 futures.workspace = true
+# The tag of a pagination cursor (LV1 Task 4).
+hmac.workspace = true
 loams-live-proto.workspace = true
 # The store seam (LV1 Task 20): the embedded store always, TiKV with the
 # `tikv` feature (LV1 plan Task 23).

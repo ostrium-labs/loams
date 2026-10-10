@@ -10,6 +10,7 @@
 use buffa::Message;
 use loams_kv::Txn;
 
+use crate::cursor::CursorKey;
 use crate::docs::Reads;
 use crate::ids::{IndexId, TableId};
 use crate::journal::MAX_SHARDS;
@@ -419,6 +420,30 @@ pub async fn ensure_journal_shards(
     check_shards(shards)?;
     txn.put(&app.app_def(), app_def(shards)).await?;
     Ok(shards)
+}
+
+/// The app's pagination cursor key (LV1 plan Task 4), from its catalog
+/// record; `None` before the app's runner first opened.
+pub async fn load_cursor_key(
+    r: &mut impl Reads,
+    app: &AppKeys,
+) -> Result<Option<CursorKey>, LiveError> {
+    match r.get(&app.cursor_key()).await? {
+        Some(bytes) => Ok(Some(CursorKey::from_record(&bytes)?)),
+        None => Ok(None),
+    }
+}
+
+/// The app's pagination cursor key: the stored one, or a new random key
+/// written as the app's record when it has none yet. It never changes, so
+/// cursors stay valid across nodes and restarts.
+pub async fn ensure_cursor_key(txn: &mut Txn, app: &AppKeys) -> Result<CursorKey, LiveError> {
+    if let Some(key) = load_cursor_key(txn, app).await? {
+        return Ok(key);
+    }
+    let key = CursorKey::random()?;
+    txn.put(&app.cursor_key(), key.as_bytes().to_vec()).await?;
+    Ok(key)
 }
 
 /// Changes the app's journal shard count to `shards`. Refused with

@@ -36,8 +36,9 @@ use rand::rngs::StdRng;
 use sha2::{Digest, Sha256};
 
 use crate::catalog::{self, TableDef};
+use crate::cursor::{self, CursorKey};
 use crate::docs::{self, Doc, IndexRange, Reads, WriteRecord};
-use crate::ids::{DocId, TableId};
+use crate::ids::{DocId, IndexId, TableId};
 use crate::journal::Journal;
 use crate::keys::{AppKeys, IDEMPOTENCY_HASH_BYTES, KeyRange};
 use crate::{Limits, LiveConfig, LiveError, LiveValue, pb};
@@ -65,14 +66,48 @@ pub enum FnKind {
     Mutation,
 }
 
+/// Who may call a function (D699): end users and platform principals
+/// (`query`, `mutation`), or platform principals only (`internalQuery`,
+/// `internalMutation`). A function that declares none is public (LV1 row
+/// T0-13), so deployed apps keep working.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Visibility {
+    #[default]
+    Public,
+    Internal,
+}
+
+/// The identity a call runs as. LV1 plan Task 16 defines it (end users
+/// through OIDC); until then it has no values, so every
+/// [`CallCtx::identity`] is `None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Identity {}
+
+/// What a function call knows about its caller (LV1 plan Task 4), carried
+/// by its [`LiveTxn`]: the identity (Task 16), the request id (a mutation's
+/// idempotency key, else empty; it seeds a JavaScript function's
+/// `Math.random`) and the deployment that serves the function (Task 6;
+/// `None` for built-ins and tests).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CallCtx {
+    pub identity: Option<Identity>,
+    pub request_id: String,
+    pub deployment: Option<String>,
+}
+
 /// A server function: a built-in `_system:*` function or (Task 13) a
 /// deployed JavaScript export. A mutation's `call` is rerun on conflict, so
-/// it must have no effect outside `txn`.
+/// it must have no effect outside `txn`. The call's [`CallCtx`] is
+/// [`LiveTxn::ctx`].
 pub trait Function: Send + Sync {
     /// The function's path (`_system:insert`, `module:export`).
     fn name(&self) -> &str;
     /// Query or mutation.
     fn kind(&self) -> FnKind;
+    /// Who may call it; public unless the function says otherwise.
+    fn visibility(&self) -> Visibility {
+        Visibility::Public
+    }
     /// Runs the function in `txn` with `args`.
     fn call<'a>(
         &'a self,
@@ -145,6 +180,19 @@ pub struct CallOutput {
     pub dropped: u64,
 }
 
+/// One page of an index range ([`LiveTxn::paginate`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Page {
+    /// The page's documents, in the range's order.
+    pub docs: Vec<Doc>,
+    /// Where the next page starts: after this page's last document (or, for
+    /// an empty page, where this one started). After the last page it
+    /// still marks the end, so documents added later are read from there.
+    pub continue_cursor: String,
+    /// The page came back short: the range has no more documents now.
+    pub is_done: bool,
+}
+
 enum Access<'a> {
     Mutation(&'a mut Txn),
     Query(&'a mut Snap),
@@ -163,7 +211,9 @@ pub struct LiveTxn<'a> {
     read_set: ReadSet,
     writes: Vec<WriteRecord>,
     usage: Usage,
-    request_id: String,
+    ctx: CallCtx,
+    /// The app's cursor key, read on the first page.
+    cursor_key: Option<CursorKey>,
     output: CallOutput,
     /// A storage error the next store call returns (tests only).
     fault: Option<TxnError>,
@@ -203,7 +253,8 @@ impl<'a> LiveTxn<'a> {
             read_set: ReadSet::default(),
             writes: Vec::new(),
             usage: Usage::default(),
-            request_id: String::new(),
+            ctx: CallCtx::default(),
+            cursor_key: None,
             output: CallOutput::default(),
             fault: None,
         }
@@ -227,16 +278,14 @@ impl<'a> LiveTxn<'a> {
         }
     }
 
-    /// The call's request id: a mutation's idempotency key, else empty
-    /// (LV1 plan Task 3 seeds `Math.random` with it; Task 4 replaces this
-    /// with `CallCtx`).
-    pub fn request_id(&self) -> &str {
-        &self.request_id
+    /// The call's context: its identity, request id and deployment.
+    pub fn ctx(&self) -> &CallCtx {
+        &self.ctx
     }
 
-    /// Sets the call's request id.
-    pub fn set_request_id(&mut self, request_id: impl Into<String>) {
-        self.request_id = request_id.into();
+    /// Sets the call's context (the runner sets the request id).
+    pub fn set_ctx(&mut self, ctx: CallCtx) {
+        self.ctx = ctx;
     }
 
     /// The limits of the call's app.
@@ -298,6 +347,16 @@ impl<'a> LiveTxn<'a> {
     /// depends on the range (its id may be created later); a user index of
     /// a missing table is [`LiveError::NotFound`].
     pub async fn query(&mut self, range: IndexRange) -> Result<Vec<Doc>, LiveError> {
+        Ok(self.scan(range, &[]).await?.0)
+    }
+
+    /// [`query`](Self::query) from after the key `after` (empty: from the
+    /// start), also returning the last key read.
+    async fn scan(
+        &mut self,
+        range: IndexRange,
+        after: &[u8],
+    ) -> Result<(Vec<Doc>, Option<Vec<u8>>), LiveError> {
         self.injected()?;
         self.usage.index_ranges += 1;
         if self.usage.index_ranges > self.limits.max_index_ranges {
@@ -326,15 +385,108 @@ impl<'a> LiveTxn<'a> {
             max_scanned_docs: remaining,
             ..self.limits.clone()
         };
-        let (found, read) = match &mut self.access {
+        let (found, read, last) = match &mut self.access {
             Access::Mutation(txn) => {
-                docs::scan(&mut **txn, self.app, &table, &range, &limits).await
+                docs::scan_after(&mut **txn, self.app, &table, &range, after, &limits).await
             }
-            Access::Query(snap) => docs::scan(&mut **snap, self.app, &table, &range, &limits).await,
+            Access::Query(snap) => {
+                docs::scan_after(&mut **snap, self.app, &table, &range, after, &limits).await
+            }
         }
         .map_err(|e| self.scan_limit(e))?;
         self.count_scanned(found.len())?;
         self.read_set.ranges.push(read);
+        Ok((found, last))
+    }
+
+    /// One page of `range` (LV1 plan Task 4): up to `num_items` documents
+    /// after the position `cursor` names (`None`: from the start of the
+    /// range), and the cursor of the next page. `range.limit` is ignored.
+    ///
+    /// The read set gains the range from the resume point to the page's
+    /// last key when the page is full, so a write after the page does not
+    /// invalidate it, and to the end of the range when it is short. The
+    /// cursor must be this app's ([`cursor::decode`]) and, unless it is a
+    /// start cursor (no key: the start of any range), of this index and
+    /// table, else [`LiveError::BadCursor`].
+    pub async fn paginate(
+        &mut self,
+        range: IndexRange,
+        cursor: Option<&str>,
+        num_items: u32,
+    ) -> Result<Page, LiveError> {
+        if num_items == 0 {
+            return Err(LiveError::invalid(
+                "paginate: numItems is at least 1".to_string(),
+            ));
+        }
+        let key = self.cursor_key().await?;
+        let prefix = docs::index_keys_prefix(self.app, range.table, range.index);
+        let start = match cursor {
+            None => Vec::new(),
+            Some(text) => {
+                let bound = cursor::decode(&key, text)?;
+                if !bound.key.is_empty()
+                    && (bound.index != range.index || !bound.key.starts_with(&prefix))
+                {
+                    return Err(LiveError::BadCursor(
+                        "the pagination cursor belongs to another index or table".into(),
+                    ));
+                }
+                bound.key
+            }
+        };
+        let index = range.index;
+        let range = IndexRange {
+            limit: Some(num_items),
+            ..range
+        };
+        let (docs, last) = self.scan(range, &start).await?;
+        let end = cursor::KeyBound {
+            index,
+            key: last.unwrap_or(start),
+        };
+        Ok(Page {
+            is_done: docs.len() < num_items as usize,
+            docs,
+            continue_cursor: cursor::encode(&key, &end),
+        })
+    }
+
+    /// The page of a range on a table that does not exist: empty and done.
+    /// Its cursor is `cursor` (checked as [`paginate`](Self::paginate)
+    /// checks it) or a start cursor, so the next page, once the table
+    /// exists, starts where this one did.
+    pub async fn empty_page(&mut self, cursor: Option<&str>) -> Result<Page, LiveError> {
+        let key = self.cursor_key().await?;
+        let start = match cursor {
+            Some(text) => cursor::decode(&key, text)?,
+            None => cursor::KeyBound {
+                index: IndexId::BY_ID,
+                key: Vec::new(),
+            },
+        };
+        Ok(Page {
+            docs: Vec::new(),
+            continue_cursor: cursor::encode(&key, &start),
+            is_done: true,
+        })
+    }
+
+    /// The app's cursor key, read once per transaction. It is written with
+    /// the app and never changes, so it is not part of the read set.
+    async fn cursor_key(&mut self) -> Result<CursorKey, LiveError> {
+        if let Some(key) = &self.cursor_key {
+            return Ok(key.clone());
+        }
+        let found = match &mut self.access {
+            Access::Mutation(txn) => catalog::load_cursor_key(&mut **txn, self.app).await?,
+            Access::Query(snap) => catalog::load_cursor_key(&mut **snap, self.app).await?,
+        }
+        .ok_or_else(|| {
+            LiveError::Internal("the app has no cursor key; its runner never opened".into())
+        })?;
+        self.cursor_key = Some(found.clone());
         Ok(found)
     }
 
@@ -715,9 +867,16 @@ impl Runner {
         let stored = store
             .run(catalog_txn("live.app.open", &options), move |txn| {
                 let keys = keys.clone();
-                Box::pin(
-                    async move { lift(catalog::ensure_journal_shards(txn, &keys, shards).await) },
-                )
+                Box::pin(async move {
+                    // The app's records: its journal shard count and its
+                    // pagination cursor key (LV1 Task 4).
+                    let ensured = async {
+                        let shards = catalog::ensure_journal_shards(txn, &keys, shards).await?;
+                        catalog::ensure_cursor_key(txn, &keys).await?;
+                        Ok(shards)
+                    };
+                    lift(ensured.await)
+                })
             })
             .await?
             .value?;
@@ -1008,7 +1167,10 @@ async fn mutation_attempt(
     }
 
     let mut live = LiveTxn::for_mutation(txn, app, &inner.limits);
-    live.set_request_id(request_id.clone());
+    live.set_ctx(CallCtx {
+        request_id: request_id.clone(),
+        ..CallCtx::default()
+    });
     let result = f.call(&mut live, args).await?;
     let has_ranges = !live.read_set.ranges.is_empty();
     let usage = live.usage;

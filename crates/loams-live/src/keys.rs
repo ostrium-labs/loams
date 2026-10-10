@@ -20,7 +20,8 @@
 //! `0x01` a table's name (→ its id, u32 BE), `0x02` a table (name =
 //! id:u32 BE → `TableDef`), `0x03` the deployment pointer and `0x04` the
 //! deployed schema (both Task 13), `0x05` the app's own settings (empty
-//! name → `AppDef`: the journal shard count, Task 10).
+//! name → `AppDef`: the journal shard count, Task 10; `"cursor"` → the
+//! app's 32-byte pagination cursor key, LV1 Task 4).
 
 use loams_kv::tuple;
 
@@ -148,6 +149,12 @@ impl AppKeys {
     /// The app's settings record (its journal shard count).
     pub fn app_def(&self) -> Vec<u8> {
         self.catalog(KIND_APP, b"")
+    }
+
+    /// The app's pagination cursor key (LV1 Task 4): 32 random bytes,
+    /// written with the app and never changed.
+    pub fn cursor_key(&self) -> Vec<u8> {
+        self.catalog(KIND_APP, b"cursor")
     }
 
     /// Every table record.

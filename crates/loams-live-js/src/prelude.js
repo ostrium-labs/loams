@@ -8,7 +8,7 @@
 //   2. defines `console` (collected per call by the host), guards the
 //      Array methods QuickJS runs without interrupt checks, and defines the
 //      `loams:server` exports (`query`, `mutation`, `internalQuery`,
-//      `internalMutation`) with `ctx.db`;
+//      `internalMutation`, and the validators `v`) with `ctx.db`;
 //   3. deletes every global outside the host's allowlist (no timers, no
 //      `fetch`, no `WebAssembly`, no `performance`, no `WeakRef`), makes the
 //      rest read-only and deep-freezes every built-in, so the bundle cannot
@@ -34,6 +34,8 @@
   const construct = Reflect.construct;
   const keys = Object.keys;
   const isArray = Array.isArray;
+  const isFinite = Number.isFinite;
+  const asIntN = BigInt.asIntN;
   const stringify = JSON.stringify;
   const fromCharCode = String.fromCharCode;
   const trunc = Math.trunc;
@@ -968,14 +970,16 @@
     throw error;
   }
 
-  function limitOf(n) {
-    if (typeof n === "bigint" && n >= 0n) {
+  // A count as a bigint: an integer from `min`, as a number or a bigint.
+  function countOf(n, what, min) {
+    if (typeof n === "bigint" && n >= BigInt(min)) {
       return n;
     }
-    if (typeof n === "number" && Number.isInteger(n) && n >= 0) {
+    if (typeof n === "number" && Number.isInteger(n) && n >= min) {
       return BigInt(n);
     }
-    throw new TypeError(`take(n) needs a non-negative integer, not ${inspect(n, 1, [])}`);
+    const kind = min === 0 ? "a non-negative" : "a positive";
+    throw new TypeError(`${what} needs ${kind} integer, not ${inspect(n, 1, [])}`);
   }
 
   class IndexRange {
@@ -1081,13 +1085,17 @@
       return this;
     }
 
-    #run(limit) {
-      const args = {
+    #spec() {
+      return {
         table: this.#table,
         index: this.#index,
         order: this.#order,
         ...this.#range,
       };
+    }
+
+    #run(limit) {
+      const args = this.#spec();
       if (limit !== undefined) {
         args.limit = limit;
       }
@@ -1095,7 +1103,27 @@
     }
 
     async take(n) {
-      return this.#run(limitOf(n));
+      return this.#run(countOf(n, "take(n)", 0));
+    }
+
+    // One page: `{ page, continueCursor, isDone }` (LV1 Task 4). The cursor
+    // is null for the first page, then the previous page's
+    // `continueCursor`; the host refuses one it did not issue.
+    async paginate(options) {
+      if (options === null || typeof options !== "object") {
+        throw new TypeError(
+          `paginate({ cursor, numItems }) takes an object, not ${inspect(options, 1, [])}`,
+        );
+      }
+      const { cursor, numItems } = options;
+      if (cursor !== null && cursor !== undefined && typeof cursor !== "string") {
+        throw new TypeError(`paginate: cursor is a string or null, not ${inspect(cursor, 1, [])}`);
+      }
+      return call("paginate", {
+        ...this.#spec(),
+        cursor: cursor ?? null,
+        numItems: countOf(numItems, "paginate: numItems", 1),
+      });
     }
 
     async collect() {
@@ -1141,13 +1169,118 @@
     return freeze(db);
   }
 
+  // ---- 2. Validators: `v` (LV1 Task 4) ----
+
+  // A validator is a frozen descriptor (`{ kind, … }`) that `v` made; the
+  // host reads it when the bundle loads (validators.rs) and checks each
+  // call's arguments before the handler runs.
+  const validators = new WeakSet();
+
+  function validator(descriptor) {
+    const made = freeze(descriptor);
+    validators.add(made);
+    return made;
+  }
+
+  function needValidator(value, where) {
+    if (!validators.has(value)) {
+      throw new TypeError(
+        `${where} needs a validator (v.string(), v.object({ … }), …), not ${inspect(value, 1, [])}`,
+      );
+    }
+    return value;
+  }
+
+  function validatorFields(fields, where) {
+    if (fields === null || typeof fields !== "object" || isArray(fields)) {
+      throw new TypeError(`${where} takes an object of validators, not ${inspect(fields, 1, [])}`);
+    }
+    const out = {};
+    for (const key of keys(fields)) {
+      // Defined, not assigned: a field named `__proto__` is a field.
+      defineProperty(out, key, {
+        value: needValidator(fields[key], `${where}: field ${stringify(key)}`),
+        enumerable: true,
+      });
+    }
+    return freeze(out);
+  }
+
+  function literalOf(value) {
+    switch (typeof value) {
+      case "string":
+      case "boolean":
+        return value;
+      case "number":
+        if (!isFinite(value)) {
+          throw new TypeError(`v.literal() takes a finite number, not ${value}`);
+        }
+        return value;
+      case "bigint":
+        if (asIntN(64, value) !== value) {
+          throw new TypeError(`v.literal(): the bigint ${value}n is outside int64`);
+        }
+        return value;
+      default:
+        if (value === null) {
+          return null;
+        }
+        throw new TypeError(
+          `v.literal() takes a string, number, bigint, boolean or null, not ${inspect(value, 1, [])}`,
+        );
+    }
+  }
+
+  const scalar = (kind) => () => validator({ kind });
+  const v = freeze({
+    null: scalar("null"),
+    int64: scalar("int64"),
+    float64: scalar("float64"),
+    boolean: scalar("boolean"),
+    string: scalar("string"),
+    bytes: scalar("bytes"),
+    any: scalar("any"),
+    array: (element) => validator({ kind: "array", element: needValidator(element, "v.array()") }),
+    object: (fields) => validator({ kind: "object", fields: validatorFields(fields, "v.object()") }),
+    literal: (value) => validator({ kind: "literal", value: literalOf(value) }),
+    union: (...members) => {
+      if (members.length === 0) {
+        throw new TypeError("v.union() needs at least one member");
+      }
+      return validator({
+        kind: "union",
+        members: freeze(members.map((m, i) => needValidator(m, `v.union() member ${i}`))),
+      });
+    },
+    optional: (inner) => validator({ kind: "optional", inner: needValidator(inner, "v.optional()") }),
+    id: (table) => {
+      if (typeof table !== "string" || table === "") {
+        throw new TypeError(`v.id(table) needs a table name, not ${inspect(table, 1, [])}`);
+      }
+      return validator({ kind: "id", table });
+    },
+  });
+
+  // A function's `args`: an object of validators, or `v.object({ … })`.
+  function argsOf(args, name) {
+    if (validators.has(args)) {
+      if (args.kind !== "object") {
+        throw new TypeError(
+          `${name}(): args is an object of validators or v.object({ … }), not v.${args.kind}()`,
+        );
+      }
+      return args;
+    }
+    return validator({ kind: "object", fields: validatorFields(args, `${name}(): args`) });
+  }
+
   const definitions = new WeakSet();
 
   function define(name, kind, visibility) {
     return {
       [name](definition) {
         let handler;
-        let hasArgs = false;
+        let args;
         if (typeof definition === "function") {
           handler = definition;
         } else if (
@@ -1156,11 +1289,13 @@
           typeof definition.handler === "function"
         ) {
           handler = definition.handler;
-          hasArgs = definition.args !== undefined;
+          if (definition.args !== undefined) {
+            args = argsOf(definition.args, name);
+          }
         } else {
           throw new TypeError(`${name}() takes a handler function or { args?, handler }`);
         }
-        const fn = freeze({ kind, visibility, handler, hasArgs });
+        const fn = freeze({ kind, visibility, handler, args });
         definitions.add(fn);
         return fn;
       },
@@ -1172,13 +1307,15 @@
     mutation: define("mutation", "mutation", "public"),
     internalQuery: define("internalQuery", "query", "internal"),
     internalMutation: define("internalMutation", "mutation", "internal"),
+    v,
   });
 
   const table = new Map();
 
   // The bundle's functions: each own enumerable property of an exported
   // object that a `loams:server` builder made is the function
-  // `<export>:<property>`.
+  // `<export>:<property>`. A row is `[path, kind, visibility, args]`, args
+  // the validator descriptor or undefined.
   function collect(namespace) {
     const metas = [];
     for (const name of keys(namespace)) {
@@ -1204,13 +1341,8 @@
           throw new TypeError(`function "${name}:${key}": a name has no ":" and is not empty`);
         }
         const path = `${name}:${key}`;
-        if (fn.hasArgs) {
-          throw new TypeError(
-            `${path}: argument validators are not supported until LV1 Task 4; leave out args`,
-          );
-        }
         table.set(path, fn);
-        metas.push([path, fn.kind, fn.visibility]);
+        metas.push([path, fn.kind, fn.visibility, fn.args]);
       }
     }
     return metas;

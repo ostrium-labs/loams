@@ -91,7 +91,10 @@ pub async fn query_as(
     let app = AppKeys::dedicated();
     let limits = Limits::default();
     let mut txn = LiveTxn::for_query(&mut snap, &app, &limits);
-    txn.set_request_id(request_id);
+    txn.set_ctx(loams_live::CallCtx {
+        request_id: request_id.to_string(),
+        ..Default::default()
+    });
     f.call(&mut txn, args).await
 }
 

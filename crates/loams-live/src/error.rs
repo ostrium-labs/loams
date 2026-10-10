@@ -11,6 +11,11 @@ pub enum LiveError {
     /// The request is malformed: a bad value, name, id or range.
     #[error("invalid argument: {0}")]
     InvalidArgument(String),
+    /// A pagination cursor that is malformed, forged, or from another app
+    /// or index (LV1 plan Task 4): `INVALID_ARGUMENT`, reason
+    /// `live_bad_cursor`.
+    #[error("invalid argument: {0}")]
+    BadCursor(String),
     /// A document, table or index does not exist.
     #[error("not found: {0}")]
     NotFound(String),
@@ -76,7 +81,7 @@ impl LiveError {
     /// The wire code of this error.
     pub fn code(&self) -> pb::ErrorCode {
         match self {
-            LiveError::InvalidArgument(_) | LiveError::NotLoopback(_) => {
+            LiveError::InvalidArgument(_) | LiveError::BadCursor(_) | LiveError::NotLoopback(_) => {
                 pb::ErrorCode::ERROR_CODE_INVALID_ARGUMENT
             }
             LiveError::NotFound(_) => pb::ErrorCode::ERROR_CODE_NOT_FOUND,
@@ -99,6 +104,16 @@ impl LiveError {
                     pb::ErrorCode::ERROR_CODE_INTERNAL
                 }
             },
+        }
+    }
+
+    /// The stable `ErrorInfo.reason` of this error, where it has one
+    /// (`docs/api/reasons.md`); the other errors are told apart by their
+    /// code.
+    pub fn reason(&self) -> Option<&'static str> {
+        match self {
+            LiveError::BadCursor(_) => Some("live_bad_cursor"),
+            _ => None,
         }
     }
 

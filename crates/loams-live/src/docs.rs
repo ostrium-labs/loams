@@ -325,7 +325,30 @@ pub async fn scan(
     range: &IndexRange,
     limits: &Limits,
 ) -> Result<(Vec<Doc>, KeyRange), LiveError> {
-    let keys = index_key_range(app, table, range)?;
+    let (docs, read, _) = scan_after(r, app, table, range, &[], limits).await?;
+    Ok((docs, read))
+}
+
+/// Like [`scan`], but starting after the key `after` in the range's order
+/// (a page's resume point, LV1 plan Task 4; empty: from the start), and
+/// also returning the last key read. Only keys of `range` are read,
+/// whatever `after` is, and the read-set range starts at the resume point.
+pub async fn scan_after(
+    r: &mut impl Reads,
+    app: &AppKeys,
+    table: &TableDef,
+    range: &IndexRange,
+    after: &[u8],
+    limits: &Limits,
+) -> Result<(Vec<Doc>, KeyRange, Option<Vec<u8>>), LiveError> {
+    let mut keys = index_key_range(app, table, range)?;
+    if !after.is_empty() {
+        match range.order {
+            Order::Asc => keys.lo = keys.lo.max(key_after(after)),
+            Order::Desc if keys.hi.is_empty() => keys.hi = after.to_vec(),
+            Order::Desc => keys.hi = keys.hi.min(after.to_vec()),
+        }
+    }
     let max = limits.max_scanned_docs;
     let fetch = match range.limit {
         Some(limit) if limit as usize > max => {
@@ -365,6 +388,7 @@ pub async fn scan(
         }
         _ => keys,
     };
+    let last = pairs.last().map(|(key, _)| key.clone());
     let docs = if range.index == IndexId::BY_ID {
         pairs
             .into_iter()
@@ -398,7 +422,17 @@ pub async fn scan(
             })
             .collect::<Result<Vec<_>, _>>()?
     };
-    Ok((docs, read))
+    Ok((docs, read, last))
+}
+
+/// The prefix every key of `index` of `table` starts with: document keys
+/// for `by_id`, index entry keys otherwise.
+pub fn index_keys_prefix(app: &AppKeys, table: TableId, index: IndexId) -> Vec<u8> {
+    if index == IndexId::BY_ID {
+        app.documents(table).lo
+    } else {
+        app.index_prefix(table, index)
+    }
 }
 
 /// The key range an index range covers, before any limit.

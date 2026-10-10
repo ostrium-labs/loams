@@ -30,6 +30,8 @@ tracing.workspace = true
 loams-kv.workspace = true
 # The suites run the TiKV cases too (with LOAMS_TEST_PD).
 loams-live = { workspace = true, features = ["tikv"] }
+# The validator vocabulary round trip (LV1 Task 4).
+proptest.workspace = true
 
 [lints]
 workspace = true

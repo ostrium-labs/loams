@@ -18,6 +18,13 @@
 //! are collected per call into [`loams_live::CallOutput`], truncated at
 //! [`JsConfig::console_lines`] × [`JsConfig::console_line_bytes`] (D682).
 //!
+//! The host API (LV1 Task 4): `ctx.db.get/query/insert/patch/replace/
+//! delete`, `withIndex`, `order`, `take`, `first`, `collect` and
+//! `paginate({ cursor, numItems })`; a function's `args`, built with
+//! `loams:server`'s `v`, is a [`Validator`] checked before the handler
+//! runs; `internalQuery` and `internalMutation` are
+//! [`Visibility::Internal`].
+//!
 //! **Trusted code only.** The slots run in this process, and some of
 //! QuickJS's C built-ins loop without polling the interrupt handler, so the
 //! CPU limit cannot be guaranteed against hostile code (LV1 rows T3-7 and
@@ -25,9 +32,14 @@
 //! deployments; multi-tenant serving needs LV1 Task 5's isolated worker and
 //! its wall-clock kill.
 
+mod host;
 mod limits;
 mod runtime;
+mod validators;
 
-pub use runtime::{
-    Bundle, FunctionMeta, GLOBALS, JsConfig, MAX_BUNDLE_BYTES, MAX_EXPORTS, Validator, Visibility,
-};
+/// Who may call a function (D699).
+pub use loams_live::Visibility;
+/// A function's argument validator (`loams:server`'s `v`), shared with
+/// schema validators.
+pub use loams_live::validate::Validator;
+pub use runtime::{Bundle, FunctionMeta, GLOBALS, JsConfig, MAX_BUNDLE_BYTES, MAX_EXPORTS};

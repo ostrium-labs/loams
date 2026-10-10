@@ -289,8 +289,8 @@ async fn bundle_load_refuses_bad_bundles() {
             "_sys",
         ),
         (
-            "import { query } from 'loams:server'; export const m = { q: query({ args: {}, handler: async () => 1 }) };",
-            "Task 4",
+            "import { query, v } from 'loams:server'; export const m = { q: query({ args: { a: 1 }, handler: async () => 1 }) };",
+            "validator",
         ),
         (
             "import { query } from 'loams:server'; query(42);",
@@ -654,3 +654,171 @@ async fn patch_with_an_undefined_field_is_refused(store: TestStore) {
     assert_eq!(field(&m.result, "body"), s("b"));
 }
 live_test!(patch_with_an_undefined_field_is_refused);
+
+const PAGES: &str = r#"
+import { query, mutation } from "loams:server";
+
+export const pages = {
+  fill: mutation(async (ctx, { n }) => {
+    for (let i = 0n; i < n; i++) {
+      await ctx.db.insert("items", { i });
+    }
+  }),
+  list: query(async (ctx, { cursor, numItems, order }) =>
+    await ctx.db
+      .query("items")
+      .withIndex("by_creation_time")
+      .order(order ?? "asc")
+      .paginate({ cursor, numItems })),
+  caught: query(async (ctx, { cursor }) => {
+    try {
+      await ctx.db.query("items").paginate({ cursor, numItems: 2 });
+      return "accepted";
+    } catch (e) {
+      return String(e);
+    }
+  }),
+  badOptions: query(async (ctx, { options }) => {
+    try {
+      await ctx.db.query("items").paginate(options);
+      return "accepted";
+    } catch (e) {
+      return String(e);
+    }
+  }),
+};
+"#;
+
+/// LV1 plan Task 4: `paginate({ cursor, numItems })` from JavaScript returns
+/// `{ page, continueCursor, isDone }` and its read set ends at the page's
+/// last key; a forged cursor is `INVALID_ARGUMENT` (`live_bad_cursor`) when
+/// it escapes the handler, and a catchable error inside it.
+async fn paginate_in_javascript(store: TestStore) {
+    let r = runner(&store).await;
+    let bundle = load(PAGES).await;
+    mutate(
+        &r,
+        &function(&bundle, "pages:fill"),
+        obj(&[("n", LiveValue::I64(5))]),
+    )
+    .await
+    .expect("fill");
+    let list = function(&bundle, "pages:list");
+    let page = |cursor: LiveValue| {
+        let (r, list) = (&r, &list);
+        async move {
+            query(
+                r,
+                list,
+                obj(&[("cursor", cursor), ("numItems", LiveValue::F64(2.0))]),
+            )
+            .await
+        }
+    };
+    // The documents share one creation time (one mutation inserted them),
+    // so their order is the ids'; the pages hold each document once.
+    let ids = |q: &loams_live::Queried| -> Vec<LiveValue> {
+        items(&field(&q.result, "page"))
+            .iter()
+            .map(|d| field(d, "i"))
+            .collect()
+    };
+    let first = page(LiveValue::Null).await.expect("page 1");
+    assert_eq!(ids(&first).len(), 2);
+    assert_eq!(field(&first.result, "isDone"), LiveValue::Bool(false));
+    assert_eq!(first.read_set.ranges.len(), 1, "a page reads one range");
+    let second = page(field(&first.result, "continueCursor"))
+        .await
+        .expect("page 2");
+    assert_eq!(ids(&second).len(), 2);
+    let third = page(field(&second.result, "continueCursor"))
+        .await
+        .expect("page 3");
+    assert_eq!(ids(&third).len(), 1);
+    assert_eq!(field(&third.result, "isDone"), LiveValue::Bool(true));
+    let mut seen: Vec<i64> = [&first, &second, &third]
+        .iter()
+        .flat_map(|q| ids(q))
+        .map(|v| match v {
+            LiveValue::I64(i) => i,
+            other => panic!("i is an int64, not {other:?}"),
+        })
+        .collect();
+    seen.sort_unstable();
+    assert_eq!(seen, vec![0, 1, 2, 3, 4]);
+    // Page 1's range ends at its last key: page 2's index entries are
+    // outside it.
+    let doc = &items(&field(&second.result, "page"))[0];
+    let (LiveValue::Str(id), LiveValue::I64(ms)) = (field(doc, "_id"), field(doc, "_creationTime"))
+    else {
+        panic!("an id and a creation time")
+    };
+    let id: DocId = id.parse().expect("an id");
+    let entry = r.app().index_entry(
+        loams_live::IndexId::BY_CREATION_TIME,
+        &[],
+        u64::try_from(ms).expect("a creation time"),
+        &id,
+    );
+    assert!(second.read_set.covers(&entry));
+    assert!(!first.read_set.covers(&entry));
+    assert!(
+        !first.read_set.ranges[0].contains(&second.read_set.ranges[0].lo),
+        "page 2 starts after page 1's range"
+    );
+
+    let LiveValue::Str(good) = field(&first.result, "continueCursor") else {
+        panic!("a cursor string")
+    };
+    let mut forged = good.into_bytes();
+    let last = forged.len() - 1;
+    forged[last] = if forged[last] == b'A' { b'B' } else { b'A' };
+    let forged = String::from_utf8(forged).expect("ascii");
+    match page(s(&forged)).await {
+        Err(e) => {
+            assert_eq!(e.code(), pb::ErrorCode::ERROR_CODE_INVALID_ARGUMENT, "{e}");
+            assert_eq!(e.reason(), Some("live_bad_cursor"), "{e}");
+        }
+        Ok(q) => panic!("the forged cursor was accepted: {:?}", q.result),
+    }
+    let caught = query(
+        &r,
+        &function(&bundle, "pages:caught"),
+        obj(&[("cursor", s(&forged))]),
+    )
+    .await
+    .expect("the handler catches it");
+    let LiveValue::Str(caught) = caught.result else {
+        panic!("a message")
+    };
+    assert!(caught.contains("cursor"), "{caught}");
+
+    for options in [
+        LiveValue::Null,
+        obj(&[("cursor", LiveValue::Null)]),
+        obj(&[
+            ("cursor", LiveValue::Null),
+            ("numItems", LiveValue::F64(0.0)),
+        ]),
+        obj(&[
+            ("cursor", LiveValue::I64(5)),
+            ("numItems", LiveValue::F64(1.0)),
+        ]),
+    ] {
+        let q = query(
+            &r,
+            &function(&bundle, "pages:badOptions"),
+            obj(&[("options", options.clone())]),
+        )
+        .await
+        .expect("the handler catches it");
+        let LiveValue::Str(m) = q.result else {
+            panic!("a message")
+        };
+        assert!(
+            m.starts_with("TypeError") && m.contains("paginate"),
+            "{options:?}: {m}"
+        );
+    }
+}
+live_test!(paginate_in_javascript);

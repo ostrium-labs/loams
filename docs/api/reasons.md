@@ -50,6 +50,7 @@ The rules, in the order they bite:
 | `quota_exceeded` | resource_exhausted | any `loams.postgres.v1` create or resize past a limit (§46 §14) | `quota`, `limit` |
 | `storage_unavailable` | unavailable | any `loams.postgres.v1` RPC that needs the pageserver, `loams-wal` or the storage controller while it is down | `component` |
 | `secret_already_issued` | failed_precondition | CreateRole, ResetRolePassword, IssueConnectCredential replayed with the same `idempotency_key`: the secret is answered once, and the idempotency ledger keeps only that it was issued, never the secret | `role`; `hint`: ResetRolePassword for a new password, or IssueConnectCredential with a new key for a new credential |
+| `live_bad_cursor` | invalid_argument | `loams.live.v1` Query, Mutate and the session's queries: a function's `paginate` got a cursor that is malformed, altered, or from another app, table or index (LV1 Task 4) | |
 | `invalid_argument` | invalid_argument | any RPC: a malformed field, an unparseable value | `field` |
 | `not_found` | not_found | any RPC: the named resource does not exist | `kind`, `name` |
 | `already_exists` | already_exists | any RPC that creates a named resource | |
@@ -64,6 +65,8 @@ The rules, in the order they bite:
 | `internal` | internal | a bug; the message and `request_id` go to the log | |
 
 The `loams.postgres.v1` rows (`project_not_found` to `secret_already_issued`) are design §46 §4.1's, registered by PG2 Task 1 before `pg-control` raises them (PG2 Task 9); `reasons_registered` (`crates/loams-proto/tests/postgres.rs`) fails if one §46 §4.1 names is missing. A replayed create under a taken name with another key answers the generic `already_exists`, and a `RestartEndpoint` with `promote` while the branch's read-write endpoint runs the generic `failed_precondition` (PG2 Task 1 ruling R1.8).
+
+`live_bad_cursor` is LV1 Task 4's: `loams_live::LiveError::reason` names it, and it reaches the wire when Live moves onto the main Connect port (LV1 Task 12) and its errors are mapped there (Task 19).
 
 The generic rows (`invalid_argument` and below) are the code-to-class mapping of D611's error hierarchy: they are what an SDK turns into its own `InvalidArgument`, `NotFound`, ... types. They carry no Loams-specific semantics, so they were already the native REST API's `error` values (`crates/loams/src/api/errors.rs`) and become the RPC `reason` unchanged. The rows above them are the specific causes AP0 registered; the specific causes API1 Tasks 2–8 add are appended as their services land, and `unavailable_service_reports_reason` covers the variant case.
 

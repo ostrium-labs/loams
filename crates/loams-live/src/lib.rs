@@ -17,10 +17,13 @@
 //! [`ReadSetIndex`], are in [`subs`] and [`readset`]. Sessions and their
 //! versioned Transitions (Task 12) are in [`session`], and the connect-rust
 //! sync service, [`LiveServer`], in [`service`]; [`deploy`] resolves the
-//! functions an app serves.
+//! functions an app serves. Pagination cursors (LV1 Task 4) are in
+//! [`cursor`], and the validators shared by function arguments and schemas
+//! in [`validate`].
 
 pub mod catalog;
 mod config;
+pub mod cursor;
 pub mod deploy;
 pub mod docs;
 mod error;
@@ -36,6 +39,7 @@ pub mod subs;
 pub mod system;
 pub mod testing;
 pub mod txn;
+pub mod validate;
 mod value;
 
 /// The `loams.live.v1` protobuf messages.
@@ -59,7 +63,7 @@ pub use service::{LiveHandle, LiveServer};
 pub use session::{ClientState, SessionConfig, Sessions, Version};
 pub use subs::{SubKey, SubResult, SubsConfig, SubsStats, Subscriptions, Tick};
 pub use txn::{
-    CallOutput, FnKind, Function, LiveTxn, LogLevel, LogLine, Mutated, Queried, ReadSet, Runner,
-    RunnerOptions, Usage,
+    CallCtx, CallOutput, FnKind, Function, Identity, LiveTxn, LogLevel, LogLine, Mutated, Page,
+    Queried, ReadSet, Runner, RunnerOptions, Usage, Visibility,
 };
 pub use value::{LiveValue, fields_from_proto, fields_to_proto};

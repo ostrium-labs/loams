@@ -41,9 +41,10 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
-use loams_live::catalog::{BY_CREATION_TIME, BY_ID, CREATION_TIME_FIELD, ID_FIELD};
-use loams_live::query::{QueryArgs, doc_value};
-use loams_live::{CallOutput, FnKind, Function, LiveError, LiveTxn, LiveValue, LogLevel, system};
+use loams_live::validate::Validator;
+use loams_live::{
+    CallOutput, FnKind, Function, LiveError, LiveTxn, LiveValue, LogLevel, Visibility,
+};
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rquickjs::context::intrinsic;
@@ -58,7 +59,9 @@ use tokio::sync::mpsc as tmpsc;
 
 use loams_live_js_alloc::MemoryMeter;
 
+use crate::host::{HostOp, host};
 use crate::limits::{Console, CpuMeter};
+use crate::validators;
 
 /// The largest bundle (16 MiB, D682).
 pub const MAX_BUNDLE_BYTES: usize = 16 * 1024 * 1024;
@@ -142,7 +145,8 @@ const SERVER_SOURCE: &str = "const s = globalThis.__loams_server__;\n\
      export const query = s.query;\n\
      export const mutation = s.mutation;\n\
      export const internalQuery = s.internalQuery;\n\
-     export const internalMutation = s.internalMutation;\n";
+     export const internalMutation = s.internalMutation;\n\
+     export const v = s.v;\n";
 /// The name errors of bundle evaluation carry.
 const BUNDLE: &str = "<bundle>";
 /// A slot thread's stack; QuickJS's own stack limit is well inside it.
@@ -192,27 +196,17 @@ impl Default for JsConfig {
     }
 }
 
-/// Who may call a function (D699): end users (`query`, `mutation`) or
-/// platform principals only (`internalQuery`, `internalMutation`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Visibility {
-    Public,
-    Internal,
-}
-
-/// An argument validator. Validators arrive with LV1 Task 4
-/// (`loams_live::validate::Validator`); until then a bundle that declares
-/// `args` is refused, so this type has no values.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Validator {}
-
 /// One function of a bundle.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunctionMeta {
     /// `module:export`.
     pub path: String,
     pub kind: FnKind,
+    /// `query`/`mutation` are public, `internalQuery`/`internalMutation`
+    /// internal (D699).
     pub visibility: Visibility,
+    /// The `args` validator, checked before the handler runs (an object
+    /// validator), or `None`: any arguments.
     pub args: Option<Validator>,
 }
 
@@ -325,12 +319,22 @@ impl Function for JsFunction {
         self.meta.kind
     }
 
+    fn visibility(&self) -> Visibility {
+        self.meta.visibility
+    }
+
     fn call<'a>(
         &'a self,
         txn: &'a mut LiveTxn<'_>,
         args: LiveValue,
     ) -> BoxFuture<'a, Result<LiveValue, LiveError>> {
         Box::pin(async move {
+            // The arguments are checked before the handler runs, so a
+            // refused call has no effect and reads only the tables its
+            // `id(table)` validators name.
+            if let Some(validator) = &self.meta.args {
+                validators::check_args(txn, &self.meta.path, validator, &args).await?;
+            }
             let (events, mut rx) = tmpsc::unbounded_channel();
             let (reply, replies) = mpsc::channel();
             let ts = txn.start_ts();
@@ -339,7 +343,7 @@ impl Function for JsFunction {
                 path: self.meta.path.clone(),
                 args,
                 start_ms: ts.physical_ms(),
-                seed: seed(ts.0, txn.request_id()),
+                seed: seed(ts.0, &txn.ctx().request_id),
                 result_bytes: limits.max_result_bytes,
                 host_bytes: limits.max_document_bytes.saturating_mul(HOST_BUDGET_FACTOR),
                 events,
@@ -392,97 +396,6 @@ fn seed(ts: u64, request_id: &str) -> [u8; 32] {
     let mut out = [0u8; 32];
     out.copy_from_slice(&digest);
     out
-}
-
-/// A `ctx.db` operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HostOp {
-    Get,
-    Query,
-    Insert,
-    Patch,
-    Replace,
-    Delete,
-}
-
-impl HostOp {
-    fn parse(op: &str) -> Option<Self> {
-        Some(match op {
-            "get" => HostOp::Get,
-            "query" => HostOp::Query,
-            "insert" => HostOp::Insert,
-            "patch" => HostOp::Patch,
-            "replace" => HostOp::Replace,
-            "delete" => HostOp::Delete,
-            _ => return None,
-        })
-    }
-}
-
-/// Runs a host operation on the call's transaction. The arguments have the
-/// `_system:*` shapes; a query also names the index fields its range
-/// uses, which are checked against the index.
-async fn host(txn: &mut LiveTxn<'_>, op: HostOp, args: LiveValue) -> Result<LiveValue, LiveError> {
-    let name = match op {
-        HostOp::Get => system::GET,
-        HostOp::Query => return host_query(txn, args).await,
-        HostOp::Insert => system::INSERT,
-        HostOp::Patch => system::PATCH,
-        HostOp::Replace => system::REPLACE,
-        HostOp::Delete => system::DELETE,
-    };
-    let f = system::lookup(name)
-        .ok_or_else(|| LiveError::Internal(format!("no system function {name}")))?;
-    f.call(txn, args).await
-}
-
-async fn host_query(txn: &mut LiveTxn<'_>, args: LiveValue) -> Result<LiveValue, LiveError> {
-    let LiveValue::Object(mut args) = args else {
-        return Err(LiveError::Internal(
-            "a query's arguments are an object".into(),
-        ));
-    };
-    let named: Vec<String> = match args.remove("fields") {
-        Some(LiveValue::Array(fields)) => fields
-            .into_iter()
-            .map(|f| match f {
-                LiveValue::Str(s) => Ok(s),
-                other => Err(LiveError::InvalidArgument(format!(
-                    "withIndex: a field name is a string, not {}",
-                    other.type_name()
-                ))),
-            })
-            .collect::<Result<_, _>>()?,
-        _ => Vec::new(),
-    };
-    let query = QueryArgs::parse("db.query", LiveValue::Object(args))?;
-    let Some(table) = txn.table(&query.table).await? else {
-        return Ok(LiveValue::Array(Vec::new()));
-    };
-    let fields: Vec<String> = match query.index.as_str() {
-        BY_CREATION_TIME => vec![CREATION_TIME_FIELD.to_string()],
-        BY_ID => vec![ID_FIELD.to_string()],
-        name => table
-            .indexes
-            .iter()
-            .find(|i| i.name == name)
-            .map(|i| i.fields.clone())
-            .unwrap_or_default(),
-    };
-    if table.index_id(&query.index).is_some()
-        && (named.len() > fields.len() || named.iter().zip(&fields).any(|(a, b)| a != b))
-    {
-        return Err(LiveError::InvalidArgument(format!(
-            "withIndex: index '{}' of table '{}' has the fields [{}], in that order; \
-             the range names [{}]",
-            query.index,
-            table.name,
-            fields.join(", "),
-            named.join(", ")
-        )));
-    }
-    let docs = txn.query(query.range(&table)?).await?;
-    Ok(LiveValue::Array(docs.iter().map(doc_value).collect()))
 }
 
 // ---- the slots ----
@@ -785,7 +698,7 @@ impl Engine {
         .map_err(|e| LiveError::Internal(format!("creating a JavaScript context: {e}")))?;
         self.state.begin(None);
         let prepared = ctx.with(|ctx| {
-            let steps = || -> rquickjs::Result<(Object<'_>, Vec<Vec<String>>)> {
+            let steps = || -> rquickjs::Result<(Object<'_>, Array<'_>)> {
                 let setup: rquickjs::Function = ctx.eval(PRELUDE)?;
                 let natives = self.natives(&ctx)?;
                 let config = Object::new(ctx.clone())?;
@@ -803,11 +716,11 @@ impl Engine {
                 self.settle::<()>(&ctx, &done)?;
                 let namespace = module.namespace()?;
                 let collect: rquickjs::Function = internals.get("collect")?;
-                let metas: Vec<Vec<String>> = collect.call((namespace,))?;
-                Ok((internals, metas))
+                let rows: Array = collect.call((namespace,))?;
+                Ok((internals, rows))
             };
             match steps() {
-                Ok((internals, metas)) => {
+                Ok((internals, rows)) => {
                     // The jobs the top level left (a floating promise) run
                     // now, within the load's limits, so none is left for
                     // the first call (C1). A top level that never stops
@@ -816,7 +729,7 @@ impl Engine {
                     if let Some(stopped) = self.stopped(Phase::Load) {
                         return Err(stopped);
                     }
-                    let metas = metas.into_iter().map(meta).collect::<Result<Vec<_>, _>>()?;
+                    let metas = self.metas(&ctx, &internals, &rows)?;
                     Ok((Persistent::save(&ctx, internals), metas))
                 }
                 Err(e) => Err(self.classify(&ctx, e, Phase::Load, None)),
@@ -834,6 +747,55 @@ impl Engine {
             metas,
             ctx,
         })
+    }
+
+    /// The bundle's functions from `collect`'s rows: `[path, kind,
+    /// visibility, args]`, args a validator descriptor (validators.rs).
+    fn metas<'js>(
+        &self,
+        ctx: &Ctx<'js>,
+        internals: &Object<'js>,
+        rows: &Array<'js>,
+    ) -> Result<Vec<FunctionMeta>, LiveError> {
+        let js = |e: rquickjs::Error| self.classify(ctx, e, Phase::Load, None);
+        let helpers = internals
+            .get::<_, Object>("values")
+            .and_then(|v| Helpers::from(&v))
+            .map_err(js)?;
+        let mut metas = Vec::with_capacity(rows.len());
+        for row in rows.iter::<Array>() {
+            let row = row.map_err(js)?;
+            let text = |i: usize| row.get::<String>(i).map_err(js);
+            let (path, kind, visibility) = (text(0)?, text(1)?, text(2)?);
+            let descriptor: Value = row.get(3).map_err(js)?;
+            let args = if descriptor.is_undefined() {
+                None
+            } else {
+                let mut budget = Budget::new(MAX_BUNDLE_BYTES, &self.state.meter);
+                let value = match to_live(ctx, descriptor, &helpers, &mut budget, 0, false) {
+                    Ok(v) => v,
+                    Err(Conv::Js(e)) => return Err(js(e)),
+                    Err(Conv::Invalid(m)) => {
+                        return Err(LiveError::FunctionError(format!(
+                            "{path}: the args validator holds {m}"
+                        )));
+                    }
+                    Err(Conv::Over | Conv::Stopped) => {
+                        return Err(self.stopped(Phase::Load).unwrap_or_else(|| {
+                            LiveError::FunctionError(format!(
+                                "{path}: the args validator is larger than the bundle limit"
+                            ))
+                        }));
+                    }
+                };
+                Some(
+                    validators::parse(&value)
+                        .map_err(|m| LiveError::FunctionError(format!("{path}: {m}")))?,
+                )
+            };
+            metas.push(meta(path, &kind, &visibility, args)?);
+        }
+        Ok(metas)
     }
 
     /// The host functions the prelude receives.
@@ -1202,15 +1164,18 @@ fn js_message(e: &LiveError) -> String {
     }
 }
 
-fn meta(row: Vec<String>) -> Result<FunctionMeta, LiveError> {
-    let [path, kind, visibility] = <[String; 3]>::try_from(row)
-        .map_err(|_| LiveError::Internal("a function row has three fields".into()))?;
-    let kind = match kind.as_str() {
+fn meta(
+    path: String,
+    kind: &str,
+    visibility: &str,
+    args: Option<Validator>,
+) -> Result<FunctionMeta, LiveError> {
+    let kind = match kind {
         "query" => FnKind::Query,
         "mutation" => FnKind::Mutation,
         other => return Err(LiveError::Internal(format!("a function kind {other}"))),
     };
-    let visibility = match visibility.as_str() {
+    let visibility = match visibility {
         "public" => Visibility::Public,
         "internal" => Visibility::Internal,
         other => return Err(LiveError::Internal(format!("a visibility {other}"))),
@@ -1219,7 +1184,7 @@ fn meta(row: Vec<String>) -> Result<FunctionMeta, LiveError> {
         path,
         kind,
         visibility,
-        args: None,
+        args,
     })
 }
 
@@ -1496,11 +1461,5 @@ mod tests {
         assert_eq!(restart_delay(5), Duration::from_millis(160));
         assert_eq!(restart_delay(20), Duration::from_secs(5));
         assert_eq!(restart_delay(u32::MAX), Duration::from_secs(5));
-    }
-
-    #[test]
-    fn host_ops_parse() {
-        assert_eq!(HostOp::parse("get"), Some(HostOp::Get));
-        assert_eq!(HostOp::parse("tables"), None);
     }
 }
