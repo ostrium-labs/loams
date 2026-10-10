@@ -47,7 +47,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 loams-agentd-harness = { workspace = true, features = ["installer-fixture"] }
 zip.workspace = true
 # 0.24 as in the fork; loams-web-bridge is on 0.30 (not a workspace key).
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 
 # The workspace policy, except `unsafe_code` is `deny` rather than `forbid`: this crate
 # has audited FFI and process sites, each under `#[allow(unsafe_code)]` with a SAFETY
