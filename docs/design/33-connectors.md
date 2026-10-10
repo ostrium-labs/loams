@@ -4,6 +4,12 @@ Status: **Approved** (owner defaults, 2026-10-02: "do suggested for all") · 202
 
 Names follow §32's owner rulings of 2026-10-01: packages under `loams` (`@loams/*` on npm), Go modules under `loams.dev/...`, CloudEvents types `io.loams.dev.<domain>.<name>.v1`. **Java is deferred**: the Camel connector layer stays, as an unmodified Camel runtime driven by generated YAML routes, but any Loams-written Java (a Java SDK, a Kestra plugin, custom Camel processors) waits until the owner lifts the deferral.
 
+> **Revision note (2026-10-10, owner direction).** *"no, redpanda etc are for real — build our own source and sink connectors for Loams; use proprietary in CI; do the best for others"*. For **P1 and P2** rows this note overrides §2.2's first non-goal, D354's "buy first" runtime table, D357's Debezium default, §8's CN2 rollout line and Appendix A's "P2 = stock Camel or Iggy plugins" legend; P3 (CN3) is unchanged. The decision log is not yet amended; until it is, the "Owner rulings 2026-10-10" section of [CN2](../plans/2026-10-10-cn2-connectors.md) is the working record. In short:
+> 1. **Native first.** Every P1/P2 system gets a first-party Rust source and sink, in-tree, on a shared SDK (`loams-connector-sdk`: source and sink traits, splits, fenced checkpoints, at-least-once with effectively-once and exactly-once where the target allows it, backpressure, schema mapping, and a conformance kit). "Buy first" now means reusing protocol libraries, not connector runtimes. CDC for Postgres, MySQL/MariaDB, SQL Server and MongoDB is native.
+> 2. **Fallbacks only.** Camel (`loams-connect`), Debezium Server and Iggy's upstream sink plugins remain as declared fallbacks: Oracle (CDC and batch), generic JDBC and JMS, Salesforce CDC until replaced, and opt-in fallbacks for the native CDC sources. Each names the task that replaces it.
+> 3. **Real systems.** Redpanda, Valkey, R2, OpenSearch, MariaDB and the other compatible systems are real external systems with their own manifests and suites, run against the real system (image, vendor emulator, fixture recorded from it, or a nightly real account). A Loams module never stands in for one.
+> 4. **Proprietary in CI only.** Oracle Free, SQL Server Developer, the Azure emulators, Splunk and similar images may run as CI-only services; they are never shipped.
+
 Markers are §32's: **(verify)**, **(estimate)**, **(read 2026-10-01)**. "The précis" is the draft's "Précis (CDMP, Java stack)"; "CDMP" there is the draft's name for the canonical event contract, which in Loams is CloudEvents 1.0 (D334).
 
 ---
