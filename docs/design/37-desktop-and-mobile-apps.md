@@ -756,7 +756,7 @@ Read on 2026-10-01 and 2026-10-02.
 
 ## 18. Native desktop on a zeron fork (supersedes the Tauri desktop)
 
-> **Retired 2026-10-09** by the owner's decision "drop GPUI" ([§50](50-loams-desktop-daemon.md), D782, D783). The fork's headless crates move into the root workspace as `crates/loams-agentd*` and become the Loams Desktop agent daemon; GPUI, headed mode, the edge and WorkOS are deleted. This section is kept as history.
+> **Retired 2026-10-09** by the owner's decision "drop GPUI" ([§50](50-loams-desktop-daemon.md), D782, D783). The fork's headless crates move into the root workspace as `crates/loams-agentd*` and become the Loams Desktop agent daemon; GPUI, headed mode, the edge and WorkOS are deleted. This section is kept as history. The fork's licence, notices and import record now live in `crates/loams-agentd/` (`LICENSE`, `NOTICE`, `import-provenance.json`). That crate's `README.md` gives the licence of each `loams-agentd*` crate: MIT for code from zeron, Apache-2.0 for the rest (§50 §4.4).
 
 Status: **Proposed** · 2026-10-02. The direction is the owner's, given on 2026-10-02: **"instead of Tauri go native for desktop apps also: https://github.com/zeronsh/zeron"**, with the product names **Loams Bot** and **Loams Software Factory**. This section turns that ruling into decisions **D480–D499** and open questions **Q480–Q499**, recorded in the [decision log](13-decision-log.md). Everything beyond the ruling is a **proposal** until the owner confirms it. The plan is [AP1n](../plans/2026-10-02-ap1n-native-desktop-zeron.md); the scaffold is the branch `loams-scaffold` of [`ostrium-labs/loams-desktop`](https://github.com/ostrium-labs/loams-desktop) (§18.12).
 

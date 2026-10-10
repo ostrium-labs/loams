@@ -9,13 +9,17 @@ listed below together with its license and attribution notice.
 
 Imported application license scope
 ----------------------------------
-The desktop agent daemon under crates/loams-agentd* includes inherited
-MIT-licensed code from zeron, Copyright (c) 2026 Wing, and Loams additions. The
-crates that carry `license = "MIT"` derive from zeron; crates/loams-agentd/
-holds its LICENSE, NOTICE, THIRD_PARTY_NOTICES.md and SCOPED_NOTICE.md, which
-remain authoritative for those crates and must accompany distributions as
-applicable. The root license does not relicense inherited daemon code. Mobile and plugin notices are retained
-under apps/mobile/ and plugins/ respectively.
+The desktop agent daemon under crates/loams-agentd* includes MIT-licensed
+code inherited from zeron (https://github.com/zeronsh/zeron), Copyright (c)
+2026 Wing, together with Loams additions. The crates that carry
+`license = "MIT"` derive from zeron through the Loams Desktop fork, at the
+commit recorded in crates/loams-agentd/import-provenance.json. The other
+loams-agentd* crates are Apache-2.0. crates/loams-agentd/README.md lists the
+licence of each crate. crates/loams-agentd/ holds the daemon's LICENSE, NOTICE,
+THIRD_PARTY_NOTICES.md and SCOPED_NOTICE.md. Those files remain authoritative
+for the MIT crates and must accompany distributions as applicable. The root
+license does not relicense inherited daemon code. Mobile and plugin notices
+are retained under apps/mobile/ and plugins/ respectively.
 
 Third-party attributions
 ------------------------

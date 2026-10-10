@@ -2,6 +2,100 @@
   "source_commit": "c9205f8f949711c3315af551c804c56452d2fbd7",
   "tracked_count": 2600,
   "imported_count": 1073,
+  "moved_to_root_workspace": {
+    "note": "source_commit, the counts, the closure and source_sha256 describe the import into apps/desktop/native at source_commit; the closure uses the fork's package names at that commit. Since then the headless crates moved into the root workspace and were edited, so their files no longer match these hashes. This section records where each package of the closure went.",
+    "upstream": {
+      "name": "zeron",
+      "repository": "https://github.com/zeronsh/zeron",
+      "license": "MIT",
+      "copyright": "Copyright (c) 2026 Wing"
+    },
+    "fork": {
+      "name": "loams-desktop",
+      "repository": "https://github.com/ostrium-labs/loams-desktop",
+      "commit": "c9205f8f949711c3315af551c804c56452d2fbd7",
+      "history": "keeps zeron's history"
+    },
+    "moved_in": "plan DD1 Task 1 (docs/plans/2026-10-09-dd1-desktop-daemon.md), design 50 section 4.1, D783",
+    "packages": {
+      "zeron": {
+        "to": "loams-agentd",
+        "license": "MIT",
+        "note": "the binary, rewritten headless"
+      },
+      "zeron-engine": {
+        "to": "loams-agentd-sessions",
+        "license": "MIT",
+        "note": "without the edge, WorkOS, Cursor or self-update"
+      },
+      "zeron-harness": {
+        "to": "loams-agentd-harness",
+        "license": "MIT",
+        "note": "without Cursor"
+      },
+      "zeron-proto": {
+        "to": "loams-agentd-proto",
+        "license": "MIT"
+      },
+      "zeron-rpc": {
+        "to": "loams-agentd-rpc",
+        "license": "MIT",
+        "note": "without device_room.rs"
+      },
+      "zeron-doc": {
+        "to": "loams-agentd-doc",
+        "license": "MIT"
+      },
+      "zeron-sync": {
+        "to": "loams-agentd-store",
+        "license": "MIT",
+        "note": "only DocsStore and the ledger"
+      },
+      "zeron-mcp": {
+        "to": "loams-agentd-mcp",
+        "license": "MIT"
+      },
+      "zeron-preview": {
+        "to": "loams-agentd-preview",
+        "license": "MIT",
+        "note": "local discovery and routing only"
+      },
+      "loams-link": {
+        "to": "loams-agentd-link",
+        "license": "Apache-2.0",
+        "note": "written by the Loams Authors"
+      },
+      "loams-brand": {
+        "to": "loams-agentd-proto",
+        "license": "MIT",
+        "note": "folded into src/brand.rs; the Loams Authors place these Apache-2.0 lines under MIT (plan DD1 ruling T0-10a)"
+      },
+      "zeron-ui": {
+        "to": null,
+        "deleted": "GPUI (D782)"
+      },
+      "zeron-update": {
+        "to": null,
+        "deleted": "self-update (D781)"
+      },
+      "zeron-voice": {
+        "to": null,
+        "deleted": "used only by the GUI"
+      },
+      "zeron-syntax": {
+        "to": null,
+        "deleted": "used only by the GUI"
+      },
+      "zeron-markdown": {
+        "to": null,
+        "deleted": "used only by the GUI"
+      },
+      "zeron-theme": {
+        "to": null,
+        "deleted": "used only by the GUI"
+      }
+    }
+  },
   "desktop_dependency_closure": {
     "zeron": [
       "loams-link",

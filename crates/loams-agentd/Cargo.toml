@@ -34,6 +34,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 
 [dev-dependencies]
 tempfile.workspace = true
+toml.workspace = true
 
 # The workspace policy, except `unsafe_code` is `deny` rather than `forbid`: this crate
 # has audited FFI and process sites, each under `#[allow(unsafe_code)]` with a SAFETY

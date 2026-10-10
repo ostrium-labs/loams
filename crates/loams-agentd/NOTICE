@@ -1,29 +1,63 @@
-Loams Desktop
+Loams Desktop agent daemon (loams-agentd)
 Copyright 2026 The Loams Authors
 
-Loams Desktop is a fork of Zeron (https://github.com/zeronsh/zeron),
-Copyright (c) 2026 Wing, distributed under the MIT License. The full upstream
-license text is in LICENSE and applies to all code inherited from Zeron. It is
-kept unmodified; do not remove it.
+This directory's crate and the other crates/loams-agentd* crates are Loams
+Desktop's per-user agent daemon (docs/design/50-loams-desktop-daemon.md).
 
-Files that Loams adds (crates/loams-brand, crates/loams-link, dist/loams,
-scripts/loams, .github/workflows/loams.yml, LOAMS.md) are licensed under the
-Apache License, Version 2.0 (see crates/loams-link/LICENSE). Changes to
-inherited files are marked `loams:` in the source and listed in LOAMS.md.
+Zeron
+-----
+The daemon derives from Zeron (https://github.com/zeronsh/zeron):
 
-Third-party components
-----------------------
-Zeron's own third-party notices (syntax-highlighting grammars, GPUI and the
-gpui-component fork, bundled icons and fonts) are in THIRD_PARTY_NOTICES.md and
-continue to apply.
+  MIT License
+  Copyright (c) 2026 Wing
 
-Added by Loams:
-- connect-rust (`connectrpc`, `connectrpc-codegen`), Apache-2.0,
+The full licence text is in LICENSE, kept unmodified. Do not remove it.
+
+The loams-agentd* crates whose Cargo.toml sets `license = "MIT"` derive from
+Zeron. They came through the Loams Desktop fork
+(https://github.com/ostrium-labs/loams-desktop), which keeps Zeron's history,
+at the commit recorded as `source_commit` in import-provenance.json
+(c9205f8f949711c3315af551c804c56452d2fbd7). Those crates, and the Loams
+Authors' changes to them, are under the MIT License in LICENSE.
+
+The other loams-agentd* crates are licensed under the Apache License,
+Version 2.0, like the rest of this repository (see the root LICENSE):
+- loams-agentd-link, written by the Loams Authors in the fork (its own
+  LICENSE);
+- the crates that are new in this repository.
+
+README.md lists each crate's licence and origin. The workspace test
+`licence_fields_are_set` keeps the Cargo.toml fields in step with that table.
+
+The Loams identity strings in loams-agentd-proto (src/brand.rs) came from the
+fork's Apache-2.0 loams-desktop-brand crate, which the Loams Authors wrote.
+The Loams Authors place those lines under that crate's MIT License.
+
+"Zeron" names the upstream project and is used here only to say where this
+code comes from. "Loams", "Loams Desktop" and "loams-agentd" name this
+software.
+
+Other notices in this directory
+-------------------------------
+- SCOPED_NOTICE.md is the notice written when the fork was imported into
+  apps/desktop/native. It is kept for history; the import's paths are now
+  crates/loams-agentd*.
+- THIRD_PARTY_NOTICES.md is Zeron's third-party notice, kept as imported. It
+  covers the tree-sitter grammars, GPUI and the gpui-component fork, the
+  Symbols icons, fonts, and the voice model. All of those belonged to
+  crates that were deleted, so none of them is built into or shipped with
+  loams-agentd. The notice applies again if one of them returns.
+
+Third-party components the fork added
+-------------------------------------
+loams-agentd-link links:
+- connect-rust (`connectrpc`), Apache-2.0,
   https://github.com/connectrpc/connect-rust
-- buffa (`buffa`, `buffa-types`, `protoc-gen-buffa`), Apache-2.0,
+- buffa (`buffa`, `buffa-types`), Apache-2.0,
   https://github.com/anthropics/buffa
-- keyring, MIT OR Apache-2.0, https://github.com/open-source-cooperative/keyring-rs
+- keyring, MIT OR Apache-2.0,
+  https://github.com/open-source-cooperative/keyring-rs
 - webbrowser, MIT OR Apache-2.0, https://github.com/amodm/webbrowser-rs
 
-"Zeron" is the name of the upstream project and is used here only to describe
-where this code comes from. "Loams" and "Loams Desktop" name this fork.
+Other Rust dependencies are pinned in the root Cargo.lock. Each keeps its
+own licence, and `cargo deny check licenses` (deny.toml) checks them.
