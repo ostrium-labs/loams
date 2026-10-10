@@ -240,10 +240,19 @@ describe('graph page', () => {
     if (!unary || !stream) throw new Error('fixture');
     const { server } = await openMovies();
     setStatement(fixtureStatement(unary));
+    // Run with Read-only off: "Stream all" must still be sent read-only, so it can never
+    // repeat a write.
+    fireEvent.click(screen.getByLabelText('Read-only'));
     run();
     const banner = await screen.findByTestId('truncated-banner');
     expect(within(banner).getByText(/Showing the first 2 rows/)).toBeTruthy();
-    expect(last(server.calls, 'Execute')).toEqual({ ...unary.request, maxRows: PAGE_MAX_ROWS });
+    // proto3 JSON leaves out `readOnly: false`.
+    const { readOnly: _ro, ...writable } = unary.request;
+    expect(last(server.calls, 'Execute')).toEqual({
+      ...writable,
+      maxRows: PAGE_MAX_ROWS,
+      idempotencyKey: expect.any(String),
+    });
 
     fireEvent.click(within(banner).getByRole('button', { name: 'Stream all' }));
     await screen.findByText('Lana Wachowski');
@@ -299,6 +308,8 @@ describe('graph page', () => {
     run();
     await screen.findByText(/1 nodes created, 1 properties set/);
     expect(executes.map((r) => r.readOnly)).toEqual([true, false]);
+    // A call that may write carries an idempotency key; a read-only one does not.
+    expect(executes.map((r) => r.idempotencyKey.length > 0)).toEqual([false, true]);
   });
 
   it('history_never_stores_parameters', async () => {

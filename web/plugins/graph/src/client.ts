@@ -88,10 +88,12 @@ function executeRequest(input: RunInput, maxRows: number): graph.ExecuteRequest 
     consistency: strong(),
     timeoutMs: PAGE_TIMEOUT_MS,
     maxRows,
+    // `idempotency_key` is required when the statement writes; a read-only call cannot.
+    ...(input.readOnly ? {} : { idempotencyKey: idempotencyKey() }),
   });
 }
 
-/** A fresh idempotency key for a create or delete. */
+/** A fresh idempotency key for a create, a delete or a writing statement. */
 export function idempotencyKey(): string {
   const c = globalThis.crypto;
   if (c?.randomUUID) return c.randomUUID();
@@ -142,11 +144,14 @@ export function createGraphClient(transport: Transport) {
     execute: (input: RunInput, signal?: AbortSignal) =>
       data.execute(executeRequest(input, PAGE_MAX_ROWS), { signal }),
 
-    /** "Stream all": the same statement, every row up to the page's cap. */
+    /**
+     * "Stream all": the same statement, every row up to the page's cap. It is always sent
+     * read-only, so replaying a statement that wrote is refused rather than written twice.
+     */
     executeStream: (input: RunInput, signal?: AbortSignal) =>
       data.executeStream(
         create(graph.ExecuteStreamRequestSchema, {
-          request: executeRequest(input, STREAM_MAX_ROWS),
+          request: executeRequest({ ...input, readOnly: true }, STREAM_MAX_ROWS),
         }),
         { signal },
       ),
