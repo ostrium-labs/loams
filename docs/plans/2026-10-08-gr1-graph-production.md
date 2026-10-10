@@ -1243,3 +1243,62 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 - **M5:** `CreateGraph` and `UpdateGraph` store and answer a graph's timeout as the value in force, at most the engine's `query_timeout` (`a_graph_timeout_is_answered_as_the_value_in_force`).
 - **M6:** a namespace's slot semaphore leaves the map when its last slot is released, so an idle or deleted namespace keeps no entry (`idle_namespaces_leave_no_slot_entry`).
 - **M7:** a row larger than a Connect message (connectrpc's default 4 MiB, less 4 KiB) is refused with `GraphError::RowTooLarge` (`RESOURCE_EXHAUSTED`/`graph_result_too_large`), in a unary answer and as a stream's final error. A statement that committed still gets a successful, `truncated` answer (I3) (`a_row_larger_than_a_message_is_refused`).
+
+### Task 7 (2026-10-10, on `backend/gr1`)
+
+**R7.1 The fixture format.** Each file in `conformance/graph/desktop/` is `{ description, exchanges }`. An exchange is one call in proto3 JSON:
+- `method`, `request`, and one answer: `response`, `chunks` (a stream) or `error` (`{ code, message, reason, metadata }`, the `ErrorInfo` decoded).
+- `ignore`: paths not compared (`elapsedNanos`, `graphs[].id`, `graphs[].createTime`, a PROFILE's `text` and `**.elapsedNanos`, a syntax error's `message`).
+- `contains`: for `instance.json` only. The server's `GetInstance` lists every package, so the fixture's row must be among them, not equal the whole answer.
+- The format is documented in `conformance/graph/desktop/README.md`. The reader and comparison are `loams_apps_mock::graph::contract`.
+- The answers are generated from the server: `UPDATE_GOLDEN=1 cargo test -p loams-graph --test desktop_contract server_answers_match_desktop_fixtures`. A regeneration keeps the old values at the ignored paths, so ids and times do not churn. Requests are written by hand.
+
+**R7.2 Seed and files (deviation).**
+- `movies` is built by `conformance/graph/desktop/movies.gql`: one statement per line, run in order on an empty graph, so ids are stable. It has three people, two movies, three `ACTED_IN` and one `DIRECTED`.
+- `kg` (LINKED) is written to the catalog directly (`GraphCatalog::create` with `GraphMode::Linked`), because `CreateGraph` refuses LINKED until Task 17. It has no mapping and is only listed.
+- Beside the nine planned files there are three more:
+  - `explain.json`: the contract names `Explain`/`Profile`, but no planned file covered them.
+  - `movies.gql`.
+  - `README.md`.
+- `execute_truncated.json` sends `max_rows = 2`, not the page's 1000, so the fixture stays small. Its second exchange is the `ExecuteStream` of the same statement, with `chunk_rows = 2`.
+
+**R7.3 Where the tests live (deviation).**
+- `server_answers_match_desktop_fixtures`, `mock_answers_match_desktop_fixtures` and `syntax_error_has_position` are in `crates/loams-graph/tests/desktop_contract.rs`, as planned. `loams-graph` gains the dev-dependencies `loams-apps-mock` (the fixture reader and the mock) and `reqwest`.
+- The server side runs on `GraphAdmin` directly.
+- The mock side runs over Connect JSON on a real socket: unary calls, and enveloped `application/connect+json` for `ExecuteStream`. It also decodes every `values.json` case with the mock's generated `Value` and encodes it back unchanged.
+- `loams-graph` has no instance service, so `instance.json` is checked by `crates/loams/tests/connect_graph.rs` `instance_matches_desktop_fixture` (`--features graph`).
+
+**R7.4 Error positions (§48 §8.3).**
+- `GraphError::Engine` is now `{ message, diagnostic: Diagnostic { gqlstatus, position: Option<Position { line, column, length }> } }`.
+- `gqlstatus` is Grafeo's own mapping (`GqlStatus::from(&Error)`) and is set on every engine error. A syntax error is `42001`.
+- `line`, `column` and `length` are computed from the span's byte offsets over the statement Grafeo attaches to a parse error. They are 1-based, and the column and length count characters, which is what an editor underlines. Without an attached statement, Grafeo's own line and column are used with a byte length.
+- They go into `ErrorInfo.metadata` for `Execute`, `Explain`, `ExecuteStream` and a non-atomic batch's `StatementError.info`.
+- Measured: `MATCH (m:Movie)\nMATCH (p:Person RETURN p` gives `42001`, line 2, column 17, length 6.
+
+**R7.5 A PROFILE operator's `details.operator` no longer carries its `rows=… time=…` suffix.** Those values are already `rows` and `elapsed_nanos`, so the line is now the same on every run, and `explain.json` compares the whole tree except times.
+
+**R7.6 Grafeo 0.5.43 answers a relationship as `INT64 0` in a result with ORDER BY (upstream, add to Q679).**
+- `MATCH (a)-[r]->(m) RETURN r ORDER BY a.name` answers `0` for every `r`. The same statement without ORDER BY answers full relationships.
+- `execute_graph.json` therefore has no ORDER BY. Unordered, its rows come in insertion order.
+- `canary_order_by_answers_a_relationship_as_zero` fails once Grafeo fixes this. Then add `ORDER BY a.name` to that fixture and regenerate it.
+- Task 8's graph view should expect the INT64 until then.
+
+**R7.7 Observed wire details the page must handle.**
+- proto3 JSON leaves out zero values, so the node and relationship with id 0 have no `id` field, and a relationship from node 0 has no `src`.
+- `columnTypes` is `ANY` for property projections, which is Grafeo's report.
+- A listed graph that is not open has no `stats`.
+- `limits` is `{}` for a graph created without limits.
+
+**R7.8 The mock (`crates/loams-apps-mock/src/graph.rs`).**
+- The catalog is real and in memory, seeded from `list_graphs.json`:
+  - `CreateGraph` takes OWNED only, follows the name rule, and answers `already_exists` for a taken name.
+  - `GetGraph` works.
+  - `ListGraphs` serves AIP-158 pages by name with an opaque token.
+  - `DeleteGraph` answers a SUCCEEDED `graph.delete` operation.
+- `Execute`, `ExecuteStream`, `Explain` and `GetSchema` answer a request whose canonical JSON equals a fixture's. Each fixture request is parsed as its message type at start-up. An unknown statement answers `unimplemented`/`not_implemented`, and an unknown graph `not_found`/`graph_not_found`.
+- `UpdateGraph`, `ExecuteBatch`, restore, export and import are stubs.
+- No token is needed.
+- The fixtures are compiled in (`include_str!`).
+- The mock's `GetInstance` now fills `services[]` for its six packages, with `loams.graph.v1` `unstable`, and lists `loams.graph.v1` in `api_versions`.
+
+**R7.9 Desktop paths.** The desktop is the Electron app, `apps/desktop-electron`, and the page is `web/plugins/graph`, so R0.20 and Task 8's paths hold. Task 7 changes no desktop code.
