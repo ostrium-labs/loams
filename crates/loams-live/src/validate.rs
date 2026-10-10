@@ -150,7 +150,7 @@ pub fn describe(violations: &[FieldViolation]) -> String {
 /// Checks `value` against `validator`. An `id(table)` is checked as a
 /// well-formed document id only; [`check_ids`] also checks its table.
 pub fn check(validator: &Validator, value: &LiveValue) -> Result<(), Vec<FieldViolation>> {
-    Checker::new(None).finish(validator, value)
+    Checker::new(None, MAX_VIOLATIONS).finish(validator, value)
 }
 
 /// Like [`check`], with each `id(table)` also checked against `tables`, the
@@ -161,19 +161,22 @@ pub fn check_ids(
     value: &LiveValue,
     tables: &BTreeMap<String, TableId>,
 ) -> Result<(), Vec<FieldViolation>> {
-    Checker::new(Some(tables)).finish(validator, value)
+    Checker::new(Some(tables), MAX_VIOLATIONS).finish(validator, value)
 }
 
 struct Checker<'t> {
     tables: Option<&'t BTreeMap<String, TableId>>,
+    /// The most violations kept; checking stops once it is reached.
+    limit: usize,
     path: Vec<PathElem>,
     out: Vec<FieldViolation>,
 }
 
 impl<'t> Checker<'t> {
-    fn new(tables: Option<&'t BTreeMap<String, TableId>>) -> Self {
+    fn new(tables: Option<&'t BTreeMap<String, TableId>>, limit: usize) -> Self {
         Checker {
             tables,
+            limit,
             path: Vec::new(),
             out: Vec::new(),
         }
@@ -193,7 +196,7 @@ impl<'t> Checker<'t> {
     }
 
     fn violation(&mut self, message: String) {
-        if self.out.len() < MAX_VIOLATIONS {
+        if self.out.len() < self.limit {
             self.out.push(FieldViolation {
                 path: self.path.clone(),
                 message,
@@ -216,7 +219,7 @@ impl<'t> Checker<'t> {
     }
 
     fn run(&mut self, validator: &Validator, value: &LiveValue) {
-        if self.out.len() >= MAX_VIOLATIONS {
+        if self.out.len() >= self.limit {
             return;
         }
         let matches = match (validator, value) {
@@ -252,10 +255,12 @@ impl<'t> Checker<'t> {
                 true
             }
             (Validator::Union(members), value) => {
+                // A member fails at its first violation: only whether it
+                // matches counts.
                 let tables = self.tables;
                 if !members
                     .iter()
-                    .any(|m| Checker::new(tables).finish(m, value).is_ok())
+                    .any(|m| Checker::new(tables, 1).finish(m, value).is_ok())
                 {
                     self.violation(format!(
                         "matches none of the union's {} members",

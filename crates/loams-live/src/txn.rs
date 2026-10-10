@@ -453,18 +453,23 @@ impl<'a> LiveTxn<'a> {
         })
     }
 
-    /// The page of a range on a table that does not exist: empty and done.
-    /// Its cursor is `cursor` (checked as [`paginate`](Self::paginate)
-    /// checks it) or a start cursor, so the next page, once the table
-    /// exists, starts where this one did.
+    /// The page of a range on a table that does not exist: empty and done,
+    /// with a start cursor, so the next page, once the table exists, starts
+    /// at the beginning. `cursor` must be this app's start cursor: a cursor
+    /// with a position names a key of an existing table (R1 never removes
+    /// a table), so it is [`LiveError::BadCursor`] here.
     pub async fn empty_page(&mut self, cursor: Option<&str>) -> Result<Page, LiveError> {
         let key = self.cursor_key().await?;
-        let start = match cursor {
-            Some(text) => cursor::decode(&key, text)?,
-            None => cursor::KeyBound {
-                index: IndexId::BY_ID,
-                key: Vec::new(),
-            },
+        if let Some(text) = cursor
+            && !cursor::decode(&key, text)?.key.is_empty()
+        {
+            return Err(LiveError::BadCursor(
+                "the pagination cursor belongs to another table".into(),
+            ));
+        }
+        let start = cursor::KeyBound {
+            index: IndexId::BY_ID,
+            key: Vec::new(),
         };
         Ok(Page {
             docs: Vec::new(),

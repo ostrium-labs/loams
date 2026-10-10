@@ -125,14 +125,14 @@ impl Function for Pager {
                 return Err(LiveError::InvalidArgument("numItems".into()));
             };
             let query = QueryArgs::parse("test:page", LiveValue::Object(args))?;
-            let table = txn
-                .table(&query.table)
-                .await?
-                .ok_or_else(|| LiveError::NotFound(query.table.clone()))?;
-            let range = query.range(&table)?;
-            let page = txn
-                .paginate(range, cursor.as_deref(), u32::try_from(n).expect("n"))
-                .await?;
+            let page = match txn.table(&query.table).await? {
+                Some(table) => {
+                    let range = query.range(&table)?;
+                    txn.paginate(range, cursor.as_deref(), u32::try_from(n).expect("n"))
+                        .await?
+                }
+                None => txn.empty_page(cursor.as_deref()).await?,
+            };
             Ok(obj(&[
                 (
                     "page",
@@ -471,5 +471,45 @@ async fn cursor_from_other_app_rejected(store: TestStore) {
         )
         .await,
         "app b",
+    );
+}
+
+live_test!(paginate_on_a_missing_table);
+async fn paginate_on_a_missing_table(store: TestStore) {
+    let r = open(&store).await;
+    // A table that does not exist yet: an empty, done page with a start
+    // cursor, which pages the table from the beginning once it exists.
+    let none = page(&r, page_args("later", "by_n", "asc", None, 2))
+        .await
+        .expect("an empty page");
+    assert_eq!(ns(&none.result), Vec::<i64>::new());
+    assert!(is_done(&none.result));
+    let start = next_cursor(&none.result);
+    page(&r, page_args("later", "by_n", "asc", Some(&start), 2))
+        .await
+        .expect("a start cursor on a missing table");
+    define(&r, "later", &[("by_n", &["n"])]).await;
+    for n in 0..3 {
+        insert(&r, "later", n).await;
+    }
+    let first = page(&r, page_args("later", "by_n", "asc", Some(&start), 2))
+        .await
+        .expect("the start cursor pages the new table");
+    assert_eq!(ns(&first.result), vec![0, 1]);
+    // A cursor with a position names a key of an existing table, so it is
+    // refused on a missing one.
+    assert_bad_cursor(
+        page(
+            &r,
+            page_args(
+                "missing",
+                "by_n",
+                "asc",
+                Some(&next_cursor(&first.result)),
+                2,
+            ),
+        )
+        .await,
+        "a positioned cursor on a missing table",
     );
 }
