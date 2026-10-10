@@ -11,10 +11,30 @@
 >
 > PG2 Task 57's CLI half (`loams pg up|down|projects|branches|connect`) and LV1 Task 37's Rust half (`loams live deploy`) move here. Those tasks keep their server-side halves (Ruling R6).
 
+## Owner rulings 2026-10-10 (defaults)
+
+The owner asked for the best default on every open question ("do the best for others"). These are binding for execution, and the contract decisions R1–R10 below are no longer proposals. Task 0 records them as rulings and Task 27 copies them into §30 and the decision log. Only the items under "Open questions" at the end still need a human.
+
+| # | Question | Decision | Reason |
+|---|---|---|---|
+| Q-CL1-1 | Rename the analytics wire engines | **Yes:** `pg` → `pg-wire`, `mysql` → `mysql-wire`, variables `LOAMS_PG_WIRE_URL` and `LOAMS_MYSQL_WIRE_URL`. `loams pg` and the `postgres` engine mean Loams Postgres only (R2) | One name, one product; nothing is published, so the rename is free now |
+| Q-CL1-2 | Loams SQL group name; `DATABASE_URL` | **`loams sql`, with the visible alias `loams mysql`.** No `tidb` name. `sql` never sets `DATABASE_URL` unless asked (`env export --database-url sql`) | Named after the product; the alias is what MySQL users type first; `DATABASE_URL` stays Postgres's (D285) |
+| Q-CL1-3 | `jsonl` for streams | **Yes.** `jsonl` is a fourth `--output` format for streaming commands only, and `json` mode buffers streams up to `--max-rows`. It is additive: `output_schema` stays 1. **This amends D283** ("exactly one JSON document" holds for `json`; `jsonl` is the streaming form), recorded in §30 and the decision log by Task 27 (R3) | An unbounded `watch` cannot be one document; scripts that want one still get it |
+| Q-CL1-4 | `loams cluster enrol` collides with the server's `cluster` | **`loams byoc enrol\|list\|revoke`** (R1). §41's text and MT4's CLI work adopt this name | Server command names stay reserved; `byoc` names what the command is for |
+| Q-CL1-5 | `postgres` engine: Loams Postgres or `postgres:17` | **Loams Postgres single-node** (`loams dev --postgres`, D719), feature in `full`. No `postgres:17` fallback. **Amends D299** (R4) | The CLI, the desktop and the cloud run the same Postgres, with branches; one engine to test |
+| Q-CL1-6 | Default ports for the new engines | Keep sql gate 13307, PgDog 15433, House 18123/19000/18125, PD 12379 for CLI stacks; the desktop keeps its own | Offsets stay unique and never clash with system defaults or the desktop |
+| Q-CL1-7 | One `postgres` and one `sql` stack per `LOAMS_HOME` | Yes (`engine_exclusive`, exit 5); lifted when PG2's runtime takes per-stack port ranges | Avoids port and runtime collisions that would be hard to diagnose |
+| Q-CL1-8 | Shared `loams-client-core` or the CLI's own layer | The CLI's own thin layer, checked by the SDK fixtures (R5); revisit at SDK 1.0 | The crate-name collision with `sdks/rust`; the fixtures keep both in step |
+| Q-CL1-9 | Live split between Rust CLI and `@loams/live-cli` | Rust `loams live` deploys and operates; bundling, `dev` watch and `codegen` stay in `@loams/live-cli` (R6) | No JavaScript toolchain in the Rust binary |
+| Q-CL1-10 | House binaries' manifest | One signed release manifest with a `components` list, read by `loams house install` and the desktop | One verification path; who holds the signing key stays Q282 (Open questions) |
+| Q-CL1-11 | `graph` in `standard` | Follow GR1's Q675 gate mechanically: `standard` includes `graph` if the size gate passes, otherwise `full` only; the hint names the variant either way | A measured gate, not a judgement call |
+| Q-CL1-12 | Product mutations as MCP tools | Not in CL1 (R8); revisit with MCP `input_required` | D289; product mutations mint secrets and resources |
+| Q-CL1-13 | Drive the desktop's engine | Yes, read-only discovery through DD1's adoption record; stacks never share the desktop's data directory (R9) | Useful for scripts without two supervisors fighting |
+
 **Goal:** One `loams` binary that a person, a script or a coding agent uses to run and drive every Loams product, locally or against a remote or cloud endpoint, with:
 - §30's foundation: the output and exit-code contract, `LOAMS_HOME` and profiles, local stacks, NVMe, `.env.loams`, the stdio MCP server, `mcp install`, embedded docs (CLI1);
 - one API client layer over the public Connect API (§44): endpoint resolution, `GetInstance` feature detection, `loams.errors.v1` mapping, idempotency keys, operation waits and server streams;
-- **five product groups**, `loams live`, `loams pg`, `loams sql`, `loams graph` and `loams house`, each a thin client of its product's API, with one shared vocabulary of nouns, verbs and flags;
+- **five product groups**, `loams live`, `loams pg`, `loams sql` (alias `loams mysql`), `loams graph` and `loams house`, each a thin client of its product's API, with one shared vocabulary of nouns, verbs and flags;
 - local stacks that can run each product: in-process engines (`live`, `graph`), engine roles that drive compose (`postgres`, `sql`), a supervised sidecar binary (`house`), and container companions (`tikv`);
 - sign-in, API keys and vended agent tokens once the unified auth plan lands (§30 §15, MT1);
 - secrets that never reach MCP output, JSON output or logs, now including Postgres role passwords, Loams SQL credentials and connection strings.
@@ -48,7 +68,7 @@ The exit is the checklist under "Exit criteria for production", with the owning 
 - [§49](../design/49-loams-house-production.md) §17–§18.2 and [HS1](2026-10-08-hs1-house-production.md) Tasks 7, 8, 26, 28 (`loams-fabric house`, `loams.house.v1`, the analytics-engine download).
 - [§19](../design/19-console-identity-and-agents.md) §5 and [MT1](2026-10-02-mt1-authentik-identity.md) Task 5 (`loams login`, the device flow, the `loams-cli` OAuth client).
 - [§50](../design/50-loams-desktop-daemon.md) and [DD1](2026-10-09-dd1-desktop-daemon.md) Task 9 (the daemon supervises the desktop's `loams dev`).
-- [§41](../design/41-multitenant-byoc-control-plane.md) §5 (`cluster enrol`, Q-CL1-4).
+- [§41](../design/41-multitenant-byoc-control-plane.md) §5 (`cluster enrol`, renamed `loams byoc enrol` by Q-CL1-4).
 
 ## Global Constraints
 
@@ -58,7 +78,7 @@ The exit is the checklist under "Exit criteria for production", with the owning 
 - **Products are reached through their public API only.** A product command never reads a product's data directory, record store, compose file or admin socket. The one exception is the stack supervisor, which starts server processes and reads their logs.
 - **The default build does not change** beyond CLI1's addition of `loams-cli`. `cargo tree -p loams -e normal` on default features gains only `loams-cli`, `loams-proto/client` and their dependencies (Task 1 test `default_build_gains_only_the_cli`).
 - **AP0 API rules** (§44): every mutating call carries an `idempotency_key`, generated once per command invocation and reused on every retry of that call. Reads are retried; a mutation is retried only on the codes §44 marks safe, and always with the same key. Errors are read from `loams.errors.v1` (`ErrorInfo.reason`, `RetryInfo`, `BadRequest`). Pagination is `page_size`/`page_token`. List commands follow pages up to `--limit` (default 1000) and report `next_page_token` in JSON.
-- **The output contract is frozen and additive** (D283, CLI1 Rulings 3, 4 and 12). Every JSON output type derives `schemars::JsonSchema` and has a schema snapshot. A change that is not additive fails `tests/schemas`. The one contract change CL1 makes is the `jsonl` format for streams (Ruling R3, Q-CL1-3).
+- **The output contract is frozen and additive** (D283, CLI1 Rulings 3, 4 and 12). Every JSON output type derives `schemars::JsonSchema` and has a schema snapshot. A change that is not additive fails `tests/schemas`. The one contract change CL1 makes is the `jsonl` format for streams (Ruling R3, Q-CL1-3), which amends D283 additively; `output_schema` stays 1.
 - **Secrets** (D288). `Secret` has no `Serialize` and no `Display`. `Secret::expose` stays a `clippy::disallowed_methods` entry. CL1 allows it in exactly four places, each with `#[allow(clippy::disallowed_methods)] // §30 §11.1`:
   - `env.rs` (the dotenv writer);
   - `api/auth.rs` (the auth header);
@@ -163,7 +183,7 @@ loams [--output table|json|text|jsonl] [--profile NAME] [--endpoint URL|local:ST
 │   ├── databases   create|list|delete
 │   ├── connection-string [--role R] [--pooled] [--show-password]
 │   └── connect     [--role R] [--read-only] [-- PSQL_ARGS…]
-├── sql                                                                                (Task 14)
+├── sql   (alias: mysql)                                                              (Task 14)
 │   ├── databases   create|describe|list|update|delete|suspend|resume
 │   ├── branches    create [--parent B] [--at-time T]|describe|list|delete
 │   ├── roles       create|list|reset-password|delete
@@ -176,6 +196,7 @@ loams [--output table|json|text|jsonl] [--profile NAME] [--endpoint URL|local:ST
 │   ├── query  GQL|--file F [--param K=V…] [--stream] [--timeout 30s]
 │   ├── explain GQL|--file F
 │   └── export --to URL | import --from URL | restore --to-time T --yes
+├── byoc        enrol|list|revoke                                    (MT4's CLI work, under this plan's rules; Q-CL1-4)
 ├── house                                                                              (Task 16)
 │   ├── install [--version V] [--allow-download] | uninstall                (the local sidecar binaries)
 │   ├── query  SQL|--file F [--database D] [--setting K=V…] [--param K=V…] [--max-rows N]
@@ -194,7 +215,8 @@ loams [--output table|json|text|jsonl] [--profile NAME] [--endpoint URL|local:ST
 - **Verbs come from one set:** `create`, `describe`, `list`, `update`, `delete`, `start`, `suspend`, `resume`, `restart`, `restore`, `reset-password`, `set-default`, `export`, `import`, `status`, `wait`, `cancel`. One concept has one verb. `ResetRolePassword` (pg) and `RotateRolePassword` (sql) are both `reset-password`.
 - **Selection flags:** `--project`, `--branch`, `--database`, `--app`, `--graph` and `--endpoint-id`. Each defaults to the profile's `[profile.X.defaults]` (Task 2), then to the only resource that exists, then fails with `selection_required` (exit 3), which lists the candidates in `details`. `--endpoint` is reserved for the API endpoint (global).
 - **Time flags:** `--at-time` and `--to-time` take RFC 3339 or a humantime offset (`-15m`). `--at-lsn` takes `X/Y`.
-- **Client and server names never collide.** No client group may equal `dev`, `standalone`, `cluster`, `warm`, `durable`, `pg-control`, `live-worker` or `serve` (Ruling R1).
+- **Client and server names never collide.** No client group or alias may equal `dev`, `standalone`, `cluster`, `warm`, `durable`, `pg-control`, `live-worker` or `serve` (Ruling R1).
+- **Aliases.** `mysql` is the one group alias (Q-CL1-2). Help and docs use the canonical `sql`.
 
 ### Global flags added to CLI1's `Globals`
 
@@ -282,8 +304,8 @@ New CLI codes: `service_not_served` (6), `selection_required` (3), `insecure_end
 | `pg-wire` (was `pg`) | in-process | `pgwire` | `--pg-listen` | 15432 (+32) | `LOAMS_PG_WIRE_URL` | standard, full |
 | `mysql-wire` (was `mysql`) | in-process | `mysql-wire` | `--mysql-listen` | 13306 (+06) | `LOAMS_MYSQL_WIRE_URL` | full |
 | `live` | in-process, **on by default in the server** | `live` (default since LV1 Task 23) | `--live-listen` / `--no-live`, `--live-store` (embedded) | 7710 (+10) | `LOAMS_LIVE_URL`, `LOAMS_LIVE_APP` | all server variants |
-| `graph` | in-process, on when compiled | `graph` | `--graph-data-dir <stack>/data/graph` / `--no-graph` | main port | — (uses `LOAMS_URL`) | full (standard per Q675) |
-| `postgres` | engine role plus compose | `postgres` (PG2 Task 9) | `--postgres --postgres-stack <stack>/postgres` (PG2 Task 56) | PgDog 15433 (+43) | **`DATABASE_URL`**, `LOAMS_PG_PROJECT` | full (Q-CL1-5) |
+| `graph` | in-process, on when compiled | `graph` | `--graph-data-dir <stack>/data/graph` / `--no-graph` | main port | — (uses `LOAMS_URL`) | full; standard if Q675's size gate passes (Q-CL1-11) |
+| `postgres` | engine role plus compose | `postgres` (PG2 Task 9) | `--postgres --postgres-stack <stack>/postgres` (PG2 Task 56) | PgDog 15433 (+43) | **`DATABASE_URL`**, `LOAMS_PG_PROJECT` | full (Q-CL1-5: Loams Postgres single-node, no `postgres:17` fallback) |
 | `sql` | engine role plus compose, needs `tikv` | `sqldb` | `--sqlgate-listen`, `--sqlgate-tls-cert/-key/-upstream-ca` (the stack CA), `--sqldb-pd` | 13307 (+07) | `LOAMS_SQL_URL` | full |
 | `house` | sidecar binary | `loams-fabric` + `libchdb` (Task 16 `house install`) | engine: the House proxy endpoint flag (HS1 Task 7, name as built); sidecar: `loams-fabric house --single-node --house-listen --native-listen --admin-listen` | 18123 (+23), native 19000 (+24), admin 18125 (+25) | `CLICKHOUSE_URL`, `LOAMS_HOUSE_URL` | separate artifact |
 | `tikv` | container companion | `release/companions.toml` | `--sqldb-pd 127.0.0.1:<pd>` (and `--meta`/`--live-store` only when asked) | PD 12379 (+79) | `LOAMS_TIKV_PD` | — |
@@ -317,14 +339,14 @@ A `schema = 1` file is upgraded in memory and rewritten only by `stack restart -
 
 ### Contract decisions this plan makes
 
-Each is a proposal until Task 0 records the owner's answer or the default. Its open question is named.
+Each was ruled on 2026-10-10 ("Owner rulings 2026-10-10 (defaults)" above). Its question is named.
 
 | # | Ruling | Why | Cost if wrong |
 |---|---|---|---|
 | R1 | **Server command names are reserved**: `dev`, `standalone`, `cluster`, `warm`, `durable`, `pg-control` (PG2 Task 9), `live-worker` (LV1 Task 5) and `serve` (GR1 §48). §41's `loams cluster enrol` cannot be a client verb under the server's `cluster`; it becomes `loams byoc enrol` (Q-CL1-4) | CLI1 Ruling 1 | A rename after release breaks scripts |
 | R2 | **`pg` and `postgres` mean Loams Postgres; the analytics wire engines become `pg-wire` and `mysql-wire`**. Nothing is built or published, so the rename is free now (Q-CL1-1) | PG2 Task 57 named the group `pg`. A `pg` engine that is not Postgres beside a `pg` group that is Postgres repeats the confusion §30 §8.2 warned about | One more rename if the owner prefers to keep `pg` for the wire |
 | R3 | **A fourth output format, `jsonl`**, valid only for streaming commands (`live watch`, `live logs --follow`, `graph query --stream`, `house query`, `operations wait --follow`). Each line is one JSON document `{"type": "header"\|"item"\|"progress"\|"summary", …}`. In `json` mode, a stream command buffers into one document (`{"items": […], "summary": …, "truncated": bool}`) up to `--max-rows` (default 10 000), then truncates and says so. **Amends D283** (Q-CL1-3) | D283 promises "exactly one JSON document", and an unbounded `watch` cannot keep it | Scripts that want one document still get it |
-| R4 | **`postgres` is Loams Postgres single-node** (`loams dev --postgres`, D719), not D299's `postgres:17` container. `pg up` is `stack create|start` with the `postgres` engine. **Amends D299** (Q-CL1-5) | D299 predates §46 §18. The desktop and the CLI should run the same Postgres | Small machines pay for the pageserver and PgDog; Q-CL1-5 asks whether to keep a plain-container fallback |
+| R4 | **`postgres` is Loams Postgres single-node** (`loams dev --postgres`, D719), not D299's `postgres:17` container. `pg up` is `stack create|start` with the `postgres` engine. **Amends D299** (Q-CL1-5) | D299 predates §46 §18. The desktop and the CLI should run the same Postgres | Small machines pay for the pageserver and PgDog; Q-CL1-5 ruled no plain-container fallback, so `doctor` (Task 25) warns below 4 GB of free RAM when `postgres` is enabled |
 | R5 | **The CLI has its own thin client layer** over `loams-proto` (`client`), not a dependency on the Rust SDK. `sdks/rust` is its own workspace, and its crate is named `loams`, the same name as the server binary's crate, so it cannot be a dependency here. The CLI copies the SDK's retry, idempotency and reason conventions and runs the SDK conformance fixtures (`sdks/fixtures`) against itself (Q-CL1-8) | Name collision; no extra workspace | Two retry layers to keep in step until a shared `loams-client-core` exists |
 | R6 | **Ownership moves.** PG2 Task 57 keeps `GetInstance` advertising and drops its CLI half (Task 13 here). LV1 Task 37 keeps `@loams/live-cli` (bundling, codegen, `dev`, `migrate`); the Rust `loams live deploy` moves here (Task 12). §46's `pg archive-restore` and `pg migrate-wal` talk to the pageserver and `loams-wal`, not to the API, so they are server commands under `loams pg-control` (PG2 Tasks 40, 43), not `loams pg` | A product's public API is the CLI's only contract; operator tools that bypass it belong to the server | None |
 | R7 | **Secrets are revealed only on a TTY.** `--show-password` (connection strings) and the one-time password of `roles create` print only when stdout is a TTY and `--output table`. Otherwise the secret goes to `--write-env PATH` (default `.env.loams`) and the output says where. In JSON the field is `"<redacted: written to .env.loams>"` | D288; agents run commands in pseudo-terminals less often than people, and a pipe is never a person | A person who pipes `connection-string` gets a redacted value and must use `--write-env` |
@@ -359,7 +381,7 @@ Each is a proposal until Task 0 records the owner's answer or the default. Its o
 
 ### Task 0: Reconcile with the code as built
 
-**Files:** this plan's "Rulings made during execution", and the decision log (open questions Q-CL1-1 … Q-CL1-13 registered as Q735 onward).
+**Files:** this plan's "Rulings made during execution" only. Task 27 carries the rulings into the decision log.
 
 Steps:
 1. Answer each of the following and record the answer, with file paths, as a ruling:
@@ -371,7 +393,7 @@ Steps:
    - DD1's engine adoption record: its path and schema (DD1 Task 9). If DD1 has not merged, `--endpoint desktop` exits 7 (`desktop_not_running`) with the hint "start Loams Desktop".
    - MT1 Task 5's state (`crates/loams-cli/src/login.rs` is listed in MT1's file structure). If MT1 has merged a `login.rs` elsewhere, Task 17 moves it.
    - PG2's compose port range and SQ1's local runtime: confirm the exclusivity rule (one `postgres` stack and one `sql` stack per `LOAMS_HOME`).
-2. Record the owner's answers to Q-CL1-1 … Q-CL1-13, or their defaults (the proposals in this plan).
+2. Record the "Owner rulings 2026-10-10 (defaults)" for Q-CL1-1 … Q-CL1-13 as rulings, plus any later owner answer that overrides one.
 3. Commit `docs(cli): cl1 task 0 rulings`.
 
 ## CL1a — Foundation and the API layer (Tasks 1–4)
@@ -391,7 +413,8 @@ Tests: CLI1 Task 1's tests, plus:
 - `default_build_gains_only_the_cli`
 - `jsonl_refused_on_unary_commands`
 - `cli_codes_disjoint_from_reasons`: parses `docs/api/reasons.md`.
-- `client_group_names_never_equal_server_commands`: covers R1's list.
+- `client_group_names_never_equal_server_commands`: covers R1's list, aliases included.
+- `sql_group_answers_to_mysql_alias`: `loams mysql databases list` parses to the same command as `loams sql databases list`.
 
 Steps: tests (FAIL) → CLI1 Task 1 → amendments → PASS → commit `feat(cli): loams-cli crate, globals and the output contract`.
 
@@ -481,7 +504,7 @@ Tests: CLI1 Task 3's. Commit `feat(loams): h1 cache flags`.
   - `Engine::requires`: `sql` → `tikv`, `house` → `native`;
   - `Engine::exclusive`: `postgres` and `sql`;
   - `Engine::available(&BuildInfo, &Task0Rulings)`.
-- The renames `pg` → `pg-wire` and `mysql` → `mysql-wire` (R2). The old names are rejected with a hint that names the new one. Nothing was ever published, so there is no alias.
+- The renames `pg` → `pg-wire` and `mysql` → `mysql-wire` (R2, Q-CL1-1). The old names are rejected with a hint that names both meanings: `pg` → "`pg-wire` for the Postgres wire protocol, or `postgres` for Loams Postgres"; `mysql` → "`mysql-wire` for the MySQL wire protocol, or `sql` for Loams SQL". Nothing was ever published, so there is no engine alias.
 - The port offsets +07, +23, +24, +25, +43 and +79 are added to CLI1's offset table. `ports_offsets_are_unique` covers all of them.
 - Stack spec v2 (`schema = 2`), with the in-memory upgrade from `schema = 1`.
 - The stack CA. `stack create` makes `ca/ca.pem` and `ca/ca.key` (0600) with rcgen when `sql` or `postgres` is enabled. It issues the gate's server certificate for `127.0.0.1`, `::1` and `localhost`, 30 days, renewed by `stack start` when under 15 days remain.
@@ -660,6 +683,7 @@ Commit `feat(cli): loams pg`.
 **Files:** `src/products/sql.rs`, `tests/sql.rs`, `tests/fakes/sqldb.rs`, `crates/loams/tests/cli/products_sql.rs`, `docs/guides/cli/sql.md`.
 
 **Interfaces:**
+- The group is `sql`, with `mysql` as a visible clap alias (Q-CL1-2). Output, errors and docs always say `sql`.
 - `databases create|describe|list|update|delete|suspend|resume` → `DatabaseService`. `describe` shows `stage` and `engine_version`.
 - `branches create [--parent] [--at-time]|describe|list|delete` → `BranchService`. `--at-time` maps to `point_ts`. Before calling, the CLI checks `GetRestoreWindow` and refuses a time outside `gc_window_start…now` locally, naming the window. The server stays the authority.
 - `roles create|list|reset-password|delete` → `RoleService` (`RotateRolePassword`).
@@ -674,6 +698,7 @@ Tests:
 - `ephemeral_credential_json_redacted`
 - `reset_password_maps_to_rotate`
 - `sql_json_output_matches_schema`
+- `sql_never_writes_database_url_by_default`
 - e2e `it_sql_create_connect` (`#[ignore]`, after SQ1 Task 20, `LOAMS_IT_SQLDB=1`)
 
 Commit `feat(cli): loams sql`.
@@ -691,7 +716,7 @@ Commit `feat(cli): loams sql`.
   - the table renders typed values, and JSON keeps the typed form.
 - `explain` → `Explain`.
 - `export --to` and `import --from` → `ExportGraph` and `ImportGraph`. `restore --to-time --yes` → `RestoreGraph`. Each waits on its operation.
-- Without the `graph` feature in the server, every command exits 6 with `feature_not_in_variant` (Q675's variant in the hint).
+- Without the `graph` feature in the server, every command exits 6 with `feature_not_in_variant`, the hint naming the variant that carries `graph` (Q-CL1-11).
 
 Tests:
 - `delete_graph_requires_yes`
@@ -865,10 +890,10 @@ Commit `test(cli): secret canary across products`. **CL1e exit:** Tasks 20–23 
 **Interfaces:**
 - The variant matrix (§30 §9.2, amended):
   - `cli`: `--no-default-features` (D297), plus the `loams-proto/client` and `house-export` features of `loams-cli`;
-  - `standard`: `es, flight, hnsw, qdrant, mcp, pgwire, durable, live`, plus `graph` if Q675 says so;
+  - `standard`: `es, flight, hnsw, qdrant, mcp, pgwire, durable, live`, plus `graph` if Q675's size gate passes (Q-CL1-11);
   - `full`: `standard` plus `tikv, durable-tikv, live-tikv, stream-grpc, mysql-wire, jobs, graph, sqldb, postgres`;
   - never: `failpoints`, `cluster-tests`, `durable-mysql`.
-- House is **not a variant**. `loams-fabric`, `loams-house-worker` and `libchdb` ship as a separate signed artifact set per target, listed in `loams-release.json` under `"components": [{"name": "house", …}]`. Both `loams house install` and the desktop read that list.
+- House is **not a variant** (Q-CL1-10). `loams-fabric`, `loams-house-worker` and `libchdb` ship as a separate signed artifact set per target, listed in `loams-release.json` under `"components": [{"name": "house", …}]`. Both `loams house install` and the desktop read that list.
 - The CLI2 variant guard also checks that `full` contains every in-binary product feature.
 
 Tests:
@@ -884,7 +909,7 @@ Commit `release(cli): variants and house components for the products`.
 **Files:** `src/doctor.rs`, `tests/doctor.rs`, `src/version.rs` (extended).
 
 **Interfaces:**
-- `loams version --output json` gains `api_versions` (the packages this CLI was generated against) and `output_schema` (1, or 2 if Q-CL1-3's `jsonl` is ruled a breaking change).
+- `loams version --output json` gains `api_versions` (the packages this CLI was generated against) and `output_schema` (1; Q-CL1-3 ruled `jsonl` additive).
 - **Skew policy.** The CLI talks to servers at its minor version or one below (N/N−1, as §10 §7). An older server prints a stderr notice. A product command whose package is missing from the server's `api_versions` exits 6 (`service_not_served`).
 - `loams doctor [--stack]` checks, read-only:
   - the binary and variant;
@@ -893,6 +918,7 @@ Commit `release(cli): variants and house components for the products`.
   - each stack's state, ports and CA expiry;
   - the container runtime;
   - the client tools (`psql`, `mysql`, `clickhouse`);
+  - free RAM when the `postgres` engine is enabled (`warn` below 4 GB; R4);
   - the endpoint's `GetInstance` and the skew;
   - the signed-in state.
   It prints a check list (`ok`, `warn`, `fail`) and exits 0, or 5 when any check fails.
@@ -934,7 +960,7 @@ Commit `ci(cli): e2e matrix and gates`.
 - CLI1 Task 11's files;
 - `docs/guides/cli.md` and `docs/guides/cli/*.md`;
 - `docs/design/30-loams-cli.md`: §5 tree, §8.2 registry v2, D283 (R3), D299 (R4), §19 roadmap (CL1 row);
-- `docs/design/13-decision-log.md`: the Q-CL1 answers;
+- `docs/design/13-decision-log.md`: the "Owner rulings 2026-10-10 (defaults)" for Q-CL1-1 … Q-CL1-13 under new IDs, dated 2026-10-10, with D283 marked "amended by" the `jsonl` ruling and D299 by the `postgres` ruling;
 - `docs/plans/README.md`: the CL1 row; CLI1 marked "Absorbed into CL1"; CLI3 replaced by CL1d;
 - the CLI2 amendment note;
 - PG2 Task 57 and LV1 Task 37: notes that their CLI halves moved here (R6).
@@ -985,30 +1011,15 @@ Commit `docs(cli): guides, design amendments and status`.
 
 - **Types.** `ApiClient`, `Endpoint`, `MutationCtx`, `await_operation`, `StreamRender`, `ClientLaunch`, `Secret`, the error mapping and the registry v2 are defined once, in Shared contracts.
 - **Review Focus.** Items 1–8 each name owning tests (Tasks 1, 3, 4, 6, 7, 9, 11–16, 20, 23, 26).
-- **Decisions the owner must make before the tasks that need them:**
-  - Q-CL1-1 and Q-CL1-2 (names), before Task 6;
-  - Q-CL1-3 (`jsonl`), before Task 1;
-  - Q-CL1-5 (`postgres` engine), before Task 6;
-  - Q-CL1-4 (`cluster enrol`), before MT4's CLI work;
-  - Q675 (graph in `standard`), before Task 24.
+- **Decisions.** Every Q-CL1 question is ruled in "Owner rulings 2026-10-10 (defaults)". Q675 is GR1's and is applied mechanically (Q-CL1-11). Only the human items under "Open questions" remain.
 
 ## Open questions
 
-| # | Question | Proposal | Owner | Needed by |
-|---|---|---|---|---|
-| Q-CL1-1 | §30's engine `pg` (the analytics wire) and the product group `pg` (Loams Postgres) share a name. Rename the wire engines to `pg-wire` and `mysql-wire`, and their variables to `LOAMS_PG_WIRE_URL` and `LOAMS_MYSQL_WIRE_URL`? | Yes (R2). Nothing is published, and PG2 Task 57 already took `loams pg` | Founder | Task 6 |
-| Q-CL1-2 | The Loams SQL group name: `sql`, `mysql` or `tidb`? `sql` also reads as Flight SQL or the MCP `sql` data tool. And should `sql` ever set `DATABASE_URL`? | `loams sql`, after the product name. `DATABASE_URL` only on request (`env export --database-url sql`) | Founder | Task 6 |
-| Q-CL1-3 | Amend D283 with a fourth format, `jsonl`, for streams, and buffer streams in `json` mode up to `--max-rows`? Is it additive (`output_schema` stays 1)? | Yes, additive (R3) | Eng | Task 1 |
-| Q-CL1-4 | §41's `loams cluster enrol` collides with the server command `loams cluster`. Rename it to `loams byoc enrol`? | `loams byoc enrol\|list\|revoke` (R1) | Founder | MT4's CLI work |
-| Q-CL1-5 | D299's `postgres` companion (a `postgres:17` container) versus Loams Postgres single-node (D719, pageserver plus `loams-wal` plus PgDog, about 2–3 GB of RAM): make the engine Loams Postgres only, or keep `postgres:17` as `--postgres-mode plain` for small machines? Which variant carries the `postgres` feature? | Loams Postgres only, in `full` (R4). No plain fallback, so the desktop and CLI behave the same | Founder | Task 6 |
-| Q-CL1-6 | Default ports for the new engines: sql gate 13307, PgDog 15433, House 18123, 19000 and 18125, TiKV PD 12379. The SQ1 desktop uses 3306 and 19379 | Keep these for CLI stacks. The desktop keeps its own | Eng | Task 6 |
-| Q-CL1-7 | At most one `postgres` stack and one `sql` stack per `LOAMS_HOME` in CL1, because of PG2's fixed compute port range and SQ1's single local runtime? | Yes. Lift it when PG2's compose runtime takes a per-stack range | Eng | Task 6 |
-| Q-CL1-8 | Extract the Rust SDK's transport, retry and idempotency layer into a shared crate (`loams-client-core`) used by the CLI and `sdks/rust`, or keep the CLI's own thin layer checked by the SDK fixtures? | Own layer now (R5). Revisit at SDK2's 1.0 | Eng | Task 3 |
-| Q-CL1-9 | The Live CLI split: the Rust `loams live` has no bundler, `dev` watch loop or `codegen` (they stay in `@loams/live-cli`). Is that the intended boundary? | Yes (§45 §13, R6) | Founder | Task 12 |
-| Q-CL1-10 | House binaries for `loams house install`: the same signed release manifest as the `loams` binary (a `components` list), or the desktop's own manifest? Who holds the key (Q282)? | One manifest, `components`, the same minisign key | Founder | Task 16, Task 24 |
-| Q-CL1-11 | Q675: is `graph` in `standard` at GA? It decides whether `loams graph` works against the default install's local stack | Follow Q675's default (`standard` if the size gate passes) | Founder | Task 24 |
-| Q-CL1-12 | Should the stdio MCP server ever offer product mutations (for example, `pg_branch_create` for an agent's preview branch), given D289? | Not in CL1 (R8). Revisit with MCP `input_required` support | Founder | Task 20 |
-| Q-CL1-13 | May the CLI drive the desktop's engine (`--endpoint desktop`) through DD1's adoption record, read-only and without the daemon's token? | Yes, read-only discovery. Stacks never share the desktop's data directory (R9) | Eng | Task 3 |
+Every design question is ruled in "Owner rulings 2026-10-10 (defaults)" at the top. What is left needs the owner personally. It blocks no code task: CI signs with a test key until it is settled.
+
+| # | Owner action | Why a human | Gates |
+|---|---|---|---|
+| CL1-H1 | Q282: who holds the release signing key (minisign) for the `loams` binaries and the House `components`, and where it is stored (an HSM or a CI secret) | Custody of a key that vouches for the company's releases | Task 16 `install` against real artifacts, Task 24 real releases |
 
 ## Rulings made during execution
 

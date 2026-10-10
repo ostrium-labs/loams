@@ -20,7 +20,7 @@
 The exit is the checklist at the end of this plan, with the owning tasks.
 
 **Architecture** (§26 §3, §27 §3):
-- **`loams-jobs` is a library crate** with the `Jobs` trait, `KvJobStore` (its only store), the background loops (stalled sweep, delayed promoter, janitor, outbox relay) and the Connect service. The `loams` binary serves it behind the feature `jobs` on `--jobs-listen` (default `127.0.0.1:7720`, loopback-only until MT1).
+- **`loams-jobs` is a library crate** with the `Jobs` trait, `KvJobStore` (its only store), the background loops (stalled sweep, delayed promoter, janitor, outbox relay) and the Connect service. The `loams` binary serves it behind the feature `jobs` on the main API port (`--listen`), like Graph; before MT1 a non-loopback `--listen` is refused while jobs are enabled (Q103 ruling).
 - **State** sits in a `loams-kv` keyspace `loams_jobs`, with the tenant prefix `t/<ns>/`. Payloads and results over 16 KiB go to the object store with a `Freshness`. The event log is a Loams stream per queue. Schedules and flows are Resonate's (feature `durable`).
 - **Adapters are thin.** `loams-celery` (Python) and `@loams/bullmq` (TypeScript) wrap the generated `loams.jobs.v1` clients of the existing SDKs. No Redis, no AMQP, no Lua.
 - **Engines are separate processes** (D51). An `EngineRunner` (local process in dev, kube-rs in cloud) drives Sail, RisingWave and the Flink operator, and each lifecycle is a Loams durable workflow.
@@ -45,6 +45,31 @@ The exit is the checklist at the end of this plan, with the owning tasks.
 - [§41](../design/41-multitenant-byoc-control-plane.md) §9–§11 (limits, the open-core boundary), [open-core.md](../open-core.md).
 - [LV1](2026-10-08-lv1-live-production.md) Tasks 27–28 (the metrics registry, admin listener, OTLP), [RN1](2026-10-01-rn1-runner-usage.md) Task 3 (`InvocationObserver`), [MT1](2026-10-02-mt1-authentik-identity.md) (auth), [MT2](2026-10-02-mt2-knative.md) (pod labels), [MT4](2026-10-02-mt4-byoc-control-plane.md) Task 8 (the no-metering guard).
 
+## Owner rulings 2026-10-10 (defaults)
+
+The owner asked for the best default on every question that does not need money, a legal choice or an external account. These rulings settle them; the tasks below are written to them, and they amend W3, W4 and W13. The decision log is not edited here: the integrator copies these rows when it numbers the JB1 questions. No JB1 question needs the owner any more (see "Open questions").
+
+| # | Question | Ruling | Reason |
+|---|---|---|---|
+| JB1-Q1 | Per-function metric names | **One rule: a family is named after what its series are keyed by.** Series keyed by a function (labels `org`, `namespace`, `function`, `tier`, plus `runner`) are `loams_function_*`, as §27 §3.1 has them. Series about a runner's own machinery, with no `function` label (instances, cold starts, pool size, observer panics), are `loams_runner_*`. Amends W13. **Cross-track note for RN1 Task 3:** `MetricsObserver` exports `loams_function_invocations_total`, `loams_function_wall_seconds_total` and `loams_function_cpu_seconds_total`, adds the `tier` label, and keeps `runner` as a label | Users and dashboards think in functions; the runner is an implementation detail, so it is a label on function series and a prefix only for its own internals |
+| JB1-Q2 | Lease concurrency, and §26 §6.9's 2,000 leases/s | **Add `get_for_update` and pessimistic mode to `loams-kv`** (shared with LV1; closes T21-15's "the first pessimistic caller adds it"), and lease pessimistically per shard (Task 5). **2,000 leases/s at S = 1 is a published benchmark, not a gate** (Task 18). Amends W4 | Optimistic windows waste work under contention exactly on hot queues; one seam method serves both tracks. A bench number depends on hardware and must not block a merge |
+| JB1-Q3 | Per-shard outbox sequence | **Accept**; shards scale it, Task 18 reports it | Simplest correct ordering; a resolved-ts design can come later behind the same record |
+| JB1-Q4 | Queue names | **Case-sensitive `[A-Za-z0-9._:-]{1,128}`** (W6) | BullMQ and Celery imports must not refuse existing names |
+| JB1-Q5 | §26's proposed details (D205, D207, D208, D210, D213, D214) | **Accepted as this plan amends them** (W1–W13 and these rulings); Task 47 writes the amendments back into §26 | The direction is approved and the plan already reconciles the details with the code |
+| JB1-Q6 | `org` label before MT4 | **The constant `default`** (W12) | Stable series now; one relabel when orgs exist |
+| JB1-Q7 | Large payload transport | **Server-streamed `GetBlob`** (W9); presigning later | `loams-store` has no presigned URLs; one transport is enough for v1 |
+| Q103 | Jobs listener | **The main API port (`--listen`), like Graph.** No `--jobs-listen`; before MT1 the server refuses a non-loopback `--listen` with jobs enabled unless `--no-jobs`, as Graph does (D750). Amends W3 | One port to expose, secure and route; the same loopback rule as Graph until auth exists |
+| Q-UH-1 | Per-namespace cardinality | **Both, capped:** per-namespace series always pass the active-namespace cap (10,000, 15 min idle) on `/metrics`; with `--metrics-per-namespace otlp` they go out as OTLP delta instead | Bounded Prometheus series by default; delta export for large fleets |
+| Q-UH-2 | Contract versioning and conformance | **`docs/api/usage-hooks-v1.md` + `loams-hooks` + the kit** (Tasks 33, 40) | Same rules as `reasons.md`; one place to read, one test to run |
+| Q-UH-3 | Final cgroup reading for removed T2 pods | **Not in JB1**; F2's plan owns it, JB1 ships `pod_labels` only | It belongs to the supervisor, which JB1 does not build |
+| Q98 | `LeaseStream` | **Not in JB1**; revisit after Task 18's numbers | Long-poll `Lease` is enough until measured otherwise |
+| Q99 | FIFO groups | **Out of scope** for JB1 | Not needed for Celery or BullMQ parity |
+| Q101 | Celery `solar` and custom schedules | **Refused with a message** | Cron and `every` cover the common cases; refusing beats silent drift |
+| Q102 | Loams-hosted Celery and BullMQ workers | **User processes in JB1** | Hosting workers is the functions runtime's job (F1, MT2), not the jobs service's |
+| Q95 | Arroyo | **Documented only** | RisingWave and Flink cover streaming SQL and DataStream |
+| Q96 | Engine tenancy | **Sail per namespace; RisingWave shared with a database per namespace, a dedicated cluster above the size threshold Task 53 measures and records** | Isolation where it is cheap, sharing where a cluster per namespace is not |
+| Q104 | Spark fallback | **Loams-managed** (Spark Connect per namespace, Kubeflow Spark Operator) | A documented-only fallback is not a fallback when Sail lacks a feature |
+
 ## Global Constraints
 
 - **Worktree and branches.** Work in `~/Documents/Ostriumlabs/loams-wt/jb1-jobs-and-usage`. Use one branch per milestone, `feat/jb1a-core`, `feat/jb1b-events-durable`, `feat/jb1c-celery`, `feat/jb1d-bullmq`, `feat/jb1e-usage-hooks`, `feat/jb1f-production` and `feat/jb1g-engines`, each based on `dev`, with stacked PRs targeting `dev`. Use `git commit -s` (DCO). Commit areas: `jobs`, `celery`, `bullmq`, `hooks`, `durable`, `engines`, `sdk`, `deploy`, `ci`, `docs`.
@@ -66,8 +91,8 @@ The exit is the checklist at the end of this plan, with the owning tasks.
 |---|---|---|---|
 | W1 | **One store implementation, `KvJobStore`, over `loams-kv::Store`**, instead of §26 §6.8's `TikvJobStore` and `LocalJobStore`. `loams-kv` already gives one transaction surface over embedded redb (MVCC) and TiKV, with retries, commit tokens, `FaultPlan` and `kv_conformance!`, and `loams-live` and `loams-pg-control` use it. `JobStore` stays a trait so the service can be tested against a fake. D214's TiKV requirement is unchanged | `crates/loams-kv/src/lib.rs`; `crates/loams-pg-control/Cargo.toml` | Low: a second backend could still be added behind the trait |
 | W2 | **`loams.jobs.v1` is generated in `loams-proto`**, not in a new `loams-jobs-proto` (D206). `loams-proto/build.rs` says new public packages go there and a package's types are generated once; GR1 and PG2 did the same. Live is the one exception, and it predates §44 | `crates/loams-proto/build.rs` header | None |
-| W3 | **The listener is `--jobs-listen 127.0.0.1:7720`** as D206 says, loopback-only until MT1. Q103 (own port or the main API port, as Graph does under D750) stays open; moving it later changes one flag and the adapters' default URL | `crates/loams/src/main.rs` (`--live-listen`), `server.rs` (Graph's loopback check) | Low |
-| W4 | **Pessimistic transactions are refused by `loams-kv` today** (`PESSIMISTIC_REFUSED`, row T21-15: no `get_for_update` yet). §26 §6.8 wants `lease` pessimistic. Task 5 builds `lease` optimistic with a randomized candidate window and conflict retries; Task 0 checks whether `get_for_update` has landed, and JB1-Q2 decides whether JB1 adds it | `crates/loams-kv/src/runner.rs` (`Mode::Pessimistic` doc) | Throughput on hot queues; measured by Task 18 |
+| W3 | **Amended by the Q103 ruling: jobs are served on the main API port (`--listen`, default `127.0.0.1:8080`), as Graph is under D750,** not on D206's `--jobs-listen 127.0.0.1:7720`. Before MT1, a non-loopback `--listen` with jobs enabled is refused unless `--no-jobs`. The adapters' default URL is `http://127.0.0.1:8080` | `crates/loams/src/main.rs` (`--live-listen`), `server.rs` (Graph's loopback check) | Low |
+| W4 | **Pessimistic transactions are refused by `loams-kv` today** (`PESSIMISTIC_REFUSED`, row T21-15: no `get_for_update` yet). §26 §6.8 wants `lease` pessimistic. **Amended by the JB1-Q2 ruling:** Task 5 adds `get_for_update` and pessimistic mode to `loams-kv` (shared with LV1) unless Task 0 finds it already landed, and `lease` is pessimistic per shard | `crates/loams-kv/src/runner.rs` (`Mode::Pessimistic` doc) | Throughput on hot queues; measured by Task 18 |
 | W5 | **Stream names cannot carry `/` or `:`**, and `_`-prefixed names are refused for users (`loams-meta` `validate_name`, `refuse_reserved`). The event stream of queue `q` is `_jobs.<q>` when `q` is stream-safe, else `_jobs.h<first 32 hex of sha256(q)>`. The name is stored in `QueueRec`, never recomputed. Task 13 adds an internal create path for reserved names | `crates/loams-meta/src/state/mod.rs:228-255` | None |
 | W6 | **Queue names are case-sensitive `[A-Za-z0-9._:-]{1,128}`**, not §26 §5.1's lower-case set, because BullMQ queue names are commonly camelCase and a drop-in import must not refuse them | BullMQ docs and examples | A rename at the API level if the owner prefers lower case (JB1-Q4) |
 | W7 | **The idempotency ledger is durable, in the job store** (`I/` keys, TTL 24 h), not `crates/loams/src/api/connect_idempotency.rs`'s per-process ledger, which says itself that a retry on another node is a fresh write. `Lease` is a mutation and has `idempotency_key` too: a retried `Lease` with the same key, while its leases are held, returns the same leases, so a lost answer does not strand jobs until their deadline | `connect_idempotency.rs` header | None |
@@ -76,7 +101,7 @@ The exit is the checklist at the end of this plan, with the owning tasks.
 | W10 | **D72's idempotent producers are not built** (no producer ids in `loams-log`). The relay writes at least once, every record carries its outbox sequence, and `watch` and the adapters drop duplicates by it, as §26 §6.6 anticipates | grep of `crates/loams-log` | None; Task 13 switches to the idempotent producer when D72 lands |
 | W11 | **Of §27 §3's producers, only the engine and the durable server exist.** There is no `loams-gateway`, no `loams-dapr`, no runtime supervisor, no `loams-runner` and no Envoy or Helm configuration in the repository. JB1 builds the contract (`loams-hooks`, the contract page and its conformance test), the engine's, the durable server's and the jobs service's families, the tenant-header layer and an Envoy access-log fragment. The gateway, Dapr, supervisor and Knative families are emitted by their own plans, against `loams-hooks` | `ls crates`, `ls deploy` | None |
 | W12 | **The engine has no organisation concept yet.** The `org` label is filled from `Ctx.principal`'s organisation once MT1/MT4 provide it; until then it is the constant `default` (JB1-Q6) | grep for `org` in `crates/loams/src`, `loams-common` | A relabel when MT4 lands |
-| W13 | **Per-function metric names disagree.** §27 §3.1 names `loams_function_*` with a `tier` label; D549 and RN1 Task 3 name `loams_runner_*` with a `runner` label. JB1 writes the contract with RN1's names (D549 is the later decision) and amends §27 §3.1 in Task 47, unless the owner rules otherwise (JB1-Q1) | §27 §3.1; D549; RN1 line 124 | A rename in RN1 or here |
+| W13 | **Per-function metric names disagree.** §27 §3.1 names `loams_function_*` with a `tier` label; D549 and RN1 Task 3 name `loams_runner_*` with a `runner` label. **Amended by the JB1-Q1 ruling:** function-keyed series are `loams_function_*` (labels `org`, `namespace`, `function`, `tier`, `runner`); `loams_runner_*` is only for a runner's own internals with no `function` label. RN1 Task 3 renames its three `MetricsObserver` families; Task 47 records the D549 amendment for the integrator | §27 §3.1; D549; RN1 line 124 | A rename in RN1 (not yet built) |
 
 ## Review Focus
 
@@ -305,7 +330,7 @@ pub trait EngineJobs { async fn submit_engine_job(&self, cx: &Ctx, job: EngineJo
 
 Steps:
 1. Answer each of the following and record the answer, with file paths, as a ruling:
-   - Are rulings W1–W13 still true at the current `dev`? In particular: has `loams-kv` gained `get_for_update` (W4)? Has LV1 Task 27 built the registry and admin listener, and on which address (W8)? Has D72 landed (W10)? Do `loams-gateway`, `loams-dapr`, `loams-runner` or a supervisor exist (W11)?
+   - Are rulings W1–W13 still true at the current `dev`? In particular: has `loams-kv` gained `get_for_update` (W4; if not, Task 5 adds it, and the LV1 owner is told before the PR)? Has LV1 Task 27 built the registry and admin listener, and on which address (W8)? Has D72 landed (W10)? Do `loams-gateway`, `loams-dapr`, `loams-runner` or a supervisor exist (W11)?
    - How does a crate create a stream with a reserved (`_`) name in process, and produce to it (`StreamProducer` in `loams-query/src/flight_ingest.rs`)? Name the existing caller to copy (a collection's implicit stream).
    - Does the embedded Resonate server at the fork pin serve `schedule.create` with a promise template, and does its cron parser take a time zone? Which group name does `DurableRuntime` register Loams' own functions under (`inproc://any@loams`, §21 §3.5)?
    - Which lease pattern to copy for the loops' owners: `loams-pg-control`'s `acquire_lease` over `loams-kv`, or `loams-meta-tikv/src/leases.rs`'s `check_fence`? If both fit, lift one into `loams-kv` only with the LV1 owner's agreement; otherwise copy into `loams-jobs/src/loops/owner.rs`.
@@ -313,7 +338,7 @@ Steps:
    - Which `kube` version does MT2/MT4 use, if any? Else the newest release at least 14 days old (needed from Task 48).
    - Python SDK: confirm `connect-python` 0.9.0 and `protoc-gen-connectrpc` 0.12.1 (§26 §12.1 says `connectrpc` 0.12.1 on PyPI). TypeScript: the package manager and workspace layout of `sdks/typescript/packages`.
    - Celery 5.6.x, kombu 5.6.x and BullMQ 6.3.x: still the latest patch on their minors? Record the pins.
-   - Owner answers, or the stated default, for Q101 (refuse `solar`), Q103 (W3: 7720), Q98 (no `LeaseStream` in JB1), JB1-Q1 to JB1-Q7 and Q-UH-1/Q-UH-2 (the defaults in "Open questions"). Whether the owner confirms §26's proposed details (D205, D207, D208, D210, D213, D214) before JB1a merges.
+   - The questions are settled in "Owner rulings 2026-10-10 (defaults)". Record only a code fact that contradicts a ruling, as a new ruling, and stop for the owner if it does.
 2. Commit `docs(jb1): task 0 rulings`.
 
 ## JB1a — The jobs core and service (Tasks 1–12)
@@ -387,10 +412,11 @@ Steps: tests first → embedded PASS → TiKV PASS → commit `feat(jobs): enque
 
 ### Task 5: Lease, extend, complete and report with fencing
 
-**Files:** `src/store/{lease.rs,complete.rs}`. Tests in the conformance macro.
+**Files:** `src/store/{lease.rs,complete.rs}`; and, unless Task 0 found it landed, `crates/loams-kv/src/{lib.rs,runner.rs,embedded.rs}` and `crates/loams-tikv` (pessimistic mode and `get_for_update`, JB1-Q2). Tests in the conformance macro and in `loams-kv`'s `kv_conformance!`.
 
 **Interfaces:**
-- `lease`: visits the requested queues in order and their shards in a rotating order; per shard, one optimistic transaction (W4) that scans the ready head (a candidate window of `min(4 × max, 256)` keys, a random subset chosen per worker), checks the bucket and the active counter, and moves up to `max` jobs to active with `epoch + 1` and a deadline by the store's clock (`Store::now`). On a write conflict it retries with a new window, at most 3 times, then returns what it has. Respects `names`, pauses, `expires` (an expired job is discarded with a `removed` event) and `timeout`.
+- **`loams-kv` first (JB1-Q2):** `Txn::get_for_update(key)` and `Mode::Pessimistic` on both backends (TiKV: `loams_tikv::Txn::get_for_update`; embedded: a per-key lock table with a 1 s wait that fails with `Conflict`). `PESSIMISTIC_REFUSED` and the case `pessimistic_mode_is_refused` are removed, which supersedes LV1's T21-15; the LV1 owner reviews the PR. New `kv_conformance!` cases: `get_for_update_blocks_concurrent_writer`, `pessimistic_read_modify_write_loses_no_update`, `pessimistic_lock_wait_times_out_as_conflict`.
+- `lease`: visits the requested queues in order and their shards in a rotating order; per shard, one pessimistic transaction that takes `get_for_update` on the shard's active counter (which serializes lessees of one shard without wasted work), scans the ready head, checks the bucket and moves up to `max` jobs to active with `epoch + 1` and a deadline by the store's clock (`Store::now`). A lock-wait timeout moves on to the next shard. Respects `names`, pauses, `expires` (an expired job is discarded with a `removed` event) and `timeout`.
 - `extend`: checks the epoch; never past `timeout`.
 - `complete`: checks the epoch, applies the `Outcome` per §26 §6.4, decrements the active counter, writes the result or error, the finished-state index, parent bookkeeping and the outbox row, in one transaction.
 - `report`: progress, a log line (capped, the oldest dropped), a data update.
@@ -410,6 +436,7 @@ Tests:
 - `paused_queue_leases_nothing`
 - `expired_job_is_discarded_not_run`
 - `lease_retry_same_key_returns_same_leases`
+- `hot_shard_leases_without_conflict_retries` (16 workers, one shard: zero aborted lease transactions)
 - `long_poll_wakes_on_enqueue` (service-level, with `wake.rs`'s notifier)
 
 Commit `feat(jobs): leases, completion and fencing`.
@@ -510,21 +537,22 @@ Embedded: 1,000 cases per PR; TiKV with faults: 200 cases per PR, 10,000 nightly
 **Interfaces:**
 - `JobsService` implements the generated trait over `Jobs`; `Ctx` from the transport (the loopback principal `local` until MT1).
 - `loams` feature `jobs = ["dep:loams-jobs"]`, not in `default`; `jobs-tikv = ["jobs", "tikv", "loams-jobs/tikv"]`.
-- Flags on `dev` and `standalone`: `--jobs-listen` (default `127.0.0.1:7720`, loopback-only check at startup), `--jobs-store` (`embedded` default on `dev`; `tikv://…` required on `standalone` and `cluster`), `--no-jobs`.
+- Served on the main API port (`--listen`) with the other Connect services (Q103 ruling). Flags on `dev` and `standalone`: `--jobs-store` (`embedded` default on `dev`; `tikv://…` required on `standalone` and `cluster`), `--no-jobs`.
 - `wake.rs`: one in-process notifier per `(ns, queue)`, fired by local enqueue and promote; across nodes, one shared poller per `(ns, queue)` per node while any lease waits (default every 200 ms).
 - The instance catalogue row for `loams.jobs.v1` (`available` when served).
 
 Tests:
 - `default_features_exclude_jobs` (`cargo tree -p loams -e normal`).
 - `standalone_refuses_embedded_store`.
-- `non_loopback_jobs_listen_refused`.
+- `non_loopback_listen_with_jobs_refused_before_mt1` (and accepted with `--no-jobs`), as Graph's `GraphListenNotLoopback`.
+- `jobs_served_on_main_api_port`.
 - `namespace_comes_from_ctx`: a request whose payload headers name another namespace is served in the caller's.
 - `connect_grpc_and_grpc_web_all_served`.
 - `lease_long_poll_returns_on_enqueue_within_50ms` and `lease_wait_capped_at_30s`.
 - `errors_carry_registered_reasons`.
 - `schedule_without_durable_is_durable_unavailable` (built without `durable`).
 
-Commit `feat(jobs): JobsService on the jobs listener`.
+Commit `feat(jobs): JobsService on the main API port`.
 
 ## JB1b — Events, `watch`, schedules, flows, TiKV and throughput (Tasks 13–18)
 
@@ -621,7 +649,7 @@ Commit `feat(jobs): tikv store under the fault plan`.
 
 Tests:
 - `bench_smoke` (PR CI, embedded store, 10 s): runs and writes a result file.
-- The bench run records numbers against §26 §6.9's estimate (2,000 leases/s at S = 1). Below it, the owner decides between JB1-Q2's options before JB1 claims a number in docs.
+- The bench run records numbers next to §26 §6.9's estimate (2,000 leases/s at S = 1) and publishes them, with the hardware, in `bench/results/jobs/README.md` and `docs/guides/jobs/semantics.md`. **The number is a published benchmark, not a gate** (JB1-Q2 ruling): no merge or GA waits on it, and the docs claim only what was measured.
 
 Commit `bench(jobs): lease throughput and hot keys`.
 
@@ -705,7 +733,7 @@ Commit `feat(celery): bindings, fanout and remote control`.
 
 **Files:** `integrations/celery/src/loams_celery/{beat.py,cli.py}`; entry point `celery.beat_schedulers: loams = loams_celery.beat:LoamsScheduler`; console script `loams-celery`. Tests `tests/test_beat.py`.
 
-**Interfaces:** `LoamsScheduler` upserts every `beat_schedule` entry as a schedule (id = entry name) on start and on change; `crontab` → cron, `timedelta` → `every`; `solar` and custom schedule classes refused with a message (Q101 default). `loams-celery sync-schedules <app>` does the same from CI.
+**Interfaces:** `LoamsScheduler` upserts every `beat_schedule` entry as a schedule (id = entry name) on start and on change; `crontab` → cron, `timedelta` → `every`; `solar` and custom schedule classes refused with a message (Q101 ruling). `loams-celery sync-schedules <app>` does the same from CI.
 
 Tests:
 - `beat_twice_no_duplicate_ticks`
@@ -808,7 +836,7 @@ Commit `feat(bullmq): python backend`.
 
 **Files:** create `crates/loams-hooks/` (`src/{lib.rs,families.rs,labels.rs}`, `tests/contract.rs`) and `docs/api/usage-hooks-v1.md`.
 
-**Interfaces:** the shared contract's `CONTRACT`, `FAMILIES`, `labels`. The page lists every family (name, kind, unit, labels, owner, per-namespace or not), the cgroup layout, the pod labels, the tenant header and the access-log fields, with rules modelled on `reasons.md`: within v1 a name or label is never renamed or removed; additions are allowed; a removal is v2 (Q-UH-2 default). `loams-hooks` has no dependency outside `std` except `http` (Task 39).
+**Interfaces:** the shared contract's `CONTRACT`, `FAMILIES`, `labels`. The page lists every family (name, kind, unit, labels, owner, per-namespace or not), the cgroup layout, the pod labels, the tenant header and the access-log fields, with rules modelled on `reasons.md`: within v1 a name or label is never renamed or removed; additions are allowed; a removal is v2 (Q-UH-2 ruling). `loams-hooks` has no dependency outside `std` except `http` (Task 39).
 
 Tests:
 - `contract_page_matches_families`: parses the page's tables and compares them with `FAMILIES`, both ways.
@@ -822,7 +850,7 @@ Commit `feat(hooks): usage-hooks contract v1`.
 
 **Files:** `crates/loams/src/metrics.rs` (W8), `crates/loams-hooks/src/active.rs`, `crates/loams/src/{main.rs,server.rs}`. Tests `crates/loams/tests/metrics.rs`, `crates/loams-hooks/tests/active.rs`.
 
-**Interfaces:** the registry and admin listener per LV1 Task 27 (or reused). `ActiveNamespaces { cap: 10_000, idle_ttl: 15 min }`: a node exports a per-namespace series only for namespaces active on it; an idle namespace's series are removed after the TTL; past the cap the least recently active are evicted and `loams_hooks_namespaces_evicted_total` counts it. Flags: `--metrics-per-namespace prometheus|otlp|off` (default `prometheus`), `--otlp-endpoint`; with `otlp`, per-namespace families are exported as OTLP metrics with delta temporality and omitted from `/metrics` (Q-UH-1 default: both, configurable).
+**Interfaces:** the registry and admin listener per LV1 Task 27 (or reused). `ActiveNamespaces { cap: 10_000, idle_ttl: 15 min }`: a node exports a per-namespace series only for namespaces active on it; an idle namespace's series are removed after the TTL; past the cap the least recently active are evicted and `loams_hooks_namespaces_evicted_total` counts it. Flags: `--metrics-per-namespace prometheus|otlp|off` (default `prometheus`), `--otlp-endpoint`; with `otlp`, per-namespace families are exported as OTLP metrics with delta temporality and omitted from `/metrics` (Q-UH-1 ruling: both, capped).
 
 Tests:
 - `active_namespace_cap_bounds_series`
@@ -919,7 +947,7 @@ Commit `feat(hooks): conformance kit for producers`.
 
 **Files:** `crates/loams-jobs/src/authz.rs`, `crates/loams/src/server.rs`. Tests `tests/authz.rs`. Needs MT1 on `dev`.
 
-**Interfaces:** actions `jobs:enqueue`, `jobs:consume`, `jobs:admin`, `jobs:schedule`, `jobs:engine` (D213), checked per queue; an agent policy may grant `jobs:enqueue` on one queue (§19 §5.1). `Ctx.principal` from MT1's verifier. With MT1, `--jobs-listen` may bind non-loopback when TLS and auth are configured (MT1 Task 7's rule). The adapters pass the token as a bearer header.
+**Interfaces:** actions `jobs:enqueue`, `jobs:consume`, `jobs:admin`, `jobs:schedule`, `jobs:engine` (D213), checked per queue; an agent policy may grant `jobs:enqueue` on one queue (§19 §5.1). `Ctx.principal` from MT1's verifier. With MT1, `--listen` may bind non-loopback with jobs enabled when TLS and auth are configured (MT1 Task 7's rule, as for Graph). The adapters pass the token as a bearer header.
 
 Tests: `consume_token_cannot_lease_other_queue`, `enqueue_only_agent_cannot_admin`, `other_namespace_token_sees_not_found`, `lease_token_useless_across_namespaces`, `non_loopback_requires_tls_and_auth`, `celery_and_bullmq_send_bearer_token`.
 
@@ -981,7 +1009,7 @@ Commit `docs(jobs): threat model and security tests`.
 - `docs/guides/jobs/{semantics.md,celery.md,bullmq.md,durable-mode.md}`: §26 §6.1's wording on delivery, the migration steps, the documented differences (mingle, gossip, early-ack chord counts, retention by time for events);
 - `docs/runbooks/jobs/{stuck-queue.md,dlq.md,relay-lag.md,tikv-hot-key.md,erase.md}`;
 - `docs/api/route-map.md`; remove `unstable: true` and the `buf.yaml` ignore at GA so `buf breaking` protects the package;
-- §26 (as built: W1, W2, W5, W6, W7, W9), §27 §3.1 (W13, after JB1-Q1), §27 §6 (Q-UH-1, Q-UH-2 answers);
+- §26 (as built: W1–W7, W9, and the details accepted as amended under JB1-Q5), §27 §3.1 (W13: keep `loams_function_*`, add the `runner` label, and state the naming rule), §27 §3.7 (the open observer exports `loams_function_*`), §27 §6 (Q-UH-1, Q-UH-2 rulings); a note for the integrator that D549's `loams_runner_*` names are amended by JB1-Q1;
 - the "consumes" lines in RN1, F1's plan when written, MT2 (Task 38, Task 40);
 - `docs/plans/README.md` (a JB1 row under a new "Track J" heading) and `docs/design/12-roadmap-testing-risks.md`.
 
@@ -1005,7 +1033,7 @@ Commit `feat(engines): engine-runner framework`.
 
 **Files:** `crates/loams-jobs-engines/src/sail.rs`, `deploy/engines/sail/`. Tests `tests/sail.rs` (local process; kind in `jb1-engines.yml`).
 
-**Interfaces:** one Sail server per namespace (Q96 default): a child process in dev (`sail spark server --port <p>`), a `kubernetes-cluster` mode Deployment in cloud, scaled to zero after 15 min idle and started on first connection; its Iceberg REST catalog points at Lakekeeper with credential vending. Sail 0.7.1 pinned by digest.
+**Interfaces:** one Sail server per namespace (Q96 ruling): a child process in dev (`sail spark server --port <p>`), a `kubernetes-cluster` mode Deployment in cloud, scaled to zero after 15 min idle and started on first connection; its Iceberg REST catalog points at Lakekeeper with credential vending. Sail 0.7.1 pinned by digest.
 
 Tests: `sail_starts_on_demand`, `sail_scales_to_zero_after_idle`, `pyspark_examples_pass_on_sail` (§17's examples), `iceberg_written_by_sail_reads_in_loams` (gate M4), `format_loams_source_works` (gate M2).
 
@@ -1035,7 +1063,7 @@ Commit `feat(engines): spark batch jobs and spark check`.
 
 **Files:** `crates/loams-jobs-engines/src/spark_fallback.rs`, `deploy/engines/spark-fallback/`. Tests `tests/spark_fallback.rs` (kind).
 
-**Interfaces:** per Q104's answer (default: Loams-managed): an Apache Spark 4 Spark Connect server per namespace (port 15002) and `SparkSubmit` through the Kubeflow Spark Operator, both reading Lakekeeper's tables.
+**Interfaces:** per the Q104 ruling (Loams-managed): an Apache Spark 4 Spark Connect server per namespace (port 15002) and `SparkSubmit` through the Kubeflow Spark Operator, both reading Lakekeeper's tables.
 
 Tests: `sail_unsupported_job_runs_on_fallback_unchanged`, `rdd_job_runs_via_spark_operator`, `fallback_reads_same_iceberg_tables` (gate M4).
 
@@ -1045,7 +1073,7 @@ Commit `feat(engines): apache spark fallback`.
 
 **Files:** `crates/loams-jobs-engines/src/risingwave.rs`, `deploy/engines/risingwave/`. Tests `tests/risingwave.rs`.
 
-**Interfaces:** `StreamingSql { engine: RisingWave, statements }`: a durable workflow applying the statements in order on the namespace's RisingWave database (Q96 default: shared cluster, one database per namespace, dedicated cluster above a size threshold), idempotent by statement hash per step. Arroyo is documented only (Q95 default).
+**Interfaces:** `StreamingSql { engine: RisingWave, statements }`: a durable workflow applying the statements in order on the namespace's RisingWave database (Q96 ruling: shared cluster, one database per namespace, dedicated cluster above a size threshold this task measures and records), idempotent by statement hash per step. Arroyo is documented only (Q95 ruling).
 
 Tests: `statements_applied_once_across_replays`, `ported_flink_sql_example_matches_flink_output`, `namespace_database_isolated`.
 
@@ -1091,26 +1119,7 @@ Commit `docs(engines): spark and flink guides and gates`.
 
 ## Open questions
 
-| # | Question | Default if unanswered | Needed by |
-|---|---|---|---|
-| Q103 | The jobs listener on its own port (`7720`) or on the main API port (as Graph, D750) | `7720` (W3) | Task 12 |
-| JB1-Q1 | Per-function family names: `loams_runner_*` (D549, RN1) or `loams_function_*` (§27 §3.1) | RN1's names; §27 §3.1 amended (W13) | Task 33 |
-| JB1-Q2 | Lease concurrency on hot queues: JB1 adds `get_for_update` and pessimistic mode to `loams-kv` (shared with LV1, row T21-15), or optimistic windows only; and whether §26 §6.9's 2,000 leases/s at S = 1 is a gate or a published number | Optimistic windows (W4); the number is published, not gated | Tasks 5, 18 |
-| JB1-Q3 | The per-shard outbox sequence is one key written by every state change on the shard, so it serializes a shard's writes. Accept it (shards scale it), or order the outbox by commit timestamp with a resolved-ts read bound | Accept; Task 18 measures | Task 13 |
-| JB1-Q4 | Queue names case-sensitive with `:` (W6), deviating from §26 §5.1 | W6 | Task 2 |
-| JB1-Q5 | Owner confirmation of §26's proposed details (D205, D207, D208, D210, D213, D214); the direction is approved, the details are proposals | Build to §26 as written; any change reopens the affected task | Before JB1a merges to `dev` |
-| JB1-Q6 | The `org` label before MT4 provides organisations | The constant `default` (W12) | Task 35 |
-| JB1-Q7 | Large payload transport: server-streamed `GetBlob` (W9) or presigned object-store URLs | `GetBlob`; presigning later | Task 8 |
-| Q-UH-1 | Per-namespace cardinality: OTLP delta only, or Prometheus limited to active namespaces | Both, chosen by `--metrics-per-namespace`, with the active-namespace cap | Task 34 |
-| Q-UH-2 | How the hooks contract is versioned, and where its conformance tests live | `docs/api/usage-hooks-v1.md` + `loams-hooks` + the kit (Tasks 33, 40) | Task 33 |
-| Q-UH-3 | The final cgroup reading for T2 pods the kubelet removes | Not in JB1 (F2's plan); `pod_labels` only | F2 plan |
-| Q98 | A server-streamed `LeaseStream` | Not in JB1 | After Task 18 |
-| Q99 | Strict per-key ordering (FIFO groups) | Out of scope | After J2 |
-| Q101 | Celery `solar` and custom schedule classes | Refused with a message | Task 24 |
-| Q102 | Loams-hosted Celery and BullMQ workers | User processes in JB1 | Doc 24 |
-| Q95 | Arroyo as a managed engine | Documented only | Task 53 |
-| Q96 | Engine tenancy: Sail per namespace; RisingWave shared with a database per namespace or per-namespace clusters | Sail per namespace; RisingWave shared below a threshold | Tasks 49, 53 |
-| Q104 | The Spark fallback Loams-managed or documented only | Loams-managed | Task 52 |
+None needs the owner. Every question this plan carried (Q95, Q96, Q98, Q99, Q101–Q104, JB1-Q1 to JB1-Q7, Q-UH-1 to Q-UH-3) is settled in "Owner rulings 2026-10-10 (defaults)" near the top. A question that a later task finds involves money, a licence or an external account is added here, not ruled by an agent.
 
 ## Self-review
 
@@ -1145,7 +1154,7 @@ Commit `docs(engines): spark and flink guides and gates`.
 - **Types.** `Jobs`, `JobStore`, `LeaseToken`, `JobsError`, the key layout, the event record, the hooks contract and `EngineRunner` are defined once, in the shared contracts.
 - **Review Focus.** Items 1–12 each name an owning test (Tasks 1, 5, 9, 11, 12, 14, 15, 17, 21, 22, 24, 34, 37, 39, 41, 44, 46, 48, 50).
 - **Not built here, by design.** The per-invocation record and reporter (`loams-platform`), `InvocationObserver` (RN1), the supervisor (F1), `KnativeRunner` (MT2), `loams-gateway` and `loams-dapr`.
-- **Decisions the owner must make before the tasks that need them:** JB1-Q5 (before JB1a merges), Q103 and JB1-Q4 (Tasks 2, 12), JB1-Q2 (after Task 18), JB1-Q1 (Task 33), Q96 and Q104 (JB1g).
+- **Decisions the owner must make:** none; every question is settled in "Owner rulings 2026-10-10 (defaults)".
 
 ## Rulings made during execution
 

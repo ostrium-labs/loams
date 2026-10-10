@@ -61,6 +61,30 @@ The exit is "Exit criteria for production" at the end of this plan, with the tas
 - The product plans, at their current rulings: [PG2](2026-10-08-pg2-postgres-production.md) (Task 0 rulings 3–5, R1.7, R5.x; Tasks 9, 47, 48), [SQ1](2026-10-08-sq1-loams-sql-tidb.md) (Tasks 11, 14, 25), [GR1](2026-10-08-gr1-graph-production.md) (Tasks 24, 25), [HS1](2026-10-08-hs1-house-production.md) (Tasks 20, 22, 26), [LV1](2026-10-08-lv1-live-production.md) (Task 28).
 - [§44](../design/44-unified-api-and-sdks.md) §4–§7 (API rules); [open-core.md](../open-core.md); MT1, MT2, MT3 and NET1 as planned.
 
+## Owner rulings 2026-10-10 (defaults)
+
+The owner asked for the best default on every question that does not need money, a legal choice or an external account. These rulings settle them; the tasks below are written to them. The decision log is not edited here: the integrator copies these rows when it numbers the CPQs. Only Q544, Q557 and Q593 stay open (see "Open questions").
+
+| # | Question | Ruling | Reason |
+|---|---|---|---|
+| CPQ1 | Namespace identity | **Key everything by `NamespaceId`**: product records, Kubernetes namespaces (`loams-<p>-<nsid>`), keyspace maps, PgDog databases, bucket prefixes. Amends §41's `loams-ns-<namespace>` and §46's `loams-pg-<ns>`. **PG2 re-keys its store before GA** (cross-track note, Task 8) | Names are unique only per org and change on rename; the id is the only key that cannot collide |
+| CPQ2 | Extract or copy `pg-control`'s store | **Extract into `loams-ctlstore`, after PG2 Task 7 lands** (reconcilers and the fenced project lease); no copy fallback | Task 7 is the last PG2 task that reshapes the store; extracting after it avoids a moving target and one shared store is cheaper than two |
+| CPQ3 | The agent as the only hub client | **Yes.** Every cluster, managed or BYOC, runs the agent as its only link to the hub, and keeps a signed local copy of the directory that gateways and products read | The data path survives a hub outage and no product holds a hub credential |
+| CPQ4 | House per-query events | **A private link-time observer, like `pg-control`'s `ComputeLifecycleObserver`.** HS1 Task 22 keeps quotas and drops the open event path (cross-track note, Task 11) | D548 moved the event contract to `loams-platform`; one pattern across products keeps the open code free of metering |
+| CPQ5 | `loams-operator` | **Create it now** with only the `LoamsNamespace` controller; MT2 adds Knative tenancy to the same crate | Onboarding cannot wait for the D185 fork |
+| CPQ6 | SQL runtime objects | **Per namespace, `loams-sql-<nsid>`** | Same isolation, RBAC and NetworkPolicy shape as every other product |
+| CPQ7 | Tailnet tags | **`tag:byoc-<org>` per org, per-cluster hostnames.** `tailnet.max_tagged_nodes` is config, default 45 while the tailnet is on the Personal plan (the plan itself is Q593) | Matches §43; the cap only guards the plan limit and moves with Q593 |
+| CPQ8 | Policy renderer | **Rust only** (CP-R9); NET1 Task 2's Python is dropped and its goldens kept | One renderer; the hub image has no Python |
+| CPQ9 | `fabric/` path dependency on `loams-tenancy` | **Yes**, types only | The House needs the same contract without a proto dependency |
+| CPQ10 | Hub packaging | **A role of `loams`** (CP-R3) | Same shape as `pg-control`; splitting later is packaging only |
+| Q542 | Service credentials | **mTLS plus an attenuated Biscuit** | mTLS proves the workload; the Biscuit scopes what it may do and can be narrowed per call |
+| Q556 | Commit signing | **SSH signing, verified by Argo CD `signatureKeys`** | No GPG keyring to run; SSH keys are already how the bot pushes |
+| Q559 | Ring mechanism | **One `ApplicationSet` per ring.** `RollingSync` may replace it later only by a new ruling | Works on every Argo CD version; `RollingSync` is still progressive-sync alpha territory |
+| Q588 | Support grants | **Customer enables, default TTL 4 h (max 24 h), no session recording in v1** | The customer holds the switch; recording needs a paid tailnet feature and a retention policy |
+| Q590 | Agent paths in tailnet mode | **Both, tailnet preferred, public name as fallback** | A tailnet outage must not cut the agent off |
+| Q591 | Headscale API keys | **Accept 90-day keys, reachable only on the tailnet or loopback, rotated at 60 days** | Headscale has no scoped keys; reachability and rotation bound the risk |
+| Q592 | `loams-net` location | **In this repository** | It is open code the hub and the CLI both call |
+
 ## Global Constraints
 
 - **Worktree and branches.** Work in `~/Documents/Ostriumlabs/loams-wt/cp1-control-plane`. Use one branch per milestone, `feat/cp1a-tenancy`, `feat/cp1b-hub`, `feat/cp1c-product-fit`, `feat/cp1d-gitops`, `feat/cp1e-byoc`, `feat/cp1f-rings` and `feat/cp1g-ops`, each based on `dev`, with stacked PRs targeting `dev`. A product-fit task (8–12) may instead land on the product's own branch if that product's coordinator asks; record which. Use `git commit -s` (DCO). Commit areas: `control`, `tenancy`, `ctlstore`, `gitops`, `operator`, `byoc`, `net`, `pg`, `sqldb`, `graph`, `house`, `live`, `console`, `cli`, `deploy`, `ci`, `docs`.
@@ -85,7 +109,7 @@ The exit is "Exit criteria for production" at the end of this plan, with the tas
 | CP-R1 | **Protos go into `loams-proto`'s `FILES` list** (`proto/loams/control/v1/*.proto`, `proto/loams/tenancy/v1/tenancy.proto`); there is no `loams-control-proto` crate (amends MT4 Ruling 1) | The as-built convention (PG2 Task 0 ruling 2) | A later split is mechanical |
 | CP-R2 | **AP0's `idempotency_key = 15`**, not MT4's `client_token` | One rule across the API (§44) | None; nothing is built on `client_token` |
 | CP-R3 | **The hub is a role, `loams control`, of the `loams` binary behind the feature `control`**; `loams-byoc-agent` is its own small binary and image | The same shape as `pg-control` (PG2 Task 9); the agent must be small and hold no engine | Splitting the hub out later is a packaging change (CPQ10) |
-| CP-R4 | **The control store is `pg-control`'s fenced store, extracted** into `crates/loams-ctlstore` (generic over `Record`, local redb and TiKV backends, one conformance suite, `IdempotencyLedger`). `pg-control` re-exports it under its existing names, so PG2's code and tests do not change | It is the only built, conformance-tested, fenced control store in the tree; the M2 `ControlStore` does not exist. SQ1's unbuilt `store/` can adopt it | A conflict with PG2's in-flight branches; fallback is a copy (CPQ2) |
+| CP-R4 | **The control store is `pg-control`'s fenced store, extracted** into `crates/loams-ctlstore` (generic over `Record`, local redb and TiKV backends, one conformance suite, `IdempotencyLedger`) after PG2 Task 7 lands. `pg-control` re-exports it under its existing names, so PG2's code and tests do not change | It is the only built, conformance-tested, fenced control store in the tree; the M2 `ControlStore` does not exist. SQ1's unbuilt `store/` can adopt it | A conflict with PG2's in-flight branches, avoided by waiting for PG2 Task 7 (CPQ2) |
 | CP-R5 | **Every cluster runs the agent**, managed or BYOC. It is the only hub client in a cluster: it mirrors the signed, cluster-scoped directory into the cluster's control store, and gateways and products read it locally. `SetLimits` (§41 §7.2) becomes `ApplyDirectory`, which carries limits under the same signature rule | One path for status and limits; the hub never reads Kubernetes; the data path survives a hub outage; no product holds a hub credential | Mirror latency of one heartbeat interval (CPQ3) |
 | CP-R6 | **Product Kubernetes namespaces are `loams-<p>-<nsid>`**, where `<p>` is `ns` (functions and Knative, D443), `pg`, `sql` or `house`, and `<nsid>` is the `NamespaceId` as 13 lowercase Crockford base32 characters. Labels carry `loams.dev/org`, `loams.dev/namespace` (the id), `loams.dev/namespace-name` and `loams.dev/product` | §41's `loams-ns-<namespace>` and §46's `loams-pg-<ns>` collide across orgs (names are unique only per org) and break on rename | Renames in PG2 Task 48 and SQ1 Task 14 before they ship (CPQ1) |
 | CP-R7 | **Products key namespace-owned records by `NamespaceId`.** Product APIs keep a `namespace` string field, which is a name within the caller's org (or the id in decimal). The product resolves it through `Directory::resolve` before any store access | Cross-org isolation; rename safety | PG2 re-keys `x/<ns>/…` and `Q/n/<ns>/…` before GA (Task 8) |
@@ -334,7 +358,7 @@ pub trait AuditSink: Send + Sync + 'static { fn emit(&self, e: AuditEvent); } //
 ## Execution order
 
 1. Task 0.
-2. **CP1a** (Tasks 1–4). Task 2 is scheduled with PG2's coordinator, because it moves code out of `loams-pg-control`.
+2. **CP1a** (Tasks 1–4). Task 2 starts only after PG2 Task 7 (reconcilers and the fenced project lease) has merged to `dev` (CPQ2), and is scheduled with PG2's coordinator, because it moves code out of `loams-pg-control`. Tasks 1, 3 and 4 do not wait for it.
 3. **CP1b** (Tasks 5–7).
 4. **CP1c** (Tasks 8–12) after Tasks 3 and 7. Each runs beside its product's plan, as soon as that product has a store and an admission path: PG2 is ready now, SQ1 after its Task 11, GR1 now, HS1 after its Task 20, LV1 after its Task 21.
 5. **CP1d** (Tasks 13–17) after CP1b. Task 15 needs `loams-operator` (CP-R10).
@@ -351,7 +375,7 @@ pub trait AuditSink: Send + Sync + 'static { fn emit(&self, e: AuditEvent); } //
 Steps:
 1. Answer each of the following and record the answer, with file paths, as a ruling:
    - What is merged of MT1 (OpenFGA model, Authentik verifier), MT2 (`loams-operator`), MT3 (waves, Argo CD version, `deploy/helm/loams-stack`) and RN1 Task 3 (`InvocationObserver`)? Each absent item keeps this plan's fallback (Task 3's `RbacAuthorizer`, CP-R10, Task 28's standalone charts).
-   - `pg-control`'s store as of `dev`: is `crates/loams-pg-control/src/store` still generic over `Record`, and which PG2 branches touch it? Agree the Task 2 window with PG2's coordinator, or record the fallback (copy, CPQ2).
+   - `pg-control`'s store as of `dev`: is `crates/loams-pg-control/src/store` still generic over `Record`, and which PG2 branches touch it? Confirm PG2 Task 7 has merged and agree the Task 2 window with PG2's coordinator (CPQ2: extract, no copy).
    - The namespace identity of each product as built: `pg-control` keys (`x/<ns>/`, `Q/n/<ns>/`), `loams-sqldb` (`m/<ns u64 BE>`), `loams-graph` (the metastore namespace), `loams-house` (`Bind`'s namespace id), Live (`loams_live_system` `apps/<id>`). List every place a bare name is used as a key.
    - The free key prefixes in `loams-meta-tikv/src/keys.rs` and `loams-pg-control/src/model.rs`; confirm `cp/` and `e/cp/` are free.
    - Argo CD at the pinned version: `ApplicationSet` progressive sync (`RollingSync`) status (Q559, **(verify)**); commit signature verification (GPG, SSH, gitsign) and `signatureKeys` (Q556).
@@ -363,7 +387,7 @@ Steps:
    - The §43 pins: Headscale v0.29.4 and `tailscale/tailscale` v1.102.5 digests, and whether a tagged Tailscale device has key expiry disabled by default (**(verify)**, §43 §8.2).
    - Whether `fabric/` can take a path dependency on `crates/loams-tenancy` without pulling `loams-common` (CPQ9).
    - The CLI's home: `crates/loams/src/main.rs` subcommands, or a CLI crate if one now exists.
-2. Record defaults for Q540–Q559 and the carried §43 questions where no owner answer exists, as MT4 Task 0 would have.
+2. The CPQs and the carried questions are settled in "Owner rulings 2026-10-10 (defaults)". Record defaults only for the remaining Q540–Q559 rows that ruling table does not cover, and record any verify result above that contradicts a ruling as a new ruling, not a silent change.
 3. Commit `docs(cp1): task 0 rulings`.
 
 ## CP1a — The tenancy contract and the control store (Tasks 1–4)
@@ -485,7 +509,7 @@ Commit `feat(control): control records, outbox and audit`.
 - `CreateNamespace` writes `NamespaceRec{state: Provisioning}` and the outbox row, and returns an `Operation` that completes when Task 15's status shows every enabled product `Ready` on every placed cluster.
 - Caps: per-principal token buckets on `CreateOrg` and `CreateNamespace`, a per-deployment org cap and `namespaces_per_org`. All are refused with `tenant_cap_reached`. If the store is unavailable, creation is refused (fail closed).
 - Authorization through `Authorizer` on every call, against the object named. The operator view's calls need `deployment#operator`.
-- Service credentials: mTLS plus an attenuated Biscuit when Q542 is answered that way; mTLS alone until then (Task 0 records it).
+- Service credentials: mTLS plus an attenuated Biscuit (Q542 ruling). The Biscuit is minted by the hub, attenuated to the caller's principal and the called object, and checked after the mTLS identity; mTLS alone is refused for a mutation.
 - gRPC reflection lists only served services (as PG2 R1.4).
 
 Tests:
@@ -565,6 +589,7 @@ Each task here is small and has the same shape: admission through `Directory::re
   - `erase` runs `DeleteProject` for every project of the namespace, waits for each erasure receipt (§46 §6), and returns one combined receipt;
   - `enforcement` reports projects, total CU and connections.
 - `kube_namespace(Postgres, id)` replaces `KubeRuntime::namespace_for` (PG2 Task 13).
+- **Cross-track note for PG2 (CPQ1):** PG2 re-keys its store by `NamespaceId` before GA. PG2's coordinator adds a PG2 task for it (or folds it into PG2 Task 13) and runs `migrate-namespace-keys` in PG2's pre-GA checklist; this task supplies the migration and its test.
 
 Tests:
 - `inactive_namespace_refused_pg`
@@ -618,7 +643,8 @@ Commit `feat(graph): plug loams-graph into the tenancy contract`.
 - The `house` limits section; `202` for rate and concurrency, `house_quota_exceeded` for volume (§49 §15).
 - Authorization types `house_database` and `house_table`.
 - `TenancyParticipant`: `erase` drops the namespace's lake tables, `_house.query_log` partitions and snapshots (past retention is not kept for an erased namespace); `enforcement` reports concurrent queries and scanned bytes per day.
-- **The adapter emits no events.** §49 §15's per-query events stay where HS1 puts them, pending CPQ4. The adapter never reads or forwards them.
+- **The adapter emits no events.** Per CPQ4, §49 §15's per-query events go through a private link-time observer in `loams-house` (the `pg-control` `ComputeLifecycleObserver` pattern), with a no-op default in the open build. The adapter never reads or forwards them.
+- **Cross-track note for HS1 Task 22:** keep quotas, drop the open event path, add the private observer seam. HS1's coordinator records it as an HS1 ruling.
 
 Tests: `inactive_namespace_refused_house`, `quota_source_from_limits`, `erase_drops_lake_tables_and_query_log`, `house_tenancy_adapter_emits_no_events` (a compile-time field list and a search of the module for the event names).
 
@@ -690,7 +716,7 @@ Commit `feat(gitops): the tenants-repository writer`.
 
 ### Task 15: The `ApplicationSet` and the operator's namespace reconcile
 
-**Files:** `deploy/gitops/appset-tenants.yaml`; `crates/loams-operator/src/{lib.rs,namespace.rs,participants.rs,rbac.rs}` (CP-R10). Tests: `crates/loams-operator/tests/{namespace.rs,golden/}` and `tests/it_k3d.rs` (ignored by default).
+**Files:** `deploy/gitops/appset-tenants.yaml`; create `crates/loams-operator/` now with `src/{lib.rs,namespace.rs,participants.rs,rbac.rs}` (CP-R10, CPQ5 ruling: do not wait for MT2). Tests: `crates/loams-operator/tests/{namespace.rs,golden/}` and `tests/it_k3d.rs` (ignored by default).
 
 **Interfaces:**
 - `ApplicationSet`: a Git directory generator over `tenants/*` and a cluster generator matrixed with `clusters.yaml`. Sync is automated with `prune: true` and `selfHeal: true`, `PrunePropagationPolicy=foreground`, and the resources finalizer (MT4 Ruling 4).
@@ -822,7 +848,7 @@ Commit `feat(byoc): air-gapped bundles`.
   }
   ```
 - `TailscaleClient`: API v2, an OAuth client with the scopes `auth_keys`, `devices` and `policy_file` only; `POST …/keys` with tags, `reusable: false` and a short expiry; ACL with ETag, `acl/validate` first.
-- `HeadscaleClient`: `/api/v1`, a bearer API key from `SecretFile`, reachable only on the tailnet or loopback (Q591). In `file` mode `apply_policy` commits through `GitRemote` to the policy repository; in `database` mode it calls the API's policy write (Q589).
+- `HeadscaleClient`: `/api/v1`, a bearer API key from `SecretFile`, reachable only on the tailnet or loopback, with a 90-day key rotated at 60 days and an alert at 75 (Q591 ruling). In `file` mode `apply_policy` commits through `GitRemote` to the policy repository; in `database` mode it calls the API's policy write (Q589).
 - `PolicyChecker`: `TailscaleApiChecker` (validate), and `HeadscaleCliChecker`, which runs NET1 Task 1's `check.sh` (seeded scratch database) as a subprocess with argument arrays.
 - `policy::render_tenant_section(base, tenants, support_grants, now) -> String`, between NET1's markers:
   - per tenant, its tag, a grant to `tag:control` tcp 443, and unexpired support grants;
@@ -852,8 +878,8 @@ Commit `feat(net): NetProvider, both clients, checker and the tenant renderer`.
 - `UpdateCluster{net.mode = TAILNET}` re-renders the tenant section and applies it through `NetProvider`. `CreateEnrolment` on such a cluster also returns a single-use join key (`tag:byoc-<org>`, 1 hour), once.
 - Capacity: past `tailnet.max_tagged_nodes` (default 45, under the Personal plan's 50; Q593) enrolment in tailnet mode is refused with `tailnet_capacity`.
 - The chart's values follow §43 §6.4: `net.mode`, `net.provider`, `net.loginServer` and `net.authKeySecret`. There is a userspace `tailscaled` sidecar, with no `NET_ADMIN`. `--login-server` is set only when `loginServer` is set, and `--advertise-tags` only when it is not (§43 §6.5).
-- The agent prefers the hub's tailnet name and falls back to the public name (Q590 default: both).
-- Support grant (Q588): the customer sets `net.supportGrant.enabled` and a TTL (default 4 hours) in their values. The agent reports the request. The hub renders the grant with its expiry, and a reconciler removes it at expiry.
+- The agent prefers the hub's tailnet name and falls back to the public name (Q590 ruling: both).
+- Support grant (Q588 ruling): the customer sets `net.supportGrant.enabled` and a TTL (default 4 hours, at most 24; longer is refused by the values schema) in their values. No session recording in v1. The agent reports the request. The hub renders the grant with its expiry, and a reconciler removes it at expiry.
 - Offboarding the last cluster of an org revokes the tag's nodes and removes the section. Revoking a cluster deletes its node.
 
 Tests:
@@ -914,7 +940,7 @@ Commit `feat(control): releases carry every product`.
 
 **Interfaces:**
 - Channels `canary`, `early` and `stable`, one release-repository branch each.
-- Rings 0–2 and the BYOC window ring (§41 §8.1). Clusters are labelled `loams.dev/ring`. There is one `ApplicationSet` per ring (the fallback, Q559), unless Task 0 found `RollingSync` stable.
+- Rings 0–2 and the BYOC window ring (§41 §8.1). Clusters are labelled `loams.dev/ring`. There is one `ApplicationSet` per ring (Q559 ruling).
 - Gates are Argo CD PostSync Jobs in the release. Their results reach the hub through the agent as `GateResultRec`s:
   - `argo-healthy`, `e2e-smoke`, `conformance-collections` (D60, D63);
   - `pg-smoke` (`CreateProject` → `StartEndpoint` → `SELECT 1` through PgDog);
@@ -1091,32 +1117,15 @@ Commit `docs(control): CP1 exit gate, runbooks and status`.
 
 ## Open questions
 
-New questions are labelled CPQ1 to CPQ10 until the integrator numbers them in the decision log. Carried questions keep their numbers.
+Everything else is settled in "Owner rulings 2026-10-10 (defaults)". These three need the owner, because they are a legal choice, money or an external account.
 
-| # | Question | Default | Owner | Needed by |
+| # | Question | Default until answered | Owner | Needed by |
 |---|---|---|---|---|
-| CPQ1 | **Namespace identity.** Key every product's namespace-owned records, and name Kubernetes namespaces, by `NamespaceId` (`loams-<p>-<nsid>`), amending §41's `loams-ns-<namespace>` and §46's `loams-pg-<ns>` (CP-R6, CP-R7)? This re-keys `pg-control`'s `x/<ns>/` and `Q/n/<ns>/` before GA | Yes | Owner + PG2, SQ1 | Before Task 8; before PG2 Task 13 ships |
-| CPQ2 | Extract `pg-control`'s store into `loams-ctlstore` and share it (CP-R4), or copy it | Extract, timed with PG2 | Eng + PG2 | Task 2 |
-| CPQ3 | Every cluster runs the agent, and the agent is the only hub client, mirroring the directory locally (CP-R5); `SetLimits` becomes `ApplyDirectory` | Yes | Eng | Task 7 |
-| CPQ4 | **§49 §15 and D776 have the House emit per-query events "through §27's hook interface"** (HS1 Task 22), but D548 moved that contract to `loams-platform`. Should the House use a private link-time observer seam like `pg-control`'s `ComputeLifecycleObserver`? | Yes; HS1 Task 22 keeps quotas and drops the open event path | Owner | Before HS1 Task 22 |
-| CPQ5 | No `loams-operator` (the D185 fork) exists. Create the crate with only the namespace controller (CP-R10), or wait for MT2 | Create now | Eng | Task 15 |
-| CPQ6 | SQL runtime objects in a per-namespace `loams-sql-<nsid>` (default), or one shared `loams-sql` namespace with labels (§47 §16 does not say) | Per namespace | Eng + SQ1 | Before SQ1 Task 14 |
-| CPQ7 | Tailnet tag per org (`tag:byoc-<org>`, as §43) with per-cluster hostnames, and `tailnet.max_tagged_nodes = 45` on the Personal plan | Yes | Founder | Task 22 |
-| CPQ8 | One renderer for the tenant policy section, in Rust (CP-R9), with NET1 Task 2's Python dropped; or both, held to shared goldens | Rust only | Eng | Task 21 |
-| CPQ9 | The `fabric/` workspace takes a path dependency on `crates/loams-tenancy` (types only, no proto) | Yes | Eng + HS1 | Task 11 |
-| CPQ10 | The hub as a role of `loams` (CP-R3), or its own binary and image per D542's crate list | Role | Eng | Task 5 |
-| Q544 | Licence of the control plane: Apache-2.0 or source-available. **Owner decision** | Apache-2.0 | Founder | Before Task 5 merges |
-| Q556 | Commit signing for the tenants and release repositories | SSH, verified by Argo CD | Eng | Task 14 |
-| Q559 | Rings through `RollingSync` or one `ApplicationSet` per ring | One per ring | Eng | Task 0 / 25 |
-| Q542 | Service credentials: mTLS plus an attenuated Biscuit, or mTLS only | mTLS + Biscuit | Eng | Task 5 |
-| Q557 | External security review before GA. **Owner action** (budget) | — | Founder | Task 29 |
-| Q588 | Who enables a support grant, its TTL, and session recording | Customer, 4 h, no recording | Founder | Task 22 |
-| Q590 | In tailnet mode, does the agent use only the tailnet or both paths | Both, tailnet preferred | Eng | Task 22 |
-| Q591 | Headscale's unscoped API keys: accept 90-day keys reachable only on the tailnet or loopback | Accept | Eng | Task 21 |
-| Q592 | `loams-net` in this repository | Yes | Founder | Task 21 |
-| Q593 | Tailscale plan: Personal (non-commercial; 50 tagged resources) until customers depend on it | Personal, then paid or Headscale | Founder | Before the first paying BYOC tenant |
+| Q544 | Licence of the control plane: Apache-2.0 or source-available (legal) | Apache-2.0 | Founder | Before Task 5 merges |
+| Q557 | External security review before GA, and its budget (money, external firm) | — (Task 29's internal review and chaos run regardless) | Founder | Task 29, before GA |
+| Q593 | Tailscale plan: Personal (non-commercial; 50 tagged resources) until customers depend on it, then paid or Headscale (money, external account) | Personal, with `tailnet.max_tagged_nodes = 45` (CPQ7) | Founder | Before the first paying BYOC tenant |
 
-**Decisions the owner must make before the tasks that need them:** CPQ1 and CPQ4 (they change PG2 and HS1 now), Q544 (before Task 5 merges), Q557 (before GA), and CPQ7 with Q593 (before tailnet-mode BYOC carries a paying tenant).
+**Decisions the owner must make before the tasks that need them:** Q544 (before Task 5 merges), Q557 (before GA), and Q593 (before tailnet-mode BYOC carries a paying tenant).
 
 ## Rulings made during execution
 

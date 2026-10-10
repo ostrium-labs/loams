@@ -9,8 +9,35 @@
 >
 > When a task of this plan lands, the matching row of API1, SDK1 or SDK2 gets a one-line pointer to it (Task 28). Do not edit those plans' rulings.
 
+## Owner rulings 2026-10-10 (defaults)
+
+The owner asked for the best default on every open question ("do the best for others"). These are binding for execution; the tasks below already follow them. Task 0 records them as rulings and Task 28 copies them into the decision log. Only the items under "Open questions" at the end still need a human.
+
+| # | Question | Decision | Reason |
+|---|---|---|---|
+| Q600 | Legacy REST shims or delete outright | **Delete outright.** No `--legacy-rest`, no `legacy.rs`, no `Deprecation`/`Sunset` headers; removed paths 404 like any unknown path, and `docs/api/migrate.md` is the only migration aid | Pre-1.0 with no external users; a shim is code written only to be deleted |
+| Q601 | Confirm 13 languages | Keep all 13; Objective-C is the first to drop if upkeep is too heavy (Q611) | Each already passes the 28 fixtures; dropping later is cheap, adding back is not |
+| Q602 | OAuth/OIDC/well-known/health stay HTTP | Yes (D602) | They are protocol endpoints that standard clients expect at fixed HTTP paths |
+| Q603 | Reflection scope | On in `loams dev`; elsewhere off unless `--reflection`, which requires auth | Developer convenience without exposing the schema on production ports |
+| Q604 | Generator versus hand-written facades | **Generate** TypeScript, Python, Go, Rust, Swift, Kotlin, Java and C#; **hand-write** Dart, Ruby, PHP, C++ and Objective-C, each checked by `<lang>_facade_matches_index` | Generation where users are most numerous; the index test keeps the hand-written five from drifting |
+| Q605 | Publish to the Buf Schema Registry | No; local plugins plus remote-plugin pins only | No extra account or dependency for a pre-1.0 API |
+| Q606 | Ruby/PHP Connect-unary fallback counts as "no REST" | Yes | Same protos and messages; it is the Connect protocol, not a bespoke REST |
+| Q607 | `loams.dev/go` vanity path | Yes; `sdks/go/go.mod` already uses it, and the `go-import` meta tag is a follow-up issue in `loams-cloud` | Stable import path independent of the repository host |
+| Q608 | `QueryArrow` IPC with a cap | Yes, 16 MiB, `result_too_large` above it pointing to Flight | Arrow for small results without making the unary path a bulk channel |
+| Q609 | Licence of generated code; DCO on mirrors | Generated code is Apache-2.0, the repository's licence (`LICENSE`, `Cargo.toml`); mirrors are bot-written, so no DCO there | Same licence as the source it is generated from; DCO certifies human contributions |
+| Q610 | C++: own vcpkg/Conan first or source only | Ship a vcpkg registry (a git repository) and a Conan recipe in-repo; publishing a hosted Conan remote stays behind `SDK_PUBLISH_CONAN` | Users get a package manager path; the hosting is the only account step |
+| Q611 | Objective-C: keep or drop | Keep generated sources plus SwiftPM; marked "community" if it fails conformance | Cheap to keep while it passes; honest label if it does not |
+| Q612 | CODEOWNERS on `reasons.md` | Yes, plus `proto/**` | Reasons and protos are the public contract |
+| Q613 | `loams.vector` module or view | Both names, one RPC (`vector.search` and `search.query`) | Discoverability for vector users without a second RPC |
+| Q614 | Scroll: stream or unary with cursor | Whatever Task 0 finds built (expected unary with a cursor) | The built shape already works on every transport, including Connect-unary |
+| API2-Q1 | Auth before MT1 | **Ship the main port with `ApiKeyAuthenticator` and `DevLoopbackAuthenticator` (loopback-only); REST removal does not wait for MT1.** `Authenticator` is the hook: MT1 adds `JwtAuthenticator` and the HTTP protocol endpoints without touching handlers | Unblocks API2b; the trait keeps MT1 a drop-in |
+| API2-Q2 | Wave 2/3 CI jobs as required checks | **Nightly and on tags, never in `required.needs` in this plan.** Making one PR-blocking is a later, separate ruling per language | Keeps PR CI fast; regressions still surface within a day |
+| API2-Q3 | `loams.durable.v1` scope | **No `loams.durable.v1` now. The Resonate HTTP protocol is the only durable API.** Task 8 ships `OperationsService` only | No second control surface to keep in step with Resonate; revisit when a Loams-specific durable need appears |
+| API2-Q4 | Idempotency window | 24 h cluster-wide, as PG2's ledger; only keyed calls pay the metastore write, and expired entries are swept by the existing metastore TTL | Covers every realistic client retry window, matches the other ledger |
+| API2-Q5 | Compat gRPC auth on the conventional ports | Unchanged until MT1; only the main-port mount goes through `Authenticator`. Recorded as an accepted pre-MT1 risk in Task 27's threat model | D603: compat ports keep their wire and auth behaviour; the main port is the new surface |
+
 **Goal:** one public API and thirteen shippable SDKs.
-- Every application call is a Connect/gRPC RPC in `loams.<service>.v1` on the `loams` main port. The native REST under `/v1/namespaces/...`, the console OpenAPI `/api/v1` and `/internal/*` are gone (with or without one release of shims, Q600).
+- Every application call is a Connect/gRPC RPC in `loams.<service>.v1` on the `loams` main port. The native REST under `/v1/namespaces/...`, the console OpenAPI `/api/v1` and `/internal/*` are gone, deleted outright with no shims (Q600).
 - Gone too: `api/console/openapi.json`, `openapi-fetch` and `openapi-typescript`.
 - The compatibility surfaces of §44 §6 are unchanged and green.
 - Every stable package carries the facade annotations, and the SDKs expose it as `loams.<module>.<call>`.
@@ -69,7 +96,7 @@ The exit is "Exit criteria for production" at the end of this plan, with the own
 1. **A retried mutation applies twice.** Paths: a keyed `WriteDocuments` retried on another gateway node; a `Produce` without a producer key auto-retried by an SDK; an SDK that mints a fresh key per attempt. Expected: never. Tests: Task 4 `keyed_write_replays_across_nodes`; Task 16 `produce_without_key_never_retried`; Task 20 `<lang>_retry_reuses_idempotency_key` for every language (Tasks 20–22).
 2. **A token leaks** into a URL, a log, an error, a fixture or an SDK's debug output. Expected: never. Tests: Task 6 `bearer_never_logged`, `query_string_token_refused`; Task 15 `fixtures_carry_no_credentials`; Task 27 `sdk_token_source_debug_redacted` (every language).
 3. **An unauthenticated call reaches data.** Paths: a Connect, gRPC or gRPC-Web call with no bearer on the main port; compat gRPC on the main port; `loams.internal.v1` on the public listener. Expected: refused with `unauthenticated` or not routed at all. Tests: Task 6 `every_served_rpc_requires_auth_except_allowlist`; Task 5 `compat_grpc_on_main_port_requires_auth`; Task 4 `internal_service_not_on_public_port`.
-4. **A REST route survives Task 11**, or a shim answers with data instead of "moved". Expected: no. Tests: Task 11 `no_native_rest_route_remains`, `legacy_shim_never_serves_data`.
+4. **A REST route survives Task 11.** Expected: no; a removed path is a 404 like any unknown path (Q600: no shims). Tests: Task 11 `no_native_rest_route_remains`, `removed_rest_paths_are_404`.
 5. **An SDK's surface drifts from the protos**: a call with no annotation, a wrong retry class, or a missing module. Expected: CI fails. Tests: Task 14 `<lang>_facade_matches_index` (every hand-written facade); Task 13 `every_stable_service_has_module`, `every_stable_rpc_has_facade_call`.
 6. **A stale or wrong consistency token is used silently.** Paths: the session store merges tokens from two namespaces; a token from another instance is accepted. Expected: an error, never a stale read. Tests: Task 16 `token_merge_is_per_stream_partition_max`, `foreign_instance_token_refused`.
 7. **A compat surface's wire output changes.** Expected: never. Tests: the existing compat suites, plus Task 5 `qdrant_grpc_bytes_unchanged_on_main_port`.
@@ -87,7 +114,6 @@ proto/loams/link/v1/link.proto                                    Task 3
 proto-internal/loams/internal/v1/internal.proto, buf.yaml         Task 4 (second buf module, D607)
 proto/loams/auth/v1/auth.proto                                    Task 6
 proto/loams/admin/v1/{org,project,agent,key,audit}.proto          Task 7
-proto/loams/durable/v1/durable.proto                              Task 8
 proto/loams/errors/v1/errors.proto                                Task 16 (RetryInfo use, request id)
 crates/loams-proto/{build.rs,src/lib.rs}                          Tasks 1–8 (package list; `internal` feature)
 crates/loams-stream-grpc/                                         Task 2 (tonic service kept as the CloudEvents gRPC binding only)
@@ -97,12 +123,11 @@ crates/loams/src/api/
   connect_internal.rs                                             Task 4
   connect_compat.rs                                               Task 5 (service-name routing to tonic)
   auth.rs connect_auth.rs connect_admin.rs                        Tasks 6–7
-  connect_operations.rs connect_durable.rs                        Task 8
+  connect_operations.rs                                           Task 8 (no connect_durable.rs: API2-Q3)
   idempotency_store.rs                                            Task 4 (cluster ledger; replaces connect_idempotency.rs's map)
-  legacy.rs                                                       Task 11 (opt-in shims)
   mod.rs collections.rs query.rs sql.rs streams.rs events.rs hot.rs internal.rs   Task 11 (REST deleted)
 crates/loams/tests/connect_{sql,streams,links,internal,compat,auth,admin,operations}.rs
-crates/loams/tests/{route_map.rs,legacy_shim.rs,curl_examples.rs}
+crates/loams/tests/{route_map.rs,curl_examples.rs}
 crates/loams-console-mock/                                        Task 7 (Connect, not OpenAPI)
 crates/loams-apps-mock/                                           Task 15 (fault endpoints on Connect)
 crates/loams-facade-gen/src/{index.rs,lib.rs}                     Tasks 13–14
@@ -140,14 +165,13 @@ scripts/ci/no-metering.sh                                         Task 12
 | `loams.auth.v1` | `AuthService` | `auth` | no | always | 6 |
 | `loams.admin.v1` | `OrgService`, `ProjectService`, `AgentService`, `KeyService`, `AuditService` | `admin.org`, `admin.projects`, `admin.agents`, `admin.keys`, `admin.audit` | no | always | 7 |
 | `loams.operations.v1` | `OperationsService` | `operations` | no | always | 8 |
-| `loams.durable.v1` | `DurableService` | `durable` | yes until Task 8's ruling | feature `durable` | 8 |
 | `loams.live.v1` | `LiveService` | `live`, `tables` | yes | feature `live` (LV1) | 9 (wiring only) |
 | `loams.graph.v1` | `GraphAdminService`, `GraphService` | `graph` | yes (GR1e) | feature `graph` | exists |
 | `loams.postgres.v1` | `PostgresService` | `postgres` | yes (PG2 GA) | feature `postgres` (PG2 Task 9) | 9 (wiring only) |
 | `loams.approvals.v1`, `loams.devices.v1`, `loams.notifications.v1` | AP0 | `approvals`, `devices`, `notifications` | no | `loams-apps-mock`; the server when AP1 serves them | no change |
 | `loams.internal.v1` | `InternalService` | none (no SDK) | n/a | `internal_router` only | 4 |
 
-Not in this table, and never in a public proto or SDK: the meter protocol, `loams.live.worker.v1` (LV1, internal), connector admin.
+Not in this table, and never in a public proto or SDK: the meter protocol, `loams.durable.v1` (API2-Q3: Resonate is the durable API), `loams.live.worker.v1` (LV1, internal), connector admin.
 
 ### Proto rules (Tasks 1–8 write the protos; this is the contract)
 
@@ -182,7 +206,6 @@ service SqlService {
 | `loams-request-id` | response | a ULID per call, also in `ErrorInfo.metadata["request_id"]` (Task 16) |
 | `Loams-Hot` | request | the existing hot-tier hint (unchanged) |
 | `loams-test-fault`, `loams-test-fault-after` | request | fault injection, **fixture server and `loams-apps-mock` only**; the real server ignores them (Task 15 test) |
-| `Deprecation`, `Sunset` | response | legacy shims only (Task 11) |
 
 ### Rust seams (`crates/loams`)
 
@@ -194,7 +217,7 @@ pub trait Authenticator: Send + Sync + 'static {
     async fn authenticate(&self, rpc: &RpcPath, headers: &HeaderMap) -> Result<Option<Principal>, AuthError>;
 }
 pub struct Principal { pub subject: String, pub org: String, pub kind: PrincipalKind, pub scopes: Vec<String> }
-pub enum PrincipalKind { User, Agent, ServiceAccount, ApiKey, DevLoopback }
+pub enum PrincipalKind { User, Agent, ServiceAccount, ApiKey, DevLoopback } // API2-Q1: ApiKey and DevLoopback ship first; User/Agent/ServiceAccount arrive with MT1's JwtAuthenticator
 pub enum AuthError { Missing, Malformed, Expired, Revoked, Unknown } // -> unauthenticated + reason
 
 /// The unauthenticated allowlist (Task 6), the only RPCs answered without a principal.
@@ -239,8 +262,8 @@ Generated by `protoc-gen-loams-facade lang=index`, committed, and drift-checked.
 ## Execution order
 
 1. Task 0.
-2. **API2a** (Tasks 1–9). Tasks 1–5 and 8 are independent of each other. Task 6 depends on MT1's token issuer (Task 0 decides the fallback). Task 7 depends on Task 6. Task 9 runs last, after LV1's main-port task and PG2 Task 9 if they have merged, and again when either merges.
-3. **API2b** (Tasks 10–12) after Tasks 6 and 7. Task 11 after Task 10.
+2. **API2a** (Tasks 1–9). Tasks 1–5 and 8 are independent of each other. Task 6 does not wait for MT1 (API2-Q1: API keys and dev-loopback first). Task 7 depends on Task 6. Task 9 runs last, after LV1's main-port task and PG2 Task 9 if they have merged, and again when either merges.
+3. **API2b** (Tasks 10–12) after Tasks 6 and 7, whether or not MT1 has merged (API2-Q1). Task 11 after Task 10.
 4. **API2c** (Tasks 13–18) can start at once, beside API2a. Task 13 needs each package's proto, so it lands per package. Task 15's recordings follow the packages they record.
 5. **API2d** (Tasks 19–23). Task 19 at once. Tasks 20–22 after Tasks 13–16. Task 23 after Task 9.
 6. **API2e** (Tasks 24–28) after API2d's wave 1 (Task 20). Task 28 last.
@@ -255,14 +278,14 @@ Steps:
 1. Answer each of the following and record the answer, with file paths and the `dev` commit, as a ruling:
    - Is this plan's "as built" still true? Check API1 Task 4's status: `QueryService/Search` in `crates/loams/src/api/connect_query.rs`, and whether `ScrollDocuments` is unary-with-cursor. If so, record it as the answer to Q614 unless the owner has ruled otherwise.
    - Which REST routes exist on `dev` today (`crates/loams/tests/route_map.rs`'s inventory)? `docs/api/route-map.md` has 27 `/v1` pairs plus `list_streams` and `list_links`, which §44 §5.1 omits. Tasks 2 and 3 add `ListStreams` and `ListLinks` for them.
-   - Has MT1 merged anything? Look for a token endpoint (`/oauth/token`), sessions, a principal store and main-port TLS (MT1 Task 7). If not, Task 6 uses `ApiKeyAuthenticator` (keys in the metastore, hashed with argon2id) and `DevLoopbackAuthenticator` (`loams dev` on loopback only), and leaves `OidcAuthenticator` to MT1.
+   - Has MT1 merged anything? Look for a token endpoint (`/oauth/token`), sessions, a principal store and main-port TLS (MT1 Task 7). Either way (API2-Q1), Task 6 ships `ApiKeyAuthenticator` (keys in the metastore, hashed with argon2id) and `DevLoopbackAuthenticator` (`loams dev` on loopback only); `JwtAuthenticator` and the HTTP protocol endpoints are added only if MT1's issuer has merged, otherwise MT1 adds them through the `Authenticator` hook.
    - Has LV1's "Live on the main port" task merged (`LiveAbsent` replaced)? Has PG2 Task 9 merged (`PostgresService` registered, `Reflector::with_services`)? Record which wiring Task 9 still owns.
-   - Which durable control surface exists in `crates/loams-durable`: start, signal, inspect? Is the Resonate HTTP protocol the only entry today? This decides how far Task 8 goes.
+   - Which durable control surface exists in `crates/loams-durable`? Record it for reference only: API2-Q3 rules that the Resonate HTTP protocol stays the only durable API, so Task 8 adds no durable RPC.
    - Where is the MCP server (§44 §6 lists it on 8083)? On 2026-10-10 no crate under `crates/` serves MCP. Record that MCP stays out of scope here (M1.6).
    - Which SDKs have a generated facade and which a hand-written one? On 2026-10-10: TypeScript, Python and Rust are generated. Go generates `gen/facade` and hand-writes `modules.go` (D730). The other nine are hand-written. Record the list, and record which `sdks/<lang>` have a CI job: TypeScript, Rust, Python, Go, C++, C# and Swift do; Java, Kotlin, Ruby, PHP, Dart and Objective-C do not.
    - Naming drift. `sdks/README.md` says the Rust crate is `loams-sdk` and the Go module is `github.com/ostrium-labs/loams/sdks/go`. `sdks/rust/Cargo.toml` says `loams` and `sdks/go/go.mod` says `loams.dev/go`. Record that the manifests win, and add the README fix to Task 28.
    - Which `sdks/fixtures/manifest.json` notes are stale? For example, R4's "No RPC carries a `consistency_token`" was true before API1 Task 3 and is not now. List them for Task 15.
-   - Q600–Q614: record each owner answer given since 2026-10-02, or the default this plan uses (see "Open questions").
+   - Q600–Q614 and API2-Q1–Q5: record the "Owner rulings 2026-10-10 (defaults)" table as rulings, plus any later owner answer that overrides one.
 2. Write `docs/sdk/toolchain-2026-10.md` (SDK1 Task 0): one row per language with the Connect or gRPC library, its latest release and date, the remote plugin and its version, the registry, and whether it has trusted publishing. Apply D612's 12-month rule and note any language that changes column. Test: `toolchain_table_has_row_per_language` (a node test in `sdks/conformance/check-languages.mjs`).
 3. Commit `docs(api2): task 0 rulings and the toolchain table`.
 
@@ -274,7 +297,7 @@ Steps:
 
 **Interfaces:**
 - `SqlService/Query`: `namespace`, `sql`, `params` (`repeated google.protobuf.Value`), `consistency`, `max_rows` (default 10 000, cap 100 000). It answers `columns[]` (name, Arrow type string), `rows[]` (`google.protobuf.ListValue`), `truncated` and `consistency_token`. It calls the same function `api/sql.rs::sql` calls.
-- `SqlService/QueryArrow` (Q608 default: yes). It answers `bytes arrow_ipc` (an Arrow IPC stream), with a cap of `--sql-arrow-max-bytes` (default 16 MiB). Over the cap it refuses with `resource_exhausted` and reason `result_too_large`, and `metadata.use = "flight"`.
+- `SqlService/QueryArrow` (Q608: yes). It answers `bytes arrow_ipc` (an Arrow IPC stream), with a cap of `--sql-arrow-max-bytes` (default 16 MiB). Over the cap it refuses with `resource_exhausted` and reason `result_too_large`, and `metadata.use = "flight"`.
 - Flight SQL is unchanged.
 
 Tests:
@@ -345,7 +368,7 @@ Commit `feat(api): loams.internal.v1 on the cluster listener; cluster-wide idemp
 **Interfaces:**
 - Routed by path prefix on the main router: `/qdrant.` goes to Qdrant's tonic server and `/arrow.flight.protocol.` goes to Flight. This happens before the connect router; the Connect paths cannot collide (`/loams.`).
 - It uses gRPC only. gRPC-Web is not offered for compat.
-- The main-port mount passes through the `Authenticator` (Task 6). The conventional ports keep their current auth.
+- The main-port mount passes through the `Authenticator` (Task 6). The conventional ports keep their current auth until MT1 (API2-Q5), recorded as an accepted risk in Task 27.
 
 Tests:
 - `qdrant_grpc_client_works_on_main_port`: the Qdrant Rust client from `tests/qdrant`.
@@ -365,8 +388,9 @@ Commit `feat(api): Qdrant gRPC and Flight SQL on the main port`.
 - Implementations:
   - `ApiKeyAuthenticator`: keys `lk_<26-char ULID>_<32 base62>`, stored as argon2id hashes in the metastore under the org.
   - `DevLoopbackAuthenticator`: only when `loams dev` listens on loopback. It yields `PrincipalKind::DevLoopback` and is refused at startup on any other address.
-  - `JwtAuthenticator`: verifies the instance's own access tokens against its JWKS (D447, D449), when MT1 provides the issuer.
-- `--auth {api-key,jwt,dev}`: `dev` is the default for `loams dev`, and `api-key,jwt` otherwise.
+  - `JwtAuthenticator`: verifies the instance's own access tokens against its JWKS (D447, D449), when MT1 provides the issuer. Not required for this task to land (API2-Q1).
+- `--auth {api-key,jwt,dev}`: `dev` is the default for `loams dev` (loopback only), and `api-key` otherwise; `api-key,jwt` becomes the default once MT1's issuer is configured. `--auth jwt` without an issuer refuses to start with a clear message.
+- The `Authenticator` trait is the only hook MT1 needs: no handler, router or test in this task assumes which implementations exist.
 - `AuthService`: `ListProviders`, `CompleteSetup`, `GetSession`, `CreateSession`, `DeleteSession` and `DecideConsent` (§44 §5.2). Sessions are cookie or bearer. `CreateSession` sets an `HttpOnly; Secure; SameSite=Lax` cookie on the Connect response.
 - **Protocol endpoints that stay HTTP** (D602): `/oauth/token`, `/oauth/authorize`, `/.well-known/{oauth-protected-resource,oauth-authorization-server,jwks.json}` and `/auth/oidc/{provider}/{start,callback}`. They are served only when MT1's issuer is present. Otherwise they are absent, not stubbed.
 - Errors are `unauthenticated` with one of the reasons `token_missing`, `token_malformed`, `token_expired` (exists), `token_revoked` and `credential_in_query_string`, and the `WWW-Authenticate: Bearer` header on HTTP.
@@ -380,6 +404,8 @@ Tests:
 - `dev_loopback_refused_on_public_address`
 - `session_cookie_and_bearer_both_work`
 - `oidc_start_remains_http_redirect`: only with MT1; `#[ignore]` with the reason otherwise.
+- `jwt_without_issuer_refused_at_startup`
+- `authenticator_is_swappable`: the suite passes with a test `Authenticator` injected, proving MT1 can add one without handler changes.
 
 Commit `feat(api): main-port authentication and loams.auth.v1`.
 
@@ -401,23 +427,22 @@ Tests:
 
 Commit `feat(api): loams.admin.v1`.
 
-### Task 8: Operations and durable control
+### Task 8: Operations on the main port
 
-**Files:** `crates/loams/src/api/connect_operations.rs`, `connect_durable.rs`, `proto/loams/durable/v1/durable.proto` and tests `crates/loams/tests/connect_operations.rs`.
+**Files:** `crates/loams/src/api/connect_operations.rs` and tests `crates/loams/tests/connect_operations.rs`. No `connect_durable.rs` and no `proto/loams/durable/` (API2-Q3).
 
 **Interfaces:**
-- `OperationsService` (`GetOperation`, `ListOperations`, `WatchOperations`, `CancelOperation`) is served on the main port over one `OperationStore` that graph, postgres and durable write to. The `loams.operations.v1` row goes into `CATALOGUE`.
-- `DurableService`: `StartRun` (keyed), `SignalRun` (keyed), `GetRun`, `ListRuns` (paged) and `CancelRun`. It sits over `loams-durable`'s embedded server. The Resonate HTTP protocol is unchanged (compat).
-- If Task 0 found no inspect surface in `loams-durable`, only `GetRun`/`ListRuns` ship here, and the package stays `unstable`.
+- `OperationsService` (`GetOperation`, `ListOperations`, `WatchOperations`, `CancelOperation`) is served on the main port over one `OperationStore` that graph and postgres write to. The `loams.operations.v1` row goes into `CATALOGUE`.
+- **No `loams.durable.v1`** (API2-Q3). The Resonate HTTP protocol stays the only durable API and is unchanged (compat). SDK users reach durable functions through the Resonate SDKs; a Loams durable package is a future plan under this plan's rules.
 
 Tests:
 - `operations_list_includes_graph_and_postgres_ops` (the features on).
 - `watch_operations_snapshot_then_changes`
 - `cancel_is_idempotent`
-- `start_run_replay_returns_same_run`
 - `resonate_protocol_unchanged`: the existing durable suite.
+- `no_durable_package_served`: `GetInstance.services[]` and reflection list no `loams.durable.*`.
 
-Commit `feat(api): operations and durable control on the main port`.
+Commit `feat(api): operations on the main port`.
 
 ### Task 9: Catalogue completeness, served-only reflection and variants
 
@@ -425,7 +450,7 @@ Commit `feat(api): operations and durable control on the main port`.
 
 **Interfaces:**
 - `CATALOGUE` holds every row of the shared table.
-- Reflection uses `Reflector::with_services(served_services())` (PG2 R1.4), so an unserved service is never listed. Reflection stays on in `loams dev` and off elsewhere unless `--reflection` is passed (Q603 default, API1 ruling 1.4).
+- Reflection uses `Reflector::with_services(served_services())` (PG2 R1.4), so an unserved service is never listed. Reflection stays on in `loams dev` and off elsewhere unless `--reflection` is passed (Q603, API1 ruling 1.4).
 - `--reflection` is added, and requires authentication.
 - Live and Postgres: if LV1's and PG2 Task 9's wiring has merged, only the catalogue and test rows change here. If not, this task leaves `LiveAbsent` and the Postgres absent stub in place and records it.
 - `VARIANT` follows CLI2's `release/variants.toml` once it exists (API1 ruling 1.5).
@@ -460,23 +485,24 @@ Tests:
 
 Commit `feat(console): Connect clients replace the OpenAPI client`.
 
-### Task 11: Delete the native REST and the OpenAPI; the legacy shims
+### Task 11: Delete the native REST and the OpenAPI (no shims)
 
 **Files:**
 - Delete the REST handlers in `crates/loams/src/api/{mod.rs,collections.rs,query.rs,sql.rs,streams.rs,events.rs,hot.rs}`, keeping the helpers the Connect handlers use, moved next to them. `/health` and `/ready` stay.
 - Delete `api/console/openapi.json` and the console mock's `/api/v1` routes.
-- Create `crates/loams/src/api/legacy.rs` and `docs/api/migrate.md` (generated from the route map by `scripts/api/migrate-page.sh`).
+- Create `docs/api/migrate.md` (generated from the route map by `scripts/api/migrate-page.sh`). No `legacy.rs` (Q600).
 - Amend the status lines of M1.6 and AP1a, one line each.
 
 **Interfaces:**
-- `--legacy-rest` (off by default), only if Q600 keeps shims. Every removed route answers `410 Gone` with `{"error":"moved","rpc":"<package.Service/Method>","docs":"https://loams.dev/docs/api/migrate"}`, plus `Deprecation: true` and `Sunset: <date of the next minor's planned release>`.
-- If Q600 says delete outright, `legacy.rs` is not created, and that is recorded.
+- Delete outright (Q600). There is no `--legacy-rest` flag and no shim: a removed path is answered by the framework's unknown-path 404, with the JSON error body.
+- `docs/api/migrate.md` maps every removed route to its RPC, and the release notes link it.
 
 Tests:
 - `no_native_rest_route_remains`: the router inventory equals the protocol endpoints of D602 plus the Connect and compat paths.
 - `route_map_covers_every_route`: still green, every row now "removed" or "protocol".
-- `legacy_shim_points_to_rpc_when_enabled`
-- `legacy_shim_never_serves_data`: every shim answer is a 410 with no body field besides the three.
+- `removed_rest_paths_are_404`: every removed route of the route map answers 404, never data.
+- `no_legacy_rest_flag`: `--legacy-rest` is not a recognised flag.
+- `migrate_page_covers_every_removed_route`
 - `framework_rejections_use_the_json_error_body`: still holds for unknown paths.
 - `compat_suites_green`
 - The console's tests.
@@ -490,7 +516,7 @@ Commit `feat(api): remove the native REST and the console OpenAPI`.
 **Interfaces:**
 - `buf lint` on `proto/` and `proto-internal/`.
 - `buf breaking` against `dev` until a tag `v*` exists, then against the latest tag. It covers every package not listed as `unstable`.
-- CODEOWNERS on `docs/api/reasons.md` and `proto/**` (Q612 default).
+- CODEOWNERS on `docs/api/reasons.md` and `proto/**` (Q612).
 - `no-metering.sh` covers `proto/` and `sdks/`.
 
 Tests:
@@ -510,7 +536,7 @@ Commit `ci(api): breaking-change, curl and reason gates`.
 
 **Interfaces:**
 - Each stable RPC carries `FacadeOptions`. API1 ruling 2.5's blocker (stubs before options) is resolved by adding the package map entries and the stubs in the same PR.
-- `QueryService/Search` carries two entries: `{module:"vector" name:"search"}` and `{module:"search" name:"query"}` (Q613 default: both).
+- `QueryService/Search` carries two entries: `{module:"vector" name:"search"}` and `{module:"search" name:"query"}` (Q613: both).
 - List RPCs carry `pagination`.
 - `lang=index` renders `facade-index.json`.
 
@@ -527,11 +553,10 @@ Commit `feat(facade): every stable package annotated; the facade index`.
 
 ### Task 14: The other nine languages against the index (Q604)
 
-**Files:** `sdks/templates/<lang>/template.env` for Swift, Kotlin, Java, C#, Dart, Ruby, PHP, C++ and Objective-C, and a facade-index test in each SDK's test tree. Optionally `crates/loams-facade-gen/src/<lang>.rs`.
+**Files:** `sdks/templates/<lang>/template.env` for Swift, Kotlin, Java, C#, Dart, Ruby, PHP, C++ and Objective-C; `crates/loams-facade-gen/src/{swift,kotlin,java,csharp}.rs`; and a facade-index test in each hand-written SDK's test tree.
 
 **Interfaces:**
-- For each language, Task 0's ruling says whether it is **generated** (a renderer in `loams-facade-gen`, `golden_<lang>`) or **hand-written against the index** (D730's fallback).
-- The default this plan uses: generate Swift, Kotlin, Java and C#; hand-write Dart, Ruby, PHP, C++ and Objective-C.
+- Q604 (ruled): Swift, Kotlin, Java and C# are **generated** (a renderer in `loams-facade-gen`, `golden_<lang>`); Dart, Ruby, PHP, C++ and Objective-C are **hand-written against the index** (D730's fallback).
 - Go's `modules.go` is replaced by a generated file when `go.rs` renders modules, which is part of this task.
 
 Tests:
@@ -620,14 +645,16 @@ Commit `feat(sdks): write_batch and bulk`.
 
 **Interfaces:**
 - Each job builds `loams` once and downloads it (the `sdk-typescript` pattern), runs `sdks/conformance/run.sh <lang>`, and checks the report against `required.mjs`.
-- Wave 1 jobs run on every PR that touches `proto/**`, `sdks/<lang>/**`, `sdks/fixtures/**` or `crates/loams/src/api/**`.
-- Waves 2 and 3 run on those paths too, once they pass. Until then they run nightly and on tags and are not in `required.needs`. The job's comment records the date it was made required.
+- Wave 1 jobs run on every PR that touches `proto/**`, `sdks/<lang>/**`, `sdks/fixtures/**` or `crates/loams/src/api/**`, and are in `required.needs`.
+- Waves 2 and 3 run nightly and on tags only, and are never in `required.needs` in this plan (API2-Q2). A nightly failure opens or updates one issue per language. Promoting a language to PR-blocking is a later, separate ruling.
+- A PR that touches only `sdks/<lang>/**` of a wave 2 or 3 language runs that language's job on the PR as an advisory (non-required) check.
 - The PHP job runs twice: with `ext-grpc`, and without it (Connect-unary).
 - Ruby likewise.
 
 Tests:
 - `workflow_lint`: `actionlint` clean.
 - `every_sdk_dir_has_a_job`: a script that fails when an `sdks/<lang>` directory has no `sdk-<lang>` job.
+- `only_wave1_is_required`: `required.needs` holds exactly the wave 1 jobs.
 
 Commit `ci(sdks): a conformance job for every language`.
 
@@ -679,8 +706,8 @@ Commit `feat(sdk-<lang>): the whole API` (one per language).
 - Task 20's list, with these per-language details:
   - Dart: the Connect library if Task 0's check passes, otherwise `grpc`.
   - Ruby and PHP: both transports (D613). `transport: grpc-only` fixtures are skipped on unary.
-  - C++: C++17 and a CMake config package; vcpkg overlay and Conan remote (Q610 default).
-  - Objective-C: generated sources and a SwiftPM target, and no CocoaPods (D614). If Q611 drops it, the directory is reduced to generated sources and a README, and the matrix row says "community".
+  - C++: C++17 and a CMake config package; a vcpkg registry (git) and an in-repo Conan recipe (Q610). Uploading to a hosted Conan remote is gated by `SDK_PUBLISH_CONAN` (Task 25).
+  - Objective-C: generated sources and a SwiftPM target, and no CocoaPods (D614). If it fails conformance (Q611), the matrix row says "community".
 - `sdks/php/vendor/` stays untracked (it is not in git on 2026-10-10) and is built by Composer in CI from `composer.lock`.
 
 Tests: the eight `<lang>_…` tests, plus `ruby_unary_transport_conformance` and `php_unary_transport_conformance`.
@@ -726,8 +753,9 @@ Commit `feat(sdks): proto revision and version checks`.
 
 **Interfaces:**
 - Tags are `sdk-<lang>-v<semver>`, signed.
-- There is one job per registry: npm, PyPI, crates.io, RubyGems, NuGet and pub.dev use OIDC trusted publishing; Maven Central uses a Portal token and a GPG key; Packagist uses a webhook from the mirror; Go and SwiftPM use mirror tags; vcpkg and Conan use own registries.
+- There is one job per registry: npm, PyPI, crates.io, RubyGems, NuGet and pub.dev use OIDC trusted publishing; Maven Central uses a Portal token and a GPG key; Packagist uses a webhook from the mirror; Go and SwiftPM use mirror tags; vcpkg uses its own git registry and Conan its own remote (Q610).
 - Every job runs `--dry-run` on PRs, and runs for real only when `vars.SDK_PUBLISH_<REGISTRY> == 'true'`. The owner sets that variable after §44 §13's action.
+- Generated code is Apache-2.0 (Q609); each package's licence field says so.
 - `sdk-mirror.yml` subtree-splits `sdks/go`, `sdks/swift` and `sdks/php` into `ostrium-labs/loams-{go,swift,php}`. The mirrors reject human pushes (a branch rule, recorded in the doc).
 - `publishing.md`'s table is rewritten. Its "D400 defers Java", "no Go module" and "no Python SDK" rows are no longer true.
 
@@ -759,7 +787,8 @@ Commit `docs(api): generated reference and tested snippets`.
 **Files:** `docs/security/api-and-sdks-threat-model.md`, plus the tests below in their packages.
 
 **Interfaces:** a threat model covering:
-- the main port: auth, reflection, gRPC-Web CORS, compat mounts and `loams.internal.v1` exposure;
+- the main port: auth (API keys and dev-loopback before MT1, API2-Q1), reflection, gRPC-Web CORS, compat mounts and `loams.internal.v1` exposure;
+- the conventional compat ports' pre-MT1 auth, as an owner-accepted risk (API2-Q5);
 - the SDKs: token storage, redaction, TLS defaults (verify on; `http://` only to loopback unless `allow_insecure` is set), retry amplification and idempotency;
 - release: OIDC scopes, mirror write rights, signing.
 
@@ -780,7 +809,7 @@ Commit `docs(security): API and SDK threat model, and its tests`.
 - `CONTRIBUTING.md` ("adding a community SDK").
 - The status lines of API1, SDK1 and SDK2, each with a pointer to API2.
 - `docs/plans/README.md`.
-- In `docs/design/13-decision-log.md`, the answers to Q600–Q614 the owner gave, each with the date.
+- In `docs/design/13-decision-log.md`, the "Owner rulings 2026-10-10 (defaults)" for Q600–Q614 and API2-Q1–Q5 (the latter under new IDs), each dated 2026-10-10, plus any later override.
 
 Tests:
 - `docs` (existing CI job): links resolve.
@@ -793,7 +822,7 @@ Commit `docs(api2): status, matrix, and decisions`.
 ## Exit criteria for production (§44, with the owning tasks)
 
 - [ ] **One API:** every application call is an RPC on the main port, the catalogue is complete, reflection is served-only, and every unavailable package refuses with a reason: Tasks 1–3, 6–9.
-- [ ] **No bespoke REST:** the native REST, the console OpenAPI and `/internal/*` are deleted, the console, data studio and desktop use Connect, and the shims follow Q600: Tasks 4, 10, 11.
+- [ ] **No bespoke REST:** the native REST, the console OpenAPI and `/internal/*` are deleted, the console, data studio and desktop use Connect, and no shim exists (Q600): Tasks 4, 10, 11.
 - [ ] **Compat unchanged:** every compat suite is green, and Qdrant gRPC and Flight are also on the main port: Task 5.
 - [ ] **Auth:** every served RPC needs a principal except the allowlist, with no token in a URL or a log: Task 6.
 - [ ] **Idempotency** holds across gateway nodes: Task 4.
@@ -801,7 +830,7 @@ Commit `docs(api2): status, matrix, and decisions`.
 - [ ] **Facade from one source:** every stable RPC is annotated, and every SDK matches the index: Tasks 13, 14.
 - [ ] **Corpus:** every stable package and every clause R1–R10 has a required fixture, and faults are injected: Task 15.
 - [ ] **Runtime contract v1:** RetryInfo, request ids and the v1 token: Task 16.
-- [ ] **Thirteen languages:** each passes 100% of the required fixtures in a CI job, required or nightly per wave, with Connect protocol conformance for the Connect SDKs: Tasks 19–23.
+- [ ] **Thirteen languages:** each passes 100% of the required fixtures in a CI job (wave 1 PR-required; waves 2 and 3 nightly, API2-Q2), with Connect protocol conformance for the Connect SDKs: Tasks 19–23.
 - [ ] **Builders and bulk** where §44 §7.5–§7.6 say so: Tasks 17, 18.
 - [ ] **Release:** version checks, dry-run publishing of every language, mirrors, and signed tags: Tasks 24, 25.
 - [ ] **Docs:** the reference is generated, the snippets are tested, and there is a migration page: Tasks 11, 26, 28.
@@ -829,37 +858,18 @@ Commit `docs(api2): status, matrix, and decisions`.
 
 - **Types.** `Authenticator`, `Principal`, `PUBLIC_RPCS`, `IdempotencyStore`, the facade index and the header table are defined once, in the shared contracts.
 - **Review Focus.** Items 1–9 each name an owning test (Tasks 4, 16, 20–22, 6, 15, 27, 5, 11, 14, 13, 9, 12).
-- **Not in this plan.** MCP (no server exists; M1.6), `loams.jobs.v1`, `loams.flow.v1`, `loams.git.v1`, `loams.systemone.v1`, `loams.collab/bot/factory.v1` and `loams.console.v1`. Each of those plans adds its package under this plan's rules (a proto, a catalogue row, the facade annotations and fixtures), and Task 13's tests catch an omission.
+- **Not in this plan.** MCP (no server exists; M1.6), `loams.durable.v1` (API2-Q3), `loams.jobs.v1`, `loams.flow.v1`, `loams.git.v1`, `loams.systemone.v1`, `loams.collab/bot/factory.v1` and `loams.console.v1`. Each of those plans adds its package under this plan's rules (a proto, a catalogue row, the facade annotations and fixtures), and Task 13's tests catch an omission.
 
 ## Open questions
 
-Still open from §44, with the default this plan uses and the task that needs the answer:
+Every design question is ruled in "Owner rulings 2026-10-10 (defaults)" at the top. What is left needs the owner personally, because it involves accounts, money or legal standing. None blocks a code task: each only gates a real publish, and every release job stays a dry run until then (Task 25).
 
-| # | Question | Default here | Needed by |
+| # | Owner action | Why a human | Gates |
 |---|---|---|---|
-| Q600 | One release of `--legacy-rest` shims, or delete outright (pre-release, no external users) | **Delete outright**: there are no external users of the M1.2 REST, and the shim is code to remove in the next minor | Task 11 |
-| Q601 | Confirm 13 languages, and which wave-3 languages to drop if upkeep is too heavy | Keep all 13 (each already passes the 28 fixtures); Objective-C is the first to drop (Q611) | Tasks 19, 22 |
-| Q602 | OAuth/OIDC/well-known/health as "kept protocol endpoints" | Yes (D602) | Task 6 |
-| Q603 | Reflection: dev only, or for authenticated callers | Dev only, plus `--reflection` (auth required) | Task 9 |
-| Q604 | Generator versus hand wrappers | Generated for TypeScript, Python, Go, Rust, Swift, Kotlin, Java and C#; hand-written against the index for the rest | Task 14 |
-| Q605 | Publish to the Buf Schema Registry | No (local plugins, remote plugin pins only) | Task 25 |
-| Q606 | Does the Ruby/PHP Connect-unary fallback count as "no REST" | Yes: same protos, same messages | Task 22 |
-| Q607 | `loams.dev/go` vanity path (a `loams-cloud` change) | Yes; `sdks/go/go.mod` already uses it | Task 25 |
-| Q608 | `QueryArrow` IPC bytes with a cap | Yes, 16 MiB | Task 1 |
-| Q609 | Licence of the generated code; DCO on mirrors | Apache-2.0; mirrors are bot-written, so no DCO | Task 25 |
-| Q610 | C++: own vcpkg/Conan first, or source only | Own registries first | Task 22 |
-| Q611 | Objective-C: generated sources plus SwiftPM, or drop | Keep, as "community" if it fails conformance | Task 22 |
-| Q612 | CODEOWNERS on `reasons.md` | Yes | Task 12 |
-| Q613 | `loams.vector` a separate module or a view | Both names, one RPC | Task 13 |
-| Q614 | Scroll: server stream or unary with a cursor | What Task 0 finds built (expected: unary with a cursor) | Task 0 |
-
-New questions this plan raises (IDs are assigned from the decision log's next free block when the plan merges):
-
-- **API2-Q1 — Auth before MT1.** May the main port ship with API keys and dev-loopback only, if MT1's issuer has not merged when API2b lands, or does REST removal wait for MT1? Needed by Task 6, and by Task 11's go decision.
-- **API2-Q2 — Wave 2 and 3 as required checks.** Should those jobs gate PRs, or stay nightly until a date the owner picks? Each one adds 5–15 min of CI per proto change. Needed by Task 19.
-- **API2-Q3 — `loams.durable.v1` scope.** Is a Loams control RPC over the embedded Resonate server wanted, or is the Resonate HTTP protocol the only durable API (and `loams.durable` an SDK wrapper over it)? Needed by Task 8.
-- **API2-Q4 — The idempotency window.** Is 24 h cluster-wide (as PG2's ledger has it) right for `WriteDocuments`, given the metastore write per keyed call? Needed by Task 4.
-- **API2-Q5 — Compat gRPC auth on the conventional ports.** Task 5 puts Qdrant gRPC and Flight on the main port behind the `Authenticator`. Should the conventional ports get the same layer now, or keep their current behaviour until MT1? Needed by Task 5.
+| API2-H1 | Create or reserve the registry accounts and namespaces of §44 §13 (npm `@loams`, PyPI, crates.io, RubyGems, NuGet, pub.dev, Maven Central with a GPG key, Packagist), configure OIDC trusted publishing, then set each `vars.SDK_PUBLISH_<REGISTRY>` | External accounts in the company's name | Task 25 real publishes |
+| API2-H2 | Host a Conan remote (and decide whether to pay for one) for Q610's C++ packages, or leave C++ at the vcpkg git registry plus the in-repo recipe | External account, possible cost | `SDK_PUBLISH_CONAN` |
+| API2-H3 | Create the mirror repositories `ostrium-labs/loams-{go,swift,php}` with the bot-only push rule, and serve the `loams.dev/go` `go-import` meta tag (Q607) from the `loams-cloud` site | GitHub org and domain administration | Task 25 mirrors, Go module path |
+| API2-H4 | Confirm Q609 (generated code under Apache-2.0, no DCO on bot-written mirrors) with whoever handles the company's legal review | Legal | First real publish |
 
 ## Rulings made during execution
 
