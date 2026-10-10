@@ -435,8 +435,15 @@ impl Shared {
             .acquire()
             .await
             .map_err(|_| LiveError::Internal("the Live workers have stopped".into()))?;
-        if let Some(process) = lock(&self.idle).pop() {
-            return Ok((process, permit));
+        loop {
+            let idle = lock(&self.idle).pop();
+            let Some(mut process) = idle else { break };
+            // A worker that died while idle (the OOM killer, a signal) never
+            // ran a call: it is dropped, not counted as a crash.
+            if matches!(process.child.try_wait(), Ok(None)) {
+                return Ok((process, permit));
+            }
+            tracing::warn!(app = %self.app, pid = process.pid, "a Loams Live worker died while idle");
         }
         if let Some(wait) = self.backoff() {
             tokio::time::sleep(wait).await;

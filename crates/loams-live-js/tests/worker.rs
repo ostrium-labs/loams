@@ -127,6 +127,32 @@ async fn worker_crash_is_function_error_and_respawns(store: TestStore) {
 #[cfg(target_os = "linux")]
 live_test!(worker_crash_is_function_error_and_respawns);
 
+/// A worker that dies while idle never ran a call: the next call starts a
+/// fresh worker and no crash is counted (PR #394 review).
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn a_worker_that_died_idle_is_replaced_without_a_crash() {
+    let store = TestStore::embedded(option_env!("CARGO_TARGET_TMPDIR")).await;
+    let r = runner(&store).await;
+    let handle = spawn(JsConfig {
+        contexts: 1,
+        ..JsConfig::default()
+    })
+    .await;
+    let ok = handle.function("w:ok").expect("w:ok");
+    assert_eq!(query(&r, &ok, unit()).await.expect("ok").result, s("fine"));
+    let before = handle.pids();
+    kill_workers(&handle);
+    // SIGKILL is delivered asynchronously.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        query(&r, &ok, unit()).await.expect("a fresh worker").result,
+        s("fine")
+    );
+    assert_ne!(before, handle.pids(), "a fresh worker process");
+    assert_eq!(handle.crashes(), 0, "an idle death is not a crash");
+}
+
 /// Five crashes within a minute mark the deployment's workers degraded;
 /// calls are still served, by workers respawned with backoff.
 #[cfg(target_os = "linux")]
