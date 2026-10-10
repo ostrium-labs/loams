@@ -1,6 +1,6 @@
 [package]
 name = "loams-sqldb"
-description = "The Loams SQL control plane (design §47): image pins, tidb-server config rendering and the compute runtime drivers."
+description = "The Loams SQL control plane (design §47): image pins, tidb-server config rendering, the compute runtime drivers and the lifecycle (suspend, resume, wake on connect)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,9 @@ publish = false
 # `cargo deny check licenses` over this crate's graph.
 [dependencies]
 async-trait.workspace = true
+# The Lifecycle machine (sans-I/O; plan SQ1 Task 5).
+loams-sqlrouter = { path = "../loams-sqlrouter" }
+rand_core = "0.10"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -23,7 +26,7 @@ tracing.workspace = true
 [dev-dependencies]
 mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust"] }
 proptest.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 
 [[test]]
 name = "it"

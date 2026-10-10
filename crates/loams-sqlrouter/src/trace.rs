@@ -82,3 +82,28 @@ pub struct NullSink;
 impl TraceSink for NullSink {
     fn emit(&mut self, _event: SpecEvent) {}
 }
+
+/// `events` as a TLA+ sequence of records, one per line, for trace specs
+/// that read a trace as a TLA+ definition (`spec/tla/router/LifecycleTrace.tla`;
+/// TLC 1.7.4 has no Json module): each record has `action` and the event's
+/// fields, e.g. `[action |-> "Admit", conn |-> "c1"]`.
+pub fn tla_sequence(events: &[SpecEvent]) -> String {
+    let value = |v: &SpecValue| match v {
+        SpecValue::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_owned(),
+        SpecValue::Int(i) => i.to_string(),
+        SpecValue::Str(s) => format!("{s:?}"),
+    };
+    let records: Vec<String> = events
+        .iter()
+        .map(|e| {
+            let mut fields = vec![format!("action |-> {:?}", e.action)];
+            fields.extend(
+                e.fields
+                    .iter()
+                    .map(|(k, v)| format!("{k} |-> {}", value(v))),
+            );
+            format!("    [{}]", fields.join(", "))
+        })
+        .collect();
+    format!("<<\n{}\n>>", records.join(",\n"))
+}

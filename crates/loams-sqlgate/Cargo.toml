@@ -36,6 +36,7 @@ async-trait.workspace = true
 hex.workspace = true
 # The LOAMS_IT_SQLDB test runs real TiDB pools through LocalRuntime.
 loams-sqldb = { path = "../loams-sqldb" }
+loams-sqlrouter = { path = "../loams-sqlrouter" }
 mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust", "rustls-tls", "ring", "tls12"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 proptest.workspace = true

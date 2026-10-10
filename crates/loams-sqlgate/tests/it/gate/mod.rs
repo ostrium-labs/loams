@@ -16,7 +16,9 @@ use loams_sqlgate::limits::{ActivityCounter, LimitsConfig, PreAuthConfig};
 use loams_sqlgate::server::{
     Gate, GateConfig, GateDeps, PlaintextPolicy, SniCert, sni_server_config,
 };
-use loams_sqlgate::upstream::{CredentialStore, PoolResolver, UpstreamError, UpstreamMember};
+use loams_sqlgate::upstream::{
+    Admission, Close, CredentialStore, PoolResolver, SessionLease, UpstreamError, UpstreamMember,
+};
 use rustls::pki_types::ServerName;
 
 use fake_tidb::{FakeOpts, FakeTidb};
@@ -24,16 +26,71 @@ use pki::Pki;
 
 const INTERNAL_PW: &[u8] = b"internal-ri-writer-password";
 
-pub struct Pools(HashMap<String, SocketAddr>, &'static str);
+pub struct Pools(HashMap<String, SocketAddr>, &'static str, Arc<WakeCtl>);
+
+/// What the tests' `EnsureRunning` does: answer `Resuming`, and ask
+/// admitted sessions to close.
+#[derive(Default)]
+pub struct WakeCtl {
+    pub resuming: std::sync::atomic::AtomicBool,
+    leases: std::sync::Mutex<Vec<tokio::sync::watch::Sender<Close>>>,
+    pub live: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl WakeCtl {
+    /// Asks every admitted session to close as `c` says.
+    pub fn close(&self, c: Close) {
+        for tx in self.leases.lock().expect("leases").iter() {
+            let _ = tx.send(c);
+        }
+    }
+
+    /// Sessions whose lease is still held.
+    pub fn live(&self) -> usize {
+        self.live.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+struct TestLease(
+    tokio::sync::watch::Receiver<Close>,
+    Arc<std::sync::atomic::AtomicUsize>,
+);
+
+#[async_trait]
+impl SessionLease for TestLease {
+    async fn closing(&mut self) -> Close {
+        if self.0.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+        *self.0.borrow_and_update()
+    }
+}
+
+impl Drop for TestLease {
+    fn drop(&mut self) {
+        self.1.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 #[async_trait]
 impl PoolResolver for Pools {
-    async fn members(&self, branch: &str) -> Result<Vec<UpstreamMember>, UpstreamError> {
+    async fn ensure_running(&self, branch: &str) -> Result<Admission, UpstreamError> {
+        if self.2.resuming.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(UpstreamError::Resuming);
+        }
         let addr = self.0.get(branch).ok_or(UpstreamError::Unavailable)?;
-        Ok(vec![UpstreamMember {
-            addr: *addr,
-            server_name: ServerName::try_from(self.1).expect("name"),
-        }])
+        let (tx, rx) = tokio::sync::watch::channel(Close::Open);
+        self.2.leases.lock().expect("leases").push(tx);
+        self.2
+            .live
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(Admission {
+            members: vec![UpstreamMember {
+                addr: *addr,
+                server_name: ServerName::try_from(self.1).expect("name"),
+            }],
+            lease: Box::new(TestLease(rx, self.2.live.clone())),
+        })
     }
 }
 
@@ -71,6 +128,7 @@ pub struct Harness {
     pub a: FakeTidb,
     pub b: FakeTidb,
     pub activity: Arc<ActivityCounter>,
+    pub wake: Arc<WakeCtl>,
 }
 
 pub struct Options {
@@ -155,9 +213,11 @@ pub async fn harness(opts: Options) -> Harness {
             },
         ),
     ]);
+    let wake = Arc::new(WakeCtl::default());
     let pools = Pools(
         HashMap::from([("br_a".into(), a.addr), ("br_b".into(), b.addr)]),
         opts.upstream_name,
+        wake.clone(),
     );
     let activity = Arc::new(ActivityCounter::default());
     let tls = sni_server_config(vec![SniCert {
@@ -207,6 +267,7 @@ pub async fn harness(opts: Options) -> Harness {
         a,
         b,
         activity,
+        wake,
     }
 }
 
@@ -246,3 +307,5 @@ impl Harness {
 
 mod real;
 mod tests;
+mod wake;
+mod wake_real;

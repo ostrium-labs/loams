@@ -5,6 +5,7 @@
 mod deps;
 mod hash;
 mod lean_oracle;
+mod lifecycle;
 mod ranges;
 mod record;
 mod trace;

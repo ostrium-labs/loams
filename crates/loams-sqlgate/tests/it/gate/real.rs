@@ -15,7 +15,9 @@ use loams_sqlgate::auth::{ResolvedUser, Role, StaticUsers, hash_password};
 use loams_sqlgate::codec::auth::Password;
 use loams_sqlgate::limits::ActivityCounter;
 use loams_sqlgate::server::{Gate, GateConfig, GateDeps, SniCert, sni_server_config};
-use loams_sqlgate::upstream::{CredentialStore, PoolResolver, UpstreamError, UpstreamMember};
+use loams_sqlgate::upstream::{
+    Admission, CredentialStore, NoLease, PoolResolver, UpstreamError, UpstreamMember,
+};
 use mysql_async::prelude::Queryable;
 use rustls::pki_types::ServerName;
 
@@ -24,7 +26,7 @@ use super::pki::Pki;
 
 const PD_HTTP: &str = "http://127.0.0.1:29379";
 
-struct Cleanup(String);
+pub(super) struct Cleanup(pub(super) String);
 
 impl Drop for Cleanup {
     fn drop(&mut self) {
@@ -46,7 +48,7 @@ impl Drop for Cleanup {
     }
 }
 
-fn keyspace(name: &str) {
+pub(super) fn keyspace(name: &str) {
     for _ in 0..10 {
         let ok = Command::new("curl")
             .args([
@@ -76,21 +78,24 @@ struct Members(std::sync::Mutex<HashMap<String, std::net::SocketAddr>>);
 
 #[async_trait]
 impl PoolResolver for Members {
-    async fn members(&self, branch: &str) -> Result<Vec<UpstreamMember>, UpstreamError> {
+    async fn ensure_running(&self, branch: &str) -> Result<Admission, UpstreamError> {
         let addr = *self
             .0
             .lock()
             .expect("members")
             .get(branch)
             .ok_or(UpstreamError::Unavailable)?;
-        Ok(vec![UpstreamMember {
-            addr,
-            server_name: ServerName::IpAddress(addr.ip().into()),
-        }])
+        Ok(Admission {
+            members: vec![UpstreamMember {
+                addr,
+                server_name: ServerName::IpAddress(addr.ip().into()),
+            }],
+            lease: Box::new(NoLease),
+        })
     }
 }
 
-struct Creds(Vec<u8>);
+pub(super) struct Creds(pub(super) Vec<u8>);
 
 #[async_trait]
 impl CredentialStore for Creds {

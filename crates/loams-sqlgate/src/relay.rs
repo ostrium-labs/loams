@@ -12,6 +12,10 @@
 //!   a discarded command are zeroed.
 //! - TiDB → client is copied packet by packet, so a gate ERR always lands
 //!   on a packet boundary.
+//! - A suspend (plan SQ1 Task 5) asks the session to close through its
+//!   lease: once idle (quiet, no command awaiting TiDB) it gets ERR 1053
+//!   and is closed; a kill closes it at once (with 1053 if it is between
+//!   commands). Closing the TiDB connection rolls back an open transaction.
 
 use std::io;
 use std::sync::Arc;
@@ -25,11 +29,19 @@ use tokio::time::Instant;
 use crate::codec::command::{Command, ErrPacket, KILL_SCAN, classify, starts_with_kill};
 use crate::codec::packet::{HEADER_LEN, MAX_FRAME, encode};
 use crate::limits::{ActivitySink, Slot};
-use crate::upstream::Upstream;
+use crate::upstream::{Close, SessionLease, Upstream};
 use crate::wire::{ClientStream, zero};
 
 /// After shutdown, a session this quiet is closed.
 const QUIET: Duration = Duration::from_millis(250);
+
+/// How often a session asked to close checks whether it is idle.
+const IDLE_POLL: Duration = Duration::from_millis(50);
+
+/// What a session closed by its lifecycle gets (MySQL's server shutdown).
+fn err_shutdown() -> ErrPacket {
+    ErrPacket::new(1053, *b"08S01", "Server shutdown in progress")
+}
 
 /// `COM_QUERY` and `COM_STMT_PREPARE`: checked for `KILL`.
 const QUERY: u8 = 0x03;
@@ -42,6 +54,8 @@ pub(crate) struct Relay {
     pub slot: Slot,
     pub idle_timeout: Duration,
     pub shutdown: watch::Receiver<bool>,
+    /// From `EnsureRunning`: a suspend closes the session through it.
+    pub lease: Box<dyn SessionLease>,
 }
 
 /// The last time a byte moved, in milliseconds since `base`, and whether
@@ -66,7 +80,15 @@ impl Clock {
 }
 
 /// Relays until either side ends, then closes both.
-pub(crate) async fn relay(client: ClientStream, upstream: Upstream, mut r: Relay) {
+pub(crate) async fn relay(client: ClientStream, upstream: Upstream, r: Relay) {
+    let Relay {
+        branch,
+        activity,
+        slot,
+        idle_timeout,
+        mut shutdown,
+        mut lease,
+    } = r;
     let (cr, cw) = tokio::io::split(client);
     let (ur, uw) = tokio::io::split(upstream);
     let cw = Mutex::new(cw);
@@ -77,7 +99,7 @@ pub(crate) async fn relay(client: ClientStream, upstream: Upstream, mut r: Relay
     };
     let idle = async {
         loop {
-            let left = r.idle_timeout.saturating_sub(clock.idle_for());
+            let left = idle_timeout.saturating_sub(clock.idle_for());
             if left.is_zero() {
                 return;
             }
@@ -89,7 +111,7 @@ pub(crate) async fn relay(client: ClientStream, upstream: Upstream, mut r: Relay
     // for TiDB's answer (a long query). The gate's drain deadline ends the
     // others (fix round 2, N4).
     let stop = async {
-        if r.shutdown.wait_for(|stopped| *stopped).await.is_err() {
+        if shutdown.wait_for(|stopped| *stopped).await.is_err() {
             // The gate is gone: nothing will ask us to stop.
             std::future::pending::<()>().await;
         }
@@ -101,18 +123,56 @@ pub(crate) async fn relay(client: ClientStream, upstream: Upstream, mut r: Relay
             tokio::time::sleep(left.max(Duration::from_millis(50))).await;
         }
     };
+    // A suspend: `WhenIdle` closes the session once quiet and not busy
+    // (the rule above), `Now` at once; `Open` cancels (an aborted suspend).
+    let lifecycle = async {
+        let mut want = Close::Open;
+        loop {
+            let polling = want == Close::WhenIdle;
+            tokio::select! {
+                c = lease.closing() => want = c,
+                () = tokio::time::sleep(IDLE_POLL), if polling => {}
+            }
+            let idle = clock.idle_for() >= QUIET && !clock.awaiting.load(Ordering::SeqCst);
+            match want {
+                Close::Now => return Close::Now,
+                Close::WhenIdle if idle => return Close::WhenIdle,
+                Close::WhenIdle | Close::Open => {}
+            }
+        }
+    };
+    let mut farewell = None;
     tokio::select! {
-        _ = client_to_upstream(cr, uw, &cw, &r.branch, &*r.activity, &clock) => {}
+        _ = client_to_upstream(cr, uw, &cw, &branch, &*activity, &clock) => {}
         _ = upstream_to_client(ur, &cw, &clock) => {}
         () = idle => tracing::debug!("idle timeout"),
         () = stop => {}
+        close = lifecycle => {
+            tracing::debug!(branch = %branch, ?close, "closed by the lifecycle");
+            // Mid-command there is no packet boundary for an ERR.
+            if close == Close::WhenIdle || !clock.awaiting.load(Ordering::SeqCst) {
+                farewell = Some(err_shutdown());
+            }
+        }
+    }
+    if let Some(err) = farewell {
+        let mut out = Vec::new();
+        let mut seq = 0;
+        encode(&err.encode(), &mut seq, &mut out);
+        let _ = tokio::time::timeout(Duration::from_secs(1), async {
+            let mut w = cw.lock().await;
+            let _ = w.write_all(&out).await;
+            let _ = w.flush().await;
+        })
+        .await;
     }
     // Close the client cleanly (TLS close_notify) without waiting long.
     let _ = tokio::time::timeout(Duration::from_secs(1), async {
         cw.lock().await.shutdown().await
     })
     .await;
-    drop(r.slot);
+    drop(slot);
+    drop(lease);
 }
 
 fn frame_len(header: &[u8; HEADER_LEN]) -> usize {

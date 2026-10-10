@@ -8409,8 +8409,10 @@ name = "loams-sqldb"
 version = "0.0.1"
 dependencies = [
  "async-trait",
+ "loams-sqlrouter",
  "mysql_async",
  "proptest",
+ "rand_core 0.10.1",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -8428,6 +8430,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hex",
  "loams-sqldb",
+ "loams-sqlrouter",
  "mysql_async",
  "proptest",
  "rcgen",

@@ -7,7 +7,8 @@
 //! keeps a keyspace partitioned ([`ranges`]), the hash functions that place a
 //! key exactly where Postgres hash partitioning and Vitess vindexes place it
 //! ([`hash`]), and the seams every protocol machine runs behind
-//! ([`machine`], [`trace`]).
+//! ([`machine`], [`trace`]), and the control-plane machines built on them
+//! ([`machines`]: Loams SQL's branch lifecycle).
 //!
 //! Nothing here does I/O, reads a clock or draws unseeded randomness: drivers
 //! supply time and randomness through [`machine::Ctx`] and execute the
@@ -21,6 +22,7 @@
 
 pub mod hash;
 pub mod machine;
+pub mod machines;
 pub mod ranges;
 pub mod record;
 pub mod trace;

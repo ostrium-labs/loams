@@ -4,6 +4,10 @@
 //! upstream login over TLS with PROXY v2, and a relay that refuses
 //! `COM_CHANGE_USER`, replication and admin commands (1235).
 //!
+//! After login the branch is woken if it is suspended (`EnsureRunning`,
+//! Task 5): the client is held up to 30 s, then gets 1040 `database is
+//! resuming, retry`. A suspend closes the session through its lease (1053).
+//!
 //! Plaintext is accepted only from loopback peers ([`PlaintextPolicy`]).
 //! Every connection gets a fresh OS-random nonce. The upstream profile is
 //! static ([`TIDB_V8_5_8`]); TiDB's own greeting is never relayed.
@@ -34,7 +38,7 @@ use crate::limits::{
     PreAuthConfig, source_key,
 };
 use crate::upstream::{
-    ClientContext, CredentialStore, PoolResolver, Upstream, UpstreamError, connect,
+    ClientContext, CredentialStore, PoolResolver, Upstream, UpstreamError, UpstreamMember, connect,
 };
 use crate::wire::{ClientStream, Prefixed, SecretBuf};
 
@@ -155,6 +159,9 @@ pub struct GateConfig {
     pub handshake_timeout: Duration,
     /// The upstream connect and login deadline.
     pub upstream_timeout: Duration,
+    /// How long a client waits for `EnsureRunning` (which refuses after
+    /// 30 s itself; this is a backstop).
+    pub wake_timeout: Duration,
     /// Per-database limits.
     pub limits: LimitsConfig,
     /// Per-IP limits on connections in their handshake.
@@ -204,6 +211,7 @@ impl GateConfig {
             plaintext: PlaintextPolicy::Never,
             handshake_timeout: Duration::from_secs(10),
             upstream_timeout: Duration::from_secs(30),
+            wake_timeout: Duration::from_secs(35),
             limits: LimitsConfig::default(),
             pre_auth: PreAuthConfig::default(),
             max_connections: 10_000,
@@ -238,7 +246,7 @@ pub struct GateDeps {
     pub users: Arc<dyn UserResolver>,
     /// Internal `ri_<role>` passwords.
     pub credentials: Arc<dyn CredentialStore>,
-    /// Pool members (`EnsureRunning`).
+    /// `EnsureRunning`: wakes the branch and admits the session.
     pub pools: Arc<dyn PoolResolver>,
     /// `ReportActivity`.
     pub activity: Arc<dyn ActivitySink>,
@@ -352,6 +360,7 @@ fn err_upstream(e: &UpstreamError, user: &str, database: Option<&str>) -> ErrPac
             *b"42000",
             &format!("Access denied for user '{user}' to database '{db}'"),
         ),
+        UpstreamError::Resuming => ErrPacket::new(1040, *b"08004", "database is resuming, retry"),
         _ => err_unavailable(),
     }
 }
@@ -523,8 +532,33 @@ impl Gate {
                 return;
             }
         };
-        let upstream =
-            tokio::time::timeout(self.config.upstream_timeout, self.upstream(&user, &ctx)).await;
+        // EnsureRunning (Task 5): a suspended branch is woken and the
+        // client held until it runs (1040 `database is resuming, retry`
+        // after 30 s). The lease lives as long as the session.
+        let admission = match tokio::time::timeout(
+            self.config.wake_timeout,
+            self.deps.pools.ensure_running(&user.branch),
+        )
+        .await
+        {
+            Ok(Ok(a)) => a,
+            Ok(Err(e)) => {
+                tracing::info!(%peer, branch = %user.branch, error = %e, "not admitted");
+                let err = err_upstream(&e, &username, ctx.database.as_deref());
+                let _ = client.write_all(&replace_ok(&done, &err)).await;
+                return;
+            }
+            Err(_) => {
+                let err = err_upstream(&UpstreamError::Resuming, &username, None);
+                let _ = client.write_all(&replace_ok(&done, &err)).await;
+                return;
+            }
+        };
+        let upstream = tokio::time::timeout(
+            self.config.upstream_timeout,
+            self.upstream(&user, &ctx, &admission.members),
+        )
+        .await;
         let upstream = match upstream {
             Ok(Ok(u)) => u,
             Ok(Err(e)) => {
@@ -556,6 +590,7 @@ impl Gate {
                 branch: user.branch.clone(),
                 activity: self.deps.activity.clone(),
                 slot,
+                lease: admission.lease,
                 idle_timeout: self.config.idle_timeout,
                 shutdown: self.shutdown.subscribe(),
             },
@@ -567,6 +602,7 @@ impl Gate {
         &self,
         user: &ResolvedUser,
         ctx: &ClientContext,
+        members: &[UpstreamMember],
     ) -> Result<Upstream, crate::upstream::UpstreamError> {
         let password = self
             .deps
@@ -574,7 +610,6 @@ impl Gate {
             .internal_password(&user.branch, user.role)
             .await
             .ok_or(crate::upstream::UpstreamError::NoCredential)?;
-        let members = self.deps.pools.members(&user.branch).await?;
         if members.is_empty() {
             return Err(crate::upstream::UpstreamError::Unavailable);
         }
