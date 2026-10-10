@@ -105,6 +105,10 @@ impl Harness for HeldHarness {
         request: RunRequest,
         controls: RunControls,
     ) -> Result<BoxStream<'static, Result<AgentEvent, HarnessError>>, HarnessError> {
+        // Subscribe before the prompt is visible: a test that sees the prompt
+        // and then ends the turn must reach this run, not a broadcast with no
+        // receiver yet.
+        let finish = self.finish.subscribe();
         self.prompts.lock().unwrap().push(request.prompt.clone());
         self.requests.lock().unwrap().push(request.clone());
         let answer = self.asks.then(|| {
@@ -120,7 +124,6 @@ impl Harness for HeldHarness {
                 multi_select: false,
             }])
         });
-        let finish = self.finish.subscribe();
         let steering = controls.steering;
         let prompts = self.prompts.clone();
         let gate = self.mailbox_gate.lock().unwrap().take();
@@ -777,11 +780,14 @@ async fn queued_text_waits_for_a_steerable_turn_even_with_legacy_policy() {
     assert_eq!(user_messages(&core), vec!["opening"]);
 
     harness.finish.send(()).unwrap();
+    // The transcript entry lands before the run starts; the prompt reaching
+    // the agent means the run is live and can be finished.
     wait_for(
-        || user_messages(&core).iter().any(|m| m == "first queued"),
+        || prompts.lock().unwrap().iter().any(|p| p == "first queued"),
         "first queued turn",
     )
     .await;
+    assert!(user_messages(&core).iter().any(|m| m == "first queued"));
     assert_eq!(queue_texts(&core), vec!["second queued"]);
     assert!(!user_messages(&core).iter().any(|m| m == "second queued"));
     harness.finish.send(()).unwrap();

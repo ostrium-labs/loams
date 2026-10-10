@@ -319,12 +319,17 @@ fn image_part(
 #[derive(Debug)]
 pub struct SessionDoc {
     doc: LoroDoc,
+    /// Serializes the queue's read-modify-write mutations (see `queue.rs`).
+    pub(crate) queue_writes: std::sync::Mutex<()>,
 }
 
 impl SessionDoc {
     /// Wrap an existing doc (e.g. imported from a snapshot).
     pub fn from_doc(doc: LoroDoc) -> Self {
-        Self { doc }
+        Self {
+            doc,
+            queue_writes: std::sync::Mutex::new(()),
+        }
     }
 
     /// Create + initialize a fresh doc for `chat_id` (host-only).
@@ -334,7 +339,7 @@ impl SessionDoc {
         meta.insert("chatId", chat_id)?;
         meta.insert("schemaVersion", SESSION_SCHEMA_VERSION as i64)?;
         doc.commit();
-        Ok(Self { doc })
+        Ok(Self::from_doc(doc))
     }
 
     pub fn doc(&self) -> &LoroDoc {

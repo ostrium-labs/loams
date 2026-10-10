@@ -14,6 +14,16 @@
 //!
 //! Writers: any device (unlike `messages`, which is host-only). The host is
 //! the only one that *takes* from the queue — see `DocHost::drain_queue`.
+//!
+//! Every mutation below is a read-modify-write of the shared `LoroDoc`: a push
+//! reads the length and then inserts, a take finds a row's index and then
+//! deletes at it, a new row is created and then filled field by field. Loro
+//! makes each single op atomic, not the sequence, and the composer, the drain
+//! and the queue RPCs run on different threads. So each mutation holds
+//! `SessionDoc::queue_writes` from its first read to its commit. Without it a
+//! push raced a take into `OutOfBound` or `ContainerDeleted`, and a take could
+//! delete the row next to the one it found (plan DD1 Task 3, the flaky
+//! `message_queue::concurrent_drains_release_one_message`).
 
 use loro::ToJson;
 use serde::{Deserialize, Serialize};
@@ -101,6 +111,12 @@ impl QueuedMessage {
 }
 
 impl SessionDoc {
+    fn queue_lock(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.queue_writes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     /// The queue in send order. Malformed rows skip rather than poison the read.
     pub fn read_queue(&self) -> Result<Vec<QueuedMessage>, DocError> {
         let raw = self
@@ -123,6 +139,7 @@ impl SessionDoc {
         if item.text.trim().is_empty() {
             return Err(DocError::Schema("queued message text required".into()));
         }
+        let _queue = self.queue_lock();
         let queue = self.doc().get_movable_list("queue");
         let map = queue.push_container(loro::LoroMap::new())?;
         write_queued_map(&map, item)?;
@@ -141,6 +158,7 @@ impl SessionDoc {
         if item.text.trim().is_empty() {
             return Err(DocError::Schema("queued message text required".into()));
         }
+        let _queue = self.queue_lock();
         let queue = self.doc().get_movable_list("queue");
         let map = queue.insert_container(index.min(queue.len()), loro::LoroMap::new())?;
         write_queued_map(&map, item)?;
@@ -152,8 +170,9 @@ impl SessionDoc {
     /// so the row goes — that is the delete gesture, not an error.
     /// `false` when there is no such row, or the text is unchanged.
     pub fn set_queued_text(&self, id: &str, text: &str, now_ms: i64) -> Result<bool, DocError> {
+        let _queue = self.queue_lock();
         if text.trim().is_empty() {
-            return self.remove_queued(id);
+            return self.remove_queued_locked(id);
         }
         let queue = self.doc().get_movable_list("queue");
         let Some(index) = index_of(&queue, id) else {
@@ -183,6 +202,7 @@ impl SessionDoc {
         id: &str,
         gate: Option<&QueueDeliveryGate>,
     ) -> Result<bool, DocError> {
+        let _queue = self.queue_lock();
         let queue = self.doc().get_movable_list("queue");
         let Some(index) = index_of(&queue, id) else {
             return Ok(false);
@@ -229,8 +249,9 @@ impl SessionDoc {
         attachments: Option<&[String]>,
         now_ms: i64,
     ) -> Result<bool, DocError> {
+        let _queue = self.queue_lock();
         if replacement.is_some_and(|text| text.trim().is_empty()) {
-            return self.remove_queued(id);
+            return self.remove_queued_locked(id);
         }
         let queue = self.doc().get_movable_list("queue");
         let Some(index) = index_of(&queue, id) else {
@@ -266,6 +287,7 @@ impl SessionDoc {
     /// Move a row to `to` (clamped to the queue's bounds). `false` when the row
     /// is missing or already sits there.
     pub fn move_queued(&self, id: &str, to: usize) -> Result<bool, DocError> {
+        let _queue = self.queue_lock();
         let queue = self.doc().get_movable_list("queue");
         let Some(from) = index_of(&queue, id) else {
             return Ok(false);
@@ -281,6 +303,11 @@ impl SessionDoc {
 
     /// Drop a row. `false` when it was already gone (another device took it).
     pub fn remove_queued(&self, id: &str) -> Result<bool, DocError> {
+        let _queue = self.queue_lock();
+        self.remove_queued_locked(id)
+    }
+
+    fn remove_queued_locked(&self, id: &str) -> Result<bool, DocError> {
         let queue = self.doc().get_movable_list("queue");
         let Some(index) = index_of(&queue, id) else {
             return Ok(false);
@@ -294,6 +321,11 @@ impl SessionDoc {
     /// `None` when it is already gone, which is the race we want: two devices
     /// popping the same row means exactly one of them gets it.
     pub fn take_queued(&self, id: &str) -> Result<Option<QueuedMessage>, DocError> {
+        let _queue = self.queue_lock();
+        self.take_queued_locked(id)
+    }
+
+    fn take_queued_locked(&self, id: &str) -> Result<Option<QueuedMessage>, DocError> {
         let queue = self.doc().get_movable_list("queue");
         let Some(index) = index_of(&queue, id) else {
             return Ok(None);
@@ -315,10 +347,11 @@ impl SessionDoc {
 
     /// Remove and return the head — the host's turn-end flush.
     pub fn take_queue_head(&self) -> Result<Option<QueuedMessage>, DocError> {
+        let _queue = self.queue_lock();
         let Some(head) = self.read_queue()?.into_iter().next() else {
             return Ok(None);
         };
-        self.take_queued(&head.id)
+        self.take_queued_locked(&head.id)
     }
 }
 
