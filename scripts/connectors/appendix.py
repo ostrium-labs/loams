@@ -68,7 +68,7 @@ SECTIONS = (
     ("identity", "A.15", "Identity"),
     ("ai", "A.16", "AI"),
     ("protocol", "A.17", "Generic protocols"),
-    ("applications", "A.18", "Loams's own applications"),
+    ("applications", "A.18", "Loams’ own applications"),
 )
 
 # A row's `category` (or `section`) column names one of these, and several
@@ -117,7 +117,7 @@ SECTION_EPILOGUES = {
     # joined A.3 as its own row: a Rust engine embedded in the Fabric, reached over
     # Connect-RPC with GQL (ISO/IEC 39075) as its query surface. The section key is `nosql`
     # because A.3 prints nosql, search, vector and graph as one table.
-    "nosql": "`Neo4j`'s source direction is served by a **native** connector over the engine's gRPC Query Service, not by `camel-neo4j`: `camel-catalog` 4.22.1 marks `camel-neo4j` (and `camel-arangodb`) `producerOnly: true`, so Camel can write to a graph and cannot read from one (D634). `Grafeo` is Loams's own graph engine, a Rust database embedded in the Fabric and reached over Connect-RPC with **GQL** — ISO/IEC 39075 — as its query surface, so the connector is not tied to one vendor's dialect. Both are P2 and neither is ★.",
+    "nosql": "`Neo4j`'s source direction is served by a **native** connector over the engine's gRPC Query Service, not by `camel-neo4j`: `camel-catalog` 4.22.1 marks `camel-neo4j` (and `camel-arangodb`) `producerOnly: true`, so Camel can write to a graph and cannot read from one (D634). `Grafeo` is Loams’ own graph engine, a Rust database embedded in the Fabric and reached over Connect-RPC with **GQL** — ISO/IEC 39075 — as its query surface, so the connector is not tied to one vendor's dialect. Both are P2 and neither is ★.",
 }
 
 SECTION_NOTES = {
@@ -126,7 +126,7 @@ SECTION_NOTES = {
     "ai": "AI connectors are mostly sinks used as enrichment steps (embedding, "
           "classification, extraction) inside a route, with the result written "
           "back into the event.",
-    "applications": 'Loams\'s collaboration applications (design §39, SF1). They are import **targets** — the sinks a route writes into when data comes from Slack, GitHub or Jira — and sources in their own right. Camel has no component for any of them, so all three are **native** Rust connectors in `loams-flow` that speak each app\'s public REST API (D354\'s "native Rust where Loams owns the hot path"; §33\'s `runtime.kind` values). They are **P1 but not ★**: they ship in CN1, but they are not part of the précis\' 21-connector hot path, so D358\'s ★ count is unchanged.',
+    "applications": 'Loams’ collaboration applications (design §39, SF1). They are import **targets** — the sinks a route writes into when data comes from Slack, GitHub or Jira — and sources in their own right. Camel has no component for any of them, so all three are **native** Rust connectors in `loams-flow` that speak each app\'s public REST API (D354\'s "native Rust where Loams owns the hot path"; §33\'s `runtime.kind` values). They are **P1 but not ★**: they ship in CN1, but they are not part of the précis\' 21-connector hot path, so D358\'s ★ count is unchanged.',
 }
 
 # The appendix's legend spells three auth methods in prose ("per driver",
