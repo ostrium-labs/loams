@@ -348,9 +348,17 @@ impl pb::GraphAdminService for GraphMock {
         request: ServiceRequest<'_, pb::DeleteGraphRequest>,
     ) -> ServiceResult<Operation> {
         let req = request.to_owned_message();
-        let graph = self.graph(&req.namespace, &req.name)?;
-        self.graphs()
-            .remove(&(req.namespace.clone(), req.name.clone()));
+        // One lock: the removal is the existence check, so two deletes cannot both succeed.
+        let graph = self
+            .graphs()
+            .remove(&(req.namespace.clone(), req.name.clone()))
+            .ok_or_else(|| {
+                refuse(
+                    ErrorCode::NotFound,
+                    "graph_not_found",
+                    format!("graph {}/{} not found", req.namespace, req.name),
+                )
+            })?;
         let mut operation = Operation {
             id: format!("op-{}", ulid::Ulid::generate().to_string().to_lowercase()),
             kind: "graph.delete".into(),

@@ -1684,21 +1684,26 @@ fn as_engine_error(err: GrafeoError) -> GraphError {
 ///
 /// The place is computed from the span's byte offsets over the statement Grafeo attached, so
 /// `column` and `length` count characters (what an editor underlines), not bytes. A span with no
-/// statement attached keeps Grafeo's own line and column.
+/// statement attached, or offsets that do not fit it, keeps Grafeo's own line and column.
 fn diagnostic_of(err: &GrafeoError) -> Diagnostic {
     let gqlstatus = grafeo_common::utils::GqlStatus::from(err)
         .as_str()
         .to_string();
     let position = match err {
-        GrafeoError::Query(query) => query.span.and_then(|span| match &query.source_query {
-            Some(source) => position_in(source, span.start, span.end),
-            None => Some(Position {
-                line: span.line,
-                column: span.column,
-                length: u32::try_from(span.end.saturating_sub(span.start))
-                    .unwrap_or(u32::MAX)
-                    .max(1),
-            }),
+        // Grafeo's own line and column (with a byte length) when there is no statement attached,
+        // or when the span's offsets are not character boundaries of it.
+        GrafeoError::Query(query) => query.span.map(|span| {
+            query
+                .source_query
+                .as_deref()
+                .and_then(|source| position_in(source, span.start, span.end))
+                .unwrap_or(Position {
+                    line: span.line,
+                    column: span.column,
+                    length: u32::try_from(span.end.saturating_sub(span.start))
+                        .unwrap_or(u32::MAX)
+                        .max(1),
+                })
         }),
         _ => None,
     };
