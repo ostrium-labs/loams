@@ -42,6 +42,10 @@ path = "src/bin/loams-wal.rs"
 required-features = ["server"]
 
 [[example]]
+name = "record_interpreted"
+required-features = ["server"]
+
+[[example]]
 name = "tikv_commit_modes"
 required-features = ["tikv"]
 
