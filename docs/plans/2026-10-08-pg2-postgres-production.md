@@ -377,6 +377,7 @@ Commit `feat(pg): roles, databases, secret store`.
     - decrements the parent's guard (`children - 1`);
     - stamps `updated_at_ms`.
   - It removes a project's records and indexes the same way.
+  - *(Task 6, R6.8.)* Removing a branch also removes its roles' and databases' records (`R/<branch>/`, `D/<branch>/`) and then deletes their secrets; the resync sweeps secrets no record names.
   - This needs a fenced `Batch` on `PgControlStore`.
 
 Tests:
@@ -1655,3 +1656,51 @@ Steps: each runbook step is executed once on kind and marked verified. Commit `d
 - **R5.13 Recorded for later tasks.**
   - Limits on branches per project and on nesting depth: Task 47, whose text is amended.
   - Operations: Task 7 sets progress and the end states. Collecting finished operations and their indexes (and the ledger's prune timer) belongs to Task 9's wiring, and their retention to Task 46's runbook.
+
+### Task 6 rulings (2026-10-10)
+
+- **R6.1 One secret, one reference, one record.**
+  - Every password issued (create, reset, a child branch's copy) is stored under a fresh `SecretRef` (`pg-role-<project ulid>-<ulid>`, lower case, a valid Kubernetes object name). Only one `RoleRec` ever names a reference.
+  - Order: the secret is stored, then the record that names it commits, in one batch with the ledger entry. A reset deletes the old secret after its new record commits.
+  - A secret whose record did not commit is deleted again, but only after the service reads that no record names it. After `Undetermined` it is kept, because the record may name it.
+  - So a crash, a failed delete or an unknown outcome can leave an unused secret, never a record without its secret. Sweeping unused secrets needs a `list` on `SecretStore`; it belongs with Task 7's resync.
+- **R6.2 Records.**
+  - `RoleRec` gains `project_id`, `system`, `created_at_ms` and `updated_at_ms`. `secret_ref` is typed `SecretRef`, which encodes as the same string.
+  - `DatabaseRec` gains `project_id` and `created_at_ms`.
+  - Both now name their project (`Record::project`), so a fenced write of either needs that project's lease (R3.11).
+  - `FORMAT` stays 1: no role or database record exists outside tests (R5.11's precedent).
+- **R6.3 The password is answered once (R1.10).**
+  - The ledger records the role (with its reference, never the password). A replay answers `secret_already_issued`, with `role` and `hint`.
+  - A call that loses its batch to a concurrent call under the same key also answers `secret_already_issued`: the ledger's answer names the winner's reference, not its own.
+  - After `Undetermined`, a call whose write applied finds its own entry and answers its password. If the outcome stays unknown, it answers `unavailable`. A retry under the same key then creates the role (nothing applied) or answers `secret_already_issued` (it applied, and the password is lost: reset it).
+- **R6.4 Inheritance.**
+  - `CreateBranch` copies the parent's roles, each with a copy of its secret under the child's own reference, and the databases whose owner it copied, all in the batch that creates the branch. The batch checks each parent role's version, so a reset or delete meanwhile makes it copy again.
+  - It copies the records as they are now, not as of the branch point: `pg-control` keeps no history of them. The compute spec makes the records authoritative, so the child's compute gets what its records say.
+  - A taken branch name is refused before anything is copied.
+- **R6.5 Names and preconditions.**
+  - A role name is a Postgres identifier (1–63 bytes, no NUL). These are reserved, compared lower-cased:
+    - `public` and `none` (Postgres);
+    - `cloud_admin`, `neon_superuser`, `databricks_superuser` and `zenith_admin` (the fork's `compute_ctl`);
+    - the prefixes `pg_`, `tok_` (§46 §8.6's login roles) and `loams_` (roles Loams manages, such as `loams_ro`).
+  - `postgres`, `template0` and `template1` are reserved database names.
+  - A database's owner must be a role of the same branch (`failed_precondition`, which registers no metadata, so the role is named in the message).
+  - `DeleteRole` refuses a role that owns a database, as `DROP ROLE` would. `CreateDatabase` rewrites its owner's record unchanged, so a create and a delete of the owner conflict either way.
+  - A `system` role is neither reset nor deleted through the API.
+  - An empty `branch_id` takes the default branch. Changes need the project and the branch `creating` or `ready`; listings work in any state.
+- **R6.6 The stores.**
+  - `FileSecretStore`:
+    - one file holding a format byte and a postcard map, age-encrypted (age 0.11.5, X25519) and replaced atomically (0600 temporary file, fsync, rename, directory fsync);
+    - the key is a 0600 file, created on first use, and a key file others can read is refused. With the feature `keyring`, the key can live in an OS keyring entry instead;
+    - one process owns the file.
+  - `KubeSecretStore` (feature `kubernetes`):
+    - one `Opaque` Secret per reference (data key `secret`, labels `app.kubernetes.io/managed-by=loams-pg-control`), written by server-side apply with the field manager `loams-pg-control`;
+    - it needs `get`, `patch` and `delete` on `secrets` in its namespace;
+    - KMS encryption at rest is the cluster's `EncryptionConfiguration`, which Task 48's chart documents.
+  - **kube is pinned at 3.1.0, not 4.2.0** (a deviation from Task 0 ruling 5). kube-client 4.x needs serde-saphyr 0.0.29, which caps `smallvec` below 1.16 and would downgrade it workspace-wide. 3.1.0 (2026-03-17, k8s-openapi 0.27.1) reads kubeconfig with `serde_yaml`, which the lockfile already has. Task 13 moves to 4.x once serde-saphyr lifts the cap.
+- **R6.7 Tests.** The role and database cases are in `tests/service/roles.rs`, run by `service_local` and `service_tikv`, rather than in `tests/roles.rs`, so they run on both backends as Task 5's do. The stores' cases are in `tests/secrets.rs` and `tests/secrets_kube.rs` (feature `kubernetes`, against a stand-in API server). `pg2.yml`'s `pg-control` job runs the latter, and clippy with `kubernetes,keyring`.
+- **R6.8 For later tasks.**
+  - **Task 7.** Removing a branch or a project also removes its `R/` and `D/` records and deletes their secrets. The orphan sweep (R6.1) also belongs here.
+  - **Tasks 11 and 24.** The fork's `compute_ctl` creates a spec role as `CREATE ROLE … INHERIT CREATEROLE CREATEDB BYPASSRLS REPLICATION IN ROLE neon_superuser` (`compute_tools/src/spec_apply.rs:819`). Only a role in `jwks_roles` is created as a plain role. Least privilege for API roles, and `loams_ro`'s attribute list (Task 0 ruling 8), are decided there.
+  - **Task 24.** `reset_password_rotates_and_invalidates_old` checks the store's side. That the old password stops working at the compute and at PgDog is Task 24's check.
+  - **Task 9.** Map `RoleRec` to `Role` (`system`, `create_time`). Wire `PgService::new`'s `SecretStore`: the file store in single-node mode, the Kubernetes store under `--runtime kubernetes`.
+  - **Task 47.** Limits on roles and databases per branch.
