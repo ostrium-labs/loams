@@ -1341,3 +1341,66 @@ This needs no new metastore type and works on every `MetaStore` backend, TiKV in
 - `--features live,durable,live-tikv,graph` is now used in `fetch-engine.mjs`, the README, both desktop workflows (Windows included, whose engine step already tolerates failure), `docs/build-from-source` and `docs/release/desktop.md`.
 - The E2E check `graph_page_runs_query_against_loams_dev` is a `test.step` in the Electron smoke's real-engine branch, so it needs only one app launch. It creates `movies` through the page, runs `MATCH (n) RETURN count(n)` and sees one row.
 - It was not run locally, because it needs a release `loams` built with those features.
+
+### Task 9 (2026-10-10, on `backend/gr1`)
+
+How these were measured: `crates/loams-graph/tests/capture_spike.rs` (kept) runs against Grafeo 0.5.43 with the workspace's features; `tests/capture_spike_temporal.rs` runs only with the spike-only feature `grafeo-temporal` (`loams-graph`, never enabled by a server build). `CdcCapture` and `apply_to_store` are in `src/changeset/{mod.rs,capture.rs}`, where Tasks 10, 11 and 14 pick them up. Grafeo sources were read from `~/.cargo/registry/src/index.crates.io-*/grafeo*-0.5.43/`.
+
+**R9.1 Q672 is answered: mechanism B (Grafeo CDC), resolved against the store.**
+- `cdc_capture_matches_model` passes 10 000 random workloads: inserts (single nodes and paths), `MERGE`, property sets of four value types, `SET n = {…}` and `SET n += {…}`, `REMOVE` of properties and labels, label adds, `DELETE` and `DETACH DELETE`, edge inserts, edge property sets and removes, edge deletes, multi-statement transactions, failed statements (an atomic batch rolls back) and requested rollbacks. After every transaction the captured operations, applied to a pure model that checks each operation's precondition, equal Grafeo's dump. One tuning run counted 25 757 node upserts, 894 node deletes, 9 049 edge upserts, 588 edge deletes, 4 406 node and 433 edge property changes over 34 528 commits, 5 244 rollbacks and 17 refused commits (R9.8).
+- Mechanism A was not prototyped: B passes with Loams-side code, which step 5 requires first. For the record, A has no tap in 0.5.43: `GrafeoDB::wal()` is public, but replay (`apply_wal_records`) is private, and `grafeo-storage`'s `WalRecovery::recover` reads a WAL directory, not one commit.
+- `commit_epoch_is_exact_under_lane` (4 threads × 25 transactions through a mutex): `prepare_commit().commit()` returned epochs 1..=100 exactly, and each transaction's CDC events sit at its own epoch (R0.5 holds under the lane).
+
+**R9.2 A change set is the transaction's net effect, not its mutation sequence (amends §48 §6.3's "in order").**
+- `CdcCapture::take(E)` reads `changes_between(E, E)`, sorts by HLC timestamp (the map returns events in hash order), and keeps only which elements were touched and how: created, labels changed, property keys named.
+- Each touched element is then read from the store. Present and created or relabelled: `UpsertNode`/`UpsertEdge` with every label and property. Present otherwise: `SetProps` with the named keys' values now, or as removed. Absent and created by this commit: nothing. Absent otherwise: `DeleteNode`/`DeleteEdge`.
+- The order is canonical: node upserts, edge upserts, property changes, edge deletes, node deletes. It can always be applied in that order.
+- This sidesteps every R0.6 gap: label add and remove look alike, edge deletes carry no type or endpoints, and the event order is lost. `DeleteEdge` needs only the id, so R0.6 (a)'s "deleted edge's type from a pre-commit read" is not needed.
+- `begin` does nothing for B (it is where A would mark the WAL position).
+
+**R9.3 A viewing epoch does not isolate a session, so I2 is enforced by a per-graph gate (changes Task 11, §48 §6.2; controller or owner to accept).**
+- Measured on the shipped build (`viewing_epoch_hides_later_commits`, `uncommitted_writes_are_visible_to_pinned_sessions`): `set_viewing_epoch(e)` hides only nodes and edges *created* after `e`. Property sets and removes, label adds and removes, node and edge deletes, and edge property changes committed after `e` are all visible to the pinned session. `MATCH (n) RETURN count(n)` ignores the pin even for creations.
+- Uncommitted writes of an open transaction (property sets, label adds, `DETACH DELETE`) are visible to a session pinned at the current epoch, which is every client session while no write is pending. Only uncommitted creations are hidden. A rollback restores the old state.
+- Cause, from source: without `temporal`, properties and labels are stored in place with an undo log (`property_ops.rs`, `set_node_property_versioned`), and `get_node_at_epoch` drops a version whose `is_deleted()` flag is set, whatever its epoch.
+- Ruling: each graph has a reader-writer gate. The write lane holds it **exclusively from `begin_transaction` until its change set is durable** (or rolled back, or the graph is fenced). Every client statement holds it shared. A client statement then never runs while a write is pending, and it reads the latest engine state, which is the durable state (`exclusive_gate_hides_non_durable_writes`). Viewing epochs are not needed for I2. They are harmless, so Task 11 may keep pinning at the durable epoch.
+- Consequence for §48 §6.2: the lane is **not** released at step 6. Group commit still works: the lane may run several queued transactions back to back under one exclusive hold and release after their one append (2 ms / 256 KiB). A client read waits at most one group's execution plus its append. The cost is no read concurrency during a write group.
+- R2.4's gap (path elements resolved at the current state, not the read's epoch) closes with it, because under the gate the current state is the durable state.
+- Alternative for later, if §17.2's read-latency gates fail under write load: the owner keeps a second, durable-only engine that applies change sets with `apply_to_store` (exactly a follower, Task 15) and serves strong reads from it, at twice the memory.
+
+**R9.4 Identity: Loams element ids are Grafeo's ids, kept on replay by caller-chosen ids. No `_lid` map.**
+- `replay_reproduces_dump_and_ids` (1 000 workloads): the captured log, replayed into a fresh engine through `apply_to_store` (`create_node_with_id`, `create_edge_with_id` and the plain setters), gives the same dump with the same ids. GQL over the replayed engine answers the same counts by label, property and edge type, a second replay of the whole log changes nothing, and the next GQL insert takes an id above every replayed one.
+- `create_node_with_id` does not check for an existing id; it replaces the chain. `apply_to_store` therefore looks the element up first and turns an upsert of an existing element into a label and property diff.
+
+**R9.5 What replay does not carry (changes Tasks 10, 11, 14 and 15).**
+- **The engine epoch** (`replay_does_not_carry_the_engine_epoch`): direct store writes run outside transactions, so a replayed engine is at epoch 0 and its next commit is epoch 1, whatever the log's `commit_epoch`s were. §48 §6.5's "skip a change set whose `commit_epoch` is not above the last applied one" therefore breaks after the first recovery. Task 10 keeps `commit_epoch` as information. Ordering and replay idempotency use the log offset, and `txn_seq` is Loams' own per-graph counter, persisted with the manifest. Task 11's `durable_epoch` is the last durable log offset, not a Grafeo epoch.
+- **Grafeo's own WAL** (`replayed_writes_need_a_checkpoint_to_survive_a_crash`): replayed writes survive `close()` and `wal_checkpoint()`, but not a crash before either. The reopened files then have none of them. Task 14 checkpoints a replayed engine before its local files may stand in for the log, and otherwise rebuilds from the snapshot and the log.
+- **MVCC and CDC**: replay writes no versions and no events, so `apply_to_store` runs only on an engine no client reads during the apply. That means recovery before serving, or a follower holding its gate exclusively (Task 15).
+
+**R9.6 Grafeo's `temporal` feature is not the answer (measured, `capture_spike_temporal.rs`).**
+- With `temporal`, a session pinned *below* the current epoch reads that epoch's properties and labels.
+- But `GrafeoDB::gc` prunes versions below the oldest *transaction*, not the oldest pinned session, and the pinned session then reads `NULL` (`canary_temporal_gc_erases_pinned_history`; an earlier probe with more label versions also read the labels as empty).
+- Pinned *at* the current epoch, it reads uncommitted writes, because `get_node_at_epoch`'s fast path reads the latest value (`canary_temporal_pin_at_current_reads_uncommitted`).
+- Setting a property and deleting the node in one transaction panics in a debug build (`VersionLog::append` after a leftover `PENDING` entry) and leaves the log out of order in a release build (`canary_temporal_set_then_delete_panics`). Both proptests fail under the feature for this reason.
+- `commit_inner`'s `finalize_pending` finalises every pending property version, not only the committing transaction's.
+- Ruling: `temporal` stays off. Without it, `pinned_epoch_survives_gc` shows `gc` changes nothing a pinned session sees. Under R9.3 the lane may call `GrafeoDB::gc` freely.
+
+**R9.7 DDL never goes through capture (confirms R0.6 (d)).** `ddl_capture_or_schema_record`: `CREATE NODE TYPE`, `CREATE INDEX`, `DROP INDEX` and `DROP NODE TYPE` produce no CDC event and leave the epoch unchanged, and `engine_classify` answers Admin for each. Task 24 routes them to `SchemaChange` through the lane.
+
+**R9.8 Grafeo commits a dangling edge, and the capture refuses that commit (upstream bug; changes Task 11).**
+- Measured (`canary_detach_delete_leaves_a_dangling_edge`): a transaction that inserts an edge and then `DETACH DELETE`s a node that existed before it commits with the node gone, the new edge still live, and no event for the edge. The cause is that the operator collects edges with `edges_from`, which does not see the transaction's own uncommitted edges (`grafeo-core` `execution/operators/mutation.rs:928-935`).
+- When the node is new too, the `DETACH DELETE` deletes nothing.
+- `CdcCapture::take` checks that every live edge it names has live endpoints. Otherwise it fails. Task 11 handles a failed capture like a failed append: the client gets `UNAVAILABLE`/`graph_reloading`, and the graph reloads from the log, which does not have the commit (the proptest rebuilds from the log after each refusal and checks the model). Such a write is never visible (R9.3) and never acknowledged.
+- The second shape (nothing deleted) is a wrong answer, not corruption, and is left to Task 32's corpus.
+
+**R9.9 CDC retention and pruning (amends R0.6 (b)).**
+- `CdcLog::prune_before` is not reachable: `GrafeoDB` has no accessor for its CDC log. Pruning happens only through `GrafeoDB::gc` (`apply_retention` with `Config.cdc_retention`).
+- Task 11 sets `cdc_retention { max_epochs: Some(64), max_events: None }`, since a count limit could prune a large commit, and calls `gc` from the lane after each group, under the gate.
+- Residual risk: the CDC log is a `MemoryConsumer`, and under buffer-manager pressure its `evict` may prune the newest epoch, between a commit and its capture. Under the gate nothing else runs on the engine in that window, but the race is not closed in principle. The capture cannot detect a pruned commit. The upstream ask below closes it.
+- `changes_between` costs O(retained events), so per-commit `gc` also keeps capture cheap.
+
+**R9.10 Upstream (Q679) and the smallest fork patch, if §48 §19.3's trigger fires.** No hook is *required*: everything above is Loams-side. In order of value, the asks are:
+1. **A commit listener.** `commit_inner` already drains the session's pending events and stamps them with the commit epoch. Returning them, for example `PreparedCommit::commit() -> (EpochId, Vec<ChangeEvent>)` or a `Session::set_commit_listener`, is about 15 lines in `session/mod.rs` and `transaction/prepared.rs`. It removes R0.5's epoch race, R9.9's eviction race and the O(N) scan, and lets the lane's mutex shrink.
+2. **Fix `DETACH DELETE`** to collect edges visible to the transaction (`mutation.rs:928-935`) (R9.8).
+3. **MVCC for properties, labels and deletes**: honour the viewing epoch for in-place properties and the `is_deleted` flag, and never return another transaction's pending writes. This is a large change, in `node_ops.rs`, `edge_ops.rs`, `property_ops.rs` and `temporal.rs`. It would let reads stop waiting on the gate (R9.3).
+4. `count(n)` honouring the viewing epoch, and `gc` honouring pinned sessions under `temporal`.
+5. Already listed in R0.5 and R0.7: return the manager's commit epoch, and a public caller-chosen-id API.

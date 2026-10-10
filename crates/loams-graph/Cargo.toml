@@ -61,6 +61,10 @@ failpoints = ["dep:fail", "fail/failpoints"]
 # `Graph::execute_forced`, a gate bypass for tests (security review I4). Enabled for this crate's
 # own tests by the self dev-dependency below; never by a server build.
 test-hooks = []
+# GR1 Task 9 spike only: Grafeo's per-epoch property and label versions, measured by
+# `cargo test -p loams-graph --features grafeo-temporal --test capture_spike_temporal` and ruled out
+# (R9.6). Never enabled by a server build.
+grafeo-temporal = ["grafeo/temporal"]
 
 [dev-dependencies]
 # A single-node metastore for the catalog tests (GR1 Task 4).
@@ -77,6 +81,8 @@ prost-types.workspace = true
 # page also runs against, called over Connect JSON.
 loams-apps-mock = { path = "../loams-apps-mock" }
 reqwest.workspace = true
+# The change-capture spike's model-based test (GR1 Task 9).
+proptest.workspace = true
 
 [lints]
 workspace = true

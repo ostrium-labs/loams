@@ -153,6 +153,7 @@ owner:  per-graph write lane (one committing transaction at a time)
 - Releasing the lane at step 6 pipelines writes: the next transaction runs while earlier change sets are still being flushed, and group commit amortizes the WAL append. A later transaction may read an earlier, not-yet-durable commit; that is safe because I3 makes the later one durable only after the earlier one.
 - **An append failure fences the graph.** If step 7 fails and cannot be retried (lease lost, a write refused as stale), the owner stops serving the graph, drops its engine instance and reloads from the snapshot and the log (§6.5). Every transaction after the last durable epoch fails with `UNAVAILABLE` and the reason `graph_reloading`, and none of them was ever visible to a client (I2).
 - **Clients see durable state only.** Every client-facing session gets `set_viewing_epoch(durable_epoch)` before it runs (§5). The write lane's own session reads the latest state, so read-your-writes inside a batch work.
+- **Amended by GR1 Task 9 (R9.3).** Grafeo 0.5.43's viewing epoch hides only element creation: property, label and delete changes, committed or not, are visible to a pinned session. The lane therefore holds a per-graph gate exclusively from step 1 until step 8 (several queued transactions may share one hold and one append), and client statements hold it shared. The lane is not released at step 6.
 
 ### 6.3 Capturing the change set: three mechanisms, one contract
 
@@ -163,6 +164,8 @@ The change set must contain every mutation of the committed transaction, in orde
 | **B (preferred)** | Grafeo CDC (`cdc` feature, session-level `session_with_cdc(true)`): after `commit()` returns E, collect the events tagged with epoch E and convert them into a neutral `GraphChangeSet` | Engine-neutral by construction; the same events feed links out and a future `WatchGraph` | CDC is in memory and retention-bounded; schema and index DDL may not be in CDC (verify); ids are engine `NodeId`/`EdgeId` |
 | A | Ship Grafeo's own WAL records for the transaction (`GrafeoDB::wal()`, replay through `apply_wal_records`), wrapped in a Loams envelope | Exact and complete; replay is Grafeo's own | Engine-specific at rest, which breaks I6 unless a neutral export is also kept; needs a WAL tap upstream does not expose yet (verify) |
 | C (single node only) | `DurabilityMode::Sync` on local disk plus `backup_incremental` shipped to the bucket every second | No new hooks | RPO is the shipping interval, so it breaks I1; allowed only for `loams dev` and the desktop |
+
+**Measured (GR1 Task 9, R9.1–R9.2, R9.4).** Mechanism B passes; the change set is the transaction's net effect in a canonical order (node upserts, edge upserts, property changes, edge deletes, node deletes), and element ids are Grafeo's own, kept on replay by caller-chosen ids, so no `_lid` map is needed.
 
 **Element identity.** A change set names elements by Loams element ids (`u64`, assigned by the owner in commit order and stable across rebuilds). If Grafeo can create a node or an edge with a caller-chosen id (verify), the Loams id and the engine id are the same. Otherwise the owner keeps a bidirectional id map inside the engine as a hidden property `_lid` with a unique index, and replay resolves through it. Task 9 decides which.
 
@@ -604,7 +607,7 @@ Before GA, on the docs site: a Graph overview (owned vs linked), a quickstart (T
 |---|---|---|---|
 | Q670 | Approve D743: Loams Graph also executes §07's `expand` stage and SQL table functions, with §07's CSR sidecars and `ExpandExec` deferred? Default: yes | Owner | GR1c |
 | Q671 | Approve D741: the `graph` role of `loams` (feature `graph`), not `loams-fabric`? Default: yes | Owner | GR1a Task 1 |
-| Q672 | Which change-capture mechanism (§6.3 A, B or C)? Default: B, if Task 9's completeness tests pass | Eng | GR1b Task 9 |
+| Q672 | ~~Which change-capture mechanism (§6.3 A, B or C)? Default: B, if Task 9's completeness tests pass~~ **Answered by GR1 Task 9 (2026-10-10): B**, CDC events resolved against the store into a net-effect change set; client isolation by a per-graph gate held until durable, not by viewing epochs (GR1 plan R9.1–R9.3) | Eng | Answered |
 | Q673 | Ship the Cypher compatibility dialect at GA (opt-in per graph), or GQL only? Default: ship it opt-in | Owner | GR1e |
 | Q674 | Is label- or property-level security needed for v1? Default: no; per-graph only | Owner | GR1d |
 | Q675 | Put `graph` in the `standard` variant at GA, or keep it in `full`? Default: `standard` if the size gate passes | Owner | GR1e exit |

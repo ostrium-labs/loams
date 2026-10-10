@@ -23,6 +23,7 @@
 #![deny(missing_docs)]
 
 pub mod catalog;
+pub mod changeset;
 pub mod classify;
 pub mod engine;
 pub mod limits;

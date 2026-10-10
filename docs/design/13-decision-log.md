@@ -1244,7 +1244,7 @@ Living document. Newest decisions at the bottom of each table.
 | Q669 | ~~GA on MySQL 8.0.46 + Vitess v24, or wait for the 8.4 rebase~~ Answered 2026-10-08 (MySQL 8.4), then superseded the same day by the TiDB direction (D721); the 8.4-syntax question moves to Q658 | Founder | Resolved |
 | Q670 | Approve D743: Loams Graph also executes §07's `expand` stage and SQL table functions, with §07's CSR sidecars and `ExpandExec` deferred? Default: yes (§48 §3) | Founder | GR1c Task 20 |
 | Q671 | Approve D741: Loams Graph as the `graph` role of `loams` behind the `graph` feature, not in `loams-fabric`? Default: yes (§48 §4) | Founder | GR1 Task 1 |
-| Q672 | Which change-capture mechanism makes the log the truth: Grafeo CDC (B, default), Grafeo WAL records (A), or local sync plus backup shipping for single node only (C)? (§48 §6.3) | Eng | GR1 Task 9 |
+| Q672 | ~~Which change-capture mechanism makes the log the truth: Grafeo CDC (B, default), Grafeo WAL records (A), or local sync plus backup shipping for single node only (C)? (§48 §6.3)~~ **Answered by GR1 Task 9 (2026-10-10): B**, resolved against the store; I2 by a per-graph gate held until durable (GR1 plan R9.1–R9.3) | Eng | Answered (GR1 Task 9) |
 | Q673 | Ship the Cypher compatibility dialect at GA (opt-in per graph, default), or GQL only? (§48 §9.3) | Founder | GR1 Task 33 |
 | Q674 | Is label- or property-level security needed in v1? Default: no, per-graph only (§48 §11) | Founder | GR1d |
 | Q675 | Put `graph` in the `standard` variant at GA, or keep it in `full`? Default: `standard` if the binary-size gate passes (§48 §4.2) | Founder | GR1 Task 39 |
