@@ -153,7 +153,7 @@ owner:  per-graph write lane (one committing transaction at a time)
 - Releasing the lane at step 6 pipelines writes: the next transaction runs while earlier change sets are still being flushed, and group commit amortizes the WAL append. A later transaction may read an earlier, not-yet-durable commit; that is safe because I3 makes the later one durable only after the earlier one.
 - **An append failure fences the graph.** If step 7 fails and cannot be retried (lease lost, a write refused as stale), the owner stops serving the graph, drops its engine instance and reloads from the snapshot and the log (§6.5). Every transaction after the last durable epoch fails with `UNAVAILABLE` and the reason `graph_reloading`, and none of them was ever visible to a client (I2).
 - **Clients see durable state only.** Every client-facing session gets `set_viewing_epoch(durable_epoch)` before it runs (§5). The write lane's own session reads the latest state, so read-your-writes inside a batch work.
-- **Amended by GR1 Task 9 (R9.3).** Grafeo 0.5.43's viewing epoch hides only element creation: property, label and delete changes, committed or not, are visible to a pinned session. The lane therefore holds a per-graph gate exclusively from step 1 until step 8 (several queued transactions may share one hold and one append), and client statements hold it shared. The lane is not released at step 6.
+- **Amended by GR1 Task 9 (R9.3).** Grafeo 0.5.43's viewing epoch hides only element creation: property, label and delete changes, committed or not, are visible to a pinned session. The lane therefore holds a per-graph gate exclusively from step 1 until step 8 (several queued transactions may share one hold and one append), and client statements hold it shared. The lane is not released at step 6. Under R9.5, `durable_epoch` in step 8 is the last durable log offset of the graph's stream, not Grafeo's epoch `E`, which does not survive recovery.
 
 ### 6.3 Capturing the change set: three mechanisms, one contract
 
@@ -167,7 +167,7 @@ The change set must contain every mutation of the committed transaction, in orde
 
 **Measured (GR1 Task 9, R9.1–R9.2, R9.4).** Mechanism B passes; the change set is the transaction's net effect in a canonical order (node upserts, edge upserts, property changes, edge deletes, node deletes), and element ids are Grafeo's own, kept on replay by caller-chosen ids, so no `_lid` map is needed.
 
-**Element identity.** A change set names elements by Loams element ids (`u64`, assigned by the owner in commit order and stable across rebuilds). If Grafeo can create a node or an edge with a caller-chosen id (verify), the Loams id and the engine id are the same. Otherwise the owner keeps a bidirectional id map inside the engine as a hidden property `_lid` with a unique index, and replay resolves through it. Task 9 decides which.
+**Element identity.** A change set names elements by Loams element ids (`u64`, assigned by the owner in commit order and stable across rebuilds). If Grafeo can create a node or an edge with a caller-chosen id (verify), the Loams id and the engine id are the same. Otherwise the owner keeps a bidirectional id map inside the engine as a hidden property `_lid` with a unique index, and replay resolves through it. *Resolved by GR1 Task 9 (R9.4): Grafeo can (`create_node_with_id`, `create_edge_with_id`), so the Loams id is the engine id and there is no `_lid` map.*
 
 **DDL** (`CREATE INDEX`, `CREATE TYPE`, constraints) is recorded as a `SchemaChange` record carrying the statement text, which is deterministic, and runs through the same lane.
 
@@ -189,6 +189,7 @@ SchemaChange    v1  { graph_id, lease_epoch, commit_epoch, statement, language }
 
 - **Open** = read the manifest → fetch the snapshot into the local cache directory (`<data>/graphs/<graph_id>/`) → open it with Grafeo → replay the change sets after `covered_offset` → durable_epoch := the last replayed epoch → serve.
 - Replay is idempotent: a change set whose `commit_epoch` is not above the last applied one is skipped.
+- **Amended by GR1 Task 9 (R9.5).** A replayed engine restarts at epoch 0 whatever the log's `commit_epoch`s were, so `commit_epoch` is not an order across recovery. Replay order and idempotency use the log offset (a record at or below the last applied offset is skipped), with `txn_seq` as Loams' own per-graph counter; `commit_epoch` is informational. `durable_epoch` after open is the last replayed log offset. A replayed engine is checkpointed (`wal_checkpoint`) before its local files may stand in for the log, because replay writes bypass Grafeo's WAL.
 - **Idle eviction.** A graph with no statement for `graph.idle_evict_after` (1 h by default) is checkpointed and dropped from memory. Its local files stay as a cache until disk pressure removes them. The next statement reopens it (cold-start target: §17.2).
 - **Engine upgrades.** If the new Grafeo cannot read the native snapshot, the owner rebuilds from the latest portable snapshot plus the log. The manifest's `engine_version` tells it which path to take.
 

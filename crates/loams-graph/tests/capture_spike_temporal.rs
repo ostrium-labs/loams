@@ -89,7 +89,10 @@ fn canary_temporal_pin_at_current_reads_uncommitted() {
     txn.rollback().expect("rollback");
 }
 
+/// Debug builds only: the panic is a `debug_assert!`, and a release build corrupts the version
+/// log's order silently instead.
 #[test]
+#[cfg(debug_assertions)]
 fn canary_temporal_set_then_delete_panics() {
     let db = db();
     db.session().execute("INSERT (:P {k: 3})").expect("seed");
