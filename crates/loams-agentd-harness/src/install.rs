@@ -41,7 +41,6 @@ enum Method {
 // Commands verified against these vendor pages with curl -fsSL on 2026-09-21.
 // https://code.claude.com/docs/en/setup
 // https://github.com/openai/codex/blob/main/README.md
-// https://cursor.com/docs/cli/installation
 // https://opencode.ai/docs/
 // https://pi.dev/docs/latest
 // https://docs.x.ai/developers/release-notes and https://docs.x.ai/build/enterprise
@@ -52,7 +51,7 @@ fn methods(id: HarnessId, platform: Platform) -> Vec<Method> {
     use Method::*;
     let windows = platform == Platform::Windows;
     match id {
-        Mock | LoamsBot => vec![], // loams: ships inside the app
+        Mock | LoamsBot | Unsupported => vec![], // loams: ships inside the app
         Antigravity => vec![Archive],
         ClaudeCode if windows => vec![PowerShell("irm https://claude.ai/install.ps1 | iex")],
         ClaudeCode => vec![Shell(
@@ -67,10 +66,6 @@ fn methods(id: HarnessId, platform: Platform) -> Vec<Method> {
             Shell("curl -fsSL https://chatgpt.com/codex/install.sh | sh", "sh"),
             Npm("@openai/codex", false),
         ],
-        Cursor if windows => vec![PowerShell(
-            "irm 'https://cursor.com/install?win32=true' | iex",
-        )],
-        Cursor => vec![Shell("curl https://cursor.com/install -fsS | bash", "bash")],
         Opencode if windows => vec![Npm("@opencode/cli", false)],
         Opencode => vec![
             Shell("curl -fsSL https://opencode.ai/install | bash", "bash"),
@@ -152,13 +147,12 @@ pub fn manual_command(id: HarnessId) -> Option<&'static str> {
     Some(match id {
         ClaudeCode => "curl -fsSL https://claude.ai/install.sh | bash",
         Codex => "npm install -g @openai/codex",
-        Cursor => "curl https://cursor.com/install -fsS | bash",
         Opencode => "npm install -g @opencode/cli",
         Pi => "npm install -g --ignore-scripts @earendil-works/pi-coding-agent",
         Grok => "npm install -g @xai-official/grok",
         Hermes => "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash",
         Devin => "curl -fsSL https://cli.devin.ai/install.sh | bash",
-        Antigravity | Mock | LoamsBot => return None,
+        Antigravity | Mock | LoamsBot | Unsupported => return None,
     })
 }
 
@@ -167,7 +161,6 @@ fn cli_and_dir(id: HarnessId) -> (&'static str, &'static str) {
     match id {
         ClaudeCode => ("claude", "~/.local/bin"),
         Codex => ("codex", "~/.local/bin or the npm global bin"),
-        Cursor => ("cursor-agent", "~/.local/bin or ~/.cursor/bin"),
         Opencode => ("opencode", "~/.opencode/bin or the npm global bin"),
         Pi => ("pi", "the npm global bin"),
         Grok => ("grok", "~/.grok/bin or the npm global bin"),
@@ -175,6 +168,7 @@ fn cli_and_dir(id: HarnessId) -> (&'static str, &'static str) {
         Devin => ("devin", "~/.local/bin"),
         Antigravity => ("agy_acp_server", "~/.loams-desktop/adapters"),
         Mock => ("mock", "PATH"),
+        Unsupported => ("an unsupported agent", "PATH"),
         LoamsBot => ("loams-desktop", "the Loams Desktop install"), // loams
     }
 }
@@ -184,7 +178,6 @@ pub fn installed(id: HarnessId) -> bool {
     match id {
         ClaudeCode => crate::ClaudeHarness::new().installed(),
         Codex => crate::CodexHarness::new().installed(),
-        Cursor => crate::CursorHarness::new().installed(),
         Opencode => crate::OpencodeHarness::new().installed(),
         Pi => crate::PiHarness::new().installed(),
         Grok => crate::AcpHarness::grok().installed(),
@@ -192,17 +185,13 @@ pub fn installed(id: HarnessId) -> bool {
         Devin => crate::AcpHarness::devin().installed(),
         Antigravity => crate::AcpHarness::antigravity().installed(),
         LoamsBot => crate::AcpHarness::loams_bot().installed(), // loams
-        Mock => false,
+        Mock | Unsupported => false,
     }
 }
 
 fn invalidate_versions(id: HarnessId) {
     let (cli, _) = cli_and_dir(id);
-    if id == HarnessId::Cursor {
-        crate::executable::invalidate_versions(&[cli, "agent"]);
-    } else {
-        crate::executable::invalidate_versions(&[cli]);
-    }
+    crate::executable::invalidate_versions(&[cli]);
 }
 
 fn post_install(id: HarnessId) -> Result<(), HarnessError> {
@@ -393,10 +382,9 @@ async fn run(
 mod tests {
     use super::*;
 
-    const IDS: [HarnessId; 10] = [
+    const IDS: [HarnessId; 9] = [
         HarnessId::ClaudeCode,
         HarnessId::Codex,
-        HarnessId::Cursor,
         HarnessId::Opencode,
         HarnessId::Pi,
         HarnessId::Grok,

@@ -113,12 +113,6 @@ pub(crate) fn attach_advertised_commands(
 fn project_dirs(harness: HarnessId) -> &'static [&'static str] {
     match harness {
         HarnessId::ClaudeCode => &[".agents/skills", ".claude/commands", ".claude/skills"],
-        HarnessId::Cursor => &[
-            ".claude/skills",
-            ".codex/skills",
-            ".agents/skills",
-            ".cursor/skills",
-        ],
         HarnessId::Opencode => &[".claude/skills", ".agents/skills", ".opencode/skills"],
         HarnessId::Grok => &[".agents/skills", ".claude/skills", ".grok/skills"],
         HarnessId::Hermes => &[".agents/skills"],
@@ -126,7 +120,7 @@ fn project_dirs(harness: HarnessId) -> &'static [&'static str] {
         HarnessId::Devin => &[".agents/skills"],
         HarnessId::Antigravity => &[".agents/skills", ".gemini/skills"],
         HarnessId::Codex => &[".agents/skills", ".codex/skills"],
-        HarnessId::Mock | HarnessId::LoamsBot => &[], // loams
+        HarnessId::Mock | HarnessId::LoamsBot | HarnessId::Unsupported => &[], // loams
     }
 }
 
@@ -716,7 +710,6 @@ mod tests {
         for harness in [
             HarnessId::ClaudeCode,
             HarnessId::Codex,
-            HarnessId::Cursor,
             HarnessId::Devin,
             HarnessId::Grok,
             HarnessId::Hermes,
@@ -745,7 +738,6 @@ mod tests {
         for harness in [
             HarnessId::ClaudeCode,
             HarnessId::Codex,
-            HarnessId::Cursor,
             HarnessId::Devin,
             HarnessId::Grok,
             HarnessId::Hermes,
@@ -782,7 +774,6 @@ mod tests {
         );
         for (harness, native) in [
             (HarnessId::ClaudeCode, ".claude"),
-            (HarnessId::Cursor, ".cursor"),
             (HarnessId::Grok, ".grok"),
             (HarnessId::Pi, ".pi"),
             (HarnessId::Opencode, ".opencode"),
@@ -863,12 +854,12 @@ mod tests {
         // Exercise both an inaccessible root and a nested directory; the
         // provider's other roots must survive.
         for denied in [
-            home.join(".cursor/skills"),
+            home.join(".grok/skills"),
             home.join(".agents/skills/private"),
         ] {
             std::fs::create_dir_all(&denied).unwrap();
             std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o0)).unwrap();
-            let result = discover_at(HarnessId::Cursor, &repo, &home);
+            let result = discover_at(HarnessId::Grok, &repo, &home);
             std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o700)).unwrap();
             let skills = result.unwrap();
             assert!(skills.iter().any(|skill| skill.name == "global"));
@@ -908,7 +899,7 @@ mod tests {
         // Root can read mode-000 files; missing and cyclic links still exercise
         // per-file I/O failures on privileged test runners.
         let denied_is_readable = std::fs::File::open(&denied).is_ok();
-        let result = discover_at(HarnessId::Cursor, &repo, &home);
+        let result = discover_at(HarnessId::Grok, &repo, &home);
         std::fs::set_permissions(&denied, std::fs::Permissions::from_mode(0o600)).unwrap();
         let skills = result.unwrap();
         let names: Vec<_> = skills.iter().map(|skill| skill.name.as_str()).collect();

@@ -1,9 +1,7 @@
 //! Opt-in real-model checks through the production queue and command executor.
 //! LOAMS_DESKTOP_TEST_HARNESS=claude LOAMS_DESKTOP_TEST_MODEL=claude-haiku-4-5 cargo test -p loams-agentd-sessions --test steering_live -- --ignored --nocapture
 use loams_agentd_doc::{MessageRole, SessionCommandPayload};
-use loams_agentd_harness::{
-    AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,
-};
+use loams_agentd_harness::{AcpHarness, ClaudeHarness, CodexHarness, Harness, OpencodeHarness};
 use loams_agentd_proto::{ChatConfig, RunRequest, SandboxLevel, SessionStatus};
 use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::{sync::Arc, time::Duration};
@@ -42,7 +40,6 @@ async fn rapid_steers_preserve_children_context_and_held_queue() {
     let harness: Arc<dyn Harness> = match name.as_str() {
         "claude" => Arc::new(ClaudeHarness::new()),
         "codex" => Arc::new(CodexHarness::new()),
-        "cursor" => Arc::new(CursorHarness::new()),
         "opencode" => Arc::new(OpencodeHarness::new()),
         "grok" => Arc::new(AcpHarness::grok()),
         "devin" => Arc::new(AcpHarness::devin()),
@@ -202,7 +199,7 @@ async fn rapid_steers_preserve_children_context_and_held_queue() {
             .count(),
         burst + 3
     );
-    if matches!(name.as_str(), "claude" | "cursor" | "codex") {
+    if matches!(name.as_str(), "claude" | "codex") {
         let events = core.sessions.subscribe("audit", 0).unwrap().0;
         let completions = events
             .iter()

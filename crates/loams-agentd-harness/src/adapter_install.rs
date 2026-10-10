@@ -108,10 +108,6 @@ fn install_dir_in(root: &Path, pin: &NpmPin) -> PathBuf {
     root.join(pin.dir_name()).join(pin.version)
 }
 
-fn install_dir(pin: &NpmPin) -> Option<PathBuf> {
-    adapters_root().map(|root| install_dir_in(&root, pin))
-}
-
 /// The package's bin entry inside an install dir, from its own package.json
 /// (`bin` as a string, or a map preferring `bin_name`).
 fn bin_entry(dir: &Path, pin: &NpmPin, bin_name: &str) -> Option<PathBuf> {
@@ -367,107 +363,6 @@ pub(crate) async fn ensure_installed(
     installed_entry(&pin, bin_name).ok_or_else(|| {
         HarnessError::Install(format!(
             "install of {} finished but its bin entry did not resolve",
-            pin.spec()
-        ))
-    })
-}
-
-/// A loams-desktop-owned shim script materialized INSIDE a managed install dir, for
-/// SDK packages with no bin entry (`@cursor/sdk`): the shim resolves the SDK
-/// from the sibling `node_modules`. Returns the shim path when the install is
-/// complete. Each build's shim source has its own immutable filename.
-pub(crate) fn installed_shim(pin: &NpmPin, shim_name: &str, contents: &str) -> Option<PathBuf> {
-    let dir = install_dir(pin)?;
-    if !dir.join(OK_MARKER).exists() {
-        return None;
-    }
-    materialize_shim(&dir, shim_name, contents).ok()
-}
-
-/// Different running Loams Desktop builds must never replace each other's shim.
-/// Publish complete, content-addressed files; a reader never sees a partial write.
-fn materialize_shim(dir: &Path, name: &str, contents: &str) -> std::io::Result<PathBuf> {
-    use sha2::{Digest, Sha256};
-    let digest = format!("{:x}", Sha256::digest(contents.as_bytes()));
-    let name = Path::new(name);
-    let stem = name.file_stem().unwrap_or_default().to_string_lossy();
-    let extension = name.extension().unwrap_or_default().to_string_lossy();
-    let shim = dir.join(format!("{stem}-{digest}.{extension}"));
-    if std::fs::read(&shim).ok().as_deref() == Some(contents.as_bytes()) {
-        return Ok(shim);
-    }
-    let temporary = dir.join(format!(".shim-{}", uuid::Uuid::new_v4()));
-    std::fs::write(&temporary, contents)?;
-    if let Err(error) = std::fs::rename(&temporary, &shim) {
-        let _ = std::fs::remove_file(&temporary);
-        // Windows cannot rename over an existing destination. Another writer
-        // publishing these same immutable bytes is a successful race.
-        if std::fs::read(&shim).ok().as_deref() != Some(contents.as_bytes()) {
-            return Err(error);
-        }
-    }
-    Ok(shim)
-}
-
-/// Like [`ensure_installed`], for a package consumed as a LIBRARY by a
-/// loams-desktop-owned shim rather than through a bin entry. Installs the pin once,
-/// writes `contents` to a content-addressed sibling of `shim_name`, and returns the shim
-/// path (spawn it via [`launch_for_entry`]).
-pub(crate) async fn ensure_installed_shim(
-    pin: NpmPin,
-    display_name: &str,
-    shim_name: &str,
-    contents: &str,
-) -> Result<PathBuf, HarnessError> {
-    if let Some(shim) = installed_shim(&pin, shim_name, contents) {
-        return Ok(shim);
-    }
-    let _guard = install_lock().lock().await;
-    if let Some(shim) = installed_shim(&pin, shim_name, contents) {
-        return Ok(shim);
-    }
-
-    let Some(npm) = find_npm() else {
-        return Err(HarnessError::NotInstalled(format!(
-            "npm (required to install the {display_name} SDK {}; searched \
-             PATH, the login shell's PATH, and fnm/nvm/volta/pnpm/bun install dirs)",
-            pin.spec()
-        )));
-    };
-    let root = adapters_root().ok_or_else(|| {
-        HarnessError::Install("cannot locate a platform data directory for managed adapters".into())
-    })?;
-    let final_dir = install_dir_in(&root, &pin);
-    let tmp_dir = root.join(format!(
-        ".tmp-{}-{}-{}",
-        pin.dir_name(),
-        pin.version,
-        std::process::id()
-    ));
-    let cache_dir = root.join(".npm-cache");
-    let install = install_into(&npm, &pin, &tmp_dir, &cache_dir, display_name).await;
-    if let Err(e) = install {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        return Err(e);
-    }
-    materialize_shim(&tmp_dir, shim_name, contents)?;
-    std::fs::write(tmp_dir.join(OK_MARKER), pin.version)?;
-    if let Some(parent) = final_dir.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    if std::fs::rename(&tmp_dir, &final_dir).is_err() {
-        // Lost a cross-process race (or a stale dir): keep whatever is in
-        // place if it's complete, else replace it.
-        if !final_dir.join(OK_MARKER).exists() {
-            let _ = std::fs::remove_dir_all(&final_dir);
-            std::fs::rename(&tmp_dir, &final_dir)?;
-        } else {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-        }
-    }
-    installed_shim(&pin, shim_name, contents).ok_or_else(|| {
-        HarnessError::Install(format!(
-            "install of {} finished but its shim did not resolve",
             pin.spec()
         ))
     })
@@ -834,33 +729,5 @@ mod tests {
             assert!(message.contains("Windows batch wrapper"));
             assert!(message.contains("native .exe"));
         }
-    }
-}
-
-#[cfg(test)]
-mod shim_stress_tests {
-    use super::*;
-    #[test]
-    fn concurrent_builds_publish_immutable_complete_shims() {
-        let dir = tempfile::tempdir().unwrap();
-        let sources: Vec<String> = (0..8)
-            .map(|build| format!("// build {build}\n{}", "x".repeat(256 * 1024)))
-            .collect();
-        std::thread::scope(|scope| {
-            for source in &sources {
-                let dir = dir.path();
-                scope.spawn(move || {
-                    for _ in 0..100 {
-                        let shim = materialize_shim(dir, "shim.mjs", source).unwrap();
-                        assert_eq!(std::fs::read_to_string(shim).unwrap(), *source);
-                        // Older applications can still rewrite their legacy filename.
-                        std::fs::write(dir.join("shim.mjs"), "old build").unwrap();
-                    }
-                });
-            }
-        });
-        println!(
-            "stress: 800 publications across 8 concurrent build versions, zero corrupt or replaced shims"
-        );
     }
 }

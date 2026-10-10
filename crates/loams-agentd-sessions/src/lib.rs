@@ -90,6 +90,14 @@ pub enum EngineError {
     Harness(#[from] loams_agentd_harness::HarnessError),
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    /// A send to a chat on a harness this daemon no longer ships (plan DD1
+    /// Task 3): the chat is read-only.
+    #[error(
+        "{}: {}",
+        loams_agentd_proto::HARNESS_UNSUPPORTED,
+        loams_agentd_proto::UNSUPPORTED_HARNESS_NOTICE
+    )]
+    HarnessUnsupported,
     #[error("{0}")]
     Other(String),
 }
@@ -236,7 +244,6 @@ impl EngineCore {
         let agent_accounts = AgentAccounts::new(agent_accounts_config);
         let harness_updates =
             harness_updates::HarnessUpdateCoordinator::new(data_dir, registry.clone());
-        harness_updates.start();
         sessions.set_titles(TitleGenerator::new(
             workspace.clone(),
             registry.clone(),
@@ -384,7 +391,6 @@ impl Engine {
         Ok(EngineInfo {
             device_id: load_or_create_device_id(&config.data_dir)?,
             workspace_scope,
-            cursor_sdk_version: Some(loams_agentd_harness::CursorHarness::sdk_version().into()),
             capabilities: loams_agentd_proto::capabilities::current(),
         })
     }

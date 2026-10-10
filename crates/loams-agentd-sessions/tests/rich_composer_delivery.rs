@@ -28,10 +28,9 @@ use loams_agentd_sessions::{EngineCore, HarnessRegistry, SteerOutcome};
 use tokio::sync::mpsc;
 
 const CHAT: &str = "rich-delivery";
-const HARNESSES: [HarnessId; 9] = [
+const HARNESSES: [HarnessId; 8] = [
     HarnessId::ClaudeCode,
     HarnessId::Codex,
-    HarnessId::Cursor,
     HarnessId::Devin,
     HarnessId::Grok,
     HarnessId::Hermes,
@@ -197,22 +196,7 @@ fn expected(raw: &str, readable: &str, id: HarnessId) -> String {
     }
 }
 fn assert_delivered(actual: &str, raw: &str, readable: &str, id: HarnessId) {
-    let expected = expected(raw, readable, id);
-    if id == HarnessId::Cursor
-        && let Some(json) = actual.strip_prefix("The preceding user messages may not have reached a Cursor checkpoint before startup stopped. Retain this JSON as conversation history; do not rerun prior tools or side effects. Respond to the current message.\n")
-    {
-        let history: serde_json::Value = serde_json::from_str(json)
-            .expect("rich selections must not corrupt Cursor's recovery JSON");
-        assert_eq!(history["currentUserMessage"], expected, "{id:?}");
-        assert!(
-            history["previousUserMessages"]
-                .as_array()
-                .is_some_and(|messages| !messages.is_empty()),
-            "Cursor recovery must retain the preceding canonical user turns"
-        );
-    } else {
-        assert_eq!(actual, expected, "{id:?}");
-    }
+    assert_eq!(actual, expected(raw, readable, id), "{id:?}");
 }
 async fn receive(rx: &mut mpsc::UnboundedReceiver<Delivery>) -> Delivery {
     tokio::time::timeout(Duration::from_secs(10), rx.recv())

@@ -19,7 +19,7 @@
 //! through it itself; loams-desktop lists the pool and adds to it through Hermes'
 //! own CLI, but never rewrites it.
 //!
-//! The original four providers each store exactly one live login:
+//! The original providers each store exactly one live login:
 //!
 //! - **Claude Code** — credentials in `~/.claude/.credentials.json`
 //!   (`$CLAUDE_CONFIG_DIR` relocates the dir) or, on macOS, the Keychain item
@@ -27,10 +27,6 @@
 //!   lives in `~/.claude.json`.
 //! - **Codex** — `$CODEX_HOME/auth.json` (default `~/.codex`): a ChatGPT OAuth
 //!   token set (identity inside the `id_token` JWT) or a raw API key.
-//! - **Cursor** — `~/.cursor/sdk/auth.json`: the Cursor SDK's credential store
-//!   (`StoredSdkCredentials`) holding the named, expiring user API key its
-//!   browser login mints. Deliberately SEPARATE from `cursor-agent login`'s
-//!   whole-account session tokens, which loams-desktop never reads.
 //! - **Antigravity** — its ACP server keeps one Google login per
 //!   `GEMINI_HOME`: a token blob in the macOS Keychain (service `gemini`) or
 //!   `antigravity-acp/acp_token.json`, plus the method in `settings.json`.
@@ -59,10 +55,8 @@
 //!    until its loopback callback lands; Antigravity runs its server's
 //!    `authenticate`.
 //!
-//! Usage probes: all three providers expose the rate-limit view their own CLIs render
-//! (`/usage` in Claude Code, `/status` in Codex; Cursor's key has no quota view,
-//! so the probe exchanges it for a dashboard session and reads the
-//! `GetCurrentPeriodUsage` call the Cursor app itself makes). Usage is
+//! Usage probes: the providers expose the rate-limit view their own CLIs render
+//! (`/usage` in Claude Code, `/status` in Codex). Usage is
 //! stale-while-revalidate: every list serves each account's last good probe
 //! (persisted to `agent-accounts/usage-cache.json`, so it survives restarts)
 //! with its fetch time; only `force_usage` hits the network, probing all
@@ -116,9 +110,6 @@ const CLAUDE_LOOPBACK_SUCCESS_URL: &str =
 const CLAUDE_LOOPBACK_SCOPES: &str = "org:create_api_key user:profile user:inference \
      user:sessions:claude_code user:mcp_servers user:file_upload user:plugins";
 const CODEX_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
-/// The Cursor dashboard's current-period usage RPC (Connect-style POST).
-const CURSOR_CURRENT_PERIOD_USAGE: &str = "aiserver.v1.DashboardService/GetCurrentPeriodUsage";
-const CURSOR_DEFAULT_BACKEND: &str = "https://api2.cursor.sh";
 
 /// Claude Code stores these next to `claudeAiOauth` in the same credential
 /// blob, but they are machine-shared (MCP server OAuth, plugin secrets) and
@@ -165,10 +156,6 @@ pub struct AgentAccountsConfig {
     pub claude_config_file: PathBuf,
     /// Codex home (`$CODEX_HOME` or `~/.codex`) — holds `auth.json`.
     pub codex_home: PathBuf,
-    /// The Cursor SDK's credential store (`~/.cursor/sdk/auth.json`): the
-    /// named, expiring API key minted by its browser login. SEPARATE from
-    /// `cursor-agent login`'s session tokens — deliberately never read.
-    pub cursor_sdk_auth_file: PathBuf,
     /// macOS Keychain service holding Claude Code's credentials, or `None`
     /// to use `.credentials.json` only (tests — a temp config must never
     /// read or write the real login). See [`claude_keychain_service`].
@@ -214,7 +201,6 @@ impl AgentAccountsConfig {
             claude_config_dir: claude_dir.unwrap_or_else(|| home_dir().join(".claude")),
             claude_config_file,
             codex_home: env_dir("CODEX_HOME").unwrap_or_else(|| home_dir().join(".codex")),
-            cursor_sdk_auth_file: home_dir().join(".cursor").join("sdk").join("auth.json"),
             antigravity_home: loams_agentd_harness::acp::antigravity_home().ok(),
             antigravity_keychain: cfg!(target_os = "macos")
                 && std::env::var_os("AGY_ACP_FORCE_FILE_STORAGE")
@@ -236,7 +222,6 @@ impl AgentAccountsConfig {
             claude_config_dir: root.join("claude"),
             claude_config_file: root.join("claude.json"),
             codex_home: root.join("codex"),
-            cursor_sdk_auth_file: root.join("cursor-sdk").join("auth.json"),
             claude_keychain_service: None,
             antigravity_home: Some(root.join("gemini")),
             antigravity_keychain: false,
@@ -400,8 +385,7 @@ enum LoginFlow {
         started_at: Instant,
     },
     /// A spawned login child polled to completion: `codex login` against a
-    /// throwaway `CODEX_HOME`, the cursor shim's login mode minting into a
-    /// throwaway store file, `grok login` against a throwaway `GROK_HOME`, or
+    /// throwaway `CODEX_HOME`, `grok login` against a throwaway `GROK_HOME`, or
     /// `hermes auth add` appending to Hermes' own pool.
     Spawned {
         harness: HarnessId,
@@ -514,8 +498,6 @@ enum NoCredentials {
     ApiKey,
     /// The slot has no access token / key at all.
     Missing,
-    /// Cursor's minted key is past its expiry.
-    KeyExpired,
     /// The provider behind this login has no usage view loams-desktop can read
     /// (a Hermes API key for some other vendor, Pi's Copilot session).
     Unsupported,
@@ -884,19 +866,6 @@ impl AgentAccounts {
             live(HarnessId::Codex, &detected);
             self.snapshot_detected(HarnessId::Codex, &detected)?;
         }
-        if let Some(detected) = self.detect_cursor() {
-            live(HarnessId::Cursor, &detected);
-            self.snapshot_detected(HarnessId::Cursor, &detected)?;
-            // The SDK's minted keys expire (90-day default) — an expired live
-            // key fails every run with an auth error, so say so up front.
-            if !self.cursor_live_usable() {
-                warnings.push(AgentAccountWarning {
-                    harness: HarnessId::Cursor,
-                    message: "The connected Cursor login's API key has expired — connect again."
-                        .into(),
-                });
-            }
-        }
         let mut detected_more: Vec<(HarnessId, Detected)> = Vec::new();
         detected_more.extend(self.detect_grok().map(|d| (HarnessId::Grok, d)));
         detected_more.extend(self.detect_devin().map(|d| (HarnessId::Devin, d)));
@@ -926,7 +895,6 @@ impl AgentAccounts {
         let mut providers: Vec<(HarnessId, Vec<Slot>)> = [
             HarnessId::ClaudeCode,
             HarnessId::Codex,
-            HarnessId::Cursor,
             HarnessId::Grok,
             HarnessId::Devin,
             HarnessId::Opencode,
@@ -1076,7 +1044,6 @@ impl AgentAccounts {
         match harness {
             HarnessId::ClaudeCode => self.activate_claude(&slot).await?,
             HarnessId::Codex => self.activate_codex(&slot)?,
-            HarnessId::Cursor => self.write_cursor_auth(&slot.credentials)?,
             HarnessId::Grok => {
                 self.write_grok_entry(slot.store_key.as_deref(), &slot.credentials)?
             }
@@ -1175,7 +1142,6 @@ impl AgentAccounts {
                 str_field(oauth, "accountUuid").or_else(|| str_field(oauth, "emailAddress"))
             }
             HarnessId::Codex => self.detect_codex().map(|d| d.account_key),
-            HarnessId::Cursor => self.detect_cursor().map(|d| d.account_key),
             HarnessId::Grok => self.detect_grok().map(|d| d.account_key),
             HarnessId::Devin => self.detect_devin().map(|d| d.account_key),
             HarnessId::Opencode | HarnessId::Pi => self
@@ -1207,17 +1173,13 @@ impl AgentAccounts {
     async fn adopt_if_live(&self, slot: &Slot) -> Result<(), EngineError> {
         let store_key = slot.store_key.as_deref();
         let live = self.live_account_key(slot.harness, store_key).await;
-        let usable = match slot.harness {
-            HarnessId::Cursor => self.cursor_live_usable(),
-            _ => live.is_some() || self.has_live_entry(slot.harness, store_key),
-        };
+        let usable = live.is_some() || self.has_live_entry(slot.harness, store_key);
         if usable && live.as_deref() != Some(slot.account_key.as_str()) {
             return Ok(());
         }
         match slot.harness {
             HarnessId::ClaudeCode => self.activate_claude(slot).await?,
             HarnessId::Codex => self.activate_codex(slot)?,
-            HarnessId::Cursor => self.write_cursor_auth(&slot.credentials)?,
             HarnessId::Grok => self.write_grok_entry(store_key, &slot.credentials)?,
             HarnessId::Devin => self.write_devin_credentials(&slot.credentials)?,
             HarnessId::Opencode | HarnessId::Pi => {
@@ -1277,7 +1239,6 @@ impl AgentAccounts {
                 *lock(&self.inner.claude_credentials) = None;
             }
             HarnessId::Codex => remove_if_exists(&self.inner.config.codex_auth_file())?,
-            HarnessId::Cursor => remove_if_exists(&self.inner.config.cursor_sdk_auth_file)?,
             // Only this login's own entry goes: other issuers (Grok) and
             // other providers' logins and API keys (OpenCode, Pi) stay.
             HarnessId::Grok => {
@@ -1391,7 +1352,6 @@ impl AgentAccounts {
                 self.start_claude_login().await
             }
             HarnessId::Codex => self.start_codex_login().await?,
-            HarnessId::Cursor => self.start_cursor_login().await?,
             HarnessId::Antigravity => self.start_antigravity_login(),
             HarnessId::Grok => self.start_grok_login().await?,
             HarnessId::Devin => self.start_devin_login()?,
@@ -1577,8 +1537,7 @@ impl AgentAccounts {
 
     /// Supersede — and reap — any pending spawned flow for `harness` (codex:
     /// `codex login` binds a fixed loopback OAuth port, so a lingering flow
-    /// makes every retry exit on EADDRINUSE; cursor: one flow is simply the
-    /// sane state).
+    /// makes every retry exit on EADDRINUSE).
     fn reap_spawned_flows(&self, harness: HarnessId) {
         let stale: Vec<String> = lock(&self.inner.flows)
             .iter()
@@ -1787,31 +1746,6 @@ impl AgentAccounts {
             mode: AgentLoginMode::Browser,
             callback_port: None,
         }
-    }
-
-    /// Cursor: the SDK's own PKCE browser flow, driven through the loams-desktop shim
-    /// in login mode. The minted key lands in a throwaway store file (never
-    /// the live `~/.cursor/sdk/auth.json`), then snapshots into a slot on
-    /// poll — mirroring codex's throwaway `CODEX_HOME`.
-    async fn start_cursor_login(&self) -> Result<AgentLoginStart, EngineError> {
-        self.reap_spawned_flows(HarnessId::Cursor);
-        let login_id = new_id();
-        let home = self.login_home(&login_id)?;
-        let cmd = loams_agentd_harness::cursor::login_command(&home.join("auth.json"))
-            .await
-            .map_err(|e| {
-                let _ = std::fs::remove_dir_all(&home);
-                EngineError::Other(format!("Could not start the Cursor login: {e}"))
-            })?;
-        self.spawn_login_child(
-            login_id,
-            HarnessId::Cursor,
-            cmd,
-            home,
-            SpawnedCompletion::CredentialFile,
-            scan_cursor_url,
-        )
-        .await
     }
 
     /// Exchange the pasted `code#state` for tokens and save the account as a
@@ -2052,7 +1986,6 @@ impl AgentAccounts {
             SpawnedCompletion::CredentialFile => {
                 read_json(&home.join("auth.json")).and_then(|auth| match harness {
                     HarnessId::Codex => parse_codex_auth(auth),
-                    HarnessId::Cursor => parse_cursor_auth(auth),
                     HarnessId::Grok => stores::parse_grok_auth(auth),
                     _ => None,
                 })
@@ -2090,17 +2023,13 @@ impl AgentAccounts {
             let message = if code == Some(0) {
                 "The sign-in finished without credentials.".to_string()
             } else {
-                let output = lock(&output);
-                // The cursor shim reports failures as a JSONL fatal frame;
-                // the CLIs print plain text. Surface the human part.
-                scan_shim_fatal(&output).unwrap_or_else(|| {
-                    strip_ansi(&output)
-                        .trim()
-                        .lines()
-                        .last()
-                        .unwrap_or("sign-in failed")
-                        .to_string()
-                })
+                // The CLIs print plain text. Surface the human part.
+                strip_ansi(&lock(&output))
+                    .trim()
+                    .lines()
+                    .last()
+                    .unwrap_or("sign-in failed")
+                    .to_string()
             };
             // A CLI's last words can carry an authorize url, a device code or
             // worse — never hand them to the UI (or a log) raw.
@@ -2174,7 +2103,7 @@ impl AgentAccounts {
     }
 
     /// Drop a flow: kill a pending login child (`codex login` holds the fixed
-    /// loopback OAuth port; the cursor shim polls Cursor's backend) and
+    /// loopback OAuth port) and
     /// reclaim its throwaway home dir. Idempotent.
     pub fn cancel_login(&self, login_id: &str) {
         let flow = self.remove_flow(login_id);
@@ -2293,27 +2222,6 @@ impl AgentAccounts {
             remove_if_exists(&dir.join(format!("{}.json", slot.id)))?;
         }
         Ok(())
-    }
-
-    fn detect_cursor(&self) -> Option<Detected> {
-        read_json(&self.inner.config.cursor_sdk_auth_file).and_then(parse_cursor_auth)
-    }
-
-    /// A live cursor login that runs can actually use: present, parseable,
-    /// and not past the minted key's expiry.
-    fn cursor_live_usable(&self) -> bool {
-        read_json(&self.inner.config.cursor_sdk_auth_file)
-            .is_some_and(|auth| cursor_key_usable(&auth))
-    }
-
-    fn write_cursor_auth(&self, credentials: &serde_json::Value) -> Result<(), EngineError> {
-        let file = &self.inner.config.cursor_sdk_auth_file;
-        if let Some(dir) = file.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let json = serde_json::to_string_pretty(credentials)
-            .map_err(|e| EngineError::Other(format!("serialize cursor auth: {e}")))?;
-        write_file_atomic(file, json.as_bytes(), true)
     }
 
     /// Persist a detected login into its slot (refreshing stored tokens).
@@ -2589,7 +2497,6 @@ impl AgentAccounts {
         let result = match harness {
             HarnessId::ClaudeCode => self.claude_usage(slot, is_active).await,
             HarnessId::Codex => self.codex_usage(slot).await,
-            HarnessId::Cursor => self.cursor_usage(slot).await,
             HarnessId::Grok => self.grok_usage(slot, is_active).await,
             HarnessId::Devin => self.devin_usage(slot).await,
             HarnessId::Opencode | HarnessId::Pi | HarnessId::Hermes => {
@@ -2695,53 +2602,6 @@ impl AgentAccounts {
         )
         .await?;
         codex_usage_snapshot(&body).ok_or_else(|| schema_error("codex", &body))
-    }
-
-    async fn cursor_usage(&self, slot: &Slot) -> Result<UsageSnapshot, ProbeError> {
-        // The SDK key tracks identity/expiry but has no quota view — the
-        // account numbers live on the dashboard API the Cursor app itself
-        // calls, reachable with a session minted from the key.
-        let api_key = str_field(&slot.credentials, "apiKey").ok_or(ProbeError::NoCredentials {
-            why: NoCredentials::Missing,
-        })?;
-        if !cursor_key_usable(&slot.credentials) {
-            return Err(ProbeError::NoCredentials {
-                why: NoCredentials::KeyExpired,
-            });
-        }
-        let backend = str_field(&slot.credentials, "backendUrl")
-            .unwrap_or_else(|| CURSOR_DEFAULT_BACKEND.to_string())
-            .trim_end_matches('/')
-            .to_string();
-        let session = probe_json(
-            "cursor",
-            "exchange",
-            self.inner
-                .http
-                .post(format!("{backend}/auth/exchange_user_api_key"))
-                .bearer_auth(api_key)
-                .json(&serde_json::json!({})),
-        )
-        .await?;
-        let access_token =
-            str_field(&session, "accessToken").ok_or_else(|| schema_error("cursor", &session))?;
-        let body = probe_json(
-            "cursor",
-            "usage",
-            self.inner
-                .http
-                .post(format!("{backend}/{CURSOR_CURRENT_PERIOD_USAGE}"))
-                .bearer_auth(&access_token)
-                .header("Connect-Protocol-Version", "1")
-                .json(&serde_json::json!({})),
-        )
-        .await?;
-        cursor_usage_window(&body)
-            .map(|window| UsageSnapshot {
-                windows: vec![window],
-                plan_label: None,
-            })
-            .ok_or_else(|| schema_error("cursor", &body))
     }
 
     /// Refresh a saved Claude slot's expired access token so its usage stays
@@ -3030,7 +2890,6 @@ fn harness_slug(harness: HarnessId) -> &'static str {
     match harness {
         HarnessId::ClaudeCode => "claude-code",
         HarnessId::Codex => "codex",
-        HarnessId::Cursor => "cursor",
         HarnessId::Devin => "devin",
         HarnessId::Grok => "grok",
         HarnessId::Hermes => "hermes",
@@ -3039,6 +2898,7 @@ fn harness_slug(harness: HarnessId) -> &'static str {
         HarnessId::Antigravity => "antigravity",
         HarnessId::LoamsBot => "loams-bot", // loams
         HarnessId::Mock => "mock",
+        HarnessId::Unsupported => "unsupported",
     }
 }
 
@@ -3258,57 +3118,6 @@ fn parse_codex_auth(auth: serde_json::Value) -> Option<Detected> {
 }
 
 /// ISO string (Claude) or unix seconds (Codex) → timestamp.
-/// The Cursor SDK's credential store (`StoredSdkCredentials`, version 1):
-/// the named user API key its browser login minted, plus identity/expiry.
-fn parse_cursor_auth(auth: serde_json::Value) -> Option<Detected> {
-    let api_key = str_field(&auth, "apiKey")?;
-    let email = str_field(&auth, "email");
-    let account_key = email.clone().unwrap_or_else(|| {
-        let digest = Sha256::digest(api_key.as_bytes());
-        format!("api-key:{}", &crate::repos::hex(&digest)[..12])
-    });
-    let expires_at = auth.get("apiKeyExpiresAtMs").and_then(|v| v.as_i64());
-    // The key's expiry doubles as the plan chip — with 90-day keys it is the
-    // one fact worth showing on the card.
-    let plan = expires_at.and_then(|ms| {
-        let when = DateTime::<Utc>::from_timestamp_millis(ms)?;
-        Some(if ms < now_ms() {
-            "Key expired".to_string()
-        } else {
-            format!("Key expires {}", when.format("%b %-d"))
-        })
-    });
-    Some(Detected {
-        account_key,
-        profile: SlotProfile {
-            email: email.unwrap_or_else(|| {
-                let tail: String = api_key
-                    .chars()
-                    .skip(api_key.len().saturating_sub(4))
-                    .collect();
-                format!("API key ·…{tail}")
-            }),
-            display_name: None,
-            organization: None,
-            plan,
-            auth_kind: AgentAuthKind::Oauth,
-        },
-        credentials: Some(auth),
-        claude_config: None,
-        store_key: None,
-        identity_known: true,
-    })
-}
-
-/// Present, parseable, and unexpired — what a run can actually use.
-fn cursor_key_usable(auth: &serde_json::Value) -> bool {
-    str_field(auth, "apiKey").is_some()
-        && auth
-            .get("apiKeyExpiresAtMs")
-            .and_then(|v| v.as_i64())
-            .is_none_or(|ms| ms > now_ms())
-}
-
 fn parse_when(value: Option<&serde_json::Value>) -> Option<DateTime<Utc>> {
     match value? {
         serde_json::Value::Number(n) => DateTime::<Utc>::from_timestamp(n.as_i64()?, 0),
@@ -3438,7 +3247,6 @@ fn usage_error_message(
     let provider = match (harness, store_key) {
         (HarnessId::ClaudeCode, _) => "Anthropic",
         (HarnessId::Codex, _) => "OpenAI",
-        (HarnessId::Cursor, _) => "Cursor",
         (HarnessId::Grok, _) => "xAI",
         (HarnessId::Devin, _) => "Devin",
         (_, Some(key)) => stores::upstream_vendor(key),
@@ -3488,9 +3296,6 @@ fn usage_error_message(
         ProbeError::NoCredentials {
             why: NoCredentials::ApiKey,
         } => "API keys have no plan usage".to_string(),
-        ProbeError::NoCredentials {
-            why: NoCredentials::KeyExpired,
-        } => "API key expired — connect again".to_string(),
         ProbeError::NoCredentials {
             why: NoCredentials::Missing,
         } => return None,
@@ -3566,40 +3371,6 @@ fn claude_usage_windows(body: &serde_json::Value) -> Option<UsageSnapshot> {
         windows,
         plan_label: None,
     })
-}
-
-/// The billing-cycle window from Cursor's `GetCurrentPeriodUsage`. The blended
-/// percent is derived from spend/limit in cents: the payload's own
-/// `totalPercentUsed` disagrees with the number Cursor's UI narrates ("You've
-/// used 72% of your included usage" against `totalSpend`/`limit`, not the
-/// precomputed 11.5). proto3 JSON omits zero-valued fields, so an absent
-/// `limit` means unusable, not 0% — a synthetic 0% would render a healthy bar
-/// for an account whose usage nobody knows.
-fn cursor_usage_window(body: &serde_json::Value) -> Option<AgentUsageWindow> {
-    let plan = body.get("planUsage")?;
-    let limit = plan.get("limit").and_then(|v| v.as_f64())?;
-    if limit <= 0.0 {
-        return None;
-    }
-    let used = plan
-        .get("totalSpend")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
-    Some(AgentUsageWindow {
-        label: "Month".to_string(),
-        used_fraction: (used / limit) as f32,
-        resets_at: json_ms(body.get("billingCycleEnd")),
-    })
-}
-
-/// Unix-millis timestamp arriving as a JSON number or proto3 int64 string.
-fn json_ms(value: Option<&serde_json::Value>) -> Option<DateTime<Utc>> {
-    let ms = match value? {
-        serde_json::Value::Number(n) => n.as_i64()?,
-        serde_json::Value::String(s) => s.parse::<i64>().ok()?,
-        _ => return None,
-    };
-    DateTime::<Utc>::from_timestamp_millis(ms)
 }
 
 fn scan_openai_url(output: &str) -> Option<String> {
@@ -3737,28 +3508,6 @@ fn ensure_recording_browser(root: &Path) -> Option<PathBuf> {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).ok()?;
     }
     Some(path)
-}
-
-/// First JSONL frame with the given `ev` in a cursor-shim output accumulator.
-fn scan_shim_event(output: &str, ev: &str) -> Option<serde_json::Value> {
-    output.lines().find_map(|line| {
-        let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-        (v.get("ev").and_then(|e| e.as_str()) == Some(ev)).then_some(v)
-    })
-}
-
-/// The Cursor SDK's sign-in page from the shim's `auth-url` frame — only a
-/// Cursor https page (it's opened on the requesting device).
-fn scan_cursor_url(output: &str) -> Option<String> {
-    str_field(&scan_shim_event(output, "auth-url")?, "url")
-        .filter(|url| stores::trusted_page(url, CURSOR_DOMAINS))
-}
-
-/// Where the Cursor SDK's browser sign-in lives.
-const CURSOR_DOMAINS: &[&str] = &["cursor.com", "cursor.sh"];
-
-fn scan_shim_fatal(output: &str) -> Option<String> {
-    str_field(&scan_shim_event(output, "fatal")?, "message")
 }
 
 type LoginChildHandles = (
@@ -4152,128 +3901,6 @@ mod tests {
     }
 
     #[test]
-    fn cursor_usage_window_derives_percent_from_spend_not_total_percent() {
-        // Real payload flavor (observed shape): proto3 JSON with string int64
-        // cycle bounds. `totalPercentUsed` (11.53) contradicts the derived
-        // 28846/40000 = 72.1% that Cursor's own UI narrates — derive.
-        let body = serde_json::json!({
-            "billingCycleStart": "1768399334000",
-            "billingCycleEnd": "1771077734000",
-            "planUsage": {
-                "totalSpend": 28846,
-                "includedSpend": 23222,
-                "bonusSpend": 5624,
-                "remaining": 11154,
-                "limit": 40000,
-                "totalPercentUsed": 11.5384,
-            },
-            "displayMessage": "You've used 72% of your included usage",
-        });
-        let window = cursor_usage_window(&body).expect("window");
-        assert_eq!(window.label, "Month");
-        assert!((window.used_fraction - 0.72115).abs() < 1e-5);
-        assert_eq!(
-            window.resets_at,
-            Some(chrono::DateTime::<Utc>::from_timestamp_millis(1_771_077_734_000).unwrap())
-        );
-    }
-
-    #[test]
-    fn cursor_usage_window_absent_limit_is_unusable_not_zero() {
-        // proto3 JSON omits zero-valued fields: an account with no usage-based
-        // spend simply lacks `limit` — never render a synthetic 0% bar.
-        assert!(cursor_usage_window(&serde_json::json!({ "planUsage": {} })).is_none());
-        assert!(cursor_usage_window(&serde_json::json!({ "planUsage": { "limit": 0 } })).is_none());
-    }
-
-    #[test]
-    fn cursor_usage_window_no_spend_is_zero_percent() {
-        let window = cursor_usage_window(&serde_json::json!({
-            "billingCycleEnd": 1771077734000i64,
-            "planUsage": { "limit": 40000 },
-        }))
-        .expect("window");
-        assert_eq!(window.used_fraction, 0.0);
-    }
-
-    #[test]
-    fn cursor_auth_parses_and_gates_on_expiry() {
-        // The SDK's StoredSdkCredentials shape (credential-store.d.ts, 1.0.28).
-        let live = serde_json::json!({
-            "version": 1,
-            "backendUrl": "https://api2.cursor.sh",
-            "apiKey": "key_abc123",
-            "apiKeyExpiresAtMs": now_ms() + 86_400_000,
-            "email": "dev@example.com",
-            "createdAtMs": now_ms() - 1000,
-        });
-        let detected = parse_cursor_auth(live.clone()).expect("parses");
-        assert_eq!(detected.account_key, "dev@example.com");
-        assert_eq!(detected.profile.email, "dev@example.com");
-        assert_eq!(detected.profile.auth_kind, AgentAuthKind::Oauth);
-        assert!(
-            detected
-                .profile
-                .plan
-                .as_deref()
-                .unwrap()
-                .starts_with("Key expires")
-        );
-        assert!(cursor_key_usable(&live));
-
-        let expired = serde_json::json!({
-            "version": 1,
-            "apiKey": "key_abc123",
-            "apiKeyExpiresAtMs": now_ms() - 1000,
-        });
-        let detected = parse_cursor_auth(expired.clone()).expect("expired still detects");
-        assert_eq!(detected.profile.plan.as_deref(), Some("Key expired"));
-        // No email → keyed (and labeled) off the key itself, codex-api-key style.
-        assert!(detected.account_key.starts_with("api-key:"));
-        assert!(!cursor_key_usable(&expired));
-
-        // No expiry field = never expires.
-        assert!(cursor_key_usable(&serde_json::json!({"apiKey": "k"})));
-        assert!(parse_cursor_auth(serde_json::json!({"version": 1})).is_none());
-    }
-
-    #[test]
-    fn cursor_shim_output_scan() {
-        let output = concat!(
-            "npm warn something unrelated\n",
-            "{\"ev\":\"auth-url\",\"url\":\"https://cursor.com/loginDeepControl?challenge=x\"}\n",
-        );
-        assert_eq!(
-            scan_cursor_url(output).as_deref(),
-            Some("https://cursor.com/loginDeepControl?challenge=x")
-        );
-        assert_eq!(scan_cursor_url("no frames here"), None);
-        // Only a Cursor https page is ever opened on the requesting device.
-        for url in [
-            "https://evil.example/loginDeepControl?challenge=x",
-            "https://cursor.com.evil.example/loginDeepControl",
-            "http://cursor.com/loginDeepControl",
-            "https://user@cursor.com/loginDeepControl",
-            "https://cursor.com:8443/loginDeepControl",
-            "javascript:alert(1)",
-        ] {
-            let frame = format!("{}\n", serde_json::json!({ "ev": "auth-url", "url": url }));
-            assert_eq!(scan_cursor_url(&frame), None, "{url}");
-        }
-        assert!(
-            scan_cursor_url(
-                "{\"ev\":\"auth-url\",\"url\":\"https://www.cursor.com/loginDeepControl?c=1\"}\n"
-            )
-            .is_some()
-        );
-        assert_eq!(
-            scan_shim_fatal("{\"ev\":\"fatal\",\"message\":\"cursor login failed: boom\"}\n")
-                .as_deref(),
-            Some("cursor login failed: boom")
-        );
-    }
-
-    #[test]
     fn openai_url_scan() {
         assert_eq!(
             scan_openai_url("open https://auth.openai.com/authorize?x=1 in your browser\n")
@@ -4409,7 +4036,6 @@ mod probe_tests {
             claude_config_dir: dir.path().join("claude"),
             claude_config_file: dir.path().join("claude.json"),
             codex_home: dir.path().join("codex"),
-            cursor_sdk_auth_file: dir.path().join("cursor.json"),
             claude_keychain_service: None,
             antigravity_home: None,
             antigravity_keychain: false,
@@ -4592,7 +4218,6 @@ mod login_tests {
             claude_config_dir: root.join("claude"),
             claude_config_file: root.join("claude.json"),
             codex_home: root.join("codex"),
-            cursor_sdk_auth_file: root.join("cursor-sdk").join("auth.json"),
             claude_keychain_service: None,
             antigravity_home: Some(root.join("gemini")),
             antigravity_keychain: false,
@@ -4631,7 +4256,10 @@ mod login_tests {
             loopback_port("https://x.test/?redirect_uri=http://example.com:80/cb"),
             None
         );
-        assert_eq!(loopback_port("https://cursor.com/loginDeepControl"), None);
+        assert_eq!(
+            loopback_port("https://auth.openai.com/oauth/authorize"),
+            None
+        );
         assert_eq!(loopback_port(""), None);
     }
 

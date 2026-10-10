@@ -107,14 +107,6 @@ impl WorkspaceDoc {
         set_opt_ms(&row, "lastSeenAt", device.last_seen_at)?;
         set_opt_ms(&row, "createdAt", device.created_at)?;
         set_opt_str(&row, "version", device.version.as_deref())?;
-        set_opt_str(
-            &row,
-            "cursorSdkVersion",
-            device.cursor_sdk_version.as_deref(),
-        )?;
-        // An old engine can update its app version without knowing SDK fields.
-        // Treat retained SDK metadata as unknown after such a downgrade.
-        set_opt_str(&row, "cursorSdkEngineVersion", device.version.as_deref())?;
         row.insert(
             "capabilities",
             crate::schema::loro_value_from_json(&serde_json::json!(&device.capabilities)),
@@ -616,18 +608,11 @@ pub(crate) struct RawDevice {
     #[serde(default)]
     version: Option<String>,
     #[serde(default)]
-    cursor_sdk_version: Option<String>,
-    #[serde(default)]
-    cursor_sdk_engine_version: Option<String>,
-    #[serde(default)]
     capabilities: Vec<String>,
 }
 
 impl From<RawDevice> for Device {
     fn from(raw: RawDevice) -> Self {
-        let sdk_version = raw
-            .cursor_sdk_version
-            .filter(|_| raw.version.is_some() && raw.version == raw.cursor_sdk_engine_version);
         Device {
             id: raw.id,
             name: raw.name,
@@ -635,7 +620,6 @@ impl From<RawDevice> for Device {
             last_seen_at: raw.last_seen_at.map(dt),
             created_at: raw.created_at.map(dt),
             version: raw.version,
-            cursor_sdk_version: sdk_version,
             capabilities: raw.capabilities,
         }
     }
@@ -696,7 +680,8 @@ pub(crate) struct RawChat {
     /// every `"opencode"` chat row wholesale, so new sessions silently never
     /// appeared in the sidebar) degrades to `None` instead of failing the
     /// row. The chat stays visible and selectable with generic defaults;
-    /// up-to-date devices still see the real config.
+    /// up-to-date devices still see the real config. An unknown harness id
+    /// no longer costs the config: it reads as `HarnessId::Unsupported`.
     #[serde(default, deserialize_with = "lenient_chat_config")]
     config: Option<ChatConfig>,
     #[serde(default)]
@@ -806,39 +791,23 @@ mod tests {
             last_seen_at: Some(ts(1_000)),
             created_at: Some(ts(500)),
             version: Some("0.1.0".into()),
-            cursor_sdk_version: None,
             capabilities: Vec::new(),
         }
     }
 
     #[test]
-    fn remote_sdk_version_survives_sync_and_old_engines_remain_unknown() {
-        let local = WorkspaceDoc::new();
-        let mut row = device("remote", "remote engine");
-        row.cursor_sdk_version = Some("1.0.31".into());
-        local.upsert_device(&row).unwrap();
-        let remote = WorkspaceDoc::new();
-        remote
-            .doc()
-            .import(&local.export_snapshot().unwrap())
-            .unwrap();
+    fn a_device_row_from_an_older_build_keeps_reading() {
+        // Rows an older build wrote still carry the Cursor SDK fields.
+        let ws = WorkspaceDoc::new();
+        ws.upsert_device(&device("old", "old engine")).unwrap();
+        let row = ws.row("devices", "old").unwrap();
+        row.insert("cursorSdkVersion", "1.0.31").unwrap();
+        row.insert("cursorSdkEngineVersion", "0.1.0").unwrap();
+        ws.doc().commit();
         assert_eq!(
-            remote.read_devices().unwrap()[0]
-                .cursor_sdk_version
-                .as_deref(),
-            Some("1.0.31")
+            ws.read_devices().unwrap(),
+            vec![device("old", "old engine")]
         );
-        // Simulate an older writer that only knows the app-version field.
-        remote
-            .row("devices", "remote")
-            .unwrap()
-            .insert("version", "0.0.1")
-            .unwrap();
-        remote.doc().commit();
-        assert_eq!(remote.read_devices().unwrap()[0].cursor_sdk_version, None);
-        row.cursor_sdk_version = None;
-        remote.upsert_device(&row).unwrap();
-        assert_eq!(remote.read_devices().unwrap()[0].cursor_sdk_version, None);
     }
 
     fn chat(id: &str, device_id: &str) -> Chat {

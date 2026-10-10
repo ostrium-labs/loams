@@ -159,19 +159,14 @@ pub mod methods {
     /// time: `{blobRef, offset?, len?}` → `{text, offset, len, total,
     /// truncated, eof}`.
     pub const FETCH_TOOL_BLOB: &str = "FetchToolBlob";
-    // Updates (ControlRpc). Stream: current UpdateStatus, then every change.
-    pub const UPDATE_STATUS: &str = "UpdateStatus";
-    /// Download + apply the newest release on the target device (symlink-managed
-    /// installs; the service restart is scheduled after the reply flushes).
-    pub const APPLY_UPDATE: &str = "ApplyUpdate";
-    /// Device-local agent CLI update lifecycle. The stream emits the complete
+    /// Device-local agent CLI update lifecycle, on request only: nothing is
+    /// checked or installed until a client calls Check or Apply (DD1 Task 3). The stream emits the complete
     /// ordered status list initially and after every transition.
     pub const WATCH_HARNESS_UPDATES: &str = "WatchHarnessUpdates";
     pub const CHECK_HARNESS_UPDATES: &str = "CheckHarnessUpdates";
     pub const APPLY_HARNESS_UPDATE: &str = "ApplyHarnessUpdate";
     pub const CANCEL_HARNESS_UPDATE: &str = "CancelHarnessUpdate";
     pub const DISMISS_HARNESS_UPDATE: &str = "DismissHarnessUpdate";
-    pub const SET_HARNESS_UPDATE_POLICY: &str = "SetHarnessUpdatePolicy";
 }
 
 #[derive(Debug, thiserror::Error)]

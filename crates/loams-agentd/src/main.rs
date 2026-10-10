@@ -250,7 +250,6 @@ fn harness_from_env() -> loams_agentd_sessions::HarnessId {
     {
         Ok("mock") => loams_agentd_sessions::HarnessId::Mock,
         Ok("codex") => loams_agentd_sessions::HarnessId::Codex,
-        Ok("cursor") => loams_agentd_sessions::HarnessId::Cursor,
         Ok("devin") => loams_agentd_sessions::HarnessId::Devin,
         Ok("grok") => loams_agentd_sessions::HarnessId::Grok,
         Ok("hermes") => loams_agentd_sessions::HarnessId::Hermes,

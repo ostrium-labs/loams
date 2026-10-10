@@ -1719,68 +1719,6 @@ struct RunResumeState {
     fork_history_sent: Arc<std::sync::atomic::AtomicBool>,
 }
 
-fn cursor_unstarted_history(
-    doc: &SessionDoc,
-    current_id: &str,
-    prompt: &str,
-    has_session: bool,
-) -> Result<String, DocError> {
-    // Convert each message before JSON encoding. Rewriting canonical chips in
-    // the encoded envelope can introduce unescaped quotes or newlines and can
-    // cause Cursor's current message to be converted twice.
-    let prompt = loams_agentd_proto::invocation::harness_prompt(prompt, HarnessId::Cursor);
-    let entries = doc.read_entries()?;
-    let preceding: Vec<_> = entries
-        .iter()
-        .take_while(|entry| entry.id != current_id)
-        .collect();
-    // With an existing session, only bridge the tail whose assistant never
-    // produced content. A process can die before writing its SDK-side receipt,
-    // even though an older session ID still exists.
-    let after = if has_session {
-        preceding
-            .iter()
-            .rposition(|entry| {
-                entry.role == MessageRole::Assistant
-                    && entry.parts.iter().any(|part| match part {
-                        MessagePart::Text { text, .. } | MessagePart::Reasoning { text, .. } => {
-                            !text.is_empty()
-                        }
-                        MessagePart::Tool { .. } | MessagePart::Input { .. } => true,
-                        _ => false,
-                    })
-            })
-            .map_or(0, |i| i + 1)
-    } else {
-        0
-    };
-    let previous: Vec<String> = preceding
-        .iter()
-        .skip(after)
-        .filter(|entry| entry.role == MessageRole::User)
-        .map(|entry| {
-            entry
-                .parts
-                .iter()
-                .filter_map(|part| match part {
-                    MessagePart::Text { text, .. } => Some(text.as_str()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .filter(|text| !text.is_empty())
-        .map(|text| loams_agentd_proto::invocation::harness_prompt(&text, HarnessId::Cursor))
-        .collect();
-    if previous.is_empty() {
-        return Ok(prompt);
-    }
-    Ok(format!(
-        "The preceding user messages may not have reached a Cursor checkpoint before startup stopped. Retain this JSON as conversation history; do not rerun prior tools or side effects. Respond to the current message.\n{}",
-        serde_json::json!({"previousUserMessages": previous, "currentUserMessage": prompt})
-    ))
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn drive_run(
     inner: Arc<Inner>,
@@ -1835,59 +1773,37 @@ async fn drive_run(
             .fork_history_sent
             .store(true, std::sync::atomic::Ordering::Release);
     }
-    // Startup can stop before the SDK saves user text, with no new session
-    // ID or receipt. Bridge that unacknowledged tail from our transcript;
-    // a fresh session needs all prior user text, not just the latest tail.
-    let prepared = if harness_id == HarnessId::Cursor {
-        cursor_unstarted_history(
-            &doc,
-            &resume_state.user_message_id,
-            &request.prompt,
-            request.resume.is_some(),
-        )
-        .map(|prompt| request.prompt = prompt)
-        .map_err(|e| loams_agentd_harness::HarnessError::Protocol(e.to_string()))
-    } else {
-        Ok(())
-    };
     // Waiting here keeps dispatch and the shared queue-flush watcher responsive.
     // The pending-update marker still orders new subprocesses after installation.
     // Share the lease with the adapter so child cleanup outlives this event loop.
     let mut _execution_lease = None;
-    let started = match prepared {
-        Ok(()) => {
-            let lease = tokio::select! {
-                biased;
-                _ = controls.interrupt.cancelled() => None,
-                lease = inner.registry.execution_lease(harness_id) => Some(Arc::new(lease)),
-            };
-            if let Some(lease) = lease {
-                _execution_lease = Some(lease.clone());
-                controls.execution_lease = Some(lease);
-                if let Some(listener) = inner.turn_listener.get() {
-                    listener(&chat_id, &request.cwd);
-                }
-                let mut wire_request = request;
-                if !matches!(harness_id, HarnessId::Cursor | HarnessId::Opencode) {
-                    wire_request.prompt = loams_agentd_proto::invocation::harness_prompt(
-                        &wire_request.prompt,
-                        harness_id,
-                    );
-                }
-                harness.run(wire_request, controls).await
-            } else {
-                Ok(futures::stream::once(async {
-                    Ok(AgentEvent::Done {
-                        status: DoneStatus::Interrupted,
-                        result: None,
-                        error: None,
-                        session_id: None,
-                    })
-                })
-                .boxed())
-            }
+    let lease = tokio::select! {
+        biased;
+        _ = controls.interrupt.cancelled() => None,
+        lease = inner.registry.execution_lease(harness_id) => Some(Arc::new(lease)),
+    };
+    let started = if let Some(lease) = lease {
+        _execution_lease = Some(lease.clone());
+        controls.execution_lease = Some(lease);
+        if let Some(listener) = inner.turn_listener.get() {
+            listener(&chat_id, &request.cwd);
         }
-        Err(error) => Err(error),
+        let mut wire_request = request;
+        if harness_id != HarnessId::Opencode {
+            wire_request.prompt =
+                loams_agentd_proto::invocation::harness_prompt(&wire_request.prompt, harness_id);
+        }
+        harness.run(wire_request, controls).await
+    } else {
+        Ok(futures::stream::once(async {
+            Ok(AgentEvent::Done {
+                status: DoneStatus::Interrupted,
+                result: None,
+                error: None,
+                session_id: None,
+            })
+        })
+        .boxed())
     };
     let mut stream = match started {
         Ok(stream) => stream,
@@ -2932,111 +2848,6 @@ async fn drive_run(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn cursor_recovery_converts_rich_messages_before_json_encoding() {
-        let doc = loams_agentd_doc::SessionDoc::init("cursor-rich-recovery").unwrap();
-        let skill = loams_agentd_proto::invocation::Invocation::Skill {
-            name: "review \"quoted\"".into(),
-            path: "/repo/quoted \"path\"/SKILL.md".into(),
-            command: None,
-        }
-        .link();
-        let previous = format!("Previous {skill}\nSecond line with \\ and \"quotes\"");
-        doc.push_message(&loams_agentd_doc::SessionMessageEntry {
-            id: "u1".into(),
-            role: loams_agentd_doc::MessageRole::User,
-            parts: vec![loams_agentd_doc::MessagePart::Text {
-                id: "u1-text".into(),
-                text: previous.clone(),
-            }],
-            created_at: 0,
-            device_id: "test".into(),
-            status: None,
-            continuation_of: None,
-            duration_ms: None,
-        })
-        .unwrap();
-        let current = format!("Current {skill}\nKeep **Markdown**");
-        let delivered = super::cursor_unstarted_history(&doc, "u2", &current, false).unwrap();
-        let (_, json) = delivered.split_once('\n').unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            parsed["currentUserMessage"],
-            loams_agentd_proto::invocation::harness_prompt(
-                &current,
-                loams_agentd_proto::HarnessId::Cursor
-            )
-        );
-        assert_eq!(
-            parsed["previousUserMessages"][0],
-            loams_agentd_proto::invocation::harness_prompt(
-                &previous,
-                loams_agentd_proto::HarnessId::Cursor
-            )
-        );
-    }
-
-    #[test]
-    fn cursor_without_a_session_id_retains_only_preceding_user_messages() {
-        let doc = loams_agentd_doc::SessionDoc::init("cursor-unstarted").unwrap();
-        for (id, role, text) in [
-            (
-                "u1",
-                loams_agentd_doc::MessageRole::User,
-                "first interrupted request",
-            ),
-            (
-                "a1",
-                loams_agentd_doc::MessageRole::Assistant,
-                "partial output",
-            ),
-            ("u2", loams_agentd_doc::MessageRole::User, "current request"),
-            (
-                "u3",
-                loams_agentd_doc::MessageRole::User,
-                "future pending request",
-            ),
-        ] {
-            doc.push_message(&loams_agentd_doc::SessionMessageEntry {
-                id: id.into(),
-                role,
-                parts: vec![loams_agentd_doc::MessagePart::Text {
-                    id: format!("{id}-text"),
-                    text: text.into(),
-                }],
-                created_at: 0,
-                device_id: "test".into(),
-                status: None,
-                continuation_of: None,
-                duration_ms: None,
-            })
-            .unwrap();
-        }
-        assert_eq!(
-            super::cursor_unstarted_history(&doc, "u1", "first interrupted request", false)
-                .unwrap(),
-            "first interrupted request"
-        );
-        let prompt = super::cursor_unstarted_history(&doc, "u2", "current request", false).unwrap();
-        assert!(prompt.contains("first interrupted request"));
-        assert!(prompt.contains("current request"));
-        assert!(!prompt.contains("partial output"));
-        assert!(!prompt.contains("future pending request"));
-        assert!(prompt.contains("do not rerun prior tools or side effects"));
-        assert_eq!(
-            super::cursor_unstarted_history(&doc, "u2", "current request", true).unwrap(),
-            "current request",
-            "content from the preceding turn is already in the native session"
-        );
-        assert!(
-            super::cursor_unstarted_history(&doc, "u3", "future pending request", true)
-                .unwrap()
-                .contains("current request"),
-            "an unacknowledged prompt after an older checkpoint must survive"
-        );
-        assert_eq!(doc.read_entries().unwrap().len(), 4);
-    }
 
     use loams_agentd_proto::{HarnessId, RunRequest, SandboxLevel};
 

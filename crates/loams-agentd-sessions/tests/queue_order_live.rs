@@ -8,9 +8,7 @@
 //! `sends`, `queue`, `steer`.
 #![allow(clippy::unwrap_used)]
 use loams_agentd_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
-use loams_agentd_harness::{
-    AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,
-};
+use loams_agentd_harness::{AcpHarness, ClaudeHarness, CodexHarness, Harness, OpencodeHarness};
 use loams_agentd_proto::{ChatConfig, HarnessId, RunRequest, SandboxLevel, SessionStatus};
 use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::{sync::Arc, time::Duration};
@@ -21,7 +19,6 @@ fn harness(name: &str) -> Arc<dyn Harness> {
     match name {
         "claude" => Arc::new(ClaudeHarness::new()),
         "codex" => Arc::new(CodexHarness::new()),
-        "cursor" => Arc::new(CursorHarness::new()),
         "opencode" => Arc::new(OpencodeHarness::new()),
         "grok" => Arc::new(AcpHarness::grok()),
         "devin" => Arc::new(AcpHarness::devin()),

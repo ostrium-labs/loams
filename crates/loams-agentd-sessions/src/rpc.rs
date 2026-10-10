@@ -50,8 +50,8 @@ use tokio::sync::watch;
 
 use loams_agentd_doc::{MessagePart, SessionCommandPayload};
 use loams_agentd_proto::{
-    ChatConfig, CreateWorktreeOutcome, EngineInfo, HarnessId, HarnessUpdatePolicy,
-    ProjectActionDraft, Space, ToolCall, WorkspaceScope,
+    ChatConfig, CreateWorktreeOutcome, EngineInfo, HarnessId, ProjectActionDraft, Space, ToolCall,
+    WorkspaceScope,
 };
 use loams_agentd_rpc::{RpcError, RpcReply, RpcService, methods, parse_params};
 
@@ -114,13 +114,6 @@ struct DismissHarnessUpdateParams {
     harness: HarnessId,
     #[serde(default)]
     version: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SetHarnessUpdatePolicyParams {
-    harness: HarnessId,
-    policy: HarnessUpdatePolicy,
 }
 
 #[derive(Debug, Deserialize)]
@@ -620,7 +613,6 @@ impl EngineRpc {
         let engine_info = EngineInfo {
             device_id: doc_host.device_id().to_string(),
             workspace_scope,
-            cursor_sdk_version: Some(loams_agentd_harness::CursorHarness::sdk_version().into()),
             capabilities: loams_agentd_proto::capabilities::current(),
         };
         Self {
@@ -1700,10 +1692,6 @@ impl RpcService for EngineRpc {
             methods::DISMISS_HARNESS_UPDATE => {
                 let p: DismissHarnessUpdateParams = parse_params(params)?;
                 RpcReply::value(&self.harness_updates()?.dismiss(p.harness, p.version))
-            }
-            methods::SET_HARNESS_UPDATE_POLICY => {
-                let p: SetHarnessUpdatePolicyParams = parse_params(params)?;
-                RpcReply::value(&self.harness_updates()?.set_policy(p.harness, p.policy))
             }
             methods::MUTATE => {
                 let p: MutateParams = parse_params(params)?;

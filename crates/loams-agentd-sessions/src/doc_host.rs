@@ -1077,6 +1077,7 @@ impl DocHost {
         chat_id: &str,
         payload: SessionCommandPayload,
     ) -> Result<String, EngineError> {
+        self.refuse_unsupported(chat_id, &payload)?;
         let handle = self.open(chat_id)?;
         let id = new_id();
         let now = now_ms();
@@ -1106,6 +1107,27 @@ impl DocHost {
             self.unarchive_on_send(chat_id);
         }
         Ok(id)
+    }
+
+    /// A chat on [`HarnessId::Unsupported`] (an agent this daemon no longer
+    /// ships, plan DD1 Task 3) is read-only: a message to it, or a Run that
+    /// picks that harness, is refused. Interrupts and input answers pass.
+    fn refuse_unsupported(
+        &self,
+        chat_id: &str,
+        payload: &SessionCommandPayload,
+    ) -> Result<(), EngineError> {
+        let picked = match payload {
+            SessionCommandPayload::Run { request, .. } => request.harness,
+            SessionCommandPayload::Steer { .. } => None,
+            _ => return Ok(()),
+        };
+        if picked == Some(HarnessId::Unsupported)
+            || self.harness_for(chat_id) == HarnessId::Unsupported
+        {
+            return Err(EngineError::HarnessUnsupported);
+        }
+        Ok(())
     }
 
     /// A send revives an archived chat on every device (best-effort).
@@ -1146,6 +1168,9 @@ impl DocHost {
         attachments: Vec<String>,
         hold_for_turn_end: bool,
     ) -> Result<String, EngineError> {
+        if self.harness_for(chat_id) == HarnessId::Unsupported {
+            return Err(EngineError::HarnessUnsupported);
+        }
         let handle = self.open(chat_id)?;
         let id = new_id();
         handle.doc.push_queued(&QueuedMessage {
@@ -2363,6 +2388,8 @@ impl DocHost {
         entry: &SessionCommandEntry,
     ) -> Result<(SessionCommandStatus, Option<String>), EngineError> {
         let chat_id = &handle.chat_id;
+        // A command an older build left in the doc of a now-unsupported chat.
+        self.refuse_unsupported(chat_id, &entry.payload)?;
         match &entry.payload {
             SessionCommandPayload::Run {
                 request,
@@ -2723,6 +2750,9 @@ impl DocHost {
         request: loams_agentd_proto::RunRequest,
         message_id: Option<String>,
     ) -> Result<String, EngineError> {
+        if harness == HarnessId::Unsupported {
+            return Err(EngineError::HarnessUnsupported);
+        }
         if let Some(workspace) = self.workspace()
             && let Some(context) = self.capture_source_context(&request.cwd).await
             && let Err(err) = workspace.set_chat_source_context(chat_id, &context)

@@ -245,7 +245,6 @@ fn device(id: &str, name: &str) -> Device {
         last_seen_at: Some(ts(1_000)),
         created_at: Some(ts(500)),
         version: Some("0.1.0".into()),
-        cursor_sdk_version: Some("1.0.31".into()),
         capabilities: Vec::new(),
     }
 }
@@ -460,12 +459,13 @@ fn pre_epoch_snapshots_resync_in_full_once() {
 }
 
 #[test]
-fn future_harness_chat_rows_stay_visible_without_their_config() {
+fn future_harness_chat_rows_stay_visible_as_unsupported() {
     // Field incident: a pre-v0.2.10 client received rows whose
     // config.harness said "opencode" — a variant it didn't have — and
     // dropped the WHOLE row ("skipping malformed registry row"), so new
-    // sessions silently never appeared in that device's sidebar. Unknown
-    // config values must cost the config, not the row.
+    // sessions silently never appeared in that device's sidebar. An unknown
+    // harness now reads as `Unsupported` (plan DD1 Task 3), so the row keeps
+    // its config and opens read-only.
     let mut ws = RegistryDoc::new("dev-a");
     ws.upsert_chat(&chat("chat-1", "dev-a")).unwrap();
     let fields: std::collections::BTreeMap<String, serde_json::Value> = [
@@ -499,10 +499,9 @@ fn future_harness_chat_rows_stay_visible_without_their_config() {
     let chats = ws.read_chats().unwrap();
     assert_eq!(chats.len(), 2, "the future-harness row must not vanish");
     let newcomer = chats.iter().find(|c| c.id == "chat-2").expect("visible");
-    assert_eq!(
-        newcomer.config, None,
-        "unknown config degrades, row survives"
-    );
+    let config = newcomer.config.as_ref().expect("the config survives");
+    assert_eq!(config.harness, loams_agentd_proto::HarnessId::Unsupported);
+    assert_eq!(config.model.as_deref(), Some("novel/model"));
     // The well-formed sibling keeps its config untouched.
     assert!(chats.iter().any(|c| c.id == "chat-1" && c.config.is_some()));
 }
@@ -531,7 +530,6 @@ fn field_mutators_round_trip() {
     assert_eq!(chat.last_message_preview.as_deref(), Some("preview text"));
     assert_eq!(chat.last_message_at, Some(ts(5_000)));
     let dev = &ws.read_devices().unwrap()[0];
-    assert_eq!(dev.cursor_sdk_version.as_deref(), Some("1.0.31"));
     assert_eq!(dev.name, "workstation");
     assert_eq!(dev.last_seen_at, Some(ts(6_000)));
 }

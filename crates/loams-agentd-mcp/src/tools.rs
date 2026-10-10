@@ -70,7 +70,7 @@ fn catalog() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "list_harnesses",
-            description: "Agent harnesses (claude-code, codex, cursor, …) and whether each is available on this device.",
+            description: "Agent harnesses (claude-code, codex, opencode, …) and whether each is available on this device.",
             input_schema: json!({ "type": "object", "properties": {} }),
         },
         ToolDef {
@@ -327,6 +327,15 @@ fn parse_enum<T: serde::de::DeserializeOwned>(what: &str, raw: &str) -> Result<T
         .map_err(|_| format!("unknown {what}: {raw:?}"))
 }
 
+/// A harness id a tool may name: any unknown name reads as
+/// `HarnessId::Unsupported`, which is never a valid choice.
+fn parse_harness(raw: &str) -> Result<HarnessId, String> {
+    match parse_enum("harness", raw)? {
+        HarnessId::Unsupported => Err(format!("unknown harness: {raw:?}")),
+        id => Ok(id),
+    }
+}
+
 // ---- summaries ---------------------------------------------------------------
 
 /// Live posture of one chat as the tools report it.
@@ -514,8 +523,7 @@ impl Tools {
     }
 
     async fn list_models(&self, args: ListModelsArgs) -> anyhow::Result<Value> {
-        let harness: HarnessId =
-            parse_enum("harness", &args.harness).map_err(anyhow::Error::msg)?;
+        let harness = parse_harness(&args.harness).map_err(anyhow::Error::msg)?;
         let models = self.loams_desktop.models(harness).await?;
         Ok(json!({
             "harness": harness,
@@ -593,7 +601,7 @@ impl Tools {
         let harnesses = self.loams_desktop.harnesses().await?;
         let harness = match args.harness.as_deref() {
             Some(raw) => {
-                let id: HarnessId = parse_enum("harness", raw).map_err(anyhow::Error::msg)?;
+                let id = parse_harness(raw).map_err(anyhow::Error::msg)?;
                 if let Some(info) = harnesses.iter().find(|h| h.id == id)
                     && !info.available()
                 {

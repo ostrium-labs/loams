@@ -23,7 +23,6 @@ pub(crate) fn context(
             let root = root("CLAUDE_CONFIG_DIR", home.join(".claude"));
             vec![root.join("settings.json"), root.join(".credentials.json")]
         }
-        HarnessId::Cursor => vec![home.join(".cursor/sdk/auth.json")],
         HarnessId::Opencode => {
             let data = root("XDG_DATA_HOME", home.join(".local/share"));
             let config = root("XDG_CONFIG_HOME", home.join(".config"));
@@ -105,7 +104,6 @@ pub(crate) fn context(
         HarnessId::Pi => &["PI_", "OPENAI_", "ANTHROPIC_"],
         HarnessId::Devin => &["DEVIN_"],
         HarnessId::Antigravity => &["GEMINI_", "GOOGLE_"],
-        HarnessId::Cursor => &["CURSOR_"],
         _ => &[],
     };
     let mut env: Vec<_> = std::env::vars_os()

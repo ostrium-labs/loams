@@ -82,6 +82,10 @@ async fn removed_edge_and_sign_in_methods_are_unknown() {
         "SelectOrg",
         "LocalImportStatus",
         "ImportLocalWorkspace",
+        // Self-update and the harness-update policies (DD1 Task 3).
+        "UpdateStatus",
+        "ApplyUpdate",
+        "SetHarnessUpdatePolicy",
     ] {
         let error = client
             .call(method, serde_json::json!({ "chatId": "c" }))

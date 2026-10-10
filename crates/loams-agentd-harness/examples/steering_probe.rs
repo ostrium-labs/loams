@@ -3,8 +3,8 @@
 //! Checks a running shell survives a rapid burst and every follow-up is acted on.
 use futures::StreamExt;
 use loams_agentd_harness::{
-    AcpHarness, CancellationToken, ClaudeHarness, CodexHarness, CursorHarness, Harness,
-    OpencodeHarness, RunControls, SteerMessage,
+    AcpHarness, CancellationToken, ClaudeHarness, CodexHarness, Harness, OpencodeHarness,
+    RunControls, SteerMessage,
 };
 use loams_agentd_proto::{AgentEvent, DoneStatus, RunRequest, SandboxLevel};
 use std::{sync::Arc, time::Duration};
@@ -18,7 +18,6 @@ async fn main() -> anyhow::Result<()> {
     let harness: Arc<dyn Harness> = match name.as_str() {
         "claude" => Arc::new(ClaudeHarness::new()),
         "codex" => Arc::new(CodexHarness::new()),
-        "cursor" => Arc::new(CursorHarness::new()),
         "opencode" => Arc::new(OpencodeHarness::new()),
         "grok" => Arc::new(AcpHarness::grok()),
         "devin" => Arc::new(AcpHarness::devin()),

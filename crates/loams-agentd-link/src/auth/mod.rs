@@ -2,9 +2,8 @@
 //! authorization code with PKCE in the system browser, a loopback redirect,
 //! the refresh token in the OS keychain.
 //!
-//! This replaces loams-desktop's own WorkOS login, which belongs to loams-desktop's private
-//! sync backend. Loams Desktop's engine auth stays compiled but unused in a Loams
-//! build (see `LOAMS.md`).
+//! The fork's own WorkOS login, which belonged to its private sync backend,
+//! is gone (plan DD1 Tasks 2 and 3).
 //!
 //! Not here yet (plan AP1n Task 4): the RFC 8693 exchange of the Authentik
 //! token for Loams tokens at the Loams gateway, which waits for the unified

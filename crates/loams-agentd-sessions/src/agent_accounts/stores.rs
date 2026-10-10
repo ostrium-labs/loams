@@ -1,4 +1,4 @@
-//! Credential stores of the agents beyond Claude Code / Codex / Cursor /
+//! Credential stores of the agents beyond Claude Code / Codex /
 //! Antigravity: where each CLI keeps its login, how loams-desktop reads (and, where
 //! it's safe, swaps) it, and the sign-ins that run through the CLI itself.
 //!
@@ -132,7 +132,6 @@ pub(super) fn cli_name(harness: HarnessId) -> &'static str {
     match harness {
         HarnessId::ClaudeCode => "claude",
         HarnessId::Codex => "codex",
-        HarnessId::Cursor => "Cursor",
         HarnessId::Grok => "grok",
         HarnessId::Devin => "devin",
         HarnessId::Opencode => "opencode",
@@ -141,6 +140,7 @@ pub(super) fn cli_name(harness: HarnessId) -> &'static str {
         HarnessId::Antigravity => "Antigravity",
         HarnessId::LoamsBot => "Loams Bot", // loams
         HarnessId::Mock => "mock",
+        HarnessId::Unsupported => "an unsupported agent",
     }
 }
 

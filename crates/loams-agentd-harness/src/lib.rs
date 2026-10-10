@@ -2,13 +2,12 @@
 //!
 //! NATIVE DRIVERS speak each agent's own wire directly: Claude Code over
 //! stream-json ([`ClaudeHarness`]), Codex over the app-server JSON-RPC
-//! ([`CodexHarness`]), Cursor through a pinned @cursor/sdk shim
-//! ([`CursorHarness`]), and opencode over its own HTTP/SSE server protocol
+//! ([`CodexHarness`]), and opencode over its own HTTP/SSE server protocol
 //! ([`OpencodeHarness`] — what the opencode desktop app speaks). The shared
 //! [`AcpHarness`] remains ONLY for agents built ground-up on ACP — Devin
 //! (`devin acp`), Grok (`grok agent stdio`) Hermes (`hermes acp`) and
 //! Antigravity. Pi uses native JSONL RPC ([`PiHarness`]).
-//! Adapter-mediated ACP for claude/codex/cursor was retired — and opencode's
+//! Adapter-mediated ACP for claude and codex was retired — and opencode's
 //! ACP layer with it: the adapters held prompt turns open for background
 //! work the CLIs themselves settle eagerly (and opencode's settles on the
 //! first uncorrelated idle), manufacturing done-status bugs the native
@@ -187,7 +186,6 @@ pub mod redact;
 pub use catalog_failure::{CatalogFailure, CatalogFailureCode};
 pub mod claude;
 pub mod codex;
-pub mod cursor;
 pub(crate) mod executable;
 pub mod install;
 pub(crate) mod jsonrpc;
@@ -399,7 +397,6 @@ pub(crate) fn crash_message(
 pub use acp::AcpHarness;
 pub use claude::ClaudeHarness;
 pub use codex::CodexHarness;
-pub use cursor::CursorHarness;
 pub use opencode::OpencodeHarness;
 pub use pi::PiHarness;
 

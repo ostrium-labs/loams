@@ -1,6 +1,6 @@
 //! HarnessRegistry — the engine's harness catalog: eager instances (mock) plus lazy
-//! slots resolved on first use (claude-code spawns subprocess discovery; codex/cursor
-//! later). Lazy slots carry a static descriptor so `ListHarnesses` never forces a spawn.
+//! slots resolved on first use (claude-code spawns subprocess discovery; codex and
+//! the rest later). Lazy slots carry a static descriptor so `ListHarnesses` never forces a spawn.
 //!
 //! Also owns the device's harness ENABLEMENT (Settings → Providers): which harnesses
 //! this device's composer offers, persisted in `{data_dir}/harness-prefs.json`.
@@ -623,23 +623,6 @@ pub fn default_registry() -> HarnessRegistry {
         Box::new(|| loams_agentd_harness::CodexHarness::new().installed()),
         Box::new(|| Ok(Arc::new(loams_agentd_harness::CodexHarness::new()) as Arc<dyn Harness>)),
     );
-    // Cursor via the pinned @cursor/sdk shim (NOT ACP — that surface strips
-    // subagent transcripts), same lazy pattern: the static descriptor mirrors
-    // CursorHarness exactly. Native step-boundary steering; no effort ladder.
-    registry.register_lazy(
-        HarnessDescriptor {
-            id: HarnessId::Cursor,
-            name: "Cursor".into(),
-            supports_steering: true,
-            steering_mode: SteeringMode::StepBoundary,
-            reasoning_levels: Vec::new(),
-            installed: true,
-            can_install: false,
-            enabled: None,
-        },
-        Box::new(|| loams_agentd_harness::CursorHarness::new().installed()),
-        Box::new(|| Ok(Arc::new(loams_agentd_harness::CursorHarness::new()) as Arc<dyn Harness>)),
-    );
     // Devin over ACP (`devin acp`), same lazy pattern: the static descriptor
     // mirrors AcpHarness::devin() exactly. No steering extension (turn
     // boundaries) and no effort ladder — Devin bakes effort into the
@@ -853,7 +836,6 @@ mod tests {
                 HarnessId::Mock,
                 HarnessId::ClaudeCode,
                 HarnessId::Codex,
-                HarnessId::Cursor,
                 HarnessId::Devin,
                 HarnessId::Grok,
                 HarnessId::Hermes,
@@ -883,12 +865,7 @@ mod tests {
                 ReasoningLevel::High
             ]
         );
-        // Cursor, Devin, Hermes and Pi mirror their specs the same way.
-        let cursor = registry.resolve(HarnessId::Cursor).unwrap();
-        assert_eq!(cursor.id(), HarnessId::Cursor);
-        assert_eq!(cursor.display_name(), "Cursor");
-        assert_eq!(cursor.steering_mode(), SteeringMode::StepBoundary);
-        assert!(cursor.reasoning_levels().is_empty());
+        // Devin, Hermes and Pi mirror their specs the same way.
         let devin = registry.resolve(HarnessId::Devin).unwrap();
         assert_eq!(devin.id(), HarnessId::Devin);
         assert_eq!(devin.display_name(), "Devin");
@@ -1201,10 +1178,10 @@ mod tests {
         assert!(!text.contains("enabled"), "{text}");
         assert!(text.contains("codex") && text.contains("grok"), "{text}");
         // An agent registered after the migration is new, not a past "no".
-        test_slot(&registry, HarnessId::Cursor, true);
+        test_slot(&registry, HarnessId::Devin, true);
         assert_eq!(
             registry.enabled_set(),
-            vec![HarnessId::ClaudeCode, HarnessId::Cursor]
+            vec![HarnessId::ClaudeCode, HarnessId::Devin]
         );
     }
 
@@ -1289,7 +1266,7 @@ mod title_tests {
         assert!(
             registry
                 .set_title_settings(TitleSettings {
-                    harness: Some(HarnessId::Cursor),
+                    harness: Some(HarnessId::Unsupported),
                     model: None
                 })
                 .is_err()

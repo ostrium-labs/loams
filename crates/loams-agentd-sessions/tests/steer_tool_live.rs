@@ -5,9 +5,7 @@
 //!
 //! LOAMS_DESKTOP_TEST_HARNESS=claude cargo test -p loams-agentd-sessions --test steer_tool_live -- --ignored --nocapture
 use loams_agentd_doc::{MessagePart, MessageRole, SessionCommandPayload, SessionMessageEntry};
-use loams_agentd_harness::{
-    AcpHarness, ClaudeHarness, CodexHarness, CursorHarness, Harness, OpencodeHarness,
-};
+use loams_agentd_harness::{AcpHarness, ClaudeHarness, CodexHarness, Harness, OpencodeHarness};
 use loams_agentd_proto::{ChatConfig, McpServer, RunRequest, SandboxLevel, SessionStatus};
 use loams_agentd_sessions::{EngineCore, HarnessRegistry};
 use std::{
@@ -48,7 +46,6 @@ fn harness(name: &str) -> Arc<dyn Harness> {
     match name {
         "claude" => Arc::new(ClaudeHarness::new()),
         "codex" => Arc::new(CodexHarness::new()),
-        "cursor" => Arc::new(CursorHarness::new()),
         "opencode" => Arc::new(OpencodeHarness::new()),
         "grok" => Arc::new(AcpHarness::grok()),
         "devin" => Arc::new(AcpHarness::devin()),

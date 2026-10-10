@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 pub enum HarnessId {
     ClaudeCode,
     Codex,
-    Cursor,
     /// Cognition's Devin agent, driven over ACP (`devin acp`).
     Devin,
     /// xAI's Grok Build agent, driven over ACP (`grok agent stdio`).
@@ -28,21 +27,20 @@ pub enum HarnessId {
     LoamsBot,
     /// Test harness; never shown in production pickers.
     Mock,
+    /// Any harness name this daemon does not ship: one it removed (the
+    /// Cursor shim, plan DD1 Task 3, stored as `"cursor"`) or one from a
+    /// newer build. A session on it opens read-only: every send answers
+    /// [`HARNESS_UNSUPPORTED`] with [`UNSUPPORTED_HARNESS_NOTICE`]. It is
+    /// written back as `"unsupported"`.
+    #[serde(other)]
+    Unsupported,
 }
 
-/// Durable user preference for one agent's independently-installed CLI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum HarnessUpdatePolicy {
-    /// Check and surface an update, but never mutate the installation without
-    /// an explicit action.
-    Notify,
-    /// Apply a discovered update after the harness execution gate becomes idle.
-    AutoWhenIdle,
-    /// Do not probe or update this harness (the desktop import's default).
-    #[default]
-    Off,
-}
+/// The error code a send to a session on [`HarnessId::Unsupported`] answers.
+pub const HARNESS_UNSUPPORTED: &str = "harness_unsupported";
+
+/// The notice shown on such a session.
+pub const UNSUPPORTED_HARNESS_NOTICE: &str = "This agent is no longer supported";
 
 /// Best-effort classification of the installation that owns an agent CLI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -111,8 +109,6 @@ pub struct HarnessUpdateStatus {
     pub channel: Option<String>,
     #[serde(default)]
     pub source: HarnessInstallSource,
-    #[serde(default)]
-    pub policy: HarnessUpdatePolicy,
     pub phase: HarnessUpdatePhase,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress: Option<HarnessUpdateProgress>,
@@ -729,8 +725,44 @@ mod tests {
     }
 
     #[test]
-    fn desktop_defaults_disable_agent_updates_and_preserve_source_wire_identity() {
-        assert_eq!(HarnessUpdatePolicy::default(), HarnessUpdatePolicy::Off);
+    fn unknown_harness_names_read_as_unsupported() {
+        // The removed Cursor shim, a newer build's agent, and the variant's
+        // own name all read as `Unsupported`, as a value and as a map key.
+        for name in ["cursor", "some-future-agent", "unsupported"] {
+            assert_eq!(
+                serde_json::from_value::<HarnessId>(serde_json::json!(name)).unwrap(),
+                HarnessId::Unsupported,
+                "{name}"
+            );
+        }
+        let keys: std::collections::HashMap<HarnessId, u8> =
+            serde_json::from_value(serde_json::json!({ "cursor": 1, "codex": 2 })).unwrap();
+        assert_eq!(keys[&HarnessId::Unsupported], 1);
+        assert_eq!(keys[&HarnessId::Codex], 2);
+        assert_eq!(
+            serde_json::to_string(&HarnessId::Unsupported).unwrap(),
+            "\"unsupported\""
+        );
+        // Every shipped harness keeps its own name.
+        for id in [
+            HarnessId::ClaudeCode,
+            HarnessId::Codex,
+            HarnessId::Devin,
+            HarnessId::Grok,
+            HarnessId::Hermes,
+            HarnessId::Pi,
+            HarnessId::Opencode,
+            HarnessId::Antigravity,
+            HarnessId::LoamsBot,
+            HarnessId::Mock,
+        ] {
+            let wire = serde_json::to_value(id).unwrap();
+            assert_eq!(serde_json::from_value::<HarnessId>(wire).unwrap(), id);
+        }
+    }
+
+    #[test]
+    fn install_source_keeps_its_wire_identity() {
         assert_eq!(
             serde_json::to_string(&HarnessInstallSource::ManagedByLoamsDesktop).unwrap(),
             "\"managed-by-zeron\"",
@@ -745,7 +777,6 @@ mod tests {
             latest_version: Some("1.1.0".into()),
             channel: Some("stable".into()),
             source: HarnessInstallSource::Npm,
-            policy: HarnessUpdatePolicy::AutoWhenIdle,
             phase: HarnessUpdatePhase::WaitingForIdle,
             progress: None,
             checked_at: Some(42),
@@ -756,7 +787,6 @@ mod tests {
         let json = serde_json::to_value(&status).unwrap();
         assert_eq!(json["harness"], "claude-code");
         assert_eq!(json["installedVersion"], "1.0.0");
-        assert_eq!(json["policy"], "auto-when-idle");
         assert_eq!(json["phase"], "waiting-for-idle");
         assert_eq!(json["canApply"], true);
         assert_eq!(
@@ -775,7 +805,7 @@ mod tests {
     #[test]
     fn manual_checks_do_not_claim_an_available_update() {
         let mut status: HarnessUpdateStatus = serde_json::from_value(serde_json::json!({
-            "harness": "cursor",
+            "harness": "codex",
             "phase": "manual-action-required",
             "canApply": true,
         }))

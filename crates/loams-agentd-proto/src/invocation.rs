@@ -290,10 +290,9 @@ mod tests {
         }
     }
 
-    const HARNESSES: [crate::HarnessId; 9] = [
+    const HARNESSES: [crate::HarnessId; 8] = [
         crate::HarnessId::ClaudeCode,
         crate::HarnessId::Codex,
-        crate::HarnessId::Cursor,
         crate::HarnessId::Devin,
         crate::HarnessId::Grok,
         crate::HarnessId::Hermes,
@@ -394,7 +393,7 @@ mod tests {
                 harness_prompt(&raw, harness),
                 "/plugin:review inspect tests"
             );
-            assert!(harness_prompt(&raw, crate::HarnessId::Cursor).starts_with("Use the skill "));
+            assert!(harness_prompt(&raw, crate::HarnessId::Devin).starts_with("Use the skill "));
             assert!(
                 harness_prompt(&format!("Please {}", skill.link()), harness)
                     .contains("Use the skill ")
@@ -402,7 +401,6 @@ mod tests {
             assert_eq!(invocation_links(&raw)[0].1, skill);
         }
         for harness in [
-            crate::HarnessId::Cursor,
             crate::HarnessId::Devin,
             crate::HarnessId::Grok,
             crate::HarnessId::Hermes,
