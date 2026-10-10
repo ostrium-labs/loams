@@ -79,7 +79,7 @@ pub mod settings;
 pub mod watchdog;
 
 pub use admission::{Collected, Event, Outcome, PoolConfig, PoolStats, WorkerLease, WorkerPool};
-pub use config::{HouseConfig, UserMap};
+pub use config::{CatalogSpec, HouseConfig, HouseFile, UserMap, WorkersMode};
 pub use errors::{CODES, ChError, HouseError, MidStreamBody};
 pub use http::{HouseHandle, serve};
 pub use sandbox::{CgroupLimits, SandboxMode, WorkerCgroups};
