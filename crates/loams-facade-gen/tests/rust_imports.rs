@@ -148,7 +148,7 @@ fn is_imported(rendered: &str, name: &str) -> bool {
             .trim()
             .trim_start_matches("pub ")
             .trim();
-        rest.split(|c: char| c == ',' || c == '{' || c == '}')
+        rest.split([',', '{', '}'])
             .map(|item| item.trim())
             .filter(|item| !item.is_empty())
             .any(|item| {
@@ -336,10 +336,9 @@ pub trait DemoModule {
 /// fixture that is not valid Rust.
 fn strip_string_literals(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
-    let mut chars = line.chars();
     let mut in_string = false;
     let mut escaped = false;
-    while let Some(c) = chars.next() {
+    for c in line.chars() {
         if in_string {
             if escaped {
                 escaped = false;
