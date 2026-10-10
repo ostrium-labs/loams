@@ -296,7 +296,7 @@ importers:
         version: 4.0.0-rc.10
       flint-chart:
         specifier: ~0.5.1
-        version: 0.5.1(echarts@5.6.0)
+        version: 0.5.1(echarts@6.1.0)
 
   plugins/core/charts:
     dependencies:
@@ -314,7 +314,7 @@ importers:
         version: 4.0.0-rc.10
       flint-chart:
         specifier: ~0.5.1
-        version: 0.5.1(echarts@5.6.0)
+        version: 0.5.1(echarts@6.1.0)
 
   plugins/core/dashboard-ui:
     dependencies:
@@ -340,8 +340,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       echarts:
-        specifier: ^5.5.1
-        version: 5.6.0
+        specifier: ^6.1.0
+        version: 6.1.0
       fast-json-patch:
         specifier: ^3.1.1
         version: 3.1.1
@@ -466,7 +466,7 @@ importers:
         version: 4.0.0-rc.10
       flint-chart:
         specifier: ~0.5.1
-        version: 0.5.1(echarts@5.6.0)
+        version: 0.5.1(echarts@6.1.0)
 
   plugins/core/host:
     dependencies:
@@ -4972,8 +4972,8 @@ packages:
   duplexer2@0.1.4:
     resolution: {integrity: sha512-asLFVfWWtJ90ZyOUHMqk7/S2w2guQKxUI2itj3d92ADHhxUSbCMGi1f1cBcJ7xM1To+pE/Khbwo1yuNbMEPKeA==}
 
-  echarts@5.6.0:
-    resolution: {integrity: sha512-oTbVTsXfKuEhxftHqL5xprgLoc0k7uScAwtryCgWF6hPYFLRwOUHiFmHGCBKP5NPFNkDVopOieyUqYGH8Fa3kA==}
+  echarts@6.1.0:
+    resolution: {integrity: sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA==}
 
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
@@ -7344,8 +7344,8 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zrender@5.6.1:
-    resolution: {integrity: sha512-OFXkDJKcrlx5su2XbzJvj/34Q3m6PvyCZkVPHGYpcCJ52ek4U/ymZyfuV1nKE23AyBJ51E/6Yr0mhZ7xGTO4ag==}
+  zrender@6.1.0:
+    resolution: {integrity: sha512-oEGMDB6pOP2S6OwRR4PdVv610zrjnA3Bh+JnSG12fYJlBKjtNAoEb5fSUoCOOINlH96I2fU38/A2UpRKs67xYQ==}
 
   zustand@4.5.7:
     resolution: {integrity: sha512-CHOUy7mu3lbD6o6LJLfllpjkzhHXSBlX8B9+qPddUsIfeF5S/UZ5q0kmCsnRqT1UHFQZchNFDDzMbQsuesHWlw==}
@@ -9797,10 +9797,10 @@ snapshots:
     dependencies:
       readable-stream: 2.3.8
 
-  echarts@5.6.0:
+  echarts@6.1.0:
     dependencies:
       tslib: 2.3.0
-      zrender: 5.6.1
+      zrender: 6.1.0
 
   ee-first@1.1.1: {}
 
@@ -10234,9 +10234,9 @@ snapshots:
 
   flatted@3.4.4: {}
 
-  flint-chart@0.5.1(echarts@5.6.0):
+  flint-chart@0.5.1(echarts@6.1.0):
     optionalDependencies:
-      echarts: 5.6.0
+      echarts: 6.1.0
 
   follow-redirects@1.16.0(debug@4.4.3(supports-color@7.2.0)):
     optionalDependencies:
@@ -12687,7 +12687,7 @@ snapshots:
 
   zod@3.25.76: {}
 
-  zrender@5.6.1:
+  zrender@6.1.0:
     dependencies:
       tslib: 2.3.0
 
