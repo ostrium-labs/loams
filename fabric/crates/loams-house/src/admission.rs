@@ -1152,6 +1152,33 @@ impl WorkerLease {
             .map_err(|err| network(format!("Abort: {err}")))
     }
 
+    /// Test-only: asks the worker to try `probe` natively, outside chDB (HS1
+    /// Task 6). `Ok` if it worked; the OS's refusal as an error if it did not.
+    #[cfg(feature = "test-hooks")]
+    pub async fn probe_for_test(
+        &mut self,
+        probe: loams_house_ipc::SandboxProbe,
+    ) -> Result<(), HouseError> {
+        let worker = self.worker()?;
+        if worker.in_flight {
+            return Err(network(
+                "the worker is still running a statement".to_string(),
+            ));
+        }
+        match FrameCodec::write_async(&mut worker.writer, &Frame::Probe(probe)).await {
+            Ok(()) => {}
+            Err(CodecError::Io(_)) => return Err(self.died()),
+            Err(err) => return Err(unsendable(&self.query_id.clone(), &err)),
+        }
+        let worker = self.worker()?;
+        match FrameCodec::read_async(&mut worker.reader).await {
+            Ok(Some(Frame::Done)) => Ok(()),
+            Ok(Some(Frame::Error { error, .. })) => Err(HouseError::from(error)),
+            Ok(Some(other)) => Err(self.broke(other.kind())),
+            Ok(None) | Err(_) => Err(self.died()),
+        }
+    }
+
     /// The worker's socket ended: the client's answer, by why it died.
     fn died(&mut self) -> HouseError {
         let query_id = self.query_id.clone();

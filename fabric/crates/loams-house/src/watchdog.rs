@@ -12,7 +12,11 @@
 //!   reach it (`worker_env_has_no_secret`), and the arguments are
 //!   `loams_house_worker::WorkerArgs`, which carry none either;
 //! * stdin and stdout are `/dev/null`; stderr is the front's, for chDB's own
-//!   messages.
+//!   messages;
+//! * it seals itself before libchdb boots (L3, HS1 Task 6): `--sandbox netns` by
+//!   default on Linux, with its forwarder's socket on **fd 4** when the launcher
+//!   has an upstream, and `--cgroup` naming the child the front made for it when
+//!   the launcher owns a delegated cgroup ([`crate::sandbox`]).
 //!
 //! # Killing a worker
 //!
@@ -46,6 +50,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::errors::{ChError, HouseError};
+use crate::sandbox::{self, FORWARDER_PORT, FORWARDER_SOCKET_FD, SandboxMode, WorkerCgroups};
 
 /// Why a worker stopped: the `reason` label of
 /// `loams_house_worker_kills_total{reason}` (HS1 Shared contracts).
@@ -350,17 +355,74 @@ pub struct ProcessLauncher {
     tmp_root: PathBuf,
     memory_limit: Option<u64>,
     s3_endpoint: Option<String>,
+    sandbox: SandboxMode,
+    forwarder: Option<std::net::SocketAddr>,
+    cgroups: Option<WorkerCgroups>,
 }
 
 impl ProcessLauncher {
     /// Workers run `binary` and get a private directory under `tmp_root` each.
+    /// They are sealed by [`sandbox::default_mode`]: `netns` on Linux; elsewhere
+    /// they run unsealed, which is logged here.
     pub fn new(binary: impl Into<PathBuf>, tmp_root: impl Into<PathBuf>) -> Self {
+        let sandbox = sandbox::default_mode();
+        if sandbox == SandboxMode::None {
+            eprintln!("{}", sandbox::unsandboxed_warning("no L3 on this system"));
+        }
         Self {
             binary: binary.into(),
             tmp_root: tmp_root.into(),
             memory_limit: None,
             s3_endpoint: None,
+            sandbox,
+            forwarder: None,
+            cgroups: None,
         }
+    }
+
+    /// Seals workers with `mode` (`--sandbox=netns|pods`). `none` is refused
+    /// here: it is [`ProcessLauncher::unsandboxed`], which must be asked for by
+    /// name (HS1 R1.10).
+    pub fn with_sandbox(mut self, mode: SandboxMode) -> Result<Self, HouseError> {
+        if mode == SandboxMode::None && cfg!(target_os = "linux") {
+            return Err(HouseError::from(ChError::bad_arguments(
+                "--sandbox=none is development only and must be forced; \
+                 House workers run sealed (netns or pods) on Linux"
+                    .to_string(),
+            )));
+        }
+        self.sandbox = mode;
+        Ok(self)
+    }
+
+    /// Workers run **without L3** (`--sandbox=none`, forced): development only,
+    /// logged at once. The deny list (L1) and chDB's own controls (L2) still
+    /// apply; nothing stops what gets past them.
+    pub fn unsandboxed(mut self) -> Self {
+        eprintln!("{}", sandbox::unsandboxed_warning("forced"));
+        self.sandbox = SandboxMode::None;
+        self
+    }
+
+    /// The sandbox workers get.
+    pub fn sandbox(&self) -> SandboxMode {
+        self.sandbox
+    }
+
+    /// Where a worker's bucket reads go. In `netns`, through its forwarder (fd 4)
+    /// to `upstream`, so the worker's endpoint is its own loopback
+    /// (`http://127.0.0.1:FORWARDER_PORT/`); in `pods` and `none`, to `upstream`
+    /// directly. Replaces any [`ProcessLauncher::with_s3_endpoint`].
+    pub fn with_forwarder(mut self, upstream: std::net::SocketAddr) -> Self {
+        self.forwarder = Some(upstream);
+        self
+    }
+
+    /// Each worker gets a child of `cgroups`, with its limits, and joins it
+    /// before it boots.
+    pub fn with_cgroups(mut self, cgroups: WorkerCgroups) -> Self {
+        self.cgroups = Some(cgroups);
+        self
     }
 
     /// The memory each worker sizes its caches and engine for.
@@ -388,12 +450,48 @@ impl ProcessLauncher {
             args.push("--memory-limit".to_string());
             args.push(bytes.to_string());
         }
-        if let Some(endpoint) = &self.s3_endpoint {
+        let endpoint = match (self.forwarder, self.sandbox) {
+            (Some(_), SandboxMode::Netns) => Some(format!("http://127.0.0.1:{FORWARDER_PORT}/")),
+            (Some(upstream), _) => Some(format!("http://{upstream}/")),
+            (None, _) => self.s3_endpoint.clone(),
+        };
+        if let Some(endpoint) = endpoint {
             args.push("--s3-endpoint".to_string());
-            args.push(endpoint.clone());
+            args.push(endpoint);
+        }
+        args.push("--sandbox".to_string());
+        args.push(self.sandbox.as_str().to_string());
+        if self.has_forwarder() {
+            args.push("--forwarder-port".to_string());
+            args.push(FORWARDER_PORT.to_string());
+        }
+        if let Some(cgroups) = &self.cgroups {
+            args.push("--cgroup".to_string());
+            args.push(cgroups.dir(id).display().to_string());
         }
         args
     }
+
+    /// Whether workers get a forwarder socket on fd 4.
+    fn has_forwarder(&self) -> bool {
+        self.forwarder.is_some() && self.sandbox == SandboxMode::Netns
+    }
+}
+
+/// `stream` again, on a descriptor above the ones a worker inherits (3 and 4),
+/// so the spawn's `dup2`s can neither be no-ops (`dup2(3, 3)` would leave
+/// close-on-exec set) nor overwrite each other's source.
+fn above_inherited(stream: StdUnixStream) -> Result<StdUnixStream, HouseError> {
+    let mut held = Vec::new();
+    let mut stream = stream;
+    while stream.as_raw_fd() <= FORWARDER_SOCKET_FD {
+        let higher = stream
+            .try_clone()
+            .map_err(|err| spawn_error("a socket", err))?;
+        held.push(stream);
+        stream = higher;
+    }
+    Ok(stream)
 }
 
 fn spawn_error(what: &str, err: impl fmt::Display) -> HouseError {
@@ -409,13 +507,17 @@ impl Launcher for ProcessLauncher {
 
         let (front, worker) =
             StdUnixStream::pair().map_err(|err| spawn_error("a socket pair", err))?;
-        // `dup2(3, 3)` would leave close-on-exec set, so never hand fd 3 to itself.
-        let worker = if worker.as_raw_fd() == loams_house_ipc::WORKER_SOCKET_FD {
-            worker
-                .try_clone()
-                .map_err(|err| spawn_error("a socket", err))?
+        let worker = above_inherited(worker)?;
+        let forwarder = if self.has_forwarder() {
+            let (front_end, worker_end) =
+                StdUnixStream::pair().map_err(|err| spawn_error("a forwarder socket pair", err))?;
+            Some((front_end, above_inherited(worker_end)?))
         } else {
-            worker
+            None
+        };
+        let cgroup = match &self.cgroups {
+            Some(cgroups) => Some(cgroups.create(id)?),
+            None => None,
         };
         let null = std::fs::File::open("/dev/null").map_err(|err| spawn_error("/dev/null", err))?;
 
@@ -426,6 +528,11 @@ impl Launcher for ProcessLauncher {
             .and_then(|()| actions.add_dup2(null.as_raw_fd(), 1))
             .and_then(|()| actions.add_dup2(worker.as_raw_fd(), loams_house_ipc::WORKER_SOCKET_FD))
             .map_err(|err| spawn_error("file actions", err))?;
+        if let Some((_, worker_end)) = &forwarder {
+            actions
+                .add_dup2(worker_end.as_raw_fd(), FORWARDER_SOCKET_FD)
+                .map_err(|err| spawn_error("file actions", err))?;
+        }
 
         // The worker starts with no signal blocked and SIGPIPE back at its default
         // (Rust ignores it in the front, and an ignored disposition survives exec).
@@ -448,14 +555,32 @@ impl Launcher for ProcessLauncher {
         // environment is passed on.
         let envp: Vec<std::ffi::CString> = Vec::new();
 
-        let pid = posix_spawn(self.binary.as_path(), &actions, &attr, &argv, &envp)
-            .map_err(|err| spawn_error(&self.binary.display().to_string(), err))?;
+        let pid = match posix_spawn(self.binary.as_path(), &actions, &attr, &argv, &envp) {
+            Ok(pid) => pid,
+            Err(err) => {
+                if let Some(cgroup) = &cgroup {
+                    sandbox::remove(cgroup);
+                }
+                return Err(spawn_error(&self.binary.display().to_string(), err));
+            }
+        };
         drop(worker);
         drop(null);
+        let control = ProcessControl::start(pid, dir, cgroup);
+        if let Some((front_end, worker_end)) = forwarder {
+            drop(worker_end);
+            let upstream = self
+                .forwarder
+                .ok_or_else(|| spawn_error("the forwarder", "no upstream"))?;
+            if let Err(err) = sandbox::serve_forwarder(front_end, upstream, id) {
+                control.terminate();
+                return Err(spawn_error("the forwarder thread", err));
+            }
+        }
 
         Ok(Launched {
             socket: front,
-            control: ProcessControl::start(pid, dir),
+            control,
         })
     }
 }
@@ -475,7 +600,7 @@ struct ProcessControl {
 }
 
 impl ProcessControl {
-    fn start(pid: Pid, dir: PathBuf) -> Arc<Self> {
+    fn start(pid: Pid, dir: PathBuf, cgroup: Option<PathBuf>) -> Arc<Self> {
         let (exit, _) = watch::channel(None);
         let control = Arc::new(Self {
             pid,
@@ -485,7 +610,7 @@ impl ProcessControl {
         let waiter = Arc::clone(&control);
         let spawned = std::thread::Builder::new()
             .name(format!("house-worker-wait-{pid}"))
-            .spawn(move || waiter.wait(&dir));
+            .spawn(move || waiter.wait(&dir, cgroup.as_deref()));
         if spawned.is_err() {
             // No waiter: kill it rather than leave an unsupervised worker.
             let _ = kill(pid, Signal::SIGKILL);
@@ -500,8 +625,8 @@ impl ProcessControl {
     }
 
     /// Waits for the exit without reaping, records it, then reaps and removes the
-    /// worker's private directory.
-    fn wait(&self, dir: &Path) {
+    /// worker's private directory and its cgroup.
+    fn wait(&self, dir: &Path, cgroup: Option<&Path>) {
         let status = loop {
             match waitid(
                 Id::Pid(self.pid),
@@ -515,6 +640,9 @@ impl ProcessControl {
         *self.exited() = true;
         let _ = waitpid(self.pid, None);
         let _ = std::fs::remove_dir_all(dir);
+        if let Some(cgroup) = cgroup {
+            sandbox::remove(cgroup);
+        }
         self.exit.send_replace(Some(status));
     }
 }
@@ -573,6 +701,10 @@ impl InprocWorker {
                 worker_id: "inproc".to_string(),
                 memory_limit: loams_house_worker::config::DEFAULT_MEMORY_LIMIT,
                 s3_endpoint: None,
+                // Not isolated (see above): chDB runs in the front's own process.
+                sandbox: SandboxMode::None,
+                forwarder_port: None,
+                cgroup: None,
             },
         }
     }

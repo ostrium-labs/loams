@@ -20,6 +20,8 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use loams_house_ipc::SandboxMode;
+
 /// The default memory limit a worker sizes itself for: §49 §12's 4 GiB per query
 /// plus the 512 MiB headroom its cgroup gets.
 pub const DEFAULT_MEMORY_LIMIT: u64 = 4 * 1024 * 1024 * 1024 + 512 * 1024 * 1024;
@@ -53,16 +55,28 @@ pub struct WorkerArgs {
     /// The loopback endpoint the worker reads the bucket through, which its
     /// `READ ON S3` grant is scoped to (HS1 Tasks 6 and 9). None: no S3 at all.
     pub s3_endpoint: Option<String>,
+    /// How the worker seals itself (`--sandbox`, HS1 Task 6). `netns` when the
+    /// flag is absent: a worker is sealed unless the front says otherwise.
+    pub sandbox: SandboxMode,
+    /// `netns` with a forwarder: the loopback port it listens on, and the
+    /// forwarder's socket is fd 4 (`--forwarder-port`).
+    pub forwarder_port: Option<u16>,
+    /// The cgroup v2 directory the front made for this worker (`--cgroup`).
+    pub cgroup: Option<PathBuf>,
 }
 
 impl WorkerArgs {
     /// Parses `--tmp-dir <p> --worker-id <id> [--memory-limit <bytes>]
-    /// [--s3-endpoint <url>]`.
+    /// [--s3-endpoint <url>] [--sandbox netns|pods|none] [--forwarder-port <p>]
+    /// [--cgroup <dir>]`.
     pub fn parse<I: IntoIterator<Item = String>>(args: I) -> Result<Self, String> {
         let mut tmp_dir = None;
         let mut worker_id = None;
         let mut memory_limit = DEFAULT_MEMORY_LIMIT;
         let mut s3_endpoint = None;
+        let mut sandbox = SandboxMode::Netns;
+        let mut forwarder_port = None;
+        let mut cgroup = None;
         let mut args = args.into_iter();
         while let Some(flag) = args.next() {
             let mut value = || args.next().ok_or_else(|| format!("{flag} needs a value"));
@@ -76,14 +90,29 @@ impl WorkerArgs {
                         .map_err(|_| format!("--memory-limit {raw:?} is not a byte count"))?;
                 }
                 "--s3-endpoint" => s3_endpoint = Some(value()?),
+                "--sandbox" => sandbox = value()?.parse()?,
+                "--forwarder-port" => {
+                    let raw = value()?;
+                    forwarder_port = Some(
+                        raw.parse()
+                            .map_err(|_| format!("--forwarder-port {raw:?} is not a port"))?,
+                    );
+                }
+                "--cgroup" => cgroup = Some(PathBuf::from(value()?)),
                 other => return Err(format!("unknown argument {other:?}")),
             }
+        }
+        if forwarder_port.is_some() && sandbox != SandboxMode::Netns {
+            return Err("--forwarder-port is only for --sandbox netns".to_string());
         }
         Ok(Self {
             tmp_dir: tmp_dir.ok_or("--tmp-dir is required")?,
             worker_id: worker_id.ok_or("--worker-id is required")?,
             memory_limit,
             s3_endpoint,
+            sandbox,
+            forwarder_port,
+            cgroup,
         })
     }
 
@@ -101,7 +130,29 @@ impl WorkerArgs {
             out.push("--s3-endpoint".to_string());
             out.push(endpoint.clone());
         }
+        out.push("--sandbox".to_string());
+        out.push(self.sandbox.as_str().to_string());
+        if let Some(port) = self.forwarder_port {
+            out.push("--forwarder-port".to_string());
+            out.push(port.to_string());
+        }
+        if let Some(cgroup) = &self.cgroup {
+            out.push("--cgroup".to_string());
+            out.push(cgroup.display().to_string());
+        }
         out
+    }
+
+    /// The TCP port of `--s3-endpoint` (`http://host:port/…`), which a `pods`
+    /// worker may connect to and nothing else.
+    pub fn s3_endpoint_port(&self) -> Option<u16> {
+        let endpoint = self.s3_endpoint.as_deref()?;
+        let rest = endpoint
+            .split_once("://")
+            .map_or(endpoint, |(_, rest)| rest);
+        let authority = rest.split('/').next()?;
+        let (_, port) = authority.rsplit_once(':')?;
+        port.parse().ok()
     }
 
     /// chDB's `--path`.
@@ -293,15 +344,76 @@ mod tests {
             worker_id: "w7".to_string(),
             memory_limit: 8 * 1024 * 1024 * 1024,
             s3_endpoint: Some("http://127.0.0.1:41887/".to_string()),
+            sandbox: SandboxMode::Netns,
+            forwarder_port: Some(9180),
+            cgroup: Some(PathBuf::from("/sys/fs/cgroup/house/w7")),
         }
+    }
+
+    fn strings(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| (*arg).to_string()).collect()
     }
 
     #[test]
     fn args_roundtrip() {
-        let args = args();
-        assert_eq!(WorkerArgs::parse(args.to_args()), Ok(args));
+        let netns = args();
+        assert_eq!(WorkerArgs::parse(netns.to_args()), Ok(netns));
         assert!(WorkerArgs::parse(vec!["--worker-id".to_string(), "x".to_string()]).is_err());
         assert!(WorkerArgs::parse(vec!["--secret".to_string(), "x".to_string()]).is_err());
+        let pods = WorkerArgs {
+            sandbox: SandboxMode::Pods,
+            forwarder_port: None,
+            cgroup: None,
+            ..args()
+        };
+        assert_eq!(WorkerArgs::parse(pods.to_args()), Ok(pods));
+    }
+
+    #[test]
+    fn a_worker_is_sealed_unless_told_otherwise() {
+        let bare =
+            WorkerArgs::parse(strings(&["--tmp-dir", "/w", "--worker-id", "w"])).expect("parses");
+        assert_eq!(bare.sandbox, SandboxMode::Netns);
+        assert!(
+            WorkerArgs::parse(strings(&[
+                "--tmp-dir",
+                "/w",
+                "--worker-id",
+                "w",
+                "--sandbox",
+                "off"
+            ]))
+            .is_err()
+        );
+        assert!(
+            WorkerArgs::parse(strings(&[
+                "--tmp-dir",
+                "/w",
+                "--worker-id",
+                "w",
+                "--sandbox",
+                "none",
+                "--forwarder-port",
+                "9180"
+            ]))
+            .is_err(),
+            "a forwarder needs the netns"
+        );
+    }
+
+    #[test]
+    fn s3_endpoint_port() {
+        assert_eq!(args().s3_endpoint_port(), Some(41887));
+        let none = WorkerArgs {
+            s3_endpoint: Some("http://house-front".to_string()),
+            ..args()
+        };
+        assert_eq!(none.s3_endpoint_port(), None);
+        let host = WorkerArgs {
+            s3_endpoint: Some("http://10.0.0.5:9180/bucket".to_string()),
+            ..args()
+        };
+        assert_eq!(host.s3_endpoint_port(), Some(9180));
     }
 
     #[test]

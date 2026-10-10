@@ -31,6 +31,14 @@ loams-chdb = { path = "../loams-chdb" }
 # only `unsafe` crate (FL2 Ruling 8).
 loams-chdb-sys = { path = "../loams-chdb-sys" }
 loams-house-ipc = { path = "../loams-house-ipc" }
+# L3 (HS1 Task 6): Landlock rules and the seccomp filter, both with safe APIs.
+landlock.workspace = true
+seccompiler.workspace = true
+# L3: the user and network namespaces (`unshare`), `lo` raised over rtnetlink,
+# `RLIMIT_CORE`, and the thread count check, without `unsafe` in Loams code.
+nix = { workspace = true, features = ["sched", "socket", "resource", "user"] }
+# The system call numbers and constants the seccomp filter names.
+libc.workspace = true
 
 [dev-dependencies]
 # Reading the Arrow, ArrowStream and Parquet bytes back with real readers in

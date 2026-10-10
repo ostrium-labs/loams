@@ -68,6 +68,62 @@ pub const EXIT_PROTOCOL: i32 = 70;
 /// The fd a worker finds its socket on.
 pub const WORKER_SOCKET_FD: i32 = 3;
 
+/// The fd a worker in the `netns` sandbox finds its forwarder socket on (HS1
+/// Task 6, §49 §13.2): the only way out of its network namespace. See
+/// `loams_house::sandbox` for the front's end and `loams_house_worker::forwarder`
+/// for the worker's.
+pub const FORWARDER_SOCKET_FD: i32 = 4;
+
+/// The loopback port a sandboxed worker's forwarder listens on, inside the
+/// worker's own network namespace. The namespace is new and empty, so the port is
+/// always free; the worker's `READ ON S3` grant names it.
+pub const FORWARDER_PORT: u16 = 9180;
+
+/// How a worker is sealed (L3, §49 §13.2, HS1 Task 6): `--sandbox=netns|pods|none`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SandboxMode {
+    /// A user and network namespace of its own with only `lo`, reached through the
+    /// forwarder; Landlock; seccomp; no capabilities. The production mode where
+    /// unprivileged user namespaces are available.
+    Netns,
+    /// The worker runs in a pod of its own, whose NetworkPolicy allows egress only
+    /// to the front's forwarder port (`deploy/house/kind/worker-pods.yaml`).
+    /// Landlock and seccomp as in `Netns`; no namespaces of its own.
+    Pods,
+    /// No L3 at all: macOS development builds, or explicitly forced (logged).
+    None,
+}
+
+impl SandboxMode {
+    /// The flag's value: `netns`, `pods` or `none`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Netns => "netns",
+            Self::Pods => "pods",
+            Self::None => "none",
+        }
+    }
+}
+
+impl std::fmt::Display for SandboxMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for SandboxMode {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text {
+            "netns" => Ok(Self::Netns),
+            "pods" => Ok(Self::Pods),
+            "none" => Ok(Self::None),
+            other => Err(format!("--sandbox {other:?}: expected netns, pods or none")),
+        }
+    }
+}
+
 /// One `hsw1` frame.
 ///
 /// The variant order is the wire encoding: append, never reorder.
@@ -121,6 +177,12 @@ pub enum Frame {
     /// a worker built without it fails to decode it and exits, which is also a crash.
     #[cfg(feature = "test-hooks")]
     Abort,
+    /// front → worker, tests only: try one thing natively, outside chDB, and
+    /// answer `Done` if it worked or `Error` with the OS's words if it did not
+    /// (HS1 Task 6). How the sandbox tests show what the OS layer alone refuses.
+    /// After `Abort`, for the same reason.
+    #[cfg(feature = "test-hooks")]
+    Probe(SandboxProbe),
 }
 
 impl Frame {
@@ -133,6 +195,16 @@ impl Frame {
             return true;
         }
         false
+    }
+
+    /// The test-only probe this frame carries, if it is one (always `None`
+    /// without `test-hooks`).
+    pub fn probe(&self) -> Option<&SandboxProbe> {
+        #[cfg(feature = "test-hooks")]
+        if let Self::Probe(probe) = self {
+            return Some(probe);
+        }
+        None
     }
 
     /// The variant's name, for logs and protocol errors. Never the contents: an
@@ -155,8 +227,28 @@ impl Frame {
             Self::Analyzed(_) => "Analyzed",
             #[cfg(feature = "test-hooks")]
             Self::Abort => "Abort",
+            #[cfg(feature = "test-hooks")]
+            Self::Probe(_) => "Probe",
         }
     }
+}
+
+/// One thing a test asks a worker to try natively (`Frame::Probe`, test-only).
+/// The type exists in every build so the worker can answer it without a feature
+/// of its own; only the frame that carries it is behind `test-hooks`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SandboxProbe {
+    /// Start this program, with no arguments, as a child (`fork`/`clone`, then
+    /// `execve`).
+    Exec(String),
+    /// Open this file and read it.
+    Read(String),
+    /// Create (or truncate) this file and write a byte.
+    Write(String),
+    /// Open a TCP connection to this `ip:port`.
+    Connect(String),
+    /// Connect to the Unix socket at this path.
+    UnixConnect(String),
 }
 
 /// What a worker says when it is ready to be bound.

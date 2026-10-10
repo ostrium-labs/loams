@@ -31,7 +31,7 @@ use bytes::Bytes;
 use loams_chdb::{ChdbError, Engine, EngineConfig, Session, SessionId, Settings};
 use loams_house_ipc::{
     Analysis, Analyze, Bind, CHUNK_BYTES, Chunk, Classification, CodecError, EngineError, Execute,
-    Frame, FrameCodec, PROTOCOL_VERSION, Progress, QueryClass, Ready,
+    Frame, FrameCodec, PROTOCOL_VERSION, Progress, QueryClass, Ready, SandboxProbe,
 };
 
 use crate::config::{self, WorkerArgs};
@@ -221,6 +221,8 @@ impl Worker {
                     Ok(answer) => answer,
                     Err(end) => return end,
                 },
+                // Test-only (`Frame::Probe` exists only with `test-hooks`).
+                other if other.probe().is_some() => other.probe().map(probe).unwrap_or_default(),
                 other => {
                     return End::Protocol(format!(
                         "a worker does not expect {} here",
@@ -693,6 +695,32 @@ pub fn replace_default_database(control: &Session) -> Result<(), ChdbError> {
     }
     control.execute_simple("DROP DATABASE IF EXISTS default")?;
     control.execute_simple("CREATE DATABASE default ENGINE = Memory")
+}
+
+/// Tries one thing natively, outside chDB, for the sandbox tests (HS1 Task 6):
+/// `Done` if it worked, `Error` with the OS's words if it did not.
+fn probe(probe: &SandboxProbe) -> Vec<Frame> {
+    let outcome: std::io::Result<()> = match probe {
+        SandboxProbe::Exec(program) => std::process::Command::new(program)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(drop),
+        SandboxProbe::Read(path) => std::fs::read(path).map(drop),
+        SandboxProbe::Write(path) => std::fs::write(path, b"x"),
+        SandboxProbe::Connect(addr) => addr
+            .parse::<std::net::SocketAddr>()
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))
+            .and_then(|addr| {
+                std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(2)).map(drop)
+            }),
+        SandboxProbe::UnixConnect(path) => std::os::unix::net::UnixStream::connect(path).map(drop),
+    };
+    match outcome {
+        Ok(()) => vec![Frame::Done],
+        Err(err) => vec![error_frame(loams_error("PROBE_REFUSED", err), false)],
+    }
 }
 
 /// Starts the thread that reads frames into a channel.

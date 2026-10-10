@@ -14,7 +14,9 @@
 //! chDB runs in `loams-house-worker` processes. This crate supervises them —
 //! [`watchdog`] starts, kills and watches one; [`admission`] keeps the
 //! [`WorkerPool`] — and talks to them in `hsw1` frames (`loams-house-ipc`). Engine
-//! errors arrive already taken apart, as `loams_house_ipc::EngineError`. Only the
+//! errors arrive already taken apart, as `loams_house_ipc::EngineError`. Workers
+//! seal themselves (L3, HS1 Task 6); [`sandbox`] is the front's half: their
+//! forwarder's far end and their cgroups. Only the
 //! `inproc-worker` feature (development, the desktop) brings libchdb into this
 //! crate's graph; `no_libchdb_in_front` checks the default one.
 //!
@@ -71,6 +73,7 @@ pub mod errors;
 pub mod fuzz;
 pub mod http;
 pub mod request;
+pub mod sandbox;
 pub mod session;
 pub mod settings;
 pub mod watchdog;
@@ -79,6 +82,7 @@ pub use admission::{Collected, Event, Outcome, PoolConfig, PoolStats, WorkerLeas
 pub use config::{HouseConfig, UserMap};
 pub use errors::{CODES, ChError, HouseError, MidStreamBody};
 pub use http::{HouseHandle, serve};
+pub use sandbox::{CgroupLimits, SandboxMode, WorkerCgroups};
 #[cfg(feature = "inproc-worker")]
 pub use watchdog::InprocWorker;
 pub use watchdog::{ExitReason, KillHandle, Launcher, ProcessLauncher};

@@ -17,7 +17,8 @@ publish = false
 # front, which is exactly what D761 forbids in a release image, so it is off by
 # default and `no_libchdb_in_front` checks the default graph.
 inproc-worker = ["dep:loams-house-worker", "dep:loams-chdb-sys"]
-# `WorkerLease::abort_for_test`, which sends the test-only `Frame::Abort`.
+# `WorkerLease::abort_for_test` and `probe_for_test`, which send the test-only
+# `Frame::Abort` and `Frame::Probe`.
 test-hooks = ["loams-house-ipc/test-hooks"]
 
 [dependencies]
@@ -26,8 +27,9 @@ test-hooks = ["loams-house-ipc/test-hooks"]
 # the worker, so this crate renders them without depending on `loams-chdb`.
 loams-house-ipc = { path = "../loams-house-ipc" }
 # `posix_spawn` of workers with their socket on fd 3 and an empty environment,
-# `SIGKILL`, and `waitid` without reaping, all without `unsafe` here.
-nix.workspace = true
+# `SIGKILL`, and `waitid` without reaping, all without `unsafe` here; `sendmsg`
+# with `SCM_RIGHTS` for the sandboxed worker's forwarder (HS1 Task 6).
+nix = { workspace = true, features = ["socket", "uio"] }
 # `HouseError`'s `Display`/`Error`, which the HTTP layer surfaces to the
 # per-request error handler. Apache-2.0 OR MIT.
 thiserror.workspace = true
