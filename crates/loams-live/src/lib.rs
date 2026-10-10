@@ -47,8 +47,8 @@ pub use loams_live_proto::loams::live::v1 as pb;
 
 pub use catalog::{IndexDef, IndexSpec, TableDef};
 pub use config::{
-    DEFAULT_JANITOR_INTERVAL, DEFAULT_JOURNAL_SHARDS, DEFAULT_LISTEN, KEYSPACE_PREFIX, LiveConfig,
-    check_listen, keyspace_of, store_path,
+    DEFAULT_JANITOR_INTERVAL, DEFAULT_JOURNAL_SHARDS, DEFAULT_LISTEN, Isolation, KEYSPACE_PREFIX,
+    LiveConfig, Tenancy, check_isolation, check_listen, keyspace_of, store_path,
 };
 pub use docs::{Doc, IndexRange, Order, Reads, WriteRecord};
 pub use error::LiveError;

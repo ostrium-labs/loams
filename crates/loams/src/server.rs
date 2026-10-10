@@ -441,6 +441,8 @@ impl ServerConfig {
             if loams_live::check_listen(live.listen).is_err() {
                 return Err(ServerError::LiveListenNotLoopback { addr: live.listen });
             }
+            // LV1 plan Task 5: strangers' code never runs in this process.
+            loams_live::check_isolation(live).map_err(|e| ServerError::Config(e.to_string()))?;
         }
         self.flight.validate().map_err(ServerError::Config)?;
         self.validate_backpressure()?;

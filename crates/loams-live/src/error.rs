@@ -49,6 +49,13 @@ pub enum LiveError {
          until the unified auth plan (D111)"
     )]
     NotLoopback(std::net::SocketAddr),
+    /// `tenancy = "multi"` without isolated workers (design §45 §3.1, LV1
+    /// plan Task 5): strangers' code never runs in the server's process.
+    #[error(r#"live: tenancy = "multi" needs isolation = "isolated" (Linux only)"#)]
+    IsolationRequired,
+    /// `isolation = "isolated"` where the worker sandbox does not exist.
+    #[error(r#"live: isolation = "isolated" needs Linux (seccomp and landlock)"#)]
+    IsolationUnavailable,
     /// A stored record could not be decoded.
     #[error("corrupt record: {0}")]
     Corrupt(String),
@@ -65,6 +72,11 @@ pub enum LiveError {
         function: String,
         limit: std::time::Duration,
     },
+    /// The isolated worker running the call crashed or was killed (LV1
+    /// plan Task 5): `FUNCTION_ERROR`, reason `live_worker_crashed`. The
+    /// call's transaction never committed; a mutation is not retried.
+    #[error("function error: {0}")]
+    WorkerCrashed(String),
     /// A deployed function ran past its runtime's memory limit.
     #[error("function {function} ran past its memory limit of {limit} bytes")]
     FunctionOutOfMemory { function: String, limit: usize },
@@ -81,16 +93,20 @@ impl LiveError {
     /// The wire code of this error.
     pub fn code(&self) -> pb::ErrorCode {
         match self {
-            LiveError::InvalidArgument(_) | LiveError::BadCursor(_) | LiveError::NotLoopback(_) => {
-                pb::ErrorCode::ERROR_CODE_INVALID_ARGUMENT
-            }
+            LiveError::InvalidArgument(_)
+            | LiveError::BadCursor(_)
+            | LiveError::NotLoopback(_)
+            | LiveError::IsolationRequired
+            | LiveError::IsolationUnavailable => pb::ErrorCode::ERROR_CODE_INVALID_ARGUMENT,
             LiveError::NotFound(_) => pb::ErrorCode::ERROR_CODE_NOT_FOUND,
             LiveError::FailedPrecondition(_) | LiveError::JournalTrimmed { .. } => {
                 pb::ErrorCode::ERROR_CODE_FAILED_PRECONDITION
             }
             LiveError::LimitExceeded { .. } => pb::ErrorCode::ERROR_CODE_RESOURCE_EXHAUSTED,
             LiveError::Corrupt(_) | LiveError::Internal(_) => pb::ErrorCode::ERROR_CODE_INTERNAL,
-            LiveError::FunctionError(_) => pb::ErrorCode::ERROR_CODE_FUNCTION_ERROR,
+            LiveError::FunctionError(_) | LiveError::WorkerCrashed(_) => {
+                pb::ErrorCode::ERROR_CODE_FUNCTION_ERROR
+            }
             LiveError::FunctionTimeout { .. } => pb::ErrorCode::ERROR_CODE_FUNCTION_TIMEOUT,
             LiveError::FunctionOutOfMemory { .. } => {
                 pb::ErrorCode::ERROR_CODE_FUNCTION_OUT_OF_MEMORY
@@ -113,6 +129,7 @@ impl LiveError {
     pub fn reason(&self) -> Option<&'static str> {
         match self {
             LiveError::BadCursor(_) => Some("live_bad_cursor"),
+            LiveError::WorkerCrashed(_) => Some("live_worker_crashed"),
             _ => None,
         }
     }

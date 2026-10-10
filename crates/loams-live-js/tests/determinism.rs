@@ -511,7 +511,7 @@ export const top = {};
         contexts: 1,
         ..loams_live_js::JsConfig::default()
     };
-    match loams_live_js::Bundle::load(forever, config).await {
+    match try_load(forever, config).await {
         Err(LiveError::FunctionTimeout { function, .. }) => assert_eq!(function, "<bundle>"),
         Err(e) => panic!("a timeout, not {e}"),
         Ok(_) => panic!("a bundle that never stops queueing jobs loads"),
@@ -583,10 +583,10 @@ export const zones = {
 /// processes with `TZ` set, since the time zone is read once per process.
 #[tokio::test]
 async fn local_time_methods_are_utc() {
-    const TEST: &str = "local_time_methods_are_utc";
-    if !is_child(TEST) {
+    let test = case_path("local_time_methods_are_utc", None);
+    if !is_child(&test) {
         for tz in ["America/New_York", "Asia/Kolkata", "Pacific/Chatham"] {
-            run_child(TEST, &[("TZ", tz)]);
+            run_child(&test, &[("TZ", tz)]);
         }
         return;
     }
@@ -633,5 +633,49 @@ async fn local_time_methods_are_utc() {
     let utc = items(&field(&got, "utc"));
     for (i, v) in utc.iter().enumerate() {
         assert_eq!(v, &LiveValue::Bool(true), "utc[{i}]");
+    }
+}
+
+/// LV1 plan Task 5, `functions_suite_runs_isolated`: every test above again,
+/// with its bundles in isolated worker processes (Linux only, where
+/// `isolated` exists). The cases are
+/// `functions_suite_runs_isolated::<test>[::<backend>]`.
+#[cfg(target_os = "linux")]
+mod functions_suite_runs_isolated {
+    use super::*;
+
+    live_test!(module_state_does_not_leak_between_calls, |store| {
+        crate::common::isolated(super::module_state_does_not_leak_between_calls(store))
+    });
+    live_test!(crypto_random_throws_in_queries_and_mutations, |store| {
+        crate::common::isolated(super::crypto_random_throws_in_queries_and_mutations(store))
+    });
+    live_test!(date_now_is_start_ts, |store| crate::common::isolated(
+        super::date_now_is_start_ts(store)
+    ));
+    live_test!(random_is_repeatable_for_same_ts_and_request, |store| {
+        crate::common::isolated(super::random_is_repeatable_for_same_ts_and_request(store))
+    });
+    live_test!(no_fetch_no_timers, |store| crate::common::isolated(
+        super::no_fetch_no_timers(store)
+    ));
+    live_test!(
+        globals_are_frozen_but_overridable_by_own_properties,
+        |store| crate::common::isolated(
+            super::globals_are_frozen_but_overridable_by_own_properties(store)
+        )
+    );
+    live_test!(leftover_jobs_never_run_in_the_next_call, |store| {
+        crate::common::isolated(super::leftover_jobs_never_run_in_the_next_call(store))
+    });
+
+    #[test]
+    fn bundle_top_level_jobs_run_within_its_limits() {
+        crate::common::isolated_sync(super::bundle_top_level_jobs_run_within_its_limits);
+    }
+
+    #[test]
+    fn local_time_methods_are_utc() {
+        crate::common::isolated_sync(super::local_time_methods_are_utc);
     }
 }

@@ -51,6 +51,9 @@ loams-hot.workspace = true
 loams-link.workspace = true
 # The Loams Live sync service (R1 Task 12).
 loams-live = { workspace = true, optional = true }
+# Loams Live's function runtime: `loams live-worker`, the isolated worker
+# process (LV1 plan Task 5).
+loams-live-js = { workspace = true, optional = true }
 # `loams.live.v1`, for the `LiveService` stub that answers
 # `feature_not_in_variant` while the live engine is out of the build variant
 # (design §44 §4). R1's crate owns those protos; `loams-proto` does not
@@ -96,7 +99,7 @@ tikv = ["dep:loams-meta-tikv", "dep:loams-tikv"]
 # store under `<data_dir>/live/`. In the default set, with no tikv-client
 # (LV1 plan Task 23, design §45 §8; reverses owner ruling T8-2 for the
 # embedded part). The embedded store is always built into loams-kv.
-live = ["dep:loams-live"]
+live = ["dep:loams-live", "dep:loams-live-js"]
 # Live on TiKV too: `--live-store tikv://<pd>[,<pd>]/<keyspace>` (and the
 # deprecated `--live-pd`/`--live-keyspace`), with its cluster GC loop.
 live-tikv = ["live", "tikv", "loams-live/tikv"]

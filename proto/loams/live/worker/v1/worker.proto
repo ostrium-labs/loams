@@ -1,0 +1,227 @@
+// The Loams Live worker protocol (LV1 plan Ruling 5 and Task 5; design §45
+// §3.1, D681). Internal: it runs between one `loams` process and the
+// sandboxed `loams live-worker` subprocesses it starts, never leaves that
+// binary, and is not in the public API catalogue or any SDK.
+//
+// Framing: every message is a 4-byte big-endian length followed by that many
+// bytes of a `HostMessage` (host to worker, on the worker's stdin) or a
+// `WorkerMessage` (worker to host, on the worker's stdout). The worker's
+// stderr carries its own log lines, never a frame.
+//
+// A conversation: the host sends `Load`; the worker evaluates the bundle and
+// answers `Loaded`. Then, one call at a time, the host sends `Invoke`; the
+// worker answers zero or more `HostCall`s, each answered by a `HostReply`
+// with the same id, then `Done`. The worker is untrusted: the host bounds
+// every frame, checks every id and kills a worker that breaks the protocol.
+syntax = "proto3";
+
+package loams.live.worker.v1;
+
+import "loams/live/v1/value.proto";
+
+// A frame from the host to the worker.
+message HostMessage {
+  oneof message {
+    Load load = 1;
+    Invoke invoke = 2;
+    HostReply host_reply = 3;
+    Probe probe = 4;
+  }
+}
+
+// A frame from the worker to the host.
+message WorkerMessage {
+  oneof message {
+    Loaded loaded = 1;
+    HostCall host_call = 2;
+    Done done = 3;
+    ProbeDone probe_done = 4;
+  }
+}
+
+// The first frame: the bundle and the limits of its runtime. The worker
+// applies its sandbox after reading it and before evaluating the bundle.
+message Load {
+  // The bundle's source, UTF-8.
+  bytes bundle = 1;
+  // The runtime's memory limit in bytes.
+  uint64 memory_limit = 2;
+  // JavaScript CPU per call, in nanoseconds.
+  uint64 cpu_limit_ns = 3;
+  // `console.*` lines kept per call.
+  uint32 console_lines = 4;
+  // Bytes kept per `console.*` line.
+  uint32 console_line_bytes = 5;
+}
+
+// The answer to `Load`: the bundle's functions, or why it failed to load.
+// A worker whose load failed exits after sending it.
+message Loaded {
+  repeated FunctionMeta functions = 1;
+  Failure error = 2;
+}
+
+// One function of the bundle.
+message FunctionMeta {
+  // `module:export`.
+  string path = 1;
+  FunctionKind kind = 2;
+  FunctionVisibility visibility = 3;
+  // The `args` validator as a descriptor (`{ kind, … }`, the form
+  // `loams:server`'s `v` builds); unset when the function declares none.
+  loams.live.v1.Value args = 4;
+}
+
+// Whether a function reads or writes.
+enum FunctionKind {
+  FUNCTION_KIND_UNSPECIFIED = 0;
+  FUNCTION_KIND_QUERY = 1;
+  FUNCTION_KIND_MUTATION = 2;
+}
+
+// Who may call a function (D699).
+enum FunctionVisibility {
+  FUNCTION_VISIBILITY_UNSPECIFIED = 0;
+  FUNCTION_VISIBILITY_PUBLIC = 1;
+  FUNCTION_VISIBILITY_INTERNAL = 2;
+}
+
+// Runs one function in a fresh context.
+message Invoke {
+  // `module:export`.
+  string path = 1;
+  loams.live.v1.Value args = 2;
+  CallContext ctx = 3;
+}
+
+// What a call's determinism and budgets depend on.
+message CallContext {
+  // The transaction's start timestamp (TSO layout): `Date` is its physical
+  // milliseconds, and it seeds `Math.random`.
+  uint64 start_ts = 1;
+  // The request id (a mutation's idempotency key), which also seeds
+  // `Math.random`.
+  string request_id = 2;
+  // The conversion budget of the result (`Limits::max_result_bytes`).
+  uint64 result_bytes = 3;
+  // The conversion budget of each `ctx.db` call's arguments.
+  uint64 host_bytes = 4;
+}
+
+// A `ctx.db` operation the host runs on the call's transaction.
+message HostCall {
+  // Unique within the call; the reply carries it back.
+  uint64 id = 1;
+  // `get`, `query`, `paginate`, `insert`, `patch`, `replace` or `delete`.
+  string op = 2;
+  loams.live.v1.Value args = 3;
+}
+
+// The host's answer to a `HostCall`.
+message HostReply {
+  uint64 id = 1;
+  oneof answer {
+    // The operation's result.
+    loams.live.v1.Value ok = 2;
+    // A catchable error, which the host keeps.
+    HostError error = 3;
+    // A storage error or a dropped caller: the call stops, uncatchably.
+    bool abort = 4;
+  }
+}
+
+// A host error as JavaScript sees it. The host keeps the error itself; a
+// call that fails with it names it by `index` (`Failure.host_error`).
+message HostError {
+  string message = 1;
+  uint32 index = 2;
+}
+
+// The end of a call.
+message Done {
+  oneof outcome {
+    loams.live.v1.Value result = 1;
+    Failure error = 2;
+  }
+  // The call's `console.*` lines, already truncated.
+  repeated LogLine logs = 3;
+  // The lines dropped past the line limit.
+  uint64 dropped = 4;
+  // The JavaScript CPU the call used (host calls excluded), in nanoseconds.
+  uint64 cpu_ns = 5;
+  // The worker exits after this frame (it ran out of memory: its runtime is
+  // never reused, LV1 row T3-10).
+  bool retire = 6;
+}
+
+// One `console.*` line.
+message LogLine {
+  LogLevel level = 1;
+  string line = 2;
+  bool truncated = 3;
+}
+
+// A `console.*` method.
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_LOG = 1;
+  LOG_LEVEL_DEBUG = 2;
+  LOG_LEVEL_INFO = 3;
+  LOG_LEVEL_WARN = 4;
+  LOG_LEVEL_ERROR = 5;
+}
+
+// Why a load or a call failed.
+message Failure {
+  oneof kind {
+    // The function threw (`FUNCTION_ERROR`), or, at load, the bundle is
+    // invalid.
+    string function_error = 1;
+    // The function ran past its CPU limit (`FUNCTION_TIMEOUT`).
+    string timeout = 2;
+    // The function ran past its memory limit (`FUNCTION_OUT_OF_MEMORY`).
+    string out_of_memory = 3;
+    // A limit of `Limits` was exceeded (`RESOURCE_EXHAUSTED`).
+    LimitExceeded limit_exceeded = 4;
+    // A malformed request (`INVALID_ARGUMENT`), such as a bundle that fails
+    // to load.
+    string invalid_argument = 5;
+    // A failure of the worker itself (`INTERNAL`).
+    string internal = 6;
+    // The host error with this index (`HostError.index`) escaped the handler.
+    uint32 host_error = 7;
+  }
+}
+
+// A limit of `Limits` that was exceeded.
+message LimitExceeded {
+  // The limit's field name, such as `max_result_bytes`.
+  string limit = 1;
+  string message = 2;
+}
+
+// A test hook (LV1 plan Task 5's sandbox tests): the worker makes the
+// system call `kind` names. Outside the sandbox tests the host never sends
+// it, and the bundle cannot.
+message Probe {
+  ProbeKind kind = 1;
+}
+
+// The system call a `Probe` makes.
+enum ProbeKind {
+  PROBE_KIND_UNSPECIFIED = 0;
+  // Nothing: the worker answers `ProbeDone`.
+  PROBE_KIND_PING = 1;
+  // `open("/etc/passwd")`.
+  PROBE_KIND_OPEN_FILE = 2;
+  // A TCP socket.
+  PROBE_KIND_OPEN_SOCKET = 3;
+  // Starting a process (`/bin/true`).
+  PROBE_KIND_EXEC = 4;
+}
+
+// The worker survived a `Probe`; `error` is the system call's own error, if
+// it returned one.
+message ProbeDone {
+  string error = 1;
+}

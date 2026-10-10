@@ -12,7 +12,7 @@ use common::*;
 use futures::future::BoxFuture;
 use loams_live::testing::TestStore;
 use loams_live::{DocId, FnKind, Function, LiveError, LiveTxn, LiveValue, live_test, pb, system};
-use loams_live_js::{Bundle, JsConfig, Visibility};
+use loams_live_js::{JsConfig, Visibility};
 use tokio::sync::Notify;
 
 const MESSAGES: &str = r#"
@@ -269,7 +269,7 @@ async fn unknown_function_is_not_found() {
 
 #[tokio::test]
 async fn bundle_load_refuses_bad_bundles() {
-    let bad = async |source: &str| match Bundle::load(source, JsConfig::default()).await {
+    let bad = async |source: &str| match try_load(source, JsConfig::default()).await {
         Ok(_) => panic!("the bundle loads: {source}"),
         Err(e) => e,
     };
@@ -822,3 +822,54 @@ async fn paginate_in_javascript(store: TestStore) {
     }
 }
 live_test!(paginate_in_javascript);
+
+/// LV1 plan Task 5, `functions_suite_runs_isolated`: every test above again,
+/// with its bundles in isolated worker processes (Linux only, where
+/// `isolated` exists). The cases are
+/// `functions_suite_runs_isolated::<test>[::<backend>]`.
+#[cfg(target_os = "linux")]
+mod functions_suite_runs_isolated {
+    use super::*;
+
+    live_test!(query_and_mutation_run_and_record_read_sets, |store| {
+        crate::common::isolated(super::query_and_mutation_run_and_record_read_sets(store))
+    });
+    live_test!(
+        mutation_rerun_on_conflict_is_invisible_to_the_caller,
+        |store| crate::common::isolated(
+            super::mutation_rerun_on_conflict_is_invisible_to_the_caller(store)
+        )
+    );
+    live_test!(function_errors_map_to_live_errors, |store| {
+        crate::common::isolated(super::function_errors_map_to_live_errors(store))
+    });
+    live_test!(values_round_trip_between_rust_and_javascript, |store| {
+        crate::common::isolated(super::values_round_trip_between_rust_and_javascript(store))
+    });
+    live_test!(storage_errors_in_host_calls_are_never_swallowed, |store| {
+        crate::common::isolated(super::storage_errors_in_host_calls_are_never_swallowed(
+            store,
+        ))
+    });
+    live_test!(patch_with_an_undefined_field_is_refused, |store| {
+        crate::common::isolated(super::patch_with_an_undefined_field_is_refused(store))
+    });
+    live_test!(paginate_in_javascript, |store| crate::common::isolated(
+        super::paginate_in_javascript(store)
+    ));
+
+    #[test]
+    fn bundle_lists_its_functions() {
+        crate::common::isolated_sync(super::bundle_lists_its_functions);
+    }
+
+    #[test]
+    fn unknown_function_is_not_found() {
+        crate::common::isolated_sync(super::unknown_function_is_not_found);
+    }
+
+    #[test]
+    fn bundle_load_refuses_bad_bundles() {
+        crate::common::isolated_sync(super::bundle_load_refuses_bad_bundles);
+    }
+}

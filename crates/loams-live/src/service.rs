@@ -25,7 +25,7 @@ use tokio_util::sync::CancellationToken;
 use crate::pb::{self, LiveService, LiveServiceServer};
 use crate::session::{Outbox, SESSION_HEADER, Sessions, Start, args_of, chunks, ts_of};
 use crate::subs::{SubsConfig, SubsStats, Subscriptions};
-use crate::{Janitor, LiveConfig, LiveError, Runner, check_listen, deploy};
+use crate::{Janitor, LiveConfig, LiveError, Runner, check_isolation, check_listen, deploy};
 
 /// How long stopping waits for in-flight requests before aborting them.
 const STOP_GRACE: Duration = Duration::from_secs(10);
@@ -58,6 +58,7 @@ impl LiveServer {
         shutdown: CancellationToken,
     ) -> Result<LiveHandle, LiveError> {
         check_listen(config.listen)?;
+        check_isolation(&config)?;
         let store = Store::open(config.store.clone()).await.map_err(|e| {
             LiveError::Internal(format!(
                 "opening the Live store (keyspace {}): {e}",

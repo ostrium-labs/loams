@@ -38,6 +38,19 @@ impl HostOp {
             _ => return None,
         })
     }
+
+    /// The operation's name, as [`HostOp::parse`] reads it.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            HostOp::Get => "get",
+            HostOp::Query => "query",
+            HostOp::Paginate => "paginate",
+            HostOp::Insert => "insert",
+            HostOp::Patch => "patch",
+            HostOp::Replace => "replace",
+            HostOp::Delete => "delete",
+        }
+    }
 }
 
 /// Runs a host operation on the call's transaction.
@@ -172,5 +185,16 @@ mod tests {
         assert_eq!(HostOp::parse("get"), Some(HostOp::Get));
         assert_eq!(HostOp::parse("paginate"), Some(HostOp::Paginate));
         assert_eq!(HostOp::parse("tables"), None);
+        for op in [
+            HostOp::Get,
+            HostOp::Query,
+            HostOp::Paginate,
+            HostOp::Insert,
+            HostOp::Patch,
+            HostOp::Replace,
+            HostOp::Delete,
+        ] {
+            assert_eq!(HostOp::parse(op.name()), Some(op));
+        }
     }
 }

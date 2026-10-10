@@ -9,9 +9,22 @@ authors.workspace = true
 # loams-live depends on loams-kv, whose tikv backend is a git dependency.
 publish = false
 
+[[bin]]
+# The isolated worker on its own (LV1 plan Task 5): what `loams live-worker`
+# runs, for this crate's tests and for embedders without the `loams` binary.
+name = "loams-live-worker"
+path = "src/bin/loams-live-worker.rs"
+test = false
+doc = false
+
 [dependencies]
+# The worker protocol's frames (`loams.live.worker.v1`, LV1 Ruling 5).
+buffa.workspace = true
 futures.workspace = true
+# `Ts`: a call's start timestamp, which the worker protocol carries.
+loams-kv.workspace = true
 loams-live.workspace = true
+loams-live-proto.workspace = true
 # The counting allocator behind the memory limit (row T3-6): the one crate
 # of the runtime allowed `unsafe`.
 loams-live-js-alloc.workspace = true
@@ -25,6 +38,15 @@ relative-path.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+# The isolated worker's sandbox (LV1 plan Task 5).
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock.workspace = true
+# The system-call numbers of the seccomp allowlist.
+libc.workspace = true
+# Resource limits and no_new_privs, without `unsafe`.
+rustix = { workspace = true, features = ["process", "thread"] }
+seccompiler.workspace = true
 
 [dev-dependencies]
 loams-kv.workspace = true

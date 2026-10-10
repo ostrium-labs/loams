@@ -13,13 +13,21 @@
 //! runtime. The jobs a bundle's top level leaves run while it loads,
 //! within the load's limits.
 //!
-//! **Host calls.** `ctx.db.*` reaches the host through `natives.host`: the
-//! slot sends the operation to the caller's future, which runs it on the
-//! call's [`LiveTxn`] (so reads land in the read set) and sends the answer
-//! back. The slot blocks meanwhile, and the CPU meter is paused. A storage
-//! error (a conflict, a deadline) aborts the call: the JavaScript side
-//! cannot catch it, and the caller returns it to the runner, which reruns
-//! a mutation from scratch. A dropped caller aborts the call the same way.
+//! **Host calls.** `ctx.db.*` reaches the host through `natives.host` and
+//! the call's [`HostLink`]: in process, the slot sends the operation to the
+//! caller's future; in an isolated worker, the worker writes it to the host
+//! as a frame (`worker.rs`). Either way the caller runs it on the call's
+//! [`LiveTxn`] (so reads land in the read set) with a [`HostDriver`] and
+//! sends the answer back. The slot blocks meanwhile, and the CPU meter is
+//! paused. A storage error (a conflict, a deadline) aborts the call: the
+//! JavaScript side cannot catch it, and the caller returns it to the
+//! runner, which reruns a mutation from scratch. A dropped caller aborts
+//! the call the same way.
+//!
+//! **Isolation.** [`JsConfig::isolation`] picks where the slots run: here
+//! ([`Isolation::InProcess`], trusted code only, LV1 row T3-10) or in
+//! sandboxed worker processes ([`Isolation::Isolated`], `worker.rs`), which
+//! run this module's [`Engine`] on their main thread.
 //!
 //! **Values.** `bigint` is `I64` (out of range is an error), number is
 //! `F64`, `ArrayBuffer` is `Bytes`, arrays and plain objects (prototype
@@ -41,9 +49,10 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
+use loams_kv::Ts;
 use loams_live::validate::Validator;
 use loams_live::{
-    CallOutput, FnKind, Function, LiveError, LiveTxn, LiveValue, LogLevel, Visibility,
+    CallOutput, FnKind, Function, Isolation, LiveError, LiveTxn, LiveValue, LogLevel, Visibility,
 };
 use rand::{RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -62,6 +71,7 @@ use loams_live_js_alloc::MemoryMeter;
 use crate::host::{HostOp, host};
 use crate::limits::{Console, CpuMeter};
 use crate::validators;
+use crate::worker::{WorkerCommand, WorkerHandle, WorkerPool};
 
 /// The largest bundle (16 MiB, D682).
 pub const MAX_BUNDLE_BYTES: usize = 16 * 1024 * 1024;
@@ -148,9 +158,9 @@ const SERVER_SOURCE: &str = "const s = globalThis.__loams_server__;\n\
      export const internalMutation = s.internalMutation;\n\
      export const v = s.v;\n";
 /// The name errors of bundle evaluation carry.
-const BUNDLE: &str = "<bundle>";
+pub(crate) const BUNDLE: &str = "<bundle>";
 /// A slot thread's stack; QuickJS's own stack limit is well inside it.
-const SLOT_STACK_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const SLOT_STACK_BYTES: usize = 8 * 1024 * 1024;
 /// QuickJS's stack limit: deeper recursion is a `RangeError`.
 const JS_STACK_BYTES: usize = 1024 * 1024;
 /// What may be allocated past the memory limit after the interrupt handler
@@ -182,6 +192,11 @@ pub struct JsConfig {
     pub console_lines: usize,
     /// Bytes kept per `console.*` line (4 KiB).
     pub console_line_bytes: usize,
+    /// Where the slots run: in this process (the default; trusted code
+    /// only) or in sandboxed worker processes, one per slot, each killed
+    /// from outside when a call runs past `cpu_limit` plus
+    /// [`KILL_GRACE`](crate::KILL_GRACE) (LV1 plan Task 5).
+    pub isolation: Isolation,
 }
 
 impl Default for JsConfig {
@@ -192,6 +207,7 @@ impl Default for JsConfig {
             contexts: 4,
             console_lines: 64,
             console_line_bytes: 4096,
+            isolation: Isolation::InProcess,
         }
     }
 }
@@ -212,56 +228,100 @@ pub struct FunctionMeta {
 
 /// A loaded bundle: one ES module whose exported objects hold functions
 /// built with `loams:server`'s `query`, `mutation`, `internalQuery` and
-/// `internalMutation`. Cheap to share; its slots stop when the bundle and
-/// every function taken from it are dropped.
+/// `internalMutation`. Cheap to share; its slots (or worker processes)
+/// stop when the bundle and every function taken from it are dropped.
 pub struct Bundle {
     metas: Arc<[FunctionMeta]>,
-    pool: Arc<Pool>,
+    exec: Exec,
+}
+
+/// Where a bundle's calls run.
+enum Exec {
+    /// Slot threads of this process.
+    Slots(Arc<Pool>),
+    /// Isolated worker processes.
+    Workers(WorkerHandle),
 }
 
 impl fmt::Debug for Bundle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let config = match &self.exec {
+            Exec::Slots(pool) => &pool.config,
+            Exec::Workers(handle) => handle.config(),
+        };
         f.debug_struct("Bundle")
             .field("functions", &self.metas.len())
-            .field("config", &self.pool.config)
+            .field("config", config)
             .finish_non_exhaustive()
     }
+}
+
+impl From<WorkerHandle> for Bundle {
+    /// The bundle a deployment's isolated workers serve.
+    fn from(handle: WorkerHandle) -> Self {
+        Bundle {
+            metas: handle.metas(),
+            exec: Exec::Workers(handle),
+        }
+    }
+}
+
+/// Refuses a bundle the limits of D682 or the configuration rule out,
+/// before anything evaluates it.
+pub(crate) fn check_source(source: &str, config: &JsConfig) -> Result<(), LiveError> {
+    if source.len() > MAX_BUNDLE_BYTES {
+        return Err(LiveError::LimitExceeded {
+            limit: "max_bundle_bytes",
+            message: format!(
+                "the bundle has {} bytes, more than {MAX_BUNDLE_BYTES}",
+                source.len()
+            ),
+        });
+    }
+    if config.contexts == 0 {
+        return Err(LiveError::InvalidArgument(
+            "a bundle needs at least one context".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Refuses a bundle that exports more than [`MAX_EXPORTS`] functions.
+pub(crate) fn check_exports(count: usize) -> Result<(), LiveError> {
+    if count > MAX_EXPORTS {
+        return Err(LiveError::LimitExceeded {
+            limit: "max_exports",
+            message: format!("the bundle exports {count} functions, more than {MAX_EXPORTS}"),
+        });
+    }
+    Ok(())
 }
 
 impl Bundle {
     /// Validates `source` (size, evaluation within the limits, exports)
     /// and starts its slots. Evaluation runs on a thread of its own, off
     /// the async executor, for at most about `config.cpu_limit`.
+    ///
+    /// With [`Isolation::Isolated`] the slots are worker processes of this
+    /// binary started as `<binary> live-worker`
+    /// ([`WorkerCommand::current_exe`]), which is what the `loams` binary
+    /// serves; other embedders use a [`WorkerPool`] of their own.
     pub async fn load(source: &str, config: JsConfig) -> Result<Self, LiveError> {
-        if source.len() > MAX_BUNDLE_BYTES {
-            return Err(LiveError::LimitExceeded {
-                limit: "max_bundle_bytes",
-                message: format!(
-                    "the bundle has {} bytes, more than {MAX_BUNDLE_BYTES}",
-                    source.len()
-                ),
-            });
+        if config.isolation == Isolation::Isolated {
+            let pool = WorkerPool::new(WorkerCommand::current_exe()?);
+            return pool
+                .spawn("", source.as_bytes(), config)
+                .await
+                .map(Bundle::from);
         }
-        if config.contexts == 0 {
-            return Err(LiveError::InvalidArgument(
-                "a bundle needs at least one context".into(),
-            ));
-        }
+        check_source(source, &config)?;
         let source: Arc<str> = Arc::from(source);
         let metas = validate(source.clone(), config.clone()).await?;
-        if metas.len() > MAX_EXPORTS {
-            return Err(LiveError::LimitExceeded {
-                limit: "max_exports",
-                message: format!(
-                    "the bundle exports {} functions, more than {MAX_EXPORTS}",
-                    metas.len()
-                ),
-            });
-        }
+        check_exports(metas.len())?;
         let pool = Pool::start(source, config)?;
         Ok(Bundle {
             metas: metas.into(),
-            pool,
+            exec: Exec::Slots(pool),
         })
     }
 
@@ -272,11 +332,16 @@ impl Bundle {
 
     /// The function `path` (`module:export`), or `None`.
     pub fn function(&self, path: &str) -> Option<Arc<dyn Function>> {
-        let meta = self.metas.iter().find(|m| m.path == path)?;
-        Some(Arc::new(JsFunction {
-            meta: meta.clone(),
-            pool: self.pool.clone(),
-        }))
+        match &self.exec {
+            Exec::Slots(pool) => {
+                let meta = self.metas.iter().find(|m| m.path == path)?;
+                Some(Arc::new(JsFunction {
+                    meta: meta.clone(),
+                    pool: pool.clone(),
+                }))
+            }
+            Exec::Workers(handle) => handle.function(path),
+        }
     }
 }
 
@@ -337,15 +402,8 @@ impl Function for JsFunction {
             }
             let (events, mut rx) = tmpsc::unbounded_channel();
             let (reply, replies) = mpsc::channel();
-            let ts = txn.start_ts();
-            let limits = txn.limits();
             let job = Job {
-                path: self.meta.path.clone(),
-                args,
-                start_ms: ts.physical_ms(),
-                seed: seed(ts.0, &txn.ctx().request_id),
-                result_bytes: limits.max_result_bytes,
-                host_bytes: limits.max_document_bytes.saturating_mul(HOST_BUDGET_FACTOR),
+                call: Call::for_txn(self.meta.path.clone(), args, txn),
                 events,
                 replies,
             };
@@ -353,28 +411,17 @@ impl Function for JsFunction {
                 .jobs
                 .send(job)
                 .map_err(|_| LiveError::Internal("the JavaScript slots have stopped".into()))?;
-            let mut storage: Option<LiveError> = None;
+            let mut driver = HostDriver::default();
             while let Some(event) = rx.recv().await {
                 match event {
                     Event::Host { op, args } => {
-                        let answer = match &storage {
-                            Some(e) => Err(e.clone()),
-                            None => host(txn, op, args).await,
-                        };
-                        if let Err(e @ LiveError::Txn(_)) = &answer {
-                            storage = Some(e.clone());
-                        }
+                        let answer = driver.answer(txn, op, args).await;
                         // The slot has gone only if the call was aborted.
                         let _ = reply.send(answer);
                     }
-                    Event::Done { result, output } => {
-                        let out = txn.output_mut();
-                        out.logs.extend(output.logs);
-                        out.dropped = out.dropped.saturating_add(output.dropped);
-                        return match storage {
-                            Some(e) => Err(e),
-                            None => result,
-                        };
+                    Event::Done(outcome) => {
+                        add_output(txn, outcome.output);
+                        return driver.finish(outcome.result);
                     }
                 }
             }
@@ -383,6 +430,13 @@ impl Function for JsFunction {
             ))
         })
     }
+}
+
+/// Adds a call's `console.*` lines to its transaction's output.
+pub(crate) fn add_output(txn: &mut LiveTxn<'_>, output: CallOutput) {
+    let out = txn.output_mut();
+    out.logs.extend(output.logs);
+    out.dropped = out.dropped.saturating_add(output.dropped);
 }
 
 /// The seed of `Math.random` for a call: SHA-256 of the start timestamp
@@ -398,32 +452,191 @@ fn seed(ts: u64, request_id: &str) -> [u8; 32] {
     out
 }
 
+// ---- calls, host links and outcomes ----
+
+/// One invocation: what a slot, here or in a worker, needs to run it.
+#[derive(Debug)]
+pub(crate) struct Call {
+    pub(crate) path: String,
+    pub(crate) args: LiveValue,
+    /// `Date`'s value: the start timestamp's milliseconds.
+    pub(crate) start_ms: u64,
+    /// `Math.random`'s seed.
+    pub(crate) seed: [u8; 32],
+    /// The conversion budget of the result (`Limits::max_result_bytes`).
+    pub(crate) result_bytes: usize,
+    /// The conversion budget of each `ctx.db` call's arguments.
+    pub(crate) host_bytes: usize,
+}
+
+impl Call {
+    /// A call of `path` at `start_ts` for request `request_id`.
+    pub(crate) fn new(
+        path: String,
+        args: LiveValue,
+        start_ts: Ts,
+        request_id: &str,
+        result_bytes: usize,
+        host_bytes: usize,
+    ) -> Self {
+        Call {
+            path,
+            args,
+            start_ms: start_ts.physical_ms(),
+            seed: seed(start_ts.0, request_id),
+            result_bytes,
+            host_bytes,
+        }
+    }
+
+    /// A call of `path` in `txn`: its start timestamp, request id and
+    /// limits.
+    pub(crate) fn for_txn(path: String, args: LiveValue, txn: &LiveTxn<'_>) -> Self {
+        let (result_bytes, host_bytes) = budgets(txn);
+        Call::new(
+            path,
+            args,
+            txn.start_ts(),
+            &txn.ctx().request_id,
+            result_bytes,
+            host_bytes,
+        )
+    }
+}
+
+/// The conversion budgets of a call in `txn`: its result's
+/// (`Limits::max_result_bytes`) and each `ctx.db` call's arguments'.
+pub(crate) fn budgets(txn: &LiveTxn<'_>) -> (usize, usize) {
+    let limits = txn.limits();
+    (
+        limits.max_result_bytes,
+        limits.max_document_bytes.saturating_mul(HOST_BUDGET_FACTOR),
+    )
+}
+
+/// The caller's answer to one `ctx.db` operation.
+#[derive(Debug)]
+pub(crate) enum HostAnswer {
+    /// The operation's result.
+    Ok(LiveValue),
+    /// A catchable error: its text as JavaScript sees it, and its index
+    /// among the call's host errors, which the caller keeps.
+    Error { message: String, index: usize },
+    /// A storage error or a dropped caller: the call stops, uncatchably.
+    Abort,
+}
+
+/// How a running call reaches its caller's transaction.
+pub(crate) trait HostLink {
+    /// Runs `op` on the caller's transaction and waits for the answer;
+    /// `None` when the caller has gone.
+    fn call(&self, op: HostOp, args: LiveValue) -> Option<HostAnswer>;
+    /// Whether the caller has gone (the interrupt handler polls it).
+    fn gone(&self) -> bool;
+}
+
+/// Why a call failed, as its slot sees it.
+#[derive(Debug, Clone)]
+pub(crate) enum Failure {
+    /// The error itself.
+    Live(LiveError),
+    /// The host error with this index escaped the handler; the caller
+    /// holds the error ([`HostDriver`]).
+    Host(usize),
+}
+
+/// The end of a call.
+#[derive(Debug)]
+pub(crate) struct Outcome {
+    pub(crate) result: Result<LiveValue, Failure>,
+    pub(crate) output: CallOutput,
+    /// The JavaScript CPU the call used (host calls excluded).
+    pub(crate) cpu: Duration,
+}
+
+/// The caller's side of a call's host operations: it runs them on the
+/// call's transaction, keeps the errors JavaScript sees by index, and
+/// remembers a storage error, which aborts the call and is its result.
+#[derive(Debug, Default)]
+pub(crate) struct HostDriver {
+    errors: Vec<LiveError>,
+    storage: Option<LiveError>,
+}
+
+impl HostDriver {
+    /// Runs `op` on `txn`. After a storage error, every operation aborts.
+    pub(crate) async fn answer(
+        &mut self,
+        txn: &mut LiveTxn<'_>,
+        op: HostOp,
+        args: LiveValue,
+    ) -> HostAnswer {
+        if self.storage.is_some() {
+            return HostAnswer::Abort;
+        }
+        match host(txn, op, args).await {
+            Ok(value) => HostAnswer::Ok(value),
+            Err(e @ LiveError::Txn(_)) => {
+                self.storage = Some(e);
+                HostAnswer::Abort
+            }
+            Err(e) => {
+                let index = self.errors.len();
+                let message = js_message(&e);
+                self.errors.push(e);
+                HostAnswer::Error { message, index }
+            }
+        }
+    }
+
+    /// The call's result: the storage error if there was one, else the
+    /// slot's outcome, a host error resolved by its index.
+    pub(crate) fn finish(self, result: Result<LiveValue, Failure>) -> Result<LiveValue, LiveError> {
+        if let Some(e) = self.storage {
+            return Err(e);
+        }
+        match result {
+            Ok(value) => Ok(value),
+            Err(Failure::Live(e)) => Err(e),
+            Err(Failure::Host(i)) => Err(self.errors.get(i).cloned().unwrap_or_else(|| {
+                LiveError::Internal(format!(
+                    "a call failed with host error {i}, which it was never given"
+                ))
+            })),
+        }
+    }
+}
+
 // ---- the slots ----
 
 /// What a slot sends the caller.
 enum Event {
-    Host {
-        op: HostOp,
-        args: LiveValue,
-    },
-    Done {
-        result: Result<LiveValue, LiveError>,
-        output: CallOutput,
-    },
+    Host { op: HostOp, args: LiveValue },
+    Done(Outcome),
 }
 
 /// One call, queued for a slot.
 struct Job {
-    path: String,
-    args: LiveValue,
-    start_ms: u64,
-    seed: [u8; 32],
-    /// The conversion budget of the result (`Limits::max_result_bytes`).
-    result_bytes: usize,
-    /// The conversion budget of each `ctx.db` call's arguments.
-    host_bytes: usize,
+    call: Call,
     events: tmpsc::UnboundedSender<Event>,
-    replies: mpsc::Receiver<Result<LiveValue, LiveError>>,
+    replies: mpsc::Receiver<HostAnswer>,
+}
+
+/// A slot's link to its caller's future, over channels.
+struct ChannelLink {
+    events: tmpsc::UnboundedSender<Event>,
+    replies: mpsc::Receiver<HostAnswer>,
+}
+
+impl HostLink for ChannelLink {
+    fn call(&self, op: HostOp, args: LiveValue) -> Option<HostAnswer> {
+        self.events.send(Event::Host { op, args }).ok()?;
+        self.replies.recv().ok()
+    }
+
+    fn gone(&self) -> bool {
+        self.events.is_closed()
+    }
 }
 
 /// A bundle's slots. Dropping it closes the queue; each slot ends after
@@ -449,15 +662,15 @@ impl Pool {
     }
 }
 
-/// How long a slot waits before restarting after its `restarts`-th panic
-/// in a row: 10 ms, doubling, at most 5 s.
-fn restart_delay(restarts: u32) -> Duration {
+/// How long a slot (or a worker) waits before restarting after its
+/// `restarts`-th failure in a row: 10 ms, doubling, at most 5 s.
+pub(crate) fn restart_delay(restarts: u32) -> Duration {
     let ms = 10u64.saturating_mul(1u64 << restarts.saturating_sub(1).min(16));
     Duration::from_millis(ms.min(5_000))
 }
 
 /// A slot that panicked after this long counts as healthy again.
-const SLOT_HEALTHY_AFTER: Duration = Duration::from_secs(60);
+pub(crate) const SLOT_HEALTHY_AFTER: Duration = Duration::from_secs(60);
 
 fn slot_main(source: &str, config: &JsConfig, queue: &Mutex<mpsc::Receiver<Job>>) {
     let mut restarts = 0u32;
@@ -513,36 +726,47 @@ fn slot_loop(source: &str, config: &JsConfig, queue: &Mutex<mpsc::Receiver<Job>>
                 Err(_) => return,
             }
         };
-        match (ready.take(), &engine) {
+        let Job {
+            call,
+            events,
+            replies,
+        } = job;
+        let outcome = match (ready.take(), &engine) {
             (Some(Ok(prepared)), Some(e)) => {
-                if e.run(prepared, job) {
+                let link = Rc::new(ChannelLink {
+                    events: events.clone(),
+                    replies,
+                });
+                let (outcome, poisoned) = e.run(prepared, call, link);
+                if poisoned {
                     engine = None;
                 }
+                outcome
             }
             (Some(Err(err)), _) => {
-                let _ = job.events.send(Event::Done {
-                    result: Err(err),
-                    output: CallOutput::default(),
-                });
                 // A context that failed to prepare (the bundle loaded
                 // before) gets a fresh runtime next time.
                 engine = None;
+                Outcome::failed(err)
             }
             _ => {
-                let _ = job.events.send(Event::Done {
-                    result: Err(LiveError::Internal("no JavaScript context is ready".into())),
-                    output: CallOutput::default(),
-                });
                 engine = None;
+                Outcome::failed(LiveError::Internal("no JavaScript context is ready".into()))
             }
-        }
+        };
+        let _ = events.send(Event::Done(outcome));
     }
 }
 
-/// The host's link to the call a slot runs.
-struct Link {
-    events: tmpsc::UnboundedSender<Event>,
-    replies: mpsc::Receiver<Result<LiveValue, LiveError>>,
+impl Outcome {
+    /// A call that failed before it ran.
+    pub(crate) fn failed(error: LiveError) -> Self {
+        Outcome {
+            result: Err(Failure::Live(error)),
+            output: CallOutput::default(),
+            cpu: Duration::ZERO,
+        }
+    }
 }
 
 /// The per-call state the natives and the interrupt handler share.
@@ -554,8 +778,10 @@ struct SlotState {
     now_ms: Cell<f64>,
     rng: RefCell<ChaCha8Rng>,
     console: RefCell<Console>,
-    link: RefCell<Option<Link>>,
-    host_errors: RefCell<Vec<LiveError>>,
+    link: RefCell<Option<Rc<dyn HostLink>>>,
+    /// The call's host errors JavaScript holds by index: its own refusals
+    /// and the caller's errors.
+    host_errors: RefCell<Vec<Failure>>,
     /// The conversion budget of each `ctx.db` call's arguments.
     host_bytes: Cell<usize>,
     config: JsConfig,
@@ -582,7 +808,7 @@ impl SlotState {
 
     /// Resets the state for a call (or, with `None`, for evaluating the
     /// bundle: the clock at the epoch, a fixed seed, no host).
-    fn begin(&self, call: Option<(u64, [u8; 32], Link)>) {
+    fn begin(&self, call: Option<(u64, [u8; 32], Rc<dyn HostLink>)>) {
         self.abort.set(false);
         self.host_errors.borrow_mut().clear();
         *self.console.borrow_mut() =
@@ -618,7 +844,7 @@ impl SlotState {
         let gone = self
             .link
             .try_borrow()
-            .is_ok_and(|l| l.as_ref().is_some_and(|l| l.events.is_closed()));
+            .is_ok_and(|l| l.as_ref().is_some_and(|l| l.gone()));
         if gone {
             self.abort.set(true);
             return true;
@@ -633,16 +859,16 @@ impl SlotState {
 }
 
 /// A slot's runtime.
-struct Engine {
+pub(crate) struct Engine {
     rt: Runtime,
     state: Rc<SlotState>,
 }
 
 /// A context with the prelude run and the bundle evaluated. `internals`
 /// is declared first so it is dropped before `ctx`.
-struct Prepared {
+pub(crate) struct Prepared {
     internals: Persistent<Object<'static>>,
-    metas: Vec<FunctionMeta>,
+    pub(crate) metas: Vec<FunctionMeta>,
     ctx: Context,
 }
 
@@ -663,7 +889,7 @@ impl Phase<'_> {
 }
 
 impl Engine {
-    fn new(config: &JsConfig) -> Result<Self, LiveError> {
+    pub(crate) fn new(config: &JsConfig) -> Result<Self, LiveError> {
         // The memory limit is the allocator's, not QuickJS's: QuickJS's own
         // out-of-memory error is catchable, the allocator's flag is not
         // (row T3-6).
@@ -683,7 +909,7 @@ impl Engine {
 
     /// A fresh context: the prelude, the frozen globals, `loams:server`
     /// and the evaluated bundle.
-    fn prepare(&self, source: &str) -> Result<Prepared, LiveError> {
+    pub(crate) fn prepare(&self, source: &str) -> Result<Prepared, LiveError> {
         let ctx = Context::custom::<(
             intrinsic::Date,
             intrinsic::Eval,
@@ -732,7 +958,7 @@ impl Engine {
                     let metas = self.metas(&ctx, &internals, &rows)?;
                     Ok((Persistent::save(&ctx, internals), metas))
                 }
-                Err(e) => Err(self.classify(&ctx, e, Phase::Load, None)),
+                Err(e) => Err(self.classify_load(&ctx, e)),
             }
         });
         self.state.meter.pause();
@@ -757,7 +983,7 @@ impl Engine {
         internals: &Object<'js>,
         rows: &Array<'js>,
     ) -> Result<Vec<FunctionMeta>, LiveError> {
-        let js = |e: rquickjs::Error| self.classify(ctx, e, Phase::Load, None);
+        let js = |e: rquickjs::Error| self.classify_load(ctx, e);
         let helpers = internals
             .get::<_, Object>("values")
             .and_then(|v| Helpers::from(&v))
@@ -847,30 +1073,34 @@ impl Engine {
         Ok(natives)
     }
 
-    /// Runs `job` in `prepared`, sends its outcome and drops the context.
-    /// Returns whether the runtime must be replaced.
-    fn run(&self, prepared: Prepared, job: Job) -> bool {
-        let Job {
+    /// Runs `call` in `prepared`, its host operations through `link`, and
+    /// drops the context. Returns the call's outcome and whether the
+    /// runtime must be replaced.
+    pub(crate) fn run(
+        &self,
+        prepared: Prepared,
+        call: Call,
+        link: Rc<dyn HostLink>,
+    ) -> (Outcome, bool) {
+        let Call {
             path,
             args,
             start_ms,
             seed,
             result_bytes,
             host_bytes,
-            events,
-            replies,
-        } = job;
-        let link = Link {
-            events: events.clone(),
-            replies,
-        };
+        } = call;
         self.state.begin(Some((start_ms, seed, link)));
         self.state.host_bytes.set(host_bytes);
         let Prepared { internals, ctx, .. } = prepared;
         let result = ctx.with(|ctx| {
             let internals = match internals.restore(&ctx) {
                 Ok(i) => i,
-                Err(e) => return Err(LiveError::Internal(format!("restoring a context: {e}"))),
+                Err(e) => {
+                    return Err(Failure::Live(LiveError::Internal(format!(
+                        "restoring a context: {e}"
+                    ))));
+                }
             };
             let call = || -> rquickjs::Result<Value<'_>> {
                 let invoke: rquickjs::Function = internals.get("invoke")?;
@@ -879,6 +1109,7 @@ impl Engine {
                 self.settle::<Value>(&ctx, &done)
             };
             let phase = Phase::Call(&path);
+            let stopped_or = |other: LiveError| Failure::Live(self.stopped(phase).unwrap_or(other));
             match call() {
                 Ok(value) => {
                     let helpers = match internals
@@ -892,31 +1123,27 @@ impl Engine {
                     match to_live(&ctx, value, &helpers, &mut budget, 0, false) {
                         Ok(v) => Ok(v),
                         Err(Conv::Js(e)) => Err(self.classify(&ctx, e, phase, Some(&internals))),
-                        Err(Conv::Invalid(m)) => Err(self.stopped(phase).unwrap_or_else(|| {
-                            LiveError::FunctionError(format!("{path} returned {m}"))
+                        Err(Conv::Invalid(m)) => Err(stopped_or(LiveError::FunctionError(
+                            format!("{path} returned {m}"),
+                        ))),
+                        Err(Conv::Stopped) => Err(stopped_or(LiveError::Internal(
+                            "a conversion stopped".into(),
+                        ))),
+                        Err(Conv::Over) => Err(stopped_or(LiveError::LimitExceeded {
+                            limit: "max_result_bytes",
+                            message: format!(
+                                "{path} returned a value larger than {result_bytes} bytes \
+                                 (every reference to a shared value counts)"
+                            ),
                         })),
-                        Err(Conv::Stopped) => Err(self
-                            .stopped(phase)
-                            .unwrap_or_else(|| LiveError::Internal("a conversion stopped".into()))),
-                        Err(Conv::Over) => {
-                            Err(self
-                                .stopped(phase)
-                                .unwrap_or_else(|| LiveError::LimitExceeded {
-                                    limit: "max_result_bytes",
-                                    message: format!(
-                                        "{path} returned a value larger than {result_bytes} bytes \
-                                     (every reference to a shared value counts)"
-                                    ),
-                                }))
-                        }
                     }
                 }
-                Err(rquickjs::Error::WouldBlock) => Err(self.stopped(phase).unwrap_or_else(|| {
-                    LiveError::FunctionError(format!(
+                Err(rquickjs::Error::WouldBlock) => {
+                    Err(stopped_or(LiveError::FunctionError(format!(
                         "{path}: the handler's promise never settled (it awaits something \
                          that never happens)"
-                    ))
-                })),
+                    ))))
+                }
                 Err(e) => Err(self.classify(&ctx, e, phase, Some(&internals))),
             }
         });
@@ -931,11 +1158,16 @@ impl Engine {
         // after it: a handler that caught QuickJS's error and returned still
         // ran out (row T3-6).
         let result = match result {
-            Ok(_) if self.state.memory.exceeded() => Err(self.out_of_memory(Phase::Call(&path))),
+            Ok(_) if self.state.memory.exceeded() => {
+                Err(Failure::Live(self.out_of_memory(Phase::Call(&path))))
+            }
             other => other,
         };
         let poisoned = self.state.halted()
-            || matches!(result, Err(LiveError::FunctionOutOfMemory { .. }))
+            || matches!(
+                result,
+                Err(Failure::Live(LiveError::FunctionOutOfMemory { .. }))
+            )
             || self.rt.is_job_pending();
         drop(ctx);
         if !poisoned {
@@ -943,8 +1175,18 @@ impl Engine {
             // the memory it had.
             self.rt.run_gc();
         }
-        let _ = events.send(Event::Done { result, output });
-        poisoned
+        let outcome = Outcome {
+            result,
+            output,
+            cpu: self.state.meter.used(),
+        };
+        (outcome, poisoned)
+    }
+
+    /// Whether the runtime ran out of memory: in an isolated worker, its
+    /// process is never reused (LV1 row T3-10).
+    pub(crate) fn out_of_memory_seen(&self) -> bool {
+        self.state.memory.exceeded()
     }
 
     /// Runs the runtime's jobs until `promise` settles, as
@@ -990,6 +1232,15 @@ impl Engine {
         None
     }
 
+    /// The error of a failed bundle evaluation.
+    fn classify_load<'js>(&self, ctx: &Ctx<'js>, error: rquickjs::Error) -> LiveError {
+        match self.classify(ctx, error, Phase::Load, None) {
+            Failure::Live(e) => e,
+            // Without the internals no host error is looked up.
+            Failure::Host(i) => LiveError::Internal(format!("host error {i} while loading")),
+        }
+    }
+
     /// The error of a failed evaluation or call.
     fn classify<'js>(
         &self,
@@ -997,16 +1248,16 @@ impl Engine {
         error: rquickjs::Error,
         phase: Phase<'_>,
         internals: Option<&Object<'js>>,
-    ) -> LiveError {
+    ) -> Failure {
         if let Some(stopped) = self.stopped(phase) {
             if error.is_exception() {
                 ctx.catch();
             }
-            return stopped;
+            return Failure::Live(stopped);
         }
         let thrown = match error {
             e if e.is_exception() => ctx.catch(),
-            other => return LiveError::FunctionError(other.to_string()),
+            other => return Failure::Live(LiveError::FunctionError(other.to_string())),
         };
         if let (Some(internals), Some(_)) = (internals, thrown.as_object()) {
             let index = internals
@@ -1029,9 +1280,9 @@ impl Engine {
         }
         let text = describe(ctx, &thrown);
         if let Some(stopped) = self.stopped(phase) {
-            return stopped;
+            return Failure::Live(stopped);
         }
-        LiveError::FunctionError(text)
+        Failure::Live(LiveError::FunctionError(text))
     }
 }
 
@@ -1082,12 +1333,17 @@ fn host_call<'js>(
         reply.set("abort", true)?;
         return Ok(reply);
     }
-    let refuse = |reply: &Object<'js>, e: LiveError| -> rquickjs::Result<()> {
+    // A catchable error: its text for JavaScript, and its index among the
+    // call's host errors, through which an escaped one is classified.
+    let keep = |reply: &Object<'js>, message: String, failure: Failure| -> rquickjs::Result<()> {
         let mut errors = s.host_errors.borrow_mut();
-        reply.set("error", js_message(&e))?;
+        reply.set("error", message)?;
         reply.set("index", errors.len())?;
-        errors.push(e);
+        errors.push(failure);
         Ok(())
+    };
+    let refuse = |reply: &Object<'js>, e: LiveError| -> rquickjs::Result<()> {
+        keep(reply, js_message(&e), Failure::Live(e))
     };
     let Some(host_op) = HostOp::parse(op) else {
         refuse(
@@ -1123,30 +1379,26 @@ fn host_call<'js>(
             return Ok(reply);
         }
     };
-    let answer = {
-        let link = s.link.borrow();
-        let Some(link) = link.as_ref() else {
-            refuse(
-                &reply,
-                LiveError::InvalidArgument("ctx.db is available only inside a handler".into()),
-            )?;
-            return Ok(reply);
-        };
-        s.meter.pause();
-        let answer = match link.events.send(Event::Host { op: host_op, args }) {
-            Ok(()) => link.replies.recv().ok(),
-            Err(_) => None,
-        };
-        s.meter.resume();
-        answer
+    let link = s.link.borrow().clone();
+    let Some(link) = link else {
+        refuse(
+            &reply,
+            LiveError::InvalidArgument("ctx.db is available only inside a handler".into()),
+        )?;
+        return Ok(reply);
     };
+    s.meter.pause();
+    let answer = link.call(host_op, args);
+    s.meter.resume();
     match answer {
-        Some(Ok(value)) => reply.set("ok", to_js(ctx, &value)?)?,
-        Some(Err(LiveError::Txn(_))) | None => {
+        Some(HostAnswer::Ok(value)) => reply.set("ok", to_js(ctx, &value)?)?,
+        Some(HostAnswer::Error { message, index }) => {
+            keep(&reply, message, Failure::Host(index))?;
+        }
+        Some(HostAnswer::Abort) | None => {
             s.abort.set(true);
             reply.set("abort", true)?;
         }
-        Some(Err(e)) => refuse(&reply, e)?,
     }
     Ok(reply)
 }
@@ -1164,7 +1416,7 @@ fn js_message(e: &LiveError) -> String {
     }
 }
 
-fn meta(
+pub(crate) fn meta(
     path: String,
     kind: &str,
     visibility: &str,

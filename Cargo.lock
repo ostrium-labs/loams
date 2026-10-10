@@ -6979,6 +6979,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "landlock"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4cca98e95f35b29d469dade6724c6f96cec9236640f745a0e99b0334ec320ab1"
+dependencies = [
+ "enumflags2",
+ "libc",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lazy-regex"
 version = "3.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7382,6 +7393,7 @@ dependencies = [
  "loams-hot",
  "loams-link",
  "loams-live",
+ "loams-live-js",
  "loams-live-proto",
  "loams-log",
  "loams-meta",
@@ -8001,15 +8013,21 @@ dependencies = [
 name = "loams-live-js"
 version = "0.0.1"
 dependencies = [
+ "buffa",
  "futures",
+ "landlock",
+ "libc",
  "loams-kv",
  "loams-live",
  "loams-live-js-alloc",
+ "loams-live-proto",
  "proptest",
  "rand 0.9.5",
  "rand_chacha 0.9.0",
  "relative-path",
  "rquickjs",
+ "rustix 1.1.5",
+ "seccompiler",
  "sha2 0.11.0",
  "tokio",
  "tracing",
@@ -12281,6 +12299,15 @@ name = "seahash"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c107b6f4780854c8b126e228ea8869f4d7b71260f962fefb57b996b8959ba6b"
+
+[[package]]
+name = "seccompiler"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4ae55de56877481d112a559bbc12667635fdaf5e005712fd4e2b2fa50ffc884"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "secrecy"

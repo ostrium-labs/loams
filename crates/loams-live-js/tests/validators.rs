@@ -225,7 +225,7 @@ async fn validator_definitions_are_checked_at_load() {
         let source = format!(
             "import {{ query, v }} from \"loams:server\";\nexport const m = {{ f: {body} }};\n"
         );
-        match Bundle::load(&source, JsConfig::default()).await {
+        match try_load(&source, JsConfig::default()).await {
             Err(LiveError::InvalidArgument(m)) => assert!(m.contains(message), "{body}: {m}"),
             other => panic!("{body}: expected a load error, got {other:?}"),
         }
@@ -541,7 +541,7 @@ fn validator_vocabulary_roundtrip() {
                 js(&v)
             );
             let bundle = rt
-                .block_on(Bundle::load(&source, config.clone()))
+                .block_on(try_load(&source, config.clone()))
                 .map_err(|e| TestCaseError::fail(format!("{source}: {e}")))?;
             let args = bundle.functions().remove(0).args;
             let want = Validator::Object(BTreeMap::from([("x".to_string(), v.clone())]));
@@ -612,4 +612,37 @@ fn violation_paths_render_like_javascript() {
     );
     assert_eq!(validate::render_path(&[]), "$");
     assert_eq!(validate::render_path(&field_path(&["x"])), "$.x");
+}
+
+/// LV1 plan Task 5, `functions_suite_runs_isolated`: every test above again,
+/// with its bundles in isolated worker processes (Linux only, where
+/// `isolated` exists). The cases are
+/// `functions_suite_runs_isolated::<test>[::<backend>]`.
+#[cfg(target_os = "linux")]
+mod functions_suite_runs_isolated {
+    use super::*;
+
+    live_test!(args_validator_rejects_before_handler_runs, |store| {
+        crate::common::isolated(super::args_validator_rejects_before_handler_runs(store))
+    });
+
+    #[test]
+    fn internal_function_metadata_is_internal() {
+        crate::common::isolated_sync(super::internal_function_metadata_is_internal);
+    }
+
+    #[test]
+    fn validator_definitions_are_checked_at_load() {
+        crate::common::isolated_sync(super::validator_definitions_are_checked_at_load);
+    }
+
+    #[test]
+    fn validator_vocabulary_roundtrip() {
+        crate::common::isolated_sync(super::validator_vocabulary_roundtrip);
+    }
+
+    #[test]
+    fn violation_paths_render_like_javascript() {
+        crate::common::isolated_sync(super::violation_paths_render_like_javascript);
+    }
 }

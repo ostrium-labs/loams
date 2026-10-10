@@ -61,6 +61,60 @@ pub struct LiveConfig {
     pub session: SessionConfig,
     /// How often the journal janitor runs.
     pub janitor_interval: Duration,
+    /// Where deployed functions run (design §45 §3.1, D681; LV1 plan
+    /// Task 5): in this process (trusted, single-tenant code only, LV1 row
+    /// T3-10) or in sandboxed worker processes.
+    pub isolation: Isolation,
+    /// Whether this node serves one tenant's code or many; `Multi` needs
+    /// [`Isolation::Isolated`] ([`check_isolation`]).
+    pub tenancy: Tenancy,
+}
+
+/// Where a deployment's functions run (`[live] isolation`, design §45
+/// §3.1, D681).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Isolation {
+    /// `in_process`: QuickJS runtimes on threads of this process. For code
+    /// the operator trusts (desktop, `loams dev`, single-tenant
+    /// deployments): a C built-in that ignores the interrupt handler can
+    /// hold a thread past the CPU limit (LV1 rows T3-7 and T3-10).
+    #[default]
+    InProcess,
+    /// `isolated`: sandboxed `loams live-worker` processes (seccomp,
+    /// landlock, resource limits), killed from outside when a call runs
+    /// past its CPU limit. Linux only.
+    Isolated,
+}
+
+impl Isolation {
+    /// The configuration value: `in_process` or `isolated`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Isolation::InProcess => "in_process",
+            Isolation::Isolated => "isolated",
+        }
+    }
+}
+
+/// Whose code a node serves (`[live] tenancy`, design §45 §3.1).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum Tenancy {
+    /// `single`: one operator's own code.
+    #[default]
+    Single,
+    /// `multi`: apps of more than one tenant; needs
+    /// [`Isolation::Isolated`].
+    Multi,
+}
+
+impl Tenancy {
+    /// The configuration value: `single` or `multi`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Tenancy::Single => "single",
+            Tenancy::Multi => "multi",
+        }
+    }
 }
 
 impl LiveConfig {
@@ -110,6 +164,8 @@ impl LiveConfig {
             subs: SubsConfig::default(),
             session: SessionConfig::default(),
             janitor_interval: DEFAULT_JANITOR_INTERVAL,
+            isolation: Isolation::default(),
+            tenancy: Tenancy::default(),
         }
     }
 }
@@ -128,6 +184,20 @@ pub fn check_listen(addr: SocketAddr) -> Result<(), LiveError> {
     } else {
         Err(LiveError::NotLoopback(addr))
     }
+}
+
+/// Refuses `tenancy = "multi"` unless functions run `isolated`, and
+/// `isolated` off Linux, where the worker sandbox does not exist (design
+/// §45 §3.1, D681; LV1 plan Task 5).
+pub fn check_isolation(config: &LiveConfig) -> Result<(), LiveError> {
+    let isolated_here = config.isolation == Isolation::Isolated && cfg!(target_os = "linux");
+    if config.tenancy == Tenancy::Multi && !isolated_here {
+        return Err(LiveError::IsolationRequired);
+    }
+    if config.isolation == Isolation::Isolated && !cfg!(target_os = "linux") {
+        return Err(LiveError::IsolationUnavailable);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

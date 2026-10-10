@@ -25,21 +25,40 @@
 //! runs; `internalQuery` and `internalMutation` are
 //! [`Visibility::Internal`].
 //!
-//! **Trusted code only.** The slots run in this process, and some of
-//! QuickJS's C built-ins loop without polling the interrupt handler, so the
-//! CPU limit cannot be guaranteed against hostile code (LV1 rows T3-7 and
-//! T3-10). In-process mode serves desktop, `loams dev` and single-tenant
-//! deployments; multi-tenant serving needs LV1 Task 5's isolated worker and
-//! its wall-clock kill.
+//! **Two isolation modes** (design §45 §3.1, D681; LV1 plan Task 5).
+//! [`Isolation::InProcess`] runs the slots on threads of this process. Some
+//! of QuickJS's C built-ins loop without polling the interrupt handler, so
+//! there the CPU limit cannot be guaranteed against hostile code (LV1 rows
+//! T3-7 and T3-10): it serves desktop, `loams dev` and single-tenant
+//! deployments, trusted code only. [`Isolation::Isolated`] runs each slot
+//! in a sandboxed worker process ([`WorkerPool`], [`WorkerHandle`]; Linux
+//! only): seccomp allows only memory, clock and stdio system calls, landlock
+//! grants no filesystem or network access, resource limits cap the address
+//! space and the open files, and the host kills a worker whose call runs
+//! past its CPU limit plus [`KILL_GRACE`]. A worker that crashes fails its
+//! call with `live_worker_crashed`. [`worker_main`] is the worker process's
+//! entry point (`loams live-worker`).
 
+mod child;
 mod host;
+mod ipc;
 mod limits;
 mod runtime;
+#[cfg(target_os = "linux")]
+mod sandbox_linux;
 mod validators;
+mod worker;
 
+pub use child::worker_main;
 /// Who may call a function (D699).
 pub use loams_live::Visibility;
 /// A function's argument validator (`loams:server`'s `v`), shared with
 /// schema validators.
 pub use loams_live::validate::Validator;
+/// Where a bundle's functions run, and whose code a node serves (design
+/// §45 §3.1, D681).
+pub use loams_live::{Isolation, Tenancy};
 pub use runtime::{Bundle, FunctionMeta, GLOBALS, JsConfig, MAX_BUNDLE_BYTES, MAX_EXPORTS};
+#[doc(hidden)]
+pub use worker::Probe;
+pub use worker::{KILL_GRACE, WorkerCommand, WorkerHandle, WorkerPool};

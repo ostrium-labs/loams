@@ -258,13 +258,13 @@ live_test!(console_output_truncated_at_limits);
 #[tokio::test]
 async fn bundle_top_level_is_limited_too() {
     let spin = "for (;;) {}";
-    match Bundle::load(spin, config()).await {
+    match try_load(spin, config()).await {
         Err(LiveError::FunctionTimeout { .. }) => {}
         Err(e) => panic!("a timeout, not {e}"),
         Ok(_) => panic!("a spinning bundle loads"),
     }
     let bomb = "const keep = []; for (let i = 0; ; i++) keep.push('x'.repeat(1 << 16) + i);";
-    match Bundle::load(bomb, config()).await {
+    match try_load(bomb, config()).await {
         Err(LiveError::FunctionOutOfMemory { .. }) => {}
         Err(e) => panic!("out of memory, not {e}"),
         Ok(_) => panic!("a bomb loads"),
@@ -523,7 +523,7 @@ export const values = {
 /// sparse array, a string shared 256 times or a DAG of shared arrays is a
 /// typed error, not an abort or an allocation of gigabytes.
 async fn value_conversion_is_budgeted(store: TestStore) {
-    let test = format!("value_conversion_is_budgeted::{}", variant(&store));
+    let test = case_path("value_conversion_is_budgeted", Some(&store));
     if !is_child(&test) {
         run_child(&test, &[]);
         return;
@@ -594,3 +594,38 @@ async fn value_conversion_is_budgeted(store: TestStore) {
     assert!(matches!(large.result, LiveValue::Str(ref s) if s.len() == 4 << 20));
 }
 live_test!(value_conversion_is_budgeted);
+
+/// LV1 plan Task 5, `functions_suite_runs_isolated`: every test above again,
+/// with its bundles in isolated worker processes (Linux only, where
+/// `isolated` exists). The cases are
+/// `functions_suite_runs_isolated::<test>[::<backend>]`.
+#[cfg(target_os = "linux")]
+mod functions_suite_runs_isolated {
+    use super::*;
+
+    live_test!(busy_loop_times_out, |store| crate::common::isolated(
+        super::busy_loop_times_out(store)
+    ));
+    live_test!(allocation_bomb_hits_memory_limit, |store| {
+        crate::common::isolated(super::allocation_bomb_hits_memory_limit(store))
+    });
+    live_test!(context_recovers_after_timeout, |store| {
+        crate::common::isolated(super::context_recovers_after_timeout(store))
+    });
+    live_test!(console_output_truncated_at_limits, |store| {
+        crate::common::isolated(super::console_output_truncated_at_limits(store))
+    });
+    live_test!(uninterruptible_array_methods_refuse_huge_arrays, |store| {
+        crate::common::isolated(super::uninterruptible_array_methods_refuse_huge_arrays(
+            store,
+        ))
+    });
+    live_test!(value_conversion_is_budgeted, |store| {
+        crate::common::isolated(super::value_conversion_is_budgeted(store))
+    });
+
+    #[test]
+    fn bundle_top_level_is_limited_too() {
+        crate::common::isolated_sync(super::bundle_top_level_is_limited_too);
+    }
+}

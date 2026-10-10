@@ -9,7 +9,7 @@ use loams_live::testing::TestStore;
 use loams_live::{
     AppKeys, Function, Limits, LiveError, LiveTxn, LiveValue, Mutated, Queried, Runner,
 };
-use loams_live_js::{Bundle, JsConfig};
+use loams_live_js::{Bundle, Isolation, JsConfig, WorkerCommand, WorkerPool};
 
 pub fn s(v: &str) -> LiveValue {
     LiveValue::Str(v.to_string())
@@ -43,9 +43,52 @@ pub async fn load(source: &str) -> Bundle {
 }
 
 pub async fn load_with(source: &str, config: JsConfig) -> Bundle {
-    match Bundle::load(source, config).await {
+    match try_load(source, config).await {
         Ok(b) => b,
         Err(e) => panic!("the bundle loads: {e}"),
+    }
+}
+
+tokio::task_local! {
+    /// Set inside [`isolated`] and [`isolated_sync`]: the suites' bundles
+    /// run in isolated workers (LV1 plan Task 5,
+    /// `functions_suite_runs_isolated`).
+    static ISOLATED: bool;
+}
+
+/// Whether the running test loads its bundles into isolated workers.
+pub fn is_isolated() -> bool {
+    ISOLATED.try_with(|i| *i).unwrap_or(false)
+}
+
+/// Runs a test body with its bundles in isolated workers.
+pub async fn isolated<F: std::future::Future<Output = ()>>(body: F) {
+    ISOLATED.scope(true, body).await;
+}
+
+/// Runs a synchronous test (a `#[test]`, or a `#[tokio::test]`, which
+/// polls its body on this thread) with its bundles in isolated workers.
+pub fn isolated_sync(test: impl FnOnce()) {
+    ISOLATED.sync_scope(true, test);
+}
+
+/// The worker processes of the isolated suites: this crate's own worker
+/// binary, which runs what `loams live-worker` runs.
+pub fn workers() -> WorkerPool {
+    WorkerPool::new(WorkerCommand::new(env!("CARGO_BIN_EXE_loams-live-worker")))
+}
+
+/// Loads `source` with `config`, in process or, inside [`isolated`], in an
+/// isolated worker.
+pub async fn try_load(source: &str, mut config: JsConfig) -> Result<Bundle, LiveError> {
+    if is_isolated() {
+        config.isolation = Isolation::Isolated;
+        workers()
+            .spawn("test", source.as_bytes(), config)
+            .await
+            .map(Bundle::from)
+    } else {
+        Bundle::load(source, config).await
     }
 }
 
@@ -135,6 +178,22 @@ pub fn run_child(test: &str, envs: &[(&str, &str)]) -> String {
         out.status
     );
     text
+}
+
+/// The full path of test `name`'s `store` case in this binary, for
+/// [`run_child`]: under [`isolated`], the case of the suite's
+/// `functions_suite_runs_isolated` module.
+pub fn case_path(name: &str, store: Option<&TestStore>) -> String {
+    let mut path = String::new();
+    if is_isolated() {
+        path.push_str("functions_suite_runs_isolated::");
+    }
+    path.push_str(name);
+    if let Some(store) = store {
+        path.push_str("::");
+        path.push_str(variant(store));
+    }
+    path
 }
 
 /// The `live_test!` variant name of `store`'s backend.

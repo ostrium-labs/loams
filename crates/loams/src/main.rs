@@ -777,12 +777,40 @@ struct LiveArgs {
     /// milliseconds (R1 plan row T12-1).
     #[arg(long, default_value_t = 50)]
     live_tick_read_lag_ms: u64,
+    /// Where Live functions run: in_process (trusted, single-tenant code)
+    /// or isolated (sandboxed worker processes; Linux only).
+    #[arg(long, value_enum, default_value_t = LiveIsolation::InProcess)]
+    live_isolation: LiveIsolation,
+    /// Whose Live code this node serves: single, or multi (which needs
+    /// --live-isolation isolated).
+    #[arg(long, value_enum, default_value_t = LiveTenancy::Single)]
+    live_tenancy: LiveTenancy,
     /// Serve no Loams Live API.
     #[arg(
         long,
         conflicts_with_all = ["live_listen", "live_store", "live_pd", "live_keyspace", "live_app"]
     )]
     no_live: bool,
+}
+
+/// `--live-isolation` (design §45 §3.1, `[live] isolation`).
+#[cfg(feature = "live")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum LiveIsolation {
+    #[value(name = "in_process")]
+    InProcess,
+    #[value(name = "isolated")]
+    Isolated,
+}
+
+/// `--live-tenancy` (design §45 §3.1, `[live] tenancy`).
+#[cfg(feature = "live")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum LiveTenancy {
+    #[value(name = "single")]
+    Single,
+    #[value(name = "multi")]
+    Multi,
 }
 
 /// What `--live-store` names (LV1 plan Task 23).
@@ -881,6 +909,14 @@ impl LiveArgs {
         let mut live = loams_live::LiveConfig::with_store(&self.live_app, store);
         live.listen = self.live_listen;
         live.subs.tick_read_lag = Duration::from_millis(self.live_tick_read_lag_ms);
+        live.isolation = match self.live_isolation {
+            LiveIsolation::InProcess => loams_live::Isolation::InProcess,
+            LiveIsolation::Isolated => loams_live::Isolation::Isolated,
+        };
+        live.tenancy = match self.live_tenancy {
+            LiveTenancy::Single => loams_live::Tenancy::Single,
+            LiveTenancy::Multi => loams_live::Tenancy::Multi,
+        };
         config.live = Some(live);
     }
 
@@ -1061,6 +1097,13 @@ enum Command {
         #[command(subcommand)]
         command: DurableCommand,
     },
+    /// One isolated Loams Live function worker (LV1 plan Task 5): started
+    /// by the server with piped stdio, never by hand. It speaks
+    /// `loams.live.worker.v1` frames on stdin and stdout and sandboxes
+    /// itself before it runs any function code.
+    #[cfg(feature = "live")]
+    #[command(hide = true)]
+    LiveWorker,
 }
 
 /// `loams durable …`: commands that start no server.
@@ -1146,6 +1189,8 @@ fn config(command: Command) -> ServerConfig {
         }
         Command::Warm { .. } => unreachable!("loams warm starts no server"),
         Command::Durable { .. } => unreachable!("loams durable starts no server"),
+        #[cfg(feature = "live")]
+        Command::LiveWorker => unreachable!("loams live-worker starts no server"),
         Command::Dev {
             data_dir,
             listen,
@@ -1333,15 +1378,25 @@ async fn durable(_command: &DurableCommand) -> ExitCode {
     ExitCode::FAILURE
 }
 
+fn main() -> ExitCode {
+    let cli = Cli::parse();
+    // LV1 plan Task 5: the worker runs before an async runtime or a log
+    // subscriber exists, so it is single-threaded when it sandboxes itself.
+    #[cfg(feature = "live")]
+    if let Command::LiveWorker = cli.command {
+        return loams_live_js::worker_main();
+    }
+    serve(cli)
+}
+
 #[tokio::main]
-async fn main() -> ExitCode {
+async fn serve(cli: Cli) -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,openraft=warn")),
         )
         .init();
-    let cli = Cli::parse();
     if let Command::Warm { target, server } = &cli.command {
         return warm(target, server).await;
     }
@@ -2136,6 +2191,49 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{ok}: {e}"));
         }
         assert!(Cli::try_parse_from(["loams", "dev", "--live-listen", "nohost:1"]).is_err());
+    }
+
+    /// LV1 plan Task 5: `--live-isolation` and `--live-tenancy` set
+    /// `[live] isolation` and `tenancy`; multi-tenancy in process fails
+    /// startup, and `live-worker` is a hidden subcommand.
+    #[cfg(feature = "live")]
+    #[test]
+    fn live_isolation_and_tenancy_flags() {
+        let live = |args: &[&str]| dev_config(args).live.expect("live is on");
+        let defaults = live(&[]);
+        assert_eq!(defaults.isolation, loams_live::Isolation::InProcess);
+        assert_eq!(defaults.tenancy, loams_live::Tenancy::Single);
+        let isolated = live(&["--live-isolation", "isolated", "--live-tenancy", "multi"]);
+        assert_eq!(isolated.isolation, loams_live::Isolation::Isolated);
+        assert_eq!(isolated.tenancy, loams_live::Tenancy::Multi);
+        let err = dev_config(&["--live-tenancy", "multi"])
+            .validate()
+            .expect_err("multi tenancy in process");
+        assert_eq!(
+            err.to_string(),
+            r#"invalid configuration: live: tenancy = "multi" needs isolation = "isolated" (Linux only)"#
+        );
+        #[cfg(target_os = "linux")]
+        dev_config(&["--live-isolation", "isolated", "--live-tenancy", "multi"])
+            .validate()
+            .expect("multi tenancy with isolated workers");
+        for bad in [
+            ["--live-isolation", "in-process"],
+            ["--live-tenancy", "many"],
+        ] {
+            assert!(
+                Cli::try_parse_from(["loams", "dev"].iter().chain(&bad)).is_err(),
+                "{bad:?}"
+            );
+        }
+        assert!(matches!(
+            Cli::try_parse_from(["loams", "live-worker"]).map(|c| c.command),
+            Ok(Command::LiveWorker)
+        ));
+        let help = Cli::try_parse_from(["loams", "--help"])
+            .expect_err("help")
+            .to_string();
+        assert!(!help.contains("live-worker"), "{help}");
     }
 
     /// Owner ruling T7-3: a build without the `tikv` feature refuses

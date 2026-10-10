@@ -203,3 +203,65 @@ async fn data_survives_sigkill_on_embedded() {
     assert_eq!(get_n(dev.live, &id, &ts).await, json!("43"));
     drop(dev);
 }
+
+/// LV1 plan Task 5: `loams live-worker`, the hidden subcommand the server
+/// starts isolated workers with, serves a bundle's functions from inside
+/// its sandbox, which kills it with `SIGSYS` when it opens a file.
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread")]
+async fn live_worker_subcommand_serves_functions_sandboxed() {
+    use loams_live_js::{Isolation, JsConfig, Probe, WorkerCommand, WorkerPool};
+
+    const BUNDLE: &str = r#"
+import { query, mutation } from "loams:server";
+export const notes = {
+  add: mutation(async (ctx, { body }) => await ctx.db.insert("notes", { body })),
+  count: query(async (ctx) => (await ctx.db.query("notes").collect()).length),
+};
+"#;
+    let pool = WorkerPool::new(WorkerCommand::new(env!("CARGO_BIN_EXE_loams")).arg("live-worker"));
+    let handle = pool
+        .spawn(
+            "dev",
+            BUNDLE.as_bytes(),
+            JsConfig {
+                isolation: Isolation::Isolated,
+                contexts: 1,
+                ..JsConfig::default()
+            },
+        )
+        .await
+        .expect("loams live-worker loads the bundle");
+    assert_eq!(handle.probe(Probe::Ping).await.expect("a ping"), "");
+
+    let store = loams_live::testing::TestStore::embedded(option_env!("CARGO_TARGET_TMPDIR")).await;
+    let runner = loams_live::Runner::open(store.store(), &store.live_config("worker"))
+        .await
+        .expect("the runner opens");
+    let add = handle.function("notes:add").expect("notes:add");
+    let body = loams_live::LiveValue::Object(
+        [("body".to_string(), loams_live::LiveValue::Str("hi".into()))].into(),
+    );
+    runner
+        .mutate(add, body, None)
+        .await
+        .expect("a mutation runs in the worker");
+    let count = handle.function("notes:count").expect("notes:count");
+    let at = runner.store().now().await.expect("now");
+    let counted = runner
+        .query(
+            &*count,
+            loams_live::LiveValue::Object(Default::default()),
+            at,
+        )
+        .await
+        .expect("a query runs in the worker");
+    assert_eq!(counted.result, loams_live::LiveValue::F64(1.0));
+
+    match handle.probe(Probe::OpenFile).await {
+        Err(e @ loams_live::LiveError::WorkerCrashed(_)) => {
+            assert!(e.to_string().contains("SIGSYS"), "{e}");
+        }
+        other => panic!("the sandbox kills the worker, not {other:?}"),
+    }
+}

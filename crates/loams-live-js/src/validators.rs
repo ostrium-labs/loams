@@ -105,6 +105,51 @@ fn parse_at(d: &LiveValue, field: bool, depth: usize) -> Result<Validator, Strin
     })
 }
 
+/// The descriptor of `validator`: what [`parse`] reads back into it. An
+/// isolated worker reports a function's validator this way, and the host
+/// parses it again.
+pub(crate) fn descriptor(validator: &Validator) -> LiveValue {
+    let d = |kind: &str, part: Option<(&str, LiveValue)>| {
+        let mut fields = BTreeMap::from([("kind".to_string(), LiveValue::Str(kind.to_string()))]);
+        if let Some((name, value)) = part {
+            fields.insert(name.to_string(), value);
+        }
+        LiveValue::Object(fields)
+    };
+    match validator {
+        Validator::Null => d("null", None),
+        Validator::Int64 => d("int64", None),
+        Validator::Float64 => d("float64", None),
+        Validator::Boolean => d("boolean", None),
+        Validator::String => d("string", None),
+        Validator::Bytes => d("bytes", None),
+        Validator::Any => d("any", None),
+        Validator::Array(element) => d("array", Some(("element", descriptor(element)))),
+        Validator::Optional(inner) => d("optional", Some(("inner", descriptor(inner)))),
+        Validator::Object(fields) => d(
+            "object",
+            Some((
+                "fields",
+                LiveValue::Object(
+                    fields
+                        .iter()
+                        .map(|(k, v)| (k.clone(), descriptor(v)))
+                        .collect(),
+                ),
+            )),
+        ),
+        Validator::Union(members) => d(
+            "union",
+            Some((
+                "members",
+                LiveValue::Array(members.iter().map(descriptor).collect()),
+            )),
+        ),
+        Validator::Literal(value) => d("literal", Some(("value", value.clone()))),
+        Validator::Id(table) => d("id", Some(("table", LiveValue::Str(table.clone())))),
+    }
+}
+
 /// Checks a call's arguments against the function's validator, before its
 /// handler runs: `INVALID_ARGUMENT` naming each violation's path. The
 /// tables an `id(table)` names are looked up in the call's transaction (a
@@ -167,5 +212,29 @@ mod tests {
         assert!(parse(&array).is_err_and(|e| e.contains("v.optional")));
         assert!(parse(&kind("date")).is_err_and(|e| e.contains("v.date")));
         assert!(parse(&LiveValue::Null).is_err());
+    }
+
+    #[test]
+    fn descriptors_round_trip() {
+        let validator = Validator::Object(BTreeMap::from([
+            (
+                "a".to_string(),
+                Validator::Optional(Box::new(Validator::Array(Box::new(Validator::Int64)))),
+            ),
+            (
+                "b".to_string(),
+                Validator::Union(vec![
+                    Validator::Literal(LiveValue::Str("x".into())),
+                    Validator::Id("t".into()),
+                    Validator::Null,
+                    Validator::Float64,
+                    Validator::Boolean,
+                    Validator::String,
+                    Validator::Bytes,
+                    Validator::Any,
+                ]),
+            ),
+        ]));
+        assert_eq!(parse(&descriptor(&validator)), Ok(validator));
     }
 }

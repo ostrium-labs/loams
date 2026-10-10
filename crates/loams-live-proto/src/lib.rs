@@ -2,7 +2,9 @@
 //! D121): values and stored documents (`value.proto`), the `LiveService`
 //! sync API (`live.proto`), and two files internal to the server: the
 //! commit journal (`journal.proto`) and the table and index catalog records
-//! (`catalog.proto`).
+//! (`catalog.proto`). `loams::live::worker::v1` is the internal protocol
+//! between the server and its sandboxed function workers
+//! (`proto/loams/live/worker/v1/worker.proto`, LV1 plan Ruling 5).
 //!
 //! Everything is generated at build time from `proto/loams/live/v1/` by
 //! `connectrpc-build`: buffa message types (with their borrowed views and
