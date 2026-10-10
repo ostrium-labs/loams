@@ -35,7 +35,9 @@ bindgen = "0.72"
 # The cheap reference-counted byte buffers `QueryStream::next_chunk` returns,
 # so streaming a result does not copy each block (FL2 Task 1). MIT.
 bytes = { version = "1", features = ["serde"] }
-clap = { version = "4", features = ["derive"] }
+# The `loams-fabric` command line (HS1 Task 7). 4.6.7 (2026-09-14) is the
+# version the engine workspace locks. MIT OR Apache-2.0.
+clap = { version = "4.6.7", features = ["derive"] }
 # The generated `loams.flow.v1` types and, from CN1 Task 3, the connect-rust
 # `FlowService` trait: connect-rust's code generator, as `loams-live-proto` does
 # for `loams.live.v1` (R1 plan Task 7). CN1 Task 0 measured 0.9.1 as the version
@@ -129,6 +131,9 @@ tar = "0.4"
 # runtime and macros for its tests, `time` for the cancellation test's deadline
 # and `sync` for the registry locks. MIT.
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+# The `loams-fabric house --config` file (HS1 Task 7): `[house]` and its tables.
+# 1.1.6 (2026-09-10) is the line the engine workspace locks. MIT OR Apache-2.0.
+toml = "1.1.6"
 thiserror = "2"
 tracing = "0.1"
 # The blocking HTTP client `build.rs` fetches the libchdb release with, when

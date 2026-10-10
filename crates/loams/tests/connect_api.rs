@@ -374,6 +374,8 @@ fn reasons_are_snake_case_and_unique() {
         "not_implemented",
         // This task's.
         "feature_not_in_variant",
+        // HS1 Task 7's: `loams.house.v1` with no House front configured.
+        "house_not_configured",
         // The code-to-class mapping every RPC error goes through (D611).
         "invalid_argument",
         "not_found",
@@ -383,5 +385,366 @@ fn reasons_are_snake_case_and_unique() {
             reasons.contains(promised),
             "{promised} is missing from {path:?}"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `loams.house.v1` through the main port (HS1 Task 7, design §49 §18.1, D778):
+// the engine proxies `/loams.house.v1.*` to `[house] endpoint` (a
+// `loams-fabric house` front), and lists the package only while the endpoint's
+// health check passes.
+// ---------------------------------------------------------------------------
+
+mod house {
+    use std::sync::Arc;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use axum::Router;
+    use axum::body::Body;
+    use axum::extract::{Request, State};
+    use axum::http::{HeaderMap, StatusCode};
+    use axum::response::{IntoResponse, Response};
+    use axum::routing::{any, get};
+    use bytes::Bytes;
+    use futures::StreamExt as _;
+    use tokio::sync::{mpsc, oneshot};
+
+    use super::*;
+
+    const EXECUTE: &str = "/loams.house.v1.HouseService/ExecuteQuery";
+
+    /// What the stand-in House front saw of the one proxied request.
+    #[derive(Debug, Default)]
+    struct Seen {
+        authorization: Option<String>,
+        path_and_query: String,
+        body: Vec<u8>,
+        hop_by_hop: Vec<String>,
+    }
+
+    /// A stand-in for `loams-fabric house`: `/ping` answers while `healthy`, and
+    /// the RPC path records what it got, tells the test when the first request
+    /// chunk arrived, sends one response chunk, and sends the second only when
+    /// the test says so.
+    struct Front {
+        healthy: AtomicBool,
+        seen: Mutex<Seen>,
+        first_chunk: Mutex<Option<oneshot::Sender<()>>>,
+        release: Mutex<Option<oneshot::Receiver<()>>>,
+    }
+
+    async fn ping(State(front): State<Arc<Front>>) -> Response {
+        if front.healthy.load(Ordering::SeqCst) {
+            (StatusCode::OK, "Ok.\n").into_response()
+        } else {
+            (StatusCode::SERVICE_UNAVAILABLE, "down\n").into_response()
+        }
+    }
+
+    async fn rpc(State(front): State<Arc<Front>>, request: Request) -> Response {
+        let headers: &HeaderMap = request.headers();
+        {
+            let mut seen = front.seen.lock().expect("seen");
+            seen.authorization = headers
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_owned);
+            seen.path_and_query = request
+                .uri()
+                .path_and_query()
+                .map(|p| p.as_str().to_owned())
+                .unwrap_or_default();
+            for name in ["connection", "keep-alive", "upgrade", "proxy-authorization"] {
+                if headers.contains_key(name) {
+                    seen.hop_by_hop.push(name.to_owned());
+                }
+            }
+        }
+        let mut body = request.into_body().into_data_stream();
+        while let Some(data) = body.next().await {
+            let data = data.expect("a request chunk");
+            front
+                .seen
+                .lock()
+                .expect("seen")
+                .body
+                .extend_from_slice(&data);
+            if let Some(tell) = front.first_chunk.lock().expect("first").take() {
+                let _ = tell.send(());
+            }
+        }
+        let release = front.release.lock().expect("release").take();
+        let (tx, rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(2);
+        tokio::spawn(async move {
+            let _ = tx.send(Ok(Bytes::from_static(b"first;"))).await;
+            if let Some(release) = release {
+                let _ = release.await;
+            }
+            let _ = tx.send(Ok(Bytes::from_static(b"second"))).await;
+        });
+        let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/connect+json")
+            .header("x-front", "house")
+            .body(Body::from_stream(stream))
+            .expect("a response")
+    }
+
+    /// Starts the stand-in front on an ephemeral loopback port.
+    async fn front(healthy: bool) -> (Arc<Front>, String) {
+        let front = Arc::new(Front {
+            healthy: AtomicBool::new(healthy),
+            seen: Mutex::new(Seen::default()),
+            first_chunk: Mutex::new(None),
+            release: Mutex::new(None),
+        });
+        let app = Router::new()
+            .route("/ping", get(ping))
+            .route("/{*rest}", any(rpc))
+            .with_state(front.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (front, format!("http://{addr}"))
+    }
+
+    async fn with_house(endpoint: Option<&str>) -> Running {
+        let endpoint = endpoint.map(|e| e.parse::<url::Url>().expect("a URL"));
+        Running::start_with(move |config| {
+            config.house.endpoint = endpoint;
+            config.house.health_interval = Duration::from_millis(50);
+        })
+        .await
+    }
+
+    /// `GetInstance`'s answer for `loams.house.v1`: (in `services[]` as
+    /// available, in `apiVersions`).
+    async fn listed(running: &Running) -> (bool, bool) {
+        let (status, info) = running
+            .connect("/loams.instance.v1.InstanceService/GetInstance", "{}")
+            .await;
+        assert_eq!(status, reqwest::StatusCode::OK, "{info}");
+        let entry = info["services"]
+            .as_array()
+            .and_then(|list| list.iter().find(|e| e["package"] == "loams.house.v1"))
+            .unwrap_or_else(|| panic!("loams.house.v1 is missing from {info}"))
+            .clone();
+        assert_eq!(entry["unstable"], true, "{entry}");
+        assert_eq!(
+            entry["services"],
+            serde_json::json!(["loams.house.v1.HouseService"]),
+            "{entry}"
+        );
+        let available = entry.get("available") == Some(&Value::Bool(true));
+        let versioned = info["apiVersions"]
+            .as_array()
+            .is_some_and(|list| list.iter().any(|p| p == "loams.house.v1"));
+        (available, versioned)
+    }
+
+    async fn becomes(running: &Running, want: (bool, bool)) -> bool {
+        for _ in 0..100 {
+            if listed(running).await == want {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        false
+    }
+
+    /// The `ErrorInfo` of a Connect JSON error.
+    fn reason_of(error: &Value) -> ErrorInfo {
+        let detail = error["details"]
+            .as_array()
+            .and_then(|d| d.first())
+            .unwrap_or_else(|| panic!("no ErrorInfo detail in {error}"));
+        assert_eq!(detail["type"], "loams.errors.v1.ErrorInfo", "{error}");
+        let bytes = STANDARD_NO_PAD
+            .decode(detail["value"].as_str().expect("an encoded ErrorInfo"))
+            .expect("unpadded base64");
+        ErrorInfo::decode_from_slice(&bytes).expect("an ErrorInfo")
+    }
+
+    /// §49 §18.1: the main port forwards `/loams.house.v1.*` with the caller's
+    /// `Authorization`, streaming the request to the front as it arrives and the
+    /// answer back as it is produced (a server-streaming `ExecuteQuery` must not
+    /// be buffered whole).
+    #[tokio::test]
+    async fn house_proxy_streams_and_preserves_auth() {
+        let (front, endpoint) = front(true).await;
+        let (first_tx, first_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        *front.first_chunk.lock().expect("first") = Some(first_tx);
+        *front.release.lock().expect("release") = Some(release_rx);
+        let running = with_house(Some(&endpoint)).await;
+
+        let (body_tx, body_rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(2);
+        let call = reqwest::Client::new()
+            .post(format!("{}{EXECUTE}?trace=1", running.base))
+            .header("content-type", "application/connect+json")
+            .header("authorization", "Bearer lk_test.secret-token")
+            .header("connection", "keep-alive")
+            .body(reqwest::Body::wrap_stream(
+                tokio_stream::wrappers::ReceiverStream::new(body_rx),
+            ))
+            .send();
+        let call = tokio::spawn(call);
+
+        // Request streaming: the front sees the first chunk while the client has
+        // not finished its body.
+        body_tx
+            .send(Ok(Bytes::from_static(b"{\"sql\":")))
+            .await
+            .expect("send");
+        tokio::time::timeout(Duration::from_secs(10), first_rx)
+            .await
+            .expect("the first request chunk reached the front before the body ended")
+            .expect("told");
+        body_tx
+            .send(Ok(Bytes::from_static(b"\"SELECT 1\"}")))
+            .await
+            .expect("send");
+        drop(body_tx);
+
+        let mut response = call.await.expect("joined").expect("the proxied call");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(response.headers()["x-front"], "house");
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/connect+json"
+        );
+        // Response streaming: the first chunk arrives while the front still
+        // holds the second.
+        let first = tokio::time::timeout(Duration::from_secs(10), response.chunk())
+            .await
+            .expect("the first response chunk arrived before the front finished")
+            .expect("a chunk")
+            .expect("not the end");
+        assert_eq!(&first[..], b"first;");
+        release_tx.send(()).expect("release");
+        let mut rest = Vec::new();
+        while let Some(chunk) = response.chunk().await.expect("a chunk") {
+            rest.extend_from_slice(&chunk);
+        }
+        assert_eq!(rest, b"second");
+
+        let seen = std::mem::take(&mut *front.seen.lock().expect("seen"));
+        assert_eq!(
+            seen.authorization.as_deref(),
+            Some("Bearer lk_test.secret-token"),
+            "the caller's Authorization goes through unchanged"
+        );
+        assert_eq!(seen.path_and_query, format!("{EXECUTE}?trace=1"));
+        assert_eq!(seen.body, b"{\"sql\":\"SELECT 1\"}");
+        assert!(
+            seen.hop_by_hop.is_empty(),
+            "hop-by-hop headers stay on their hop: {:?}",
+            seen.hop_by_hop
+        );
+        running.server.shutdown().await.expect("shutdown");
+    }
+
+    /// §49 §18.1: `GetInstance` lists `loams.house.v1` as available (and in
+    /// `apiVersions`) only while an endpoint is configured and its health check
+    /// passes; it is always in `services[]`, `unstable: true` until GA.
+    #[tokio::test]
+    async fn catalogue_lists_house_only_when_healthy() {
+        let running = with_house(None).await;
+        assert_eq!(listed(&running).await, (false, false), "not configured");
+        running.server.shutdown().await.expect("shutdown");
+
+        let (front, endpoint) = front(false).await;
+        let running = with_house(Some(&endpoint)).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(
+            listed(&running).await,
+            (false, false),
+            "configured, unhealthy"
+        );
+        front.healthy.store(true, Ordering::SeqCst);
+        assert!(becomes(&running, (true, true)).await, "healthy: listed");
+        front.healthy.store(false, Ordering::SeqCst);
+        assert!(becomes(&running, (false, false)).await, "unhealthy again");
+        running.server.shutdown().await.expect("shutdown");
+
+        // An endpoint nothing listens on is never listed.
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = closed.local_addr().expect("addr");
+        drop(closed);
+        let running = with_house(Some(&format!("http://{addr}"))).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(listed(&running).await, (false, false), "unreachable");
+        // And a call to it is `unavailable`, not a hang or a bare 502.
+        let (status, error) = running.connect(EXECUTE, "{}").await;
+        assert_eq!(status, reqwest::StatusCode::SERVICE_UNAVAILABLE, "{error}");
+        assert_eq!(error["code"], "unavailable", "{error}");
+        assert_eq!(reason_of(&error).reason, "unavailable");
+        running.server.shutdown().await.expect("shutdown");
+    }
+
+    /// Without `[house] endpoint`, every `loams.house.v1` RPC answers
+    /// `unimplemented` with the reason `house_not_configured`, in the shape of
+    /// the protocol the caller speaks: a Connect unary error, a Connect
+    /// end-of-stream message, or gRPC-Web trailers.
+    #[tokio::test]
+    async fn house_absent_answers_feature_not_configured() {
+        let running = with_house(None).await;
+
+        let (status, error) = running.connect(EXECUTE, "{}").await;
+        assert_eq!(status, reqwest::StatusCode::NOT_IMPLEMENTED, "{error}");
+        assert_eq!(error["code"], "unimplemented", "{error}");
+        assert_eq!(reason_of(&error).reason, "house_not_configured");
+        let (_, other) = running
+            .connect("/loams.house.v1.HouseService/ListTables", "{}")
+            .await;
+        assert_eq!(reason_of(&other).reason, "house_not_configured");
+
+        // Connect streaming: HTTP 200 and one end-of-stream envelope.
+        let response = reqwest::Client::new()
+            .post(format!("{}{EXECUTE}", running.base))
+            .header("content-type", "application/connect+json")
+            .body(vec![0u8, 0, 0, 0, 2, b'{', b'}'])
+            .send()
+            .await
+            .expect("a streaming call");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/connect+json"
+        );
+        let body = response.bytes().await.expect("body");
+        let envelopes = frames(&body);
+        assert_eq!(envelopes.len(), 1, "{body:?}");
+        assert_eq!(envelopes[0].0, 0b10, "the end-of-stream flag");
+        let end: Value = serde_json::from_slice(envelopes[0].1).expect("JSON");
+        assert_eq!(end["error"]["code"], "unimplemented", "{end}");
+        assert_eq!(reason_of(&end["error"]).reason, "house_not_configured");
+
+        // gRPC-Web: HTTP 200, trailers in a 0x80 frame, status 12.
+        let response = reqwest::Client::new()
+            .post(format!("{}{EXECUTE}", running.base))
+            .header("content-type", "application/grpc-web+proto")
+            .body(vec![0u8, 0, 0, 0, 0])
+            .send()
+            .await
+            .expect("a gRPC-Web call");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let body = response.bytes().await.expect("body");
+        let web = frames(&body);
+        assert_eq!(web.len(), 1, "{body:?}");
+        assert_eq!(web[0].0, 0x80, "a trailers frame");
+        let trailers = String::from_utf8_lossy(web[0].1).to_lowercase();
+        assert!(trailers.contains("grpc-status: 12\r\n"), "{trailers}");
+        assert!(trailers.contains("grpc-status-details-bin: "), "{trailers}");
+
+        running.server.shutdown().await.expect("shutdown");
     }
 }

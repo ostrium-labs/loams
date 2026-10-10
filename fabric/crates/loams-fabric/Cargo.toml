@@ -1,0 +1,37 @@
+[package]
+name = "loams-fabric"
+description = "The Loams Fabric binary: `loams-fabric house` runs the Loams House front (HS1 Task 7, design §49 §3). The roles of FL1 (`ingest`, `flow`) join it when FL1 lands. Links no libchdb (D761) unless built with `inproc-worker`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+# The rpath to `libchdb.so`, only with `inproc-worker`; see the file.
+build = "build.rs"
+publish = false
+
+[[bin]]
+name = "loams-fabric"
+path = "src/main.rs"
+
+[features]
+# `--workers=inproc` (§49 §17): chDB in the front's own process, for single-node
+# development and the desktop. It brings libchdb into this binary, which D761
+# forbids in release images, so it is off by default; `no_libchdb_in_front`
+# checks the default graph.
+inproc-worker = ["loams-house/inproc-worker", "dep:loams-chdb-sys"]
+
+[dependencies]
+clap.workspace = true
+loams-house = { path = "../loams-house" }
+# `--single-node`'s generated local key.
+uuid.workspace = true
+# The front runs on a multi-threaded runtime and stops on SIGINT or SIGTERM.
+tokio = { workspace = true, features = ["rt-multi-thread", "signal", "macros"] }
+
+# Only with `inproc-worker`: the `links = "chdb"` package whose
+# `DEP_CHDB_LIB_DIR` this package's `build.rs` turns into an rpath.
+loams-chdb-sys = { path = "../loams-chdb-sys", optional = true }
+
+[lints]
+workspace = true

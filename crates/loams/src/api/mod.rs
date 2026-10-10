@@ -24,6 +24,7 @@ mod errors;
 pub mod events;
 mod graph;
 pub mod hot;
+pub mod house_proxy;
 pub mod internal;
 mod query;
 mod sql;
@@ -130,6 +131,10 @@ pub struct AppState {
     /// served (`--no-graph`, or a cluster node before GR1 Task 12).
     #[cfg(feature = "graph")]
     pub graph: Option<std::sync::Arc<loams_graph::service::admin::GraphAdmin>>,
+    /// The `loams.house.v1` proxy to a `loams-fabric house` front (HS1 Task 7,
+    /// design §49 §18.1); `None` when no `[house] endpoint` is configured, and
+    /// then the package answers `house_not_configured`.
+    pub house: Option<Arc<house_proxy::HouseProxy>>,
 }
 
 /// What a query node needs to run forwarded reads (plan M1.3 Task 11).
@@ -186,8 +191,9 @@ pub fn router(state: AppState) -> Router {
     let hot_default = state.collections.config().hot_default;
     let connect = connect::routes(&state, hot_default);
     let hot_layer = HotLayer::new(hot_default);
+    let house = state.house.clone();
     let collection = "/v1/namespaces/{ns}/collections/{c}";
-    Router::new()
+    let routes = Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/v1/namespaces", post(create_namespace))
@@ -261,7 +267,10 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
         .layer(hot_layer)
         .merge(internal)
-        .merge(connect)
+        .merge(connect);
+    // Outermost: `/loams.house.v1.*` goes to the House front before any route,
+    // fallback, body limit or hot layer sees it (`house_proxy`).
+    house_proxy::layer(routes, house)
 }
 
 /// The routes of a node without the `gateway` role (plan M1.3 Task 11):
