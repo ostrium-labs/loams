@@ -23,6 +23,13 @@ allow = [
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"
+# The desktop agent daemon (design §50 §4.1, DD1 plan T0-4, T0-10a): the code
+# moved from the zeron fork into crates/loams-agentd* is MIT, except
+# loams-agentd-link (Apache-2.0, Loams-authored). Its new dependencies need no
+# entry beyond the list above: CC0-1.0 (notify), MPL-2.0 (nucleo-matcher) and
+# MPL-2.0+ (im, bitmaps and sized-chunks, through loro; the `+` is satisfied
+# by MPL-2.0, so no [[licenses.clarify]] is needed). `cargo deny check
+# licenses` passed on 2026-10-10 with no change here.
 
 # stringmetrics (via httpmock, dev tooling in loams-console-mock) states its
 # license only as a LICENSE file: Apache-2.0.

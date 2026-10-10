@@ -42,6 +42,7 @@ jobs:
       live-embedded: ${{ steps.filter.outputs.live-embedded }}
       durable: ${{ steps.filter.outputs.durable }}
       deny: ${{ steps.filter.outputs.deny }}
+      agentd: ${{ steps.filter.outputs.agentd }}
       graph: ${{ steps.filter.outputs.graph }}
       sqlgate: ${{ steps.filter.outputs.sqlgate }}
       protos: ${{ steps.filter.outputs.protos }}
@@ -172,6 +173,13 @@ jobs:
               - *toolchain
               - "crates/*/Cargo.toml"
               - "deny.toml"
+            # The desktop agent daemon (design §50, DD1 Task 4): the headless
+            # guard (D782) and the loams-agentd* clippy and test suites.
+            agentd:
+              - *toolchain
+              - "crates/loams-agentd*/**"
+              - "scripts/ci/agentd-*"
+              - ".config/nextest.toml"
             # Loams Graph (GR1, design §48): the engine crate, its proto, the
             # licence gate input it is checked against, and loams's manifest,
             # whose default build must not link Grafeo.
@@ -427,6 +435,49 @@ jobs:
           node-version: 22
       - name: workspace tests
         run: cargo nextest run --workspace --locked --partition hash:${{ matrix.partition }}/2
+
+  # The desktop agent daemon (design §50, DD1 Task 4). The headless guard
+  # (D782) fails if a GUI, webview or audio crate enters loams-agentd's tree on
+  # any target; its self-test runs first so a broken filter cannot pass. Then
+  # clippy and each loams-agentd* crate's own tests, one crate at a time, so
+  # every crate builds with only its own features (the workspace `check` and
+  # `rust-tests` jobs unify features across the whole workspace).
+  agentd:
+    name: loams-agentd (headless guard, clippy, tests)
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.agentd == 'true') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_DEV_HEAVY || 'depot-ubuntu-24.04-4') }}
+    # PTY, shell and harness-fixture tests; a hung one fails the job.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # The loams-agentd-harness tests run `#!/usr/bin/env node` and
+      # `#!/usr/bin/env python3` fixtures (harness stand-ins).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: headless guard self-test
+        run: bash scripts/ci/agentd-deps.test.sh
+      - name: headless guard (D782)
+        run: bash scripts/ci/agentd-deps.sh
+      - name: clippy
+        run: cargo clippy -p 'loams-agentd*' --all-targets --locked -- -D warnings
+      - name: tests, crate by crate
+        run: |
+          set -euo pipefail
+          crates=$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[].name | select(startswith("loams-agentd"))' | sort)
+          test -n "$crates" || { echo "no loams-agentd* crates found"; exit 1; }
+          failed=()
+          for crate in $crates; do
+            echo "::group::cargo test -p $crate"
+            cargo test -p "$crate" --locked || failed+=("$crate")
+            echo "::endgroup::"
+          done
+          if ((${#failed[@]})); then
+            echo "tests failed in: ${failed[*]}"; exit 1
+          fi
 
   feature-tests:
     name: Rust feature tests
@@ -1765,6 +1816,7 @@ jobs:
       - docs
       - check
       - rust-tests
+      - agentd
       - feature-tests
       - crash-gate
       - cluster

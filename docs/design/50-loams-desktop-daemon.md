@@ -170,6 +170,8 @@ cargo tree -p loams-agentd -e normal,build --target all --prefix none --format '
 
 `--target all` matters: macOS and Windows dependencies are otherwise invisible on a Linux runner.
 
+As built (DD1 Task 4), the script is stricter than this sketch. The sketch exits 0 when `cargo tree` itself fails, because the empty output matches nothing; the script fails instead. It names each offending package and prints the path that pulls it in (`cargo tree -i`). Its `--filter` mode reads `cargo tree` lines from stdin, and `scripts/ci/agentd-deps.test.sh` uses it as a negative self-test.
+
 ### 4.4 Where the code lives (D783)
 
 - **Moved, not forked twice.** The surviving crates move into the root workspace (`members = ["crates/*"]` picks them up). The root workspace already pins the same `rusqlite`, `libsqlite3-sys`, `connectrpc`, `reqwest` 0.12 and `tokio-tungstenite` 0.24 versions as the fork's lockfile, so the move adds `loro`, `keyring`, `portable-pty` and the harness dependencies, not a second SQLite.
