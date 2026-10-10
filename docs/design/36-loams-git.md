@@ -1,6 +1,8 @@
 # 36 — Loams Git: a WAL on the Bucket, Smart HTTP, Agent Scopes and a Build Cache
 
-Status: **Approved** (owner defaults, 2026-10-02: "do suggested for all") · 2026-10-01. Source: §14 "Loams Git (hosting, WAL, build cache)" and the related open questions in §15 of the owner's draft "Loams Serverless Runtime — Consolidated Plan" (2026-09-30, `chatdump.md` lines 868–946). The owner asked on 2026-10-01 to fold that draft into the design docs, the decision log and the plans. This document **extends §15 §3 (repos on the bucket)**; it does not fork that design. Where it changes an approved part of §15, the change is marked with its D-number and listed in §15 "Conflicts". The `Fs` trait is §17 below. Running Loams Git on Cloudflare (Workers, Durable Objects, Containers) is a commercial Cloudflare target (`loams-platform`): since the owner's ruling of 2026-10-02 ("move Cloudflare, OpenRTB etc. commercial to private repos"; §38 D440 on PR #182) the former §35 lives there (private). This repository's Git core stays portable to it but does not depend on it.
+> **Revised 2026-10-10: monorepo mode (§19).** The owner directed on 2026-10-10: *"loam git should be similar to google monorepo, download only touched file, spawn million of worktrees on s3, it should wrap git command and take over"*. §19 designs it: server-side workspaces on the bucket (CitC-style overlays with a snapshot per save), a lazy FUSE client (`loams-vfs`), and a `git` shim that takes over porcelain and falls through to real git. The WAL core (§4–§5, D388–D392) and the build cache and mirror (§8–§9) stand. **Superseded or amended by §19:** §6.4 and D397 (amended by D826–D829), §13's phases and D411's schedule (D825), §2.2's LFS non-goal (D837). The owner added the same day **secrets as code** (§19.13): `env/` files committed like normal files whose values never become git objects. New decisions are **proposed D825–D847** and open questions **Q750–Q760**; they are not yet in the decision log (Q735–Q747 are reserved by the CL1 plan, so this document starts at Q750; numbers are confirmed when the log is updated). The plan is [GT1 (2026-10-10, rewritten for monorepo mode)](../plans/2026-10-10-gt1-loams-git.md).
+
+Status: **Approved** (owner defaults, 2026-10-02: "do suggested for all") · 2026-10-01; §19 **Proposed** (2026-10-10). Source: §14 "Loams Git (hosting, WAL, build cache)" and the related open questions in §15 of the owner's draft "Loams Serverless Runtime — Consolidated Plan" (2026-09-30, `chatdump.md` lines 868–946). The owner asked on 2026-10-01 to fold that draft into the design docs, the decision log and the plans. This document **extends §15 §3 (repos on the bucket)**; it does not fork that design. Where it changes an approved part of §15, the change is marked with its D-number and listed in §15 "Conflicts". The `Fs` trait is §17 below. Running Loams Git on Cloudflare (Workers, Durable Objects, Containers) is a commercial Cloudflare target (`loams-platform`): since the owner's ruling of 2026-10-02 ("move Cloudflare, OpenRTB etc. commercial to private repos"; §38 D440 on PR #182) the former §35 lives there (private). This repository's Git core stays portable to it but does not depend on it.
 
 Decisions **D388–D399**; open questions **Q384–Q395** (the range D380–D399 / Q380–Q399 was shared with the former §35; D381 and D382 stay here, in §17, and D380, D383–D387 moved to `loams-platform`, private). Plans: [GT1](../plans/2026-10-01-gt1-wal-git-core.md) (the WAL git core and `git-remote-loams`), [GT2](../plans/2026-10-01-gt2-smart-http.md) (Smart HTTP for stock git) and [GT3](../plans/2026-10-01-gt3-build-cache-and-mirror.md) (the sccache backend and the crates mirror). GT4 and GT5 are not yet planned.
 
@@ -21,7 +23,7 @@ Markers: **(source)** means read in the upstream repository or documentation on 
 | D394 | **Smart HTTP.** `git-upload-pack` speaks **protocol v2** (`ls-refs`, `fetch` with `filter`, `shallow` and `wait-for-done`, `object-info`); a v0/v1 upload-pack is added in GT2 only if a client in W1's matrix lacks v2. `git-receive-pack` speaks v0/v1, since protocol v2 has no push (`report-status`, `report-status-v2`, `atomic`, `delete-refs`, `side-band-64k`, `ofs-delta`, `push-options`, `quiet`). The server loop is Loams’, on gitoxide primitives. **Stock `git` runs only as an unmodified separate process**: the test oracle, the repack worker (D396) and, on the client, the pack steps of `git-remote-loams`'s pushes (D395). Answers §15 Q1 and the draft's last open question | Approved (owner defaults, 2026-10-02) |
 | D395 | **`git-remote-loams`.** In GT1 it is a serverless helper that reads and writes the bucket directly through the core (capabilities `fetch`, `push`, `option`; `loams::<store-url>` addresses). In GT2 it adds `stateless-connect` to tunnel protocol v2 to an in-process upload-pack, which is what partial clone and lazy fetch need, and `loams://<host>/<ns>/<repo>` addresses that reach a Loams server | Approved (owner defaults, 2026-10-02) |
 | D396 | **Compaction is never on the push path.** Checkpoints every 256 segments or 8 MiB of replay; geometric repack with bitmaps and a multi-pack index by **stock `git repack`** on a worker's local mirror (gitoxide cannot yet write deltas or bitmaps); pack-set changes are committed through the WAL like pushes; one compactor per repository, by lease; GC by fork-family reachability after the §03 §7 grace period | Approved (owner defaults, 2026-10-02) |
-| D397 | **`loams-vfs` is §15 §5.1's `/workspace` lower layer** (GT4). A scope is a list of cone-mode sparse-checkout paths carried in the agent's vended token; blobs are fetched on first read; **write admission** refuses a commit that changes paths outside the scope; a commit is one WAL record whatever the folders it touches. **No per-scope WAL partitions** until GT4 measures that the per-repository sequencer is the bottleneck (Q391) | Approved (owner defaults, 2026-10-02) |
+| D397 | *(Amended (proposed) by D826–D829, §19: `loams-vfs` becomes Loams Git's primary client and workspaces become server-side records; scopes and write admission stand.)* **`loams-vfs` is §15 §5.1's `/workspace` lower layer** (GT4). A scope is a list of cone-mode sparse-checkout paths carried in the agent's vended token; blobs are fetched on first read; **write admission** refuses a commit that changes paths outside the scope; a commit is one WAL record whatever the folders it touches. **No per-scope WAL partitions** until GT4 measures that the per-repository sequencer is the bottleneck (Q391) | Approved (owner defaults, 2026-10-02) |
 | D398 | **Build cache: sccache** (Apache-2.0, v0.18.0) is the primary cache. Loams serves it two ways: **direct** (sccache's S3 backend against R2, RustFS or S3 with vended prefix-scoped credentials; no Loams code on the path) and **through the gateway** (sccache's WebDAV backend against a Loams endpoint that meters hits and misses, refreshes entries on hit for approximate LRU and enforces trust). **Trust model:** trusted branches write; forks, pull requests and agent sandboxes read only, with an optional private scratch prefix. BuildCache (zlib) only if a toolchain sccache cannot handle needs it | Approved (owner defaults, 2026-10-02) |
 | D399 | **Package mirror: a crates.io sparse-index read-through** in the `gateway` role (§15 §6): index files cached with ETag revalidation, `.crate` files content-addressed by their SHA-256 `cksum` in the public-packages namespace, the §15 §6 policy (allowlists, quarantine, audit records). The index lives in the object store, **not** in a Durable Object or D1 | Approved (owner defaults, 2026-10-02) |
 
@@ -43,7 +45,8 @@ Markers: **(source)** means read in the upstream repository or documentation on 
 - A distributed POSIX filesystem or concurrent multi-writer workspaces (§15 §14).
 - Gossip, any-node writes and NVMe replica fleets in GT1–GT3. They are GT5, after measurement (D391).
 - SHA-256 repositories in GT1–GT2. The object format is a field from the first format version (Q393).
-- Git LFS beyond §15 §3.2's plan (batch API on the namespace CAS, W1).
+- Git LFS beyond §15 §3.2's plan (batch API on the namespace CAS, W1). *(Revised by D837, §19.12: lazy fetch makes LFS unnecessary for Loams workspaces; an LFS-compatible read path for stock clients comes after GA.)*
+- *(§19 note: "a distributed POSIX filesystem or concurrent multi-writer workspaces" stays a non-goal. A §19 workspace is a single-writer virtual filesystem over one repository (D827), not a shared POSIX filesystem.)*
 
 ## 3. Reference systems
 
@@ -415,6 +418,8 @@ A pack older than the GC grace period (1 h, §03 §7) at commit is refused (`Sta
 
 ### 6.4 `loams-vfs` and per-folder scopes (D397, GT4, not yet planned)
 
+> **Superseded (proposed) by §19 (D826–D834).** `loams-vfs` is no longer a later phase over an agent's local overlay: it is the primary client, and the workspace (base, overlay, snapshots) is a server-side record that any machine can mount. Scopes (cones carried in the token, `EACCES` outside them, `OutOfScope` write admission on the server) and "one WAL per repository" carry over unchanged (§19.11). The text below is kept for the record.
+
 `loams-vfs` is the lazy lower layer of §15 §5.1's `/workspace`, not a second filesystem design:
 
 - **Mount.** A FUSE (or virtiofs, §15 Q3) filesystem over a `Materializer`: the tree of the agent's commit is listed at mount, blobs are fetched on first read or write, and writes go to the local upper layer (overlay).
@@ -510,6 +515,8 @@ R2 prices read 2026-10-01: storage $0.015/GB-month, Class A $4.50 per million, C
 
 ## 13. Phases
 
+> **Replaced (proposed) by §19.12.** The 2026-10-01 GT1–GT3 plans were superseded by the 2026-10-10 GT1 production plan, which is rewritten for monorepo mode; GT4 is folded into it, and track GT starts now (D825, superseding D411). GT5 is unchanged. The table below is kept for the record.
+
 | Phase | Scope | Exit gate | Plan |
 |---|---|---|---|
 | **GT1** | `loams-git`: formats, `BlobStore`, `WalStore`, `Odb`, `BucketRefLog` with group commit and idempotency, checkpoints, forks; `git-remote-loams` (serverless `fetch`/`push`) | Stock git clones, fetches and pushes through `loams::` on RustFS and in-memory; 8 concurrent pushers never lose an acknowledged push; the linearizability checker passes RefLog histories under store faults; pushes/s and push latency measured on RustFS, R2 and S3 | [GT1](../plans/2026-10-01-gt1-wal-git-core.md) |
@@ -555,6 +562,8 @@ GT1–GT2 are §15 W1's repository scope; GT3 is W2's sccache wiring and the cra
 | The draft §6: event types `io.loams.<domain>.<name>.v1` | `io.loams.dev.git.*.v1` | The owner's ruling of 2026-10-01: the prefix is `io.loams.dev.<domain>.<name>.v1` |
 
 ## 16. Open questions
+
+> **2026-10-10.** Q384–Q395 stay resolved, except that Q395's answer (keep §15's slot, D411) is reversed by the owner's direction of 2026-10-10 (D825). Monorepo mode's open questions are §19.15 (Q750–Q756).
 
 | # | Question | Owner | Needed by |
 |---|---|---|---|
@@ -650,3 +659,478 @@ Read on 2026-10-01 unless noted.
 - Object stores: AWS "Amazon S3 now supports conditional writes" (2024-08-20) and "… functionality for conditional writes" (2024-11-25); https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html; https://developers.cloudflare.com/r2/api/s3/api/ (`If-Match`, `If-None-Match` on PutObject; updated 2026-07-31), https://developers.cloudflare.com/r2/platform/limits/ ("Maximum concurrent writes to the same object name (key): 1 per second"; updated 2026-06-08), https://developers.cloudflare.com/r2/reference/consistency (strong read-after-write and listing), https://developers.cloudflare.com/r2/pricing/ (updated 2026-10-01), Cloudflare API `POST /accounts/{account_id}/r2/temp-access-credentials` (`permission`, `prefixes`, `objects`, `ttlSeconds` ≤ 604800); https://docs.cloud.google.com/storage/docs/request-preconditions (updated 2026-09-30); Microsoft "Specifying conditional headers for Blob service operations" (updated 2026-01-20); RustFS https://github.com/rustfs/rustfs (Apache-2.0; 1.0.1-preview.14, 2026-09-30; PRs #6421, #6798, #6801).
 - sccache: https://github.com/mozilla/sccache (Apache-2.0; v0.18.0, 2026-09-14; README limits; docs/MultiLevel.md; docs/Configuration.md, docs/S3.md, docs/Webdav.md). mozilla-actions/sccache-action (Apache-2.0, v0.0.11). BuildCache: https://gitlab.com/bits-n-bites/buildcache (zlib; v0.33.1, 2026-09-23).
 - Cargo: https://doc.rust-lang.org/cargo/reference/registry-index.html (sparse layout, `config.json` `dl` markers including `{sha256-checksum}`, `auth-required`, `cksum`). kellnr (Apache-2.0, v6.9.0, 2026-09-23), panamax (Apache-2.0, v1.0.14, 2024-06-06), ktra (Apache-2.0).
+
+---
+
+## 19. Monorepo mode: virtual workspaces on the bucket (revision of 2026-10-10)
+
+Status: **Proposed** (2026-10-10). Decisions **D825–D847** and open questions **Q750–Q760** are proposed numbers above the decision log's highest (D824; Q735–Q747 are reserved by CL1). They go into the log when the owner confirms them. Plan: [GT1, rewritten 2026-10-10](../plans/2026-10-10-gt1-loams-git.md).
+
+### 19.1 The direction and what it changes
+
+The owner, 2026-10-10: *"loam git should be similar to google monorepo, download only touched file, spawn million of worktrees on s3, it should wrap git command and take over"*. Later the same day: *secrets as code* in an `env/` folder (§19.13).
+
+Read as a design (Piper and CitC on object storage):
+
+1. **One server-side repository per monorepo, on the bucket.** §4's WAL core is that store and does not change: create-only segments, one-object packs, a per-repository sequencer, O(1) forks.
+2. **Workspaces are server-side records**, not clones. A workspace is a base commit plus an overlay of changed paths, saved as a create-only chain of snapshots under the repository's prefix. Creating one costs one PUT, so millions are cheap, and any machine or agent can mount any workspace.
+3. **The client is a virtual filesystem.** It shows the whole tree, fetches a file's content on first read, caches it on the host, and uploads only what changed. It never clones.
+4. **`git` is taken over.** A shim installed as `git` runs the common porcelain natively against the workspace and the server. Anything it does not support falls through to real git with a one-line notice. Outside a Loams mount it runs real git untouched.
+5. **Stock git still works.** Smart HTTP, partial clone and sparse checkout (§6) remain the interop path. Workspaces can be fetched as hidden refs.
+6. **It is built for agent fleets.** Each agent gets its own workspace, cheaply. Workspaces tie into `loams-agentd` (§50, DD1) and the software factory (§39 D-SF-18).
+
+| # | Decision (proposed) | § |
+|---|---|---|
+| D825 | **Monorepo mode is Loams Git's product direction.** §4–§5 (D388–D392) stay as the repository store. §6.4 and phase GT4 are replaced by §19 and folded into the GT1 plan. **Track GT starts now**, superseding D411: the owner's direction reverses Q395's answer | §19.1, §19.14 |
+| D826 | **Workspaces are server-side records.** Each workspace is a create-only chain `ws/<ws_id>/snap/<n:020>.lws` under the repository. A snapshot is complete: base, HEAD, local refs, index tree, worktree tree, snapshot commit, workspace packs and a changed-path hint. Creating a workspace is one PUT (two with a name). A save commits at the create-only PUT of snapshot `n+1`, which is D389's pattern | §19.4 |
+| D827 | **One writer per workspace, by fencing, with no lease service.** The writer is the mount that wrote the latest snapshot. Another mount becomes the writer only by writing a takeover snapshot: explicitly (`--take`), or automatically once the last snapshot is older than `WRITER_IDLE` (10 min). A fenced former writer's unsaved state goes to a salvage record and is never merged silently. Read-only mounts are unlimited | §19.4.3 |
+| D828 | **`loams-vfs`, the lazy client.** One per-user daemon, `loams-vfsd`, serves FUSE on Linux (`fuser`, MIT; FUSE passthrough for opened local files). It has one mount root with workspaces as subdirectories (CitC's layout), and also accepts per-workspace mounts. It fetches trees per directory and blobs per file, lazily. The content-addressed cache is shared by every workspace on a host. A local overlay and change journal make status O(changed). Ignored build directories are redirected to local disk. macOS (NFSv3 loopback first, then FSKit) and Windows (ProjFS) come after GA | §19.6 |
+| D829 | **Saves upload only touched files.** The save path debounces, hashes, checks which objects the server already has, writes one workspace pack (`.lpk`) per save with the new blobs, trees and commits, then PUTs the snapshot. Ignored paths stay local. `env/` values are sealed first (D839) | §19.5.3 |
+| D830 | **`ObjectService` and derived data.** It serves batched object reads (range reads, coalesced per pack), tree reads with aux data (entry sizes), so `stat` and `ls -l` never fetch blobs, immutable per-object GETs, and has-checks. Derived data (tree aux, commit graph with changed-path Bloom filters, blame) are immutable bucket objects keyed by object id under `derived/` | §19.5 |
+| D831 | **A push from a workspace moves no data from the client.** `PushWorkspace` assembles, on the server, the closure the repository lacks from the workspace packs into one `.lpk`. It then commits a `RefTxn` through the repository's sequencer (§4.4). Commits are real git commits (SHA-1), so object ids match on every interop path | §19.7.5 |
+| D832 | **The `git` shim.** The binary `loams-git` is installed as `git` ahead of the system git. Outside a Loams workspace it `exec`s real git. Inside one, it runs natively only when the subcommand **and every flag** are on its allowlist. Otherwise it falls through to real git over a projected `.git` (partial clone with a `loams` promisor remote, sparse index, fsmonitor answered from the vfsd journal), with a one-line notice. `git clone` of a Loams URL and `git worktree add` create workspaces | §19.7 |
+| D833 | **History runs on the server.** The `Log`, `Blame`, `Grep` and `DiffStat` RPCs run over derived data. The shim formats their results exactly as git does and merges in the workspace's local changes | §19.8 |
+| D834 | **The workspace API.** `WorkspaceService` and `ObjectService` join `loams.repos.v1`. They cover create, get, list, fork, delete, snapshots, `ReadFiles`, `ApplyEdits` (agents that do not mount), `Diff`, `Rebase`, `Push` and `Watch` | §19.10 |
+| D835 | **Snapshot commits make in-progress work visible to stock git.** Each snapshot records a deterministic commit (tree = worktree tree, parent = HEAD, a fixed author `Loams Snapshot <snapshot@loams.invalid>`, time = the snapshot time). It is advertised as the hidden ref `refs/loams/ws/<ws_id>`: shown only to an `ls-refs` with that prefix, and allowed as a want | §19.9 |
+| D836 | **Retention and GC.** Every snapshot is kept for 7 days, then hourly snapshots to 30 days, then one a day while the workspace lives. Named snapshots are kept. Deleted workspaces are purged after `GC_GRACE`. A workspace pack is collected once no retained snapshot names it. Workspace packs are compacted every 64 | §19.4.5 |
+| D837 | **GA scope.** Linux FUSE. Local-first (a direct bucket backend) and loopback serving before MT1, behind `GitAuthorizer`; networked serving after MT1. Webhooks after GA. LFS is unnecessary, because blobs are already lazy, so an LFS-compatible read path for stock clients comes after GA. macOS, Windows and Kubernetes packaging after GA | §19.12 |
+| D838 | **Licences.** No code is copied from or linked to Sapling, EdenFS or Mononoke (GPL-2.0), or git (GPL-2.0; it runs as an unmodified process, D394). Only ideas are taken, from public documentation and papers. VFS for Git (MIT, C#) is a reference, not a port. The new dependencies are permissive: `fuser` (MIT), gitoxide (MIT OR Apache-2.0), `grep-*` and `ignore` (MIT OR Unlicense), and rules derived from gitleaks (MIT, with attribution) | §19.2 |
+| D839 | **Secrets as code.** Values in `env/` files are never stored as git objects. The repository stores the **sealed env format**: per key a reference and a keyed fingerprint, never plaintext and never ciphertext. Sealing happens at the first point plaintext would leave the user's machine (vfsd save, shim, the git clean filter, `ApplyEdits`), and the server refuses an unsealed `env/` file | §19.13.2 |
+| D840 | **The vault.** `loams-vault` encrypts each version with its own data key, wrapped by the namespace's KMS key (D96's `KeyProvider`), and stores versions as create-only bucket objects. A `SecretBackend` trait has adapters for OpenBao and HashiCorp Vault (KV v2), AWS Secrets Manager, Azure Key Vault and GCP Secret Manager. D189's Dapr path stays the read path for applications | §19.13.3 |
+| D841 | **Versions, drafts and environments.** A sealed value is a version of a secret, identified by (repository, file, key). A value sealed on a branch that is not mapped to an environment is a draft. An environment is a create-only chain of revisions, each a map from key to version. `env/policy.toml` maps branches to environments (default `dev` → `refs/heads/dev`, `main` → `refs/heads/main`) | §19.13.4 |
+| D842 | **Promotion on merge.** A committed `RefTxn` that moves a mapped branch triggers `EnvPromoter`. It is durable and idempotent on (repository, environment, seq), writes the environment's next revision and emits `io.loams.dev.env.promoted.v1`. Deployments receive the change through Loams runtimes (read live), `loams env run --watch`, and the Dapr secret-store component. A Kubernetes sync comes after GA | §19.13.5 |
+| D843 | **Rotation without commits.** Each key can have a rotation policy, served by a provider: random, Loams Postgres role, Loams SQL role, the external vault's own rotation, or a webhook. A rotation runs as a durable workflow with an overlap grace period. It writes a new version and an environment revision, never a commit. Views note when the live version differs from the pinned one | §19.13.6 |
+| D844 | **Access and audit.** Plaintext goes only to a principal with `env:read` on that environment. Agents have no `env:read` unless a grant gives it. Everyone else sees redacted lines. Every plaintext read, seal, promotion and rotation is audited (CloudEvents on `_audit`, never values). vfsd never persists rendered plaintext, except files the user edited on that host | §19.13.7 |
+| D845 | **Review without values.** Diffs, `show`, `log -p` and the server's `Diff` show env changes per key (added, removed, changed by fingerprint), never values. A key-level three-way merge driver resolves concurrent edits of different keys | §19.13.8 |
+| D846 | **Leak prevention.** Secret scanning uses rules derived from gitleaks plus an exact match against the repository's known fingerprints. It runs at save (the file is held local-only), at native commit, `ApplyEdits`, `PushWorkspace` and `receive-pack` (the push is refused, naming path, line and rule). An allowlist entry needs a reason and is audited | §19.13.9 |
+| D847 | **Plain-git interop for env.** Clients without the shim see the sealed format. `loams env filter` is a git clean, smudge, diff and merge driver for people who use plain git. The receive path refuses plaintext `env/` files with a remedy | §19.13.10 |
+
+### 19.2 Prior art, and what Loams takes
+
+| System | What it does | What Loams takes | Licence note |
+|---|---|---|---|
+| **Google Piper + CitC** (Potvin and Levenberg, "Why Google Stores Billions of Lines of Code in a Single Repository", CACM 2016) | A central monorepo on Spanner/Bigtable. CitC workspaces store only modified files in the cloud, as an overlay on a Piper snapshot, through FUSE. Every save is a snapshot. Workspaces are reachable from any machine and readable by review and search tools. Development is trunk-based | Workspaces as server-side overlays, snapshots per save, the `/<root>/<user>/<ws>` layout, review of in-progress work, trunk-based by default | Paper only |
+| **Meta Sapling + EdenFS + Mononoke** | EdenFS is a virtual filesystem (FUSE on Linux, NFSv3 on macOS, ProjFS on Windows) with lazy fetch, an on-disk overlay, a journal for fast status, "redirections" (bind mounts) for build output, and prefetch profiles. Mononoke stores **derived data** (fsnodes with sizes, blame, unodes) in a blobstore. Sapling's CLI talks to the daemon. Commit Cloud syncs workspaces | Journal-based status, redirections for ignored build directories, sizes as derived data so `stat` needs no blob, the daemon-plus-thin-CLI split, an NFS fallback on macOS | **GPL-2.0: no code is read for copying, ported or linked** (D838). Ideas only, from public documentation and talks |
+| **Microsoft VFS for Git (GVFS) and Scalar** | ProjFS placeholders, the GVFS protocol (`/gvfs/objects`, a prefetch of commits and trees), a read-object hook, fsmonitor. VFS for Git was retired; Scalar moved to partial clone, sparse checkout, the sparse index, fsmonitor and background maintenance, all now in git | The batched objects endpoint and tree prefetch. The lesson: virtualization is hard to keep correct, so Loams keeps a non-virtual path that always works (partial clone with sparse checkout) and uses Scalar's recipe for the projected `.git` | MIT (C#). Referenced, not ported |
+| **git: partial clone, promisor remotes, sparse index, fsmonitor, `bundle-uri`** | Clients that lack objects fetch them lazily, and status scales with the changed set | The projected `.git` of the fallthrough path (§19.7.4), and stock-client interop | git is GPL-2.0 and runs as a process (D394) |
+| **Jujutsu** (Apache-2.0) | "The working copy is a commit", snapshotted at every command; an operation log | The snapshot commit (D835) and snapshot-on-command in the shim | Apache-2.0. Ideas only; no dependency |
+| **SOPS, git-crypt, External Secrets Operator** | SOPS: encrypted values in files, decrypted with KMS. git-crypt: transparent encryption with clean and smudge filters. ESO: syncs external vaults into Kubernetes Secrets | The clean/smudge filter for plain-git users; key-level diffs; ESO as the Kubernetes delivery after GA. Not ciphertext in git: see D839 and Q757 | MPL-2.0, GPL-3.0 and Apache-2.0 respectively. Ideas only |
+
+### 19.3 Architecture
+
+```
+ host (laptop, CI runner, agent sandbox host)                         server (gateway role)            bucket
+ ┌──────────────────────────────────────────────────────┐            ┌──────────────────────┐    ┌─────────────────────────┐
+ │ git (shim: loams-git) ──unix socket──► loams-vfsd     │  Connect   │ RepoService          │    │ ns/<ns>/repos/<repo_id>/ │
+ │   │ outside mount: exec real git       │ FUSE ~/loams │◄──────────►│ WorkspaceService     │───►│   wal/ checkpoints/ packs│
+ │   │ unsupported: real git + projection │ overlay      │            │ ObjectService        │    │   ws/<ws_id>/snap/ packs/│
+ │   ▼                                    │ CAS cache    │            │ EnvService           │    │   derived/               │
+ │ real git (process)                     │ journal      │            │ Smart HTTP (interop) │    │ ns/<ns>/vault/           │
+ │                                        └──────┬───────┘            │ sequencers (§4.4)    │    └─────────────────────────┘
+ │ local-first: vfsd's DirectBackend writes the bucket itself (fenced) ┘ └──────────────────────┘
+ └──────────────────────────────────────────────────────┘
+```
+
+- **The shim is a thin client.** Native commands read working files through the mount, as real git would. They read and change workspace state (HEAD, index, refs) through vfsd. Its startup budget is 2 ms when it passes through to real git and 20 ms for a native command, before any I/O (§19.7.6).
+- **vfsd is the host's authority** for the workspaces it mounts as writer. It owns the overlay, the journal, the cache and the save pipeline.
+- **The server is stateless** for workspaces. The snapshot chain fences writers (D827), so no workspace sequencer exists. Pushes still go through the repository's sequencer.
+- **Two backends, one client.** `ApiBackend` uses `loams.repos.v1`. `DirectBackend` uses the `loams-git` core against the bucket with vended credentials, for single-user and local-first use, as `git-remote-loams` does (D395). Both are fenced the same way.
+
+### 19.4 Workspaces as server-side records (D826, D827, D836)
+
+#### 19.4.1 Layout
+
+Added to §4.1:
+
+```
+ns/<ns>/repos/<repo_id>/
+  ws/<ws_id>/snap/<n:020>.lws        create-only; snapshot 0 is written by CreateWorkspace; ≤ 1 MiB
+  ws/<ws_id>/head                    hint {n, written_unix_ms}; ≤ 1 write/s; never ahead of the true tail
+  ws/<ws_id>/packs/<checksum>.lpk    objects created in the workspace (blobs, trees, commits), D390's bundle
+  ws/<ws_id>/salvage/<mount_id>/<ulid>.lws   a fenced writer's unsaved state (D827)
+  _ws_names/<owner>/<name>.json      {ws_id, created_unix_ms}; put_if_absent; unnamed (agent) workspaces have none
+  derived/tree-aux/<tree_oid>.lta    entry sizes per tree (D830)
+  derived/blame/<commit>/<sha256(path)>.lbl
+  derived/graph/<seq:020>.graph      a commit-graph layer for commits since the last compaction (D833)
+```
+
+`ws_id` is `w` followed by a 26-character lowercase ULID. `owner` is the principal's stable id.
+
+#### 19.4.2 The snapshot (`proto/loams/git/v1/workspace.proto`, an on-disk format like D390)
+
+A `.lws` object is framed like a segment: magic `LGITWSNP`, `format_version` u16 = 1, `n` u64, the protobuf body, CRC32C, then `LGITWSEN`. Its body is at most 1 MiB, so it stays atomic on RustFS (§4.2).
+
+```protobuf
+message ChangedPath {
+  string path = 1;
+  enum Kind { MODIFIED = 0; ADDED = 1; DELETED = 2; UNTRACKED = 3; TYPE_CHANGED = 4; }
+  Kind kind = 2;
+  bool staged = 3;                    // the index differs from HEAD at this path
+}
+message LocalRef { string name = 1; bytes oid = 2; string upstream = 3; }
+message Conflict { string path = 1; bytes base = 2; bytes ours = 3; bytes theirs = 4; uint32 mode = 5; }
+message Takeover { string from_mount = 1; uint64 from_n = 2; string reason = 3; }
+message ForkOrigin { string repo_id = 1; string ws_id = 2; uint64 n = 3; }
+
+message WorkspaceSnapshot {
+  string ws_id = 1;  uint64 n = 2;  ObjectFormat object_format = 3;
+  string repo_id = 4;  string owner = 5;  string name = 6;          // "" for unnamed workspaces
+  string track = 7;                    // "refs/heads/main": what `pull` rebases onto
+  bytes base = 8;  uint64 base_seq = 9;    // the commit last rebased onto, and the repository seq it was read at
+  bytes head = 10;  string head_ref = 11;  // HEAD; "" when detached
+  repeated LocalRef refs = 12;             // workspace-local branches and lightweight tags
+  bytes index_tree = 13;                   // the staged tree; conflicts live in `conflicts`
+  bytes worktree_tree = 14;                // tracked + untracked, without ignored paths
+  bytes snapshot_commit = 15;              // D835
+  repeated ChangedPath changed = 16;  bool changed_overflow = 17;   // capped at MAX_CHANGED_HINT
+  repeated PackRef packs = 18;             // the live workspace pack set
+  string writer = 19;  string principal = 20;  int64 created_unix_ms = 21;
+  string label = 22;                       // a named snapshot (`loams ws snapshot --name`)
+  Takeover takeover = 23;  ForkOrigin fork = 24;
+  repeated Conflict conflicts = 25;
+}
+```
+
+- **Complete, not a delta.** Mounting reads one snapshot, plus the hint and a probe, as WAL readers do (§4.6). The tree objects carry the size of the overlay, so the record stays small. A change to `k` files writes about `k × depth` new tree objects into the save's pack.
+- **Status is O(changed).** The `changed` hint lists every path that differs among HEAD, the index and the worktree. Past `MAX_CHANGED_HINT` (10,000 paths) it is omitted and readers diff the trees, which skips equal subtrees by object id.
+
+#### 19.4.3 Writers, readers and takeover (D827)
+
+```
+save: PUT ws/<ws_id>/snap/<n+1>.lws  If-None-Match: *
+  200 → saved at n+1
+  412 → GET n+1. Its writer is this mount (a retry after an unknown outcome) → saved.
+        Its writer is another mount → this mount is fenced: it writes its unsaved state to
+        salvage/<mount_id>/<ulid>.lws, becomes read-only, and tells the user and the shim
+        ("workspace taken over by <mount> at <time>; your unsaved changes are in salvage <ulid>")
+```
+
+- **Mounting as writer.** If the latest snapshot's writer is this mount, the mount continues. If the writer is another mount and the snapshot is younger than `WRITER_IDLE`, the mount is read-only unless `--take` is given. Otherwise vfsd writes a takeover snapshot `n+1`, with the same trees and `takeover` set, before it accepts writes.
+- **Read-only mounts** pin a snapshot (`@n`) or follow the latest (polling the hint, or `WatchWorkspace`).
+- **Salvage** is listed and restored with `loams ws salvage list|restore`, which replays it as edits on the current snapshot. Paths that conflict are written as conflicts.
+
+#### 19.4.4 Creating, forking and naming
+
+- `CreateWorkspace(repo, track, at?, name?)` writes the name record (when named) with `put_if_absent`, then snapshot 0. Snapshot 0 has `base = head = at` (default: `track`'s tip at `snapshot(Latest)`), `index_tree = worktree_tree = base^{tree}`, and no packs. **It writes no data and copies nothing.**
+- **Fork** (`ForkWorkspace(ws@n)`) writes the new workspace's snapshot 0 as a copy of snapshot `n`, with `fork` set and the source's packs referenced by the source's paths. GC counts those references (§19.4.5).
+- **Listing** pages through `_ws_names/<owner>/` (named workspaces) or `ws/` (all of them, for administrators and GC).
+
+#### 19.4.5 Retention and GC (D836)
+
+| What | Rule |
+|---|---|
+| Snapshots | Every snapshot for 7 days; then the last one of each hour to 30 days; then the last one of each day. Named snapshots, the latest snapshot and any snapshot a fork names are kept while the workspace lives |
+| Workspace packs | Collected after `GC_GRACE` once no retained snapshot, fork or in-flight push names them, with a GC claim (§03 §7) |
+| Workspace pack compaction | When a snapshot names more than `WS_PACKS_COMPACT_AT` (64) packs, a worker merges the reachable objects into one pack. The next save names it, fenced on the snapshot `n` it read |
+| Deleted workspaces | `DeleteWorkspace` writes a final snapshot with the label `deleted`; everything under `ws/<ws_id>/` is purged after `GC_GRACE`, unless a fork still names its packs |
+| Salvage | 30 days |
+
+### 19.5 Objects: lazy fetch and upload (D829, D830)
+
+#### 19.5.1 Reads
+
+- `GetObjects(ws, oids[])`: up to `FETCH_BATCH_OIDS` (1,024) per call, streamed back. The server resolves through `RangeOdb` (§5.3) over the repository's pack set plus the workspace's packs, groups the reads by pack and coalesces them into ranges of at least 64 KiB.
+- `GetTrees(ws, root, depth)`: a tree and its subtrees to `depth` (default `TREE_PREFETCH_DEPTH` = 2), each with **tree aux data**: for every entry, its mode, object id and size. Sizes come from pack entry headers; a delta's header carries the result size, so no blob is inflated. The aux data is cached as `derived/tree-aux/<tree_oid>.lta`, which is immutable.
+- `GET /git/<ns>/<repo>.git/loams/objects/<oid>` returns one object, zlib-compressed in the loose format, with `Cache-Control: private, max-age=31536000, immutable`. An organisation's caching proxy can serve it; R2 charges no egress for it.
+- **Prefetch.** `.loams/profiles/<name>.txt` holds gitignore-style patterns, committed to the repository; `loams vfs prefetch --profile <name>` uses one. vfsd's fetch log records the paths a command (`cargo build`, `pytest`) read first and suggests a profile (`loams vfs profile suggest`). On `readdir`, vfsd prefetches that directory's trees to depth 2.
+
+#### 19.5.2 Upload
+
+- `HasObjects(ws, oids[])` returns a bitmap over the repository and the workspace packs.
+- `PutWorkspacePack(ws, lpk)` checks that every object hashes to its id, applies the hardening limits of §6.3, runs secret scanning (§19.13.9), and stores `ws/<ws_id>/packs/<checksum>.lpk` (create-only, content-named). The snapshot that names the pack is the commit point. An unnamed pack is garbage after `GC_GRACE`.
+
+#### 19.5.3 The save pipeline (vfsd)
+
+1. **Trigger.** A file is closed after writing, or a rename, unlink or chmod happens. Saves wait for `SAVE_DEBOUNCE` (2 s idle) and are at least `SAVE_MIN_INTERVAL` (1 s) apart. Every native shim command and `loams ws sync` force a save, as jj snapshots on each command.
+2. Take the journal entries since the last save, and drop ignored paths (§19.6.4).
+3. **Seal** `env/` files (§19.13.2) and **scan** the other files (§19.13.9). A file that fails the scan is held local-only and shown in `git status` as `blocked: possible secret (<rule>)`.
+4. Hash the changed files, build the new trees along the changed paths, and build the snapshot commit.
+5. Run `HasObjects`, write one `.lpk` with the missing objects, then `PutWorkspacePack`.
+6. PUT snapshot `n+1` (§19.4.3), then publish the hint (at most once a second).
+
+Data is **locally durable** when the overlay file is fsynced, and **remotely durable** once the snapshot commits. `git commit` and `loams ws sync` wait for the latter. After a crash, vfsd replays the journal against the last committed snapshot.
+
+### 19.6 The client: `loams-vfs` (D828)
+
+#### 19.6.1 Mounts
+
+- **One root per user**, `$LOAMS_VFS_ROOT` (default `~/loams`), with `~/loams/<namespace>/<repo>/<owner>/<workspace>/` beneath it: CitC's layout, one FUSE session for every workspace. `git worktree add <path>` and `git clone loams://…` create a symlink at `<path>` that points into the root. `--mount` gives a workspace its own FUSE session at `<path>`, for tools that resolve symlinks badly.
+- `$XDG_RUNTIME_DIR/loams/mounts` lists the mounted roots and workspaces (written atomically). The shim reads it without contacting vfsd (§19.7.1).
+
+#### 19.6.2 Local state (`$LOAMS_HOME/vfs/`)
+
+| Store | What | Survives restart |
+|---|---|---|
+| `meta.sqlite` (`rusqlite`, the workspace pin) | the inode table (stable inode numbers per path and workspace), per-workspace state (the last committed snapshot, the writer flag), the journal (sequence, path, kind) | yes |
+| `cache/` (an `Fs`, §17) | a content-addressed cache of objects (blobs, trees, tree aux) shared by all workspaces on the host; LRU, `CACHE_DEFAULT_BYTES` 20 GiB | yes, and it can be deleted at any time |
+| `overlay/<ws_id>/` | real files for every path written in the workspace; plaintext `env/` files only when edited on this host (§19.13.7) | yes |
+| `redirect/<ws_id>/` | the local directories behind redirected build paths (§19.6.4) | yes |
+
+#### 19.6.3 Filesystem semantics
+
+- **Reads.** A file not yet in the overlay is served from the cache, or fetched (`GetObjects`). Once fetched, an opened file is backed by a cache file, and FUSE passthrough (Linux ≥ 6.9) serves its reads in the kernel. Otherwise the kernel page cache is kept (`FOPEN_KEEP_CACHE`).
+- **Metadata.** `stat`, `ls -l` and `readdir` are answered from trees and tree aux data, never from blobs. Unchanged files report the base commit's committer time as their mtime. When a rebase or switch changes a file, its mtime becomes the time of the change. Build tools' mtime fingerprints therefore stay valid.
+- **Writes** go to the overlay (copy-up on the first write; truncate-on-open needs no fetch). Renames, unlinks, symlinks, chmod (only the executable bit, as git tracks), hard links (refused with `EPERM`, as git cannot represent them) and `fsync` (fsync of the overlay file and the journal) are supported.
+- **Scopes** (D397, kept): paths outside the grant's cones are listed but answer `EACCES`, and the server refuses writes outside them (`OutOfScope`).
+- **Offline.** Cached content stays readable. An uncached read fails with `EIO` after `FETCH_TIMEOUT` (30 s), with the path logged, and `loams vfs status` reports the mount offline. Saves queue and resume.
+- **Switching HEAD costs nothing on disk.** `switch`, `checkout` and `pull` swap the base tree. vfsd keeps overlay paths, and refuses to switch, as git does, when an overlay path conflicts with the target.
+
+#### 19.6.4 Ignored paths and redirections
+
+Paths matched by `.gitignore` (and `.git/info/exclude`) are **local only**. They are never uploaded and never visible on another host. The top-level ignored build directories named in `.loams/redirections.toml` (default: `target/`, `node_modules/`, `.venv/`, `build/`, `dist/`, `__pycache__/`) are **redirected**: vfsd serves them as passthrough directories backed by `redirect/<ws_id>/<path>`, so builds write at native disk speed (EdenFS's redirections, re-implemented). Build outputs that must cross hosts go through the build cache (§8).
+
+#### 19.6.5 Platforms
+
+Linux FUSE is the GA platform (`/dev/fuse`, `fusermount3`; unprivileged in a user namespace since Linux 4.18). **Sandboxes** either bind-mount a workspace directory from the host's vfsd into the sandbox, export it over virtiofs to microVMs (§15 Q3), or run their own vfsd. After GA, macOS gets an NFSv3 loopback server first (no kernel extension), then FSKit (macOS 15.4+); Windows gets ProjFS (Q753).
+
+### 19.7 The `git` shim (D832)
+
+#### 19.7.1 Dispatch
+
+1. The binary `loams-git` is installed as `git` in `$LOAMS_HOME/bin`, which the installer puts ahead of the system git on `PATH`. The desktop app and the CLI installer offer it, on by default with a clear prompt (Q752); `loams git shim uninstall` removes it.
+2. The shim finds **real git** from `LOAMS_REAL_GIT`, else as the next `git` on `PATH` whose canonical path is not the shim, cached in `$LOAMS_HOME/real-git`.
+3. It resolves the effective directory from `-C`, `--git-dir`, `--work-tree`, `GIT_DIR`, `GIT_WORK_TREE` and the cwd. When that directory is **not inside a mounted workspace** (from the mounts file, with no socket call) or `LOAMS_GIT_IN_FALLBACK=1` is set, the shim `exec`s real git with argv and environment untouched.
+4. Inside a workspace, it parses the arguments against the subcommand's allowlist. Any flag, form or configuration it does not implement (for example `commit.gpgsign=true`) means **fallthrough** (§19.7.4). Native handling is never a best-effort approximation.
+5. Outside a workspace, `git clone <loams URL> [dir]` (`loams://…`, or an `https://` URL whose `info/refs` advertises `loams-workspaces`) creates a workspace tracking the default branch and links it at `dir`. It prints `loams: cloned as workspace <owner>/<name> (virtual; files download on first read). Use 'git clone --no-loams' for a full clone.` `--no-loams` or `LOAMS_GIT_CLONE=real` runs real git.
+
+#### 19.7.2 Native commands at GA
+
+| Command | Native scope (anything else falls through) |
+|---|---|
+| `status` | long, `-s`, `--porcelain[=v1\|v2]`, `-b`, `-u[no\|normal\|all]`, `--ignored=no`, pathspecs |
+| `diff` | worktree, `--cached`/`--staged`, `<commit>`, `<a>..<b>`, `<a>...<b>`; `--stat`, `--name-only`, `--name-status`, `--numstat`, `-U<n>`, `--no-color`/`--color`, `--exit-code`, `--quiet`, pathspecs. Output is byte-identical to git's default algorithm (Myers, as git's xdiff). `--patience`, `--histogram`, word diff and external diff tools fall through |
+| `add`, `rm`, `mv`, `restore`, `reset` | `add <paths>\|-A\|-u\|.`; `rm [--cached] [-r]`; `mv`; `restore [--staged] [--source]`; `reset [--soft\|--mixed\|--hard] [<commit>]`, `reset <paths>`. `-p` and `-i` fall through |
+| `commit` | `-m` (repeatable), `-F`, `-a`, `--amend`, `--no-edit`, `--allow-empty`, `--author`, `--date`, `-q`, `--no-verify`. The editor is honoured (`GIT_EDITOR`, `core.editor`). Hooks `pre-commit`, `prepare-commit-msg`, `commit-msg` and `post-commit` run from `core.hooksPath` or the projected hooks directory. Signing falls through |
+| `log`, `show` | `--oneline`, `-n`, `--format`/`--pretty` (the placeholders in the porcelain crate's table), `--stat`, `--name-only`, `--name-status`, `-p`, `--graph` (falls through above 1,000 commits), `--all`, `--author`, `--since`/`--until`, `--grep`, ranges, `-- <paths>`; through `Log` (§19.8) |
+| `branch`, `switch`, `checkout`, `tag` | list, create, delete, rename, `-u`/`--set-upstream-to`, `-vv`; `switch [-c] <b>`, `checkout [-b] <b>\|<commit>\|-- <paths>`; lightweight tags (annotated and signed tags fall through) |
+| `fetch`, `pull`, `push` | `fetch [origin]` refreshes the repository snapshot only (no objects); `pull [--rebase]` rebases the overlay and local commits onto `track` (§19.7.5); `push [-u] [origin] [<src>:<dst>]`, `--force-with-lease`, `--delete`, `-o` (push options) through `PushWorkspace`. A remote that is not the workspace's repository falls through |
+| `worktree` | `add <path> [-b <b>] [<commit>]` creates a workspace (one PUT) and links it; `list` lists the user's workspaces of this repository; `remove` deletes the workspace; `prune` |
+| `blame`, `grep` | `blame [-L] [-w] [--porcelain] <rev> -- <path>` through `Blame`; `grep [-n] [-i] [-l] [-e] [-w] [-F\|-E] <pattern> [<rev>] [-- <paths>]` through `Grep` plus a local search of overlay paths |
+| plumbing | `rev-parse` (`--show-toplevel`, `--git-dir`, `--is-inside-work-tree`, `--abbrev-ref`, `HEAD`, `<rev>`), `ls-files` (`-m`, `-o`, `--exclude-standard`, `-s`), `cat-file` (`-p`, `-t`, `-s`, `-e`, `--batch`, `--batch-check`), `config --get`/`--list` (read only; writes fall through), `symbolic-ref`, `merge-base`, `rev-list --count` |
+
+The command list is the **agent corpus**: the commands Claude Code, Codex, opencode and IDEs actually issue, recorded from their transcripts and fixtures. Merge, rebase, cherry-pick, stash, bisect, submodule and every interactive mode fall through at GA (Q751).
+
+#### 19.7.3 The index and local branches
+
+git's index is `index_tree` plus `conflicts`. Stat data is not needed, because vfsd's journal knows exactly which paths changed. Local branches and tags live in the snapshot (`refs`), so they move with the workspace to any machine. `refs/remotes/origin/*` is the repository's `snapshot(Latest)` at the last `fetch`, held by vfsd per workspace.
+
+#### 19.7.4 Fallthrough on a projected `.git`
+
+When a command falls through inside a workspace:
+
+1. The shim prints one line to stderr: `loams: 'git <cmd> …' is not native yet; running real git <version> on this workspace's projected .git (slower on large trees)`. `loams.quietFallback=true` or `LOAMS_GIT_QUIET_FALLBACK=1` silences it; it is always logged.
+2. vfsd **projects** `.git` into the overlay, or refreshes it if it is stale (stamped with the snapshot `n` in `.git/loams-projection`). The projection holds `HEAD`, `refs/` and `packed-refs` from the snapshot, and a `config` with `extensions.partialClone=loams`, `remote.loams.url=loams://…`, `remote.loams.promisor=true`, `core.fsmonitor=loams-git fsmonitor` (answered from the journal), `index.sparse=true`, `core.untrackedCache=true`, `filter.loams-env.*` (§19.13.10) and `core.hooksPath`. Its `index` is a sparse index: the changed directories are expanded and the rest are sparse directory entries. The object directory starts empty. Real git fetches missing objects through `git-remote-loams` (`stateless-connect`, §6.2) into a per-workspace promisor pack store under the cache.
+3. The shim runs real git with `LOAMS_GIT_IN_FALLBACK=1`, so nested `git` calls go straight to real git.
+4. When real git exits, vfsd **absorbs** the projection: new `HEAD` and `refs/heads/*`, the index (sparse entries back to trees, conflicts at stages 1–3), and new objects from real git's object directory into the next save's pack. Then it saves. A projection changed outside the shim, for example by an IDE through libgit2, is absorbed at the next save the same way.
+
+The projection is **always present** as `.git` at the workspace root, so tools that look for `.git` (IDEs, `cargo`, `pre-commit`) find a repository. It is the same projection that Scalar-style partial clone would produce, so real git's behaviour is real git's.
+
+#### 19.7.5 Pull, rebase and push
+
+- **Pull** (`pull --rebase`, the default in a workspace): read `track`'s new tip `B'`. For each path in the overlay or the local commits that also changed between `base` and `B'` (a tree diff, which skips equal subtrees), run a three-way merge with the vendored algorithm of the porcelain crate (a clean-room diff3, not git's code). Conflicts become `conflicts` and conflict markers in the overlay. Local commits are replayed natively when every one of them merges cleanly. Otherwise the shim falls through to real `git rebase` on the projection. `base := B'` and `base_seq` is recorded. **No unchanged file is downloaded.**
+- **Push** (D831): `PushWorkspace(ws@n, updates[], options)` runs on the server. It computes the closure of the new tips that the repository lacks, against the repository's pack set at `snapshot(Latest)`. It reads those objects from the workspace packs by range, writes one `.lpk`, and commits a `RefTxn` through the repository's sequencer with §4.5's derived idempotency key. Fast-forward, protection, scope and secret checks are §6.3's. The client uploads nothing, because the objects arrived at save time. The answer carries the seq as a consistency token.
+
+#### 19.7.6 Performance budgets (gates in GT1, Task 80)
+
+| Operation | Budget (p99, a 10-million-file synthetic tree, 1,000 changed files) |
+|---|---|
+| Shim passthrough overhead outside a workspace | 2 ms |
+| `git status` (native) | 50 ms |
+| `git diff --stat` (native, changed blobs cached) | 150 ms |
+| `git worktree add` / `CreateWorkspace` | 300 ms (one or two PUTs) |
+| Mounting an existing workspace (first `ls` at the root) | 1 s |
+| First read of an uncached file in the same region | 150 ms |
+| Save of 100 changed files to a durable snapshot | 1 s |
+| `git push` of a workspace commit (server-side assembly) | 2 s plus 3 × segment PUT latency |
+
+### 19.8 History on the server (D833)
+
+- **`Log(rev, ranges, pathspec, limit, fields)`** walks the commit graph. The graph comes from compaction's `commit-graph`, written with `--changed-paths` (Bloom filters), plus `derived/graph/<seq>.graph` layers built on demand for later commits. Pathspecs are tested with the Bloom filters, then tree diffs. Results are streamed. The shim formats them.
+- **`Blame(rev, path, range)`** uses `gix-blame` (MIT OR Apache-2.0; Task 0 confirms it is mature enough; the fallback is a Loams implementation over `Log` and diffs). It is cached in `derived/blame/`.
+- **`Grep(rev, pattern, pathspec, flags)`** runs the `grep-regex` and `grep-searcher` crates (MIT OR Unlicense) in parallel over the tree's blobs, with a deadline and a match limit. It uses §15 §4's code index when one exists. The shim adds a local search of overlay paths, and lets an overlay path's result replace the server's.
+- **`DiffStat(a, b, pathspec)`** returns tree-diff statistics. Line counts need blob reads, which the server does and caches per (a, b) pair.
+- **`env/` files** in all four return keys and fingerprints only (§19.13.8).
+
+### 19.9 Interop (D835)
+
+- §6 (Smart HTTP and `git-remote-loams`) is unchanged and is the path for stock clients and CI: `git clone --filter=blob:none --sparse https://…/<repo>.git` works against the same repository.
+- `ls-refs` hides `refs/loams/` unless the client asks for that prefix. `fetch` allows any snapshot commit reachable from a workspace the caller may read as a want. CI and reviewers can therefore fetch in-progress work: `git fetch origin refs/loams/ws/<ws_id>`.
+- The advertisement adds the capability `loams-workspaces` (an unknown capability, which stock git ignores), so the shim recognises a Loams `https://` URL.
+
+### 19.10 The API (D834)
+
+`loams.repos.v1` gains two services. §44's rules apply: an idempotency key on every mutation, `NO_SIDE_EFFECTS` reads, `loams.errors.v1` reasons and pagination.
+
+| Service | RPCs |
+|---|---|
+| `WorkspaceService` | `CreateWorkspace`, `GetWorkspace`, `ListWorkspaces`, `ForkWorkspace`, `DeleteWorkspace`, `ListSnapshots`, `GetSnapshot`, `SaveSnapshot` (append a snapshot whose objects were uploaded; fenced on `n`), `ReadFiles` (paths at `ws@n`, rendering `env/` per §19.13.7), `ApplyEdits` (writes, deletes and renames as one new snapshot, for agents that do not mount; seals `env/` and scans), `Diff`, `Rebase` (the server-side pull for mount-less agents), `PushWorkspace`, `WatchWorkspace`, `ListSalvage`, `RestoreSalvage` |
+| `ObjectService` | `GetObjects` (server stream), `GetTrees`, `HasObjects`, `PutWorkspacePack` (client stream), `Log`, `Blame`, `Grep`, `DiffStat` |
+
+New reasons: `workspace_not_found`, `workspace_fenced` (aborted), `workspace_read_only` (failed_precondition), `workspace_name_taken` (already_exists), `object_missing` (failed_precondition), `secret_detected` (failed_precondition), `env_unsealed` (invalid_argument), `env_access_denied` (permission_denied), `env_foreign_reference` (permission_denied).
+
+### 19.11 Agent scale
+
+- **Cost (estimate, R2 prices of §12).** A workspace costs 1–2 PUTs to create ($4.50–9 per million workspaces) and about 1 KB to keep (one million idle workspaces ≈ 1 GB ≈ $0.015 a month). A save is two PUTs plus a hint at most once a second: an agent saving every 10 s for 8 hours makes about 2,900 saves, about 5,800 PUTs, **about $0.03 per agent-day**. Reads are Class B ($0.36 per million) and are shared across a host's agents by the host cache.
+- **A thousand agents on one host** share one vfsd, one FUSE session and one cache. A new agent's workspace on the same base costs no download.
+- **`loams-agentd`** (§50, DD1): its `CreateWorktree` and `DeleteWorktree` RPCs create and delete Loams workspaces when the repository is a Loams repository. agentd supervises vfsd on the desktop as it supervises the engine (D790). Each harness run gets a scoped token whose grant covers only its workspace and cones.
+- **Mount-less agents** (remote, serverless, or §39's `forgejo.propose_patch`) use `ReadFiles`, `ApplyEdits`, `Rebase` and `PushWorkspace` without FUSE.
+- **Contention** stays in the repository sequencer at push time (D391, D397). Saves never touch it.
+
+### 19.12 Phases, schedule and GA (D825, D837)
+
+The single GT1 plan (2026-10-10, rewritten) carries everything to GA, in milestones GT1a–GT1l, **starting now**. GT5 (Continuity-style NVMe replicas, gossip, any-node writes) is unchanged and is not planned.
+
+| In GA | After GA (planned as tasks after the GA gate) |
+|---|---|
+| WAL core, repositories as a service, `ObjectService`, workspaces, `loams-vfs` on Linux, the shim, Smart HTTP and the helper, compaction and GC, env secrets as code, the build cache and crates mirror, operations | The LFS-compatible read path (an LFS batch API serving pointer files' objects from the namespace CAS, for stock clients), push webhooks (through links and notifications, from `_git`), macOS (NFSv3, then FSKit), Windows (ProjFS), Kubernetes packaging (with an External Secrets Operator provider for env) |
+
+GA serves loopback and local-first (the direct backend) before MT1, behind the `GitAuthorizer` and env-grant seams. Networked serving follows MT1 (D111) with no change to the GT1 code paths.
+
+### 19.13 Secrets as code: `env/` (D839–D847)
+
+#### 19.13.1 The requirement
+
+The owner, 2026-10-10 (from the coordinator's brief): a repository can have an `env/` folder (`env/dev.env`, `env/main.env`, or one file per environment) that people commit like normal files. Loams Git never stores the values as plaintext git objects. Values go to a key vault (Loams' own, backed by KMS, or an external one), and the repository keeps only references. Secrets rotate automatically, per key, without a commit. A merge into `dev` or `main` promotes the env changes to that environment, and running deployments get the new values. Checkouts show env files decrypted only to authorised principals, and every read is audited. Reviews show key names and whether each key was added, changed or removed, never values. Secrets pasted outside `env/` are caught at push. Plain git clients see the sealed format, never plaintext.
+
+#### 19.13.2 The sealed env format (D839)
+
+Files matching `env/**/*.env` (configurable in `env/policy.toml`, Q758) are env files. In a workspace an authorised user edits ordinary dotenv text. The **git object** is always the sealed form:
+
+```
+# loams-env v1 — sealed by Loams Git; values are in the vault, not in git. Edit in a Loams workspace or with `loams env`.
+DATABASE_URL=loams-env:v1:s01j9x…q2@7:fp=3f9a1c0d5e7b2a4c8d1e6f0a9b3c5d7e
+STRIPE_KEY=loams-env:v1:s01j9y…k8@2:fp=…
+# loams:plain
+LOG_LEVEL=info
+```
+
+- A sealed line is `KEY=loams-env:v1:<secret_id>@<version>:fp=<fingerprint>`. `secret_id` is `s` plus a ULID, allocated on the first seal of (repository, file path, key) and reused afterwards. `fingerprint` is the first 128 bits of `HMAC-SHA256(repo_fp_key, key ‖ 0x00 ‖ value)`, where `repo_fp_key` is a per-repository key held in the vault and never in git.
+- Comments, blank lines and order are kept verbatim. A value preceded by `# loams:plain` stays in git as plaintext (non-secret configuration). Values can use the dotenv quoting rules of the `dotenvy` crate (MIT); multi-line values are sealed whole.
+- **Sealing is deterministic and idempotent.** If a key's fingerprint equals the one in the base or HEAD version of the file, the existing reference is reused with no vault call. Otherwise `Seal(repo, path, key, value)` is idempotent on (secret, fingerprint): sealing the same new value twice (a `git status` through the clean filter, a retried save) returns the same draft version. Re-saving an unchanged file therefore never creates versions or changes object ids.
+- **References, not ciphertext** (Q757). Ciphertext in git can never be revoked: history keeps it, and anyone who later gains the key can read it. References can be revoked, rotated and purged in the vault. The cost is that reading needs the vault, which lazy fetch needs anyway.
+- **Where sealing happens:** vfsd's save (§19.5.3 step 3), native `add` and `commit`, the clean filter (§19.13.10), and `ApplyEdits`. The overlay may hold plaintext on the editing host. Nothing leaves the host unsealed.
+
+#### 19.13.3 The vault (D840)
+
+- **`loams-vault`** (Apache-2.0) stores each version as `ns/<ns>/vault/secrets/<secret_id>/v/<version:010>.lsv`, create-only. The body is AES-256-GCM under a fresh data key, and the data key is wrapped by the namespace's key through D96's `KeyProvider` (AWS KMS, GCP Cloud KMS, Azure Key Vault keys; a file provider for tests and local-first use). The version record carries the fingerprint, the creator, the time and the state (`draft`, `live`, `superseded`, `destroyed`). `destroyed` deletes the body and keeps the record.
+- **`SecretBackend`** abstracts where the bodies live. Adapters: `LoamsVault` (the default), `OpenBao` (HashiCorp Vault and OpenBao, KV v2 HTTP API), `AwsSecretsManager`, `AzureKeyVault` and `GcpSecretManager`, each mapping (secret, version) onto the store's own versioning and labels. One conformance suite covers them all. The repository chooses a backend in `env/policy.toml` (`[vault] backend = "loams" | "openbao:<mount>" | …`). The backend's credentials are namespace configuration, never repository content. With an external backend, Loams keeps only the version records and fingerprints, not the bodies.
+- **D189** (Dapr's secrets building block) stays the path by which applications read external stores. Loams' vault is exposed to Dapr as a secret-store component (`loams`), so applications read an environment's live set the same way (§19.13.5).
+- The vault can serve other Loams credentials later (§46's role passwords, Q30's credential store). That is out of GT1's scope.
+
+#### 19.13.4 Versions, drafts and environments (D841)
+
+- **Draft.** A version sealed in a workspace, or on a branch that is not mapped to an environment. It is readable only by principals who could read the environment its file maps to, plus the author.
+- **Environment.** `env/policy.toml` maps environments to branches and files:
+
+  ```toml
+  [environments.dev]
+  branch = "refs/heads/dev"
+  files  = ["env/_shared.env", "env/dev.env"]   # later files override earlier keys
+  [environments.main]
+  branch = "refs/heads/main"
+  files  = ["env/_shared.env", "env/main.env"]
+  [keys.DATABASE_URL]
+  rotate = { every = "30d", provider = "loams-postgres", role = "app", grace = "1h" }
+  ```
+
+  With no policy file, the defaults are `dev` and `main` as above, each reading `env/<environment>.env`.
+- **An environment is a create-only chain of revisions**, `ns/<ns>/vault/env/<repo_id>/<environment>/rev/<n:020>.ler`, each a map from key to (secret, version). The latest revision is the **live set**. A revision records its cause: `promotion {commit, seq}` or `rotation {key, from, to}`.
+
+#### 19.13.5 Promotion on merge, and delivery (D842)
+
+1. `EnvPromoter` consumes the sequencer's committed transactions (GT1 Task 15's `GitEvent::Committed`). For each update that moves a mapped branch to a new tip, it reads the environment's files at that tip (sealed lines only).
+2. It computes the new live set. Keys whose referenced version is a draft are marked `live`; removed keys leave the set. **A key whose live version came from a rotation and whose referenced version is unchanged in the merge keeps the rotated version**, so a merge never rolls back a rotation.
+3. It writes revision `n+1` (create-only, idempotent on (repository, environment, seq)) and emits `io.loams.dev.env.promoted.v1` on the namespace stream `_env`, with the environment, revision, commit and key names (added, changed, removed), never values.
+4. **Delivery.** Loams runtimes (Live, the serverless runtime) read the live set at invocation. `loams env run --env main [--watch] -- <cmd>` injects variables and restarts the child on a new revision. The Dapr `loams` secret store reads the live set. A Kubernetes sync controller (an External Secrets Operator provider plus a rollout annotation) comes after GA. Deployments can match revisions to code through the `commit` field.
+
+The whole promotion is a durable execution (`loams-durable`), so a crash resumes it, and its idempotency key makes it exactly-once per (environment, seq).
+
+#### 19.13.6 Rotation (D843)
+
+- A `[keys.<KEY>] rotate` entry sets `every`, `provider` and `grace`. Providers: `random` (`bytes`, `alphabet`), `loams-postgres` (a role password through pg-control's `ResetRolePassword`, with an A/B role pair so the old credential works during `grace`), `loams-sql` (`RotateRolePassword`), `external` (the external vault rotates; Loams follows its latest version) and `webhook` (POST to a URL that returns the new value; HTTPS only; signed).
+- The rotation workflow (durable) runs: create the new credential at the provider; seal it as version `v+1` (`live`); write an environment revision `{rotation}`; emit `io.loams.dev.env.rotated.v1`; wait for `grace`; revoke the old credential at the provider; mark the old version `superseded`.
+- **No commit is made.** The sealed file in git still pins `@v`. Renders for authorised principals show the pinned value with a trailing comment `# loams: rotated, live is v<v+1> (<date>)`, and `loams env show --live` shows the live value. A later edit of that key in a branch seals a new value. Promoting it replaces the rotated version and resets the rotation clock.
+
+#### 19.13.7 Reads, redaction and audit (D844)
+
+- **Grants.** `GitGrant` gains `env: Vec<EnvGrant { environment, access: Read | Write | Promote }>`. MT1 maps these to OpenFGA relations. **Agents' vended tokens carry no env grant unless one is given explicitly**, so an agent sees redacted env files and cannot leak values into its transcript.
+- **Rendering on the lazy fetch path.** vfsd renders an env file on open. It fetches the sealed blob and calls `EnvService.Open(repo, environment, refs[])`, which checks the grant, audits the read and returns the values. The rendered text is kept in memory only, for at most `ENV_RENDER_TTL` (5 min). Lines the principal may not read render as `KEY=<redacted fp=3f9a1c0d>`. The file's size is the rendered size, computed at `lookup`. Env files are small and few, so `stat` may call the vault.
+- **Editing a redacted file.** A redacted line left as it was keeps its reference. A redacted line that is changed is refused with `EACCES` at save, and the shim names the key.
+- **Plaintext on disk** exists only in the overlay of a file the user edited on that host (mode 0600 within the 0700 `$LOAMS_HOME`). `loams vfs scrub-env` removes it after its save.
+- **Audit.** `io.loams.dev.env.read.v1`, `.sealed.v1`, `.promoted.v1`, `.rotated.v1` and `.destroyed.v1` go to `_audit`, with the principal, the workspace or deployment, the environment, keys and versions. Never values.
+
+#### 19.13.8 Review without values (D845)
+
+- The shim's `diff`, `show` and `log -p`, and the server's `Diff`, `DiffStat` and `Grep`, recognise env files. They print a **key-level diff** instead of a line diff:
+
+  ```
+  env/main.env (sealed; values hidden)
+    + NEW_FEATURE_FLAG          added
+    ~ DATABASE_URL              changed (fp 3f9a1c0d → 9b20e4aa)
+    - LEGACY_TOKEN              removed
+      LOG_LEVEL: "debug" → "info"   (loams:plain)
+  ```
+
+  Real git on the projection uses the same text through the `diff=loams-env` textconv driver (§19.13.10).
+- **Merge.** A key-level three-way merge (`merge=loams-env`, native in the shim's pull and in `PushWorkspace`'s fast-forward checks): different keys merge cleanly; the same key changed to different fingerprints is a conflict, shown with fingerprints, never values.
+
+#### 19.13.9 Leak prevention (D846)
+
+- **Detectors.** Rules derived from gitleaks' default rule set (MIT; the attribution is in `NOTICE`), compiled with the `regex` crate, plus entropy checks. Then **known-value matching**: every token of a scanned file (split on non-token characters, 16–512 bytes long) is fingerprinted with the repository's `repo_fp_key`, and a match against any known fingerprint of the repository's secrets is a certain leak with no regex needed.
+- **Where.** In vfsd's save the file is held local-only, and `git status` and `loams ws status` report it. Native `commit` refuses with `loams: possible secret in <path>:<line> (<rule>); move it to env/ or allow it with 'loams env allow <path>:<line> --reason …'`. `ApplyEdits`, `PutWorkspacePack`, `PushWorkspace` and `receive-pack` refuse, the last with report-status `secret detected in <path>:<line> (<rule>)`. **The server is the authority.** Client checks are early warnings.
+- **Allowlist.** `.loams/secret-allowlist.toml` entries carry a path, a line fingerprint, a rule and a reason. Changes to it are audited. An entry never allows known-value matches.
+- `.env` files outside `env/` are scanned like any file, and the scanner's message suggests `env/`.
+
+#### 19.13.10 Plain-git interop (D847)
+
+- Clients without the shim (Smart HTTP, `git-remote-loams`, mirrors) see the sealed format, which is valid dotenv text with opaque values.
+- `loams env init` writes `.gitattributes` (`env/** filter=loams-env diff=loams-env merge=loams-env`) and `env/policy.toml`. `loams env filter` implements git's long-running filter protocol (`filter.<driver>.process`) for clean (seal) and smudge (render or redact), a textconv for diff, and the merge driver. A plain-git user with the `loams` CLI and a credential therefore gets the workspace experience on a normal clone. Without it, the user sees sealed files.
+- `receive-pack`, `PushWorkspace` and `ApplyEdits` refuse an env file that is not fully sealed (`env_unsealed`; report-status `env file <path> is not sealed: run 'loams env init' or push through Loams Git`). They also refuse a reference to a secret that does not belong to this repository (`env_foreign_reference`), so a fork or another repository cannot point at someone else's secrets. **Forks do not inherit env grants.**
+
+### 19.14 Conflicts with earlier decisions
+
+| Earlier | §19 | Resolution |
+|---|---|---|
+| D411 (GT keeps §15's W1 slot, after M3; Q395) | D825: start now | The owner's direction of 2026-10-10 reverses Q395's answer. D411 is superseded when D825 is confirmed |
+| D397 (`loams-vfs` as the lower layer of an agent's local `/workspace`, GT4) | D826–D829 | Amended: the workspace is a server-side record and `loams-vfs` is the primary client. Cones and write admission are kept |
+| §6.4 "a checkpoint commits the upper layer on the agent's branch" | Snapshots per save, commits by `git commit` | Snapshots are not commits on a branch. The snapshot commit (D835) is a hidden ref, and branches move only on push |
+| §15 §5.1 (overlayfs upper on local NVMe over a lazy lower) | vfsd's overlay | Same layering, inside one FUSE daemon. Sandboxes bind-mount or use virtiofs (§19.6.5) |
+| §2.2 (LFS through §15 §3.2's batch API in W1) | D837 | LFS is unnecessary for workspaces; an LFS-compatible read path comes after GA |
+| §2.2 (no concurrent multi-writer workspaces) | D827 | Kept: one writer, any number of readers, explicit takeover |
+| D394 (stock git only as a separate process) | D832 | Kept: the shim `exec`s or spawns real git and links none of it |
+| §15 principle 2 (one writer per workspace) | D827 | Kept, and enforced by fencing |
+| D189 (tenant secrets through Dapr) | D840 | Complementary: Dapr stays the application read path; env needs writes and versions, so `SecretBackend` has native adapters, and Loams' vault is a Dapr component |
+| D96 (customer-managed keys by envelope encryption) | D840 | Reused: the vault's data keys are wrapped by the namespace's `KeyProvider` key |
+| D393 (usage through §27's hooks only) | §19 metrics | Kept: new families `loams_git_ws_*`, `loams_vfs_*` and `loams_env_*` follow §11's labels |
+
+### 19.15 Open questions
+
+Resolved with the plan's defaults on 2026-10-10 (coordinator's brief): **start now** (D825); **a loopback and local-first GA before MT1, with auth seams** (D837; was GT-Q6); **LFS unnecessary, with an LFS-compatible read path after GA** (D837; was GT-Q4); **webhooks after GA** (was GT-Q5); **Kubernetes packaging later** (was GT-Q7). The plan's other earlier questions take their stated defaults (the plan, "Open questions").
+
+| # | Question | Default | Owner | Needed by |
+|---|---|---|---|---|
+| Q750 | **Workspace visibility.** Readable by every principal who can read the repository (CitC-like; enables review and agents reading peers' in-progress work), or by the owner and explicit grants only? | Repository readers can read; only the owner (and grants) can write or take over. `env/` stays per environment grant either way | Founder | GT1 Task 25 |
+| Q751 | **Native versus fallthrough at GA.** Is §19.7.2's list right, with merge, rebase, cherry-pick and stash falling through to real git on the projection? | Yes | Founder | GT1 Task 36 |
+| Q752 | **Taking over `git` by default.** Install the shim ahead of the system git by default (with a prompt and an uninstall), or opt-in only? | Installed by default with a prompt in the desktop app and the CLI installer; opt-out | Founder | GT1 Task 36 |
+| Q753 | **macOS order.** NFSv3 loopback first (works on any macOS, as EdenFS does) or FSKit first (macOS 15.4+, needs an app extension and signing)? | NFSv3 first | Eng | After GA |
+| Q754 | **Save cadence and retention** (cost against recovery): 2 s debounce and 1 s minimum interval; all snapshots for 7 d, hourly to 30 d, then daily | As stated | Eng | GT1 Task 32 |
+| Q755 | **Performance-gate fixtures.** Which monorepo shapes gate GA (a synthetic 10-million-file tree plus the Linux kernel's history; a Chromium-sized tree nightly)? | As stated | Eng + Founder | GT1 Task 80 |
+| Q756 | **Ignored outputs never cross hosts.** Confirm that `target/` and similar stay local, with the build cache (§8) as the cross-host path | Confirm | Founder | GT1 Task 31 |
+| Q757 | **References or encrypted envelopes in git.** References only (revocable; reading needs the vault), or SOPS-style ciphertext in git (offline decryption with KMS access; never revocable)? | References only | Founder | GT1 Task 61 |
+| Q758 | **Which files are env files.** `env/**/*.env` only, or also `.env*` anywhere in the tree? | `env/**/*.env`; `.env*` elsewhere is scanned as a possible leak | Founder | GT1 Task 61 |
+| Q759 | **Rotation providers at GA.** random, Loams Postgres, Loams SQL, external and webhook; are cloud-database IAM providers (RDS, Cloud SQL) needed at GA? | Not at GA | Founder | GT1 Task 66 |
+| Q760 | **Agents and env.** Agents never see plaintext unless explicitly granted (D844). Should an agent with `Write` be able to *set* values it cannot read (sealing new values blind), for example when provisioning a database? | Yes: write without read is allowed and audited | Founder | GT1 Task 62 |
+
+Still open from before: **GT-Q8** (credentials for R2, S3 Standard and S3 Express One Zone measurements; RustFS only until they are provided).
+
+### 19.16 Sources for §19
+
+From the author's knowledge, not re-read on 2026-10-10 (Task 0 of the plan checks the version-specific facts):
+
+- R. Potvin, J. Levenberg, "Why Google Stores Billions of Lines of Code in a Single Repository", *CACM* 59(7), 2016 (Piper, CitC).
+- Sapling SCM, EdenFS and Mononoke: https://sapling-scm.com, https://github.com/facebook/sapling (GPL-2.0); EdenFS documentation on overlays, journals, redirections and NFS on macOS.
+- Microsoft VFS for Git (https://github.com/microsoft/VFSForGit, MIT, archived) and Scalar (in git since 2.38); the GVFS protocol documentation.
+- git documentation: partial clone, `gitremote-helpers` (`stateless-connect`), sparse index (`index.sparse`), `core.fsmonitor`, `gitattributes` (`filter.<driver>.process`, textconv, merge drivers), `commit-graph --changed-paths`.
+- Jujutsu (https://github.com/jj-vcs/jj, Apache-2.0): working-copy commits and the operation log.
+- `fuser` (https://github.com/cberner/fuser, MIT); Linux FUSE passthrough (6.9).
+- SOPS (MPL-2.0), git-crypt (GPL-3.0), External Secrets Operator (Apache-2.0), gitleaks (MIT), OpenBao (MPL-2.0; KV v2 API), HashiCorp Vault KV v2 API, AWS Secrets Manager, Azure Key Vault and GCP Secret Manager APIs; `dotenvy` (MIT).
