@@ -1,17 +1,18 @@
 //! What the service cases (`tests/service/`) share: a fake [`NeonApi`], a
-//! store of the test binary's backend (`crate::factory()`), and a service
-//! on a hand-driven clock.
+//! store of the test binary's backend (`crate::factory()`), an in-memory
+//! secret store, and a service on a hand-driven clock.
 
 #![allow(dead_code)]
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use loams_pg_control::model::{BranchKey, BranchRec, BranchState};
 use loams_pg_control::neon::{
     Component, LsnAtTime, NeonApiError, NeonRead, TenantId, TimelineId, TimelineView, WalHeads,
 };
+use loams_pg_control::secrets::{Secret, SecretError, SecretRef, SecretStore};
 use loams_pg_control::service::Reason;
 use loams_pg_control::service::{BeforeCommit, Caller, Clock, PgService, ServiceConfig};
 use loams_pg_control::{KvControlStore, PgControlStore, StoreOptions};
@@ -120,10 +121,112 @@ impl TestClock {
     }
 }
 
+/// A secret store in memory, which a test can read and make fail.
+#[derive(Debug, Default)]
+pub struct MemorySecrets {
+    map: Mutex<BTreeMap<String, Vec<u8>>>,
+    fail_puts: AtomicBool,
+}
+
+impl MemorySecrets {
+    fn map(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, Vec<u8>>> {
+        self.map.lock().expect("secrets lock")
+    }
+
+    /// The bytes under `r`, if any.
+    pub fn value(&self, r: &SecretRef) -> Option<Vec<u8>> {
+        self.map().get(r.as_str()).cloned()
+    }
+
+    /// How many secrets are stored.
+    pub fn len(&self) -> usize {
+        self.map().len()
+    }
+
+    /// Every stored value.
+    pub fn values(&self) -> Vec<Vec<u8>> {
+        self.map().values().cloned().collect()
+    }
+
+    /// Makes every put fail (`unavailable`), or not.
+    pub fn fail_puts(&self, fail: bool) {
+        self.fail_puts.store(fail, Ordering::SeqCst);
+    }
+}
+
+#[async_trait::async_trait]
+impl SecretStore for MemorySecrets {
+    async fn put(&self, r: &SecretRef, s: Secret<Vec<u8>>) -> Result<(), SecretError> {
+        if self.fail_puts.load(Ordering::SeqCst) {
+            return Err(SecretError::Unavailable("injected".into()));
+        }
+        self.map().insert(r.as_str().into(), s.expose().clone());
+        Ok(())
+    }
+
+    async fn get(&self, r: &SecretRef) -> Result<Secret<Vec<u8>>, SecretError> {
+        self.value(r)
+            .map(Secret::new)
+            .ok_or_else(|| SecretError::NotFound(r.to_string()))
+    }
+
+    async fn delete(&self, r: &SecretRef) -> Result<(), SecretError> {
+        self.map().remove(r.as_str());
+        Ok(())
+    }
+}
+
+/// `LoseAck` at `point` of the first attempt of every `pg.batch`.
+#[derive(Debug)]
+pub struct FirstBatch {
+    pub point: loams_kv::FaultPoint,
+}
+
+impl loams_kv::FaultPlan for FirstBatch {
+    fn at(&self, op: &str, point: loams_kv::FaultPoint, attempt: u32) -> Option<loams_kv::Fault> {
+        (op == "pg.batch" && point == self.point && attempt == 1)
+            .then_some(loams_kv::Fault::LoseAck)
+    }
+}
+
+/// Every log line of this test binary, at every level, from the first call
+/// on: a process-wide subscriber writing into one buffer.
+pub fn captured_logs() -> Arc<Mutex<Vec<u8>>> {
+    static LOGS: OnceLock<Arc<Mutex<Vec<u8>>>> = OnceLock::new();
+    LOGS.get_or_init(|| {
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        let writer = {
+            let buf = buf.clone();
+            move || LogWriter(buf.clone())
+        };
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_writer(writer)
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::set_global_default(subscriber).expect("the only subscriber");
+        buf
+    })
+    .clone()
+}
+
+struct LogWriter(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogWriter {
+    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("logs lock").extend_from_slice(b);
+        Ok(b.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct Harness {
     pub service: PgService<FakeNeon>,
     pub store: KvControlStore,
     pub neon: FakeNeon,
+    pub secrets: Arc<MemorySecrets>,
     pub clock: TestClock,
 }
 
@@ -170,19 +273,43 @@ pub fn harness_with(store: KvControlStore, before_commit: Option<BeforeCommit>) 
         before_commit,
         ..config(&clock)
     };
-    let service = PgService::new(store.clone(), neon.clone(), config);
+    let secrets = Arc::new(MemorySecrets::default());
+    let service = PgService::new(store.clone(), neon.clone(), secrets.clone(), config);
     Harness {
         service,
         store,
         neon,
+        secrets,
         clock,
     }
+}
+
+/// As [`harness_with`], sharing `secrets`.
+pub fn harness_sharing(
+    store: KvControlStore,
+    secrets: Arc<MemorySecrets>,
+    before_commit: Option<BeforeCommit>,
+) -> Harness {
+    let mut h = harness_with(store, before_commit);
+    let config = h.service.config().clone();
+    h.service = PgService::new(h.store.clone(), h.neon.clone(), secrets.clone(), config);
+    h.secrets = secrets;
+    h
 }
 
 /// A service on `store` with no hook, its own fake and a clock at
 /// [`T0_MS`]: what a hook uses to commit a competing write.
 pub fn plain_service(store: &KvControlStore, neon: &FakeNeon) -> PgService<FakeNeon> {
-    PgService::new(store.clone(), neon.clone(), config(&new_clock()))
+    plain_service_with(store, neon, Arc::new(MemorySecrets::default()))
+}
+
+/// As [`plain_service`], on `secrets`.
+pub fn plain_service_with(
+    store: &KvControlStore,
+    neon: &FakeNeon,
+    secrets: Arc<MemorySecrets>,
+) -> PgService<FakeNeon> {
+    PgService::new(store.clone(), neon.clone(), secrets, config(&new_clock()))
 }
 
 /// A hook that runs `f` once, the first time `rpc` is about to commit.

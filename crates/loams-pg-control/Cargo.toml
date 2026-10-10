@@ -16,15 +16,28 @@ tikv = ["loams-kv/tikv"]
 # KvControlStore::with_faults: loams-kv's fault hooks, for the conformance
 # suite's injected faults.
 faults = ["loams-kv/faults"]
+# secrets::KubeSecretStore: role secrets as Kubernetes Secrets (Task 6).
+kubernetes = ["dep:kube", "dep:k8s-openapi"]
+# secrets::KeySource::Keyring: the file store's key in the OS keyring.
+keyring = ["dep:keyring"]
 
 [dependencies]
+# The single-node secret file (secrets::FileSecretStore).
+age.workspace = true
+async-trait.workspace = true
+base64.workspace = true
 futures.workspace = true
 hex.workspace = true
+k8s-openapi = { workspace = true, optional = true }
+keyring = { workspace = true, optional = true }
+kube = { workspace = true, optional = true }
 loams-kv.workspace = true
 # The clients NeonClients adapts (src/neon.rs); loams-postgres never
 # depends on this crate.
 loams-postgres.workspace = true
 postcard.workspace = true
+# Role passwords: 32 bytes from the OS (secrets::generate_password).
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -33,6 +46,7 @@ time.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 ulid.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 # The conformance suite injects faults (feature `faults`).
@@ -41,6 +55,9 @@ proptest.workspace = true
 # The stand-in Neon components of tests/neon_clients.rs.
 axum.workspace = true
 url.workspace = true
+tempfile.workspace = true
+# role_secret_never_logged captures every log line.
+tracing-subscriber.workspace = true
 
 [[test]]
 name = "store_tikv"
@@ -49,6 +66,10 @@ required-features = ["tikv"]
 [[test]]
 name = "service_tikv"
 required-features = ["tikv"]
+
+[[test]]
+name = "secrets_kube"
+required-features = ["kubernetes"]
 
 [lints]
 workspace = true

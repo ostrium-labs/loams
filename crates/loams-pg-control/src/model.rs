@@ -40,6 +40,7 @@ use std::collections::BTreeMap;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::secrets::SecretRef;
 use crate::store::StoreError;
 
 /// The format byte in front of every stored record.
@@ -77,9 +78,9 @@ pub trait Record: Serialize + DeserializeOwned + Clone + Send + Sync + 'static {
     /// As [`encode_key`](Self::encode_key).
     fn encode_prefix(prefix: &Self::Prefix) -> Result<Vec<u8>, StoreError>;
     /// The project this record belongs to, when it names one: a fenced
-    /// write of it needs that project's lease, `e/pg/<project_id>` (R3.11).
-    /// `None` (roles and databases, whose records name only a branch): any
-    /// project's fence may write it.
+    /// write of it needs that project's lease, `e/pg/<project_id>` (R3.11;
+    /// roles and databases since Task 6). `None` (the idempotency ledger):
+    /// any project's fence may write it.
     fn project(&self) -> Option<&str>;
 }
 
@@ -572,14 +573,27 @@ impl Record for ComputeRec {
 // ---- Role and database ----
 
 /// A Postgres role of a branch. The secret lives in the credential store;
-/// this holds only its reference (§46 §8.6).
+/// this holds only its reference (§46 §8.6). The key names the branch; the
+/// record names its project too, so a fenced write needs that project's
+/// lease (R3.11; Task 6).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoleRec {
+    pub project_id: String,
     pub branch_id: String,
     pub name: String,
-    pub secret_ref: String,
+    /// The password's reference in the [`SecretStore`](crate::secrets::SecretStore):
+    /// fresh for every password, and this record's alone.
+    pub secret_ref: SecretRef,
     pub login: bool,
     pub pool_mode: Option<PoolMode>,
+    /// A role Loams manages (for example agents' read-only role): the API
+    /// neither resets nor deletes it.
+    #[serde(default)]
+    pub system: bool,
+    #[serde(default)]
+    pub created_at_ms: u64,
+    #[serde(default)]
+    pub updated_at_ms: u64,
 }
 
 /// `(branch_id, role)`.
@@ -600,7 +614,7 @@ impl Record for RoleRec {
     type Prefix = BranchScope;
     const KIND: &'static str = "role";
     fn project(&self) -> Option<&str> {
-        None
+        Some(&self.project_id)
     }
     fn key(&self) -> RoleKey {
         RoleKey {
@@ -619,9 +633,13 @@ impl Record for RoleRec {
 /// A database of a branch; its owner is a role of the same branch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabaseRec {
+    pub project_id: String,
     pub branch_id: String,
     pub name: String,
+    /// The owner role's name, on the same branch.
     pub owner: String,
+    #[serde(default)]
+    pub created_at_ms: u64,
 }
 
 /// `(branch_id, database)`.
@@ -636,7 +654,7 @@ impl Record for DatabaseRec {
     type Prefix = BranchScope;
     const KIND: &'static str = "database";
     fn project(&self) -> Option<&str> {
-        None
+        Some(&self.project_id)
     }
     fn key(&self) -> DatabaseKey {
         DatabaseKey {

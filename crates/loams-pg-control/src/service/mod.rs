@@ -1,5 +1,5 @@
-//! `pg-control`'s API service: the project and branch RPCs of
-//! `loams.postgres.v1` (design §46 §4; PG2 Task 5).
+//! `pg-control`'s API service: the project, branch, role and database RPCs
+//! of `loams.postgres.v1` (design §46 §4; PG2 Tasks 5 and 6).
 //!
 //! The service writes records and answers; it changes no storage. A create
 //! writes its record in state `creating` with a `Pending` operation, and a
@@ -22,14 +22,19 @@
 //! ledger: if the entry is there the write was this call's (or a concurrent
 //! call's under the same key), and its answer is answered (R3.14).
 //!
+//! **Secrets** (Task 6): role passwords go to the [`SecretStore`], never to
+//! a record, the ledger, a log line or an error; see [`roles`].
+//!
 //! The request and answer types are plain Rust; Task 9 maps them to and
 //! from `loams.postgres.v1`'s messages, and its `Authorizer` decides
 //! [`Caller::admin`].
 
 pub mod branches;
+pub mod databases;
 mod idempotency;
 pub mod operations;
 pub mod projects;
+pub mod roles;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -42,9 +47,12 @@ use serde::de::DeserializeOwned;
 
 pub use idempotency::{ANSWER_JSON, IdempotencyLedger, LEDGER_TTL};
 
+use crate::model::Record;
 use crate::neon::NeonRead;
+use crate::secrets::{SecretError, SecretStore};
 use crate::store::{
-    ApiWriter, Batch, BatchError, DEFAULT_PAGE_SIZE, KvControlStore, Page, StoreError,
+    ApiWriter, Batch, BatchError, DEFAULT_PAGE_SIZE, KvControlStore, MAX_PAGE_SIZE, Page,
+    PgControlStore, StoreError, Versioned,
 };
 use idempotency::{Begin, Claim};
 
@@ -156,6 +164,7 @@ pub enum Reason {
     BranchProtected,
     LsnOutOfRetention,
     StorageUnavailable,
+    SecretAlreadyIssued,
     InvalidArgument,
     NotFound,
     AlreadyExists,
@@ -177,6 +186,7 @@ impl Reason {
             Reason::BranchProtected => "branch_protected",
             Reason::LsnOutOfRetention => "lsn_out_of_retention",
             Reason::StorageUnavailable => "storage_unavailable",
+            Reason::SecretAlreadyIssued => "secret_already_issued",
             Reason::InvalidArgument => "invalid_argument",
             Reason::NotFound => "not_found",
             Reason::AlreadyExists => "already_exists",
@@ -197,6 +207,7 @@ impl Reason {
             Reason::BranchHasChildren
             | Reason::BranchProtected
             | Reason::LsnOutOfRetention
+            | Reason::SecretAlreadyIssued
             | Reason::FailedPrecondition => "failed_precondition",
             Reason::StorageUnavailable | Reason::Unavailable => "unavailable",
             Reason::InvalidArgument => "invalid_argument",
@@ -218,6 +229,7 @@ impl Reason {
             Reason::BranchProtected,
             Reason::LsnOutOfRetention,
             Reason::StorageUnavailable,
+            Reason::SecretAlreadyIssued,
             Reason::InvalidArgument,
             Reason::NotFound,
             Reason::AlreadyExists,
@@ -284,6 +296,27 @@ impl ServiceError {
         ServiceError::new(Reason::FailedPrecondition, message)
     }
 
+    /// Whether this is the answer to a write whose outcome is unknown
+    /// ([`StoreError::Undetermined`]): the write may have applied.
+    pub(crate) fn is_undetermined(&self) -> bool {
+        self.reason == Reason::Unavailable && self.message == UNDETERMINED
+    }
+
+    /// A secret store's failure, logged with its reference and cause (never
+    /// a secret: [`SecretError`] carries none) and answered without them.
+    pub(crate) fn secret(e: &SecretError) -> Self {
+        match e {
+            SecretError::Unavailable(_) => {
+                tracing::warn!(error = %e, "the credential store is unavailable");
+                ServiceError::new(Reason::Unavailable, "the credential store is unavailable")
+            }
+            other => {
+                tracing::error!(error = %other, "credential store failure");
+                ServiceError::new(Reason::Internal, "internal error")
+            }
+        }
+    }
+
     fn neon(e: &crate::neon::NeonApiError) -> Self {
         tracing::warn!(reason = e.reason.as_str(), component = ?e.component, error = %e.message, "a Neon component refused");
         let out = ServiceError::new(e.reason, format!("storage answered {}", e.reason.as_str()));
@@ -306,10 +339,7 @@ impl From<StoreError> for ServiceError {
                 tracing::warn!(error = %m, "the control store is unavailable");
                 ServiceError::new(Reason::Unavailable, "the control store is unavailable")
             }
-            StoreError::Undetermined => ServiceError::new(
-                Reason::Unavailable,
-                "the write's outcome is unknown; retry with the same idempotency_key",
-            ),
+            StoreError::Undetermined => ServiceError::new(Reason::Unavailable, UNDETERMINED),
             other => {
                 tracing::error!(error = %other, "pg-control store failure");
                 ServiceError::new(Reason::Internal, "internal error")
@@ -317,6 +347,9 @@ impl From<StoreError> for ServiceError {
         }
     }
 }
+
+/// The message of a write whose outcome is unknown.
+const UNDETERMINED: &str = "the write's outcome is unknown; retry with the same idempotency_key";
 
 /// Makes a mutation's answer from its batch's outcomes.
 pub(crate) type Answer<T> = Arc<dyn Fn(&[Option<u64>]) -> T + Send + Sync>;
@@ -354,23 +387,40 @@ pub(crate) enum Applied<T> {
     Again,
 }
 
-/// The project and branch RPCs (see the module docs).
-#[derive(Debug, Clone)]
+/// The project, branch, role and database RPCs (see the module docs).
+#[derive(Clone)]
 pub struct PgService<N> {
     store: KvControlStore,
     writer: ApiWriter,
     ledger: IdempotencyLedger,
     neon: N,
+    secrets: Arc<dyn SecretStore>,
     config: ServiceConfig,
 }
 
+impl<N: fmt::Debug> fmt::Debug for PgService<N> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PgService")
+            .field("store", &self.store)
+            .field("neon", &self.neon)
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<N: NeonRead> PgService<N> {
-    pub fn new(store: KvControlStore, neon: N, config: ServiceConfig) -> Self {
+    pub fn new(
+        store: KvControlStore,
+        neon: N,
+        secrets: Arc<dyn SecretStore>,
+        config: ServiceConfig,
+    ) -> Self {
         PgService {
             writer: store.api_writer(),
             ledger: IdempotencyLedger::new(store.clone()),
             store,
             neon,
+            secrets,
             config,
         }
     }
@@ -462,6 +512,23 @@ impl<N: NeonRead> PgService<N> {
                 Err(StoreError::Undetermined.into())
             }
             Err(e) => Err(e.error.into()),
+        }
+    }
+
+    /// Every record under `prefix`, every page.
+    pub(crate) async fn all<R: Record>(
+        &self,
+        prefix: &R::Prefix,
+    ) -> Result<Vec<Versioned<R>>, ServiceError> {
+        let mut all = Vec::new();
+        let mut at = Page::first(MAX_PAGE_SIZE);
+        loop {
+            let (records, next) = self.store.list::<R>(prefix, at).await?;
+            all.extend(records);
+            match next {
+                Some(token) => at = Page::after(MAX_PAGE_SIZE, token),
+                None => return Ok(all),
+            }
         }
     }
 

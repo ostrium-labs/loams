@@ -1,4 +1,4 @@
-//! The project and branch RPCs (PG2 Task 5) on TiKV and a fake Neon: the
+//! The project, branch, role and database RPCs (PG2 Tasks 5 and 6) on TiKV and a fake Neon: the
 //! cases of `service_local`. Each prints `skipped:` when `LOAMS_TEST_PD` is
 //! unset.
 
@@ -16,3 +16,5 @@ fn factory() -> Factory {
 mod branches;
 #[path = "service/projects.rs"]
 mod projects;
+#[path = "service/roles.rs"]
+mod roles;

@@ -14,6 +14,8 @@
 //!   (snapshot isolation sees two writes of one key, never a read and a
 //!   write). The parent's record and version are untouched. `SetDefaultBranch` writes the project and
 //!   checks the branch; a delete writes the branch and checks the project.
+//! - **Inheritance** (Task 6): a child copies its parent's roles, with
+//!   copies of their secrets, and databases, in the batch that creates it.
 //! - **Protection** (§46 §10): deleting a protected branch, or lifting its
 //!   protection, needs `admin` (an agent's approval flow is Task 9's).
 
@@ -30,11 +32,11 @@ use super::{
 use crate::ids::{BranchId, timeline_id};
 use crate::model::{
     BranchGuardKey, BranchGuardRec, BranchKey, BranchNameKey, BranchNameRec, BranchPrefix,
-    BranchRec, BranchState, ProjectKey, ProjectRec, ProjectState, Record,
+    BranchRec, BranchState, ProjectKey, ProjectRec, ProjectState, Record, RoleRec,
 };
 use crate::names::validate_name;
 use crate::neon::{Lsn, LsnAtTime, TenantId, TimelineId, WalHeads};
-use crate::store::{Batch, MAX_PAGE_SIZE, Page, PgControlStore, Versioned};
+use crate::store::{Batch, PgControlStore, Versioned};
 
 /// Where in its parent's history a branch starts.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,7 +164,7 @@ fn view(branch: Versioned<BranchRec>, project: &ProjectRec) -> BranchView {
 
 impl<N: NeonRead> PgService<N> {
     /// The branch `branch_id` of `project_id`.
-    async fn branch(
+    pub(crate) async fn branch(
         &self,
         project_id: &str,
         branch_id: &str,
@@ -203,19 +205,10 @@ impl<N: NeonRead> PgService<N> {
         &self,
         project_id: &str,
     ) -> Result<Vec<Versioned<BranchRec>>, ServiceError> {
-        let prefix = BranchPrefix {
+        self.all::<BranchRec>(&BranchPrefix {
             project_id: project_id.into(),
-        };
-        let mut all = Vec::new();
-        let mut at = Page::first(MAX_PAGE_SIZE);
-        loop {
-            let (branches, next) = self.store.list::<BranchRec>(&prefix, at).await?;
-            all.extend(branches);
-            match next {
-                Some(token) => at = Page::after(MAX_PAGE_SIZE, token),
-                None => return Ok(all),
-            }
-        }
+        })
+        .await
     }
 
     /// A `ready` parent, or `failed_precondition`: a branch point needs
@@ -423,6 +416,36 @@ impl<N: NeonRead> PgService<N> {
                 Some(&branch.id),
                 now,
             );
+            let taken = ServiceError::new(
+                Reason::AlreadyExists,
+                format!("a branch named {} exists in this project", req.name),
+            );
+            // A taken name is refused before any secret is copied (the
+            // name index still decides a race, at the commit).
+            let name_key = BranchNameKey {
+                project_id: branch.project_id.clone(),
+                name: branch.name.clone(),
+            };
+            if self.store.get::<BranchNameRec>(&name_key).await?.is_some() {
+                return Err(taken);
+            }
+            // The parent's roles (with copies of their secrets) and
+            // databases, as the timeline's catalog has them (Task 6).
+            let mut copies = Vec::new();
+            let inherited = match self
+                .inherit(&parent.record, &branch.id, now, &mut copies)
+                .await
+            {
+                Ok(Some(inherited)) => inherited,
+                Ok(None) => {
+                    self.discard(copies).await;
+                    continue;
+                }
+                Err(e) => {
+                    self.discard(copies).await;
+                    return Err(e);
+                }
+            };
             let mut batch = Batch::new();
             let name_at = batch.put(
                 &BranchNameRec {
@@ -443,11 +466,18 @@ impl<N: NeonRead> PgService<N> {
                 },
                 Some(project.version),
             )?;
+            for role in &inherited.roles {
+                batch.put(role, None)?;
+            }
+            for db in &inherited.databases {
+                batch.put(db, None)?;
+            }
+            // A reset or delete of a parent role meanwhile: copy again.
+            for p in &inherited.parents {
+                batch.check::<RoleRec>(&p.record.key(), Some(p.version))?;
+            }
             add_operation(&mut batch, &operation)?;
-            let taken = ServiceError::new(
-                Reason::AlreadyExists,
-                format!("a branch named {} exists in this project", req.name),
-            );
+            let branch_id = branch.id.clone();
             let mutation = Mutation::new(batch, move |out| BranchCreated {
                 operation: operation.clone(),
                 branch: BranchView {
@@ -461,10 +491,23 @@ impl<N: NeonRead> PgService<N> {
                 },
             })
             .conflict_means(name_at, taken);
-            if let Applied::Done(created) =
-                self.apply("CreateBranch", claim.as_ref(), mutation).await?
-            {
-                return Ok(created);
+            match self.apply("CreateBranch", claim.as_ref(), mutation).await {
+                Ok(Applied::Done(created)) => {
+                    // A concurrent call under the same key created it: this
+                    // try's copies are unused.
+                    if created.branch.branch.record.id != branch_id {
+                        self.discard(copies).await;
+                    }
+                    return Ok(created);
+                }
+                Ok(Applied::Again) => self.discard(copies).await,
+                Err(e) => {
+                    // After an unknown outcome the copies may be in use.
+                    if !e.is_undetermined() {
+                        self.discard(copies).await;
+                    }
+                    return Err(e);
+                }
             }
         }
         Err(Self::contended())

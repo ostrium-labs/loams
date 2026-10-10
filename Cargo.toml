@@ -14,6 +14,10 @@ license = "Apache-2.0"
 authors = ["The Loams Authors"]
 
 [workspace.dependencies]
+# pg-control's single-node secret file (PG2 Task 6): x25519 recipients only.
+# 0.11.5 (2026-07-14), not 0.12: 0.12 adds the post-quantum hpke, ml-kem and
+# p256 trees, which the file store does not use.
+age = "=0.11.5"
 anyhow = "1"
 arrow = "58.4"
 arrow-array = "58.4"
@@ -94,7 +98,18 @@ httpmock = { version = "0.8.3", default-features = false, features = ["remote"] 
 humantime = "2"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.15"
+# The Kubernetes client (PG2 Task 6's KubeSecretStore first). Task 0 ruling 5
+# asks for the newest release at least 14 days old, 4.2.0; it is held at
+# 3.1.0 (2026-03-17, k8s-openapi 0.27.1 of 2026-03-05) because kube-client 4.x
+# needs serde-saphyr 0.0.29, which caps smallvec below 1.16 and would
+# downgrade it workspace-wide. 3.1.0 reads kubeconfig with serde_yaml, already
+# in the lockfile. rustls with ring.
+k8s-openapi = { version = "=0.27.1", features = ["latest"] }
 kafka-protocol = { version = "0.18", default-features = false }
+# The OS keyring (macOS Keychain, Windows Credential Manager, the Secret
+# Service), as loams-agentd-link uses it.
+keyring = "=4.2.0"
+kube = { version = "=3.1.0", default-features = false, features = ["client", "rustls-tls", "ring"] }
 lance = { version = "=12.0.0", default-features = false }
 lance-file = { version = "=12.0.0", default-features = false }
 lance-index = { version = "=12.0.0", default-features = false }
@@ -207,6 +222,7 @@ unicode-segmentation = "1.13"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+zeroize = "=1.9.0"
 zstd = "0.14"
 loams-cache = { path = "crates/loams-cache", version = "0.0.1" }
 loams-collection = { path = "crates/loams-collection", version = "0.0.1" }

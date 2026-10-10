@@ -175,7 +175,7 @@ jobs:
           cargo build --locked --bin loams-wal-interpreted --features tikv
 
   pg-control:
-    name: loams-pg-control (local store, clippy default and tikv)
+    name: loams-pg-control (local store, clippy default, tikv, kubernetes and keyring)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -192,3 +192,7 @@ jobs:
         run: cargo clippy -p loams-pg-control --all-targets --locked -- -D warnings
       - name: clippy (tikv)
         run: cargo clippy -p loams-pg-control --all-targets --features tikv --locked -- -D warnings
+      - name: test (the Kubernetes secret store, against a stand-in API)
+        run: cargo test -p loams-pg-control --features kubernetes --test secrets_kube --locked
+      - name: clippy (kubernetes, keyring)
+        run: cargo clippy -p loams-pg-control --all-targets --features kubernetes,keyring --locked -- -D warnings

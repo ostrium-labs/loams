@@ -1,4 +1,4 @@
-//! The project and branch RPCs (PG2 Task 5) on the local (embedded) store
+//! The project, branch, role and database RPCs (PG2 Tasks 5 and 6) on the local (embedded) store
 //! and a fake Neon. `service_tikv` runs the same cases on TiKV.
 
 #[macro_use]
@@ -15,3 +15,5 @@ fn factory() -> Factory {
 mod branches;
 #[path = "service/projects.rs"]
 mod projects;
+#[path = "service/roles.rs"]
+mod roles;

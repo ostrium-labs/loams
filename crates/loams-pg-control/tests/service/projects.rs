@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use crate::common::{T0_MS, admin, harness_on, user};
+use crate::common::{FirstBatch, T0_MS, admin, harness_on, user};
 use loams_pg_control::ids::{ProjectId, tenant_id};
 use loams_pg_control::model::{
     BranchKey, BranchRec, BranchState, OperationRec, ProjectNameKey, ProjectNameRec, ProjectRec,
@@ -574,19 +574,6 @@ async fn a_conflict_on_the_ledger_answers_the_winner() {
     let won = winner.lock().expect("lock").clone().expect("the hook ran");
     assert_eq!(first, won, "the loser answers the winner's response");
     assert_eq!(all_projects(&h).await.len(), 1);
-}
-
-/// `LoseAck` at `point` of the first attempt of every `pg.batch`.
-#[derive(Debug)]
-struct FirstBatch {
-    point: loams_kv::FaultPoint,
-}
-
-impl loams_kv::FaultPlan for FirstBatch {
-    fn at(&self, op: &str, point: loams_kv::FaultPoint, attempt: u32) -> Option<loams_kv::Fault> {
-        (op == "pg.batch" && point == self.point && attempt == 1)
-            .then_some(loams_kv::Fault::LoseAck)
-    }
 }
 
 /// Records carry when they were created and last written.
