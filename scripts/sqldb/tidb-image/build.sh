@@ -34,7 +34,7 @@ git_src() { git -C "$src" "$@"; }
 # Annotated tags only (no --tags): every patch-queue release is one.
 tag="$(git_src describe --exact-match HEAD)" || {
   echo "build.sh: $src is not at an annotated tag" >&2; exit 1; }
-[[ "$tag" == v8.5.8-loams.* ]] || { echo "build.sh: tag $tag is not a v8.5.8-loams.N tag" >&2; exit 1; }
+[[ "$tag" =~ ^v8\.5\.8-loams\.[0-9]+$ ]] || { echo "build.sh: tag $tag is not a v8.5.8-loams.N tag" >&2; exit 1; }
 [[ -z "$(git_src status --porcelain --untracked-files=no)" ]] || {
   echo "build.sh: $src has local changes" >&2; exit 1; }
 image="${2:-ghcr.io/ostrium-labs/tidb:$tag}"
