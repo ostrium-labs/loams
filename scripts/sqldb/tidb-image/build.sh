@@ -31,8 +31,9 @@ GO_IMAGE=docker.io/library/golang:1.25.12@sha256:9006890ecba0a168034d99516084099
 BASE_IMAGE=docker.io/pingcap/tidb@sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5
 
 git_src() { git -C "$src" "$@"; }
-tag="$(git_src describe --tags --exact-match HEAD)" || {
-  echo "build.sh: $src is not at a tag" >&2; exit 1; }
+# Annotated tags only (no --tags): every patch-queue release is one.
+tag="$(git_src describe --exact-match HEAD)" || {
+  echo "build.sh: $src is not at an annotated tag" >&2; exit 1; }
 [[ "$tag" == v8.5.8-loams.* ]] || { echo "build.sh: tag $tag is not a v8.5.8-loams.N tag" >&2; exit 1; }
 [[ -z "$(git_src status --porcelain --untracked-files=no)" ]] || {
   echo "build.sh: $src has local changes" >&2; exit 1; }
