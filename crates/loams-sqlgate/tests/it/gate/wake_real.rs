@@ -364,18 +364,16 @@ async fn ddl_finishes(c: &mut mysql_async::Conn, table: &str) -> bool {
     .is_ok()
 }
 
-/// The Task 4 finding, explained (plan R5.3): TiDB v8.5.8's global DDL owner
-/// manager campaigns on `/tidb/ddl/fg/owner` without the keyspace's etcd
-/// prefix, so the TiDBs of all keyspaces on one PD elect one DDL owner
-/// between them, and DDL in every other keyspace waits forever. Fixed
-/// upstream by pingcap/tidb#60403 (issue #60401), not in release-8.5.
+/// The Task 4 finding, explained (plan R5.3): upstream TiDB v8.5.8's global
+/// DDL owner manager campaigns on `/tidb/ddl/fg/owner` without the
+/// keyspace's etcd prefix, so the TiDBs of all keyspaces on one PD elect one
+/// DDL owner between them, and DDL in every other keyspace waits forever.
+/// Fixed upstream by pingcap/tidb#60403 (issue #60401), not in release-8.5;
+/// the pinned `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1` carries the
+/// cherry-pick (§47 §5.4 (d)).
 #[cfg_attr(
     not(loams_it_sqldb),
     ignore = "needs LOAMS_IT_SQLDB=1 and the spike stack"
-)]
-#[cfg_attr(
-    loams_it_sqldb,
-    ignore = "fails on TiDB v8.5.8 (pingcap/tidb#60401): needs the keyspace-prefixed DDL owner patch (R5.3)"
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn ddl_runs_while_another_keyspace_runs() {

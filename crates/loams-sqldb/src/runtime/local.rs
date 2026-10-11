@@ -1,4 +1,4 @@
-//! [`SqlRuntime`] on one host: one `pingcap/tidb@<digest>` container per pool
+//! [`SqlRuntime`] on one host: one TiDB `<image>@<digest>` container per pool
 //! member under Podman or Docker, host networking (the desktop and the
 //! `LOAMS_IT_SQLDB` tests).
 //!

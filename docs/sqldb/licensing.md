@@ -8,15 +8,15 @@ These components are Go (TiDB, PD, BR, TiCDC) or Rust built by PingCAP (TiKV). L
 
 | Image | Version | Licence | Used for |
 |---|---|---|---|
-| `pingcap/tidb` | v8.5.8 | Apache-2.0 | The compute pool of each branch (`tidb-server`, keyspace mode) |
+| `ghcr.io/ostrium-labs/tidb` | v8.5.8-loams.1 | Apache-2.0 | The compute pool of each branch (`tidb-server`, keyspace mode): upstream v8.5.8 plus the §47 §5.4 patch queue, on PingCAP's own v8.5.8 image |
 | `pingcap/tikv` | v8.5.8 | Apache-2.0 | The spike and IT stack. Production runs the Loams TiKV |
 | `pingcap/pd` | v8.5.8 | Apache-2.0 | The spike and IT stack, plus the keyspace API |
 | `pingcap/br` | v8.5.8 | Apache-2.0 | Backup, log backup and restore jobs (SQ1c) |
 | `pingcap/ticdc` | v8.5.8 | Apache-2.0 | Pinned only. Classic TiCDC cannot read keyspaces (§47 §10), so CDC is the Rust `loams-sqlcdc` |
 
-- **How the images reach a host.** The runtimes (`LocalRuntime`, `KubernetesRuntime`) pull `<image>@<digest>` from Docker Hub. Loams does not redistribute these images.
+- **How the images reach a host.** The runtimes (`LocalRuntime`, `KubernetesRuntime`) pull `<image>@<digest>`: the PingCAP images from Docker Hub, and the patched TiDB from GitHub's container registry (private for now, so hosts log in to `ghcr.io`). Loams does not redistribute the PingCAP images.
 - **If an image is ever mirrored or bundled** (for example, an offline desktop installer), its Apache-2.0 `LICENSE` and `NOTICE` files ship with it.
-- **Patches.** Any TiDB patch (§47 §5.4) stays in the `ostrium-labs/tidb` fork under Apache-2.0, and its image is pinned the same way.
+- **Patches.** TiDB patches (§47 §5.4) stay in the `ostrium-labs/tidb` fork under Apache-2.0, and its image is pinned the same way. That image replaces only `/tidb-server` in PingCAP's `pingcap/tidb:v8.5.8` image, whose Rocky Linux 9 base carries its own licences (the base image labels them `Apache-2.0 AND BSD-3-Clause AND GPL-2.0-only`). If the image is ever published, it ships with TiDB's `LICENSE` and a pointer to the fork's source and the base's sources.
 
 ## Linked Rust code
 

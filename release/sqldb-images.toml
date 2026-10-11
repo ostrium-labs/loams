@@ -6,11 +6,18 @@
 # and pd by digest and checked each binary's `-V` (TiDB and PD
 # `Release Version: v8.5.8`, TiKV `8.5.8`), and checked the ticdc and br
 # manifests (both platforms) without pulling them.
+#
+# TiDB is Loams' patch queue on v8.5.8 (§47 §5.4; SQ1 R5.3): branch
+# loams/v8.5.8-patches of ostrium-labs/tidb (v8.5.8 plus pingcap/tidb#60403),
+# tag v8.5.8-loams.1, built by scripts/sqldb/tidb-image/build.sh on top of
+# docker.io/pingcap/tidb@sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5
+# (the upstream v8.5.8 pin). linux/amd64 only; the package is private, so
+# hosts log in to ghcr.io before they pull.
 
 [tidb]
-image = "docker.io/pingcap/tidb"
-tag = "v8.5.8"
-digest = "sha256:df168c764bf2dfdb166dc37a5c3b0e210d29d5f3ab2d33317fd0fdf7b32037f5"
+image = "ghcr.io/ostrium-labs/tidb"
+tag = "v8.5.8-loams.1"
+digest = "sha256:ea62f135814fef2d9d89bb659f1b70b63d7eecb6f2ba61edf53482f29089a954"
 
 [tikv]
 image = "docker.io/pingcap/tikv"

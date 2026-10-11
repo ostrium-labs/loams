@@ -1,0 +1,16 @@
+# Loams' patched tidb-server (design §47 §5.4). Built by build.sh, which
+# compiles the binary from the ostrium-labs/tidb patch-queue tag and passes the
+# upstream image of the same release as BASE_IMAGE.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+ARG VERSION
+ARG REVISION
+COPY tidb-server /tidb-server
+LABEL org.opencontainers.image.title="tidb" \
+      org.opencontainers.image.description="TiDB ${VERSION}: pingcap/tidb with the Loams patch queue" \
+      org.opencontainers.image.source="https://github.com/ostrium-labs/tidb" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.ref.name="loams/v8.5.8-patches" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      net.pingcap.tibuild.git-sha="${REVISION}"
