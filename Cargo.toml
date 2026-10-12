@@ -221,7 +221,7 @@ thiserror = "2"
 tikv-client = { git = "https://github.com/ostrium-labs/client-rust", rev = "1f8962b00b33ebc6f34b72d6c52d08b8a8e1906e", default-features = false }
 time = { version = "0.3", features = ["std", "formatting", "parsing", "macros"] }
 time-fmt = "0.3.8"
-toml = "0.8"
+toml = "1.1"
 # The engine's `loams.house.v1` proxy hands axum's `Send`-only request body to
 # reqwest, which wants `Sync` (HS1 Task 7). 1.0.2 (2024-11-20) is already in the
 # lock through axum. Apache-2.0.
