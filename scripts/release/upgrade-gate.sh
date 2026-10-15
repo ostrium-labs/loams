@@ -102,6 +102,8 @@ fixtures() {
 timed fixtures_write fixtures write --out /state/state.json
 
 # The candidate: its image from this checkout, and the client.
+# Into the store the stack runs from.
+case "$engine" in */docker) export LOAMS_BUILD_ENGINE=buildx ;; *) export LOAMS_BUILD_ENGINE=podman ;; esac
 timed build_candidate "$root/deploy/release/build.sh" --platforms linux/amd64 --version "$candidate" loams
 timed build_client cargo build --locked -p loams-upgrade --bin loams-upgrade
 export LOAMS_UPGRADE_TRACE=1

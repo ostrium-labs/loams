@@ -58,7 +58,12 @@ fi
 version="${version#v}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die "version $version is not semver"
 
-if command -v podman >/dev/null 2>&1; then
+# LOAMS_BUILD_ENGINE=podman|buildx picks one when both are installed (the
+# upgrade gate builds into Docker's store, which its stack runs from).
+if [[ -n "${LOAMS_BUILD_ENGINE:-}" ]]; then
+  engine="$LOAMS_BUILD_ENGINE"
+  [[ "$engine" == podman || "$engine" == buildx ]] || die "LOAMS_BUILD_ENGINE is podman or buildx"
+elif command -v podman >/dev/null 2>&1; then
   engine=podman
 elif command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then
   engine=buildx
