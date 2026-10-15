@@ -1797,11 +1797,11 @@ dependencies = [
 
 [[package]]
 name = "jsonwebtoken"
-version = "9.2.0"
+version = "9.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c7ea04a7c5c055c175f189b6dc6ba036fd62306b58c66c9f6389036c503a3f4"
+checksum = "5a87cc7a48537badeae96744432de36f4be2b4a34a05a5ef32e9dd8a1c169dde"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "js-sys",
  "pem",
  "ring",
@@ -1894,7 +1894,7 @@ version = "0.1.0-preview.2"
 dependencies = [
  "futures",
  "loams-tuple",
- "rand 0.9.3",
+ "rand 0.10.3",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
@@ -2281,7 +2281,7 @@ dependencies = [
  "futures-util",
  "opentelemetry",
  "percent-encoding",
- "rand 0.9.3",
+ "rand 0.9.5",
  "serde_json",
  "thiserror 2.0.11",
  "tokio",
@@ -2320,7 +2320,7 @@ dependencies = [
  "postgres_ffi_types",
  "postgres_versioninfo",
  "posthog_client_lite",
- "rand 0.9.3",
+ "rand 0.9.5",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -2618,7 +2618,7 @@ dependencies = [
  "bytes",
  "itertools 0.10.5",
  "postgres-protocol",
- "rand 0.9.3",
+ "rand 0.9.5",
  "serde",
  "thiserror 1.0.69",
  "tokio",
@@ -2914,9 +2914,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.9.3"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ec095654a25171c2124e9e3393a930bddbffdc939556c914957a4c3e0a87166"
+checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.3",
@@ -4518,7 +4518,7 @@ dependencies = [
  "pin-project-lite",
  "postgres_connection",
  "pq_proto",
- "rand 0.9.3",
+ "rand 0.9.5",
  "regex",
  "scopeguard",
  "sentry",
