@@ -1,0 +1,24 @@
+# The upgrade gate's override (design §54 §14 step 1, UP1 Task 20). The gate
+# copies it into the stack directory as compose.override.yaml, so the
+# previous release, `loams upgrade` and the candidate all run with it:
+#
+# - no Tailscale: the engine takes API keys (secrets/api-keys) instead, and
+#   the fixtures reach its loopback listeners from a container that shares
+#   the `loams` container's network namespace;
+# - no Postgres compute (it needs a tenant and a timeline the gate does not
+#   create yet); the pageserver and the safekeeper run, so the drain runs;
+# - no published host ports, so parallel stacks on one runner do not collide.
+services:
+  loams:
+    environment:
+      LOAMS_AUTH_MODE: apikey
+  tailscale:
+    profiles: [disabled]
+  compute1:
+    profiles: [disabled]
+  pageserver:
+    ports: !reset []
+  safekeeper1:
+    ports: !reset []
+  rustfs:
+    ports: !reset []

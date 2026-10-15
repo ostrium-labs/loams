@@ -2301,6 +2301,10 @@ jobs:
       # Design §54 §11 (UP1 Task 11): the release train lists every compiled
       # migration once and chains to `fresh`, its pins match the pin files,
       # and a release pull request's CHANGELOG entry has its Upgrading section.
+      # UP1 Task 20's gate_in_ci_required.
+      - if: ${{ !cancelled() }}
+        name: the upgrade gate is in CI required
+        run: python3 scripts/ci/check-upgrade-gate.py --self-test && python3 scripts/ci/check-upgrade-gate.py
       - if: ${{ !cancelled() }}
         name: upgrade path checker self-test
         run: scripts/release/check-upgrade-path.sh --self-test
@@ -2345,6 +2349,42 @@ jobs:
         run: python3 scripts/release/make-repo.py --self-test
 
 
+  # Design §54 §14 (D941, UP1 Task 20): the previous release's stack, with
+  # fixture data in every product (conformance/upgrade), upgraded to the
+  # candidate built from this checkout, checked, rolled back and checked
+  # again; with every migration reversible, also `rollback --keep-writes`.
+  # The full tier (pull requests into main), the nightly on dev, and a pull
+  # request labelled `ci:upgrade` (a pin bump, §9.2).
+  upgrade-gate:
+    name: "Upgrade: previous release → candidate"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.full == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:upgrade')) }}
+    runs-on: ${{ vars.RUNNER_HEAVY || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - name: the upgrade gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/release/upgrade-gate.sh "$RUNNER_TEMP/upgrade-gate"
+      - if: ${{ always() }}
+        name: the ledger, the snapshot, check's JSON, timings and logs
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: upgrade-gate
+          path: |
+            ${{ runner.temp }}/upgrade-gate/*.json
+            ${{ runner.temp }}/upgrade-gate/*.txt
+            ${{ runner.temp }}/upgrade-gate/state/state.json
+          if-no-files-found: ignore
+
   required:
     name: CI required
     if: always()
@@ -2385,6 +2425,7 @@ jobs:
       - deny
       - web
       - dapr-edge
+      - upgrade-gate
     runs-on: ubuntu-24.04
     steps:
       - name: Require all selected CI jobs to pass

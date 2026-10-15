@@ -24,6 +24,22 @@ push) runs them anyway. CodeRabbit does not review drafts.
 `CI required`, `Connectors required`, `Web and mobile required` (each passes when every job its
 event selected passed and the rest were skipped) and, on `dev`, `DCO sign-off`.
 
+## The upgrade gate
+
+`Upgrade: previous release → candidate` (`upgrade-gate`, design §54 §14) is in `CI required`. It runs on the
+full tier, in the nightly on `dev`, and on a pull request into `dev` labelled `ci:upgrade` (use the label for a
+third-party pin bump). `scripts/release/upgrade-gate.sh` does the work:
+- it starts the previous release (the candidate's `from` in `release/upgrade-path.toml`) from its published
+  bundle, with `deploy/release/ci/compose.upgrade.yaml`;
+- it writes `conformance/upgrade`'s fixtures;
+- it builds the candidate's `loams` image from the checkout, then runs `loams-upgrade` to upgrade, check, roll
+  back and check again;
+- when every migration is reversible, it also runs `rollback --keep-writes`.
+
+The artifact `upgrade-gate` holds the ledger, `check`'s JSON, the reports, the timings and every service's logs.
+Run it locally with `scripts/release/upgrade-gate.sh <workdir>`. It needs Docker with Compose (or Podman), `gh`
+and about 15 GB of free disk.
+
 ## Names
 
 Workflows are named for their product area (`CI`, `Connectors`, `Web and mobile`, `Postgres`,
