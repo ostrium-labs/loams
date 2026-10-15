@@ -88,16 +88,82 @@ fn postgres_dir(stack_dir: &Path) -> Option<PathBuf> {
     dir.join("compose.yaml").exists().then_some(dir)
 }
 
+/// The modes of every file and directory under `dir` (relative paths), but
+/// the history's.
+fn modes(dir: &Path) -> Result<std::collections::BTreeMap<String, u32>> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(at) = stack.pop() {
+        for entry in std::fs::read_dir(&at).map_err(|e| io(&at, e))? {
+            let entry = entry.map_err(|e| io(&at, e))?;
+            let path = entry.path();
+            let rel = path
+                .strip_prefix(dir)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+            if rel == history::DIR {
+                continue;
+            }
+            let meta = std::fs::symlink_metadata(&path).map_err(|e| io(&path, e))?;
+            if meta.is_dir() {
+                stack.push(path);
+            } else if !meta.is_file() {
+                continue;
+            }
+            out.insert(rel, meta.permissions().mode() & 0o7777);
+        }
+    }
+    Ok(out)
+}
+
+/// Puts back the modes `saved` recorded for files under `dir`.
+fn apply_modes(dir: &Path, saved: &std::collections::BTreeMap<String, u32>) -> Result<()> {
+    for (rel, mode) in saved {
+        let path = dir.join(rel);
+        if path.exists() {
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(*mode))
+                .map_err(|e| io(&path, e))?;
+        }
+    }
+    Ok(())
+}
+
 /// Copies the stack directory (bundle, `.env`, `secrets/`) and its sibling
-/// Postgres directory into the snapshot's host copy, privately.
+/// Postgres directory into the snapshot's host copy, privately, with their
+/// modes in `modes.json` (a restore puts them back: a service bind-mounts
+/// some of these files and reads them as another user).
 pub fn save_host(stack_dir: &Path, id: &str) -> Result<PathBuf> {
     history::private_dir(stack_dir)?;
     let to = host_copy_dir(stack_dir, id);
     copy_tree(stack_dir, &to.join("release"), true, &|n| n == history::DIR)?;
+    let mut recorded = serde_json::Map::new();
+    recorded.insert(
+        "release".into(),
+        serde_json::to_value(modes(stack_dir)?).unwrap_or_default(),
+    );
     if let Some(pg) = postgres_dir(stack_dir) {
         copy_tree(&pg, &to.join(POSTGRES_DIR), true, &|_| false)?;
+        recorded.insert(
+            POSTGRES_DIR.into(),
+            serde_json::to_value(modes(&pg)?).unwrap_or_default(),
+        );
     }
+    write_private(
+        &to.join("modes.json"),
+        &serde_json::Value::Object(recorded).to_string(),
+    )?;
     Ok(to)
+}
+
+/// The modes `save_host` recorded for `part` (`release` or the Postgres
+/// directory); empty for a copy without them.
+fn saved_modes(from: &Path, part: &str) -> std::collections::BTreeMap<String, u32> {
+    std::fs::read_to_string(from.join("modes.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| serde_json::from_value(v[part].clone()).ok())
+        .unwrap_or_default()
 }
 
 /// Puts the host copy back: the bundle files, `.env` and `secrets/` exactly
@@ -122,6 +188,7 @@ pub fn restore_host(stack_dir: &Path, id: &str) -> Result<()> {
             std::fs::copy(&saved, stack_dir.join(name)).map_err(|e| io(&saved, e))?;
         }
     }
+    apply_modes(stack_dir, &saved_modes(&from, "release"))?;
     let saved_pg = from.join(POSTGRES_DIR);
     if saved_pg.exists()
         && let Some(parent) = stack_dir.parent()
@@ -131,6 +198,7 @@ pub fn restore_host(stack_dir: &Path, id: &str) -> Result<()> {
             remove_extra(&pg, &saved_pg)?;
         }
         copy_tree(&saved_pg, &pg, false, &|_| false)?;
+        apply_modes(&pg, &saved_modes(&from, POSTGRES_DIR))?;
     }
     Ok(())
 }

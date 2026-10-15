@@ -127,6 +127,21 @@ fn rollback_restores_every_component() {
         History::of(&dir).entries().last().expect("entry").event,
         Event::RolledBack
     );
+    // The files keep their modes (a service bind-mounts some of them and reads
+    // them as another user), though the host copy is private.
+    use std::os::unix::fs::PermissionsExt as _;
+    let mode =
+        |p: std::path::PathBuf| std::fs::metadata(p).expect("meta").permissions().mode() & 0o777;
+    assert_eq!(
+        mode(
+            world
+                .root
+                .path()
+                .join("stack/loams-postgres-dev/compose.yaml")
+        ),
+        0o644
+    );
+    assert_eq!(mode(dir.join("compose.yaml")), 0o644);
     // With BR, TiKV is restored into fresh volumes at the snapshot's version.
     let world = World::new(ENV);
     let br = scripted(Script::new(), true);
