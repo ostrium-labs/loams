@@ -33,7 +33,8 @@ def upsert(stack, docs):
 
 def get(stack, ids):
     reply = stack.http().ok("POST", f"{BASE}/documents/get", {"ids": ids})
-    return {d["id"]: d.get("source") for d in reply.get("documents", [])}
+    # A strong get answers one entry per id, `null` for one that is missing.
+    return {d["id"]: d.get("source") for d in (reply or {}).get("documents", []) if d}
 
 
 def write(stack):

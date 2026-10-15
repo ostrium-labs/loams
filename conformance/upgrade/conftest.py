@@ -31,7 +31,9 @@ class FakeEngine:
                 self.docs[op["upsert"]["id"]] = op["upsert"]["source"]
             return 200, {}
         if path.endswith("/documents/get"):
-            return 200, {"documents": [{"id": i, "source": self.docs[i]} for i in body["ids"] if i in self.docs]}
+            # One entry per id, `null` for a missing one, as the engine answers.
+            return 200, {"documents": [{"id": i, "source": self.docs[i]} if i in self.docs else None
+                                       for i in body["ids"]]}
         if path.endswith("/query"):
             text = body["retrievers"][0]["text"]["query"]["match"]["text"]
             return 200, {"hits": [{"pk": i} for i, d in self.docs.items() if text in d["body"]]}
