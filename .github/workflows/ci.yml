@@ -2382,6 +2382,7 @@ jobs:
           path: |
             ${{ runner.temp }}/upgrade-gate/*.json
             ${{ runner.temp }}/upgrade-gate/*.txt
+            ${{ runner.temp }}/upgrade-gate/*.log
             ${{ runner.temp }}/upgrade-gate/state/state.json
           if-no-files-found: ignore
 

@@ -115,9 +115,22 @@ pub struct UpgradeReport {
     pub pruned: Vec<String>,
 }
 
-fn failed_output(code: &'static str, what: &str, out: &Output) -> UpgradeError {
-    let last = out.stderr.lines().last().unwrap_or_default().trim();
-    UpgradeError::new(code, format!("{what} (exit {}): {last}", out.status))
+/// A failed command as `code`, with the last lines of what it printed.
+pub fn failed_output(code: &'static str, what: &str, out: &Output) -> UpgradeError {
+    UpgradeError::new(
+        code,
+        format!("{what} (exit {}): {}", out.status, tail(&out.stderr)),
+    )
+}
+
+/// The last three non-empty lines of `text`, joined.
+pub fn tail(text: &str) -> String {
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    lines[lines.len().saturating_sub(3)..].join(" | ")
 }
 
 /// Runs a helper; a non-zero exit is `code`.

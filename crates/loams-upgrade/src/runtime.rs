@@ -56,6 +56,11 @@ impl Cli {
     }
 
     fn run(&self, args: &[String]) -> Result<Output> {
+        // LOAMS_UPGRADE_TRACE=1 prints every command (the gate keeps it in
+        // its logs). Arguments hold paths and image names, never `.env` values.
+        if std::env::var_os("LOAMS_UPGRADE_TRACE").is_some() {
+            eprintln!("+ {} {}", self.program, args.join(" "));
+        }
         let out = Command::new(&self.program)
             .args(args)
             .output()

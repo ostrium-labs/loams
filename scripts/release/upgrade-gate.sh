@@ -104,11 +104,12 @@ timed fixtures_write fixtures write --out /state/state.json
 # The candidate: its image from this checkout, and the client.
 timed build_candidate "$root/deploy/release/build.sh" --platforms linux/amd64 --version "$candidate" loams
 timed build_client cargo build --locked -p loams-upgrade --bin loams-upgrade
+export LOAMS_UPGRADE_TRACE=1
 up="$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/debug/loams-upgrade"
 bundle="$root/deploy/release"
 
-"$up" check --dir "$stack" --to "$candidate" --bundle "$bundle" > "$work/check.json"
-timed upgrade "$up" --dir "$stack" --to "$candidate" --bundle "$bundle" --yes > "$work/upgrade-1.json"
+"$up" check --dir "$stack" --to "$candidate" --bundle "$bundle" > "$work/check.json" 2> "$work/check.log"
+timed upgrade "$up" --dir "$stack" --to "$candidate" --bundle "$bundle" --yes > "$work/upgrade-1.json" 2> "$work/upgrade-1.log"
 timed fixtures_check fixtures check --state /state/state.json
 fixtures write-new --state /state/state.json
 fixtures check --state /state/state.json --expect-new-writes present
@@ -116,14 +117,14 @@ compose run --rm --no-deps migrate migrate status --meta=tikv://pd:2379/loams_me
   --bucket=file:///var/lib/loams/bucket --data-dir=/var/lib/loams --output json > "$work/ledger.json" || true
 
 # 2. Rollback from the snapshot.
-timed rollback "$up" rollback --dir "$stack" --yes > "$work/rollback-1.json"
+timed rollback "$up" rollback --dir "$stack" --yes > "$work/rollback-1.json" 2> "$work/rollback-1.log"
 fixtures check --state /state/state.json --expect-new-writes absent
 
 # 3. Reversibility, and --keep-writes.
 if [ "$classes" = "reversible" ]; then
-  "$up" --dir "$stack" --to "$candidate" --bundle "$bundle" --yes > "$work/upgrade-2.json"
+  "$up" --dir "$stack" --to "$candidate" --bundle "$bundle" --yes > "$work/upgrade-2.json" 2> "$work/upgrade-2.log"
   fixtures write-new --state /state/state.json
-  timed rollback_keep_writes "$up" rollback --dir "$stack" --keep-writes --yes > "$work/rollback-2.json"
+  timed rollback_keep_writes "$up" rollback --dir "$stack" --keep-writes --yes > "$work/rollback-2.json" 2> "$work/rollback-2.log"
   # The previous release reads the fixtures and the candidate's new writes.
   fixtures check --state /state/state.json --expect-new-writes present
 else
