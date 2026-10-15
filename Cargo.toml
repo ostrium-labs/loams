@@ -118,7 +118,7 @@ itertools = "0.15"
 # Ed25519 JWTs for computes (PG2 Task 8: the spec upcall's per-compute token
 # and pg-control's token for compute_ctl), the library compute_ctl verifies
 # them with. 9.3.1 (2025-02-01) is already in the lockfile (resonate).
-jsonwebtoken = { version = "=9.3.1", default-features = false }
+jsonwebtoken = { version = "=10.3.0", default-features = false }
 # The Kubernetes client (PG2 Task 6's KubeSecretStore first). Task 0 ruling 5
 # asks for the newest release at least 14 days old, 4.2.0; it is held at
 # 3.1.0 (2026-03-17, k8s-openapi 0.27.1 of 2026-03-05) because kube-client 4.x
