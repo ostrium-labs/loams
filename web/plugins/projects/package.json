@@ -2,7 +2,7 @@
   "name": "@loams/plugin-projects",
   "version": "0.1.0",
   "private": true,
-  "description": "A project, its environments (keys, activity, collections and the Connect snippet) and its access, on loams.admin.v1; and the sidebar's project switcher (API2 Task 10, AP1a Task 5).",
+  "description": "A project, its environments (keys, activity, collections and the Connect snippet) and its access, on loams.admin.v1; the top bar's project pill and the project's pages (API2 Task 10, AP1a Task 5, CF1 Task 10).",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -33,7 +33,8 @@
       "provides": [],
       "slots": [
         "console.page",
-        "shell.nav.context"
+        "shell.topbar.left",
+        "shell.nav.section"
       ],
       "permissions": [],
       "requires": {

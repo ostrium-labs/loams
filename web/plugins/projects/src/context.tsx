@@ -1,13 +1,11 @@
-// The sidebar's project context (`shell.nav.context`), as the original console's
-// sidebar had it: a project switcher, then the open project's Overview, its
-// environments, Agents and Access. On an org page no project is open, so the last
-// one opened stays, marked as such, for one-click return.
+// The project pill in the top bar (design 59 W20, `shell.topbar.left`): the project
+// switcher that used to head the sidebar's project context (`shell.nav.context`).
 
 import { useQuery } from '@connectrpc/connect-query';
 import type { RouterService } from '@loams/console-host';
 import { admin } from '@loams/proto';
 import { SelectMenu } from '@loams/ui';
-import { Bot, ChevronsUpDown, Layers, LayoutGrid, Lock, Shield } from 'lucide-react';
+import { ChevronsUpDown } from 'lucide-react';
 import { useEffect, useSyncExternalStore } from 'react';
 
 export const LAST_PROJECT_KEY = 'loams-project';
@@ -39,34 +37,13 @@ function writeLast(slug: string) {
   }
 }
 
-function Item({
-  href,
-  path,
-  exact,
-  sub,
-  children,
-}: {
-  href: string;
-  path: string;
-  exact?: boolean;
-  sub?: boolean;
-  children: React.ReactNode;
-}) {
-  const active = path === href || (!exact && path.startsWith(`${href}/`));
-  return (
-    <li>
-      <a
-        href={`#${href}`}
-        className={sub ? 'la-side-sub' : undefined}
-        aria-current={active ? 'page' : undefined}
-      >
-        {children}
-      </a>
-    </li>
-  );
-}
-
-export function ProjectContext({ router }: { router: RouterService }) {
+/**
+ * The top bar's project pill (W20, `shell.topbar.left`): the project switcher. On an org page
+ * no project is open, so the last one opened stays, marked as such, for one-click return.
+ * The project's Overview, Agents and Access are pages (`shell.nav.section`, `:project`);
+ * its environments are reached from its Overview and the palette.
+ */
+export function ProjectPill({ router }: { router: RouterService }) {
   const location = useSyncExternalStore(router.subscribe, () => router.current());
   const open = projectOf(location.path);
   useEffect(() => {
@@ -76,66 +53,23 @@ export function ProjectContext({ router }: { router: RouterService }) {
   const list = projects.data?.projects ?? [];
   const slug = open ?? readLast();
   const current = list.find((p) => p.slug === slug) ?? list[0];
-  const envs = useQuery(
-    admin.ProjectService.method.listEnvironments,
-    { project: current?.slug ?? '' },
-    { enabled: Boolean(current) },
-  );
   if (!current) return null;
   const idle = !open;
-  const base = `/projects/${current.slug}`;
   return (
-    <div className="la-side">
-      <div className="lc-switcher">
-        <SelectMenu
-          label={idle ? 'Open a project (last opened shown)' : 'Project'}
-          value={current.slug}
-          onValueChange={(next) => router.navigate(`/projects/${next}`)}
-          options={list.map((p) => ({ value: p.slug, label: p.name }))}
-          className={idle ? 'lc-switcher-trigger la-switcher-idle' : 'lc-switcher-trigger'}
-          leading={
-            <span className="lc-switcher-mark" aria-hidden="true">
-              {current.name.slice(0, 1).toUpperCase()}
-            </span>
-          }
-          icon={<ChevronsUpDown size={14} />}
-        />
-      </div>
-      <nav className="lc-nav la-side-nav" aria-label="Project">
-        <div className="lc-nav-group" data-idle={idle ? '' : undefined}>
-          <h2 className="lc-nav-heading">
-            {current.name}
-            {idle && <span className="la-side-note"> · last opened</span>}
-          </h2>
-          <ul>
-            <Item href={base} path={location.path} exact>
-              <LayoutGrid aria-hidden="true" size={16} strokeWidth={1.75} />
-              <span className="lc-nav-label">Overview</span>
-            </Item>
-            <li>
-              <span className="la-side-sub-title">
-                <Layers aria-hidden="true" size={16} strokeWidth={1.75} /> Environments
-              </span>
-            </li>
-            {(envs.data?.environments ?? []).map((e) => (
-              <Item key={e.slug} href={`${base}/environments/${e.slug}`} path={location.path} sub>
-                <span className="env-dot" data-slug={e.slug} aria-hidden="true" />
-                <span className="lc-nav-label">{e.name}</span>
-                {e.protected && <Lock size={12} aria-label="protected" className="la-side-lock" />}
-              </Item>
-            ))}
-            <Item href={`${base}/agents`} path={location.path}>
-              <Bot aria-hidden="true" size={16} strokeWidth={1.75} />
-              <span className="lc-nav-label">Agents</span>
-              <span className="la-side-count">{current.agentCount}</span>
-            </Item>
-            <Item href={`${base}/access`} path={location.path}>
-              <Shield aria-hidden="true" size={16} strokeWidth={1.75} />
-              <span className="lc-nav-label">Access</span>
-            </Item>
-          </ul>
-        </div>
-      </nav>
+    <div className="lc-project-pill" data-idle={idle ? '' : undefined}>
+      <SelectMenu
+        label={idle ? 'Open a project (last opened shown)' : 'Project'}
+        value={current.slug}
+        onValueChange={(next) => router.navigate(`/projects/${next}`)}
+        options={list.map((p) => ({ value: p.slug, label: p.name }))}
+        className="lc-pill-trigger"
+        leading={
+          <span className="lc-pill-mark" aria-hidden="true">
+            {current.name.slice(0, 1).toUpperCase()}
+          </span>
+        }
+        icon={<ChevronsUpDown size={13} />}
+      />
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { SlotProvider, SlotRegistry } from '@loams/slots';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Layout } from '../src/layout.js';
+import { isSettingsPage, pageEntries } from '../src/pages.js';
 import { HashRouter, type HashSource } from '../src/router.js';
 
 function memory(start = '/'): HashSource {
@@ -74,7 +75,7 @@ describe('shell chrome', () => {
     expect(screen.getByText('Loams 0.1.0-preview.3')).toBeTruthy();
   });
 
-  it('breadcrumbs name the instance, the section and the page', () => {
+  it('breadcrumbs name the instance and the page, without a section (D1080)', () => {
     const { slots, router } = setup('/live', flags);
     act(() => {
       section(slots, 'Live', 'Data', 40);
@@ -83,7 +84,6 @@ describe('shell chrome', () => {
     const trail = screen.getByRole('navigation', { name: 'Breadcrumb' });
     expect([...trail.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
       'Acme Loams',
-      'Data',
       'Live',
     ]);
     expect(within(trail).getByText('Live').closest('li')?.getAttribute('aria-current')).toBe(
@@ -99,7 +99,7 @@ describe('shell chrome', () => {
     expect(document.documentElement.classList.contains('dark')).toBe(false);
   });
 
-  it('switches the session environment from the sidebar', async () => {
+  it('switches the session environment from the top bar`s branch pill (W21)', async () => {
     const envs = [
       { id: 'dev', name: 'Development', namespace: 'd', protected: false },
       { id: 'prod', name: 'Production', namespace: 'p', protected: true },
@@ -120,7 +120,9 @@ describe('shell chrome', () => {
       },
     } as unknown as SessionService;
     setup('/', undefined, withEnvs);
-    const trigger = screen.getByRole('combobox', { name: 'Environment' });
+    const trigger = within(screen.getByRole('banner')).getByRole('combobox', {
+      name: 'Environment',
+    });
     expect(trigger.textContent).toContain('Development');
     fireEvent.click(trigger);
     const option = await screen.findByRole('option', { name: 'Production' });
@@ -132,25 +134,6 @@ describe('shell chrome', () => {
 });
 
 describe('shell layout', () => {
-  it('nav_groups_and_orders_sections', () => {
-    const { slots } = setup();
-    act(() => {
-      section(slots, 'Connectors', 'Integrate', 10);
-      section(slots, 'Settings', 'Organisation', 20);
-      section(slots, 'Live', 'Data', 40);
-      section(slots, 'Postgres', 'Data', 20);
-      section(slots, 'Durable', 'Compute', 10);
-      section(slots, 'Cloud', 'Organisation', 10);
-    });
-    const nav = screen.getByRole('navigation', { name: 'Console' });
-    const headings = [...nav.querySelectorAll('.lc-nav-heading')].map((h) => h.textContent);
-    expect(headings).toEqual(['Data', 'Compute', 'Integrate', 'Organisation']);
-    const labels = within(nav)
-      .getAllByRole('link')
-      .map((a) => a.textContent);
-    expect(labels).toEqual(['Postgres', 'Live', 'Durable', 'Connectors', 'Cloud', 'Settings']);
-  });
-
   it('existing_routes_still_render', () => {
     const { slots, router } = setup('/');
     act(() => {
@@ -177,19 +160,28 @@ describe('shell layout', () => {
       );
     });
     expect(screen.getByText('status page')).toBeTruthy();
-    const nav = screen.getByRole('navigation', { name: 'Console' });
-    const sectionOf = (name: string) =>
-      within(nav)
-        .getByRole('link', { name })
-        .closest('.lc-nav-group')
-        ?.querySelector('.lc-nav-heading')?.textContent;
-    expect(sectionOf('Status')).toBe('Data');
-    expect(sectionOf('Namespaces')).toBe('Data');
-    expect(sectionOf('Approvals')).toBe('Organisation');
-    expect(sectionOf('Odd')).toBe('Organisation');
-    expect(within(nav).getByRole('link', { name: 'Status' }).getAttribute('aria-current')).toBe(
-      'page',
+    // Pages from `router.page(… nav)` join the page model: the instance's pages are
+    // Settings, the rest are Pages (D1080).
+    const all = pageEntries(
+      slots.entries('shell.nav.section'),
+      slots.entries('console.nav'),
+      undefined,
     );
+    const place = (label: string) => {
+      const p = all.find((x) => x.label === label);
+      return p && (isSettingsPage(p) ? 'Settings' : 'Pages');
+    };
+    expect(place('Status')).toBe('Pages');
+    expect(place('Namespaces')).toBe('Pages');
+    expect(place('Approvals')).toBe('Settings');
+    expect(place('Odd')).toBe('Pages');
+    act(() => router.navigate('/approvals'));
+    expect(screen.getByText('apr page')).toBeTruthy();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Settings' }))
+        .getByRole('link', { name: 'Approvals' })
+        .getAttribute('aria-current'),
+    ).toBe('page');
     expect(slots.entries('console.nav')).toHaveLength(4);
   });
 });

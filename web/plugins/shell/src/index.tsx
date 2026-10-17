@@ -8,7 +8,9 @@ import type { SlotRegistry } from '@loams/slots';
 import { AppearanceSection } from './appearance.js';
 import { Layout } from './layout.js';
 import { syncModeWithRoute } from './mode-switcher.js';
+import { PREFERENCES_ID } from './pages.js';
 import { DRAWER, INSPECTOR, PanelController } from './panel.js';
+import { PreferencesPage } from './preferences.js';
 import { HashRouter } from './router.js';
 
 export {
@@ -19,6 +21,8 @@ export {
   useThemeState,
 } from './appearance.js';
 export {
+  Crumbs,
+  EnvironmentSwitcher,
   MainRegion,
   readSidebar,
   runShellCommand,
@@ -39,6 +43,21 @@ export {
 
 export { inMode, type ModeFilter, navSections, SECTIONS, STUDIO_SECTIONS } from './nav.js';
 export {
+  currentProject,
+  DEFAULT_PINNED,
+  isSettingsPage,
+  PAGES_CHANGED_EVENT,
+  type PageEntry,
+  pageAt,
+  pageEntries,
+  pinnedPages,
+  readPinned,
+  SETTINGS_GROUPS,
+  settingsHome,
+  togglePinned,
+  writePinned,
+} from './pages.js';
+export {
   isPaletteShortcut,
   type PaletteModes,
   type PaletteRow,
@@ -48,6 +67,7 @@ export {
   scopePalette,
 } from './palette.js';
 export { DRAWER, INSPECTOR, type PanelConfig, PanelController } from './panel.js';
+export { PreferencesPage } from './preferences.js';
 export { PanelRegion, PanelToggles, tabShows } from './regions.js';
 export { compile, HashRouter, type HashSource, windowHash } from './router.js';
 export { ShellSidebar } from './sidebar.js';
@@ -83,6 +103,30 @@ const plugin: PluginModule = {
           drawer={drawer}
         />
       )),
+    );
+    // Preferences (T2-5): the settings sections where the desktop's Settings page is absent.
+    ctx.effect(() =>
+      router.page(
+        { id: PREFERENCES_ID, path: '/preferences', title: 'Preferences', plugin: 'shell' },
+        () => <PreferencesPage />,
+      ),
+    );
+    ctx.effect(() =>
+      slots.register(
+        {
+          name: 'shell.nav.section',
+          plugin: 'shell',
+          order: 130,
+          meta: {
+            id: PREFERENCES_ID,
+            label: 'Preferences',
+            href: '/preferences',
+            icon: 'settings',
+            group: 'Settings',
+          },
+        },
+        () => null,
+      ),
     );
     // Settings › Appearance: the theme choice and panel motion (D1074, D1076).
     ctx.effect(() =>

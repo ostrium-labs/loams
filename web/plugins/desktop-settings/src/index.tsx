@@ -53,7 +53,8 @@ const plugin: PluginModule = {
           order: 120,
           meta: {
             id: 'settings',
-            label: 'Settings',
+            // Settings lists every settings page (D1080): this one is the app's own.
+            label: 'App settings',
             href: '/settings',
             icon: 'settings',
             group: 'Organisation',

@@ -84,7 +84,6 @@ import {
   Pin,
   Plus,
   Search,
-  Settings,
   Trash2,
 } from 'lucide-react';
 import {
@@ -1043,10 +1042,6 @@ export function StudioSidebar({
             Clean up worktrees
           </button>
         )}
-        <a href={`#${studioHref({ kind: 'settings' })}`} className={ROW}>
-          <Settings size={15} strokeWidth={1.75} aria-hidden="true" />
-          Studio settings
-        </a>
       </div>
       <CloneDialog
         open={cloning}

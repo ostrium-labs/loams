@@ -1,9 +1,11 @@
 // Console | Studio in the real console (SD1 Tasks 3 and 15): the oss catalog with
 // the browser platform over the in-memory mock. The switch shows in every edition.
 
+import type { ConsoleHandle } from '@loams/console-host';
 import { MODE_KEY, type ModeService, parseCatalog, parsePatch } from '@loams/console-host';
 import { createMockTransport } from '@loams/console-host/testing';
 import { createWebPlatform } from '@loams/platform-web';
+import { pageEntries } from '@loams/plugin-shell';
 import { fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import baseCatalog from '../catalog/base.yml?raw';
@@ -53,13 +55,18 @@ const go = (path: string) => {
   window.location.hash = `#${path}`;
   window.dispatchEvent(new HashChangeEvent('hashchange'));
 };
-const navLabels = (root: HTMLElement) =>
-  [...root.querySelectorAll('.lc-nav a')].map((a) => a.textContent);
+/** Every page the plugins register (design 59 D1080: the sidebar pins only a few). */
+const navLabels = (handle: { slots: ConsoleHandle['slots'] }) =>
+  pageEntries(
+    handle.slots.entries('shell.nav.section'),
+    handle.slots.entries('console.nav'),
+    undefined,
+  ).map((p) => p.label);
 
 describe('modes in the console', () => {
   it('console_routes_unchanged', async () => {
-    const { root, mode } = await start();
-    await waitFor(() => expect(navLabels(root)).toContain('Approvals'));
+    const { root, handle, mode } = await start();
+    await waitFor(() => expect(navLabels(handle)).toContain('Approvals'));
     for (const [path, text] of [
       ['/', 'Demo instance'],
       ['/namespaces', 'search-prod'],
@@ -76,7 +83,7 @@ describe('modes in the console', () => {
   it('the switch shows in every edition, and Studio says how to connect an agentd', async () => {
     // No `studio` instance feature and no agentd host (owner feedback 2026-10-17).
     const { root, handle, mode } = await start();
-    await waitFor(() => expect(navLabels(root)).toContain('Approvals'));
+    await waitFor(() => expect(navLabels(handle)).toContain('Approvals'));
     expect(mode.available).toEqual(['console', 'studio']);
     expect(handle.plugins().find((p) => p.id === 'studio')?.status).toBe('deferred');
     const studio = await waitFor(() => {
@@ -89,7 +96,9 @@ describe('modes in the console', () => {
     expect(mode.current).toBe('studio');
     expect(localStorage.getItem(MODE_KEY)).toBe('studio');
     // Entering Studio imports its plugin (and its sidebar's dependencies) the first time.
-    await waitFor(() => expect(navLabels(root)).toEqual(['Home', 'Settings']), { timeout: 10_000 });
+    await waitFor(() => expect(navLabels(handle)).toContain('Studio settings'), {
+      timeout: 10_000,
+    });
     expect(window.location.hash).toBe('#/studio');
     await waitFor(
       () => expect(root.textContent).toContain('Studio needs a Loams server with agentd'),
@@ -101,7 +110,7 @@ describe('modes in the console', () => {
     // A Console route switches back; Studio stays loaded.
     go('/approvals');
     await waitFor(() => expect(mode.current).toBe('console'));
-    await waitFor(() => expect(navLabels(root)).toContain('Approvals'));
+    await waitFor(() => expect(navLabels(handle)).toContain('Approvals'));
     expect(handle.plugins().find((p) => p.id === 'studio')?.status).toBe('active');
   }, 20_000);
 

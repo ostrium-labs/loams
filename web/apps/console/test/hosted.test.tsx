@@ -2,9 +2,11 @@
 // screen, and the browser edition's catalog (real pages by default, sample pages
 // only under "Demo data") booted over the in-memory mock.
 
+import type { ConsoleHandle } from '@loams/console-host';
 import { composeCatalog, parseCatalog } from '@loams/console-host';
 import { createMockTransport } from '@loams/console-host/testing';
 import { createWebPlatform } from '@loams/platform-web';
+import { pageEntries } from '@loams/plugin-shell';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import baseCatalog from '../catalog/base.yml?raw';
@@ -197,8 +199,13 @@ describe('Connect your engine', () => {
   });
 });
 
-const navLabels = (root: HTMLElement) =>
-  [...root.querySelectorAll('.lc-nav a')].map((a) => a.textContent);
+/** Every page the plugins register (design 59 D1080: the sidebar pins only a few). */
+const navLabels = (handle: { slots: ConsoleHandle['slots'] }) =>
+  pageEntries(
+    handle.slots.entries('shell.nav.section'),
+    handle.slots.entries('console.nav'),
+    undefined,
+  ).map((p) => p.label);
 
 async function boot(demo: boolean) {
   const root = document.createElement('div');
@@ -239,8 +246,8 @@ describe('the browser edition', () => {
 
   it('loads only pages the engine serves, with the engine, Demo data and sign-out in the header', async () => {
     const { root, handle, session } = await boot(false);
-    await waitFor(() => expect(navLabels(root)).toContain('Live'));
-    const labels = navLabels(root);
+    await waitFor(() => expect(navLabels(handle)).toContain('Live'));
+    const labels = navLabels(handle);
     expect(labels).toEqual(expect.arrayContaining(['Live', 'Graph', 'Analytics', 'Status']));
     for (const sample of ['Deployments', 'Loams SQL', 'Metrics', 'Pipelines', 'Git']) {
       expect(labels).not.toContain(sample);
@@ -262,9 +269,9 @@ describe('the browser edition', () => {
   });
 
   it('adds the sample-data pages under Demo data', async () => {
-    const { root } = await boot(true);
-    await waitFor(() => expect(navLabels(root)).toContain('Loams SQL'));
-    expect(navLabels(root)).toEqual(
+    const { root, handle } = await boot(true);
+    await waitFor(() => expect(navLabels(handle)).toContain('Loams SQL'));
+    expect(navLabels(handle)).toEqual(
       expect.arrayContaining(['Live', 'Deployments', 'Loams SQL', 'Metrics', 'Pipelines', 'Git']),
     );
     expect(root.textContent).toContain('Sample pages on');

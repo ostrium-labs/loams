@@ -10,9 +10,10 @@
 // The mode scope: an entry's mode is its `meta.mode`, else its plugin's (the current
 // mode when the plugin is in both). An entry whose `meta.mode` its plugin does not
 // declare is refused (§53 §4.1). The current mode's commands come first under their
-// own headings; the other mode's follow under one heading, "Console" or "Studio". A
-// plugin of a mode not yet entered is not loaded, so its commands appear once that mode
-// has been visited.
+// own headings; the other mode's follow under one heading, "Console" or "Studio". The
+// shell's "Go to" rows reach every page in either mode (D1080), so they are the current
+// mode's. A plugin of a mode not yet entered is not loaded, so its commands appear once
+// that mode has been visited.
 
 import type { Mode } from '@loams/console-host';
 import { type PaletteCommand, SlotBoundary, type SlotEntry, useSlot } from '@loams/slots';
@@ -151,8 +152,8 @@ export function ShellPalette({
 }: {
   /** The current and available modes; absent, everything is Console's. */
   modes?: PaletteModes;
-  /** The "Go to" commands of each mode, from the nav. */
-  nav: (mode: Mode) => ScopedCommand[];
+  /** The "Go to" (and pin) commands of each mode for the query, from the pages. */
+  nav: (mode: Mode, query: string) => ScopedCommand[];
   /** The shell's own commands (switch mode, theme, agent panel), in the current mode. */
   general: ScopedCommand[];
   /** Open state, when the caller owns it (the top bar's search button opens it too). */
@@ -210,7 +211,7 @@ export function ShellPalette({
   });
   const byMode = (m: Mode) => contributed.filter((c) => c.mode === m);
   for (const m of [current, ...available.filter((a) => a !== current)]) {
-    scoped.push(...byMode(m), ...nav(m));
+    scoped.push(...byMode(m), ...nav(m, query));
     if (m === current) scoped.push(...general);
   }
   const rows = scopePalette(scoped, current, available, query);

@@ -1,5 +1,5 @@
 // The shell's part in the console's own pages (API2 Task 10): bare pages, the
-// session gate, page breadcrumbs, route queries, the sidebar's project context and
+// session gate, page breadcrumbs, route queries, the top bar's project pill and
 // signing out.
 
 import type { FlagsService, SessionService } from '@loams/console-host';
@@ -69,7 +69,7 @@ describe('the console pages in the shell', () => {
       );
     });
     expect(screen.getByRole('heading', { name: 'Sign in here' })).toBeTruthy();
-    expect(screen.queryByRole('navigation', { name: 'Console' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Sidebar' })).toBeNull();
   });
 
   it('signed_out_visitor_is_sent_to_sign_in_with_next', () => {
@@ -116,14 +116,15 @@ describe('the console pages in the shell', () => {
     expect(document.title).toBe('Platform · Loams');
   });
 
-  it('the_nav_context_replaces_the_environment_switcher', () => {
+  it('the_project_pill_sits_in_the_top_bar_and_nav_context_is_not_rendered', () => {
     const { slots } = setup('/', gated('ready'));
     act(() => {
-      slots.register({ name: 'shell.nav.context', plugin: 'projects' }, () => (
-        <p>project switcher</p>
-      ));
+      slots.register({ name: 'shell.topbar.left', plugin: 'projects' }, () => <p>project pill</p>);
+      slots.register({ name: 'shell.nav.context', plugin: 'old' }, () => <p>old context</p>);
     });
-    expect(screen.getByText('project switcher')).toBeTruthy();
+    expect(within(screen.getByRole('banner')).getByText('project pill')).toBeTruthy();
+    // W20: the slot stays declared, and the shell no longer renders it.
+    expect(screen.queryByText('old context')).toBeNull();
   });
 
   it('the_account_menu_signs_out', async () => {

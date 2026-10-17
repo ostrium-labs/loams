@@ -1,8 +1,8 @@
 /*
  * The console's org, project, agent, audit and account pages, in the original
  * console's look (web/apps/console/src/app.css before API2 Task 10). Page rules
- * live under `.la` (the page root, <Page>), the sidebar's project context under
- * `.la-side`. Every colour, shadow and radius is a @loams/ui token.
+ * live under `.la` (the page root, <Page>). Every colour, shadow and radius is a
+ * @loams/ui token.
  */
 .la-page > * {
   animation: la-rise 520ms var(--op-ease) both;
@@ -17,10 +17,6 @@
   animation-delay: 150ms;
 }
 .la a {
-  color: inherit;
-  text-decoration: none;
-}
-.la-side a {
   color: inherit;
   text-decoration: none;
 }
@@ -66,19 +62,7 @@
   background: var(--op-faint);
 }
 
-.la-side .env-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  background: var(--op-faint);
-}
-
 .la .env-dot.lg {
-  width: 10px;
-  height: 10px;
-}
-
-.la-side .env-dot.lg {
   width: 10px;
   height: 10px;
 }
@@ -87,23 +71,11 @@
   background: var(--op-grow);
 }
 
-.la-side .env-dot[data-slug="development"] {
-  background: var(--op-grow);
-}
-
 .la .env-dot[data-slug="staging"] {
   background: var(--op-info);
 }
 
-.la-side .env-dot[data-slug="staging"] {
-  background: var(--op-info);
-}
-
 .la .env-dot[data-slug="production"] {
-  background: var(--op-accent);
-}
-
-.la-side .env-dot[data-slug="production"] {
   background: var(--op-accent);
 }
 
@@ -627,55 +599,4 @@
     animation: none;
     transition: none;
   }
-}
-
-/* The sidebar's project context: the project switcher and the open project's pages,
-   in the shell's nav look (lc-nav-*), with the original's environment sub-list. */
-.la-side .lc-switcher-trigger.la-switcher-idle {
-  border-style: dashed;
-  background: transparent;
-  color: var(--op-muted);
-  font-weight: 400;
-}
-.la-side .lc-switcher-trigger.la-switcher-idle .lc-switcher-mark {
-  color: var(--op-muted);
-  background: var(--op-raised);
-}
-.la-side {
-  display: contents;
-}
-.la-side .la-side-nav {
-  flex: none;
-  overflow: visible;
-  padding: 10px 12px 0;
-}
-.la-side .la-side-note {
-  color: var(--op-faint);
-}
-.la-side .la-side-sub-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 30px;
-  padding: 0 10px;
-  font-size: 0.88rem;
-  color: var(--op-muted);
-}
-.la-side .lc-nav a.la-side-sub {
-  height: 30px;
-  padding-left: 36px;
-  font-size: 0.84rem;
-}
-.la-side .la-side-lock {
-  margin-left: auto;
-  color: var(--op-faint);
-}
-.la-side .la-side-count {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.68rem;
-  color: var(--op-faint);
-}
-.la-side .lc-nav-group[data-idle] .lc-nav-heading {
-  color: var(--op-faint);
 }

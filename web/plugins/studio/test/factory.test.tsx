@@ -4,7 +4,7 @@
 
 import type { ModeService } from '@loams/console-host';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { desktopFactory, type StudioFactory } from '../src/factory.js';
@@ -74,6 +74,13 @@ describe('the Factory group', () => {
   it('lists the eight apps with their configured state', async () => {
     render(wrap(<FactoryGroup factory={desktopFake().factory} />));
     const group = await screen.findByRole('navigation', { name: 'Factory' });
+    // Collapsed by default (owner feedback 2026-10-17): one line with the count.
+    const toggle = within(group).getByRole('button', { name: /^Factory/ });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(await within(group).findByText('3 of 8 connected')).toBeTruthy();
+    expect(within(group).queryByRole('list')).toBeNull();
+    fireEvent.click(toggle);
+    expect(localStorage.getItem('loams.studio.factory.open')).toBe('1');
     const links = within(await within(group).findByRole('list')).getAllByRole('link');
     // Matomo stays (Q813).
     const text = (a: HTMLElement) =>
@@ -187,6 +194,7 @@ describe('the Factory group', () => {
         { id: 'zulip', label: 'Zulip', state: 'unconfigured' },
       ],
     };
+    localStorage.setItem('loams.studio.factory.open', '1');
     render(wrap(<FactoryGroup factory={links} />));
     const group = await screen.findByRole('navigation', { name: 'Factory' });
     const anchors = await within(group).findAllByRole('link');

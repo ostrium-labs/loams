@@ -1,5 +1,6 @@
-// The shell's side of the modes (SD1 Task 3, §53 §4): the switcher, nav filtered
-// by mode, and a route of the other mode switching the mode first.
+// The shell's side of the modes (SD1 Task 3, §53 §4): the switcher, the (deprecated) nav
+// model by mode, Pages the same in both modes (D1080), and a route of the other mode
+// switching the mode first.
 
 import {
   MODE_HOME,
@@ -13,6 +14,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Layout, navSections } from '../src/layout.js';
 import { syncModeWithRoute } from '../src/mode-switcher.js';
+import { writePinned } from '../src/pages.js';
 import { HashRouter, type HashSource } from '../src/router.js';
 
 function memory(start = '/'): HashSource & { go(path: string): void } {
@@ -80,7 +82,7 @@ const entry = (slots: SlotRegistry, plugin: string, label: string, group: string
     () => null,
   );
 
-const navLabels = () => [...document.querySelectorAll('.lc-nav a')].map((a) => a.textContent);
+const navLabels = () => [...document.querySelectorAll('.lc-pages a')].map((a) => a.textContent);
 
 beforeEach(() => {
   localStorage.clear();
@@ -93,25 +95,27 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('nav by mode', () => {
-  it('nav_filtered_by_mode', () => {
+  it('the pinned Pages are the same in both modes (D1080)', () => {
     const mode = modeService();
     const { slots } = setup(mode);
     act(() => {
+      writePinned(undefined, ['Postgres', 'Projects']);
       entry(slots, 'pages', 'Postgres', 'Data');
       entry(slots, 'studio', 'Projects', 'Studio');
     });
-    expect(navLabels()).toEqual(['Postgres']);
+    expect(navLabels()).toEqual(['Postgres', 'Projects']);
     act(() => mode.set('studio'));
-    expect(navLabels()).toEqual(['Projects']);
+    expect(navLabels()).toEqual(['Postgres', 'Projects']);
   });
 
   it('marks only the most specific entry current', () => {
     const mode = modeService(['console', 'studio'], 'studio');
-    const { slots } = setup(mode, '/studio/settings');
+    const { slots } = setup(mode, '/studio/runs/r1');
     act(() => {
+      writePinned(undefined, ['Runs', 'Run']);
       for (const [label, href] of [
-        ['Home', '/studio'],
-        ['Settings', '/studio/settings'],
+        ['Runs', '/studio/runs'],
+        ['Run', '/studio/runs/r1'],
       ]) {
         slots.register(
           {
@@ -123,8 +127,8 @@ describe('nav by mode', () => {
         );
       }
     });
-    const current = [...document.querySelectorAll('.lc-nav a[aria-current="page"]')];
-    expect(current.map((a) => a.textContent)).toEqual(['Settings']);
+    const current = [...document.querySelectorAll('.lc-pages a[aria-current="page"]')];
+    expect(current.map((a) => a.textContent)).toEqual(['Run']);
   });
 
   it('meta_mode_overrides_plugin_modes', () => {

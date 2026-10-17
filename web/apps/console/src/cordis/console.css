@@ -147,75 +147,94 @@ code {
   display: none;
 }
 
-/* The environment switcher, like the original's project switcher. */
-.lc-switcher {
-  flex: none;
-  margin: 4px 8px;
+/* Pages and Settings (D1080): no section headings, 28px rows on the type scale. */
+.lc-pages,
+.lc-settings-nav {
+  display: grid;
+  gap: 2px;
+  padding: 4px 8px 8px;
 }
-.lc-switcher-trigger {
+.lc-pages-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: var(--op-control);
-  padding: 0 8px;
-  border: 1px solid var(--op-rule);
-  border-radius: var(--op-radius-md);
-  background: var(--op-bg);
-  color: var(--op-ink);
-  font: inherit;
-  font-size: var(--op-text-small);
+  justify-content: space-between;
+  height: var(--op-row);
+  margin: 0;
+  padding: 0 4px 0 8px;
+  color: var(--op-faint);
+  font-size: var(--op-text-micro);
   font-weight: 500;
+}
+.lc-pages-head h2 {
+  margin: 0;
+  font: inherit;
+}
+.lc-pages-edit {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--op-radius-sm);
+  background: none;
+  color: var(--op-faint);
   cursor: pointer;
 }
-.lc-switcher-trigger:hover {
-  border-color: var(--op-input);
+.lc-pages-edit:hover,
+.lc-pages-edit[aria-expanded="true"] {
+  background: var(--op-row-hover);
+  color: var(--op-ink);
 }
-.lc-switcher-mark {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--op-radius-sm);
-  font-size: var(--op-text-micro);
-  font-weight: 600;
-  color: var(--op-accent-ink);
-  background: var(--op-accent);
-}
-
-/* Nav ------------------------------------------------------------------------ */
-
-.lc-nav {
-  padding: 4px 8px 12px;
-}
-.lc-nav-group + .lc-nav-group {
-  margin-top: 12px;
-}
-/* The instance-wide sections sit apart, as the original's Organization half does. */
-.lc-nav-group:not([data-scope]) + .lc-nav-group[data-scope="org"] {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--op-rule);
-}
-.lc-nav-heading {
-  margin: 0;
-  padding: 4px 8px;
-  font-size: var(--op-text-micro);
-  font-weight: 500;
-  color: var(--op-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lc-nav ul {
+.lc-pages ul,
+.lc-settings-nav ul {
   display: grid;
   gap: 1px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.lc-nav a,
+.lc-pages-empty {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--op-faint);
+  font-size: var(--op-text-small);
+}
+.lc-page-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--op-row);
+  min-width: 0;
+  padding: 0 8px;
+  border-radius: var(--op-radius-md);
+  color: var(--op-muted);
+  font-size: var(--op-text-small);
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background-color var(--op-duration) ease,
+    color var(--op-duration) ease;
+}
+.lc-page-link svg {
+  flex: none;
+}
+.lc-page-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-page-link:hover {
+  background: var(--op-row-hover);
+  color: var(--op-ink);
+}
+/* The current page: a white chip in light, a soft fill in dark. */
+.lc-page-link[aria-current="page"] {
+  background: var(--op-row-selected);
+  box-shadow: var(--op-shadow-chip);
+  color: var(--op-ink);
+}
 .lc-side-foot a {
   display: flex;
   align-items: center;
@@ -223,32 +242,16 @@ code {
   height: var(--op-row);
   padding: 0 8px;
   border-radius: var(--op-radius-md);
-  font-size: var(--op-text-body);
+  font-size: var(--op-text-small);
   color: var(--op-muted);
   text-decoration: none;
   transition:
     background-color var(--op-duration) ease,
     color var(--op-duration) ease;
 }
-.lc-nav a svg {
-  flex: none;
-}
-.lc-nav-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lc-nav a:hover,
 .lc-side-foot a:hover {
   color: var(--op-ink);
   background: var(--op-row-hover);
-}
-/* The current page: a white chip in light, a soft fill in dark. */
-.lc-nav a[aria-current="page"] {
-  color: var(--op-ink);
-  background: var(--op-row-selected);
-  box-shadow: var(--op-shadow-chip);
 }
 .lc-side-foot {
   gap: 0;
@@ -401,6 +404,74 @@ code {
   .lc-trail li + li::before {
     display: none;
   }
+}
+/* The project and branch pills (W20, W21): 28px chips like Studio's context. */
+.lc-project-pill,
+.lc-env-pill {
+  flex: none;
+  min-width: 0;
+}
+.lc-pill-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  height: var(--op-control-compact);
+  padding: 0 8px;
+  border: 1px solid var(--op-rule);
+  border-radius: var(--op-radius-pill);
+  background: var(--op-bg);
+  color: var(--op-ink);
+  font: inherit;
+  font-size: var(--op-text-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+.lc-pill-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-pill-trigger svg {
+  flex: none;
+  color: var(--op-faint);
+}
+.lc-pill-trigger:hover {
+  border-color: var(--op-input);
+}
+.lc-project-pill[data-idle] .lc-pill-trigger {
+  border-style: dashed;
+  background: transparent;
+  color: var(--op-muted);
+}
+.lc-pill-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--op-radius-xs);
+  font-size: var(--op-text-micro);
+  font-weight: 600;
+  color: var(--op-accent-ink);
+  background: var(--op-accent);
+}
+.lc-project-pill[data-idle] .lc-pill-mark {
+  color: var(--op-muted);
+  background: var(--op-raised);
+}
+@media (max-width: 720px) {
+  .lc-project-pill,
+  .lc-env-pill {
+    display: none;
+  }
+}
+/* Preferences (T2-5): the settings sections, one under the other. */
+.lc-preferences {
+  display: grid;
+  gap: 32px;
+  max-width: 640px;
 }
 .lc-overlays {
   display: flex;
