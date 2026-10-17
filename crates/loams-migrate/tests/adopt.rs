@@ -22,7 +22,7 @@ use loams_store::Store as ObjectStore;
 use support::Stack;
 use tempfile::TempDir;
 
-const P3: &str = "0.1.0-preview.3";
+const V0_1_0: &str = "0.1.0";
 
 fn fixture(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -183,7 +183,7 @@ async fn declared_preview2_with_decodable_data_is_adopted() {
     let report = Runner::new(&migrations, train)
         .run(
             &mut p2.cx(Some(PREVIEW_2)),
-            P3,
+            V0_1_0,
             &RunOptions::new("migrate-adopt"),
         )
         .await
@@ -198,7 +198,7 @@ async fn declared_preview2_with_decodable_data_is_adopted() {
             .expect("stack")
             .expect("stamped")
             .release,
-        P3
+        V0_1_0
     );
     let entries = ledger.entries().await.expect("entries");
     assert_eq!(entries[0].id, "0000-adopt-preview-2");
@@ -208,7 +208,7 @@ async fn declared_preview2_with_decodable_data_is_adopted() {
     // Without a declared release the run refuses and marks it failed.
     let other = Preview2::new().await;
     let err = Runner::new(&migrations, train)
-        .run(&mut other.cx(None), P3, &RunOptions::new("migrate-adopt"))
+        .run(&mut other.cx(None), V0_1_0, &RunOptions::new("migrate-adopt"))
         .await
         .unwrap_err();
     assert_eq!(err.code(), "migration_failed", "{err}");
@@ -239,12 +239,12 @@ async fn adoption_is_idempotent() {
     let runner = Runner::new(&migrations, UpgradePath::compiled());
     let opts = RunOptions::new("migrate-adopt");
     runner
-        .run(&mut p2.cx(Some(PREVIEW_2)), P3, &opts)
+        .run(&mut p2.cx(Some(PREVIEW_2)), V0_1_0, &opts)
         .await
         .expect("first");
     let entries = p2.stack.ledger().await.entries().await.expect("entries");
     let again = runner
-        .run(&mut p2.cx(Some(PREVIEW_2)), P3, &opts)
+        .run(&mut p2.cx(Some(PREVIEW_2)), V0_1_0, &opts)
         .await
         .expect("again");
     assert!(again.applied.is_empty() && !again.stack_written);
@@ -295,7 +295,7 @@ async fn adoption_writes_only_system_upgrade_keys() {
     Runner::new(&migrations, UpgradePath::compiled())
         .run(
             &mut p2.cx(Some(PREVIEW_2)),
-            P3,
+            V0_1_0,
             &RunOptions::new("migrate-adopt"),
         )
         .await
@@ -343,7 +343,7 @@ async fn preview2_reads_after_adoption() {
     Runner::new(&migrations, UpgradePath::compiled())
         .run(
             &mut p2.cx(Some(PREVIEW_2)),
-            P3,
+            V0_1_0,
             &RunOptions::new("migrate-adopt"),
         )
         .await

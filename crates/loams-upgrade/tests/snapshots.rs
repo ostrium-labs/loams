@@ -9,10 +9,10 @@ use support::{Fake, failed, ok, stack, stack_dir};
 
 #[test]
 fn prune_requires_yes() {
-    let dir = stack_dir("LOAMS_VERSION=0.1.0-preview.3\n");
+    let dir = stack_dir("LOAMS_VERSION=0.1.0\n");
     let stack = stack(&dir);
     let fake = Fake::new(|_| ok(""));
-    let image = "ghcr.io/ostrium-labs/loams:0.1.0-preview.3";
+    let image = "ghcr.io/ostrium-labs/loams:0.1.0";
     let err = snapshots::prune(&fake, &stack, image, "01J", false).unwrap_err();
     assert_eq!(err.code, "confirmation_required");
     assert_eq!(exit_for(err.code), 3);
@@ -33,7 +33,7 @@ fn prune_requires_yes() {
 
 #[test]
 fn snapshots_list_passes_the_listing_through() {
-    let dir = stack_dir("LOAMS_VERSION=0.1.0-preview.3\n");
+    let dir = stack_dir("LOAMS_VERSION=0.1.0\n");
     let listing = r#"[{"id":"01J","complete":true,"bytes":10}]"#;
     let fake = Fake::new(move |_| ok(listing));
     let value = snapshots::list(&fake, &stack(&dir), "img").expect("list");
@@ -46,7 +46,7 @@ fn status_reports_the_ledger_and_the_last_attempt() {
     std::fs::create_dir(dir.path().join(".loams-upgrade")).expect("mkdir");
     std::fs::write(
         dir.path().join(status::HISTORY),
-        "{\"target\":\"0.1.0-preview.3\",\"outcome\":\"rolled_back\"}\n{\"target\":\"0.1.0-preview.3\",\"outcome\":\"done\"}\n",
+        "{\"target\":\"0.1.0\",\"outcome\":\"rolled_back\"}\n{\"target\":\"0.1.0\",\"outcome\":\"done\"}\n",
     )
     .expect("w");
     // preview.2's image has no `migrate`: reported, not fatal.
@@ -62,7 +62,7 @@ fn status_reports_the_ledger_and_the_last_attempt() {
     );
     assert_eq!(
         report.last_attempt,
-        Some(serde_json::json!({"target": "0.1.0-preview.3", "outcome": "done"}))
+        Some(serde_json::json!({"target": "0.1.0", "outcome": "done"}))
     );
     let schema = serde_json::to_value(schemars::schema_for!(StatusReport)).expect("schema");
     let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/schemas/status.json");

@@ -265,7 +265,7 @@ mod tests {
     #[test]
     fn the_compiled_path_parses() {
         let path = UpgradePath::compiled();
-        assert!(path.release("0.1.0-preview.3").is_some());
+        assert!(path.release("0.1.0").is_some());
         assert_eq!(
             path.release("0.1.0-preview.2").map(|r| r.from.as_str()),
             Some(FRESH)

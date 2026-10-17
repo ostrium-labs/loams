@@ -13,7 +13,7 @@ is [`publishing.md`](publishing.md), which this does not change.
 ## What ships
 
 Two binaries are packaged: **`loams`**, `crates/loams/src/main.rs`, and, from
-0.1.0-preview.3, **`git-remote-loams`**, `crates/loams-git-remote` (git's
+0.1.0, **`git-remote-loams`**, `crates/loams-git-remote` (git's
 remote helper for `loams::` URLs; see [Git push and fetch to the
 bucket](#git-push-and-fetch-to-the-bucket)). The `loams` subcommands are
 `dev`, `standalone`, `cluster`, `warm`, `durable` and `migrate`.

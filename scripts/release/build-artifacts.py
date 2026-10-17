@@ -9,7 +9,7 @@ server binary, git's remote helper and the console, the same things the Linux
 packages install.
 
 Every artifact carries `git-remote-loams` next to `loams` (from
-0.1.0-preview.3): git runs `git-remote-loams` for a `loams::` URL and finds it
+0.1.0): git runs `git-remote-loams` for a `loams::` URL and finds it
 by name on PATH, so it is installed in the same directory as `loams`.
 
 Two rules this script exists to enforce:

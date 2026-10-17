@@ -4,9 +4,11 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-18
+
 ### Upgrading
 
-From **0.1.0-preview.2** (one step at a time): `loams upgrade --to 0.1.0-preview.3`.
+From **0.1.0-preview.2** (one step at a time): `loams upgrade --to 0.1.0`.
 
 It takes a snapshot first, and `loams upgrade rollback` restores it.
 
@@ -163,7 +165,7 @@ See [docs/release/upgrades.md](docs/release/upgrades.md).
   `SIGTERM` a node drains: `/ready` answers `503`, its streams close and new calls are refused
   with `unavailable` (`node_draining`, new), and running mutations finish first (LV1 Task 24).
 
-## [0.1.0-preview.2] - unreleased
+## [0.1.0-preview.2] - 2026-10-15
 
 The second preview. Everything marked **Preview** in the [feature status table](docs/release/preview.md#feature-status)
 ships in it, built from `dev` with the work held back from preview.1 merged. Same shape as

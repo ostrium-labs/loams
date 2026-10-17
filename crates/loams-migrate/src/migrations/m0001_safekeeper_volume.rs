@@ -1,4 +1,4 @@
-//! `0001-safekeeper-volume` (design §54 §9.3, D945; UP1 Task 10): preview.3
+//! `0001-safekeeper-volume` (design §54 §9.3, D945; UP1 Task 10): 0.1.0
 //! gives `safekeeper1` a volume. preview.2's safekeeper keeps its WAL in the
 //! container's filesystem, so recreating it loses whatever the pageserver
 //! has not uploaded yet. This migration drains first (Task 9): with the

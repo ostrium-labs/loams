@@ -1,5 +1,5 @@
 //! Adopting a preview.2 stack (design §54 §5.3, D926; UP1 Task 5, Q820's
-//! default): preview.2 writes no stack record and no ledger, so preview.3's
+//! default): preview.2 writes no stack record and no ledger, so 0.1.0's
 //! `migrate` recognises it from what is on disk and records it as
 //! `0.1.0-preview.2`.
 //!

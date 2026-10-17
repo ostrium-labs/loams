@@ -2,7 +2,7 @@
 # predecessor (`from`) and the migrations it introduced, in order:
 #
 # - before v0.1.0, `from` is the exact previous release (each preview is a
-#   step);
+#   step), and v0.1.0 itself names the last preview;
 # - from v0.1.0, a patch release declares its minor line (`from = "0.1"`): any
 #   earlier 0.1.x upgrades to it in one step;
 # - the first release of a new line (0.2.0) names the last patch of the
@@ -15,7 +15,7 @@
 # (`scripts/release/check-upgrade-path.sh`) and the signed manifest's copy.
 
 [[release]]
-version     = "0.1.0-preview.3"
+version     = "0.1.0"
 from        = "0.1.0-preview.2"
 free_factor = 1.5
 # Expected downtime of the upgrade, excluding image pulls (Q833's target).

@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 # Not on crates.io (owner, 2026-10-15): the helper ships in the release
-# packages next to `loams` from 0.1.0-preview.3 (the .deb, .rpm and
+# packages next to `loams` from 0.1.0 (the .deb, .rpm and
 # .pkg.tar.zst, the macOS tarballs and the Windows zip; see
 # docs/release/packaging.md). From source:
 # `cargo install --path crates/loams-git-remote`.

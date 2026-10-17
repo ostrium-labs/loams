@@ -120,7 +120,7 @@ services:
   # snapshot first. No listener, no published port, no tailnet door, no
   # container socket.
   migrate:
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.0-preview.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.0}
     command:
       - migrate
       - run
@@ -163,7 +163,7 @@ services:
 
   loams:
     <<: *restart
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.0-preview.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.0}
     command:
       - standalone
       - --bucket=${LOAMS_BUCKET:-file:///var/lib/loams/bucket}
@@ -263,7 +263,7 @@ services:
   house:
     <<: *restart
     profiles: [house]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.0-preview.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.0}
     command:
       - house
       - --single-node
@@ -381,7 +381,7 @@ services:
   pg-control:
     <<: *restart
     profiles: [postgres-control]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.0-preview.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.0}
     command:
       - pg-control
       - --store=local
@@ -469,7 +469,7 @@ services:
   pg-runner:
     <<: *restart
     profiles: [postgres-control]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.0-preview.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.0}
     command:
       - pg-runner
       - --listen=0.0.0.0:7691
@@ -507,7 +507,7 @@ services:
   agentd:
     <<: *restart
     profiles: [agentd]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-agentd:${LOAMS_VERSION:-0.1.0-preview.2}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-agentd:${LOAMS_VERSION:-0.1.0}
     # The daemon writes its token, lock and store beside its config.toml, in
     # a directory it makes owner-only (0700): that is /home/loams/agentd, in
     # the data volume. Only config.toml comes from ./agentd, read-only, and

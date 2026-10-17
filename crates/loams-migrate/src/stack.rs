@@ -19,7 +19,7 @@ pub const STACK_RECORD_VERSION: u8 = 0x01;
 /// What release a stack's data is at, and which format versions it writes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StackRecord {
-    /// The release the data was last migrated to, e.g. `0.1.0-preview.3`.
+    /// The release the data was last migrated to, e.g. `0.1.0`.
     pub release: String,
     /// Registry id → the version enabled for writing. A format at version 1
     /// is left out ("absent means 1", D924), which keeps the record within a

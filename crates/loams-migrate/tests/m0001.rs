@@ -70,12 +70,12 @@ async fn m0001_is_reversible_and_idempotent() {
     );
     let path = loams_migrate::UpgradePath::compiled();
     let listed = path
-        .release("0.1.0-preview.3")
-        .expect("preview.3")
+        .release("0.1.0")
+        .expect("0.1.0")
         .migrations
         .iter()
         .find(|m| m.id == "0001-safekeeper-volume")
-        .expect("listed under preview.3");
+        .expect("listed under 0.1.0");
     assert_eq!(listed.class, Class::Reversible);
     let stack = Stack::new().await;
     let (_shared, pageserver, safekeeper) = fakes(Fake {

@@ -2025,7 +2025,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "loams-agentd-connect"
-version = "0.1.0-preview.2"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -2065,7 +2065,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-doc"
-version = "0.1.0-preview.2"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "loams-agentd-proto",
@@ -2079,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-harness"
-version = "0.1.0-preview.2"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2105,7 +2105,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-preview"
-version = "0.1.0-preview.2"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2128,7 +2128,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-proto"
-version = "0.1.0-preview.2"
+version = "0.1.0"
 dependencies = [
  "chrono",
  "pulldown-cmark",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-rpc"
-version = "0.1.0-preview.2"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2160,7 +2160,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-sessions"
-version = "0.1.0-preview.2"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2199,7 +2199,7 @@ dependencies = [
 
 [[package]]
 name = "loams-agentd-store"
-version = "0.1.0-preview.2"
+version = "0.1.0"
 dependencies = [
  "rusqlite",
  "thiserror 2.0.21",

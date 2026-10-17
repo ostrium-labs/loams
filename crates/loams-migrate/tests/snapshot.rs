@@ -111,7 +111,7 @@ impl Stores {
 
     fn opts(&self) -> SnapshotOptions {
         SnapshotOptions {
-            target_release: "0.1.0-preview.3".to_string(),
+            target_release: "0.1.0".to_string(),
             raft_dir: Some(self.raft.path().to_path_buf()),
             ..SnapshotOptions::default()
         }

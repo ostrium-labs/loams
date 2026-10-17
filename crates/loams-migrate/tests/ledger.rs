@@ -52,7 +52,7 @@ fn entry(seq: u32, id: &str) -> LedgerEntry {
         seq,
         id: id.to_string(),
         release_from: "0.1.0-preview.2".to_string(),
-        release_to: "0.1.0-preview.3".to_string(),
+        release_to: "0.1.0".to_string(),
         store: Store::Meta,
         class: Class::Reversible,
         state: LedgerState::Pending,
@@ -219,7 +219,7 @@ async fn stack_record_and_last_entry_commit_together() {
     let lease = MigrationLease::acquire(db.meta.clone(), "migrate-a", LEASE_TTL)
         .await
         .expect("lease");
-    let target = "0.1.0-preview.3";
+    let target = "0.1.0";
     let record = StackRecord::current(target, REGISTRY, at(1_792_000_100), None);
     ledger
         .append(&lease, &entry(1, "0000-a"))
@@ -279,7 +279,7 @@ async fn ledger_keys_live_under_system_upgrade_prefix() {
         .append(&lease, &entry(1, "0000-a"))
         .await
         .expect("append");
-    let record = StackRecord::current("0.1.0-preview.3", REGISTRY, at(1), None);
+    let record = StackRecord::current("0.1.0", REGISTRY, at(1), None);
     ledger.set_stack(&lease, &record).await.expect("stack");
     let ns = db
         .meta

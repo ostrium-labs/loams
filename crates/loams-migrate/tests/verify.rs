@@ -10,7 +10,7 @@ use loams_store::Store as ObjectStore;
 use support::Stack;
 use tempfile::TempDir;
 
-const RELEASE: &str = "0.1.0-preview.3";
+const RELEASE: &str = "0.1.0";
 
 #[tokio::test]
 async fn verify_reports_empty_for_unused_products() {

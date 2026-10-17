@@ -344,13 +344,13 @@ version = "0.1.0"
 from = "fresh"
 """
     check(tree(line, []))
-    # The notes golden: the real preview.3 entry.
-    golden = (real / "scripts/release/testdata/upgrade-notes-0.1.0-preview.3.md").read_text()
-    rendered = notes(real, "0.1.0-preview.3")
+    # The notes golden: the real 0.1.0 entry.
+    golden = (real / "scripts/release/testdata/upgrade-notes-0.1.0.md").read_text()
+    rendered = notes(real, "0.1.0")
     assert rendered == golden, f"notes differ from the golden:\n{rendered}"
     # The manifest's upgrade object matches the path file.
-    m = manifest(real, "0.1.0-preview.3")
-    r = release_of(real, "0.1.0-preview.3")
+    m = manifest(real, "0.1.0")
+    r = release_of(real, "0.1.0")
     assert m["from"] == r["from"]
     assert [x["id"] for x in m["migrations"]] == [x["id"] for x in r.get("migration", [])]
     assert m["components"] == r.get("components", {})

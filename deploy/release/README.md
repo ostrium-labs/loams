@@ -39,7 +39,7 @@ healthcheck.
 ```sh
 deploy/release/build.sh loams                        # both platforms, local manifest list
 deploy/release/build.sh --platforms linux/amd64 loams
-deploy/release/build.sh --version 0.1.0-preview.2 --push   # CI on a tag
+deploy/release/build.sh --version 0.1.0 --push   # CI on a tag
 ```
 
 ## On this machine
@@ -178,9 +178,9 @@ From 0.1.0-preview.2, `loams upgrade` upgrades this stack in place, one release 
 time, with a snapshot first:
 
 ```sh
-loams upgrade check --to 0.1.0-preview.3   # what it will do and what would stop it
-loams upgrade --to 0.1.0-preview.3         # snapshot, migrate, restart, verify
-loams upgrade rollback                     # back to the snapshot
+loams upgrade check --to 0.1.0  # what it will do and what would stop it
+loams upgrade --to 0.1.0        # snapshot, migrate, restart, verify
+loams upgrade rollback          # back to the snapshot
 ```
 
 Snapshots go to the `upgrade-snapshots` volume, or to `LOAMS_UPGRADE_SNAPSHOT_DIR`
@@ -201,9 +201,9 @@ directory and `deploy/loams-postgres-dev` to `~/loams`, writes `.env` with mode
 needs SSH and outbound internet only.
 
 ```sh
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.0-preview.3 --check   # loams upgrade check
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.0-preview.3           # loams upgrade, on the VM
-deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.0-preview.3 --rollback
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.0 --check  # loams upgrade check
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.0          # loams upgrade, on the VM
+deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.0 --rollback
 ```
 
 `upgrade.sh` fetches the target release's `loams` CLI on the VM (its Linux

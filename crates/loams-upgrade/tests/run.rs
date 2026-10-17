@@ -52,7 +52,7 @@ fn steps_run_in_documented_order() {
         "--pageserver=http://pageserver:9898",
         "--tikv=cold",
         "--tikv-version=v8.5.8",
-        "--target-release=0.1.0-preview.3",
+        "--target-release=0.1.0",
     ] {
         assert!(snap.contains(&flag.to_string()), "{flag}: {snap:?}");
     }
@@ -62,7 +62,7 @@ fn steps_run_in_documented_order() {
         .into_iter()
         .find(|c| kind(c) == "migrate run")
         .expect("run");
-    assert!(migrate.contains(&"ghcr.io/ostrium-labs/loams:0.1.0-preview.3".to_string()));
+    assert!(migrate.contains(&"ghcr.io/ostrium-labs/loams:0.1.0".to_string()));
     assert!(migrate.contains(&"--declared-release=0.1.0-preview.2".to_string()));
     assert_eq!(report.host_changes[0]["service"], "safekeeper1");
     // The bundle is installed beside the user's files.
@@ -70,7 +70,7 @@ fn steps_run_in_documented_order() {
     assert!(
         std::fs::read_to_string(dir.join("compose.yaml"))
             .expect("c")
-            .contains("preview.3")
+            .contains("# 0.1.0")
     );
     assert!(dir.join("compose.override.yaml").exists());
     assert!(
@@ -81,11 +81,11 @@ fn steps_run_in_documented_order() {
                 .join("stack/loams-postgres-dev/compose.yaml")
         )
         .expect("pg")
-        .contains("preview.3")
+        .contains("# 0.1.0")
     );
-    assert!(world.env().contains("LOAMS_VERSION=0.1.0-preview.3"));
+    assert!(world.env().contains("LOAMS_VERSION=0.1.0"));
     assert_eq!(last_event(&world), Event::Done);
-    // BR when TiKV mounts the snapshots (preview.3 onwards).
+    // BR when TiKV mounts the snapshots (0.1.0 onwards).
     let world = World::new(ENV);
     let fake = fake_br();
     upgrade(&world, &fake, &opts()).expect("upgrade");
@@ -114,7 +114,7 @@ fn pull_failure_changes_nothing() {
         &mut stack,
         &bundle,
         "0.1.0-preview.2",
-        "0.1.0-preview.3",
+        "0.1.0",
         &opts(),
     )
     .unwrap_err();
@@ -261,7 +261,7 @@ fn no_auto_rollback_leaves_failed_state_and_door_closed() {
     );
     assert_eq!(last_event(&world), Event::Failed);
     // Still at the target's files: a rerun resumes, a rollback restores.
-    assert!(world.env().contains("LOAMS_VERSION=0.1.0-preview.3"));
+    assert!(world.env().contains("LOAMS_VERSION=0.1.0"));
 }
 
 #[test]
@@ -272,7 +272,7 @@ fn env_changes_keep_user_values() {
     let fake = scripted(Script::new(), false);
     upgrade(&world, &fake, &opts()).expect("upgrade");
     let env = world.env();
-    assert!(env.contains("LOAMS_VERSION=0.1.0-preview.3\n"), "{env}");
+    assert!(env.contains("LOAMS_VERSION=0.1.0\n"), "{env}");
     assert!(env.contains("AWS_SECRET_ACCESS_KEY=s3cr3t-aws-key-value\n"));
     assert!(env.contains("LOAMS_AUTH_MODE=tailscale\n"));
     assert!(env.contains("# a comment\n"));
@@ -295,17 +295,17 @@ fn env_changes_keep_user_values() {
     let release = world
         .bundle()
         .path
-        .release("0.1.0-preview.3")
+        .release("0.1.0")
         .cloned()
         .expect("p3");
     let text = loams_upgrade::install::env_with_changes(
         "LOAMS_UPGRADE_SNAPSHOT_DIR=/srv/snaps\nLOAMS_VERSION=0.1.0-preview.2\n",
-        "0.1.0-preview.3",
+        "0.1.0",
         &release,
     );
     assert_eq!(
         text,
-        "LOAMS_UPGRADE_SNAPSHOT_DIR=/srv/snaps\nLOAMS_VERSION=0.1.0-preview.3\n"
+        "LOAMS_UPGRADE_SNAPSHOT_DIR=/srv/snaps\nLOAMS_VERSION=0.1.0\n"
     );
 }
 
@@ -333,9 +333,9 @@ fn chain_bundle(world: &World, version: &str) -> Bundle {
         r#"
 [[release]]
 version = "0.1.0-preview.4"
-from = "0.1.0-preview.3"
+from = "0.1.0"
 [[release]]
-version = "0.1.0-preview.3"
+version = "0.1.0"
 from = "0.1.0-preview.2"
 [[release]]
 version = "0.1.0-preview.2"
@@ -365,7 +365,7 @@ fn chain_walk_stops_at_first_failure() {
         loams_upgrade::runtime::Runtime::engine(&base, args).expect("base")
     });
     let mut stack = world.stack();
-    let steps = vec!["0.1.0-preview.3".to_string(), "0.1.0-preview.4".to_string()];
+    let steps = vec!["0.1.0".to_string(), "0.1.0-preview.4".to_string()];
     let mut asked = Vec::new();
     let err = upgrade_chain(&fake, &mut stack, "0.1.0-preview.2", &steps, &opts(), |v| {
         asked.push(v.clone());
@@ -386,7 +386,7 @@ fn chain_walk_stops_at_first_failure() {
     assert_eq!(
         ends,
         [
-            ("0.1.0-preview.3".to_string(), Event::Done),
+            ("0.1.0".to_string(), Event::Done),
             ("0.1.0-preview.4".to_string(), Event::RolledBack)
         ]
     );
@@ -396,8 +396,8 @@ fn chain_walk_stops_at_first_failure() {
         !k.contains(&"migrate snapshots prune".to_string()),
         "{k:#?}"
     );
-    // The stack is at preview.3: the verified step.
-    assert!(world.env().contains("LOAMS_VERSION=0.1.0-preview.3"));
+    // The stack is at 0.1.0: the verified step.
+    assert!(world.env().contains("LOAMS_VERSION=0.1.0"));
 }
 
 #[test]
@@ -428,7 +428,7 @@ fn kill_cli_mid_upgrade_then_rerun_resumes() {
         &other,
         &mut stack,
         &world.bundle(),
-        "0.1.0-preview.3",
+        "0.1.0",
         "0.1.0-preview.4",
         &opts(),
     )
@@ -438,13 +438,13 @@ fn kill_cli_mid_upgrade_then_rerun_resumes() {
     // The rerun resumes: no second snapshot, migrate runs, the door opens.
     let fake = scripted(Script::new(), false);
     let mut stack = world.stack();
-    // .env already says preview.3; the attempt says where it came from.
+    // .env already says 0.1.0; the attempt says where it came from.
     let report = run::upgrade_step(
         &fake,
         &mut stack,
         &world.bundle(),
-        "0.1.0-preview.3",
-        "0.1.0-preview.3",
+        "0.1.0",
+        "0.1.0",
         &opts(),
     )
     .expect("resumed");
@@ -501,7 +501,7 @@ fn upgrade_output_has_no_env_values() {
         "--dir",
         &dir,
         "--to",
-        "0.1.0-preview.3",
+        "0.1.0",
         "--bundle",
         &bundle,
         "--yes",
@@ -522,7 +522,7 @@ fn upgrade_output_has_no_env_values() {
         "--dir",
         &dir,
         "--to",
-        "0.1.0-preview.3",
+        "0.1.0",
         "--bundle",
         &bundle,
         "--yes",
@@ -559,7 +559,7 @@ fn local_bundle_is_reported_unverified() {
         "--dir",
         &dir,
         "--to",
-        "0.1.0-preview.3",
+        "0.1.0",
         "--bundle",
         &bundle,
         "--yes",
@@ -577,7 +577,7 @@ fn local_bundle_is_reported_unverified() {
         "--dir",
         &dir,
         "--to",
-        "0.1.0-preview.3",
+        "0.1.0",
         "--bundle",
         &bundle,
     ]);

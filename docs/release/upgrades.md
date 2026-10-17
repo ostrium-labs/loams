@@ -1,8 +1,8 @@
 # Upgrading a self-hosted stack
 
-From v0.1.0-preview.3 on, a Loams compose stack is upgraded in place and keeps its data (design
+From v0.1.0 on, a Loams compose stack is upgraded in place and keeps its data (design
 [§54](../design/54-upgrades.md)). `loams upgrade` does it, one release at a time. It takes a snapshot first, and
-`loams upgrade rollback` puts the stack back. preview.1 → preview.2 kept no data. preview.2 → preview.3 is the
+`loams upgrade rollback` puts the stack back. preview.1 → preview.2 kept no data. preview.2 → 0.1.0 is the
 first step that keeps it.
 
 ## Quick start
@@ -10,9 +10,9 @@ first step that keeps it.
 From the stack's directory (the bundle's `release/`, the one with `compose.yaml` and `.env`):
 
 ```sh
-loams upgrade check --to 0.1.0-preview.3     # what it will do, and what would stop it
-loams upgrade --to 0.1.0-preview.3           # asks first; --yes to skip the question
-loams upgrade status                         # the stack's release, the ledger, the last attempt
+loams upgrade check --to 0.1.0  # what it will do, and what would stop it
+loams upgrade --to 0.1.0        # asks first; --yes to skip the question
+loams upgrade status            # the stack's release, the ledger, the last attempt
 ```
 
 If anything is wrong afterwards:
@@ -62,7 +62,7 @@ step's snapshot is kept until the last step verifies. If the CLI is killed, run 
 The snapshot is taken with the writers stopped, by the target image:
 
 - **TiKV** (the metastore, Live, TiDB, Durable on TiKV):
-  - with BR (`br backup txn`), when the stack's `tikv` mounts the snapshot volume (preview.3 and later);
+  - with BR (`br backup txn`), when the stack's `tikv` mounts the snapshot volume (0.1.0 and later);
   - otherwise, as preview.2 does, as a cold copy of `pd-data` and `tikv-data`, with PD and TiKV stopped for the
     copy.
 - **The bucket:** objects are immutable. The snapshot copies the few mutable pointer objects and records a GC
@@ -100,8 +100,8 @@ Reversible claim before a release ships.
 
 | Release | Migration | Store | Class |
 |---|---|---|---|
-| 0.1.0-preview.3 | `0000-adopt-preview-2`: records preview.2's versions (preview.2 wrote no stack record) | meta | Reversible |
-| 0.1.0-preview.3 | `0001-safekeeper-volume`: gives the safekeeper a volume, after a drain | host | Reversible |
+| 0.1.0 | `0000-adopt-preview-2`: records preview.2's versions (preview.2 wrote no stack record) | meta | Reversible |
+| 0.1.0 | `0001-safekeeper-volume`: gives the safekeeper a volume, after a drain | host | Reversible |
 
 The release notes of every release that keeps data have an "Upgrading" section with its table, its third-party
 pins and its expected downtime (`scripts/release/upgrade-notes.sh`).
@@ -111,7 +111,7 @@ pins and its expected downtime (`scripts/release/upgrade-notes.sh`).
 - **One step at a time.** Each preview upgrades from the one before it only. From v0.1.0 on, a patch release
   upgrades from any earlier patch of its minor line. `migrate` refuses any other source
   (`upgrade_step_not_adjacent`).
-- **Never by hand across preview.2 → preview.3.** `docker compose up` with the new bundle would recreate the
+- **Never by hand across preview.2 → 0.1.0.** `docker compose up` with the new bundle would recreate the
   safekeeper before its WAL is drained. Use `loams upgrade`.
 - **No downgrades of third-party components.** A target whose PD, TiKV or TiDB pin is older than the stack's
   is refused (`component_downgrade`). No Postgres major changes through `loams upgrade`.

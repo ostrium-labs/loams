@@ -71,7 +71,7 @@ fn observed() -> Observed {
             .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
             .collect(),
         plan: Some(json!({
-            "from": null, "to": "0.1.0-preview.3", "point_of_no_return": false,
+            "from": null, "to": "0.1.0", "point_of_no_return": false,
             "steps": [
                 {"id": "0000-adopt-preview-2", "store": "meta", "class": "reversible",
                  "estimate": {"rows": 1, "bytes": 0, "seconds": 2}, "state": "pending"},
@@ -105,7 +105,7 @@ fn check_json_matches_schema() {
     );
     // A real report has exactly the schema's required properties.
     let report =
-        check::report("0.1.0-preview.2", "0.1.0-preview.3", &train(), &observed()).expect("report");
+        check::report("0.1.0-preview.2", "0.1.0", &train(), &observed()).expect("report");
     let value = serde_json::to_value(&report).expect("json");
     let mut keys: Vec<&String> = value.as_object().expect("object").keys().collect();
     keys.sort();
@@ -117,7 +117,7 @@ fn check_json_matches_schema() {
     props.sort();
     assert_eq!(keys, props);
     // §54 §10.2's example.
-    assert_eq!(value["path"], json!(["0.1.0-preview.3"]));
+    assert_eq!(value["path"], json!(["0.1.0"]));
     assert_eq!(
         value["migrations"][1],
         json!({"id": "0001-safekeeper-volume", "store": "host", "class": "reversible",
@@ -134,14 +134,14 @@ fn codes(report: &CheckReport) -> Vec<&str> {
 #[test]
 fn check_reports_blockers() {
     let path = train();
-    // Not adjacent: preview.1 is not preview.3's source, and the chain is named.
+    // Not adjacent: preview.1 is not 0.1.0's source, and the chain is named.
     let report =
-        check::report("0.1.0-preview.1", "0.1.0-preview.3", &path, &observed()).expect("report");
+        check::report("0.1.0-preview.1", "0.1.0", &path, &observed()).expect("report");
     assert_eq!(codes(&report), ["upgrade_step_not_adjacent"]);
     assert!(
         report.blockers[0]
             .message
-            .contains("0.1.0-preview.2 -> 0.1.0-preview.3"),
+            .contains("0.1.0-preview.2 -> 0.1.0"),
         "{:?}",
         report.blockers
     );
@@ -150,27 +150,27 @@ fn check_reports_blockers() {
     newer
         .current_components
         .insert("tikv".to_string(), "v8.5.9".to_string());
-    let report = check::report("0.1.0-preview.2", "0.1.0-preview.3", &path, &newer).expect("r");
+    let report = check::report("0.1.0-preview.2", "0.1.0", &path, &newer).expect("r");
     assert_eq!(codes(&report), ["component_downgrade"]);
     // Too little space for 1.5× the estimate.
     let mut low = observed();
     low.free_bytes = Some(1_400);
-    let report = check::report("0.1.0-preview.2", "0.1.0-preview.3", &path, &low).expect("r");
+    let report = check::report("0.1.0-preview.2", "0.1.0", &path, &low).expect("r");
     assert_eq!(codes(&report), ["insufficient_space"]);
     low.free_bytes = Some(1_500);
-    let report = check::report("0.1.0-preview.2", "0.1.0-preview.3", &path, &low).expect("r");
+    let report = check::report("0.1.0-preview.2", "0.1.0", &path, &low).expect("r");
     assert!(report.blockers.is_empty(), "{:?}", report.blockers);
     // A migration a run left failed.
     let mut failed_run = observed();
     failed_run.plan.as_mut().expect("plan")["steps"][0]["state"] = json!("failed");
     let report =
-        check::report("0.1.0-preview.2", "0.1.0-preview.3", &path, &failed_run).expect("r");
+        check::report("0.1.0-preview.2", "0.1.0", &path, &failed_run).expect("r");
     assert_eq!(codes(&report), ["migration_incomplete"]);
     assert!(report.blockers[0].message.contains("0000-adopt-preview-2"));
     // An unhealthy stack.
     let mut sick = observed();
     sick.unhealthy = vec!["tikv".to_string()];
-    let report = check::report("0.1.0-preview.2", "0.1.0-preview.3", &path, &sick).expect("r");
+    let report = check::report("0.1.0-preview.2", "0.1.0", &path, &sick).expect("r");
     assert_eq!(codes(&report), ["stack_unhealthy"]);
     // A release the train does not have.
     let err = check::report("0.1.0-preview.2", "9.9.9", &path, &observed()).unwrap_err();
@@ -204,7 +204,7 @@ fn check_reads_plan_when_engine_down() {
         }
         failed(1, "unexpected")
     });
-    let report = check::check(&fake, &stack, &train(), "0.1.0-preview.3").expect("check");
+    let report = check::check(&fake, &stack, &train(), "0.1.0").expect("check");
     assert_eq!(report.current, "0.1.0-preview.2");
     assert_eq!(report.migrations[0].estimate.seconds, 2);
     assert_eq!(report.snapshot_estimate_bytes, 4096);
@@ -215,9 +215,9 @@ fn check_reads_plan_when_engine_down() {
         .iter()
         .find(|c| c.iter().any(|a| a == "plan"))
         .expect("a plan helper ran");
-    assert!(plan_call.contains(&"ghcr.io/ostrium-labs/loams:0.1.0-preview.3".to_string()));
+    assert!(plan_call.contains(&"ghcr.io/ostrium-labs/loams:0.1.0".to_string()));
     assert!(plan_call.contains(&"--declared-release=0.1.0-preview.2".to_string()));
-    assert!(plan_call.contains(&"--target-release=0.1.0-preview.3".to_string()));
+    assert!(plan_call.contains(&"--target-release=0.1.0".to_string()));
     assert!(plan_call.contains(&"--bucket=s3://b".to_string()));
     // No .env value other than the bucket's URL is put on a command line.
     for call in &calls {
@@ -236,7 +236,7 @@ fn helper_containers_follow_the_boundary() {
     )
     .expect("w");
     let stack = stack(&dir);
-    let image = "ghcr.io/ostrium-labs/loams:0.1.0-preview.3";
+    let image = "ghcr.io/ostrium-labs/loams:0.1.0";
     let br = "docker.io/pingcap/br@sha256:cddec1ce";
     let specs = [
         (

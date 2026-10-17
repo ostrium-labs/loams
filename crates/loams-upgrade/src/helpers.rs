@@ -279,7 +279,7 @@ pub fn prepare_helper(stack: &StackDir, image: &str, id: &str) -> HelperSpec {
 }
 
 /// Whether `tikv` mounts the snapshots at [`SNAPSHOTS`] in the stack's
-/// resolved compose file (`compose config --format json`; preview.3 and
+/// resolved compose file (`compose config --format json`; 0.1.0 and
 /// later): BR can then write its backup where `migrate` reads it.
 pub fn tikv_mounts_snapshots(config: &serde_json::Value) -> bool {
     config["services"]["tikv"]["volumes"]

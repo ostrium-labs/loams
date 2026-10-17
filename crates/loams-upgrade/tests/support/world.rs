@@ -51,15 +51,15 @@ impl World {
         let bundle = root.path().join("bundle/release");
         write(
             &bundle.join("compose.yaml"),
-            "name: loams\n# preview.3\nservices: {}\n",
+            "name: loams\n# 0.1.0\nservices: {}\n",
         );
         write(
             &bundle.join(".env.example"),
-            "LOAMS_VERSION=0.1.0-preview.3\n",
+            "LOAMS_VERSION=0.1.0\n",
         );
         write(
             &root.path().join("bundle/loams-postgres-dev/compose.yaml"),
-            "# preview.3 postgres\n",
+            "# 0.1.0 postgres\n",
         );
         let train = std::fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../release/upgrade-path.toml"),
@@ -224,7 +224,7 @@ pub fn snapshot_ids(calls: &[Vec<String>]) -> Vec<String> {
 pub fn scripted(script: Script, tikv_mount: bool) -> Fake {
     let calls: Arc<Mutex<Vec<Vec<String>>>> = Arc::default();
     let seen = calls.clone();
-    let plan = json!({"from": null, "to": "0.1.0-preview.3", "point_of_no_return": false,
+    let plan = json!({"from": null, "to": "0.1.0", "point_of_no_return": false,
         "steps": [{"id": "0000-adopt-preview-2", "store": "meta", "class": "reversible",
                    "estimate": {"rows": 0, "bytes": 0, "seconds": 1}, "state": "pending"}]})
     .to_string();
@@ -282,7 +282,7 @@ pub fn upgrade(
         &mut stack,
         &world.bundle(),
         "0.1.0-preview.2",
-        "0.1.0-preview.3",
+        "0.1.0",
         opts,
     )
 }

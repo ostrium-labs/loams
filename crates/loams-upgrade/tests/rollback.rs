@@ -20,7 +20,7 @@ fn options(keep_writes: bool) -> RollbackOptions {
     }
 }
 
-/// A world upgraded to preview.3, and the snapshot its upgrade took.
+/// A world upgraded to 0.1.0, and the snapshot its upgrade took.
 fn upgraded(env: &str) -> (World, String) {
     let world = World::new(env);
     let fake = scripted(Script::new(), false);
@@ -30,11 +30,11 @@ fn upgraded(env: &str) -> (World, String) {
         &mut stack,
         &world.bundle(),
         "0.1.0-preview.2",
-        "0.1.0-preview.3",
+        "0.1.0",
         &opts(),
     )
     .expect("upgrade");
-    assert!(world.env().contains("LOAMS_VERSION=0.1.0-preview.3"));
+    assert!(world.env().contains("LOAMS_VERSION=0.1.0"));
     (world, report.snapshot)
 }
 
@@ -52,12 +52,12 @@ fn after_upgrade(snapshot: &str, script: Script, status: Option<Output>) -> Fake
 
 fn ledger(class: &str) -> Output {
     ok(&json!({
-        "stack": {"release": "0.1.0-preview.3"},
+        "stack": {"release": "0.1.0"},
         "ledger": [
             {"seq": 1, "id": "0000-adopt-preview-2", "from": "0.1.0-preview.2",
-             "to": "0.1.0-preview.3", "store": "meta", "class": "reversible", "state": "done"},
+             "to": "0.1.0", "store": "meta", "class": "reversible", "state": "done"},
             {"seq": 2, "id": "0001-safekeeper-volume", "from": "0.1.0-preview.2",
-             "to": "0.1.0-preview.3", "store": "host", "class": class, "state": "done"}
+             "to": "0.1.0", "store": "host", "class": class, "state": "done"}
         ]
     })
     .to_string())
@@ -70,7 +70,7 @@ fn rollback_restores_every_component() {
     let mut stack = world.stack();
     let report =
         rollback::rollback(&fake, &mut stack, &options(false), &|_| true).expect("rollback");
-    assert_eq!(report.from, "0.1.0-preview.3");
+    assert_eq!(report.from, "0.1.0");
     assert_eq!(report.to, "0.1.0-preview.2");
     assert_eq!(report.snapshot, snapshot);
     let k = kinds(&fake);
@@ -96,7 +96,7 @@ fn rollback_restores_every_component() {
     )));
     assert!(restore.contains(&"--tikv-version=v8.5.8".to_string()));
     // It ran the image that took the snapshot.
-    assert!(restore.contains(&"ghcr.io/ostrium-labs/loams:0.1.0-preview.3".to_string()));
+    assert!(restore.contains(&"ghcr.io/ostrium-labs/loams:0.1.0".to_string()));
     // The previous bundle, .env and Postgres files are back.
     assert_eq!(world.env(), ENV);
     let dir = world.stack_dir();
@@ -151,7 +151,7 @@ fn rollback_restores_every_component() {
         &mut stack,
         &world.bundle(),
         "0.1.0-preview.2",
-        "0.1.0-preview.3",
+        "0.1.0",
         &opts(),
     )
     .expect("upgrade");
@@ -192,7 +192,7 @@ fn rollback_prints_lost_writes_window() {
             .any(|k| k.starts_with("stop") || k.contains("restore")),
         "{k:?}"
     );
-    assert!(world.env().contains("LOAMS_VERSION=0.1.0-preview.3"));
+    assert!(world.env().contains("LOAMS_VERSION=0.1.0"));
 }
 
 #[test]

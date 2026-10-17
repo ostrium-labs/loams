@@ -221,10 +221,10 @@ async fn non_adjacent_source_refused() {
         code(runner.run(&mut stack.cx(), "9.9.9", &opts()).await),
         "release_not_found"
     );
-    // Adjacency on the compiled train: preview.3 upgrades only from preview.2.
+    // Adjacency on the compiled train: 0.1.0 upgrades only from preview.2.
     let compiled = loams_migrate::UpgradePath::compiled();
-    assert!(compiled.check_adjacent(P2, P3).is_ok());
-    assert!(compiled.check_adjacent("0.1.0-preview.1", P3).is_err());
+    assert!(compiled.check_adjacent(P2, "0.1.0").is_ok());
+    assert!(compiled.check_adjacent("0.1.0-preview.1", "0.1.0").is_err());
 }
 
 #[tokio::test]

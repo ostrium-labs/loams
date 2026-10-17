@@ -1,6 +1,6 @@
 ### Upgrading
 
-From **0.1.0-preview.2** (one step at a time): `loams upgrade --to 0.1.0-preview.3`.
+From **0.1.0-preview.2** (one step at a time): `loams upgrade --to 0.1.0`.
 
 It takes a snapshot first, and `loams upgrade rollback` restores it.
 
