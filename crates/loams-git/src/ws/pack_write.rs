@@ -1,6 +1,8 @@
 //! Packs the server writes itself (plan GT1 Task 25): the trees and the
 //! snapshot commit a server-side change to a workspace makes
-//! (`RestoreSalvage`; `ApplyEdits` in Task 26), as one workspace pack.
+//! (`RestoreSalvage`; `ApplyEdits` in Task 26), as one workspace pack, and
+//! the repository pack `PushWorkspace` assembles from workspace packs
+//! (Task 27), whose stored entries are copied rather than recompressed.
 //!
 //! Written from `gitformat-pack(5)`: a version 2 pack of whole objects (no
 //! deltas, so the pack is self-contained as T24.2 requires) and its
@@ -25,37 +27,61 @@ const LARGE_OFFSET: u64 = 0x8000_0000;
 pub fn write_ws_pack(
     objects: impl IntoIterator<Item = (Kind, Bytes)>,
 ) -> Result<(BlobId, pb::PackRef, Bytes), BlobError> {
-    let mut unique: BTreeMap<ObjectId, (Kind, Bytes)> = BTreeMap::new();
+    let mut unique: BTreeMap<ObjectId, PackEntry> = BTreeMap::new();
     for (kind, data) in objects {
         let oid = gix_object::compute_hash(gix_hash::Kind::Sha1, kind, &data)
             .map_err(|err| BlobError::InvalidPack(format!("hashing an object: {err}")))?;
-        unique.entry(oid).or_insert((kind, data));
+        unique.entry(oid).or_insert(PackEntry::Whole(kind, data));
     }
-    let count = u32::try_from(unique.len())
+    write_pack(&unique)
+}
+
+/// One entry of a pack [`write_pack`] writes.
+#[derive(Clone, Debug)]
+pub enum PackEntry {
+    /// An object to store whole, compressed here.
+    Whole(Kind, Bytes),
+    /// A stored entry of another pack that is not a delta (its header and
+    /// compressed data, as `RangeOdb::raw_entry` reads them), copied as it
+    /// is (Task 27's copy mode).
+    Raw(Bytes),
+}
+
+/// A version 2 pack of `entries` (by id, each self-contained: no deltas)
+/// and its idx, bundled.
+pub(crate) fn write_pack(
+    entries: &BTreeMap<ObjectId, PackEntry>,
+) -> Result<(BlobId, pb::PackRef, Bytes), BlobError> {
+    let count = u32::try_from(entries.len())
         .map_err(|_| BlobError::InvalidPack("more objects than a pack holds".into()))?;
     let mut pack = Vec::new();
     pack.extend_from_slice(b"PACK");
     pack.extend_from_slice(&2u32.to_be_bytes());
     pack.extend_from_slice(&count.to_be_bytes());
     // (oid, offset, crc32) in object id order, as the idx lists them.
-    let mut entries = Vec::with_capacity(unique.len());
-    for (oid, (kind, data)) in &unique {
+    let mut idx_entries = Vec::with_capacity(entries.len());
+    for (oid, entry) in entries {
         let offset = pack.len() as u64;
         let start = pack.len();
-        entry_header(kind_number(*kind), data.len() as u64, &mut pack);
-        let mut z = gix_zlib::stream::deflate::Write::new(
-            Vec::with_capacity(data.len() / 2 + 64),
-            gix_zlib::Compression::default(),
-        );
-        z.write_all(data)
-            .and_then(|()| z.flush())
-            .map_err(|err| BlobError::InvalidPack(format!("compressing {oid}: {err}")))?;
-        pack.extend_from_slice(&z.into_inner());
-        entries.push((*oid, offset, crc32(&pack[start..])));
+        match entry {
+            PackEntry::Whole(kind, data) => {
+                entry_header(kind_number(*kind), data.len() as u64, &mut pack);
+                let mut z = gix_zlib::stream::deflate::Write::new(
+                    Vec::with_capacity(data.len() / 2 + 64),
+                    gix_zlib::Compression::default(),
+                );
+                z.write_all(data)
+                    .and_then(|()| z.flush())
+                    .map_err(|err| BlobError::InvalidPack(format!("compressing {oid}: {err}")))?;
+                pack.extend_from_slice(&z.into_inner());
+            }
+            PackEntry::Raw(raw) => pack.extend_from_slice(raw),
+        }
+        idx_entries.push((*oid, offset, crc32(&pack[start..])));
     }
     let pack_sum = sha1(&pack)?;
     pack.extend_from_slice(pack_sum.as_bytes());
-    let idx = write_idx(&entries, &pack_sum)?;
+    let idx = write_idx(&idx_entries, &pack_sum)?;
     LpkWriter::from_parts(Bytes::from(pack), Bytes::from(idx))
 }
 

@@ -282,6 +282,11 @@ pub(crate) mod served {
         }
     }
 
+    /// The tenant a repository's sequencer commits for: the namespace in this install's org.
+    pub(crate) fn tenant(ns_name: &str) -> String {
+        format!("{LOCAL_ORG}/{ns_name}")
+    }
+
     pub(crate) fn key_reused() -> ConnectError {
         refuse(
             ErrorCode::FailedPrecondition,
@@ -668,7 +673,7 @@ pub(crate) mod served {
         }
 
         /// The ref log of `record`.
-        async fn log(
+        pub(crate) async fn log(
             &self,
             ns_name: &str,
             record: &RepoRecord,
