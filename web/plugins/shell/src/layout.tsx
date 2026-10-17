@@ -22,7 +22,8 @@ import { AppearanceMenu } from './appearance.js';
 import { EngineTooOld } from './engine.js';
 import { MainRegion, Outlet, TopBar, UserMenu, useNarrow, useSidebarState } from './frame.js';
 import { MODE_LABEL, ModeSwitcher, useMode, useModeShortcut } from './mode-switcher.js';
-import { navSections, useLocation } from './nav.js';
+import { useLocation } from './nav.js';
+import { currentProject, isSettingsPage, pageEntries, readPinned, togglePinned } from './pages.js';
 import { type ScopedCommand, ShellPalette } from './palette.js';
 import { DRAWER, INSPECTOR, PanelController } from './panel.js';
 import { PanelRegion, PanelToggles } from './regions.js';
@@ -70,8 +71,8 @@ function modKeys(...keys: string[]): string[] {
 }
 
 /**
- * The palette with the shell's own rows (SD1 Task 24): "Go to" for each mode's nav
- * entries, and the general commands (switch mode, theme, agent panel).
+ * The palette with the shell's own rows (SD1 Task 24, D1080): "Go to" for every page, the
+ * pin commands, and the general commands (switch mode, theme, agent panel).
  */
 function Palette({
   router,
@@ -93,21 +94,41 @@ function Palette({
   const legacy = useSlot('console.nav');
   const current = useMode(mode);
   const modesOf = (id: string) => mode?.modesOf(id) ?? ['console'];
-  const nav = (m: Mode): ScopedCommand[] => {
-    const seen = new Set<string>();
-    return navSections(sections, legacy, mode ? { mode: m, modesOf } : undefined).flatMap(
-      ([group, items]) =>
-        items
-          .filter((i) => !seen.has(i.href) && seen.add(i.href))
-          .map((i) => ({
-            id: `go:${i.href}`,
-            title: `Go to ${i.label}`,
-            group: 'Go to',
-            keywords: [group, i.href],
-            mode: m,
-            run: () => router.navigate(i.href),
-          })),
-    );
+  const location = useLocation(router);
+  const project = currentProject(location.path);
+  const all = pageEntries(sections, legacy, project);
+  // Every page in every mode (D1080): Settings pages under "Settings", the rest under "Pages".
+  // A typed query also offers to pin or unpin each page for the open project.
+  const nav = (m: Mode, query: string): ScopedCommand[] => {
+    if (m !== current) return [];
+    const pinned = query.trim() ? readPinned(project) : [];
+    return all.flatMap((p): ScopedCommand[] => {
+      const settings = isSettingsPage(p);
+      const go: ScopedCommand = {
+        id: `go:${p.href}`,
+        title: `Go to ${p.label}`,
+        group: settings ? 'Settings' : 'Pages',
+        keywords: [p.group, p.href, p.id],
+        mode: m,
+        run: () => router.navigate(p.href),
+      };
+      if (settings || !query.trim()) return [go];
+      const on = pinned.includes(p.id);
+      return [
+        go,
+        {
+          id: `pin:${p.id}`,
+          title: on ? `Unpin ${p.label} from the sidebar` : `Pin ${p.label} to the sidebar`,
+          group: 'Sidebar',
+          keywords: ['pin', 'unpin', 'sidebar', p.id],
+          secondary: true,
+          mode: m,
+          run: () => {
+            togglePinned(project, p.id);
+          },
+        },
+      ];
+    });
   };
   const other = mode?.available.find((m) => m !== current);
   const general: ScopedCommand[] = [
@@ -257,7 +278,6 @@ export function Layout({
             router={router}
             flags={flags}
             mode={mode}
-            session={session}
             width={side.width}
             onWidth={(w) => setSide({ width: w })}
             open={sidebarOpen}
@@ -269,6 +289,7 @@ export function Layout({
               router={router}
               flags={flags}
               mode={mode}
+              session={session}
               sidebarOpen={sidebarOpen}
               onToggleSidebar={toggleSidebar}
               onOpenPalette={() => setPaletteOpen(true)}

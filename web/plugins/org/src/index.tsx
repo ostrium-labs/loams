@@ -83,7 +83,8 @@ const plugin: PluginModule = {
     nav('org-home', 'All projects', paths.home, 'projects', 1);
     nav('teams', 'Teams', '/teams', 'teams', 2);
     nav('members', 'Members', '/members', 'members', 3);
-    nav('org-settings', 'Settings', paths.settings, 'settings', 90);
+    // Settings lists every settings page (D1080), so this one says whose it is.
+    nav('org-settings', 'Organisation settings', paths.settings, 'settings', 90);
   },
 };
 

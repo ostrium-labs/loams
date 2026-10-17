@@ -1,37 +1,44 @@
-// The shell's sidebar (design 59, D1078–D1079): the brand, the server indicator and
+// The shell's sidebar (design 59, D1078–D1080): the brand, the server indicator and
 // "New thread" on top; projects and their threads (`shell.sidebar.threads`, Task 9) and the
-// product nav in the middle; the docs link and version at the foot. 232px by default,
-// resizable from 200 to 320px and collapsible (⌘B); below 960px it is a sheet. Task 10
-// replaces the nav with pinned Pages and Settings.
+// project's pinned Pages in the middle (Settings' own list on a Settings page); Settings, the
+// docs link and the version at the foot. 232px by default, resizable from 200 to 320px and
+// collapsible (⌘B); below 960px it is a sheet. The palette reaches every page (D1080).
 
-import {
-  type FlagsService,
-  MODE_HOME,
-  type ModeService,
-  type SessionService,
-} from '@loams/console-host';
+import { type FlagsService, MODE_HOME, type ModeService } from '@loams/console-host';
 import { Slot, useSlot } from '@loams/slots';
 import {
-  SelectMenu,
+  Menu,
+  MenuCheckboxItem,
   Sheet,
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
 } from '@loams/ui';
-import { BookOpen, ChevronsUpDown, SquarePen } from 'lucide-react';
-import { useSyncExternalStore } from 'react';
+import { ArrowLeft, BookOpen, Pin, Settings, SquarePen } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Brand, runShellCommand, SIDEBAR } from './frame.js';
 import { iconFor } from './icons.js';
 import { useMode } from './mode-switcher.js';
-import { isActive, navSections, ORG_SECTIONS, useLocation, useModeFilter } from './nav.js';
+import { useLocation } from './nav.js';
+import {
+  currentProject,
+  isSettingsPage,
+  PAGES_CHANGED_EVENT,
+  type PageEntry,
+  pageAt,
+  pageEntries,
+  pinnedPages,
+  readPinned,
+  settingsHome,
+  togglePinned,
+} from './pages.js';
 import type { HashRouter } from './router.js';
 
 export function ShellSidebar({
   router,
   flags,
   mode,
-  session,
   width,
   onWidth,
   open,
@@ -41,7 +48,6 @@ export function ShellSidebar({
   router: HashRouter;
   flags?: FlagsService;
   mode?: ModeService;
-  session: SessionService;
   width: number;
   onWidth: (w: number) => void;
   open: boolean;
@@ -74,9 +80,10 @@ export function ShellSidebar({
             <Slot name="shell.sidebar.threads" props={{}} />
           </section>
         )}
-        <Nav router={router} mode={mode} session={session} />
+        <Navigation router={router} />
       </SidebarContent>
       <SidebarFooter className="lc-side-foot">
+        <SettingsLink router={router} />
         <a href="https://loams.dev/docs" target="_blank" rel="noreferrer">
           <BookOpen size={15} aria-hidden="true" /> Documentation
         </a>
@@ -111,90 +118,148 @@ export function ShellSidebar({
   );
 }
 
-/**
- * The product nav, grouped by section. Above it, the project switcher and the open
- * project's pages when a plugin serves them (`shell.nav.context`); otherwise, in Console,
- * the session's environments.
- */
-function Nav({
-  router,
-  mode,
-  session,
-}: {
-  router: HashRouter;
-  mode?: ModeService;
-  session: SessionService;
-}) {
+/** The sidebar's pages and their location, re-read on navigation. */
+function usePages(router: HashRouter) {
   const sections = useSlot('shell.nav.section');
   const legacy = useSlot('console.nav');
   const location = useLocation(router);
-  const filter = useModeFilter(mode);
-  const model = navSections(sections, legacy, filter);
-  // Only the most specific match is current (`/studio/settings`, not also `/studio`).
-  const current = model
-    .flatMap(([, items]) => items)
-    .filter((i) => isActive(location.path, i.href))
-    .sort((a, b) => b.href.length - a.href.length)[0]?.key;
-  const hasContext = useSlot('shell.nav.context').length > 0;
-  return (
-    <>
-      {hasContext ? (
-        <Slot name="shell.nav.context" props={{}} />
-      ) : (
-        filter?.mode !== 'studio' && <EnvironmentSwitcher session={session} />
-      )}
-      <nav className="lc-nav" aria-label={filter?.mode === 'studio' ? 'Studio' : 'Console'}>
-        {model.map(([group, items]) => (
-          <div
-            key={group}
-            className="lc-nav-group"
-            data-scope={ORG_SECTIONS.includes(group) ? 'org' : undefined}
-          >
-            <h2 className="lc-nav-heading">{group}</h2>
-            <ul>
-              {items.map((item) => {
-                const Icon = iconFor(item.icon);
-                return (
-                  <li key={item.key}>
-                    <a
-                      href={`#${item.href}`}
-                      aria-current={item.key === current ? 'page' : undefined}
-                    >
-                      <Icon aria-hidden="true" size={16} strokeWidth={1.75} />
-                      <span className="lc-nav-label">{item.label}</span>
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
-      </nav>
-    </>
+  const project = currentProject(location.path);
+  const all = pageEntries(sections, legacy, project);
+  return { all, project, location };
+}
+
+/**
+ * The middle of the sidebar (D1080): the project's pinned Pages, or, on a Settings page,
+ * the Settings list with a way back to where the person was.
+ */
+function Navigation({ router }: { router: HashRouter }) {
+  const { all, project, location } = usePages(router);
+  const here = pageAt(all, location.path);
+  const back = useRef('/');
+  const settings = here !== undefined && isSettingsPage(here);
+  if (!settings) back.current = location.path;
+  return settings ? (
+    <SettingsNav pages={all.filter(isSettingsPage)} current={here.id} back={back.current} />
+  ) : (
+    <PagesSection all={all} project={project} current={here?.id} />
   );
 }
 
-/** The environment the session reads, like the original console's project switcher. */
-function EnvironmentSwitcher({ session }: { session: SessionService }) {
-  useSyncExternalStore(session.subscribe, () => session.environment?.());
-  const environments = session.environments?.() ?? [];
-  const current = session.environment?.();
-  if (!current || environments.length === 0) return null;
+function PageLink({ page, current }: { page: PageEntry; current: boolean }) {
+  const Icon = iconFor(page.icon);
   return (
-    <div className="lc-switcher">
-      <SelectMenu
-        label="Environment"
-        value={current.id}
-        onValueChange={(id) => session.select(id)}
-        options={environments.map((e) => ({ value: e.id, label: e.name }))}
-        className="lc-switcher-trigger"
-        leading={
-          <span className="lc-switcher-mark" aria-hidden="true">
-            {current.name.slice(0, 1).toUpperCase()}
-          </span>
-        }
-        icon={<ChevronsUpDown size={14} />}
-      />
-    </div>
+    <li>
+      <a
+        className="lc-page-link"
+        href={`#${page.href}`}
+        aria-current={current ? 'page' : undefined}
+        title={page.label}
+      >
+        <Icon aria-hidden="true" size={15} strokeWidth={1.75} />
+        <span className="lc-page-label">{page.label}</span>
+      </a>
+    </li>
+  );
+}
+
+/** The pins of the open project, live across the sidebar and the palette. */
+function usePinned(project: string | undefined): string[] {
+  const [pinned, setPinned] = useState(() => readPinned(project));
+  useEffect(() => {
+    setPinned(readPinned(project));
+    const onChange = () => setPinned(readPinned(project));
+    window.addEventListener(PAGES_CHANGED_EVENT, onChange);
+    return () => window.removeEventListener(PAGES_CHANGED_EVENT, onChange);
+  }, [project]);
+  return pinned;
+}
+
+function PagesSection({
+  all,
+  project,
+  current,
+}: {
+  all: PageEntry[];
+  project: string | undefined;
+  current?: string;
+}) {
+  const pinned = usePinned(project);
+  const shown = pinnedPages(all, pinned);
+  const pinnable = all.filter((p) => !isSettingsPage(p));
+  return (
+    <section className="lc-pages" aria-labelledby="lc-pages-title">
+      <div className="lc-pages-head">
+        <h2 id="lc-pages-title">Pages</h2>
+        <Menu
+          label="Pin pages to the sidebar"
+          trigger={
+            <button
+              type="button"
+              className="lc-pages-edit"
+              aria-label="Edit pages"
+              title="Pin or unpin pages"
+            >
+              <Pin size={13} strokeWidth={1.75} aria-hidden="true" />
+            </button>
+          }
+        >
+          {pinnable.map((p) => (
+            <MenuCheckboxItem
+              key={p.id}
+              checked={pinned.includes(p.id)}
+              onCheckedChange={() => togglePinned(project, p.id)}
+            >
+              {p.label}
+            </MenuCheckboxItem>
+          ))}
+        </Menu>
+      </div>
+      {shown.length > 0 ? (
+        <ul aria-labelledby="lc-pages-title">
+          {shown.map((p) => (
+            <PageLink key={p.id} page={p} current={p.id === current} />
+          ))}
+        </ul>
+      ) : (
+        <p className="lc-pages-empty">No pinned pages. Pin one here or from the palette.</p>
+      )}
+    </section>
+  );
+}
+
+function SettingsNav({
+  pages,
+  current,
+  back,
+}: {
+  pages: PageEntry[];
+  current: string;
+  back: string;
+}) {
+  return (
+    <nav aria-label="Settings" className="lc-settings-nav">
+      <a className="lc-page-link" href={`#${back}`}>
+        <ArrowLeft size={15} strokeWidth={1.75} aria-hidden="true" />
+        <span className="lc-page-label">Back</span>
+      </a>
+      <h2 className="lc-pages-head">Settings</h2>
+      <ul>
+        {pages.map((p) => (
+          <PageLink key={p.id} page={p} current={p.id === current} />
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+/** The foot's way into Settings (and ⌘, from Task 12). */
+function SettingsLink({ router }: { router: HashRouter }) {
+  const { all } = usePages(router);
+  const home = settingsHome(all);
+  if (!home) return null;
+  return (
+    <a href={`#${home.href}`} aria-keyshortcuts="Control+Comma Meta+Comma">
+      <Settings size={15} strokeWidth={1.75} aria-hidden="true" /> Settings
+    </a>
   );
 }

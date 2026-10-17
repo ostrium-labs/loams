@@ -22,11 +22,13 @@ import {
   MenuItem,
   MenuLabel,
   MenuSeparator,
+  SelectMenu,
 } from '@loams/ui';
-import { LogOut, PanelLeft, X } from 'lucide-react';
+import { ChevronsUpDown, GitBranch, LogOut, PanelLeft, X } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useMode } from './mode-switcher.js';
-import { inMode, isActive, navSections, useLocation, useModeFilter } from './nav.js';
+import { inMode, useLocation, useModeFilter } from './nav.js';
+import { currentProject, pageAt, pageEntries } from './pages.js';
 import type { Crumb, HashRouter } from './router.js';
 
 /** The sidebar's saved state, limits and default width (D1078: 232px, 200–320). */
@@ -142,6 +144,7 @@ export function TopBar({
   router,
   flags,
   mode,
+  session,
   sidebarOpen,
   onToggleSidebar,
   onOpenPalette,
@@ -151,6 +154,8 @@ export function TopBar({
   router: HashRouter;
   flags?: FlagsService;
   mode?: ModeService;
+  /** The session's environments: the branch pill in Console (W21). */
+  session?: SessionService;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
   onOpenPalette: () => void;
@@ -160,6 +165,7 @@ export function TopBar({
   trailing?: ReactNode;
 }) {
   const mac = isMac();
+  const current = useMode(mode);
   return (
     <header className="lc-topbar" data-drag-region="">
       <button
@@ -177,6 +183,7 @@ export function TopBar({
       <div className="lc-topbar-start">
         <Entries name="shell.topbar.left" mode={mode} />
         <Entries name="shell.header.server" mode={mode} />
+        {session && current === 'console' && <EnvironmentSwitcher session={session} />}
         <Crumbs router={router} flags={flags} mode={mode} />
       </div>
       <div className="lc-topbar-center">
@@ -228,7 +235,10 @@ export function MainRegion({ router, mode }: { router: HashRouter; mode?: ModeSe
   return <Outlet router={router} />;
 }
 
-/** The page's place: instance, section, page; the last crumb is the current page. */
+/**
+ * The page's place (D1080, no sections): the instance (Studio in Studio mode), the page the
+ * route is under when it is not the page itself, then the page. A page's own trail wins.
+ */
 export function Crumbs({
   router,
   flags,
@@ -242,34 +252,42 @@ export function Crumbs({
   const legacy = useSlot('console.nav');
   const location = useLocation(router);
   const trail = useSyncExternalStore(router.subscribe, () => router.trail());
-  const filter = useModeFilter(mode);
+  const current = useMode(mode);
   const title = location.pageId ? router.title() : undefined;
   if (trail && trail.length > 0) return <Trail crumbs={trail} />;
-  let group: string | undefined;
-  let home: { label: string; href: string } | undefined;
-  for (const [g, items] of navSections(sections, legacy, filter)) {
-    const hit = items
-      .filter((i) => isActive(location.path, i.href))
-      .sort((a, b) => b.href.length - a.href.length)[0];
-    if (hit && (!home || hit.href.length > home.href.length)) {
-      group = g;
-      home = { label: hit.label, href: hit.href };
-    }
-  }
-  const crumbs: { label: string; href?: string }[] = [
-    filter?.mode === 'studio'
+  const home = pageAt(pageEntries(sections, legacy, currentProject(location.path)), location.path);
+  const root =
+    mode && current === 'studio'
       ? { label: 'Studio', href: MODE_HOME.studio }
-      : { label: flags?.instanceName || 'Loams', href: '/' },
-  ];
-  const root = crumbs[0] as { label: string; href: string };
-  // In Studio the root crumb is the mode's home, so its section and home page are not repeated.
-  if (group && group !== root.label) crumbs.push({ label: group });
+      : { label: flags?.instanceName || 'Loams', href: '/' };
+  const crumbs: { label: string; href?: string }[] = [root];
   if (home && home.href !== location.path && home.href !== root.href) {
     crumbs.push({ label: home.label, href: home.href });
   }
   const last = title ?? home?.label ?? 'Not found';
   if (location.path !== root.href || last !== root.label) crumbs.push({ label: last });
   return <Trail crumbs={crumbs} />;
+}
+
+/** The branch pill in Console (W21): the environment the session reads. */
+export function EnvironmentSwitcher({ session }: { session: SessionService }) {
+  useSyncExternalStore(session.subscribe, () => session.environment?.());
+  const environments = session.environments?.() ?? [];
+  const current = session.environment?.();
+  if (!current || environments.length === 0) return null;
+  return (
+    <div className="lc-env-pill">
+      <SelectMenu
+        label="Environment"
+        value={current.id}
+        onValueChange={(id) => session.select(id)}
+        options={environments.map((e) => ({ value: e.id, label: e.name }))}
+        className="lc-pill-trigger"
+        leading={<GitBranch size={13} strokeWidth={1.75} aria-hidden="true" />}
+        icon={<ChevronsUpDown size={13} />}
+      />
+    </div>
+  );
 }
 
 export function Trail({ crumbs }: { crumbs: Crumb[] }) {

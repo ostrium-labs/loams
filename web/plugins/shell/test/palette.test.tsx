@@ -112,7 +112,13 @@ describe('the shell palette', () => {
           name: 'shell.nav.section',
           plugin: 'studio',
           order: 0,
-          meta: { id: 'home', label: 'Home', href: '/studio', group: 'Studio', mode: 'studio' },
+          meta: {
+            id: 'tasks',
+            label: 'Tasks',
+            href: '/studio/tasks',
+            group: 'Studio',
+            mode: 'studio',
+          },
         },
         () => null,
       );
@@ -133,7 +139,9 @@ describe('the shell palette', () => {
     expect(listed()).toEqual([
       '# Pipelines',
       'Run pipeline',
-      '# Go to',
+      // Every page is the current mode's (D1080), a Studio page too.
+      '# Pages',
+      'Go to Tasks',
       'Go to Jobs',
       '# General',
       'Switch to Studio',
@@ -143,7 +151,6 @@ describe('the shell palette', () => {
       'Theme: Light',
       '# Studio',
       'Fix login',
-      'Go to Home',
     ]);
 
     // In Studio the order flips, and Console's commands sit under "Console".
@@ -159,8 +166,9 @@ describe('the shell palette', () => {
     expect(listed()).toEqual([
       '# Threads',
       'Fix login',
-      '# Go to',
-      'Go to Home',
+      '# Pages',
+      'Go to Tasks',
+      'Go to Jobs',
       '# General',
       'Switch to Console',
       '# Appearance',
@@ -169,7 +177,6 @@ describe('the shell palette', () => {
       'Theme: Light',
       '# Console',
       'Run pipeline',
-      'Go to Jobs',
     ]);
     expect(listed()).not.toContain('Sneaky');
   });
@@ -198,7 +205,7 @@ describe('the shell palette', () => {
     // The query starts empty each time the palette opens.
     expect((again as HTMLInputElement).value).toBe('');
     fireEvent.change(again, { target: { value: 'go jobs' } });
-    await waitFor(() => expect(listed()).toEqual(['# Go to', 'Go to Jobs']));
+    await waitFor(() => expect(listed()).toEqual(['# Pages', 'Go to Jobs']));
     fireEvent.keyDown(again, { key: 'Enter' });
     await waitFor(() => expect(router.current().path).toBe('/jobs'));
   });

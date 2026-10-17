@@ -194,7 +194,8 @@ const plugin: PluginModule = {
           order: 90,
           meta: {
             id: 'studio-settings',
-            label: 'Settings',
+            // Settings lists every settings page (D1080), so this one says whose it is.
+            label: 'Studio settings',
             href: '/studio/settings',
             icon: 'settings',
             group: 'Studio',

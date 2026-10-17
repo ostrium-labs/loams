@@ -9,16 +9,21 @@ import { useSyncExternalStore } from 'react';
 import { useMode } from './mode-switcher.js';
 import type { HashRouter } from './router.js';
 
-/** The nav sections, in display order. Anything else follows them. */
+/**
+ * The nav sections, in display order. Anything else follows them.
+ * @deprecated design 59 (D1080): the sidebar has no sections; use `pageEntries`.
+ */
 export const SECTIONS = ['Data', 'Compute', 'Integrate', 'Organisation', 'Operate'] as const;
 /**
  * Studio's nav sections, in display order (§53 §5.9): its own pages, then the
  * software factory, which moved here from Console's Integrate section (D916).
+ * @deprecated design 59 (D1080): use `pageEntries`.
  */
 export const STUDIO_SECTIONS = ['Studio', 'Factory'] as const;
 /**
  * The sections about the whole instance rather than its data and services: the
  * original console's "Organization" half of the sidebar, set apart below the rest.
+ * @deprecated design 59 (D1080): these are Settings pages now; use `isSettingsPage`.
  */
 export const ORG_SECTIONS: readonly string[] = ['Organisation', 'Operate'];
 
@@ -64,7 +69,10 @@ export function inMode(
   return filter.modesOf(entry.plugin).includes(filter.mode);
 }
 
-/** The nav model from both slots, grouped in section order and sorted by `order`. */
+/**
+ * The nav model from both slots, grouped in section order and sorted by `order`.
+ * @deprecated design 59 (D1080): the sidebar shows pinned Pages; use `pageEntries`.
+ */
 export function navSections(
   allSections: SlotEntry<'shell.nav.section'>[],
   allLegacy: SlotEntry<'console.nav'>[],
