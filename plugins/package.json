@@ -26,7 +26,7 @@
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "2.16.0",
     "@connectrpc/connect-web": "^2.2.0",
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.4",
     "@vitest/coverage-v8": "5.0.1",
     "eslint": "^9.0.0",
     "msw": "^2.15.0",

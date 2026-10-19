@@ -39,7 +39,7 @@
 		"@loams-plugins/plugin-zulip-adapter": "workspace:*",
 		"@loams/proto": "workspace:*",
 		"@playwright/test": "catalog:",
-		"@types/node": "24.13.6",
+		"@types/node": "26.6.4",
 		"@types/pg": "8.23.1",
 		"@types/pg-cursor": "2.7.2",
 		"cordis": "4.0.0-rc.10",
