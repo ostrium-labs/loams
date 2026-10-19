@@ -6,7 +6,7 @@
   "types": "src/index.ts",
   "dependencies": {
     "cordis": "^4.0.0-rc.10",
-    "pg": "^8.16.0",
+    "pg": "^8.23.1",
     "@loams-core/types": "workspace:*"
   },
   "devDependencies": {

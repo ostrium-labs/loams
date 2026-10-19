@@ -21,9 +21,9 @@
 		"ajv": "8.20.0",
 		"electron-updater": "6.8.9",
 		"js-yaml": "4.3.2",
-		"mysql2": "3.24.4",
-		"pg": "8.23.0",
-		"pg-cursor": "2.22.0"
+		"mysql2": "3.24.5",
+		"pg": "8.23.1",
+		"pg-cursor": "2.22.1"
 	},
 	"devDependencies": {
 		"@bufbuild/protobuf": "2.16.0",
@@ -42,8 +42,8 @@
 		"@types/pg": "8.23.1",
 		"@types/pg-cursor": "2.7.2",
 		"cordis": "4.0.0-rc.10",
-		"electron": "44.4.5",
-		"electron-builder": "26.16.1",
+		"electron": "44.5.1",
+		"electron-builder": "26.17.0",
 		"electron-vite": "5.0.0",
 		"typescript": "5.9.3",
 		"vite": "7.3.7",
