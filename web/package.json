@@ -16,7 +16,7 @@
     "test": "pnpm -r --if-present test"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
+    "@biomejs/biome": "2.5.15",
     "typescript": "5.9.3"
   }
 }

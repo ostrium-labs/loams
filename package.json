@@ -19,7 +19,7 @@
     "affected": "nx affected --targets=build,test,typecheck --parallel=2"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
+    "@biomejs/biome": "2.5.15",
     "nx": "23.2.1",
     "typescript": "5.9.3"
   }
