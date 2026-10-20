@@ -23,6 +23,11 @@ allow = [
     # BSD Zero Clause (tslib, via echarts in the console). Owner, 2026-10-13
     # (SD1 ruling T2-6): allowed everywhere, for crates and npm alike.
     "0BSD",
+    # borrow-or-share 0.2.4, via fluent-uri -> referencing -> jsonschema 0.58,
+    # which loams-llm's structured-output validation pulls in (MM1 Task 2,
+    # ruling R2.8), as fabric/deny.toml already allows for loams-flow. MIT-0
+    # is OSI-approved and is MIT without the attribution clause.
+    "MIT-0",
 ]
 confidence-threshold = 0.9
 unused-allowed-license = "allow"

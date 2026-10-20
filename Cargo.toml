@@ -134,6 +134,11 @@ hex = "0.4"
 hmac = "0.13"
 http = "1"
 http-body = "1"
+# Structured-output validation in loams-llm (MM1 Task 2). 0.58.5 (2026-10-02,
+# MIT), the version fabric/ pins; 0.58.6 was 13 days old when this was added
+# (14-day rule). `default-features = false`: no HTTP or file `$ref` resolver,
+# so validating a model's output never touches the network or the disk.
+jsonschema = { version = "=0.58.5", default-features = false }
 httpmock = { version = "0.8.3", default-features = false, features = ["remote"] }
 humantime = "2"
 indexmap = { version = "2", features = ["serde"] }
@@ -306,6 +311,8 @@ loams-graph = { path = "crates/loams-graph", version = "0.1.0" }
 loams-hnsw = { path = "crates/loams-hnsw", version = "0.1.0" }
 loams-hot = { path = "crates/loams-hot", version = "0.1.0" }
 loams-link = { path = "crates/loams-link", version = "0.1.0" }
+# Model providers for Loams Memory and the desktop daemon (design §52 §10, MM1 Task 2).
+loams-llm = { path = "crates/loams-llm", version = "0.1.0" }
 loams-kv = { path = "crates/loams-kv", version = "0.1.0" }
 loams-live = { path = "crates/loams-live", version = "0.1.0" }
 loams-live-js = { path = "crates/loams-live-js", version = "0.1.0" }
