@@ -112,7 +112,7 @@ rand_010 = { package = "rand", version = "=0.10.3", default-features = false }
 # 2026-10-22. MIT OR Apache-2.0.
 gix-hash = { version = "=0.27.0", default-features = false, features = ["sha1"] }
 gix-validate = { version = "=0.12.0", default-features = false }
-gix-object = { version = "=0.65.0", default-features = false, features = ["sha1"] }
+gix-object = { version = "=0.66.0", default-features = false, features = ["sha1"] }
 gix-pack = { version = "=0.75.0", default-features = false, features = ["sha1"] }
 gix-zlib = { version = "=0.2.0", default-features = false }
 # The commit-graph reader of `derived/graph/` layers (GT1 Task 20).
