@@ -110,7 +110,7 @@ rand_010 = { package = "rand", version = "=0.10.3", default-features = false }
 # Loams Git (GT1): the gitoxide 0.88 train of 2026-09-25, pinned exactly
 # (R0.8, T0-21), SHA-1 only (Ruling 8). A move to 0.89 is its own PR after
 # 2026-10-22. MIT OR Apache-2.0.
-gix-hash = { version = "=0.27.0", default-features = false, features = ["sha1"] }
+gix-hash = { version = "=0.28.0", default-features = false, features = ["sha1"] }
 gix-validate = { version = "=0.12.0", default-features = false }
 gix-object = { version = "=0.65.0", default-features = false, features = ["sha1"] }
 gix-pack = { version = "=0.75.0", default-features = false, features = ["sha1"] }
