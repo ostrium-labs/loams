@@ -234,7 +234,7 @@ impl OpenFgaAuthorizer {
                     on_missing: "ignore".into(),
                 }),
             };
-            self.client.clone().write(req).await.map_err(status)?;
+            self.send_write(req).await?;
         }
         Ok(())
     }
@@ -252,9 +252,40 @@ impl OpenFgaAuthorizer {
             }),
             deletes: None,
         };
-        self.client.clone().write(req).await.map_err(status)?;
+        self.send_write(req).await?;
         Ok(())
     }
+}
+
+impl OpenFgaAuthorizer {
+    /// Sends one write, retrying a write the datastore did not commit because it was busy
+    /// (SQLite's lock, `busy_timeout` 100 ms in OpenFGA) or the server was briefly unavailable.
+    /// Up to 4 attempts, 50-400 ms apart; validation errors are never retried.
+    async fn send_write(&self, req: WriteRequest) -> Result<()> {
+        let mut delay = Duration::from_millis(50);
+        for attempt in 1.. {
+            match self.client.clone().write(req.clone()).await {
+                Ok(_) => return Ok(()),
+                Err(e) if attempt < 4 && transient(&e) => {
+                    tracing::debug!(target: "loams_authz", attempt, error = %e, "retrying an OpenFGA write");
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
+                }
+                Err(e) => return Err(status(e)),
+            }
+        }
+        unreachable!("the loop returns")
+    }
+}
+
+fn transient(e: &Status) -> bool {
+    use openfga_client::tonic::Code;
+    let m = e.message();
+    matches!(
+        e.code(),
+        Code::Unavailable | Code::ResourceExhausted | Code::Aborted
+    ) || m.contains("database is locked")
+        || m.contains("SQLITE_BUSY")
 }
 
 fn contextual(tuples: &[Tuple]) -> Result<Option<ContextualTupleKeys>> {

@@ -291,7 +291,7 @@ Commit: one PR per numbered group where it keeps PRs small (for example, 1–4 d
 
 ## IA2 and IA4 — the agent path first (Tasks specified after IA0)
 
-IA0 reported **go** ([report](ia0-spike-report.md)). The owner put agent authentication first (2026-10-21: "current agent auth is too complex and friction"), so these tasks run in this order: IA2 Tasks 1–3, then IA4 Tasks 1–3, then the rest of IA2. One branch and one PR per task, each green before merge. F1 and F3 of the report change IA3 only and wait for the owner.
+IA0 reported **go** ([report](ia0-spike-report.md)). The owner put agent authentication first (2026-10-21: "current agent auth is too complex and friction"), so these tasks run in this order: IA2 Tasks 1–3, IA2 Task 4 and IA4 Tasks 1–3 (IA4 Task 1 by a clean-room agent), then the rest of IA2. One branch and one PR per task, each green before merge. F1 and F3 of the report change IA3 only and wait for the owner.
 
 ### IA2 Task 1 — `crates/loams-authz`: the trait and four implementations
 
@@ -329,6 +329,19 @@ Commit: `authz: the deny-by-default middleware (IA2 Task 2, D1611)`.
 **Tests:** `builtin_matches_openfga` runs every check and list in `deploy/openfga/core.fga.yaml` against `BuiltinAuthorizer` (always) and against OpenFGA (when `LOAMS_AUTHZ_OPENFGA_GRPC` is set), and both must match the file's assertions. `builtin_refuses_agent_billing_admin`.
 
 Commit: `authz: BuiltinAuthorizer, with the differential test against OpenFGA (IA2 Task 3, D1613)`.
+
+### IA2 Task 4 — the engine enforces through `loams-authz` (agent-facing surfaces first)
+
+**What to write** (D1605, D1610, D1611; report F5, F7):
+
+- **Subjects.** `crates/loams/src/auth` maps every admitted principal to a `loams_authz::Subject` and puts it in the request's extensions:
+  - an OIDC JWT: the principal store's link `(iss, sub) → (kind, status)` (a new `PrincipalLink` record in `directory.rs`; no link means `user`). A `disabled` link is refused with `token_revoked` on every request, whatever the JWT's `exp`;
+  - a session: `user:<user id>`; an `lk_` key: `service_account:<id>`; a tailnet user: their linked user; `LOAMS_AUTH_MODE=off`: no subject, and `AllowAllAuthorizer`.
+- **Selection.** `LOAMS_AUTHZ` = `builtin` (default, D1613) | `openfga` (`LOAMS_AUTHZ_OPENFGA_GRPC`, `_STORE`, `_MODEL`, optional `_KEY`). Either is wrapped in `CachedAuthorizer` (5 s); `off` is accepted only with `LOAMS_AUTH_MODE=off` on loopback. In `builtin` mode the principal store is the tuple source.
+- **Model.** `environment` gains `can_read: viewer`, `can_write: editor` and `can_admin: deployer`, for data-plane calls scoped to one namespace (collections, KV, Live, Durable), with model tests.
+- **First surfaces.** `namespace_reach.rs`, `graph_auth.rs` and `durable.rs` ask `can_read`/`can_write`/`can_admin` on `environment:<namespace id>` (Graph on `graph:<ns>/<name>`) through the trait; the admin RPCs keep `OrgRoleAuthorizer` until IA2 Task 5 declares a `can_*` per RPC.
+
+**Tests:** `agent_jwt_reaches_only_granted_namespace`, `disabled_link_refuses_live_jwt`, `session_maps_to_user`, `lk_key_maps_to_service_account`, `builtin_is_the_default`, `authz_off_refused_off_loopback`, and the existing auth tests unchanged.
 
 ### IA4 Task 1 — agents as Zitadel machine users
 

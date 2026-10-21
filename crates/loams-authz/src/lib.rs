@@ -9,12 +9,13 @@
 //! | [`OpenFgaAuthorizer`] | OpenFGA over gRPC (`openfga-client`), profile `authz` |
 //! | [`CachedAuthorizer`] | wraps any authorizer: allow decisions only, TTL ≤ 5 s (D66, D1611) |
 //! | [`AllowAllAuthorizer`] | developer mode, refused unless every listener is on loopback |
+//! | [`BuiltinAuthorizer`] | single-org mode: model v1 in process, no OpenFGA (D1613) |
 //! | [`RecordingAuthorizer`] | records every request and decision (tests, decision log) |
 //!
-//! [`http`] enforces it on HTTP routes, deny by default (D1611). `BuiltinAuthorizer`
-//! (single-org mode, D1613) follows in IA2 Task 3.
+//! [`http`] enforces it on HTTP routes, deny by default (D1611).
 
 mod allow_all;
+mod builtin;
 mod cached;
 pub mod http;
 mod openfga;
@@ -27,6 +28,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 pub use allow_all::{AllowAllAuthorizer, NotLoopback};
+pub use builtin::BuiltinAuthorizer;
 pub use cached::{CachedAuthorizer, MAX_CACHE_TTL};
 pub use openfga::{MAX_CHECKS_PER_BATCH, OpenFgaAuthorizer, Tuple};
 pub use recording::{Record, RecordingAuthorizer};
