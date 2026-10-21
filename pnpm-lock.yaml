@@ -221,27 +221,6 @@ importers:
       '@connectrpc/connect-web':
         specifier: 2.2.0
         version: 2.2.0(@bufbuild/protobuf@2.16.0)(@connectrpc/connect@2.2.0(@bufbuild/protobuf@2.16.0))
-      '@loams-plugins/plugin-forgejo-adapter':
-        specifier: workspace:*
-        version: link:../../plugins/packages/plugin-forgejo-adapter
-      '@loams-plugins/plugin-glitchtip-adapter':
-        specifier: workspace:*
-        version: link:../../plugins/packages/plugin-glitchtip-adapter
-      '@loams-plugins/plugin-itsaplan-adapter':
-        specifier: workspace:*
-        version: link:../../plugins/packages/plugin-itsaplan-adapter
-      '@loams-plugins/plugin-langfuse-adapter':
-        specifier: workspace:*
-        version: link:../../plugins/packages/plugin-langfuse-adapter
-      '@loams-plugins/plugin-matomo-adapter':
-        specifier: workspace:*
-        version: link:../../plugins/packages/plugin-matomo-adapter
-      '@loams-plugins/plugin-openpanel-adapter':
-        specifier: workspace:*
-        version: link:../../plugins/packages/plugin-openpanel-adapter
-      '@loams-plugins/plugin-zulip-adapter':
-        specifier: workspace:*
-        version: link:../../plugins/packages/plugin-zulip-adapter
       '@loams/proto':
         specifier: workspace:*
         version: link:../../web/packages/proto

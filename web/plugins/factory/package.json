@@ -24,6 +24,8 @@
       ],
       "inject": [
         "desktop",
+        "studio.factory",
+        "platform",
         "router",
         "slots"
       ],
@@ -38,7 +40,9 @@
         "console": "^0.1.0"
       },
       "editions": [
-        "desktop"
+        "oss",
+        "desktop",
+        "cloud"
       ]
     }
   },

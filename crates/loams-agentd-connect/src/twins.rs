@@ -244,6 +244,13 @@ methods! {
     NotificationService {
         WatchNotifications => Method("WatchNotifications"),
     }
+    FactoryService {
+        ListFactoryApps => Method("FactoryList"),
+        TestFactoryApp => Method("FactoryTest"),
+        QueryFactory => Method("FactoryQuery"),
+        ConfigureFactoryApp => Method("FactoryConfigure"),
+        RemoveFactoryApp => Method("FactoryRemove"),
+    }
 }
 
 /// The methods that write to git: a plugin calls them only with the

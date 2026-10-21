@@ -621,6 +621,13 @@ describe("MatomoAdapterService", () => {
     expect(paramsOf(fetchMock).has("idSite")).toBe(false);
   });
 
+  it("reads the version Matomo's JSON renderer wraps as { value }", async () => {
+    // format=JSON renders a scalar as {"value": …}.
+    fetchMock.mockResolvedValueOnce(reply({ value: "5.5.0" }));
+
+    expect(await service.getVersion()).toBe("5.5.0");
+  });
+
   it("falls back to the restricted-token site endpoints on request", async () => {
     fetchMock.mockImplementation(async () =>
       reply({

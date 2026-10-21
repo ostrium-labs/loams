@@ -12,6 +12,7 @@ import {
 import type { Context } from '@loams/cordis';
 import dataStudioPkg from '@loams/plugin-data-studio/package.json';
 import durablePkg from '@loams/plugin-durable/package.json';
+import factoryPkg from '@loams/plugin-factory/package.json';
 import gitPkg from '@loams/plugin-git/package.json';
 import graphPkg from '@loams/plugin-graph/package.json';
 import housePkg from '@loams/plugin-house/package.json';
@@ -39,6 +40,7 @@ export const webModules: ModuleTable = {
   '@loams/plugin-data-studio': () => import('@loams/plugin-data-studio'),
   '@loams/plugin-streams': () => import('@loams/plugin-streams'),
   '@loams/plugin-durable': () => import('@loams/plugin-durable'),
+  '@loams/plugin-factory': () => import('@loams/plugin-factory'),
 };
 
 export const webManifests: unknown[] = [
@@ -52,6 +54,7 @@ export const webManifests: unknown[] = [
   dataStudioPkg,
   streamsPkg,
   durablePkg,
+  factoryPkg,
 ];
 
 /** The patches over base.yml, in order. */

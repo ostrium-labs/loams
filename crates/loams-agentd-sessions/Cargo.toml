@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 loams-agentd-preview.workspace = true
 loams-agentd-proto.workspace = true
+loams-agentd-factory.workspace = true
 loams-agentd-doc.workspace = true
 loams-agentd-store.workspace = true
 loams-agentd-harness.workspace = true

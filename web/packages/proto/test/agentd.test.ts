@@ -10,6 +10,7 @@ import {
   ApprovalService,
   AttachmentService,
   DiffService,
+  FactoryService,
   FileService,
   GitService,
   HarnessService,
@@ -41,6 +42,7 @@ const SERVICES = {
   ApprovalService,
   NotificationService,
   AttachmentService,
+  FactoryService,
 };
 
 describe('loams.agentd.v1', () => {

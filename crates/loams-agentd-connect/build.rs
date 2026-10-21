@@ -28,6 +28,7 @@ const FILES: &[&str] = &[
     "loams/agentd/v1/approvals.proto",
     "loams/agentd/v1/groups.proto",
     "loams/agentd/v1/notifications.proto",
+    "loams/agentd/v1/factory.proto",
 ];
 
 fn main() {

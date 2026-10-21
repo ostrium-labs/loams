@@ -130,7 +130,7 @@ describe('the Factory group', () => {
 
   it('shows a failure to list the apps', async () => {
     const factory: StudioFactory = {
-      kind: 'desktop',
+      kind: 'pages',
       list: async () => {
         throw new Error('ipc closed');
       },

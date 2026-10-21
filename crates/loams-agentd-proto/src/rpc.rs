@@ -25,6 +25,10 @@ use crate::checkpoints::{
     CheckpointList, ListCheckpointsParams, RestoreCheckpointParams, RestoreCheckpointReply,
 };
 use crate::daemon::DaemonMode;
+use crate::factory::{
+    FactoryAppList, FactoryAppParams, FactoryAppReply, FactoryConfigureParams, FactoryQueryParams,
+    FactoryQueryReply,
+};
 use crate::git_write::{
     CommitWorktreeParams, CommitWorktreeReply, CreateChangeRequestParams, CreateChangeRequestReply,
     DiscardPathsParams, MergeBranchParams, MergeBranchReply, PushBranchParams, PushBranchReply,
@@ -495,6 +499,18 @@ method_table! {
     APPLY_HARNESS_UPDATE = ApplyHarnessUpdate: Unary(HarnessParams -> ApplyHarnessUpdateReply), Owner, renderer: true;
     CANCEL_HARNESS_UPDATE = CancelHarnessUpdate: Unary(HarnessParams -> CancelledReply), Owner, renderer: true;
     DISMISS_HARNESS_UPDATE = DismissHarnessUpdate: Unary(DismissHarnessUpdateParams -> HarnessUpdateStatus), Owner, renderer: true;
+    /// The software factory's apps (SF1 amendment F1-F6; §50 §13, D795): every app
+    /// with its state; the non-secret fields only.
+    FACTORY_LIST = FactoryList: Unary(Empty -> FactoryAppList), Owner, renderer: true;
+    /// Check an app's stored connection.
+    FACTORY_TEST = FactoryTest: Unary(FactoryAppParams -> FactoryAppReply), Owner, renderer: true;
+    /// One read from the factory's op allowlist (D660).
+    FACTORY_QUERY = FactoryQuery: Unary(FactoryQueryParams -> FactoryQueryReply), Owner, renderer: true;
+    /// Store an app's URL and credentials, then check them. Write-only for secrets,
+    /// and Electron main's alone: not on the Connect surface (F4).
+    FACTORY_CONFIGURE = FactoryConfigure: Unary(FactoryConfigureParams -> FactoryAppReply), Owner, renderer: false;
+    /// Forget an app and its credentials (F4: main's alone).
+    FACTORY_REMOVE = FactoryRemove: Unary(FactoryAppParams -> Empty), Owner, renderer: false;
 }
 
 #[cfg(test)]

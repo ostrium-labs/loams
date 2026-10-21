@@ -23,6 +23,7 @@ use crate::engine::{self, Engine};
 mod approvals;
 mod attachments;
 mod diff;
+mod factory;
 mod files;
 mod git;
 mod groups;
@@ -77,10 +78,10 @@ impl Agentd {
     /// A Connect router with every service registered.
     pub fn router(self) -> Router {
         use crate::proto::loams::agentd::v1::{
-            ApprovalServiceExt, AttachmentServiceExt, DiffServiceExt, FileServiceExt,
-            GitServiceExt, HarnessServiceExt, NotificationServiceExt, PreviewServiceExt,
-            ProjectServiceExt, QueueServiceExt, ReviewServiceExt, RunGroupServiceExt,
-            StudioServiceExt, TerminalServiceExt, ThreadServiceExt,
+            ApprovalServiceExt, AttachmentServiceExt, DiffServiceExt, FactoryServiceExt,
+            FileServiceExt, GitServiceExt, HarnessServiceExt, NotificationServiceExt,
+            PreviewServiceExt, ProjectServiceExt, QueueServiceExt, ReviewServiceExt,
+            RunGroupServiceExt, StudioServiceExt, TerminalServiceExt, ThreadServiceExt,
         };
         let me = Arc::new(self);
         let router = Router::new();
@@ -98,6 +99,7 @@ impl Agentd {
         let router = RunGroupServiceExt::register(Arc::clone(&me), router);
         let router = ApprovalServiceExt::register(Arc::clone(&me), router);
         let router = NotificationServiceExt::register(Arc::clone(&me), router);
+        let router = FactoryServiceExt::register(Arc::clone(&me), router);
         AttachmentServiceExt::register(me, router)
     }
 

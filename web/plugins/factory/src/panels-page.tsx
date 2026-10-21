@@ -31,10 +31,13 @@ export function PanelsPage({
   desktop,
   app,
   navigate,
+  embeds = true,
 }: {
   desktop: LoamsDesktopApi;
   app: FactoryAppId;
   navigate: (to: string) => void;
+  /** False in a browser: the app opens in a tab (SF1 amendment F5). */
+  embeds?: boolean;
 }) {
   const { apps } = useApps(desktop);
   const [openError, setOpenError] = useState<string>();
@@ -88,13 +91,15 @@ export function PanelsPage({
               size="sm"
               variant="primary"
               disabled={!configured}
-              onClick={() => navigate(`/studio/factory/${app}/app`)}
+              onClick={() => (embeds ? navigate(`/studio/factory/${app}/app`) : void open())}
             >
               Open app
             </Button>
-            <Button size="sm" variant="quiet" disabled={!configured} onClick={() => void open()}>
-              Open in new window
-            </Button>
+            {embeds && (
+              <Button size="sm" variant="quiet" disabled={!configured} onClick={() => void open()}>
+                Open in new window
+              </Button>
+            )}
           </>
         }
       />

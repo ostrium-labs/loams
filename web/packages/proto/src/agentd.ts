@@ -9,6 +9,7 @@
 export * from './gen/loams/agentd/v1/approvals_pb.js';
 export * from './gen/loams/agentd/v1/attachments_pb.js';
 export * from './gen/loams/agentd/v1/diff_pb.js';
+export * from './gen/loams/agentd/v1/factory_pb.js';
 export * from './gen/loams/agentd/v1/files_pb.js';
 export * from './gen/loams/agentd/v1/git_pb.js';
 export * from './gen/loams/agentd/v1/groups_pb.js';

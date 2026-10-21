@@ -339,6 +339,7 @@ loams-worker = { path = "crates/loams-worker", version = "0.1.0" }
 # workspace keys above, so its crates name those two directly.
 loams-agentd-connect = { path = "crates/loams-agentd-connect", version = "0.1.0" }
 loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.0" }
+loams-agentd-factory = { path = "crates/loams-agentd-factory", version = "0.1.0" }
 loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.0" }
 loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.1.0" }
 loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.1.0" }

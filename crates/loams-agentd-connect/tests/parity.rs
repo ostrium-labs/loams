@@ -78,6 +78,7 @@ struct Clients {
     review: pb::ReviewServiceClient<HttpClient>,
     groups: pb::RunGroupServiceClient<HttpClient>,
     approvals: pb::ApprovalServiceClient<HttpClient>,
+    factory: pb::FactoryServiceClient<HttpClient>,
 }
 
 struct Daemon {
@@ -188,7 +189,8 @@ impl Daemon {
             notifications: pb::NotificationServiceClient::new(http(), config.clone()),
             review: pb::ReviewServiceClient::new(http(), config.clone()),
             groups: pb::RunGroupServiceClient::new(http(), config.clone()),
-            approvals: pb::ApprovalServiceClient::new(http(), config),
+            approvals: pb::ApprovalServiceClient::new(http(), config.clone()),
+            factory: pb::FactoryServiceClient::new(http(), config),
         };
         let ndjson = memory_client(engine);
         let info: rs::EngineInfo = ndjson
@@ -534,13 +536,22 @@ const CHILD: &str = "LOAMS_AGENTD_PARITY_CHILD";
 #[test]
 fn connect_and_ndjson_agree() {
     if std::env::var_os(CHILD).is_some() {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(4)
-            .enable_all()
-            .build()
+        // On its own thread with room to spare: polling one case per method
+        // nests deeply in a debug build, more than a test thread's 2 MiB.
+        std::thread::Builder::new()
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(4)
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    // On the heap: one case per method makes a large future.
+                    .block_on(Box::pin(scenario()));
+            })
             .unwrap()
-            // On the heap: one case per method makes a large future.
-            .block_on(Box::pin(scenario()));
+            .join()
+            .unwrap();
         return;
     }
     let scratch = tempfile::tempdir().unwrap();
@@ -1780,6 +1791,9 @@ async fn scenario() {
         |r| mutated(r.ok)
     );
 
+    // On the heap, as the scenario is: its own future keeps this one small.
+    Box::pin(factory_steps(&mut s)).await;
+
     // Every method with an ndjson twin has a case.
     let twinned: BTreeSet<String> = CONNECT_METHODS
         .iter()
@@ -1808,4 +1822,158 @@ async fn scenario() {
         twinned.len(),
         mismatches.join("\n")
     );
+}
+
+fn factory_health(
+    h: buffa::EnumValue<pb::FactoryHealth>,
+) -> Result<rs::factory::FactoryHealth, MapError> {
+    use rs::factory::FactoryHealth as H;
+    match h {
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_OK) => Ok(H::Ok),
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_AUTH_FAILED) => Ok(H::AuthFailed),
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_UNREACHABLE) => {
+            Ok(H::Unreachable)
+        }
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_UNCONFIGURED) => {
+            Ok(H::Unconfigured)
+        }
+        buffa::EnumValue::Known(pb::FactoryHealth::FACTORY_HEALTH_LOCKED) => Ok(H::Locked),
+        other => Err(MapError::enum_value("FactoryHealth", other.to_i32())),
+    }
+}
+
+/// A `FactoryApp` back to the ndjson type: an unconfigured app has no `fields`.
+fn factory_app(a: pb::FactoryApp) -> Result<rs::factory::FactoryAppInfo, MapError> {
+    let configured = a.url.is_some();
+    Ok(rs::factory::FactoryAppInfo {
+        id: a.id,
+        label: a.label,
+        url: a.url,
+        health: factory_health(a.health)?,
+        has_panels: a.has_panels,
+        credential_fields: a
+            .credential_fields
+            .into_iter()
+            .map(|f| rs::factory::FactoryCredentialField {
+                key: f.key,
+                label: f.label,
+                secret: f.secret,
+            })
+            .collect(),
+        fields: configured.then(|| a.fields.into_iter().collect()),
+        persistent: a.persistent,
+    })
+}
+
+fn factory_error(e: pb::FactoryError) -> rs::factory::FactoryError {
+    rs::factory::FactoryError {
+        code: e.code,
+        message: e.message,
+    }
+}
+
+fn factory_app_reply(
+    r: Option<pb::__buffa::oneof::test_factory_app_response::Result>,
+) -> Result<rs::factory::FactoryAppReply, MapError> {
+    use pb::__buffa::oneof::test_factory_app_response::Result as R;
+    match r {
+        Some(R::App(a)) => Ok(rs::factory::FactoryAppReply {
+            app: Some(factory_app(*a)?),
+            error: None,
+        }),
+        Some(R::Error(e)) => Ok(rs::factory::FactoryAppReply {
+            app: None,
+            error: Some(factory_error(*e)),
+        }),
+        None => Err(MapError::empty_oneof("TestFactoryAppResponse.result")),
+    }
+}
+
+fn factory_query_reply(
+    r: Option<pb::__buffa::oneof::query_factory_response::Result>,
+) -> Result<rs::factory::FactoryQueryReply, MapError> {
+    use pb::__buffa::oneof::query_factory_response::Result as R;
+    match r {
+        Some(R::ValueJson(v)) => Ok(rs::factory::FactoryQueryReply {
+            value: Some(serde_json::from_str(&v).map_err(|e| MapError(e.to_string()))?),
+            error: None,
+        }),
+        Some(R::Error(e)) => Ok(rs::factory::FactoryQueryReply {
+            value: None,
+            error: Some(factory_error(*e)),
+        }),
+        None => Err(MapError::empty_oneof("QueryFactoryResponse.result")),
+    }
+}
+
+/// The factory (SF1 amendment F2): both daemons start with nothing configured.
+async fn factory_steps(s: &mut Suite) {
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/ListFactoryApps",
+        FactoryList,
+        |d| json!({}),
+        factory.list_factory_apps(json!({})),
+        |r| rs::factory::FactoryAppList {
+            apps: r
+                .apps
+                .into_iter()
+                .map(factory_app)
+                .collect::<Result<_, _>>()?,
+        }
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/TestFactoryApp",
+        FactoryTest,
+        |d| json!({ "app": "forgejo" }),
+        factory.test_factory_app(json!({ "app": "forgejo" })),
+        |r| factory_app_reply(r.result)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/QueryFactory",
+        FactoryQuery,
+        |d| json!({ "app": "forgejo", "op": "repos", "params": { "limit": 20 } }),
+        factory.query_factory(
+            json!({ "app": "forgejo", "op": "repos", "paramsJson": "{\"limit\":20}" })
+        ),
+        |r| factory_query_reply(r.result)?
+    );
+    // An unreachable OpenObserve: configured, then checked, then forgotten.
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/ConfigureFactoryApp",
+        FactoryConfigure,
+        |d| json!({ "app": "openobserve", "url": "http://127.0.0.1:9/web/", "fields": {} }),
+        factory.configure_factory_app(
+            json!({ "app": "openobserve", "url": "http://127.0.0.1:9/web/", "fields": {} })
+        ),
+        |r| factory_configure_reply(r.result)?
+    );
+    unary!(
+        s,
+        "/loams.agentd.v1.FactoryService/RemoveFactoryApp",
+        FactoryRemove,
+        |d| json!({ "app": "openobserve" }),
+        factory.remove_factory_app(json!({ "app": "openobserve" })),
+        |r| rs::Empty {}
+    );
+}
+
+fn factory_configure_reply(
+    r: Option<pb::__buffa::oneof::configure_factory_app_response::Result>,
+) -> Result<rs::factory::FactoryAppReply, MapError> {
+    use pb::__buffa::oneof::configure_factory_app_response::Result as R;
+    match r {
+        Some(R::App(a)) => Ok(rs::factory::FactoryAppReply {
+            app: Some(factory_app(*a)?),
+            error: None,
+        }),
+        Some(R::Error(e)) => Ok(rs::factory::FactoryAppReply {
+            app: None,
+            error: Some(factory_error(*e)),
+        }),
+        None => Err(MapError::empty_oneof("ConfigureFactoryAppResponse.result")),
+    }
 }
