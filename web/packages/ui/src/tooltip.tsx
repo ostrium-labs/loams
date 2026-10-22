@@ -131,7 +131,7 @@ export function TooltipPopup({
         <TooltipPrimitive.Popup
           className={cx(
             'relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) text-balance rounded-sm bg-ink text-small text-bg shadow-pop ' +
-              'transition-[width,height,scale,opacity] duration-(--op-duration) motion-reduce:transition-none ' +
+              'transition-[width,height,scale,opacity] duration-(--op-duration-fast) ease-out data-ending-style:duration-(--op-duration-exit) data-ending-style:ease-in motion-reduce:transition-none ' +
               'data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0',
             variant === 'code'
               ? 'max-w-120 wrap-anywhere text-left font-mono leading-relaxed' // mono-ok: code

@@ -13,7 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use loams_durable::{DurableConfig, DurableError, DurableServer, DurableStore};
 use serde_json::{Value, json};
-use sqlx::{Connection, MySqlConnection};
+use sqlx::{AssertSqlSafe, Connection, MySqlConnection};
 
 /// The admin URL, or `None` (and the skip line) without one.
 fn admin_url(test: &str) -> Option<String> {
@@ -45,7 +45,7 @@ impl Db {
             .subsec_nanos();
         let name = format!("loams_t_{test}_{}_{nanos}", std::process::id());
         let mut conn = admin(admin_url).await;
-        sqlx::raw_sql(&format!("CREATE DATABASE `{name}`"))
+        sqlx::raw_sql(AssertSqlSafe(format!("CREATE DATABASE `{name}`")))
             .execute(&mut conn)
             .await
             .expect("create database");
@@ -79,15 +79,21 @@ impl Db {
 
     async fn exec(&self, sql: &str) {
         let mut conn = MySqlConnection::connect(&self.url).await.expect("connect");
-        sqlx::raw_sql(sql).execute(&mut conn).await.expect(sql);
+        sqlx::raw_sql(AssertSqlSafe(sql))
+            .execute(&mut conn)
+            .await
+            .expect(sql);
     }
 
     async fn drop(self) {
         let mut conn = admin(&self.admin).await;
-        sqlx::raw_sql(&format!("DROP DATABASE IF EXISTS `{}`", self.name))
-            .execute(&mut conn)
-            .await
-            .expect("drop database");
+        sqlx::raw_sql(AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS `{}`",
+            self.name
+        )))
+        .execute(&mut conn)
+        .await
+        .expect("drop database");
     }
 }
 

@@ -6,7 +6,7 @@
 // page `docs/api/reasons.md`, so a caller switching on it is exhaustive and a
 // reason the registry has lost stops compiling.
 //
-// This walks **every** reason in the registry — all one hundred and two — round a full
+// This walks **every** reason in the registry — all one hundred and twenty-four — round a full
 // encode/decode cycle, through the wire form the server actually sends: a Connect
 // JSON error body with a base64 `loams.errors.v1.ErrorInfo` in `details`, and a
 // gRPC-Web `grpc-status-details-bin` header. It asserts the reason survives, that
@@ -110,6 +110,7 @@ const std::vector<RegistryRow>& Registry() {
       {Reason::kIdempotencyKeyReused, Code::kFailedPrecondition, ""},
       {Reason::kWorkspaceNotFound, Code::kNotFound, "workspace"},
       {Reason::kWorkspaceFenced, Code::kAborted, "workspace"},
+      {Reason::kBatchPartiallyApplied, Code::kAborted, "workspace"},
       {Reason::kWorkspaceReadOnly, Code::kFailedPrecondition, "workspace"},
       {Reason::kWorkspaceNameTaken, Code::kAlreadyExists, "workspace"},
       {Reason::kObjectMissing, Code::kFailedPrecondition, "oid"},
@@ -117,17 +118,46 @@ const std::vector<RegistryRow>& Registry() {
       {Reason::kEnvUnsealed, Code::kInvalidArgument, "path"},
       {Reason::kEnvAccessDenied, Code::kPermissionDenied, "environment"},
       {Reason::kEnvForeignReference, Code::kPermissionDenied, "path"},
+      {Reason::kMemoryStoreNotFound, Code::kNotFound, "store"},
+      {Reason::kMemorySpaceNotFound, Code::kNotFound, "space"},
+      {Reason::kMemorySpaceLimit, Code::kResourceExhausted, "limit"},
+      {Reason::kMemoryManagedObject, Code::kFailedPrecondition, "object"},
+      {Reason::kMemoryBlockVersionMismatch, Code::kAborted, "label"},
+      {Reason::kMemoryBlockTooLarge, Code::kInvalidArgument, "label"},
+      {Reason::kMemoryCoreBudgetExceeded, Code::kResourceExhausted, "limit"},
+      {Reason::kMemoryContentTooLarge, Code::kInvalidArgument, "limit"},
+      {Reason::kMemorySecretDetected, Code::kFailedPrecondition, "rule"},
+      {Reason::kMemoryPiiRefused, Code::kFailedPrecondition, "kind"},
+      {Reason::kMemoryModelNotConfigured, Code::kFailedPrecondition, "model"},
+      {Reason::kMemoryModelNotLocal, Code::kFailedPrecondition, "host"},
+      {Reason::kMemoryTokenBudgetExhausted, Code::kResourceExhausted, "budget"},
+      {Reason::kMemoryExtractionFailed, Code::kFailedPrecondition, "episode"},
+      {Reason::kMemoryTooManySpaces, Code::kInvalidArgument, "limit"},
+      {Reason::kMemoryCrossSpaceWrite, Code::kInvalidArgument, ""},
+      {Reason::kMemoryNotYetAvailable, Code::kUnimplemented, "rpc"},
+      {Reason::kCodeRepoNotIndexed, Code::kFailedPrecondition, "repo"},
+      {Reason::kCodeIndexBuilding, Code::kUnavailable, "repo"},
+      {Reason::kCodeChangeTooLarge, Code::kInvalidArgument, "limit"},
+      {Reason::kCodeLanguageUnsupported, Code::kFailedPrecondition, "language"},
+      {Reason::kCodeScipInvalid, Code::kInvalidArgument, "cause"},
       {Reason::kLiveBadCursor, Code::kInvalidArgument, ""},
       {Reason::kLiveWorkerCrashed, Code::kInternal, ""},
       {Reason::kLiveDeployConflict, Code::kFailedPrecondition, ""},
       {Reason::kLiveSchemaViolation, Code::kInvalidArgument, ""},
+      {Reason::kFilterConflict, Code::kInvalidArgument, ""},
+      {Reason::kSearchAfterNeedsTiebreak, Code::kInvalidArgument, ""},
+      {Reason::kInvalidConsistencyToken, Code::kInvalidArgument, ""},
+      {Reason::kNamespaceRequired, Code::kInvalidArgument, ""},
+      {Reason::kSqlParamCount, Code::kInvalidArgument, ""},
       {Reason::kLiveIndexNotReady, Code::kFailedPrecondition, ""},
       {Reason::kLiveAppDisabled, Code::kFailedPrecondition, ""},
       {Reason::kLiveAppExists, Code::kFailedPrecondition, ""},
       {Reason::kLiveFunctionError, Code::kUnknown, ""},
       {Reason::kLiveFunctionTimeout, Code::kDeadlineExceeded, ""},
+      {Reason::kClientDeadlineExceeded, Code::kDeadlineExceeded, ""},
       {Reason::kLiveFunctionOutOfMemory, Code::kResourceExhausted, ""},
       {Reason::kLiveLimitExceeded, Code::kResourceExhausted, ""},
+      {Reason::kResultTooLarge, Code::kResourceExhausted, ""},
       {Reason::kLiveAppMismatch, Code::kPermissionDenied, ""},
       {Reason::kLiveOriginNotAllowed, Code::kPermissionDenied, ""},
       {Reason::kSessionRotate, Code::kUnavailable, ""},
@@ -331,7 +361,7 @@ int main() {
   // matched, which is how a caller stops branching on it.
   const std::vector<Reason>& all = AllReasons();
   LOAMS_REQUIRE(!all.empty(), "the reason registry is empty");
-  LOAMS_CHECK_EQ(all.size(), std::size_t{102}, "the registry should carry all one hundred and two reasons");
+  LOAMS_CHECK_EQ(all.size(), std::size_t{132}, "the registry should carry all one hundred and thirty-two reasons");
   LOAMS_CHECK_EQ(Registry().size(), all.size(), "this test's registry table and the enum disagree in size");
   for (const Reason reason : all) {
     LOAMS_CHECK(!ToString(reason).empty(), "a reason with no registry spelling");

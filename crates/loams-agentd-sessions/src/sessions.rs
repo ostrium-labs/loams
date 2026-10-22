@@ -1521,6 +1521,15 @@ impl Inner {
         found
     }
 
+    /// Release the Working hold a dying run kept for its orphaned steers when
+    /// none of them could be re-dispatched: with no run left to drive the
+    /// chat, settle it Idle so the queue drains again.
+    fn settle_orphan_hold(&self, chat_id: &str) {
+        if !lock(&self.runs).contains_key(chat_id) {
+            self.set_status(chat_id, SessionStatus::Idle, false);
+        }
+    }
+
     fn remove_run(&self, chat_id: &str, run_id: &str) {
         let mut runs = lock(&self.runs);
         if runs.get(chat_id).is_some_and(|h| h.run_id == run_id) {
@@ -3051,8 +3060,23 @@ async fn drive_run(
         .map(|h| std::mem::take(&mut *lock(&h.routed_steers)).into())
         .unwrap_or_default();
     inner.remove_run(&chat_id, &run_id);
-    inner.set_status_with_completion(&chat_id, final_status, false, final_completed_turn);
-    if !interrupted && !orphans.is_empty() {
+    let redispatch = !interrupted && !orphans.is_empty();
+    // Accepted steers still own the chat's next turn. Publishing the settled
+    // status before their re-dispatch lets the ordinary queue drain (it reads
+    // "no turn in flight") overtake them: the next held row would start
+    // first, and the orphan would then steer into it, out of order. Stay
+    // Working until the re-dispatch below has started its own turn.
+    inner.set_status_with_completion(
+        &chat_id,
+        if redispatch {
+            SessionStatus::Working
+        } else {
+            final_status
+        },
+        false,
+        final_completed_turn,
+    );
+    if redispatch {
         // The dying run accepted these into its mailbox but never confirmed a
         // Steered boundary (idle-reaper race, a mid-turn error discarding
         // queued boundary steers, a parked child death). Their user entries
@@ -3067,6 +3091,7 @@ async fn drive_run(
             for steer in orphans {
                 let Some(mut request) = engine.last_request(&chat) else {
                     tracing::warn!(chat = %chat, "orphaned steer lost: no run config to re-dispatch");
+                    engine.inner.settle_orphan_hold(&chat);
                     break;
                 };
                 request.prompt = steer.prompt.clone();
@@ -3075,6 +3100,7 @@ async fn drive_run(
                 tracing::info!(chat = %chat, "re-dispatching steer orphaned by a dying run");
                 let Some(host) = engine.inner.doc_host() else {
                     tracing::warn!(chat = %chat, "orphaned steer lost: doc host unavailable");
+                    engine.inner.settle_orphan_hold(&chat);
                     break;
                 };
                 if let Err(err) = host

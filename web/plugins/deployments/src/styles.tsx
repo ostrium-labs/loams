@@ -42,10 +42,6 @@ const CSS = `
   max-height: 320px; overflow: auto; list-style: none; }
 .ld-logs li[data-level="error"] { color: var(--op-danger); }
 .ld-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
-.ld-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--op-rule); }
-.ld-tab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 14px; color: var(--op-muted); font: inherit; cursor: pointer; }
-.ld-tab[aria-selected="true"] { color: var(--op-ink); border-bottom-color: var(--op-accent); }
-.ld-tab:focus-visible { outline: 2px solid var(--op-accent); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) {
   .ld-progress-fill { transition: none; }
   .ld-running { animation: none; background-image: none; }

@@ -51,7 +51,7 @@ How people sign in, and how operators reach machines.
 | MySQL (Loams SQL): `loams-sqlgate`, TLS 1.2+ with SNI per database, branch from the role user or the SNI | [§47](47-loams-sql-production.md) §12 (D731) | Built; the release stack does not expose it yet |
 | SQL router across shards | [§31](31-loams-router-and-verification.md) §4–§7 | In progress (RT) |
 | Engine surfaces (native, Flight SQL, Qdrant, Elasticsearch, Connect) and their credentials | [§10](10-operations.md) §4 (the surface table); [§44](44-unified-api-and-sdks.md) | Preview |
-| House (ClickHouse HTTP) on its own tailnet node | HS1; `deploy/release/compose.yaml` (`--profile house`) | Preview; TLS between engine and House is HS1 Task 20 |
+| House (ClickHouse HTTP) on its own tailnet node | HS1; `deploy/release/compose.yaml` (profile `house-tailnet`; the House itself runs by default) | Preview; TLS between engine and House is HS1 Task 20 |
 | Per-tenant caps, rate limits and backpressure | [§10](10-operations.md) §3–§4; CP1 Task 6 (limits) | Partly built |
 
 ## 4. Internal: node to node

@@ -117,6 +117,8 @@ pub struct HouseSettings {
     pub dev_unmapped_principals: bool,
     /// Where the audit is appended.
     pub audit_log: Option<PathBuf>,
+    /// The OpenTelemetry collector spans go to (HS1 Task 23).
+    pub otlp_endpoint: Option<String>,
 }
 
 /// The TLS listener's settings (HS1 Task 20).
@@ -215,6 +217,12 @@ pub fn resolve(args: &HouseArgs, file: HouseFile) -> Result<HouseSettings, House
         ..HouseConfig::default()
     };
     house.limits.apply(&mut http);
+    // Metrics labels, operator lines, the query log's retention (HS1 Task 23).
+    house.observability.apply(&mut http).map_err(bad)?;
+    let otlp_endpoint = args
+        .otlp_endpoint
+        .clone()
+        .or(house.observability.otlp_endpoint.clone());
     // Namespace quotas (HS1 Task 22): `[house.quotas]` until the control plane
     // serves them.
     http.quotas = std::sync::Arc::new(house.quotas.to_quotas().map_err(bad)?);
@@ -348,6 +356,7 @@ pub fn resolve(args: &HouseArgs, file: HouseFile) -> Result<HouseSettings, House
         link_key: args.link_key_file.clone(),
         dev_unmapped_principals: args.dev_unmapped_principals,
         audit_log,
+        otlp_endpoint,
     })
 }
 
@@ -451,7 +460,16 @@ pub async fn start(mut settings: HouseSettings) -> Result<Running, HouseError> {
             config: loams_house::tls::server_config(&tls.cert, &tls.key)?,
         });
     }
+    // Spans (HS1 Task 23): to the collector, when one is named.
+    if let Some(endpoint) = &settings.otlp_endpoint {
+        let sink = loams_house::trace::OtlpHttp::start(endpoint, "loams-house").map_err(bad)?;
+        settings.http.tracer = loams_house::trace::Tracer::new(sink);
+    }
     let cache = house_cache(&settings).await?;
+    if let Some(cache) = &cache {
+        cache.set_tracer(Arc::clone(&settings.http.tracer));
+        settings.http.cache_metrics = Some(Arc::new(cache.clone()));
+    }
     let lake = lake(&settings, cache.as_ref()).await?;
     let launcher = launcher(&settings, cache)?;
     let pool = WorkerPool::start(settings.pool.clone(), launcher).await?;

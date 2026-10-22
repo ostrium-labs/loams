@@ -9,6 +9,7 @@ import {
 	type Page,
 	test,
 } from "@playwright/test";
+import { mainWindow } from "./windows";
 
 const appRoot = resolve(__dirname, "../..");
 
@@ -75,7 +76,7 @@ test("leaving a server clears its path-scoped and secure cookies", async () => {
 		env,
 	});
 	try {
-		const page = await app.firstWindow();
+		const page = await mainWindow(app);
 		await page.waitForLoadState("domcontentloaded");
 		const jar = () =>
 			app.evaluate(async ({ session }) =>

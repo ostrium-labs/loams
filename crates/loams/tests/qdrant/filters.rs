@@ -1085,8 +1085,15 @@ async fn payload_index_type_change_is_501() {
         error(&reply),
         "Unsupported in Loams: changing payload index type"
     );
-    // Deleting an index stays unsupported.
-    let (status, _) = qd.delete("/collections/tc/index/k", None).await;
+    // Deleting the index retires it (D1210); the type change stays 501.
+    let (status, _) = qd.delete("/collections/tc/index/k?wait=true", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = create_index(
+        &qd,
+        "tc",
+        json!({"field_name": "k", "field_schema": "integer"}),
+    )
+    .await;
     assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 }
 

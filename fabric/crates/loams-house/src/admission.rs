@@ -140,6 +140,9 @@ pub struct PoolStats {
     pub kills: BTreeMap<ExitReason, u64>,
     /// Workers (idle or lent) per bound namespace.
     pub bound: BTreeMap<String, usize>,
+    /// How long booted workers took to send `Ready`
+    /// (`loams_house_worker_boot_seconds`, HS1 Task 23).
+    pub boot_seconds: crate::metrics::HistogramSnapshot,
 }
 
 impl PoolStats {
@@ -217,6 +220,8 @@ struct PoolInner {
     known_settings: std::sync::OnceLock<Arc<std::collections::HashSet<String>>>,
     /// Where every lease's usage goes when it ends (HS1 Task 22).
     usage: std::sync::RwLock<Option<Arc<crate::usage::Usage>>>,
+    /// Boot times of the workers that sent `Ready` (HS1 Task 23).
+    boot_seconds: crate::metrics::Histogram,
 }
 
 impl PoolInner {
@@ -264,6 +269,8 @@ struct Running {
     cpu_latest: Option<Duration>,
     /// Its counters so far.
     progress: Progress,
+    /// Its `house.worker` span, when the statement is traced (HS1 Task 23).
+    span: Option<crate::trace::OpenSpan>,
 }
 
 /// What a running statement produces, in order.
@@ -317,6 +324,7 @@ impl PoolInner {
     /// Starts a worker and waits for its `Ready`.
     async fn boot(&self) -> Result<Worker, HouseError> {
         let id = self.next_id();
+        let started = Instant::now();
         let launched = self.launcher.launch(&id)?;
         let shared = WorkerShared::new(id, launched.control);
         // Until `Ready` makes it a `Worker` (whose drop kills it), a boot that is
@@ -339,6 +347,7 @@ impl PoolInner {
         let failure = match first {
             Ok(Ok(Some(Frame::Ready(mut ready)))) if ready.protocol == PROTOCOL_VERSION => {
                 abandoned.disarm();
+                self.boot_seconds.observe(started.elapsed());
                 let names = std::mem::take(&mut ready.settings);
                 self.known_settings
                     .get_or_init(|| Arc::new(names.into_iter().collect()));
@@ -548,6 +557,7 @@ impl WorkerPool {
             next_id: AtomicU64::new(1),
             known_settings: std::sync::OnceLock::new(),
             usage: std::sync::RwLock::new(None),
+            boot_seconds: crate::metrics::Histogram::new(crate::metrics::BOOT_BUCKETS),
         });
         let first = inner.boot().await?;
         inner.state().idle.push(first);
@@ -942,6 +952,7 @@ impl WorkerPool {
             pinned: state.pinned.len(),
             kills: state.kills.clone(),
             bound,
+            boot_seconds: self.inner.boot_seconds.snapshot(),
         }
     }
 
@@ -1149,11 +1160,19 @@ impl WorkerLease {
             self.measured.query_id = self.query_id.clone();
         }
         self.measured.statements += 1;
+        // Its span (HS1 Task 23): `house-cache` finds it by the worker's id.
+        let span = crate::trace::child("house.worker").map(|mut span| {
+            span.set("loams.query_id", self.query_id.clone());
+            span.set("loams.worker", self.worker_id().to_string());
+            span.tracer().bind_worker(self.worker_id(), span.context());
+            span
+        });
         self.statement = Some(Running {
             started: Instant::now(),
             cpu_before: cpu,
             cpu_latest: cpu,
             progress: Progress::default(),
+            span,
         });
     }
 
@@ -1185,6 +1204,17 @@ impl WorkerLease {
         m.result_rows = m.result_rows.saturating_add(p.result_rows);
         m.worker_time = m.worker_time.saturating_add(running.started.elapsed());
         m.code = code;
+        if let Some(mut span) = running.span {
+            span.tracer().unbind_worker(self.worker_id());
+            span.set("loams.read_rows", p.rows_read);
+            span.set("loams.read_bytes", p.bytes_read);
+            span.set("loams.result_rows", p.result_rows);
+            span.set("clickhouse.code", code);
+            if code != 0 {
+                span.fail();
+            }
+            span.end();
+        }
     }
 
     async fn next_event_inner(&mut self) -> Result<Event, HouseError> {
@@ -1586,6 +1616,26 @@ impl Admission {
     /// queue or the wait. Before any of it, the namespace's quotas (HS1 Task
     /// 22): a statement past one is refused at once ([`crate::quota`]).
     pub async fn admit(
+        self: &Arc<Self>,
+        namespace: &str,
+        memory: u64,
+        access: crate::quota::Access,
+    ) -> Result<Ticket, HouseError> {
+        // The wait is the statement's `house.admission` span (HS1 Task 23).
+        let mut span = crate::trace::child("house.admission");
+        let admitted = self.admit_untraced(namespace, memory, access).await;
+        if let Some(span) = span.as_mut() {
+            span.set("loams.namespace", namespace.to_string());
+            span.set("loams.memory_bytes", memory);
+            if let Err(err) = &admitted {
+                span.set("clickhouse.code", err.code());
+                span.fail();
+            }
+        }
+        admitted
+    }
+
+    async fn admit_untraced(
         self: &Arc<Self>,
         namespace: &str,
         memory: u64,

@@ -76,6 +76,10 @@ pub struct HouseArgs {
     /// [default with --single-node: <data-dir>/audit.log].
     #[arg(long)]
     pub audit_log: Option<PathBuf>,
+    /// The OpenTelemetry collector the statements' spans go to, over OTLP/HTTP
+    /// (`http://otel-collector:4318`); none by default (HS1 Task 23).
+    #[arg(long)]
+    pub otlp_endpoint: Option<String>,
     /// The native protocol listener (9000; served from HS1 Task 31)
     /// [default with --single-node: 127.0.0.1:9000].
     #[arg(long)]

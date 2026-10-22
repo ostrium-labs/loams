@@ -69,6 +69,8 @@ futures.workspace = true
 # batch that crosses `max_rows` decoded, sliced and encoded again (`api/frames.rs`).
 arrow-array.workspace = true
 arrow-ipc.workspace = true
+# The query log's rows, built as Arrow by the front (HS1 Task 23).
+arrow-schema.workspace = true
 # The `JSON_ROWS` header lines and `DESCRIBE`'s answer.
 serde_json.workspace = true
 # The catalog and DDL for lake tables (HS1 Task 10): Iceberg metadata through
@@ -93,8 +95,6 @@ loams-chdb-sys = { path = "../loams-chdb-sys", optional = true }
 [dev-dependencies]
 # `format_constants_match_registry` (UP1 Task 6).
 loams-common = { path = "../../../crates/loams-common" }
-# `api/frames.rs`'s tests build Arrow streams to frame.
-arrow-schema.workspace = true
 # `tests/request_fuzz.rs`: the `request_parse` fuzz target's body on stable.
 proptest.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "rt", "rt-multi-thread", "sync", "time", "macros"] }

@@ -7,7 +7,7 @@
 // §53 §8.1; Q802 keeps DD1e's approval card's job, drawn here from upstream's panel).
 // The call's arguments are untrusted: they show as text only.
 
-import { cx } from "@loams/ui";
+import { cx, motion, useMotionPreset } from "@loams/ui";
 import { ShieldAlert } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import type { PendingApproval } from "../chat/session.logic";
@@ -74,6 +74,7 @@ export const PendingApprovalCard = memo(function PendingApprovalCard({
   const detail = approvalDetail(approval);
   const canRespond = onResolve !== undefined;
   const ref = useRef<HTMLElement | null>(null);
+  const rise = useMotionPreset("fadeUp");
 
   // The first pending approval takes focus so its keys answer it, but never from a field
   // the person is typing in.
@@ -97,13 +98,15 @@ export const PendingApprovalCard = memo(function PendingApprovalCard({
   };
 
   return (
-    <section
+    <motion.section
+      initial={rise.initial}
+      animate={rise.animate}
+      transition={rise.transition}
       aria-label={label}
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: the card takes Enter, Shift+Enter and Esc while focused
       tabIndex={0}
       ref={ref}
       data-approval-card={approval.id}
-      className="border border-accent bg-accent-soft focus-visible:outline-2 focus-visible:outline-accent"
+      className="rounded-lg border border-control-border bg-elevated shadow-chip focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2"
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter") {
@@ -115,9 +118,9 @@ export const PendingApprovalCard = memo(function PendingApprovalCard({
         }
       }}
     >
-      <div className="flex items-center gap-2 px-3 pt-2 text-xs text-muted">
-        <ShieldAlert className="size-3.5 shrink-0 text-accent-fg" aria-hidden />
-        <span className="shrink-0 font-medium text-accent-fg">{label}</span>
+      <div className="flex items-center gap-2 px-3 pt-2.5 text-small text-muted">
+        <ShieldAlert className="size-3.5 shrink-0 text-warn" aria-hidden />
+        <span className="shrink-0 font-medium text-ink">{label}</span>
         <span className={/* mono-ok: id */ "min-w-0 truncate font-mono"}>{approval.tool}</span>
         {approval.risk === "destructive" || approval.risk === "write" ? (
           <span
@@ -136,11 +139,11 @@ export const PendingApprovalCard = memo(function PendingApprovalCard({
         ) : null}
       </div>
       {detail ? (
-        <pre className="mx-3 mt-1.5 mb-0 max-h-32 overflow-auto border border-rule-soft bg-bg px-2 py-1 font-mono text-xs whitespace-pre-wrap text-ink">
+        <pre className="mx-3 mt-2 mb-0 max-h-32 overflow-auto rounded-md border border-rule-soft bg-bg px-2.5 py-1.5 font-mono text-small whitespace-pre-wrap text-ink">
           {detail}
         </pre>
       ) : null}
-      <div className="px-3 py-2">
+      <div className="px-3 pt-2.5 pb-3">
         <ApprovalActions isResponding={responding} canRespond={canRespond} onDecide={decide} />
         {error ? (
           <p role="alert" className="m-0 mt-1 text-xs text-danger">
@@ -148,6 +151,6 @@ export const PendingApprovalCard = memo(function PendingApprovalCard({
           </p>
         ) : null}
       </div>
-    </section>
+    </motion.section>
   );
 });

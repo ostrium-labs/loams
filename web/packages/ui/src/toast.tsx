@@ -1,7 +1,7 @@
 // Portions of this file are from T3 Code (https://github.com/pingdotgg/t3code),
 // apps/web/src/components/ui/toast.tsx at commit 33aa4614, Copyright (c) 2026 T3 Tools Inc., MIT licence
 // (see web/packages/ui/LICENSE.t3code). Modified by The Loams Authors:
-// ported to the design 59 tokens and cx; thread routing, the composer store, MorphIcon and copy-to-clipboard removed. Loams' changes are Apache-2.0.
+// ported to the design 59 tokens and cx; thread routing, the composer store, MorphIcon and copy-to-clipboard removed; the elevated surface and enter and exit timing (UI1). Loams' changes are Apache-2.0.
 
 // Toasts (design 59, D1082): stacked at the bottom right, auto-dismissing, with actions.
 // The stack is upstream's: the newest toast in front, older ones peeking behind it,
@@ -505,8 +505,10 @@ export function useToast(): ToastApi {
 
 const TOAST_ROOT = [
   'absolute right-0 bottom-0 z-[calc(9999-var(--toast-index))] w-full origin-bottom overflow-visible select-none',
-  'rounded-lg border border-rule bg-surface text-body text-ink shadow-pop',
-  '[transition:transform_var(--op-panel-duration)_var(--op-ease-panel),opacity_var(--op-duration),height_var(--op-duration)] motion-reduce:transition-none',
+  'rounded-lg border border-rule bg-elevated text-body text-ink shadow-toast',
+  // Enter and exit on transform and opacity (UI1-1): 220ms out of the bottom edge, the stack
+  // moving with it; reduced motion zeroes the tokens.
+  '[transition:transform_var(--op-duration-page)_var(--op-ease-out),opacity_var(--op-duration-enter)_var(--op-ease-out),height_var(--op-duration)] motion-reduce:transition-none',
   // A bridge across the gap, so moving between spread-out toasts keeps the stack open.
   'after:absolute after:bottom-full after:left-0 after:h-[calc(var(--toast-gap)+1px)] after:w-full',
   '[--toast-gap:12px] [--toast-peek:12px] [--toast-scale:calc(max(0,1-(var(--toast-index)*.1)))] [--toast-shrink:calc(1-var(--toast-scale))]',

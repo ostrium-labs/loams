@@ -26,9 +26,14 @@ code {
   font-family: var(--loams-font-mono); /* mono-ok: code */
   font-size: 0.82em;
 }
-:focus-visible {
-  outline: 2px solid var(--op-accent);
-  outline-offset: 2px;
+/* The default ring, in the `base` layer (tailwind.css orders it below the utilities): a
+   control that draws its own ring (a field's box, a menu row's highlight) opts out with
+   `outline-none` (UI1). */
+@layer base {
+  :focus-visible {
+    outline: var(--op-focus-width) solid var(--op-focus);
+    outline-offset: var(--op-focus-offset);
+  }
 }
 ::selection {
   background: var(--op-accent);
@@ -55,6 +60,14 @@ code {
 
 .lc-side {
   background: var(--op-window);
+}
+/* The sidebar's column (the toggle's target): the sidebar and its splitter. Closing it with
+   Motion on slides its width; the sidebar keeps its own width inside, so nothing reflows. */
+.lc-side-col {
+  display: flex;
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
 }
 /* The splitter between the sidebar and the work card: invisible until hovered or focused. */
 #lc-side > [data-slot="resize-handle"] {
@@ -151,9 +164,54 @@ code {
   font-size: var(--op-text-micro);
   font-weight: 500;
 }
-.lc-pages-head h2 {
+.lc-pages-head h2,
+.lc-settings-sub h3 {
+  min-width: 0;
   margin: 0;
   font: inherit;
+}
+/* A group heading that opens and shuts its rows (UI2): the label and a chevron that turns. */
+.lc-nav-disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  margin-inline-start: -4px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--op-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: color var(--op-duration-fast) var(--op-ease-out);
+}
+.lc-nav-disclosure:hover {
+  color: var(--op-ink);
+}
+.lc-nav-disclosure:focus-visible {
+  outline-offset: calc(var(--op-focus-width) * -1);
+}
+.lc-nav-chevron {
+  flex: none;
+  opacity: 0;
+  transform: rotate(0deg);
+  transition:
+    transform var(--op-duration-fast) var(--op-ease-out),
+    opacity var(--op-duration-fast) var(--op-ease-out);
+}
+/* The chevron shows on hover and focus, and always while the group is shut. */
+.lc-nav-disclosure:hover .lc-nav-chevron,
+.lc-nav-disclosure:focus-visible .lc-nav-chevron,
+.lc-nav-disclosure[aria-expanded="false"] .lc-nav-chevron {
+  opacity: 1;
+}
+.lc-nav-disclosure[aria-expanded="true"] .lc-nav-chevron {
+  transform: rotate(90deg);
+}
+.lc-nav-body {
+  display: grid;
+  gap: 2px;
 }
 .lc-pages-edit {
   display: inline-grid;
@@ -180,13 +238,35 @@ code {
   padding: 0;
   list-style: none;
 }
+/* No pinned pages: a quiet dashed box that says where pins come from. */
 .lc-pages-empty {
-  margin: 0;
-  padding: 4px 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 0;
+  padding: 10px;
+  border: 1px dashed var(--op-rule);
+  border-radius: var(--op-radius-md);
   color: var(--op-faint);
   font-size: var(--op-text-small);
 }
+.lc-pages-empty svg {
+  flex: none;
+  margin-top: 2px;
+}
+.lc-pages-empty p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  line-height: 1.4;
+}
+.lc-pages-empty strong {
+  color: var(--op-muted);
+  font-weight: 500;
+}
 .lc-page-link {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -199,8 +279,13 @@ code {
   font-weight: 500;
   text-decoration: none;
   transition:
-    background-color var(--op-duration) ease,
-    color var(--op-duration) ease;
+    background-color var(--op-duration-fast) var(--op-ease-out),
+    color var(--op-duration-fast) var(--op-ease-out);
+}
+.lc-page-link:focus-visible,
+.lc-side-foot a:focus-visible,
+.lc-new-thread:focus-visible {
+  outline-offset: calc(var(--op-focus-width) * -1);
 }
 .lc-page-link svg {
   flex: none;
@@ -215,11 +300,17 @@ code {
   background: var(--op-row-hover);
   color: var(--op-ink);
 }
-/* The current page: a white chip in light, a soft fill in dark. */
+/* The current page: a white chip in light, a soft fill in dark. The chip is its own element
+   (SelectionIndicator), so it slides to the next current page (UI2). */
 .lc-page-link[aria-current="page"] {
+  color: var(--op-ink);
+}
+.lc-nav-indicator {
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--op-radius-md);
   background: var(--op-row-selected);
   box-shadow: var(--op-shadow-chip);
-  color: var(--op-ink);
 }
 .lc-side-foot a {
   display: flex;
@@ -275,6 +366,21 @@ code {
   :is(button, a, input, select, textarea, [role="button"], [role="combobox"], [data-no-drag]) {
   -webkit-app-region: no-drag;
 }
+/* The rest of what can take a click or focus: tabs, switches, menu rows, labels and
+   anything focusable. desktop-drag-regions.test.ts scans the real top bar against both. */
+.lc-topbar [role="tab"],
+.lc-topbar [role="switch"],
+.lc-topbar [role="checkbox"],
+.lc-topbar [role="radio"],
+.lc-topbar [role="menuitem"],
+.lc-topbar [role="option"],
+.lc-topbar [role="link"],
+.lc-topbar [tabindex]:not([tabindex="-1"]),
+.lc-topbar [contenteditable="true"],
+.lc-topbar label,
+.lc-topbar summary {
+  -webkit-app-region: no-drag;
+}
 .lc-topbar-start,
 .lc-topbar-end {
   display: flex;
@@ -317,24 +423,15 @@ code {
   justify-content: center;
   gap: 6px;
 }
+/* The top bar's icon buttons are @loams/ui IconButtons (quiet, 28px, a tooltip with the
+   shortcut); the bar keeps its 16px icons and paints a panel toggle that is on. */
 .lc-bar-btn {
-  display: inline-grid;
   flex: none;
-  place-items: center;
-  width: var(--op-control-compact);
-  height: var(--op-control-compact);
-  padding: 0;
-  border: 0;
-  border-radius: var(--op-radius-md);
-  background: none;
-  color: var(--op-muted);
-  cursor: pointer;
-  transition:
-    background-color var(--op-duration) ease,
-    color var(--op-duration) ease;
 }
-/* A panel toggle that is on (the agent dock now; the inspector and drawer from Task 8). */
-.lc-bar-btn:hover,
+.lc-bar-btn svg {
+  width: var(--op-icon);
+  height: var(--op-icon);
+}
 .lc-bar-btn[aria-pressed="true"],
 .lc-bar-btn[aria-expanded="true"]:not(.lc-sidebar-toggle) {
   background: var(--op-row-hover);
@@ -343,6 +440,12 @@ code {
 .lc-bar-btn[aria-pressed="true"] svg,
 .lc-bar-btn[aria-expanded="true"]:not(.lc-sidebar-toggle) svg {
   color: var(--op-accent-fg);
+}
+/* A tooltip's label and its shortcut keys. */
+.lc-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .lc-palette-hint {
   display: inline-flex;
@@ -360,6 +463,11 @@ code {
   font: inherit;
   font-size: var(--op-text-small);
   cursor: pointer;
+}
+.lc-palette-hint {
+  transition:
+    border-color var(--op-duration-fast) var(--op-ease-out),
+    color var(--op-duration-fast) var(--op-ease-out);
 }
 .lc-palette-hint:hover {
   border-color: var(--op-input);
@@ -400,12 +508,17 @@ code {
   color: var(--op-faint);
 }
 .lc-trail a {
+  border-radius: var(--op-radius-xs);
   color: inherit;
   text-decoration: none;
+  transition: color var(--op-duration-fast) var(--op-ease-out);
 }
 .lc-trail a:hover,
 .lc-trail [aria-current] {
   color: var(--op-ink);
+}
+.lc-trail [aria-current] {
+  font-weight: 500;
 }
 @media (max-width: 640px) {
   .lc-trail li:not([aria-current]) {
@@ -523,6 +636,11 @@ code {
   color: var(--op-muted);
   cursor: pointer;
 }
+.lc-round-btn {
+  transition:
+    background-color var(--op-duration-fast) var(--op-ease-out),
+    color var(--op-duration-fast) var(--op-ease-out);
+}
 .lc-round-btn:hover {
   color: var(--op-ink);
   background: var(--op-row-hover);
@@ -619,6 +737,23 @@ code {
   max-width: 1600px;
   margin-inline: auto;
 }
+/* A new page rises in (UI2: fadeUp, 220ms). The page's root is a new element only when the
+   route's page changes, so a same-page update (new params, a re-render) does not animate. No
+   fill mode: once done, the page carries no transform. Reduced motion zeroes the duration. */
+@keyframes lc-route-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.lc-main > * {
+  animation: lc-route-in var(--op-duration-page) var(--op-ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lc-main > * {
+    animation: none;
+  }
+}
 .lc-home {
   display: grid;
   min-height: 100%;
@@ -648,21 +783,24 @@ code {
   display: grid;
   gap: 16px;
 }
+/* The page header (PageHead): a 20px title, a one-line muted subtitle, actions on the right
+   at the title's height. Desktop-dense: the page's 16px gap is the only space under it. */
 .lc-page-head {
-  margin-bottom: 8px;
+  min-height: var(--op-control);
 }
 .lc-page-head h1 {
   margin: 0;
-  font-size: var(--op-text-hero);
-  line-height: 1.2;
+  min-height: var(--op-control);
+  font-size: var(--op-text-title);
+  line-height: var(--op-control);
   letter-spacing: -0.01em;
-  font-weight: 600;
+  font-weight: var(--op-weight-semibold);
 }
 .lc-page-head p {
   max-width: 68ch;
-  margin: 8px 0 0;
-  font-size: var(--op-text-emphasis);
-  line-height: 1.6;
+  margin: 2px 0 0;
+  font-size: var(--op-text-body);
+  line-height: 20px;
   color: var(--op-muted);
 }
 .lc-page > h2,
@@ -731,11 +869,24 @@ code {
 .lc-drawer[hidden] {
   display: none;
 }
-.lc-inspector {
+/* The inspector's and the drawer's clip carries the size (regions.tsx): it snaps, or with
+   Motion on slides on the panel curve while the panel inside holds its size. */
+.lc-panel-clip {
+  display: flex;
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+/* Each panel hangs from its outer edge, so a slide reveals it from there. */
+.lc-inspector-clip {
+  justify-content: flex-end;
   /* Never wider than the card leaves for main. */
   max-width: calc(100% - 240px);
 }
-.lc-drawer {
+.lc-drawer-clip {
+  flex-direction: column;
+  justify-content: flex-end;
   max-height: calc(100% - 120px);
 }
 .lc-inspector:focus,
@@ -942,7 +1093,7 @@ code {
   gap: 8px;
 }
 .ds-crumbs {
-  font-size: 13px;
+  font-size: var(--op-text-body);
   color: var(--op-muted);
   margin-bottom: 4px;
 }
@@ -965,20 +1116,6 @@ code {
   flex-wrap: wrap;
   border-bottom: 1px solid var(--op-rule);
 }
-.ds-ns {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-bottom: 8px;
-}
-.ds-ns label {
-  font-size: 13px;
-  color: var(--op-muted);
-}
-.ds-ns input {
-  width: 200px;
-  font-family: var(--loams-font-mono); /* mono-ok: id */
-}
 .ds-tabs {
   display: flex;
   gap: 4px;
@@ -987,22 +1124,42 @@ code {
 .ds-toolbar .ds-tabs {
   border-bottom: 0;
 }
+/* Tab strips on data pages (DataTabs and the hand-rolled strips): the @loams/ui Tabs look,
+   a 36px tab with a 2px accent underline that slides (SelectionIndicator). */
 .ds-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  margin-bottom: -1px;
+  padding: 0 12px;
   appearance: none;
   background: none;
   border: 0;
-  border-bottom: 2px solid transparent;
-  padding: 8px 12px;
+  border-radius: var(--op-radius-sm) var(--op-radius-sm) 0 0;
   color: var(--op-muted);
   font: inherit;
+  font-size: var(--op-text-body);
+  font-weight: var(--op-weight-medium);
+  text-decoration: none;
   cursor: pointer;
+  transition: color var(--op-duration-fast) var(--op-ease-out);
 }
-.ds-tab:hover {
-  color: var(--op-ink);
-}
+.ds-tab:hover,
 .ds-tab[aria-selected="true"] {
   color: var(--op-ink);
-  border-bottom-color: var(--op-accent);
+}
+.ds-tab:focus-visible {
+  outline: var(--op-focus-width) solid var(--op-focus);
+  outline-offset: calc(var(--op-focus-width) * -1);
+}
+.ds-tab-indicator {
+  right: 8px;
+  bottom: 0;
+  left: 8px;
+  height: 2px;
+  border-radius: var(--op-radius-pill);
+  background: var(--op-accent);
 }
 .ds-pad {
   padding: 16px;
@@ -1319,9 +1476,10 @@ button.lc-hosted-engine {
 }
 /* With Studio's git tools in the top bar, the mode switch is icons only below 1536px
    (each option keeps its name for assistive technology and its tooltip), so the bar fits
-   at 1280 and 1440 with the sidebar open. */
+   at 1280 and 1440 with the sidebar open. Only the label is hidden: the option's icon and
+   the sliding selection chip (`data-slot="selection-indicator"`) stay. */
 @media (max-width: 1535px) {
-  .lc-topbar:has(.lc-studio-tools) .lc-mode span {
+  .lc-topbar:has(.lc-studio-tools) .lc-mode button > span:not([data-slot]) > span {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1331,7 +1489,7 @@ button.lc-hosted-engine {
   }
 }
 @media (max-width: 640px) {
-  .lc-mode span {
+  .lc-mode button > span:not([data-slot]) > span {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1470,10 +1628,45 @@ button.lc-hosted-engine {
   margin-top: 8px;
 }
 .lc-settings-sub {
+  display: flex;
+  align-items: center;
   margin: 0;
-  padding: 4px 8px 2px;
+  padding: 2px 8px 0;
   color: var(--op-faint);
   font-size: var(--op-text-micro);
   font-weight: 400;
   letter-spacing: 0.02em;
+}
+
+/* Desktop chrome (design 59, D1083) ------------------------------------------ */
+
+/* The desktop's preload sets data-platform and data-fullscreen on <html>; the web edition
+   sets neither, so none of this applies in a browser. macOS: the traffic lights sit at x 16
+   in the 44px bar, so the brand (sidebar open) or the top bar (sidebar closed) starts after
+   them, except in fullscreen, where they are gone. */
+html[data-platform="darwin"]:not([data-fullscreen="true"]) .lc-shell {
+  --lc-traffic: 76px;
+}
+html[data-platform="darwin"] .lc-brand {
+  -webkit-app-region: drag;
+}
+html[data-platform="darwin"] .lc-brand :is(button, a, input, [role="button"], [role="combobox"]) {
+  -webkit-app-region: no-drag;
+}
+/* Vibrancy behind the sidebar only (Q933: in light too); the top bar and work area stay solid.
+   A page without the shell (sign-in, the boot screen) keeps its solid background. */
+html[data-platform="darwin"]:has(.lc-shell),
+html[data-platform="darwin"]:has(.lc-shell) body,
+html[data-platform="darwin"] .lc-shell,
+html[data-platform="darwin"] .lc-side {
+  background: transparent;
+}
+html[data-platform="darwin"] .lc-body {
+  background: var(--op-window);
+}
+/* Windows and Linux: keep the top bar's end clear of the title bar overlay's buttons
+   (the Window Controls Overlay area; 0 when the overlay is absent). */
+html[data-platform="win32"] .lc-shell,
+html[data-platform="linux"] .lc-shell {
+  --lc-wco-end: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }

@@ -1,0 +1,15 @@
+# Override for deploy/authentik/compose/docker-compose.yml: also publish the
+# Authentik server on this host's TAILNET address, so the admin interface can be
+# opened at http://<tailnet-name>:9000 from an operator device.
+#
+#   docker compose -f docker-compose.yml -f ../../tailnet/authentik-tailnet/docker-compose.tailnet.yml up -d
+#
+# TAILNET_IP is this host's address from `tailscale ip -4` (100.64.0.0/10).
+# The public name stays on Cloudflare Tunnel, with the admin routes denied there
+# (cloudflared-admin-deny.example.yml). Traffic to this port is inside the
+# WireGuard tunnel, and the grant for it (tag:authentik tcp:9000) is only given
+# to group:ops.
+services:
+  server:
+    ports:
+      - "${TAILNET_IP:?set TAILNET_IP to this host's tailnet IPv4}:9000:9000"

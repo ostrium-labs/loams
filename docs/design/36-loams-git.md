@@ -917,6 +917,8 @@ save: PUT ws/<ws_id>/snap/<n+1>.lws  If-None-Match: *
 
 **As built (GT1d, Task 26; `crates/loams-git/src/diff/`, `crates/loams-git/src/ws/{edits.rs,merge3.rs}`).** `ReadFiles`, `ApplyEdits`, `Diff` and `Rebase` are served for mount-less agents. `ApplyEdits` builds the trees, writes one server pack and appends `expect_n + 1`; `Diff` prints what `git diff --no-renames --no-indent-heuristic` prints, from Loams' own Myers diff; `Rebase` replays uncommitted changes onto the track's tip with a clean-room diff3 (`merge3`, diff3-style markers), reading only the paths both sides changed. Until env sealing (GT1 Task 62) env files are read redacted and cannot be written. Plan rulings T26.1–T26.6.
 
+**As built (GT1d, Task 27; `crates/loams-git/src/ws/{commit.rs,push.rs}`).** `CommitWorkspace` commits a snapshot's index on the server (author: the caller; committer: Loams), so agents that do not mount can make commits, and `PushWorkspace` pushes them: the closure of the new tips that the repository lacks is walked through the workspace's packs, copied into one repository pack (stored entries byte for byte, deltas resolved), verified and scanned as an upload is, and committed with the ref updates as one `RefTxn` through the repository's sequencer. Updates must fast-forward unless forced or leased (`--force-with-lease`); a push that loses a ref to another push re-checks it against the new tip and retries. Each ref's outcome is in the answer. A push that moves `track` to the workspace's HEAD moves the workspace's base too. `Land` (D1026, Task 90) builds on both. Plan rulings T27.1–T27.8.
+
 #### 19.5.3 The save pipeline (vfsd)
 
 1. **Trigger.** A file is closed after writing, or a rename, unlink or chmod happens. Saves wait for `SAVE_DEBOUNCE` (2 s idle) and are at least `SAVE_MIN_INTERVAL` (1 s) apart. Every native shim command and `loams ws sync` force a save, as jj snapshots on each command.
@@ -1045,7 +1047,7 @@ The projection is **always present** as `.git` at the workspace root, so tools t
 
 | Service | RPCs |
 |---|---|
-| `WorkspaceService` | `CreateWorkspace`, `GetWorkspace`, `ListWorkspaces`, `ForkWorkspace`, `DeleteWorkspace`, `ListSnapshots`, `GetSnapshot`, `SaveSnapshot` (append a snapshot whose objects were uploaded; fenced on `n`), `ReadFiles` (paths at `ws@n`, rendering `env/` per §19.13.7), `ApplyEdits` (writes, deletes and renames as one new snapshot, for agents that do not mount; seals `env/` and scans), `Diff`, `Rebase` (the server-side pull for mount-less agents), `PushWorkspace`, `WatchWorkspace`, `ListSalvage`, `RestoreSalvage` |
+| `WorkspaceService` | `CreateWorkspace`, `GetWorkspace`, `ListWorkspaces`, `ForkWorkspace`, `DeleteWorkspace`, `ListSnapshots`, `GetSnapshot`, `SaveSnapshot` (append a snapshot whose objects were uploaded; fenced on `n`), `ReadFiles` (paths at `ws@n`, rendering `env/` per §19.13.7), `ApplyEdits` (writes, deletes and renames as one new snapshot, for agents that do not mount; seals `env/` and scans), `Diff`, `Rebase` (the server-side pull for mount-less agents), `CommitWorkspace` (commits the index on the server; GT1 Task 27), `PushWorkspace`, `WatchWorkspace`, `ListSalvage`, `RestoreSalvage` |
 | `ObjectService` | `GetObjects` (server stream), `GetTrees`, `HasObjects`, `PutWorkspacePack` (client stream), `Log`, `Blame`, `Grep`, `DiffStat` |
 
 New reasons: `workspace_not_found`, `workspace_fenced` (aborted), `workspace_read_only` (failed_precondition), `workspace_name_taken` (already_exists), `object_missing` (failed_precondition), `secret_detected` (failed_precondition), `env_unsealed` (invalid_argument), `env_access_denied` (permission_denied), `env_foreign_reference` (permission_denied).
@@ -1057,7 +1059,7 @@ New reasons: `workspace_not_found`, `workspace_fenced` (aborted), `workspace_rea
 - **Cost (estimate, R2 prices of §12).** A workspace costs 1–2 PUTs to create ($4.50–9 per million workspaces) and about 1 KB to keep (one million idle workspaces ≈ 1 GB ≈ $0.015 a month). A save is two PUTs plus a hint at most once a second: an agent saving every 10 s for 8 hours makes about 2,900 saves, about 5,800 PUTs, **about $0.03 per agent-day**. Reads are Class B ($0.36 per million) and are shared across a host's agents by the host cache.
 - **A thousand agents on one host** share one vfsd, one FUSE session and one cache. A new agent's workspace on the same base costs no download.
 - **`loams-agentd`** (§50, DD1): its `CreateWorktree` and `DeleteWorktree` RPCs create and delete Loams workspaces when the repository is a Loams repository. agentd supervises vfsd on the desktop as it supervises the engine (D790). Each harness run gets a scoped token whose grant covers only its workspace and cones.
-- **Mount-less agents** (remote, serverless, or §39's `forgejo.propose_patch`) use `ReadFiles`, `ApplyEdits`, `Rebase` and `PushWorkspace` without FUSE.
+- **Mount-less agents** (remote, serverless, or §39's `forgejo.propose_patch`) use `ReadFiles`, `ApplyEdits`, `Rebase`, `CommitWorkspace` and `PushWorkspace` without FUSE.
 - **Contention** stays in the repository sequencer at push time (D391, D397). Saves never touch it.
 
 ### 19.12 Phases, schedule and GA (D825, D837)

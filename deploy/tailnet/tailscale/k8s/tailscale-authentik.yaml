@@ -1,0 +1,98 @@
+# Private-network node for Authentik on k3s (Target B). Works with Tailscale
+# (default) or Headscale: the provider is only the TS_EXTRA_ARGS value in the
+# Secret `tailnet-auth` (secrets.example.yaml).
+#
+# One pod, two containers, no NET_ADMIN and no /dev/net/tun:
+#   tailscale  userspace networking; a tailnet connection to this node's address
+#              on port 9000 is delivered to the pod's localhost:9000
+#   forward    socat: localhost:9000 -> the Service authentik-server:9000
+# Nothing is published publicly; auth.loams.dev stays on cloudflared.
+#
+#   kubectl apply -k deploy/tailnet/tailscale        (after creating the Secret)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tailscale-authentik
+---
+# containerboot keeps its state in a Secret (TS_KUBE_SECRET), so a reschedule
+# does not register a second node.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tailscale-authentik
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["tailscale-authentik-state"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tailscale-authentik
+subjects:
+  - kind: ServiceAccount
+    name: tailscale-authentik
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tailscale-authentik
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tailscale-authentik
+  labels: {app.kubernetes.io/name: tailscale-authentik}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # one node identity: never two pods at once
+  selector:
+    matchLabels: {app.kubernetes.io/name: tailscale-authentik}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: tailscale-authentik}
+    spec:
+      serviceAccountName: tailscale-authentik
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: tailscale
+          image: docker.io/tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065
+          env:
+            - {name: TS_KUBE_SECRET, value: tailscale-authentik-state}
+            - {name: TS_USERSPACE, value: "true"}
+            - {name: TS_AUTH_ONCE, value: "true"}
+            - {name: TS_ACCEPT_DNS, value: "false"}
+            - {name: TS_HOSTNAME, value: ak-1}
+            - name: TS_AUTHKEY
+              valueFrom: {secretKeyRef: {name: tailnet-auth, key: TS_AUTHKEY}}
+            # Tailscale: "--advertise-tags=tag:authentik" (optional with a tagged key).
+            # Headscale: "--login-server=https://headscale.loams.dev" and NO
+            # --advertise-tags (the tags come from the pre-auth key).
+            - name: TS_EXTRA_ARGS
+              valueFrom: {secretKeyRef: {name: tailnet-auth, key: TS_EXTRA_ARGS}}
+          resources:
+            requests: {cpu: 20m, memory: 48Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false   # tailscaled writes under /tmp and /var/run
+            capabilities: {drop: ["ALL"]}
+        - name: forward
+          image: docker.io/alpine/socat:1.8.0.3@sha256:beb4a68d9e4fe6b0f21ea774a0fde6c31f580dde6368939ed70100c5385b015e
+          args:
+            - TCP-LISTEN:9000,fork,reuseaddr
+            - TCP:authentik-server.authentik.svc.cluster.local:9000
+          resources:
+            requests: {cpu: 5m, memory: 8Mi}
+            limits: {memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}

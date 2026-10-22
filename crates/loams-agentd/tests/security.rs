@@ -7,7 +7,7 @@
 
 mod support;
 
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -52,8 +52,18 @@ fn exchange(port: u16, request: &str) -> Response {
     let mut chunk = [0u8; 4096];
     loop {
         match stream.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
             Ok(n) => bytes.extend_from_slice(&chunk[..n]),
+            // A signal is not the server's answer. Once anything in this
+            // process handles SIGCHLD (tokio's reaper does), another test's
+            // daemon exiting interrupts this recv: with a read timeout set,
+            // Linux fails it with EINTR even under SA_RESTART.
+            Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                panic!("no answer within the read timeout; read so far: {bytes:?}")
+            }
+            // Reset: the server closed without answering.
+            Err(_) => break,
         }
         if let Some(end) = find(&bytes, b"\r\n\r\n")
             && bytes.starts_with(b"HTTP/1.1 101")
@@ -197,6 +207,46 @@ fn failed_upgrades_are_slowed() {
         "four failures took {:?}",
         started.elapsed()
     );
+}
+
+/// The raw-HTTP helper reads through signals: a SIGCHLD landing on the
+/// reading thread mid-recv once read as "closed without answering" (status 0),
+/// the CI flake in `failed_upgrades_are_slowed`. Here a handler is installed
+/// and the signal aimed at the reader on every read.
+#[cfg(unix)]
+#[test]
+fn exchange_reads_through_signals() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let _handler = runtime.block_on(async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::child()).unwrap()
+    });
+    let home = Home::new(CHILD);
+    let daemon = Daemon::start(&home, &["--child"]);
+    let port = daemon.discovery.port;
+    let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // SAFETY: pthread_self has no preconditions.
+    #[allow(unsafe_code)]
+    let reader = unsafe { libc::pthread_self() } as usize;
+    let signaller = std::thread::spawn({
+        let done = done.clone();
+        move || {
+            while !done.load(std::sync::atomic::Ordering::Acquire) {
+                // SAFETY: the reader thread outlives this loop: it joins us
+                // before it returns.
+                #[allow(unsafe_code)]
+                unsafe {
+                    libc::pthread_kill(reader as libc::pthread_t, libc::SIGCHLD);
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+    });
+    let statuses: Vec<u16> = (0..2)
+        .map(|_| exchange(port, &upgrade(port, &[("Authorization", "Bearer nope")])).status)
+        .collect();
+    done.store(true, std::sync::atomic::Ordering::Release);
+    signaller.join().unwrap();
+    assert_eq!(statuses, vec![401, 401]);
 }
 
 #[test]

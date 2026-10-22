@@ -153,6 +153,7 @@ service DocumentService {
   // ceiling, and every answer to an admitted *or* a refused write carries the
   // backlog headers.
   rpc WriteDocuments(WriteDocumentsRequest) returns (WriteDocumentsResponse) {
+    option (loams.options.v1.facade) = {name: "write"};
   }
   // The documents of `ids`, in request order.
   //
@@ -161,15 +162,18 @@ service DocumentService {
   // `repeated` field of messages, and an empty entry is the same information
   // — the entry is there and it is empty.
   rpc GetDocuments(GetDocumentsRequest) returns (GetDocumentsResponse) {
+    option (loams.options.v1.facade) = {name: "get"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // One page of the collection's documents in primary-key order, and the id to
   // continue after. `next` is absent on the last page.
   rpc ScrollDocuments(ScrollDocumentsRequest) returns (ScrollDocumentsResponse) {
+    option (loams.options.v1.facade) = {name: "scroll"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // How many documents match, which is a read and not a free one.
   rpc CountDocuments(CountDocumentsRequest) returns (CountDocumentsResponse) {
+    option (loams.options.v1.facade) = {name: "count"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Deletes every document matching `filter`, in batches, at one pinned
@@ -181,12 +185,14 @@ service DocumentService {
   // in `consistency` too: an `at_least` token makes the pin at least as new as
   // the token.
   rpc DeleteByFilter(DeleteByFilterRequest) returns (FilterWriteResponse) {
+    option (loams.options.v1.facade) = {name: "delete_by_filter"};
   }
   // The same as `DeleteByFilter` with a `patch` applied to each match.
   //
   // A filter write patches the documents the filter matched and never creates
   // one, so `patch.upsert` is refused.
   rpc PatchByFilter(PatchByFilterRequest) returns (FilterWriteResponse) {
+    option (loams.options.v1.facade) = {name: "patch_by_filter"};
   }
 }
 
@@ -367,6 +373,13 @@ message ScrollDocumentsRequest {
   // unary RPC keeps its shape rather than breaking for an open question. True
   // server-streaming, if Q614 says so, is a separate additive RPC.
   DocumentId page_token = 8;
+  // The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+  // (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+  // the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+  // takes. A `Struct` and not a `Query` because `query.proto` imports this
+  // file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+  // this and `filter` is `invalid_argument` with reason `filter_conflict`.
+  google.protobuf.Struct where = 9;
 }
 
 message ScrollDocumentsResponse {
@@ -383,6 +396,13 @@ message CountDocumentsRequest {
   string collection = 2;
   google.protobuf.Value filter = 3;
   Consistency consistency = 4;
+  // The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+  // (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+  // the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+  // takes. A `Struct` and not a `Query` because `query.proto` imports this
+  // file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+  // this and `filter` is `invalid_argument` with reason `filter_conflict`.
+  google.protobuf.Struct where = 5;
 }
 
 message CountDocumentsResponse {
@@ -411,6 +431,13 @@ message DeleteByFilterRequest {
   // The `cursor` of the previous partial call, which resumes at the same pin.
   FilterWriteCursor cursor = 6;
   Consistency consistency = 7;
+  // The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+  // (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+  // the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+  // takes. A `Struct` and not a `Query` because `query.proto` imports this
+  // file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+  // this and `filter` is `invalid_argument` with reason `filter_conflict`.
+  google.protobuf.Struct where = 8;
 }
 
 message PatchByFilterRequest {
@@ -426,6 +453,13 @@ message PatchByFilterRequest {
   bool allow_partial = 6;
   FilterWriteCursor cursor = 7;
   Consistency consistency = 8;
+  // The filter as a typed `loams.collection.v1.Query`, in its proto3 JSON
+  // (`{"term": {"field": "tags", "value": "policy"}}`, `{"matchAll": {}}`):
+  // the shape the SDKs' `Filter` builder writes and `SearchRequest.filter`
+  // takes. A `Struct` and not a `Query` because `query.proto` imports this
+  // file, so this file cannot import it back (SDKP ruling P0a-1). Setting both
+  // this and `filter` is `invalid_argument` with reason `filter_conflict`.
+  google.protobuf.Struct where = 9;
 }
 
 // The answer to one filter write. Both filter writes answer this, because

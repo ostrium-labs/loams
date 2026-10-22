@@ -16,6 +16,16 @@ import { REASONS, type Reason } from '../gen/facade.js';
  * than dropped. */
 const KNOWN_REASONS: ReadonlySet<string> = new Set<string>(REASONS);
 
+/**
+ * Reasons the SDK raises itself, without a server answer (SDKP §2.1, R12 and
+ * R13). They are registered in `docs/api/reasons.md` as client-side, and are
+ * kept here as well so the SDK does not depend on when that registry lands.
+ */
+export const CLIENT_REASONS = ['client_deadline_exceeded', 'batch_partially_applied'] as const;
+
+/** A reason the SDK raises itself. */
+export type ClientReason = (typeof CLIENT_REASONS)[number];
+
 /** What every Loams failure carries. */
 export class LoamsError extends Error {
   /** The Connect code, the canonical classification. */
@@ -23,7 +33,7 @@ export class LoamsError extends Error {
   /** The stable cause, when the server sent an `ErrorInfo`. Undefined means
    * the failure came from below the API (a socket, a timeout, a CORS
    * rejection), not from a Loams service. */
-  readonly reason: Reason | undefined;
+  readonly reason: Reason | ClientReason | undefined;
   /** Structured context the server sent. Never secrets. */
   readonly metadata: Readonly<Record<string, string>>;
   /** A short next step in the caller's locale, when the server sent one. */
@@ -38,7 +48,7 @@ export class LoamsError extends Error {
     message: string,
     init: {
       code: Code;
-      reason?: Reason;
+      reason?: Reason | ClientReason;
       unknownReason?: string;
       metadata?: Record<string, string>;
       hint?: string;
@@ -91,6 +101,35 @@ export class FeatureNotInVariantError extends UnimplementedError {
   ) {
     super(message, init);
     this.variant = init.variant;
+  }
+}
+
+/**
+ * A `documents.writeBatch` that stopped at a failed chunk (runtime contract
+ * R13). The chunks before it are applied and stay applied; `token` is their
+ * merged consistency token, so a caller can read what did land, and `cause` is
+ * the failed chunk's own error.
+ */
+export class BatchError extends LoamsError {
+  /** How many chunks were applied before the failure. */
+  readonly chunksApplied: number;
+  /** How many documents those chunks carried. */
+  readonly rowsApplied: number;
+  /** The merged token of the applied chunks, if any carried one. */
+  readonly token: string | undefined;
+
+  constructor(
+    message: string,
+    init: ConstructorParameters<typeof LoamsError>[1] & {
+      chunksApplied: number;
+      rowsApplied: number;
+      token?: string;
+    },
+  ) {
+    super(message, init);
+    this.chunksApplied = init.chunksApplied;
+    this.rowsApplied = init.rowsApplied;
+    this.token = init.token;
   }
 }
 

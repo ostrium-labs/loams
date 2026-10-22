@@ -192,6 +192,25 @@ export const LANGFUSE_LEGACY_REMOVED_ON = "2026-11-16";
 const LANGFUSE_KNOWN_UNSTABLE_PATHS: readonly string[] = [`${LANGFUSE_API_PREFIX}/metrics/daily`];
 
 /**
+ * The legacy paths a caller may still read, and only through a method that opts in
+ * (`listLegacyTraces`): a self-hosted Langfuse 3.x that is not on the v4 data model
+ * answers `/v2/observations` with a 404, and its trace list is the only read left.
+ */
+export const LANGFUSE_LEGACY_FALLBACK_PATHS: readonly string[] = [`${LANGFUSE_API_PREFIX}/traces`];
+
+/** Most traces one legacy page returns (the server's own cap). */
+export const LANGFUSE_LEGACY_TRACE_LIMIT_MAX = 100;
+
+/** One row of the legacy `/api/public/traces` list: the fields a panel reads. */
+export interface LangfuseLegacyTrace {
+  id: string;
+  name?: string | null;
+  timestamp: string;
+  totalCost?: number | null;
+  latency?: number | null;
+}
+
+/**
  * Throw if `path` targets a removed legacy surface.
  *
  * Versioned paths (`/v2/...`, `/v3/...`) pass; an unversioned `traces`,
@@ -464,7 +483,16 @@ export function buildLangfuseMetricsParams(query: LangfuseMetricsQuery): { query
   assertRange("row_limit", query.config?.row_limit, 1, 1000);
   assertLangfuseMetricsWindow(query);
 
-  return { query: JSON.stringify(query) };
+  // On the wire each metric is `{ measure, aggregation }`: `field` is this adapter's
+  // name for it, and Langfuse rejects a metric without `measure` (a 400).
+  const wire = {
+    ...query,
+    metrics: metrics.map((m) => {
+      const { field, aggregation } = normalizeLangfuseMetric(m);
+      return { measure: field, aggregation };
+    }),
+  };
+  return { query: JSON.stringify(wire) };
 }
 
 function assertRange(field: string, value: number | undefined, min: number, max: number): void {

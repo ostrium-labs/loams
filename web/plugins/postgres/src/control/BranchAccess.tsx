@@ -99,7 +99,7 @@ export function BranchAccess({
   };
 
   if (load.state === 'loading') {
-    return <p className="text-sm text-muted">Loading roles and databases…</p>;
+    return <p className="text-body text-muted">Loading roles and databases…</p>;
   }
   if (load.state === 'error') {
     return (
@@ -111,7 +111,7 @@ export function BranchAccess({
 
   return (
     <section aria-labelledby={`access-${branchId}`} className="flex flex-col gap-4">
-      <h3 id={`access-${branchId}`} className="text-base font-semibold">
+      <h3 id={`access-${branchId}`} className="text-emphasis font-semibold">
         Roles and databases on {branch.name}
       </h3>
       {error && (
@@ -136,7 +136,7 @@ export function BranchAccess({
                 {load.roles.map((r) => (
                   <tr key={r.name} data-role={r.name}>
                     <td>
-                      <span className={/* mono-ok: id */ 'font-mono text-sm'}>{r.name}</span>{' '}
+                      <span className={/* mono-ok: id */ 'font-mono text-body'}>{r.name}</span>{' '}
                       {r.system && <Badge>System</Badge>}
                     </td>
                     <td>
@@ -212,8 +212,8 @@ export function BranchAccess({
               <tbody>
                 {load.databases.map((d) => (
                   <tr key={d.name} data-database={d.name}>
-                    <td className={/* mono-ok: id */ 'font-mono text-sm'}>{d.name}</td>
-                    <td className={/* mono-ok: id */ 'font-mono text-xs'}>{d.ownerRole}</td>
+                    <td className={/* mono-ok: id */ 'font-mono text-body'}>{d.name}</td>
+                    <td className={/* mono-ok: id */ 'font-mono text-small'}>{d.ownerRole}</td>
                     <td>
                       <Button
                         size="sm"

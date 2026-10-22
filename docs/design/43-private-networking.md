@@ -34,7 +34,7 @@ Facts that shaped the design, several of which correct assumptions the questions
 2. **Headscale cannot sit behind Cloudflare's proxy or Tunnel.** The Tailscale control protocol upgrades a `POST` with `Upgrade: tailscale-control-protocol`; Headscale's documentation says Cloudflare "does not support WebSocket POSTs as required by the Tailscale protocol" and that this setup "is not supported and will not work". A Headscale host is therefore a DNS-only record with public 443/tcp and 3478/udp (D583). Hosted Tailscale has no host for us to run.
 3. **Neither provider can use Authentik groups in policy.** Headscale cannot use OIDC groups (its documentation); Tailscale with a custom OIDC provider has no user or group provisioning (its documentation; SCIM is a paid feature). Authentik groups can decide who may sign in (Headscale `oidc.allowed_groups`), not what they may reach. The policy names operators by email, kept in Git (D584).
 4. **Tagged nodes do not expire**, on either provider. Servers need tags to be owned by the organisation rather than a person. Lifecycle is enforced by short-lived keys, ephemeral nodes for CI, an inventory diff, and deleting nodes on retirement (D589).
-5. **Tailscale's free plan is for non-commercial use** (its pricing FAQ) with 6 users, 3 ACL groups and 50 tagged resources to start (§3.1). That is fine for the owner's pre-revenue lab and not for a commercial service with customers on it; the choice of plan is Q593.
+5. **Tailscale's free plan is for non-commercial use** (its pricing FAQ) with 6 users, 3 ACL groups and 50 tagged resources to start (§3.1). That is fine for a non-commercial test deployment and not for a commercial service with customers on it; the choice of plan is Q593.
 
 ### 1.1 The picture
 

@@ -14,7 +14,7 @@ export function Kbd({ className, ...props }: ComponentProps<'kbd'>) {
     <kbd
       className={cx(
         'pointer-events-none inline-flex h-5 min-w-5 select-none items-center justify-center gap-1 ' +
-          'rounded-sm border border-rule-soft bg-surface px-1 font-sans text-[0.72rem] text-muted',
+          'rounded-sm border border-rule-soft bg-surface px-1 font-sans text-micro text-muted',
         className,
       )}
       data-slot="kbd"

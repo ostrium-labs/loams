@@ -22,10 +22,10 @@ For the hosted console, the host must be a `*.ts.net` name on **port 443**: its 
 `loams-agentd` is not in the `loams` CLI packages (`.deb`, `.rpm`, pacman), and the release's `loams-agentd-<version>.spdx.json` asset is its SBOM, not the binary. Take it out of the published image, `ghcr.io/ostrium-labs/loams-agentd` (amd64 and arm64), where it is `/usr/local/bin/loams-agentd`:
 
 ```sh
-podman create --name loams-agentd-copy ghcr.io/ostrium-labs/loams-agentd:0.1.0
+podman create --name loams-agentd-copy ghcr.io/ostrium-labs/loams-agentd:0.1.1
 podman cp loams-agentd-copy:/usr/local/bin/loams-agentd ~/.local/bin/
 podman rm loams-agentd-copy
-loams-agentd version        # loams-agentd 0.1.0
+loams-agentd version        # loams-agentd 0.1.1
 ```
 
 (`docker create` and `docker cp` work the same way.) The binary is linked against glibc 2.39 and nothing else of note, so it runs on Debian 13, Ubuntu 24.04, Fedora 40 and newer.

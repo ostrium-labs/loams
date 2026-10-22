@@ -28,6 +28,8 @@ export function EmbeddedApp({
   const [info, setInfo] = useState<FactoryAppInfo>();
   const [error, setError] = useState<string>();
   const label = info?.label ?? APP_LABELS[app];
+  // The app's own UI: its App URL when it has one (ItsAPlan), else its URL.
+  const uiUrl = info?.fields?.appUrl || info?.url;
 
   useEffect(() => {
     let live = true;
@@ -116,7 +118,7 @@ export function EmbeddedApp({
     );
   }
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="box-border flex h-full min-h-0 flex-col gap-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="m-0 mr-auto flex items-center gap-3 text-lg font-medium">
           {label} {info && <HealthPill health={info.health} />}
@@ -142,8 +144,8 @@ export function EmbeddedApp({
         <Button
           size="sm"
           variant="quiet"
-          disabled={!info?.url}
-          onClick={() => info?.url && void desktop.shell.openExternal(info.url)}
+          disabled={!uiUrl}
+          onClick={() => uiUrl && void desktop.shell.openExternal(uiUrl)}
         >
           <ExternalLink aria-hidden="true" size={14} /> Open in browser
         </Button>

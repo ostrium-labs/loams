@@ -12,6 +12,11 @@ export interface FactoryAppDef {
 	hasPanels: boolean;
 	/** Absent for OpenObserve: full UI only. */
 	adapter?: () => Promise<AdapterCtor>;
+	/**
+	 * Health for an app without an adapter: resolves when the app answers, throws
+	 * (with `status` for an HTTP error) when it does not.
+	 */
+	probe?: (url: string) => Promise<void>;
 	configFrom(
 		url: string,
 		fields: Record<string, string>,
@@ -59,6 +64,8 @@ export const FACTORY_APPS: Record<FactoryAppId, FactoryAppDef> = {
 		credentialFields: [
 			f("apiKey", "API key"),
 			f("projectKey", "Project key", false),
+			// ItsAPlan's web UI and its API are separate origins: the embedded UI uses this.
+			f("appUrl", "App URL (optional)", false),
 			sso,
 		],
 		hasPanels: true,
@@ -128,6 +135,16 @@ export const FACTORY_APPS: Record<FactoryAppId, FactoryAppDef> = {
 		label: "OpenObserve",
 		credentialFields: [sso],
 		hasPanels: false,
+		// Its unauthenticated health route sits at the origin, whatever path the UI is on.
+		probe: async (url) => {
+			const r = await fetch(new URL("/healthz", url).href, {
+				signal: AbortSignal.timeout(10_000),
+			});
+			if (!r.ok)
+				throw Object.assign(new Error(`health check answered ${r.status}`), {
+					status: r.status,
+				});
+		},
 		configFrom: (url) => ({ baseUrl: base(url) }),
 	},
 };

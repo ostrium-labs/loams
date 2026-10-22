@@ -23,8 +23,8 @@ export function PageHead({
       }
     >
       <div>
-        {crumbs && <nav className="lc-crumbs mb-1 text-sm text-muted">{crumbs}</nav>}
-        <h1 className="flex items-center gap-3">
+        {crumbs && <nav className="lc-crumbs mb-1 text-small text-muted">{crumbs}</nav>}
+        <h1 className="flex items-center gap-2">
           {title}
           {badge}
         </h1>

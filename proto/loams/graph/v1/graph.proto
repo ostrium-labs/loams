@@ -79,21 +79,30 @@ service GraphAdminService {
   // Creates a graph. Idempotent by `idempotency_key`: a repeat answers the
   // graph the first call made. A different graph under a taken name is
   // `already_exists`.
-  rpc CreateGraph(CreateGraphRequest) returns (Graph) {}
+  rpc CreateGraph(CreateGraphRequest) returns (Graph) {
+    option (loams.options.v1.facade) = {name: "create"};
+  }
   // One graph, by namespace and name.
   rpc GetGraph(GetGraphRequest) returns (Graph) {
+    option (loams.options.v1.facade) = {name: "get"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // The namespace's graphs, by name (AIP-158).
   rpc ListGraphs(ListGraphsRequest) returns (ListGraphsResponse) {
+    option (loams.options.v1.facade) = {name: "list" pagination: "graphs:next_page_token"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Changes `languages`, `limits` or `replicas`, named by `update_mask`.
-  rpc UpdateGraph(UpdateGraphRequest) returns (Graph) {}
+  rpc UpdateGraph(UpdateGraphRequest) returns (Graph) {
+    option (loams.options.v1.facade) = {name: "update"};
+  }
   // Closes the graph and, after the retention hold, purges its storage.
-  rpc DeleteGraph(DeleteGraphRequest) returns (loams.operations.v1.Operation) {}
+  rpc DeleteGraph(DeleteGraphRequest) returns (loams.operations.v1.Operation) {
+    option (loams.options.v1.facade) = {name: "delete"};
+  }
   // Labels, edge types, property keys, counts and indexes.
   rpc GetSchema(GetSchemaRequest) returns (GraphSchema) {
+    option (loams.options.v1.facade) = {name: "schema"};
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // Restores a graph, at a consistency token or a time, into a new graph.
@@ -113,15 +122,23 @@ service GraphService {
   };
 
   // Runs one statement as one transaction.
-  rpc Execute(ExecuteRequest) returns (ExecuteResponse) {}
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse) {
+    option (loams.options.v1.facade) = {name: "query"};
+  }
   // Runs statements, as one transaction (`atomic`) or one each.
-  rpc ExecuteBatch(ExecuteBatchRequest) returns (ExecuteBatchResponse) {}
+  rpc ExecuteBatch(ExecuteBatchRequest) returns (ExecuteBatchResponse) {
+    option (loams.options.v1.facade) = {name: "query_batch"};
+  }
   // Runs one statement and streams its rows in chunks (server streaming
   // only, D420), for results past the unary row cap.
-  rpc ExecuteStream(ExecuteStreamRequest) returns (stream ResultChunk) {}
+  rpc ExecuteStream(ExecuteStreamRequest) returns (stream ResultChunk) {
+    option (loams.options.v1.facade) = {name: "query_stream"};
+  }
   // The plan of a statement (`EXPLAIN`), or its profile (`PROFILE`) when
   // `profile` is set. A profile runs the statement.
-  rpc Explain(ExplainRequest) returns (Plan) {}
+  rpc Explain(ExplainRequest) returns (Plan) {
+    option (loams.options.v1.facade) = {name: "explain" retry_safe: true};
+  }
 }
 
 // ---------------------------------------------------------------------------

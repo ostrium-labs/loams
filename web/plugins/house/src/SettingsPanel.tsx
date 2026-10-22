@@ -21,10 +21,10 @@ export function SettingsPanel({
 
   return (
     <section aria-labelledby={`${id}-title`} className="flex flex-col gap-2">
-      <h3 id={`${id}-title`} className="m-0 text-sm">
+      <h3 id={`${id}-title`} className="m-0 text-body">
         Settings
       </h3>
-      <p className="m-0 text-xs text-muted">
+      <p className="m-0 text-small text-muted">
         Only settings the House allows: limits, formats, the analyzer switches and Loams' own
         settings. Others are refused by the server.
       </p>
@@ -33,7 +33,7 @@ export function SettingsPanel({
           <option key={s} value={s} />
         ))}
       </datalist>
-      {rows.length === 0 && <p className="m-0 text-sm text-muted">No settings.</p>}
+      {rows.length === 0 && <p className="m-0 text-body text-muted">No settings.</p>}
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
         {rows.map((r, i) => {
           const problem =
@@ -73,7 +73,7 @@ export function SettingsPanel({
                 </Button>
               </div>
               {problem && (
-                <p id={errId} className="m-0 text-xs text-danger">
+                <p id={errId} className="m-0 text-small text-danger">
                   {problem}
                 </p>
               )}

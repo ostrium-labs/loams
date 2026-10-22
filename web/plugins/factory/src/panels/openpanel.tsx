@@ -39,7 +39,8 @@ export function OpenPanelPanel({ desktop }: { desktop: LoamsDesktopApi }) {
                   rowKey={(r, i) => String(r.date ?? i)}
                   empty="No series"
                   columns={[
-                    { key: 'date', header: 'Date', cell: (r) => mono(r.date) },
+                    // A day bucket: the date, not midnight UTC.
+                    { key: 'date', header: 'Date', cell: (r) => mono(r.date?.slice(0, 10)) },
                     ...cols.map((k) => ({
                       key: k,
                       header: label(k),

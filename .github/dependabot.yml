@@ -80,6 +80,11 @@ updates:
     groups:
       npm-minor-and-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # @types/node tracks the Node version the repo targets (Node 22 in CI and
+      # `engines`). Skip majors above 22; revisit when the Node target moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # Dev-only client drivers for the sqlgate codec fixtures (SQ1 Task 3).
   - package-ecosystem: npm

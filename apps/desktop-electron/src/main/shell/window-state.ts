@@ -22,7 +22,7 @@ export const DEFAULT_STATE: WindowState = {
 	isMaximized: false,
 };
 export const MIN_WIDTH = 900;
-export const MIN_HEIGHT = 600;
+export const MIN_HEIGHT = 640;
 
 /** Keeps size sane and drops the position unless the window is visibly on a display. */
 export function clampToDisplays(s: WindowState, displays: Rect[]): WindowState {

@@ -3,7 +3,7 @@
 
 import { Code, ConnectError, createClient, type Transport } from '@connectrpc/connect';
 import type { LoamsDesktopApi } from '@loams/desktop/contracts';
-import { createDurableApi, envelope } from '@loams/durable-client';
+import { createDurableApi, EnvelopeError, envelope } from '@loams/durable-client';
 import { collection } from '@loams/proto';
 import { useEffect, useRef, useState } from 'react';
 
@@ -93,7 +93,12 @@ export interface DurableSummary {
 
 export async function loadDurable(net: Net): Promise<DurableSummary> {
   const api = createDurableApi(envelope((...a) => net.fetch(...(a as [string])), net.baseUrl));
-  const page = await api.searchPromises({ state: 'pending', limit: PENDING_LIMIT });
+  // A server without the durable API (an engine before B12, or one that does not place it
+  // on this port) answers 404, with or without an envelope: not served, not an error.
+  const page = await api.searchPromises({ state: 'pending', limit: PENDING_LIMIT }).catch((e) => {
+    if (e instanceof EnvelopeError && e.status === 404) throw new NotServedError(e.message);
+    throw e;
+  });
   return { pending: page.items.length, more: page.items.length >= PENDING_LIMIT };
 }
 

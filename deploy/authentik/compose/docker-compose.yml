@@ -1,0 +1,224 @@
+# Authentik (open-source edition) for auth.loams.dev: single-VM target.
+#
+#   postgresql   PostgreSQL 17, one named volume
+#   server       Authentik server (UI, API, OIDC)         127.0.0.1:9000 only
+#   worker       Authentik worker (blueprints, email, tasks)
+#   backup       nightly pg_dump -> S3-compatible bucket (R2 or RustFS) via rclone
+#   cloudflared  Cloudflare Tunnel: auth.loams.dev -> http://server:9000
+#   tailscale    OPTIONAL (profile `tailnet`): joins the private network so the
+#                admin interface is reachable at http://<TS_HOSTNAME>:9000 from
+#                the tailnet. Works with Tailscale (default) or Headscale: the
+#                provider is TAILNET_LOGIN_SERVER in .env (docs/platform/deploy/tailnet.md)
+#
+# No inbound ports are published except 127.0.0.1:9000 (for local checks).
+# Authentik has needed no Redis since 2025.10; none is run here.
+#
+# Pinned 2026-10-02: Authentik 2026.8.3 (released 2026-09-17), cloudflared
+# 2026.9.3 (2026-09-24), PostgreSQL 17 (alpine), rclone 1.75.1. Bump with
+# ../../../docs/deploy/authentik.md, "Upgrades".
+
+x-authentik-env: &authentik-env
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?set AUTHENTIK_SECRET_KEY (openssl rand -base64 60)}
+  AUTHENTIK_POSTGRESQL__HOST: postgresql
+  AUTHENTIK_POSTGRESQL__NAME: ${PG_DB:-authentik}
+  AUTHENTIK_POSTGRESQL__USER: ${PG_USER:-authentik}
+  AUTHENTIK_POSTGRESQL__PASSWORD: ${PG_PASS:?set PG_PASS (openssl rand -base64 36)}
+  AUTHENTIK_EMAIL__HOST: ${SMTP_HOST:?set SMTP_HOST}
+  AUTHENTIK_EMAIL__PORT: ${SMTP_PORT:-587}
+  AUTHENTIK_EMAIL__USERNAME: ${SMTP_USERNAME:-}
+  AUTHENTIK_EMAIL__PASSWORD: ${SMTP_PASSWORD:-}
+  AUTHENTIK_EMAIL__USE_TLS: ${SMTP_USE_TLS:-true}
+  AUTHENTIK_EMAIL__USE_SSL: ${SMTP_USE_SSL:-false}
+  AUTHENTIK_EMAIL__TIMEOUT: 30
+  AUTHENTIK_EMAIL__FROM: ${SMTP_FROM:?set SMTP_FROM}
+  AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+  AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+  AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
+  # Read by the Loams blueprints (../blueprints) through !Env.
+  LOAMS_CLOUD_CLIENT_SECRET: ${LOAMS_CLOUD_CLIENT_SECRET:?set LOAMS_CLOUD_CLIENT_SECRET (openssl rand -hex 32)}
+  # Secret of the `headscale` OIDC client (loams-05-headscale.yaml). Any random value
+  # works until Headscale is deployed (docs/platform/deploy/headscale.md); then Headscale
+  # reads the same value. Unused when TAILNET_PROVIDER=tailscale.
+  HEADSCALE_OIDC_CLIENT_SECRET: ${HEADSCALE_OIDC_CLIENT_SECRET:?set HEADSCALE_OIDC_CLIENT_SECRET (openssl rand -hex 32)}
+  LOAMS_PREVIEW_ORIGIN: ${LOAMS_PREVIEW_ORIGIN:-https://preview.loams.dev}
+  LOAMS_ENROLLMENT_OPEN: ${LOAMS_ENROLLMENT_OPEN:-false}
+  LOAMS_AUTH_DOMAIN: ${LOAMS_AUTH_DOMAIN:-auth.loams.dev}
+
+x-authentik-image: &authentik-image
+  ghcr.io/goauthentik/server:2026.8.3@sha256:ab9b4e8cc4ab3f8d1198d2db6aeea66bafea1963b3f2843589e0d163f97d9849
+
+services:
+  postgresql:
+    image: docker.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PG_DB:-authentik}
+      POSTGRES_USER: ${PG_USER:-authentik}
+      POSTGRES_PASSWORD: ${PG_PASS:?set PG_PASS}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [internal]
+
+  server:
+    image: *authentik-image
+    command: server
+    restart: unless-stopped
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      <<: *authentik-env
+      # First start only: sets the password and email of the `akadmin` user.
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL:-}
+    ports:
+      - "127.0.0.1:9000:9000"
+    shm_size: 512mb
+    volumes:
+      - data:/data
+      - ../branding:/data/media/public/loams:ro
+      - ../blueprints:/blueprints/loams:ro
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks: [internal]
+
+  worker:
+    image: *authentik-image
+    command: worker
+    restart: unless-stopped
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      <<: *authentik-env
+    shm_size: 512mb
+    volumes:
+      - data:/data
+      - ../branding:/data/media/public/loams:ro
+      - ../blueprints:/blueprints/loams:ro
+    healthcheck:
+      test: ["CMD", "ak", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks: [internal]
+
+  backup:
+    build:
+      context: ./backup
+    image: loams/authentik-backup:local
+    restart: unless-stopped
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      PGHOST: postgresql
+      PGUSER: ${PG_USER:-authentik}
+      PGDATABASE: ${PG_DB:-authentik}
+      PGPASSWORD: ${PG_PASS}
+      BACKUP_AT: ${BACKUP_AT:-03:15}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_BUCKET: ${BACKUP_S3_BUCKET:?set BACKUP_S3_BUCKET}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-authentik}
+      BACKUP_HEARTBEAT_URL: ${BACKUP_HEARTBEAT_URL:-}
+      # rclone remote "backup", configured entirely from the environment.
+      RCLONE_CONFIG_BACKUP_TYPE: s3
+      RCLONE_CONFIG_BACKUP_PROVIDER: ${BACKUP_S3_PROVIDER:-Cloudflare}
+      RCLONE_CONFIG_BACKUP_ENDPOINT: ${BACKUP_S3_ENDPOINT:?set BACKUP_S3_ENDPOINT}
+      RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:?set BACKUP_S3_ACCESS_KEY_ID}
+      RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:?set BACKUP_S3_SECRET_ACCESS_KEY}
+      RCLONE_CONFIG_BACKUP_REGION: ${BACKUP_S3_REGION:-auto}
+      # Bucket-scoped tokens cannot create buckets; the bucket must already exist.
+      RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET: "true"
+    volumes:
+      - backup-scratch:/scratch
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /scratch/alive && [ $$(( $$(date +%s) - $$(date -r /scratch/alive +%s) )) -lt 300 ]"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks: [internal]
+
+  cloudflared:
+    image: docker.io/cloudflare/cloudflared:2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 run
+    restart: unless-stopped
+    environment:
+      # Empty only for the CLI-tunnel override (docker-compose.cli-tunnel.yml).
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks: [internal]
+
+  # Private-network node, off unless `--profile tailnet` (or COMPOSE_PROFILES=tailnet).
+  # It shares the Authentik server's network namespace and runs in userspace
+  # networking (no NET_ADMIN, no /dev/net/tun): a connection to this node's tailnet
+  # address on port 9000 arrives on the server's localhost:9000. The public name
+  # auth.loams.dev stays on cloudflared. Only Tailscale-client features that
+  # Headscale also has are used (no Serve, no Funnel), so the same service joins
+  # either provider; TAILNET_LOGIN_SERVER empty = Tailscale's hosted service.
+  tailscale:
+    profiles: ["tailnet"]
+    image: docker.io/tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065
+    restart: unless-stopped
+    network_mode: "service:server"
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      # A tagged auth key from your provider; never commit it. Not `:?`-required, so the
+      # stack validates without the profile; empty means an interactive login URL in the logs.
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-ak-1}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_AUTH_ONCE: "true"
+      TS_ACCEPT_DNS: "false"
+      TAILNET_LOGIN_SERVER: ${TAILNET_LOGIN_SERVER:-}
+      TS_TAGS: ${TS_TAGS:-}
+    # The provider switch, resolved at start (the image's entrypoint is containerboot):
+    #   TAILNET_LOGIN_SERVER set (Headscale) -> --login-server=<url> and NO --advertise-tags,
+    #     because Headscale takes tags from the tagged pre-auth key and rejects a
+    #     client-requested tag (verified 2026-10-02, Headscale v0.29.4);
+    #   empty (Tailscale's hosted service)   -> --advertise-tags=$TS_TAGS if set (required
+    #     when the key comes from an OAuth client; harmless with a tagged auth key).
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -n "$$TAILNET_LOGIN_SERVER" ]; then
+          export TS_EXTRA_ARGS="--login-server=$$TAILNET_LOGIN_SERVER"
+        elif [ -n "$$TS_TAGS" ]; then
+          export TS_EXTRA_ARGS="--advertise-tags=$$TS_TAGS"
+        fi
+        exec /usr/local/bin/containerboot
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+
+networks:
+  internal:
+
+volumes:
+  tailscale-state:
+  database:
+  data:
+  backup-scratch:

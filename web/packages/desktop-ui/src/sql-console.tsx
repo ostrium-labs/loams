@@ -92,7 +92,7 @@ export function SqlConsole({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
-        <span id={labelId} className="text-sm font-medium">
+        <span id={labelId} className="text-body font-medium">
           SQL editor
         </span>
         <div className="loams-sql-frame">
@@ -141,7 +141,7 @@ export function SqlConsole({
       )}
       {result && (
         <div className="flex flex-col gap-2">
-          <p className="m-0 text-sm text-muted">
+          <p className="m-0 text-body text-muted">
             {result.columns.length === 0
               ? `Statement ran in ${result.elapsedMs} ms.`
               : `${result.rows.length.toLocaleString('en-US')} row${result.rows.length === 1 ? '' : 's'} in ${result.elapsedMs} ms`}
@@ -165,10 +165,12 @@ export function SqlConsole({
                   key: `${c}`,
                   header: <span className={/* mono-ok: sql */ 'font-mono'}>{name}</span>,
                   cell: (row: { r: unknown[] }) => (
-                    <span className={/* mono-ok: sql */ 'font-mono text-xs'}>{cell(row.r[c])}</span>
+                    <span className={/* mono-ok: sql */ 'font-mono text-small'}>
+                      {cell(row.r[c])}
+                    </span>
                   ),
                 }))}
-                empty={<p className="m-0 text-sm text-muted">No rows.</p>}
+                empty={<p className="m-0 text-body text-muted">No rows.</p>}
               />
             </div>
           )}

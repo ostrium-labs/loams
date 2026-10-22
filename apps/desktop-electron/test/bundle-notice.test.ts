@@ -28,4 +28,18 @@ describe("desktop bundle attribution", () => {
 		expect(text).toContain("T3 Code");
 		expect(text).toContain("LICENSE.t3code");
 	});
+
+	it("ships the dsh-desktop licence and the splash", () => {
+		const shipped = new Map(
+			config.extraResources.map((r) => [r.to, resolve(app, r.from)]),
+		);
+		for (const to of [
+			"LICENSE.dsh-desktop",
+			"splash/splash.html",
+			"splash/loams-loader.gif",
+			"splash/loams-loader-dark.gif",
+		]) {
+			expect(existsSync(shipped.get(to) ?? ""), to).toBe(true);
+		}
+	});
 });

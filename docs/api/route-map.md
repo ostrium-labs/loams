@@ -32,7 +32,7 @@ Served by `api::router` on `--listen` (gateway role). Tests are in `crates/loams
 | POST | `/durable/` | protocol | kept (B12): the Resonate protocol envelope, the loopback durable listener's `POST /` behind the port's authentication | `loams_durable::DurableGateway::handle` | `api::durable` unit tests, `durable.rs::durable_api_is_served_on_the_main_port_too` |
 | POST | `/v1/namespaces` | app | `loams.collection.v1.NamespaceService/CreateNamespace` | `MetaStore::create_namespace` | `http.rs::namespaces_and_streams_are_created_once` |
 | POST | `/v1/namespaces/{ns}/streams` | app | `loams.stream.v1.StreamService/CreateStream` | `MetaStore::create_stream` | `http.rs::namespaces_and_streams_are_created_once` |
-| GET | `/v1/namespaces/{ns}/streams` | app | `loams.stream.v1.StreamService/ListStreams` (not yet in the proto; native REST until the streams Connect service exists, AP1e Task 19, D672) | `MetaStore::streams` | `http.rs::list_streams_sorted`, `unknown_namespace_404` |
+| GET | `/v1/namespaces/{ns}/streams` | app | `loams.stream.v1.StreamService/ListStreams` (served since SDKP P0c, paged) | `MetaStore::streams` | `http.rs::list_streams_sorted`, `unknown_namespace_404`; `connect_streams.rs::describe_and_list_streams_paginate` |
 | GET | `/v1/namespaces/{ns}/streams/{stream}` | app | `loams.stream.v1.StreamService/DescribeStream` | `MetaStore::stream` | `http.rs::namespaces_and_streams_are_created_once` |
 | POST | `/v1/namespaces/{ns}/streams/{stream}/partitions/{partition}/records` | app | `loams.stream.v1.StreamService/Produce` | `api::produce_records` (`LogWriter::append`) | `http.rs::produced_records_are_fetched_back`, `acknowledged_records_survive_a_restart`, `a_record_for_the_wrong_partition_of_an_implicit_stream_is_rejected` |
 | GET | `/v1/namespaces/{ns}/streams/{stream}/partitions/{partition}/records` | app | `loams.stream.v1.StreamService/Fetch` | `LogReader::fetch` (long-poll on the offset watch) | `http.rs::produced_records_are_fetched_back`, `a_long_poll_fetch_wakes_on_produce`, `out_of_range_offsets_get_416_with_both_bounds` |
@@ -58,7 +58,7 @@ Served by `api::router` on `--listen` (gateway role). Tests are in `crates/loams
 | PUT | `/v1/namespaces/{ns}/collections/{c}/hot` | app | `loams.collection.v1.CollectionService/SetHot` | `MetaStore::set_collection_hot`, `hot::local_status` | `hot_http.rs::put_hot_sets_the_catalog_and_returns_status`, `put_hot_on_a_missing_collection_is_404`, `a_malformed_hot_body_is_400`, `hot_routes_accept_aliases` |
 | POST | `/v1/namespaces/{ns}/collections/{c}/warm` | app | `loams.collection.v1.CollectionService/WarmCollection` | `hot::warm_local` or the owner's `/internal/v1/hot/warm` | `hot_http.rs::warm_prefetches_an_unpinned_collection`, `loams_warm_posts_the_warm_request` |
 | POST | `/v1/namespaces/{ns}/query` | app | `loams.collection.v1.QueryService/Search` | `CollectionService::search` | `native_query.rs` (6 tests), `hot_http.rs::the_hot_off_header_gives_identical_results_and_reports_none`, `connect_query.rs` (10 tests) |
-| POST | `/v1/namespaces/{ns}/sql` | app | `loams.sql.v1.SqlService/Query` | `CollectionService::sql_context_with`, `loams_query::sql::run_read_only` | `native_sql.rs::sql_over_http_returns_columns_and_rows`, `sql_ddl_is_400` |
+| POST | `/v1/namespaces/{ns}/sql` | app | `loams.sql.v1.SqlService/Query` | `CollectionService::sql_context_with`, `loams_query::sql::run_read_only` | `native_sql.rs::sql_over_http_returns_columns_and_rows`, `sql_ddl_is_400`; `connect_sql.rs::sql_over_http_returns_columns_and_rows_rpc`, `sql_ddl_is_400_rpc` |
 
 Router-level behaviour pinned by `http.rs::framework_rejections_use_the_json_error_body` (the `no_route` fallback and `method_not_allowed`) is replaced by connect-rust's error envelope for RPC paths; the fallback stays for unknown paths.
 
@@ -238,6 +238,48 @@ Git Smart HTTP (§36 §6.1, D602, D603) is a **protocol** surface and stays HTTP
 | `/git/{ns}/{repo}.git/loams/objects/{oid}` | GET | object | one object in git's loose format, `Cache-Control: private, max-age=31536000, immutable`; `?ws=<ws_id>` reads a workspace's packs too (GT1 Task 18, §36 §19.5.1) |
 
 Until Task 46 the listener serves only the authenticated catch-all routes listed under "Loams Git listener" above.
+
+## Planned: `loams.memory.v1` (MM1 Task 1; the RPCs are served from MM1 Task 11)
+
+Loams Memory (design §52 §9.1, D884). With the `loams` feature `memory` (MM1 Task 11), the main port serves `loams.memory.v1.MemoryAdminService` and `MemoryService` over Connect, gRPC and gRPC-Web, behind the engine's authentication; an RPC whose MM1 task has not landed answers `unimplemented` with `memory_not_yet_available`, and without the feature every RPC answers `feature_not_in_variant` (the package's `CATALOGUE` row and that stub land together in Task 11, MM1 ruling R1.8). It is a pure-RPC package: §52 names no REST surface and API2 (D602) removes application REST, so the rows below are the Connect paths, not console REST routes (MM1 ruling R1.5). They put the path first, which `route_map_covers_every_route` skips; `every_rpc_has_a_planned_route` (`crates/loams-proto/tests/memory.rs`) checks that every row names an RPC of the two services and every RPC has a row. The MVP subset (the plan's "Shared contracts", marked MVP) is served by the end of MM1a. `CodeMemoryService` joins this section with `code.proto` (MM1 Task 27).
+
+| Path | Method | Target RPC | Notes |
+|---|---|---|---|
+| `/loams.memory.v1.MemoryAdminService/CreateStore` | POST | `loams.memory.v1.MemoryAdminService/CreateStore` | MVP: MM1 Task 3 |
+| `/loams.memory.v1.MemoryAdminService/GetStore` | POST | `loams.memory.v1.MemoryAdminService/GetStore` | MVP: Task 3 |
+| `/loams.memory.v1.MemoryAdminService/ListStores` | POST | `loams.memory.v1.MemoryAdminService/ListStores` | MVP: Task 3 |
+| `/loams.memory.v1.MemoryAdminService/UpdateStore` | POST | `loams.memory.v1.MemoryAdminService/UpdateStore` | MVP: Task 3 |
+| `/loams.memory.v1.MemoryAdminService/DeleteStore` | POST | `loams.memory.v1.MemoryAdminService/DeleteStore` | returns an `Operation`; Task 23 (owner ruling, R1.7) |
+| `/loams.memory.v1.MemoryAdminService/CreateSpace` | POST | `loams.memory.v1.MemoryAdminService/CreateSpace` | MVP: Task 3 |
+| `/loams.memory.v1.MemoryAdminService/GetSpace` | POST | `loams.memory.v1.MemoryAdminService/GetSpace` | MVP: Task 3 |
+| `/loams.memory.v1.MemoryAdminService/ListSpaces` | POST | `loams.memory.v1.MemoryAdminService/ListSpaces` | MVP: Task 3 |
+| `/loams.memory.v1.MemoryAdminService/UpdateSpace` | POST | `loams.memory.v1.MemoryAdminService/UpdateSpace` | `name` and `ttl` with Task 3; an `isolation` move returns `memory.space.move`, Task 52 (owner ruling, R1.7) |
+| `/loams.memory.v1.MemoryAdminService/ExportSpace` | POST | `loams.memory.v1.MemoryAdminService/ExportSpace` | returns an `Operation`; Task 25 |
+| `/loams.memory.v1.MemoryAdminService/ImportSpace` | POST | `loams.memory.v1.MemoryAdminService/ImportSpace` | returns an `Operation`; Task 25 |
+| `/loams.memory.v1.MemoryAdminService/ConfigureMirror` | POST | `loams.memory.v1.MemoryAdminService/ConfigureMirror` | Task 26 (deferred past GA, Q785/Q786) |
+| `/loams.memory.v1.MemoryAdminService/GetErasure` | POST | `loams.memory.v1.MemoryAdminService/GetErasure` | MVP: Task 9 (logical forget); the purge's progress from Task 23 |
+| `/loams.memory.v1.MemoryService/Add` | POST | `loams.memory.v1.MemoryService/Add` | MVP: Task 5; `Idempotency-Key` carries `idempotency_key` |
+| `/loams.memory.v1.MemoryService/AddBatch` | POST | `loams.memory.v1.MemoryService/AddBatch` | MVP: Task 5 |
+| `/loams.memory.v1.MemoryService/Search` | POST | `loams.memory.v1.MemoryService/Search` | MVP: Task 8 (hybrid); expand from Task 15 |
+| `/loams.memory.v1.MemoryService/GetProfile` | POST | `loams.memory.v1.MemoryService/GetProfile` | MVP: Task 10 |
+| `/loams.memory.v1.MemoryService/GetFact` | POST | `loams.memory.v1.MemoryService/GetFact` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/ListFacts` | POST | `loams.memory.v1.MemoryService/ListFacts` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/UpdateFact` | POST | `loams.memory.v1.MemoryService/UpdateFact` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/InvalidateFact` | POST | `loams.memory.v1.MemoryService/InvalidateFact` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/PinFact` | POST | `loams.memory.v1.MemoryService/PinFact` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/History` | POST | `loams.memory.v1.MemoryService/History` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/GetEntity` | POST | `loams.memory.v1.MemoryService/GetEntity` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/ListEntities` | POST | `loams.memory.v1.MemoryService/ListEntities` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/ListEpisodes` | POST | `loams.memory.v1.MemoryService/ListEpisodes` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/RetryExtraction` | POST | `loams.memory.v1.MemoryService/RetryExtraction` | MVP: Task 9 |
+| `/loams.memory.v1.MemoryService/Forget` | POST | `loams.memory.v1.MemoryService/Forget` | MVP: Task 9 (logical); physical purge Task 23 |
+| `/loams.memory.v1.MemoryService/GetBlock` | POST | `loams.memory.v1.MemoryService/GetBlock` | MVP: Task 10 |
+| `/loams.memory.v1.MemoryService/ListBlocks` | POST | `loams.memory.v1.MemoryService/ListBlocks` | MVP: Task 10 |
+| `/loams.memory.v1.MemoryService/UpdateBlock` | POST | `loams.memory.v1.MemoryService/UpdateBlock` | MVP: Task 10 |
+| `/loams.memory.v1.MemoryService/Consolidate` | POST | `loams.memory.v1.MemoryService/Consolidate` | returns an `Operation`; Task 18 |
+| `/loams.memory.v1.MemoryService/ListDreamRuns` | POST | `loams.memory.v1.MemoryService/ListDreamRuns` | Task 18 |
+| `/loams.memory.v1.MemoryService/RevertDreamRun` | POST | `loams.memory.v1.MemoryService/RevertDreamRun` | returns an `Operation`; Task 18 |
+| `/loams.memory.v1.MemoryService/WatchSpace` | POST | `loams.memory.v1.MemoryService/WatchSpace` | server stream; Task 24 |
 
 ## Out of scope: compatibility surfaces (D603)
 

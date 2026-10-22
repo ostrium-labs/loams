@@ -101,7 +101,7 @@ function NodeMetricsMini({ live, nodeId, label }: { live: Live; nodeId: string; 
   return (
     <div className="mt-1 flex flex-col gap-1">
       <Sparkline points={throughput} height={28} ariaLabel={`${label} throughput, last minute`} />
-      <span className="text-xs text-muted tabular-nums" aria-live="off">
+      <span className="text-small text-muted tabular-nums" aria-live="off">
         {latestText(throughput, lag)}
       </span>
     </div>
@@ -128,17 +128,15 @@ const PipelineNodeView = memo(function PipelineNodeView({ data, selected }: Node
         <Handle type="target" position={Position.Left} aria-label={`${node.label} input`} />
       )}
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted">
-          {KIND_LABEL[node.kind]}
-        </span>
+        <span className="text-micro font-medium text-muted">{KIND_LABEL[node.kind]}</span>
         {problems.length > 0 && (
           <span className="text-[10px] font-medium text-danger" title={problems.join('\n')}>
             {problems.length} issue{problems.length > 1 ? 's' : ''}
           </span>
         )}
       </div>
-      <div className="truncate text-sm font-medium">{node.label}</div>
-      <div className="truncate text-xs text-faint">{subtitle}</div>
+      <div className="truncate text-body font-medium">{node.label}</div>
+      <div className="truncate text-small text-faint">{subtitle}</div>
       <div
         className={/* mono-ok: code */ 'truncate font-mono text-[10px] text-muted'}
         title={schema}

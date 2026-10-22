@@ -2,7 +2,7 @@
 
 > **Updated 2026-10-19 ([D1119](13-decision-log.md)): Loams has no open core.** Where this document places metering, billing, the hosted control plane, commercial APIs or other components in the private `loams-platform` repository, or calls something private for open-core reasons, read that as superseded: everything is Apache-2.0, and the metering, billing and control-plane code is moving into the open repo now (design §63, Loams Meter). Ostrium Labs offers services (infrastructure efficiency, SLAs, support), not a paid edition. The rest of the design is unchanged.
 
-Status: **Proposed**, 2026-10-02. Decisions **D520–D539**, open questions **Q520–Q539** (recorded in the [decision log](13-decision-log.md)). Plans: [SO1](../plans/2026-10-02-so1-systemone.md) (engine, API, backends, CLI) and [SO2](../plans/2026-10-02-so2-systemone-desktop.md) (desktop, browser, Apple sidecar, Loams Bot).
+Status: **Proposed**, 2026-10-02. Decisions **D520–D539**, open questions **Q520–Q539** (recorded in the [decision log](13-decision-log.md)). **Amended 2026-10-18** by the owner's rulings on SO1 Task 0 ([spike](../plans/so1-systemone-spike.md); SO1 rulings R0.5a, R0.6, R0.8, R0.14, R0.20): D525 and D527 amended, Q523 answered; §1, §4.2, §6.3, §7.2 and §8 carry the changes. Plans: [SO1](../plans/2026-10-02-so1-systemone.md) (engine, API, backends, CLI) and [SO2](../plans/2026-10-02-so2-systemone-desktop.md) (desktop, browser, Apple sidecar, Loams Bot).
 
 The owner's request of 2026-10-02: "add this to our desktop app", with a pasted note that proposes one `POST /v1/systemone` whose backend is chosen from the host, with Jev (TypeSafe's closed cloud API) as a configurable cloud option. **The note is a third party's reading of third-party pages.** This document re-checked its important claims on 2026-10-02 (§2) and corrects the ones that were wrong. Nothing named `loams-systemone.ts` exists in any of our repositories, so this is a fresh design. **No code is written by this document.**
 
@@ -19,7 +19,7 @@ What we build (and what we buy):
 | Engine | A Rust crate `loams-systemone`: canonical types, a `DecisionBackend` trait, a registry, host detection, routing, calibration, self-test, model manager | Build |
 | NVIDIA and generic CPU | Upstream `laya-serve` (`pip install "laya[serve]"`) as a **loopback sidecar with a generated key** | Buy |
 | Apple silicon | A small Swift sidecar over FluidInference's `FluidUse` library (`LayaManager`, Core ML, Apache-2.0) | Buy plus a thin wrapper |
-| CPU without Python | In-process Rust. **Spike-gated** (SO1 Task 0): `kevala` (Apache-2.0, Rust, runs Laya natively) first; `ort` with our own port of Laya's prompt and head only if kevala fails | Buy first |
+| CPU without Python | In-process Rust: ~~`kevala` (Apache-2.0, Rust, runs Laya natively) first; `ort` with our own port of Laya's prompt and head only if kevala fails~~ upstream's official Rust port **`laya-onnx`** on `ort` (amended 2026-10-18, D527), behind an off-by-default feature until its gates are measured | Buy first |
 | Browser | Official `laya-ts` (Apache-2.0, ONNX on onnxruntime-web, WebGPU then WASM) as an **opt-in** cordis plugin; the default browser path is the server | Buy |
 | Cloud | A Jev adapter, off by default, key supplied by the user, never a default fallback for private data | Build (adapter only) |
 
@@ -29,7 +29,7 @@ Backend per host, in one table (rules in §6):
 |---|---|---|
 | Loams Desktop on Apple silicon (macOS 14+) | `laya-coreml` (multilingual) | 128/256/512/1024-token buckets, 32 options per question |
 | Desktop or CLI with an NVIDIA GPU | `laya-torch` through `laya-serve` on CUDA | 32.8 to 39.5 ms per question on a T4 (vendor figure) |
-| Desktop or CLI, CPU only | `laya-native` (kevala) if SO1 Task 0 passes, else `laya-torch` on CPU | Upstream measures 193 to 464 ms per question for torch on CPU; the native number is to be measured |
+| Desktop or CLI, CPU only | `laya-native` (~~kevala~~ `laya-onnx`, amended 2026-10-18) once its gates pass and the feature is on, else `laya-torch` on CPU | Upstream measures 193 to 464 ms per question for torch on CPU; the native number is to be measured |
 | Loams server (gateway role) | NVIDIA if present, else CPU, as above | The same sidecar manager runs server-side |
 | Browser console | The instance's `/v1/systemone` | Local WASM is an opt-in plugin, and COOP/COEP makes it awkward (§7.5) |
 | Any host, explicit opt-in | `jev` | Data leaves the machine; TypeSafe's agreement forbids a standalone service and distillation; OSS-client fit unconfirmed (Q520) |
@@ -190,7 +190,7 @@ The path, request and response follow **Jev's documented fields** (and `laya-ser
 | `min_confidence` | Applied to `calibrated_confidence`, not to Laya's `answer_confidence` |
 | Response `usage.options` | Returned (Laya's per-question option-span report) |
 | `instructions` and `criteria` shapes | **v1 supports string `instructions`** and the `criteria` forms below. Jev also accepts object or array `instructions` and free-form `criteria`; those answer `422 UNSUPPORTED_SHAPE` in v1 (a client sending them is not base-URL compatible), and a later version may serialise them to text once we measure whether that helps |
-| `noul` `criteria` (optional in Jev) | Accepted as an optional string; forwarded to Jev; for Laya backends ignored with the warning `noul_criteria_ignored` (Task 0 checks whether Laya reads it) |
+| `noul` `criteria` (optional in Jev) | ~~Accepted as an optional string; forwarded to Jev; for Laya backends ignored with the warning `noul_criteria_ignored` (Task 0 checks whether Laya reads it)~~ **Amended 2026-10-18 (SO1 R0.6):** optional; an object with optional `true` and `false` descriptions, the shape Jev documents and Laya reads; forwarded to both. Any other key is a `422` |
 
 ```json
 POST /v1/systemone
@@ -242,9 +242,9 @@ Rules:
 - Unknown request fields are ignored (as Laya does). The five hook arguments Laya refuses are not part of our surface.
 - `routing` and `action` are **not** returned (Laya's extensions, not Jev's); `act_probability` is never exposed (D536).
 - `noul` answers have no native `confidence` (Jev) or one equal to `answer_confidence` (Laya); `calibrated_confidence` is `max(p, 1-p)` after calibration.
-- **Limits, two layers.** Validation (before any backend) uses the **largest limit any registered backend accepts**: body 2 MiB, state 50 000 characters, 64 questions, **255 options per `choice`** (Jev's cap), **32 levels per `score`** (Laya's cap; Jev's is 10), 512 options per request. The router then applies each backend's own capability: Core ML 32 options; `laya-serve` 100 options and 32 levels; Jev 255 options and **2 to 10 levels**. A request over a backend's cap simply excludes that backend; if none remains the error is `NO_BACKEND` with the reason per backend (and a hint to split into a two-step choice). So 32 levels is Loams’ and Laya's limit, not a universal Jev-compatible one.
+- **Limits, two layers.** Validation (before any backend) uses the **largest limit any registered backend accepts**: body 2 MiB, state 50 000 characters, 64 questions, **255 options per `choice`** (Jev's cap), **32 levels per `score`** (Laya's cap; Jev's is 10), 512 options per request. The router then applies each backend's own capability: Core ML 32 options; `laya-serve` 100 options (255 when it runs with `LAYA_TOURNAMENT_GROUP`, once SO1 Task 8 has measured it; amended 2026-10-18, D525) and 32 levels; Jev 255 options and **2 to 10 levels**. A request over a backend's cap simply excludes that backend; if none remains the error is `NO_BACKEND` with the reason per backend (and a hint to split into a two-step choice). So 32 levels is Loams’ and Laya's limit, not a universal Jev-compatible one.
 - HTTP status mapping: 400 malformed; 401/403 auth; 413 limits; 422 invalid question; 429 quota; 503 `BACKEND_UNAVAILABLE`; 500 never carries internals.
-- **Listener.** On the desktop and in `loams dev` the route is on the loopback listener (D111). On a server it is on the gateway role behind the normal auth (§19) with a per-org quota (the engine enforces whatever limit it is given; the plan decides the number, D220).
+- **Listener.** ~~On the desktop and in `loams dev` the route is on the loopback listener (D111). On a server it is on the gateway role behind the normal auth (§19) with a per-org quota (the engine enforces whatever limit it is given; the plan decides the number, D220).~~ **Amended 2026-10-18 (SO1 R0.14):** `POST /v1/systemone` and `/batch` are a D603 compatibility surface (a drop-in for Jev and `laya-serve` clients), served in v1 **only on the loopback listener** (desktop and `loams dev`, D111). On a server the API is `loams.systemone.v1` over Connect on the main port (D600), behind its `Authenticator`; a public HTTP route waits for Q539.
 
 ### 4.3 How `noul` and `score` are mapped (D522)
 
@@ -352,7 +352,7 @@ Detection never loads a model and never runs inference. A GPU that exists but wh
 | Rule | Behaviour |
 |---|---|
 | Locality | Default `LOCAL_ONLY`. A cloud backend is eligible only if the request says `ALLOW_CLOUD` **and** the instance, org or user setting allows cloud decisions **and** a key is configured. A forced `backend: "jev"` with locality `LOCAL_ONLY` is an error (`CLOUD_NOT_ALLOWED`), not a quiet fallback |
-| Options over a backend's cap | More than 32 options on any `choice`: exclude `laya-coreml` (its bucket has 32 slots). Over 100 excludes `laya-torch` (its HTTP cap), leaving Jev (cap 255) if cloud is allowed; over 255 is rejected at validation. A `score` with more than 10 levels excludes Jev. If no backend remains: `NO_BACKEND` naming each exclusion and suggesting a two-step hierarchy |
+| Options over a backend's cap | More than 32 options on any `choice`: exclude `laya-coreml` (its bucket has 32 slots). Over 100 excludes `laya-torch` (its HTTP cap), leaving Jev (cap 255) if cloud is allowed, unless the sidecar runs with `LAYA_TOURNAMENT_GROUP` (amended 2026-10-18, D525: then `laya-torch` takes 101 to 255 by elimination, with the warning `choice_by_tournament`, once SO1 Task 8 has measured it); over 255 is rejected at validation. A `score` with more than 10 levels excludes Jev. If no backend remains: `NO_BACKEND` naming each exclusion and suggesting a two-step hierarchy |
 | More than about 20 options | Laya's accuracy falls off sharply (0.425 on 77 labels vs Jev's 0.870 on 72). Order: `laya-torch` with a widened `head_max_len`/`max_len` (upstream's fix) first if local-only; Jev preferred only if cloud is allowed (the request's `locality` and the instance switch), otherwise stay local; warning `options_over_20` either way. No quality claim for the widened path until SO1's self-test adds a 40-option case and the numbers are measured (Q528) |
 | Language | Only the English checkpoint is English-only. Use it only when the state is detected as English (explicit `lang`, else script and language detection: Latin script and detector says English). **Anything else, including undecided Latin text, goes to the multilingual checkpoint.** A backend that ships only the English checkpoint (`laya-wasm` English, the note's `laya-mlx` English weights) is excluded for non-English text. The cost of the safe default is accuracy on English (MASSIVE intent 0.783 English vs 0.657 multilingual), so on Apple silicon the English-quality gap is Q522 |
 | State over the window | Core ML: the smallest loaded bucket that fits; if even 1024 does not fit, `truncated` is reported and the warning `state_truncated` is added. Laya sidecar: `usage.truncated` becomes the same warning, and `on_truncate` set to `warn`, `widen` or `error` (default `warn`; `widen` retries once with a larger `max_len` up to `LAYA_MAX_TOKEN_BUDGET`). The state is never silently cut |
@@ -379,19 +379,23 @@ Detection never loads a model and never runs inference. A GPU that exists but wh
 
 ### 7.2 `laya-native`: in-process Rust, spike-gated (D527)
 
-The desktop wants a CPU path without a multi-gigabyte Python environment. SO1 Task 0 settles it with measurements, in this order:
-1. **kevala as a pinned git dependency** (Apache-2.0). Gates: the `laya` pack answers our golden set (`§9.2`, plus 200 labelled decisions) within 0.02 probability of `laya-serve` on the same inputs; native CPU p50 under 150 ms for a short state on the reference laptop (target, not a vendor figure); a multilingual pack exists or can be converted with its converter; the crate builds with our toolchain and `cargo deny` passes (it states zero dependencies). If it passes, `LayaNativeBackend` wraps its `Model` trait and the Python sidecar becomes the NVIDIA and server path only.
-2. If kevala fails a gate: `ort` 2.0.0-rc (exact pin, `load-dynamic`) with `tokenizers` and our own port of Laya's request template and head, from the fp32 ONNX export. This is a multi-week port that must be re-verified on every upstream template change, so it needs the owner's go-ahead (Q523).
-3. If neither: CPU users run the Python sidecar. That is acceptable and is the stated fallback.
+The desktop wants a CPU path without a multi-gigabyte Python environment. SO1 Task 0 settles it with measurements.
+
+**Amended 2026-10-18 (D527, SO1 R0.8).** The spike found that kevala fails (no multilingual checkpoint; its own int8 parity figure is 0.024) and that upstream now ships an official Rust port, `laya-onnx` (`NandhaKishorM/laya/laya-rust`, Apache-2.0, `ort` and `tokenizers`, all three checkpoints, golden-tested against Python). The order is now:
+
+1. **`laya-onnx` as a dependency pinned by git revision** (until it is on crates.io), behind the off-by-default `native` feature. Gates, measured before the feature is enabled: within 0.02 probability of `laya-serve` on our golden set plus 200 labelled decisions; native CPU p50 under 150 ms for a short state; `cargo deny` clean, with ONNX Runtime loaded dynamically (`load-dynamic`) from a library pinned by digest in our model lock rather than downloaded at build time.
+2. If `laya-onnx` fails a gate, or until the owner turns the feature on: CPU users run the Python sidecar. That is acceptable and is the stated fallback.
+
+The 2026-10-02 order, struck: ~~(1) **kevala as a pinned git dependency** (Apache-2.0). Gates: the `laya` pack answers our golden set (`§9.2`, plus 200 labelled decisions) within 0.02 probability of `laya-serve` on the same inputs; native CPU p50 under 150 ms for a short state on the reference laptop (target, not a vendor figure); a multilingual pack exists or can be converted with its converter; the crate builds with our toolchain and `cargo deny` passes (it states zero dependencies). If it passes, `LayaNativeBackend` wraps its `Model` trait and the Python sidecar becomes the NVIDIA and server path only. (2) If kevala fails a gate: `ort` 2.0.0-rc (exact pin, `load-dynamic`) with `tokenizers` and our own port of Laya's request template and head, from the fp32 ONNX export. This is a multi-week port that must be re-verified on every upstream template change, so it needs the owner's go-ahead (Q523). (3) If neither: CPU users run the Python sidecar.~~
 
 ### 7.3 `laya-coreml`: a Swift sidecar inside the desktop app (D528)
 
-- Code lives in `ostrium-labs/loams-desktop` at `sidecars/coreml/` (a SwiftPM executable `loams-coreml`), not in this repository (it needs Xcode and macOS CI).
+- ~~Code lives in `ostrium-labs/loams-desktop` at `sidecars/coreml/` (a SwiftPM executable `loams-coreml`), not in this repository (it needs Xcode and macOS CI).~~ Code lives in this repository at `apps/desktop-electron/sidecars/coreml/` (a SwiftPM executable `loams-coreml`), built only by the macOS arm64 job (amended 2026-10-18).
 - It depends on `FluidInference/FluidUse` (Apache-2.0; its library product `FluidUse` includes `LayaManager`) **pinned by revision**. If building the whole package pulls in too much (FluidAudio and the demo targets), SO2 Task 0 vendors only the Laya files with their Apache-2.0 notice instead (Q525).
-- It speaks the same HTTP/JSON as `laya-serve`, restricted to `POST /v1/systemone` and `GET /health`, on a **Unix domain socket** in `$LOAMS_HOME/run/` (mode 0600) with the same per-launch bearer key, so the Rust adapter is the same `LayaServeBackend` client over a different transport. No TCP port exists.
+- It speaks the same HTTP/JSON as `laya-serve`, restricted to `POST /v1/systemone` and `GET /health`, on a **Unix domain socket** in ~~`$LOAMS_HOME/run/`~~ the daemon's `<userData>/agentd/run/systemone/`, with a 0700 directory under `$TMPDIR` when the path would exceed `sun_path` (amended 2026-10-18) (mode 0600) with the same per-launch bearer key, so the Rust adapter is the same `LayaServeBackend` client over a different transport. No TCP port exists.
 - Models: `FluidInference/laya-coreml` buckets are fetched by our model manager (not by `LayaManager.load()`'s own download, so verification and the cache policy are ours) and given to the sidecar by path. Default: the 128 and 512 buckets (what `LayaManager.load()` loads), int8-embedding variants where the model card shows equal accuracy, 256 and 1024 on demand. Compute units per bucket as FluidUse documents.
 - Limits it enforces and reports: 32 options per `choice`, multilingual checkpoint only, a state over 1024 tokens truncated on the right with `usage.truncated`. The router already excludes it above 32 options (§6.3), and the sidecar returns `422` with `options_over_32` if asked anyway.
-- macOS 14+ and Apple silicon only. The sidecar is code-signed and notarised with the app, in `Contents/MacOS/` or `Contents/Helpers/`, and launched by `loams-link`.
+- macOS 14+ and Apple silicon only. The sidecar is code-signed and notarised with the app, in ~~`Contents/MacOS/` or `Contents/Helpers/`, and launched by `loams-link`~~ `Contents/Resources/bin/`, copied into the daemon's runtime directory by `install-runtime`, and started and supervised only by `loams-agentd` (amended 2026-10-18).
 - Not shipped by upstream: no server exists, so this is ours, and it is the largest piece of new code in SO2.
 
 ### 7.4 `laya-mlx`: optional (D529)
@@ -407,14 +411,15 @@ The desktop wants a CPU path without a multi-gigabyte Python environment. SO1 Ta
 
 ## 8. The desktop integration (D538)
 
-Loams Desktop is the zeron fork (§37 §18, `ostrium-labs/loams-desktop`). SystemOne enters it through `loams-link`, never through zeron's engine:
+~~Loams Desktop is the zeron fork (§37 §18, `ostrium-labs/loams-desktop`). SystemOne enters it through `loams-link`, never through zeron's engine.~~ (Amended 2026-10-18.) Loams Desktop is the Electron app, the cordis shell and the per-user daemon `loams-agentd` (§50, §53). SystemOne lives in the daemon, which is the desktop's only SystemOne host: the `loams dev` engine it supervises runs with its SystemOne route off. The shims and the shell are the daemon's clients (owner, SO1 R0.20 and SO2-Q2 to Q5):
 
 ```
- Loams Bot (harness / bot-acp shim)      zeron mcp (injected tool)       Settings > Decisions
+ Loams Bot (ACP shim, bot-acp)     agentd MCP shim + tool registry     Settings › Decisions (cordis plugin)
+   ndjson, scoped run token          ndjson, scoped run token            loams.agentd.v1 via Electron main
             │                                   │                              │
             └──────────────┬────────────────────┴──────────────────────────────┘
                            ▼
-                 loams-systemone-link (in loams-link, no GPUI)
+                 loams-agentd-systemone (in loams-agentd, headless)
                   · HostProfile · Registry · Router (the crate `loams-systemone`, as a library)
                   · ModelManager (download, verify, cache, residency)
                   · SidecarSupervisor ── CoremlSidecarBackend ── UDS ──► loams-coreml (Swift, ANE)
@@ -423,12 +428,12 @@ Loams Desktop is the zeron fork (§37 §18, `ostrium-labs/loams-desktop`). Syste
                                       └─ RemoteBackend ── Connect ──► the instance's SystemOneService (when signed in)
 ```
 
-- **The desktop links the `loams-systemone` crate** (small: no DataFusion or storage). That is allowed by §37 §18.3's rule against embedding the *engine*; this crate is a client library of 3 to 4 k lines, not the engine.
-- **Local first, instance second.** With a local backend ready the desktop answers locally. With none ready, or by setting, it calls the instance's `SystemOneService` (the `RemoteBackend`), which is another registry. Data locality is shown in the UI per answer (`loams.locality`).
+- **The daemon links the `loams-systemone` crate** (small: no DataFusion or storage). That is allowed by §37 §18.3's rule against embedding the *engine*; this crate is a client library of 3 to 4 k lines, not the engine.
+- **Local first, instance second.** The `RemoteBackend` is registered only once the daemon can sign in to an instance (Q703); until then the desktop is local-only (amended 2026-10-18). With a local backend ready the desktop answers locally. With none ready, or by setting, it calls the instance's `SystemOneService` (the `RemoteBackend`), which is another registry. Data locality is shown in the UI per answer (`loams.locality`).
 - **Models are the app's, kept resident.** The Model Manager downloads, verifies, caches and (setting) keeps the sidecar loaded; a lazy-start mode starts it on first use and stops it after N idle minutes. Resident memory is shown (Core ML fp16 bucket about 614 MB; torch English 808 MB, multilingual 647 MB per upstream).
-- **Settings, "Decisions" panel** (GPUI, in `loams-panels`): the active backend and why (`route_reason`), a table of backends with status and a one-line fix for each `NotInstalled`, model sizes, download/verify/delete, residency, a "run self-test" button with the result, calibration status per question type, and a **Cloud decisions** section: off by default, a Jev key field stored in the OS keychain (never in config), the consent text from §10 and a per-org policy override from the instance.
-- **Loams Bot uses it** (D538): (1) before dispatch, `route.agent` (choice over the five platform agents), `urgency` (score) and `needs_person` (noul) decide which A2A agent gets a message and whether to interrupt; (2) as a cheap pre-filter, "does this message need the LLM at all" (noul), which saves a model call for acknowledgements; (3) as the policy for notification priority on phones. The decision, its probabilities and the backend are shown on the thread's card ("routed to forgejo, 0.91") and sent into the A2A message metadata for tracing (`systemone.backend`, `systemone.latency_ms`, no content, §39 D-SF-11). **A SystemOne answer is advisory and never approves or authorises anything** (D537).
-- **Agent surface.** A read-only MCP tool `systemone_decide` is added to the MCP server the engine injects into every run (as `zeron mcp` is), so coding agents can ask local questions; it has no network path and is off if no local backend is ready.
+- **Settings, "Decisions" panel** (~~GPUI, in `loams-panels`~~ the cordis plugin `@loams/plugin-systemone`, a Settings section in both modes, reading the daemon over `loams.agentd.v1`; amended 2026-10-18): the active backend and why (`route_reason`), a table of backends with status and a one-line fix for each `NotInstalled`, model sizes, download/verify/delete, residency, a "run self-test" button with the result, calibration status per question type, and a **Cloud decisions** section: off by default, a Jev key field stored in the OS keychain (never in config), the consent text from §10 and a per-org policy override from the instance.
+- **Loams Bot uses it** (D538): (1) before dispatch, `route.agent` (choice over the five platform agents), `urgency` (score) and `needs_person` (noul) decide which A2A agent gets a message and whether to interrupt; (2) as a cheap pre-filter, "does this message need the LLM at all" (noul), which saves a model call for acknowledgements; ~~(3) as the policy for notification priority on phones~~ (amended 2026-10-18: phone notification priority is out of scope; on the desktop `needs_person` raises the daemon's OS notification and Studio's toast). The decision, its probabilities and the backend are shown on the thread's card ("routed to forgejo, 0.91") and sent into the A2A message metadata for tracing (`systemone.backend`, `systemone.latency_ms`, no content, §39 D-SF-11). **A SystemOne answer is advisory and never approves or authorises anything** (D537).
+- **Agent surface.** A read-only MCP tool `systemone_decide` is added to ~~the MCP server the engine injects into every run (as `zeron mcp` is)~~ the daemon's injected MCP shim (`loams-agentd-mcp`) and its tool registry (amended 2026-10-18), so coding agents can ask local questions; it has no network path and is off if no local backend is ready.
 - **Telemetry.** The desktop sends nothing to Loams or anyone else (zeron has none; D284). Two separate things stay local: the decision log (§9.4), opt-in and off by default, and, when the desktop talks to an instance, the usage event `io.loams.dev.systemone.decided.v1` (§11) is emitted **by the instance's server path only** into that operator's own stream (counts, backend, latency, locality; never content), enabled when the operator runs the route; the local sidecar path emits no event. A2A trace metadata (`systemone.*`, no content) travels to the operator's own collector like every other §39 span.
 
 ## 9. Calibration, self-test, fine-tuning, models, cache
@@ -514,7 +519,7 @@ Per plan task (see the plans). The cross-cutting ones:
 | Plan | Contents | Depends on |
 |---|---|---|
 | **SO1** | Spike (kevala, `ort`, `laya-serve` measurements); protos and mock; `loams-systemone` crate (types, wire, trait, registry, host detection, routing); `laya-serve` adapter and supervisor; Jev adapter; calibration; self-test; model manager; server route, CLI and MCP; decision log; docs and exit gate | AP0's proto and Connect conventions (D128); `loams-link` unaffected |
-| **SO2** | Reconcile with `loams-desktop`; the Swift Core ML sidecar; `loams-systemone-link` in the app; Model Manager and Settings panels; Loams Bot integration; zeron MCP tool; optional cordis browser plugin; Windows and Linux CPU path; optional MLX; exit gate | SO1 Tasks 1 to 8, AP1n Task 4 (Connect client in `loams-link`), SF3 Task 5 (the desktop harness) |
+| **SO2** (re-targeted 2026-10-18) | Reconcile with the daemon and Studio as built; the Swift Core ML sidecar supervised by `loams-agentd`; `loams-agentd-systemone`; Model Manager and Settings › Decisions in the cordis shell; Loams Bot integration in the ACP shim; `systemone_decide` in agentd's MCP shim; optional cordis browser plugin; Windows and Linux CPU path; optional MLX; exit gate | SO1 Tasks 1 to 10; DD1 and SD1 as built (see the SO2 plan's dependency table) |
 
 The track is **SO** (new label `track:so`, "SystemOne").
 
@@ -539,6 +544,7 @@ The track is **SO** (new label `track:so`, "SystemOne").
 
 - **§37 §18.3 "do not embed the engine in the app".** The desktop links the small client crate `loams-systemone`, not the engine; unchanged in spirit (D538).
 - **D220 (hosted or commercial inference goes in `loams-platform`).** A Jev client adapter is a client of someone else's API with the user's own key and is open; a Loams-hosted inference service is commercial (§11).
+- **§37 §18 and D538 as first written (the zeron fork in `ostrium-labs/loams-desktop`).** Superseded by §50 and §53: the fork is retired and its repository deleted; the desktop host is `loams-agentd` (D528 and D538 amended 2026-10-18).
 - **D111 (loopback only until auth).** The sidecars and the desktop route are loopback; the server route sits behind normal auth.
 - **§39 D-SF-11 (no content in spans).** Kept (D537.4).
 - **§37 §5.6 trust tiers.** The browser plugin is a first-party plugin; its worker document is a separate origin by design (§7.5).

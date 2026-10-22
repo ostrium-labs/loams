@@ -55,6 +55,8 @@ class LoamsClient(
     session: ConsistencySession? = null,
     /** How long one attempt may take. Only used when this client builds its own transport. */
     timeout: java.time.Duration = java.time.Duration.ofSeconds(30),
+    /** The namespace an app request with an empty `namespace` field goes to (R11). */
+    val namespace: String? = null,
 ) {
     /** The transport calls go over. */
     val transport: Transport = resolveTransport(endpoint, transport)
@@ -67,6 +69,8 @@ class LoamsClient(
         protocol = protocol,
         codec = codec,
         session = session,
+        defaultNamespace = namespace,
+        timeout = timeout,
     )
 
     /** The caller's default retry budget. */
@@ -80,6 +84,51 @@ class LoamsClient(
      * which module it belongs to rather than a name this SDK invented.
      */
     val modules: Modules = Modules(this)
+
+    /** `loams.namespaces` (SDKP §2.2). */
+    val namespaces: NamespacesModule by lazy { NamespacesModule(this) }
+
+    /** `loams.collections` (SDKP §2.2). */
+    val collections: CollectionsModule by lazy { CollectionsModule(this) }
+
+    /** `loams.documents` (SDKP §2.3). */
+    val documents: DocumentsModule by lazy { DocumentsModule(this) }
+
+    /** `loams.search` (SDKP §2.4). */
+    val search: SearchModule by lazy { SearchModule(this) }
+
+    /** `loams.vector` (SDKP §2.4, Q613). */
+    val vector: VectorModule by lazy { VectorModule(this) }
+
+    /** `loams.graph` (SDKP §2.5). Experimental. */
+    val graph: GraphModule by lazy { GraphModule(this) }
+
+    /** `loams.sql` (SDKP §2.5). */
+    val sql: SqlModule by lazy { SqlModule(this) }
+
+    /** `loams.streams` (SDKP §2.5). */
+    val streams: StreamsModule by lazy { StreamsModule(this) }
+
+    /** A handle on one collection (SDKP §2.8); null [namespace] takes the client's default. */
+    fun collection(name: String, namespace: String? = null): CollectionHandle = CollectionHandle(this, name, namespace)
+
+    companion object {
+        /**
+         * A client from the environment (R1): `LOAMS_ENDPOINT`, then `LOAMS_API_KEY` or
+         * `LOAMS_TOKEN`, and `LOAMS_NAMESPACE`.
+         */
+        fun fromEnv(env: Map<String, String> = System.getenv(), session: ConsistencySession? = null): LoamsClient {
+            val endpoint = env["LOAMS_ENDPOINT"]?.takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("loams: LOAMS_ENDPOINT is not set; it is the instance's base URL")
+            val bearer = env["LOAMS_API_KEY"]?.takeIf { it.isNotEmpty() } ?: env["LOAMS_TOKEN"]?.takeIf { it.isNotEmpty() }
+            return LoamsClient(
+                endpoint = endpoint,
+                tokenSource = bearer?.let { StaticTokenSource(it) },
+                session = session,
+                namespace = env["LOAMS_NAMESPACE"]?.takeIf { it.isNotEmpty() },
+            )
+        }
+    }
 
     /**
      * One RPC by its path, through the same path a facade method uses.

@@ -959,7 +959,9 @@ async fn a_graph_from_before_the_log_is_adopted() {
 /// for 300 ms, and answers how many appends there were.
 async fn grouped_writes(fx: &Fixture, group: GroupCommit, writers: usize) -> usize {
     let log = fx.log().with_group_commit(group);
-    let admin = fx.admin_with(&log);
+    // Every writer must be admitted at once: the default slot cap is twice the cores, which a
+    // 4 vCPU runner puts below the writer count.
+    let admin = fx.admin_with(&log).with_statement_slots(writers + 4);
     create(&admin, "kg").await;
     write(&admin, "kg", "INSERT (:Seed)").await;
     let appends = Arc::new(std::sync::atomic::AtomicUsize::new(0));

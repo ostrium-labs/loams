@@ -80,6 +80,10 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip SUID/SGID bit preservation: not reachable. Loams never calls ZipArchive::extract or ZipStreamReader::extract: archive_install.rs extracts entry by entry, rejects link and special-file entries, confines paths with enclosed_name, and never applies archive permission bits; remove with the zip 9.x bump on or after 2026-10-30 (zip 9.0.4 turns 14 days old)" },
     { id = "RUSTSEC-2026-0368", reason = "zip symlink target escape in extract: not reachable. Loams never calls ZipArchive::extract or ZipStreamReader::extract: archive_install.rs extracts entry by entry, rejects link and special-file entries, confines paths with enclosed_name, and never applies archive permission bits; remove with the zip 9.x bump on or after 2026-10-30 (zip 9.0.4 turns 14 days old)" },
     { id = "RUSTSEC-2026-0369", reason = "zip permissions applied through symlinks in extract: not reachable. Loams never calls ZipArchive::extract or ZipStreamReader::extract: archive_install.rs extracts entry by entry, rejects link and special-file entries, confines paths with enclosed_name, and never applies archive permission bits; remove with the zip 9.x bump on or after 2026-10-30 (zip 9.0.4 turns 14 days old)" },
+    # webpki-roots 0.26.11 is a shim with no roots of its own: it re-exports
+    # webpki-roots 1.x, which is at 1.0.10 (emSign removed) in this lock. Reached
+    # through sqlx-core 0.8 and tokio-tungstenite 0.24; remove when they move to 1.x.
+    { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 re-exports webpki-roots 1.0.10, which drops the distrusted emSign roots; the 0.26 shim carries no certificates" },
 ]
 
 [sources]

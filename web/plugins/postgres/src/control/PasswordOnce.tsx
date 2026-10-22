@@ -43,7 +43,7 @@ export function PasswordOnce({
             {issued.reset ? 'The old password no longer works. ' : ''}
             Copy this password now. Loams does not show it again; reset it if it is lost.
           </Notice>
-          <label htmlFor={fieldId} className="text-sm">
+          <label htmlFor={fieldId} className="text-body">
             Password
           </label>
           <div className="flex gap-2">
@@ -78,7 +78,7 @@ export function PasswordOnce({
               </Button>
             )}
           </div>
-          <p className="text-xs text-muted" aria-live="polite">
+          <p className="text-small text-muted" aria-live="polite">
             {copyFailed
               ? 'Could not copy. Show the password and copy it from the field.'
               : copied

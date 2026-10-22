@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import tomllib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -106,12 +107,22 @@ def symbols(sdk_dir, lang, unstable):
 
 
 def previous_release(root):
-    """`v<from>` of the newest release in release/upgrade-path.toml."""
-    text = (root / "release/upgrade-path.toml").read_text()
-    m = re.search(r"\[\[release\]\][^\[]*?from\s*=\s*\"([^\"]+)\"", text)
-    if not m or m.group(1) == "fresh":
+    """`v<from>` of the newest release in release/upgrade-path.toml. A patch
+    release's `from` is its line (`0.1`): the newest earlier stable release
+    of that line is the previous release."""
+    with open(root / "release/upgrade-path.toml", "rb") as f:
+        releases = tomllib.load(f)["release"]
+    newest = releases[0]
+    src = newest["from"]
+    if src == "fresh":
         return None
-    return f"v{m.group(1)}"
+    if re.fullmatch(r"\d+\.\d+", src):
+        line = [r["version"] for r in releases[1:]
+                if r["version"].startswith(src + ".") and "-" not in r["version"]]
+        if not line:
+            return None
+        return f"v{line[0]}"
+    return f"v{src}"
 
 
 def checkout(root, tag, into):

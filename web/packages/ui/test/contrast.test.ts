@@ -45,8 +45,42 @@ function oklch(l: number, c: number, h: number): [number, number, number] {
   ].map((x) => gamma(clamp(x))) as [number, number, number];
 }
 
+/** sRGB (gamma) to OKLab, and back: for `color-mix(in oklab, …)`. */
+function toOklab([r, g, b]: Rgba): [number, number, number] {
+  const [lr, lg, lb] = [r, g, b].map(linear) as [number, number, number];
+  const l = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
+  const m = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
+  const s = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+function fromOklab([L, a, b]: [number, number, number]): [number, number, number] {
+  const c = Math.hypot(a, b);
+  const h = (Math.atan2(b, a) * 180) / Math.PI;
+  return oklch(L, c, h);
+}
+
 function parse(value: string, vars: Record<string, string>): Rgba {
   const v = value.trim();
+  const mix = /^color-mix\(in oklab,\s*(.+?)\s+([\d.]+)%,\s*(.+?)\)$/.exec(v);
+  if (mix) {
+    const a = parse(mix[1] as string, vars);
+    const b = parse(mix[3] as string, vars);
+    const p = Number(mix[2]) / 100;
+    const [la, lb] = [toOklab(a), toOklab(b)];
+    const out = fromOklab(
+      [0, 1, 2].map((i) => (la[i] as number) * p + (lb[i] as number) * (1 - p)) as [
+        number,
+        number,
+        number,
+      ],
+    );
+    return [...out, a[3] * p + b[3] * (1 - p)];
+  }
   const ref = /^var\((--op-[a-z0-9-]+)\)$/.exec(v);
   if (ref) return parse(vars[ref[1] as string] ?? 'missing', vars);
   let m = /^#([0-9a-f]{6})$/i.exec(v);
@@ -95,7 +129,14 @@ const TEXT = [
   '--op-code-param',
   '--op-code-operator',
 ];
-const SURFACES = ['--op-bg', '--op-surface', '--op-window', '--op-raised', '--op-row-selected'];
+const SURFACES = [
+  '--op-bg',
+  '--op-surface',
+  '--op-elevated',
+  '--op-window',
+  '--op-raised',
+  '--op-row-selected',
+];
 /** A state colour on its own soft fill. */
 const ON_SOFT: [string, string][] = [
   ['--op-grow', '--op-grow-soft'],
@@ -108,9 +149,13 @@ const ON_SOFT: [string, string][] = [
 /** Text on a filled control. */
 const ON_FILL: [string, string][] = [
   ['--op-accent-ink', '--op-accent'],
+  // The primary button's hover and pressed fills (UI1) keep its label AA.
+  ['--op-accent-ink', '--op-accent-hover'],
+  ['--op-accent-ink', '--op-accent-active'],
   ['--op-grow-on', '--op-grow-deep'],
-  // The solid destructive button (Task 4) writes the canvas colour on danger.
+  // The solid destructive button (Task 4) writes the canvas colour on danger, and on its hover.
   ['--op-bg', '--op-danger'],
+  ['--op-bg', '--op-danger-hover'],
 ];
 
 /** Every opaque backdrop a surface can sit on: itself, or over the canvas and the surface. */
@@ -161,12 +206,19 @@ describe.each([
     expect(failures).toEqual([]);
   });
 
-  it('the focus ring (the accent) is 3:1 against every surface', () => {
-    for (const s of ['--op-bg', '--op-surface', '--op-window']) {
-      expect(ratio(text('--op-accent'), parse(vars[s] as string, vars)), s).toBeGreaterThanOrEqual(
+  it('the focus ring (--op-focus, the accent) is 3:1 against every surface', () => {
+    expect(vars['--op-focus']).toBe('var(--op-accent)');
+    for (const s of ['--op-bg', '--op-surface', '--op-elevated', '--op-window']) {
+      expect(ratio(text('--op-focus'), parse(vars[s] as string, vars)), s).toBeGreaterThanOrEqual(
         3,
       );
     }
+  });
+
+  it('a button outline (--op-control-border) is half the field outline', () => {
+    expect(vars['--op-control-border']).toBe(
+      'color-mix(in oklab, var(--op-input) 50%, transparent)',
+    );
   });
 });
 
@@ -216,6 +268,20 @@ describe('forced colours (Review Focus 5)', () => {
     for (const t of ['--op-rule', '--op-rule-soft', '--op-input'])
       expect(f).toContain(`${t}: CanvasText`);
     expect(f).toContain('--op-accent: Highlight');
+  });
+
+  it('maps the focus ring and button outlines to system colours', () => {
+    const f = forced(TOKENS);
+    expect(f).toContain('--op-focus: Highlight');
+    expect(f).toContain('--op-control-border: ButtonText');
+  });
+
+  it('keeps the sliding selection and selected rows visible', () => {
+    const f = forced(STYLES);
+    expect(f).toMatch(
+      /\[data-slot="selection-indicator"\][^{]*\{[^}]*outline:\s*1px solid Highlight/,
+    );
+    expect(f).toMatch(/\.loams-row\[data-selected\][^{]*\{[^}]*outline:\s*1px solid Highlight/);
   });
 
   it('draws focus as an outline and keeps status dots visible', () => {

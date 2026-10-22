@@ -9,8 +9,11 @@
  *
  * Utilities sit in a cascade layer, so unlayered @loams/ui and console CSS
  * wins over them. Use utilities for layout and spacing around components.
+ * `base` (console.css's element defaults, such as the global focus ring) sits
+ * below the utilities, so `outline-none` on an input inside a ringed box wins
+ * and the box draws the one ring (UI1).
  */
-@layer theme, utilities;
+@layer theme, base, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 
@@ -27,10 +30,13 @@
   --color-window: var(--op-window);
   --color-bg: var(--op-bg);
   --color-surface: var(--op-surface);
+  --color-elevated: var(--op-elevated);
   --color-raised: var(--op-raised);
   --color-rule: var(--op-rule);
   --color-rule-soft: var(--op-rule-soft);
   --color-input: var(--op-input);
+  --color-control-border: var(--op-control-border);
+  --color-focus: var(--op-focus);
   --color-ink: var(--op-ink);
   --color-muted: var(--op-muted);
   --color-faint: var(--op-faint);
@@ -38,6 +44,8 @@
   --color-accent-fg: var(--op-accent-fg);
   --color-accent-soft: var(--op-accent-soft);
   --color-accent-ink: var(--op-accent-ink);
+  --color-accent-hover: var(--op-accent-hover);
+  --color-accent-active: var(--op-accent-active);
   --color-grow: var(--op-grow);
   --color-grow-soft: var(--op-grow-soft);
   --color-grow-deep: var(--op-grow-deep);
@@ -48,6 +56,7 @@
   --color-info-soft: var(--op-info-soft);
   --color-danger: var(--op-danger);
   --color-danger-soft: var(--op-danger-soft);
+  --color-danger-hover: var(--op-danger-hover);
   --color-row-hover: var(--op-row-hover);
   --color-row-selected: var(--op-row-selected);
   --color-scrim: var(--op-scrim);
@@ -66,6 +75,9 @@
   --font-mono: var(--loams-font-mono); /* mono-ok: code */
   --ease-op: var(--op-ease);
   --ease-panel: var(--op-ease-panel);
+  --ease-out: var(--op-ease-out);
+  --ease-in: var(--op-ease-in);
+  --ease-in-out: var(--op-ease-in-out);
 
   /* The type scale (D1075): text-micro … text-hero. */
   --text-micro: var(--op-text-micro);
@@ -101,4 +113,5 @@
   --shadow-modal: var(--op-shadow-modal);
   --shadow-composer: var(--op-shadow-composer);
   --shadow-chip: var(--op-shadow-chip);
+  --shadow-toast: var(--op-shadow-toast);
 }

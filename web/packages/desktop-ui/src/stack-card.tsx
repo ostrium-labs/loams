@@ -54,7 +54,7 @@ export function StackCard({
   if (!state) {
     return (
       <Card title={title}>
-        <p className="text-sm text-muted">Checking the stack…</p>
+        <p className="text-body text-muted">Checking the stack…</p>
       </Card>
     );
   }
@@ -63,7 +63,7 @@ export function StackCard({
     return (
       <Card title={title} actions={<StatusTag status="planned">no container runtime</StatusTag>}>
         <div className="flex flex-col gap-3">
-          <p className="m-0 text-sm text-muted">
+          <p className="m-0 text-body text-muted">
             The local {LABEL[id]} stack runs in containers, and no container runtime was found on
             this computer. Install Docker or Podman, restart Loams Desktop, and the stack can be
             started from here.
@@ -131,10 +131,12 @@ export function StackCard({
     >
       <div className="flex flex-col gap-3">
         {state.phase === 'stopped' && (
-          <p className="m-0 text-sm text-muted">The stack is stopped. Start it to use this page.</p>
+          <p className="m-0 text-body text-muted">
+            The stack is stopped. Start it to use this page.
+          </p>
         )}
         {state.phase === 'starting' && (
-          <p className="m-0 text-sm text-muted">Starting containers. This can take a minute.</p>
+          <p className="m-0 text-body text-muted">Starting containers. This can take a minute.</p>
         )}
         {state.phase === 'error' && state.code !== 'pg_major_mismatch' && (
           <Notice tone="danger" title="The stack failed">
@@ -167,11 +169,11 @@ export function StackCard({
         {state.phase === 'running' && (
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {state.services.map((s) => (
-              <li key={s.name} className="flex flex-wrap items-center gap-2 text-sm">
+              <li key={s.name} className="flex flex-wrap items-center gap-2 text-body">
                 <span className={/* mono-ok: id */ 'font-mono'}>{s.name}</span>
                 <span className="text-muted">{s.state}</span>
                 {s.ports.length > 0 && (
-                  <span className="tabular-nums text-xs text-faint">{s.ports.join(', ')}</span>
+                  <span className="tabular-nums text-small text-faint">{s.ports.join(', ')}</span>
                 )}
               </li>
             ))}

@@ -1,0 +1,8 @@
+# Tailnet node for Authentik on k3s. The Secret `tailnet-auth` is created out of
+# band (k8s/secrets.example.yaml).
+#   kubectl apply -k deploy/tailnet/tailscale
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: authentik
+resources:
+  - k8s/tailscale-authentik.yaml

@@ -2,8 +2,9 @@
 
 GitHub Actions on this repository. The repository is public, so GitHub-hosted runners (Linux,
 Windows, macOS) cost nothing; what is scarce is the organisation's concurrent-job limit (about 20
-jobs, about 5 of them macOS). Blacksmith runners (free tier, minutes counted per vCPU) are used
-only for the heavy Rust builds, through the `RUNNER_HEAVY` repository variable.
+jobs, about 5 of them macOS). CI uses GitHub-hosted runners only (owner, 2026-10-19; Blacksmith
+removed). The `RUNNER_HEAVY` and `RUNNER_MAIN` repository variables select the label for the heavy
+Rust jobs and the main-branch jobs, and default to `ubuntu-latest`.
 
 ## Tiers
 
@@ -15,6 +16,10 @@ only for the heavy Rust builds, through the `RUNNER_HEAVY` repository variable.
 
 `nightly.yml` dispatches the full suites on `dev` every night (a `schedule:` only runs on the
 default branch, `main`). A red nightly means: fix `dev` before the next `dev` → `main` pull request.
+
+| Nightly workflow | What it checks |
+|---|---|
+| `mastra-gate.yml` (MA1 Task 27, Q1001) | Mastra's own Qdrant suites (with and without an API key) and the observed Elasticsearch suite from `ostrium-labs/loams-mastra` `main`, against `loams` built from `dev` (`LOAMS_VERSION=dev`, so entries fixed on dev must pass). A failure opens or updates the issue "Mastra gate fails on dev" (label `mastra-compat`). Not a required check. |
 
 A draft pull request skips the heavy jobs until it is marked ready; the `ci:full` label (then a
 push) runs them anyway. CodeRabbit does not review drafts.

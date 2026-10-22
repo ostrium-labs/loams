@@ -34,29 +34,24 @@ public class RuntimeContractTest {
     // ---------------------------------------------------------------- R4: consistency tokens
 
     /**
-     * A consistency store keeps the token it was given and refuses to merge two (R4).
-     *
-     * <p>The refusal is the whole point: a silently-wrong consistency token reads stale data,
-     * which is worse than a failure, so the conflict is counted and surfaced rather than resolved.
+     * A consistency store merges the tokens it is given (R4 as amended by SDKP §2.1): the max
+     * offset per stream and partition, in the {@code v1:} encoding.
      */
     @Test
-    public void aConsistencyStoreRefusesToMergeTwoTokens() {
+    public void aConsistencyStoreMergesTokens() {
         ConsistencySession session = new ConsistencySession();
         assertEquals("a fresh session has no token", "", session.current());
 
-        assertNull("the first token was not taken", session.record("v1:1"));
-        assertEquals("v1:1", session.current());
+        assertNull(session.record("v1:s1/p0@5"));
+        assertEquals("v1:s1/p0@5", session.current());
+        assertNull(session.record("v1:s1/p0@3,s1/p1@2"));
+        assertEquals("v1:s1/p0@5,s1/p1@2", session.current());
+        assertEquals(0, session.conflicts());
 
-        assertNull("recording the same token again was treated as a conflict", session.record("v1:1"));
-        assertEquals("a repeat changed the stored token", "v1:1", session.current());
-        assertEquals("a repeat counted as a conflict", 0, session.conflicts());
-
-        String conflict = session.record("v1:2");
-        assertNotNull("two different tokens were merged silently", conflict);
-        assertTrue("the conflict did not say what it refused: " + conflict, conflict.contains("v1:1"));
-        assertTrue("the conflict did not say what it refused: " + conflict, conflict.contains("v1:2"));
-        assertEquals("the store overwrote its token with an unmergeable one", "v1:1", session.current());
-        assertEquals("the conflict was not counted", 1, session.conflicts());
+        String refused = session.record("opaque");
+        assertNotNull("a token that is not v1: was merged", refused);
+        assertEquals("v1:s1/p0@5,s1/p1@2", session.current());
+        assertEquals(1, session.conflicts());
 
         session.clear();
         assertEquals("clear left a token behind", "", session.current());
@@ -66,10 +61,10 @@ public class RuntimeContractTest {
     @Test
     public void recordingNothingIsNotAConflict() {
         ConsistencySession session = new ConsistencySession();
-        session.record("v1:7");
+        session.record("v1:s7/p0@1");
         assertNull(session.record(null));
         assertNull(session.record(""));
-        assertEquals("v1:7", session.current());
+        assertEquals("v1:s7/p0@1", session.current());
         assertEquals(0, session.conflicts());
     }
 

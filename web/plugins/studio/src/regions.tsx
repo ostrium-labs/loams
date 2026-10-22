@@ -13,6 +13,7 @@ import { StudioGitTools } from './git/GitToolbar.js';
 import { StudioContext } from './header.js';
 import { Home } from './home/Home.js';
 import { NotConnected } from './home/states.js';
+import type { StudioNotification } from './notifications/data.js';
 import type { StudioKeys } from './palette/commands.js';
 import { useReach } from './projects/queries.js';
 import { type Panel, routeOf, STUDIO_PAGES, type StudioRoute } from './routes.js';
@@ -44,6 +45,8 @@ export interface StudioRegionDeps {
   openExternal: (url: string) => Promise<void>;
   /** The console's modes: the sidebar's Factory group is Studio mode's only. */
   mode?: ModeService | undefined;
+  /** Posts an OS notification for one that just arrived (the web edition only, W15). */
+  notify?: ((n: StudioNotification) => void) | undefined;
 }
 
 /** The Studio route the router is on, or the home for any other page. */
@@ -80,8 +83,9 @@ function Threads({ agentd, factory, router, keys, mode }: ThreadsProps) {
   const route = useRoute(router);
   // The threads show in both modes (W10); the Factory group is a Studio area, as its nav is.
   const studio = useStudioMode(mode);
-  // Q934: the thread list shows when an agentd is reachable; otherwise the sidebar has Pages only.
-  if (reach.state !== 'ready') return null;
+  // Q934: the thread list shows when an agentd is reachable. The Factory group does not
+  // need the daemon, so it shows either way (owner ruling, 2026-10-18).
+  if (reach.state !== 'ready') return factory && studio ? <FactoryGroup factory={factory} /> : null;
   return (
     <StudioSidebar agentd={agentd} route={route} navigate={(to) => router.navigate(to)} keys={keys}>
       {factory && studio && <FactoryGroup factory={factory} />}
@@ -279,7 +283,7 @@ export function registerStudioRegions(slots: SlotRegistry, d: StudioRegionDeps):
     ),
     slots.register(
       { name: 'shell.topbar.left', plugin: 'studio', meta: { mode: 'studio' } },
-      () => <StudioContext agentd={d.agentd} router={d.router} />,
+      () => <StudioContext agentd={d.agentd} router={d.router} notify={d.notify} />,
     ),
     slots.register(
       { name: 'shell.topbar.right', plugin: 'studio', meta: { mode: 'studio' } },

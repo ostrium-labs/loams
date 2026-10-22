@@ -219,7 +219,7 @@ export function GraphView({ elements }: { elements: Elements }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="m-0 text-sm text-muted" role="status">
+      <p className="m-0 text-body text-muted" role="status">
         {capped
           ? `Showing ${drawnReal} of ${drawing.totalNodes} nodes. The rest are in the table.`
           : `${drawnReal} ${drawnReal === 1 ? 'node' : 'nodes'}, ${drawing.edges.length} ${
@@ -314,7 +314,7 @@ export function GraphView({ elements }: { elements: Elements }) {
           })}
         </svg>
         <aside
-          className="rounded-md border border-solid border-rule p-3 text-sm"
+          className="rounded-md border border-solid border-rule p-3 text-body"
           aria-label="Selected node"
           aria-live="polite"
         >
@@ -333,7 +333,7 @@ function NodeDetails({ node, stub }: { node: graph.Node; stub: boolean }) {
   const keys = Object.keys(node.properties).sort();
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="m-0 text-base">
+      <h3 className="m-0 text-emphasis">
         Node <span className={/* mono-ok: id */ 'font-mono'}>#{node.id.toString()}</span>
       </h3>
       {stub ? (

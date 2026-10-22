@@ -10,7 +10,7 @@ const rec = (v: unknown): Rec => (typeof v === 'object' && v !== null ? (v as Re
 
 function Row({ k, children }: { k: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[10rem_1fr] gap-3 border-b border-rule-soft py-2 text-sm last:border-b-0">
+    <div className="grid grid-cols-[10rem_1fr] gap-3 border-b border-rule-soft py-2 text-body last:border-b-0">
       <dt className="text-muted">{k}</dt>
       <dd className="m-0 min-w-0">{children}</dd>
     </div>
@@ -46,7 +46,7 @@ function Capabilities({ summary, manifest }: { summary: ConnectorSummary; manife
         </Row>
         <Row k="Delivery">
           {delivery.source || delivery.sink ? (
-            <span className="text-xs">
+            <span className="text-small">
               source {String(delivery.source ?? 'n/a')}, sink {String(delivery.sink ?? 'n/a')}
             </span>
           ) : (
@@ -71,9 +71,11 @@ function Facts({ summary, manifest }: { summary: ConnectorSummary; manifest: Rec
         <Row k="Auth">{badges(summary.auth)}</Row>
         <Row k="Secrets">{badges(manifest.secrets)}</Row>
         <Row k="Licence">
-          <span className={/* mono-ok: id */ 'font-mono text-xs'}>{summary.licence || 'n/a'}</span>
+          <span className={/* mono-ok: id */ 'font-mono text-small'}>
+            {summary.licence || 'n/a'}
+          </span>
           {Object.keys(deps).length > 0 && (
-            <span className="ml-2 text-xs text-muted">
+            <span className="ml-2 text-small text-muted">
               {Object.entries(deps)
                 .map(([k, v]) => `${k}: ${String(v)}`)
                 .join(', ')}
@@ -81,11 +83,11 @@ function Facts({ summary, manifest }: { summary: ConnectorSummary; manifest: Rec
           )}
         </Row>
         <Row k="Runtime">
-          <span className={/* mono-ok: id */ 'font-mono text-xs'}>
+          <span className={/* mono-ok: id */ 'font-mono text-small'}>
             {summary.runtime.kind} {summary.runtime.ref}
           </span>
           {typeof runtime.version === 'string' && (
-            <span className="ml-2 text-xs text-muted">{runtime.version}</span>
+            <span className="ml-2 text-small text-muted">{runtime.version}</span>
           )}
         </Row>
         <Row k="Spec version">{String(manifest.specVersion ?? 'n/a')}</Row>
@@ -153,7 +155,7 @@ export function DetailPage({
     return (
       <div className="lc-page">
         <PageHead title="Connector" actions={back} />
-        <p className="text-sm text-muted">
+        <p className="text-body text-muted">
           {catalog.state === 'error' ? catalog.message : 'Loading…'}
         </p>
       </div>

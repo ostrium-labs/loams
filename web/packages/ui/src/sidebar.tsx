@@ -286,7 +286,7 @@ export function SidebarGroup({
     >
       {label && (
         <div className="flex h-7 items-center justify-between gap-2 px-2">
-          <h3 id={id} className="m-0 truncate text-[0.74rem] font-[540] uppercase text-faint">
+          <h3 id={id} className="m-0 truncate text-micro font-medium text-faint">
             {label}
           </h3>
           {action}
@@ -319,7 +319,7 @@ export function SidebarMenuItem({ className, ...props }: ComponentProps<'li'>) {
 
 const ROW =
   'flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-sm border-0 ' +
-  'bg-transparent px-2 text-left font-[inherit] text-[0.86rem] text-muted no-underline outline-none ' +
+  'bg-transparent px-2 text-left font-[inherit] text-body text-muted no-underline outline-none ' +
   'hover:bg-raised hover:text-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent ' +
   'disabled:cursor-default disabled:opacity-50 aria-[current=page]:bg-raised aria-[current=page]:text-ink ' +
   '[&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0';

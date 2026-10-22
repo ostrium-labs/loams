@@ -15,11 +15,11 @@ Maven:
 <dependency>
   <groupId>dev.loams</groupId>
   <artifactId>loams</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 
-Gradle: `implementation("dev.loams:loams:0.1.0")`. Java 17 or newer; the only
+Gradle: `implementation("dev.loams:loams:0.1.1")`. Java 17 or newer; the only
 runtime dependency is `com.google.protobuf:protobuf-java`. `./build.sh package OUT_DIR`
 builds the jars and POM that sdk-release.yml publishes.
 
@@ -67,6 +67,52 @@ cd sdks/java
 
 **Requires a JDK only.** No Maven, no Gradle, no network after the first run.
 Tested on `javac 25.0.4.1` compiling with `--release 17`.
+
+## Build an app
+
+Namespaces, collections, documents, search, vector and graph, with no REST calls
+(SDKP). [`examples/notes/Notes.java`](examples/notes/Notes.java) is the whole notes
+app; `LOAMS_ENDPOINT=http://127.0.0.1:8080 ./build.sh example` runs it.
+
+```java
+Client loams = Client.of(Options.fromEnv()       // LOAMS_ENDPOINT, LOAMS_API_KEY or LOAMS_TOKEN, LOAMS_NAMESPACE
+        .namespace("app")                         // filled into every app request that names none (R11)
+        .sessionConsistency(true)                 // reads see this process's writes (R4)
+        .timeout(Duration.ofSeconds(10))          // per unary call, retries included (R12); 30 s by default
+        .build());
+
+loams.namespaces().create("app");
+loams.collections().create("notes", new Schema().text("title").text("body").keyword("tags").i64("n").vector("embedding", 4));
+
+CollectionHandle notes = loams.collection("notes");
+notes.upsert(List.of(new Doc(1, Map.of("title", "Refund policy", "body", "Refunds within 14 days.",
+        "tags", List.of("policy"), "n", 1), Map.of("embedding", new float[] {1, 0, 0, 0}))));
+
+SearchResponse hits = loams.search().query(Search.on("notes")
+        .text("refund", "body")
+        .vector("embedding", new float[] {1, 0, 0, 0})
+        .fuse(Fusion.rrf(60))                     // or Fusion.dbsf(), Fusion.weighted(0.7f, 0.3f)
+        .filter(Filter.and(Filter.eq("tags", "policy"), Filter.gte("n", 1)))
+        .highlight("body")
+        .select(List.of("title"), null)
+        .limit(5));
+
+long policies = notes.count(Filter.eq("tags", "policy"));
+for (Document doc : notes.scrollAll(null, 100)) { /* every document, in id order */ }
+WriteBatch.Result batch = notes.writeBatch(manyDocs);   // chunks of 10 000 ops, one key per chunk (R13)
+loams.graph().query("notes_graph", "INSERT (:Note {id: $id})", Map.of("id", 1L), false);   // experimental
+```
+
+Modules: `namespaces()`, `collections()`, `documents()` (`write`, `upsert`, `delete`,
+`patch`, `writeBatch`, `get`, `scrollAll`, `count`, `deleteByFilter`, `patchByFilter`),
+`search()` (`query`, `queryAll` with a `Sort.pk()` tiebreaker, `text`, `hybrid`),
+`vector()` and `graph()` (experimental). Failures are typed (`NotFoundException`,
+`InvalidArgumentException`, `DeadlineExceededException`, …) with the server's reason.
+A write's token is a `ConsistencyToken` (`parse`, `merge`) a read takes as
+`Consistent.atLeast(token)`. SQL and streams arrive with `loams.sql.v1` and
+`loams.stream.v1`; `Subscription` is the resumable fetch loop the streams module will
+use. Durable has no module: use the [Resonate SDK](https://docs.resonatehq.io) with
+`LOAMS_ENDPOINT/durable/` as its URL.
 
 ## What is generated and what is not
 

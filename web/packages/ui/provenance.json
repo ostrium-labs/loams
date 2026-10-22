@@ -57,7 +57,7 @@
       "upstreamPath": "apps/web/src/components/ui/button.tsx",
       "commit": "33aa4614783e856977a5f0b856dc65ebc1ce6794",
       "upstreamSha256": "90e714b31089a9a7136a372000eabf2d3056cced072dc5aa3583edef8a078aa6",
-      "localSha256": "4a0da083d984ae72be37fc5ad57da6a163fd0ae27efd3a5b6b8bf6d7f553f01c",
+      "localSha256": "4f0ac2c60c20fbcaa831965b26f1389b2b0db42ee08602ed5690fe68f813656a",
       "verdict": "adapt",
       "group": "k",
       "note": "the cva table became the Loams .loams-btn classes in styles.css; Loams variant and size names kept; InlineButton dropped"
@@ -114,7 +114,7 @@
       "upstreamPath": "apps/web/src/components/ui/command.tsx",
       "commit": "6524a8d43795dc543f7cfb572388cdea3662ad48",
       "upstreamSha256": "b295fcfed11b65ad8cb156bd6458cafa59d626b7f55949098045a9f831ad700f",
-      "localSha256": "d625a642f197d14c4c54cddfcdb15767264a6a3bf1e613452a440ce901a298a2",
+      "localSha256": "8eecfe72a8ec59014d5fa81b42115114170e9bec1e3e3f90279b38d5c08eb412",
       "verdict": "adapt",
       "group": "k",
       "note": "merges apps/web/src/components/ui/dialog-styles.ts; autocomplete's popup parts are src/autocomplete.tsx since CF1; @legendapp/list replaced by TanStack Virtual"
@@ -124,7 +124,7 @@
       "upstreamPath": "apps/web/src/components/ui/dialog-styles.ts",
       "commit": "33aa4614783e856977a5f0b856dc65ebc1ce6794",
       "upstreamSha256": "e0e987bd3bcf354286d0323db8a448d1953fce676c2503ee3d6c02dfd0a82fbb",
-      "localSha256": "cac0797c076aa660fccb0d17f0a4d5271657c0d77dd8f944530bb1f71eebea4b",
+      "localSha256": "5773bd05eef1b0bb019e49dccb5213fc6b2e94eb6db508066a57f25f0dfaad48",
       "verdict": "adapt",
       "group": "k"
     },
@@ -161,7 +161,7 @@
       "upstreamPath": "apps/web/src/components/ui/input-group.tsx",
       "commit": "6524a8d43795dc543f7cfb572388cdea3662ad48",
       "upstreamSha256": "6e7d282125b31e26fb9893553b79851886c8d38f1647ba98b2b7b0fc3b63f3a7",
-      "localSha256": "2b9837bef13f04095569f513a290e66f02b516447b97c9b9425224e41d283b98",
+      "localSha256": "85b8e6be56ad003c107db4424e92c4ffcefe57e75a0252834ab39c13fdb32e92",
       "verdict": "adapt",
       "group": "k"
     },
@@ -170,7 +170,7 @@
       "upstreamPath": "apps/web/src/components/ui/input.tsx",
       "commit": "33aa4614783e856977a5f0b856dc65ebc1ce6794",
       "upstreamSha256": "3da4013e812d00d8a3f9795825625ab098bf4e14c360b20fcd653ca1f8b77f57",
-      "localSha256": "721ec6981627054b59f870a042fac484572d35dc59cca04892d85c518ba037c2",
+      "localSha256": "efe86a888ee12e1b582932d19792311c1a2b9e7dd32a7977770c7aeb5b658886",
       "verdict": "adapt",
       "group": "k"
     },
@@ -179,7 +179,7 @@
       "upstreamPath": "apps/web/src/components/ui/kbd.tsx",
       "commit": "6524a8d43795dc543f7cfb572388cdea3662ad48",
       "upstreamSha256": "f0589fe3e38a2cb59e8f7e2d38298f50b6f5996d40725368410ba68aa933d690",
-      "localSha256": "5c874af17487c81339e078c92bd231db7d7f8e1f3f0afe56348ee02943bc580f",
+      "localSha256": "79bf8740a0658c721e63f1049269f26f309cbd440254022414662d3fbc953512",
       "verdict": "adapt",
       "group": "k"
     },
@@ -215,7 +215,7 @@
       "upstreamPath": "apps/web/src/components/ui/popover.tsx",
       "commit": "33aa4614783e856977a5f0b856dc65ebc1ce6794",
       "upstreamSha256": "740ff44488fda81290fea6219d82c8fc937a194abe013a75a05314ab110fce9c",
-      "localSha256": "4cbab5640ff223c907df11e209fc615dd70c2a27bab1540a6aae76ccdf5ce1bf",
+      "localSha256": "c8d35763e1162075b76900a38afff4a6e8e484d73eb7bce42f586225daa12078",
       "verdict": "adapt",
       "group": "k"
     },
@@ -251,7 +251,7 @@
       "upstreamPath": "apps/web/src/components/ui/select.tsx",
       "commit": "33aa4614783e856977a5f0b856dc65ebc1ce6794",
       "upstreamSha256": "510d1e050931661dda3c27776a48a942bcce6775b1bfcfbeb5c3e740a1efbff0",
-      "localSha256": "642b5ffca3c2ec3b3a06078ff9ddf71a2e7b6dd70d8c7ab6c3735932db206d4b",
+      "localSha256": "f2e2178193a611d7af7c3aacd75b613cb84413c64a3c5f85cce5dd63a52fa0b5",
       "verdict": "adapt",
       "group": "k"
     },
@@ -287,7 +287,7 @@
       "upstreamPath": "apps/web/src/components/ui/sidebar.tsx",
       "commit": "6524a8d43795dc543f7cfb572388cdea3662ad48",
       "upstreamSha256": "227405b712e3277c7326c738f1596ff3fd9bc564578c5408cb9933ea9e60a92d",
-      "localSha256": "b8638b0b4ce54817cc2402c13221c54c29276a81947181412e8e58100c346024",
+      "localSha256": "794a582e7a05360188c14499fa724ab472e39623957e66c1c9a8c4add05b00e2",
       "verdict": "adapt",
       "group": "k",
       "note": "controlled width and open state; the provider, cookie and Effect Schema storage are dropped; the rail is a keyboard window splitter (ResizeHandle)"
@@ -315,7 +315,7 @@
       "upstreamPath": "apps/web/src/components/ui/switch.tsx",
       "commit": "6524a8d43795dc543f7cfb572388cdea3662ad48",
       "upstreamSha256": "b6a76d03b50e878a3659e67fac13d5d2e1e27d5857400e33499a5e46604b0274",
-      "localSha256": "10909c688b314247e0c8469548ac104c7d25ceea5195d37fade9f0edc9dc9e96",
+      "localSha256": "eb435e36f9cf850201e9cc6e9092bb135d75c21e05047eacd901884944d848b5",
       "verdict": "adapt",
       "group": "k"
     },
@@ -353,7 +353,7 @@
       "upstreamPath": "apps/web/src/components/ui/toast.tsx",
       "commit": "33aa4614783e856977a5f0b856dc65ebc1ce6794",
       "upstreamSha256": "27c0b8096adf87ad6ac1d26cbd0c0d64333a264545599497335899023f2fcc03",
-      "localSha256": "14d92c90f720429335af42b64ae782422b27a660146829e9f413019df6851d1f",
+      "localSha256": "d6648aa931763602cad8bbb62564fcc31afba43ca6b8ce4b4b7ae24ba0c1e187",
       "verdict": "adapt",
       "group": "k",
       "note": "merges apps/web/src/components/ui/toast.logic.ts (buildVisibleToastLayout, hasVisibleToastAction, shouldHideCollapsedToastContent); always bottom right; anchored toasts, the thread filter, the copy-error button, additionalActions and expandableDescriptionTrigger dropped; ThreadToastData is ToastData"
@@ -363,7 +363,7 @@
       "upstreamPath": "apps/web/src/components/ui/toggle-group.tsx",
       "commit": "6524a8d43795dc543f7cfb572388cdea3662ad48",
       "upstreamSha256": "16e44dfc8ba962fb59adacbaef21489bd938b4500a2e35344e53ef509120b6fe",
-      "localSha256": "e8822d8d86a15b88d51ec44cb8317f2539c36cd5deff07f187715e66a16ebdf0",
+      "localSha256": "2d39e47e3e366449a8bc3d1a52841cc1b4d0558149ee8285b8dc6a855bc763c5",
       "verdict": "adapt",
       "group": "k",
       "note": "merges apps/web/src/components/ui/toggle.tsx; its segmented variant stays Segmented (segmented.tsx)"
@@ -373,7 +373,7 @@
       "upstreamPath": "apps/web/src/components/ui/tooltip.tsx",
       "commit": "33aa4614783e856977a5f0b856dc65ebc1ce6794",
       "upstreamSha256": "2d4bfcbc0ee53a44a68e8a6cacd11d7db22bd11c8e1ffa258676300ccee6c494",
-      "localSha256": "d7662fcf1f66a28500fee4830593fe929030c0c2eb832cea0e8f4c04ae65df21",
+      "localSha256": "961bf272f1beac12772b8e48c14b9a41afb48fa2a79a07c78aa11bc895fa0e1b",
       "verdict": "adapt",
       "group": "k"
     }

@@ -442,6 +442,126 @@ fn check_settings(flat: BTreeMap<String, String>) -> Result<Settings, EsError> {
     })
 }
 
+/// The settings `PUT /{index}/_settings` may change (#948): the dynamic
+/// settings a create accepts and Loams does not act on. A `null` value
+/// resets one.
+const DYNAMIC_SETTINGS: &[&str] = &[
+    "index.refresh_interval",
+    "index.number_of_replicas",
+    "index.max_result_window",
+    "index.default_pipeline",
+];
+
+/// The flat `index.*` keys of a `PUT /{index}/_settings` body, `None` for
+/// a `null` (reset). The body is `{"index": {...}}`, flat `index.*` keys,
+/// bare keys (ES adds `index.`) or any of these under `settings`.
+fn put_settings_keys(body: &Value) -> Result<BTreeMap<String, Option<String>>, EsError> {
+    let body = match body {
+        Value::Object(map) if map.len() == 1 && map.contains_key("settings") => &map["settings"],
+        other => other,
+    };
+    let Value::Object(map) = body else {
+        return Err(EsError::illegal_argument(format!(
+            "settings must be an object, got [{}]",
+            bare(body)
+        )));
+    };
+    fn walk(prefix: &str, map: &Map<String, Value>, out: &mut BTreeMap<String, Option<String>>) {
+        for (key, value) in map {
+            let key = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            if let Value::Object(inner) = value {
+                walk(&key, inner, out);
+                continue;
+            }
+            let key = if key.starts_with("index.") {
+                key
+            } else {
+                format!("index.{key}")
+            };
+            let value = match value {
+                Value::Null => None,
+                other => Some(bare(other)),
+            };
+            out.insert(key, value);
+        }
+    }
+    let mut out = BTreeMap::new();
+    walk("", map, &mut out);
+    if out.is_empty() {
+        return Err(EsError::new(
+            400,
+            "action_request_validation_exception",
+            "Validation Failed: 1: no settings to update;",
+        ));
+    }
+    Ok(out)
+}
+
+/// The `ANN_SETTINGS` annotation after `PUT /{index}/_settings` with
+/// `body` (#948): dynamic settings are stored (or reset by `null`) so `GET`
+/// returns them; a static setting is refused as ES refuses it on an open
+/// index, an unknown one as unknown. With `preserve_existing`, a setting
+/// already set is kept.
+pub fn plan_put_settings(
+    schema: &CollectionSchema,
+    index: &str,
+    id: CollectionId,
+    body: &Value,
+    preserve_existing: bool,
+) -> Result<String, EsError> {
+    let keys = put_settings_keys(body)?;
+    let mut stored = stored_settings(schema);
+    let mut non_dynamic = Vec::new();
+    for (key, value) in &keys {
+        if DYNAMIC_SETTINGS.contains(&key.as_str()) {
+            if let Some(value) = value {
+                match key.as_str() {
+                    "index.number_of_replicas" => {
+                        setting_u32(key, value, 0, u32::MAX)?;
+                    }
+                    "index.max_result_window" => {
+                        setting_u32(key, value, 1, u32::MAX)?;
+                    }
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        let is_static = key == "index.number_of_shards"
+            || key.starts_with("index.analysis.")
+            || key.starts_with("index.similarity.")
+            || key == "index.mapping.total_fields.limit";
+        if is_static {
+            non_dynamic.push(key.clone());
+        } else {
+            return Err(unknown_setting(key));
+        }
+    }
+    if !non_dynamic.is_empty() {
+        return Err(EsError::illegal_argument(format!(
+            "Can't update non dynamic settings [[{}]] for open indices [[{index}/{}]]",
+            non_dynamic.join(", "),
+            index_uuid(id)
+        )));
+    }
+    for (key, value) in keys {
+        match value {
+            Some(_) if preserve_existing && stored.contains_key(&key) => {}
+            Some(value) => {
+                stored.insert(key, value);
+            }
+            None => {
+                stored.remove(&key);
+            }
+        }
+    }
+    Ok(serde_json::to_string(&stored).unwrap_or_default())
+}
+
 /// The stored settings of a schema (`ANN_SETTINGS`).
 fn stored_settings(schema: &CollectionSchema) -> BTreeMap<String, String> {
     schema

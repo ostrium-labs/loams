@@ -336,7 +336,7 @@ export function PipelinesPage({ client, initial, sample }: PipelinesPageProps) {
             onChange={(e) => rename(e.target.value.toLowerCase())}
           />
         </div>
-        <span className="text-sm text-muted">
+        <span className="text-body text-muted">
           {graph.nodes.length} nodes · {graph.edges.length} connections
           {liveIssues.some((i) => i.level === 'error') && !running ? ' · not ready to deploy' : ''}
         </span>
@@ -350,7 +350,7 @@ export function PipelinesPage({ client, initial, sample }: PipelinesPageProps) {
             </Notice>
           ) : (
             <Card title={`${issues.length} issue${issues.length > 1 ? 's' : ''}`}>
-              <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm">
+              <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body">
                 {issues.map((i) => (
                   <li
                     key={`${i.level}:${i.nodeId ?? ''}:${i.edgeId ?? ''}:${i.message}`}
@@ -412,9 +412,9 @@ export function PipelinesPage({ client, initial, sample }: PipelinesPageProps) {
 
         <div className="flex min-w-0 flex-col gap-4 lg:max-h-[70vh]">
           <nav aria-label="Pipeline outline" className="flex flex-col gap-2">
-            <h2 className="m-0 text-xs font-medium uppercase tracking-wide text-muted">Nodes</h2>
+            <h2 className="m-0 text-small font-medium text-muted">Nodes</h2>
             {graph.nodes.length === 0 ? (
-              <p className="m-0 text-sm text-faint">None yet.</p>
+              <p className="m-0 text-body text-faint">None yet.</p>
             ) : (
               <ul className="m-0 flex list-none flex-col gap-1 p-0">
                 {graph.nodes.map((n) => (
@@ -423,17 +423,17 @@ export function PipelinesPage({ client, initial, sample }: PipelinesPageProps) {
                       type="button"
                       aria-current={n.id === selectedId ? 'true' : undefined}
                       onClick={() => select(n.id)}
-                      className={`flex w-full items-center justify-between gap-2 border border-solid px-2 py-1 text-left text-sm ${
+                      className={`flex w-full items-center justify-between gap-2 border border-solid px-2 py-1 text-left text-body ${
                         n.id === selectedId
                           ? 'border-accent bg-accent-soft'
                           : 'border-rule bg-surface'
                       } text-ink`}
                     >
                       <span className="truncate">
-                        {n.label} <span className="text-xs text-faint">{n.kind}</span>
+                        {n.label} <span className="text-small text-faint">{n.kind}</span>
                       </span>
                       {problemsByNode.has(n.id) && (
-                        <span className="text-xs text-danger">
+                        <span className="text-small text-danger">
                           {problemsByNode.get(n.id)?.length} issue
                           {(problemsByNode.get(n.id)?.length ?? 0) > 1 ? 's' : ''}
                         </span>
@@ -461,14 +461,14 @@ export function PipelinesPage({ client, initial, sample }: PipelinesPageProps) {
               onRemove={() => onRemoveNodes([selected.id])}
             />
           ) : (
-            <p className="m-0 text-sm text-muted">Select a node to configure it.</p>
+            <p className="m-0 text-body text-muted">Select a node to configure it.</p>
           )}
         </div>
       </div>
 
       {running && live && (
         <section aria-label="Live metrics" className="flex flex-col gap-3">
-          <h2 className="m-0 text-base">Live metrics</h2>
+          <h2 className="m-0 text-emphasis">Live metrics</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {graph.nodes.map((n) => (
               <NodeMetrics
@@ -483,8 +483,8 @@ export function PipelinesPage({ client, initial, sample }: PipelinesPageProps) {
       )}
 
       <details>
-        <summary className="cursor-pointer text-sm text-muted">Pipeline spec</summary>
-        <pre className="mt-2 max-h-80 overflow-auto border border-solid border-rule bg-surface p-3 font-mono text-xs">
+        <summary className="cursor-pointer text-body text-muted">Pipeline spec</summary>
+        <pre className="mt-2 max-h-80 overflow-auto border border-solid border-rule bg-surface p-3 font-mono text-small">
           {JSON.stringify(toPipelineSpec(graph), null, 2)}
         </pre>
       </details>

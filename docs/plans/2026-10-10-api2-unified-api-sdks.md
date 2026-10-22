@@ -9,6 +9,8 @@
 >
 > When a task of this plan lands, the matching row of API1, SDK1 or SDK2 gets a one-line pointer to it (Task 28). Do not edit those plans' rulings.
 >
+> **SDKP pointer (2026-10-19).** [SDKP](2026-10-19-sdk-parity.md) carries Tasks 1–2, Task 13 for `loams.collection.v1` and `loams.graph.v1`, Task 14 and Task 17 for the app modules, and the app half of Tasks 15 and 20–22, as its P0a–P0e and L1–L13.
+>
 > **SD1 pointer.** `loams.agentd.v1`, the agent daemon's Connect surface ([SD1](2026-10-13-sd1-studio-ade.md) Task 4), is outside the SDK catalogue (Q816): `loams-facade-gen`'s `NOT_SDK_PACKAGES` keeps it out of `PROTO_PACKAGES`, it is a §44 §7.2 row with no SDK module, and its reasons are a daemon-only table in `docs/api/reasons.md` (SD1 T4-2–T4-4).
 
 ## Owner rulings 2026-10-10 (defaults)

@@ -36,7 +36,7 @@ export const PREVIEW_NOTICE = 'Actions here change nothing.';
 export const LOG_CAP = 500;
 
 const Mono = ({ children }: { children: ReactNode }) => (
-  <span className={/* mono-ok: id */ 'font-mono text-xs'}>{children}</span>
+  <span className={/* mono-ok: id */ 'font-mono text-small'}>{children}</span>
 );
 const shortId = (id: string) => id.slice(-8);
 const when = (ms: number) => new Date(ms).toLocaleString();
@@ -179,7 +179,7 @@ export function DeploymentsTable({
           cell: (d) => (
             <span className="flex flex-col gap-1">
               <DeploymentStateTag state={d.state} />
-              {d.failureReason && <span className="text-danger text-xs">{d.failureReason}</span>}
+              {d.failureReason && <span className="text-danger text-small">{d.failureReason}</span>}
             </span>
           ),
         },
@@ -249,7 +249,7 @@ export function FunctionsCard({
             header: 'Arguments validator',
             cell: (f) =>
               f.args ? (
-                <code className="font-mono text-xs whitespace-pre-wrap">
+                <code className="font-mono text-small whitespace-pre-wrap">
                   {validatorText(f.args)}
                 </code>
               ) : (
@@ -374,13 +374,13 @@ export function LogsCard({
           </Notice>
         )}
         {skipped > 0 && (
-          <p className="m-0 text-muted text-xs">
+          <p className="m-0 text-muted text-small">
             {skipped} {skipped === 1 ? 'line was' : 'lines were'} overwritten in the engine's log
             buffer before this view read {skipped === 1 ? 'it' : 'them'}.
           </p>
         )}
         {dropped > 0 && (
-          <p className="m-0 text-muted text-xs">
+          <p className="m-0 text-muted text-small">
             {dropped} older {dropped === 1 ? 'line' : 'lines'} dropped from view.
           </p>
         )}
@@ -391,7 +391,7 @@ export function LogsCard({
           // biome-ignore lint/a11y/noNoninteractiveTabindex: the scrolled log must be reachable by keyboard
           tabIndex={0}
           className={
-            /* mono-ok: code */ 'font-mono text-xs border border-rule rounded p-2 overflow-auto max-h-80'
+            /* mono-ok: code */ 'font-mono text-small border border-rule rounded p-2 overflow-auto max-h-80'
           }
         >
           {lines.length === 0 ? (

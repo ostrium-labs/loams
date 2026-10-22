@@ -1,0 +1,52 @@
+{
+  "name": "search_expand",
+  "builder": "search",
+  "message": "loams.collection.v1.SearchRequest",
+  "spec": {
+    "on": "notes",
+    "calls": [
+      {
+        "op": "text",
+        "args": [
+          "refund",
+          {
+            "fields": [
+              "body"
+            ]
+          }
+        ]
+      },
+      {
+        "op": "expand",
+        "args": [
+          "notes_graph",
+          {
+            "from_field": "id",
+            "hops": 1
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "collection": "notes",
+    "retrievers": [
+      {
+        "text": {
+          "query": {
+            "match": {
+              "field": "body",
+              "text": "refund"
+            }
+          }
+        }
+      }
+    ],
+    "expandSpec": {
+      "graph": "notes_graph",
+      "fromField": "id",
+      "hops": 1
+    }
+  },
+  "scenario_step": "app_graph/4"
+}

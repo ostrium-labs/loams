@@ -97,5 +97,7 @@ export async function startDesktop(
   const mode = handle.ctx.get('mode') as ModeService | undefined;
   if (mode) wireShellCommands(api, mode);
   await wireDeepLinks(api);
+  // The splash closes once the console has painted (D1084).
+  requestAnimationFrame(() => void api.shell.ready?.());
   return handle;
 }

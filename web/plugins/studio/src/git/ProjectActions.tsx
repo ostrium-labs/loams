@@ -9,10 +9,10 @@ import { createConnectQueryKey } from '@connectrpc/connect-query';
 import { useAgentdMutation } from '@loams/console-host/query';
 import { type ProjectAction, ProjectActionIcon, ProjectService } from '@loams/proto/agentd';
 import {
-  AlertDialog,
   Badge,
   Button,
   Checkbox,
+  ConfirmDialog,
   Dialog,
   Field,
   Input,
@@ -251,20 +251,18 @@ export function ProjectActionsEditor({ spaceId }: { spaceId: string }) {
           )}
         </div>
       </Dialog>
-      <AlertDialog
+      <ConfirmDialog
         open={deleting !== null}
         onClose={() => setDeleting(null)}
-        title={`Delete ${deleting?.name ?? 'this action'}?`}
+        object={deleting?.name ?? 'this action'}
         confirm="Delete"
-        tone="danger"
+        impact="The action is removed from this project for every thread."
         onConfirm={() => {
           const a = deleting;
           setDeleting(null);
           if (a) remove.mutate({ spaceId, actionId: a.id });
         }}
-      >
-        The action is removed from this project for every thread.
-      </AlertDialog>
+      />
     </>
   );
 }

@@ -3,6 +3,7 @@
 //! what each step is for).
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use connectrpc::{ConnectError, ErrorCode};
@@ -62,6 +63,20 @@ impl HouseApi {
     }
 }
 
+/// A refusal's ClickHouse code: the one its `ErrorInfo` names, else the
+/// Connect code's counterpart (`reason_for`'s inverse, coarsely).
+fn connect_code(err: &ConnectError) -> i32 {
+    match err.code {
+        ErrorCode::Unauthenticated => 516,
+        ErrorCode::PermissionDenied => 497,
+        ErrorCode::NotFound => 60,
+        ErrorCode::InvalidArgument => 36,
+        ErrorCode::Unimplemented => 48,
+        ErrorCode::Unavailable => 210,
+        _ => 1,
+    }
+}
+
 fn cancelled_error(query_id: &str) -> HouseError {
     ExitReason::Cancel.client_error(query_id, None)
 }
@@ -112,6 +127,8 @@ struct Started {
     /// What an `INSERT` into a lake table wrote, which the front ran to its
     /// commit before answering (HS1 Task 12).
     inserted: Option<crate::insert::Inserted>,
+    /// Its query log row, metrics, operator line and trace (HS1 Task 23).
+    observed: Option<Arc<crate::querylog::Statement>>,
 }
 
 pub(super) fn sorted<'a>(
@@ -207,21 +224,36 @@ impl HouseApi {
             );
             (sink, event)
         });
-        let started = self.start_checked(user, st).await;
+        // Its query log row, metrics, operator line and trace (HS1 Task 23):
+        // its checks and worker run under its root span.
+        let observed = self.governance.observer.begin("api", &st.query_id, None);
+        observed.identify(user);
+        observed.describe(
+            &match classify(&request::plan(st.sql.as_bytes(), false).sql) {
+                Ok(Classified::Known { stmt, .. }) => stmt.kind().to_string(),
+                Ok(Classified::Unparsed { .. }) | Err(_) => "Unparsed".to_string(),
+            },
+            super::database_or_default(&st.database),
+            &st.sql,
+        );
+        let started = crate::trace::scope(observed.current(), self.start_checked(user, st)).await;
+        let started = match started {
+            Ok(mut started) => {
+                if started.lease.is_some() {
+                    observed.started_on_worker();
+                }
+                started.observed = Some(observed);
+                Ok(started)
+            }
+            Err(err) => {
+                observed.fail(connect_code(&err), err.message.as_deref().unwrap_or(""));
+                Err(err)
+            }
+        };
         if let Some((sink, mut event)) = audit {
             event.code = match &started {
                 Ok(_) => 0,
-                // The Connect code's ClickHouse counterpart (`reason_for`'s
-                // inverse, coarsely).
-                Err(err) => match err.code {
-                    ErrorCode::Unauthenticated => 516,
-                    ErrorCode::PermissionDenied => 497,
-                    ErrorCode::NotFound => 60,
-                    ErrorCode::InvalidArgument => 36,
-                    ErrorCode::Unimplemented => 48,
-                    ErrorCode::Unavailable => 210,
-                    _ => 1,
-                },
+                Err(err) => connect_code(err),
             };
             sink.record(&event);
         }
@@ -353,6 +385,7 @@ impl HouseApi {
                         ticket: None,
                         started: Instant::now(),
                         inserted: None,
+                        observed: None,
                     });
                 }
                 gate::CatalogOutcome::Rows(query) => {
@@ -457,6 +490,7 @@ impl HouseApi {
                         ticket: Some(ticket),
                         started,
                         inserted: Some(inserted),
+                        observed: None,
                     });
                 }
             }
@@ -486,6 +520,7 @@ impl HouseApi {
                             ticket: None,
                             started: Instant::now(),
                             inserted: None,
+                            observed: None,
                         });
                     }
                     Some(Err(err)) => return Err(to_connect(&err)),
@@ -568,6 +603,10 @@ impl HouseApi {
                 &sql,
                 &st.settings,
                 None,
+                Some(crate::read::Front {
+                    processes: &self.governance.processes,
+                    query_log: self.governance.observer.log.as_deref(),
+                }),
             )
             .await
             {
@@ -726,6 +765,7 @@ impl HouseApi {
             ticket: Some(ticket),
             started,
             inserted: None,
+            observed: None,
         })
     }
 
@@ -851,9 +891,25 @@ struct Run {
     done: bool,
     /// An `INSERT` into a lake table the front ran (HS1 Task 12).
     inserted: Option<crate::insert::Inserted>,
+    /// Its query log row (HS1 Task 23), ended when the run is.
+    observed: Option<Arc<crate::querylog::Statement>>,
     _running: RunningGuard,
     _deadline: Option<Deadline>,
     _ticket: Option<crate::admission::Ticket>,
+}
+
+impl Drop for Run {
+    fn drop(&mut self) {
+        // A stream dropped before its end: the client went away (HS1 Task 23).
+        if !self.done
+            && let Some(observed) = &self.observed
+        {
+            observed.fail(
+                crate::querylog::CANCELLED,
+                "the client went away before the result ended",
+            );
+        }
+    }
 }
 
 impl Run {
@@ -867,6 +923,7 @@ impl Run {
             ticket,
             started,
             inserted,
+            observed,
         } = started;
         let front_only = lease.is_none();
         let mut run = Self {
@@ -888,6 +945,7 @@ impl Run {
             failed: None,
             done: false,
             inserted,
+            observed,
             _running: running,
             _deadline: deadline,
             _ticket: ticket,
@@ -964,6 +1022,22 @@ impl Run {
             self.send_header_if_known();
         }
         self.batches(rest);
+        if let Some(observed) = &self.observed {
+            observed.progress(&self.last);
+            let (rows, bytes) = (self.framer.rows(), self.framer.bytes());
+            let written = self
+                .inserted
+                .as_ref()
+                .map(|i| (i.written_rows, i.written_bytes));
+            observed.update(|e| {
+                e.result_rows = rows;
+                e.result_bytes = bytes;
+                if let Some((rows, bytes)) = written {
+                    e.written_rows = rows;
+                    e.written_bytes = bytes;
+                }
+            });
+        }
         self.queue.push_back(Frame::Summary(pb::QuerySummary {
             result_rows: self.framer.rows(),
             result_bytes: self.framer.bytes(),
@@ -988,6 +1062,10 @@ impl Run {
     }
 
     fn fail(&mut self, err: &HouseError) {
+        if let Some(observed) = &self.observed {
+            observed.progress(&self.last);
+            observed.fail(err.code(), err.message());
+        }
         self.failed = Some(to_connect(err));
     }
 
@@ -1043,6 +1121,9 @@ impl Run {
             Ok(Event::Done(stats)) => {
                 self.last = stats;
                 if let Some(lease) = self.lease.take() {
+                    if let Some(observed) = &self.observed {
+                        observed.cpu(lease.measured().cpu);
+                    }
                     self.pool.release(lease, Outcome::Completed);
                 }
                 match self.framer.finish() {

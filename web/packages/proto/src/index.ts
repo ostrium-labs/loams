@@ -29,6 +29,8 @@ export * as operations from './gen/loams/operations/v1/operations_pb.js';
 // sends. It is generated because instance.proto's service options reference
 // it, and protoc-gen-es writes that import into the generated descriptor.
 export * as options from './gen/loams/options/v1/options_pb.js';
+export * as sql from './gen/loams/sql/v1/sql_pb.js';
+export * as stream from './gen/loams/stream/v1/stream_pb.js';
 
 /** The app proto packages this module generates, as `GetInstance.api_versions` names them. */
 export const APP_API_PACKAGES = [

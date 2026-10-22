@@ -15,6 +15,7 @@ import {
   Avatar,
   Badge,
   Empty,
+  IconButton,
   Kbd,
   KbdGroup,
   Logo,
@@ -108,6 +109,22 @@ function isMac(): boolean {
   }
 }
 
+/** The modifier as a key cap shows it: ⌘ on macOS, Ctrl elsewhere. */
+export const modKey = (mac = isMac()) => (mac ? '⌘' : 'Ctrl');
+
+/** A top bar tooltip: what the control does, then its shortcut (Mod plus `keys`). */
+export function ShortcutHint({ label, keys }: { label: string; keys: string }) {
+  return (
+    <span className="lc-tip">
+      {label}
+      <KbdGroup aria-hidden="true">
+        <Kbd>{modKey()}</Kbd>
+        <Kbd>{keys}</Kbd>
+      </KbdGroup>
+    </span>
+  );
+}
+
 type BarSlot =
   | 'shell.topbar.left'
   | 'shell.topbar.center'
@@ -168,18 +185,18 @@ export function TopBar({
   const current = useMode(mode);
   return (
     <header className="lc-topbar" data-drag-region="">
-      <button
-        type="button"
+      <IconButton
+        size="sm"
         className="lc-bar-btn lc-sidebar-toggle"
-        aria-label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        tooltip={<ShortcutHint label={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'} keys="B" />}
         aria-controls="lc-side"
         aria-expanded={sidebarOpen}
         aria-keyshortcuts="Control+B Meta+B"
-        title={`${sidebarOpen ? 'Hide' : 'Show'} sidebar (${mac ? '⌘' : 'Ctrl+'}B)`}
         onClick={onToggleSidebar}
       >
-        <PanelLeft size={16} strokeWidth={1.75} aria-hidden="true" />
-      </button>
+        <PanelLeft strokeWidth={1.75} aria-hidden="true" />
+      </IconButton>
       <div className="lc-topbar-start">
         <Entries name="shell.topbar.left" mode={mode} />
         <Entries name="shell.header.server" mode={mode} />
@@ -197,7 +214,7 @@ export function TopBar({
         >
           <span className="lc-palette-hint-text">Search or run a command</span>
           <KbdGroup aria-hidden="true">
-            <Kbd>{mac ? '⌘' : 'Ctrl'}</Kbd>
+            <Kbd>{modKey(mac)}</Kbd>
             <Kbd>K</Kbd>
           </KbdGroup>
         </button>

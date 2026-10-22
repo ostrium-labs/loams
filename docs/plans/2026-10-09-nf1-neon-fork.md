@@ -787,6 +787,8 @@ Commit `loams-ci: monthly extension updates` (LP-0022).
 
 ## NF1e — Postgres 18 (Tasks 24–30)
 
+> **Superseded by [NF2](2026-10-18-nf2-postgres-18-19.md)** (D1107, 2026-10-18): this milestone's tasks moved to NF2, with the corrections of [§62](../design/62-postgres-major-versions.md) (the 18 base is `REL_18_6`, 19's GA is 2026-11-19, no `preview` pin list).
+
 ### Task 24: Postgres 18 in the fork
 
 **Files:**
@@ -917,6 +919,8 @@ Commit `deploy(pg): Postgres 18 supported`.
 
 ## NF1f — Postgres 19 (Tasks 31–35)
 
+> **Superseded by [NF2](2026-10-18-nf2-postgres-18-19.md)** (D1107, 2026-10-18): this milestone's tasks moved to NF2, with the corrections of [§62](../design/62-postgres-major-versions.md) (the 18 base is `REL_18_6`, 19's GA is 2026-11-19, no `preview` pin list).
+
 ### Task 31: Track 19 from RC1
 
 **Files:**
@@ -996,6 +1000,8 @@ Tests: the matrix; `pins.py check`; `verify-pins.sh`.
 Commit `deploy(pg): Postgres 19 supported`.
 
 ## NF1g — Upgrades, Loams integration and ownership (Tasks 36–41)
+
+> Tasks 36–38 and Task 41's removal of 14 and 15 moved to [NF2](2026-10-18-nf2-postgres-18-19.md) Tasks 12, 13, 25 and 16 (D1107, D1115). Tasks 39–41 stay here.
 
 ### Task 36: PgDog per major
 

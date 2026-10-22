@@ -74,29 +74,53 @@
 #![deny(missing_docs)]
 #![warn(missing_debug_implementations)]
 
+pub mod app;
+pub mod app_modules;
+pub mod batch;
 pub mod binding;
+pub mod builders;
 pub mod call;
 pub mod client;
+pub mod consistency;
 pub mod error;
 pub mod facade;
+pub mod handle;
 pub mod pagination;
 pub mod reason;
 pub mod request;
 pub mod retry;
 pub mod streams;
+pub mod subscribe;
 pub mod system;
 pub mod token;
 pub mod transport;
 pub mod uuidv7;
 
+pub use crate::app::{
+    AppRequest, prepare_request, record_response, record_response_in, response_tokens,
+};
+pub use crate::app_modules::{
+    CollectionsModule, DocumentsModule, GraphModule, NamespacesModule, SearchModule, SqlModule,
+    StreamsModule, VectorModule, sql_records,
+};
+pub use crate::batch::{BatchError, BatchOptions, BatchResult, write_batch};
 pub use crate::binding::{binding_of, module_of};
-pub use crate::call::{Attempt, CallOptionsOverrides, RetryPlan, call_with_retry};
+pub use crate::builders::{DocId, Filter, Fusion, Schema, Search, Sort, TextRetriever};
+pub use crate::call::{
+    Attempt, CallOptionsOverrides, DEFAULT_TIMEOUT, RetryPlan, call_with_retry,
+    client_deadline_exceeded,
+};
 pub use crate::client::{InstanceModule, LiveModule, Loams, TablesModule};
-pub use crate::error::{ErrorInfoShape, ErrorKind, LoamsError};
+pub use crate::consistency::{ConsistencyToken, TokenPosition};
+pub use crate::error::{
+    BATCH_PARTIALLY_APPLIED, CLIENT_DEADLINE_EXCEEDED, CLIENT_REASONS, ErrorInfoShape, ErrorKind,
+    LoamsError,
+};
 pub use crate::facade::{
     CallBinding, Idempotency, ModuleBinding, PROTO_PACKAGES, PROTO_REV, Pagination, Retry,
     Streaming,
 };
+pub use crate::handle::{CollectionCalls, CollectionHandle, Document, PatchChange, Target};
 pub use crate::pagination::{PageRequest, PageResponse, PagedCall, paginate};
 pub use crate::reason::{FEATURE_NOT_IN_VARIANT, Reason, TOKEN_EXPIRED, UnknownReason};
 pub use crate::request::{
@@ -104,6 +128,7 @@ pub use crate::request::{
 };
 pub use crate::retry::{DEFAULT_MAX_RETRIES, RetryClass};
 pub use crate::streams::{Opened, ResponseStream, WatchOptions};
+pub use crate::subscribe::{OffsetRecord, Subscription, subscribe};
 pub use crate::system::{Catalogue, System, VersionReport};
 pub use crate::token::{
     ApiKey, EnvToken, FormPoster, OidcExchange, Refreshing, StaticToken, TokenSource,
@@ -114,7 +139,11 @@ pub use crate::transport::{TransportOptions, WireProtocol, transport};
 // the facade's call options are the two things a caller always touches.
 pub use connectrpc::ErrorCode as Code;
 pub use loams_live_proto::loams::live::v1 as live_v1;
+pub use loams_proto::loams::collection::v1 as collection_v1;
+pub use loams_proto::loams::graph::v1 as graph_v1;
 pub use loams_proto::loams::instance::v1 as instance_v1;
+pub use loams_proto::loams::sql::v1 as sql_v1;
+pub use loams_proto::loams::stream::v1 as stream_v1;
 
 /// The RPC `Loams::watch` resumes, named for the error a failure carries.
 pub(crate) const WATCH_RPC: &str = "loams.live.v1.LiveService/Watch";

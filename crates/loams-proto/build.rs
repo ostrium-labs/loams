@@ -14,8 +14,9 @@
 //! §8's `Query` — and `page_token` on `ScrollDocumentsRequest`. Tasks 5–8
 //! append `loams.sql.v1`, `loams.link.v1`, `loams.admin.v1`, `loams.auth.v1`
 //! and `loams.internal.v1`. GR1 Task 1 adds `loams.graph.v1` (design §48),
-//! PG2 Task 1 `loams.postgres.v1` (design §46 §4), and GT1 Task 12
-//! `loams.repos.v1` (design §36 §19.10).
+//! PG2 Task 1 `loams.postgres.v1` (design §46 §4), GT1 Task 12
+//! `loams.repos.v1` (design §36 §19.10), and MM1 Task 1 `loams.memory.v1`
+//! (design §52 §9.1).
 //!
 //! `loams.live.v1` is **not** here: R1's `loams-live-proto` already
 //! generates it, and a proto package's Rust types are generated exactly
@@ -51,6 +52,10 @@ const FILES: &[&str] = &[
     "loams/repos/v1/workspaces.proto",
     "loams/repos/v1/objects.proto",
     "loams/repos/v1/env.proto",
+    // Loams Memory (design §52 §9.1, MM1 Task 1): the types are always
+    // generated; the services are served by the `loams` feature `memory`
+    // from MM1 Task 11.
+    "loams/memory/v1/memory.proto",
     // The console API (API2 Tasks 6 and 7): the types and clients the Rust
     // SDK's facade binds. The server registers neither package yet; its
     // `connect_admin.rs` and `connect_auth.rs` are the tasks' server half.
@@ -61,6 +66,8 @@ const FILES: &[&str] = &[
     "loams/admin/v1/key.proto",
     "loams/admin/v1/audit.proto",
     "loams/auth/v1/auth.proto",
+    "loams/sql/v1/sql.proto",
+    "loams/stream/v1/stream.proto",
 ];
 
 fn main() {

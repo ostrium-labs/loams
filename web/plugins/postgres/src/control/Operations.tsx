@@ -49,14 +49,14 @@ export function Operations({
             return (
               <tr key={op.id} data-operation={op.id} data-state={op.state}>
                 <td>
-                  <span className={/* mono-ok: id */ 'font-mono text-xs'}>{op.kind}</span>
-                  <span className="block text-xs text-faint">{op.id}</span>
+                  <span className={/* mono-ok: id */ 'font-mono text-small'}>{op.kind}</span>
+                  <span className="block text-small text-faint">{op.id}</span>
                 </td>
-                <td className="text-sm">{targetText(op, names)}</td>
+                <td className="text-body">{targetText(op, names)}</td>
                 <td>
                   <Badge>{STATE_LABEL[op.state]}</Badge>
                   {op.error && (
-                    <span className="block text-xs text-danger" role="note">
+                    <span className="block text-small text-danger" role="note">
                       {op.error.code}: {op.error.message}
                     </span>
                   )}
@@ -65,16 +65,16 @@ export function Operations({
                   {p && p.total > 0 ? (
                     <>
                       <Meter value={p.done} max={p.total} label={label} />
-                      <span className="text-xs text-muted">
+                      <span className="text-small text-muted">
                         {p.done}/{p.total} {p.unit}
                         {p.phase ? ` · ${p.phase}` : ''}
                       </span>
                     </>
                   ) : (
-                    <span className="text-xs text-muted">—</span>
+                    <span className="text-small text-muted">—</span>
                   )}
                 </td>
-                <td className="text-xs text-muted">
+                <td className="text-small text-muted">
                   <time dateTime={op.updatedAt}>{formatRelative(op.updatedAt)}</time>
                 </td>
               </tr>

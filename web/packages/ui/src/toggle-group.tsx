@@ -22,8 +22,8 @@ const TOGGLE =
   'data-pressed:border-rule data-pressed:bg-bg data-pressed:text-ink ' +
   'data-disabled:cursor-not-allowed data-disabled:opacity-50';
 const SIZES: Record<Size, string> = {
-  sm: 'h-7 min-w-7 px-2 text-[0.8rem]',
-  md: 'h-8 min-w-8 px-2.5 text-[0.86rem]',
+  sm: 'h-7 min-w-7 px-2 text-small',
+  md: 'h-8 min-w-8 px-2.5 text-body',
 };
 
 export function ToggleGroup<V extends string>({

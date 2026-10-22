@@ -31,12 +31,43 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: compose config (default, every profile, without Postgres)
+      - name: compose config (default, each store profile, every profile, without Postgres)
         working-directory: deploy/release
         run: |
           docker compose --env-file .env.example config -q
+          for profiles in tikv rustfs tikv,rustfs tikv,rustfs,house-tailnet,postgres-control,console,headscale; do
+            COMPOSE_PROFILES="$profiles" docker compose --env-file .env.example config -q
+            COMPOSE_PROFILES="$profiles" LOAMS_POSTGRES_COMPOSE=./postgres-off.yaml \
+              docker compose --env-file .env.example config -q
+          done
           docker compose --env-file .env.example --profile '*' config -q
           LOAMS_POSTGRES_COMPOSE=./postgres-off.yaml docker compose --env-file .env.example config -q
+      # The light default (D1340): the engine on its embedded stores, the
+      # House, Loams Postgres on local folders and agentd; PD, TiKV, TiDB and
+      # RustFS only with their profiles, which reach the services that choose
+      # their store by them.
+      - name: the light default and the store profiles
+        working-directory: deploy/release
+        run: |
+          services() { docker compose --env-file .env.example config --services | sort | tr '\n' ' '; }
+          want="agentd compute1 house house-init loams migrate pageserver pg-bootstrap safekeeper1 storage_broker tailscale "
+          [ "$(services)" = "$want" ] || { echo "default services: $(services)"; echo "expected: $want"; exit 1; }
+          [ "$(COMPOSE_PROFILES=tikv,rustfs services)" = "agentd compute1 create-bucket house house-init loams migrate pageserver pd pg-bootstrap rustfs safekeeper1 storage_broker tailscale tidb tikv " ] \
+            || { echo "tikv,rustfs services: $(COMPOSE_PROFILES=tikv,rustfs services)"; exit 1; }
+          cfg="$(COMPOSE_PROFILES=tikv,rustfs docker compose --env-file .env.example config --format json)"
+          for s in loams migrate pageserver safekeeper1; do
+            jq -e --arg s "$s" '.services[$s].environment.LOAMS_PROFILES == "tikv,rustfs"' <<<"$cfg"
+          done
+          # The engine and migrate choose their stores in config/stores.sh, and
+          # name none themselves.
+          for s in loams migrate; do
+            jq -e --arg s "$s" '.services[$s]
+                   | (.entrypoint == ["/usr/bin/tini", "--", "/bin/sh", "/etc/loams/stores.sh"])
+                     and ([.command[] | select(test("^--(meta|live-store|durable-store)="))] == [])
+                     and (.depends_on.pd.required == false) and (.depends_on.tikv.required == false)' <<<"$cfg"
+          done
+          # The engine reads the House's link certificate at start.
+          jq -e '.services.loams.depends_on.house.condition == "service_healthy"' <<<"$cfg"
       # 0.1.0 blocker: an apostrophe in endpoint-storage's `sh -c` script
       # ("pg-control's key") opened a quote that never closed, and the
       # service restart-looped. Every inline shell script must parse.
@@ -103,13 +134,13 @@ jobs:
         run: |
           cfg="$(docker compose --env-file .env.example config --format json)"
           jq -e '.services.safekeeper1.volumes
-                 | map(select(.source == "safekeeper-data" and .target == "/data")) | length == 1' <<<"$cfg"
+                 | map(select(.source == "safekeeper-data" and .target == "/data/.neon")) | length == 1' <<<"$cfg"
           # migrate reaches the Postgres storage APIs to drain before a recreate.
           jq -e '.services.migrate.command
                  | (index("--pageserver=http://pageserver:9898") != null)
                    and (index("--safekeeper=http://safekeeper1:7676") != null)' <<<"$cfg"
       - name: shellcheck
-        run: shellcheck deploy/release/build.sh deploy/release/byoc/install.sh deploy/release/byoc/uninstall.sh deploy/release/byoc/upgrade.sh deploy/release/byoc/upgrade-test.sh deploy/loams-postgres-dev/bootstrap/pg-bootstrap.sh deploy/loams-postgres-dev/compute/start.sh
+        run: shellcheck deploy/release/build.sh deploy/release/config/stores.sh deploy/release/byoc/install.sh deploy/release/byoc/uninstall.sh deploy/release/byoc/upgrade.sh deploy/release/byoc/upgrade-test.sh deploy/loams-postgres-dev/bootstrap/pg-bootstrap.sh deploy/loams-postgres-dev/compute/start.sh
       # UP1 Task 22: upgrade_sh_dry_run_prints_remote_commands.
       - name: byoc upgrade.sh
         run: deploy/release/byoc/upgrade-test.sh

@@ -1,4 +1,4 @@
-import { Button, Input } from '@loams/ui';
+import { Button, InputControl } from '@loams/ui';
 import { type FormEvent, useState } from 'react';
 
 /** Recently opened namespaces under `storageKey` (newest first); empty when storage is unavailable. */
@@ -43,13 +43,15 @@ export function NamespacePicker({
   const options = [...new Set(['default', ns, ...recentNamespaces(storageKey)])];
   return (
     <form className="flex items-center gap-2 pb-2" onSubmit={go}>
-      <label htmlFor={`${idPrefix}-ns-input`} className="text-sm text-muted">
+      <label htmlFor={`${idPrefix}-ns-input`} className="text-small text-muted">
         Namespace
       </label>
-      <Input
+      <InputControl
         id={`${idPrefix}-ns-input`}
         list={`${idPrefix}-ns-options`}
-        className={/* mono-ok: id */ 'w-48 font-mono'}
+        size="compact"
+        font="mono"
+        className="w-48"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         spellCheck={false}

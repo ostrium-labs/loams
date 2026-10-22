@@ -28,6 +28,8 @@
 
 #include <google/protobuf/message.h>
 
+#include "loams/app.hpp"
+#include "loams/data.hpp"
 #include "loams/approvals/v1/approvals.pb.h"
 #include "loams/call.hpp"
 #include "loams/client.hpp"
@@ -294,6 +296,25 @@ class Loams {
   NotificationsModule* Notifications();
   SystemModule* System();
 
+  // The app-building modules (SDKP §2; `app.hpp`).
+  NamespacesModule* Namespaces() { return &app_.namespaces; }
+  CollectionsModule* Collections() { return &app_.collections; }
+  DocumentsModule* Documents() { return &app_.documents; }
+  SearchModule* Search() { return &app_.search; }
+  VectorModule* Vector() { return &app_.vector; }
+  /// Experimental: `loams.graph.v1` is unstable.
+  GraphModule* Graph() { return &app_.graph; }
+  SqlModule* Sql() { return &sql_; }
+  StreamsModule* Streams() { return &streams_; }
+  /// Any facade call by its facade-index name over its request's proto3 JSON.
+  std::string Call(const std::string& name, const std::string& request_json, const CallOptions& options = {}) {
+    return app_.raw.Call(name, request_json, options);
+  }
+  /// A handle on one collection; `ns` empty is the client's default namespace.
+  CollectionHandle Collection(const std::string& name, const std::string& ns = "") {
+    return CollectionHandle(&app_, name, ns);
+  }
+
  private:
   std::shared_ptr<Client> client_;
   InstanceModule instance_;
@@ -304,6 +325,9 @@ class Loams {
   DevicesModule devices_;
   OperationsModule operations_;
   NotificationsModule notifications_;
+  AppModules app_;
+  SqlModule sql_;
+  StreamsModule streams_;
 };
 
 /// Builds a `Loams` from options. The one line an application starts with.

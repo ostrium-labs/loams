@@ -4,11 +4,348 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-21
+
+Highlights:
+
+- **The UI upgrade.** The console, Studio and Loams Desktop move onto the design 59 foundation
+  (CF1): new tokens, component states and a motion system, polished data screens, a reworked
+  shell (sidebar, inspector and drawer regions, the palette, one keymap), Studio's home, threads
+  and approval cards, and on the desktop native menus, per-OS window chrome synced to the theme,
+  a splash, OS notifications and an update toast with "Skip this version".
+- **The app-building API in all 13 SDKs.** TypeScript, Python, Go, Rust, C#, C++, Swift, Java,
+  Kotlin, Ruby, PHP, Dart and Objective-C each have the `namespaces`, `collections`, `documents`,
+  `search`, `vector` and `graph` modules, the `Schema`, `Filter` and `Search` builders,
+  collection handles, `write_batch`, `scroll_all` and `query_all`, consistency tokens with a
+  read-your-writes session store, a default namespace and client deadlines, plus `sql` and
+  `streams`. Each SDK replays one recorded app scenario in CI.
+- **New APIs: `loams.sql.v1` and `loams.stream.v1`** on the engine's main port. Read-only SQL
+  with `$n` parameters, answered as typed rows or Arrow; streams with keyed records, idempotent
+  produce (`producer_id`, `producer_seq`) and long-poll fetch, over Connect, gRPC and gRPC-Web.
+- **Self-host first-run fixes.** `LOAMS_SETUP_TOKEN` reaches the engine from `.env` (and
+  `secrets/engine.env` still wins), and a one-shot `pg-bootstrap` service creates `compute1`'s
+  tenant and timeline, so a fresh stack comes up without manual steps from the bundle or the tag.
+- **A light default self-host stack** (D1340): `docker compose up -d` in `deploy/release` now starts the
+  engine on its embedded stores (metastore on openraft + redb, Live on redb, Durable on SQLite) with a
+  local-folder bucket, Loams House linked to the engine, Loams Git (the engine image gains the `git`
+  feature), Loams Postgres with its remote storage in local folders, and agentd: about 8 GB of images and
+  1 GB of RAM at idle, down from about 10 GB and 2.6 GB. PD, TiKV and TiDB (Loams SQL) are the `tikv`
+  profile and RustFS the `rustfs` profile, set in `.env` as `COMPOSE_PROFILES`; the House's own tailnet
+  node is `house-tailnet` (was part of `house`). The engine records the store its data was started on and
+  refuses the other. `byoc/install.sh` gains `--tikv`, `--rustfs`, `--profiles` and `--no-postgres`
+  (`--all` is now both store profiles). Upgrading a 0.1.0 stack: add `COMPOSE_PROFILES=tikv,rustfs` to its
+  `.env` first. `loams upgrade` follows the profiles and refuses a stack on the embedded stores for now;
+  see docs/release/upgrades.md.
+- **Elasticsearch and Mastra compatibility.** The Elasticsearch API gains `GET /_cat/indices`,
+  `GET` and `PUT /{index}/_settings`, sort on `_seq_no`, the scroll API (as `helpers.scan` uses
+  it) and aggregations on the engine (composite and `top_hits` included), and `_update_by_query` replaces a key when its param is an object. The Qdrant gateway serves
+  `DELETE` of a payload index (REST and gRPC), and CI runs `@qdrant/js-client-rest` 1.18 and 1.19
+  and a nightly Mastra gate against a dev build. With these, the NVIDIA RAG Blueprint harness
+  passes 38 of 38.
+- **Durable in the CLI packages.** The `.deb`, `.rpm`, pacman, macOS and Windows packages are built
+  with the image's features, so `loams dev` from a package serves Durable on 127.0.0.1:8001 (#925).
+- **agentd ordering fix.** A steer orphaned by a closing run keeps its place ahead of the queue, so
+  queued messages no longer run out of order or two in one turn.
+- **Dependency updates** across Cargo, npm and Go.
+
+### Upgrading
+
+**0.1.1 changes the default stack; reinstall.** There are no 0.1.0 installs to carry forward, so
+start from the 0.1.1 compose bundle with a fresh `.env`, rather than upgrading a 0.1.0 stack in place: the light default keeps its data on the
+embedded stores and local folders, not in 0.1.0's TiKV and RustFS. To keep a 0.1.0 stack's data,
+add `COMPOSE_PROFILES=tikv,rustfs` to its `.env` before `loams upgrade --to 0.1.1`; it then keeps
+0.1.0's shape, Durable on SQLite included (docs/release/upgrades.md).
+`loams upgrade rollback --keep-writes` back to 0.1.0 is refused (`KEEP_WRITES_UNSERVED`, D1343):
+0.1.0's startup gate cannot serve data a later release has written, so roll back from the snapshot.
+
+### Added
+
+- **Elasticsearch API** (MA1, #937, #954, #958, #963, #938, #964): `GET /_cat/indices` in the json and
+  text formats; `GET` and `PUT /{index}/_settings`; sort on `_seq_no`; the scroll API
+  (`scroll`, `_search/scroll`, clearing a scroll), as the Python client's `helpers.scan` uses it;
+  `_update_by_query` assigning an object param by replacing the key; and aggregations computed on
+  the engine, `composite` and `top_hits` included (#964).
+- **The Mastra gate** (MA1 Task 27, #956): a nightly run of Mastra's suites against a dev build,
+  which files an issue on failure. `loams-postgres-dev` computes run with 128 MB `shared_buffers`
+  and a 256 MB file cache (#946).
+- **The UI upgrade** (phases 1 and 2, extending CF1, design 59): tokens, component states and the
+  motion system (`motion`, `useMotionPreset`, `StaggerList`, `ListRow`, `Segmented`); data
+  screens polish; shell and navigation motion, keyboard and polish; Studio's home, threads and
+  approval cards and the desktop chrome on the same primitives (#801, #802, #803, #804).
+- **CF1 tasks 12–16** (design 59): one keymap for D1081 in which editable targets keep their
+  keys; per-OS window chrome synced to the page theme; native menus and the context menu; a splash
+  with Loams' loader; OS notifications and an update toast with "Skip this version" (#819–#822, #825).
+- **Durable on TiKV** (#796): the image adds `durable-tikv`, and PD pre-allocates the keyspace;
+  with the `tikv` profile, `LOAMS_DURABLE_STORE=tikv://pd:2379/loams_durable` puts the stack's
+  Durable there (D1342; SQLite stays the default). The TiKV durable server creates its keyspace if PD has none, answers
+  `promise.search`, `task.search` and `schedule.search` (the console's Durable page uses them;
+  `--durable-set servers.server_tikv.search=false` turns them off), and its start log names its
+  store.
+- **The Qdrant gateway deletes payload indexes** (MA1 Task 23, D1210, #929):
+  `DELETE /collections/{c}/index/{field}` and gRPC `Points/DeleteFieldIndex` retire the index, which
+  leaves `payload_schema`; filters are unchanged, and `PUT` with the same type revives it. CI runs
+  `@qdrant/js-client-rest` 1.18 and 1.19 against the gateway (MA1 Task 25, #931).
+- **Loams House observability** (HS1 Task 23 part 2, #797): every design §49 §15 metric series, one
+  trace per statement, redacted operator logs and the query log.
+- **Loams Git `CommitWorkspace` and `PushWorkspace`** (GT1 Task 27, #734): commit a workspace
+  snapshot and push it without re-uploading objects, with per-ref checks and keyed idempotency.
+- **Software factory apps in Studio** (#773, #798): an end-to-end pass over the factory apps on the
+  desktop and the browser console, with their images pinned.
+- **`platform/`** (#860): the former private `loams-platform` repository, imported as a separate
+  Cargo workspace (`loams-meter`, the node metering agent), with the Authentik and tailnet deploy
+  files and the platform design docs, Apache-2.0 (D1119, design 63).
+- Release: the product release's `SHA256SUMS` is signed by `release-checksums.yml` (#827), and the
+  desktop's update manifests are dropped before `DESKTOP-SHA256SUMS` on a product release (#829).
+- **The Kotlin SDK replays the app scenario** (SDKP P0d): `kotlin_app_collections`, `kotlin_app_search`,
+  `kotlin_app_graph`, `kotlin_app_sql` and `kotlin_app_streams` replay `sdks/fixtures/recorded/app/`
+  through the facade against the fixture server, and CI runs `check-languages --suite app` for Kotlin.
+  Fixed on the way: the Connect JSON writer sent every `bytes` field empty and failed on any map field,
+  wrote a `float` as its widened double (`0.699999988079071` for `0.7`), and `Sort.score()` and
+  `Sort.pk()` now leave the order unset by default and `Search.select` no longer sends an empty
+  `exclude`, as the builder corpus does.
+- **The C# SDK replays the app scenario** (SDKP P0d): `csharp_app_collections`, `csharp_app_search`,
+  `csharp_app_graph`, `csharp_app_sql` and `csharp_app_streams` replay `sdks/fixtures/recorded/app` through
+  the public facade against the shared fixture server, the report's `ran` names them, and the `SDK: C#`
+  job runs `check-languages --check csharp --suite app`.
+- **The C# SDK builds apps** (SDKP L5): `Namespaces`, `Collections`, `Documents`, `Search`, `Vector` and
+  `Graph` modules over the generated `loams.collection.v1` and `loams.graph.v1` stubs, the `Schema`,
+  `Filter` and `Search` builders, `client.Collection(name)` handles, `WriteBatchAsync`, `ScrollAllAsync`
+  and `QueryAllAsync`; consistency tokens that parse and merge, a session store that gives reads
+  read-your-writes, a default namespace, client deadlines (`client_deadline_exceeded`), and the
+  `examples/Notes` app.
+- **The Java SDK replays the app scenario** (SDKP P0d): `java_app_collections`, `java_app_search`,
+  `java_app_graph`, `java_app_sql` and `java_app_streams` replay `sdks/fixtures/recorded/app` through the
+  facade, and CI's `SDK: Java` job runs `check-languages --suite app`. `Options.json(true)` sends unary
+  calls as proto3 JSON (a dependency-free codec, so the runtime still needs only `protobuf-java`), and
+  a Connect unary call in JSON is no longer enveloped. `sdks/java/gen` is regenerated, so
+  `CountDocumentsRequest.where` and the other typed-query fields reach Java.
+- **The Java SDK builds apps** (SDKP): namespaces, collections, documents, search, vector and graph
+- **The Kotlin SDK builds apps** (SDKP): namespaces, collections, documents, search, vector and graph
+- **The Swift SDK builds apps** (SDKP): namespaces, collections, documents, search, vector and graph
+  modules, the `Schema`, `Filter` and `Search` builders, collection handles, `writeBatch`, `scrollAll` and
+  `queryAll`; consistency tokens that parse and merge, a session store that gives reads read-your-writes,
+  a default namespace, client deadlines (`client_deadline_exceeded`), and the notes example app.
+- **The Swift SDK replays the app scenario** (SDKP P0d): `swift_app_collections`, `swift_app_search`,
+  `swift_app_graph`, `swift_app_sql` and `swift_app_streams` replay `sdks/fixtures/recorded/app` through
+  the facade against the fixture server, and the `SDK: Swift` job runs `check-languages --suite app`.
+  `Code.invalidArgument` now reads Connect's `invalid_argument` (a stream's end frame read it as
+  `unknown`), and the test fixture server no longer depends on the working directory.
+- **The Ruby SDK builds apps** (SDKP L10): `namespaces`, `collections`, `documents`, `search`,
+  `vector` and `graph` modules over the descriptor set, `Client#call` for any facade call, the `Schema`,
+  `Filter` and `Search` builders, `client.collection(name)` handles, `write_batch`, `scroll_all` and
+  `query_all`; consistency tokens that parse and merge, a session store that gives reads read-your-writes,
+  a default namespace, `Loams.from_env`, client deadlines (`client_deadline_exceeded`), and the notes
+- PHP SDK: `sql()` (`query` with `$n` parameters, `queryArrow`, `Sql::records`) and `streams()` (`create`, `get`, `list`, `produce` with producer deduplication, `fetch`, `produceEvents`, `fetchEvents`, `subscribe`).
+- **The PHP SDK builds apps** (SDKP L11): `namespaces()`, `collections()`, `documents()`, `search()`,
+  `vector()` and `graph()` modules over Connect JSON, `Client::call()` for any facade call, the `Schema`,
+  `Filter` and `Search` builders, `$client->collection($name)` handles, `writeBatch`, `scrollAll` and
+  `queryAll`; consistency tokens that parse and merge, a session store that gives reads read-your-writes,
+  a default namespace, `Client::fromEnv()`, client deadlines (`client_deadline_exceeded`), and the notes
+  example app.
+- **The C++ SDK builds apps** (SDKP L6): `Namespaces()`, `Collections()`, `Documents()`, `Search()`,
+  `Vector()` and `Graph()` modules over the generated `loams.collection.v1` and `loams.graph.v1` stubs,
+  `Loams::Call` for any facade call, the `Schema`, `Filter` and `Search` builders, `Collection(name)`
+  handles, `WriteBatch`, `ScrollAll` and `QueryAll`; consistency tokens that parse and merge, a session
+  store that merges rather than refusing a second token, `Options::default_namespace`, `OptionsFromEnv()`,
+  and a 30 s per-call budget (`connect-timeout-ms`, `client_deadline_exceeded`, never retried).
+- **The Ruby SDK's `sql` and `streams` modules** (SDKP L10 part C): `sql.query` with `$n` parameters,
+  `query_arrow` and `Sql.records`; `streams.create`, `get`, `list`, `produce` (an optional record key,
+  producer deduplication), `fetch`, `produce_events`, `fetch_events` and `subscribe`.
+- Dart SDK: `sql` (`query` with `$n` parameters, `queryArrow`, `SqlModule.records`) and `streams` (`create`, `get`, `list`, `produce` with producer deduplication, `fetch`, `produceEvents`, `fetchEvents`, `subscribe`).
+- **The Dart SDK builds apps** (SDKP L12): `namespaces`, `collections`, `documents`, `search`, `vector`
+  and `graph` modules over Connect JSON, `LoamsClient.call` for any facade call, the `Schema`, `Filter`
+  and `Search` builders, `client.collection(name)` handles, `writeBatch`, `scrollAll` and `queryAll`
+  (as `Stream`s); consistency tokens that parse and merge, a session store that gives reads
+  read-your-writes, a default namespace, `LoamsClient.fromEnv`, client deadlines
+  (`client_deadline_exceeded`), and the notes example app.
+- Objective-C SDK: `sql` (`query` with `$n` parameters, `queryArrow`, `records`) and `streams` (`create`, `get`, `list`, `produce` with producer deduplication, `fetch`, `produceEvents`, `fetchEvents`, `subscribe` with a block callback and a cancel token).
+- **The Objective-C SDK builds apps** (SDKP L13): `namespaces`, `collections`, `documents`, `search`,
+  `vector` and `graph` on `LoamsClient` over Connect JSON, `LoamsClient.call` for any facade call, the
+  `LoamsSchema`, `LoamsFilter` and `LoamsSearch` builders, `collection:namespace:` handles,
+  `writeBatch`, `scrollAll` and `queryAll`; consistency tokens that parse and merge, a session store that
+  gives reads read-your-writes, a default namespace, `LoamsClientConfiguration.fromEnvironment`, client
+  deadlines (`client_deadline_exceeded`), and `LoamsSubscription` with a cancel token.
+- **The C++ SDK's `Sql()` and `Streams()` modules** (SDKP L6 part C): `Query` with `$n` parameters,
+  `QueryArrow` and `SqlModule::Records`; `Create`, `Get`, `List`, `Produce` (an optional record key,
+  producer deduplication), `Fetch`, `ProduceEvents`, `FetchEvents` and `Subscribe`. The generated stubs
+  now include `loams.sql.v1` and `loams.stream.v1`.
+- **`loams.sql.v1` on the main port** (SDKP P0b, API2 Task 1): `SqlService/Query` runs one read-only
+  statement over a namespace's collections with `$1…$n` parameters (each cast to its placeholder's
+  inferred type) and answers typed columns and rows; `QueryArrow` answers the result as one Arrow IPC
+  stream, capped at 16 MiB (`result_too_large`, use Flight SQL past it). A parameter count mismatch is
+  `invalid_argument` with reason `sql_param_count`. `@loams/proto` exports the package as `sql`.
+- **`loams.stream.v1` on the main port** (SDKP P0c, API2 Task 2): create, describe and list streams;
+  produce and fetch records and CloudEvents over Connect, gRPC and gRPC-Web. A produce with
+  `producer_id` and `producer_seq` is idempotent (a repeat answers the first append with `duplicate`);
+  `Fetch` takes `max_records` and a long poll (`max_wait_ms`, at most 30 s). The tonic listener of
+  `--stream-grpc-listen` is unchanged and wire-compatible.
+- **Desktop: Settings > Postgres** (PG2 R9.1): the pg-control URL (default `127.0.0.1:7680`) and the
+  API key file (`postgres.control.apiKeyFile`), with checks, a Test connection button, and a file
+  picker. Main reads the key file; the key never reaches the renderer. The Postgres page follows a
+  saved change without a restart, and its subtitle names pg-control's own address. The environment
+  variables `LOAMS_PG_CONTROL_URL`, `LOAMS_PG_CONTROL_API_KEY` and `_API_KEY_FILE` still win, and the
+  page says so when they are set.
+
 ### Changed
 
-- Loams is fully open source; there is no open core (D1119). README, CONTRIBUTING, GOVERNANCE, ECOSYSTEM, the design docs and the decision log now say so; the metering, billing and control-plane code is moving into the open repo now (design §63). Ostrium Labs offers services (infrastructure efficiency, SLAs, support).
+- **Self-host first run** (#866, #880, #883): `LOAMS_SETUP_TOKEN` passes from `.env` to the engine
+  through `config/setup-token.env`, so `secrets/engine.env` still wins when both set it; the
+  bundle is the primary install path, and the release's bundle job checks first-run setup; a
+  one-shot `pg-bootstrap` service creates `compute1`'s tenant and timeline on the first `up`
+  (keeping their ids in the `pg-bootstrap` volume), and `compute1` starts after it.
+  `.env.example` documents `LOAMS_SETUP_TOKEN` and `LOAMS_TAILSCALE_ALLOWED_USERS`.
+- **A patch release upgrades from its line.** `release/upgrade-path.toml` lists 0.1.1 with
+  `from = "0.1"`; the upgrade gate and the SDK public-symbol check resolve a line to the newest
+  earlier release of it (here `v0.1.0`), and the generated Upgrading notes say "any earlier 0.1.x".
+- CI runs on GitHub-hosted runners only; Blacksmith is removed (#826).
+- Dependencies: the Cargo minor-and-patch group (14 updates, #864), the npm minor-and-patch group
+  (30 updates, #878), `uuid` 11.1.1 → 14.0.2 (#808), `react-resizable` 3.2.0 → 4.0.2 (#810),
+  `go-sql-driver/mysql` 1.9.3 → 1.10.1 in the sqlgate capture tool (#805); Dependabot ignores
+  `@types/node` majors while the repo targets Node 22 (#894).
+- **Desktop: Durable on a remote server**: the protocol proxy forwards `/durable/` to the active
+  remote server's main port (`POST /durable/`, B12) with the session the other engine routes use,
+  instead of answering 404. The Durable page and the Overview's Durable card work on remote servers;
+  an engine without the API reads as "Not on this server".
+- Loams is fully open source; there is no open core (D1119). README, CONTRIBUTING, GOVERNANCE, ECOSYSTEM, the design docs and the decision log now say so; the metering, billing and control-plane code is in this repository (`platform/`, design §63). Ostrium Labs is a research lab building open-source Loams (D1323); the services wording is gone.
+- The app modules in every generated SDK facade (SDKP P0a): `namespaces`,
+  `collections`, `documents`, `search`, `vector` and `graph`, from facade
+  annotations on `loams.collection.v1` and `loams.graph.v1`. The facade index
+  `sdks/fixtures/facade-index.json` lists every SDK call for the hand-written
+  SDKs to check themselves against (`scripts/sdk/gen.sh index`), and
+  `gen.sh descriptors` regenerates Ruby's and Kotlin's descriptor sets.
+- `where` on `ScrollDocuments`, `CountDocuments`, `DeleteByFilter` and
+  `PatchByFilter`: a typed `Query`'s proto3 JSON, the shape the SDK `Filter`
+  builders write. Setting both `filter` and `where` is `invalid_argument`,
+  reason `filter_conflict`.
 
-## [0.1.0] - 2026-10-18
+- The app conformance corpus (SDKP P0d): the notes-app scenario recorded from
+  `loams dev` (`sdks/fixtures/recorded/app/`, `app-scenario.md`), the builder
+  corpus (`sdks/fixtures/builders/`) and the consistency-token corpus
+  (`sdks/fixtures/tokens.json`, also run by `loams-collection`), and
+  `check-languages.mjs --check <lang> --suite app`.
+
+- Seven registered reasons (SDKP P0e): `sql_param_count` and
+  `result_too_large` for `loams.sql.v1`, and the client-side
+  `namespace_required`, `invalid_consistency_token`,
+  `search_after_needs_tiebreak`, `client_deadline_exceeded` and
+  `batch_partially_applied`, in every SDK's reason list. The SDK runtime
+  contract gains R11 (default namespace), R12 (timeouts), R13 (`write_batch`)
+  and R14 (`subscribe`), and R4 the token encoding and the session store.
+- TypeScript SDK (`@loams/client`): the app-building layer of SDKP. `Schema`,
+  `Filter` and `Search` builders checked against the new builder corpus
+  (`sdks/fixtures/builders/`); `loams.collection(name)` handles;
+  `ConsistencyToken` parse/merge/print checked against `sdks/fixtures/tokens.json`,
+  and a session store that merges every response token and sends
+  `consistency.at_least`; a default namespace (R11); a 30 s unary deadline
+  raising `client_deadline_exceeded` (R12); `documents.writeBatch` (R13);
+  `streams.subscribe` (R14); `search.text`, `search.hybrid`, `search.queryAll`,
+  `documents.upsert/delete/patch/scrollAll` and `<call>All` for paged calls;
+  `Loams.fromEnv()`.
+- TypeScript SDK: `loams.sql` and `loams.streams` (SDKP L1 part C):
+  `sql.query`, `sql.queryArrow`, `sql.records(statement, [$1, …])` and
+  `sqlRecords(answer)`; `streams.create`, `get`, `list`/`listAll`, `produce`,
+  `fetch`, `produceEvents`, `fetchEvents` and `subscribe`; replayed by
+  `typescript_app_sql` and `typescript_app_streams`.
+
+- The `sql` and `streams` modules in every generated SDK facade (SDKP Part C):
+  `sql.query` and `sql.query_arrow` from facade annotations on `loams.sql.v1`,
+  `streams.create`, `get`, `list`, `produce`, `fetch`, `produce_events` and
+  `fetch_events` from `loams.stream.v1`, the Python and Go stubs for both, and
+  the `app_sql` and `app_streams` scenarios recorded from `loams dev`
+  (`record-fixtures.mjs --source app --scenario …`).
+- Python SDK (`loams`): the app-building layer of SDKP, in both `Loams` and
+  `AsyncLoams`. `Schema`, `Filter` and `Search` builders checked against the
+  builder corpus (`sdks/fixtures/builders/`); `loams.collection(name)` handles;
+  `ConsistencyToken` parse/merge/print checked against
+  `sdks/fixtures/tokens.json`, and a session store that merges every response
+  token (fields and the `loams-consistency-token` header) and sends
+  `consistency.at_least`; a default namespace (R11); a 30 s unary deadline
+  raising `client_deadline_exceeded` (R12); `documents.write_batch` (R13);
+  `streams.subscribe` (R14); `search.text`, `search.hybrid`,
+  `search.query_all`, `documents.upsert/delete/patch/scroll_all` and
+  `<call>_all` for paged calls; `Loams.from_env()`. The package now carries the
+  `loams.collection.v1` and `loams.graph.v1` messages and Connect stubs.
+
+- Python SDK: the app modules on `Loams` and `AsyncLoams` (`namespaces`,
+  `collections`, `documents`, `search`, `vector`, `graph`), typed with the
+  generated Protocols plus the conveniences; the app scenario replayed through
+  the public facade in `python_app_collections`, `python_app_search` and
+  `python_app_graph`; `examples/notes/main.py`.
+- Python SDK: `loams.sql` and `loams.streams` on both clients (SDKP L2 part C):
+  `sql.query`, `sql.query_arrow`, `sql.records(statement, [$1, …])` and
+  `loams.sql_records(answer)`; `streams.create`, `get`, `list`/`list_all`,
+  `produce`, `fetch`, `produce_events`, `fetch_events` and `subscribe`;
+  replayed by `python_app_sql` and `python_app_streams`.
+
+- Python SDK: `session_consistency=True` now works: the response header is read
+  through `connectrpc.client.ResponseMetadata`, and two different tokens merge
+  instead of being refused. The session keeps one token per proto package, and
+  only collection and SQL reads take it (SDKP-17). `timeout_ms` is now the
+  SDK's own deadline over all of a call's retries rather than the transport's
+  per-attempt one.
+- Go SDK (`loams.dev/go`): the app-building layer of SDKP. `NewSchema`,
+  `Filter` and `NewSearch` builders (with `RRF`, `DBSF`, `Weighted`, `Sort`)
+  checked against the builder corpus (`sdks/fixtures/builders/`);
+  `client.Collection(name)` handles; `ConsistencyToken` parse/merge/print
+  checked against `sdks/fixtures/tokens.json`, and a session store that merges
+  every response token and sends `consistency.at_least`; `Options.Namespace`
+  and `FromEnv` (R11); a 30 s unary deadline raising `client_deadline_exceeded`
+  (R12); `WriteBatch` and `*BatchError` (R13); `Subscribe` (R14);
+  `DocumentCalls` (Upsert, Delete, Patch, WriteBatch, ScrollAll) and
+  `SearchCalls` (Text, Hybrid, QueryAll). The generated stubs now include
+  `loams.collection.v1` and `loams.graph.v1`.
+  The app modules `Namespaces()`, `Collections()`, `Documents()`, `Search()`,
+  `Vector()` and `Graph()` (the binding table checked against
+  `facade-index.json` by `go_facade_matches_index`), the app scenario replayed
+  through them (`go_app_*`), and `examples/notes`.
+- Go SDK: `client.Sql()` and `client.Streams()` (SDKP L3 part C): `Query`,
+  `QueryArrow`, `Records(ctx, statement, params)` and `SqlRecords(answer)`;
+  `Create`, `Get`, `List`/`ListAll`, `Produce`, `Fetch`, `ProduceEvents`,
+  `FetchEvents` and `Subscribe`; replayed by `go_app_sql` and
+  `go_app_streams`.
+- Rust SDK (`loams`): the app-building layer of SDKP part A. `Schema`, `Filter`
+  and `Search` builders checked against the shared builder corpus
+  (`sdks/fixtures/builders/`); `ConsistencyToken` checked against
+  `sdks/fixtures/tokens.json`, and a session that merges every response token;
+  a default namespace (`with_namespace`, R11); a 30 s unary deadline over the
+  whole call with `client_deadline_exceeded` (R12); `write_batch` and
+  `BatchError` (R13); `subscribe` as a `futures::Stream` (R14);
+  `CollectionHandle`, `scroll_all`, `query_all`; `Loams::from_env`. The app
+  modules `namespaces()`, `collections()`, `documents()`, `search()`,
+  `vector()` and `graph()`, `loams.collection(name)`, and the app scenario
+  replayed through them (`rust_app_*`); `examples/notes`.
+- Rust SDK: `loams.sql()` and `loams.streams()` (SDKP L4 part C): `query`,
+  `query_arrow`, `records(statement, params)` and `sql_records(&answer)`;
+  `create`, `get`, `list`/`list_all`, `produce`, `fetch`, `produce_events`,
+  `fetch_events`, and `Loams::subscribe` over `fetch` (now a local, not
+  `Send`, stream); replayed by `rust_app_sql` and `rust_app_streams`.
+
+### Fixed
+
+- **The CLI packages had no Durable** (#925). The `.deb`, `.rpm`, pacman package, macOS tarballs
+  and Windows zip were built from the default features, so `loams dev` from a package served
+  nothing on 127.0.0.1:8001. They now build with the release image's features (`durable`,
+  `durable-tikv`, `tikv`, `live-tikv`, `graph`, `pgwire`, `mysql-wire`, `stream-grpc`), a check
+  keeps that list equal to the image's, and `scripts/release/smoke-durable.sh` checks that
+  Durable answers on 8001 in the Linux, Windows and macOS package jobs.
+- **agentd: queued messages ran out of order** (#926). When a run closed with a steer still in its
+  mailbox, agentd published `Idle` before re-dispatching it, so the queue drain started the next
+  row first and the orphan steered into it. The chat now stays `Working` until the re-dispatch
+  starts its own turn.
+- Release: nFPM gets the 16-digit long key id, not the fingerprint (#830), and
+  `sign-checksums.sh` resolves the public key path before changing directory (#832).
+- A search retriever without `k` was refused ("k must be between 1 and
+  100000"); it now takes `max(10, offset + limit)` on REST and Connect.
+- `search_after` refused the primary-key sort value a Connect answer had just
+  returned (a `google.protobuf.Value` number is a double): a whole double is now
+  the key it names, and an id past 2^53 is answered as `{"uint": "…"}` and read
+  back exactly.
+- TypeScript SDK: a facade call whose name differs from its RPC
+  (`admin.keys.create` for `KeyService/CreateKey`) failed with "has no method";
+  and the paging iterator dropped items whose field name has an underscore
+  (`service_accounts`).
+
+## [0.1.0] - 2026-10-19
 
 ### Upgrading
 

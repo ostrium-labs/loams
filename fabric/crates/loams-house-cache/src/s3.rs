@@ -140,8 +140,27 @@ pub async fn handle(
             };
             let head = method == Method::HEAD;
             let range = request.headers().get(header::RANGE).cloned();
+            let started = std::time::SystemTime::now();
             let (status, response, bytes) =
                 object(&id, &upstream, relative, head, range.as_ref(), &target).await;
+            // The read's span, under the span of what the worker runs now
+            // (HS1 Task 23).
+            let tracer = proxy.tracer();
+            if let Some(parent) = tracer.worker_span(worker) {
+                tracer.record(
+                    parent,
+                    "house.cache.read",
+                    started,
+                    std::time::SystemTime::now(),
+                    vec![
+                        ("http.method", method.as_str().into()),
+                        ("loams.key", relative.into()),
+                        ("http.status_code", i64::from(status.as_u16()).into()),
+                        ("loams.bytes", bytes.into()),
+                    ],
+                    status.is_client_error() || status.is_server_error(),
+                );
+            }
             respond(status, response, bytes)
         }
         (&Method::GET | &Method::HEAD, true) => respond(

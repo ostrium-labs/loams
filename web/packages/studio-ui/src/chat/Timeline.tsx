@@ -7,7 +7,7 @@
 // render the same component over the same store (D917).
 
 import type { SessionMessageEntry, UserInputAnswer } from "@loams/agentd-client";
-import { AlertDialog, cx } from "@loams/ui";
+import { ConfirmDialog, cx, motion, useMotionPreset } from "@loams/ui";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type ReactNode,
@@ -244,6 +244,11 @@ export function Timeline(props: TimelineProps) {
     [latest],
   );
 
+  // Rows that arrive while the thread is open rise in; the history the thread opens with,
+  // rows loaded above it and rows that only change in place do not move.
+  const entering = useEnteringRows(rows, threadKey);
+  const rise = useMotionPreset("fadeUp");
+
   const renderRow = (row: TimelineRow) => (
     <TimelineRowView row={row} matched={matchSet.has(row.id)} active={activeMatchId === row.id} />
   );
@@ -285,7 +290,20 @@ export function Timeline(props: TimelineProps) {
               })}
             </div>
           ) : (
-            rows.map((row) => <div key={row.id}>{renderRow(row)}</div>)
+            rows.map((row) =>
+              entering.has(row.id) ? (
+                <motion.div
+                  key={row.id}
+                  initial={rise.initial}
+                  animate={rise.animate}
+                  transition={rise.transition}
+                >
+                  {renderRow(row)}
+                </motion.div>
+              ) : (
+                <div key={row.id}>{renderRow(row)}</div>
+              ),
+            )
           )}
           {approvals.length > 0 ? (
             <div className={cx("flex flex-col gap-2 py-2", compact ? "px-2" : "px-4")}>
@@ -303,15 +321,15 @@ export function Timeline(props: TimelineProps) {
           ) : null}
         </div>
       </div>
-      <AlertDialog
+      <ConfirmDialog
         open={confirmTurn !== null}
         onClose={() => {
           if (!restoring) setConfirmTurn(null);
         }}
-        title="Restore to before this turn?"
+        object="to before this turn"
         confirm="Restore"
-        tone="danger"
         pending={restoring}
+        impact="The checkout goes back to how it was before this turn started. Changes made since, by the agent or by you, are discarded. The thread's messages stay."
         onConfirm={() => {
           const turnId = confirmTurn;
           if (!turnId) return;
@@ -324,10 +342,40 @@ export function Timeline(props: TimelineProps) {
             () => setRestoring(false),
           );
         }}
-      >
-        The checkout goes back to how it was before this turn started. Changes made since, by the
-        agent or by you, are discarded. The thread's messages stay.
-      </AlertDialog>
+      />
     </TimelineActionsContext>
   );
+}
+
+/**
+ * The ids of rows appended after the timeline first showed rows (for `threadKey`). The first
+ * non-empty set is the baseline; a row counts as new only when it lands after every row seen
+ * so far, so history loaded above and rows re-derived in place never animate.
+ */
+function useEnteringRows(rows: TimelineRow[], threadKey: string | undefined): ReadonlySet<string> {
+  const state = useRef<{
+    key: string | undefined;
+    seen: Set<string> | null;
+    entering: Set<string>;
+  }>({ key: threadKey, seen: null, entering: new Set() });
+  const s = state.current;
+  if (s.key !== threadKey) {
+    s.key = threadKey;
+    s.seen = null;
+    s.entering = new Set();
+  }
+  if (s.seen === null) {
+    if (rows.length > 0) s.seen = new Set(rows.map((row) => row.id));
+    return s.entering;
+  }
+  let lastSeen = -1;
+  rows.forEach((row, index) => {
+    if (s.seen?.has(row.id)) lastSeen = index;
+  });
+  for (let i = lastSeen + 1; i < rows.length; i++) {
+    const id = rows[i]?.id;
+    if (id !== undefined && !s.seen.has(id)) s.entering.add(id);
+  }
+  for (const row of rows) s.seen.add(row.id);
+  return s.entering;
 }

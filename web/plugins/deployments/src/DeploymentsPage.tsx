@@ -16,6 +16,8 @@ import {
   formatRelative,
   Notice,
   SampleDataNotice,
+  SelectionGroup,
+  SelectionIndicator,
   Stat,
   Stats,
   StatusTag,
@@ -124,25 +126,30 @@ export function DeploymentsPage({ client, sample }: { client: DeployClient; samp
         <SampleDataNotice>The pipelines and deploys shown are simulated.</SampleDataNotice>
       )}
       <Summary client={client} />
-      <div role="tablist" aria-label="Deployment views" className="ld-tabs" onKeyDown={onKey}>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            ref={(el) => {
-              refs.current[t.id] = el;
-            }}
-            type="button"
-            role="tab"
-            className="ld-tab"
-            id={`${base}-${t.id}`}
-            aria-selected={tab === t.id}
-            aria-controls={`${base}-panel`}
-            tabIndex={tab === t.id ? 0 : -1}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div role="tablist" aria-label="Deployment views" className="ds-tabs" onKeyDown={onKey}>
+        <SelectionGroup>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              ref={(el) => {
+                refs.current[t.id] = el;
+              }}
+              type="button"
+              role="tab"
+              className="ds-tab"
+              id={`${base}-${t.id}`}
+              aria-selected={tab === t.id}
+              aria-controls={`${base}-panel`}
+              tabIndex={tab === t.id ? 0 : -1}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+              {tab === t.id && (
+                <SelectionIndicator layoutId="deploy-tab" className="ds-tab-indicator" />
+              )}
+            </button>
+          ))}
+        </SelectionGroup>
       </div>
       <div role="tabpanel" id={`${base}-panel`} aria-labelledby={`${base}-${tab}`}>
         {tab === 'live' && <LiveDeployments client={client} />}

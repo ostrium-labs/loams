@@ -74,6 +74,50 @@ pub async fn replace(
     summary: Vec<(String, String)>,
     timestamp_ms: i64,
 ) -> Result<Append, LakeError> {
+    rewrite(
+        metadata,
+        manifests,
+        removed,
+        added,
+        summary,
+        timestamp_ms,
+        Operation::Replace,
+    )
+    .await
+}
+
+/// Builds a `delete` snapshot that removes the whole files at `removed` and
+/// adds none (HS1 Task 23: the query log's retention drops its old days'
+/// files). It requires `main` to be the snapshot it was built on, like
+/// [`replace`].
+pub async fn delete_files(
+    metadata: &TableMetadata,
+    manifests: Vec<(ManifestFile, Bytes)>,
+    removed: &HashSet<String>,
+    summary: Vec<(String, String)>,
+    timestamp_ms: i64,
+) -> Result<Append, LakeError> {
+    rewrite(
+        metadata,
+        manifests,
+        removed,
+        Vec::new(),
+        summary,
+        timestamp_ms,
+        Operation::Delete,
+    )
+    .await
+}
+
+async fn rewrite(
+    metadata: &TableMetadata,
+    manifests: Vec<(ManifestFile, Bytes)>,
+    removed: &HashSet<String>,
+    added: Vec<DataFile>,
+    summary: Vec<(String, String)>,
+    timestamp_ms: i64,
+    operation: Operation,
+) -> Result<Append, LakeError> {
     let version = metadata.format_version();
     if version != FormatVersion::V2 {
         return Err(LakeError::Invalid(format!(
@@ -261,7 +305,7 @@ pub async fn replace(
         .with_timestamp_ms(timestamp_ms.max(metadata.last_updated_ms()))
         .with_manifest_list(list_location)
         .with_summary(Summary {
-            operation: Operation::Replace,
+            operation,
             additional_properties: properties,
         })
         .with_schema_id(schema.schema_id())
@@ -445,6 +489,37 @@ mod tests {
         .await
         .expect_err("gone");
         assert!(matches!(err, LakeError::Conflict(_)), "{err}");
+    }
+
+    /// The query log's retention (HS1 Task 23): whole files go, nothing is
+    /// added, and the snapshot says `delete`.
+    #[tokio::test]
+    async fn delete_files_removes_whole_files() {
+        let mut store: HashMap<String, Bytes> = HashMap::new();
+        let mut metadata = table();
+        let built = fast_append(&metadata, None, vec![file("a", 10), file("b", 5)], 1_000)
+            .await
+            .expect("append");
+        metadata = commit(metadata, &mut store, built).await;
+        let removed: HashSet<String> =
+            ["s3://local/ns/1/house/default/t-x/data/a.parquet".to_string()].into();
+        let built = delete_files(
+            &metadata,
+            manifests_of(&metadata, &store),
+            &removed,
+            vec![("loams.retention".to_string(), "1".to_string())],
+            2_000,
+        )
+        .await
+        .expect("delete");
+        metadata = commit(metadata, &mut store, built).await;
+        let snapshot = metadata.current_snapshot().expect("delete");
+        assert_eq!(snapshot.summary().operation, Operation::Delete);
+        let props = &snapshot.summary().additional_properties;
+        assert_eq!(props["total-records"], "5");
+        assert_eq!(props["deleted-records"], "10");
+        assert_eq!(props["added-data-files"], "0");
+        assert_eq!(live(&metadata, &store), vec![("b.parquet".into(), 1)]);
     }
 
     /// A data file for a test, as the writer would make one.

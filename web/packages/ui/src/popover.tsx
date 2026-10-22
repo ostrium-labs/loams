@@ -1,7 +1,7 @@
 // Portions of this file are from T3 Code (https://github.com/pingdotgg/t3code),
 // apps/web/src/components/ui/popover.tsx at commit 33aa4614, Copyright (c) 2026 T3 Tools Inc., MIT licence
 // (see web/packages/ui/LICENSE.t3code). Modified by The Loams Authors:
-// ported to the design 59 tokens and cx, with Base UI underneath; no cva, lucide or Effect; the root is PopoverRoot and the Loams Popover wrapper keeps its props; the thread-details "panel" variant is dropped; the layer sits between dialogs (71) and toasts (80). Loams' changes are Apache-2.0.
+// ported to the design 59 tokens and cx, with Base UI underneath; no cva, lucide or Effect; the root is PopoverRoot and the Loams Popover wrapper keeps its props; the thread-details "panel" variant is dropped; the layer sits between dialogs (71) and toasts (80); the elevated surface and the enter and exit timing (UI1). Loams' changes are Apache-2.0.
 
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import type { ReactElement, ReactNode } from 'react';
@@ -12,9 +12,11 @@ export const OVERLAY_LAYER = 'z-[75]';
 
 /** The surface menus, popovers and preview cards share (the corner and text size are each part's). */
 export const OVERLAY_SURFACE =
-  'border border-rule bg-surface text-ink shadow-pop outline-none ' +
-  'transition-[scale,opacity] duration-(--op-duration) motion-reduce:transition-none ' +
-  'data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 ' +
+  'border border-rule bg-elevated text-ink shadow-pop outline-none ' +
+  // Opens from its trigger (origin-(--transform-origin)) in 160ms, closes in 110ms; transform
+  // and opacity only; reduced motion snaps (UI1-1).
+  'transition-[scale,opacity] duration-(--op-duration-enter) ease-out data-ending-style:duration-(--op-duration-exit) data-ending-style:ease-in motion-reduce:transition-none ' +
+  'data-starting-style:scale-97 data-ending-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 ' +
   '[-webkit-app-region:no-drag]';
 
 export const PopoverCreateHandle = PopoverPrimitive.createHandle;

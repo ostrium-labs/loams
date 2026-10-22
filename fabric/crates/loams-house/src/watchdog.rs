@@ -403,6 +403,19 @@ struct Process {
     cancelled: bool,
     /// A write the front carries to its commit itself: not killable.
     cancellable: bool,
+    /// When it was registered (`system.processes.elapsed`, HS1 Task 23).
+    since: std::time::Instant,
+}
+
+/// A running statement as `system.processes` shows it (HS1 Task 23).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RunningQuery {
+    pub query_id: String,
+    pub user: String,
+    pub query: String,
+    pub elapsed: Duration,
+    /// Asked to stop.
+    pub cancelled: bool,
 }
 
 /// Why a kill found nothing it may kill.
@@ -460,6 +473,7 @@ impl Processes {
                 kill: None,
                 cancelled: false,
                 cancellable: true,
+                since: std::time::Instant::now(),
             },
         );
         Ok(ProcessGuard {
@@ -471,6 +485,24 @@ impl Processes {
     /// Whether statement `query_id` is still running.
     pub fn is_running(&self, query_id: &str) -> bool {
         self.lock().contains_key(query_id)
+    }
+
+    /// The statements running now in `namespace`, by id.
+    pub fn list(&self, namespace: u64) -> Vec<RunningQuery> {
+        let mut out: Vec<RunningQuery> = self
+            .lock()
+            .iter()
+            .filter(|(_, p)| p.namespace == namespace)
+            .map(|(id, p)| RunningQuery {
+                query_id: id.clone(),
+                user: p.user.clone(),
+                query: p.query.clone(),
+                elapsed: p.since.elapsed(),
+                cancelled: p.cancelled,
+            })
+            .collect();
+        out.sort_by(|a, b| a.query_id.cmp(&b.query_id));
+        out
     }
 
     /// Statements running now.

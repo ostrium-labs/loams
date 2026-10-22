@@ -78,12 +78,12 @@ function WorkLogLine({ icon, label, trailing, wrapLabel }: RowContent) {
 }
 
 const interactionClassName =
-  "cursor-pointer hover:bg-surface focus-visible:outline-2 focus-visible:outline-accent";
+  "cursor-pointer transition-colors duration-(--op-duration-fast) ease-out hover:bg-row-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus motion-reduce:transition-none";
 
 function useRowClassName(interactive: boolean) {
   const grouped = use(GroupedRows);
   return cx(
-    "relative w-full min-w-0 rounded-none border-0 bg-transparent px-0.5 text-left text-inherit",
+    "relative w-full min-w-0 rounded-md border-0 bg-transparent px-0.5 text-left text-inherit",
     grouped ? "py-0" : "py-0.5",
     interactive && interactionClassName,
   );

@@ -8,6 +8,8 @@ import {
   Field,
   Input,
   Select,
+  SelectionGroup,
+  SelectionIndicator,
   SkeletonList,
   StatusTag,
   Table,
@@ -357,18 +359,23 @@ export function ListPage({
           onOpen={(next) => navigate(base(next) + (tab === 'links' ? '/links' : ''))}
         />
         <div className="flex gap-1" role="tablist" aria-label="Streams and links">
-          {(['streams', 'links'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={t === tab}
-              className="ds-tab"
-              onClick={() => navigate(base(ns) + (t === 'links' ? '/links' : ''))}
-            >
-              {t === 'streams' ? 'Streams' : 'Links'}
-            </button>
-          ))}
+          <SelectionGroup>
+            {(['streams', 'links'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={t === tab}
+                className="ds-tab"
+                onClick={() => navigate(base(ns) + (t === 'links' ? '/links' : ''))}
+              >
+                {t === 'streams' ? 'Streams' : 'Links'}
+                {t === tab && (
+                  <SelectionIndicator layoutId="streams-tab" className="ds-tab-indicator" />
+                )}
+              </button>
+            ))}
+          </SelectionGroup>
         </div>
       </div>
       <div className="flex items-center justify-between">
@@ -408,7 +415,16 @@ export function ListPage({
             rowKey={(s) => s.name}
             onRowClick={(s) => navigate(`${base(ns)}/stream/${encodeURIComponent(s.name)}`)}
             empty={
-              <Empty title="No streams yet">Create a stream, then produce a record to it.</Empty>
+              <Empty
+                title="No streams yet"
+                actions={
+                  <Button size="sm" onClick={() => setCreating(true)}>
+                    New stream
+                  </Button>
+                }
+              >
+                Create a stream, then produce a record to it.
+              </Empty>
             }
             columns={[
               {
@@ -436,7 +452,18 @@ export function ListPage({
             rows={visibleLinks}
             rowKey={(l) => l.name}
             onRowClick={(l) => navigate(`${base(ns)}/link/${encodeURIComponent(l.name)}`)}
-            empty={<Empty title="No links yet">Create a link from a stream to a target.</Empty>}
+            empty={
+              <Empty
+                title="No links yet"
+                actions={
+                  <Button size="sm" onClick={() => setCreating(true)}>
+                    New link
+                  </Button>
+                }
+              >
+                Create a link from a stream to a target.
+              </Empty>
+            }
             columns={[
               {
                 key: 'name',

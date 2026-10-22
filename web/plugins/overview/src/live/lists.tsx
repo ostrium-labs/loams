@@ -41,7 +41,7 @@ function When({ at, now }: { at: number; now: number }) {
 }
 
 function Loaded<T>({ load, children }: { load: Load<T>; children: (data: T) => ReactNode }) {
-  if (load.state === 'loading') return <p className="text-sm text-muted m-0">Loading</p>;
+  if (load.state === 'loading') return <p className="text-body text-muted m-0">Loading</p>;
   if (load.state === 'error')
     return (
       <Notice tone="danger" title="Not reachable">

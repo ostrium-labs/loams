@@ -5,13 +5,19 @@ From v0.1.0 on, a Loams compose stack is upgraded in place and keeps its data (d
 `loams upgrade rollback` puts the stack back. preview.1 → preview.2 kept no data. preview.2 → 0.1.0 is the
 first step that keeps it.
 
+**0.1.1 changes the default stack (D1340): reinstall.** There are no 0.1.0 installs to carry
+forward, so start 0.1.1 from its bundle with a fresh `.env`. The steps below upgrade a 0.1.0 stack that
+keeps its stores (`COMPOSE_PROFILES=tikv,rustfs` in `.env` first); `rollback --keep-writes` back to 0.1.0
+is refused (D1343), so a rollback from 0.1.1 restores the snapshot. A stack on the light default's
+embedded stores is upgraded by hand until 0.1.2.
+
 ## Quick start
 
 From the stack's directory (the bundle's `release/`, the one with `compose.yaml` and `.env`):
 
 ```sh
-loams upgrade check --to 0.1.0  # what it will do, and what would stop it
-loams upgrade --to 0.1.0        # asks first; --yes to skip the question
+loams upgrade check --to 0.1.1  # what it will do, and what would stop it
+loams upgrade --to 0.1.1        # asks first; --yes to skip the question
 loams upgrade status            # the stack's release, the ledger, the last attempt
 ```
 
@@ -105,6 +111,11 @@ Reversible claim before a release ships.
 |---|---|---|---|
 | 0.1.0 | `0000-adopt-preview-2`: records preview.2's versions (preview.2 wrote no stack record) | meta | Reversible |
 | 0.1.0 | `0001-safekeeper-volume`: gives the safekeeper a volume, after a drain | host | Reversible |
+| 0.1.1 | None (from any earlier 0.1.x). A 0.1.0 stack keeps its stores with `COMPOSE_PROFILES=tikv,rustfs`, Durable on SQLite included | | |
+
+`loams upgrade rollback --keep-writes` back to 0.1.0 is refused: 0.1.0's startup gate does not serve data a later
+release stamped (fixed after 0.1.0, design §54 §17 T14-2), so it would not start. Roll back from the snapshot
+instead (the default). From 0.1.1 on, `--keep-writes` works whenever every migration of the step is reversible.
 
 The release notes of every release that keeps data have an "Upgrading" section with its table, its third-party
 pins and its expected downtime (`scripts/release/upgrade-notes.sh`).
@@ -118,6 +129,16 @@ pins and its expected downtime (`scripts/release/upgrade-notes.sh`).
   safekeeper before its WAL is drained. Use `loams upgrade`.
 - **No downgrades of third-party components.** A target whose PD, TiKV or TiDB pin is older than the stack's
   is refused (`component_downgrade`). No Postgres major changes through `loams upgrade`.
+- **An upgrade keeps a stack on its stores** (D1340). A stack from 0.1.0 or earlier runs PD, TiKV and RustFS
+  always; the light default that follows it does not. Before upgrading such a stack, add
+  `COMPOSE_PROFILES=tikv,rustfs` to its `.env`, so the new compose file keeps them (without it the engine
+  starts on an empty embedded catalog beside the TiKV data, which stays unread). `loams upgrade` follows the
+  profiles: TiKV's snapshot (BR or a cold copy) and its ordered start only with `tikv`.
+- **A stack on the embedded stores** (no `tikv` profile) is not upgraded by `loams upgrade` yet: `loams migrate`
+  cannot open the embedded metastore while the engine runs, and `check` refuses it (`stack_unrecognised`).
+  Upgrade it by hand: back up the volumes, `docker compose stop`, set `LOAMS_VERSION` in `.env`, then
+  `docker compose up -d`; `migrate` runs before the engine, and the engine refuses data with a migration still
+  pending.
 - **The engine refuses data it cannot read.** It exits 78 (`format_unreadable`, `migration_incomplete`,
   `stack_unrecognised`) rather than start. `loams migrate status` shows why.
 - **Recreating a service by hand.** A sidecar with `network_mode: service:X` (the `tailscale` sidecar is in

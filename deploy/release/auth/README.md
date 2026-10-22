@@ -1,6 +1,6 @@
 # The hosted auth service (auth.loams.dev)
 
-For Loams 0.1.0, Ostrium hosts two things: the console and this
+For Loams 0.1.1, Ostrium hosts two things: the console and this
 auth service. Everything else runs on the user's machines, reached over their own
 tailnet. This directory deploys the auth service. It is
 [Authentik](https://goauthentik.io) 2026.8.3, open-source edition, behind Caddy.
@@ -109,7 +109,7 @@ JWKS URL as the matching entry of `LOAMS_OIDC_JWKS_URL`.
 
 ## Coming soon: self-hosted consoles
 
-In 0.1.0, the hosted console at `https://console.loams.dev` is the only browser
+In 0.1.1, the hosted console at `https://console.loams.dev` is the only browser
 client registered with auth.loams.dev. Running the console on your own Vercel,
 Cloudflare or custom domain against auth.loams.dev is coming soon. A signed-in page at
 `https://auth.loams.dev/register` will create a public PKCE client for your console's

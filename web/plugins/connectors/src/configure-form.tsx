@@ -120,11 +120,11 @@ export function Fields({
       {fields.map((f) =>
         f.children ? (
           <fieldset key={f.id} className="m-0 border border-rule p-4">
-            <legend className={/* mono-ok: id */ 'px-2 font-mono text-sm'}>
+            <legend className={/* mono-ok: id */ 'px-2 font-mono text-body'}>
               {f.key}
               {f.required && <span aria-hidden="true"> *</span>}
             </legend>
-            {f.description && <p className="mb-3 text-sm text-muted">{f.description}</p>}
+            {f.description && <p className="mb-3 text-body text-muted">{f.description}</p>}
             <Fields fields={f.children} values={values} set={set} errors={errors} />
           </fieldset>
         ) : (
@@ -258,8 +258,8 @@ export function ConfigureForm({
         </form>
         <div className="flex min-w-0 flex-col gap-3">
           <div className="flex items-center justify-between">
-            <strong className="text-sm">Instance YAML</strong>
-            <span className="text-xs text-muted" aria-live="polite">
+            <strong className="text-body">Instance YAML</strong>
+            <span className="text-small text-muted" aria-live="polite">
               {validation === undefined
                 ? 'Validating…'
                 : validation.valid
@@ -268,12 +268,12 @@ export function ConfigureForm({
             </span>
           </div>
           <section aria-label="Instance YAML">
-            <pre className="m-0 max-h-96 overflow-auto border border-rule bg-surface p-3 font-mono text-xs">
+            <pre className="m-0 max-h-96 overflow-auto border border-rule bg-surface p-3 font-mono text-small">
               {yaml}
             </pre>
           </section>
           {secrets.length > 0 && (
-            <p className="text-xs text-muted">
+            <p className="text-small text-muted">
               Secret fields are never stored or exported. Create them in the namespace secret store
               under the names shown; the YAML refers to them as <code>{'${secret:<name>}'}</code>.
             </p>
@@ -284,7 +284,7 @@ export function ConfigureForm({
             </Notice>
           )}
           {note && (
-            <p className="text-xs text-muted" role="status">
+            <p className="text-small text-muted" role="status">
               {note}
             </p>
           )}

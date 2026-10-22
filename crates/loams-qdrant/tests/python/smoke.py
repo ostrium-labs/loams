@@ -536,6 +536,38 @@ def payload_indexes(ctx):
     assert hits.count == 1
 
 
+@check()
+def payload_index_delete(ctx):
+    """Deleting a payload index retires it (MA1 Task 23, D1210)."""
+    name = ctx.name()
+    ctx.client.create_collection(
+        name, vectors_config=models.VectorParams(size=2, distance=models.Distance.DOT)
+    )
+    ctx.client.upsert(
+        name,
+        points=[
+            models.PointStruct(id=1, vector=[1.0, 0.0], payload={"tenant": "a"}),
+            models.PointStruct(id=2, vector=[0.0, 1.0], payload={"tenant": "b"}),
+        ],
+        wait=True,
+    )
+    ctx.client.create_payload_index(name, field_name="tenant", field_schema=models.PayloadSchemaType.KEYWORD, wait=True)
+    assert set(ctx.client.get_collection(name).payload_schema) == {"tenant"}
+    result = ctx.client.delete_payload_index(name, field_name="tenant", wait=True)
+    assert result.status == models.UpdateStatus.COMPLETED, result
+    assert ctx.client.get_collection(name).payload_schema == {}
+    # Filters on the key keep working.
+    tenant_a = models.Filter(must=[models.FieldCondition(key="tenant", match=models.MatchValue(value="a"))])
+    assert ctx.client.count(name, count_filter=tenant_a).count == 1
+    # A key with no index completes too, as in Qdrant.
+    result = ctx.client.delete_payload_index(name, field_name="nonExistentField", wait=True)
+    assert result.status == models.UpdateStatus.COMPLETED, result
+    # Re-creating it with the same type revives it.
+    ctx.client.create_payload_index(name, field_name="tenant", field_schema=models.PayloadSchemaType.KEYWORD, wait=True)
+    schema = ctx.client.get_collection(name).payload_schema
+    assert schema["tenant"].data_type == models.PayloadSchemaType.KEYWORD, schema
+
+
 def filter_payload(i):
     rng = random.Random(i)
     p = {

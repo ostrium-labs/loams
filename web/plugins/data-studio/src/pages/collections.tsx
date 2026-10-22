@@ -11,6 +11,7 @@ import {
   Empty,
   Field,
   Input,
+  LoadingSwap,
   Select,
   SkeletonList,
   StatusTag,
@@ -303,55 +304,71 @@ export function CollectionsPage({
       </div>
       {nsError && <ErrorNotice title="Could not create the namespace" message={nsError} />}
       <Card title={`Collections in ${ns}`} flush>
-        {list.state === 'loading' && (
-          <SkeletonList className="ds-pad" label="Loading collections" rows={4} />
-        )}
-        {list.state === 'error' && (
+        {list.state === 'error' ? (
           <div className="ds-pad">
-            <ErrorNotice title="Could not list collections" message={list.message} />
+            <ErrorNotice title="Could not list collections" message={list.message} retry={reload} />
           </div>
-        )}
-        {list.state === 'ready' && (
-          <Table<CollectionInfo>
-            caption="Collections"
-            rows={list.data}
-            rowKey={(c) => c.name}
-            onRowClick={(c) => navigate(open(c.name))}
-            empty={
-              <Empty title="No collections yet">
-                Create a collection, then ingest a file into it.
-              </Empty>
-            }
-            columns={[
-              {
-                key: 'name',
-                header: 'Name',
-                cell: (c) => (
-                  <a className="ds-link" href={`#${open(c.name)}`}>
-                    <code>{c.name}</code>
-                  </a>
-                ),
-              },
-              {
-                key: 'docs',
-                header: 'Documents',
-                numeric: true,
-                cell: (c) => c.liveDocCount.toString(),
-              },
-              {
-                key: 'ver',
-                header: 'Versions',
-                numeric: true,
-                cell: (c) => c.manifestVersion.toString(),
-              },
-              {
-                key: 'hot',
-                header: 'Hot',
-                cell: (c) =>
-                  c.hot?.enabled ? <StatusTag status="done">hot</StatusTag> : <Badge>cold</Badge>,
-              },
-            ]}
-          />
+        ) : (
+          <LoadingSwap
+            loading={list.state === 'loading'}
+            skeleton={<SkeletonList className="ds-pad" label="Loading collections" rows={4} />}
+          >
+            {list.state === 'ready' && (
+              <Table<CollectionInfo>
+                caption="Collections"
+                rows={list.data}
+                rowKey={(c) => c.name}
+                onRowClick={(c) => navigate(open(c.name))}
+                empty={
+                  <Empty
+                    title="No collections yet"
+                    actions={
+                      search ? undefined : (
+                        <Button size="sm" onClick={() => setCreating(true)}>
+                          New collection
+                        </Button>
+                      )
+                    }
+                  >
+                    Create a collection, then ingest a file into it.
+                  </Empty>
+                }
+                columns={[
+                  {
+                    key: 'name',
+                    header: 'Name',
+                    cell: (c) => (
+                      <a className="ds-link" href={`#${open(c.name)}`}>
+                        <code>{c.name}</code>
+                      </a>
+                    ),
+                  },
+                  {
+                    key: 'docs',
+                    header: 'Documents',
+                    numeric: true,
+                    cell: (c) => c.liveDocCount.toLocaleString('en-US'),
+                  },
+                  {
+                    key: 'ver',
+                    header: 'Versions',
+                    numeric: true,
+                    cell: (c) => c.manifestVersion.toString(),
+                  },
+                  {
+                    key: 'hot',
+                    header: 'Hot',
+                    cell: (c) =>
+                      c.hot?.enabled ? (
+                        <StatusTag status="done">hot</StatusTag>
+                      ) : (
+                        <Badge>cold</Badge>
+                      ),
+                  },
+                ]}
+              />
+            )}
+          </LoadingSwap>
         )}
       </Card>
       <NewCollection

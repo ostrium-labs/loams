@@ -13,5 +13,6 @@ mod snapshot;
 mod tantivy_schema;
 mod target;
 mod target_crash;
+mod token_corpus;
 mod values;
 mod writer;

@@ -147,6 +147,7 @@ pub const REASONS: &[Reason] = &[
     "idempotency_key_reused",
     "workspace_not_found",
     "workspace_fenced",
+    "batch_partially_applied",
     "workspace_read_only",
     "workspace_name_taken",
     "object_missing",
@@ -154,17 +155,46 @@ pub const REASONS: &[Reason] = &[
     "env_unsealed",
     "env_access_denied",
     "env_foreign_reference",
+    "memory_store_not_found",
+    "memory_space_not_found",
+    "memory_space_limit",
+    "memory_managed_object",
+    "memory_block_version_mismatch",
+    "memory_block_too_large",
+    "memory_core_budget_exceeded",
+    "memory_content_too_large",
+    "memory_secret_detected",
+    "memory_pii_refused",
+    "memory_model_not_configured",
+    "memory_model_not_local",
+    "memory_token_budget_exhausted",
+    "memory_extraction_failed",
+    "memory_too_many_spaces",
+    "memory_cross_space_write",
+    "memory_not_yet_available",
+    "code_repo_not_indexed",
+    "code_index_building",
+    "code_change_too_large",
+    "code_language_unsupported",
+    "code_scip_invalid",
     "live_bad_cursor",
     "live_worker_crashed",
     "live_deploy_conflict",
     "live_schema_violation",
+    "filter_conflict",
+    "search_after_needs_tiebreak",
+    "invalid_consistency_token",
+    "namespace_required",
+    "sql_param_count",
     "live_index_not_ready",
     "live_app_disabled",
     "live_app_exists",
     "live_function_error",
     "live_function_timeout",
+    "client_deadline_exceeded",
     "live_function_out_of_memory",
     "live_limit_exceeded",
+    "result_too_large",
     "live_app_mismatch",
     "live_origin_not_allowed",
     "session_rotate",
@@ -254,6 +284,7 @@ pub const REASON_CODES: &[(Reason, &str)] = &[
     ("idempotency_key_reused", "failed_precondition"),
     ("workspace_not_found", "not_found"),
     ("workspace_fenced", "aborted"),
+    ("batch_partially_applied", "aborted"),
     ("workspace_read_only", "failed_precondition"),
     ("workspace_name_taken", "already_exists"),
     ("object_missing", "failed_precondition"),
@@ -261,17 +292,46 @@ pub const REASON_CODES: &[(Reason, &str)] = &[
     ("env_unsealed", "invalid_argument"),
     ("env_access_denied", "permission_denied"),
     ("env_foreign_reference", "permission_denied"),
+    ("memory_store_not_found", "not_found"),
+    ("memory_space_not_found", "not_found"),
+    ("memory_space_limit", "resource_exhausted"),
+    ("memory_managed_object", "failed_precondition"),
+    ("memory_block_version_mismatch", "aborted"),
+    ("memory_block_too_large", "invalid_argument"),
+    ("memory_core_budget_exceeded", "resource_exhausted"),
+    ("memory_content_too_large", "invalid_argument"),
+    ("memory_secret_detected", "failed_precondition"),
+    ("memory_pii_refused", "failed_precondition"),
+    ("memory_model_not_configured", "failed_precondition"),
+    ("memory_model_not_local", "failed_precondition"),
+    ("memory_token_budget_exhausted", "resource_exhausted"),
+    ("memory_extraction_failed", "failed_precondition"),
+    ("memory_too_many_spaces", "invalid_argument"),
+    ("memory_cross_space_write", "invalid_argument"),
+    ("memory_not_yet_available", "unimplemented"),
+    ("code_repo_not_indexed", "failed_precondition"),
+    ("code_index_building", "unavailable"),
+    ("code_change_too_large", "invalid_argument"),
+    ("code_language_unsupported", "failed_precondition"),
+    ("code_scip_invalid", "invalid_argument"),
     ("live_bad_cursor", "invalid_argument"),
     ("live_worker_crashed", "internal"),
     ("live_deploy_conflict", "failed_precondition"),
     ("live_schema_violation", "invalid_argument"),
+    ("filter_conflict", "invalid_argument"),
+    ("search_after_needs_tiebreak", "invalid_argument"),
+    ("invalid_consistency_token", "invalid_argument"),
+    ("namespace_required", "invalid_argument"),
+    ("sql_param_count", "invalid_argument"),
     ("live_index_not_ready", "failed_precondition"),
     ("live_app_disabled", "failed_precondition"),
     ("live_app_exists", "failed_precondition"),
     ("live_function_error", "unknown"),
     ("live_function_timeout", "deadline_exceeded"),
+    ("client_deadline_exceeded", "deadline_exceeded"),
     ("live_function_out_of_memory", "resource_exhausted"),
     ("live_limit_exceeded", "resource_exhausted"),
+    ("result_too_large", "resource_exhausted"),
     ("live_app_mismatch", "permission_denied"),
     ("live_origin_not_allowed", "permission_denied"),
     ("session_rotate", "unavailable"),
@@ -332,11 +392,14 @@ pub const PROTO_PACKAGES: &[&str] = &[
     "loams.instance.v1",
     "loams.live.v1",
     "loams.live.worker.v1",
+    "loams.memory.v1",
     "loams.notifications.v1",
     "loams.operations.v1",
     "loams.options.v1",
     "loams.postgres.v1",
     "loams.repos.v1",
+    "loams.sql.v1",
+    "loams.stream.v1",
 ];
 
 /// AIP-158 paging, named by `FacadeOptions.pagination`.
@@ -521,6 +584,62 @@ pub static MODULES: &[ModuleBinding] = &[
         ],
     },
     ModuleBinding {
+        name: "collections",
+        summary: "Collections: schema, aliases, versions, scan plans and the hot tier.",
+        service: "loams.collection.v1.CollectionService",
+        package: "loams.collection.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "collections", name: "add_fields", proto_name: "add_fields", method: "AddFields", rpc: "loams.collection.v1.CollectionService/AddFields", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "collections", name: "create", proto_name: "create", method: "CreateCollection", rpc: "loams.collection.v1.CollectionService/CreateCollection", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "collections", name: "drop", proto_name: "drop", method: "DropCollection", rpc: "loams.collection.v1.CollectionService/DropCollection", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "collections", name: "get", proto_name: "get", method: "GetCollection", rpc: "loams.collection.v1.CollectionService/GetCollection", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "collections", name: "list", proto_name: "list", method: "ListCollections", rpc: "loams.collection.v1.CollectionService/ListCollections", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: Some(Pagination { items: "collections", next_page_token: "next_page_token" }) },
+            CallBinding { module: "collections", name: "list_versions", proto_name: "list_versions", method: "ListVersions", rpc: "loams.collection.v1.CollectionService/ListVersions", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: Some(Pagination { items: "versions", next_page_token: "next_page_token" }) },
+            CallBinding { module: "collections", name: "scan", proto_name: "scan", method: "Scan", rpc: "loams.collection.v1.CollectionService/Scan", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "collections", name: "set_hot", proto_name: "set_hot", method: "SetHot", rpc: "loams.collection.v1.CollectionService/SetHot", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "collections", name: "update_aliases", proto_name: "update_aliases", method: "UpdateAliases", rpc: "loams.collection.v1.CollectionService/UpdateAliases", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "collections", name: "warm", proto_name: "warm", method: "WarmCollection", rpc: "loams.collection.v1.CollectionService/WarmCollection", service: "loams.collection.v1.CollectionService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "documents",
+        summary: "Documents: write, get, scroll, count, delete by filter and patch by filter.",
+        service: "loams.collection.v1.DocumentService",
+        package: "loams.collection.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "documents", name: "count", proto_name: "count", method: "CountDocuments", rpc: "loams.collection.v1.DocumentService/CountDocuments", service: "loams.collection.v1.DocumentService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "documents", name: "delete_by_filter", proto_name: "delete_by_filter", method: "DeleteByFilter", rpc: "loams.collection.v1.DocumentService/DeleteByFilter", service: "loams.collection.v1.DocumentService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "documents", name: "get", proto_name: "get", method: "GetDocuments", rpc: "loams.collection.v1.DocumentService/GetDocuments", service: "loams.collection.v1.DocumentService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "documents", name: "patch_by_filter", proto_name: "patch_by_filter", method: "PatchByFilter", rpc: "loams.collection.v1.DocumentService/PatchByFilter", service: "loams.collection.v1.DocumentService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "documents", name: "scroll", proto_name: "scroll", method: "ScrollDocuments", rpc: "loams.collection.v1.DocumentService/ScrollDocuments", service: "loams.collection.v1.DocumentService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "documents", name: "write", proto_name: "write", method: "WriteDocuments", rpc: "loams.collection.v1.DocumentService/WriteDocuments", service: "loams.collection.v1.DocumentService", package: "loams.collection.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "graph",
+        summary: "Loams Graph: stored property graphs, queried with GQL.",
+        service: "loams.graph.v1.GraphAdminService",
+        package: "loams.graph.v1",
+        unstable: true,
+        derived: false,
+        calls: &[
+            CallBinding { module: "graph", name: "create", proto_name: "create", method: "CreateGraph", rpc: "loams.graph.v1.GraphAdminService/CreateGraph", service: "loams.graph.v1.GraphAdminService", package: "loams.graph.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "graph", name: "delete", proto_name: "delete", method: "DeleteGraph", rpc: "loams.graph.v1.GraphAdminService/DeleteGraph", service: "loams.graph.v1.GraphAdminService", package: "loams.graph.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "graph", name: "explain", proto_name: "explain", method: "Explain", rpc: "loams.graph.v1.GraphService/Explain", service: "loams.graph.v1.GraphService", package: "loams.graph.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "graph", name: "get", proto_name: "get", method: "GetGraph", rpc: "loams.graph.v1.GraphAdminService/GetGraph", service: "loams.graph.v1.GraphAdminService", package: "loams.graph.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "graph", name: "list", proto_name: "list", method: "ListGraphs", rpc: "loams.graph.v1.GraphAdminService/ListGraphs", service: "loams.graph.v1.GraphAdminService", package: "loams.graph.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: Some(Pagination { items: "graphs", next_page_token: "next_page_token" }) },
+            CallBinding { module: "graph", name: "query", proto_name: "query", method: "Execute", rpc: "loams.graph.v1.GraphService/Execute", service: "loams.graph.v1.GraphService", package: "loams.graph.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "graph", name: "query_batch", proto_name: "query_batch", method: "ExecuteBatch", rpc: "loams.graph.v1.GraphService/ExecuteBatch", service: "loams.graph.v1.GraphService", package: "loams.graph.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "graph", name: "query_stream", proto_name: "query_stream", method: "ExecuteStream", rpc: "loams.graph.v1.GraphService/ExecuteStream", service: "loams.graph.v1.GraphService", package: "loams.graph.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Server, pagination: None },
+            CallBinding { module: "graph", name: "schema", proto_name: "schema", method: "GetSchema", rpc: "loams.graph.v1.GraphAdminService/GetSchema", service: "loams.graph.v1.GraphAdminService", package: "loams.graph.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "graph", name: "update", proto_name: "update", method: "UpdateGraph", rpc: "loams.graph.v1.GraphAdminService/UpdateGraph", service: "loams.graph.v1.GraphAdminService", package: "loams.graph.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
         name: "instance",
         summary: "What this instance is, and who the caller is on it.",
         service: "loams.instance.v1.InstanceService",
@@ -567,6 +686,58 @@ pub static MODULES: &[ModuleBinding] = &[
         ],
     },
     ModuleBinding {
+        name: "namespaces",
+        summary: "Namespaces: the container every collection and stream lives in.",
+        service: "loams.collection.v1.NamespaceService",
+        package: "loams.collection.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "namespaces", name: "create", proto_name: "create", method: "CreateNamespace", rpc: "loams.collection.v1.NamespaceService/CreateNamespace", service: "loams.collection.v1.NamespaceService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "namespaces", name: "list", proto_name: "list", method: "ListNamespaces", rpc: "loams.collection.v1.NamespaceService/ListNamespaces", service: "loams.collection.v1.NamespaceService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: Some(Pagination { items: "namespaces", next_page_token: "next_page_token" }) },
+        ],
+    },
+    ModuleBinding {
+        name: "search",
+        summary: "Queries: one search over one collection, dense, sparse, text or hybrid.",
+        service: "loams.collection.v1.QueryService",
+        package: "loams.collection.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "search", name: "query", proto_name: "query", method: "Search", rpc: "loams.collection.v1.QueryService/Search", service: "loams.collection.v1.QueryService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "sql",
+        summary: "SQL: one read-only statement over a namespace's collections, with parameters.",
+        service: "loams.sql.v1.SqlService",
+        package: "loams.sql.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "sql", name: "query", proto_name: "query", method: "Query", rpc: "loams.sql.v1.SqlService/Query", service: "loams.sql.v1.SqlService", package: "loams.sql.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "sql", name: "query_arrow", proto_name: "query_arrow", method: "QueryArrow", rpc: "loams.sql.v1.SqlService/QueryArrow", service: "loams.sql.v1.SqlService", package: "loams.sql.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "streams",
+        summary: "Streams: create, list and describe a namespace's logs; produce and fetch records and CloudEvents.",
+        service: "loams.stream.v1.StreamService",
+        package: "loams.stream.v1",
+        unstable: false,
+        derived: false,
+        calls: &[
+            CallBinding { module: "streams", name: "create", proto_name: "create", method: "CreateStream", rpc: "loams.stream.v1.StreamService/CreateStream", service: "loams.stream.v1.StreamService", package: "loams.stream.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "streams", name: "fetch", proto_name: "fetch", method: "Fetch", rpc: "loams.stream.v1.StreamService/Fetch", service: "loams.stream.v1.StreamService", package: "loams.stream.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "streams", name: "fetch_events", proto_name: "fetch_events", method: "FetchCloudEvents", rpc: "loams.stream.v1.StreamService/FetchCloudEvents", service: "loams.stream.v1.StreamService", package: "loams.stream.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "streams", name: "get", proto_name: "get", method: "DescribeStream", rpc: "loams.stream.v1.StreamService/DescribeStream", service: "loams.stream.v1.StreamService", package: "loams.stream.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "streams", name: "list", proto_name: "list", method: "ListStreams", rpc: "loams.stream.v1.StreamService/ListStreams", service: "loams.stream.v1.StreamService", package: "loams.stream.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: Some(Pagination { items: "streams", next_page_token: "next_page_token" }) },
+            CallBinding { module: "streams", name: "produce", proto_name: "produce", method: "Produce", rpc: "loams.stream.v1.StreamService/Produce", service: "loams.stream.v1.StreamService", package: "loams.stream.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+            CallBinding { module: "streams", name: "produce_events", proto_name: "produce_events", method: "ProduceCloudEvents", rpc: "loams.stream.v1.StreamService/ProduceCloudEvents", service: "loams.stream.v1.StreamService", package: "loams.stream.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
         name: "tables",
         summary: "",
         service: "loams.live.v1.LiveService",
@@ -576,6 +747,17 @@ pub static MODULES: &[ModuleBinding] = &[
         calls: &[
             CallBinding { module: "tables", name: "mutate", proto_name: "mutate", method: "Mutate", rpc: "loams.live.v1.LiveService/Mutate", service: "loams.live.v1.LiveService", package: "loams.live.v1", keyed: true, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
             CallBinding { module: "tables", name: "query", proto_name: "query", method: "Query", rpc: "loams.live.v1.LiveService/Query", service: "loams.live.v1.LiveService", package: "loams.live.v1", keyed: false, idempotency: Idempotency::None, retry: Retry::Manual, streaming: Streaming::Unary, pagination: None },
+        ],
+    },
+    ModuleBinding {
+        name: "vector",
+        summary: "",
+        service: "loams.collection.v1.QueryService",
+        package: "loams.collection.v1",
+        unstable: false,
+        derived: true,
+        calls: &[
+            CallBinding { module: "vector", name: "search", proto_name: "search", method: "Search", rpc: "loams.collection.v1.QueryService/Search", service: "loams.collection.v1.QueryService", package: "loams.collection.v1", keyed: false, idempotency: Idempotency::NoSideEffects, retry: Retry::Safe, streaming: Streaming::Unary, pagination: None },
         ],
     },
 ];
@@ -952,6 +1134,227 @@ pub trait AuthModule {
     ) -> impl std::future::Future<Output = Result<loams_proto::loams::auth::v1::ListProvidersResponse, LoamsError>> + Send;
 }
 
+/// `CollectionsModule` is `loams.collections` — Collections: schema, aliases, versions, scan plans and the hot tier.
+///
+/// Wraps `loams.collection.v1.CollectionService`.
+#[rustfmt::skip]
+pub trait CollectionsModule {
+    /// The SDK module, as it appears on `loams.collections`.
+    const MODULE: &'static str = "collections";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.collection.v1.CollectionService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.collection.v1.CollectionService/AddFields`, retried: safe.
+    fn add_fields(
+        &self,
+        request: loams_proto::loams::collection::v1::AddFieldsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::AddFieldsResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.CollectionService/CreateCollection`, retried: safe.
+    fn create(
+        &self,
+        request: loams_proto::loams::collection::v1::CreateCollectionRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::CollectionInfo, LoamsError>> + Send;
+
+    /// `loams.collection.v1.CollectionService/DropCollection`, retried: safe.
+    fn drop(
+        &self,
+        request: loams_proto::loams::collection::v1::DropCollectionRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::DropCollectionResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.CollectionService/GetCollection`, retried: safe.
+    fn get(
+        &self,
+        request: loams_proto::loams::collection::v1::GetCollectionRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::CollectionInfo, LoamsError>> + Send;
+
+    /// `loams.collection.v1.CollectionService/ListCollections`, retried: safe. AIP-158: page with `collections` and follow `next_page_token` through `loams::paginate`.
+    fn list(
+        &self,
+        request: loams_proto::loams::collection::v1::ListCollectionsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::ListCollectionsResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.CollectionService/ListVersions`, retried: safe. AIP-158: page with `versions` and follow `next_page_token` through `loams::paginate`.
+    fn list_versions(
+        &self,
+        request: loams_proto::loams::collection::v1::ListVersionsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::ListVersionsResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.CollectionService/Scan`, retried: manual.
+    fn scan(
+        &self,
+        request: loams_proto::loams::collection::v1::ScanRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::ScanPlan, LoamsError>> + Send;
+
+    /// `loams.collection.v1.CollectionService/SetHot`, retried: safe.
+    fn set_hot(
+        &self,
+        request: loams_proto::loams::collection::v1::SetHotRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::SetHotResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.CollectionService/UpdateAliases`, retried: safe.
+    fn update_aliases(
+        &self,
+        request: loams_proto::loams::collection::v1::UpdateAliasesRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::UpdateAliasesResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.CollectionService/WarmCollection`, retried: safe.
+    fn warm(
+        &self,
+        request: loams_proto::loams::collection::v1::WarmCollectionRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::WarmCollectionResponse, LoamsError>> + Send;
+}
+
+/// `DocumentsModule` is `loams.documents` — Documents: write, get, scroll, count, delete by filter and patch by filter.
+///
+/// Wraps `loams.collection.v1.DocumentService`.
+#[rustfmt::skip]
+pub trait DocumentsModule {
+    /// The SDK module, as it appears on `loams.documents`.
+    const MODULE: &'static str = "documents";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.collection.v1.DocumentService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.collection.v1.DocumentService/CountDocuments`, retried: safe.
+    fn count(
+        &self,
+        request: loams_proto::loams::collection::v1::CountDocumentsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::CountDocumentsResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.DocumentService/DeleteByFilter`, retried: manual.
+    fn delete_by_filter(
+        &self,
+        request: loams_proto::loams::collection::v1::DeleteByFilterRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::FilterWriteResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.DocumentService/GetDocuments`, retried: safe.
+    fn get(
+        &self,
+        request: loams_proto::loams::collection::v1::GetDocumentsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::GetDocumentsResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.DocumentService/PatchByFilter`, retried: manual.
+    fn patch_by_filter(
+        &self,
+        request: loams_proto::loams::collection::v1::PatchByFilterRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::FilterWriteResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.DocumentService/ScrollDocuments`, retried: safe.
+    fn scroll(
+        &self,
+        request: loams_proto::loams::collection::v1::ScrollDocumentsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::ScrollDocumentsResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.DocumentService/WriteDocuments`, retried: manual.
+    fn write(
+        &self,
+        request: loams_proto::loams::collection::v1::WriteDocumentsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::WriteDocumentsResponse, LoamsError>> + Send;
+}
+
+/// `GraphModule` is `loams.graph` — Loams Graph: stored property graphs, queried with GQL.
+///
+/// Wraps `loams.graph.v1.GraphAdminService`. Its wire contract may still change, so `buf breaking` skips it and an SDK marks it experimental (§44 §10.3).
+#[rustfmt::skip]
+pub trait GraphModule {
+    /// The SDK module, as it appears on `loams.graph`.
+    const MODULE: &'static str = "graph";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.graph.v1.GraphAdminService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = true;
+
+    /// `loams.graph.v1.GraphAdminService/CreateGraph`, retried: manual.
+    fn create(
+        &self,
+        request: loams_proto::loams::graph::v1::CreateGraphRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::graph::v1::Graph, LoamsError>> + Send;
+
+    /// `loams.graph.v1.GraphAdminService/DeleteGraph`, retried: manual.
+    fn delete(
+        &self,
+        request: loams_proto::loams::graph::v1::DeleteGraphRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::operations::v1::Operation, LoamsError>> + Send;
+
+    /// `loams.graph.v1.GraphService/Explain`, retried: safe.
+    fn explain(
+        &self,
+        request: loams_proto::loams::graph::v1::ExplainRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::graph::v1::Plan, LoamsError>> + Send;
+
+    /// `loams.graph.v1.GraphAdminService/GetGraph`, retried: safe.
+    fn get(
+        &self,
+        request: loams_proto::loams::graph::v1::GetGraphRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::graph::v1::Graph, LoamsError>> + Send;
+
+    /// `loams.graph.v1.GraphAdminService/ListGraphs`, retried: safe. AIP-158: page with `graphs` and follow `next_page_token` through `loams::paginate`.
+    fn list(
+        &self,
+        request: loams_proto::loams::graph::v1::ListGraphsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::graph::v1::ListGraphsResponse, LoamsError>> + Send;
+
+    /// `loams.graph.v1.GraphService/Execute`, retried: manual.
+    fn query(
+        &self,
+        request: loams_proto::loams::graph::v1::ExecuteRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::graph::v1::ExecuteResponse, LoamsError>> + Send;
+
+    /// `loams.graph.v1.GraphService/ExecuteBatch`, retried: manual.
+    fn query_batch(
+        &self,
+        request: loams_proto::loams::graph::v1::ExecuteBatchRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::graph::v1::ExecuteBatchResponse, LoamsError>> + Send;
+
+    /// `loams.graph.v1.GraphService/ExecuteStream`, retried: manual.
+    fn query_stream(
+        &self,
+        request: loams_proto::loams::graph::v1::ExecuteStreamRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<ResponseStream<loams_proto::loams::graph::v1::ResultChunk>, LoamsError>> + Send;
+
+    /// `loams.graph.v1.GraphAdminService/GetSchema`, retried: safe.
+    fn schema(
+        &self,
+        request: loams_proto::loams::graph::v1::GetSchemaRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::graph::v1::GraphSchema, LoamsError>> + Send;
+
+    /// `loams.graph.v1.GraphAdminService/UpdateGraph`, retried: manual.
+    fn update(
+        &self,
+        request: loams_proto::loams::graph::v1::UpdateGraphRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::graph::v1::Graph, LoamsError>> + Send;
+}
+
 /// `InstanceModule` is `loams.instance` — What this instance is, and who the caller is on it.
 ///
 /// Wraps `loams.instance.v1.InstanceService`.
@@ -1103,6 +1506,142 @@ pub trait LiveAdminModule {
     ) -> impl std::future::Future<Output = Result<loams_live_proto::loams::live::v1::UpdateAppResponse, LoamsError>> + Send;
 }
 
+/// `NamespacesModule` is `loams.namespaces` — Namespaces: the container every collection and stream lives in.
+///
+/// Wraps `loams.collection.v1.NamespaceService`.
+#[rustfmt::skip]
+pub trait NamespacesModule {
+    /// The SDK module, as it appears on `loams.namespaces`.
+    const MODULE: &'static str = "namespaces";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.collection.v1.NamespaceService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.collection.v1.NamespaceService/CreateNamespace`, retried: safe.
+    fn create(
+        &self,
+        request: loams_proto::loams::collection::v1::CreateNamespaceRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::CreateNamespaceResponse, LoamsError>> + Send;
+
+    /// `loams.collection.v1.NamespaceService/ListNamespaces`, retried: safe. AIP-158: page with `namespaces` and follow `next_page_token` through `loams::paginate`.
+    fn list(
+        &self,
+        request: loams_proto::loams::collection::v1::ListNamespacesRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::ListNamespacesResponse, LoamsError>> + Send;
+}
+
+/// `SearchModule` is `loams.search` — Queries: one search over one collection, dense, sparse, text or hybrid.
+///
+/// Wraps `loams.collection.v1.QueryService`.
+#[rustfmt::skip]
+pub trait SearchModule {
+    /// The SDK module, as it appears on `loams.search`.
+    const MODULE: &'static str = "search";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.collection.v1.QueryService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.collection.v1.QueryService/Search`, retried: safe.
+    fn query(
+        &self,
+        request: loams_proto::loams::collection::v1::SearchRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::SearchResponse, LoamsError>> + Send;
+}
+
+/// `SqlModule` is `loams.sql` — SQL: one read-only statement over a namespace's collections, with parameters.
+///
+/// Wraps `loams.sql.v1.SqlService`.
+#[rustfmt::skip]
+pub trait SqlModule {
+    /// The SDK module, as it appears on `loams.sql`.
+    const MODULE: &'static str = "sql";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.sql.v1.SqlService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.sql.v1.SqlService/Query`, retried: safe.
+    fn query(
+        &self,
+        request: loams_proto::loams::sql::v1::QueryRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::sql::v1::QueryResponse, LoamsError>> + Send;
+
+    /// `loams.sql.v1.SqlService/QueryArrow`, retried: safe.
+    fn query_arrow(
+        &self,
+        request: loams_proto::loams::sql::v1::QueryArrowRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::sql::v1::QueryArrowResponse, LoamsError>> + Send;
+}
+
+/// `StreamsModule` is `loams.streams` — Streams: create, list and describe a namespace's logs; produce and fetch records and CloudEvents.
+///
+/// Wraps `loams.stream.v1.StreamService`.
+#[rustfmt::skip]
+pub trait StreamsModule {
+    /// The SDK module, as it appears on `loams.streams`.
+    const MODULE: &'static str = "streams";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.stream.v1.StreamService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.stream.v1.StreamService/CreateStream`, retried: safe.
+    fn create(
+        &self,
+        request: loams_proto::loams::stream::v1::CreateStreamRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::stream::v1::CreateStreamResponse, LoamsError>> + Send;
+
+    /// `loams.stream.v1.StreamService/Fetch`, retried: safe.
+    fn fetch(
+        &self,
+        request: loams_proto::loams::stream::v1::FetchRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::stream::v1::FetchResponse, LoamsError>> + Send;
+
+    /// `loams.stream.v1.StreamService/FetchCloudEvents`, retried: safe.
+    fn fetch_events(
+        &self,
+        request: loams_proto::loams::stream::v1::FetchCloudEventsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::stream::v1::FetchCloudEventsResponse, LoamsError>> + Send;
+
+    /// `loams.stream.v1.StreamService/DescribeStream`, retried: safe.
+    fn get(
+        &self,
+        request: loams_proto::loams::stream::v1::DescribeStreamRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::stream::v1::DescribeStreamResponse, LoamsError>> + Send;
+
+    /// `loams.stream.v1.StreamService/ListStreams`, retried: safe. AIP-158: page with `streams` and follow `next_page_token` through `loams::paginate`.
+    fn list(
+        &self,
+        request: loams_proto::loams::stream::v1::ListStreamsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::stream::v1::ListStreamsResponse, LoamsError>> + Send;
+
+    /// `loams.stream.v1.StreamService/Produce`, retried: manual.
+    fn produce(
+        &self,
+        request: loams_proto::loams::stream::v1::ProduceRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::stream::v1::ProduceResponse, LoamsError>> + Send;
+
+    /// `loams.stream.v1.StreamService/ProduceCloudEvents`, retried: manual.
+    fn produce_events(
+        &self,
+        request: loams_proto::loams::stream::v1::ProduceCloudEventsRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::stream::v1::ProduceCloudEventsResponse, LoamsError>> + Send;
+}
+
 /// `TablesModule` is a second facade name for the same RPCs, exposed as `loams.tables`.
 ///
 /// Wraps `loams.live.v1.LiveService`. Its wire contract may still change, so `buf breaking` skips it and an SDK marks it experimental (§44 §10.3).
@@ -1128,4 +1667,24 @@ pub trait TablesModule {
         request: loams_live_proto::loams::live::v1::QueryRequest,
         options: Option<&CallOptions>,
     ) -> impl std::future::Future<Output = Result<loams_live_proto::loams::live::v1::QueryResponse, LoamsError>> + Send;
+}
+
+/// `VectorModule` is a second facade name for the same RPCs, exposed as `loams.vector`.
+///
+/// Wraps `loams.collection.v1.QueryService`.
+#[rustfmt::skip]
+pub trait VectorModule {
+    /// The SDK module, as it appears on `loams.vector`.
+    const MODULE: &'static str = "vector";
+    /// The service behind the module.
+    const SERVICE: &'static str = "loams.collection.v1.QueryService";
+    /// Whether the package's wire contract may still change.
+    const UNSTABLE: bool = false;
+
+    /// `loams.collection.v1.QueryService/Search`, retried: safe.
+    fn search(
+        &self,
+        request: loams_proto::loams::collection::v1::SearchRequest,
+        options: Option<&CallOptions>,
+    ) -> impl std::future::Future<Output = Result<loams_proto::loams::collection::v1::SearchResponse, LoamsError>> + Send;
 }

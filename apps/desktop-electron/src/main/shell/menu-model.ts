@@ -18,35 +18,59 @@ export interface MenuNode {
 }
 
 /**
- * The menu items the renderer acts on (SD1 Task 28, §53 §4.2): main forwards them on
- * `shell:command`; every other id is main's own.
+ * The menu items the renderer acts on (SD1 Task 28, §53 §4.2, CF1 Task 14): main forwards
+ * them on `shell:command`; every other id is main's own (`check-updates`, `restart-server`,
+ * `show-logs`, `report-issue`, `docs`, `about`, `quit`).
  */
 export const MENU_COMMANDS: Readonly<Record<string, ShellCommand>> = {
 	"mode-studio": "mode.studio",
 	"mode-console": "mode.console",
 	"mode-toggle": "mode.toggle",
 	"new-thread": "chat.new",
+	palette: "palette.toggle",
+	"toggle-sidebar": "sidebar.toggle",
+	"toggle-inspector": "inspector.toggle",
+	"toggle-drawer": "drawer.toggle",
+	back: "navigation.back",
+	forward: "navigation.forward",
+	"next-thread": "thread.next",
+	"reopen-thread": "thread.reopen",
+	settings: "settings.open",
 };
+
+export const ISSUES_URL = "https://github.com/ostrium-labs/loams/issues/new/choose";
 
 export function menuCommand(id: string): ShellCommand | undefined {
 	return Object.hasOwn(MENU_COMMANDS, id) ? MENU_COMMANDS[id] : undefined;
 }
 
+/**
+ * An item whose chord the renderer's shell owns (D1081): the menu shows the accelerator but
+ * does not register it, so one key press never runs twice and editable targets keep theirs.
+ */
+const r = (id: string, label: string, accelerator: string): MenuNode => ({
+	id,
+	label,
+	accelerator,
+	registerAccelerator: false,
+});
+
+/** The application menu (D1084): App on macOS, then File, Edit, View, Window and Help. */
 export function menuModel(o: { platform: string; dev: boolean }): MenuNode[] {
 	const sep: MenuNode = { type: "separator" };
 	const mac = o.platform === "darwin";
+	const settings = r("settings", mac ? "Settings…" : "Settings", "CmdOrCtrl+,");
+	const checkUpdates: MenuNode = { id: "check-updates", label: "Check for Updates…" };
+	const newThread = r("new-thread", "New Thread", "CmdOrCtrl+N");
 	const menus: MenuNode[] = [];
-	const newThread: MenuNode = {
-		id: "new-thread",
-		label: "New thread",
-		accelerator: "CmdOrCtrl+N",
-		registerAccelerator: false,
-	};
 	if (mac) {
 		menus.push({
 			label: "Loams Desktop",
 			submenu: [
 				{ id: "about", label: "About Loams Desktop" },
+				checkUpdates,
+				sep,
+				settings,
 				sep,
 				{ role: "hide" },
 				{ role: "hideOthers" },
@@ -55,11 +79,11 @@ export function menuModel(o: { platform: string; dev: boolean }): MenuNode[] {
 				{ id: "quit", label: "Quit Loams Desktop" },
 			],
 		});
-		menus.push({ label: "File", submenu: [newThread] });
+		menus.push({ label: "File", submenu: [newThread, sep, { role: "close" }] });
 	} else {
 		menus.push({
 			label: "File",
-			submenu: [newThread, sep, { id: "quit", label: "Quit" }],
+			submenu: [newThread, sep, settings, sep, { id: "quit", label: "Quit" }],
 		});
 	}
 	menus.push({
@@ -75,15 +99,19 @@ export function menuModel(o: { platform: string; dev: boolean }): MenuNode[] {
 		],
 	});
 	const view: MenuNode[] = [
+		r("palette", "Command Palette", "CmdOrCtrl+K"),
+		sep,
+		r("toggle-sidebar", "Toggle Sidebar", "CmdOrCtrl+B"),
+		r("toggle-inspector", "Toggle Inspector", "CmdOrCtrl+I"),
+		r("toggle-drawer", "Toggle Drawer", "CmdOrCtrl+J"),
+		sep,
+		r("back", "Back", "CmdOrCtrl+["),
+		r("forward", "Forward", "CmdOrCtrl+]"),
+		sep,
 		// Loams Studio and Console (§53 §4.2): one window, two modes.
 		{ id: "mode-studio", label: "Studio" },
 		{ id: "mode-console", label: "Console" },
-		{
-			id: "mode-toggle",
-			label: "Switch mode",
-			accelerator: "CmdOrCtrl+Shift+M",
-			registerAccelerator: false,
-		},
+		r("mode-toggle", "Switch Mode", "CmdOrCtrl+Shift+M"),
 		sep,
 		{ role: "resetZoom" },
 		{ role: "zoomIn" },
@@ -95,14 +123,24 @@ export function menuModel(o: { platform: string; dev: boolean }): MenuNode[] {
 	menus.push({ label: "View", submenu: view });
 	menus.push({
 		label: "Window",
-		submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "close" }],
+		submenu: [
+			{ role: "minimize" },
+			{ role: "zoom" },
+			sep,
+			r("next-thread", "Next Thread", "Ctrl+Tab"),
+			r("reopen-thread", "Reopen Closed Thread", "CmdOrCtrl+Shift+T"),
+			sep,
+			{ role: "close" },
+		],
 	});
 	menus.push({
 		label: "Help",
 		submenu: [
 			{ id: "docs", label: "Documentation" },
-			{ id: "logs", label: "Open logs folder" },
-			...(mac ? [] : [sep, { id: "about", label: "About Loams Desktop" }]),
+			{ id: "show-logs", label: "Show Logs" },
+			{ id: "restart-server", label: "Restart Local Server" },
+			{ id: "report-issue", label: "Report an Issue…" },
+			...(mac ? [] : [sep, checkUpdates, { id: "about", label: "About Loams Desktop" }]),
 		],
 	});
 	return menus;

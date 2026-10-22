@@ -81,6 +81,7 @@ public final class ConnectTransport implements AutoCloseable {
     private final Protocol protocol;
     private final HttpClient client;
     private final boolean ownsClient;
+    private final boolean json;
 
     /**
      * Build a transport.
@@ -90,6 +91,17 @@ public final class ConnectTransport implements AutoCloseable {
      * @param client the HTTP client to use, or {@code null} to build one
      */
     public ConnectTransport(String endpoint, Protocol protocol, HttpClient client) {
+        this(endpoint, protocol, client, false);
+    }
+
+    /**
+     * Build a transport whose unary calls use the proto3 JSON mapping when {@code json} is set.
+     *
+     * <p>The transport only frames the bytes; {@link #json()} is what tells the caller to encode
+     * the message as JSON and to read the answer as JSON.
+     */
+    public ConnectTransport(String endpoint, Protocol protocol, HttpClient client, boolean json) {
+        this.json = json;
         this.endpoint = endpoint.endsWith("/") ? endpoint.substring(0, endpoint.length() - 1) : endpoint;
         this.protocol = protocol == null ? Protocol.CONNECT : protocol;
         this.ownsClient = client == null;
@@ -104,6 +116,11 @@ public final class ConnectTransport implements AutoCloseable {
                                 .followRedirects(HttpClient.Redirect.NEVER)
                                 .connectTimeout(Duration.ofSeconds(20))
                                 .build();
+    }
+
+    /** Whether unary calls carry the proto3 JSON mapping rather than binary protobuf. */
+    public boolean json() {
+        return json;
     }
 
     /** The wire protocol this transport speaks. */
@@ -137,12 +154,28 @@ public final class ConnectTransport implements AutoCloseable {
             Map<String, String> headers,
             boolean jsonCodec)
             throws IOException, InterruptedException {
+        return unary(service, method, body, headers, jsonCodec, null);
+    }
+
+    /**
+     * One unary call that gives up after {@code timeout} (R12): the request's own timeout, so a
+     * call that runs out raises {@link java.net.http.HttpTimeoutException} inside a {@link
+     * ConnectFailure}. {@code null} means none.
+     */
+    public UnaryResponse unary(
+            String service,
+            String method,
+            byte[] body,
+            Map<String, String> headers,
+            boolean jsonCodec,
+            Duration timeout)
+            throws IOException, InterruptedException {
         String rpc = service + "/" + method;
         String contentType =
                 jsonCodec ? jsonVariant(UNARY_CONTENT_TYPE.get(protocol)) : UNARY_CONTENT_TYPE.get(protocol);
 
         byte[] payload;
-        if (protocol == Protocol.CONNECT && !jsonCodec) {
+        if (protocol == Protocol.CONNECT) {
             // Connect unary sends the bare message: no framing. That is what makes the same
             // call a plain HTTP POST a person can curl.
             payload = body;
@@ -151,10 +184,10 @@ public final class ConnectTransport implements AutoCloseable {
         }
 
         HttpResponse<byte[]> response =
-                send(rpc, contentType, payload, headers, HttpResponse.BodyHandlers.ofByteArray(), null);
+                send(rpc, contentType, payload, headers, HttpResponse.BodyHandlers.ofByteArray(), timeout);
 
         byte[] responseBody = response.body();
-        if (protocol == Protocol.CONNECT && !jsonCodec) {
+        if (protocol == Protocol.CONNECT) {
             if (response.statusCode() / 100 == 2) {
                 return new UnaryResponse(responseBody, headersOf(response));
             }

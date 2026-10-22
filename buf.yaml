@@ -32,6 +32,12 @@ lint:
       # `loams.house.v1` (HS1 Task 8, design §49 §18.2): RestoreTable answers
       # `loams.operations.v1.Operation`, as the graph's slow RPCs do.
       - proto/loams/house/v1/house.proto
+      # `loams.memory.v1` (MM1 Task 1, design §52 §9.1): the RPCs answer the
+      # resource itself (`Store`, `Space`, `Fact`, `Entity`, `Episode`,
+      # `Block`, `Profile`, `Erasure`), the slow ones
+      # `loams.operations.v1.Operation`, and WatchSpace streams `SpaceEvent`,
+      # as §9.1 writes them (MM1 ruling R1.3).
+      - proto/loams/memory/v1/memory.proto
     # For the same reason: `CreateCollection` and `GetCollection` both answer
     # `CollectionInfo`, the collection's own document, and `ListCollections`
     # embeds it. A per-RPC response message would make every caller unwrap
@@ -54,6 +60,9 @@ lint:
       # `loams.house.v1`: `loams.operations.v1.Operation` answers RestoreTable
       # here and other packages' slow RPCs.
       - proto/loams/house/v1/house.proto
+      # `loams.memory.v1`: `Store`, `Space`, `Fact` and `Operation` each answer
+      # several RPCs (see above, §52 §9.1).
+      - proto/loams/memory/v1/memory.proto
 # `buf breaking` runs twice in CI (`app-protos`): against `main`, and against
 # the previous release's tag (design §54 §13.2, D939). A package listed under
 # `ignore` below is `unstable`. It leaves the list only by a deliberate change
@@ -83,3 +92,7 @@ breaking:
     # `unstable: true` until SD1 Task 32, which removes this line; until then
     # the daemon and its clients ship together.
     - proto/loams/agentd
+    # `loams.memory.v1` (Loams Memory, MM1 Task 1, design §52 §9.1) is
+    # `unstable: true` until MM1 Task 56, which removes this line and the
+    # option.
+    - proto/loams/memory

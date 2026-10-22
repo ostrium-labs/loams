@@ -55,4 +55,8 @@ plugins:
       # Six files: the facade imports each message from its own file's
       # module, next to this one.
       - package=loams.admin.v1=loams.admin.v1.org_pb2
+      - package=loams.collection.v1=loams.collection.v1.collection_pb2
+      - package=loams.graph.v1=loams.graph.v1.graph_pb2
+      - package=loams.sql.v1=loams.sql.v1.sql_pb2
+      - package=loams.stream.v1=loams.stream.v1.stream_pb2
 clean: true

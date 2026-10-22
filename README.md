@@ -8,7 +8,7 @@
 
 Loams is open-source tooling for building software with AI agents: **Loams Studio** runs your coding agents side by side, **Loams Software Factory** keeps your development toolchain beside them, and the **Loams Marketplace** (coming soon) is where agents, apps and harnesses will come from. All three sit on the Loams data platform, written in Rust, which keeps your data in *your* object-storage bucket (S3, GCS, Azure Blob, RustFS or a local directory) in open formats.
 
-> **0.1.0 — first release.** You run the stack yourself with Docker Compose, locally or on your own VMs, over your own Tailscale tailnet, and use the hosted console at [console.loams.dev](https://console.loams.dev). Loams Desktop opens in Studio. 0.x: APIs and on-disk formats may change between minor versions; upgrades are supported with `loams upgrade`.
+> **0.1.1 — a patch release of 0.1, the first release.** You run the stack yourself with Docker Compose, locally or on your own VMs, over your own Tailscale tailnet, and use the hosted console at [console.loams.dev](https://console.loams.dev). Loams Desktop opens in Studio. 0.x: APIs and on-disk formats may change between minor versions; 0.1.1 changes the default stack, so reinstall rather than upgrade a 0.1.0 stack.
 
 [Products](https://loams.dev/products) · [Download Loams Desktop](https://github.com/ostrium-labs/loams/releases/latest) · [Run Loams](docs/release/preview.md) · [Documentation](docs/README.md) · [Website](https://loams.dev) · [API reference](https://loams.dev/api-docs) · [Contributing](CONTRIBUTING.md)
 
@@ -36,7 +36,7 @@ Read the [pitch](docs/design/00-pitch.md) and the [architecture](docs/design/01-
   <img src="docs/assets/architecture.svg" alt="Loams architecture: clients reach the retrieval engine, Live, Durable and Postgres; a stateless gateway and router tier (planned) and the runtime and jobs (planned) are shown dashed; TiKV holds metadata and transactions; object storage holds all data in open formats." width="100%">
 </p>
 
-## What ships in 0.1.0
+## What ships in 0.1.1
 
 | | |
 |---|---|
@@ -49,7 +49,7 @@ Read the [pitch](docs/design/00-pitch.md) and the [architecture](docs/design/01-
 | **Console, desktop, CLI** | Hosted web console; Loams Desktop and the `loams` CLI for Linux, macOS and Windows |
 | **Loams Studio and Software Factory** | Experimental. See [Products](#products) above |
 | **Loams Git** | Experimental. `git-remote-loams`, git's remote helper, ships with the `loams` CLI packages: `git clone`, `fetch` and `push` reach a Loams Git repository on a bucket, with no server in between |
-| **SDKs** | TypeScript, Python, Go, Rust, C#, C++ and Swift (more languages coming). Published to npm, PyPI, crates.io, NuGet and the Go proxy as `0.1.0`; Swift from the release tag, C++ as a release tarball <!-- verify after publish --> |
+| **SDKs** | TypeScript, Python, Go, Rust, C#, C++ and Swift, each with the app-building API (collections, search, vector, graph, SQL and streams). Published to npm, PyPI, crates.io, NuGet and the Go proxy as `0.1.1`; Swift from the release tag, C++ as a release tarball. Experimental: Java and Kotlin on Maven Central, Ruby on RubyGems |
 
 **Coming next:** Loams Git on the server (repositories in the release images), first-party connectors, Iceberg analytics, Kafka wire, functions and jobs. The full status table is in [Running Loams](docs/release/preview.md); the plan is in the [roadmap](docs/design/12-roadmap-testing-risks.md).
 
@@ -76,7 +76,7 @@ Examples for the native API, Qdrant clients, Flight SQL and reading the bucket d
 
 ## Repository
 
-The engine crates, the web console, Loams Desktop, the mobile apps, SDKs, protos, connectors and deploy files all live here; see the [project layout](docs/project-layout.md) and the [monorepo guide](docs/monorepo.md). Design documents are in [`docs/design`](docs/design/README.md) and task-by-task plans in [`docs/plans`](docs/plans/README.md).
+The engine crates, the web console, Loams Desktop, the mobile apps, SDKs, protos, connectors and deploy files all live here; see the [project layout](docs/project-layout.md) and the [monorepo guide](docs/monorepo.md). Design documents are in [`docs/design`](docs/design/README.md) and task-by-task plans in [`docs/plans`](docs/plans/README.md). The metering agent and the hosted-cloud platform docs (metering, billing, Authentik and tailnet deploys), merged from the former private platform repository, are in [`platform/`](platform/README.md) and [`docs/platform`](docs/platform/README.md).
 
 ## Contributing and community
 

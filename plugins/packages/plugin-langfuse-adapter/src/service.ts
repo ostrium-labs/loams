@@ -14,6 +14,9 @@ import {
   LangfuseObservationsQuery,
   LangfuseOrganizationProjects,
   LangfusePage,
+  LANGFUSE_LEGACY_FALLBACK_PATHS,
+  LANGFUSE_LEGACY_TRACE_LIMIT_MAX,
+  LangfuseLegacyTrace,
   LangfuseScoreV3,
   LangfuseScoresQuery,
   LANGFUSE_OBSERVATION_LIMIT_MAX,
@@ -90,10 +93,13 @@ export class LangfuseAdapterService extends Service {
   private async _get<T>(
     suffix: string,
     params?: Record<string, QueryValue>,
-    options: { auth?: "required" | "none" } = {},
+    options: { auth?: "required" | "none"; legacyFallback?: boolean } = {},
   ): Promise<T> {
     const path = apiPath(suffix);
-    assertSupportedLangfusePath(path);
+    // A legacy fallback path passes only when its method opts in; every other call is guarded.
+    if (!(options.legacyFallback && LANGFUSE_LEGACY_FALLBACK_PATHS.includes(path))) {
+      assertSupportedLangfusePath(path);
+    }
     const client = options.auth === "none" ? this.probe : this.client;
     const body = await client.get<T>(path, params);
     this._noteDeprecation(path, body);
@@ -187,6 +193,36 @@ export class LangfuseAdapterService extends Service {
     );
     const { payload } = stripLangfuseDeprecation(body);
     return { data: payload.data ?? [], meta: payload.meta };
+  }
+
+  /**
+   * `GET /api/public/traces` — the LEGACY trace list, newest first.
+   *
+   * Only a fallback: call it when {@link listObservations} answers 404, which is what
+   * a self-hosted Langfuse 3.x does when it is not on the v4 data model. Langfuse Cloud
+   * removes this path on `LANGFUSE_LEGACY_REMOVED_ON`; self-hosted 3.x keeps it.
+   */
+  async listLegacyTraces(
+    query: { limit?: number; page?: number; fromTimestamp?: string } = {},
+  ): Promise<LangfusePage<LangfuseLegacyTrace>> {
+    if (
+      query.limit !== undefined &&
+      (query.limit < 1 || query.limit > LANGFUSE_LEGACY_TRACE_LIMIT_MAX)
+    ) {
+      throw new Error(
+        `langfuse: legacy trace limit must be 1..${LANGFUSE_LEGACY_TRACE_LIMIT_MAX}; got ${query.limit}.`,
+      );
+    }
+    const fromTimestamp =
+      query.fromTimestamp === undefined
+        ? undefined
+        : assertObservationTimestamp(query.fromTimestamp, "fromTimestamp");
+    const body = await this._get<LangfusePage<LangfuseLegacyTrace>>(
+      "/traces",
+      { limit: query.limit, page: query.page, fromTimestamp },
+      { legacyFallback: true },
+    );
+    return { data: body.data ?? [], meta: body.meta };
   }
 
   /**

@@ -90,6 +90,25 @@ final class Fixtures implements AutoCloseable {
         return startReplayServer();
     }
 
+    /**
+     * The shared {@code fixture-server.mjs} and nothing else, for a scenario replay: it is the
+     * only one of the three that walks a recording's steps by {@code loams-fixture-name} and
+     * {@code loams-fixture-step}, so a live endpoint or the in-process replay would not be the
+     * recording at all.
+     *
+     * @throws AssertionError when Node is not on PATH or the server did not start
+     */
+    static Fixtures startShared() {
+        if (!onPath("node")) {
+            throw new AssertionError("the app scenario replays need node on PATH for " + FIXTURE_SERVER_JS);
+        }
+        Fixtures started = startNodeFixtureServer();
+        if (started == null) {
+            throw new AssertionError("could not start " + FIXTURE_SERVER_JS);
+        }
+        return started;
+    }
+
     private static Fixtures startNodeFixtureServer() {
         Path root = repositoryRoot();
         Path server = root.resolve(FIXTURE_SERVER_JS);

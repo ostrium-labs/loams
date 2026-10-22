@@ -179,12 +179,24 @@ Obscura's own, under its own licence, and the pinned version is recorded in
 crates/loams-sidebar-browser/src/engine.rs.
 
 dsh-desktop (https://github.com/dataelement/dsh-desktop), MIT License,
-Copyright (c) 2026 DataElement. apps/desktop-electron adapts parts of its
-Electron shell (build configuration and main-process patterns); each adapted
-file carries an attribution header. See apps/desktop-electron/NOTICE.
+Copyright (c) 2026 DataElement. Files under apps/desktop-electron/ that say
+"Adapted from dataelement/dsh-desktop" derive from it (its Electron shell's
+build configuration, main-process patterns and startup splash);
+apps/desktop-electron/provenance.json lists them and
+apps/desktop-electron/LICENSE.dsh-desktop carries the licence. See
+apps/desktop-electron/NOTICE.
 
 T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright (c)
 2026 T3 Tools Inc. Files under web/packages/studio-ui/ and web/packages/ui/
 marked in their headers are derived from T3 Code at the commit recorded in
 each package's provenance.json; the MIT licence text is in each package's
 LICENSE.t3code and must accompany distributions of those files.
+
+authentik (https://github.com/goauthentik/authentik), MIT License for the
+parts outside its enterprise directories, Copyright Jens Langhammer and the
+authentik contributors. The recovery flow in
+deploy/authentik/blueprints/loams-02-flows.yaml (imported with the former
+loams-platform repository on 2026-10-19) is based on authentik's
+recovery-with-MFA example blueprint. The deploy files run authentik's
+open-source edition from its published images; no authentik source is
+vendored.

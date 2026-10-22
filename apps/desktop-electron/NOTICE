@@ -6,6 +6,12 @@ Portions of this app are adapted from dsh-desktop
 Copyright (c) 2026 DataElement. Each adapted file starts with
 "Adapted from dataelement/dsh-desktop (MIT), <path>."
 
+The dsh-desktop files are listed, with their upstream paths, commit
+bc732f5dc4c5465915d5b3f28d9b0b32703fc664 and SHA-256 sums, in this app's
+provenance.json. dsh-desktop's MIT licence text is LICENSE.dsh-desktop and ships
+with the app. Only the dataelement/dsh-desktop repository's own source is used;
+the prebuilt @deepseek-ai/* packages it loads are not copied, read or bundled.
+
 Loams Studio (web/packages/studio-ui and parts of web/packages/ui, bundled
 into the console) includes portions of T3 Code
 (https://github.com/pingdotgg/t3code), MIT License, Copyright (c) 2026 T3

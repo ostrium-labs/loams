@@ -1,0 +1,88 @@
+# The `platform/` workspace and the hosted-deploy checks imported from the
+# former private ostrium-labs/loams-platform repository on 2026-10-19
+# (docs/platform/README.md). GitHub-hosted runners only.
+#
+#   platform-rust     fmt, clippy, tests and cargo-deny over `platform/`
+#                     (loams-meter), like fabric.yml's `connectors-unit`
+#   tailnet-lint      offline HuJSON/subset check of deploy/tailnet's policy
+#   tailnet-headscale Headscale's own `policy check` against a throwaway
+#                     database (pinned image), so the shared policy stays valid
+#                     for both providers
+#
+# The private repository's `tailscale` job (test and apply the policy through
+# the Tailscale API with TS_OAUTH_* secrets) is not carried over: by the
+# owner's ruling of 2026-10-19 it runs from a separate private deployment
+# repository, never from this public one (docs/platform/deploy/tailnet.md,
+# step 3).
+name: Platform
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - "platform/**"
+      - "deploy/tailnet/**"
+      - ".github/workflows/platform.yml"
+  pull_request:
+    paths:
+      - "platform/**"
+      - "deploy/tailnet/**"
+      - ".github/workflows/platform.yml"
+
+concurrency:
+  group: platform-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/dev' && github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  platform-rust:
+    name: "Platform: fmt, clippy, tests and deny"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          workspaces: platform -> target
+      - name: rustfmt
+        working-directory: platform
+        run: cargo fmt --all --check
+      - name: clippy
+        working-directory: platform
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: tests
+        working-directory: platform
+        run: cargo test --workspace --locked --no-fail-fast
+      # The pin ci.yml and fabric.yml already use.
+      - uses: taiki-e/install-action@badb8c3638e0b773c6c17a6025c2306a8f1c4303 # nextest, 2026-10-02
+        with:
+          tool: cargo-deny
+      - name: licenses, advisories, sources
+        working-directory: platform
+        run: cargo deny check
+
+  tailnet-lint:
+    name: "Platform: tailnet policy lint"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 deploy/tailnet/policy/lint.py
+
+  tailnet-headscale:
+    name: "Platform: tailnet policy, Headscale check"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: deploy/tailnet/headscale/policy/check.sh

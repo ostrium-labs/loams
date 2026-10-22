@@ -13,8 +13,11 @@
 :root {
   --op-window: #f4f2ee;
   --op-bg: #ffffff;
-  /* Cards, popovers and dialogs: white on the window in direction A. */
+  /* Cards and panels: white on the window in direction A. */
   --op-surface: #ffffff;
+  /* Floating layers (menus, popovers, selects, dialogs, toasts): a step above --op-surface in
+     dark, the same white in light, where the shadow and hairline lift it. */
+  --op-elevated: #ffffff;
   --op-raised: #f1efea;
   --op-rule: #ece8e2;
   --op-rule-soft: #efece7;
@@ -37,6 +40,19 @@
   --op-info-soft: rgb(29 78 216 / 0.1);
   --op-danger: #b91c1c;
   --op-danger-soft: rgb(185 28 28 / 0.1);
+  /* Hover and pressed fills for the solid actions: darker in light, so white text stays AA. */
+  --op-accent-hover: color-mix(in oklab, var(--op-accent) 88%, #000000);
+  --op-accent-active: color-mix(in oklab, var(--op-accent) 78%, #000000);
+  --op-danger-hover: color-mix(in oklab, var(--op-danger) 88%, #000000);
+
+  /* Borders. --op-rule is the default border, --op-rule-soft the separator inside a surface,
+     --op-input the field outline (3:1), and --op-control-border the outline of a button, which
+     its label names (half the field outline, T4-1). */
+  --op-control-border: color-mix(in oklab, var(--op-input) 50%, transparent);
+  /* The focus ring (design 59 §7): the accent at 2px, offset 2px; rows inset it. */
+  --op-focus: var(--op-accent);
+  --op-focus-width: 2px;
+  --op-focus-offset: 2px;
 
   /* Sidebar rows: the selected row is a white chip with a 1px shadow (direction A). */
   --op-row-hover: rgb(29 27 24 / 0.04);
@@ -47,6 +63,7 @@
   --op-shadow-pop: 0 12px 32px -12px rgb(29 27 24 / 0.18);
   --op-shadow-modal: 0 24px 56px -20px rgb(29 27 24 / 0.28);
   --op-shadow-composer: 0 12px 28px -18px rgb(0 0 0 / 0.4);
+  --op-shadow-toast: 0 8px 24px -12px rgb(29 27 24 / 0.2);
   --op-scrim: rgb(29 27 24 / 0.24);
   /* Dialog glass: 80% opacity over a 14px blur; dark adds a 4% white inset highlight. */
   --op-glass: 80%;
@@ -104,12 +121,18 @@
   --op-radius-xl: 22px;
   --op-radius-pill: 999px;
 
-  /* Density (D1076). */
+  /* Density (D1076): control heights 24 (xs), 28 (compact), 32 (default), 36 (input, large). */
+  --op-control-xs: 24px;
   --op-control-compact: 28px;
   --op-control: 32px;
   --op-control-input: 36px;
   --op-topbar: 44px;
   --op-row: 28px;
+  --op-row-comfortable: 32px;
+  /* Icons (lucide-react): 12 inside badges, 14 in compact controls, 16 by default. */
+  --op-icon-xs: 12px;
+  --op-icon-sm: 14px;
+  --op-icon: 16px;
 
   /* Type (D1075): system faces; monospace for code, ids and SQL only. */
   --loams-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
@@ -122,11 +145,26 @@
   --op-text-section: 16px;
   --op-text-title: 20px;
   --op-text-hero: 24px;
+  --op-weight-regular: 400;
+  --op-weight-medium: 500;
+  --op-weight-semibold: 600;
 
-  /* Motion (D1076): off by default, panels snap; colour and opacity changes are quick. */
+  /* Motion (D1076, amended by UI1-1): panels snap unless Motion is on; colour changes are quick;
+     overlays, toasts and selection move briefly on transform and opacity only. The JS presets in
+     motion.tsx carry the same values. prefers-reduced-motion zeroes every duration (below). */
   --op-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --op-ease-out: var(--op-ease);
+  --op-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --op-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --op-ease-panel: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Hover and press: colour, background, border. */
+  --op-duration-fast: 120ms;
   --op-duration: 120ms;
+  /* Overlays opening (menus, popovers, tooltips, selects, dialogs) and closing (faster). */
+  --op-duration-enter: 160ms;
+  --op-duration-exit: 110ms;
+  /* Pages, toasts and content swaps (skeleton to content). */
+  --op-duration-page: 220ms;
   --op-panel-duration: 0ms;
   color-scheme: light;
 }
@@ -135,6 +173,7 @@
   --op-window: #111111;
   --op-bg: #0a0a0a;
   --op-surface: #111111;
+  --op-elevated: #171717;
   --op-raised: rgb(255 255 255 / 0.04);
   --op-rule: rgb(255 255 255 / 0.06);
   --op-rule-soft: rgb(255 255 255 / 0.04);
@@ -156,12 +195,17 @@
   --op-info-soft: rgb(96 165 250 / 0.14);
   --op-danger: #f87171;
   --op-danger-soft: rgb(248 113 113 / 0.14);
+  --op-accent-hover: color-mix(in oklab, var(--op-accent) 88%, #000000);
+  --op-accent-active: color-mix(in oklab, var(--op-accent) 78%, #000000);
+  /* Dark text sits on the solid danger fill in dark, so its hover lightens. */
+  --op-danger-hover: color-mix(in oklab, var(--op-danger) 88%, #ffffff);
   --op-row-hover: rgb(255 255 255 / 0.04);
   --op-row-selected: rgb(255 255 255 / 0.07);
   --op-shadow-chip: 0 0 0 0 transparent;
   --op-shadow-pop: 0 12px 32px -12px rgb(0 0 0 / 0.6);
   --op-shadow-modal: 0 24px 56px -20px rgb(0 0 0 / 0.7);
   --op-shadow-composer: 0 12px 28px -18px rgb(0 0 0 / 0.75);
+  --op-shadow-toast: 0 8px 24px -12px rgb(0 0 0 / 0.6);
   --op-scrim: rgb(0 0 0 / 0.5);
   --op-dialog-highlight: inset 0 1px 0 rgb(255 255 255 / 0.04);
   /* The same hues, stepped for the dark surface. */
@@ -210,7 +254,11 @@ html[data-motion="on"] {
   :root,
   html[data-motion="on"] {
     --op-panel-duration: 0ms;
+    --op-duration-fast: 0ms;
     --op-duration: 0ms;
+    --op-duration-enter: 0ms;
+    --op-duration-exit: 0ms;
+    --op-duration-page: 0ms;
   }
 }
 
@@ -224,6 +272,8 @@ html[data-motion="on"] {
     --op-input: CanvasText;
     --op-accent: Highlight;
     --op-accent-fg: LinkText;
+    --op-control-border: ButtonText;
+    --op-focus: Highlight;
     --op-row-selected: Highlight;
   }
 }

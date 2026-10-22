@@ -65,12 +65,48 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Compacts `database.name` in `ctx`'s namespace (see the module docs).
+/// Compacts `database.name` in `ctx`'s namespace (see the module docs), and
+/// counts it in the front's metrics (HS1 Task 23).
 pub async fn compact(
     ctx: &InsertContext<'_>,
     database: &str,
     name: &str,
     deduplicate: bool,
+) -> Result<Compacted, HouseError> {
+    let started = std::time::Instant::now();
+    let mut rewritten = (0u64, 0u64);
+    let mut span = crate::trace::child("house.compaction");
+    let outcome = compact_counted(ctx, database, name, deduplicate, &mut rewritten).await;
+    let result = match &outcome {
+        Ok(Compacted::Committed(_)) => "committed",
+        Ok(Compacted::Abandoned) => "abandoned",
+        Ok(Compacted::Nothing) => "nothing",
+        Err(_) => "failed",
+    };
+    let (files, bytes) = match &outcome {
+        Ok(Compacted::Committed(_)) => rewritten,
+        _ => (0, 0),
+    };
+    ctx.lake
+        .metrics()
+        .compaction(result, started.elapsed(), files, bytes);
+    if let Some(span) = span.as_mut() {
+        span.set("loams.table", format!("{database}.{name}"));
+        span.set("loams.result", result);
+        span.set("loams.files", files);
+        if outcome.is_err() {
+            span.fail();
+        }
+    }
+    outcome
+}
+
+async fn compact_counted(
+    ctx: &InsertContext<'_>,
+    database: &str,
+    name: &str,
+    deduplicate: bool,
+    rewritten: &mut (u64, u64),
 ) -> Result<Compacted, HouseError> {
     let lake = ctx.lake;
     let namespace = ctx.user.namespace;
@@ -152,6 +188,7 @@ pub async fn compact(
         manifests.push((manifest, bytes));
     }
     let removed: HashSet<String> = files.iter().map(|f| f.location.clone()).collect();
+    *rewritten = (files.len() as u64, files.iter().map(|f| f.size_bytes).sum());
     let built = loams_house_lake::rewrite::replace(
         &table.metadata,
         manifests,
@@ -311,6 +348,7 @@ async fn count_final(
             &sql,
             &pinned,
             None,
+            None,
         )
         .await?;
         let out = lease
@@ -376,7 +414,7 @@ impl Scheduler {
             let Some((namespace, database, name)) = Lake::names_of(&ident) else {
                 continue;
             };
-            let system = UserMap::dev("loams-compaction", "", namespace, false);
+            let system = UserMap::system("loams-compaction", namespace);
             let ctx = InsertContext {
                 lake: &self.lake,
                 pool: &self.pool,

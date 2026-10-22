@@ -74,3 +74,6 @@ export function readThemeChoice(file: string): ThemeChoice {
 	const v = readSetting<unknown>(file, THEME_SETTING, "system");
 	return v === "dark" || v === "light" ? v : "system";
 }
+
+/** The update the person chose to skip (D1085); automatic checks stay quiet about it. */
+export const UPDATE_SKIPPED_KEY = "update.skippedVersion";

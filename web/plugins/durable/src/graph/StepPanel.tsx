@@ -19,11 +19,11 @@ function Payload({ label, value }: { label: string; value: Value | undefined }) 
   const d: Decoded = decodeValue(value);
   return (
     <div className="flex flex-col gap-1" data-payload={label}>
-      <div className="text-muted text-xs">{label}</div>
+      <div className="text-muted text-small">{label}</div>
       {d.kind === 'empty' ? (
-        <span className="text-muted text-sm">empty</span>
+        <span className="text-muted text-body">empty</span>
       ) : (
-        <pre className="font-mono text-xs overflow-auto max-h-48 m-0 whitespace-pre-wrap break-all">
+        <pre className="font-mono text-small overflow-auto max-h-48 m-0 whitespace-pre-wrap break-all">
           {d.kind === 'json' ? d.text : (d.text ?? d.raw)}
         </pre>
       )}
@@ -49,7 +49,7 @@ export function StepPanel({ step, onClose }: { step: Step; onClose: () => void }
         <span
           ref={heading}
           tabIndex={-1}
-          className={/* mono-ok: id */ 'font-mono text-sm break-all'}
+          className={/* mono-ok: id */ 'font-mono text-body break-all'}
         >
           {step.name}
         </span>
@@ -61,39 +61,43 @@ export function StepPanel({ step, onClose }: { step: Step; onClose: () => void }
       }
     >
       <section className="flex flex-col gap-4" aria-label={`Detail of step ${step.name}`}>
-        <dl className="grid grid-cols-2 gap-2 m-0 text-sm">
+        <dl className="grid grid-cols-2 gap-2 m-0 text-body">
           <div>
-            <dt className="text-muted text-xs">Status</dt>
+            <dt className="text-muted text-small">Status</dt>
             <dd className="m-0">
               <StatusTag status={statusTone(step.status)}>{STATUS_LABEL[step.status]}</StatusTag>
             </dd>
           </div>
           <div>
-            <dt className="text-muted text-xs">Kind</dt>
+            <dt className="text-muted text-small">Kind</dt>
             <dd className="m-0">{step.kind}</dd>
           </div>
           <div>
-            <dt className="text-muted text-xs">Started</dt>
+            <dt className="text-muted text-small">Started</dt>
             <dd className="m-0">{when(step.startedAt)}</dd>
           </div>
           <div>
-            <dt className="text-muted text-xs">Took</dt>
+            <dt className="text-muted text-small">Took</dt>
             <dd className="m-0">{formatMs(took)}</dd>
           </div>
           {step.wakeAt !== undefined && (
             <div className="col-span-2">
-              <dt className="text-muted text-xs">{step.kind === 'timer' ? 'Wakes' : 'Deadline'}</dt>
+              <dt className="text-muted text-small">
+                {step.kind === 'timer' ? 'Wakes' : 'Deadline'}
+              </dt>
               <dd className="m-0">{new Date(step.wakeAt).toLocaleString()}</dd>
             </div>
           )}
           <div className="col-span-2">
-            <dt className="text-muted text-xs">Id</dt>
-            <dd className={/* mono-ok: id */ 'm-0 font-mono text-xs break-all'}>{step.id}</dd>
+            <dt className="text-muted text-small">Id</dt>
+            <dd className={/* mono-ok: id */ 'm-0 font-mono text-small break-all'}>{step.id}</dd>
           </div>
         </dl>
         {step.error && (
           <Notice tone={step.status === 'failed' ? 'danger' : 'warn'} title="Error">
-            <span className={/* mono-ok: code */ 'font-mono text-xs break-all'}>{step.error}</span>
+            <span className={/* mono-ok: code */ 'font-mono text-small break-all'}>
+              {step.error}
+            </span>
           </Notice>
         )}
         {step.attempts.length > 0 && (
@@ -121,7 +125,9 @@ export function StepPanel({ step, onClose }: { step: Step; onClose: () => void }
                 key: 'error',
                 header: 'Error',
                 cell: (a) => (
-                  <span className={/* mono-ok: code */ 'font-mono text-xs'}>{a.error ?? ''}</span>
+                  <span className={/* mono-ok: code */ 'font-mono text-small'}>
+                    {a.error ?? ''}
+                  </span>
                 ),
               },
             ]}

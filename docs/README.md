@@ -26,6 +26,7 @@ Build, understand, and contribute to Loams: hybrid retrieval on object storage, 
 |---|---|
 | [design/](design/README.md) | Architecture, formats, invariants, decisions, and proposed platform tracks |
 | [plans/](plans/README.md) | Implementation tasks, milestone evidence, and dependency studies |
+| [platform/](platform/README.md) | Metering, billing and hosted-cloud designs, plans and deploy runbooks merged from the former private platform repository |
 | [api/](api/) | Native routes and stable error reasons |
 | [sdk/](sdk/) | Runtime contract and cross-language fixtures |
 | [build-from-source/](build-from-source/README.md) | Toolchains and platform prerequisites |

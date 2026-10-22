@@ -2,8 +2,17 @@
 // groups"). The recent threads are the sidebar's rows (it publishes them to the query
 // cache), so the home opens no stream of its own.
 
-import { Badge, Card, Empty, formatRelative, SkeletonList } from '@loams/ui';
-import { FolderGit2, GitBranch } from 'lucide-react';
+import {
+  Badge,
+  Card,
+  Empty,
+  formatRelative,
+  ListRow,
+  SkeletonList,
+  StaggerItem,
+  StaggerList,
+} from '@loams/ui';
+import { FolderGit2, GitBranch, MessageSquare } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { Project, StudioAgentd } from '../agentd.js';
 import { useProjects } from '../projects/queries.js';
@@ -47,21 +56,19 @@ export function Home({ agentd }: { agentd: StudioAgentd }) {
   return (
     <div className="mx-auto flex w-full max-w-[960px] flex-col gap-6 px-6 py-8">
       <header>
-        <h1 className="m-0 text-[1.6rem] font-semibold text-ink tracking-[-0.01em]">
-          Loams Studio
-        </h1>
+        <h1 className="m-0 text-title font-semibold text-ink">Loams Studio</h1>
         <p className="m-0 mt-1 text-muted">Pick a project to start a thread in it.</p>
       </header>
       <section aria-labelledby="studio-projects" className="flex flex-col gap-3">
         <h2 id="studio-projects" className="m-0 text-micro font-medium text-faint">
           Projects
         </h2>
-        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 p-0">
-          {projects.data.map((p) => (
-            <li key={p.id}>
+        <StaggerList className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 p-0">
+          {projects.data.map((p, i) => (
+            <StaggerItem key={p.id} index={i}>
               <a
                 href={`#${studioHref({ kind: 'project', projectId: p.id })}`}
-                className="flex flex-col gap-2 border border-rule-soft bg-surface p-4 text-ink no-underline transition-colors hover:border-rule hover:bg-raised"
+                className="flex flex-col gap-1.5 rounded-lg border border-rule-soft bg-surface px-4 py-3.5 text-ink no-underline transition-colors duration-(--op-duration-fast) ease-out hover:border-rule hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2"
               >
                 <span className="flex items-center gap-2 font-medium">
                   <FolderGit2
@@ -72,21 +79,19 @@ export function Home({ agentd }: { agentd: StudioAgentd }) {
                   />
                   {p.name}
                 </span>
-                <span
-                  className={/* mono-ok: path */ 'truncate font-mono text-[0.72rem] text-faint'}
-                >
+                <span className={/* mono-ok: path */ 'truncate font-mono text-micro text-faint'}>
                   {p.path}
                 </span>
                 {p.branch && (
-                  <span className="flex items-center gap-1.5 text-[0.8rem] text-muted">
-                    <GitBranch size={13} aria-hidden="true" />
+                  <span className="flex items-center gap-1.5 text-small text-muted">
+                    <GitBranch size={12} aria-hidden="true" />
                     {p.branch}
                   </span>
                 )}
               </a>
-            </li>
+            </StaggerItem>
           ))}
-        </ul>
+        </StaggerList>
       </section>
       <RecentThreads agentd={agentd} projects={projects.data} />
     </div>
@@ -112,30 +117,33 @@ function RecentThreads({
   return (
     <Card title="Recent threads">
       {recent.length === 0 ? (
-        <Empty title="No threads yet">
-          Open a project above and describe a change to start one.
-        </Empty>
+        <p className="m-0 px-2 py-2 text-muted">
+          <span className="font-medium text-ink">No threads yet.</span> Open a project above and
+          describe a change to start one.
+        </p>
       ) : (
-        <ul className="m-0 flex list-none flex-col p-0">
-          {recent.map((t) => (
-            <li key={t.id}>
-              <a
-                href={`#${studioHref({ kind: 'thread', threadId: t.id })}`}
-                className="flex items-baseline gap-3 rounded-md px-2 py-1.5 text-ink no-underline hover:bg-raised"
-              >
-                <span className="min-w-0 flex-1 truncate">{t.title || 'Untitled thread'}</span>
-                {projectName(t.projectId) && (
-                  <span className="shrink-0 text-[0.8rem] text-muted">
-                    {projectName(t.projectId)}
+        <StaggerList className="m-0 flex list-none flex-col gap-px p-0">
+          {recent.map((t, i) => (
+            <StaggerItem key={t.id} index={i}>
+              <ListRow
+                render={<a href={`#${studioHref({ kind: 'thread', threadId: t.id })}`} />}
+                icon={<MessageSquare aria-hidden="true" strokeWidth={1.75} />}
+                meta={
+                  <span className="flex items-center gap-3">
+                    {projectName(t.projectId) && (
+                      <span className="text-muted">{projectName(t.projectId)}</span>
+                    )}
+                    <span className="min-w-[72px] text-end text-faint tabular-nums">
+                      {formatRelative(new Date(t.updatedAt).toISOString())}
+                    </span>
                   </span>
-                )}
-                <span className="shrink-0 text-[0.8rem] text-faint">
-                  {formatRelative(new Date(t.updatedAt).toISOString())}
-                </span>
-              </a>
-            </li>
+                }
+              >
+                {t.title || 'Untitled thread'}
+              </ListRow>
+            </StaggerItem>
           ))}
-        </ul>
+        </StaggerList>
       )}
     </Card>
   );
@@ -180,9 +188,9 @@ export function ProjectPage({
   return (
     <div className="mx-auto flex w-full max-w-[960px] flex-col gap-6 px-6 py-8">
       <header className="flex flex-col gap-1">
-        <h1 className="m-0 text-[1.5rem] font-semibold text-ink">{project.name}</h1>
+        <h1 className="m-0 text-title font-semibold text-ink">{project.name}</h1>
         <p className="m-0 flex flex-wrap items-center gap-2 text-muted">
-          <code className="text-[0.78rem]">{project.path}</code>
+          <code className="text-small">{project.path}</code>
           {project.branch && <Badge>{project.branch}</Badge>}
         </p>
       </header>

@@ -130,32 +130,32 @@ The list this short is a consequence of the server's `reqwest` being
 
 ### The feature set, and what is not in the package
 
-Packages are built from the **default** feature set —
-`default = ["es", "flight", "hnsw", "live", "qdrant"]` — with no extra flags.
-Since LV1 Task 23 that includes Loams Live on its embedded store: `loams dev`
-and `loams standalone` serve the Live API on loopback (127.0.0.1:7710) with
-data under `<data-dir>/live/`, unless started with `--no-live`.
-**[verified]** — read from `crates/loams/Cargo.toml`.
+Packages are built with the release image's features (#925):
+`live,live-tikv,durable,durable-tikv,graph,tikv,pgwire,mysql-wire,stream-grpc`
+on top of the default set (`es`, `flight`, `hnsw`, `live`, `qdrant`). The list is
+`LOAMS_PACKAGE_FEATURES` in `.github/workflows/release-package.yml`, and the
+Linux job fails if it differs from `ARG FEATURES` in
+`deploy/release/Containerfile.loams`. So `loams dev` from a package serves what
+the image serves: Live on 127.0.0.1:7710, and Durable (the embedded Resonate
+server) on 127.0.0.1:8001, with data under `<data-dir>/durable/`.
+`scripts/release/smoke-durable.sh` checks that Durable answers there, on Linux,
+on Windows and on the macOS runner that can run its binary natively.
 
-That means these are **not** in the packaged binary, and a flag for one of them
-will not work:
+The 0.1.0 packages were built from the default set alone, so they had no
+Durable: `loams dev` logged "this build has no durable execution" and nothing
+listened on 8001.
+
+The `depends` list above still holds. Resonate's SQLite comes from `rusqlite`
+with `bundled`, which compiles it into the binary, and the image's runtime stage
+installs no libraries beyond `ca-certificates`, `curl` and `tini`.
+
+Not in the package:
 
 | Feature | Not in the package because |
 |---|---|
-| `durable`, `durable-mysql`, `durable-tikv` | Opt-in, and the crate comment says it "rebuilds about 480 crates". It also pulls an embedded Resonate server, whose SQLite build would add a C dependency the `depends` list above does not declare. |
-| `tikv`, `live-tikv` | Opt-in; pull a git-pinned `tikv-client` that the default build must not carry. A packaged binary refuses `--live-store tikv://…`. |
-| `mysql-wire`, `pgwire` | Opt-in; add a DataFusion build. |
-| `stream-grpc` | Opt-in. |
+| `durable-mysql` | Not in the image either. |
+| `postgres` | `pg-control` ships as its own image (`loams-pg-control`). |
 | `failpoints` | Release builds must not contain failpoints. |
-
-**This is an assumption worth a maintainer's eye.** The `durable` comment in
-`crates/loams/Cargo.toml` says "release builds, CI's durable jobs and the Loams
-cloud build turn it on", and this workflow does not. Turning it on for a
-packaged build means re-deriving the dependency list against a real binary, and
-a C dependency in an .deb needs `Depends:` entries this page has not verified.
-Shipping the default-feature build is the conservative choice; enabling
-`durable` for packages is a follow-up that should update `depends` in the same
-commit.
 
 ## Windows
 
@@ -423,7 +423,7 @@ signature, read back off the finished files, so nothing has to be guessed.
 
 | Row | What it records |
 |---|---|
-| **D628** | Linux packages are built with nFPM from one config: `.deb`, `.rpm` and `.pkg.tar.zst`, default feature set. |
+| **D628** | Linux packages are built with nFPM from one config: `.deb`, `.rpm` and `.pkg.tar.zst`, default feature set (since #925, the release image's features). |
 | **D629** | The `.rpm` is built unsigned and signed by SignPath; the `.deb` and the pacman package are signed with the project GPG key. |
 | **D630** | Windows ships an unsigned `.zip`, not an MSI. |
 | **D631** | No repository is published until SignPath has signed the `.rpm`. |

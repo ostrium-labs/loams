@@ -132,11 +132,13 @@ def test_binding_names_the_rpc_it_will_call(factory) -> None:
 
 @pytest.mark.parametrize("factory", [Loams, AsyncLoams])
 def test_binding_refuses_a_module_the_generator_has_not_seen(factory) -> None:
-    """`loams.vector` does not exist until its proto carries facade options, so a
-    caller reaching for it gets a `LoamsError`, not an `AttributeError`."""
+    """A module no proto annotates does not exist, so a caller reaching for it
+    gets a `LoamsError`, not an `AttributeError`."""
     client = factory(ENDPOINT)
     with pytest.raises(LoamsError):
-        client.binding("vector", "search")
+        client.binding("nosuchmodule", "search")
+    # `loams.vector` is a second facade name on `QueryService/Search` (SDKP P0a).
+    assert client.binding("vector", "search").method == "Search"
     with pytest.raises(LoamsError):
         client.binding("live", "nosuchcall")
 

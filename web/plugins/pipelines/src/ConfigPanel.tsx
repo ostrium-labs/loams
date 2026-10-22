@@ -55,7 +55,7 @@ export function SecretField({
       label={
         <span className="flex items-center gap-2">
           {field.label}
-          {field.required && <span className="text-xs text-faint"> required</span>}
+          {field.required && <span className="text-small text-faint"> required</span>}
           <Badge>{isSet ? 'set' : 'not set'}</Badge>
         </span>
       }
@@ -125,7 +125,7 @@ function ConfigInput({
   const label = (
     <span>
       {field.label}
-      {field.required && <span className="ml-2 text-xs text-faint"> required</span>}
+      {field.required && <span className="ml-2 text-small text-faint"> required</span>}
     </span>
   );
   return (
@@ -180,7 +180,7 @@ function MapEditor({
 }) {
   const fields = fieldsOf(input);
   if (fields.length === 0) {
-    return <p className="m-0 text-sm text-muted">Connect a typed input to map its fields.</p>;
+    return <p className="m-0 text-body text-muted">Connect a typed input to map its fields.</p>;
   }
   // No mappings yet means every field passes through under its own name.
   const current = node.mappings ?? fields.map((f) => ({ from: f.name, to: f.name }));
@@ -194,10 +194,10 @@ function MapEditor({
     onChange(next);
   };
   return (
-    <table className="w-full text-sm">
+    <table className="w-full text-body">
       <caption className="sr-only">Field mappings</caption>
       <thead>
-        <tr className="text-left text-xs text-muted">
+        <tr className="text-left text-small text-muted">
           <th scope="col">Keep</th>
           <th scope="col">Field</th>
           <th scope="col">Output name</th>
@@ -218,7 +218,7 @@ function MapEditor({
                   onChange={(e) => set(f.name, e.target.checked ? f.name : undefined)}
                 />
               </td>
-              <td className={/* mono-ok: code */ 'font-mono text-xs'}>
+              <td className={/* mono-ok: code */ 'font-mono text-small'}>
                 {f.name}:{f.type}
               </td>
               <td>
@@ -250,7 +250,7 @@ function CastEditor({
 }) {
   const fields = fieldsOf(input);
   if (fields.length === 0) {
-    return <p className="m-0 text-sm text-muted">Connect a typed input to map its schema.</p>;
+    return <p className="m-0 text-body text-muted">Connect a typed input to map its schema.</p>;
   }
   const casts = node.casts ?? {};
   return (
@@ -259,7 +259,7 @@ function CastEditor({
         <li key={f.name} className="flex items-center justify-between gap-2">
           <label
             htmlFor={`${node.id}-cast-${f.name}`}
-            className={/* mono-ok: id */ 'font-mono text-xs'}
+            className={/* mono-ok: id */ 'font-mono text-small'}
           >
             {f.name}:{f.type} →
           </label>
@@ -303,8 +303,8 @@ function Connections({
     node.kind === 'sink' ? [] : graph.nodes.filter((n) => canConnect(graph, node.id, n.id).ok);
   return (
     <section aria-label="Connections" className="flex flex-col gap-2">
-      <h3 className="m-0 text-xs font-medium uppercase tracking-wide text-muted">Connections</h3>
-      <ul className="m-0 flex list-none flex-col gap-1 p-0 text-sm">
+      <h3 className="m-0 text-small font-medium text-muted">Connections</h3>
+      <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body">
         {ins.map((e) => (
           <li key={e.id} className="flex items-center justify-between gap-2">
             <span>from {label(e.source)}</span>
@@ -377,8 +377,8 @@ export function ConfigPanel(props: ConfigPanelProps) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="m-0 truncate text-base">{node.label}</h2>
-          <p className="m-0 text-xs text-muted">
+          <h2 className="m-0 truncate text-emphasis">{node.label}</h2>
+          <p className="m-0 text-small text-muted">
             {node.kind} · {title}
             {def?.delivery?.[node.kind as 'source' | 'sink'] &&
               ` · ${def.delivery[node.kind as 'source' | 'sink']}`}
@@ -393,7 +393,7 @@ export function ConfigPanel(props: ConfigPanelProps) {
 
       {problems.length > 0 && (
         <ul
-          className="m-0 flex list-none flex-col gap-1 p-0 text-sm text-danger"
+          className="m-0 flex list-none flex-col gap-1 p-0 text-body text-danger"
           aria-label="Problems with this node"
         >
           {problems.map((p) => (
@@ -435,7 +435,7 @@ export function ConfigPanel(props: ConfigPanelProps) {
         )}
 
         {node.kind === 'transform' && (
-          <p className="m-0 text-sm text-muted">{TRANSFORM_HINT[node.ref as TransformKind]}</p>
+          <p className="m-0 text-body text-muted">{TRANSFORM_HINT[node.ref as TransformKind]}</p>
         )}
         {node.ref === 'filter' && node.kind === 'transform' && (
           <Field
@@ -472,7 +472,7 @@ export function ConfigPanel(props: ConfigPanelProps) {
         )}
       </fieldset>
 
-      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small">
         {node.kind !== 'source' && (
           <>
             <dt className="text-muted">Input</dt>

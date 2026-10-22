@@ -487,6 +487,21 @@ pub struct ReadContext<'a> {
     /// The records a materialized view reads under its pipe's name (HS1 Task
     /// 16); a pipe read without them is `620`.
     pub batch: Option<&'a crate::pipes::PipeBatch>,
+    /// What the front itself answers `system.processes` and
+    /// `system.query_log` from (HS1 Task 23), for a client's statement.
+    pub front: Option<Front<'a>>,
+    /// Whether the reader holds `house:admin`: it sees the namespace's
+    /// processes and query log, not only its own.
+    pub admin: bool,
+}
+
+/// The front's own sources of `system` rows (HS1 Task 23).
+#[derive(Debug, Clone, Copy)]
+pub struct Front<'a> {
+    /// Its running statements, both surfaces.
+    pub processes: &'a crate::watchdog::Processes,
+    /// Its query log, when it has a catalog.
+    pub query_log: Option<&'a crate::querylog::QueryLog>,
 }
 
 /// Whether a setting is on (`1`, `true`).
@@ -534,8 +549,12 @@ pub async fn plan(
             if let Some((database, name, table)) =
                 resolve(lake, ctx.namespace, ctx.database, printed).await?
             {
-                // A table outside the user's grants is not read (HS1 Task 20).
-                if ctx.grants.is_some_and(|g| !g.allows(&database, &name)) {
+                // A table outside the user's grants is not read (HS1 Task 20),
+                // nor is the House's own `_house` by name (HS1 Task 23: the
+                // query log is read as `system.query_log`).
+                if database == crate::querylog::HOUSE_DATABASE
+                    || ctx.grants.is_some_and(|g| !g.allows(&database, &name))
+                {
                     return Err(HouseError::from(ChError::access_denied(format!(
                         "{}: Not enough privileges on {database}.{name}: it is not among \
                          this identity's tables.",
@@ -574,7 +593,9 @@ pub async fn plan(
             }
         }
         for database in whole {
-            if engine_database(&database) || !lake.database_exists(ctx.namespace, &database).await?
+            if engine_database(&database)
+                || database == crate::querylog::HOUSE_DATABASE
+                || !lake.database_exists(ctx.namespace, &database).await?
             {
                 continue;
             }
@@ -641,6 +662,14 @@ pub async fn plan(
         }
         plan.views.push(views::view_ddl(&pin, &source, mode)?);
         plan.pins.push(pin);
+    }
+    // `system.query_log` reads the namespace's `_house.query_log` (HS1 Task
+    // 23) through a view of its own; no client statement names it.
+    if system_tables.contains("query_log")
+        && let Some(log) = ctx.front.and_then(|f| f.query_log)
+        && let Some(ddl) = log.read_views(ctx.namespace, endpoint.as_deref()).await?
+    {
+        plan.views.extend(ddl);
     }
     if !system_tables.is_empty() {
         plan.views

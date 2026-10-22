@@ -423,6 +423,13 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.families != '[]'))) && needs.changes.outputs.heavy != 'false' }}
     runs-on: ubuntu-24.04
+    # MongoDB's own start-up check refuses Linux 6.19 and newer (SERVER-121912),
+    # and misreads Ubuntu's patched kernels, which some ubuntu-24.04 runners now
+    # report (SERVER-136848, no fix version yet): mongod exits before a suite
+    # runs. Until MongoDB fixes the check or the job pins a runner kernel, the
+    # mongodb leg still runs but does not fail `Connectors required` (owner,
+    # 2026-10-22; tracking issue #1053).
+    continue-on-error: ${{ matrix.family == 'mongodb' }}
     strategy:
       fail-fast: false
       matrix:

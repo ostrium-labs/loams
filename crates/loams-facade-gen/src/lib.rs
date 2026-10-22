@@ -21,6 +21,7 @@
 //! every SDK by default.
 
 pub mod go;
+pub mod index;
 pub mod naming;
 pub mod python;
 pub mod reasons;

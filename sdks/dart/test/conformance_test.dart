@@ -76,7 +76,7 @@ Future<void> writeReport(String endpoint) async {
     'endpoint': endpoint,
     'language': 'dart',
     'live': false,
-    'ran': requiredFixtures,
+    'ran': await withAppFixtures(requiredFixtures),
     'skipped': [],
     'tests': [
       'dart_conformance_all_required_fixtures',
@@ -182,7 +182,7 @@ void main() {
       'endpoint': endpoint,
       'language': 'dart',
       'live': false,
-      'ran': ran,
+      'ran': await withAppFixtures(ran),
       'skipped': [],
       'tests': [
         'dart_conformance_all_required_fixtures',
@@ -375,4 +375,20 @@ class MockTransport extends Transport {
   Future<HttpResponse> execute(String path, Map<String, String> headers, dynamic body) async {
     return handler(headers);
   }
+}
+
+/// [ran] plus the `app_*` fixtures the app replay (test/app_replay_test.dart)
+/// recorded in an earlier write of the same report.
+Future<List<String>> withAppFixtures(List<String> ran) async {
+  final file = File('${Directory.current.parent.path}/fixtures/results/dart.json');
+  final previous = <String>[];
+  if (await file.exists()) {
+    try {
+      final report = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      previous.addAll([for (final n in (report['ran'] as List? ?? const [])) if (n is String && n.startsWith('app_')) n]);
+    } on FormatException {
+      // A half-written report: start again.
+    }
+  }
+  return {...ran, ...previous}.toList()..sort();
 }

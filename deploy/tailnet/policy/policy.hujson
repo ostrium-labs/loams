@@ -1,0 +1,150 @@
+// Loams hosted tailnet: default-deny access policy, shared by BOTH providers.
+//
+//   tailscale  applied through the API by tailscale/gitops-acl-action
+//              (from a separate private deployment repository; the
+//              monorepo's .github/workflows/platform.yml only lints and checks)
+//   headscale  loaded from file, checked by deploy/tailnet/headscale/policy/check.sh
+//
+// Keep it inside the subset both understand: `grants`, `groups`, `tagOwners`,
+// `tests`. Do not add `postures`, `ipsets` or other Tailscale-only sections
+// (Headscale rejects or ignores them); see docs/platform/deploy/tailnet.md, "Policy".
+//
+// No `acls` section and a non-empty `grants` section: everything not granted
+// below is denied. Edit through a pull request. CI tests it (Tailscale: the
+// API's validator; Headscale: its own checker), then:
+//   tailscale  the deployment repository applies it (or the admin console)
+//   headscale  reload the server (SIGHUP, see docs/platform/deploy/headscale.md)
+//
+// Who is who
+//   Humans   Tailscale: users of the tailnet's identity provider, addressed by
+//            email. Headscale: users created at OIDC sign-in (Authentik),
+//            gated by Authentik's `loams-net-users`. Headscale cannot use OIDC
+//            groups in policy (docs/ref/oidc.md, "Limitations"), and Tailscale
+//            with a custom OIDC provider has no group provisioning either, so
+//            `group:ops` below lists the operators by email in both cases.
+//   Servers  Tagged nodes, joined with a tagged auth key. Only `group:ops`
+//            may own a tag. Tagged nodes do not expire by default: remove them
+//            from the provider when retired.
+//   Tenants  `tag:byoc-<tenant>`: a customer cluster's agent node. Tenants
+//            reach only `tag:control`, never each other (design 43 D586).
+{
+  "groups": {
+    // REPLACE with the real operator emails before first start.
+    "group:ops": ["admin@loams.dev"]
+  },
+
+  "tagOwners": {
+    "tag:ops":       ["group:ops"],   // reserved: operator-owned shared devices
+    "tag:authentik": ["group:ops"],   // the Authentik VM or pod host
+    "tag:headscale": ["group:ops"],   // the Headscale host (provider=headscale only; unused with Tailscale)
+    "tag:k3s":       ["group:ops"],   // k3s servers and agents, any site
+    "tag:tikv":      ["group:ops"],   // TiKV and PD nodes
+    "tag:wesql":     ["group:ops"],   // WeSQL nodes
+    "tag:objstore":  ["group:ops"],   // RustFS or other private object store
+    "tag:bench":     ["group:ops"],   // loam-bench self-hosted CI runner
+    "tag:ci":        ["group:ops"],   // ephemeral CI jobs (ephemeral pre-auth keys)
+    "tag:control":   ["group:ops"],   // the BYOC control plane (loams-control)
+
+    // BEGIN GENERATED TENANT TAGS (scripts/net/render-policy, design 43 D586)
+    "tag:byoc-acme": ["group:ops"]    // example tenant, remove or replace
+    // END GENERATED TENANT TAGS
+  },
+
+  "grants": [
+    // --- operators ---------------------------------------------------------
+    // SSH to every server tag. OpenSSH listens on the tailnet address only;
+    // the host firewall has no public 22.
+    {
+      "src": ["group:ops"],
+      "dst": ["tag:authentik", "tag:headscale", "tag:k3s", "tag:tikv", "tag:wesql",
+              "tag:objstore", "tag:bench", "tag:control"],
+      "ip":  ["tcp:22"]
+    },
+    // Authentik's admin interface, reachable on the tailnet only (see
+    // docs/platform/deploy/tailnet.md, "Authentik admin on the tailnet").
+    {
+      "src": ["group:ops"],
+      "dst": ["tag:authentik"],
+      "ip":  ["tcp:9000"]
+    },
+    // kubectl to the k3s API server.
+    {
+      "src": ["group:ops"],
+      "dst": ["tag:k3s"],
+      "ip":  ["tcp:6443"]
+    },
+    // The control plane's operator API.
+    {
+      "src": ["group:ops"],
+      "dst": ["tag:control"],
+      "ip":  ["tcp:443"]
+    },
+
+    // --- east-west, by role --------------------------------------------------
+    // k3s node to node: API server, kubelet, etcd, flannel VXLAN, WireGuard.
+    {
+      "src": ["tag:k3s"],
+      "dst": ["tag:k3s"],
+      "ip":  ["tcp:6443", "tcp:10250", "tcp:2379-2380", "udp:8472", "udp:51820-51821"]
+    },
+    // TiKV and PD across sites: client, peer, status ports.
+    {
+      "src": ["tag:tikv", "tag:k3s"],
+      "dst": ["tag:tikv"],
+      "ip":  ["tcp:2379-2380", "tcp:20160", "tcp:20180"]
+    },
+    // WeSQL: MySQL protocol and the node-to-node ports.
+    {
+      "src": ["tag:wesql", "tag:k3s"],
+      "dst": ["tag:wesql"],
+      "ip":  ["tcp:3306", "tcp:33060"]
+    },
+    // Backups and other S3 traffic to the private object store.
+    {
+      "src": ["tag:k3s", "tag:authentik", "tag:headscale", "tag:tikv", "tag:wesql", "tag:bench"],
+      "dst": ["tag:objstore"],
+      "ip":  ["tcp:9000", "tcp:443"]
+    },
+    // Metrics scrape from the cluster's collector to the infrastructure tags.
+    {
+      "src": ["tag:k3s"],
+      "dst": ["tag:authentik", "tag:headscale", "tag:bench"],
+      "ip":  ["tcp:9100"]
+    },
+    // Ephemeral CI jobs reach the bench runner's result endpoint only.
+    {
+      "src": ["tag:ci"],
+      "dst": ["tag:bench"],
+      "ip":  ["tcp:8080"]
+    },
+
+    // --- tenants (BYOC connectivity mode, design 43 section 6) ---------------
+    // A tenant cluster's agent reaches the control plane. Nothing else, and
+    // the control plane never initiates a connection into a tenant.
+    {
+      "src": ["tag:byoc-acme"],
+      "dst": ["tag:control"],
+      "ip":  ["tcp:443"]
+    }
+  ],
+
+  // Both providers evaluate these in CI; a failing test fails the check.
+  "tests": [
+    // operators
+    {"src": "admin@loams.dev", "accept": ["tag:k3s:22", "tag:k3s:6443", "tag:authentik:9000"]},
+    {"src": "admin@loams.dev", "deny":   ["tag:k3s:10250", "tag:tikv:20160"]},
+    // servers do not get a shell on each other
+    {"src": "tag:k3s", "deny": ["tag:k3s:22", "tag:authentik:22", "tag:headscale:22", "tag:bench:22"]},
+    // CI is not a way into the cluster
+    {"src": "tag:ci", "accept": ["tag:bench:8080"]},
+    {"src": "tag:ci", "deny":   ["tag:k3s:6443", "tag:k3s:22", "tag:authentik:9000", "tag:control:443"]},
+    // the Headscale host reaches only the object store
+    {"src": "tag:headscale", "accept": ["tag:objstore:9000"]},
+    {"src": "tag:headscale", "deny":   ["tag:k3s:6443", "tag:authentik:9000"]},
+    // tenants: the control plane only, never operators' servers or each other
+    {"src": "tag:byoc-acme", "accept": ["tag:control:443"]},
+    {"src": "tag:byoc-acme", "deny":   ["tag:control:22", "tag:k3s:6443", "tag:authentik:9000", "tag:objstore:9000"]},
+    // the control plane does not dial into tenants
+    {"src": "tag:control", "deny": ["tag:byoc-acme:443", "tag:byoc-acme:6443"]}
+  ]
+}

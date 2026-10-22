@@ -148,10 +148,14 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: buf lint (STANDARD)
         run: web/packages/proto/node_modules/.bin/buf lint
-      - name: buf breaking (FILE, against dev)
+      # Against the pull request's base: a release pull request into main is
+      # cut from dev and lacks what dev gained since, which is not a break.
+      - name: buf breaking (FILE, against the base branch)
+        env:
+          BASE: ${{ github.base_ref || 'dev' }}
         run: |
-          git fetch --no-tags origin dev
-          web/packages/proto/node_modules/.bin/buf breaking --against ".git#branch=origin/dev"
+          git fetch --no-tags origin "$BASE"
+          web/packages/proto/node_modules/.bin/buf breaking --against ".git#branch=origin/$BASE"
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2

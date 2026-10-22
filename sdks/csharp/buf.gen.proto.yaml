@@ -33,6 +33,11 @@ inputs:
       - proto/loams/operations/v1
       - proto/loams/notifications/v1
       - proto/loams/live/v1
+      # SDKP (docs/plans/2026-10-19-sdk-parity.md): the app-building packages.
+      - proto/loams/collection/v1
+      - proto/loams/graph/v1
+      - proto/loams/sql/v1
+      - proto/loams/stream/v1
 plugins:
   # v35.0 is protoc 35.0; the `integrity` a `bsr` row carries is the upstream
   # `protoc-gen-*` release the BSR build wraps, because buf publishes no digest

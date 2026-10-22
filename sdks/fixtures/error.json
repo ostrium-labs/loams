@@ -300,6 +300,230 @@
         "R8"
       ],
       "about": "A session from 10 minutes ago decides a STEP_UP_SESSION approval."
+    },
+    {
+      "reason": "already_exists",
+      "fixture": "app_collections",
+      "step": 2,
+      "server": "loams dev",
+      "rpc": "CreateNamespace",
+      "path": "/loams.collection.v1.NamespaceService/CreateNamespace",
+      "contentType": "application/json",
+      "httpStatus": 409,
+      "connectCode": "already_exists",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R3",
+        "R4",
+        "R6",
+        "R8",
+        "R11"
+      ],
+      "about": "Create it again: `already_exists`, which `retry_safe` callers treat as done."
+    },
+    {
+      "reason": "not_found",
+      "fixture": "app_collections",
+      "step": 16,
+      "server": "loams dev",
+      "rpc": "GetCollection",
+      "path": "/loams.collection.v1.CollectionService/GetCollection",
+      "contentType": "application/json",
+      "httpStatus": 404,
+      "connectCode": "not_found",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R3",
+        "R4",
+        "R6",
+        "R8",
+        "R11"
+      ],
+      "about": "A collection that is not there: `not_found` (R8)."
+    },
+    {
+      "reason": "filter_conflict",
+      "fixture": "app_collections",
+      "step": 17,
+      "server": "loams dev",
+      "rpc": "CountDocuments",
+      "path": "/loams.collection.v1.DocumentService/CountDocuments",
+      "contentType": "application/json",
+      "httpStatus": 400,
+      "connectCode": "invalid_argument",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R3",
+        "R4",
+        "R6",
+        "R8",
+        "R11"
+      ],
+      "about": "Both `filter` and `where`: `filter_conflict`, refused before anything is read."
+    },
+    {
+      "reason": "feature_not_in_variant",
+      "fixture": "app_graph",
+      "step": 0,
+      "server": "loams dev",
+      "rpc": "CreateGraph",
+      "path": "/loams.graph.v1.GraphAdminService/CreateGraph",
+      "contentType": "application/json",
+      "httpStatus": 501,
+      "connectCode": "unimplemented",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "about": "Create the graph."
+    },
+    {
+      "reason": "feature_not_in_variant",
+      "fixture": "app_graph",
+      "step": 1,
+      "server": "loams dev",
+      "rpc": "Execute",
+      "path": "/loams.graph.v1.GraphService/Execute",
+      "contentType": "application/json",
+      "httpStatus": 501,
+      "connectCode": "unimplemented",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "about": "Insert notes, tags and `TAGGED` edges with GQL and parameters, keyed."
+    },
+    {
+      "reason": "feature_not_in_variant",
+      "fixture": "app_graph",
+      "step": 2,
+      "server": "loams dev",
+      "rpc": "Execute",
+      "path": "/loams.graph.v1.GraphService/Execute",
+      "contentType": "application/json",
+      "httpStatus": 501,
+      "connectCode": "unimplemented",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "about": "Read it back, read-only."
+    },
+    {
+      "reason": "invalid_argument",
+      "fixture": "app_graph",
+      "step": 3,
+      "server": "loams dev",
+      "rpc": "Search",
+      "path": "/loams.collection.v1.QueryService/Search",
+      "contentType": "application/json",
+      "httpStatus": 400,
+      "connectCode": "invalid_argument",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "about": "The builder corpus case `search_expand`: a search that walks the graph from its hits. Without the graph feature the expand stage is refused as `invalid_argument` (\"expand runs on Loams Graph, which this server does not run\"), not `feature_not_in_variant`: the search itself is served."
+    },
+    {
+      "reason": "feature_not_in_variant",
+      "fixture": "app_graph",
+      "step": 4,
+      "server": "loams dev",
+      "rpc": "DeleteGraph",
+      "path": "/loams.graph.v1.GraphAdminService/DeleteGraph",
+      "contentType": "application/json",
+      "httpStatus": 501,
+      "connectCode": "unimplemented",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R5",
+        "R8"
+      ],
+      "about": "Delete the graph."
+    },
+    {
+      "reason": "invalid_argument",
+      "fixture": "app_search",
+      "step": 6,
+      "server": "loams dev",
+      "rpc": "Search",
+      "path": "/loams.collection.v1.QueryService/Search",
+      "contentType": "application/json",
+      "httpStatus": 400,
+      "connectCode": "invalid_argument",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R6",
+        "R8"
+      ],
+      "about": "A weighted sum with one weight for two retrievers: refused. The builders refuse it before sending; this is the server's own refusal of the raw request."
+    },
+    {
+      "reason": "sql_param_count",
+      "fixture": "app_sql",
+      "step": 3,
+      "server": "loams dev",
+      "rpc": "Query",
+      "path": "/loams.sql.v1.SqlService/Query",
+      "contentType": "application/json",
+      "httpStatus": 400,
+      "connectCode": "invalid_argument",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "about": "A `$1` with no value: `invalid_argument`, reason `sql_param_count`."
+    },
+    {
+      "reason": "invalid_argument",
+      "fixture": "app_sql",
+      "step": 4,
+      "server": "loams dev",
+      "rpc": "Query",
+      "path": "/loams.sql.v1.SqlService/Query",
+      "contentType": "application/json",
+      "httpStatus": 400,
+      "connectCode": "invalid_argument",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R8"
+      ],
+      "about": "A statement that is not a query: `invalid_argument`."
+    },
+    {
+      "reason": "not_found",
+      "fixture": "app_streams",
+      "step": 11,
+      "server": "loams dev",
+      "rpc": "Fetch",
+      "path": "/loams.stream.v1.StreamService/Fetch",
+      "contentType": "application/json",
+      "httpStatus": 404,
+      "connectCode": "not_found",
+      "carriesErrorInfo": true,
+      "required": false,
+      "pinnedBy": [
+        "R3",
+        "R8",
+        "R14"
+      ],
+      "about": "A stream that does not exist: `not_found`."
     }
   ],
   "unproducible": [
@@ -628,6 +852,12 @@
       "standIn": null
     },
     {
+      "reason": "batch_partially_applied",
+      "code": "aborted",
+      "why": "Raised by the SDKs, never by a server (runtime contract R13).",
+      "standIn": null
+    },
+    {
       "reason": "workspace_read_only",
       "code": "failed_precondition",
       "why": "Loams Git's loams.repos.v1 services are not part of the recorded corpus yet; the recorder runs no git runtime (GT1 Task 12).",
@@ -670,6 +900,138 @@
       "standIn": null
     },
     {
+      "reason": "memory_store_not_found",
+      "code": "not_found",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_space_not_found",
+      "code": "not_found",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_space_limit",
+      "code": "resource_exhausted",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_managed_object",
+      "code": "failed_precondition",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_block_version_mismatch",
+      "code": "aborted",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_block_too_large",
+      "code": "invalid_argument",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_core_budget_exceeded",
+      "code": "resource_exhausted",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_content_too_large",
+      "code": "invalid_argument",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_secret_detected",
+      "code": "failed_precondition",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_pii_refused",
+      "code": "failed_precondition",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_model_not_configured",
+      "code": "failed_precondition",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_model_not_local",
+      "code": "failed_precondition",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_token_budget_exhausted",
+      "code": "resource_exhausted",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_extraction_failed",
+      "code": "failed_precondition",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_too_many_spaces",
+      "code": "invalid_argument",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_cross_space_write",
+      "code": "invalid_argument",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "memory_not_yet_available",
+      "code": "unimplemented",
+      "why": "Loams Memory's loams.memory.v1 services are not served yet (MM1 Task 11), so the recorder cannot raise it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "code_repo_not_indexed",
+      "code": "failed_precondition",
+      "why": "Loams Memory's CodeMemoryService does not exist yet; code.proto lands with MM1 Task 27, so nothing raises it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "code_index_building",
+      "code": "unavailable",
+      "why": "Loams Memory's CodeMemoryService does not exist yet; code.proto lands with MM1 Task 27, so nothing raises it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "code_change_too_large",
+      "code": "invalid_argument",
+      "why": "Loams Memory's CodeMemoryService does not exist yet; code.proto lands with MM1 Task 27, so nothing raises it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "code_language_unsupported",
+      "code": "failed_precondition",
+      "why": "Loams Memory's CodeMemoryService does not exist yet; code.proto lands with MM1 Task 27, so nothing raises it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
+      "reason": "code_scip_invalid",
+      "code": "invalid_argument",
+      "why": "Loams Memory's CodeMemoryService does not exist yet; code.proto lands with MM1 Task 27, so nothing raises it (MM1 Task 1).",
+      "standIn": null
+    },
+    {
       "reason": "live_bad_cursor",
       "code": "invalid_argument",
       "why": "Needs a deployed Live function that paginates; the recorder deploys no bundle, so no `paginate` call runs (LV1 Task 4).",
@@ -697,72 +1059,6 @@
       "reason": "live_index_not_ready",
       "code": "failed_precondition",
       "why": "Needs a deploy still backfilling an index that a function reads; the recorder deploys nothing (LV1 Task 9).",
-      "standIn": null
-    },
-    {
-      "reason": "live_app_disabled",
-      "code": "failed_precondition",
-      "why": "Needs a Live app that was disabled or deleted through LiveAdminService; the recorder creates no apps (LV1 Task 13).",
-      "standIn": null
-    },
-    {
-      "reason": "live_app_exists",
-      "code": "failed_precondition",
-      "why": "Needs a second CreateApp under a taken name; the recorder creates no apps (LV1 Task 13).",
-      "standIn": null
-    },
-    {
-      "reason": "live_app_mismatch",
-      "code": "permission_denied",
-      "why": "Needs a credential bound to another environment's Live app; the recorder's credentials are bound to none (LV1 Task 15).",
-      "standIn": null
-    },
-    {
-      "reason": "live_origin_not_allowed",
-      "code": "permission_denied",
-      "why": "Needs a browser Origin a Live app does not list; the recorder sends no Origin and creates no apps (LV1 Task 18).",
-      "standIn": null
-    },
-    {
-      "reason": "session_rotate",
-      "code": "unavailable",
-      "why": "Needs a Watch stream held open for 24 hours; the recorder's sessions are short (LV1 Task 17).",
-      "standIn": null
-    },
-    {
-      "reason": "session_gone",
-      "code": "not_found",
-      "why": "Needs a second Live node whose session a call names; the recorder runs one engine (LV1 Task 24).",
-      "standIn": null
-    },
-    {
-      "reason": "node_draining",
-      "code": "unavailable",
-      "why": "Needs an engine shutting down while the recorder calls it (LV1 Task 24).",
-      "standIn": null
-    },
-    {
-      "reason": "live_function_error",
-      "code": "unknown",
-      "why": "Needs a deployed function that throws; the recorder deploys nothing (LV1 Task 19).",
-      "standIn": null
-    },
-    {
-      "reason": "live_function_timeout",
-      "code": "deadline_exceeded",
-      "why": "Needs a deployed function that runs past its CPU limit; the recorder deploys nothing (LV1 Task 19).",
-      "standIn": null
-    },
-    {
-      "reason": "live_function_out_of_memory",
-      "code": "resource_exhausted",
-      "why": "Needs a deployed function that runs past its memory limit; the recorder deploys nothing (LV1 Task 19).",
-      "standIn": null
-    },
-    {
-      "reason": "live_limit_exceeded",
-      "code": "resource_exhausted",
-      "why": "Needs a Live write past an app limit; the recorder writes nothing to Live (LV1 Task 19).",
       "standIn": null
     },
     {
@@ -871,6 +1167,102 @@
       "reason": "auth_unavailable",
       "code": "unavailable",
       "why": "Raised by the main port's auth layer (API2 Task 6); both recorder servers run without authentication, so no recording carries it.",
+      "standIn": null
+    },
+    {
+      "reason": "live_app_disabled",
+      "code": "failed_precondition",
+      "why": "Needs a Live app that was disabled or deleted through LiveAdminService; the recorder creates no apps (LV1 Task 13).",
+      "standIn": null
+    },
+    {
+      "reason": "live_app_exists",
+      "code": "failed_precondition",
+      "why": "Needs a second CreateApp under a taken name; the recorder creates no apps (LV1 Task 13).",
+      "standIn": null
+    },
+    {
+      "reason": "live_app_mismatch",
+      "code": "permission_denied",
+      "why": "Needs a credential bound to another environment's Live app; the recorder's credentials are bound to none (LV1 Task 15).",
+      "standIn": null
+    },
+    {
+      "reason": "live_origin_not_allowed",
+      "code": "permission_denied",
+      "why": "Needs a browser Origin a Live app does not list; the recorder sends no Origin and creates no apps (LV1 Task 18).",
+      "standIn": null
+    },
+    {
+      "reason": "session_rotate",
+      "code": "unavailable",
+      "why": "Needs a Watch stream held open for 24 hours; the recorder's sessions are short (LV1 Task 17).",
+      "standIn": null
+    },
+    {
+      "reason": "session_gone",
+      "code": "not_found",
+      "why": "Needs a second Live node whose session a call names; the recorder runs one engine (LV1 Task 24).",
+      "standIn": null
+    },
+    {
+      "reason": "node_draining",
+      "code": "unavailable",
+      "why": "Needs an engine shutting down while the recorder calls it (LV1 Task 24).",
+      "standIn": null
+    },
+    {
+      "reason": "live_function_error",
+      "code": "unknown",
+      "why": "Needs a deployed function that throws; the recorder deploys nothing (LV1 Task 19).",
+      "standIn": null
+    },
+    {
+      "reason": "live_function_timeout",
+      "code": "deadline_exceeded",
+      "why": "Needs a deployed function that runs past its CPU limit; the recorder deploys nothing (LV1 Task 19).",
+      "standIn": null
+    },
+    {
+      "reason": "live_function_out_of_memory",
+      "code": "resource_exhausted",
+      "why": "Needs a deployed function that runs past its memory limit; the recorder deploys nothing (LV1 Task 19).",
+      "standIn": null
+    },
+    {
+      "reason": "live_limit_exceeded",
+      "code": "resource_exhausted",
+      "why": "Needs a Live write past an app limit; the recorder writes nothing to Live (LV1 Task 19).",
+      "standIn": null
+    },
+    {
+      "reason": "result_too_large",
+      "code": "resource_exhausted",
+      "why": "Needs a `QueryArrow` answer past `--sql-arrow-max-bytes` (16 MiB); `app_sql` stays small.",
+      "standIn": null
+    },
+    {
+      "reason": "namespace_required",
+      "code": "invalid_argument",
+      "why": "Raised by the SDKs before any network call (runtime contract R11); no server returns it.",
+      "standIn": null
+    },
+    {
+      "reason": "invalid_consistency_token",
+      "code": "invalid_argument",
+      "why": "Raised by the SDKs when a token does not parse (runtime contract R4); the server answers a bad token with invalid_argument.",
+      "standIn": null
+    },
+    {
+      "reason": "search_after_needs_tiebreak",
+      "code": "invalid_argument",
+      "why": "Raised by the SDKs before any network call (SDKP section 2.4); no server returns it.",
+      "standIn": null
+    },
+    {
+      "reason": "client_deadline_exceeded",
+      "code": "deadline_exceeded",
+      "why": "Raised by the SDKs, never by a server (runtime contract R12).",
       "standIn": null
     }
   ]

@@ -1,0 +1,25 @@
+# PostgreSQL 17 for Authentik on CloudNativePG (operator installed separately:
+# https://cloudnative-pg.io). One instance for the beta; set instances: 3 when
+# the cluster has three nodes. Service: authentik-db-rw.authentik.svc:5432.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: authentik-db
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  bootstrap:
+    initdb:
+      database: authentik
+      owner: authentik
+      secret:
+        name: authentik-db
+  storage:
+    size: 5Gi
+  postgresql:
+    parameters:
+      # Authentik opens about 50% more connections since it left Redis behind.
+      max_connections: "200"
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}

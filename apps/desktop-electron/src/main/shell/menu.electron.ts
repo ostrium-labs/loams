@@ -15,7 +15,11 @@ export function installAppMenu(o: {
 			out.registerAccelerator = n.registerAccelerator;
 		if (n.submenu) out.submenu = n.submenu.map(map);
 		const id = n.id;
-		if (id) out.click = () => o.onAction(id);
+		if (id) {
+			// The id also lets Menu.getMenuItemById find the item (the e2e clicks it).
+			out.id = id;
+			out.click = () => o.onAction(id);
+		}
 		return out as MenuItemConstructorOptions;
 	};
 	const tpl = menuModel({ platform: process.platform, dev: o.dev });

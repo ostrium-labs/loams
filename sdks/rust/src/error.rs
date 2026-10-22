@@ -164,7 +164,55 @@ struct Detail {
     source: Option<ConnectError>,
 }
 
+/// The reason the SDK raises when a call runs out of its own deadline (R12).
+/// Client-side: no server sent it.
+pub const CLIENT_DEADLINE_EXCEEDED: &str = "client_deadline_exceeded";
+/// The reason a `write_batch` that stopped part-way carries (R13).
+pub const BATCH_PARTIALLY_APPLIED: &str = "batch_partially_applied";
+/// The reason the SDK raises for an app request with no namespace (R11).
+pub const NAMESPACE_REQUIRED: &str = "namespace_required";
+/// The reason the SDK raises for a malformed consistency token (R4).
+pub const INVALID_CONSISTENCY_TOKEN: &str = "invalid_consistency_token";
+/// The reason `query_all` raises for a sort with no primary-key tiebreaker.
+pub const SEARCH_AFTER_NEEDS_TIEBREAK: &str = "search_after_needs_tiebreak";
+/// Every reason the SDK raises itself (SDKP §2.1), registered in
+/// `docs/api/reasons.md` as client-side and so in the [`Reason`] enum.
+pub const CLIENT_REASONS: &[&str] = &[
+    CLIENT_DEADLINE_EXCEEDED,
+    BATCH_PARTIALLY_APPLIED,
+    NAMESPACE_REQUIRED,
+    INVALID_CONSISTENCY_TOKEN,
+    SEARCH_AFTER_NEEDS_TIEBREAK,
+];
+
 impl LoamsError {
+    /// With one `metadata` entry added.
+    #[must_use]
+    pub fn with_metadata(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.detail.metadata.insert(key.into(), value.into());
+        self
+    }
+
+    /// With a client-side reason (one of [`CLIENT_REASONS`]).
+    #[must_use]
+    pub fn with_client_reason(mut self, reason: &'static str) -> Self {
+        self.detail.unknown_reason = Some(reason.to_owned());
+        self
+    }
+
+    /// The client-side reason, when the SDK raised this error itself.
+    #[must_use]
+    pub fn client_reason(&self) -> Option<&str> {
+        self.unknown_reason()
+            .filter(|reason| CLIENT_REASONS.contains(reason))
+    }
+
+    /// Whether this is the SDK's own deadline running out (R12).
+    #[must_use]
+    pub fn is_client_deadline_exceeded(&self) -> bool {
+        self.client_reason() == Some(CLIENT_DEADLINE_EXCEEDED)
+    }
+
     /// Builds an error with every field explicit. The call path uses
     /// [`LoamsError::from_connect`]; the guard in [`crate::system`] builds one
     /// directly.

@@ -11,8 +11,8 @@
 // confirmed is still the checkout's (the expected checksum; `stale_diff` otherwise).
 
 import {
-  AlertDialog,
   Button,
+  ConfirmDialog,
   cx,
   Empty,
   Notice,
@@ -700,23 +700,18 @@ export function DiffPanel({ threadId, source, onOpenFile, className }: DiffPanel
       ) : null}
       {reviewBar}
       {body}
-      <AlertDialog
+      <ConfirmDialog
         open={pending !== null}
         onClose={() => setPending(null)}
-        title={
-          pending?.kind === "discard-file"
-            ? `Discard changes to ${pending.path}?`
-            : "Discard all changes?"
-        }
+        object={pending?.kind === "discard-file" ? `changes to ${pending.path}` : "all changes"}
         confirm={pending?.kind === "discard-file" ? "Discard file" : "Discard all"}
-        tone="danger"
         onConfirm={confirmDiscard}
-      >
-        {pending?.kind === "discard-file"
-          ? "The file goes back to HEAD. This cannot be undone."
-          : "Every file in this checkout goes back to HEAD and untracked files are removed. This cannot be undone."}{" "}
-        It applies only if the diff is still the one shown here.
-      </AlertDialog>
+        impact={`${
+          pending?.kind === "discard-file"
+            ? "The file goes back to HEAD. This cannot be undone."
+            : "Every file in this checkout goes back to HEAD and untracked files are removed. This cannot be undone."
+        } It applies only if the diff is still the one shown here.`}
+      />
     </DiffPanelShell>
   );
 }

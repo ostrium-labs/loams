@@ -7,6 +7,8 @@
 #   scripts/sdk/gen.sh python           # the `loams` package's facade and stubs
 #   scripts/sdk/gen.sh go               # module loams.dev/go's facade and stubs
 #   scripts/sdk/gen.sh rust             # crate loams' facade
+#   scripts/sdk/gen.sh index            # sdks/fixtures/facade-index.json
+#   scripts/sdk/gen.sh descriptors      # Ruby's and Kotlin's descriptor sets
 #
 # The facade generator is a Rust binary (SDK1 Task 3), so the script builds it
 # first and points buf at wherever cargo put it: the repository's cargo config
@@ -97,6 +99,26 @@ case "$lang" in
     generate_facade sdks/typescript/buf.gen.yaml "$plugin"
     echo "generated sdks/typescript/packages/client/src/gen/facade.ts"
     ;;
+  index)
+    # The facade index the hand-written SDKs check themselves against (SDKP
+    # P0a): the same plugin, `lang=index`.
+    plugin="$(plugin_path)"
+    if [ -z "$plugin" ]; then
+      echo "could not find protoc-gen-loams-facade after cargo build" >&2
+      exit 1
+    fi
+    generate_facade sdks/fixtures/buf.gen.index.yaml "$plugin"
+    echo "generated sdks/fixtures/facade-index.json"
+    ;;
+  descriptors)
+    # The descriptor sets Ruby and Kotlin read at runtime (D652): the whole
+    # proto module, as `sdks/kotlin/build.sh descriptors` builds it, so every
+    # annotated package is in both and the two never differ.
+    for out in sdks/ruby/gen/loams-descriptor.binpb sdks/kotlin/gen/loams-descriptor.binpb; do
+      "$BUF" build -o "$out"
+      echo "generated $out"
+    done
+    ;;
   typescript-live)
     # protoc-gen-es is a Node plugin pinned by @loams/client; buf.gen.live.yaml
     # points at its binary.
@@ -141,7 +163,7 @@ case "$lang" in
     echo "generated $FACADE_OUT"
     ;;
   *)
-    echo "usage: scripts/sdk/gen.sh <typescript|typescript-live|python|go|rust>" >&2
+    echo "usage: scripts/sdk/gen.sh <typescript|typescript-live|python|go|rust|index|descriptors>" >&2
     exit 2
     ;;
 esac

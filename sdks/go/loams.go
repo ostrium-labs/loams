@@ -21,8 +21,11 @@ package loams
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"loams.dev/go/gen/facade"
 	instancev1 "loams.dev/go/gen/loams/instance/v1"
@@ -62,13 +65,27 @@ type Options struct {
 	MaxRetries int
 	// NoRetries turns off automatic retries for the whole client.
 	NoRetries bool
-	// SessionConsistency holds a session consistency token across calls (D609).
+	// SessionConsistency holds a session consistency token across calls (D609,
+	// R4).
 	//
 	// **Off by default**: every read is then `STRONG` on its own, which is
-	// correct but does not give read-your-writes across processes. Turn it on
-	// when one process is both writing and reading, and remember it keeps the
-	// token it was given rather than merging — see `consistency.go`.
+	// correct but does not give read-your-writes across processes. On, every
+	// token a response carries merges into the session, and every read whose
+	// request has a `consistency` field is sent `at_least` the session unless the
+	// call set `consistency` itself or passed `WithoutSessionConsistency()`.
 	SessionConsistency bool
+	// Namespace is the default namespace (R11): it fills the `namespace` field
+	// of any request that has one and leaves it empty. An explicit namespace
+	// always wins; with neither, the call fails with `*InvalidArgumentError`
+	// before any network call.
+	Namespace string
+	// Timeout is the budget of every unary call, retries included (R12).
+	// **Zero means `DefaultTimeout` (30 s)**, for the reason `MaxRetries` gives;
+	// set NoTimeout to turn it off. `WithTimeout` overrides it per call. Streams
+	// have no default deadline.
+	Timeout time.Duration
+	// NoTimeout turns off the default unary deadline for the whole client.
+	NoTimeout bool
 	// Protocol overrides the wire protocol. Unset means Connect.
 	Protocol Protocol
 }
@@ -89,11 +106,25 @@ type Client struct {
 	tables    TablesModule
 	system    *System
 
+	// The app modules (SDKP).
+	namespaces  NamespacesModule
+	collections CollectionsModule
+	documents   DocumentsModule
+	search      SearchModule
+	vector      VectorModule
+	graph       GraphModule
+	sql         SqlModule
+	streams     StreamsModule
+
 	// modules is every generated module, by name: the catalogue a caller
 	// iterates when it wants to feature-detect without hard-coding a field.
 	modules map[string]any
 
 	transport TransportConfig
+	// namespace is the default namespace (R11), or "".
+	namespace string
+	// handleModules are the calls a collection handle delegates to.
+	handleModules HandleModules
 }
 
 // New builds a Client.
@@ -147,7 +178,22 @@ func New(options Options) (*Client, error) {
 		maxRetries = 0
 	}
 	clients := facade.NewServiceClients(config.HTTPClient, endpoint, clientOptions...)
-	client.invoker = NewCallInvoker(clients, options.Auth, maxRetries, client.session)
+	// A nil *ConsistencySession must not reach the invoker as a non-nil
+	// interface: "no session" has to stay nil.
+	var store ConsistencyTokenStore
+	if client.session != nil {
+		store = client.session
+	}
+	client.invoker = NewCallInvoker(clients, options.Auth, maxRetries, store)
+	timeout := options.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	if options.NoTimeout {
+		timeout = 0
+	}
+	client.invoker.SetDefaults(InvokerDefaults{Namespace: options.Namespace, Timeout: timeout})
+	client.namespace = options.Namespace
 	// ExtraHeaders were accepted and never sent (B17), so a client configured to
 	// address one Live app silently addressed the server's default app instead.
 	// They go through the invoker, which is the one place every unary call and
@@ -162,6 +208,33 @@ func New(options Options) (*Client, error) {
 	client.modules["live"] = client.live
 	client.modules["live.admin"] = client.liveAdmin
 	client.modules["tables"] = client.tables
+	app := func(name string) moduleInfo {
+		return moduleInfo{invoker: client.invoker, registry: client.modules, name: name}
+	}
+	client.namespaces = &namespacesModule{app("namespaces")}
+	client.collections = &collectionsModule{app("collections")}
+	client.documents = &documentsModule{app("documents")}
+	client.search = &searchModule{app("search")}
+	client.vector = &vectorModule{app("vector")}
+	client.graph = &graphModule{app("graph")}
+	client.sql = &sqlModule{app("sql")}
+	client.streams = &streamsModule{app("streams")}
+	client.modules["namespaces"] = client.namespaces
+	client.modules["collections"] = client.collections
+	client.modules["documents"] = client.documents
+	client.modules["search"] = client.search
+	client.modules["vector"] = client.vector
+	client.modules["graph"] = client.graph
+	client.modules["sql"] = client.sql
+	client.modules["streams"] = client.streams
+	client.handleModules = HandleModules{
+		Documents:      DocumentCalls{Write: client.documents.Write, Scroll: client.documents.Scroll},
+		GetDocuments:   client.documents.Get,
+		CountDocuments: client.documents.Count,
+		Search:         SearchCalls{Query: client.search.Query},
+		GetCollection:  client.collections.Get,
+		DropCollection: client.collections.Drop,
+	}
 	client.system = &System{
 		client:   client,
 		endpoint: endpoint,
@@ -169,6 +242,49 @@ func New(options Options) (*Client, error) {
 	}
 	return client, nil
 }
+
+// The environment FromEnv reads (R1, R11).
+const (
+	EnvEndpoint  = "LOAMS_ENDPOINT"
+	EnvNamespace = "LOAMS_NAMESPACE"
+)
+
+// FromEnv builds a Client from the environment: `LOAMS_ENDPOINT`, then
+// `LOAMS_API_KEY` or `LOAMS_TOKEN` (through `EnvToken`), then `LOAMS_NAMESPACE`.
+// A field already set in `options` wins over the environment.
+func FromEnv(options Options) (*Client, error) {
+	return fromEnv(options, os.LookupEnv)
+}
+
+func fromEnv(options Options, lookup func(string) (string, bool)) (*Client, error) {
+	if options.Endpoint == "" {
+		endpoint, _ := lookup(EnvEndpoint)
+		if endpoint == "" {
+			return nil, &InvalidArgumentError{LoamsError{
+				Code:     CodeInvalidArgument,
+				Reason:   ReasonInvalidArgument,
+				Metadata: map[string]string{"field": EnvEndpoint},
+				Cause:    errors.New("loams.FromEnv: LOAMS_ENDPOINT is not set"),
+			}}
+		}
+		options.Endpoint = endpoint
+	}
+	if options.Auth == nil {
+		for _, name := range EnvNames {
+			if value, ok := lookup(name); ok && value != "" {
+				options.Auth = &EnvTokenSource{Lookup: lookup}
+				break
+			}
+		}
+	}
+	if options.Namespace == "" {
+		options.Namespace, _ = lookup(EnvNamespace)
+	}
+	return New(options)
+}
+
+// Namespace is the client's default namespace (R11), or "".
+func (c *Client) Namespace() string { return c.namespace }
 
 // MustNew is New for a program that cannot usefully continue without a client —
 // a `main`, a `TestMain`, an example. It panics on the error, which is a usage
@@ -199,6 +315,41 @@ func (c *Client) Tables() TablesModule { return c.tables }
 
 // System is the module catalogue, feature detection and the version check.
 func (c *Client) System() *System { return c.system }
+
+// Namespaces is `loams.namespaces` (SDKP §2.2).
+func (c *Client) Namespaces() NamespacesModule { return c.namespaces }
+
+// Collections is `loams.collections` (SDKP §2.2).
+func (c *Client) Collections() CollectionsModule { return c.collections }
+
+// Documents is `loams.documents` (SDKP §2.3): the generated calls. The
+// conveniences (Upsert, Delete, Patch, WriteBatch, ScrollAll) are on
+// DocumentCalls and on a collection handle (`Collection`).
+func (c *Client) Documents() DocumentsModule { return c.documents }
+
+// DocumentCalls are the document conveniences over this client's calls.
+func (c *Client) DocumentCalls() DocumentCalls { return c.handleModules.Documents }
+
+// Search is `loams.search` (SDKP §2.4); build a request with NewSearch.
+func (c *Client) Search() SearchModule { return c.search }
+
+// SearchCalls are the search conveniences (Text, Hybrid, QueryAll) over this
+// client's `search.query`.
+func (c *Client) SearchCalls() SearchCalls { return c.handleModules.Search }
+
+// Vector is `loams.vector` (SDKP §2.4, Q613).
+func (c *Client) Vector() VectorModule { return c.vector }
+
+// Graph is `loams.graph` (SDKP §2.5). Its package is unstable.
+func (c *Client) Graph() GraphModule { return c.graph }
+
+// Sql is `loams.sql` (SDKP §2.5): one read-only SQL statement over a
+// namespace's collections.
+func (c *Client) Sql() SqlModule { return c.sql }
+
+// Streams is `loams.streams` (SDKP §2.5): a namespace's logs, with
+// Subscribe (R14).
+func (c *Client) Streams() StreamsModule { return c.streams }
 
 // Module returns a generated module by name, so a caller can feature-detect
 // without a hard-coded field:

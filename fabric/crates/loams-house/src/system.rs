@@ -51,6 +51,7 @@ pub const REPLACED: &[&str] = &[
     "processes",
     "errors",
     "loams_pipes",
+    "query_log",
 ];
 
 /// `system.loams_pipes` (HS1 Task 16): the House's own, one row per
@@ -455,7 +456,11 @@ pub async fn views(
     tables: &BTreeSet<String>,
 ) -> Result<Vec<String>, HouseError> {
     let mut catalog = match ctx.lake {
-        Some(lake) if tables.iter().any(|t| t != "processes" && t != "errors") => {
+        Some(lake)
+            if tables
+                .iter()
+                .any(|t| !matches!(t.as_str(), "processes" | "errors" | "query_log")) =>
+        {
             catalog_tables(lake, ctx.namespace).await?
         }
         _ => Vec::new(),
@@ -481,6 +486,15 @@ pub async fn views(
         quote_name(SYSTEM_VIEWS)
     )];
     for table in tables {
+        if table == "query_log" {
+            out.push(format!(
+                "CREATE OR REPLACE VIEW {}.{} AS\n{}",
+                quote_name(SYSTEM_VIEWS),
+                quote_name(table),
+                query_log_view(ctx).await?
+            ));
+            continue;
+        }
         if table == "loams_pipes" {
             out.push(format!(
                 "CREATE OR REPLACE VIEW {}.{} AS\n{}",
@@ -499,6 +513,9 @@ pub async fn views(
                 Some(lake) => parts_view(lake, &shape, &catalog).await?,
                 None => catalog_select(&shape, &Rows::default()),
             },
+            // The namespace's running statements, from the front (HS1 Task
+            // 23): the caller's own, every user's with `house:admin`.
+            "processes" if ctx.front.is_some() => processes_view(ctx, &shape),
             "processes" => engine_select(
                 "processes",
                 &shape,
@@ -546,6 +563,190 @@ pub async fn views(
         ));
     }
     Ok(out)
+}
+
+/// `system.processes` from the front's process list (HS1 Task 23).
+fn processes_view(ctx: ReadContext<'_>, shape: &[ShapeColumn]) -> String {
+    let mut rows = Rows {
+        columns: vec![
+            "is_initial_query",
+            "user",
+            "query_id",
+            "initial_user",
+            "initial_query_id",
+            "elapsed",
+            "is_cancelled",
+            "query",
+        ],
+        rows: Vec::new(),
+    };
+    if let Some(front) = ctx.front {
+        for p in front.processes.list(ctx.namespace) {
+            if !ctx.admin && p.user != ctx.user {
+                continue;
+            }
+            rows.rows.push(vec![
+                Some("1".to_string()),
+                Some(p.user.clone()),
+                Some(p.query_id.clone()),
+                Some(p.user),
+                Some(p.query_id),
+                Some(format!("{:.6}", p.elapsed.as_secs_f64())),
+                Some(u8::from(p.cancelled).to_string()),
+                Some(p.query),
+            ]);
+        }
+    }
+    catalog_select(shape, &rows)
+}
+
+/// `system.query_log`'s columns: ClickHouse's names and types where it has
+/// them, then the House's own (HS1 Task 23).
+pub const QUERY_LOG_COLUMNS: &[(&str, &str)] = &[
+    ("type", "String"),
+    ("event_date", "Date"),
+    ("event_time", "DateTime('UTC')"),
+    ("event_time_microseconds", "DateTime64(6, 'UTC')"),
+    ("query_start_time", "DateTime('UTC')"),
+    ("query_start_time_microseconds", "DateTime64(6, 'UTC')"),
+    ("query_duration_ms", "UInt64"),
+    ("read_rows", "UInt64"),
+    ("read_bytes", "UInt64"),
+    ("written_rows", "UInt64"),
+    ("written_bytes", "UInt64"),
+    ("result_rows", "UInt64"),
+    ("result_bytes", "UInt64"),
+    ("memory_usage", "UInt64"),
+    ("current_database", "String"),
+    ("query", "String"),
+    ("normalized_query_hash", "UInt64"),
+    ("query_kind", "String"),
+    ("is_initial_query", "UInt8"),
+    ("user", "String"),
+    ("query_id", "String"),
+    ("initial_user", "String"),
+    ("initial_query_id", "String"),
+    ("exception_code", "Int32"),
+    ("exception", "String"),
+    ("ProfileEvents", "Map(String, UInt64)"),
+    ("loams_principal", "String"),
+    ("loams_surface", "String"),
+];
+
+/// `system.query_log` (HS1 Task 23): the namespace's `_house.query_log` (the
+/// view [`crate::read::plan`] makes for it) and this front's rows not written
+/// yet; the caller's own rows, every user's with `house:admin`.
+async fn query_log_view(ctx: ReadContext<'_>) -> Result<String, HouseError> {
+    use crate::querylog::{COLUMNS, HOUSE_DATABASE, QUERY_LOG_TABLE};
+    let mut parts: Vec<String> = Vec::new();
+    let log = ctx.front.and_then(|f| f.query_log);
+    if log.is_some()
+        && let Some(lake) = ctx.lake
+        && lake
+            .load(ctx.namespace, HOUSE_DATABASE, QUERY_LOG_TABLE)
+            .await?
+            .is_some()
+    {
+        let list: Vec<String> = COLUMNS
+            .iter()
+            .map(|(name, _)| format!("{} AS __{name}", quote_name(name)))
+            .collect();
+        parts.push(format!(
+            "SELECT {} FROM {}.{}",
+            list.join(", "),
+            quote_name(HOUSE_DATABASE),
+            quote_name(QUERY_LOG_TABLE)
+        ));
+    }
+    // The rows not written yet, as literals: dates as days, times as
+    // microseconds.
+    let pending = log.map(|l| l.pending(ctx.namespace)).unwrap_or_default();
+    let raw = |ty: &str| match ty {
+        "Date" => "Int32".to_string(),
+        t if t.starts_with("DateTime64") => "Int64".to_string(),
+        t => t.to_string(),
+    };
+    let structure: Vec<String> = COLUMNS
+        .iter()
+        .map(|(name, ty)| format!("__v_{name} {}", raw(ty)))
+        .collect();
+    let converted: Vec<String> = COLUMNS
+        .iter()
+        .map(|(name, ty)| match *ty {
+            "Date" => format!("addDays(toDate('1970-01-01'), __v_{name}) AS __{name}"),
+            t if t.starts_with("DateTime64") => {
+                format!("fromUnixTimestamp64Micro(__v_{name}, 'UTC') AS __{name}")
+            }
+            _ => format!("__v_{name} AS __{name}"),
+        })
+        .collect();
+    let source = if pending.is_empty() {
+        format!("null({})", quote_string(&structure.join(", ")))
+    } else {
+        let rows: Vec<String> = pending
+            .iter()
+            .map(|e| format!("({})", crate::querylog::literals(e).join(", ")))
+            .collect();
+        format!(
+            "values({}, {})",
+            quote_string(&structure.join(", ")),
+            rows.join(", ")
+        )
+    };
+    parts.push(format!("SELECT {} FROM {source}", converted.join(", ")));
+    let filter = if ctx.admin {
+        String::new()
+    } else {
+        format!("\nWHERE __user = {}", quote_string(ctx.user))
+    };
+    let typed = |expr: &str, name: &str| -> String {
+        let ty = QUERY_LOG_COLUMNS
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map_or("String", |(_, t)| *t);
+        format!("CAST({expr}, {}) AS {}", quote_string(ty), quote_name(name))
+    };
+    let select = [
+        typed("__type", "type"),
+        typed("__event_date", "event_date"),
+        typed("toDateTime(__event_time, 'UTC')", "event_time"),
+        typed("__event_time", "event_time_microseconds"),
+        typed("toDateTime(__query_start_time, 'UTC')", "query_start_time"),
+        typed("__query_start_time", "query_start_time_microseconds"),
+        typed("greatest(__query_duration_ms, 0)", "query_duration_ms"),
+        typed("greatest(__read_rows, 0)", "read_rows"),
+        typed("greatest(__read_bytes, 0)", "read_bytes"),
+        typed("greatest(__written_rows, 0)", "written_rows"),
+        typed("greatest(__written_bytes, 0)", "written_bytes"),
+        typed("greatest(__result_rows, 0)", "result_rows"),
+        typed("greatest(__result_bytes, 0)", "result_bytes"),
+        typed("greatest(__memory_usage, 0)", "memory_usage"),
+        typed("__current_database", "current_database"),
+        typed("__query", "query"),
+        typed(
+            "reinterpretAsUInt64(__normalized_query_hash)",
+            "normalized_query_hash",
+        ),
+        typed("__query_kind", "query_kind"),
+        typed("1", "is_initial_query"),
+        typed("__user", "user"),
+        typed("__query_id", "query_id"),
+        typed("__user", "initial_user"),
+        typed("__query_id", "initial_query_id"),
+        typed("__exception_code", "exception_code"),
+        typed("__exception", "exception"),
+        typed(
+            "map('OSCPUVirtualTimeMicroseconds', toUInt64(greatest(ifNull(__cpu_time_us, 0), 0)))",
+            "ProfileEvents",
+        ),
+        typed("__loams_principal", "loams_principal"),
+        typed("__loams_surface", "loams_surface"),
+    ];
+    Ok(format!(
+        "SELECT {}\nFROM ({}){filter}",
+        select.join(", "),
+        parts.join("\nUNION ALL\n")
+    ))
 }
 
 async fn pipes_view(ctx: ReadContext<'_>) -> Result<String, HouseError> {

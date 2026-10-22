@@ -33,6 +33,7 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
+use crate::consistency::ConsistencyToken;
 use crate::error::LoamsError;
 use crate::uuidv7::uuidv7;
 
@@ -101,8 +102,16 @@ where
     }
 }
 
-/// A session's merged consistency token (D609). Off unless a client or a call
-/// turns it on.
+/// A session's merged consistency token (D609; R4 as amended by SDKP §2.1).
+/// Off unless a client or a call turns it on.
+///
+/// Every token a response carries is parsed and **merged**: per `(stream,
+/// partition)` the larger offset wins, so a read held to the session waits for
+/// every write the session saw. A string that is not a `v1:` token at all (a
+/// page token, a bearer) is ignored; a `v1:` string that does not parse is
+/// counted in [`ConsistencySession::rejected`] and otherwise ignored, because the
+/// RPC that answered with it already succeeded and a caller that retries on
+/// that error performs the write twice.
 #[derive(Debug)]
 pub struct ConsistencySession {
     state: Mutex<SessionState>,
@@ -110,12 +119,10 @@ pub struct ConsistencySession {
 
 #[derive(Debug, Default)]
 struct SessionState {
-    token: Option<String>,
-    /// How many responses carried a token the session could not merge. Counted
-    /// rather than thrown: the RPC already succeeded, and a caller that retries
-    /// on that error performs the write twice.
-    conflicts: u64,
-    /// How many tokens were folded in.
+    /// One merged token per scope (a proto package; `""` for a caller using
+    /// the store directly). R4, SDKP-17.
+    tokens: BTreeMap<String, ConsistencyToken>,
+    rejected: u64,
     merged: u64,
 }
 
@@ -134,40 +141,77 @@ impl ConsistencySession {
         Self::default()
     }
 
-    /// The token to attach to the next read, if there is one.
+    /// The token to attach to the next read in the default scope, as text.
     #[must_use]
     pub fn current(&self) -> Option<String> {
-        self.state.lock().ok().and_then(|state| state.token.clone())
+        self.current_in("")
     }
 
-    /// Folds a token the server returned into the session's.
-    ///
-    /// The first token becomes the session's. A later token **equal** to it is
-    /// a no-op. A later token **different** from it cannot be merged without
-    /// parsing the encoding, which is not in the protos yet, so it is counted as
-    /// a conflict and the session keeps what it had: reporting is right and
-    /// guessing is not.
+    /// The token to attach to the next read in `scope` (a proto package).
+    #[must_use]
+    pub fn current_in(&self, scope: &str) -> Option<String> {
+        self.token_in(scope).map(|token| token.to_string())
+    }
+
+    /// The merged token of the default scope, parsed.
+    #[must_use]
+    pub fn token(&self) -> Option<ConsistencyToken> {
+        self.token_in("")
+    }
+
+    /// The merged token of `scope`, parsed.
+    #[must_use]
+    pub fn token_in(&self, scope: &str) -> Option<ConsistencyToken> {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| state.tokens.get(scope).cloned())
+    }
+
+    /// Folds a token the server returned into the default scope.
     pub fn record(&self, token: Option<&str>) {
-        let Some(token) = token.filter(|t| !t.is_empty()) else {
+        self.record_in(token, "");
+    }
+
+    /// Folds a token the server returned into `scope`'s.
+    pub fn record_in(&self, token: Option<&str>, scope: &str) {
+        let Some(token) = token.filter(|t| t.starts_with("v1:")) else {
             return;
         };
         let Ok(mut state) = self.state.lock() else {
             return;
         };
-        match &state.token {
-            None => {
-                state.token = Some(token.to_owned());
+        match token.parse::<ConsistencyToken>() {
+            Ok(parsed) => {
+                let merged = match state.tokens.remove(scope) {
+                    None => parsed.normalized(),
+                    Some(current) => current.merge(&parsed),
+                };
+                state.tokens.insert(scope.to_owned(), merged);
                 state.merged += 1;
             }
-            Some(current) if current == token => {}
-            Some(_) => state.conflicts += 1,
+            Err(_) => state.rejected += 1,
         }
     }
 
-    /// How many tokens could not be merged with the session's.
+    /// Forgets the token.
+    pub fn clear(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            *state = SessionState::default();
+        }
+    }
+
+    /// How many `v1:` tokens the session could not parse.
+    #[must_use]
+    pub fn rejected(&self) -> u64 {
+        self.state.lock().map(|state| state.rejected).unwrap_or(0)
+    }
+
+    /// The old name of [`ConsistencySession::rejected`], from before tokens
+    /// merged.
     #[must_use]
     pub fn conflicts(&self) -> u64 {
-        self.state.lock().map(|state| state.conflicts).unwrap_or(0)
+        self.rejected()
     }
 
     /// How many tokens were folded in.
@@ -177,10 +221,6 @@ impl ConsistencySession {
     }
 
     /// The token a response carried, read out of the response message.
-    ///
-    /// A free function so the call path can read the field without the session
-    /// knowing what a response message looks like: it is one string field, and
-    /// the generated struct's name differs per RPC.
     #[must_use]
     pub fn token_of(consistency_token: &str) -> Option<&str> {
         (!consistency_token.is_empty()).then_some(consistency_token)
@@ -380,31 +420,33 @@ mod tests {
     }
 
     #[test]
-    fn a_session_keeps_one_token_and_counts_what_it_cannot_merge() {
+    fn a_session_merges_tokens_and_counts_what_it_cannot_parse() {
         let session = ConsistencySession::new();
         assert_eq!(session.current(), None);
-        session.record(Some("v1:a"));
-        assert_eq!(session.current().as_deref(), Some("v1:a"));
-        session.record(Some("v1:a"));
-        assert_eq!(session.merged(), 1);
-        assert_eq!(session.conflicts(), 0);
-        // Two different tokens meeting: reported, not merged into a wrong one.
-        session.record(Some("v1:b"));
-        assert_eq!(session.current().as_deref(), Some("v1:a"));
-        assert_eq!(session.conflicts(), 1);
+        session.record(Some("v1:s1/p0@5"));
+        assert_eq!(session.current().as_deref(), Some("v1:s1/p0@5"));
+        session.record(Some("v1:s1/p0@3,s2/p0@1"));
+        assert_eq!(session.current().as_deref(), Some("v1:s1/p0@5,s2/p0@1"));
+        assert_eq!(session.merged(), 2);
+        assert_eq!(session.rejected(), 0);
+        // A `v1:` string that does not parse is counted, not merged.
+        session.record(Some("v1:garbage"));
+        assert_eq!(session.rejected(), 1);
+        // Anything that is not a `v1:` token is not the session's business.
+        session.record(Some("page-2"));
         session.record(None);
         session.record(Some(""));
-        assert_eq!(session.current().as_deref(), Some("v1:a"));
-        assert_eq!(session.conflicts(), 1);
+        assert_eq!(session.current().as_deref(), Some("v1:s1/p0@5,s2/p0@1"));
+        assert_eq!(session.rejected(), 1);
     }
 
     #[test]
     fn an_explicit_consistency_wins_and_the_session_is_the_fallback() {
         let session = ConsistencySession::new();
-        session.record(Some("v1:a"));
+        session.record(Some("v1:s1/p0@1"));
         assert_eq!(
             Consistency::resolve(None, Some(&session)),
-            Consistency::AtLeast("v1:a".to_owned())
+            Consistency::AtLeast("v1:s1/p0@1".to_owned())
         );
         assert_eq!(
             Consistency::resolve(Some(&Consistency::Eventual), Some(&session)),

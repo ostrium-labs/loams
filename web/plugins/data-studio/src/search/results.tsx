@@ -3,7 +3,7 @@
 // signal's rank; per hit: copy id, find similar, and the JSON.
 
 import type { JsonObject, JsonValue } from '@bufbuild/protobuf';
-import { Badge, Button, cx } from '@loams/ui';
+import { Badge, Button, cx, StaggerItem, StaggerList } from '@loams/ui';
 import { Braces, Check, Copy, Minus, Plus, Sparkles } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import type { SearchHit } from '../client.js';
@@ -91,7 +91,11 @@ export function Results(p: ResultsProps) {
 function Cards({ hits, fields, terms, ranks, canSimilar, onSimilar, onFilter }: ResultsProps) {
   const textFields = fields.filter((f) => f.type === 'text').map((f) => f.name);
   return (
-    <ol className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Search results">
+    <StaggerList
+      as="ol"
+      className="m-0 flex list-none flex-col gap-2 p-0"
+      aria-label="Search results"
+    >
       {hits.map((h, i) => {
         const titleField = textFields.find((f) => {
           const v = h.source[f];
@@ -104,7 +108,7 @@ function Cards({ hits, fields, terms, ranks, canSimilar, onSimilar, onFilter }: 
           .filter((k) => !textFields.includes(k))
           .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
         return (
-          <li key={h.id}>
+          <StaggerItem key={h.id} index={i}>
             <article
               aria-labelledby={`hit-${i}`}
               className="flex flex-col gap-2 rounded-md border border-rule bg-surface px-4 py-3"
@@ -142,10 +146,10 @@ function Cards({ hits, fields, terms, ranks, canSimilar, onSimilar, onFilter }: 
                 onFilter={onFilter}
               />
             </article>
-          </li>
+          </StaggerItem>
         );
       })}
-    </ol>
+    </StaggerList>
   );
 }
 

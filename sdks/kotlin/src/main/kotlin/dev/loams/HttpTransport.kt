@@ -70,7 +70,7 @@ class HttpTransport(
 
     override fun send(request: TransportRequest): TransportResponse {
         val builder = HttpRequest.newBuilder(URI.create(base + request.path))
-            .timeout(timeout)
+            .timeout(request.timeout ?: timeout)
             // `POST` always: Connect unary is a POST and the framing protocols are too,
             // and a GET would need the idempotency level's blessing for a body.
             .POST(HttpRequest.BodyPublishers.ofByteArray(request.body))

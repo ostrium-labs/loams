@@ -34,7 +34,7 @@ export function OverviewCard({
         <div className="flex flex-col gap-3">
           {children}
           <a
-            className="text-sm text-accent-fg no-underline"
+            className="text-body text-accent-fg no-underline"
             href={`#${href}`}
             aria-label={`Open ${title}`}
           >
@@ -52,7 +52,7 @@ const StatGrid = ({ children }: { children: ReactNode }) => (
 );
 
 const Muted = ({ children }: { children: ReactNode }) => (
-  <p className="text-sm text-muted m-0">{children}</p>
+  <p className="text-body text-muted m-0">{children}</p>
 );
 
 /** Where a card reads from: `down` when the active server is the local engine and it is not ready. */
@@ -118,7 +118,7 @@ export function EngineCard({
         tag={{ tone: 'done', label: 'Connected' }}
       >
         <Muted>Connected to {active.name}.</Muted>
-        <code className="font-mono text-xs">{active.url}</code>
+        <code className="font-mono text-small">{active.url}</code>
       </OverviewCard>
     );
   }
@@ -146,7 +146,7 @@ export function EngineCard({
       {engine.phase === 'starting' && <Muted>Starting (attempt {engine.attempt})…</Muted>}
       {engine.phase === 'failed' && <Muted>{engine.reason}</Muted>}
       {engine.phase === 'ready' && (
-        <dl className="m-0 grid grid-cols-[6rem_1fr] gap-y-1 text-xs">
+        <dl className="m-0 grid grid-cols-[6rem_1fr] gap-y-1 text-small">
           {(
             [
               ['HTTP', engine.url],
@@ -187,23 +187,7 @@ export function DataCard({ where, load }: { where: Where; load: Load<DataSummary
   );
 }
 
-export function DurableCard({
-  where,
-  load,
-  local = true,
-}: {
-  where: Where;
-  load: Load<DurableSummary>;
-  /** False when the active server is not this computer: durable runs on the local engine only. */
-  local?: boolean;
-}) {
-  if (!local) {
-    return (
-      <OverviewCard id="durable" title="Durable" href="/durable" tag={LOCAL_ONLY}>
-        <LocalOnly />
-      </OverviewCard>
-    );
-  }
+export function DurableCard({ where, load }: { where: Where; load: Load<DurableSummary> }) {
   const g = Gate({
     where,
     load,
@@ -296,7 +280,7 @@ export function FactoryCard({ load }: { load: Load<FactoryAppInfo[]> }) {
     body = (
       <ul className="m-0 p-0 list-none flex flex-col gap-1">
         {load.data.map((a) => (
-          <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
+          <li key={a.id} className="flex items-center justify-between gap-2 text-body">
             <span>{a.label}</span>
             <StatusTag status={HEALTH[a.health].tone}>{HEALTH[a.health].label}</StatusTag>
           </li>
@@ -404,7 +388,7 @@ export function LiveCard({
       tag={running ? { tone: 'done', label: 'Running' } : { tone: 'planned', label: 'Not running' }}
     >
       {running && engine.phase === 'ready' ? (
-        <code className="font-mono text-xs truncate">{engine.liveUrl}</code>
+        <code className="font-mono text-small truncate">{engine.liveUrl}</code>
       ) : (
         <Muted>
           {engine.phase === 'ready'

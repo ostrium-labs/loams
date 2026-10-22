@@ -17,7 +17,7 @@ resolver = "3"
 members = []
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.97"
 license = "Apache-2.0"
@@ -83,6 +83,8 @@ connectrpc = { version = "0.9.1", default-features = false, features = ["client"
 # `buffa` is the code generator's runtime: message encoding, decoding an
 # `ErrorInfo` detail out of an error body, and the generated clients' types.
 buffa = { version = "0.9.2", features = ["json"] }
+# The well-known types (`Struct`, `Value`) the builders decode into.
+buffa-types = { version = "0.9.2", features = ["json"] }
 # The Connect protocol sends an error detail as base64 protobuf, and connect-rust
 # keeps its base64 decoder private, so the SDK decodes it itself. The two
 # alphabets (padded and unpadded) both appear in the wild and both are accepted.
@@ -95,13 +97,17 @@ futures.workspace = true
 # client could guess is a key that can be replayed.
 getrandom = { workspace = true, features = ["std"] }
 http.workspace = true
+# The builders write proto3 JSON and decode it with the generated messages'
+# serde mapping, which is the one JSON shape every SDK's builder shares.
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["sync", "time"] }
 # The generated `loams.*.v1` packages and their clients, from the same build
 # the server compiles them with. `client` is the connect-rust client transport;
 # `crates/loams-proto`'s own docs name this crate as the one the SDKs build on.
-loams-proto = { path = "../../crates/loams-proto", version = "0.1.0", features = ["client"] }
-loams-live-proto = { path = "../../crates/loams-live-proto", version = "0.1.0", features = ["client"] }
+loams-proto = { path = "../../crates/loams-proto", version = "0.1.1", features = ["client"] }
+loams-live-proto = { path = "../../crates/loams-live-proto", version = "0.1.1", features = ["client"] }
 
 # TLS only.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"], optional = true }

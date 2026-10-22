@@ -15,6 +15,7 @@ import { useAgentdQuery, useAgentdTransport } from '@loams/console-host/query';
 import { ProjectService, TerminalService } from '@loams/proto/agentd';
 import {
   type FileLinkTarget,
+  isMacPlatform,
   matchesKeybindingShortcut,
   parseKeybindingShortcut,
   resolveShortcutCommand,
@@ -88,13 +89,17 @@ export function terminalSessionsFor(transport: Transport): TerminalSessions {
   return sessions;
 }
 
-const SHELL_SHORTCUTS = SHELL_KEYBINDINGS.map((b) => parseKeybindingShortcut(b.key)).filter(
-  (s) => s !== null,
-);
+const SHELL_SHORTCUTS = SHELL_KEYBINDINGS.flatMap((b) => {
+  const shortcut = parseKeybindingShortcut(b.key);
+  return shortcut ? [{ shortcut, terminal: b.terminal === true }] : [];
+});
 
 /**
  * Whether a key press in a terminal belongs to Studio (a binding that applies with the
- * terminal focused and has a handler now) or to the shell (its own chords).
+ * terminal focused and has a handler now) or to the shell (its own chords). On Linux and
+ * Windows the shell program keeps Ctrl+letter (Ctrl+K, J, B, N, I…), so only the chords
+ * the shell takes from a terminal there pass (D1081, Review Focus 1); on macOS every ⌘
+ * chord passes, since ⌘ never reaches the program.
  */
 export function isStudioShortcut(keys: StudioKeys, event: KeyboardEvent): boolean {
   const command = resolveShortcutCommand(event, keys.keybindings.resolved(), {
@@ -107,7 +112,10 @@ export function isStudioShortcut(keys: StudioKeys, event: KeyboardEvent): boolea
     },
   });
   if (command && keys.commands.has(command)) return true;
-  return SHELL_SHORTCUTS.some((s) => matchesKeybindingShortcut(event, s, keys.platform));
+  const mac = isMacPlatform(keys.platform);
+  return SHELL_SHORTCUTS.some(
+    (s) => (mac || s.terminal) && matchesKeybindingShortcut(event, s.shortcut, keys.platform),
+  );
 }
 
 /** The Files panel's href for a path a terminal printed. */

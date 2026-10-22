@@ -41,10 +41,21 @@ struct Config {
     server_url: String,
     #[serde(default = "default_retry_timeout")]
     retry_timeout: i64,
+    /// Answer `promise.search`, `task.search` and `schedule.search`. The
+    /// blob server leaves them off (each one scans the store), but the
+    /// console's Durable page and the SQLite store answer them, so they are
+    /// on here; `--durable-set servers.server_tikv.search=false` turns them
+    /// off.
+    #[serde(default = "default_search")]
+    search: bool,
 }
 
 fn default_retry_timeout() -> i64 {
     30_000
+}
+
+fn default_search() -> bool {
+    true
 }
 
 fn configure(
@@ -83,6 +94,18 @@ impl ResonateServer for TikvServer {
         let mut config =
             loams_tikv::TikvConfig::new(self.config.pd.clone(), self.config.keyspace.clone());
         config.root = self.config.root.clone();
+        // PD pre-allocates keyspaces only when a cluster is first
+        // bootstrapped, so a cluster that predates the durable keyspace (a
+        // stack moving its Resonate off SQLite) has none: create it, as Live
+        // does for its own. Idempotent.
+        loams_tikv::ensure_keyspace(&config.pd_http_url(), &config.keyspace)
+            .await
+            .map_err(|e| {
+                Unavailable::new(format!(
+                    "cannot open the TiKV durable keyspace {}: {e}",
+                    config.keyspace
+                ))
+            })?;
         let tikv = Tikv::connect(config)
             .await
             .map_err(|e| Unavailable::new(format!("cannot open the TiKV durable store: {e}")))?;
@@ -100,6 +123,7 @@ impl ResonateServer for TikvServer {
                     ..Default::default()
                 },
                 debug,
+                search: self.config.search,
                 server_url: self.config.server_url.clone(),
                 ..Default::default()
             },

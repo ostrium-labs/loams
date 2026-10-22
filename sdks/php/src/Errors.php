@@ -81,6 +81,7 @@ class SequencerUnavailableException extends LoamsException {}
 class IdempotencyKeyReusedException extends LoamsException {}
 class WorkspaceNotFoundException extends LoamsException {}
 class WorkspaceFencedException extends LoamsException {}
+class BatchPartiallyAppliedException extends LoamsException {}
 class WorkspaceReadOnlyException extends LoamsException {}
 class WorkspaceNameTakenException extends LoamsException {}
 class ObjectMissingException extends LoamsException {}
@@ -88,17 +89,46 @@ class SecretDetectedException extends LoamsException {}
 class EnvUnsealedException extends LoamsException {}
 class EnvAccessDeniedException extends LoamsException {}
 class EnvForeignReferenceException extends LoamsException {}
+class MemoryStoreNotFoundException extends LoamsException {}
+class MemorySpaceNotFoundException extends LoamsException {}
+class MemorySpaceLimitException extends LoamsException {}
+class MemoryManagedObjectException extends LoamsException {}
+class MemoryBlockVersionMismatchException extends LoamsException {}
+class MemoryBlockTooLargeException extends LoamsException {}
+class MemoryCoreBudgetExceededException extends LoamsException {}
+class MemoryContentTooLargeException extends LoamsException {}
+class MemorySecretDetectedException extends LoamsException {}
+class MemoryPiiRefusedException extends LoamsException {}
+class MemoryModelNotConfiguredException extends LoamsException {}
+class MemoryModelNotLocalException extends LoamsException {}
+class MemoryTokenBudgetExhaustedException extends LoamsException {}
+class MemoryExtractionFailedException extends LoamsException {}
+class MemoryTooManySpacesException extends LoamsException {}
+class MemoryCrossSpaceWriteException extends LoamsException {}
+class MemoryNotYetAvailableException extends LoamsException {}
+class CodeRepoNotIndexedException extends LoamsException {}
+class CodeIndexBuildingException extends LoamsException {}
+class CodeChangeTooLargeException extends LoamsException {}
+class CodeLanguageUnsupportedException extends LoamsException {}
+class CodeScipInvalidException extends LoamsException {}
 class LiveBadCursorException extends LoamsException {}
 class LiveWorkerCrashedException extends LoamsException {}
 class LiveDeployConflictException extends LoamsException {}
 class LiveSchemaViolationException extends LoamsException {}
+class FilterConflictException extends LoamsException {}
+class SearchAfterNeedsTiebreakException extends LoamsException {}
+class InvalidConsistencyTokenException extends LoamsException {}
+class NamespaceRequiredException extends LoamsException {}
+class SqlParamCountException extends LoamsException {}
 class LiveIndexNotReadyException extends LoamsException {}
 class LiveAppDisabledException extends LoamsException {}
 class LiveAppExistsException extends LoamsException {}
 class LiveFunctionErrorException extends LoamsException {}
 class LiveFunctionTimeoutException extends LoamsException {}
+class ClientDeadlineExceededException extends LoamsException {}
 class LiveFunctionOutOfMemoryException extends LoamsException {}
 class LiveLimitExceededException extends LoamsException {}
+class ResultTooLargeException extends LoamsException {}
 class LiveAppMismatchException extends LoamsException {}
 class LiveOriginNotAllowedException extends LoamsException {}
 class SessionRotateException extends LoamsException {}
@@ -130,14 +160,28 @@ class PairingExpiredException extends LoamsException {}
 class PairingUsedException extends LoamsException {}
 class DeviceRevokedException extends LoamsException {}
 class PushTargetUnknownException extends LoamsException {}
-class InvalidArgumentException extends LoamsException {}
+class InvalidArgumentException extends LoamsException
+{
+    /** Refused on the client, before any network call. */
+    public static function client(string $message, ?string $reason = null): self
+    {
+        return new self($message, 'invalid_argument', $reason, null, 400);
+    }
+}
 class NotFoundException extends LoamsException {}
 class AlreadyExistsException extends LoamsException {}
 class PermissionDeniedException extends LoamsException {}
 class FailedPreconditionException extends LoamsException {}
 class ResourceExhaustedException extends LoamsException {}
 class UnavailableException extends LoamsException {}
-class DeadlineExceededException extends LoamsException {}
+class DeadlineExceededException extends LoamsException
+{
+    /** R12: the call's budget ran out on the client; never retried. */
+    public static function client(): self
+    {
+        return new self('the call ran out of time on the client', 'deadline_exceeded', 'client_deadline_exceeded', null, 504);
+    }
+}
 class AbortedException extends LoamsException {}
 class InternalException extends LoamsException {}
 
@@ -193,6 +237,7 @@ class ErrorParser
         'idempotency_key_reused' => IdempotencyKeyReusedException::class,
         'workspace_not_found' => WorkspaceNotFoundException::class,
         'workspace_fenced' => WorkspaceFencedException::class,
+        'batch_partially_applied' => BatchPartiallyAppliedException::class,
         'workspace_read_only' => WorkspaceReadOnlyException::class,
         'workspace_name_taken' => WorkspaceNameTakenException::class,
         'object_missing' => ObjectMissingException::class,
@@ -200,17 +245,46 @@ class ErrorParser
         'env_unsealed' => EnvUnsealedException::class,
         'env_access_denied' => EnvAccessDeniedException::class,
         'env_foreign_reference' => EnvForeignReferenceException::class,
+        'memory_store_not_found' => MemoryStoreNotFoundException::class,
+        'memory_space_not_found' => MemorySpaceNotFoundException::class,
+        'memory_space_limit' => MemorySpaceLimitException::class,
+        'memory_managed_object' => MemoryManagedObjectException::class,
+        'memory_block_version_mismatch' => MemoryBlockVersionMismatchException::class,
+        'memory_block_too_large' => MemoryBlockTooLargeException::class,
+        'memory_core_budget_exceeded' => MemoryCoreBudgetExceededException::class,
+        'memory_content_too_large' => MemoryContentTooLargeException::class,
+        'memory_secret_detected' => MemorySecretDetectedException::class,
+        'memory_pii_refused' => MemoryPiiRefusedException::class,
+        'memory_model_not_configured' => MemoryModelNotConfiguredException::class,
+        'memory_model_not_local' => MemoryModelNotLocalException::class,
+        'memory_token_budget_exhausted' => MemoryTokenBudgetExhaustedException::class,
+        'memory_extraction_failed' => MemoryExtractionFailedException::class,
+        'memory_too_many_spaces' => MemoryTooManySpacesException::class,
+        'memory_cross_space_write' => MemoryCrossSpaceWriteException::class,
+        'memory_not_yet_available' => MemoryNotYetAvailableException::class,
+        'code_repo_not_indexed' => CodeRepoNotIndexedException::class,
+        'code_index_building' => CodeIndexBuildingException::class,
+        'code_change_too_large' => CodeChangeTooLargeException::class,
+        'code_language_unsupported' => CodeLanguageUnsupportedException::class,
+        'code_scip_invalid' => CodeScipInvalidException::class,
         'live_bad_cursor' => LiveBadCursorException::class,
         'live_worker_crashed' => LiveWorkerCrashedException::class,
         'live_deploy_conflict' => LiveDeployConflictException::class,
         'live_schema_violation' => LiveSchemaViolationException::class,
+        'filter_conflict' => FilterConflictException::class,
+        'search_after_needs_tiebreak' => SearchAfterNeedsTiebreakException::class,
+        'invalid_consistency_token' => InvalidConsistencyTokenException::class,
+        'namespace_required' => NamespaceRequiredException::class,
+        'sql_param_count' => SqlParamCountException::class,
         'live_index_not_ready' => LiveIndexNotReadyException::class,
         'live_app_disabled' => LiveAppDisabledException::class,
         'live_app_exists' => LiveAppExistsException::class,
         'live_function_error' => LiveFunctionErrorException::class,
         'live_function_timeout' => LiveFunctionTimeoutException::class,
+        'client_deadline_exceeded' => ClientDeadlineExceededException::class,
         'live_function_out_of_memory' => LiveFunctionOutOfMemoryException::class,
         'live_limit_exceeded' => LiveLimitExceededException::class,
+        'result_too_large' => ResultTooLargeException::class,
         'live_app_mismatch' => LiveAppMismatchException::class,
         'live_origin_not_allowed' => LiveOriginNotAllowedException::class,
         'session_rotate' => SessionRotateException::class,
@@ -393,6 +467,23 @@ class ErrorParser
 
         if ($code === 'unauthenticated' || $httpStatus === 401) {
             return new UnauthenticatedException($message, $code, $reason, $unknownReason, $httpStatus, $rawDetails);
+        }
+
+        $byCode = [
+            'invalid_argument' => InvalidArgumentException::class,
+            'not_found' => NotFoundException::class,
+            'already_exists' => AlreadyExistsException::class,
+            'permission_denied' => PermissionDeniedException::class,
+            'failed_precondition' => FailedPreconditionException::class,
+            'resource_exhausted' => ResourceExhaustedException::class,
+            'unavailable' => UnavailableException::class,
+            'deadline_exceeded' => DeadlineExceededException::class,
+            'aborted' => AbortedException::class,
+            'internal' => InternalException::class,
+        ];
+        if (isset($byCode[$code])) {
+            $class = $byCode[$code];
+            return new $class($message, $code, $reason, $unknownReason, $httpStatus, $rawDetails);
         }
 
         return new LoamsException($message, $code, $reason, $unknownReason, $httpStatus, $rawDetails);

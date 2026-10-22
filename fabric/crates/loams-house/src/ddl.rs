@@ -439,6 +439,7 @@ pub fn check_new_name(what: &str, name: &str) -> Result<(), HouseError> {
                     | "information_schema"
                     | "INFORMATION_SCHEMA"
                     | "_temporary_and_external_tables"
+                    | crate::querylog::HOUSE_DATABASE
             ));
     if reserved {
         return Err(HouseError::from(ChError::bad_arguments(format!(

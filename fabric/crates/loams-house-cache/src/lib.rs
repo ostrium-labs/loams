@@ -132,6 +132,9 @@ struct Inner {
     /// Prefixes the catalog vouched for, per namespace (external tables'
     /// locations, HS1 Task 10, R9.5): added to every grant of that namespace.
     vouched: Mutex<HashMap<String, Vec<String>>>,
+    /// The front's tracer: each read is a span under its worker's (HS1 Task
+    /// 23).
+    tracer: Mutex<Arc<loams_house::trace::Tracer>>,
 }
 
 /// The proxy. Cheap to clone; every clone is the same proxy.
@@ -158,8 +161,20 @@ impl HouseCache {
                 metrics: Mutex::new(Metrics::default()),
                 recorded: Mutex::new(None),
                 vouched: Mutex::new(HashMap::new()),
+                tracer: Mutex::new(loams_house::trace::Tracer::off()),
             }),
         }
+    }
+
+    /// Puts each worker's reads under the span of what it runs, in `tracer`'s
+    /// traces (the front's, HS1 Task 23).
+    pub fn set_tracer(&self, tracer: Arc<loams_house::trace::Tracer>) {
+        *lock(&self.inner.tracer) = tracer;
+    }
+
+    /// Its tracer.
+    pub fn tracer(&self) -> Arc<loams_house::trace::Tracer> {
+        Arc::clone(&lock(&self.inner.tracer))
     }
 
     /// Sets what `worker` may read (the pool's `Bind`, or a test).
@@ -310,6 +325,33 @@ impl HouseCache {
             Some(ns) => update(metrics.namespaces.entry(ns.to_string()).or_default()),
             None => metrics.refused_unbound += 1,
         }
+    }
+}
+
+/// Its counters for the front's `/metrics` (HS1 Task 23): requests, refusals
+/// and bytes over every namespace, and the blocks its caches hit and missed
+/// (each distinct upstream counted once).
+impl loams_house::metrics::CacheMetrics for HouseCache {
+    fn cache_counters(&self) -> loams_house::metrics::CacheCounters {
+        let metrics = self.metrics();
+        let mut out = loams_house::metrics::CacheCounters::default();
+        let mut seen: Vec<*const Upstream> = Vec::new();
+        for (namespace, m) in &metrics.namespaces {
+            out.requests += m.requests;
+            out.refused += m.refused;
+            out.bytes += m.bytes_served;
+            if let Some(upstream) = self.upstream(namespace) {
+                let at = Arc::as_ptr(&upstream);
+                if !seen.contains(&at) {
+                    seen.push(at);
+                    let stats = upstream.cache().stats();
+                    out.hits += stats.hits;
+                    out.misses += stats.misses;
+                }
+            }
+        }
+        out.refused += metrics.refused_unbound;
+        out
     }
 }
 

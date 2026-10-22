@@ -195,6 +195,9 @@ class WorkspaceNotFoundException extends LoamsException {
 class WorkspaceFencedException extends LoamsException {
   WorkspaceFencedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
+class BatchPartiallyAppliedException extends LoamsException {
+  BatchPartiallyAppliedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
 
 class WorkspaceReadOnlyException extends LoamsException {
   WorkspaceReadOnlyException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
@@ -224,6 +227,94 @@ class EnvForeignReferenceException extends LoamsException {
   EnvForeignReferenceException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
 
+class MemoryStoreNotFoundException extends LoamsException {
+  MemoryStoreNotFoundException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemorySpaceNotFoundException extends LoamsException {
+  MemorySpaceNotFoundException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemorySpaceLimitException extends LoamsException {
+  MemorySpaceLimitException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryManagedObjectException extends LoamsException {
+  MemoryManagedObjectException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryBlockVersionMismatchException extends LoamsException {
+  MemoryBlockVersionMismatchException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryBlockTooLargeException extends LoamsException {
+  MemoryBlockTooLargeException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryCoreBudgetExceededException extends LoamsException {
+  MemoryCoreBudgetExceededException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryContentTooLargeException extends LoamsException {
+  MemoryContentTooLargeException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemorySecretDetectedException extends LoamsException {
+  MemorySecretDetectedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryPiiRefusedException extends LoamsException {
+  MemoryPiiRefusedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryModelNotConfiguredException extends LoamsException {
+  MemoryModelNotConfiguredException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryModelNotLocalException extends LoamsException {
+  MemoryModelNotLocalException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryTokenBudgetExhaustedException extends LoamsException {
+  MemoryTokenBudgetExhaustedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryExtractionFailedException extends LoamsException {
+  MemoryExtractionFailedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryTooManySpacesException extends LoamsException {
+  MemoryTooManySpacesException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryCrossSpaceWriteException extends LoamsException {
+  MemoryCrossSpaceWriteException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class MemoryNotYetAvailableException extends LoamsException {
+  MemoryNotYetAvailableException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class CodeRepoNotIndexedException extends LoamsException {
+  CodeRepoNotIndexedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class CodeIndexBuildingException extends LoamsException {
+  CodeIndexBuildingException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class CodeChangeTooLargeException extends LoamsException {
+  CodeChangeTooLargeException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class CodeLanguageUnsupportedException extends LoamsException {
+  CodeLanguageUnsupportedException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
+class CodeScipInvalidException extends LoamsException {
+  CodeScipInvalidException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+
 class LiveBadCursorException extends LoamsException {
   LiveBadCursorException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
@@ -238,6 +329,21 @@ class LiveDeployConflictException extends LoamsException {
 
 class LiveSchemaViolationException extends LoamsException {
   LiveSchemaViolationException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class FilterConflictException extends LoamsException {
+  FilterConflictException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class SearchAfterNeedsTiebreakException extends LoamsException {
+  SearchAfterNeedsTiebreakException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class InvalidConsistencyTokenException extends LoamsException {
+  InvalidConsistencyTokenException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class NamespaceRequiredException extends LoamsException {
+  NamespaceRequiredException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class SqlParamCountException extends LoamsException {
+  SqlParamCountException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
 
 class LiveIndexNotReadyException extends LoamsException {
@@ -259,6 +365,9 @@ class LiveFunctionErrorException extends LoamsException {
 class LiveFunctionTimeoutException extends LoamsException {
   LiveFunctionTimeoutException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
+class ClientDeadlineExceededException extends LoamsException {
+  ClientDeadlineExceededException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
 
 class LiveFunctionOutOfMemoryException extends LoamsException {
   LiveFunctionOutOfMemoryException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
@@ -266,6 +375,9 @@ class LiveFunctionOutOfMemoryException extends LoamsException {
 
 class LiveLimitExceededException extends LoamsException {
   LiveLimitExceededException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+}
+class ResultTooLargeException extends LoamsException {
+  ResultTooLargeException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
 }
 
 class LiveAppMismatchException extends LoamsException {
@@ -422,6 +534,14 @@ class UnavailableException extends LoamsException {
 
 class DeadlineExceededException extends LoamsException {
   DeadlineExceededException(super.message, {super.code, super.reason, super.unknownReason, super.httpStatus, super.rawDetails});
+
+  /// R12: the call's budget ran out on the client; never retried.
+  factory DeadlineExceededException.client() => DeadlineExceededException(
+        'the call ran out of time on the client',
+        code: 'deadline_exceeded',
+        reason: 'client_deadline_exceeded',
+        httpStatus: 504,
+      );
 }
 
 class AbortedException extends LoamsException {
@@ -541,6 +661,8 @@ class ErrorParser {
         WorkspaceNotFoundException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'workspace_fenced': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         WorkspaceFencedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'batch_partially_applied': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        BatchPartiallyAppliedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'workspace_read_only': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         WorkspaceReadOnlyException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'workspace_name_taken': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
@@ -555,6 +677,50 @@ class ErrorParser {
         EnvAccessDeniedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'env_foreign_reference': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         EnvForeignReferenceException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_store_not_found': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryStoreNotFoundException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_space_not_found': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemorySpaceNotFoundException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_space_limit': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemorySpaceLimitException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_managed_object': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryManagedObjectException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_block_version_mismatch': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryBlockVersionMismatchException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_block_too_large': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryBlockTooLargeException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_core_budget_exceeded': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryCoreBudgetExceededException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_content_too_large': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryContentTooLargeException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_secret_detected': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemorySecretDetectedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_pii_refused': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryPiiRefusedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_model_not_configured': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryModelNotConfiguredException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_model_not_local': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryModelNotLocalException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_token_budget_exhausted': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryTokenBudgetExhaustedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_extraction_failed': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryExtractionFailedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_too_many_spaces': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryTooManySpacesException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_cross_space_write': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryCrossSpaceWriteException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'memory_not_yet_available': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        MemoryNotYetAvailableException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'code_repo_not_indexed': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        CodeRepoNotIndexedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'code_index_building': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        CodeIndexBuildingException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'code_change_too_large': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        CodeChangeTooLargeException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'code_language_unsupported': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        CodeLanguageUnsupportedException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'code_scip_invalid': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        CodeScipInvalidException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_bad_cursor': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveBadCursorException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_worker_crashed': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
@@ -563,6 +729,16 @@ class ErrorParser {
         LiveDeployConflictException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_schema_violation': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveSchemaViolationException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'filter_conflict': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        FilterConflictException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'search_after_needs_tiebreak': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        SearchAfterNeedsTiebreakException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'invalid_consistency_token': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        InvalidConsistencyTokenException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'namespace_required': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        NamespaceRequiredException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'sql_param_count': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        SqlParamCountException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_index_not_ready': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveIndexNotReadyException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_app_disabled': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
@@ -573,10 +749,14 @@ class ErrorParser {
         LiveFunctionErrorException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_function_timeout': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveFunctionTimeoutException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'client_deadline_exceeded': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        ClientDeadlineExceededException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_function_out_of_memory': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveFunctionOutOfMemoryException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_limit_exceeded': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveLimitExceededException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
+    'result_too_large': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
+        ResultTooLargeException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_app_mismatch': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
         LiveAppMismatchException(msg, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails),
     'live_origin_not_allowed': (msg, {code = 'unknown', reason, unknownReason, httpStatus = 500, rawDetails = const []}) =>
@@ -804,6 +984,12 @@ class ErrorParser {
 
     if (code == 'unauthenticated' || httpStatus == 401) {
       return UnauthenticatedException(message, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails);
+    }
+
+    // No class for the reason: the code's own class, so `on NotFoundException`
+    // catches every `not_found`.
+    if (reasons.containsKey(code)) {
+      return reasons[code]!(message, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails);
     }
 
     return LoamsException(message, code: code, reason: reason, unknownReason: unknownReason, httpStatus: httpStatus, rawDetails: rawDetails);

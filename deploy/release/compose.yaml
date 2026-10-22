@@ -1,12 +1,27 @@
 # The Loams stack: everything a user runs themselves, on one machine
 # or a VM of their own (BYOC, see byoc/install.sh). Configure it in .env (copy
-# .env.example). Start the engine and its storage with
+# .env.example) and start it with
 #
-#   docker compose up -d loams tailscale
+#   docker compose up -d
 #
-# or the whole stack (adds tidb and the Postgres stack) with `up -d`; add
-# `--profile house` for Loams House on its own tailnet node, and
-# `--profile postgres-control` for Loams Postgres's control plane.
+# The default is light enough for a laptop or one small VM: the engine on its
+# embedded stores (metastore on openraft + redb, Live on redb, Durable on
+# SQLite) with a local-folder bucket, Loams House, Loams Postgres on local
+# folders, agentd and the tailnet sidecar. Single node, no replication: back
+# up the volumes (docs/release/preview.md, "Durability").
+#
+# Profiles, set in .env as COMPOSE_PROFILES (comma-separated) so that every
+# service and `loams upgrade` see the same set:
+#
+# - `tikv`: PD, TiKV and TiDB (Loams SQL); the engine's metastore and Live
+#   move onto TiKV (config/stores.sh). Choose it before the first start: a
+#   stack's data stays on the store it was started on.
+# - `rustfs`: an S3 bucket (RustFS) for Loams Postgres's pageserver,
+#   safekeeper and endpoint storage instead of local folders. Also before
+#   the first start.
+# - `house-tailnet`: the House's own tailnet node (https://loams-house.<tailnet>/).
+# - `postgres-control`: Loams Postgres's control plane.
+# - `console`, `headscale` (coming soon): as below.
 #
 # Network exposure: nothing binds a host port on 0.0.0.0. Only the engine and
 # the Tailscale sidecar share a network namespace (the `loams` service's); no
@@ -35,8 +50,11 @@ x-restart: &restart
   restart: unless-stopped
 
 services:
+  # PD, TiKV and TiDB: `tikv` profile only (Loams SQL, and the metastore and
+  # Live on TiKV for scale).
   pd:
     <<: *restart
+    profiles: [tikv]
     image: docker.io/pingcap/pd:${TIKV_TAG:-v8.5.8}
     command:
       - --name=pd
@@ -58,6 +76,7 @@ services:
 
   tikv:
     <<: *restart
+    profiles: [tikv]
     image: docker.io/pingcap/tikv:${TIKV_TAG:-v8.5.8}
     command:
       - --pd-endpoints=pd:2379
@@ -93,6 +112,7 @@ services:
   # 4000 over the tailnet.
   tidb:
     <<: *restart
+    profiles: [tikv]
     image: ${TIDB_IMAGE:-ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1}
     # The patched TiDB image is amd64 only: on Apple silicon and other arm64
     # hosts Docker Desktop runs it emulated (Rosetta or QEMU).
@@ -120,12 +140,13 @@ services:
   # snapshot first. No listener, no published port, no tailnet door, no
   # container socket.
   migrate:
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.0}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.1}
+    # config/stores.sh adds the store flags the profiles select (--meta and
+    # --live-store on TiKV with `tikv`; none, the embedded stores, without).
+    entrypoint: ["/usr/bin/tini", "--", "/bin/sh", "/etc/loams/stores.sh"]
     command:
       - migrate
       - run
-      - --meta=tikv://pd:2379/loams_meta
-      - --live-store=tikv://pd:2379/loams_live_dev
       - --bucket=${LOAMS_BUCKET:-file:///var/lib/loams/bucket}
       - --data-dir=/var/lib/loams
       - --house-dir=/var/lib/loams-house
@@ -138,6 +159,7 @@ services:
     restart: "no"
     environment:
       RUST_LOG: ${RUST_LOG:-info}
+      LOAMS_PROFILES: ${COMPOSE_PROFILES:-}
     # The engine's own settings (AWS_* for an s3:// LOAMS_BUCKET): no new
     # credentials (D944).
     env_file:
@@ -155,15 +177,23 @@ services:
       # never uploaded. LOAMS_UPGRADE_SNAPSHOT_DIR puts them in a host
       # directory instead of the volume.
       - ${LOAMS_UPGRADE_SNAPSHOT_DIR:-upgrade-snapshots}:/var/lib/loams-upgrade-snapshots
+      - ./config/stores.sh:/etc/loams/stores.sh:ro
+    # PD and TiKV only with the `tikv` profile (`required: false`).
     depends_on:
       pd:
         condition: service_healthy
+        required: false
       tikv:
         condition: service_healthy
+        required: false
 
   loams:
     <<: *restart
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.0}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams:${LOAMS_VERSION:-0.1.1}
+    # The stores come from the profiles (config/stores.sh): embedded by
+    # default, the metastore and Live on TiKV with `tikv`, Durable on SQLite
+    # unless LOAMS_DURABLE_STORE says otherwise.
+    entrypoint: ["/usr/bin/tini", "--", "/bin/sh", "/etc/loams/stores.sh"]
     command:
       - standalone
       - --bucket=${LOAMS_BUCKET:-file:///var/lib/loams/bucket}
@@ -180,19 +210,21 @@ services:
       - --pg-listen=127.0.0.1:5432
       - --mysql-listen=127.0.0.1:3306
       - --graph-data-dir=/var/lib/loams/graph
-      - --meta=tikv://pd:2379/loams_meta
-      - --live-store=tikv://pd:2379/loams_live_dev
-      # The House link (HS1 Task 20) comes from LOAMS_HOUSE_* below: set
-      # LOAMS_HOUSE_ENDPOINT=https://house:8443 when you run `--profile house`.
+      # The House link (HS1 Task 20) comes from LOAMS_HOUSE_* below.
     environment:
       RUST_LOG: ${RUST_LOG:-info}
-      # The House front over TLS on the `house-link` network (HS1 Task 20).
-      # Empty: loams.house.v1 answers house_not_configured. The House makes its
+      LOAMS_PROFILES: ${COMPOSE_PROFILES:-}
+      # Durable execution's store (Resonate): empty is SQLite in loams-data;
+      # tikv://pd:2379/loams_durable (with the `tikv` profile) is a fresh
+      # TiKV keyspace, for several engines (D261, D1342).
+      LOAMS_DURABLE_STORE: ${LOAMS_DURABLE_STORE:-}
+      # The House front over TLS on the `house-link` network (HS1 Task 20),
+      # on by default. Empty: loams.house.v1 answers house_not_configured. The House makes its
       # certificate and its key in the house-link volume on first start; this
       # engine trusts that certificate alone for the link and signs in with that
       # key, after its own auth has let the caller in (the caller's credentials
       # are not passed on).
-      LOAMS_HOUSE_ENDPOINT: ${LOAMS_HOUSE_ENDPOINT:-}
+      LOAMS_HOUSE_ENDPOINT: ${LOAMS_HOUSE_ENDPOINT-https://house:8443}
       LOAMS_HOUSE_CA: /var/lib/loams-house-link/house.crt
       LOAMS_HOUSE_KEY_FILE: /var/lib/loams-house-link/link.key
       # Engine auth: tailscale | oidc | apikey | off (loopback only).
@@ -229,13 +261,23 @@ services:
       - loams-data:/var/lib/loams
       - ./secrets:/etc/loams/secrets:ro
       - house-link:/var/lib/loams-house-link:ro
+      - ./config/stores.sh:/etc/loams/stores.sh:ro
     depends_on:
       pd:
         condition: service_healthy
+        required: false
       tikv:
         condition: service_healthy
+        required: false
       migrate:
         condition: service_completed_successfully
+      # The engine reads the House's certificate at start (LOAMS_HOUSE_CA),
+      # which the House writes on its first start. Optional: an engine whose
+      # House does not come up (no Landlock TCP rules before Linux 6.7)
+      # still starts once the House has written it.
+      house:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
       interval: 10s
@@ -244,10 +286,10 @@ services:
       retries: 3
 
   # Loams House (the ClickHouse HTTP interface, loams-fabric with its chDB
-  # workers), `--profile house`. Two doors:
+  # workers), on by default. Two doors:
   #
   # - Its plaintext listener stays on loopback (D111). The `house-tailscale`
-  #   sidecar shares its network namespace and serves
+  #   sidecar (`--profile house-tailnet`) shares its network namespace and serves
   #   https://loams-house.<tailnet>/ from 127.0.0.1:8123 (TLS from the tailnet's
   #   certificates, reachable only by tailnet members the policy lets in).
   # - Its TLS listener, 0.0.0.0:8443 (HS1 Task 20), is the engine's link. It is
@@ -258,9 +300,9 @@ services:
   #   acts for the Loams principal the engine authenticated, with the scopes
   #   and tables HOUSE_PRINCIPALS gives it; a principal not listed has no House
   #   access, and every statement is in the House's audit log
-  #   (/var/lib/loams-house/audit.log). Set
-  #   LOAMS_HOUSE_ENDPOINT=https://house:8443 to wire the engine to it (the
-  #   console's House page then works).
+  #   (/var/lib/loams-house/audit.log). LOAMS_HOUSE_ENDPOINT
+  #   (https://house:8443 by default) wires the engine to it, so the
+  #   console's House page works; set it empty to leave the link off.
   #
   # Clients of the tailnet door sign in as ClickHouse user `default` with the
   # password in /var/lib/loams-house/house.key (created on first start).
@@ -274,10 +316,31 @@ services:
   # default seccomp profile refuses them). The worker refuses to boot when its
   # sandbox cannot be put in force. chDB's access control (R-ACL.1) and the
   # statement checks (L1) are always on.
+  # One-shot, before the House: gives the house-link volume to the House's
+  # uid (10001). The fabric image has no /var/lib/loams-house-link, so Docker
+  # creates a fresh volume owned by root and the House could not write its
+  # certificate there (Podman hands it to the container's user itself). No
+  # network, every capability dropped but CHOWN and FOWNER.
+  house-init:
+    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.1}}
+    restart: "no"
+    user: "0:0"
+    network_mode: none
+    # CHOWN for the owner, FOWNER for the mode whoever owns it now.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt: [no-new-privileges:true]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        set -eu; dir=/var/lib/loams-house-link; ls -ldn "$$dir";
+        chown 10001:10001 "$$dir"; chmod 0750 "$$dir"; ls -ldn "$$dir"
+    volumes:
+      - house-link:/var/lib/loams-house-link
+
   house:
     <<: *restart
-    profiles: [house]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.0}
+    image: ${HOUSE_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-fabric:${LOAMS_VERSION:-0.1.1}}
     command:
       - house
       - --single-node
@@ -297,16 +360,27 @@ services:
     volumes:
       - house-data:/var/lib/loams-house
       - house-link:/var/lib/loams-house-link
+    # Healthy once it answers on loopback and its link certificate (which
+    # the engine reads at start) is written.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8123/ping && test -s /var/lib/loams-house-link/house.crt"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 30
     depends_on:
       migrate:
         condition: service_completed_successfully
+      house-init:
+        condition: service_completed_successfully
 
-  # The House's tailnet node, in the House's network namespace (its only
-  # neighbour there). A second node on the tailnet: give it its own auth key
-  # (HOUSE_TS_AUTHKEY) or a reusable TS_AUTHKEY.
+  # The House's tailnet node (`--profile house-tailnet`), in the House's
+  # network namespace (its only neighbour there). A second node on the
+  # tailnet: give it its own auth key (HOUSE_TS_AUTHKEY) or a reusable
+  # TS_AUTHKEY. Without it the House is reached through the engine only.
   house-tailscale:
     <<: *restart
-    profiles: [house]
+    profiles: [house-tailnet]
     image: docker.io/tailscale/tailscale:${TAILSCALE_TAG:-v1.90.6}
     network_mode: service:house
     environment:
@@ -338,7 +412,7 @@ services:
       TS_USERSPACE: "true"
       TS_AUTH_ONCE: "true"
       # https (Tailscale: MagicDNS + HTTPS certificates), or http for Headscale
-      # (coming soon, unsupported in 0.1.0); see tailscale/serve-*.json.
+      # (coming soon, unsupported in 0.1.1); see tailscale/serve-*.json.
       TS_SERVE_CONFIG: /config/serve-${TS_SERVE_MODE:-https}.json
       TS_EXTRA_ARGS: --login-server=${TS_LOGIN_SERVER:-https://controlplane.tailscale.com} ${TS_EXTRA_ARGS:-}
     volumes:
@@ -348,7 +422,7 @@ services:
       loams:
         condition: service_started
 
-  # COMING SOON, unsupported in 0.1.0: Headscale issues no ts.net
+  # COMING SOON, unsupported in 0.1.1: Headscale issues no ts.net
   # HTTPS certificates, so the hosted console cannot reach an engine on it.
   # A self-hosted tailnet control server (`--profile headscale`). Clients,
   # including the browser's device, must reach HEADSCALE_SERVER_URL, so on a VM
@@ -395,7 +469,7 @@ services:
   pg-control:
     <<: *restart
     profiles: [postgres-control]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.0}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.1}
     command:
       - pg-control
       - --store=local
@@ -456,16 +530,23 @@ services:
       AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
       AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
       AWS_REGION: us-east-1
+      LOAMS_PROFILES: ${COMPOSE_PROFILES:-}
+    # The bucket: RustFS's `neon` with the `rustfs` profile, else a local
+    # folder in its own volume.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
         until [ -s /run/endpoint-storage/key.pem ]; do echo "waiting for the pg-control key"; sleep 1; done;
-        exec endpoint_storage --config='{"listen": "0.0.0.0:51243",
-        "pemfile": "/run/endpoint-storage/key.pem", "type": "AwsS3",
-        "bucket_name": "neon", "bucket_region": "us-east-1",
-        "prefix_in_bucket": "endpoint-storage/", "endpoint": "http://rustfs:9000"}'
+        case ",$${LOAMS_PROFILES}," in
+        *,rustfs,*) storage='"type": "AwsS3", "bucket_name": "neon", "bucket_region": "us-east-1",
+        "prefix_in_bucket": "endpoint-storage/", "endpoint": "http://rustfs:9000"' ;;
+        *) mkdir -p /data/.neon/endpoint-storage; storage='"type": "LocalFs", "local_path": "/data/.neon/endpoint-storage"' ;;
+        esac;
+        exec endpoint_storage --config="{\"listen\": \"0.0.0.0:51243\",
+        \"pemfile\": \"/run/endpoint-storage/key.pem\", $${storage}}"
     volumes:
       - pg-endpoint-storage-key:/run/endpoint-storage:ro
+      - pg-endpoint-storage:/data/.neon
     depends_on:
       pg-control:
         condition: service_started
@@ -483,7 +564,7 @@ services:
   pg-runner:
     <<: *restart
     profiles: [postgres-control]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.0}
+    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-pg-control:${LOAMS_VERSION:-0.1.1}
     command:
       - pg-runner
       - --listen=0.0.0.0:7691
@@ -515,13 +596,12 @@ services:
       timeout: 3s
       retries: 30
 
-  # The optional agent daemon (`--profile agentd`); its config is
-  # agentd/config.toml. It supervises its own engine, so it needs nothing from
-  # this one and stays on the compose network.
+  # The agent daemon, on by default; its config is agentd/config.toml. It
+  # supervises its own engine, so it needs nothing from this one and stays on
+  # the compose network.
   agentd:
     <<: *restart
-    profiles: [agentd]
-    image: ${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-agentd:${LOAMS_VERSION:-0.1.0}
+    image: ${AGENTD_IMAGE:-${LOAMS_REGISTRY:-ghcr.io/ostrium-labs}/loams-agentd:${LOAMS_VERSION:-0.1.1}}
     # The daemon writes its token, lock and store beside its config.toml, in
     # a directory it makes owner-only (0700): that is /home/loams/agentd, in
     # the data volume. Only config.toml comes from ./agentd, read-only, and
@@ -560,4 +640,6 @@ volumes:
   pg-runner-data:
   pg-runner-token:
   pg-endpoint-storage-key:
+  # Endpoint storage's local folder (without the `rustfs` profile).
+  pg-endpoint-storage:
   upgrade-snapshots:

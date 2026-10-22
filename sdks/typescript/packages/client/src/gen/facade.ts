@@ -21,10 +21,19 @@ import { AgentService, AuditService, KeyService, OrgService, ProjectService } fr
 import type { AddTeamMemberRequestSchema, AddTeamMemberResponse, CreateAgentRequestSchema, CreateAgentResponse, CreateEnvironmentRequestSchema, CreateEnvironmentResponse, CreateInvitationRequestSchema, CreateInvitationResponse, CreateKeyRequestSchema, CreateKeyResponse, CreateProjectRequestSchema, CreateProjectResponse, CreateServiceAccountRequestSchema, CreateServiceAccountResponse, CreateTeamRequestSchema, CreateTeamResponse, CreateTrustPolicyRequestSchema, CreateTrustPolicyResponse, GetAgentRequestSchema, GetAgentResponse, GetEnvironmentActivityRequestSchema, GetEnvironmentActivityResponse, GetEnvironmentRequestSchema, GetEnvironmentResponse, GetOrgRequestSchema, GetOrgResponse, GetProjectRequestSchema, GetProjectResponse, GetTeamRequestSchema, GetTeamResponse, GrantAccessRequestSchema, GrantAccessResponse, ListAccessRequestSchema, ListAccessResponse, ListAgentTokensRequestSchema, ListAgentTokensResponse, ListAgentsRequestSchema, ListAgentsResponse, ListAuditEventsRequestSchema, ListAuditEventsResponse, ListEnvironmentsRequestSchema, ListEnvironmentsResponse, ListInvitationsRequestSchema, ListInvitationsResponse, ListKeysRequestSchema, ListKeysResponse, ListMembersRequestSchema, ListMembersResponse, ListProjectsRequestSchema, ListProjectsResponse, ListServiceAccountsRequestSchema, ListServiceAccountsResponse, ListTeamsRequestSchema, ListTeamsResponse, ListTrustPoliciesRequestSchema, ListTrustPoliciesResponse, RemoveMemberRequestSchema, RemoveMemberResponse, ResumeAgentRequestSchema, ResumeAgentResponse, RevokeKeyRequestSchema, RevokeKeyResponse, RevokeTokenRequestSchema, RevokeTokenResponse, SuspendAgentRequestSchema, SuspendAgentResponse, UpdateAgentRequestSchema, UpdateAgentResponse, UpdateOrgRequestSchema, UpdateOrgResponse, WatchAuditEventsRequestSchema, WatchAuditEventsResponse } from '@loams/proto/admin';
 import { AuthService } from '@loams/proto/auth';
 import type { CompleteSetupRequestSchema, CompleteSetupResponse, CreateSessionRequestSchema, CreateSessionResponse, DecideConsentRequestSchema, DecideConsentResponse, DeleteSessionRequestSchema, DeleteSessionResponse, GetSessionRequestSchema, GetSessionResponse, ListProvidersRequestSchema, ListProvidersResponse } from '@loams/proto/auth';
+import { CollectionService, DocumentService, NamespaceService, QueryService } from '@loams/proto/collection-v1';
+import type { AddFieldsRequestSchema, AddFieldsResponse, CollectionInfo, CountDocumentsRequestSchema, CountDocumentsResponse, CreateCollectionRequestSchema, CreateNamespaceRequestSchema, CreateNamespaceResponse, DeleteByFilterRequestSchema, DropCollectionRequestSchema, DropCollectionResponse, FilterWriteResponse, GetCollectionRequestSchema, GetDocumentsRequestSchema, GetDocumentsResponse, ListCollectionsRequestSchema, ListCollectionsResponse, ListNamespacesRequestSchema, ListNamespacesResponse, ListVersionsRequestSchema, ListVersionsResponse, PatchByFilterRequestSchema, ScanPlan, ScanRequestSchema, ScrollDocumentsRequestSchema, ScrollDocumentsResponse, SearchRequestSchema, SearchResponse, SetHotRequestSchema, SetHotResponse, UpdateAliasesRequestSchema, UpdateAliasesResponse, WarmCollectionRequestSchema, WarmCollectionResponse, WriteDocumentsRequestSchema, WriteDocumentsResponse } from '@loams/proto/collection-v1';
+import { GraphAdminService, GraphService } from '@loams/proto/graph';
+import type { CreateGraphRequestSchema, DeleteGraphRequestSchema, ExecuteBatchRequestSchema, ExecuteBatchResponse, ExecuteRequestSchema, ExecuteResponse, ExecuteStreamRequestSchema, ExplainRequestSchema, GetGraphRequestSchema, GetSchemaRequestSchema, Graph, GraphSchema, ListGraphsRequestSchema, ListGraphsResponse, Plan, ResultChunk, UpdateGraphRequestSchema } from '@loams/proto/graph';
 import { InstanceService } from '@loams/proto/instance';
 import type { GetInstanceRequestSchema, GetInstanceResponse, WhoAmIRequestSchema, WhoAmIResponse } from '@loams/proto/instance';
 import { LiveAdminService, LiveService } from '@loams/live/live';
 import type { ActivateDeploymentRequestSchema, ActivateDeploymentResponse, AuthenticateRequestSchema, AuthenticateResponse, CreateAppRequestSchema, CreateAppResponse, DeleteAppRequestSchema, DeleteAppResponse, DeployRequestSchema, DeployResponse, GetAppRequestSchema, GetAppResponse, GetDeploymentRequestSchema, GetDeploymentResponse, GetIndexStatusRequestSchema, GetIndexStatusResponse, ListAppsRequestSchema, ListAppsResponse, ListDeploymentsRequestSchema, ListDeploymentsResponse, ModifyQuerySetRequestSchema, ModifyQuerySetResponse, MutateRequestSchema, MutateResponse, QueryRequestSchema, QueryResponse, TailLogsRequestSchema, TailLogsResponse, Transition, UpdateAppRequestSchema, UpdateAppResponse, WatchRequestSchema } from '@loams/live/live';
+import { SqlService } from '@loams/proto/sql';
+import type { QueryArrowRequestSchema, QueryArrowResponse, QueryRequestSchema as SqlV1QueryRequestSchema, QueryResponse as SqlV1QueryResponse } from '@loams/proto/sql';
+import { StreamService } from '@loams/proto/stream';
+import type { CreateStreamRequestSchema, CreateStreamResponse, DescribeStreamRequestSchema, DescribeStreamResponse, FetchCloudEventsRequestSchema, FetchCloudEventsResponse, FetchRequestSchema, FetchResponse, ListStreamsRequestSchema, ListStreamsResponse, ProduceCloudEventsRequestSchema, ProduceCloudEventsResponse, ProduceRequestSchema, ProduceResponse } from '@loams/proto/stream';
+import type { Operation } from '@loams/proto/operations';
 /**
  *  `loams.admin.agents` — Agents, their tokens and trust policies, and service accounts.
  *
@@ -404,6 +413,230 @@ export interface AuthModule {
 }
 
 /**
+ *  `loams.collections` — Collections: schema, aliases, versions, scan plans and the hot tier.
+ *
+ *  Wraps `loams.collection.v1.CollectionService`.
+ */
+export interface CollectionsModule {
+  /** The SDK module, as it appears on `loams.collections`. */
+  readonly module: 'collections';
+  /** The service behind the module. */
+  readonly service: 'loams.collection.v1.CollectionService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.collection.v1.CollectionService/AddFields`, retried: safe.
+   */
+  addFields(
+    request: MessageInitShape<typeof AddFieldsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<AddFieldsResponse>;
+  /**
+   *  `loams.collection.v1.CollectionService/CreateCollection`, retried: safe.
+   */
+  create(
+    request: MessageInitShape<typeof CreateCollectionRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CollectionInfo>;
+  /**
+   *  `loams.collection.v1.CollectionService/DropCollection`, retried: safe.
+   */
+  drop(
+    request: MessageInitShape<typeof DropCollectionRequestSchema>,
+    options?: CallOptions,
+  ): Promise<DropCollectionResponse>;
+  /**
+   *  `loams.collection.v1.CollectionService/GetCollection`, retried: safe.
+   */
+  get(
+    request: MessageInitShape<typeof GetCollectionRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CollectionInfo>;
+  /**
+   *  `loams.collection.v1.CollectionService/ListCollections`, retried: safe. AIP-158: page with `collections` and follow `next_page_token` through `loams.paginate`.
+   */
+  list(
+    request: MessageInitShape<typeof ListCollectionsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListCollectionsResponse>;
+  /**
+   *  `loams.collection.v1.CollectionService/ListVersions`, retried: safe. AIP-158: page with `versions` and follow `next_page_token` through `loams.paginate`.
+   */
+  listVersions(
+    request: MessageInitShape<typeof ListVersionsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListVersionsResponse>;
+  /**
+   *  `loams.collection.v1.CollectionService/Scan`, retried: manual.
+   */
+  scan(
+    request: MessageInitShape<typeof ScanRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ScanPlan>;
+  /**
+   *  `loams.collection.v1.CollectionService/SetHot`, retried: safe.
+   */
+  setHot(
+    request: MessageInitShape<typeof SetHotRequestSchema>,
+    options?: CallOptions,
+  ): Promise<SetHotResponse>;
+  /**
+   *  `loams.collection.v1.CollectionService/UpdateAliases`, retried: safe.
+   */
+  updateAliases(
+    request: MessageInitShape<typeof UpdateAliasesRequestSchema>,
+    options?: CallOptions,
+  ): Promise<UpdateAliasesResponse>;
+  /**
+   *  `loams.collection.v1.CollectionService/WarmCollection`, retried: safe.
+   */
+  warm(
+    request: MessageInitShape<typeof WarmCollectionRequestSchema>,
+    options?: CallOptions,
+  ): Promise<WarmCollectionResponse>;
+}
+
+/**
+ *  `loams.documents` — Documents: write, get, scroll, count, delete by filter and patch by filter.
+ *
+ *  Wraps `loams.collection.v1.DocumentService`.
+ */
+export interface DocumentsModule {
+  /** The SDK module, as it appears on `loams.documents`. */
+  readonly module: 'documents';
+  /** The service behind the module. */
+  readonly service: 'loams.collection.v1.DocumentService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.collection.v1.DocumentService/CountDocuments`, retried: safe.
+   */
+  count(
+    request: MessageInitShape<typeof CountDocumentsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CountDocumentsResponse>;
+  /**
+   *  `loams.collection.v1.DocumentService/DeleteByFilter`, retried: manual.
+   */
+  deleteByFilter(
+    request: MessageInitShape<typeof DeleteByFilterRequestSchema>,
+    options?: CallOptions,
+  ): Promise<FilterWriteResponse>;
+  /**
+   *  `loams.collection.v1.DocumentService/GetDocuments`, retried: safe.
+   */
+  get(
+    request: MessageInitShape<typeof GetDocumentsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<GetDocumentsResponse>;
+  /**
+   *  `loams.collection.v1.DocumentService/PatchByFilter`, retried: manual.
+   */
+  patchByFilter(
+    request: MessageInitShape<typeof PatchByFilterRequestSchema>,
+    options?: CallOptions,
+  ): Promise<FilterWriteResponse>;
+  /**
+   *  `loams.collection.v1.DocumentService/ScrollDocuments`, retried: safe.
+   */
+  scroll(
+    request: MessageInitShape<typeof ScrollDocumentsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ScrollDocumentsResponse>;
+  /**
+   *  `loams.collection.v1.DocumentService/WriteDocuments`, retried: manual.
+   */
+  write(
+    request: MessageInitShape<typeof WriteDocumentsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<WriteDocumentsResponse>;
+}
+
+/**
+ *  `loams.graph` — Loams Graph: stored property graphs, queried with GQL.
+ *
+ *  Wraps `loams.graph.v1.GraphAdminService`. Its wire contract may still change, so `buf breaking` skips it and an SDK marks it experimental (§44 §10.3).
+ */
+export interface GraphModule {
+  /** The SDK module, as it appears on `loams.graph`. */
+  readonly module: 'graph';
+  /** The service behind the module. */
+  readonly service: 'loams.graph.v1.GraphAdminService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: true;
+  /**
+   *  `loams.graph.v1.GraphAdminService/CreateGraph`, retried: manual.
+   */
+  create(
+    request: MessageInitShape<typeof CreateGraphRequestSchema>,
+    options?: CallOptions,
+  ): Promise<Graph>;
+  /**
+   *  `loams.graph.v1.GraphAdminService/DeleteGraph`, retried: manual.
+   */
+  delete(
+    request: MessageInitShape<typeof DeleteGraphRequestSchema>,
+    options?: CallOptions,
+  ): Promise<Operation>;
+  /**
+   *  `loams.graph.v1.GraphService/Explain`, retried: safe.
+   */
+  explain(
+    request: MessageInitShape<typeof ExplainRequestSchema>,
+    options?: CallOptions,
+  ): Promise<Plan>;
+  /**
+   *  `loams.graph.v1.GraphAdminService/GetGraph`, retried: safe.
+   */
+  get(
+    request: MessageInitShape<typeof GetGraphRequestSchema>,
+    options?: CallOptions,
+  ): Promise<Graph>;
+  /**
+   *  `loams.graph.v1.GraphAdminService/ListGraphs`, retried: safe. AIP-158: page with `graphs` and follow `next_page_token` through `loams.paginate`.
+   */
+  list(
+    request: MessageInitShape<typeof ListGraphsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListGraphsResponse>;
+  /**
+   *  `loams.graph.v1.GraphService/Execute`, retried: manual.
+   */
+  query(
+    request: MessageInitShape<typeof ExecuteRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ExecuteResponse>;
+  /**
+   *  `loams.graph.v1.GraphService/ExecuteBatch`, retried: manual.
+   */
+  queryBatch(
+    request: MessageInitShape<typeof ExecuteBatchRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ExecuteBatchResponse>;
+  /**
+   *  `loams.graph.v1.GraphService/ExecuteStream`, retried: manual.
+   */
+  queryStream(
+    request: MessageInitShape<typeof ExecuteStreamRequestSchema>,
+    options?: CallOptions,
+  ): AsyncIterable<ResultChunk>;
+  /**
+   *  `loams.graph.v1.GraphAdminService/GetSchema`, retried: safe.
+   */
+  schema(
+    request: MessageInitShape<typeof GetSchemaRequestSchema>,
+    options?: CallOptions,
+  ): Promise<GraphSchema>;
+  /**
+   *  `loams.graph.v1.GraphAdminService/UpdateGraph`, retried: manual.
+   */
+  update(
+    request: MessageInitShape<typeof UpdateGraphRequestSchema>,
+    options?: CallOptions,
+  ): Promise<Graph>;
+}
+
+/**
  *  `loams.instance` — What this instance is, and who the caller is on it.
  *
  *  Wraps `loams.instance.v1.InstanceService`.
@@ -558,6 +791,146 @@ export interface LiveAdminModule {
 }
 
 /**
+ *  `loams.namespaces` — Namespaces: the container every collection and stream lives in.
+ *
+ *  Wraps `loams.collection.v1.NamespaceService`.
+ */
+export interface NamespacesModule {
+  /** The SDK module, as it appears on `loams.namespaces`. */
+  readonly module: 'namespaces';
+  /** The service behind the module. */
+  readonly service: 'loams.collection.v1.NamespaceService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.collection.v1.NamespaceService/CreateNamespace`, retried: safe.
+   */
+  create(
+    request: MessageInitShape<typeof CreateNamespaceRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CreateNamespaceResponse>;
+  /**
+   *  `loams.collection.v1.NamespaceService/ListNamespaces`, retried: safe. AIP-158: page with `namespaces` and follow `next_page_token` through `loams.paginate`.
+   */
+  list(
+    request: MessageInitShape<typeof ListNamespacesRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListNamespacesResponse>;
+}
+
+/**
+ *  `loams.search` — Queries: one search over one collection, dense, sparse, text or hybrid.
+ *
+ *  Wraps `loams.collection.v1.QueryService`.
+ */
+export interface SearchModule {
+  /** The SDK module, as it appears on `loams.search`. */
+  readonly module: 'search';
+  /** The service behind the module. */
+  readonly service: 'loams.collection.v1.QueryService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.collection.v1.QueryService/Search`, retried: safe.
+   */
+  query(
+    request: MessageInitShape<typeof SearchRequestSchema>,
+    options?: CallOptions,
+  ): Promise<SearchResponse>;
+}
+
+/**
+ *  `loams.sql` — SQL: one read-only statement over a namespace's collections, with parameters.
+ *
+ *  Wraps `loams.sql.v1.SqlService`.
+ */
+export interface SqlModule {
+  /** The SDK module, as it appears on `loams.sql`. */
+  readonly module: 'sql';
+  /** The service behind the module. */
+  readonly service: 'loams.sql.v1.SqlService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.sql.v1.SqlService/Query`, retried: safe.
+   */
+  query(
+    request: MessageInitShape<typeof SqlV1QueryRequestSchema>,
+    options?: CallOptions,
+  ): Promise<SqlV1QueryResponse>;
+  /**
+   *  `loams.sql.v1.SqlService/QueryArrow`, retried: safe.
+   */
+  queryArrow(
+    request: MessageInitShape<typeof QueryArrowRequestSchema>,
+    options?: CallOptions,
+  ): Promise<QueryArrowResponse>;
+}
+
+/**
+ *  `loams.streams` — Streams: create, list and describe a namespace's logs; produce and fetch records and CloudEvents.
+ *
+ *  Wraps `loams.stream.v1.StreamService`.
+ */
+export interface StreamsModule {
+  /** The SDK module, as it appears on `loams.streams`. */
+  readonly module: 'streams';
+  /** The service behind the module. */
+  readonly service: 'loams.stream.v1.StreamService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.stream.v1.StreamService/CreateStream`, retried: safe.
+   */
+  create(
+    request: MessageInitShape<typeof CreateStreamRequestSchema>,
+    options?: CallOptions,
+  ): Promise<CreateStreamResponse>;
+  /**
+   *  `loams.stream.v1.StreamService/Fetch`, retried: safe.
+   */
+  fetch(
+    request: MessageInitShape<typeof FetchRequestSchema>,
+    options?: CallOptions,
+  ): Promise<FetchResponse>;
+  /**
+   *  `loams.stream.v1.StreamService/FetchCloudEvents`, retried: safe.
+   */
+  fetchEvents(
+    request: MessageInitShape<typeof FetchCloudEventsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<FetchCloudEventsResponse>;
+  /**
+   *  `loams.stream.v1.StreamService/DescribeStream`, retried: safe.
+   */
+  get(
+    request: MessageInitShape<typeof DescribeStreamRequestSchema>,
+    options?: CallOptions,
+  ): Promise<DescribeStreamResponse>;
+  /**
+   *  `loams.stream.v1.StreamService/ListStreams`, retried: safe. AIP-158: page with `streams` and follow `next_page_token` through `loams.paginate`.
+   */
+  list(
+    request: MessageInitShape<typeof ListStreamsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ListStreamsResponse>;
+  /**
+   *  `loams.stream.v1.StreamService/Produce`, retried: manual.
+   */
+  produce(
+    request: MessageInitShape<typeof ProduceRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ProduceResponse>;
+  /**
+   *  `loams.stream.v1.StreamService/ProduceCloudEvents`, retried: manual.
+   */
+  produceEvents(
+    request: MessageInitShape<typeof ProduceCloudEventsRequestSchema>,
+    options?: CallOptions,
+  ): Promise<ProduceCloudEventsResponse>;
+}
+
+/**
  *  A second facade name for the same RPCs, exposed as `loams.tables`.
  *
  *  Wraps `loams.live.v1.LiveService`. Its wire contract may still change, so `buf breaking` skips it and an SDK marks it experimental (§44 §10.3).
@@ -583,6 +956,27 @@ export interface TablesModule {
     request: MessageInitShape<typeof QueryRequestSchema>,
     options?: CallOptions,
   ): Promise<QueryResponse>;
+}
+
+/**
+ *  A second facade name for the same RPCs, exposed as `loams.vector`.
+ *
+ *  Wraps `loams.collection.v1.QueryService`.
+ */
+export interface VectorModule {
+  /** The SDK module, as it appears on `loams.vector`. */
+  readonly module: 'vector';
+  /** The service behind the module. */
+  readonly service: 'loams.collection.v1.QueryService';
+  /** Whether the package's wire contract may still change. */
+  readonly unstable: false;
+  /**
+   *  `loams.collection.v1.QueryService/Search`, retried: safe.
+   */
+  search(
+    request: MessageInitShape<typeof SearchRequestSchema>,
+    options?: CallOptions,
+  ): Promise<SearchResponse>;
 }
 
 /** One facade call, as the runtime dispatches it. */
@@ -722,6 +1116,62 @@ export const MODULES: readonly ModuleBinding[] = [
     ],
   },
   {
+    name: 'collections',
+    summary: 'Collections: schema, aliases, versions, scan plans and the hot tier.',
+    service: 'loams.collection.v1.CollectionService',
+    package: 'loams.collection.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'collections', name: 'addFields', protoName: 'add_fields', method: 'AddFields', rpc: 'loams.collection.v1.CollectionService/AddFields', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'none', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'collections', name: 'create', protoName: 'create', method: 'CreateCollection', rpc: 'loams.collection.v1.CollectionService/CreateCollection', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'none', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'collections', name: 'drop', protoName: 'drop', method: 'DropCollection', rpc: 'loams.collection.v1.CollectionService/DropCollection', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'none', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'collections', name: 'get', protoName: 'get', method: 'GetCollection', rpc: 'loams.collection.v1.CollectionService/GetCollection', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'collections', name: 'list', protoName: 'list', method: 'ListCollections', rpc: 'loams.collection.v1.CollectionService/ListCollections', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: { items: 'collections', nextPageToken: 'nextPageToken' } },
+      { module: 'collections', name: 'listVersions', protoName: 'list_versions', method: 'ListVersions', rpc: 'loams.collection.v1.CollectionService/ListVersions', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: { items: 'versions', nextPageToken: 'nextPageToken' } },
+      { module: 'collections', name: 'scan', protoName: 'scan', method: 'Scan', rpc: 'loams.collection.v1.CollectionService/Scan', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'collections', name: 'setHot', protoName: 'set_hot', method: 'SetHot', rpc: 'loams.collection.v1.CollectionService/SetHot', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'none', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'collections', name: 'updateAliases', protoName: 'update_aliases', method: 'UpdateAliases', rpc: 'loams.collection.v1.CollectionService/UpdateAliases', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'none', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'collections', name: 'warm', protoName: 'warm', method: 'WarmCollection', rpc: 'loams.collection.v1.CollectionService/WarmCollection', service: 'loams.collection.v1.CollectionService', package: 'loams.collection.v1', idempotency: 'none', retry: 'safe', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
+    name: 'documents',
+    summary: 'Documents: write, get, scroll, count, delete by filter and patch by filter.',
+    service: 'loams.collection.v1.DocumentService',
+    package: 'loams.collection.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'documents', name: 'count', protoName: 'count', method: 'CountDocuments', rpc: 'loams.collection.v1.DocumentService/CountDocuments', service: 'loams.collection.v1.DocumentService', package: 'loams.collection.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'documents', name: 'deleteByFilter', protoName: 'delete_by_filter', method: 'DeleteByFilter', rpc: 'loams.collection.v1.DocumentService/DeleteByFilter', service: 'loams.collection.v1.DocumentService', package: 'loams.collection.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'documents', name: 'get', protoName: 'get', method: 'GetDocuments', rpc: 'loams.collection.v1.DocumentService/GetDocuments', service: 'loams.collection.v1.DocumentService', package: 'loams.collection.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'documents', name: 'patchByFilter', protoName: 'patch_by_filter', method: 'PatchByFilter', rpc: 'loams.collection.v1.DocumentService/PatchByFilter', service: 'loams.collection.v1.DocumentService', package: 'loams.collection.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'documents', name: 'scroll', protoName: 'scroll', method: 'ScrollDocuments', rpc: 'loams.collection.v1.DocumentService/ScrollDocuments', service: 'loams.collection.v1.DocumentService', package: 'loams.collection.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'documents', name: 'write', protoName: 'write', method: 'WriteDocuments', rpc: 'loams.collection.v1.DocumentService/WriteDocuments', service: 'loams.collection.v1.DocumentService', package: 'loams.collection.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
+    name: 'graph',
+    summary: 'Loams Graph: stored property graphs, queried with GQL.',
+    service: 'loams.graph.v1.GraphAdminService',
+    package: 'loams.graph.v1',
+    unstable: true,
+    derived: false,
+    calls: [
+      { module: 'graph', name: 'create', protoName: 'create', method: 'CreateGraph', rpc: 'loams.graph.v1.GraphAdminService/CreateGraph', service: 'loams.graph.v1.GraphAdminService', package: 'loams.graph.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'graph', name: 'delete', protoName: 'delete', method: 'DeleteGraph', rpc: 'loams.graph.v1.GraphAdminService/DeleteGraph', service: 'loams.graph.v1.GraphAdminService', package: 'loams.graph.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'graph', name: 'explain', protoName: 'explain', method: 'Explain', rpc: 'loams.graph.v1.GraphService/Explain', service: 'loams.graph.v1.GraphService', package: 'loams.graph.v1', idempotency: 'none', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'graph', name: 'get', protoName: 'get', method: 'GetGraph', rpc: 'loams.graph.v1.GraphAdminService/GetGraph', service: 'loams.graph.v1.GraphAdminService', package: 'loams.graph.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'graph', name: 'list', protoName: 'list', method: 'ListGraphs', rpc: 'loams.graph.v1.GraphAdminService/ListGraphs', service: 'loams.graph.v1.GraphAdminService', package: 'loams.graph.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: { items: 'graphs', nextPageToken: 'nextPageToken' } },
+      { module: 'graph', name: 'query', protoName: 'query', method: 'Execute', rpc: 'loams.graph.v1.GraphService/Execute', service: 'loams.graph.v1.GraphService', package: 'loams.graph.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'graph', name: 'queryBatch', protoName: 'query_batch', method: 'ExecuteBatch', rpc: 'loams.graph.v1.GraphService/ExecuteBatch', service: 'loams.graph.v1.GraphService', package: 'loams.graph.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'graph', name: 'queryStream', protoName: 'query_stream', method: 'ExecuteStream', rpc: 'loams.graph.v1.GraphService/ExecuteStream', service: 'loams.graph.v1.GraphService', package: 'loams.graph.v1', idempotency: 'none', retry: 'manual', streaming: 'server', pagination: null },
+      { module: 'graph', name: 'schema', protoName: 'schema', method: 'GetSchema', rpc: 'loams.graph.v1.GraphAdminService/GetSchema', service: 'loams.graph.v1.GraphAdminService', package: 'loams.graph.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'graph', name: 'update', protoName: 'update', method: 'UpdateGraph', rpc: 'loams.graph.v1.GraphAdminService/UpdateGraph', service: 'loams.graph.v1.GraphAdminService', package: 'loams.graph.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
     name: 'instance',
     summary: 'What this instance is, and who the caller is on it.',
     service: 'loams.instance.v1.InstanceService',
@@ -768,6 +1218,58 @@ export const MODULES: readonly ModuleBinding[] = [
     ],
   },
   {
+    name: 'namespaces',
+    summary: 'Namespaces: the container every collection and stream lives in.',
+    service: 'loams.collection.v1.NamespaceService',
+    package: 'loams.collection.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'namespaces', name: 'create', protoName: 'create', method: 'CreateNamespace', rpc: 'loams.collection.v1.NamespaceService/CreateNamespace', service: 'loams.collection.v1.NamespaceService', package: 'loams.collection.v1', idempotency: 'none', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'namespaces', name: 'list', protoName: 'list', method: 'ListNamespaces', rpc: 'loams.collection.v1.NamespaceService/ListNamespaces', service: 'loams.collection.v1.NamespaceService', package: 'loams.collection.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: { items: 'namespaces', nextPageToken: 'nextPageToken' } },
+    ],
+  },
+  {
+    name: 'search',
+    summary: 'Queries: one search over one collection, dense, sparse, text or hybrid.',
+    service: 'loams.collection.v1.QueryService',
+    package: 'loams.collection.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'search', name: 'query', protoName: 'query', method: 'Search', rpc: 'loams.collection.v1.QueryService/Search', service: 'loams.collection.v1.QueryService', package: 'loams.collection.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
+    name: 'sql',
+    summary: 'SQL: one read-only statement over a namespace\'s collections, with parameters.',
+    service: 'loams.sql.v1.SqlService',
+    package: 'loams.sql.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'sql', name: 'query', protoName: 'query', method: 'Query', rpc: 'loams.sql.v1.SqlService/Query', service: 'loams.sql.v1.SqlService', package: 'loams.sql.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'sql', name: 'queryArrow', protoName: 'query_arrow', method: 'QueryArrow', rpc: 'loams.sql.v1.SqlService/QueryArrow', service: 'loams.sql.v1.SqlService', package: 'loams.sql.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
+    name: 'streams',
+    summary: 'Streams: create, list and describe a namespace\'s logs; produce and fetch records and CloudEvents.',
+    service: 'loams.stream.v1.StreamService',
+    package: 'loams.stream.v1',
+    unstable: false,
+    derived: false,
+    calls: [
+      { module: 'streams', name: 'create', protoName: 'create', method: 'CreateStream', rpc: 'loams.stream.v1.StreamService/CreateStream', service: 'loams.stream.v1.StreamService', package: 'loams.stream.v1', idempotency: 'none', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'streams', name: 'fetch', protoName: 'fetch', method: 'Fetch', rpc: 'loams.stream.v1.StreamService/Fetch', service: 'loams.stream.v1.StreamService', package: 'loams.stream.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'streams', name: 'fetchEvents', protoName: 'fetch_events', method: 'FetchCloudEvents', rpc: 'loams.stream.v1.StreamService/FetchCloudEvents', service: 'loams.stream.v1.StreamService', package: 'loams.stream.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'streams', name: 'get', protoName: 'get', method: 'DescribeStream', rpc: 'loams.stream.v1.StreamService/DescribeStream', service: 'loams.stream.v1.StreamService', package: 'loams.stream.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
+      { module: 'streams', name: 'list', protoName: 'list', method: 'ListStreams', rpc: 'loams.stream.v1.StreamService/ListStreams', service: 'loams.stream.v1.StreamService', package: 'loams.stream.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: { items: 'streams', nextPageToken: 'nextPageToken' } },
+      { module: 'streams', name: 'produce', protoName: 'produce', method: 'Produce', rpc: 'loams.stream.v1.StreamService/Produce', service: 'loams.stream.v1.StreamService', package: 'loams.stream.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+      { module: 'streams', name: 'produceEvents', protoName: 'produce_events', method: 'ProduceCloudEvents', rpc: 'loams.stream.v1.StreamService/ProduceCloudEvents', service: 'loams.stream.v1.StreamService', package: 'loams.stream.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
     name: 'tables',
     summary: '',
     service: 'loams.live.v1.LiveService',
@@ -777,6 +1279,17 @@ export const MODULES: readonly ModuleBinding[] = [
     calls: [
       { module: 'tables', name: 'mutate', protoName: 'mutate', method: 'Mutate', rpc: 'loams.live.v1.LiveService/Mutate', service: 'loams.live.v1.LiveService', package: 'loams.live.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
       { module: 'tables', name: 'query', protoName: 'query', method: 'Query', rpc: 'loams.live.v1.LiveService/Query', service: 'loams.live.v1.LiveService', package: 'loams.live.v1', idempotency: 'none', retry: 'manual', streaming: 'unary', pagination: null },
+    ],
+  },
+  {
+    name: 'vector',
+    summary: '',
+    service: 'loams.collection.v1.QueryService',
+    package: 'loams.collection.v1',
+    unstable: false,
+    derived: true,
+    calls: [
+      { module: 'vector', name: 'search', protoName: 'search', method: 'Search', rpc: 'loams.collection.v1.QueryService/Search', service: 'loams.collection.v1.QueryService', package: 'loams.collection.v1', idempotency: 'no_side_effects', retry: 'safe', streaming: 'unary', pagination: null },
     ],
   },
 ];
@@ -794,9 +1307,17 @@ export const SERVICE_DESCRIPTORS: Readonly<Record<string, DescService>> = {
   'loams.admin.v1.OrgService': OrgService,
   'loams.admin.v1.ProjectService': ProjectService,
   'loams.auth.v1.AuthService': AuthService,
+  'loams.collection.v1.CollectionService': CollectionService,
+  'loams.collection.v1.DocumentService': DocumentService,
+  'loams.collection.v1.NamespaceService': NamespaceService,
+  'loams.collection.v1.QueryService': QueryService,
+  'loams.graph.v1.GraphAdminService': GraphAdminService,
+  'loams.graph.v1.GraphService': GraphService,
   'loams.instance.v1.InstanceService': InstanceService,
   'loams.live.v1.LiveAdminService': LiveAdminService,
   'loams.live.v1.LiveService': LiveService,
+  'loams.sql.v1.SqlService': SqlService,
+  'loams.stream.v1.StreamService': StreamService,
 };
 
 /** The proto packages this SDK speaks, as `GetInstance.api_versions` names them. */
@@ -813,11 +1334,14 @@ export const PROTO_PACKAGES = [
   'loams.instance.v1',
   'loams.live.v1',
   'loams.live.worker.v1',
+  'loams.memory.v1',
   'loams.notifications.v1',
   'loams.operations.v1',
   'loams.options.v1',
   'loams.postgres.v1',
   'loams.repos.v1',
+  'loams.sql.v1',
+  'loams.stream.v1',
 ] as const;
 
 /**
@@ -875,6 +1399,7 @@ export const REASONS = [
   'idempotency_key_reused',
   'workspace_not_found',
   'workspace_fenced',
+  'batch_partially_applied',
   'workspace_read_only',
   'workspace_name_taken',
   'object_missing',
@@ -882,17 +1407,46 @@ export const REASONS = [
   'env_unsealed',
   'env_access_denied',
   'env_foreign_reference',
+  'memory_store_not_found',
+  'memory_space_not_found',
+  'memory_space_limit',
+  'memory_managed_object',
+  'memory_block_version_mismatch',
+  'memory_block_too_large',
+  'memory_core_budget_exceeded',
+  'memory_content_too_large',
+  'memory_secret_detected',
+  'memory_pii_refused',
+  'memory_model_not_configured',
+  'memory_model_not_local',
+  'memory_token_budget_exhausted',
+  'memory_extraction_failed',
+  'memory_too_many_spaces',
+  'memory_cross_space_write',
+  'memory_not_yet_available',
+  'code_repo_not_indexed',
+  'code_index_building',
+  'code_change_too_large',
+  'code_language_unsupported',
+  'code_scip_invalid',
   'live_bad_cursor',
   'live_worker_crashed',
   'live_deploy_conflict',
   'live_schema_violation',
+  'filter_conflict',
+  'search_after_needs_tiebreak',
+  'invalid_consistency_token',
+  'namespace_required',
+  'sql_param_count',
   'live_index_not_ready',
   'live_app_disabled',
   'live_app_exists',
   'live_function_error',
   'live_function_timeout',
+  'client_deadline_exceeded',
   'live_function_out_of_memory',
   'live_limit_exceeded',
+  'result_too_large',
   'live_app_mismatch',
   'live_origin_not_allowed',
   'session_rotate',
@@ -984,6 +1538,7 @@ export const REASON_CODES: Readonly<Record<Reason, string>> = {
   idempotency_key_reused: 'failed_precondition',
   workspace_not_found: 'not_found',
   workspace_fenced: 'aborted',
+  batch_partially_applied: 'aborted',
   workspace_read_only: 'failed_precondition',
   workspace_name_taken: 'already_exists',
   object_missing: 'failed_precondition',
@@ -991,17 +1546,46 @@ export const REASON_CODES: Readonly<Record<Reason, string>> = {
   env_unsealed: 'invalid_argument',
   env_access_denied: 'permission_denied',
   env_foreign_reference: 'permission_denied',
+  memory_store_not_found: 'not_found',
+  memory_space_not_found: 'not_found',
+  memory_space_limit: 'resource_exhausted',
+  memory_managed_object: 'failed_precondition',
+  memory_block_version_mismatch: 'aborted',
+  memory_block_too_large: 'invalid_argument',
+  memory_core_budget_exceeded: 'resource_exhausted',
+  memory_content_too_large: 'invalid_argument',
+  memory_secret_detected: 'failed_precondition',
+  memory_pii_refused: 'failed_precondition',
+  memory_model_not_configured: 'failed_precondition',
+  memory_model_not_local: 'failed_precondition',
+  memory_token_budget_exhausted: 'resource_exhausted',
+  memory_extraction_failed: 'failed_precondition',
+  memory_too_many_spaces: 'invalid_argument',
+  memory_cross_space_write: 'invalid_argument',
+  memory_not_yet_available: 'unimplemented',
+  code_repo_not_indexed: 'failed_precondition',
+  code_index_building: 'unavailable',
+  code_change_too_large: 'invalid_argument',
+  code_language_unsupported: 'failed_precondition',
+  code_scip_invalid: 'invalid_argument',
   live_bad_cursor: 'invalid_argument',
   live_worker_crashed: 'internal',
   live_deploy_conflict: 'failed_precondition',
   live_schema_violation: 'invalid_argument',
+  filter_conflict: 'invalid_argument',
+  search_after_needs_tiebreak: 'invalid_argument',
+  invalid_consistency_token: 'invalid_argument',
+  namespace_required: 'invalid_argument',
+  sql_param_count: 'invalid_argument',
   live_index_not_ready: 'failed_precondition',
   live_app_disabled: 'failed_precondition',
   live_app_exists: 'failed_precondition',
   live_function_error: 'unknown',
   live_function_timeout: 'deadline_exceeded',
+  client_deadline_exceeded: 'deadline_exceeded',
   live_function_out_of_memory: 'resource_exhausted',
   live_limit_exceeded: 'resource_exhausted',
+  result_too_large: 'resource_exhausted',
   live_app_mismatch: 'permission_denied',
   live_origin_not_allowed: 'permission_denied',
   session_rotate: 'unavailable',

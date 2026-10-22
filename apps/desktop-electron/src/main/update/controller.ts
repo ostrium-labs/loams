@@ -45,6 +45,9 @@ export interface ControllerDeps {
 	log?: (...a: unknown[]) => void;
 	/** Injectable timer for the install watchdog. */
 	schedule?: (fn: () => void, ms: number) => () => void;
+	/** The version the person skipped (`update.skippedVersion`); automatic checks stay quiet about it. */
+	skipped?: () => string | undefined;
+	saveSkipped?: (version: string) => void;
 }
 
 /** quitAndInstall in electron-updater 6.8.9 never throws: it emits "error" and returns. */
@@ -52,7 +55,13 @@ export const INSTALL_WATCHDOG_MS = 10_000;
 
 export interface Controller {
 	state(): State;
-	check(): Promise<void>;
+	/**
+	 * Checks the feed. An automatic check (the scheduler's) stays quiet about a skipped
+	 * version; a manual one ("Check now", the menu) offers it again (D1085).
+	 */
+	check(o?: { manual?: boolean }): Promise<void>;
+	/** "Skip this version": automatic checks no longer offer `version`. */
+	skip(version: string): void;
 	download(): Promise<void>;
 	install(): Promise<void>;
 	/** True once a downloaded file passed the pinned-hash check and is waiting to be installed. */
@@ -127,7 +136,7 @@ export function createController(d: ControllerDeps): Controller {
 
 	return {
 		state: () => state,
-		async check() {
+		async check(o = {}) {
 			if (d.mode === "disabled" || checking) return;
 			if (state.phase === "downloading" || state.phase === "ready") return;
 			checking = true;
@@ -152,6 +161,10 @@ export function createController(d: ControllerDeps): Controller {
 					set({ phase: "idle" });
 					return;
 				}
+				if (!o.manual && d.skipped?.() === p.version) {
+					set({ phase: "idle" });
+					return;
+				}
 				if (d.mode === "manual") {
 					pinned = p;
 					set({ phase: "available", version: p.version });
@@ -165,6 +178,10 @@ export function createController(d: ControllerDeps): Controller {
 				}
 				if (!matchesPinned(r.updateInfo, p)) {
 					fail("unsigned_manifest");
+					return;
+				}
+				if (!o.manual && d.skipped?.() === p.version) {
+					set({ phase: "idle" });
 					return;
 				}
 				pinned = p;
@@ -191,6 +208,11 @@ export function createController(d: ControllerDeps): Controller {
 			} catch (e) {
 				fail("update_failed", e);
 			}
+		},
+		skip(version) {
+			d.saveSkipped?.(version);
+			if (state.phase === "available" && state.version === version)
+				set({ phase: "idle" });
 		},
 		hasVerifiedDownload: () => verifiedDownload && state.phase === "ready",
 		async install() {

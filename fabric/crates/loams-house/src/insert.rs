@@ -604,6 +604,14 @@ async fn write_and_commit(
         (true, Some(token)) => Some(dedup::token_key(token)?),
         (true, None) => Some(dedup::hash_key(hash)),
     };
+    // The commit's span (HS1 Task 23): from the queue to the answer, which
+    // includes the group commit's interval.
+    let mut span = crate::trace::child("house.commit");
+    if let Some(span) = span.as_mut() {
+        span.set("loams.table", table.clone());
+        span.set("loams.files", written.files.len() as u64);
+        span.set("loams.rows", written.rows);
+    }
     let (reply, answer) = oneshot::channel();
     committer.submit(
         &target.table.ident,
@@ -631,7 +639,18 @@ async fn write_and_commit(
         HouseError::from(ChError::network_error(
             "the commit queue ended before the commit was answered",
         ))
-    })??;
+    })?;
+    if let Some(mut span) = span {
+        match &committed {
+            Ok(c) => {
+                span.set("loams.snapshot_id", c.snapshot_id);
+                span.set("loams.duplicate", c.duplicate);
+            }
+            Err(_) => span.fail(),
+        }
+        span.end();
+    }
+    let committed = committed?;
     let (rows, bytes) = if committed.duplicate {
         (0, 0)
     } else {
@@ -812,6 +831,7 @@ async fn stage(
                 &internal,
                 &pairs,
                 ctx.pipe_batch,
+                None,
             )
             .await?;
             let mut insert = execute(ctx, session, false, plan.sql, "TSV");
@@ -1041,6 +1061,7 @@ pub async fn create_as(
             &analysis,
             &select,
             ctx.settings,
+            None,
             None,
         )
         .await?;

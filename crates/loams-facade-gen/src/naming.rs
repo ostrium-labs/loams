@@ -99,6 +99,32 @@ pub fn snake(name: &str) -> String {
     out
 }
 
+/// The identifier a renderer that imports message types by their bare name
+/// (TypeScript, Python) gives one message: its leaf, unless another package's
+/// message the facade also names has the same leaf. Then the first package in
+/// sorted order keeps the bare leaf and every other one is prefixed with its
+/// own package (`loams.sql.v1.QueryRequest` beside `loams.live.v1.QueryRequest`
+/// is `SqlV1QueryRequest`), so the two imports cannot shadow each other.
+pub fn local_name(model: &crate::Model, full: &str) -> String {
+    let full = full.trim_start_matches('.');
+    let name = leaf(full);
+    let package = package_of(full);
+    let mut owners: Vec<&str> = model
+        .calls()
+        .flat_map(|call| [call.input.as_str(), call.output.as_str()])
+        .map(|other| other.trim_start_matches('.'))
+        .filter(|other| leaf(other) == name)
+        .map(package_of)
+        .collect();
+    owners.sort_unstable();
+    owners.dedup();
+    if owners.first().is_none_or(|first| *first == package) {
+        return name.to_owned();
+    }
+    let prefix = package.strip_prefix("loams.").unwrap_or(package);
+    format!("{}{name}", pascal(prefix))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -135,6 +135,25 @@ pub struct HouseConfig {
     /// How often every lake table's bytes are measured (`house.storage`, HS1
     /// Task 22): daily; zero turns it off.
     pub storage_usage_interval: Duration,
+    /// Whether the statement series of `/metrics` carry a `ns` label (§49
+    /// §15: the operator's choice, one series per namespace): off.
+    pub metrics_namespace_labels: bool,
+    /// Where the statements' spans go (HS1 Task 23, OTLP); nowhere by default.
+    /// `house-cache` shares it to put its reads under their worker's span.
+    pub tracer: std::sync::Arc<crate::trace::Tracer>,
+    /// Where each statement's operator line goes (HS1 Task 23, literals
+    /// redacted); nowhere by default (`loams-fabric house` writes them to
+    /// stderr).
+    pub operator_log: Option<std::sync::Arc<dyn crate::oplog::OperatorLog>>,
+    /// How often each namespace's query log rows are written (§49 §15): 5 s;
+    /// zero writes them only when asked ([`crate::http::HouseHandle::flush_query_log`]).
+    pub query_log_interval: Duration,
+    /// How long query log rows are kept unless a namespace's table says
+    /// otherwise (§49 §15): 30 days.
+    pub query_log_retention: Duration,
+    /// `house-cache`'s counters for `/metrics` (HS1 Task 23), when the front
+    /// has one.
+    pub cache_metrics: Option<std::sync::Arc<dyn crate::metrics::CacheMetrics>>,
 }
 
 /// The House's link to the engine's stream API (HS1 Task 16, `[house.engine]`).
@@ -200,6 +219,12 @@ impl Default for HouseConfig {
             quotas: std::sync::Arc::new(crate::quota::ConfigQuotas::default()),
             usage: std::sync::Arc::new(crate::usage::NoUsageObserver),
             storage_usage_interval: crate::usage::DEFAULT_STORAGE_INTERVAL,
+            metrics_namespace_labels: false,
+            tracer: crate::trace::Tracer::off(),
+            operator_log: None,
+            query_log_interval: crate::querylog::DEFAULT_FLUSH_INTERVAL,
+            query_log_retention: crate::querylog::DEFAULT_RETENTION,
+            cache_metrics: None,
             default_buffer_size: 1024 * 1024,
             max_query_size: 256 * 1024,
             receive_timeout: Duration::from_secs(30),
@@ -238,7 +263,7 @@ pub fn check_tls_users(listen: SocketAddr, users: &[UserMap]) -> Result<(), Hous
     if listen.ip().is_loopback() {
         return Ok(());
     }
-    match users.iter().find(|u| u.verifies("")) {
+    match users.iter().find(|u| u.has_empty_password()) {
         Some(user) => Err(HouseError::from(ChError::bad_arguments(format!(
             "house TLS listen on {listen}: user {:?} has an empty password, and a listener \
              other hosts reach takes none",
@@ -247,6 +272,10 @@ pub fn check_tls_users(listen: SocketAddr, users: &[UserMap]) -> Result<(), Hous
         None => Ok(()),
     }
 }
+
+/// SHA-256 of the empty string: the digest of a user with no password.
+const EMPTY_PASSWORD_SHA256: &str =
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /// A development user (FL2 Task 2): a name, the SHA-256 of its password, the
 /// namespace its queries run in, and whether it may only read. Task 20 replaces
@@ -290,6 +319,29 @@ impl UserMap {
             link: false,
             principal: None,
         }
+    }
+
+    /// An internal identity for the House's own work (compaction, pipes): every
+    /// scope in `namespace`, and no password, so it can never sign in
+    /// ([`Self::verifies`] compares against an empty digest, which no
+    /// password's SHA-256 equals).
+    pub fn system(user: &str, namespace: u64) -> Self {
+        Self {
+            user: user.to_string(),
+            password_sha256: String::new(),
+            namespace,
+            readonly: false,
+            scopes: crate::identity::Scopes::ALL,
+            grants: None,
+            link: false,
+            principal: None,
+        }
+    }
+
+    /// Whether this user signs in with the empty password.
+    pub fn has_empty_password(&self) -> bool {
+        self.password_sha256
+            .eq_ignore_ascii_case(EMPTY_PASSWORD_SHA256)
     }
 
     /// The engine's link user (HS1 Task 20): signs in with `key` and acts for
@@ -490,6 +542,55 @@ pub struct HouseSection {
     /// (HS1 Task 22).
     #[serde(default)]
     pub quotas: crate::quota::QuotasSection,
+    /// `[house.observability]`: metrics, traces, operator logs and the query
+    /// log (HS1 Task 23).
+    #[serde(default)]
+    pub observability: ObservabilitySection,
+}
+
+/// `[house.observability]` (HS1 Task 23).
+///
+/// ```toml
+/// [house.observability]
+/// metrics_namespace_labels = false
+/// otlp_endpoint = "http://otel-collector:4318"
+/// operator_log = true
+/// query_log_retention_days = 30
+/// ```
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ObservabilitySection {
+    /// A `ns` label on the statement series of `/metrics`.
+    pub metrics_namespace_labels: Option<bool>,
+    /// The OpenTelemetry collector the spans go to (OTLP/HTTP, JSON);
+    /// `--otlp-endpoint`. None: no spans.
+    pub otlp_endpoint: Option<String>,
+    /// One redacted line per statement on stderr; on by default.
+    pub operator_log: Option<bool>,
+    /// How long the query log keeps its rows, in days (30).
+    pub query_log_retention_days: Option<u64>,
+}
+
+impl ObservabilitySection {
+    /// Sets what it names on `config` (the OTLP endpoint is the binary's to
+    /// start, on its runtime).
+    pub fn apply(&self, config: &mut HouseConfig) -> Result<(), String> {
+        if let Some(on) = self.metrics_namespace_labels {
+            config.metrics_namespace_labels = on;
+        }
+        if self.operator_log.unwrap_or(true) {
+            config.operator_log = Some(std::sync::Arc::new(crate::oplog::StderrLines));
+        }
+        if let Some(days) = self.query_log_retention_days {
+            if days == 0 {
+                return Err(
+                    "[house.observability] query_log_retention_days: at least 1".to_string()
+                );
+            }
+            config.query_log_retention = Duration::from_secs(days.saturating_mul(24 * 3600));
+        }
+        Ok(())
+    }
 }
 
 /// `[house.engine]` (HS1 Task 16).

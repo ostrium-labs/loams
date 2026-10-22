@@ -37,6 +37,11 @@ function fake(
     ...init.stacks,
   };
   let update: Update = init.update ?? { phase: 'idle' };
+  const updateListeners = new Set<(s: Update) => void>();
+  const pushUpdate = (s: Update) => {
+    update = s;
+    for (const cb of updateListeners) cb(s);
+  };
   const auto = { enabled: true, locked: init.autoLocked ?? false };
   const ok = { ok: true, value: undefined } as const;
   const api = {
@@ -93,9 +98,17 @@ function fake(
       },
       download: async () => void calls.push('download'),
       installAndRestart: async () => void calls.push('install'),
+      onState: (cb: (s: Update) => void) => {
+        updateListeners.add(cb);
+        return () => void updateListeners.delete(cb);
+      },
+      skip: async (v: string) => {
+        calls.push(`skip:${v}`);
+        pushUpdate({ phase: 'idle', mode: 'self' });
+      },
     },
   } as unknown as LoamsDesktopApi;
-  return { api, calls };
+  return { api, calls, pushUpdate };
 }
 
 describe('settings area', () => {
@@ -165,6 +178,29 @@ describe('settings area', () => {
       'about',
     ]);
     expect(slots.entries('shell.nav.section')[0]?.meta?.href).toBe('/settings');
+  });
+
+  it('plugin_adds_the_postgres_section_when_the_bridge_has_pg_control', () => {
+    const slots = new SlotRegistry();
+    const ctx = { effect: (fn: () => unknown) => void fn(), root: {} };
+    const desktop = {
+      ...fake().api,
+      pgControl: {
+        settings: async () => ({}),
+        save: async () => ({}),
+        test: async () => ({}),
+        pickKeyFile: async () => null,
+        onChanged: () => () => undefined,
+      },
+    };
+    const services = { desktop, slots, router: { page: () => () => undefined } };
+    plugin.apply(Object.assign(ctx, services) as never, {});
+    expect(slots.entries('console.settings.section').map((e) => e.meta?.id)).toEqual([
+      'stacks',
+      'postgres',
+      'updates',
+      'about',
+    ]);
   });
 });
 
@@ -289,6 +325,19 @@ describe('updates section', () => {
       />,
     );
     expect(await screen.findByText(/: 42%/)).toBeTruthy();
+  });
+});
+
+describe('updates section follows pushes (CF1 Task 16)', () => {
+  it('shows a state main pushes, and a skip from the toast', async () => {
+    const { api, pushUpdate } = fake();
+    render(<UpdatesSection desktop={api} />);
+    await screen.findByText('You are on the latest version.');
+    act(() => pushUpdate({ phase: 'available', version: '2.0.0', mode: 'self' }));
+    expect(await screen.findByRole('button', { name: 'Download update' })).toBeTruthy();
+    await act(() => api.update.skip('2.0.0'));
+    expect(await screen.findByText('You are on the latest version.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Download update' })).toBeNull();
   });
 });
 

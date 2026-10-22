@@ -16,10 +16,9 @@ gRPC-Web (D600), and this SDK speaks the two HTTP-shaped ones:
 
 ## Install
 
-Download `loams-cpp-0.1.0.tar.gz` from the
+Download `loams-cpp-0.1.1.tar.gz` from the
 [GitHub release](https://github.com/ostrium-labs/loams/releases) and use it from
 CMake with `find_package(loams CONFIG)`. There are no vcpkg or Conan ports yet.
-<!-- verify after publish -->
 
 ## Requirements
 
@@ -113,6 +112,69 @@ loams->System()->Version();                               // PROTO_REV vs api_ve
 
 Module and method names are `PascalCase`, which is design §44 §7.1's rule for C++.
 
+## Build an app
+
+The app-building modules (SDKP) are `Namespaces()`, `Collections()`,
+`Documents()`, `Search()`, `Vector()` and `Graph()` (experimental), with the
+`Schema`, `Filter` and `Search` builders (`loams/builders.hpp`) and
+`Collection(name)`, a handle that fills the collection in.
+[`examples/notes/main.cpp`](examples/notes/main.cpp) is the whole flow, and the
+build compiles it:
+
+```cpp
+loams::Options options = loams::OptionsFromEnv();  // LOAMS_ENDPOINT, LOAMS_API_KEY, LOAMS_NAMESPACE
+options.session_consistency = true;                 // reads see this client's writes
+auto client = loams::MakeLoams(std::move(options));
+
+client->Namespaces()->Create("app");
+client->Collections()->Create("notes",
+    loams::Schema().Keyword("title").Text("body").Keyword("tags").I64("n").Vector("embedding", 4));
+
+auto notes = client->Collection("notes");
+notes.Upsert({loams::Document::FromJson(1, R"({"title":"Refunds","body":"refund policy","tags":["policy"]})",
+                                        {{"embedding", {1, 0, 0, 0}}})});
+
+auto hits = notes.Search(loams::Search()
+    .Text("refund", {{"body"}, {}})
+    .Vector("embedding", {1, 0, 0, 0})
+    .Fuse(loams::Fusion::Rrf(60))  // or Dbsf(), Weighted({0.7f, 0.3f})
+    .Where(loams::Filter::Eq("tags", loams::Json("policy")))
+    .Highlight("body")
+    .Limit(10));
+```
+
+- **Answers are the response messages** (`collection_v1::SearchResponse` and so on);
+  `loams::DocId::From(hit.pk())` gives a key back.
+- **Writes.** `Documents()->Upsert`, `Delete`, `Patch` and `Write` (raw ops) answer
+  a consistency `token`. `WriteBatch(collection, docs, {chunk_rows, chunk_bytes})`
+  sends chunks one at a time, each with its own idempotency key, and answers a
+  `BatchResult` (merged `token`, `chunks`, `rows`); a failed chunk throws
+  `BatchError` with `ChunksApplied()` and the `Token()` of the chunks before it.
+- **Reads.** `Get`, `Count`, `Scroll` / `ScrollAll` / `ScrollEach`, `Search()->Query`,
+  `QueryAll` / `QueryEach` (follow `search_after`; the sort must end with
+  `Sort::Pk()`), `Text`, `Hybrid` and `Vector()->Search`. `ReadOptions::consistency`
+  is `strong`, `eventual` or a token.
+- **Graph** (experimental): `Create`, `Query` (GQL with `GraphValue` parameters; a
+  read-only statement retries as a read), `QueryBatch`, `Explain`, `ListAll`,
+  `Delete`; `GraphModule::Records(response)` gives rows as maps.
+- **The default namespace** (`Options::default_namespace`, or `CallOptions::ns`)
+  fills every request that names none; with neither the call throws
+  `InvalidArgumentError` before any network call. **Timeouts**: `Options::timeout`
+  (30 s) is a unary call's budget, retries included, sent as `connect-timeout-ms`;
+  `CallOptions::timeout` overrides it. A spent budget throws `DeadlineExceededError`
+  with `UnknownReason() == "client_deadline_exceeded"` and is never retried.
+- **SQL** (`loams/data.hpp`): `Sql()->Query(sql, {Json(1), …}, {max_rows, consistency})`
+  answers `columns` and `rows`; `SqlModule::Records(res)` gives rows as maps. `QueryArrow`
+  answers the Arrow IPC bytes. SQL reads see the session's collection writes.
+- **Streams:** `Streams()->Create`, `Get`, `List` / `ListAll`, `Produce(stream, records,
+  {partition, producer_id, producer_seq})` (a `ProduceRecord` has an optional key, a value and
+  headers; a repeated producer sequence is deduplicated), `Fetch`, `ProduceEvents` /
+  `FetchEvents` (CloudEvents as a JSON array), and `Subscribe(stream, {partition, offset})`, a
+  `loams::Subscription` pull reader (`Next()`, `Cancel()`, `Offset()` to resume).
+- Durable execution has no module: use a Resonate SDK with `LOAMS_ENDPOINT/durable/`.
+- `ctest -R cpp_app_` runs the app scenario against `LOAMS_TEST_ENDPOINT`
+  (skipped without one); the other `cpp_*` app tests need no server.
+
 ## What the runtime does
 
 | Clause | Where | What it means here |
@@ -120,7 +182,7 @@ Module and method names are `PascalCase`, which is design §44 §7.1's rule for 
 | **R1** credentials | `loams/token_source.hpp` | A bearer from a token source, in `Authorization: Bearer`, **never** in a URL. A `401` with `reason = token_expired` triggers exactly **one** refresh and **one** retry; a second expiry reaches the caller as a `TokenExpiredError`. An API key cannot refresh, so its refresh is the no-op the contract describes. |
 | **R2** retry | `loams/retry.hpp` | A call's retry class comes from the binding table, not from a guess. Retryable: `unavailable`, `deadline_exceeded`, `resource_exhausted`. Base 100 ms, ×2, cap 2 s, 3 retries, **full** jitter. `max_retries = 0` disables. |
 | **R3** idempotency | `loams/idempotency.hpp` | A mutating call that declares `idempotency_key` gets one **per logical call**, minted before the first attempt, and **the same key on every retry** — a UUIDv7 unless the caller supplies one. The request is cloned, never mutated in place. |
-| **R4** consistency | `loams/consistency.hpp` | `session_consistency` is **off by default**. A store folds returned tokens in and attaches them to later reads; two *different* tokens meeting is an **error**, not a merge, because the `v1:` encoding is not in the protos yet and a silently-merged token reads stale data. |
+| **R4** consistency | `loams/consistency.hpp` | `ConsistencyToken` parses the `v1:` encoding and merges two tokens (max offset per stream and partition). `session_consistency` is **off by default**; with it on, the app modules merge every `token`, `read_token` and `consistency_token` into the session (one per proto package) and send `consistency.at_least` on every read that leaves `consistency` unset. |
 | **R5** unavailable services | `loams/system.hpp` | `Available`/`Served`/`Unavailable`/`Guard` read `GetInstance.services[]`, cached for the life of the client with one shared in-flight fetch. `Guard` raises the **same** `FeatureNotInVariantError` a call does, so one `catch` covers both. |
 | **R6** pagination | `loams/pagination.hpp` | `PageIterator` follows `next_page_token` to the end and yields **items**, not pages. It is refused at construction for an unpaged binding, because an iterator over one returns a single page and looks like a complete list. |
 | **R7** streams | `loams/stream.hpp` | Server streams only (D420). A `MessageStream` tracks the cursor of every message and re-opens from it on a retryable failure, so a reconnect neither misses what changed nor re-yields what it already yielded. A stream with no resume **reports** rather than starting over. |

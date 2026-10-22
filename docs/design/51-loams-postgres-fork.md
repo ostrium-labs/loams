@@ -392,6 +392,8 @@ The pgrx-based extensions (`pg_jsonschema`, `pg_graphql`, `pg_tiktoken`, `pgx_ul
 
 ## 8. Postgres 18 and 19 (D813, D814)
 
+> **Detail superseded by [§62](62-postgres-major-versions.md)** (2026-10-18, Proposed): the per-major changes as checked against 18.6 and 19 RC1, 19's GA date (2026-11-19, not 2026-10-29), the base of the 18 branch, the support window (16 supported again), promotion rules and upgrade paths. This section is kept as written.
+
 ### 8.1 Support policy (answers Q649)
 
 | Major | Upstream EOL (verify) | Loams state | What we build |

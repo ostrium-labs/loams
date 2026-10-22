@@ -29,6 +29,7 @@ from collections.abc import Iterator, Mapping
 from types import TracebackType
 from typing import Any, TypeVar, cast
 
+from connectrpc.code import Code
 from google.protobuf.message import Message
 
 from loams._gen.facade import (
@@ -36,12 +37,24 @@ from loams._gen.facade import (
     PROTO_PACKAGES,
     PROTO_REV,
     CallBinding,
+    GraphModuleSync,
     InstanceModuleSync,
     LiveModuleSync,
     ModuleBinding,
     TablesModuleSync,
+    VectorModuleSync,
 )
-from loams.runtime.call import CallInvoker
+from loams.app import attach_app_calls
+from loams.app_types import (
+    CollectionsNamespace,
+    DocumentsNamespace,
+    NamespacesNamespace,
+    SearchNamespace,
+    SqlNamespace,
+    StreamsNamespace,
+)
+from loams.handle import CollectionHandle
+from loams.runtime.call import DEFAULT_TIMEOUT_MS, CallInvoker
 from loams.runtime.consistency import ConsistencySession
 from loams.runtime.errors import LoamsError
 from loams.runtime.options import CallOptions, ConsistencyTokenStore, PageRequestOptions
@@ -89,6 +102,30 @@ class _Module:
         return f"<loams.{self.module} ({self.service})>"
 
 
+def _from_env(
+    environ: Mapping[str, str] | None, overrides: dict[str, Any]
+) -> tuple[str, dict[str, Any]]:
+    """The endpoint and constructor arguments `from_env` reads, for both clients."""
+    import os
+
+    env = os.environ if environ is None else environ
+    endpoint = overrides.pop("endpoint", None) or env.get("LOAMS_ENDPOINT", "")
+    if not endpoint:
+        raise LoamsError(
+            "Loams.from_env: LOAMS_ENDPOINT is not set",
+            code=Code.INVALID_ARGUMENT,
+            metadata={"field": "LOAMS_ENDPOINT"},
+        )
+    kwargs = dict(overrides)
+    key = env.get("LOAMS_API_KEY") or env.get("LOAMS_TOKEN")
+    if key and "api_key" not in kwargs and "auth" not in kwargs:
+        kwargs["api_key"] = key
+    namespace = env.get("LOAMS_NAMESPACE")
+    if namespace and "namespace" not in kwargs:
+        kwargs["namespace"] = namespace
+    return endpoint, kwargs
+
+
 def build_modules(invoker: CallInvoker) -> dict[str, Any]:
     """One object per generated module.
 
@@ -131,6 +168,7 @@ class Loams:
         max_retries: int = DEFAULT_MAX_RETRIES,
         session_consistency: bool = False,
         timeout_ms: int | None = None,
+        namespace: str | None = None,
     ) -> None:
         """Builds a client for one instance.
 
@@ -150,22 +188,21 @@ class Loams:
             (D609). **Off by default**: every read is then `STRONG` on its own,
             which is correct but does not give read-your-writes across processes.
 
-            **Turning this on does not yet give you read-your-writes, and nothing
-            warns you.** D609 puts the token in the response message *and* in the
-            response header `loams-consistency-token`. No generated message has a
-            `consistency_token` field, so that half of the contract is not there
-            to read; and `connectrpc==0.12.1` exposes only `execute_unary` and
-            `execute_server_stream`, which return the message and discard the
-            response headers, so the other half is unreachable too. The store
-            therefore stays empty and no `loams-consistency` header is ever sent.
-
-            So this is currently a no-op that costs an allocation. It is kept
-            because the flag is the documented shape of the feature and the store
-            is correct once a token can reach it. `loams.consistency` is `None`
-            when the flag is off; with it on, the store is there and
-            `loams.consistency.current()` is still `None`, which is how you can
-            tell. `tests/test_consistency.py` pins the gap, and fails on a
-            connectrpc upgrade that would let us close it.
+            With it on, every consistency token a response carries -- the
+            `consistency_token`, `token` and `read_token` fields and the
+            `loams-consistency-token` header -- merges into `loams.consistency`
+            (max offset per stream and partition, R4), and every later read whose
+            request has a `consistency` field is sent `at_least` the session
+            when the caller left that field unset.
+        :param timeout_ms: the deadline of every unary call that does not set its
+            own (R12). Default 30 000; `0` disables it. One budget covers a
+            call's retries, and running out raises `DeadlineExceededError` with
+            reason `client_deadline_exceeded`, which is never retried. Streams
+            have no default deadline.
+        :param namespace: the namespace of every request that has a `namespace`
+            field and leaves it empty (R11). An explicit namespace wins; with
+            neither, such a call raises `InvalidArgumentError` before any
+            network call.
         """
         if api_key is not None and auth is not None:
             raise ValueError("pass api_key or auth, not both: they answer the same question")
@@ -177,10 +214,11 @@ class Loams:
 
         from loams.runtime.transports import protocol_of
 
+        # The deadline is the invoker's (R12), not the transport's, so one budget
+        # covers a call's retries and `timeout_ms=0` can disable it.
         options = transport_options or TransportOptions(
             proto_json=proto_json,
             protocol=protocol_of(protocol),
-            timeout_ms=timeout_ms,
         )
         client = make_sync_client(options.merge(endpoint))
         self._client = client
@@ -199,10 +237,20 @@ class Loams:
         self._consistency: ConsistencySession | None = (
             ConsistencySession() if session_consistency else None
         )
-        self._invoker = CallInvoker(client, source, max_retries, self._consistency)
+        self._invoker = CallInvoker(
+            client,
+            source,
+            max_retries,
+            self._consistency,
+            namespace=namespace,
+            timeout_ms=DEFAULT_TIMEOUT_MS if timeout_ms is None else timeout_ms,
+        )
+        #: The default namespace (R11), if the client has one.
+        self.namespace: str | None = namespace
         self._endpoint = endpoint
 
         modules = build_modules(self._invoker)
+        attach_app_calls(modules, MODULES)
         #: Every generated module, by name: the catalogue a caller iterates. A
         #: module the generator has not seen yet is absent, so `modules` is how a
         #: caller asks what this build can do before naming one.
@@ -210,7 +258,40 @@ class Loams:
         self.instance = cast(InstanceModuleSync, modules["instance"])
         self.live = cast(LiveModuleSync, modules["live"])
         self.tables = cast(TablesModuleSync, modules["tables"])
+        #: `loams.namespaces`: the containers every collection and stream live in.
+        self.namespaces = cast(NamespacesNamespace, modules["namespaces"])
+        #: `loams.collections`: collections, their schemas, aliases and versions.
+        self.collections = cast(CollectionsNamespace, modules["collections"])
+        #: `loams.documents`: write, read, scroll and count, with the conveniences.
+        self.documents = cast(DocumentsNamespace, modules["documents"])
+        #: `loams.search`: text, vector and hybrid search (`Search` builds one).
+        self.search = cast(SearchNamespace, modules["search"])
+        #: `loams.vector`: the kNN half of `search`, by its own name (Q613).
+        self.vector = cast(VectorModuleSync, modules["vector"])
+        #: `loams.graph`: Loams Graph, queried with GQL. Its package is unstable.
+        self.graph = cast(GraphModuleSync, modules["graph"])
+        #: `loams.sql`: one read-only SQL statement over a namespace's collections.
+        self.sql = cast(SqlNamespace, modules["sql"])
+        #: `loams.streams`: a namespace's logs, with `subscribe` (R14).
+        self.streams = cast(StreamsNamespace, modules["streams"])
         self.system = SystemApi(self.instance.get_instance)
+
+    @classmethod
+    def from_env(
+        cls,
+        environ: Mapping[str, str] | None = None,
+        **overrides: Any,
+    ) -> Loams:
+        """A client from the environment (R1): `LOAMS_ENDPOINT`, then
+        `LOAMS_API_KEY` or `LOAMS_TOKEN`, then `LOAMS_NAMESPACE`. A keyword
+        argument wins over the environment."""
+        endpoint, kwargs = _from_env(environ, overrides)
+        return cls(endpoint, **kwargs)
+
+    def collection(self, name: str, *, namespace: str | None = None) -> CollectionHandle:
+        """A handle on one collection: its document and search calls with
+        `collection` (and `namespace`) filled in (SDKP §2.8). Holds no state."""
+        return CollectionHandle(self.modules, name, namespace=namespace)
 
     # -- lifecycle ---------------------------------------------------------
 

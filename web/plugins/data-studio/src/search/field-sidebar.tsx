@@ -3,7 +3,7 @@
 // current filter matches, with buttons to filter for or out a value.
 
 import type { JsonObject, JsonValue } from '@bufbuild/protobuf';
-import { Button, cx } from '@loams/ui';
+import { Button, cx, SearchInput } from '@loams/ui';
 import { ChevronDown, ChevronRight, Columns3, Minus, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { bucketsOf, type DataClient } from '../client.js';
@@ -35,16 +35,16 @@ export function FieldSidebar(p: FieldSidebarProps) {
   return (
     <aside aria-label="Fields" className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center justify-between">
-        <h2 className="m-0 text-small font-semibold text-muted uppercase tracking-wide">Fields</h2>
+        <h2 className="m-0 text-small font-medium text-muted">Fields</h2>
         <span className="text-small text-faint">{p.fields.length}</span>
       </div>
       {p.fields.length > 8 && (
-        <input
-          className="loams-input"
-          aria-label="Filter fields"
+        <SearchInput
+          size="compact"
+          label="Filter fields"
           placeholder="Filter fields"
           value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
+          onValueChange={setFilterText}
         />
       )}
       <ul className="m-0 flex list-none flex-col gap-0.5 p-0">

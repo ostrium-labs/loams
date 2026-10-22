@@ -170,6 +170,11 @@ impl Grants {
 
     /// Whether `database.table` is granted.
     pub fn allows(&self, database: &str, table: &str) -> bool {
+        // `_house` is the House's own (the query log, HS1 Task 23): no grant
+        // reaches it, not even `*.*`.
+        if database == crate::querylog::HOUSE_DATABASE {
+            return false;
+        }
         self.0
             .iter()
             .any(|(d, t)| (d == "*" || d == database) && (t == "*" || t == table))
@@ -177,6 +182,9 @@ impl Grants {
 
     /// Whether every table of `database` is granted (what database DDL needs).
     pub fn allows_database(&self, database: &str) -> bool {
+        if database == crate::querylog::HOUSE_DATABASE {
+            return false;
+        }
         self.0
             .iter()
             .any(|(d, t)| (d == "*" || d == database) && t == "*")
@@ -184,6 +192,9 @@ impl Grants {
 
     /// Whether some table of `database` may be granted (it is listed).
     pub fn mentions_database(&self, database: &str) -> bool {
+        if database == crate::querylog::HOUSE_DATABASE {
+            return false;
+        }
         self.0.iter().any(|(d, _)| d == "*" || d == database)
     }
 }
@@ -319,16 +330,20 @@ pub fn not_granted(user: &UserMap, database: &str, table: &str) -> HouseError {
 
 /// Whether `user` may touch `database.table`.
 pub fn granted(user: &UserMap, database: &str, table: &str) -> bool {
-    user.grants
-        .as_ref()
-        .is_none_or(|grants| grants.allows(database, table))
+    database != crate::querylog::HOUSE_DATABASE
+        && user
+            .grants
+            .as_ref()
+            .is_none_or(|grants| grants.allows(database, table))
 }
 
 /// Whether `user` may run DDL on `database` itself.
 pub fn granted_database(user: &UserMap, database: &str) -> bool {
-    user.grants
-        .as_ref()
-        .is_none_or(|grants| grants.allows_database(database))
+    database != crate::querylog::HOUSE_DATABASE
+        && user
+            .grants
+            .as_ref()
+            .is_none_or(|grants| grants.allows_database(database))
 }
 
 #[cfg(test)]

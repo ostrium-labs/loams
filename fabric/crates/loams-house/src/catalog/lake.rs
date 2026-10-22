@@ -193,6 +193,9 @@ pub struct Lake {
     /// The front's quotas (HS1 Task 22): the `pipes` quota, checked where
     /// pipes are made. Set once, when the front starts serving.
     quotas: std::sync::OnceLock<Arc<crate::quota::Quotas>>,
+    /// The front's metrics (HS1 Task 23): its commits and compactions count
+    /// here, and its surfaces share them.
+    metrics: Arc<crate::metrics::Metrics>,
 }
 
 /// How many pipes and materialized views a namespace may hold (§49 §12: 32 and
@@ -251,7 +254,13 @@ impl Lake {
             pipe_states: Arc::default(),
             object_caps: ObjectCaps::default(),
             quotas: std::sync::OnceLock::new(),
+            metrics: Arc::default(),
         }
+    }
+
+    /// The front's metrics (HS1 Task 23).
+    pub fn metrics(&self) -> &Arc<crate::metrics::Metrics> {
+        &self.metrics
     }
 
     /// Holds the namespaces' pipes to `quotas` (HS1 Task 22). The first call
@@ -273,11 +282,14 @@ impl Lake {
     /// The commit queues of this lake's tables (HS1 Task 12).
     pub fn committer(&self) -> Arc<crate::commit::Committer> {
         Arc::clone(self.committer.get_or_init(|| {
-            Arc::new(crate::commit::Committer::new(crate::commit::CommitIo {
-                catalog: Arc::clone(&self.catalog),
-                store: self.store.clone(),
-                root: self.root.clone(),
-            }))
+            Arc::new(
+                crate::commit::Committer::new(crate::commit::CommitIo {
+                    catalog: Arc::clone(&self.catalog),
+                    store: self.store.clone(),
+                    root: self.root.clone(),
+                })
+                .with_metrics(Arc::clone(&self.metrics)),
+            )
         }))
     }
 
@@ -479,7 +491,9 @@ impl Lake {
             let Some(name) = child.as_ref().last().cloned() else {
                 continue;
             };
-            if name.starts_with(RESERVED_PREFIX) {
+            // `_house` (the query log, HS1 Task 23) is the House's own: never
+            // listed; [`Lake::house_tables`] finds it for the House's sweeps.
+            if name.starts_with(RESERVED_PREFIX) || name == crate::querylog::HOUSE_DATABASE {
                 continue;
             }
             let comment = self
@@ -590,7 +604,11 @@ impl Lake {
             .await
         {
             Ok(tables) => Ok(tables.into_iter().map(|t| t.name().to_string()).collect()),
-            Err(CatalogError::NoSuchNamespace(_)) if database == "default" => Ok(Vec::new()),
+            Err(CatalogError::NoSuchNamespace(_))
+                if database == "default" || database == crate::querylog::HOUSE_DATABASE =>
+            {
+                Ok(Vec::new())
+            }
             Err(CatalogError::NoSuchNamespace(_)) => Err(unknown_database(database)),
             Err(err) => Err(err.into()),
         }

@@ -3,7 +3,7 @@
 
 import { ConnectError } from '@connectrpc/connect';
 import { type Loaded, useLoad as useSharedLoad } from '@loams/desktop-ui';
-import { Notice } from '@loams/ui';
+import { Button, Notice, SelectionGroup, SelectionIndicator } from '@loams/ui';
 
 export function errorText(e: unknown): string {
   if (e instanceof ConnectError) return e.rawMessage || e.message;
@@ -18,11 +18,31 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[]): [Loaded<T>,
   return useSharedLoad(load, deps, { errorText });
 }
 
-export function ErrorNotice({ title, message }: { title: string; message: string }) {
-  return (
+export function ErrorNotice({
+  title,
+  message,
+  retry,
+}: {
+  title: string;
+  message: string;
+  /** Offers "Try again" under the notice. */
+  retry?: () => void;
+}) {
+  const notice = (
     <Notice tone="danger" title={title}>
       {message}
     </Notice>
+  );
+  if (!retry) return notice;
+  return (
+    <div className="flex flex-col gap-2">
+      {notice}
+      <div>
+        <Button size="sm" onClick={retry}>
+          Try again
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -56,18 +76,23 @@ export function Tabs({
 }) {
   return (
     <div className="ds-tabs" role="tablist" aria-label="Data views">
-      {TABS.filter((t) => coll || t.id === 'sql').map((t) => (
-        <button
-          key={t.id}
-          type="button"
-          role="tab"
-          aria-selected={t.id === active}
-          className="ds-tab"
-          onClick={() => navigate(tabPath(ns, coll, t.id))}
-        >
-          {t.label}
-        </button>
-      ))}
+      <SelectionGroup>
+        {TABS.filter((t) => coll || t.id === 'sql').map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={t.id === active}
+            className="ds-tab"
+            onClick={() => navigate(tabPath(ns, coll, t.id))}
+          >
+            {t.label}
+            {t.id === active && (
+              <SelectionIndicator layoutId="ds-tab" className="ds-tab-indicator" />
+            )}
+          </button>
+        ))}
+      </SelectionGroup>
     </div>
   );
 }

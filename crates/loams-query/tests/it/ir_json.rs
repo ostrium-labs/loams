@@ -675,7 +675,10 @@ fn sort_and_field_values_serialize_normalized() {
         assert_eq!(to(&value), json::pk::to_json(&pk));
     }
     assert_eq!(SortValue::I64(-1).as_pk(), None);
-    assert_eq!(SortValue::F64(1.0).as_pk(), None);
+    // A whole double is the id a Connect answer's `sort_values` spelled as a
+    // `google.protobuf.Value` number (SDKP); a fraction names no key.
+    assert_eq!(SortValue::F64(1.0).as_pk(), Some(PrimaryKey::U64(1)));
+    assert_eq!(SortValue::F64(1.5).as_pk(), None);
     assert_eq!(from::<Fuzziness>(json!("auto")), Fuzziness::Auto);
     assert_eq!(from::<Fuzziness>(json!(2)), Fuzziness::Edits(2));
     assert!(serde_json::from_value::<Fuzziness>(json!(3)).is_err());
@@ -1905,4 +1908,48 @@ fn metastore_errors_of_an_append_are_unavailable() {
     // Other metastore errors keep the direct mapping.
     let config = ServiceError::from(LogError::Meta(MetaError::Config("bad".to_string())));
     assert!(matches!(config, ServiceError::Internal(_)), "{config:?}");
+}
+
+/// A retriever without `k` parses, and takes `max(10, offset + limit)`; one
+/// with `k` keeps it (SDKP: the builders send no `k` unless asked).
+#[test]
+fn an_omitted_k_is_the_window() {
+    let parse = |body: serde_json::Value| {
+        loams_query::json::hybrid::parse_query_body(body, 0).expect("parses")
+    };
+    let k_of = |request: &SearchRequest, at: usize| match &request.retrievers[at] {
+        loams_query::Retriever::Text { k, .. } | loams_query::Retriever::Vector { k, .. } => *k,
+        other => panic!("unexpected {other:?}"),
+    };
+    let small = parse(serde_json::json!({"collection": "c", "limit": 3,
+        "retrievers": [{"text": {"query": "match_all"}}]}));
+    assert_eq!(k_of(&small, 0), 10);
+    let large = parse(
+        serde_json::json!({"collection": "c", "limit": 40, "offset": 20,
+        "retrievers": [{"vector": {"field": "e", "query": [1.0]}}, {"text": {"query": "match_all", "k": 7}}]}),
+    );
+    assert_eq!(k_of(&large, 0), 60);
+    assert_eq!(k_of(&large, 1), 7);
+    let hybrid = parse(serde_json::json!({"from": "c", "limit": 25,
+        "retrieve": [{"text": {"field": "body", "query": "x"}}]}));
+    assert_eq!(k_of(&hybrid, 0), 25);
+}
+
+/// A primary-key sort value that came back as a whole double (a Connect
+/// answer's number) is the key it names; a fraction or a negative is not one.
+/// An integer past 2^53 reads back from `{"uint": "…"}` exactly.
+#[test]
+fn a_whole_double_is_a_primary_key() {
+    use loams_collection::PrimaryKey;
+    use loams_query::SortValue;
+    assert_eq!(SortValue::F64(2.0).as_pk(), Some(PrimaryKey::U64(2)));
+    assert_eq!(SortValue::F64(2.5).as_pk(), None);
+    assert_eq!(SortValue::F64(-1.0).as_pk(), None);
+    let big: SortValue =
+        serde_json::from_value(serde_json::json!({"uint": "18446744073709551615"}))
+            .expect("a uint");
+    assert_eq!(big, SortValue::U64(u64::MAX));
+    let small: SortValue =
+        serde_json::from_value(serde_json::json!({"int": "-9007199254740993"})).expect("an int");
+    assert_eq!(small, SortValue::I64(-9_007_199_254_740_993));
 }

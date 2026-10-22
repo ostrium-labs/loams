@@ -30,10 +30,9 @@ permissions:
   contents: read
 
 # Runners (owner, 2026-10-11; Depot removed): GitHub-hosted ubuntu-24.04 by
-# default, free for this public repository. Only the heavy Rust jobs that
-# starve a 4 vCPU / 16 GB runner (fmt and clippy, Rust tests, feature tests,
-# Live, Graph, agentd, durable linearizability) run on Blacksmith 8 vCPU,
-# whose free minutes are counted per vCPU: keep light jobs off it.
+# default, free for this public repository. Blacksmith removed (owner,
+# 2026-10-19): every job runs on GitHub-hosted runners. The RUNNER_HEAVY and
+# RUNNER_MAIN repository variables can still override the labels.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   # A newer dev head supersedes an older one; main runs to completion.
@@ -56,7 +55,7 @@ jobs:
       pull-requests: read
     outputs:
       # 'false' on a draft pull request without the `ci:full` label: the heavy
-      # jobs (Blacksmith and macOS) wait until it is ready for review.
+      # jobs (heavy Rust and macOS) wait until it is ready for review.
       heavy: ${{ github.event.pull_request.draft != true || contains(github.event.pull_request.labels.*.name, 'ci:full') }}
       # 'true' on a pull request into main: the full tier.
       full: ${{ github.base_ref == 'main' }}
@@ -417,8 +416,12 @@ jobs:
     name: "Rust: fmt and clippy"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.rust == 'true') }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
     steps:
+      - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -503,11 +506,15 @@ jobs:
     name: "Rust: tests"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.rust == 'true') && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
     # A hung test fails the job instead of holding the runner; nextest also
     # terminates a loams-agentd* test after 3 minutes (.config/nextest.toml).
     timeout-minutes: 120
     steps:
+      - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -536,10 +543,14 @@ jobs:
     # ~80 agentd-sessions tests unrun.
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.agentd == 'true') && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
     # PTY, shell and harness-fixture tests; a hung one fails the job.
     timeout-minutes: 60
     steps:
+      - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
@@ -580,8 +591,12 @@ jobs:
     name: "Rust: feature tests"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.rust == 'true'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
     steps:
+      - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -693,6 +708,21 @@ jobs:
         run: |
           crates/loams-qdrant/tests/python/run.sh 1.19.1 modern | tee "$RUNNER_TEMP/modern.log"
           grep -q '^qdrant-client 1.19.1 modern: [0-9]* checks passed$' "$RUNNER_TEMP/modern.log"
+      # @qdrant/js-client-rest, the client @mastra/qdrant uses (MA1 Task 25).
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.27.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: qdrant-js 1.18.0
+        run: |
+          crates/loams-qdrant/tests/js/run.sh 1.18.0 | tee "$RUNNER_TEMP/js-1.18.log"
+          grep -q '^qdrant-js 1.18.0: [0-9]* checks passed$' "$RUNNER_TEMP/js-1.18.log"
+      - name: qdrant-js 1.19.0
+        run: |
+          crates/loams-qdrant/tests/js/run.sh 1.19.0 | tee "$RUNNER_TEMP/js-1.19.log"
+          grep -q '^qdrant-js 1.19.0: [0-9]* checks passed$' "$RUNNER_TEMP/js-1.19.log"
       - name: loams log
         if: failure()
         run: tail -n 200 "$RUNNER_TEMP/loams.log" || true
@@ -874,11 +904,13 @@ jobs:
   # R1 plan Task 1: the TiKV-backed suites against a tiup playground (PD and
   # TiKV v8.5.8 on API v2, port offset 17000). Promotion PRs run it only when
   # they touch the TiKV crates, their cluster config or scripts, or the Live
-  # protos (the `tikv` filter in the changes job). Nightly has its own job.
+  # protos (the `tikv` filter in the changes job). A pull request into dev
+  # with the `ci:tikv` label runs it too, on the same filter (label, then a
+  # push). Nightly has its own job.
   tikv:
     name: "TiKV: suites"
     needs: changes
-    if: ${{ !cancelled() && inputs.nightly != true && (needs.changes.result == 'skipped' || (github.base_ref == 'main' && needs.changes.outputs.tikv == 'true')) }}
+    if: ${{ !cancelled() && inputs.nightly != true && (needs.changes.result == 'skipped' || ((github.base_ref == 'main' || contains(github.event.pull_request.labels.*.name, 'ci:tikv')) && needs.changes.outputs.tikv == 'true')) }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -955,8 +987,12 @@ jobs:
     name: "Live: embedded store"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.live-embedded == 'true'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
     steps:
+      - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -1081,11 +1117,15 @@ jobs:
     name: "Durable: SQLite linearizability"
     needs: changes
     if: ${{ !cancelled() && (inputs.nightly != true && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.durable == 'true')))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
     timeout-minutes: 120
     env:
       DURABLE_FORK_TARGET_DIR: ${{ github.workspace }}/target/durable-fork-build
     steps:
+      - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -1327,6 +1367,16 @@ jobs:
           git diff --exit-code -- sdks/typescript/packages/client/src/gen || {
             echo "sdks/typescript/packages/client/src/gen is stale: run 'scripts/sdk/gen.sh typescript' and commit the result"; exit 1;
           }
+      # SDKP P0a: the facade index the hand-written SDKs check themselves
+      # against, and the descriptor sets Ruby and Kotlin read at runtime, are
+      # generated from the same protos and must not drift either.
+      - name: the facade index and the descriptor sets are up to date
+        run: |
+          ./scripts/sdk/gen.sh index
+          ./scripts/sdk/gen.sh descriptors
+          git diff --exit-code -- sdks/fixtures/facade-index.json sdks/ruby/gen sdks/kotlin/gen || {
+            echo "facade-index.json or a descriptor set is stale: run 'scripts/sdk/gen.sh index' and 'scripts/sdk/gen.sh descriptors' and commit the result"; exit 1;
+          }
       # The golden test compares the committed facade against the generator's
       # output over the real proto/ tree, so a proto edit that changed the SDK
       # surface cannot pass with a stale file.
@@ -1358,6 +1408,11 @@ jobs:
       # short of the bar, 2 no report — all non-zero fail this step.
       - name: the suite meets the 100% required-fixture bar
         run: node sdks/conformance/check-languages.mjs --check typescript
+      # SDKP: the app suite (the app scenario replayed through the public
+      # facade, and every app test named), until S1 folds it into the line
+      # above by making the app fixtures required.
+      - name: the app suite
+        run: node sdks/conformance/check-languages.mjs --check typescript --suite app
       # The same suite against a real server. This is the job that can afford
       # it, and it is what catches a recorded corpus that has drifted from the
       # API (design §44 §10.4). A live `loams dev` does not serve the app
@@ -1442,6 +1497,12 @@ jobs:
       # (issue #374).
       - name: the Rust SDK's generated code is not stale
         run: ./scripts/sdk/drift.sh rust
+      # SDKP: the app suite. `cargo test` above replayed the app scenario
+      # through the facade (tests/app_scenario.rs) and wrote
+      # sdks/fixtures/results/rust.json; this checks it ran every app fixture
+      # and names every app test.
+      - name: the app suite
+        run: node sdks/conformance/check-languages.mjs --check rust --suite app
 
   # SDK2 Task 1: the Python SDK. CI's existing Python jobs are the qdrant
   # smoke and static analysis, neither of which imports this package.
@@ -1459,9 +1520,19 @@ jobs:
       - name: the Python SDK's tests
         working-directory: sdks/python
         run: uv run pytest -q
+      # SDKP: the app suite (the app scenario replayed through the public
+      # facade, sync and async, and every app test named). It reads the report
+      # the tests above just wrote; S1 folds it into the plain check.
+      - name: the app suite
+        run: node sdks/conformance/check-languages.mjs --check python --suite app
       - name: the SDK typechecks under --strict
         working-directory: sdks/python
         run: uv run mypy --strict src
+      # SDKP Part D: the notes app, the scenario as a program, needs no server
+      # to be checked against the API.
+      - name: the examples typecheck under --strict
+        working-directory: sdks/python
+        run: uv run mypy --strict examples
       # A generation difference must be a dependency bump, not whatever the
       # runner resolved, so the runtime pins stay exact.
       - name: the SDK's runtime dependencies are exact pins
@@ -1503,6 +1574,13 @@ jobs:
         if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
         working-directory: sdks/swift
         run: swift test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # against the fixture server and wrote sdks/fixtures/results/swift.json;
+      # this fails the job unless every app fixture was replayed and every SDKP
+      # test is named.
+      - name: the Swift SDK passes the app suite
+        if: ${{ hashFiles('sdks/swift/Package.swift') != '' }}
+        run: node sdks/conformance/check-languages.mjs --check swift --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1560,6 +1638,11 @@ jobs:
       # gen/facade (Q604) is neither regenerated nor cleaned.
       - name: the Go SDK's generated code is not stale
         run: ./scripts/sdk/drift.sh go
+      # SDKP: the app suite. `go test` above replayed the app scenario through
+      # the facade and wrote sdks/fixtures/results/go.json; this checks it ran
+      # every app fixture and names every app test.
+      - name: the app suite
+        run: node sdks/conformance/check-languages.mjs --check go --suite app
 
   # SDK2 Task 11 (#295): the C++ SDK. protobuf 36.1.0 and libcurl 8.x are
   # preinstalled on the runner, and the pinned `buf.build/protocolbuffers/cpp`
@@ -1638,6 +1721,11 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
           cmake --build build -j 4
           ctest --test-dir build --output-on-failure
+      # SDKP: the app suite. ctest replayed the recorded app scenario (cpp_app_*)
+      # and wrote sdks/fixtures/results/cpp.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the C++ SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check cpp --suite app
       # A proto edit that moved the SDK surface must not pass with stale stubs.
       # `scripts/sdk/drift.sh` has no C++ case yet -- it would ask the Rust
       # `protoc-gen-loams-facade` for a facade it cannot render (D644) -- so the
@@ -1701,6 +1789,8 @@ jobs:
       - name: the C# SDK's conformance suite
         working-directory: sdks/csharp
         run: dotnet test Loams.sln -c Release
+      - name: the C# SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check csharp --suite app
       # A proto edit that moved the SDK surface must not pass with stale stubs.
       # `scripts/sdk/drift.sh` has no C# case -- there is no `protoc-gen-loams-facade`
       # template for C#, since the facade is hand-written (D650) -- so the check is
@@ -1753,6 +1843,11 @@ jobs:
       - name: the Java SDK's tests
         working-directory: sdks/java
         run: ./build.sh test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/java.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Java SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check java --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1787,6 +1882,11 @@ jobs:
       - name: the Kotlin SDK's tests
         working-directory: sdks/kotlin
         run: ./build.sh test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/kotlin.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Kotlin SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check kotlin --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1813,6 +1913,11 @@ jobs:
       - name: the Ruby SDK's tests
         working-directory: sdks/ruby
         run: bundle exec rake test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/ruby.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Ruby SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check ruby --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1842,6 +1947,14 @@ jobs:
       - name: the PHP SDK's tests
         working-directory: sdks/php
         run: vendor/bin/phpunit
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/php.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the PHP SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check php --suite app
+      - name: the PHP examples parse
+        working-directory: sdks/php
+        run: for f in examples/*.php examples/*/main.php; do php -l "$f"; done
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1872,6 +1985,11 @@ jobs:
       - name: the Dart SDK's tests
         working-directory: sdks/dart
         run: dart test
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/dart.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Dart SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check dart --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1899,6 +2017,11 @@ jobs:
       - name: the Objective-C SDK's tests
         working-directory: sdks/objc
         run: swift test --disable-swift-testing
+      # SDKP: the app suite. The tests above replayed the recorded app scenario
+      # and wrote sdks/fixtures/results/objc.json; this fails the job unless every
+      # app fixture was replayed and every SDKP test is named.
+      - name: the Objective-C SDK passes the app suite
+        run: node sdks/conformance/check-languages.mjs --check objc --suite app
       # API2 Task 19: a nightly failure opens or updates one issue per language.
       - name: open or update the nightly-failure issue
         if: ${{ failure() && inputs.nightly == true }}
@@ -1915,8 +2038,12 @@ jobs:
     name: "Graph: tests"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.graph == 'true'))) && needs.changes.outputs.heavy != 'false' }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
     steps:
+      - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       - uses: actions/checkout@v7
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
@@ -2028,7 +2155,7 @@ jobs:
     name: "Agentd: RPC fuzzing"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.agentd == 'true'))) }}
-    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'ubuntu-latest') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     # Two targets x 60 s plus the build.
     timeout-minutes: 20
     steps:
@@ -2072,7 +2199,7 @@ jobs:
     name: "Agentd: Studio fuzzing"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.agentd == 'true'))) }}
-    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'blacksmith-4vcpu-ubuntu-2404') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
+    runs-on: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && (vars.RUNNER_MAIN || 'ubuntu-latest') || (vars.RUNNER_LIGHT || 'ubuntu-latest') }}
     # Four targets x 60 s plus the build (the sessions crate is large).
     timeout-minutes: 40
     steps:
@@ -2417,9 +2544,13 @@ jobs:
     name: "Upgrade: previous release → candidate"
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.full == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:upgrade')) }}
-    runs-on: ${{ vars.RUNNER_HEAVY || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.RUNNER_HEAVY || 'ubuntu-latest' }}
     timeout-minutes: 150
     steps:
+      - name: Free disk space (GitHub-hosted runners have about 14 GB free)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0

@@ -76,7 +76,7 @@ export function HistoryPanel({
   };
 
   const title = (
-    <h3 id={`${id}-title`} className="m-0 text-sm">
+    <h3 id={`${id}-title`} className="m-0 text-body">
       History
     </h3>
   );
@@ -84,7 +84,7 @@ export function HistoryPanel({
     return (
       <section aria-labelledby={`${id}-title`} className="flex flex-col gap-2">
         {title}
-        <p className="m-0 text-sm text-muted" role="status">
+        <p className="m-0 text-body text-muted" role="status">
           Query history is not available on this server.
         </p>
       </section>
@@ -115,12 +115,12 @@ export function HistoryPanel({
         </Select>
       </div>
       {error && (
-        <p className="m-0 text-sm text-danger" role="alert">
+        <p className="m-0 text-body text-danger" role="alert">
           {error}
         </p>
       )}
       {!loading && !error && items.length === 0 && (
-        <p className="m-0 text-sm text-muted">No queries match.</p>
+        <p className="m-0 text-body text-muted">No queries match.</p>
       )}
       <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Past queries">
         {items.map((h) => (
@@ -131,7 +131,7 @@ export function HistoryPanel({
             <code className="line-clamp-3 whitespace-pre-wrap break-words text-[12px]">
               {h.query}
             </code>
-            <div className="flex items-center gap-2 text-xs text-muted">
+            <div className="flex items-center gap-2 text-small text-muted">
               <span data-status={h.status}>
                 {h.status.charAt(0) + h.status.slice(1).toLowerCase()}
                 {h.errorCode ? ` (code ${h.errorCode})` : ''}
@@ -157,7 +157,7 @@ export function HistoryPanel({
         </Button>
       )}
       {loading && (
-        <p className="m-0 text-xs text-muted" role="status">
+        <p className="m-0 text-small text-muted" role="status">
           Loading history…
         </p>
       )}

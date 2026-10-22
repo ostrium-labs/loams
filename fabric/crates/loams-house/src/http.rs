@@ -127,9 +127,13 @@ pub struct HouseHandle {
     queues: Option<JoinHandle<()>>,
     views: Option<JoinHandle<()>>,
     storage: Option<JoinHandle<()>>,
+    query_log_task: Option<JoinHandle<()>>,
     /// The usage hub and its quotas (HS1 Task 22).
     usage: Arc<crate::usage::Usage>,
     lake: Option<Arc<Lake>>,
+    /// The front's metrics and its query log (HS1 Task 23).
+    metrics: Arc<crate::metrics::Metrics>,
+    query_log: Option<Arc<crate::querylog::QueryLog>>,
 }
 
 impl HouseHandle {
@@ -146,6 +150,24 @@ impl HouseHandle {
             crate::usage::StorageReporter::new(Arc::clone(lake), Arc::clone(&self.usage))
                 .round(at)
                 .await;
+        }
+    }
+
+    /// Its metrics (HS1 Task 23).
+    pub fn metrics(&self) -> &Arc<crate::metrics::Metrics> {
+        &self.metrics
+    }
+
+    /// Its query log, when it has a catalog (HS1 Task 23).
+    pub fn query_log(&self) -> Option<&Arc<crate::querylog::QueryLog>> {
+        self.query_log.as_ref()
+    }
+
+    /// Writes every namespace's query log rows now (HS1 Task 23), as the
+    /// timer does every `query_log_interval`.
+    pub async fn flush_query_log(&self) {
+        if let Some(log) = &self.query_log {
+            log.flush().await;
         }
     }
 
@@ -195,6 +217,9 @@ impl HouseHandle {
         if let Some(storage) = &self.storage {
             storage.abort();
         }
+        if let Some(task) = &self.query_log_task {
+            task.abort();
+        }
     }
 }
 
@@ -217,6 +242,9 @@ struct Shared {
     admission: Arc<crate::admission::Admission>,
     /// Running statements, both surfaces: `KILL QUERY` (HS1 Task 21).
     processes: Arc<crate::watchdog::Processes>,
+    /// Every statement's end: metrics, operator line, trace, query log (HS1
+    /// Task 23).
+    observer: Arc<crate::querylog::Observer>,
 }
 
 /// connect-rust's service for `loams.house.v1`, which has no `Debug` of its own.
@@ -332,7 +360,26 @@ async fn serve_all(
     // Quotas and usage (HS1 Task 22): one set of counters for both surfaces,
     // fed by every lease's, insert's and storage round's events.
     let quotas = crate::quota::Quotas::new(Arc::clone(&config.quotas));
-    let usage = crate::usage::Usage::new(Arc::clone(&config.usage), Arc::clone(&quotas));
+    // Observability (HS1 Task 23): one set of metrics for the surfaces, the
+    // commits and the compactions; the query log when there is a catalog.
+    let metrics = lake
+        .as_ref()
+        .map_or_else(Arc::default, |lake| Arc::clone(lake.metrics()));
+    metrics.set_namespace_labels(config.metrics_namespace_labels);
+    let query_log = lake
+        .as_ref()
+        .map(|lake| crate::querylog::QueryLog::new(Arc::clone(lake), config.query_log_retention));
+    let observer = Arc::new(crate::querylog::Observer {
+        metrics: Arc::clone(&metrics),
+        tracer: Arc::clone(&config.tracer),
+        oplog: config.operator_log.clone(),
+        log: query_log.clone(),
+    });
+    let usage = crate::usage::Usage::with_metrics(
+        Arc::clone(&config.usage),
+        Arc::clone(&quotas),
+        Arc::clone(&metrics),
+    );
     pool.set_usage(Arc::clone(&usage));
     if let Some(lake) = &lake {
         lake.set_quotas(Arc::clone(&quotas));
@@ -348,6 +395,7 @@ async fn serve_all(
             crate::api::Governance {
                 admission: Arc::clone(&admission),
                 processes: Arc::clone(&processes),
+                observer: Arc::clone(&observer),
             },
         )
         .router(),
@@ -361,6 +409,7 @@ async fn serve_all(
         lake,
         admission,
         processes,
+        observer,
     });
     let tls_shared = Arc::clone(&shared);
     // Background compaction of the lake's tables (HS1 Task 13).
@@ -412,9 +461,13 @@ async fn serve_all(
         Some((listener, bound)) => (
             Some(crate::metrics::serve(
                 listener,
-                shared.pool.clone(),
-                shared.lake.clone(),
-                Arc::clone(&shared.admission),
+                crate::metrics::Sources {
+                    pool: shared.pool.clone(),
+                    lake: shared.lake.clone(),
+                    admission: Arc::clone(&shared.admission),
+                    metrics: Arc::clone(&metrics),
+                    cache: shared.config.cache_metrics.clone(),
+                },
             )),
             Some(bound),
         ),
@@ -450,6 +503,11 @@ async fn serve_all(
         (Some(lake), every) if !every.is_zero() => Some(
             crate::usage::StorageReporter::new(Arc::clone(lake), Arc::clone(&usage)).spawn(every),
         ),
+        _ => None,
+    };
+    // The query log's group commits and its retention (HS1 Task 23).
+    let query_log_task = match (&query_log, shared.config.query_log_interval) {
+        (Some(log), every) if !every.is_zero() => Some(log.spawn(every)),
         _ => None,
     };
     let handle_lake = shared.lake.clone();
@@ -519,8 +577,11 @@ async fn serve_all(
         queues,
         views,
         storage,
+        query_log_task,
         usage,
         lake: handle_lake,
+        metrics,
+        query_log,
     })
 }
 
@@ -926,6 +987,9 @@ struct Meta {
     /// Its admission and its process-list entry (HS1 Task 21), held until the
     /// response ends.
     held: Held,
+    /// Its query log row, metrics, operator line and trace (HS1 Task 23),
+    /// ended when the response does.
+    observed: Option<Arc<crate::querylog::Statement>>,
 }
 
 /// What a statement holds while it runs (HS1 Task 21).
@@ -984,6 +1048,12 @@ impl Meta {
         if let Some(audit) = &self.audit {
             audit.finish(code.unwrap_or(0));
         }
+        if let Some(observed) = &self.observed {
+            observed.progress(last);
+            if let Some(code) = code {
+                observed.fail(code, "");
+            }
+        }
         let mut builder = Response::builder()
             .status(status)
             .header("Content-Type", content_type)
@@ -1034,6 +1104,9 @@ impl Meta {
 
     /// A whole error response (nothing of the result went out).
     fn error(&self, error: &HouseError, last: &Progress, close: bool) -> Response<HouseBody> {
+        if let Some(observed) = &self.observed {
+            observed.fail(error.code(), error.message());
+        }
         let body = self.encode_whole(error.render(&self.version).as_bytes());
         let status =
             StatusCode::from_u16(error.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -1295,6 +1368,7 @@ async fn handle(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Hou
                 snapshot: None,
                 audit: None,
                 held: Held::default(),
+                observed: None,
             };
             return meta.error(&err, &Progress::default(), true);
         }
@@ -1305,7 +1379,23 @@ async fn handle(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Hou
         "/ping" | "/" if reading && (path == "/ping" || !has_query) => {
             plain(StatusCode::OK, "Ok.\n", keep)
         }
-        "/" if reading || method == Method::POST => run(&shared, request, params).await,
+        "/" if reading || method == Method::POST => {
+            // The statement's query log row, metrics, operator line and trace
+            // (HS1 Task 23); its work runs under its root span.
+            let query_id = params
+                .iter()
+                .find(|(k, v)| k == "query_id" && !v.is_empty())
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            let parent = request
+                .headers()
+                .get("traceparent")
+                .and_then(|v| v.to_str().ok())
+                .and_then(crate::trace::SpanContext::from_traceparent);
+            let observed = shared.observer.begin("http", &query_id, parent);
+            let current = observed.current();
+            crate::trace::scope(current, run(&shared, request, params, query_id, observed)).await
+        }
         "/" | "/ping" => plain(StatusCode::METHOD_NOT_ALLOWED, "Use GET or POST.\n", keep),
         _ => plain(
             StatusCode::NOT_FOUND,
@@ -1322,6 +1412,8 @@ async fn run(
     shared: &Arc<Shared>,
     request: Request<Incoming>,
     params: Vec<(String, String)>,
+    query_id: String,
+    observed: Arc<crate::querylog::Statement>,
 ) -> Response<HouseBody> {
     let config = &shared.config;
     let get = |name: &str| {
@@ -1350,10 +1442,7 @@ async fn run(
             .map(|(_, v)| v.clone())
     };
     let mut meta = Meta {
-        query_id: get("query_id")
-            .filter(|id| !id.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        query_id,
         format: get("default_format").unwrap_or("TabSeparated").to_string(),
         timezone: setting("session_timezone").unwrap_or_else(|| "UTC".to_string()),
         encoding: (get("enable_http_compression") == Some("1"))
@@ -1367,6 +1456,7 @@ async fn run(
         snapshot: None,
         audit: None,
         held: Held::default(),
+        observed: Some(Arc::clone(&observed)),
     };
     // Every statement's audit record (HS1 Task 20): the claimed user and
     // principal now, the signed-in identity once known.
@@ -1405,6 +1495,7 @@ async fn run(
         &known,
         shared.lake.is_some(),
         meta.audit.as_deref(),
+        &observed,
     )
     .await;
     let prepared = match prepared {
@@ -1513,6 +1604,7 @@ async fn run(
         .map(str::to_string)
         .or_else(|| session.as_ref().map(|g| g.state().database.clone()))
         .unwrap_or_else(|| "default".to_string());
+    observed.update(|e| e.database = current_database.clone());
     // `SHOW TABLES`, `SHOW DATABASES`, `SHOW PROCESSLIST`: ClickHouse's own
     // `SELECT` over the House's `system` tables (HS1 Task 11).
     let shown = match &classified {
@@ -1753,6 +1845,10 @@ async fn run(
             &sql,
             &all,
             None,
+            Some(crate::read::Front {
+                processes: &shared.processes,
+                query_log: shared.observer.log.as_deref(),
+            }),
         )
         .await
         {
@@ -1790,6 +1886,7 @@ async fn run(
         let close = !body.drain().await;
         return meta.error(&err, &Progress::default(), close);
     }
+    observed.started_on_worker();
     // `KILL QUERY` reaches it from now (one that came first kills it now).
     if let Some(process) = &meta.held.process {
         process.started(lease.kill_handle());
@@ -1829,6 +1926,7 @@ async fn prepare(
     known: &std::collections::HashSet<String>,
     has_lake: bool,
     audit: Option<&Audit>,
+    observed: &crate::querylog::Statement,
 ) -> Result<Prepared, HouseError> {
     let get = |name: &str| {
         params
@@ -1845,6 +1943,7 @@ async fn prepare(
         })
         .collect();
     let user = auth::identify(config, &header_pairs, params)?;
+    observed.identify(&user);
     for name in ["compress", "decompress"] {
         if get(name) == Some("1") {
             return Err(HouseError::from(ChError::not_implemented(format!(
@@ -1896,6 +1995,12 @@ async fn prepare(
             request::plan(&text, false)
         }
     };
+    observed.update(|e| {
+        e.query = match &plan.input {
+            Some(spec) => format!("{} FORMAT {}", spec.insert, spec.format),
+            None => plan.sql.clone(),
+        };
+    });
     let classified = match &plan.input {
         Some(spec) => {
             // The head the body streams into gets the checks every statement gets.
@@ -1925,6 +2030,12 @@ async fn prepare(
             });
         });
     }
+    observed.update(|e| {
+        e.kind = match &classified {
+            Classified::Known { stmt, .. } => stmt.kind().to_string(),
+            Classified::Unparsed { .. } => "Unparsed".to_string(),
+        };
+    });
     if readonly && matches!(&classified, Classified::Known { stmt, .. } if !stmt.is_read()) {
         return Err(readonly_error());
     }
@@ -2099,6 +2210,9 @@ async fn lake_insert(
         }
     };
     meta.worker = Some(lease.worker_id().to_string());
+    if let Some(observed) = &meta.observed {
+        observed.started_on_worker();
+    }
     let known = shared.pool.known_settings();
     let ctx = crate::insert::InsertContext {
         lake,
@@ -2224,6 +2338,9 @@ async fn respond(
             Ok(Event::Progress(progress)) => last = progress,
             Ok(Event::Done(stats)) => {
                 last = stats;
+                if let Some(observed) = &meta.observed {
+                    observed.cpu(lease.measured().cpu);
+                }
                 pool.release(lease, Outcome::Completed);
                 if let Some(guard) = session.as_mut() {
                     guard.confirm_pin();
@@ -2299,7 +2416,16 @@ fn stream_rest(
     tokio::spawn(async move {
         // The session stays checked out until the statement ends (373 meanwhile).
         let mut session = session;
+        let abandoned = |meta: &Meta| {
+            if let Some(observed) = &meta.observed {
+                observed.fail(
+                    crate::querylog::CANCELLED,
+                    "the client went away before the result ended",
+                );
+            }
+        };
         if tx.send(Piece::Data(Bytes::from(pending))).await.is_err() {
+            abandoned(&meta);
             pool.kill(lease, ExitReason::Cancel);
             return;
         }
@@ -2307,6 +2433,9 @@ fn stream_rest(
             match lease.next_event().await {
                 Ok(Event::Chunk(chunk)) => {
                     let Ok(encoded) = encode(&mut encoder, &chunk.bytes) else {
+                        if let Some(observed) = &meta.observed {
+                            observed.fail(1001, "encoding the response failed");
+                        }
                         pool.kill(lease, ExitReason::Cancel);
                         let _ = tx.send(Piece::Abort).await;
                         return;
@@ -2315,12 +2444,17 @@ fn stream_rest(
                         && tx.send(Piece::Data(Bytes::from(encoded))).await.is_err()
                     {
                         // The client went away: the statement is abandoned.
+                        abandoned(&meta);
                         pool.kill(lease, ExitReason::Cancel);
                         return;
                     }
                 }
                 Ok(Event::Progress(_)) => {}
-                Ok(Event::Done(_)) => {
+                Ok(Event::Done(stats)) => {
+                    if let Some(observed) = &meta.observed {
+                        observed.progress(&stats);
+                        observed.cpu(lease.measured().cpu);
+                    }
                     pool.release(lease, Outcome::Completed);
                     if let Some(guard) = session.as_mut() {
                         guard.confirm_pin();
@@ -2335,6 +2469,9 @@ fn stream_rest(
                 }
                 Err(err) => {
                     pool.release(lease, Outcome::Completed);
+                    if let Some(observed) = &meta.observed {
+                        observed.fail(err.code(), err.message());
+                    }
                     // Ruling 9: the rows sent stay, the exception text follows, and
                     // the connection closes without the terminating chunk.
                     let text = err.render(&meta.version);

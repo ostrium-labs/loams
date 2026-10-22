@@ -1,0 +1,98 @@
+# Prometheus alerting rules for Loams House fronts (HS1 Task 23, design §49 §15).
+# Load with `rule_files:` or a PrometheusRule's `spec`; every series comes from
+# the front's admin listener (`GET /metrics` on --admin-listen, 8125).
+groups:
+  - name: loams-house
+    rules:
+      - alert: LoamsHouseErrorRateHigh
+        expr: |
+          sum by (instance) (rate(loams_house_queries_total{status="error"}[5m]))
+            / clamp_min(sum by (instance) (rate(loams_house_queries_total[5m])), 0.001) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 5% of statements fail on {{ $labels.instance }}"
+          description: "Check the operator log (house_statement lines) for the codes."
+      - alert: LoamsHouseLatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (instance, le) (rate(loams_house_query_seconds_bucket[5m]))) > 10
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "p95 statement latency above 10 s on {{ $labels.instance }}"
+      - alert: LoamsHouseQueueBacklog
+        expr: max by (instance) (loams_house_queue_depth) > 20
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Statements wait for admission on {{ $labels.instance }}"
+          description: "Namespace queues or node memory are full; scale out (Task 24) or raise the limits."
+      - alert: LoamsHouseWorkersCrashing
+        expr: sum by (instance) (rate(loams_house_worker_kills_total{reason=~"crash|oom"}[10m])) > 0.05
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "House workers crash or run out of memory on {{ $labels.instance }}"
+      - alert: LoamsHouseWorkerBootSlow
+        expr: |
+          histogram_quantile(0.95, sum by (instance, le) (rate(loams_house_worker_boot_seconds_bucket[15m]))) > 5
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Workers take more than 5 s to boot on {{ $labels.instance }}"
+      - alert: LoamsHouseCommitConflicts
+        expr: sum by (instance) (rate(loams_house_commit_conflicts_total[5m])) > 1
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Lake commits keep losing races on {{ $labels.instance }}"
+      - alert: LoamsHouseCommitsFailing
+        expr: sum by (instance) (rate(loams_house_commits_total{result="failed"}[5m])) > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Lake commits fail on {{ $labels.instance }} (catalog or bucket)"
+      - alert: LoamsHouseCompactionFailing
+        expr: sum by (instance) (increase(loams_house_compaction_runs_total{result="failed"}[1h])) > 3
+        labels: {severity: warning}
+        annotations:
+          summary: "Compactions fail on {{ $labels.instance }}"
+      - alert: LoamsHouseCacheHitRatioLow
+        expr: |
+          sum by (instance) (rate(loams_house_cache_hits_total[15m]))
+            / clamp_min(sum by (instance) (rate(loams_house_cache_hits_total[15m])) + sum by (instance) (rate(loams_house_cache_misses_total[15m])), 1) < 0.5
+        for: 30m
+        labels: {severity: info}
+        annotations:
+          summary: "house-cache serves under half its blocks from cache on {{ $labels.instance }}"
+      - alert: LoamsHousePipeLagging
+        expr: max by (ns, pipe) (loams_house_pipe_lag_records) > 1000000
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Pipe {{ $labels.pipe }} (namespace {{ $labels.ns }}) is a million records behind"
+      - alert: LoamsHousePipeFailing
+        expr: max by (ns, pipe) (loams_house_pipe_errors) == 1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Materialized view {{ $labels.pipe }} (namespace {{ $labels.ns }}) keeps failing"
+          description: "Its last error is in system.loams_pipes."
+      - alert: LoamsHouseQueryLogBehind
+        expr: max by (instance) (loams_house_query_log_pending_rows) > 50000
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "The query log is not being written on {{ $labels.instance }}"
+          description: "Rows past 100 000 are dropped; check the bucket and the catalog."
+      - alert: LoamsHouseQueryLogDropping
+        expr: sum by (instance) (increase(loams_house_query_log_rows_total{result="dropped"}[15m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Query log rows were dropped on {{ $labels.instance }}"
+      - alert: LoamsHouseFrontDown
+        expr: up{job=~".*loams-house.*"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "A House front's admin listener does not answer ({{ $labels.instance }})"

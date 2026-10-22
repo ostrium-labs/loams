@@ -1,0 +1,1390 @@
+syntax = "proto3";
+
+// Loams Memory (design §52, D870–D891; MM1 Task 1): agent memory on Loams'
+// own primitives. A store holds spaces; a space holds episodes (raw inputs),
+// entities, facts (bi-temporal edges between entities) and blocks (core
+// memory). `loams` serves this package behind the cargo feature `memory`
+// (MM1 Task 11); until an RPC's task lands it answers `unimplemented` with
+// the reason `memory_not_yet_available`. Code memory's `CodeMemoryService`
+// is `code.proto`'s (MM1 Task 27).
+//
+// - **Ids** (§52 §6): "ms_" (store), "sp_" (space), "ep_" (episode), "en_"
+//   (entity), "dr_" (dream run) and "bl_" (block) followed by a 26-character
+//   Crockford ULID; "fa_" (fact) followed by 32 lower-case hex characters, a
+//   hash of (space, episode, extraction ordinal), so a retried extraction
+//   writes the same ids. An erasure's id is the one §18 §9's erasure log gives
+//   it.
+// - **Addressing.** Every request names its namespace in a top-level
+//   `namespace = 1` and its store in `store = 2`: the store's name or its
+//   "ms_" id (a name never starts with "ms_"). A space is a `SpaceRef`: its
+//   "sp_" id, or its (kind, external_id) key. Facts, entities, episodes and
+//   blocks are named by their id (a block by its label) inside one space.
+// - **Spaces per call.** A read (`Search`, `GetProfile`) names 1..8 spaces,
+//   each authorized on its own, and every result names its space. A write
+//   names exactly one (`memory_cross_space_write` otherwise).
+// - **Time** (§52 §6.4). World time `Fact.world` is when a fact was true;
+//   system time `Fact.system` is when Loams believed it. Both are half-open
+//   `[start, end)`; an unset `end` is open. `as_of` reads world time and
+//   `known_at` system time; both may be given.
+// - **Updates** change exactly the fields named in `update_mask`; an empty
+//   mask is `invalid_argument` (field `update_mask`), never "every field".
+//   With `expected_version`, an update or delete applies only at that version
+//   (otherwise `aborted`). Blocks take `if_version`, which is required.
+// - **Idempotency.** Every mutation that is not idempotent by construction has
+//   `string idempotency_key = 15` (a client ULID); a replay within 24 h
+//   answers the first response, including the same `Operation` id. A create
+//   keyed by name (`CreateSpace`) and a call that sets state (the updates,
+//   `ConfigureMirror`, `InvalidateFact`, `PinFact`, the compare-and-swap
+//   `UpdateBlock`) take none: a repeat is the same call (API1 ruling 2.4).
+// - **Consistency.** A write answers a `consistency_token`; a read that
+//   passes it sees that write (§52 §7.2).
+// - **Operations.** The long-running RPCs answer a
+//   `loams.operations.v1.Operation`, whose `target` is `{store, space?}`. The
+//   kinds: `memory.store.delete`, `memory.space.move` (an `UpdateSpace` that
+//   changes `isolation`), `memory.space.export`, `memory.space.import`,
+//   `memory.dream.run` and `memory.dream.revert`.
+// - **Memories are data.** Text this package returns came from users, agents,
+//   tools and other systems. Render it for a model only inside the
+//   untrusted-data frame of §52 §12.2, as `SearchResponse.context` and
+//   `Profile.context` already are.
+// - **No metering.** Model work is reported as `ModelCallStats`.
+// - **Errors** carry a `loams.errors.v1.ErrorInfo` whose `reason` is in
+//   `docs/api/reasons.md`: `memory_store_not_found`, `memory_space_not_found`,
+//   `memory_space_limit`, `memory_managed_object`,
+//   `memory_block_version_mismatch`, `memory_block_too_large`,
+//   `memory_core_budget_exceeded`, `memory_content_too_large`,
+//   `memory_secret_detected`, `memory_pii_refused`,
+//   `memory_model_not_configured`, `memory_model_not_local`,
+//   `memory_token_budget_exhausted`, `memory_extraction_failed`,
+//   `memory_too_many_spaces`, `memory_cross_space_write` and, until each RPC
+//   is served, `memory_not_yet_available`.
+package loams.memory.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "loams/operations/v1/operations.proto";
+import "loams/options/v1/options.proto";
+
+// Stores, spaces, import and export, the mirror and erasure.
+service MemoryAdminService {
+  option (loams.options.v1.module) = {
+    name: "memory"
+    summary: "Loams Memory: stores, spaces and their lifecycle."
+    // Until Loams Memory GA: `buf breaking` skips the package (buf.yaml) and
+    // SDKs mark the module experimental. MM1 Task 56 removes both.
+    unstable: true
+  };
+  // No method carries `loams.options.v1.facade` yet, so the SDK facades
+  // expose no `memory` module: that waits for MM1 Task 44, which adds the
+  // SDK package maps and stubs with it (MM1 ruling R1.1).
+
+  // Creates a store with its first shard.
+  rpc CreateStore(CreateStoreRequest) returns (Store);
+  rpc GetStore(GetStoreRequest) returns (Store) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListStores(ListStoresRequest) returns (ListStoresResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // `models`, `budgets`, `policies` and `schedule`.
+  rpc UpdateStore(UpdateStoreRequest) returns (Store);
+  // Deletes the store, every space in it and their objects, through the
+  // erasure path of §52 §7.4. Operation `memory.store.delete`.
+  rpc DeleteStore(DeleteStoreRequest) returns (loams.operations.v1.Operation);
+
+  // Creates a space keyed by (kind, external_id); `Add` also creates one on
+  // first use when the caller may. A create of an existing key answers
+  // `already_exists`.
+  rpc CreateSpace(CreateSpaceRequest) returns (Space);
+  rpc GetSpace(GetSpaceRequest) returns (Space) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListSpaces(ListSpacesRequest) returns (ListSpacesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // `name`, `ttl` and `isolation`. A change of `isolation` moves the space
+  // to another shard: Operation `memory.space.move`, named in the answer's
+  // `operation` while it runs.
+  rpc UpdateSpace(UpdateSpaceRequest) returns (Space);
+  // The space in the Agent Memory Repo layout (§52 §7.6.1), to an object key
+  // or a Loams Git repository. Operation `memory.space.export`.
+  rpc ExportSpace(ExportSpaceRequest) returns (loams.operations.v1.Operation);
+  // From the Agent Memory Repo layout, or a mem0, Graphiti/Zep, supermemory
+  // or Letta export (§52 §7.6.2). Operation `memory.space.import`.
+  rpc ImportSpace(ImportSpaceRequest) returns (loams.operations.v1.Operation);
+  // Sets or clears the space's two-way Git mirror (§52 §7.6.3).
+  rpc ConfigureMirror(ConfigureMirrorRequest) returns (Space);
+  // The progress and proof of a `Forget`'s erasure (§52 §7.4, §18 §9).
+  rpc GetErasure(GetErasureRequest) returns (Erasure) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// Add, search, facts, entities, episodes, forget, blocks, consolidation and
+// watch.
+service MemoryService {
+  option (loams.options.v1.module) = {
+    name: "memory"
+    summary: "Loams Memory: add, search, forget and core memory for agents."
+    // See MemoryAdminService.
+    unstable: true
+  };
+
+  // Records an episode and, with `infer` not NONE, queues its extraction
+  // (§52 §7.1). Answers once the episode is durable; with `wait_ms`, waits
+  // up to that long for the extracted facts.
+  rpc Add(AddRequest) returns (AddResponse);
+  // Several adds in one call, each to one space; each item succeeds or
+  // fails on its own.
+  rpc AddBatch(AddBatchRequest) returns (AddBatchResponse);
+  // Hybrid search over 1..8 spaces (§52 §7.2).
+  rpc Search(SearchRequest) returns (SearchResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // The static and dynamic profiles of 1..8 spaces, and optionally a search
+  // in the same call (§52 §6.6).
+  rpc GetProfile(GetProfileRequest) returns (Profile) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc GetFact(GetFactRequest) returns (Fact) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListFacts(ListFactsRequest) returns (ListFactsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // A correction (§52 §7.3): the fact's system time closes, and a new fact
+  // with `relation.updates` naming it is answered.
+  rpc UpdateFact(UpdateFactRequest) returns (Fact);
+  // Closes the fact's world time ("I no longer use npm"); history is kept.
+  rpc InvalidateFact(InvalidateFactRequest) returns (Fact);
+  // Pins or unpins a fact; a pinned fact is never pruned or merged away.
+  rpc PinFact(PinFactRequest) returns (Fact);
+  // The chain of facts linked by updates and contradictions, each with both
+  // intervals.
+  rpc History(HistoryRequest) returns (HistoryResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc GetEntity(GetEntityRequest) returns (Entity) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListEntities(ListEntitiesRequest) returns (ListEntitiesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListEpisodes(ListEpisodesRequest) returns (ListEpisodesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Queues a failed or skipped episode's extraction again.
+  rpc RetryExtraction(RetryExtractionRequest) returns (Episode);
+  // Deletes a fact, episode, entity, filter's episodes or the whole space,
+  // with no history (§52 §7.4). Not invalidation: see `InvalidateFact`.
+  rpc Forget(ForgetRequest) returns (ForgetResponse);
+  rpc GetBlock(GetBlockRequest) returns (Block) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc ListBlocks(ListBlocksRequest) returns (ListBlocksResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Compare-and-swap on `if_version` (§52 §6.5); a stale write is `aborted`
+  // with `memory_block_version_mismatch`.
+  rpc UpdateBlock(UpdateBlockRequest) returns (Block);
+  // Starts a dream run for one space now (§52 §7.5). Operation
+  // `memory.dream.run`.
+  rpc Consolidate(ConsolidateRequest) returns (loams.operations.v1.Operation);
+  rpc ListDreamRuns(ListDreamRunsRequest) returns (ListDreamRunsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // Restores the state before a dream run, within `prune_retention`.
+  // Operation `memory.dream.revert`.
+  rpc RevertDreamRun(RevertDreamRunRequest) returns (loams.operations.v1.Operation);
+  // A snapshot cursor, then fact, entity, block and dream-run changes, then a
+  // heartbeat every 15 s; resumes from a cursor (§52 §7.7). A read (AP0:
+  // reads are `NO_SIDE_EFFECTS`), so it takes no `idempotency_key`.
+  rpc WatchSpace(WatchSpaceRequest) returns (stream SpaceEvent) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared types
+// ---------------------------------------------------------------------------
+
+// A space by id, or by (kind, external_id): created on first `Add` when the
+// caller may create spaces (§52 §4.1).
+message SpaceRef {
+  oneof ref {
+    // "sp_" + ULID.
+    string id = 1;
+    SpaceKey key = 2;
+  }
+}
+
+message SpaceKey {
+  SpaceKind kind = 1;
+  // The application's own user, project or agent key; unique per store and
+  // kind.
+  string external_id = 2;
+}
+
+enum SpaceKind {
+  SPACE_KIND_UNSPECIFIED = 0;
+  SPACE_KIND_USER = 1;
+  SPACE_KIND_PROJECT = 2;
+  SPACE_KIND_ORG = 3;
+  SPACE_KIND_AGENT = 4;
+  // Scratch memory with a TTL and a parent space (§52 §4.1).
+  SPACE_KIND_SESSION = 5;
+}
+
+// Who an episode came from (§52 §12.2), ordered: EXTERNAL < TOOL < AGENT <
+// USER.
+enum Trust {
+  TRUST_UNSPECIFIED = 0;
+  TRUST_USER = 1;
+  TRUST_AGENT = 2;
+  TRUST_TOOL = 3;
+  TRUST_EXTERNAL = 4;
+}
+
+// What `Add` does with an episode (§52 §7.1.1).
+enum InferMode {
+  // EXTRACT.
+  INFER_MODE_UNSPECIFIED = 0;
+  // Entities and facts extracted and resolved.
+  INFER_MODE_EXTRACT = 1;
+  // The content is one fact as given, with entities extracted for linking.
+  INFER_MODE_VERBATIM = 2;
+  // The episode only, searchable as archival memory.
+  INFER_MODE_NONE = 3;
+}
+
+enum FactKind {
+  FACT_KIND_UNSPECIFIED = 0;
+  FACT_KIND_FACT = 1;
+  FACT_KIND_PREFERENCE = 2;
+  FACT_KIND_INSTRUCTION = 3;
+  FACT_KIND_DECISION = 4;
+  FACT_KIND_CORRECTION = 5;
+  FACT_KIND_GOTCHA = 6;
+  FACT_KIND_EVENT = 7;
+  FACT_KIND_LESSON = 8;
+}
+
+enum FactStatus {
+  FACT_STATUS_UNSPECIFIED = 0;
+  FACT_STATUS_ACTIVE = 1;
+  // World time closed: a contradiction or `InvalidateFact`.
+  FACT_STATUS_INVALIDATED = 2;
+  // System time closed: a correction or a prune.
+  FACT_STATUS_EXPIRED = 3;
+  // Held back from core memory as a possible injection (§52 §12.3).
+  FACT_STATUS_QUARANTINED = 4;
+  FACT_STATUS_PENDING_REVIEW = 5;
+}
+
+// A half-open time interval `[start, end)`; an unset `end` is open.
+message Interval {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+}
+
+// How a fact relates to others (§52 §6.3): supermemory's vocabulary as data.
+message Relation {
+  // Facts this one corrects or contradicts ("fa_" ids).
+  repeated string updates = 1;
+  // Facts this one adds detail to.
+  repeated string extends = 2;
+  // Facts a derived lesson came from.
+  repeated string derived_from = 3;
+}
+
+// The prompt and model that wrote a fact.
+message Extractor {
+  // For example "extract-facts@3".
+  string prompt = 1;
+  // SHA-256 of the prompt text, hex.
+  string prompt_sha = 2;
+  string model = 3;
+  string provider = 4;
+}
+
+// Model calls made for a request or a run: counts of calls and tokens only.
+message ModelCallStats {
+  uint64 calls = 1;
+  uint64 input_tokens = 2;
+  uint64 output_tokens = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Resources
+// ---------------------------------------------------------------------------
+
+// A fact: an edge between two entities of one space, with both intervals and
+// its provenance (§52 §6.3).
+message Fact {
+  // "fa_" + 32 hex.
+  string id = 1;
+  string space_id = 2;
+  // Entity ids ("en_") of the same space.
+  string src = 3;
+  string dst = 4;
+  // Upper snake case, for example "PREFERS".
+  string predicate = 5;
+  // The fact as one sentence.
+  string text = 6;
+  FactKind kind = 7;
+  // When it was true in the world.
+  Interval world = 8;
+  // When Loams believed it.
+  Interval system = 9;
+  // The episodes it was extracted from ("ep_" ids).
+  repeated string episodes = 10;
+  Relation relation = 11;
+  float confidence = 12;
+  float importance = 13;
+  bool pinned = 14;
+  FactStatus status = 15;
+  Extractor extractor = 16;
+  // The extractor's guess at when the fact stops mattering.
+  google.protobuf.Timestamp expires_hint = 17;
+  // The trust of the episode it came from.
+  Trust trust = 18;
+  google.protobuf.Timestamp last_used_time = 19;
+  uint64 uses = 20;
+}
+
+enum EntityStatus {
+  ENTITY_STATUS_UNSPECIFIED = 0;
+  ENTITY_STATUS_ACTIVE = 1;
+  // Merged into `Entity.merged_into` by consolidation.
+  ENTITY_STATUS_MERGED = 2;
+  ENTITY_STATUS_QUARANTINED = 3;
+}
+
+// A person, project, tool or other thing facts are about (§52 §6.2).
+message Entity {
+  // "en_" + ULID; the name is not the key, so renames keep it.
+  string id = 1;
+  string space_id = 2;
+  string name = 3;
+  repeated string aliases = 4;
+  // An open set: "Person", "Organization", "Project", "Repository", "Tool",
+  // "Place", "Concept", "Event", "CodeSymbol", "Self".
+  string type = 5;
+  // Kept by consolidation.
+  string summary = 6;
+  // For a "CodeSymbol": "code:<repo>:<path>#<qualified name>".
+  string code_ref = 7;
+  EntityStatus status = 8;
+  string merged_into = 9;
+  google.protobuf.Timestamp create_time = 10;
+  google.protobuf.Timestamp update_time = 11;
+  google.protobuf.Timestamp last_used_time = 12;
+  uint64 uses = 13;
+}
+
+enum EpisodeKind {
+  EPISODE_KIND_UNSPECIFIED = 0;
+  EPISODE_KIND_MESSAGE = 1;
+  EPISODE_KIND_MESSAGES = 2;
+  EPISODE_KIND_DOCUMENT = 3;
+  EPISODE_KIND_NOTE = 4;
+  EPISODE_KIND_JSON = 5;
+  EPISODE_KIND_EVENT = 6;
+  EPISODE_KIND_REVIEW = 7;
+  EPISODE_KIND_IMPORT = 8;
+  EPISODE_KIND_REPO_EDIT = 9;
+}
+
+enum ExtractionStatus {
+  EXTRACTION_STATUS_UNSPECIFIED = 0;
+  EXTRACTION_STATUS_PENDING = 1;
+  EXTRACTION_STATUS_DONE = 2;
+  // With `Extraction.reason`; the episode stays searchable.
+  EXTRACTION_STATUS_FAILED = 3;
+  // `infer: none`, or no chat model configured.
+  EXTRACTION_STATUS_SKIPPED = 4;
+  EXTRACTION_STATUS_QUARANTINED = 5;
+}
+
+// Where an episode came from: the Agent Memory Repo spec's `source` link.
+message EpisodeSource {
+  string uri = 1;
+  string agent = 2;
+  string actor = 3;
+  string tool = 4;
+}
+
+message Extraction {
+  ExtractionStatus status = 1;
+  // For example "extract-facts@3".
+  string prompt = 2;
+  string model = 3;
+  uint32 attempts = 4;
+  // A registered reason when FAILED, for example
+  // `memory_token_budget_exhausted`.
+  string reason = 5;
+}
+
+// A raw input, chunked at 8 KiB (§52 §6.1).
+message Episode {
+  // "ep_" + ULID.
+  string id = 1;
+  string space_id = 2;
+  EpisodeKind kind = 3;
+  // For messages.
+  string role = 4;
+  string speaker = 5;
+  string content = 6;
+  // SHA-256 of the normalised content, hex; a duplicate add is a no-op.
+  string content_hash = 7;
+  // Resolves relative dates; the add time unless the caller gave one.
+  google.protobuf.Timestamp reference_time = 8;
+  // System time of the add.
+  google.protobuf.Timestamp record_time = 9;
+  string session_ref = 10;
+  EpisodeSource source = 11;
+  Trust trust = 12;
+  map<string, string> metadata = 13;
+  Extraction extraction = 14;
+  // A chunk's parent episode and its position in it.
+  string parent_id = 15;
+  uint32 chunk = 16;
+}
+
+// A labelled piece of core memory (§52 §6.5).
+message Block {
+  // "bl_" + ULID.
+  string id = 1;
+  string space_id = 2;
+  // Unique per space: "profile.static", "profile.dynamic", "index",
+  // "persona", or custom (`^[a-z][a-z0-9_.-]{0,63}$`).
+  string label = 3;
+  // What the block is for; models read it before writing.
+  string description = 4;
+  // At most `limit` characters.
+  string value = 5;
+  // Default 2 000, at most 16 384.
+  uint32 limit = 6;
+  // Agents cannot write it; users and admins can.
+  bool read_only = 7;
+  // Written only by consolidation.
+  bool managed = 8;
+  // Incremented on every write; `UpdateBlock` requires it as `if_version`.
+  uint64 version = 9;
+  // The facts a managed block was built from ("fa_" ids).
+  repeated string sources = 10;
+  google.protobuf.Timestamp update_time = 11;
+}
+
+// One space's profile (§52 §6.6).
+message SpaceProfile {
+  string space_id = 1;
+  // `profile.static`: stable facts about the space's subject.
+  Block static_profile = 2;
+  // `profile.dynamic`: recent context, a cached query.
+  Block dynamic_profile = 3;
+  // `index`: the entities and topics of the space.
+  Block index = 4;
+}
+
+// The answer of `GetProfile`.
+message Profile {
+  repeated SpaceProfile profiles = 1;
+  // The search, when the request had a `query`.
+  SearchResponse search = 2;
+  // The profiles (and search) rendered for a model inside the untrusted-data
+  // frame of §52 §12.2.
+  string context = 3;
+}
+
+enum StoreState {
+  STORE_STATE_UNSPECIFIED = 0;
+  STORE_STATE_ACTIVE = 1;
+  STORE_STATE_DELETING = 2;
+}
+
+enum ProviderKind {
+  PROVIDER_KIND_UNSPECIFIED = 0;
+  // OpenAI's chat and embeddings API, and servers that speak it (Ollama).
+  PROVIDER_KIND_OPENAI_COMPATIBLE = 1;
+  // Anthropic Messages; no embeddings.
+  PROVIDER_KIND_ANTHROPIC = 2;
+}
+
+// One model a store calls (§52 §10.1).
+message ModelRef {
+  ProviderKind provider = 1;
+  string model = 2;
+  // `https`, or `http` on loopback; no userinfo.
+  string base_url = 3;
+  // A reference to the provider key ("env/<name>", §36 §19.13), never the
+  // key: a store record never holds a secret.
+  string key_ref = 4;
+}
+
+message StoreModels {
+  // Extraction, resolution and consolidation. Unset: no extraction.
+  ModelRef chat = 1;
+  // Unset: BM25 only.
+  ModelRef embedder = 2;
+  ModelRef reranker = 3;
+  // The embedder's dimension, fixed once the store has data.
+  uint32 embedding_dimension = 4;
+}
+
+// Token caps (§52 §10.3), reserved before a call and settled after it.
+message StoreBudgets {
+  // Per store per UTC day; 0 is no cap.
+  uint64 daily_tokens = 1;
+  // Per dream run per space (default 50 000).
+  uint64 dream_run_tokens = 2;
+  // Per model call.
+  uint64 call_tokens = 3;
+}
+
+enum SecretPolicy {
+  SECRET_POLICY_UNSPECIFIED = 0;
+  // `Add` answers `memory_secret_detected`.
+  SECRET_POLICY_REFUSE = 1;
+  // The secret is replaced before the episode is written (default).
+  SECRET_POLICY_REDACT = 2;
+}
+
+enum PiiPolicy {
+  PII_POLICY_UNSPECIFIED = 0;
+  PII_POLICY_ALLOW = 1;
+  PII_POLICY_TAG = 2;
+  PII_POLICY_REDACT = 3;
+  // `Add` answers `memory_pii_refused`.
+  PII_POLICY_REFUSE = 4;
+}
+
+enum ResolutionMode {
+  RESOLUTION_MODE_UNSPECIFIED = 0;
+  // Contradictions resolved when facts are written (default, Q781).
+  RESOLUTION_MODE_WRITE_TIME = 1;
+  // Overlap left to consolidation.
+  RESOLUTION_MODE_DEFERRED = 2;
+}
+
+message StorePolicies {
+  SecretPolicy secrets = 1;
+  PiiPolicy pii = 2;
+  ResolutionMode resolution = 3;
+  // Models only on loopback or `private_hosts` (§52 §10.2); a model elsewhere
+  // is refused with `memory_model_not_local`.
+  bool local_only = 4;
+  // Hosts `local_only` also allows.
+  repeated string private_hosts = 5;
+  // `Add` creates a space on first use for a caller with `writer` on the
+  // store (default true).
+  bool auto_create_spaces = 6;
+}
+
+// When dream runs start (§52 §7.5).
+message ConsolidationSchedule {
+  bool enabled = 1;
+  // The quiet hour (0–23) in `time_zone` a daily run starts at.
+  uint32 hour = 2;
+  // An IANA zone, for example "Europe/Berlin".
+  string time_zone = 3;
+  // New facts in a space that start a run before the daily one (default
+  // 500); 0 is off.
+  uint32 fact_threshold = 4;
+  // How long expired facts are kept before they are deleted, and how far
+  // back `RevertDreamRun` reaches (default 90 days).
+  google.protobuf.Duration prune_retention = 5;
+}
+
+// A memory store: models, budgets, policies and placement (§52 §4.1).
+message Store {
+  // "ms_" + ULID.
+  string id = 1;
+  string namespace = 2;
+  // `^[a-z][a-z0-9-]{0,62}$`, unique in the namespace.
+  string name = 3;
+  StoreModels models = 4;
+  StoreBudgets budgets = 5;
+  StorePolicies policies = 6;
+  ConsolidationSchedule schedule = 7;
+  StoreState state = 8;
+  uint32 shard_count = 9;
+  google.protobuf.Timestamp create_time = 10;
+  google.protobuf.Timestamp update_time = 11;
+  // The record's version, for `expected_version`.
+  uint64 version = 12;
+}
+
+enum Isolation {
+  ISOLATION_UNSPECIFIED = 0;
+  // A shard shared with other spaces (default for user, agent, session).
+  ISOLATION_SHARED = 1;
+  // A shard of its own (default for org and project).
+  ISOLATION_DEDICATED = 2;
+}
+
+enum SpaceState {
+  SPACE_STATE_UNSPECIFIED = 0;
+  SPACE_STATE_ACTIVE = 1;
+  // Moving to another shard (`memory.space.move`).
+  SPACE_STATE_MOVING = 2;
+  // Forgotten; the id is kept so it is never reused.
+  SPACE_STATE_FORGOTTEN = 3;
+}
+
+// A space's two-way Git mirror (§52 §7.6.3).
+message Mirror {
+  bool enabled = 1;
+  // A Loams Git repository in the store's namespace (default
+  // "memory/<space slug>").
+  string repository = 2;
+  string branch = 3;
+}
+
+// A space: the unit of ownership, access, export and deletion (§52 §4.1).
+message Space {
+  // "sp_" + ULID.
+  string id = 1;
+  // The store's "ms_" id.
+  string store_id = 2;
+  SpaceKind kind = 3;
+  string external_id = 4;
+  // A display name.
+  string name = 5;
+  // The owning principal's subject, or the external subject.
+  string owner = 6;
+  // The parent space of a session ("sp_" id).
+  string parent_id = 7;
+  // A session's lifetime (default 7 days).
+  google.protobuf.Duration ttl = 8;
+  Isolation isolation = 9;
+  // The shard the space is pinned to.
+  string shard = 10;
+  SpaceState state = 11;
+  Mirror mirror = 12;
+  // The `memory.space.move` operation while one runs.
+  string operation = 13;
+  google.protobuf.Timestamp create_time = 14;
+  google.protobuf.Timestamp update_time = 15;
+  uint64 version = 16;
+}
+
+enum DreamTrigger {
+  DREAM_TRIGGER_UNSPECIFIED = 0;
+  DREAM_TRIGGER_SCHEDULE = 1;
+  // `Consolidate`.
+  DREAM_TRIGGER_REQUEST = 2;
+  // `ConsolidationSchedule.fact_threshold` new facts.
+  DREAM_TRIGGER_THRESHOLD = 3;
+}
+
+enum DreamRunState {
+  DREAM_RUN_STATE_UNSPECIFIED = 0;
+  DREAM_RUN_STATE_RUNNING = 1;
+  DREAM_RUN_STATE_SUCCEEDED = 2;
+  DREAM_RUN_STATE_FAILED = 3;
+  // Stopped at its token budget; what it did is kept and reported.
+  DREAM_RUN_STATE_BUDGET_EXHAUSTED = 4;
+  DREAM_RUN_STATE_REVERTED = 5;
+}
+
+// The steps of a dream run (§52 §7.5).
+enum DreamStep {
+  DREAM_STEP_UNSPECIFIED = 0;
+  DREAM_STEP_RETRY = 1;
+  DREAM_STEP_MERGE_ENTITIES = 2;
+  DREAM_STEP_MERGE_FACTS = 3;
+  DREAM_STEP_CONTRADICTIONS = 4;
+  DREAM_STEP_SUMMARIES = 5;
+  DREAM_STEP_DERIVE = 6;
+  DREAM_STEP_PRUNE = 7;
+  DREAM_STEP_PROMOTE = 8;
+  DREAM_STEP_BLOCKS = 9;
+}
+
+// A block's value before and after a run.
+message BlockChange {
+  string label = 1;
+  uint64 old_version = 2;
+  uint64 new_version = 3;
+}
+
+// What a dream run changed.
+message DreamChanges {
+  // Entities merged away ("en_" ids).
+  repeated string merged_entities = 1;
+  // Facts merged away ("fa_" ids).
+  repeated string merged_facts = 2;
+  repeated string invalidated_facts = 3;
+  repeated string expired_facts = 4;
+  repeated string derived_facts = 5;
+  // Facts copied into the parent space from an expired session.
+  repeated string promoted_facts = 6;
+  repeated string deleted_facts = 7;
+  repeated BlockChange blocks = 8;
+}
+
+// One consolidation run over one space (§52 §7.5).
+message DreamRun {
+  // "dr_" + ULID.
+  string id = 1;
+  string space_id = 2;
+  DreamTrigger trigger = 3;
+  DreamRunState state = 4;
+  repeated DreamStep steps = 5;
+  DreamChanges changes = 6;
+  ModelCallStats model_calls = 7;
+  string model = 8;
+  google.protobuf.Timestamp start_time = 9;
+  google.protobuf.Timestamp end_time = 10;
+  // The run that reverted this one ("dr_" id).
+  string reverted_by = 11;
+}
+
+enum ErasureState {
+  ERASURE_STATE_UNSPECIFIED = 0;
+  // Deleted from every read; physical purge pending.
+  ERASURE_STATE_PENDING = 1;
+  ERASURE_STATE_PURGING = 2;
+  // Purged from storage, snapshots and logs.
+  ERASURE_STATE_COMPLETED = 3;
+  ERASURE_STATE_FAILED = 4;
+}
+
+// The proof of a forget (§52 §7.4, §18 §9).
+message Erasure {
+  string id = 1;
+  string namespace = 2;
+  string store_id = 3;
+  string space_id = 4;
+  // What was forgotten.
+  ForgetTarget target = 5;
+  ErasureState state = 6;
+  // The objects rewritten so far (collections, graph snapshots, streams).
+  repeated string objects_rewritten = 7;
+  google.protobuf.Timestamp create_time = 8;
+  // When the purge must be done by (30 days, D69).
+  google.protobuf.Timestamp deadline_time = 9;
+  google.protobuf.Timestamp complete_time = 10;
+}
+
+// ---------------------------------------------------------------------------
+// MemoryAdminService messages
+// ---------------------------------------------------------------------------
+
+message CreateStoreRequest {
+  string namespace = 1;
+  string name = 2;
+  StoreModels models = 3;
+  StoreBudgets budgets = 4;
+  StorePolicies policies = 5;
+  ConsolidationSchedule schedule = 6;
+  string idempotency_key = 15;
+}
+
+message GetStoreRequest {
+  string namespace = 1;
+  // The store's name or "ms_" id.
+  string store = 2;
+}
+
+message ListStoresRequest {
+  string namespace = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListStoresResponse {
+  repeated Store stores = 1;
+  string next_page_token = 2;
+}
+
+message UpdateStoreRequest {
+  string namespace = 1;
+  // `id` names the store.
+  Store store = 2;
+  // `models`, `budgets`, `policies` and `schedule`.
+  google.protobuf.FieldMask update_mask = 3;
+  optional uint64 expected_version = 4;
+}
+
+message DeleteStoreRequest {
+  string namespace = 1;
+  string store = 2;
+  optional uint64 expected_version = 3;
+  string idempotency_key = 15;
+}
+
+message CreateSpaceRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceKey key = 3;
+  string name = 4;
+  // A session's parent: required for SESSION.
+  SpaceRef parent = 5;
+  // A session's lifetime (default 7 days).
+  google.protobuf.Duration ttl = 6;
+  // Unset: DEDICATED for org and project, SHARED otherwise.
+  Isolation isolation = 7;
+  // The owner; unset is the caller.
+  string owner = 8;
+}
+
+message GetSpaceRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+}
+
+message ListSpacesRequest {
+  string namespace = 1;
+  string store = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+  // Unset: every kind.
+  SpaceKind kind = 5;
+  // Sessions of one parent ("sp_" id).
+  string parent_id = 6;
+}
+
+message ListSpacesResponse {
+  repeated Space spaces = 1;
+  string next_page_token = 2;
+}
+
+message UpdateSpaceRequest {
+  string namespace = 1;
+  string store = 2;
+  // `id` names the space.
+  Space space = 3;
+  // `name`, `ttl` and `isolation`.
+  google.protobuf.FieldMask update_mask = 4;
+  optional uint64 expected_version = 5;
+}
+
+// A Loams Git repository and branch to export to or import from.
+message GitLocation {
+  string repository = 1;
+  string branch = 2;
+}
+
+message ExportSpaceRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  oneof destination {
+    // An object key in the namespace's bucket, for a tar archive.
+    string object_key = 4;
+    GitLocation git = 5;
+  }
+  // Also write `history/` (invalidated and expired facts).
+  bool include_history = 6;
+  string idempotency_key = 15;
+}
+
+enum ImportFormat {
+  IMPORT_FORMAT_UNSPECIFIED = 0;
+  IMPORT_FORMAT_AGENT_MEMORY_REPO = 1;
+  IMPORT_FORMAT_MEM0 = 2;
+  IMPORT_FORMAT_GRAPHITI = 3;
+  IMPORT_FORMAT_SUPERMEMORY = 4;
+  IMPORT_FORMAT_LETTA = 5;
+}
+
+message ImportSpaceRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  ImportFormat format = 4;
+  oneof source {
+    string object_key = 5;
+    GitLocation git = 6;
+  }
+  string idempotency_key = 15;
+}
+
+message ConfigureMirrorRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  // `enabled: false` stops mirroring and keeps the repository.
+  Mirror mirror = 4;
+}
+
+message GetErasureRequest {
+  string namespace = 1;
+  string store = 2;
+  string erasure_id = 3;
+}
+
+// ---------------------------------------------------------------------------
+// MemoryService messages
+// ---------------------------------------------------------------------------
+
+// One message of a conversation.
+message ChatMessage {
+  // For example "user", "assistant", "tool".
+  string role = 1;
+  // Who spoke; becomes an entity.
+  string speaker = 2;
+  string content = 3;
+  google.protobuf.Timestamp time = 4;
+}
+
+message Messages {
+  repeated ChatMessage messages = 1;
+}
+
+message Document {
+  string title = 1;
+  string content = 2;
+  // For example "text/markdown".
+  string media_type = 3;
+  string uri = 4;
+}
+
+message AddRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  // At most 1 MiB in all (`memory_content_too_large`), chunked into 8 KiB
+  // episodes.
+  oneof input {
+    string text = 4;
+    Messages messages = 5;
+    Document document = 6;
+    google.protobuf.Struct json = 7;
+  }
+  // Resolves relative dates; default the add time.
+  google.protobuf.Timestamp reference_time = 8;
+  // The caller's session or thread id, for the previous-messages context.
+  string session_ref = 9;
+  map<string, string> metadata = 10;
+  // Unset: the trust the caller's principal kind implies.
+  Trust trust = 11;
+  InferMode infer = 12;
+  // ≤ 30 000; 0 answers once the episode is durable.
+  uint32 wait_ms = 13;
+  EpisodeSource source = 14;
+  string idempotency_key = 15;
+}
+
+message AddResponse {
+  // The space written to ("sp_" id), created by this call if
+  // `space_created`.
+  string space_id = 1;
+  bool space_created = 2;
+  // One per chunk.
+  repeated string episode_ids = 3;
+  // The extracted facts, when `wait_ms` was long enough.
+  repeated Fact facts = 4;
+  // Where extraction stands when the call answers.
+  ExtractionStatus extraction = 5;
+  string consistency_token = 6;
+  ModelCallStats model_calls = 7;
+}
+
+// One item of `AddBatch`: `AddRequest` without the namespace, store, wait
+// and key.
+message AddBatchItem {
+  SpaceRef space = 1;
+  oneof input {
+    string text = 2;
+    Messages messages = 3;
+    Document document = 4;
+    google.protobuf.Struct json = 5;
+  }
+  google.protobuf.Timestamp reference_time = 6;
+  string session_ref = 7;
+  map<string, string> metadata = 8;
+  Trust trust = 9;
+  InferMode infer = 10;
+  EpisodeSource source = 11;
+}
+
+message AddBatchRequest {
+  string namespace = 1;
+  string store = 2;
+  // At most 100 items (MM1 ruling R1.6).
+  repeated AddBatchItem items = 3;
+  string idempotency_key = 15;
+}
+
+// One item's answer, in request order.
+message AddBatchResult {
+  string space_id = 1;
+  bool space_created = 2;
+  repeated string episode_ids = 3;
+  // Empty on success; otherwise a registered reason.
+  string error_reason = 4;
+  string error_message = 5;
+}
+
+message AddBatchResponse {
+  repeated AddBatchResult results = 1;
+  string consistency_token = 2;
+}
+
+// What a search returns.
+message Include {
+  bool facts = 1;
+  bool entities = 2;
+  bool episodes = 3;
+  bool blocks = 4;
+}
+
+// Narrows a search or a list.
+message Filter {
+  // Every pair must match the episode's or fact's metadata.
+  map<string, string> metadata = 1;
+  // Facts touching one of these entities ("en_" ids).
+  repeated string entity_ids = 2;
+  string session_ref = 3;
+  google.protobuf.Timestamp recorded_after = 4;
+  google.protobuf.Timestamp recorded_before = 5;
+}
+
+// Graph expansion from the top seeds (§52 §7.2).
+message Expand {
+  // 0..2.
+  uint32 hops = 1;
+  // Only edges of these predicates; empty is all.
+  repeated string predicates = 2;
+}
+
+enum RerankMode {
+  RERANK_MODE_UNSPECIFIED = 0;
+  // Reciprocal rank fusion only (default).
+  RERANK_MODE_RRF = 1;
+  // Maximal marginal relevance, for diversity.
+  RERANK_MODE_MMR = 2;
+  // The store's reranker model.
+  RERANK_MODE_MODEL = 3;
+}
+
+message Rerank {
+  RerankMode mode = 1;
+}
+
+message SearchRequest {
+  string namespace = 1;
+  string store = 2;
+  // The spaces to search, 1..8 (§52 §4.2, §13.1): each is authorized on its
+  // own, and every result names its space. More is `invalid_argument` with
+  // `memory_too_many_spaces`.
+  repeated SpaceRef spaces = 3;
+  string query = 4;
+  // Unset: facts only.
+  Include include = 5;
+  // World time: facts true at this time.
+  google.protobuf.Timestamp as_of = 6;
+  // System time: what Loams believed at this time.
+  google.protobuf.Timestamp known_at = 7;
+  repeated FactKind kinds = 8;
+  Filter filter = 9;
+  // Default 20, at most 100.
+  uint32 limit = 10;
+  Expand expand = 11;
+  Rerank rerank = 12;
+  // Also invalidated and expired facts.
+  bool include_history = 13;
+  // From an earlier write: the search sees it.
+  string consistency_token = 14;
+}
+
+// One result.
+message SearchResult {
+  // The space it came from ("sp_" id).
+  string space_id = 1;
+  float score = 2;
+  oneof item {
+    Fact fact = 3;
+    Entity entity = 4;
+    Episode episode = 5;
+    Block block = 6;
+  }
+}
+
+message SearchResponse {
+  repeated SearchResult results = 1;
+  // The results rendered for a model inside the untrusted-data frame of
+  // §52 §12.2.
+  string context = 2;
+  // The state this search read at.
+  string consistency_token = 3;
+  ModelCallStats model_calls = 4;
+}
+
+message GetProfileRequest {
+  string namespace = 1;
+  string store = 2;
+  // 1..8, as for `SearchRequest.spaces`.
+  repeated SpaceRef spaces = 3;
+  // Also search for this, in the same call.
+  string query = 4;
+  // The search's limit (default 20, at most 100).
+  uint32 limit = 5;
+  string consistency_token = 6;
+}
+
+message GetFactRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  string fact_id = 4;
+  string consistency_token = 5;
+}
+
+message ListFactsRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+  repeated FactKind kinds = 6;
+  // Unset: ACTIVE.
+  repeated FactStatus statuses = 7;
+  Filter filter = 8;
+  google.protobuf.Timestamp as_of = 9;
+  google.protobuf.Timestamp known_at = 10;
+  string consistency_token = 11;
+}
+
+message ListFactsResponse {
+  repeated Fact facts = 1;
+  string next_page_token = 2;
+}
+
+message UpdateFactRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  string fact_id = 4;
+  // The corrected sentence.
+  string text = 5;
+  string idempotency_key = 15;
+}
+
+message InvalidateFactRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  string fact_id = 4;
+  // When it stopped being true; default now.
+  google.protobuf.Timestamp invalid_time = 5;
+}
+
+message PinFactRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  string fact_id = 4;
+  // False unpins (§52 §7.3's `UnpinFact`).
+  bool pinned = 5;
+}
+
+message HistoryRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  oneof subject {
+    string fact_id = 4;
+    string entity_id = 5;
+  }
+}
+
+message HistoryResponse {
+  // Oldest first.
+  repeated Fact facts = 1;
+}
+
+message GetEntityRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  string entity_id = 4;
+}
+
+message ListEntitiesRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+  // One entity type; empty is all.
+  string type = 6;
+  // Unset: ACTIVE.
+  repeated EntityStatus statuses = 7;
+}
+
+message ListEntitiesResponse {
+  repeated Entity entities = 1;
+  string next_page_token = 2;
+}
+
+message ListEpisodesRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+  Filter filter = 6;
+  // Unset: every status.
+  repeated ExtractionStatus extraction = 7;
+}
+
+message ListEpisodesResponse {
+  repeated Episode episodes = 1;
+  string next_page_token = 2;
+}
+
+message RetryExtractionRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  string episode_id = 4;
+  string idempotency_key = 15;
+}
+
+// Episodes to forget by time range, metadata or session.
+message ForgetFilter {
+  google.protobuf.Timestamp recorded_after = 1;
+  google.protobuf.Timestamp recorded_before = 2;
+  map<string, string> metadata = 3;
+  string session_ref = 4;
+}
+
+// What a `Forget` removes (§52 §7.4).
+message ForgetTarget {
+  oneof target {
+    string fact_id = 1;
+    // The episode, its chunks, and facts it alone supports.
+    string episode_id = 2;
+    // The entity, every fact touching it and its mentions.
+    string entity_id = 3;
+    // Everything in the space and the space record.
+    bool space = 4;
+    ForgetFilter filter = 5;
+  }
+}
+
+message ForgetRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  ForgetTarget target = 4;
+  string idempotency_key = 15;
+}
+
+message ForgetResponse {
+  // Follow the physical purge with `GetErasure`.
+  string erasure_id = 1;
+  // No read at or after this token returns what was forgotten.
+  string consistency_token = 2;
+}
+
+message GetBlockRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  string label = 4;
+}
+
+message ListBlocksRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListBlocksResponse {
+  repeated Block blocks = 1;
+  string next_page_token = 2;
+}
+
+message UpdateBlockRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  // The block; `label` names it.
+  Block block = 4;
+  // `value`, `description`, `limit` and `read_only`.
+  google.protobuf.FieldMask update_mask = 5;
+  // Required: the `version` read. 0 creates a block that does not exist yet.
+  // A stale version is `aborted` with `memory_block_version_mismatch`.
+  uint64 if_version = 6;
+}
+
+message ConsolidateRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  // Empty: every step.
+  repeated DreamStep steps = 4;
+  string idempotency_key = 15;
+}
+
+message ListDreamRunsRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListDreamRunsResponse {
+  // Newest first.
+  repeated DreamRun dream_runs = 1;
+  string next_page_token = 2;
+}
+
+message RevertDreamRunRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  string dream_run_id = 4;
+  string idempotency_key = 15;
+}
+
+message WatchSpaceRequest {
+  string namespace = 1;
+  string store = 2;
+  SpaceRef space = 3;
+  // A `cursor` from an earlier event; empty starts with a snapshot cursor.
+  string resume_cursor = 4;
+}
+
+// A fact, entity or block that no longer exists.
+message Removed {
+  RemovedKind kind = 1;
+  string id = 2;
+}
+
+enum RemovedKind {
+  REMOVED_KIND_UNSPECIFIED = 0;
+  REMOVED_KIND_FACT = 1;
+  REMOVED_KIND_ENTITY = 2;
+  REMOVED_KIND_BLOCK = 3;
+}
+
+message Heartbeat {}
+
+// One change in a watched space.
+message SpaceEvent {
+  oneof event {
+    Fact fact = 1;
+    Entity entity = 2;
+    Block block = 3;
+    DreamRun dream_run = 4;
+    Removed removed = 5;
+    // Every 15 s while nothing else is sent.
+    Heartbeat heartbeat = 6;
+  }
+  string cursor = 7;
+  // The cursor was too old: the watch restarted from the current state, and
+  // the client re-reads what it holds.
+  bool snapshot_reset = 8;
+}

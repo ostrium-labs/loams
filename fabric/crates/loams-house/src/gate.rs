@@ -637,6 +637,7 @@ pub async fn read_plan(
     sql: &str,
     settings: &[(String, String)],
     batch: Option<&crate::pipes::PipeBatch>,
+    front: Option<crate::read::Front<'_>>,
 ) -> Result<ReadPlan, HouseError> {
     crate::read::plan(
         ReadContext {
@@ -646,6 +647,8 @@ pub async fn read_plan(
             user: &user.user,
             grants: user.grants.as_ref(),
             batch,
+            front,
+            admin: user.scopes.admin,
         },
         lease,
         analysis,

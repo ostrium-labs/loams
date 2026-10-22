@@ -160,8 +160,10 @@ export function KeybindingsCard({ store, platform }: { store: KeybindingStore; p
     >
       <div className="flex flex-col gap-4">
         <p className="m-0 text-[0.86rem] text-muted">
-          Studio's shortcuts on this device. Ctrl/Cmd+K (the palette), Ctrl/Cmd+J (the agent panel)
-          and Ctrl/Cmd+Shift+M (the mode) belong to the console in both modes.
+          Studio's shortcuts on this device. The console keeps its own in both modes: Ctrl/Cmd+K or
+          Ctrl/Cmd+Shift+P (the palette), N (a new thread), B, I and J (the sidebar, inspector and
+          drawer), 1–9 and Ctrl+Tab (threads), [ and ] (back and forward), Shift+T (reopen a
+          thread), comma (Settings) and Shift+M (the mode).
         </p>
         <Input
           type="search"

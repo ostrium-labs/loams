@@ -71,6 +71,26 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('the Factory group', () => {
+  it('re-reads the apps after a navigation, so a configure elsewhere shows', async () => {
+    // The group stays mounted while the factory's own pages configure an app.
+    let health = 'unconfigured';
+    const factory = desktopFactory({
+      factory: {
+        list: async () => [
+          { id: 'forgejo', label: 'Forgejo', health, hasPanels: true, credentialFields: [] },
+        ],
+      },
+    } as never);
+    render(wrap(<FactoryGroup factory={factory} />));
+    const group = await screen.findByRole('navigation', { name: 'Factory' });
+    expect(await within(group).findByText('0 of 1 connected')).toBeTruthy();
+    health = 'ok';
+    await act(async () => {
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(await within(group).findByText('1 of 1 connected')).toBeTruthy();
+  });
+
   it('lists the eight apps with their configured state', async () => {
     render(wrap(<FactoryGroup factory={desktopFake().factory} />));
     const group = await screen.findByRole('navigation', { name: 'Factory' });
@@ -132,6 +152,30 @@ describe('the Factory group', () => {
       ),
     );
     expect(await screen.findByRole('navigation', { name: 'Factory' })).toBeTruthy();
+  });
+
+  it('shows its header while the daemon is down (owner ruling, 2026-10-18)', async () => {
+    const { agentd } = desktopAgentd({ running: false });
+    const router = {
+      current: () => ({ path: '/studio', params: {} }),
+      subscribe: () => () => {},
+      navigate: vi.fn(),
+      page: () => () => {},
+    };
+    render(
+      wrap(
+        <StudioThreads
+          agentd={agentd}
+          factory={desktopFake().factory}
+          router={router}
+          keys={createStudioKeys()}
+        />,
+      ),
+    );
+    const group = await screen.findByRole('navigation', { name: 'Factory' });
+    expect(await within(group).findByText('3 of 8 connected')).toBeTruthy();
+    // The threads still need the daemon.
+    expect(screen.queryByRole('navigation', { name: 'Projects' })).toBeNull();
   });
 
   it('shows in Studio mode only; the threads show in both (design 59, W10)', async () => {

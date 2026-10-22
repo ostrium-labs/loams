@@ -1,0 +1,7 @@
+# Copy to cloudflared/config.yml for the CLI tunnel option.
+tunnel: 00000000-0000-0000-0000-000000000000   # the UUID printed by `cloudflared tunnel create`
+credentials-file: /etc/cloudflared/credentials.json
+ingress:
+  - hostname: auth.loams.dev
+    service: http://server:9000
+  - service: http_status:404

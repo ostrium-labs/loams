@@ -49,7 +49,8 @@ jsonwebtoken.workspace = true
 # The `loams.house.v1` proxy's streamed request body (HS1 Task 7).
 http-body.workspace = true
 loams-cache.workspace = true
-loams-cloudevents.workspace = true
+# `protobuf`: `loams.stream.v1`'s ProduceCloudEvents decodes a protobuf CloudEventBatch (SDKP P0c).
+loams-cloudevents = { workspace = true, features = ["protobuf"] }
 loams-collection.workspace = true
 loams-common.workspace = true
 # The embedded Resonate server (D1), with the durable feature only.
@@ -212,6 +213,8 @@ failpoints = [
 [dev-dependencies]
 arrow-array.workspace = true
 arrow-flight.workspace = true
+# `connect_sql.rs` decodes `QueryArrow`'s IPC stream (API2 Task 1).
+arrow-ipc.workspace = true
 arrow-schema.workspace = true
 futures.workspace = true
 # `connect_admin.rs`'s `mock_and_server_answer_alike` runs the console mock

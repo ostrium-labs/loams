@@ -1202,29 +1202,44 @@ impl Repos {
                 ADJECTIVES[(seed % ADJECTIVES.len() as u64) as usize],
                 NOUNS[((seed / 31) % NOUNS.len() as u64) as usize]
             );
-            if !base.join(&candidate).exists()
-                && !existing.contains(&format!("loams-desktop/{candidate}"))
-            {
-                name = Some(candidate);
-                break;
+            if existing.contains(&format!("loams-desktop/{candidate}")) {
+                continue;
+            }
+            // Reserve the directory atomically: `create_dir` fails if it
+            // exists, so two concurrent callers sharing `base` (same repo
+            // folder name) never pick the same one. `git worktree add`
+            // accepts an existing empty directory.
+            match std::fs::create_dir(base.join(&candidate)) {
+                Ok(()) => {
+                    name = Some(candidate);
+                    break;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e.into()),
             }
         }
         let name =
             name.ok_or_else(|| EngineError::Other("Could not allocate a worktree name".into()))?;
         let path = base.join(&name);
         let branch_name = format!("loams-desktop/{name}");
-        self.git(
-            &[
-                "worktree",
-                "add",
-                "-b",
-                &branch_name,
-                &path.to_string_lossy(),
-                branch,
-            ],
-            Some(repo_path),
-        )
-        .await?;
+        let added = self
+            .git(
+                &[
+                    "worktree",
+                    "add",
+                    "-b",
+                    &branch_name,
+                    &path.to_string_lossy(),
+                    branch,
+                ],
+                Some(repo_path),
+            )
+            .await;
+        if let Err(e) = added {
+            // Release the reservation; it is still empty if git failed.
+            let _ = std::fs::remove_dir(&path);
+            return Err(e);
+        }
         let checkout = self.checkout_identity(&path).await?;
         Ok(Worktree {
             repo_path: repo_path.to_string_lossy().to_string(),
@@ -2687,5 +2702,68 @@ tmpfs /run tmpfs rw 0 0
 
         assert_eq!(alpha.unwrap()[0].path, "alpha.rs");
         assert_eq!(beta.unwrap()[0].path, "beta.rs");
+    }
+
+    /// Concurrent `create_worktree` calls for repos with the same folder
+    /// name share `{root}/<repoName>/`. Each one must get its own directory:
+    /// checking `exists()` and then running `git worktree add` let two
+    /// callers pick the same free name, and the slower one failed (the
+    /// flaky `review_comment_outdated_after_change`, whose tests all use a
+    /// repo called `repo`).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn concurrent_worktrees_under_one_repo_name_never_collide() {
+        const CALLERS: usize = 48;
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("worktrees");
+        let mut repo_paths = Vec::new();
+        for i in 0..CALLERS {
+            let repo = tmp.path().join(format!("parent-{i}")).join("repo");
+            std::fs::create_dir_all(&repo).unwrap();
+            for args in [
+                &["init", "-q", "-b", "main"][..],
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t.invalid",
+                    "commit",
+                    "-q",
+                    "--allow-empty",
+                    "-m",
+                    "i",
+                ][..],
+            ] {
+                let status = std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(&repo)
+                    .status()
+                    .unwrap();
+                assert!(status.success());
+            }
+            repo_paths.push(repo);
+        }
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(CALLERS));
+        let tasks: Vec<_> = repo_paths
+            .into_iter()
+            .enumerate()
+            .map(|(i, repo)| {
+                let repos = Repos::with_worktrees_root(
+                    &tmp.path().join(format!("data-{i}")),
+                    "device",
+                    root.clone(),
+                );
+                let barrier = barrier.clone();
+                tokio::spawn(async move {
+                    barrier.wait().await;
+                    repos.create_worktree(&repo, "main").await
+                })
+            })
+            .collect();
+        let mut paths = HashSet::new();
+        for task in tasks {
+            let worktree = task.await.unwrap().expect("every caller gets a worktree");
+            assert!(paths.insert(worktree.path), "two callers got one directory");
+        }
+        assert_eq!(paths.len(), CALLERS);
     }
 }

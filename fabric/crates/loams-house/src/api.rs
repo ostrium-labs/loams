@@ -113,6 +113,8 @@ pub struct Governance {
     pub admission: Arc<crate::admission::Admission>,
     /// Running statements, both surfaces.
     pub processes: Arc<crate::watchdog::Processes>,
+    /// Every statement's end, and the query log (HS1 Task 23).
+    pub observer: Arc<crate::querylog::Observer>,
 }
 
 impl HouseApi {
@@ -411,6 +413,34 @@ fn database_or_default(database: &str) -> &str {
     }
 }
 
+/// A query log row as the API shows it.
+fn record_of(e: &crate::querylog::Entry) -> pb::QueryRecord {
+    pb::QueryRecord {
+        query_id: e.query_id.clone(),
+        principal: e.user.clone(),
+        started_at: buffa::MessageField::some(loams_house_proto::google::protobuf::Timestamp {
+            seconds: e.started_us.div_euclid(1_000_000),
+            nanos: i32::try_from(e.started_us.rem_euclid(1_000_000) * 1000).unwrap_or(0),
+            ..Default::default()
+        }),
+        duration_ms: e.duration_ms(),
+        status: match e.code {
+            0 => pb::QueryStatus::QUERY_STATUS_FINISHED,
+            crate::querylog::CANCELLED => pb::QueryStatus::QUERY_STATUS_CANCELLED,
+            _ => pb::QueryStatus::QUERY_STATUS_FAILED,
+        }
+        .into(),
+        error_code: e.code,
+        query: e.query.clone(),
+        query_truncated: false,
+        read_rows: e.read_rows,
+        read_bytes: e.read_bytes,
+        result_rows: e.result_rows,
+        error_message: e.exception.clone(),
+        ..Default::default()
+    }
+}
+
 /// AIP-158 paging over a whole list: an opaque token for the next offset.
 fn page<T>(items: Vec<T>, page_size: i32, token: &str) -> Result<(Vec<T>, String), ConnectError> {
     let size = match usize::try_from(page_size) {
@@ -672,8 +702,8 @@ impl HouseService for HouseApi {
         let request = request.to_owned_message();
         let namespace_wide =
             request.scope.as_known() == Some(pb::HistoryScope::HISTORY_SCOPE_NAMESPACE);
-        if namespace_wide {
-            // `house:admin` arrives with HS1 Task 20; until then nobody has it.
+        // The namespace's whole history needs `house:admin` (§49 §18).
+        if namespace_wide && !user.scopes.admin {
             return Err(refuse(
                 ErrorCode::PermissionDenied,
                 "house_access_denied",
@@ -681,25 +711,69 @@ impl HouseService for HouseApi {
                 &[],
             ));
         }
-        let Some(log) = self.catalog.query_log(user.namespace) else {
-            return Err(not_yet("The query log", catalog::QUERY_LOG_TASK));
+        let status = match request.status.as_known() {
+            None | Some(pb::QueryStatus::QUERY_STATUS_UNSPECIFIED) => None,
+            Some(pb::QueryStatus::QUERY_STATUS_FINISHED) => {
+                Some(crate::querylog::StatusFilter::Finished)
+            }
+            Some(pb::QueryStatus::QUERY_STATUS_FAILED) => {
+                Some(crate::querylog::StatusFilter::Failed)
+            }
+            Some(pb::QueryStatus::QUERY_STATUS_CANCELLED) => {
+                Some(crate::querylog::StatusFilter::Cancelled)
+            }
+            // The log holds ended statements only (ruling R23.9).
+            Some(pb::QueryStatus::QUERY_STATUS_RUNNING) => {
+                return Response::ok(pb::ListQueryHistoryResponse::default());
+            }
         };
-        let status = request.status.as_known();
         let since = request.since.as_option().cloned();
-        let text = request.text_contains.to_lowercase();
+        let log: Vec<pb::QueryRecord> = match &self.governance.observer.log {
+            // The namespace's `_house.query_log` (HS1 Task 23).
+            Some(log) => {
+                let filter = crate::querylog::Filter {
+                    user: (!namespace_wide).then(|| user.user.clone()),
+                    since_us: since
+                        .as_ref()
+                        .map(|t| t.seconds.saturating_mul(1_000_000) + i64::from(t.nanos) / 1000),
+                    status,
+                    text: (!request.text_contains.is_empty())
+                        .then(|| request.text_contains.clone()),
+                    ..crate::querylog::Filter::default()
+                };
+                log.read(&self.pool, user.namespace, &filter)
+                    .await
+                    .map_err(|err| to_connect(&err))?
+                    .iter()
+                    .map(record_of)
+                    .collect()
+            }
+            // A House without a catalog has no query log: its fixtures.
+            None => {
+                let Some(log) = self.catalog.query_log(user.namespace) else {
+                    return Err(not_yet("The query log", catalog::QUERY_LOG_TASK));
+                };
+                let text = request.text_contains.to_lowercase();
+                let wanted = request.status.as_known();
+                log.into_iter()
+                    .filter(|q| namespace_wide || q.principal == user.user)
+                    .filter(|q| match wanted {
+                        None | Some(pb::QueryStatus::QUERY_STATUS_UNSPECIFIED) => true,
+                        Some(wanted) => q.status.as_known() == Some(wanted),
+                    })
+                    .filter(|q| match (&since, q.started_at.as_option()) {
+                        (Some(since), Some(at)) => {
+                            (at.seconds, at.nanos) >= (since.seconds, since.nanos)
+                        }
+                        (Some(_), None) => false,
+                        (None, _) => true,
+                    })
+                    .filter(|q| text.is_empty() || q.query.to_lowercase().contains(&text))
+                    .collect()
+            }
+        };
         let rows: Vec<pb::QueryRecord> = log
             .into_iter()
-            .filter(|q| q.principal == user.user)
-            .filter(|q| match status {
-                None | Some(pb::QueryStatus::QUERY_STATUS_UNSPECIFIED) => true,
-                Some(wanted) => q.status.as_known() == Some(wanted),
-            })
-            .filter(|q| match (&since, q.started_at.as_option()) {
-                (Some(since), Some(at)) => (at.seconds, at.nanos) >= (since.seconds, since.nanos),
-                (Some(_), None) => false,
-                (None, _) => true,
-            })
-            .filter(|q| text.is_empty() || q.query.to_lowercase().contains(&text))
             .map(|mut q| {
                 if q.query.len() > 4096 {
                     let mut end = 4096;
@@ -727,20 +801,42 @@ impl HouseService for HouseApi {
     ) -> ServiceResult<pb::GetQueryResponse> {
         let user = self.caller(&ctx)?;
         let request = request.to_owned_message();
-        let Some(log) = self.catalog.query_log(user.namespace) else {
-            return Err(not_yet("The query log", catalog::QUERY_LOG_TASK));
+        let not_found = || {
+            refuse(
+                ErrorCode::NotFound,
+                "house_query_not_found",
+                format!("No query of yours has the id {}", request.query_id),
+                &[("query_id", request.query_id.clone())],
+            )
         };
-        let found = log
-            .into_iter()
-            .find(|q| q.query_id == request.query_id && q.principal == user.user)
-            .ok_or_else(|| {
-                refuse(
-                    ErrorCode::NotFound,
-                    "house_query_not_found",
-                    format!("No query of yours has the id {}", request.query_id),
-                    &[("query_id", request.query_id.clone())],
-                )
-            })?;
+        if request.query_id.is_empty() {
+            return Err(invalid("query_id", "query_id is empty"));
+        }
+        let found = match &self.governance.observer.log {
+            // Another user's statement only with `house:admin`.
+            Some(log) => {
+                let filter = crate::querylog::Filter {
+                    user: (!user.scopes.admin).then(|| user.user.clone()),
+                    query_id: Some(request.query_id.clone()),
+                    ..crate::querylog::Filter::default()
+                };
+                log.read(&self.pool, user.namespace, &filter)
+                    .await
+                    .map_err(|err| to_connect(&err))?
+                    .first()
+                    .map(record_of)
+            }
+            None => {
+                let Some(log) = self.catalog.query_log(user.namespace) else {
+                    return Err(not_yet("The query log", catalog::QUERY_LOG_TASK));
+                };
+                log.into_iter().find(|q| {
+                    q.query_id == request.query_id
+                        && (q.principal == user.user || user.scopes.admin)
+                })
+            }
+        };
+        let found = found.ok_or_else(not_found)?;
         Response::ok(pb::GetQueryResponse {
             query: buffa::MessageField::some(found),
             ..Default::default()

@@ -25,6 +25,8 @@ inputs:
       - proto/loams/live/v1
       # Loams Graph (GR1 Task 8): the Graph page's admin and GQL clients.
       - proto/loams/graph/v1
+      - proto/loams/sql/v1
+      - proto/loams/stream/v1
       # Loams House (HS1 Task 8): the Analytics page's client (§49 §18.3).
       - proto/loams/house/v1
       # The console API on Connect (API2 Tasks 6 and 7): sessions, setup and

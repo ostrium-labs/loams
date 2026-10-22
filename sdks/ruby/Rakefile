@@ -8,8 +8,9 @@ end
 
 def run_minitest(filter = nil)
   ruby_bin = RbConfig.ruby
-  test_file = File.expand_path("test/conformance_test.rb", __dir__)
-  args = ["-Ilib", "-Itest", "-Itest/support", test_file]
+  # Every `test/*_test.rb`, in one process.
+  loader = Dir[File.expand_path("test/*_test.rb", __dir__)].sort.map { |f| "require #{f.dump};" }.join
+  args = ["-Ilib", "-Itest", "-Itest/support", "-e", loader]
   if filter && !filter.empty?
     args += ["--", "--name", "/#{filter}/"]
   end
@@ -25,6 +26,15 @@ namespace :test do
     target ||= ENV["TESTOPTS"].to_s.sub(/^--name\s*/, "") unless ENV["TESTOPTS"].to_s.empty?
     run_minitest(target)
   end
+end
+
+desc "Regenerate gen/loams-descriptor.binpb from proto/ (needs buf; scripts/sdk/gen.sh descriptors does the same)"
+task :descriptors do
+  repo = File.expand_path("../..", __dir__)
+  out = File.expand_path("gen/loams-descriptor.binpb", __dir__)
+  # The whole proto module, as gen.sh builds it for Ruby and Kotlin (D652).
+  Dir.chdir(repo) { system("buf", "build", "-o", out) || abort("buf build failed") }
+  puts "#{File.size(out)} bytes in gen/loams-descriptor.binpb; commit it if it changed"
 end
 
 desc "Run all tests"

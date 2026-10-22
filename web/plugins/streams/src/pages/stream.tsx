@@ -117,7 +117,7 @@ export function TailPanel({
       }
       flush
     >
-      <p className="lc-muted px-4 pt-2 text-sm">
+      <p className="lc-muted px-4 pt-2 text-body">
         {paused ? 'Paused.' : `Polling every ${pollMs / 1000} s.`} New records only, newest{' '}
         {TAIL_LIMIT} kept ({records.length} shown).
       </p>
@@ -299,7 +299,7 @@ function ProduceCard({
           <Button variant="primary" type="submit" disabled={busy}>
             Produce
           </Button>
-          {result && <span className="text-sm text-muted">{result}</span>}
+          {result && <span className="text-body text-muted">{result}</span>}
         </div>
         {problems.length > 0 && (
           <ErrorNotice title="The CloudEvent is not valid" message={problems.join(' ')} />
@@ -390,7 +390,7 @@ export function StreamPage({
             onProduced={refresh}
           />
           <div className="flex items-center gap-2">
-            <label htmlFor="sp-tail-partition" className="text-sm text-muted">
+            <label htmlFor="sp-tail-partition" className="text-body text-muted">
               Tail partition
             </label>
             <Select

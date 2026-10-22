@@ -21,6 +21,7 @@
 // request would be one refactor away from regenerating the key per attempt, which
 // is the exact failure the corpus's `mock_state_idempotent_decide` records.
 
+using System.Collections.Frozen;
 using Google.Protobuf;
 
 namespace Loams;
@@ -99,10 +100,25 @@ public sealed record CallOptions
     public string? ConsistencyToken { get; init; }
 
     /// <summary>
-    /// Folds this call's responses into the client's session store and attaches the
-    /// stored token to later reads. Off unless asked for, in both directions (R4).
+    /// Whether this call reads from and records into the client's session store
+    /// (R4). Null follows the client: on when
+    /// <see cref="LoamsClientOptions.SessionConsistency"/> is on. True or false
+    /// overrides it for this call.
     /// </summary>
-    public bool UseSessionConsistency { get; init; }
+    public bool? UseSessionConsistency { get; init; }
+
+    /// <summary>
+    /// The namespace this call fills into a request that has a <c>namespace</c>
+    /// field and left it empty (R11). Overrides the client's default; an explicit
+    /// field on the request wins over both.
+    /// </summary>
+    public string? Namespace { get; init; }
+
+    /// <summary>
+    /// This call's deadline (R12). Null takes the client's (30 s for a unary call,
+    /// none for a stream); <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> means none.
+    /// </summary>
+    public TimeSpan? Timeout { get; init; }
 
     /// <summary>
     /// Makes a server stream reconnect from its last cursor on a retryable failure
@@ -315,7 +331,19 @@ public sealed class CallInvoker
 
     /// <summary>Builds an invoker over a transport and a client's credentials.</summary>
     public CallInvoker(Transport transport, ITokenSource? source, int maxRetries, ConsistencySession? session)
+        : this(transport, source, maxRetries, session, null, null)
     {
+    }
+
+    /// <summary>
+    /// Builds an invoker with the client defaults of R11 (a default namespace) and
+    /// R12 (a unary deadline).
+    /// </summary>
+    public CallInvoker(Transport transport, ITokenSource? source, int maxRetries, ConsistencySession? session,
+        string? defaultNamespace, TimeSpan? timeout)
+    {
+        DefaultNamespace = string.IsNullOrEmpty(defaultNamespace) ? null : defaultNamespace;
+        Timeout = timeout ?? DefaultTimeout;
         Transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _source = source;
         _maxRetries = maxRetries;
@@ -324,6 +352,18 @@ public sealed class CallInvoker
 
     /// <summary>The transport calls go over.</summary>
     public Transport Transport { get; }
+
+    /// <summary>The unary deadline when neither client nor call names one (R12).</summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>The namespace a request with an empty <c>namespace</c> field gets (R11).</summary>
+    public string? DefaultNamespace { get; }
+
+    /// <summary>The client's unary deadline (R12).</summary>
+    public TimeSpan Timeout { get; }
+
+    /// <summary>The session store, or null when session consistency is off.</summary>
+    public ConsistencySession? Session => _session;
 
     /// <summary>The protocol this client speaks.</summary>
     public Protocol Protocol => Transport.Protocol;
@@ -359,57 +399,95 @@ public sealed class CallInvoker
                 $"{binding.Name} is a server stream; call ServerStreamAsync for it");
         }
 
-        var settings = options ?? CallOptions.None;
+        var response = await RunUnaryAsync(binding, request, options ?? CallOptions.None, cancellationToken)
+            .ConfigureAwait(false);
+        if (response is not TResponse typed)
+        {
+            throw ErrorMapper.Internal(binding.Rpc,
+                $"{binding.Name} answered with a {response.GetType().Name}, not a {typeof(TResponse).Name}");
+        }
+        return typed;
+    }
+
+    // The one unary path: R11's namespace, R4's session read, R3's key, R12's
+    // deadline, the retry loop, and R4's session write, in that order.
+    private async Task<IMessage> RunUnaryAsync(
+        CallBinding binding,
+        IMessage request,
+        CallOptions settings,
+        CancellationToken cancellationToken)
+    {
+        var session = SessionFor(binding, settings);
+        var (prepared, bodyCarriesToken) = Prepare(binding, request, settings, session);
 
         // R3: keyed **once**, before the first attempt, and the same message goes to
         // every attempt. A binding whose schema declares no `idempotency_key` is
         // left exactly as the caller wrote it, and a caller who set
         // `MintIdempotencyKey = false` has already decided this call goes out
         // unkeyed.
-        var keyed = Idempotency.Apply(request, settings.IdempotencyKey ?? string.Empty,
+        var keyed = Idempotency.Apply(prepared, settings.IdempotencyKey ?? string.Empty,
             settings.MintIdempotencyKey ?? true);
 
         var plan = PlanFor(binding, settings, keyed.Keyed);
-        var token = ConsistencySession.Resolve(settings.ConsistencyToken,
-            settings.UseSessionConsistency ? _session : null);
+        var token = !string.IsNullOrEmpty(settings.ConsistencyToken)
+            ? settings.ConsistencyToken
+            : bodyCarriesToken ? null : session?.Current;
 
-        var response = await RetryLoop.RunAsync(
-            binding.Rpc,
-            keyed.Request,
-            plan,
-            (attempt) => SendUnaryAsync(binding, attempt, settings, token),
-            cancellationToken).ConfigureAwait(false);
-
-        if (response is not TResponse typed)
+        // R12: one budget for the whole logical call, retries and backoff
+        // included. A call that runs out of it is `deadline_exceeded` with reason
+        // `client_deadline_exceeded`, and is never retried: the budget is spent.
+        var budget = settings.Timeout ?? Timeout;
+        using var deadline = Deadline.Start(budget, cancellationToken);
+        string? headerToken = null;
+        IMessage response;
+        try
         {
-            throw ErrorMapper.Internal(binding.Rpc,
-                $"{binding.Name} answered with a {response.GetType().Name}, not a {typeof(TResponse).Name}");
+            response = await RetryLoop.RunAsync(
+                binding.Rpc,
+                keyed.Request,
+                plan,
+                async (attempt) =>
+                {
+                    var (message, header) = await SendUnaryAsync(binding, attempt, settings, token, deadline)
+                        .ConfigureAwait(false);
+                    headerToken = header;
+                    return message;
+                },
+                deadline.Token).ConfigureAwait(false);
+        }
+        catch (Exception thrown) when (deadline.Expired && !cancellationToken.IsCancellationRequested)
+        {
+            throw Deadline.Exceeded(binding.Rpc, budget, thrown);
         }
 
         // A store that cannot merge a token counts it and carries on: the RPC
         // succeeded, and turning that into an error would make a caller that
         // retries on it perform the write twice.
-        RecordConsistency(settings, typed);
-        return typed;
+        RecordConsistency(session, response, headerToken);
+        return response;
     }
 
-    private async Task<IMessage> SendUnaryAsync(
+    private async Task<(IMessage Message, string? ConsistencyToken)> SendUnaryAsync(
         CallBinding binding,
         Attempt attempt,
         CallOptions settings,
-        string? consistencyToken)
+        string? consistencyToken,
+        Deadline deadline)
     {
         var body = MessageCodec.Serialize(attempt.Request, Codec);
         var headers = await HeadersAsync(settings, attempt.CancellationToken).ConfigureAwait(false);
+        var extra = new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase);
         if (consistencyToken is { Length: > 0 })
         {
-            headers = new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase)
-            {
-                [ConsistencySession.Header] = consistencyToken,
-            };
+            extra[ConsistencySession.Header] = consistencyToken;
+        }
+        if (deadline.Remaining is { } remaining)
+        {
+            var (name, value) = Deadline.Header(Protocol, remaining);
+            extra[name] = value;
         }
 
-        var response = await Transport.SendAsync(new TransportRequest(binding, body, headers),
+        var response = await Transport.SendAsync(new TransportRequest(binding, body, extra),
             attempt.CancellationToken).ConfigureAwait(false);
 
         if (ResponseReader.UnaryFailure(response, Protocol, binding.Rpc) is { } failure)
@@ -418,7 +496,7 @@ public sealed class CallInvoker
         }
 
         var parser = DescriptorFor(binding.ResponseTypeName);
-        return MessageCodec.Deserialize(parser, response.Body, Codec);
+        return (MessageCodec.Deserialize(parser, response.Body, Codec), response.ConsistencyToken);
     }
 
     /// <summary>
@@ -449,18 +527,8 @@ public sealed class CallInvoker
             throw ErrorMapper.Internal(binding.Rpc, $"{binding.Name} is a server stream; call ServerStreamAsync for it");
         }
 
-        var settings = options ?? CallOptions.None;
-        var keyed = Idempotency.Apply(request, settings.IdempotencyKey ?? string.Empty,
-            settings.MintIdempotencyKey ?? true);
-        var plan = PlanFor(binding, settings, keyed.Keyed);
-        var token = ConsistencySession.Resolve(settings.ConsistencyToken,
-            settings.UseSessionConsistency ? _session : null);
-
-        var response = await RetryLoop.RunAsync(binding.Rpc, keyed.Request, plan,
-            (attempt) => SendUnaryAsync(binding, attempt, settings, token), cancellationToken).ConfigureAwait(false);
-
-        RecordConsistency(settings, response);
-        return response;
+        return await RunUnaryAsync(binding, request, options ?? CallOptions.None, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -588,32 +656,92 @@ public sealed class CallInvoker
             : new RetryPlan(retrySafe, maxRetries, _source.CanRefresh, _source.RefreshAsync);
     }
 
-    /// <summary>
-    /// Folds a response's consistency token into the session, when the caller opted
-    /// in. A merge failure is swallowed on purpose — see the caller.
-    /// </summary>
-    private void RecordConsistency(CallOptions settings, IMessage response)
+    // R4's session applies to the packages whose tokens share the collection log's
+    // `v1:` family and whose reads accept a merged token. A graph token names one
+    // graph's own stream (`v1:s<graph>/p0@<offset>`), so a graph read refuses a
+    // merged one: graph tokens are threaded by the caller (SDKP ruling, C# L5).
+    internal static readonly FrozenSet<string> SessionPackages = new[]
     {
-        if (_session is null || !settings.UseSessionConsistency)
+        "loams.collection.v1", "loams.sql.v1",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    private ConsistencySession? SessionFor(CallBinding binding, CallOptions settings) =>
+        settings.UseSessionConsistency == false
+            ? null
+            : settings.UseSessionConsistency == true || SessionPackages.Contains(binding.Package) ? _session : null;
+
+    /// <summary>The response fields a consistency token can arrive in (R4).</summary>
+    internal static readonly string[] TokenFields = ["consistency_token", "token", "read_token"];
+
+    private static void RecordConsistency(ConsistencySession? session, IMessage response, string? header)
+    {
+        if (session is null)
         {
             return;
         }
-        var field = response.Descriptor.FindFieldByName("consistency_token");
-        if (field?.Accessor.GetValue(response) is not string token || token.Length == 0)
+        foreach (var name in TokenFields)
         {
-            return;
+            var field = response.Descriptor.FindFieldByName(name);
+            if (field is { FieldType: Google.Protobuf.Reflection.FieldType.String, IsRepeated: false }
+                && field.Accessor.GetValue(response) is string token)
+            {
+                session.Merge(token);
+            }
         }
-        try
+        session.Merge(header);
+    }
+
+    /// <summary>
+    /// The packages R11 applies to: the app-building API, where every request is
+    /// scoped to a namespace (SDKP §2.1). The older packages are left as they were.
+    /// </summary>
+    internal static readonly FrozenSet<string> NamespacedPackages = new[]
+    {
+        "loams.collection.v1", "loams.graph.v1", "loams.sql.v1", "loams.stream.v1",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    // R11 and R4's read half, on a copy: the caller's message is never mutated.
+    private (IMessage Request, bool BodyCarriesToken) Prepare(
+        CallBinding binding,
+        IMessage request,
+        CallOptions settings,
+        ConsistencySession? session)
+    {
+        IMessage? copy = null;
+        IMessage Copy() => copy ??= request.Descriptor.Parser.ParseFrom(request.ToByteArray());
+
+        if (NamespacedPackages.Contains(binding.Package)
+            && request.Descriptor.FindFieldByName("namespace") is
+                { FieldType: Google.Protobuf.Reflection.FieldType.String, IsRepeated: false } ns
+            && ns.Accessor.GetValue(request) is "")
         {
-            _session.Merge(token);
+            var fill = settings.Namespace ?? DefaultNamespace;
+            if (string.IsNullOrEmpty(fill))
+            {
+                throw new InvalidArgumentError(binding.Rpc, Reason.InvalidArgument, "namespace_required",
+                    new Dictionary<string, string> { ["field"] = "namespace" },
+                    message: $"{binding.Rpc}: no namespace: pass one, or give the client a default " +
+                        "(LoamsClientOptions.Namespace or LOAMS_NAMESPACE)");
+            }
+            ns.Accessor.SetValue(Copy(), fill);
         }
-        catch (InvalidOperationException)
+
+        var bodyCarriesToken = false;
+        if (session?.Current is { } current
+            && string.IsNullOrEmpty(settings.ConsistencyToken)
+            && request.Descriptor.FindFieldByName("consistency") is
+                { FieldType: Google.Protobuf.Reflection.FieldType.Message } consistency
+            && consistency.MessageType.FindFieldByName("at_least") is { } atLeast)
         {
-            // No RPC carries a `consistency_token` yet (R4), and when one does the
-            // store may legitimately be asked to merge two it cannot. The call
-            // succeeded; refusing it here would make a caller that retries on the
-            // error perform the write twice.
+            if (consistency.Accessor.GetValue(request) is null)
+            {
+                var value = consistency.MessageType.Parser.ParseFrom(ByteString.Empty);
+                atLeast.Accessor.SetValue(value, current);
+                consistency.Accessor.SetValue(Copy(), value);
+            }
+            bodyCarriesToken = true;
         }
+        return (copy ?? request, bodyCarriesToken);
     }
 
     private static Google.Protobuf.Reflection.MessageDescriptor DescriptorFor(string clrTypeName) =>

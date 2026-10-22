@@ -1,0 +1,106 @@
+# The software factory's app images, pinned by digest (SF1 Task 2, design §39 D-SF-17).
+# Each is the newest stable release at least 14 days old on `pinned_on`, tested end to end
+# in Studio against the factory's adapters (PR #773). Licences are design §39 §4's.
+# Test notes: Langfuse 4 needs ClickHouse 25.12 or newer (its compose pins 25.12) and
+# takes traces over OTLP; Zulip 12 refuses plain HTTP that did not come through a
+# TLS-terminating proxy; ItsAPlan's api and web are separate origins (Plane's App URL).
+# Bump: pick the release, resolve its manifest-list digest, re-run the factory's
+# end-to-end checks, then edit this file.
+schema = 1
+pinned_on = "2026-10-18"
+
+[images.forgejo]
+image = "codeberg.org/forgejo/forgejo"
+version = "16.0.5"
+released = "2026-09-17"
+digest = "sha256:cf5f5ae6acf2ababca0ee3d255705b83a47f35b25e07fc931d694d60664053fe"
+licence = "GPL-3.0-or-later"
+source = "https://codeberg.org/forgejo/forgejo"
+
+[images.zulip]
+image = "ghcr.io/zulip/zulip-server"
+version = "12.3-0"
+released = "2026-09-21"
+digest = "sha256:76a1ecc4ba5470869d9609ef1ec16497b410189918b2daba85862183a59aa275"
+licence = "Apache-2.0"
+source = "https://github.com/zulip/docker-zulip"
+
+[images.itsaplan-api]
+image = "ghcr.io/croffasia/itsaplan-api"
+version = "1.3.0"
+released = "2026-10-04"
+digest = "sha256:e0124d4ac395cbdf9c06c57e44d375c0cf53b8a0b9b3ee1593422bfdcf09edb8"
+licence = "AGPL-3.0"
+source = "https://github.com/croffasia/itsaplan"
+
+[images.itsaplan-web]
+image = "ghcr.io/croffasia/itsaplan-web"
+version = "1.3.0"
+released = "2026-10-04"
+digest = "sha256:f8d78542a508cc9bd473a210644712ad3d981d85d03c19fafef3ea95d1a95da0"
+licence = "AGPL-3.0"
+source = "https://github.com/croffasia/itsaplan"
+
+[images.itsaplan-worker]
+image = "ghcr.io/croffasia/itsaplan-worker"
+version = "1.3.0"
+released = "2026-10-04"
+digest = "sha256:0bb843ab28062a7203e08be1470b2541d51cd3a2033ad208e3b2554386e66b65"
+licence = "AGPL-3.0"
+source = "https://github.com/croffasia/itsaplan"
+
+[images.glitchtip]
+image = "docker.io/glitchtip/glitchtip"
+version = "6.2.6"
+released = "2026-08-08"
+digest = "sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6"
+licence = "MIT"
+source = "https://gitlab.com/glitchtip/glitchtip-backend"
+
+[images.openpanel-api]
+image = "docker.io/lindesvard/openpanel-api"
+version = "2.3.0"
+released = "2026-08-18"
+digest = "sha256:cee4855cd715a7248c5c49090fe93a28ffc505541de20cb238d8884a6bcb9223"
+licence = "AGPL-3.0"
+source = "https://github.com/Openpanel-dev/openpanel"
+
+[images.openpanel-dashboard]
+image = "docker.io/lindesvard/openpanel-dashboard"
+version = "2.3.0"
+released = "2026-08-18"
+digest = "sha256:b773cf864454a0ec89b2a133b48bf06202880ed650a75cc2f1f5c87aaed1cffa"
+licence = "AGPL-3.0"
+source = "https://github.com/Openpanel-dev/openpanel"
+
+[images.openpanel-worker]
+image = "docker.io/lindesvard/openpanel-worker"
+version = "2.3.0"
+released = "2026-08-18"
+digest = "sha256:b22e247fb6980b820c1a954d0e3d2fe88b3edf40a58aa53329467af239538e80"
+licence = "AGPL-3.0"
+source = "https://github.com/Openpanel-dev/openpanel"
+
+[images.langfuse-web]
+image = "docker.io/langfuse/langfuse"
+version = "4.50.0"
+released = "2026-10-02"
+digest = "sha256:3d2ae888a0e6edb41fdba6e7d5baca5e4baede3a870dac7970dadd9d925b018e"
+licence = "MIT (ee/ never enabled)"
+source = "https://github.com/langfuse/langfuse"
+
+[images.langfuse-worker]
+image = "docker.io/langfuse/langfuse-worker"
+version = "4.50.0"
+released = "2026-10-02"
+digest = "sha256:52f7fd41ded2f1a6acab13ff7cb1832d36dfe2cbf44adea402b7a09cfa4ce800"
+licence = "MIT (ee/ never enabled)"
+source = "https://github.com/langfuse/langfuse"
+
+[images.openobserve]
+image = "public.ecr.aws/zinclabs/openobserve"
+version = "v1.0.4"
+released = "2026-09-24"
+digest = "sha256:d4a878fac1f6c56003764f7f2a1625668917388f167e222c8c810de3f54c56ba"
+licence = "AGPL-3.0"
+source = "https://github.com/openobserve/openobserve"

@@ -438,7 +438,7 @@ export function GroupPage({
   return (
     <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6 px-6 py-6">
       <header className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2 text-[0.78rem] text-muted">
+        <div className="flex flex-wrap items-center gap-2 text-small text-muted">
           <Layers size={14} aria-hidden="true" className="text-accent-fg" />
           <span>Run group</span>
           <span aria-hidden="true">·</span>
@@ -447,9 +447,9 @@ export function GroupPage({
           </span>
           <StatusTag status={tag.status}>{tag.label}</StatusTag>
         </div>
-        <h1 className="m-0 text-[1.4rem] font-semibold text-ink tracking-[-0.01em]">{title}</h1>
+        <h1 className="m-0 text-title font-semibold text-ink">{title}</h1>
         {rest && (
-          <p className="m-0 line-clamp-3 whitespace-pre-wrap text-[0.86rem] text-muted">{rest}</p>
+          <p className="m-0 line-clamp-3 whitespace-pre-wrap text-body text-muted">{rest}</p>
         )}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {group.hasCheck && !resolved && (
@@ -503,7 +503,7 @@ export function GroupPage({
         {matrix.isPending && !matrix.data ? (
           <Spinner tone="muted" label="Comparing the variants" />
         ) : matrix.error ? (
-          <p role="alert" className="m-0 text-[0.84rem] text-danger">
+          <p role="alert" className="m-0 text-body text-danger">
             {matrix.error.message}
           </p>
         ) : (
@@ -524,8 +524,8 @@ export function GroupPage({
         {pair && (
           <div className="flex flex-col gap-3 border-t border-rule-soft pt-3">
             <div className="flex flex-col gap-1.5">
-              <span className="text-[0.8rem] text-muted">Side by side</span>
-              <div className="grid items-center gap-2 text-[0.82rem] text-muted md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1.5fr)]">
+              <span className="text-small text-muted">Side by side</span>
+              <div className="grid items-center gap-2 text-body text-muted md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1.5fr)]">
                 <Select
                   aria-label="Left"
                   value={pair.from}
@@ -562,11 +562,11 @@ export function GroupPage({
               </div>
             </div>
             {pair.from === pair.to ? (
-              <p className="m-0 text-[0.84rem] text-muted">Pick two different variants.</p>
+              <p className="m-0 text-body text-muted">Pick two different variants.</p>
             ) : pairDiff.isPending ? (
               <Spinner tone="muted" label="Reading the pair’s diff" />
             ) : pairDiff.error ? (
-              <p role="alert" className="m-0 text-[0.84rem] text-danger">
+              <p role="alert" className="m-0 text-body text-danger">
                 {pairDiff.error.message}
               </p>
             ) : (

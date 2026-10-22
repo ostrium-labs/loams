@@ -1,7 +1,11 @@
-# deploy/loams-postgres-dev: Loams Postgres (Neon) on RustFS, the development stack from the Neon + WeSQL spike (docs/design/23-neon-and-wesql.md).
+# deploy/loams-postgres-dev: Loams Postgres (Neon), the development stack from the Neon + WeSQL spike (docs/design/23-neon-and-wesql.md).
 # Derived from neondatabase/neon `docker-compose/` (Apache-2.0), with MinIO replaced by RustFS,
 # one safekeeper instead of three, and computes that attach to an explicit tenant/timeline
 # (compute1's is created by the one-shot pg-bootstrap unless .env names one).
+# The pageserver's and the safekeeper's remote storage is a local folder in their own volumes by
+# default (Neon's LocalFs: one disk, no second copy); the `rustfs` profile (COMPOSE_PROFILES=rustfs
+# in .env) runs RustFS and puts both in its `neon` bucket instead. Pick one before the first start:
+# the timelines stay in the storage they were created in.
 # Not a production layout: no storage controller, no proxy, no TLS, default credentials, loopback ports.
 # The project keeps its pre-rename name (D823): Docker names users' volumes
 # after it, so renaming it would orphan their data.
@@ -16,9 +20,13 @@ x-s3-env: &s3-env
   AWS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
   AWS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY:-rustfsadmin}
   AWS_REGION: us-east-1
+  # The profiles (COMPOSE_PROFILES): `rustfs` selects the S3 remote storage.
+  LOAMS_PROFILES: ${COMPOSE_PROFILES:-}
 
 services:
+  # RustFS and its bucket: `rustfs` profile only.
   rustfs:
+    profiles: [rustfs]
     image: docker.io/rustfs/rustfs:1.0.0
     environment:
       RUSTFS_VOLUMES: /data
@@ -34,6 +42,7 @@ services:
   # Creates the `neon` bucket with a SigV4-signed PUT. RustFS requires x-amz-content-sha256,
   # which curl 7.88's --aws-sigv4 does not add, so it is set to the empty-body hash.
   create-bucket:
+    profiles: [rustfs]
     image: *neon-image
     depends_on: [rustfs]
     restart: "no"
@@ -53,20 +62,33 @@ services:
     image: *neon-image
     command: ["storage_broker", "--listen-addr=0.0.0.0:50051"]
 
+  # Its configuration is pageserver.toml plus the remote storage the profiles select, written
+  # into the data volume at each start: the `neon` bucket on RustFS, or the folder
+  # /data/.neon/remote_storage in the same volume.
   pageserver:
     image: *neon-image
     environment: *s3-env
     ports:
       - 127.0.0.1:9898:9898 # management API: tenants, timelines, branches
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        case ",$${LOAMS_PROFILES}," in
+        *,rustfs,*) remote="{ endpoint='http://rustfs:9000', bucket_name='neon', bucket_region='us-east-1', prefix_in_bucket='/pageserver' }" ;;
+        *) mkdir -p /data/.neon/remote_storage; remote="{ local_path='/data/.neon/remote_storage' }" ;;
+        esac;
+        { cat /etc/loams-pageserver/pageserver.toml; echo "remote_storage=$${remote}"; } > /data/.neon/pageserver.toml;
+        exec /usr/local/bin/pageserver -D /data/.neon
     volumes:
       - pageserver-data:/data/.neon
-      - ./pageserver.toml:/data/.neon/pageserver.toml:ro
+      - ./pageserver.toml:/etc/loams-pageserver/pageserver.toml:ro
       - ./identity.toml:/data/.neon/identity.toml:ro
     depends_on:
       storage_broker:
         condition: service_started
       create-bucket:
         condition: service_completed_successfully
+        required: false
 
   # WAL lands on the safekeeper's disk first and is offloaded to the bucket. Since preview.3 it is
   # on the safekeeper-data volume, so recreating the container loses nothing (design §54 §9.3,
@@ -81,16 +103,25 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
-        safekeeper --listen-pg=safekeeper1:5454 --listen-http=0.0.0.0:7676 --id=1
-        --broker-endpoint=http://storage_broker:50051 -D /data
-        --remote-storage="{endpoint='http://rustfs:9000', bucket_name='neon', bucket_region='us-east-1', prefix_in_bucket='/safekeeper/'}"
+        case ",$${LOAMS_PROFILES}," in
+        *,rustfs,*) remote="{endpoint='http://rustfs:9000', bucket_name='neon', bucket_region='us-east-1', prefix_in_bucket='/safekeeper/'}" ;;
+        *) mkdir -p /data/.neon/remote_storage; remote="{local_path='/data/.neon/remote_storage'}" ;;
+        esac;
+        exec safekeeper --listen-pg=safekeeper1:5454 --listen-http=0.0.0.0:7676 --id=1
+        --broker-endpoint=http://storage_broker:50051 -D /data/.neon
+        --remote-storage="$${remote}"
+    # At /data/.neon, not /data: a fresh volume takes a copy of the image's directory, and the
+    # image's /data holds a 600 MB Postgres tarball the safekeeper never reads. A stack whose
+    # volume was first mounted at /data keeps its files at the volume's root, which is where they
+    # are read now.
     volumes:
-      - safekeeper-data:/data
+      - safekeeper-data:/data/.neon
     depends_on:
       storage_broker:
         condition: service_started
       create-bucket:
         condition: service_completed_successfully
+        required: false
 
   # One-shot: makes sure compute1's tenant and timeline exist on the pageserver, then exits 0
   # (bootstrap/pg-bootstrap.sh). With TENANT_ID and TIMELINE_ID empty it creates them once and

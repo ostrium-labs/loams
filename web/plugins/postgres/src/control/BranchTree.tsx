@@ -115,23 +115,23 @@ export function BranchTree({
                   <td>
                     {b.parentId ? (
                       <>
-                        <span className={/* mono-ok: id */ 'font-mono text-xs'}>
+                        <span className={/* mono-ok: id */ 'font-mono text-small'}>
                           {b.parentLsn || '—'}
                         </span>
                         {b.parentTime && (
-                          <time dateTime={b.parentTime} className="block text-xs text-muted">
+                          <time dateTime={b.parentTime} className="block text-small text-muted">
                             {new Date(b.parentTime).toLocaleString()}
                           </time>
                         )}
                       </>
                     ) : (
-                      <span className="text-xs text-muted">Root</span>
+                      <span className="text-small text-muted">Root</span>
                     )}
                   </td>
-                  <td className={/* mono-ok: id */ 'font-mono text-xs'}>
+                  <td className={/* mono-ok: id */ 'font-mono text-small'}>
                     {b.wal?.commitLsn || '—'}
                   </td>
-                  <td className="text-xs">{formatBytes(b.logicalSizeBytes)}</td>
+                  <td className="text-small">{formatBytes(b.logicalSizeBytes)}</td>
                   <td>
                     <Checkbox
                       label={<span className="sr-only">Protect {b.name}</span>}
@@ -264,7 +264,7 @@ function CreateBranchDialog({
           {(p) => <Input {...p} value={name} autoFocus onChange={(e) => setName(e.target.value)} />}
         </Field>
         <fieldset className="flex flex-col gap-1">
-          <legend className="text-sm">Branch point</legend>
+          <legend className="text-body">Branch point</legend>
           {(
             [
               ['head', `The current head of ${from?.name ?? 'the parent'}`],
@@ -376,7 +376,7 @@ function DeleteBranchDialog({
       }
     >
       <div className="flex flex-col gap-3">
-        <p className="text-sm">
+        <p className="text-body">
           Its endpoints are stopped first, then its timeline, roles and databases are removed. This
           cannot be undone.
         </p>

@@ -182,6 +182,22 @@ impl WorkspaceService for WorkspacesAbsent {
     ) -> ServiceResult<pb::RebaseResponse> {
         Err(absent("Rebase"))
     }
+
+    async fn commit_workspace(
+        &self,
+        _ctx: RequestContext,
+        _request: ServiceRequest<'_, pb::CommitWorkspaceRequest>,
+    ) -> ServiceResult<pb::CommitWorkspaceResponse> {
+        Err(absent("CommitWorkspace"))
+    }
+
+    async fn push_workspace(
+        &self,
+        _ctx: RequestContext,
+        _request: ServiceRequest<'_, pb::PushWorkspaceRequest>,
+    ) -> ServiceResult<pb::PushWorkspaceResponse> {
+        Err(absent("PushWorkspace"))
+    }
 }
 
 #[cfg(feature = "git")]
@@ -200,20 +216,22 @@ mod served {
     use loams_git::format::snapshot::snapshot_commit;
     use loams_git::history::{Pathspec, TreeReader};
     use loams_git::limits::{
-        HINT_EVERY, MAX_EDITS, MAX_FENCE_RETRIES, MAX_FORK_DEPTH, MAX_READ_PATHS,
+        HINT_EVERY, MAX_EDITS, MAX_FENCE_RETRIES, MAX_FORK_DEPTH, MAX_READ_PATHS, MAX_REFS_PER_PUSH,
     };
     use loams_git::objects::{Kind, WsView};
     use loams_git::odb::RangeOdb;
     use loams_git::ws::{
-        BucketWorkspaceStore, DELETED_LABEL, EditError, FileEdit, FileMode, MergeLabels, NoEnv,
-        NoScan, ReplayError, SalvageRef, SaveCheckError, SnapAppended, WorkspaceStore, WsBase,
-        WsError, WsPackBlobs, WsPackError, apply_edits, changed_paths, check_save_objects,
-        commit_tree, empty_tree, file_patch, fork_sources, put_workspace_pack, read_file,
-        rebase_trees, replay_salvage, seal_snapshot, view_of, write_ws_pack,
+        BucketWorkspaceStore, DELETED_LABEL, EditError, FileEdit, FileMode, Ident, Lease,
+        MergeLabels, NoEnv, NoScan, PushError, PushLog, PushRequest, PushSpec, RefStatus,
+        ReplayError, SERVER_COMMITTER, SalvageRef, SaveCheckError, SnapAppended, WorkspaceStore,
+        WsBase, WsError, WsPackBlobs, WsPackError, apply_edits, changed_paths, check_save_objects,
+        commit_tree, empty_tree, file_patch, fork_sources, push_workspace, put_workspace_pack,
+        read_file, rebase_trees, replay_salvage, same_workspace_commit, seal_snapshot, view_of,
+        workspace_commit, write_ws_pack,
     };
     use loams_git::{
-        BlobId, CreateWs, GitAccess, MountId, Principal, RefName, RefSnapshot, RepoPath, RepoPaths,
-        SnapN, StoreBlobStore, WsId, WsName,
+        BlobId, CreateWs, GitAccess, MountId, ObjectDb, Principal, RefName, RefSnapshot, RepoPath,
+        RepoPaths, SnapN, StoreBlobStore, WsId, WsName,
     };
     use loams_proto::loams::repos::v1 as pb;
     use loams_proto::loams::repos::v1::__buffa::oneof::watch_workspace_response;
@@ -227,8 +245,8 @@ mod served {
         internal, odb_error, open_odb, pack_pb, parse_oid, workspace_not_found, ws_pack_error,
     };
     use crate::api::repos::served::{
-        ReposServed, idem_key, invalid, key_reused, now_ms, page_size, repo_name, timestamp,
-        unavailable,
+        ReposServed, idem_key, invalid, key_reused, now_ms, page_size, ref_error, repo_name,
+        tenant, timestamp, token, unavailable,
     };
 
     /// `ListWorkspaces`', `ListSnapshots`' and `ListSalvage`'s page size when the request names
@@ -942,6 +960,311 @@ mod served {
                     .send((record.repo_id.clone(), ws.clone()));
             }
             Ok(appended)
+        }
+
+        /// Whether `stored` (snapshot `on.n + 1`) is the commit a `CommitWorkspace` of `on`
+        /// with `message` by `principal` makes: a retried call answers it.
+        #[allow(clippy::too_many_arguments)]
+        async fn commit_replayed(
+            &self,
+            ns_name: &str,
+            record: &RepoRecord,
+            ws: &WsId,
+            stored: &gitpb::WorkspaceSnapshot,
+            on: &gitpb::WorkspaceSnapshot,
+            principal: &Principal,
+            author: &Ident,
+            message: &str,
+        ) -> Result<bool, ConnectError> {
+            if stored.n != on.n + 1
+                || stored.principal != principal.as_str()
+                || stored.worktree_tree != on.worktree_tree
+                || stored.index_tree != on.index_tree
+                || stored.head.is_empty()
+                || stored.head == on.head
+            {
+                return Ok(false);
+            }
+            let Some(head) = head_of(stored)? else {
+                return Ok(false);
+            };
+            let odb = self.snapshot_odb(ns_name, record, ws, stored, on).await?;
+            let body = match odb.read(&head).await {
+                Ok((Kind::Commit, body)) => body,
+                Ok(_) => return Ok(false),
+                Err(err) => return Err(odb_error(err)),
+            };
+            let tree = tree_of(&on.index_tree, "index_tree")?;
+            Ok(same_workspace_commit(
+                &body,
+                &tree,
+                head_of(on)?.as_ref(),
+                author,
+                message,
+            ))
+        }
+
+        /// After a push moved `track` to the workspace's HEAD: a snapshot whose base (and
+        /// `base_seq`) is that commit, when the latest snapshot still has that HEAD on another
+        /// base; `None` when there is nothing to move or another save won.
+        async fn advance_base(
+            &self,
+            record: &RepoRecord,
+            ws: &WsId,
+            pushed_head: &loams_git::ObjectId,
+            seq: loams_git::Seq,
+            principal: &Principal,
+            writer_id: Option<&MountId>,
+        ) -> Result<Option<gitpb::WorkspaceSnapshot>, ConnectError> {
+            let (_, latest) = self.latest(record, ws.as_str()).await?;
+            let head = pushed_head.as_bytes();
+            if latest.head.as_slice() != head || latest.base.as_slice() == head {
+                return Ok(None);
+            }
+            let mut next = successor(
+                &gitpb::WorkspaceSnapshot {
+                    base: head.to_vec(),
+                    base_seq: seq.0,
+                    ..(*latest).clone()
+                },
+                tree_of(&latest.worktree_tree, "worktree_tree")?,
+                tree_of(&latest.index_tree, "index_tree")?,
+                latest.conflicts.clone(),
+                principal,
+                writer_id,
+            )?;
+            next.packs = self
+                .store_objects(record, ws, &next, Vec::new(), &latest.packs)
+                .await?;
+            let store = self.store(record);
+            Ok(match self.append(&store, record, ws, &next).await? {
+                SnapAppended::Committed { .. } => Some(next),
+                SnapAppended::Fenced { .. } => None,
+            })
+        }
+    }
+
+    /// `failed_precondition` with metadata `condition` (ruling T26.5: no new reasons).
+    fn precondition(condition: &str, ws: &WsId, message: &str) -> ConnectError {
+        refuse(
+            ErrorCode::FailedPrecondition,
+            "failed_precondition",
+            message,
+            &[
+                ("condition", condition.to_owned()),
+                ("workspace", ws.to_string()),
+            ],
+        )
+    }
+
+    /// A snapshot's HEAD; `None` when unborn.
+    fn head_of(
+        snap: &gitpb::WorkspaceSnapshot,
+    ) -> Result<Option<loams_git::ObjectId>, ConnectError> {
+        if snap.head.is_empty() {
+            return Ok(None);
+        }
+        tree_of(&snap.head, "head").map(Some)
+    }
+
+    /// `refs` with the local branch `head_ref` (when HEAD names one) at `oid`, added (following
+    /// `track`) when the snapshot does not list it yet.
+    fn move_head_ref(
+        snap: &gitpb::WorkspaceSnapshot,
+        oid: &loams_git::ObjectId,
+    ) -> Vec<gitpb::LocalRef> {
+        let mut refs = snap.refs.clone();
+        if snap.head_ref.is_empty() {
+            return refs;
+        }
+        match refs.iter_mut().find(|r| r.name == snap.head_ref) {
+            Some(local) => local.oid = oid.as_bytes().to_vec(),
+            None => refs.push(gitpb::LocalRef {
+                name: snap.head_ref.clone(),
+                oid: oid.as_bytes().to_vec(),
+                upstream: snap.track.clone(),
+            }),
+        }
+        refs
+    }
+
+    /// What a push update's `src` names in `snap`: `HEAD`, a workspace-local ref (full, or a
+    /// branch's or tag's short name) or an object id; `None` (a delete) when empty.
+    fn push_src(
+        field: &str,
+        snap: &gitpb::WorkspaceSnapshot,
+        src: &str,
+    ) -> Result<Option<loams_git::ObjectId>, ConnectError> {
+        if src.is_empty() {
+            return Ok(None);
+        }
+        if src == "HEAD" {
+            return head_of(snap)?
+                .map(Some)
+                .ok_or_else(|| invalid(field, "HEAD is unborn: commit first"));
+        }
+        let candidates = [
+            src.to_owned(),
+            format!("refs/heads/{src}"),
+            format!("refs/tags/{src}"),
+        ];
+        for name in &candidates {
+            if let Some(local) = snap.refs.iter().find(|r| &r.name == name) {
+                return tree_of(&local.oid, "refs").map(Some);
+            }
+        }
+        if src.len() == 40 {
+            return parse_oid(field, src).map(Some);
+        }
+        Err(invalid(
+            field,
+            format!("{src:?} is neither HEAD, a ref of the workspace nor an object id"),
+        ))
+    }
+
+    /// A push's destination: a full ref name, or a branch's short name.
+    fn push_dst(field: &str, dst: &str) -> Result<RefName, ConnectError> {
+        if dst.is_empty() {
+            return Err(invalid(field, "name the repository's ref to update"));
+        }
+        let full = if dst.starts_with("refs/") {
+            dst.to_owned()
+        } else {
+            format!("refs/heads/{dst}")
+        };
+        RefName::parse(&full).map_err(|err| invalid(field, err.to_string()))
+    }
+
+    fn push_error(name: &str, err: PushError) -> ConnectError {
+        match err {
+            PushError::Missing(oid) => refuse(
+                ErrorCode::FailedPrecondition,
+                "object_missing",
+                format!("object {oid} is in neither the repository nor the workspace's packs"),
+                &[("oid", oid.to_string())],
+            ),
+            PushError::Odb(err) => odb_error(err),
+            PushError::Pack(err @ WsPackError::TooLarge { .. }) => invalid(
+                "updates",
+                format!("the push's objects are too large: {err}"),
+            ),
+            PushError::Pack(err @ WsPackError::Refused(_)) => ws_pack_error(err),
+            PushError::Pack(WsPackError::Blob(err)) => unavailable("storing the pushed pack", &err),
+            PushError::Pack(err) => internal("assembling the pushed pack", &err),
+            PushError::Ref(err) => ref_error(name, err),
+        }
+    }
+
+    /// One ref's outcome as the API answers it.
+    fn push_result(
+        name: &RefName,
+        status: &RefStatus,
+        requested: Option<&loams_git::ObjectId>,
+    ) -> pb::PushRefResult {
+        use pb::PushRefStatus as S;
+        let oid =
+            |oid: Option<&loams_git::ObjectId>| oid.map(ToString::to_string).unwrap_or_default();
+        let (status, old, new, message) = match status {
+            RefStatus::Updated { old, new } => (
+                S::PUSH_REF_STATUS_UPDATED,
+                oid(old.as_ref()),
+                oid(new.as_ref()),
+                String::new(),
+            ),
+            RefStatus::UpToDate => (
+                S::PUSH_REF_STATUS_UP_TO_DATE,
+                oid(requested),
+                oid(requested),
+                "up to date".to_owned(),
+            ),
+            RefStatus::NonFastForward => (
+                S::PUSH_REF_STATUS_NON_FAST_FORWARD,
+                String::new(),
+                oid(requested),
+                "non-fast-forward".to_owned(),
+            ),
+            RefStatus::FetchFirst => (
+                S::PUSH_REF_STATUS_FETCH_FIRST,
+                String::new(),
+                oid(requested),
+                "fetch first".to_owned(),
+            ),
+            RefStatus::Stale { current } => (
+                S::PUSH_REF_STATUS_STALE,
+                oid(current.as_ref()),
+                oid(requested),
+                "stale info".to_owned(),
+            ),
+            RefStatus::AlreadyExists => (
+                S::PUSH_REF_STATUS_ALREADY_EXISTS,
+                String::new(),
+                oid(requested),
+                "already exists".to_owned(),
+            ),
+            RefStatus::Protected => (
+                S::PUSH_REF_STATUS_PROTECTED,
+                String::new(),
+                oid(requested),
+                "protected".to_owned(),
+            ),
+            RefStatus::OutOfScope { path } => (
+                S::PUSH_REF_STATUS_OUT_OF_SCOPE,
+                String::new(),
+                oid(requested),
+                format!("out of scope: {path}"),
+            ),
+            RefStatus::NotFound => (
+                S::PUSH_REF_STATUS_NOT_FOUND,
+                String::new(),
+                String::new(),
+                "remote ref does not exist".to_owned(),
+            ),
+            RefStatus::Invalid => (
+                S::PUSH_REF_STATUS_INVALID,
+                String::new(),
+                oid(requested),
+                "invalid ref name".to_owned(),
+            ),
+            RefStatus::AtomicFailed => (
+                S::PUSH_REF_STATUS_ATOMIC_FAILED,
+                String::new(),
+                oid(requested),
+                "atomic push failed".to_owned(),
+            ),
+        };
+        pb::PushRefResult {
+            ref_name: name.to_string(),
+            status: EnumValue::Known(status),
+            old_oid: old,
+            new_oid: new,
+            message,
+            ..Default::default()
+        }
+    }
+
+    /// The repository's ref log as a push needs it: the latest refs from this node's log, and
+    /// commits routed to the repository's sequencer owner (GT1 Task 14).
+    struct SequencedLog<'a> {
+        sequencers: &'a loams_git::RepoSequencers,
+        log: loams_git::BucketRefLog,
+        ns: loams_git::NamespaceId,
+        tenant: String,
+        repo: loams_git::RepoId,
+    }
+
+    #[async_trait::async_trait]
+    impl PushLog for SequencedLog<'_> {
+        async fn latest(&self) -> Result<Arc<RefSnapshot>, loams_git::RefError> {
+            loams_git::RefLog::snapshot(&self.log, loams_git::ReadAt::Latest).await
+        }
+
+        async fn commit(
+            &self,
+            txn: loams_git::RefTxn,
+        ) -> Result<loams_git::Receipt, loams_git::RefError> {
+            self.sequencers
+                .commit(self.ns, &self.tenant, &self.repo, txn)
+                .await
         }
     }
 
@@ -2029,6 +2352,310 @@ mod served {
                 "the workspace kept changing while it was rebased; retry",
                 &[],
             ))
+        }
+
+        async fn commit_workspace(
+            &self,
+            ctx: RequestContext,
+            request: ServiceRequest<'_, pb::CommitWorkspaceRequest>,
+        ) -> ServiceResult<pb::CommitWorkspaceResponse> {
+            let req = request.to_owned_message();
+            let record = self
+                .repo(&ctx, GitAccess::Write, &req.namespace, &req.name)
+                .await?;
+            idem_key(&req.idempotency_key)?;
+            let principal = caller_principal(&ctx)?;
+            let who = caller(&ctx)?;
+            let author = Ident::of_principal(&who.subject, &who.display_name, who.email.as_deref());
+            let writer_id = writer(&req.writer)?;
+            if req.message.trim().is_empty() {
+                return Err(invalid("message", "a commit needs a message"));
+            }
+            let (ws, latest) = self.latest(&record, &req.workspace).await?;
+            may_write_workspace(&self.repos, &ctx, &latest.owner).await?;
+            let n = req.expect_n;
+            if latest.n < n {
+                return Err(invalid(
+                    "expect_n",
+                    format!("the latest snapshot is {}", latest.n),
+                ));
+            }
+            if latest.n > n + 1 {
+                return Err(fenced(&latest, None));
+            }
+            let store = self.store(&record);
+            let on = if latest.n == n {
+                Arc::clone(&latest)
+            } else {
+                store
+                    .get(&record.repo_id, &ws, SnapN(n))
+                    .await
+                    .map_err(ws_error)?
+                    .ok_or_else(|| fenced(&latest, None))?
+            };
+            let answer = |snap: &gitpb::WorkspaceSnapshot| {
+                Response::ok(pb::CommitWorkspaceResponse {
+                    snapshot: MessageField::some(snapshot_pb(snap)),
+                    commit: hex(&snap.head),
+                    ..Default::default()
+                })
+            };
+            if latest.n == n + 1 {
+                // A retry answers the snapshot its first attempt saved; anything else lost
+                // the race.
+                return if self
+                    .commit_replayed(
+                        &req.namespace,
+                        &record,
+                        &ws,
+                        &latest,
+                        &on,
+                        &principal,
+                        &author,
+                        &req.message,
+                    )
+                    .await?
+                {
+                    answer(&latest)
+                } else {
+                    Err(fenced(&latest, None))
+                };
+            }
+            if !on.conflicts.is_empty() {
+                return Err(precondition(
+                    "conflicts",
+                    &ws,
+                    "resolve the workspace's conflicts (stage the resolved files) before committing",
+                ));
+            }
+            let tree = tree_of(&on.index_tree, "index_tree")?;
+            let parent = head_of(&on)?;
+            if !req.allow_empty {
+                let odb = self
+                    .snapshot_odb(&req.namespace, &record, &ws, &latest, &on)
+                    .await?;
+                let parent_tree = match &parent {
+                    Some(parent) => commit_tree(&odb, "head", parent)
+                        .await
+                        .map_err(save_check_error)?,
+                    None => empty_tree(),
+                };
+                if parent_tree == tree {
+                    return Err(precondition(
+                        "nothing_to_commit",
+                        &ws,
+                        "the index equals HEAD's tree: stage changes first, or allow an empty commit",
+                    ));
+                }
+            }
+            let (commit, body) = workspace_commit(
+                &tree,
+                parent.as_ref(),
+                &author,
+                &SERVER_COMMITTER,
+                now_ms().div_euclid(1000),
+                &req.message,
+            )
+            .map_err(odb_error)?;
+            let mut next = successor(
+                &gitpb::WorkspaceSnapshot {
+                    head: commit.as_bytes().to_vec(),
+                    refs: move_head_ref(&on, &commit),
+                    ..(*on).clone()
+                },
+                tree_of(&on.worktree_tree, "worktree_tree")?,
+                tree,
+                on.conflicts.clone(),
+                &principal,
+                writer_id.as_ref(),
+            )?;
+            next.packs = self
+                .store_objects(&record, &ws, &next, vec![(Kind::Commit, body)], &on.packs)
+                .await?;
+            match self.append(&store, &record, &ws, &next).await? {
+                SnapAppended::Committed { .. } => answer(&next),
+                SnapAppended::Fenced { existing } => {
+                    if self
+                        .commit_replayed(
+                            &req.namespace,
+                            &record,
+                            &ws,
+                            &existing,
+                            &on,
+                            &principal,
+                            &author,
+                            &req.message,
+                        )
+                        .await?
+                    {
+                        answer(&existing)
+                    } else {
+                        Err(fenced(&existing, None))
+                    }
+                }
+            }
+        }
+
+        async fn push_workspace(
+            &self,
+            ctx: RequestContext,
+            request: ServiceRequest<'_, pb::PushWorkspaceRequest>,
+        ) -> ServiceResult<pb::PushWorkspaceResponse> {
+            let req = request.to_owned_message();
+            let record = self
+                .repo(&ctx, GitAccess::Write, &req.namespace, &req.name)
+                .await?;
+            let client_key = idem_key(&req.idempotency_key)?;
+            let principal = caller_principal(&ctx)?;
+            let writer_id = writer(&req.writer)?;
+            let (ws, latest) = self.latest(&record, &req.workspace).await?;
+            may_write_workspace(&self.repos, &ctx, &latest.owner).await?;
+            if req.updates.len() > MAX_REFS_PER_PUSH {
+                return Err(invalid(
+                    "updates",
+                    format!("a push may update at most {MAX_REFS_PER_PUSH} refs"),
+                ));
+            }
+            let snap = self.snapshot_at(&record, &ws, &latest, req.n).await?;
+            let asked: Vec<pb::PushUpdate> = if req.updates.is_empty() {
+                vec![pb::PushUpdate {
+                    src: "HEAD".to_owned(),
+                    dst: snap.track.clone(),
+                    ..Default::default()
+                }]
+            } else {
+                req.updates.clone()
+            };
+            let mut specs = Vec::with_capacity(asked.len());
+            let mut digest = Sha256::new();
+            for part in [
+                "PushWorkspace",
+                record.repo_id.as_str(),
+                ws.as_str(),
+                &snap.n.to_string(),
+                &req.atomic.to_string(),
+            ] {
+                digest.update(part.as_bytes());
+                digest.update([0]);
+            }
+            for option in &req.push_options {
+                digest.update(b"\x01");
+                digest.update(option.as_bytes());
+            }
+            for (i, update) in asked.iter().enumerate() {
+                let dst = push_dst(&format!("updates[{i}].dst"), &update.dst)?;
+                if specs.iter().any(|s: &PushSpec| s.dst == dst) {
+                    return Err(invalid(
+                        &format!("updates[{i}].dst"),
+                        format!("{dst} is named twice"),
+                    ));
+                }
+                let new = push_src(&format!("updates[{i}].src"), &snap, &update.src)?;
+                let lease = match update.expect.as_deref() {
+                    None => None,
+                    Some("") => Some(Lease::Absent),
+                    Some(hex) => Some(Lease::Oid(parse_oid(&format!("updates[{i}].expect"), hex)?)),
+                };
+                digest.update(b"\x02");
+                digest.update(dst.as_str().as_bytes());
+                digest.update([0]);
+                digest.update(new.map(|o| o.to_string()).unwrap_or_default().as_bytes());
+                digest.update([0, u8::from(update.force), 0]);
+                digest.update(update.expect.as_deref().unwrap_or("\x03").as_bytes());
+                specs.push(PushSpec {
+                    dst,
+                    new,
+                    force: update.force,
+                    lease,
+                });
+            }
+            let request_digest: [u8; 32] = digest.finalize().into();
+            let (log, repo) = self.repos.read(&req.namespace, &record, "").await?;
+            let store = self.store(&record);
+            let view = WsView {
+                packs: union_packs(&latest.packs, [snap.packs.as_slice()]),
+                ..view_of(&store, &record.repo_id, &latest)
+                    .await
+                    .map_err(ws_error)?
+            };
+            let odb = self.odb(&record, &repo, &ws, &view).await?;
+            let push_log = SequencedLog {
+                sequencers: &self.repos.git.sequencers,
+                log,
+                ns: record.ns,
+                tenant: tenant(&req.namespace),
+                repo: record.repo_id.clone(),
+            };
+            let blobs = StoreBlobStore::new(
+                self.repos.git.store.clone(),
+                RepoPaths::new(record.ns, &record.repo_id),
+            );
+            let pushed = push_workspace(
+                &push_log,
+                &odb,
+                &record.repo_id,
+                &blobs,
+                &NoScan,
+                &PushRequest {
+                    specs: specs.clone(),
+                    atomic: req.atomic,
+                    principal: principal.clone(),
+                    push_options: req.push_options.clone(),
+                    key: client_key.map(|key| (key, request_digest)),
+                },
+            )
+            .await
+            .map_err(|err| push_error(record.name.as_str(), err))?;
+            // Pushing HEAD to `track` makes the workspace's commits upstream: its base moves
+            // there, so a later `Rebase` sees no local commits (ruling T27.7).
+            let track = RefName::parse(&snap.track).ok();
+            let pushed_head = head_of(&snap)?.filter(|head| {
+                specs
+                    .iter()
+                    .zip(&pushed.statuses)
+                    .any(|(spec, (_, status))| {
+                        Some(&spec.dst) == track.as_ref()
+                            && spec.new == Some(*head)
+                            && status.is_ok()
+                    })
+            });
+            let moved = match pushed_head {
+                Some(head) => self
+                    .advance_base(
+                        &record,
+                        &ws,
+                        &head,
+                        pushed.seq,
+                        &principal,
+                        writer_id.as_ref(),
+                    )
+                    .await
+                    .unwrap_or_else(|err| {
+                        tracing::warn!(error = %err, "moving a pushed workspace's base failed");
+                        None
+                    }),
+                None => None,
+            };
+            Response::ok(pb::PushWorkspaceResponse {
+                seq: pushed.seq.0,
+                consistency_token: token(&record.repo_id, pushed.seq),
+                results: pushed
+                    .statuses
+                    .iter()
+                    .zip(&specs)
+                    .map(|((name, status), spec)| push_result(name, status, spec.new.as_ref()))
+                    .collect(),
+                pack: match &pushed.pack {
+                    Some(pack) => MessageField::some(pack_pb(pack)),
+                    None => MessageField::none(),
+                },
+                snapshot: match &moved {
+                    Some(snap) => MessageField::some(snapshot_pb(snap)),
+                    None => MessageField::none(),
+                },
+                replayed: pushed.replayed,
+                ..Default::default()
+            })
         }
     }
 

@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { FACTORY_APPS } from "../src/main/factory/apps";
-import { OP_NAME_ALLOWLIST, OPS } from "../src/main/factory/ops";
+import {
+	OP_NAME_ALLOWLIST,
+	OPS,
+	UnsupportedError,
+} from "../src/main/factory/ops";
 
 const src = readFileSync(
 	new URL("../src/main/factory/ops.ts", import.meta.url),
@@ -33,6 +37,8 @@ describe("ops", () => {
 			"topPages",
 			"live",
 			"metricsDaily",
+			// Langfuse 4's daily usage (/v2/metrics): a read.
+			"metrics",
 			// GlitchTip's latest event of an issue (SD1 Task 27): a read.
 			"latestIssueEvent",
 		]);
@@ -191,5 +197,132 @@ describe("ops for Studio", () => {
 		)) as { release?: string; stack?: string };
 		expect(out.release).toBe("api@2");
 		expect(out.stack).toBeUndefined();
+	});
+	it("langfuse_traces_fall_back_to_the_legacy_list_on_404", async () => {
+		// A default self-hosted Langfuse 3.x has no /v2/observations: read its trace list.
+		const op = OPS.langfuse.traces;
+		if (!op) throw new Error("no traces op");
+		const notFound = () =>
+			Promise.reject(Object.assign(new Error("404"), { status: 404 }));
+		const out = await op.run(
+			adapter({
+				listObservations: notFound,
+				listLegacyTraces: (q: unknown) => {
+					expect(q).toMatchObject({ limit: 20 });
+					return {
+						data: [
+							{
+								id: "t1",
+								name: "checkout-agent",
+								timestamp: "2026-10-18T08:00:00Z",
+								totalCost: 0.5,
+							},
+						],
+					};
+				},
+			}),
+			op.params.parse({}) as never,
+			ctx,
+		);
+		expect(out).toEqual([
+			{
+				id: "t1",
+				traceId: "t1",
+				name: "checkout-agent",
+				startTime: "2026-10-18T08:00:00Z",
+				level: undefined,
+				totalCost: 0.5,
+			},
+		]);
+	});
+
+	it("langfuse_traces_without_either_api_is_unsupported_not_a_raw_404", async () => {
+		const op = OPS.langfuse.traces;
+		if (!op) throw new Error("no traces op");
+		const notFound = () =>
+			Promise.reject(
+				Object.assign(
+					new Error("GET http://lf/api/public/v2/observations failed with 404"),
+					{ status: 404 },
+				),
+			);
+		const run = op.run(
+			adapter({ listObservations: notFound, listLegacyTraces: notFound }),
+			op.params.parse({}) as never,
+			ctx,
+		);
+		await expect(run).rejects.toBeInstanceOf(UnsupportedError);
+		await expect(run).rejects.not.toThrow(/http:/);
+	});
+
+	it("langfuse_daily_falls_back_to_v2_metrics_on_404", async () => {
+		// Langfuse 4 serves no /metrics/daily: the daily table comes from /v2/metrics.
+		const op = OPS.langfuse.daily;
+		if (!op) throw new Error("no daily op");
+		const asked: Record<string, unknown>[] = [];
+		const out = await op.run(
+			adapter({
+				metricsDaily: () =>
+					Promise.reject(Object.assign(new Error("404"), { status: 404 })),
+				metrics: (q: unknown) => {
+					asked.push(q as Record<string, unknown>);
+					return {
+						data: [
+							{
+								time_dimension: "2026-10-18",
+								count_count: 3,
+								sum_totalCost: 0.5,
+							},
+							{
+								time_dimension: "2026-10-19",
+								count_count: 0,
+								sum_totalCost: null,
+							},
+						],
+					};
+				},
+			}),
+			op.params.parse({}) as never,
+			ctx,
+		);
+		expect(asked[0]).toMatchObject({
+			view: "observations",
+			timeDimension: { granularity: "day" },
+		});
+		const from = Date.parse(String(asked[0]?.["fromTimestamp"]));
+		const to = Date.parse(String(asked[0]?.["toTimestamp"]));
+		expect(to - from).toBe(30 * 86_400_000);
+		expect(out).toEqual({
+			available: true,
+			days: [
+				{ date: "2026-10-18", observations: 3, totalCost: 0.5 },
+				{ date: "2026-10-19", observations: 0 },
+			],
+		});
+	});
+
+	it("openpanel_insights_default_to_a_window_that_includes_today", async () => {
+		// OpenPanel's own default window ends yesterday: a deploy's first hours read as zero.
+		const op = OPS.openpanel.insights;
+		if (!op) throw new Error("no insights op");
+		const seen: unknown[] = [];
+		await op.run(
+			adapter({
+				overview: (_id: unknown, q: unknown) => {
+					seen.push(q);
+					return { summary: {}, series: [] };
+				},
+				topPages: (_id: unknown, q: unknown) => {
+					seen.push(q);
+					return [];
+				},
+			}),
+			op.params.parse({ projectId: "shop" }) as never,
+			ctx,
+		);
+		expect(seen).toEqual([
+			expect.objectContaining({ range: "30d" }),
+			expect.objectContaining({ range: "30d" }),
+		]);
 	});
 });

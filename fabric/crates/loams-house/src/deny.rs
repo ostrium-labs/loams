@@ -485,6 +485,9 @@ pub const ALLOWED_SYSTEM_TABLES: &[&str] = &[
     // The House's own (HS1 Task 16): it is never chDB's, the front's view
     // answers it.
     "loams_pipes",
+    // The namespace's `_house.query_log` (HS1 Task 23): never chDB's own,
+    // the front's view answers it.
+    "query_log",
 ];
 
 /// The database `merge()` may name besides the current one. HS1 Task 11 builds

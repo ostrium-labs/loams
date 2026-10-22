@@ -1,0 +1,483 @@
+{
+  "name": "app_search",
+  "kind": "app",
+  "about": "The notes app, part two: every search the builder corpus spells, against the notes `app_collections` wrote (four of them, after its delete). Text with a filter, highlights and a projection; its next page through `search_after`; a vector search; hybrid with RRF, DBSF and a weighted sum; and the weighted sum refused for the wrong number of weights.",
+  "transport": "connect",
+  "required": false,
+  "pinnedBy": [
+    "R6",
+    "R8"
+  ],
+  "reason": null,
+  "source": {
+    "server": "loams dev",
+    "commit": "59a22b48",
+    "recordedAt": "2026-10-19T07:02:02.943Z"
+  },
+  "volatile": [
+    "token",
+    "readToken",
+    "consistencyToken",
+    "collectionId",
+    "namespaceId",
+    "createdAtMs",
+    "updatedAtMs",
+    "instanceId",
+    "performance",
+    "manifestVersion",
+    "version",
+    "seqNo",
+    "positions",
+    "pin"
+  ],
+  "steps": [
+    {
+      "about": "The builder corpus case `search_text_filter_highlight_select`, sent as `search.query`.",
+      "call": "search.query",
+      "builder": "search_text_filter_highlight_select",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.QueryService/Search",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"retrievers\":[{\"text\":{\"query\":{\"match\":{\"field\":\"body\",\"text\":\"refund\"}}}}],\"filter\":{\"term\":{\"field\":\"tags\",\"value\":\"policy\"}},\"highlight\":{\"fields\":[{\"field\":\"body\"}]},\"select\":{\"source\":{\"include\":[\"title\"]}},\"limit\":2,\"sort\":[{\"score\":{}},{\"pk\":{}}]}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        },
+        "body": {
+          "hits": [
+            {
+              "pk": {
+                "uint": "1"
+              },
+              "score": 0.37045214,
+              "sortValues": [
+                0.3704521358013153,
+                1
+              ],
+              "source": {
+                "title": "Refund policy"
+              },
+              "highlight": {
+                "body": [
+                  "<em>refund</em> policy for every order"
+                ]
+              }
+            },
+            {
+              "pk": {
+                "uint": "3"
+              },
+              "score": 0.34388584,
+              "sortValues": [
+                0.3438858389854431,
+                3
+              ],
+              "source": {
+                "title": "Refund window"
+              },
+              "highlight": {
+                "body": [
+                  "the <em>refund</em> window is thirty days"
+                ]
+              }
+            }
+          ],
+          "readToken": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The next page, `search_after` the last hit's `sort_values` (`query_all`). The builder corpus's `search_after_page` is this body.",
+      "call": "search.query",
+      "builder": "search_after_page",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.QueryService/Search",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"retrievers\":[{\"text\":{\"query\":{\"match\":{\"field\":\"body\",\"text\":\"refund\"}}}}],\"filter\":{\"term\":{\"field\":\"tags\",\"value\":\"policy\"}},\"highlight\":{\"fields\":[{\"field\":\"body\"}]},\"select\":{\"source\":{\"include\":[\"title\"]}},\"limit\":2,\"sort\":[{\"score\":{}},{\"pk\":{}}],\"searchAfter\":[0.3438858389854431,3]}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        },
+        "body": {
+          "hits": [
+            {
+              "pk": {
+                "uint": "4"
+              },
+              "score": 0.32087487,
+              "sortValues": [
+                0.3208748698234558,
+                4
+              ],
+              "source": {
+                "title": "Returns"
+              },
+              "highlight": {
+                "body": [
+                  "returns need a receipt before a <em>refund</em>"
+                ]
+              }
+            }
+          ],
+          "readToken": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The builder corpus case `search_vector_ann_params`, sent as `vector.search`.",
+      "call": "vector.search",
+      "builder": "search_vector_ann_params",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.QueryService/Search",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"retrievers\":[{\"vector\":{\"field\":\"embedding\",\"query\":[1,0,0,0],\"k\":3,\"params\":{\"nprobes\":8,\"refineFactor\":2}}}],\"limit\":3}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        },
+        "body": {
+          "hits": [
+            {
+              "pk": {
+                "uint": "1"
+              },
+              "score": 1,
+              "sortValues": [
+                1,
+                1
+              ],
+              "source": {
+                "n": 1,
+                "tags": "policy",
+                "body": "refund policy for every order",
+                "title": "Refund policy"
+              }
+            },
+            {
+              "pk": {
+                "uint": "2"
+              },
+              "score": 0.9938837,
+              "sortValues": [
+                0.9938837289810181,
+                2
+              ],
+              "source": {
+                "n": 2,
+                "body": "shipping takes three days",
+                "pinned": true,
+                "title": "Shipping times",
+                "tags": "shipping"
+              }
+            },
+            {
+              "pk": {
+                "uint": "4"
+              },
+              "score": 0.70710677,
+              "sortValues": [
+                0.7071067690849304,
+                4
+              ],
+              "source": {
+                "n": 4,
+                "tags": "policy",
+                "title": "Returns",
+                "body": "returns need a receipt before a refund"
+              }
+            }
+          ],
+          "readToken": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The builder corpus case `search_hybrid_rrf`, sent as `search.query`.",
+      "call": "search.query",
+      "builder": "search_hybrid_rrf",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.QueryService/Search",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"retrievers\":[{\"text\":{\"query\":{\"match\":{\"field\":\"body\",\"text\":\"refund\"}}}},{\"vector\":{\"field\":\"embedding\",\"query\":[1,0,0,0],\"k\":5}}],\"fusion\":{\"rrf\":{\"k\":60}},\"limit\":3}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        },
+        "body": {
+          "hits": [
+            {
+              "pk": {
+                "uint": "1"
+              },
+              "score": 0.032786883,
+              "sortValues": [
+                0.032786883413791656,
+                1
+              ],
+              "source": {
+                "title": "Refund policy",
+                "n": 1,
+                "body": "refund policy for every order",
+                "tags": "policy"
+              }
+            },
+            {
+              "pk": {
+                "uint": "3"
+              },
+              "score": 0.03175403,
+              "sortValues": [
+                0.0317540317773819,
+                3
+              ],
+              "source": {
+                "n": 3,
+                "body": "the refund window is thirty days",
+                "title": "Refund window",
+                "tags": "policy"
+              }
+            },
+            {
+              "pk": {
+                "uint": "4"
+              },
+              "score": 0.031746034,
+              "sortValues": [
+                0.0317460335791111,
+                4
+              ],
+              "source": {
+                "tags": "policy",
+                "body": "returns need a receipt before a refund",
+                "title": "Returns",
+                "n": 4
+              }
+            }
+          ],
+          "readToken": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The builder corpus case `search_hybrid_dbsf`, sent as `search.query`.",
+      "call": "search.query",
+      "builder": "search_hybrid_dbsf",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.QueryService/Search",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"retrievers\":[{\"text\":{\"query\":{\"match\":{\"field\":\"body\",\"text\":\"refund\"}}}},{\"vector\":{\"field\":\"embedding\",\"query\":[1,0,0,0],\"k\":5}}],\"fusion\":{\"dbsf\":{}},\"limit\":3}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        },
+        "body": {
+          "hits": [
+            {
+              "pk": {
+                "uint": "1"
+              },
+              "score": 1.2855552,
+              "sortValues": [
+                1.2855552434921265,
+                1
+              ],
+              "source": {
+                "body": "refund policy for every order",
+                "title": "Refund policy",
+                "n": 1,
+                "tags": "policy"
+              }
+            },
+            {
+              "pk": {
+                "uint": "4"
+              },
+              "score": 0.8487433,
+              "sortValues": [
+                0.8487433195114136,
+                4
+              ],
+              "source": {
+                "body": "returns need a receipt before a refund",
+                "n": 4,
+                "tags": "policy",
+                "title": "Returns"
+              }
+            },
+            {
+              "pk": {
+                "uint": "3"
+              },
+              "score": 0.752818,
+              "sortValues": [
+                0.7528179883956909,
+                3
+              ],
+              "source": {
+                "body": "the refund window is thirty days",
+                "title": "Refund window",
+                "n": 3,
+                "tags": "policy"
+              }
+            }
+          ],
+          "readToken": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "The builder corpus case `search_hybrid_weighted`, sent as `search.query`.",
+      "call": "search.query",
+      "builder": "search_hybrid_weighted",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.QueryService/Search",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"retrievers\":[{\"text\":{\"query\":{\"match\":{\"field\":\"body\",\"text\":\"refund\"}}}},{\"vector\":{\"field\":\"embedding\",\"query\":[1,0,0,0],\"k\":5}}],\"fusion\":{\"weightedSum\":{\"weights\":[0.7,0.3]}},\"limit\":3}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "loams-consistency-token": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        },
+        "body": {
+          "hits": [
+            {
+              "pk": {
+                "uint": "1"
+              },
+              "score": 0.5593165,
+              "sortValues": [
+                0.5593165159225464,
+                1
+              ],
+              "source": {
+                "tags": "policy",
+                "body": "refund policy for every order",
+                "n": 1,
+                "title": "Refund policy"
+              }
+            },
+            {
+              "pk": {
+                "uint": "4"
+              },
+              "score": 0.43674445,
+              "sortValues": [
+                0.43674445152282715,
+                4
+              ],
+              "source": {
+                "title": "Returns",
+                "body": "returns need a receipt before a refund",
+                "tags": "policy",
+                "n": 4
+              }
+            },
+            {
+              "pk": {
+                "uint": "2"
+              },
+              "score": 0.29816514,
+              "sortValues": [
+                0.29816514253616333,
+                2
+              ],
+              "source": {
+                "tags": "shipping",
+                "pinned": true,
+                "n": 2,
+                "body": "shipping takes three days",
+                "title": "Shipping times"
+              }
+            }
+          ],
+          "readToken": "v1:s1/p0@2,s1/p1@3,s1/p2@0,s1/p3@2"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "about": "A weighted sum with one weight for two retrievers: refused. The builders refuse it before sending; this is the server's own refusal of the raw request.",
+      "call": "search.query",
+      "request": {
+        "method": "POST",
+        "path": "/loams.collection.v1.QueryService/Search",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"namespace\":\"app\",\"collection\":\"notes\",\"retrievers\":[{\"text\":{\"query\":{\"match\":{\"field\":\"body\",\"text\":\"refund\"}}}},{\"vector\":{\"field\":\"embedding\",\"query\":[1,0,0,0],\"k\":5}}],\"fusion\":{\"weightedSum\":{\"weights\":[1]}},\"limit\":3}"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": {
+          "code": "invalid_argument",
+          "message": "invalid argument: weighted_sum needs one weight per list, got 1 for 2",
+          "details": [
+            {
+              "type": "loams.errors.v1.ErrorInfo",
+              "value": "ChBpbnZhbGlkX2FyZ3VtZW50"
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 400,
+        "reason": "invalid_argument"
+      }
+    }
+  ]
+}

@@ -5,16 +5,16 @@
  * @loams/ui token.
  */
 .la-page > * {
-  animation: la-rise 520ms var(--op-ease) both;
+  animation: la-rise var(--op-duration-page) var(--op-ease-out) both;
 }
 .la-page > :nth-child(2) {
-  animation-delay: 50ms;
+  animation-delay: 25ms;
 }
 .la-page > :nth-child(3) {
-  animation-delay: 100ms;
+  animation-delay: 50ms;
 }
 .la-page > :nth-child(n + 4) {
-  animation-delay: 150ms;
+  animation-delay: 75ms;
 }
 .la a {
   color: inherit;
@@ -44,7 +44,7 @@
 }
 
 .la .small {
-  font-size: 0.8rem;
+  font-size: var(--op-text-small);
 }
 
 .la .nowrap {
@@ -82,31 +82,30 @@
 @keyframes la-rise {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(4px);
   }
 }
 
 .la .page-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px 24px;
-  margin-bottom: 24px;
+  gap: 12px 24px;
+  margin-bottom: 20px;
 }
 
 .la .page-head h1 {
   margin: 0;
-  font-size: 1.75rem;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  font-weight: 560;
-  font-stretch: 112%;
+  font-size: var(--op-text-title);
+  line-height: 28px;
+  letter-spacing: -0.01em;
+  font-weight: var(--op-weight-semibold);
 }
 
 .la .page-eyebrow {
   margin-bottom: 6px;
-  font-size: 0.7rem;
+  font-size: var(--op-text-micro);
   color: var(--op-faint);
 }
 
@@ -121,10 +120,10 @@
 }
 
 .la .page-intro {
-  margin-top: 8px;
+  margin-top: 4px;
   max-width: 68ch;
-  font-size: 0.94rem;
-  line-height: 1.6;
+  font-size: var(--op-text-body);
+  line-height: 20px;
   color: var(--op-muted);
 }
 
@@ -142,8 +141,8 @@
 
 .la .section-title {
   margin: 32px 0 12px;
-  font-size: 1rem;
-  font-weight: 540;
+  font-size: var(--op-text-emphasis);
+  font-weight: var(--op-weight-semibold);
 }
 
 .la .grid-2 {
@@ -158,7 +157,7 @@
 }
 
 .la .card-link {
-  font-size: 0.8rem;
+  font-size: var(--op-text-small);
   color: var(--op-muted);
 }
 
@@ -168,7 +167,7 @@
 
 .la .footnote {
   margin-top: 28px;
-  font-size: 0.8rem;
+  font-size: var(--op-text-small);
   color: var(--op-faint);
 }
 
@@ -191,7 +190,7 @@
 }
 
 .la .action {
-  font-size: 0.76rem;
+  font-size: var(--op-text-small);
   color: var(--op-ink);
 }
 
@@ -218,8 +217,8 @@
   transition:
     border-color 160ms ease,
     transform 200ms var(--op-ease);
-  animation: la-rise 520ms var(--op-ease) both;
-  animation-delay: calc(120ms + var(--i, 0) * 60ms);
+  animation: la-rise var(--op-duration-page) var(--op-ease-out) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 25ms);
 }
 
 .la .project-card:hover {
@@ -234,20 +233,20 @@
 }
 
 .la .project-card-head strong {
-  font-size: 1.02rem;
-  font-weight: 540;
+  font-size: var(--op-text-emphasis);
+  font-weight: var(--op-weight-semibold);
 }
 
 .la .project-agents {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 0.72rem;
+  font-size: var(--op-text-small);
   color: var(--op-muted);
 }
 
 .la .project-desc {
-  font-size: 0.86rem;
+  font-size: var(--op-text-body);
   color: var(--op-muted);
 }
 
@@ -264,7 +263,7 @@
   gap: 6px;
   padding: 2px 8px;
   border: 1px solid var(--op-rule-soft);
-  font-size: 0.76rem;
+  font-size: var(--op-text-small);
   background: var(--op-bg);
   white-space: nowrap;
 }
@@ -275,7 +274,7 @@
 
 .la .env-chip-n {
   font-variant-numeric: tabular-nums;
-  font-size: 0.66rem;
+  font-size: var(--op-text-micro);
   color: var(--op-faint);
 }
 
@@ -348,7 +347,7 @@
 
 .la .trust strong {
   color: var(--op-ink);
-  font-weight: 520;
+  font-weight: var(--op-weight-medium);
 }
 
 .la .trust code {
@@ -359,7 +358,7 @@
   display: inline-grid;
   gap: 4px;
   min-width: 64px;
-  font-size: 0.76rem;
+  font-size: var(--op-text-small);
   font-variant-numeric: tabular-nums;
 }
 
@@ -381,13 +380,13 @@
 }
 
 .la .chart-legend {
-  font-size: 0.86rem;
+  font-size: var(--op-text-body);
   color: var(--op-muted);
 }
 
 .la .chart-legend strong {
   color: var(--op-ink);
-  font-weight: 560;
+  font-weight: var(--op-weight-semibold);
 }
 
 .la .chart-svg {
@@ -400,7 +399,7 @@
   fill: color-mix(in oklab, var(--op-ink) 22%, transparent);
   transform-box: fill-box;
   transform-origin: bottom;
-  animation: la-bar 700ms var(--op-ease) both;
+  animation: la-bar var(--op-duration-page) var(--op-ease-out) both;
 }
 
 .la .chart-svg .bar.on {
@@ -421,7 +420,7 @@
   display: flex;
   justify-content: space-between;
   font-variant-numeric: tabular-nums;
-  font-size: 0.64rem;
+  font-size: var(--op-text-micro);
   color: var(--op-faint);
 }
 
@@ -440,7 +439,7 @@
 
 .la .checks legend {
   margin-bottom: 6px;
-  font-size: 0.84rem;
+  font-size: var(--op-text-body);
   font-weight: 500;
 }
 
@@ -464,7 +463,7 @@
 }
 
 .la .facts dt {
-  font-size: 0.66rem;
+  font-size: var(--op-text-micro);
   color: var(--op-faint);
 }
 
@@ -499,26 +498,25 @@
   padding: 28px;
   border: 1px solid var(--op-rule-soft);
   background: var(--op-surface);
-  animation: la-rise 520ms var(--op-ease) both;
+  animation: la-rise var(--op-duration-page) var(--op-ease-out) both;
 }
 
 .la .auth-card h1 {
   margin: 4px 0 0;
-  font-size: 1.4rem;
+  font-size: var(--op-text-title);
   line-height: 1.2;
   letter-spacing: -0.015em;
-  font-weight: 560;
-  font-stretch: 112%;
+  font-weight: var(--op-weight-semibold);
 }
 
 .la .auth-card p {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: var(--op-text-body);
   line-height: 1.55;
 }
 
 .la .auth-foot {
-  font-size: 0.8rem;
+  font-size: var(--op-text-small);
   color: var(--op-muted);
 }
 
@@ -526,7 +524,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 0.78rem;
+  font-size: var(--op-text-small);
   color: var(--op-faint);
 }
 

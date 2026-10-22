@@ -88,6 +88,12 @@ module Loams
       collect_messages(file.message_type, file.package, "")
     end
 
+    # Every message's class, built up front. `google-protobuf` builds a
+    # class on first `msgclass`, and iterating a repeated message field whose
+    # element class was never built raises `TypeError` (a `SearchResponse`'s
+    # `hits`), so no class is left to be built lazily.
+    MESSAGES.each_value { |descriptor| descriptor&.msgclass }
+
     # Every service in the set, in the order the files declare them.
     SERVICES = SET.file.flat_map do |file|
       file.service.to_a.map do |raw_svc|

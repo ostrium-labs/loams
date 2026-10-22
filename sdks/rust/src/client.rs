@@ -61,6 +61,8 @@ pub(crate) struct Runtime {
     pub(crate) consistency: Option<Arc<ConsistencySession>>,
     pub(crate) default_timeout: Option<std::time::Duration>,
     pub(crate) catalogue_cache: Arc<Mutex<crate::system::Cache>>,
+    /// The namespace a request with an empty `namespace` is sent with (R11).
+    pub(crate) namespace: Option<String>,
 }
 
 impl Runtime {
@@ -80,7 +82,21 @@ impl Runtime {
             .session
             .clone()
             .or_else(|| self.consistency.clone());
-        let consistency = Consistency::resolve(overrides.consistency.as_ref(), session.as_deref());
+        // The header is the path for RPCs whose request has no `consistency`
+        // field; the session's token there is the call's own package's
+        // (SDKP-17). App requests carry it in the field (`prepare_request`).
+        // An app package never takes the session's token as a header: its
+        // requests carry `consistency` (collections, SQL) or must not take
+        // the session's at all (graph).
+        let scoped = ConsistencySession::new();
+        if let Some(token) = session
+            .as_deref()
+            .filter(|_| !crate::app::APP_PACKAGES.contains(&binding.package))
+            .and_then(|session| session.current_in(binding.package))
+        {
+            scoped.record(Some(&token));
+        }
+        let consistency = Consistency::resolve(overrides.consistency.as_ref(), Some(&scoped));
         RetryPlan {
             // D610: a `Safe` call always retries; a `Manual` one retries once it
             // carries an idempotency key, and `keyed` is `true` exactly then.
@@ -94,6 +110,19 @@ impl Runtime {
             session: session.clone(),
             timeout: overrides.timeout.or(self.default_timeout),
             random: RetryPlan::jitter(),
+        }
+    }
+
+    /// The plan of a server stream: the unary one, except that a stream has no
+    /// default deadline (R12) — only the one the call sets.
+    pub(crate) fn stream_plan(
+        &self,
+        overrides: &CallOptionsOverrides,
+        binding: &'static CallBinding,
+    ) -> RetryPlan {
+        RetryPlan {
+            timeout: overrides.timeout,
+            ..self.plan(overrides, binding, false)
         }
     }
 }
@@ -131,6 +160,44 @@ impl Loams<HttpClient> {
         Loams::with_transport_and_config(transport, config, options.endpoint.clone())
     }
 
+    /// A client from the environment (R1, R11): `LOAMS_ENDPOINT`, then
+    /// `LOAMS_API_KEY` or `LOAMS_TOKEN` as the bearer, then `LOAMS_NAMESPACE`
+    /// as the default namespace.
+    ///
+    /// # Errors
+    ///
+    /// `invalid_argument` when `LOAMS_ENDPOINT` is unset, or the endpoint's own
+    /// errors.
+    pub fn from_env() -> Result<Self, LoamsError> {
+        Loams::from_env_with(|name| std::env::var(name).ok())
+    }
+
+    /// [`Loams::from_env`] over a lookup the caller supplies, for a test or a
+    /// configuration map.
+    ///
+    /// # Errors
+    ///
+    /// As [`Loams::from_env`].
+    pub fn from_env_with(lookup: impl Fn(&str) -> Option<String>) -> Result<Self, LoamsError> {
+        let get = |name: &str| lookup(name).filter(|value| !value.is_empty());
+        let endpoint = get("LOAMS_ENDPOINT").ok_or_else(|| {
+            LoamsError::new(
+                crate::error::ErrorKind::InvalidArgument,
+                connectrpc::ErrorCode::InvalidArgument,
+                "Loams::from_env: LOAMS_ENDPOINT is not set",
+            )
+            .with_metadata("field", "LOAMS_ENDPOINT")
+        })?;
+        let mut loams = Loams::connect(TransportOptions::new(&endpoint))?;
+        if let Some(bearer) = get("LOAMS_API_KEY").or_else(|| get("LOAMS_TOKEN")) {
+            loams = loams.with_auth(Arc::new(crate::token::StaticToken::new(bearer)?));
+        }
+        if let Some(namespace) = get("LOAMS_NAMESPACE") {
+            loams = loams.with_namespace(namespace);
+        }
+        Ok(loams)
+    }
+
     /// Builds a client for an endpoint with the SDK's defaults: no credential, a
     /// retry budget of [`DEFAULT_MAX_RETRIES`], and no session consistency store.
     ///
@@ -162,8 +229,15 @@ impl<T: Clone> Loams<T> {
             token_source: None,
             max_retries: DEFAULT_MAX_RETRIES,
             consistency: None,
-            default_timeout: config.default_timeout(),
+            // R12: unary calls get 30 s unless the transport options say
+            // otherwise; `stream_plan` keeps streams free of it.
+            default_timeout: Some(
+                config
+                    .default_timeout()
+                    .unwrap_or(crate::call::DEFAULT_TIMEOUT),
+            ),
             catalogue_cache: Arc::new(Mutex::new(crate::system::Cache::default())),
+            namespace: None,
         };
         Ok(Loams {
             inner: Arc::new(Inner {
@@ -189,6 +263,33 @@ impl<T: Clone> Loams<T> {
         let mut runtime = self.inner.runtime.clone();
         runtime.max_retries = retries;
         self.with_runtime(runtime)
+    }
+
+    /// Returns a client with a default namespace (R11): every request with a
+    /// `namespace` field that leaves it empty is sent with this one. An explicit
+    /// namespace always wins; with neither, such a call is refused with
+    /// `invalid_argument` before any network call.
+    #[must_use]
+    pub fn with_namespace(self, namespace: impl Into<String>) -> Self {
+        let mut runtime = self.inner.runtime.clone();
+        let namespace = namespace.into();
+        runtime.namespace = (!namespace.is_empty()).then_some(namespace);
+        self.with_runtime(runtime)
+    }
+
+    /// Returns a client whose unary calls default to `timeout` (R12); a zero
+    /// duration disables the default.
+    #[must_use]
+    pub fn with_timeout(self, timeout: std::time::Duration) -> Self {
+        let mut runtime = self.inner.runtime.clone();
+        runtime.default_timeout = Some(timeout);
+        self.with_runtime(runtime)
+    }
+
+    /// The default namespace, when the client has one (R11).
+    #[must_use]
+    pub fn namespace(&self) -> Option<&str> {
+        self.inner.runtime.namespace.as_deref()
     }
 
     /// Returns a client holding a session consistency token across calls (D609).
@@ -295,6 +396,144 @@ where
         }
     }
 
+    /// `loams.namespaces` (SDKP §2.2).
+    #[must_use]
+    pub fn namespaces(&self) -> crate::app_modules::NamespacesModule<'_, T> {
+        crate::app_modules::NamespacesModule {
+            client: loams_proto::loams::collection::v1::NamespaceServiceClient::new(
+                self.inner.transport.clone(),
+                self.inner.config.clone(),
+            ),
+            runtime: &self.inner.runtime,
+        }
+    }
+
+    /// `loams.collections` (SDKP §2.2).
+    #[must_use]
+    pub fn collections(&self) -> crate::app_modules::CollectionsModule<'_, T> {
+        crate::app_modules::CollectionsModule {
+            client: loams_proto::loams::collection::v1::CollectionServiceClient::new(
+                self.inner.transport.clone(),
+                self.inner.config.clone(),
+            ),
+            runtime: &self.inner.runtime,
+        }
+    }
+
+    /// `loams.documents` (SDKP §2.3).
+    #[must_use]
+    pub fn documents(&self) -> crate::app_modules::DocumentsModule<'_, T> {
+        crate::app_modules::DocumentsModule {
+            client: loams_proto::loams::collection::v1::DocumentServiceClient::new(
+                self.inner.transport.clone(),
+                self.inner.config.clone(),
+            ),
+            runtime: &self.inner.runtime,
+        }
+    }
+
+    /// `loams.search` (SDKP §2.4).
+    #[must_use]
+    pub fn search(&self) -> crate::app_modules::SearchModule<'_, T> {
+        crate::app_modules::SearchModule {
+            client: loams_proto::loams::collection::v1::QueryServiceClient::new(
+                self.inner.transport.clone(),
+                self.inner.config.clone(),
+            ),
+            runtime: &self.inner.runtime,
+        }
+    }
+
+    /// `loams.vector` (SDKP §2.4, Q613).
+    #[must_use]
+    pub fn vector(&self) -> crate::app_modules::VectorModule<'_, T> {
+        crate::app_modules::VectorModule {
+            client: loams_proto::loams::collection::v1::QueryServiceClient::new(
+                self.inner.transport.clone(),
+                self.inner.config.clone(),
+            ),
+            runtime: &self.inner.runtime,
+        }
+    }
+
+    /// `loams.sql` (SDKP §2.5): one read-only SQL statement over a
+    /// namespace's collections.
+    #[must_use]
+    pub fn sql(&self) -> crate::app_modules::SqlModule<'_, T> {
+        crate::app_modules::SqlModule {
+            client: loams_proto::loams::sql::v1::SqlServiceClient::new(
+                self.inner.transport.clone(),
+                self.inner.config.clone(),
+            ),
+            runtime: &self.inner.runtime,
+        }
+    }
+
+    /// `loams.streams` (SDKP §2.5): a namespace's logs.
+    #[must_use]
+    pub fn streams(&self) -> crate::app_modules::StreamsModule<'_, T> {
+        crate::app_modules::StreamsModule {
+            client: loams_proto::loams::stream::v1::StreamServiceClient::new(
+                self.inner.transport.clone(),
+                self.inner.config.clone(),
+            ),
+            runtime: &self.inner.runtime,
+        }
+    }
+
+    /// Every record of one partition from `request.offset` on (R14): a loop
+    /// over `streams().fetch` that backs off on an empty page, as a
+    /// `futures::Stream` whose [`crate::subscribe::Subscription::offset`] is
+    /// where to resume. `options` go on every fetch.
+    #[must_use]
+    pub fn subscribe(
+        &self,
+        request: loams_proto::loams::stream::v1::FetchRequest,
+        options: CallOptionsOverrides,
+    ) -> crate::subscribe::Subscription<loams_proto::loams::stream::v1::FetchedRecord>
+    where
+        T: Clone,
+    {
+        let from = request.offset;
+        let loams = self.clone();
+        crate::subscribe::subscribe(from, move |offset| {
+            let loams = loams.clone();
+            let options = options.clone();
+            let mut page = request.clone();
+            page.offset = offset;
+            fetch_page(loams, page, options)
+        })
+    }
+
+    /// `loams.graph` (SDKP §2.5). Its package is `unstable`.
+    #[must_use]
+    pub fn graph(&self) -> crate::app_modules::GraphModule<'_, T> {
+        crate::app_modules::GraphModule {
+            client: crate::app_modules::GraphClients {
+                admin: loams_proto::loams::graph::v1::GraphAdminServiceClient::new(
+                    self.inner.transport.clone(),
+                    self.inner.config.clone(),
+                ),
+                statements: loams_proto::loams::graph::v1::GraphServiceClient::new(
+                    self.inner.transport.clone(),
+                    self.inner.config.clone(),
+                ),
+            },
+            runtime: &self.inner.runtime,
+        }
+    }
+
+    /// A handle on one collection: its document and search calls with
+    /// `collection` (and `namespace`, when given) filled in (SDKP §2.8).
+    #[must_use]
+    pub fn collection<'a>(
+        &'a self,
+        name: &str,
+        namespace: Option<&str>,
+    ) -> crate::handle::CollectionHandle<'a, Self> {
+        crate::handle::CollectionHandle::new(self, name, namespace)
+    }
+
     /// `loams.system` — the module catalogue, feature detection and the version
     /// check (R5, R9).
     #[must_use]
@@ -376,7 +615,7 @@ where
         let rpc = binding.rpc;
         let runtime = self.inner.runtime.clone();
         let client = self.live().client.clone();
-        let plan = runtime.plan(&overrides, binding, false);
+        let plan = runtime.stream_plan(&overrides, binding);
         let opener_plan = plan.clone();
         let opener_client = client.clone();
         let opened = call_with_retry(
@@ -545,7 +784,7 @@ where
     ) -> Result<Opened<Transition>, LoamsError> {
         let binding = crate::binding::binding_of("live", "watch").expect("generated");
         let rpc = binding.rpc;
-        let plan = self.runtime.plan(&options, binding, false);
+        let plan = self.runtime.stream_plan(&options, binding);
         let client = self.client.clone();
         call_with_retry(
             request,
@@ -705,7 +944,7 @@ where
 /// which is what promotes a mutation to `RetryClass::Safe` for the retry loop
 /// (R3, D610). The key is decided **before** the first attempt and lives inside
 /// the request, so every attempt carries the identical one.
-async fn send<Req, V, F, Fut>(
+pub(crate) async fn send<Req, V, F, Fut>(
     binding: &'static CallBinding,
     request: Req,
     keyed: bool,
@@ -716,6 +955,7 @@ async fn send<Req, V, F, Fut>(
 where
     Req: Clone,
     V: buffa::view::MessageView<'static>,
+    V::Owned: serde::Serialize,
     F: FnMut(Req, connectrpc::client::CallOptions) -> Fut,
     Fut:
         std::future::Future<Output = Result<UnaryResponse<OwnedView<V>>, connectrpc::ConnectError>>,
@@ -729,7 +969,12 @@ where
         rpc,
     )
     .await?;
-    Ok(response.into_owned())
+    let (headers, message, _trailers) = response.into_owned_parts();
+    // R4: every token the response carried merges into the session.
+    if let Some(session) = &plan.session {
+        crate::app::record_response_in(session, binding.package, &headers, &message);
+    }
+    Ok(message)
 }
 
 /// Turns connect-rust's stream handle into the [`Opened`] form the runtime
@@ -752,6 +997,84 @@ where
             Err(error) => Some((Err(error), None)),
         }
     }))
+}
+
+#[async_trait::async_trait(?Send)]
+impl<T> crate::handle::CollectionCalls for Loams<T>
+where
+    T: ClientTransport + Send + Sync + 'static,
+    T::ResponseBody: Unpin + Send,
+    <T::ResponseBody as Body>::Error: std::fmt::Display,
+{
+    async fn write_documents(
+        &self,
+        request: loams_proto::loams::collection::v1::WriteDocumentsRequest,
+        options: CallOptionsOverrides,
+    ) -> Result<loams_proto::loams::collection::v1::WriteDocumentsResponse, LoamsError> {
+        self.documents().write(request, options).await
+    }
+
+    async fn get_documents(
+        &self,
+        request: loams_proto::loams::collection::v1::GetDocumentsRequest,
+        options: CallOptionsOverrides,
+    ) -> Result<loams_proto::loams::collection::v1::GetDocumentsResponse, LoamsError> {
+        self.documents().get(request, options).await
+    }
+
+    async fn scroll_documents(
+        &self,
+        request: loams_proto::loams::collection::v1::ScrollDocumentsRequest,
+        options: CallOptionsOverrides,
+    ) -> Result<loams_proto::loams::collection::v1::ScrollDocumentsResponse, LoamsError> {
+        self.documents().scroll(request, options).await
+    }
+
+    async fn count_documents(
+        &self,
+        request: loams_proto::loams::collection::v1::CountDocumentsRequest,
+        options: CallOptionsOverrides,
+    ) -> Result<loams_proto::loams::collection::v1::CountDocumentsResponse, LoamsError> {
+        self.documents().count(request, options).await
+    }
+
+    async fn search(
+        &self,
+        request: loams_proto::loams::collection::v1::SearchRequest,
+        options: CallOptionsOverrides,
+    ) -> Result<loams_proto::loams::collection::v1::SearchResponse, LoamsError> {
+        Loams::search(self).query(request, options).await
+    }
+
+    async fn get_collection(
+        &self,
+        request: loams_proto::loams::collection::v1::GetCollectionRequest,
+        options: CallOptionsOverrides,
+    ) -> Result<loams_proto::loams::collection::v1::CollectionInfo, LoamsError> {
+        self.collections().get(request, options).await
+    }
+
+    async fn drop_collection(
+        &self,
+        request: loams_proto::loams::collection::v1::DropCollectionRequest,
+        options: CallOptionsOverrides,
+    ) -> Result<loams_proto::loams::collection::v1::DropCollectionResponse, LoamsError> {
+        self.collections().drop(request, options).await
+    }
+}
+
+/// One `streams().fetch` over an owned client, for `Loams::subscribe`.
+async fn fetch_page<T>(
+    loams: Loams<T>,
+    page: loams_proto::loams::stream::v1::FetchRequest,
+    options: CallOptionsOverrides,
+) -> Result<Vec<loams_proto::loams::stream::v1::FetchedRecord>, LoamsError>
+where
+    T: ClientTransport + Send + Sync + 'static,
+    T::ResponseBody: Unpin,
+    <T::ResponseBody as Body>::Error: std::fmt::Display,
+{
+    Ok(loams.streams().fetch(page, options).await?.records)
 }
 
 #[cfg(test)]
@@ -909,9 +1232,10 @@ mod tests {
         assert_eq!(loams.inner.runtime.max_retries, DEFAULT_MAX_RETRIES);
         assert_eq!(
             loams.bindings().len(),
-            10,
+            18,
             "admin.agents, admin.audit, admin.keys, admin.org, admin.projects, auth, \
-             instance, live, live.admin and tables"
+             collections, documents, graph, instance, live, live.admin, namespaces, search, \
+             sql, streams, tables and vector"
         );
     }
 
@@ -937,14 +1261,17 @@ mod tests {
     fn a_cloned_client_shares_one_session_store() {
         let loams = client().session_consistency(true);
         let clone = loams.clone();
-        loams.consistency().expect("a session").record(Some("v1:a"));
+        loams
+            .consistency()
+            .expect("a session")
+            .record(Some("v1:s1/p0@1"));
         assert_eq!(
             clone
                 .consistency()
                 .expect("the same session")
                 .current()
                 .as_deref(),
-            Some("v1:a")
+            Some("v1:s1/p0@1")
         );
     }
 
@@ -956,7 +1283,7 @@ mod tests {
             .expect("generated");
         assert_eq!(binding.rpc, "loams.instance.v1.InstanceService/GetInstance");
         let missing = loams
-            .binding("collections", "list_collections")
+            .binding("collections", "list_collections_of_nothing")
             .unwrap_err();
         assert!(
             missing.to_string().contains("no generated call"),

@@ -97,6 +97,11 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # The server's features: the release image's (deploy/release/Containerfile.loams
+  # FEATURES), so `loams dev` from a package serves what the image serves,
+  # Durable on 127.0.0.1:8001 included (#925, D262). The Linux job checks the
+  # two lists are equal.
+  LOAMS_PACKAGE_FEATURES: live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc
   RELEASE_BRANCH: ${{ vars.RELEASE_BRANCH || github.event.repository.default_branch }}
 
 jobs:
@@ -212,7 +217,7 @@ jobs:
     name: "Linux: packages (deb, rpm, pkg.tar.zst)"
     needs: [guard, preflight]
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     outputs:
       assets: ${{ steps.collect.outputs.assets }}
       summary: ${{ steps.collect.outputs.summary }}
@@ -228,6 +233,9 @@ jobs:
       - name: protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # Dry runs only: a run that publishes builds without a cache another
+        # run could have written (cache poisoning).
+        if: inputs.dry_run == true
 
       # The packaging scripts' own tests. They build real .deb, .rpm and
       # .pkg.tar.zst files from fixtures, so a packaging definition that nFPM
@@ -259,8 +267,20 @@ jobs:
           pnpm build
           test -f apps/console/dist/index.html
 
+      - name: the package features are the image's
+        run: |
+          set -euo pipefail
+          image=$(sed -n 's/^ARG FEATURES=//p' deploy/release/Containerfile.loams)
+          [ "$image" = "$LOAMS_PACKAGE_FEATURES" ] || {
+            echo "::error::LOAMS_PACKAGE_FEATURES ($LOAMS_PACKAGE_FEATURES) differs from Containerfile.loams FEATURES ($image)"; exit 1; }
+
       - name: build the server binary
-        run: cargo build --release -j 4 -p loams --bin loams --locked
+        run: cargo build --release -j 4 -p loams --bin loams --locked --features "$LOAMS_PACKAGE_FEATURES"
+
+      # Durable answers on its loopback listener (#925): a package built
+      # without `durable` started and served nothing on 8001.
+      - name: smoke test (Durable on 127.0.0.1:8001)
+        run: scripts/release/smoke-durable.sh target/release/loams
 
       # A separate cargo call, so the helper's dependencies cannot change the
       # server's feature set (features unify across the packages of one build).
@@ -385,7 +405,7 @@ jobs:
     needs: [guard]
     runs-on: windows-latest
     # A cold Windows build of the workspace takes about an hour.
-    timeout-minutes: 150
+    timeout-minutes: 240
     outputs:
       assets: ${{ steps.collect.outputs.assets }}
     steps:
@@ -448,6 +468,9 @@ jobs:
             'AWS_LC_SYS_PREBUILT_NASM=1' | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           }
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # Dry runs only: a run that publishes builds without a cache another
+        # run could have written (cache poisoning).
+        if: inputs.dry_run == true
 
       - name: the web console (non-fatal)
         id: console
@@ -461,7 +484,7 @@ jobs:
           if (-not (Test-Path apps/console/dist/index.html)) { throw 'no dist/index.html' }
 
       - name: build the server binary
-        run: cargo build --release -j 4 -p loams --bin loams --locked
+        run: cargo build --release -j 4 -p loams --bin loams --locked --features "$env:LOAMS_PACKAGE_FEATURES"
 
       - name: build git-remote-loams
         run: cargo build --release -j 4 -p loams-git-remote --bin git-remote-loams --locked
@@ -478,6 +501,10 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           ./target/release/git-remote-loams.exe --version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: smoke test (Durable on 127.0.0.1:8001)
+        shell: bash
+        run: scripts/release/smoke-durable.sh target/release/loams.exe
 
       - name: build the Windows zip
         id: package
@@ -531,7 +558,7 @@ jobs:
     name: "macOS: tarball (${{ matrix.arch }})"
     needs: [guard]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 150
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
@@ -546,6 +573,9 @@ jobs:
       - name: protoc
         run: brew install protobuf
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # Dry runs only: a run that publishes builds without a cache another
+        # run could have written (cache poisoning).
+        if: inputs.dry_run == true
         with:
           key: release-macos-${{ matrix.arch }}
 
@@ -566,7 +596,7 @@ jobs:
         run: |
           set -euo pipefail
           rustup target add "$TARGET"
-          cargo build --release -j 4 -p loams --bin loams --locked --target "$TARGET"
+          cargo build --release -j 4 -p loams --bin loams --locked --target "$TARGET" --features "$LOAMS_PACKAGE_FEATURES"
           # Separately, so the helper cannot change the server's feature set.
           cargo build --release -j 4 -p loams-git-remote --bin git-remote-loams --locked --target "$TARGET"
 
@@ -599,6 +629,19 @@ jobs:
               [ "$(lipo -archs "$bin")" = arm64 ]
             fi
           done
+
+      # Where the runner can execute the binary natively (a cross-build is
+      # checked by architecture only, above).
+      - name: smoke test (Durable on 127.0.0.1:8001)
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" = "$(uname -m | sed 's/^arm64$/aarch64/')-apple-darwin" ]; then
+            scripts/release/smoke-durable.sh "$RUNNER_TEMP/loams"
+          else
+            echo "::notice::$TARGET is not this runner's architecture; Durable smoke test skipped"
+          fi
 
       - name: build the macOS tarball
         env:

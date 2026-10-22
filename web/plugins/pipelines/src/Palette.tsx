@@ -2,7 +2,7 @@
 // a button (click or Enter adds the node at the canvas centre) and is draggable onto the
 // canvas, so the keyboard path and the pointer path add the same node.
 
-import { Input } from '@loams/ui';
+import { SearchInput } from '@loams/ui';
 import { type DragEvent, useMemo, useState } from 'react';
 import {
   type ConnectorDef,
@@ -81,7 +81,7 @@ function Entry({
         onClick={() => onAdd(item)}
         title={title}
         aria-label={`Add ${item.label} ${item.kind}`}
-        className="w-full cursor-grab rounded-md border border-solid border-rule bg-surface px-2 py-1 text-left text-sm text-ink hover:border-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        className="flex h-7 w-full cursor-grab items-center rounded-sm border border-solid border-rule-soft bg-surface px-2 text-left text-body text-ink transition-colors duration-(--op-duration-fast) hover:border-control-border hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
       >
         {item.label}
       </button>
@@ -105,11 +105,11 @@ function Section({
   const groups = byFamily(catalog, direction, query);
   return (
     <section aria-label={title} className="flex flex-col gap-2">
-      <h3 className="m-0 text-xs font-medium uppercase tracking-wide text-muted">{title}</h3>
-      {groups.length === 0 && <p className="m-0 text-xs text-faint">No match.</p>}
+      <h3 className="m-0 text-small font-medium text-muted">{title}</h3>
+      {groups.length === 0 && <p className="m-0 text-small text-faint">No match.</p>}
       {groups.map(([family, list]) => (
         <div key={family} className="flex flex-col gap-1">
-          <h4 className="m-0 text-xs text-faint">{FAMILY_LABEL[family]}</h4>
+          <h4 className="m-0 text-micro text-faint">{FAMILY_LABEL[family]}</h4>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {list.map((c) => (
               <Entry
@@ -139,16 +139,16 @@ export function Palette({
   return (
     <nav aria-label="Node palette" className="flex min-w-0 flex-col gap-4 overflow-y-auto">
       <fieldset disabled={disabled} className="m-0 flex flex-col gap-4 border-0 p-0">
-        <Input
-          type="search"
-          aria-label="Filter connectors"
+        <SearchInput
+          size="compact"
+          label="Filter connectors"
           placeholder="Filter connectors"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onValueChange={setQuery}
         />
         <Section title="Sources" direction="source" catalog={catalog} query={query} onAdd={onAdd} />
         <section aria-label="Transforms" className="flex flex-col gap-2">
-          <h3 className="m-0 text-xs font-medium uppercase tracking-wide text-muted">Transforms</h3>
+          <h3 className="m-0 text-small font-medium text-muted">Transforms</h3>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {transforms.map((t) => (
               <Entry

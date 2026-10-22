@@ -4,7 +4,7 @@
 // fallback screen readers get.
 
 import { LiveChart } from '@loams/charts';
-import { Button, Card, Notice } from '@loams/ui';
+import { Card, Notice, Segmented } from '@loams/ui';
 import { useMemo, useState } from 'react';
 import { useLoad } from '../load.js';
 import { trafficSpec, usageSpec } from './specs.js';
@@ -57,21 +57,13 @@ export function UsageChart({ client }: { client: OverviewMetricsClient }) {
       <Card
         title="Resource usage"
         actions={
-          // Buttons, not tabs: each is a toggle the keyboard reaches with Tab,
-          // and `aria-pressed` says which one is showing.
-          <fieldset className="m-0 flex min-w-0 gap-1 border-0 p-0" aria-label="Resource">
-            {RESOURCES.map((r) => (
-              <Button
-                key={r.id}
-                size="sm"
-                variant={r.id === resource ? 'primary' : 'quiet'}
-                aria-pressed={r.id === resource}
-                onClick={() => setResource(r.id)}
-              >
-                {r.label}
-              </Button>
-            ))}
-          </fieldset>
+          // A segmented toggle, not tabs: `aria-pressed` says which resource is showing.
+          <Segmented
+            label="Resource"
+            value={resource}
+            onValueChange={setResource}
+            options={RESOURCES.map((r) => ({ value: r.id, label: r.label }))}
+          />
         }
       >
         {history.state === 'error' ? (

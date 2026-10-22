@@ -21,13 +21,16 @@ syntax = "proto3";
 // carry no `consistency_token`: the snapshot number orders them.
 //
 // Agents that do not mount a workspace read, edit, diff and rebase it with
-// `ReadFiles`, `ApplyEdits`, `Diff` and `Rebase` (§36 §19.11, GT1 Task 26).
+// `ReadFiles`, `ApplyEdits`, `Diff` and `Rebase` (§36 §19.11, GT1 Task 26),
+// commit it with `CommitWorkspace`, and push its commits with
+// `PushWorkspace` (GT1 Task 27), which moves no object from the client.
 //
 // Reasons: `workspace_not_found`, `workspace_fenced` (aborted),
 // `workspace_name_taken` (already_exists), `object_missing`
 // (failed_precondition), `fork_too_deep`, `idempotency_key_reused`,
-// `env_unsealed`, `failed_precondition`, `permission_denied`,
-// `invalid_argument` and `internal`.
+// `env_unsealed`, `secret_detected`, `failed_precondition`,
+// `permission_denied`, `invalid_argument` and `internal`. A push reports
+// each ref's outcome in its answer, not as an error.
 package loams.repos.v1;
 
 import "google/protobuf/timestamp.proto";
@@ -125,6 +128,27 @@ service WorkspaceService {
   // `conflicts` or `local_commits`). Rebasing onto the base the workspace has answers its latest
   // snapshot.
   rpc Rebase(RebaseRequest) returns (RebaseResponse);
+  // Commits the index of snapshot `expect_n` as a new snapshot,
+  // `expect_n + 1`, whose HEAD (and the local branch HEAD names) is the new
+  // commit: its parent is HEAD (none when unborn), its author the caller
+  // and its committer Loams. Fenced on `expect_n` as `ApplyEdits` is; a
+  // retry answers the snapshot its first attempt saved. Refused
+  // (`failed_precondition`, metadata `condition`) with unresolved
+  // conflicts (`conflicts`), or when the index equals HEAD's tree and
+  // `allow_empty` is unset (`nothing_to_commit`).
+  rpc CommitWorkspace(CommitWorkspaceRequest) returns (CommitWorkspaceResponse);
+  // Updates the repository's refs to commits of a snapshot (the latest, or
+  // `n`): the objects the repository lacks are copied on the server from
+  // the workspace's packs into one repository pack, and the updates are
+  // committed as one ref transaction. An update must fast-forward unless it
+  // is forced or leased; an existing tag moves only when forced. When
+  // another push moves a ref first, the update is checked again against
+  // the new tip. Each ref's outcome is in `results`. When the push moves
+  // `track` to the snapshot's HEAD, the workspace's base moves there too,
+  // in a new snapshot (`snapshot`). A retry with the same
+  // `idempotency_key` answers the same refs; the key with another request
+  // is `idempotency_key_reused`.
+  rpc PushWorkspace(PushWorkspaceRequest) returns (PushWorkspaceResponse);
 }
 
 // How a path differs among HEAD, the index and the worktree.
@@ -545,4 +569,116 @@ message RebaseResponse {
   // The paths that did not merge cleanly, now among the snapshot's
   // conflicts.
   repeated string conflicts = 2;
+}
+
+message CommitWorkspaceRequest {
+  string namespace = 1;
+  string name = 2;
+  string workspace = 3;
+  // The snapshot whose index is committed; the new one is `expect_n + 1`.
+  uint64 expect_n = 4;
+  // The commit message (required).
+  string message = 5;
+  // Commit even when the index equals HEAD's tree.
+  bool allow_empty = 6;
+  // The mount writing the new snapshot, when known.
+  string writer = 7;
+  string idempotency_key = 15;
+}
+
+message CommitWorkspaceResponse {
+  Snapshot snapshot = 1;
+  // The new commit, the snapshot's HEAD.
+  string commit = 2;
+}
+
+// One ref a push updates.
+message PushUpdate {
+  // What the ref will point at: "HEAD", a workspace-local ref (full, or a
+  // branch's short name), or an object id. Empty deletes the ref.
+  string src = 1;
+  // The repository's ref, as "refs/heads/main" ("main" is
+  // "refs/heads/main").
+  string dst = 2;
+  // Update even when it is not a fast-forward (`git push +src:dst`).
+  bool force = 3;
+  // `--force-with-lease`: update only when the ref points here (an object
+  // id), or, when empty, does not exist; such an update need not be a
+  // fast-forward. Unset is no lease.
+  optional string expect = 4;
+}
+
+message PushWorkspaceRequest {
+  string namespace = 1;
+  string name = 2;
+  string workspace = 3;
+  // The snapshot pushed; unset is the latest.
+  optional uint64 n = 4;
+  // At most 4,096 updates, each ref once; empty pushes HEAD to `track`.
+  repeated PushUpdate updates = 5;
+  // Every update or none (`git push --atomic`); otherwise refused refs are
+  // reported and the others committed.
+  bool atomic = 6;
+  // git push options (`-o`).
+  repeated string push_options = 7;
+  // The mount writing the snapshot that moves the base, when known.
+  string writer = 8;
+  string idempotency_key = 15;
+}
+
+// What became of one ref of a push.
+enum PushRefStatus {
+  PUSH_REF_STATUS_UNSPECIFIED = 0;
+  // Moved, created or deleted.
+  PUSH_REF_STATUS_UPDATED = 1;
+  // Already where the push asked.
+  PUSH_REF_STATUS_UP_TO_DATE = 2;
+  // Not a fast-forward, and neither forced nor leased.
+  PUSH_REF_STATUS_NON_FAST_FORWARD = 3;
+  // The ref points at a commit the workspace does not have: rebase first.
+  PUSH_REF_STATUS_FETCH_FIRST = 4;
+  // The lease does not hold, or the ref kept changing while the push
+  // retried.
+  PUSH_REF_STATUS_STALE = 5;
+  // An existing tag, which moves only when forced.
+  PUSH_REF_STATUS_ALREADY_EXISTS = 6;
+  // A protection rule refuses the delete or the forced update.
+  PUSH_REF_STATUS_PROTECTED = 7;
+  // The credential's scope does not cover a path the update changes.
+  PUSH_REF_STATUS_OUT_OF_SCOPE = 8;
+  // A delete of a ref that does not exist.
+  PUSH_REF_STATUS_NOT_FOUND = 9;
+  // The ref name is not valid here.
+  PUSH_REF_STATUS_INVALID = 10;
+  // Another ref of an atomic push was refused.
+  PUSH_REF_STATUS_ATOMIC_FAILED = 11;
+}
+
+message PushRefResult {
+  // The repository's ref.
+  string ref_name = 1;
+  PushRefStatus status = 2;
+  // Where the ref pointed and points now, when known (empty: absent).
+  string old_oid = 3;
+  string new_oid = 4;
+  // What git would print for a refused ref ("non-fast-forward", "fetch
+  // first", "stale info", "already exists", ...).
+  string message = 5;
+}
+
+message PushWorkspaceResponse {
+  // The seq of the push's ref transaction (of the refs read, when nothing
+  // was committed), and its consistency token.
+  uint64 seq = 1;
+  string consistency_token = 2;
+  // One per update, in the order asked.
+  repeated PushRefResult results = 3;
+  // The repository pack the push added; unset when the repository had
+  // every object.
+  PackRef pack = 4;
+  // The snapshot that moved the workspace's base to the pushed HEAD, when
+  // one was written.
+  Snapshot snapshot = 5;
+  // The ref transaction repeats an earlier push under the same key.
+  bool replayed = 6;
 }

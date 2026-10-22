@@ -12,10 +12,17 @@ sync ``api_key`` under the name ``async_api_key_source``.
 """
 
 from loams.aio import AsyncLoams
+from loams.app import Document, sql_records
+from loams.builders import Filter, Fusion, Schema, Search, Sort, dbsf, rrf, weighted
+from loams.handle import AsyncCollectionHandle, CollectionHandle
 from loams.loams import Loams
+from loams.runtime.batch import BatchResult
+from loams.runtime.consistency import ConsistencySession, ConsistencyToken
 from loams.runtime.errors import (
+    CLIENT_REASONS,
     AbortedError,
     AlreadyExistsError,
+    BatchError,
     DeadlineExceededError,
     FailedPreconditionError,
     FeatureNotInVariantError,
@@ -47,6 +54,24 @@ from loams.runtime.token_source import (
 )
 
 __all__ = [
+    # The app-building layer (SDKP): the builders, the collection handle, the
+    # consistency token and the batch result.
+    "AsyncCollectionHandle",
+    "BatchError",
+    "BatchResult",
+    "CLIENT_REASONS",
+    "CollectionHandle",
+    "ConsistencySession",
+    "ConsistencyToken",
+    "Document",
+    "Filter",
+    "Fusion",
+    "Schema",
+    "Search",
+    "Sort",
+    "dbsf",
+    "rrf",
+    "weighted",
     # The per-call options, because every generated method takes
     # `options: CallOptions | None` and there is no other way to set a deadline, a
     # caller header or an idempotency key on one call. They were reachable only as
@@ -85,4 +110,5 @@ __all__ = [
     "oidc_exchange",
     "refreshing",
     "static_token",
+    "sql_records",
 ]

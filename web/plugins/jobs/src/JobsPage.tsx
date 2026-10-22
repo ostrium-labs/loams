@@ -496,7 +496,7 @@ function JobBody({ job }: { job: JobDetail }) {
   ];
   return (
     <>
-      <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-body">
         <dt className="text-muted">State</dt>
         <dd>
           <StateTag state={job.state} />
@@ -561,22 +561,22 @@ function JobBody({ job }: { job: JobDetail }) {
               <pre className="loams-pre">{preview.text}</pre>
             </ScrollRegion>
             {preview.truncated && (
-              <p className="text-muted text-sm">Preview cut at 4,096 characters.</p>
+              <p className="text-muted text-body">Preview cut at 4,096 characters.</p>
             )}
           </>
         )}
         {preview.kind === 'external' && (
-          <p className="text-muted text-sm">
+          <p className="text-muted text-body">
             Stored in the object store as <code>{preview.blobRef}</code>; it is not previewed here.
           </p>
         )}
         {preview.kind === 'binary' && (
-          <p className="text-muted text-sm">Binary payload; no preview.</p>
+          <p className="text-muted text-body">Binary payload; no preview.</p>
         )}
         {Object.keys(job.headers).length > 0 && (
           <details>
             <summary>Headers ({Object.keys(job.headers).length})</summary>
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-body">
               {Object.entries(job.headers).map(([k, v]) => (
                 <div key={k} className="contents">
                   <dt>
@@ -599,17 +599,17 @@ function JobBody({ job }: { job: JobDetail }) {
           columns={attemptCols}
           rows={job.attempts}
           rowKey={(a) => String(a.n)}
-          empty={<p className="text-muted text-sm">Not leased yet.</p>}
+          empty={<p className="text-muted text-body">Not leased yet.</p>}
         />
       </section>
 
       <section aria-labelledby={`logs-${job.id}`} className="flex flex-col gap-2">
         <h3 id={`logs-${job.id}`}>Logs</h3>
         {job.logs.length === 0 ? (
-          <p className="text-muted text-sm">No log lines.</p>
+          <p className="text-muted text-body">No log lines.</p>
         ) : (
           <ScrollRegion label="Job logs" className="max-h-64">
-            <ol className={/* mono-ok: code */ 'loams-pre font-mono text-sm'}>
+            <ol className={/* mono-ok: code */ 'loams-pre font-mono text-body'}>
               {job.logs.map((l, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: log lines are append-only and may repeat
                 <li key={i}>

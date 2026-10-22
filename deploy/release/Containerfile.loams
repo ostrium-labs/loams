@@ -17,7 +17,7 @@ ENV RUSTUP_TOOLCHAIN=1.97.1 \
     CARGO_TERM_COLOR=never
 WORKDIR /src
 COPY . .
-ARG FEATURES=live,live-tikv,durable,graph,tikv,pgwire,mysql-wire,stream-grpc
+ARG FEATURES=live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc
 ARG CARGO_BUILD_JOBS=
 RUN --mount=type=cache,id=loams-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=loams-target-engine,target=/src/target \

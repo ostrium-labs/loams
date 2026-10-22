@@ -30,6 +30,7 @@ import { FeatureNotInVariantError } from '../src/runtime/errors.js';
 import { FIXTURES, type FixtureServer, startFixtureServer } from './helpers/server.js';
 import { requiredFixtures } from './helpers/corpus.js';
 import { TRANSPORT, driveRequiredFixtures } from './helpers/required.js';
+import { driveAppFixtures } from './helpers/app-replay.js';
 import { REPORT, clearReport, testsThisSuiteHas, writeConformanceReport } from './helpers/report.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -76,9 +77,15 @@ describe('@loams/client conformance', () => {
     const required = (await requiredFixtures()).map((fixture) => fixture.name);
     expect([...ran].sort()).toEqual([...required].sort());
 
+    // The SDKP app scenario, replayed through the public facade (SDKP P0d):
+    // not required until S1, but reported, because `check-languages --suite
+    // app` reads the same report.
+    const appRan = await driveAppFixtures(server.endpoint);
+    const reported = [...ran, ...appRan];
+
     // The report this run leaves behind, and the 100% bar is read from it
     // (`check-languages.mjs --check typescript`, which is what CI runs).
-    expect(await writeConformanceReport(ran, TRANSPORT)).toEqual([...ran].sort());
+    expect(await writeConformanceReport(reported, TRANSPORT)).toEqual([...reported].sort());
 
     // From here the suite checks what a client is for, through the public
     // facade. The fixture list above is the same corpus driven the same way; what

@@ -1,0 +1,107 @@
+// SQL over a namespace's collections (design §44 §5.1; API2 Task 1; SDKP
+// P0b, docs/plans/2026-10-19-sdk-parity.md).
+//
+// `SqlService/Query` runs one read-only statement through the same
+// DataFusion context the native REST route (`POST /v1/namespaces/{ns}/sql`)
+// and Flight SQL use: the namespace's collections are its tables, the search
+// table functions are in scope, and anything that is not a query is
+// `invalid_argument`. Rows come back as JSON-shaped values; `QueryArrow`
+// answers the same result as one Arrow IPC stream for callers that read
+// Arrow.
+//
+// ## Parameters
+//
+// `params` binds the positional placeholders `$1…$n`, in order. A value is
+// cast to the type the planner inferred for its placeholder (`n > $1` on an
+// `i64` column binds a JSON number as an `Int64`), and a statement whose
+// placeholder count is not the number of values given is `invalid_argument`
+// with reason `sql_param_count`. Named placeholders (`$name`) are not
+// accepted. A list or an object is not a scalar and is refused.
+//
+// ## Limits
+//
+// `max_rows` (default 10 000, at most 100 000) caps the rows a statement
+// answers; `truncated` says more existed. A statement runs within the
+// server's SQL timeout. `QueryArrow`'s stream is capped at
+// `--sql-arrow-max-bytes` (16 MiB by default); over it the call is
+// `resource_exhausted` with reason `result_too_large` and `metadata.use =
+// "flight"`, because Flight SQL streams a result of any size.
+//
+// ## Consistency
+//
+// `consistency` is `loams.collection.v1.Consistency`, read by the same rule
+// as `GetDocuments`: `at_least` waits for a write's token, `pin` reads a
+// pinned version, and the `loams-consistency-token` request header merges
+// in.
+syntax = "proto3";
+
+package loams.sql.v1;
+
+import "google/protobuf/struct.proto";
+import "loams/collection/v1/document.proto";
+import "loams/options/v1/options.proto";
+
+service SqlService {
+  option (loams.options.v1.module) = {
+    name: "sql"
+    summary: "SQL: one read-only statement over a namespace's collections, with parameters."
+  };
+
+  // Runs one read-only statement and answers its rows.
+  rpc Query(QueryRequest) returns (QueryResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "query"};
+  }
+  // Runs one read-only statement and answers its result as an Arrow IPC
+  // stream.
+  rpc QueryArrow(QueryArrowRequest) returns (QueryArrowResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+    option (loams.options.v1.facade) = {name: "query_arrow"};
+  }
+}
+
+message QueryRequest {
+  // The namespace whose collections are the statement's tables.
+  string namespace = 1;
+  // One read-only SQL statement.
+  string sql = 2;
+  // The values of `$1…$n`, in order.
+  repeated google.protobuf.Value params = 3;
+  // How fresh the read is; strong when unset.
+  loams.collection.v1.Consistency consistency = 4;
+  // At most this many rows (default 10 000, at most 100 000).
+  optional uint32 max_rows = 5;
+}
+
+// One result column: its name and its Arrow type, as Arrow prints it
+// (`Int64`, `Utf8`, `List(Float32)`).
+message Column {
+  string name = 1;
+  string type = 2;
+}
+
+message QueryResponse {
+  repeated Column columns = 1;
+  // One list per row, one value per column, in column order. A 64-bit
+  // integer past 2^53 is a decimal string, so it stays exact.
+  repeated google.protobuf.ListValue rows = 2;
+  // More rows existed than `max_rows` allowed.
+  bool truncated = 3;
+  // The token the read was answered at, when it waited for one.
+  string consistency_token = 4;
+}
+
+message QueryArrowRequest {
+  string namespace = 1;
+  string sql = 2;
+  repeated google.protobuf.Value params = 3;
+  loams.collection.v1.Consistency consistency = 4;
+  optional uint32 max_rows = 5;
+}
+
+message QueryArrowResponse {
+  // The result as one Arrow IPC stream: the schema, then the batches.
+  bytes arrow_ipc = 1;
+  bool truncated = 2;
+  string consistency_token = 3;
+}

@@ -54,7 +54,7 @@ import Foundation
 public enum Code: String, Sendable, Hashable, CaseIterable {
     case canceled
     case unknown
-    case invalidArgument
+    case invalidArgument = "invalid_argument"
     case deadlineExceeded = "deadline_exceeded"
     case notFound = "not_found"
     case alreadyExists = "already_exists"

@@ -21,7 +21,7 @@ Three cases stay distinct (R8):
 
 from __future__ import annotations
 
-from typing import Final, cast
+from typing import Final, Literal, cast
 
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError, ErrorDetail
@@ -34,8 +34,11 @@ from loams.errors.v1.errors_pb2 import ErrorInfo
 from loams._gen.facade import FEATURE_NOT_IN_VARIANT, REASONS, TOKEN_EXPIRED, Reason
 
 __all__ = [
+    "CLIENT_REASONS",
     "AbortedError",
     "AlreadyExistsError",
+    "BatchError",
+    "ClientReason",
     "DeadlineExceededError",
     "FailedPreconditionError",
     "FeatureNotInVariantError",
@@ -59,6 +62,16 @@ __all__ = [
 #: `Reason` does not have is a server newer than this SDK.
 _KNOWN_REASONS: Final[frozenset[str]] = frozenset(REASONS)
 
+#: A reason the SDK raises itself, without a server answer (SDKP §2.1, R12 and
+#: R13). Registered in `docs/api/reasons.md` as client-side, and kept here as
+#: well so the SDK does not depend on when that registry lands.
+ClientReason = Literal["client_deadline_exceeded", "batch_partially_applied"]
+
+#: The client-side reasons, as a set.
+CLIENT_REASONS: Final[frozenset[str]] = frozenset(
+    {"client_deadline_exceeded", "batch_partially_applied"}
+)
+
 #: The `type.googleapis.com/loams.errors.v1.ErrorInfo` prefix Connect puts on a
 #: packed detail. Matched rather than assumed, so a service that adds a detail
 #: of its own does not move `reason` out from under a caller.
@@ -74,7 +87,7 @@ class LoamsError(Exception):
         message: str,
         *,
         code: Code = Code.UNKNOWN,
-        reason: Reason | None = None,
+        reason: Reason | ClientReason | None = None,
         unknown_reason: str | None = None,
         metadata: dict[str, str] | None = None,
         hint: str | None = None,
@@ -94,7 +107,7 @@ class LoamsError(Exception):
         #: The stable cause, when the server sent an `ErrorInfo`. `None` means
         #: the failure came from below the API (a socket, a timeout), not from a
         #: Loams service.
-        self.reason: Reason | None = reason
+        self.reason: Reason | ClientReason | None = reason
         #: Structured context the server sent. Never secrets.
         self.metadata: dict[str, str] = dict(metadata) if metadata else {}
         #: A short next step in the caller's locale, when the server sent one.
@@ -172,6 +185,41 @@ class FeatureNotInVariantError(UnimplementedError):
         super().__init__(message, **kwargs)  # type: ignore[arg-type]
         #: The build variant that was asked for.
         self.variant: str | None = variant
+
+
+class BatchError(LoamsError):
+    """A `documents.write_batch` that stopped at a failed chunk (runtime contract
+    R13).
+
+    The chunks before it are applied and stay applied; `token` is their merged
+    consistency token, so a caller can read what did land, and `__cause__` is
+    the failed chunk's own error. `reason` is `batch_partially_applied`.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        chunks_applied: int,
+        rows_applied: int,
+        token: str | None = None,
+        code: Code = Code.ABORTED,
+        metadata: dict[str, str] | None = None,
+        rpc: str | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            code=code,
+            reason="batch_partially_applied",
+            metadata=metadata,
+            rpc=rpc,
+        )
+        #: How many chunks were applied before the failure.
+        self.chunks_applied: int = chunks_applied
+        #: How many operations those chunks carried.
+        self.rows_applied: int = rows_applied
+        #: The merged token of the applied chunks, if any carried one.
+        self.token: str | None = token
 
 
 class TokenExpiredError(UnauthenticatedError):

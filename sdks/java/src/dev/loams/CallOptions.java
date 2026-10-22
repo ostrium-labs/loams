@@ -31,6 +31,9 @@ public final class CallOptions {
     private final String consistencyToken;
     private final ConsistencySession session;
     private final StreamResume<?> streamResume;
+    private final String namespace;
+    private final java.time.Duration timeout;
+    private final Boolean mintIdempotencyKey;
 
     private CallOptions(Builder builder) {
         this.maxRetries = builder.maxRetries;
@@ -40,6 +43,9 @@ public final class CallOptions {
         this.consistencyToken = builder.consistencyToken;
         this.session = builder.session;
         this.streamResume = builder.streamResume;
+        this.namespace = builder.namespace;
+        this.timeout = builder.timeout;
+        this.mintIdempotencyKey = builder.mintIdempotencyKey;
     }
 
     /** No overrides at all: the client's defaults and the binding's retry class. */
@@ -168,6 +174,41 @@ public final class CallOptions {
         return streamResume;
     }
 
+    /**
+     * The namespace this call fills into a request whose {@code namespace} field is empty (R11),
+     * over the client's default; an explicit field on the request wins over both. {@code null}
+     * follows the client.
+     */
+    public String namespace() {
+        return namespace;
+    }
+
+    /**
+     * This call's deadline (R12), or {@code null} for the client's (30 s for a unary call). {@link
+     * java.time.Duration#ZERO} means none.
+     */
+    public java.time.Duration timeout() {
+        return timeout;
+    }
+
+    /**
+     * Whether the SDK may mint an idempotency key for this call (R3). {@code null} means yes; false
+     * sends the request as built, unkeyed and so never retried unless it is safe.
+     */
+    public Boolean mintIdempotencyKey() {
+        return mintIdempotencyKey;
+    }
+
+    /** These options with a per-call namespace. */
+    public static CallOptions withNamespace(String namespace) {
+        return builder().namespace(namespace).build();
+    }
+
+    /** These options with a per-call deadline. */
+    public static CallOptions withTimeout(java.time.Duration timeout) {
+        return builder().timeout(timeout).build();
+    }
+
     /** Whether anything was overridden at all, so the common path skips a merge. */
     public boolean isEmpty() {
         return maxRetries == null
@@ -176,7 +217,10 @@ public final class CallOptions {
                 && headers.isEmpty()
                 && consistencyToken == null
                 && session == null
-                && streamResume == null;
+                && streamResume == null
+                && namespace == null
+                && timeout == null
+                && mintIdempotencyKey == null;
     }
 
     /** Collects overrides into one {@link CallOptions}. */
@@ -189,6 +233,9 @@ public final class CallOptions {
         private String consistencyToken;
         private ConsistencySession session;
         private StreamResume<?> streamResume;
+        private String namespace;
+        private java.time.Duration timeout;
+        private Boolean mintIdempotencyKey;
 
         private Builder() {}
 
@@ -224,6 +271,57 @@ public final class CallOptions {
 
         public Builder streamResume(StreamResume<?> value) {
             this.streamResume = value;
+            return this;
+        }
+
+        public Builder namespace(String value) {
+            this.namespace = value;
+            return this;
+        }
+
+        public Builder timeout(java.time.Duration value) {
+            this.timeout = value;
+            return this;
+        }
+
+        public Builder mintIdempotencyKey(boolean value) {
+            this.mintIdempotencyKey = value;
+            return this;
+        }
+
+        /** Copies every override of {@code options} into this builder. */
+        public Builder from(CallOptions options) {
+            if (options == null) {
+                return this;
+            }
+            if (options.maxRetries != null) {
+                maxRetries = options.maxRetries;
+            }
+            if (options.retrySafe != null) {
+                retrySafe = options.retrySafe;
+            }
+            if (options.idempotencyKey != null) {
+                idempotencyKey = options.idempotencyKey;
+            }
+            headers.putAll(options.headers);
+            if (options.consistencyToken != null) {
+                consistencyToken = options.consistencyToken;
+            }
+            if (options.session != null) {
+                session = options.session;
+            }
+            if (options.streamResume != null) {
+                streamResume = options.streamResume;
+            }
+            if (options.namespace != null) {
+                namespace = options.namespace;
+            }
+            if (options.timeout != null) {
+                timeout = options.timeout;
+            }
+            if (options.mintIdempotencyKey != null) {
+                mintIdempotencyKey = options.mintIdempotencyKey;
+            }
             return this;
         }
 
@@ -274,6 +372,15 @@ public final class CallOptions {
             }
             if (option.streamResume != null) {
                 builder.streamResume(option.streamResume);
+            }
+            if (option.namespace != null) {
+                builder.namespace(option.namespace);
+            }
+            if (option.timeout != null) {
+                builder.timeout(option.timeout);
+            }
+            if (option.mintIdempotencyKey != null) {
+                builder.mintIdempotencyKey(option.mintIdempotencyKey);
             }
         }
         return builder.build();

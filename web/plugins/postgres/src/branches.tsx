@@ -74,7 +74,7 @@ export function Branches({ pg }: { pg: Pg }) {
     }
   }
 
-  if (load.state === 'loading') return <p className="text-sm text-muted">Loading branches…</p>;
+  if (load.state === 'loading') return <p className="text-body text-muted">Loading branches…</p>;
   if (load.state === 'error') {
     return (
       <Notice tone="danger" title="Could not load branches">
@@ -130,10 +130,10 @@ export function Branches({ pg }: { pg: Pg }) {
                     <strong>{t.name ?? 'unnamed'}</strong>
                   </span>
                 </td>
-                <td className={/* mono-ok: id */ 'font-mono text-xs'}>{t.timelineId}</td>
-                <td className={/* mono-ok: id */ 'font-mono text-xs'}>{t.ancestorLsn ?? '—'}</td>
-                <td className={/* mono-ok: id */ 'font-mono text-xs'}>{t.lastRecordLsn}</td>
-                <td className={/* mono-ok: id */ 'font-mono text-xs'}>
+                <td className={/* mono-ok: id */ 'font-mono text-small'}>{t.timelineId}</td>
+                <td className={/* mono-ok: id */ 'font-mono text-small'}>{t.ancestorLsn ?? '—'}</td>
+                <td className={/* mono-ok: id */ 'font-mono text-small'}>{t.lastRecordLsn}</td>
+                <td className={/* mono-ok: id */ 'font-mono text-small'}>
                   {load.wal[t.timelineId]?.commitLsn ?? '—'}
                 </td>
                 <td>

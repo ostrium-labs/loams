@@ -74,6 +74,7 @@ Design reference: [51 Loams Postgres: our hard fork of Neon](../design/51-loams-
 | NF1e (Tasks 24–30) | Postgres 18: vendor 18.6; format diff; `postgres_ffi`, `wal_decoder`, pageserver, `pgxn/neon`, walproposer and `compute_ctl` at 18; `loams-postgres-compute-v18`; the decoder, `loams-wal` and `loams-postgres` at 18; the gate and promotion | Tasks 16, 17; Q717, Q727 | Planned |
 | NF1f (Tasks 31–35) | Postgres 19: track from RC1 (2026-10-15); port Neon's patch series; the Rust side at 19; `loams-postgres-compute-v19` beta and Loams behind `allow_beta_major`; the GA gate (Q718) | Task 27 | Planned |
 | NF1g (Tasks 36–41) | PgDog per major; branch major upgrades through `fast_import` and `ImportPgdata` (used by PG2 Task 51); the `pg_upgrade --link` spike; desktop majors and the upgrade prompt; runbooks, maintainers and the MVM switch; docs and status | Task 28; PG2 Task 58 for Task 39 | Planned |
+| [NF2: Postgres 18 and 19](2026-10-18-nf2-postgres-18-19.md) (stub; NF2a Tasks 0–16, NF2b 17–24, NF2c 25–28) | Design [§62](../design/62-postgres-major-versions.md) (D1107–D1118, Q949–Q959). Supersedes NF1 Tasks 24–35 and takes over 36–38: the 18 format diff, `loams/pg18` from `REL_18_6`, synchronous AIO in the smgr, the Rust side, images and extensions at 18, Loams' majors from the pin file and pg-control's major API, PgDog per major, branch upgrades by import; minors within 7 days for every major, 14 and 15 removed; 19 after 18's beta, supported after 19.1 and D1113; the `pg_upgrade`-on-a-timeline spike | NF1 Tasks 16–18; Q949–Q959 | Stub |
 
 ## Track R: Loams Live, TiDB SQL and the TiKV metastore (parallel to M1)
 
@@ -321,8 +322,8 @@ Design: [§40](../design/40-loams-systemone.md), D520–D539. Decisions are advi
 
 | Plan | Scope | Status |
 |---|---|---|
-| [SO1: SystemOne engine, API and backends](2026-10-02-so1-systemone.md) | Spike (kevala, `ort`, `laya-serve`); `loams.systemone.v1`; the `loams-systemone` crate; `laya-serve` sidecar; Jev adapter; calibration; self-test; model manager; route, CLI, MCP; decision log | Planned |
-| [SO2: SystemOne on the desktop](2026-10-02-so2-systemone-desktop.md) | Swift Core ML sidecar; `loams-systemone-link`; Model Manager and Settings; Loams Bot decisions; zeron MCP tool; optional browser plugin, CPU and MLX paths | Planned |
+| [SO1: SystemOne engine, API and backends](2026-10-02-so1-systemone.md) | Spike (kevala, `ort`, `laya-serve`); `loams.systemone.v1`; the `loams-systemone` crate; `laya-serve` sidecar; Jev adapter; calibration; self-test; model manager; route, CLI, MCP; decision log | Planned; Task 0 done 2026-10-18 ([spike](so1-systemone-spike.md), rulings R0.1–R0.24, owner rulings 2026-10-18) |
+| [SO2: SystemOne on the desktop](2026-10-02-so2-systemone-desktop.md) | Re-targeted 2026-10-18 to the in-repo desktop: the Swift Core ML sidecar supervised by `loams-agentd`; `loams-agentd-systemone`; SystemOne on ndjson and `loams.agentd.v1`; Model Manager and Settings › Decisions in the cordis shell; Loams Bot decisions in the ACP shim and Studio's card; `systemone_decide` in agentd's MCP shim and tool registry; optional browser plugin, CPU and MLX paths | Approved (owner, 2026-10-18); Task 0 done 2026-10-19 ([spike](so2-systemone-spike.md), rulings R0.1–R0.21, owner questions SO2-Q6 to Q8 accepted 2026-10-19) |
 
 ## Track API and SDK: unified Connect services and generated clients
 
@@ -334,6 +335,7 @@ Design: [§44](../design/44-unified-api-and-sdks.md), D600–D619. All 13 gRPC-s
 | [SDK1: generation pipeline](2026-10-02-sdk1-generation-pipeline.md) | buf pins, facade generation, runtime fixtures, conformance, releases and API docs | API1 Tasks 1–2; may start with AP0 | Planned — **remaining tasks superseded by API2 (2026-10-10)** |
 | [SDK2: language clients](2026-10-02-sdk2-languages.md) | Thirteen language tasks with public facades, transports, conformance, examples and registry packages | SDK1 Tasks 1–4 and the services each fixture uses | Planned — **remaining work superseded by API2 Tasks 19–23 (2026-10-10)** |
 | [API2: the unified Connect API and the SDKs in production](2026-10-10-api2-unified-api-sdks.md) | Every application call a Connect RPC on the main port; REST and the console OpenAPI deleted with no shims; auth on the main port; thirteen shippable SDKs covering the whole API. Finishes API1, SDK1 and SDK2 | See the plan's execution order | Planned (2026-10-10, owner default rulings; D848) |
+| [SDKP: the app-building API in every SDK](2026-10-19-sdk-parity.md) | Owner request 2026-10-19. The same app modules in all 13 SDKs: namespaces, collections and schema, documents, search (text, vector, hybrid, filters, fusion, highlights, select, paging), SQL with params, streams (produce, fetch, subscribe), graph (GQL, expand). P0a–P0e: facade annotations on `collection.v1` and `graph.v1`, `sql.v1` and `stream.v1` (API2 Tasks 1–2), the app scenario, builder and token corpora, R4 and R11–R14. L1–L13: one task per language; S1 makes the app fixtures required | API2 (its Tasks 1, 2, 13, 14 and 17, for the app modules) | Planned (2026-10-19; owner rulings SDKP-8–SDKP-10) |
 
 ## Track IS: Loams Infra, the HashiCorp stack's roles in Rust
 
@@ -350,6 +352,14 @@ Design reference: [65 Loams Operator](../design/65-loams-operator.md) (D1172–D
 | Plan | Scope | Depends on | Status |
 |---|---|---|---|
 | [OP1: Loams operator, the minimum viable slice](2026-10-19-op1-loams-operator.md) (stub; OP0 Tasks 0–5, OP1 Tasks 6–21) | `loams-operator-api`, `loams-kube` (Lease, fences, journal, conditions, drift) and `loams-operator`; `LoamsCluster` with the engine, `ObjectStore` (S3 probe, RustFS), PD/TiKV `external` and `bridge` (tidb-operator v2), the gateway and `LoamsNamespace` (CP1 Task 15); RBAC, VAPs, exposure rules, metrics, events, the Helm chart, `loams operator` CLI; LOC spec 0.1, the kind/k3d harness, LOC Core and the operator-HA requirements in CI | v0.1.0 shipped (Q996); CP1 Task 15 (or built here) | Stub (design approved 2026-10-19) |
+
+## Track MA: Loams × Mastra
+
+Design reference: [66 Loams × Mastra](../design/66-loams-mastra.md) (D1202–D1227, Q1000–Q1014, approved by the owner 2026-10-20). Owner request, 2026-10-20: a Mastra integration, built in the new public repository `ostrium-labs/loams-mastra` as soon as the plan is done; the Resonate engine moved forward the same day to run in parallel with MA0 and go upstream as `@mastra/resonate`. Most tasks land in `ostrium-labs/loams-mastra`; MA1's fixes (Tasks 23–27) land here.
+
+| Plan | Scope | Depends on | Status |
+|---|---|---|---|
+| [MA1: Loams × Mastra](2026-10-20-ma1-loams-mastra.md) (MA0 Tasks 0–12, MAR 13–22, MA1 23–27 fully specified; MA2 28–37 and MA3 38–41 at task level; adoption 42–46) | **MA0** the `loams-mastra` repository (pnpm workspace, Apache-2.0, NOTICE with Mastra provenance, DCO, GitHub-hosted CI), Mastra's pg and Qdrant suites vendored at release tags and run against `loams dev` and Loams Postgres with expected-failure lists, quickstarts, a template, the upstream docs page; **MAR** a Resonate `ExecutionEngine` tested on an upstream Resonate server and Loams Durable, published as `@loams/mastra-resonate`, contributed as `@mastra/resonate`; **MA1** Qdrant payload-index delete, ES `_cat/indices`, `@qdrant/js-client-rest` in CI, gate findings, a nightly gate on `dev`; **MA2** `@loams/mastra` (vector, storage, pubsub, cache, exporter); **MA3** Memory processors and tools, `loams-mcp` from `MCPClient`, LongMemEval | v0.1.0 (released); #884 for MA2; MM1a and #847 for MA3 | Approved (2026-10-20) |
 
 ## Later milestones
 

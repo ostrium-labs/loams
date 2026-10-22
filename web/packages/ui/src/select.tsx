@@ -48,15 +48,16 @@ const TRIGGER_SIZE = {
   lg: 'h-9 px-3',
 } as const;
 const TRIGGER_VARIANT = {
-  default: 'w-full min-w-36 border-input bg-bg text-ink',
+  default:
+    'w-full min-w-36 border-input bg-bg text-ink hover:border-muted data-popup-open:border-muted',
   ghost:
     'border-transparent bg-transparent text-muted hover:bg-raised hover:text-ink data-pressed:bg-raised',
 } as const;
 
 const TRIGGER_BASE =
   'relative inline-flex cursor-pointer select-none items-center justify-between gap-2 rounded-md border text-left text-body outline-none ' +
-  'transition-colors duration-(--op-duration) motion-reduce:transition-none ' +
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ' +
+  'transition-colors duration-(--op-duration-fast) motion-reduce:transition-none ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ' +
   'aria-invalid:border-danger data-disabled:pointer-events-none data-disabled:opacity-60 ' +
   '[&_svg]:pointer-events-none [&_svg]:shrink-0';
 
@@ -136,8 +137,8 @@ export function SelectValue({ className, ...props }: WithClass<SelectPrimitive.V
 
 /** The popup surface every picker shares (select, combobox, autocomplete). */
 export const POPUP_SURFACE =
-  'rounded-panel border border-rule bg-surface text-ink shadow-pop ' +
-  'transition-opacity duration-(--op-duration) motion-reduce:transition-none';
+  'rounded-panel border border-rule bg-elevated text-ink shadow-pop ' +
+  'transition-opacity duration-(--op-duration-enter) ease-out data-ending-style:duration-(--op-duration-exit) data-ending-style:ease-in motion-reduce:transition-none';
 
 export function SelectPopup({
   className,

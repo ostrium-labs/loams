@@ -214,12 +214,32 @@ impl UsageObserver for Recorder {
 pub struct Usage {
     observer: Arc<dyn UsageObserver>,
     quotas: Arc<Quotas>,
+    /// Counts each event by name (`loams_house_usage_events_total`, HS1
+    /// Task 23).
+    metrics: Option<Arc<crate::metrics::Metrics>>,
 }
 
 impl Usage {
     /// A hub over `observer` and `quotas`.
     pub fn new(observer: Arc<dyn UsageObserver>, quotas: Arc<Quotas>) -> Arc<Self> {
-        Arc::new(Self { observer, quotas })
+        Arc::new(Self {
+            observer,
+            quotas,
+            metrics: None,
+        })
+    }
+
+    /// A hub that also counts each event in `metrics` (HS1 Task 23).
+    pub fn with_metrics(
+        observer: Arc<dyn UsageObserver>,
+        quotas: Arc<Quotas>,
+        metrics: Arc<crate::metrics::Metrics>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            observer,
+            quotas,
+            metrics: Some(metrics),
+        })
     }
 
     /// Its quotas.
@@ -230,6 +250,9 @@ impl Usage {
     /// Counts and hands on one event.
     pub fn emit(&self, event: UsageEvent) {
         self.quotas.account(&event, event.at());
+        if let Some(metrics) = &self.metrics {
+            metrics.usage_event(event.kind());
+        }
         self.observer.on_usage(&event);
     }
 

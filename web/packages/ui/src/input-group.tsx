@@ -70,7 +70,7 @@ export function InputGroupInput({ className, ...props }: InputHTMLAttributes<HTM
   return (
     <input
       className={cx(
-        'h-full min-w-0 flex-1 border-0 bg-transparent px-2.5 font-[inherit] text-[0.9rem] text-ink ' +
+        'h-full min-w-0 flex-1 border-0 bg-transparent px-2.5 font-[inherit] text-body text-ink ' +
           'outline-none placeholder:text-faint',
         className,
       )}

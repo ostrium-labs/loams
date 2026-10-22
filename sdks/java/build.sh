@@ -7,6 +7,7 @@
 #   ./build.sh test -t name # run the test methods whose name contains `name`
 #   ./build.sh stubs        # regenerate sdks/java/gen from proto/ (needs `buf`)
 #   ./build.sh package DIR  # the Maven Central files for dev.loams:loams in DIR
+#   ./build.sh example      # run examples/notes against LOAMS_ENDPOINT
 #   ./build.sh clean
 #
 # ## Why not Maven or Gradle
@@ -139,6 +140,11 @@ compile() {
   say "build.sh: compiling $(wc -l <"$build/test-sources.txt") test files"
   javac "${javac_flags[@]}" -cp "$(classpath)" -d "$test_classes" "@$build/test-sources.txt" \
     || die "the suite did not compile"
+  # The "Build an app" example (SDKP L8 part D) compiles with the suite, so CI
+  # catches an example the API has moved away from. `./build.sh example` runs it.
+  mkdir -p "$build/example-classes"
+  javac "${javac_flags[@]}" -cp "$(classpath)" -d "$build/example-classes" "$root/examples/notes/Notes.java" \
+    || die "examples/notes did not compile"
 }
 
 run_tests() {
@@ -204,6 +210,10 @@ case "${1:-test}" in
     ;;
   package)
     package_artifacts "${2:-}"
+    ;;
+  example)
+    compile
+    java -cp "$(classpath):$build/example-classes" Notes
     ;;
   test)
     compile

@@ -301,10 +301,24 @@ describe("langfuse metrics request shape", () => {
     expect([...url.searchParams.keys()]).toEqual(["query"]);
     expect(JSON.parse(url.searchParams.get("query")!)).toMatchObject({
       view: "observations",
-      metrics: [{ field: "latency", aggregation: "p95" }],
+      // The wire name is `measure` (Langfuse rejects `field` with a 400).
+      metrics: [{ measure: "latency", aggregation: "p95" }],
       dimensions: ["name"],
       timeDimension: { granularity: "day" },
     });
+  });
+
+  it("sends a bare measure name as { measure, aggregation: count }", () => {
+    const params = buildLangfuseMetricsParams({
+      view: "observations",
+      metrics: ["latency", { field: "totalCost", aggregation: "sum" }],
+      fromTimestamp: "2026-01-01T00:00:00Z",
+      toTimestamp: "2026-01-08T00:00:00Z",
+    });
+    expect(JSON.parse(params.query).metrics).toEqual([
+      { measure: "latency", aggregation: "count" },
+      { measure: "totalCost", aggregation: "sum" },
+    ]);
   });
 
   it("round-trips reserved characters through the query blob", () => {
@@ -440,6 +454,23 @@ describe("langfuse deprecated surface", () => {
     for (const call of harness!.captured) {
       expect(call.url).not.toMatch(/\/api\/public\/(traces|sessions|observations|metrics)(\?|$)/);
     }
+  });
+});
+
+describe("langfuse legacy trace list (fallback for self-hosted 3.x)", () => {
+  it("reads /api/public/traces only through its own method, with the key and a bounded limit", async () => {
+    const page = await harness!.service.listLegacyTraces({ limit: 20 });
+    expect(page.data).toEqual([]);
+    const call = harness!.captured.at(-1)!;
+    expect(new URL(call.url).pathname).toBe("/api/public/traces");
+    expect(new URL(call.url).searchParams.get("limit")).toBe("20");
+    expect(call.headers.authorization?.startsWith("Basic ")).toBe(true);
+    // The general guard still refuses the path everywhere else.
+    expect(() => assertSupportedLangfusePath("/api/public/traces")).toThrow(/2026-11-16/);
+  });
+
+  it("rejects a limit outside 1..100", async () => {
+    await expect(harness!.service.listLegacyTraces({ limit: 101 })).rejects.toThrow(/1\.\.100/);
   });
 });
 

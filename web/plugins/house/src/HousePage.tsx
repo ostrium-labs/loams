@@ -500,10 +500,11 @@ function Workspace({
         subtitle="ClickHouse SQL over Loams House: lake and realtime tables, read-only by default."
         actions={
           databases.length > 0 && (
-            <label className="flex items-center gap-2 text-sm" htmlFor={`${ids}-db`}>
+            <label className="flex items-center gap-2 text-body" htmlFor={`${ids}-db`}>
               <span className="text-muted">Database</span>
               <Select
                 id={`${ids}-db`}
+                className="loams-input-compact"
                 value={database}
                 onChange={(e) => chooseDatabase(e.target.value)}
               >
@@ -572,7 +573,7 @@ function Workspace({
           {notice && <Notice title={notice} />}
 
           {busy && (
-            <div className="flex items-center gap-3 text-sm text-muted" role="status">
+            <div className="flex items-center gap-3 text-body text-muted" role="status">
               <span>Running… {progress ? `${fmt.format(progress.readRows)} rows read` : ''}</span>
               {pct !== undefined && (
                 <progress
@@ -587,8 +588,8 @@ function Workspace({
 
           {plan !== undefined && (
             <section aria-label="Plan" className="flex flex-col gap-2">
-              <h3 className="m-0 text-base">Plan</h3>
-              <pre className="m-0 overflow-auto rounded-md bg-surface p-3 font-mono text-xs">
+              <h3 className="m-0 text-emphasis">Plan</h3>
+              <pre className="m-0 overflow-auto rounded-md bg-surface p-3 font-mono text-small">
                 {plan}
               </pre>
             </section>
@@ -677,11 +678,11 @@ function Workspace({
           </>
         }
       >
-        <p className="m-0 text-sm">
+        <p className="m-0 text-body">
           The House says this statement writes. It runs once more, with writes allowed, on{' '}
           <span className={/* mono-ok: id */ 'font-mono'}>{database}</span>.
         </p>
-        <pre className="m-0 mt-2 max-h-48 overflow-auto rounded-md bg-surface p-2 font-mono text-xs">
+        <pre className="m-0 mt-2 max-h-48 overflow-auto rounded-md bg-surface p-2 font-mono text-small">
           {confirm?.sql}
         </pre>
       </Dialog>

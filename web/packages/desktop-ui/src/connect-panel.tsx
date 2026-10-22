@@ -15,7 +15,7 @@ export function clientCommand(d: Dialect, c: SqlConnection): string {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[8rem_1fr] items-center gap-3 border-b border-rule-soft py-2 text-sm">
+    <div className="grid grid-cols-[8rem_1fr] items-center gap-3 border-b border-rule-soft py-2 text-body">
       <dt className="text-muted">{label}</dt>
       <dd className={/* mono-ok: id */ 'm-0 flex items-center gap-2 font-mono'}>{children}</dd>
     </div>
@@ -81,7 +81,7 @@ export function ConnectPanel({
       </Notice>
     );
   }
-  if (!conn) return <p className="text-sm text-muted">Loading…</p>;
+  if (!conn) return <p className="text-body text-muted">Loading…</p>;
 
   return (
     <div className="flex flex-col gap-4">
@@ -121,7 +121,7 @@ export function ConnectPanel({
       </Card>
       <Card title={dialect === 'postgres' ? 'psql' : 'mysql'}>
         <Snippet>{clientCommand(dialect, conn)}</Snippet>
-        <p className="mb-0 mt-2 text-xs text-faint">The client asks for the password.</p>
+        <p className="mb-0 mt-2 text-small text-faint">The client asks for the password.</p>
       </Card>
     </div>
   );

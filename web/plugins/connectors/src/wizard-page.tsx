@@ -166,7 +166,7 @@ export function WizardPage({
     return (
       <div className="lc-page">
         <PageHead title="New instance" actions={back} />
-        <p className="text-sm text-muted">
+        <p className="text-body text-muted">
           {catalog.state === 'error' ? catalog.message : 'Loading…'}
         </p>
       </div>
@@ -253,7 +253,7 @@ export function WizardPage({
       />
       <FixtureNotice flow={flow} />
       <nav aria-label="Wizard steps" className="mb-4">
-        <ol className="m-0 flex list-none flex-wrap gap-2 p-0 text-sm">
+        <ol className="m-0 flex list-none flex-wrap gap-2 p-0 text-body">
           {STEPS.map((s, i) => (
             <li
               key={s}
@@ -279,7 +279,12 @@ export function WizardPage({
             else void create();
           }}
         >
-          <h2 key={step} ref={focusHeading} tabIndex={-1} className="m-0 text-base outline-none">
+          <h2
+            key={step}
+            ref={focusHeading}
+            tabIndex={-1}
+            className="m-0 text-emphasis outline-none"
+          >
             {STEPS[step]}
           </h2>
 
@@ -291,7 +296,7 @@ export function WizardPage({
                 )}
               </Field>
               <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-                <legend className="mb-1 text-sm">Direction</legend>
+                <legend className="mb-1 text-body">Direction</legend>
                 {directions.map((d) => (
                   <label key={d} className="loams-check">
                     <input
@@ -332,7 +337,7 @@ export function WizardPage({
           {step === 1 && (
             <>
               {secretLeaves.length > 0 && (
-                <p className="m-0 text-xs text-muted">
+                <p className="m-0 text-small text-muted">
                   Secret fields are write-only: sent once to the namespace secret store, never shown
                   again.
                 </p>
@@ -389,7 +394,7 @@ export function WizardPage({
 
           {step === 3 && (
             <>
-              <dl className="m-0 grid grid-cols-[10rem_1fr] gap-2 text-sm">
+              <dl className="m-0 grid grid-cols-[10rem_1fr] gap-2 text-body">
                 <dt className="text-muted">Name</dt>
                 <dd className={/* mono-ok: id */ 'm-0 font-mono'}>{name}</dd>
                 <dt className="text-muted">Direction</dt>
@@ -409,7 +414,7 @@ export function WizardPage({
                 ))}
               </dl>
               <section aria-label="Config">
-                <pre className="m-0 max-h-80 overflow-auto border border-rule bg-surface p-3 font-mono text-xs">
+                <pre className="m-0 max-h-80 overflow-auto border border-rule bg-surface p-3 font-mono text-small">
                   {JSON.stringify(config, null, 2)}
                 </pre>
               </section>

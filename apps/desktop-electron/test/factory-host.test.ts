@@ -323,6 +323,77 @@ describe("factory host", () => {
 		expect(r).toMatchObject({ ok: true, value: { health: "unreachable" } });
 	});
 
+	it("adapterless_app_health_is_probed_not_assumed", async () => {
+		// OpenObserve has no adapter: its health comes from its unauthenticated
+		// /healthz at the configured origin, never from "configured means ok".
+		const real = new FactoryHost(mkVault(), new Context());
+		const seen: string[] = [];
+		const cases: [() => Response | Promise<Response>, string][] = [
+			[() => Response.json({ status: "ok" }), "ok"],
+			[() => new Response("bad gateway", { status: 502 }), "unreachable"],
+			[
+				() => {
+					throw new TypeError("fetch failed");
+				},
+				"unreachable",
+			],
+		];
+		for (const [respond, health] of cases) {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async (u: string | URL) => {
+					seen.push(String(u));
+					return respond();
+				}),
+			);
+			await real.remove("openobserve");
+			const r = await real.configure(
+				"openobserve",
+				"http://o2.example:5080/web/",
+				{},
+			);
+			expect(r).toMatchObject({ ok: true, value: { health } });
+		}
+		expect(seen.every((u) => u === "http://o2.example:5080/healthz")).toBe(
+			true,
+		);
+	});
+
+	it("plane_app_url_is_the_embedded_ui_and_the_api_base_stays", async () => {
+		// ItsAPlan serves its API and its web UI on different origins.
+		const seen: string[] = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (u: string | URL | Request) => {
+				seen.push(String(u instanceof Request ? u.url : u));
+				return Response.json({ authenticated: true, name: "x", status: "ok" });
+			}),
+		);
+		const h = new FactoryHost(mkVault(), new Context());
+		const r = await h.configure("plane", "http://api.plan.test", {
+			apiKey: "itp_k",
+			appUrl: "http://plan.test/",
+		});
+		expect(r).toMatchObject({
+			ok: true,
+			value: { url: "http://api.plan.test" },
+		});
+		expect(h.appUrls("plane")).toEqual({ url: "http://plan.test/" });
+		expect(seen.every((u) => u.startsWith("http://api.plan.test/"))).toBe(true);
+		// Not an http(s) URL: refused, nothing stored.
+		const bad = await h.configure("plane", "http://api.plan.test", {
+			apiKey: "itp_k",
+			appUrl: "javascript:alert(1)",
+		});
+		expect(bad).toMatchObject({ ok: false, code: "invalid_url" });
+		// Without one, the embedded UI is the configured URL, as before.
+		await h.configure("plane", "http://api.plan.test", { apiKey: "itp_k" });
+		expect(h.appUrls("plane")?.url).toBe("http://plan.test/");
+		await h.remove("plane");
+		await h.configure("plane", "http://api.plan.test", { apiKey: "itp_k" });
+		expect(h.appUrls("plane")?.url).toBe("http://api.plan.test");
+	});
+
 	it("error_codes_map", async () => {
 		const h = mk();
 		await h.configure("forgejo", "https://f.example", { token: "t" });

@@ -99,7 +99,7 @@ export function FailureView({ failure, statement }: { failure: GraphFailure; sta
       role="alert"
     >
       <p className="m-0 font-medium">{failure.message || 'The server refused the call.'}</p>
-      <p className="m-0 text-sm text-muted">
+      <p className="m-0 text-body text-muted">
         {[
           failure.gqlstatus && `GQLSTATUS ${failure.gqlstatus}`,
           failure.reason ?? failure.codeName,
@@ -135,7 +135,7 @@ export function Editor(p: EditorProps) {
   return (
     <section className="flex flex-col gap-3" aria-label="Editor">
       <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm" htmlFor={`${ids}-lang`}>
+        <label className="flex items-center gap-2 text-body" htmlFor={`${ids}-lang`}>
           <span className="text-muted">Language</span>
           <Select
             id={`${ids}-lang`}
@@ -152,7 +152,7 @@ export function Editor(p: EditorProps) {
           onChange={(e) => p.onReadOnly(e.target.checked)}
         />
         {p.history.length > 0 && (
-          <label className="flex items-center gap-2 text-sm" htmlFor={`${ids}-hist`}>
+          <label className="flex items-center gap-2 text-body" htmlFor={`${ids}-hist`}>
             <span className="text-muted">History</span>
             <Select
               id={`${ids}-hist`}
@@ -212,7 +212,7 @@ export function Editor(p: EditorProps) {
         />
       </div>
       <details>
-        <summary className="cursor-pointer text-sm text-muted">Parameters</summary>
+        <summary className="cursor-pointer text-body text-muted">Parameters</summary>
         <Textarea
           aria-label="Parameters (JSON object)"
           className={/* mono-ok: code */ 'mt-2 box-border w-full resize-y font-mono text-[13px]'}
@@ -222,7 +222,7 @@ export function Editor(p: EditorProps) {
           value={p.parameters}
           onChange={(e) => p.onParameters(e.target.value)}
         />
-        <p className="m-0 text-xs text-muted">
+        <p className="m-0 text-small text-muted">
           Parameters are sent with the statement and never kept in the history.
         </p>
       </details>

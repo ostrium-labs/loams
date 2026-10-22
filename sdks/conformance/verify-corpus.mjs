@@ -57,7 +57,7 @@ function stepsOf(fixture) {
 /** Every `.json` fixture file on disk, by name, from both source directories. */
 async function filesOnDisk(dir = FIXTURES_DIR) {
   const out = new Map();
-  for (const sub of ['recorded', join('recorded', 'apps-mock')]) {
+  for (const sub of ['recorded', join('recorded', 'apps-mock'), join('recorded', 'app')]) {
     let names;
     try {
       names = await readdir(join(dir, sub));
@@ -231,6 +231,116 @@ if (registry === null) {
     `registry: ${declared.size} reasons, ${recorded.size} recorded, ${unproducible.size} declared unproducible`,
   );
 }
+
+// ---- 6: the app corpus (SDKP P0d) -------------------------------------------
+//
+// The builder corpus (`sdks/fixtures/builders/`) pins what every SDK's
+// `Schema`, `Filter` and `Search` builders write; the app scenario
+// (`recorded/app/`) is what the server answered to exactly those requests. A
+// builder case that drifted from the request its scenario step sends would let
+// thirteen builders agree with each other and not with the recording, so each
+// step that names a `builder` must send that case's `expect`. Decoding each
+// `expect` into its message is each language's `<lang>_builders_match_corpus`,
+// which has protobuf at hand; this script has no dependencies on purpose.
+
+const BUILDER_CASES = [
+  'schema_notes',
+  'filter_term',
+  'filter_bool_nested',
+  'filter_range_open',
+  'filter_ids',
+  'search_text_filter_highlight_select',
+  'search_vector_ann_params',
+  'search_hybrid_rrf',
+  'search_hybrid_dbsf',
+  'search_hybrid_weighted',
+  'search_after_page',
+  'search_expand',
+];
+const builders = new Map();
+{
+  const dir = join(FIXTURES_DIR, 'builders');
+  let names = [];
+  try {
+    names = (await readdir(dir)).filter((name) => name.endsWith('.json'));
+  } catch {
+    fail('sdks/fixtures/builders/ is missing: the builder corpus every SDK checks itself against');
+  }
+  for (const file of names) {
+    const entry = JSON.parse(await readFile(join(dir, file), 'utf8'));
+    for (const key of ['name', 'builder', 'message', 'spec', 'expect']) {
+      if (entry[key] === undefined) {
+        fail(`builders/${file} has no ${key}`);
+      }
+    }
+    if (`${entry.name}.json` !== file) {
+      fail(`builders/${file} is named ${entry.name}`);
+    }
+    if (!['schema', 'filter', 'search'].includes(entry.builder)) {
+      fail(`builders/${file}: builder ${entry.builder} is not schema, filter or search`);
+    }
+    builders.set(entry.name, entry);
+  }
+  for (const name of BUILDER_CASES) {
+    if (!builders.has(name)) {
+      fail(`the builder corpus has no ${name}`);
+    }
+  }
+}
+{
+  let tokens = null;
+  try {
+    tokens = JSON.parse(await readFile(join(FIXTURES_DIR, 'tokens.json'), 'utf8'));
+  } catch {
+    fail('sdks/fixtures/tokens.json is missing or not JSON');
+  }
+  if (tokens) {
+    for (const key of ['parse', 'merge', 'malformed']) {
+      if (!Array.isArray(tokens[key]) || tokens[key].length === 0) {
+        fail(`tokens.json has no ${key} cases`);
+      }
+    }
+  }
+}
+/** What a step sends for a builder case: the search body without its
+ * namespace, the schema, or the `where` filter. */
+function builtPart(entry, body) {
+  if (entry.builder === 'search') {
+    const { namespace: _namespace, ...rest } = body;
+    return rest;
+  }
+  if (entry.builder === 'schema') {
+    return body.schema;
+  }
+  return body.where ?? body.filter;
+}
+for (const [name, { fixture }] of onDisk) {
+  if (fixture.kind !== 'app') {
+    continue;
+  }
+  for (const [at, step] of stepsOf(fixture).entries()) {
+    if (!step.call) {
+      fail(`${name} step ${at} names no facade call, so no SDK knows what to replay it with`);
+    }
+    if (!step.builder) {
+      continue;
+    }
+    const entry = builders.get(step.builder);
+    if (!entry) {
+      fail(`${name} step ${at} names builder case ${step.builder}, which is not in the corpus`);
+      continue;
+    }
+    const sent = JSON.stringify(canonical(builtPart(entry, JSON.parse(step.request.body ?? '{}'))));
+    const wanted = JSON.stringify(canonical(entry.expect));
+    if (sent !== wanted) {
+      fail(
+        `${name} step ${at} sends a different ${step.builder} than the builder corpus expects: ` +
+          `${sent.slice(0, 300)} vs ${wanted.slice(0, 300)}`,
+      );
+    }
+  }
+}
+log(`app corpus: ${builders.size} builder cases`);
 
 // ---- the skip rule itself is still expressible ------------------------------
 

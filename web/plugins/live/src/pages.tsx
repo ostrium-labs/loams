@@ -15,6 +15,8 @@ import {
   Notice,
   plainError,
   Select,
+  SelectionGroup,
+  SelectionIndicator,
   SkeletonList,
   StatusTag,
   Table,
@@ -49,7 +51,7 @@ const isNotRunning = (e: unknown) =>
 const isUnserved = (e: unknown) => e instanceof ConnectError && e.code === Code.Unimplemented;
 
 const Mono = ({ children }: { children: ReactNode }) => (
-  <span className={/* mono-ok: id */ 'font-mono text-xs'}>{children}</span>
+  <span className={/* mono-ok: id */ 'font-mono text-small'}>{children}</span>
 );
 
 function Loading({ what }: { what: string }) {
@@ -590,7 +592,7 @@ export function MutateTab({ api, tables, sel, onGone }: TabProps) {
             <p className="m-0">
               Run <Mono>{pending.fn}</Mono> with these arguments. It commits at once.
             </p>
-            <pre className="font-mono text-xs m-0 overflow-auto">
+            <pre className="font-mono text-small m-0 overflow-auto">
               {JSON.stringify(pending.args, null, 2)}
             </pre>
             <p className="m-0 text-muted">
@@ -813,23 +815,24 @@ export function LivePage({
               ]}
             />
           </Card>
-          <div role="tablist" aria-label="Live views" className="flex gap-4 border-b border-rule">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={t.id === tab}
-                className={
-                  t.id === tab
-                    ? 'bg-transparent border-0 border-b-2 border-accent text-ink px-1 py-2 cursor-pointer font-medium'
-                    : 'bg-transparent border-0 border-b-2 border-transparent text-muted px-1 py-2 cursor-pointer'
-                }
-                onClick={() => setTab(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div role="tablist" aria-label="Live views" className="ds-tabs">
+            <SelectionGroup>
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={t.id === tab}
+                  className="ds-tab"
+                  onClick={() => setTab(t.id)}
+                >
+                  {t.label}
+                  {t.id === tab && (
+                    <SelectionIndicator layoutId="live-tab" className="ds-tab-indicator" />
+                  )}
+                </button>
+              ))}
+            </SelectionGroup>
           </div>
           {tab === 'documents' && (
             <DocumentsTab api={api} tables={loaded.tables} sel={sel} onSel={setSel} onGone={gone} />

@@ -13,13 +13,17 @@
 //! uploads the new objects as one workspace pack ([`put_workspace_pack`],
 //! Task 24). `WorkspaceService` (Task 25) checks a save's objects
 //! ([`check_save_objects`]), replays salvage ([`replay_salvage`]) and finds
-//! workspaces for object reads ([`StoreWsLookup`]).
+//! workspaces for object reads ([`StoreWsLookup`]). Task 27 commits a
+//! workspace's index on the server ([`workspace_commit`]) and pushes its
+//! commits without re-uploading objects ([`push_workspace`]).
 
+mod commit;
 mod edits;
 mod lookup;
 pub mod merge3;
 mod pack;
 mod pack_write;
+mod push;
 mod salvage;
 mod save;
 mod store;
@@ -37,6 +41,7 @@ use crate::format::pb;
 use crate::format::snapshot::snapshot_commit;
 use crate::ids::{MountId, ObjectId, Principal, RefName, RepoId, Seq, SnapN, WsId, WsName};
 
+pub use commit::{Ident, SERVER_COMMITTER, same_workspace_commit, workspace_commit};
 pub use edits::{
     DIFF_CONTEXT, EditError, Edited, EnvHooks, EnvRefusal, FileEdit, FileRead, NoEnv, Rebased,
     Rendered, apply_edits, changed_paths, file_patch, is_env_path, read_file, rebase_trees,
@@ -47,7 +52,11 @@ pub use pack::{
     NoScan, PackScan, ScanRefusal, VerifiedPack, WsPackBlobs, WsPackError, WsPackUploads,
     check_pack_len, fork_sources, put_workspace_pack, verify_workspace_pack,
 };
-pub use pack_write::write_ws_pack;
+pub use pack_write::{PackEntry, write_ws_pack};
+pub use push::{
+    ANCESTRY_CLOCK_SKEW_SECS, Lease, PushError, PushLog, PushRequest, PushSpec, Pushed, RefStatus,
+    is_fast_forward, push_closure, push_key, push_workspace,
+};
 pub use salvage::{ReplayError, Replayed, replay_salvage};
 pub use save::{SaveCheckError, check_save_objects, commit_tree, empty_tree};
 pub use store::{BucketWorkspaceStore, MemWorkspaceStore};

@@ -202,6 +202,8 @@ pub struct Committer {
     io: Arc<CommitIo>,
     queues: Queues,
     dirty: Dirty,
+    /// Where each catalog commit's time and result are counted (HS1 Task 23).
+    metrics: Arc<crate::metrics::Metrics>,
 }
 
 impl Committer {
@@ -211,7 +213,14 @@ impl Committer {
             io: Arc::new(io),
             queues: Arc::new(Mutex::new(HashMap::new())),
             dirty: Arc::new(Mutex::new(DirtySets::default())),
+            metrics: Arc::default(),
         }
+    }
+
+    /// Counts its commits in `metrics` (HS1 Task 23).
+    pub fn with_metrics(mut self, metrics: Arc<crate::metrics::Metrics>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     /// The tables that took commits since the last call (compaction's
@@ -263,6 +272,7 @@ impl Committer {
             Arc::clone(&self.queues),
             name,
             Arc::clone(&self.dirty),
+            Arc::clone(&self.metrics),
         ));
     }
 }
@@ -282,6 +292,7 @@ async fn run_table(
     queues: Queues,
     name: String,
     dirty: Dirty,
+    metrics: Arc<crate::metrics::Metrics>,
 ) {
     let mut last_commit: Option<Instant> = None;
     let mut last_cycle = Duration::ZERO;
@@ -336,7 +347,7 @@ async fn run_table(
             }
         }
         let cycle = Instant::now();
-        commit_batch(&io, &table, batch).await;
+        commit_batch(&io, &table, batch, &metrics).await;
         dirty.lock().unwrap_or_else(|e| e.into_inner()).mark(&table);
         last_cycle = cycle.elapsed();
         last_commit = Some(Instant::now());
@@ -354,8 +365,13 @@ enum Fate {
     Repeat,
 }
 
-async fn commit_batch(io: &CommitIo, table: &TableIdent, batch: Vec<Pending>) {
-    let answers = commit(io, table, &batch).await;
+async fn commit_batch(
+    io: &CommitIo,
+    table: &TableIdent,
+    batch: Vec<Pending>,
+    metrics: &crate::metrics::Metrics,
+) {
+    let answers = commit(io, table, &batch, metrics).await;
     for (pending, answer) in batch.into_iter().zip(answers) {
         let _ = pending.reply.send(answer);
     }
@@ -366,6 +382,7 @@ async fn commit(
     io: &CommitIo,
     table: &TableIdent,
     batch: &[Pending],
+    metrics: &crate::metrics::Metrics,
 ) -> Vec<Result<Committed, HouseError>> {
     let fail_all = |err: HouseError| batch.iter().map(|_| Err(err.clone())).collect();
     let commit_id = uuid::Uuid::new_v4().to_string();
@@ -427,11 +444,20 @@ async fn commit(
                 return fail_all(err);
             }
         }
-        match io
+        let committing = Instant::now();
+        let committed = io
             .catalog
             .commit(table, built.requirements, built.updates)
-            .await
-        {
+            .await;
+        metrics.commit(
+            match &committed {
+                Ok(_) => "committed",
+                Err(CatalogError::Conflict { .. }) => "conflict",
+                Err(_) => "failed",
+            },
+            committing.elapsed(),
+        );
+        match committed {
             Ok(_) => return answers(&fates, built.snapshot_id),
             Err(err) if attempt < MAX_ATTEMPTS && retryable(&err) => {
                 if matches!(err, CatalogError::Unavailable(_)) {

@@ -1,0 +1,90 @@
+{
+  "name": "schema_notes",
+  "builder": "schema",
+  "message": "google.protobuf.Struct",
+  "spec": [
+    {
+      "op": "text",
+      "args": [
+        "title"
+      ]
+    },
+    {
+      "op": "text",
+      "args": [
+        "body"
+      ]
+    },
+    {
+      "op": "keyword",
+      "args": [
+        "tags"
+      ]
+    },
+    {
+      "op": "i64",
+      "args": [
+        "n"
+      ]
+    },
+    {
+      "op": "vector",
+      "args": [
+        "embedding",
+        4
+      ]
+    }
+  ],
+  "expect": {
+    "fields": [
+      {
+        "name": "title",
+        "source_path": "title",
+        "kind": {
+          "text": {
+            "analyzer": "standard",
+            "positions": true
+          }
+        },
+        "indexed": true,
+        "fast": false
+      },
+      {
+        "name": "body",
+        "source_path": "body",
+        "kind": {
+          "text": {
+            "analyzer": "standard",
+            "positions": true
+          }
+        },
+        "indexed": true,
+        "fast": false
+      },
+      {
+        "name": "tags",
+        "source_path": "tags",
+        "kind": "keyword",
+        "indexed": true,
+        "fast": true
+      },
+      {
+        "name": "n",
+        "source_path": "n",
+        "kind": "i64",
+        "indexed": true,
+        "fast": true
+      }
+    ],
+    "vectors": [
+      {
+        "name": "embedding",
+        "dim": 4,
+        "distance": "cosine"
+      }
+    ],
+    "sparse_vectors": [],
+    "dynamic": "ignore",
+    "max_fields": 1000
+  }
+}

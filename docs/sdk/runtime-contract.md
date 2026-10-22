@@ -49,21 +49,55 @@ supplies a key. A request with no such field is left alone.
 
 ## R4 — Consistency tokens
 
-A write answers with a `consistency_token`; a read accepts one, so a caller that
-just wrote can read its own write. Threading those by hand is the caller's job
-today. A session store is the alternative: **off by default**, and when a call
-opts in, every response's token is folded into the session and attached to later
-reads.
+A write answers with a consistency token; a read accepts one, so a caller that
+just wrote can read its own write.
 
-**The token's encoding is not in the protos yet.** §05 §5 defines the semantics
-and API1's write paths carry an opaque `v1:` string; §44 §7.4 says it merges by
-"max offset per stream and partition", which needs the encoding parsed. Until
-that lands, a store keeps the token it was given and reports two different
-tokens meeting as an error rather than merging them into a wrong one — a
-silently-wrong consistency token reads stale data, which is worse than a
-failure.
+**The encoding** (amended by SDKP, 2026-10-19) is the server's,
+`crates/loams-collection/src/token.rs`:
 
-*Not pinned by a test yet,* because no RPC carries a token.
+```
+v1:s<stream>/p<partition>@<offset>,s<stream>/p<partition>@<offset>,…
+```
+
+Each item is the next offset after a write, for one `(stream, partition)`.
+Every number is canonical decimal (no sign, no leading zeros), so a token has
+one spelling. Streams and offsets are `u64` and partitions `u32`, and an SDK
+keeps them exact (a `bigint`, an `int`, a `uint64`, never a double). Every SDK
+exposes a `ConsistencyToken` value with:
+
+- **`parse`**: the text form, or `invalid_argument` with reason
+  `invalid_consistency_token` raised client-side for a malformed token, before
+  any network call;
+- **`to_string`**: `v1:` plus the items in the token's order;
+- **`merge`**: both tokens' items, the larger offset kept per
+  `(stream, partition)`, normalised (sorted by stream, then partition, one item
+  per pair) — exactly what `ConsistencyToken::merge` on the server produces;
+- **equality** after normalising.
+
+`sdks/fixtures/tokens.json` holds the server's own parse, print, merge and
+malformed cases; `<lang>_consistency_token_merge` runs it.
+
+**The session store** is off by default. With `session_consistency` on:
+
+- every token a response carries merges into the session: the
+  `consistency_token`, `token` or `read_token` field, and the
+  `loams-consistency-token` response header. A string that is not a `v1:` token
+  (a page token, a bearer) is ignored; a `v1:` string that does not parse is
+  counted and ignored, because the call it came back from has already happened
+  and turning it into an error invites a second write;
+- every **collection or SQL read** (`loams.collection.v1`, `loams.sql.v1`)
+  whose request has a `consistency` field, and leaves it unset, is sent
+  `at_least` the session's token, in that field. An explicit `consistency`
+  always wins, and a call can opt out of the session;
+- **graph reads never take the session's token.** A graph's token names one
+  graph's stream and a Graph read refuses a token naming any other, so a
+  session that mixed them would fail the read; a graph caller passes the token
+  of its own write explicitly. The session keeps one merged token per package,
+  and `merge` takes the max per `(stream, partition)` within it (SDKP-17).
+
+*Pinned by* `<lang>_consistency_token_merge` (the corpus) and
+`<lang>_session_read_your_writes` (a write's token is the next read's
+`at_least`).
 
 ## R5 — Unavailable services
 
@@ -164,3 +198,65 @@ assertions over the Connect and gRPC-Web transports and checks the entry points
 statically. **What it cannot pin** is a CORS preflight or a browser-specific
 header rule: that needs an origin and a server that answers preflights, and no
 test in this repository has one.
+
+## R11 — The default namespace
+
+A client may be built with a default namespace (`namespace` on the client,
+`LOAMS_NAMESPACE` in `from_env`). Every request **in an app package** —
+`loams.collection.v1`, `loams.graph.v1`, `loams.sql.v1`, `loams.stream.v1` —
+that has a `namespace` field and leaves it empty is sent with the default. An
+explicit namespace always wins. A request with neither is refused with
+`invalid_argument`, reason `namespace_required` (`metadata.field =
+"namespace"`), client-side, before any network call. A `namespace` field outside the app packages is not a Loams
+namespace (`loams.live.v1` `CreateAppRequest.namespace` names an app's
+environment) and is never filled or refused (SDKP-11).
+
+*Pinned by* `<lang>_default_namespace`.
+
+## R12 — Timeouts
+
+Every unary call has a deadline: the client's default (30 s unless the client
+says otherwise) or the call's own; zero means none. Streams have no default
+deadline, only one a call sets. The deadline is **one budget for the whole
+call**, retries and backoff included, and each attempt is sent with what is left
+of it (`connect-timeout-ms` on Connect, `grpc-timeout` on gRPC). When the budget
+runs out the call fails with `deadline_exceeded` and the client-side reason
+`client_deadline_exceeded`, and is **never retried**: the budget is spent. A
+server's own `deadline_exceeded` inside the budget is retried as R2 says.
+
+*Pinned by* `<lang>_timeout_deadline`.
+
+## R13 — `documents.write_batch`
+
+A bulk upsert as a loop of ordinary `WriteDocuments` calls, chunked by
+operations (default 10 000) and by encoded bytes (default 4 MiB; one operation
+over the limit goes alone):
+
+- one chunk in flight at a time, so order holds and a failure stops at a known
+  point;
+- each chunk gets its own idempotency key, minted before its first attempt and
+  reused on that chunk's retries (R3);
+- the result is the merge of every chunk's consistency token (R4);
+- the first failed chunk stops the load with a `BatchError` carrying the
+  client-side reason `batch_partially_applied`, how many chunks and operations
+  were applied before it, their merged token, and the failed chunk's own error.
+  The applied chunks stay applied.
+
+*Pinned by* `<lang>_write_batch_chunks`.
+
+## R14 — `streams.subscribe`
+
+A client loop over unary `Fetch` (SDKP-2), so it works on every transport and
+through every proxy, exposed as the language's native async iteration:
+
+- the next offset is the last record's offset + 1, and the iterator exposes it
+  (`offset`), so a caller can stop and resume without losing or repeating a
+  record;
+- an empty fetch backs off 100 ms, doubling, up to 1 s, and the backoff resets
+  when a record arrives; with `max_wait_ms` the server long-polls instead;
+- cancelling the iterator (break, `return`, a cancelled context or token) stops
+  the loop, and no further fetch is sent;
+- a fetch that fails after R2's retries ends the iteration with that error, and
+  `offset` still says where to resume.
+
+*Pinned by* `<lang>_streams_subscribe_resumes`.

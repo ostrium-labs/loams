@@ -24,16 +24,17 @@ The crates are `loams-*` and the binary is `loams`. Packages will publish as `lo
 
 Loams has no open core (D1119, 2026-10-19). The engine, the Multitenant BYOC
 Control Plane with GitOps, observability, quota enforcement, and the metering,
-billing and hosted control-plane code (moving into the open repo now) are all
-Apache-2.0. Ostrium Labs is a research lab building open-source Loams, so a
-contribution is never turned away because it belongs to a paid edition.
+billing and hosted control-plane code are all Apache-2.0: the former private
+`loams-platform` repository was merged into this one on 2026-10-19
+([`docs/platform`](docs/platform/README.md)). Ostrium Labs is a research lab
+building open-source Loams, so a contribution is never turned away because it
+belongs to a paid edition.
 
 **Integrity** still applies to anything a charge depends on: "could a tenant or an
-agent profit from forging this value?" If so, it must be produced and validated by
-a component the tenant does not control. Being open source does not change that;
-the protection comes from where the code runs, not from hiding it. While that code
-moves in (design §63), nothing in this repository depends on the separate
-`loams-platform` repository.
+agent profit from forging this value?" If so, it must be produced outside the
+tenant's sandbox and validated by a component the tenant does not control. Being
+open source does not change that; the protection comes from where the code runs,
+not from hiding it.
 
 ## Development setup
 

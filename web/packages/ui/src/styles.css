@@ -1,7 +1,9 @@
 /*
- * @loams/ui components. Square surfaces, round actions: panels keep hard
- * corners like cut soil; anything you press is a pill. Every class starts
- * with `loams-`, so the sheet can sit beside any other CSS.
+ * @loams/ui components, painted on the design 59 tokens (tokens.css). Surfaces take the radius
+ * scale (cards lg, controls md, rows and chips sm); layers come from lightness steps and
+ * hairlines, and shadows only lift what floats. Every interactive class has its hover, pressed,
+ * focus-visible and disabled states here. Every class starts with `loams-`, so the sheet can sit
+ * beside any other CSS.
  */
 @import "./tokens.css";
 
@@ -40,22 +42,36 @@
   border-radius: var(--op-radius-md);
   font: inherit;
   font-size: var(--op-text-body);
-  font-weight: 500;
+  font-weight: var(--op-weight-medium);
   line-height: 1;
   white-space: nowrap;
   color: var(--op-ink);
   background: none;
   cursor: pointer;
   text-decoration: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
   transition:
-    background-color var(--op-duration) ease,
-    border-color var(--op-duration) ease,
-    color var(--op-duration) ease;
+    background-color var(--op-duration-fast) ease,
+    border-color var(--op-duration-fast) ease,
+    color var(--op-duration-fast) ease,
+    transform var(--op-duration-fast) var(--op-ease-out);
+}
+
+.loams-btn svg {
+  flex: none;
+  width: var(--op-icon);
+  height: var(--op-icon);
+}
+
+/* Pressed: a 2% press on transform only, never on a disabled or busy button. */
+.loams-btn:active:not(:disabled, [aria-disabled="true"]) {
+  transform: scale(0.98);
 }
 
 .loams-btn:focus-visible {
-  outline: 2px solid var(--op-accent);
-  outline-offset: 2px;
+  outline: var(--op-focus-width) solid var(--op-focus);
+  outline-offset: var(--op-focus-offset);
 }
 
 .loams-btn:disabled,
@@ -64,31 +80,55 @@
   cursor: not-allowed;
 }
 
+/* Working: the label stays at full strength beside the spinner; only presses are refused. */
+.loams-btn[data-loading] {
+  opacity: 1;
+  cursor: progress;
+}
+
+.loams-btn-spinner {
+  display: inline-flex;
+}
+
 .loams-btn-primary {
   color: var(--op-accent-ink);
   background: var(--op-accent);
   border-color: var(--op-accent);
 }
 
-.loams-btn-primary:hover:not(:disabled) {
-  background: color-mix(in oklab, var(--op-accent) 90%, var(--op-bg));
+.loams-btn-primary:hover:not(:disabled, [aria-disabled="true"]) {
+  background: var(--op-accent-hover);
+  border-color: var(--op-accent-hover);
+}
+
+.loams-btn-primary:active:not(:disabled, [aria-disabled="true"]) {
+  background: var(--op-accent-active);
+  border-color: var(--op-accent-active);
 }
 
 /* A button is named by its label, so its outline is half the field outline (T4-1). */
 .loams-btn-secondary {
   background: var(--op-surface);
-  border-color: color-mix(in oklab, var(--op-input) 50%, transparent);
+  border-color: var(--op-control-border);
 }
 
-.loams-btn-secondary:hover:not(:disabled) {
+.loams-btn-secondary:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--op-raised);
+}
+
+.loams-btn-secondary:active:not(:disabled, [aria-disabled="true"]),
+.loams-btn-quiet:active:not(:disabled, [aria-disabled="true"]),
+.loams-btn-quiet[data-popup-open],
+.loams-btn-secondary[data-popup-open] {
+  background: var(--op-row-selected);
 }
 
 .loams-btn-quiet {
   color: var(--op-muted);
 }
 
-.loams-btn-quiet:hover:not(:disabled) {
+.loams-btn-quiet:hover:not(:disabled, [aria-disabled="true"]),
+.loams-btn-quiet[data-popup-open] {
   color: var(--op-ink);
   background: var(--op-raised);
 }
@@ -96,10 +136,10 @@
 .loams-btn-danger {
   color: var(--op-danger);
   background: var(--op-surface);
-  border-color: color-mix(in oklab, var(--op-input) 50%, transparent);
+  border-color: var(--op-control-border);
 }
 
-.loams-btn-danger:hover:not(:disabled) {
+.loams-btn-danger:hover:not(:disabled, [aria-disabled="true"]) {
   background: var(--op-danger-soft);
   border-color: color-mix(in oklab, var(--op-danger) 32%, transparent);
 }
@@ -108,6 +148,11 @@
   color: var(--op-bg);
   background: var(--op-danger);
   border-color: var(--op-danger);
+}
+
+.loams-btn-danger-solid:hover:not(:disabled, [aria-disabled="true"]) {
+  background: var(--op-danger-hover);
+  border-color: var(--op-danger-hover);
 }
 
 .loams-btn-link {
@@ -119,12 +164,16 @@
   text-underline-offset: 3px;
 }
 
-.loams-btn-link:hover:not(:disabled) {
+.loams-btn-link:hover:not(:disabled, [aria-disabled="true"]) {
   text-decoration-color: currentColor;
 }
 
+.loams-btn-link:active:not(:disabled, [aria-disabled="true"]) {
+  transform: none;
+}
+
 .loams-btn-xs {
-  height: 24px;
+  height: var(--op-control-xs);
   gap: 4px;
   padding: 0 7px;
   font-size: var(--op-text-small);
@@ -135,6 +184,14 @@
   height: var(--op-control-compact);
   padding: 0 9px;
   font-size: var(--op-text-small);
+}
+
+.loams-btn-xs svg,
+.loams-btn-sm svg,
+.loams-btn-icon-sm svg,
+.loams-btn-icon-xs svg {
+  width: var(--op-icon-sm);
+  height: var(--op-icon-sm);
 }
 
 .loams-btn-lg {
@@ -152,6 +209,19 @@
   width: var(--op-control-compact);
   height: var(--op-control-compact);
   padding: 0;
+}
+
+.loams-btn-icon-xs {
+  width: var(--op-control-xs);
+  height: var(--op-control-xs);
+  padding: 0;
+  border-radius: var(--op-radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loams-btn:active:not(:disabled, [aria-disabled="true"]) {
+    transform: none;
+  }
 }
 
 /* Joined buttons in a ButtonGroup (these rules are unlayered, so the group's utilities cannot reach them). */
@@ -185,9 +255,10 @@
   align-items: center;
   gap: 7px;
   padding: 2px 9px 2px 7px;
-  border-radius: 999px;
+  border-radius: var(--op-radius-pill);
   font-family: inherit;
   font-size: var(--op-text-micro);
+  font-weight: var(--op-weight-medium);
   line-height: 1.5;
   white-space: nowrap;
 }
@@ -196,6 +267,7 @@
   content: "";
   width: 6px;
   height: 6px;
+  border-radius: var(--op-radius-pill);
   background: currentColor;
 }
 
@@ -240,26 +312,28 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border: 1px solid var(--op-rule-soft);
+  border: 1px solid var(--op-rule);
+  border-radius: var(--op-radius-lg);
   background: var(--op-surface);
 }
 
+/* The head is part of the surface: a hairline under it, no fill of its own. */
 .loams-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 46px;
-  padding: 8px 16px;
+  min-height: var(--op-topbar);
+  padding: 8px 12px 8px 16px;
   border-bottom: 1px solid var(--op-rule-soft);
-  background: var(--op-raised);
 }
 
 .loams-card-head h2,
 .loams-card-head h3 {
   margin: 0;
-  font-size: 0.92rem;
-  font-weight: 540;
+  font-size: var(--op-text-emphasis);
+  font-weight: var(--op-weight-semibold);
+  line-height: 20px;
 }
 
 .loams-card-head > div {
@@ -271,15 +345,19 @@
 .loams-card-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
+  gap: 12px;
   flex: 1;
   padding: 16px;
-  font-size: 0.9rem;
-  line-height: 1.55;
+  font-size: var(--op-text-body);
+  line-height: 20px;
 }
 
+/* A flush body (a table) clips to the card's lower corners. */
 .loams-card-flush {
   padding: 0;
+  overflow: hidden;
+  border-end-start-radius: calc(var(--op-radius-lg) - 1px);
+  border-end-end-radius: calc(var(--op-radius-lg) - 1px);
 }
 
 .loams-card-body > p {
@@ -317,6 +395,12 @@
   border-radius: var(--op-radius-lg);
 }
 
+/* Inside a card the card is the frame: no second, dashed box. */
+.loams-card .loams-empty {
+  border: 0;
+  border-radius: 0;
+}
+
 .loams-empty-body {
   max-width: 42ch;
 }
@@ -325,7 +409,7 @@
   margin: 0;
 }
 
-/* Fields /* Fields ------------------------------------------------------------------------ */
+/* Fields ------------------------------------------------------------------------ */
 
 .loams-field {
   display: grid;
@@ -334,17 +418,20 @@
 
 .loams-field > label,
 .loams-field > .loams-field-label {
-  font-size: 0.84rem;
-  font-weight: 500;
+  font-size: var(--op-text-small);
+  font-weight: var(--op-weight-medium);
+  line-height: 16px;
 }
 
 .loams-field-hint {
-  font-size: 0.78rem;
+  font-size: var(--op-text-small);
+  line-height: 16px;
   color: var(--op-muted);
 }
 
 .loams-field-error {
-  font-size: 0.78rem;
+  font-size: var(--op-text-small);
+  line-height: 16px;
   color: var(--op-danger);
 }
 
@@ -358,24 +445,42 @@
   font-size: var(--op-text-body);
   color: var(--op-ink);
   background: var(--op-bg);
-  transition: border-color var(--op-duration) ease;
+  transition: border-color var(--op-duration-fast) ease;
+}
+
+/* A toolbar field: 28px at 12px, beside compact buttons (a namespace, a database). */
+.loams-input.loams-input-compact {
+  width: auto;
+  height: var(--op-control-compact);
+  padding-left: 8px;
+  border-radius: var(--op-radius-sm);
+  font-size: var(--op-text-small);
 }
 
 .loams-input::placeholder {
   color: var(--op-faint);
 }
 
-.loams-input:hover {
+.loams-input:hover:not(:disabled, [aria-invalid="true"]) {
   border-color: var(--op-muted);
 }
 
 .loams-input:focus-visible {
-  outline: 2px solid var(--op-accent);
-  outline-offset: 2px;
+  outline: var(--op-focus-width) solid var(--op-focus);
+  outline-offset: var(--op-focus-offset);
 }
 
 .loams-input[aria-invalid="true"] {
   border-color: var(--op-danger);
+}
+
+.loams-input[aria-invalid="true"]:focus-visible {
+  outline-color: var(--op-danger);
+}
+
+.loams-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 select.loams-input {
@@ -414,11 +519,11 @@ textarea.loams-input {
 }
 
 .loams-check input:focus-visible {
-  outline: 2px solid var(--op-accent);
-  outline-offset: 2px;
+  outline: var(--op-focus-width) solid var(--op-focus);
+  outline-offset: var(--op-focus-offset);
 }
 
-/* Tables /* Tables ------------------------------------------------------------------------ */
+/* Tables ------------------------------------------------------------------------ */
 
 .loams-table-wrap {
   overflow-x: auto;
@@ -449,7 +554,17 @@ textarea.loams-input {
   vertical-align: middle;
 }
 
-.loams-table tbody tr:last-child td {
+/* A row header (`<th scope="row">`) reads as the row's first cell, not as a column head. */
+.loams-table tbody th {
+  height: auto;
+  padding: 8px 10px;
+  font-size: var(--op-text-body);
+  font-weight: var(--op-weight-regular);
+  color: var(--op-ink);
+  white-space: normal;
+}
+
+.loams-table tbody tr:last-child > * {
   border-bottom: 0;
 }
 
@@ -465,6 +580,16 @@ textarea.loams-input {
   background: var(--op-row-hover);
 }
 
+.loams-table tbody tr[aria-selected="true"],
+.loams-table tbody tr[data-selected] {
+  background: var(--op-row-selected);
+}
+
+.loams-table tbody tr:focus-visible {
+  outline: var(--op-focus-width) solid var(--op-focus);
+  outline-offset: calc(var(--op-focus-width) * -1);
+}
+
 .loams-table .loams-num {
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -476,12 +601,100 @@ textarea.loams-input {
 }
 
 .loams-table-primary strong {
-  font-weight: 520;
+  font-weight: var(--op-weight-medium);
 }
 
 .loams-table-primary span {
   font-size: var(--op-text-small);
   color: var(--op-muted);
+}
+
+/* List rows (ListRow): one line in a list, a sidebar or a picker ----------------------------- */
+
+.loams-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--op-row-comfortable);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--op-radius-sm);
+  font: inherit;
+  font-size: var(--op-text-body);
+  line-height: 20px;
+  text-align: start;
+  text-decoration: none;
+  color: var(--op-ink);
+  background: transparent;
+  transition: background-color var(--op-duration-fast) ease;
+}
+
+.loams-row[data-density="compact"] {
+  min-height: var(--op-row);
+  font-size: var(--op-text-small);
+  line-height: 16px;
+}
+
+.loams-row svg {
+  flex: none;
+  width: var(--op-icon);
+  height: var(--op-icon);
+  color: var(--op-muted);
+}
+
+.loams-row[data-density="compact"] svg {
+  width: var(--op-icon-sm);
+  height: var(--op-icon-sm);
+}
+
+a.loams-row,
+button.loams-row,
+.loams-row[role="option"],
+.loams-row[role="button"],
+.loams-row[tabindex] {
+  cursor: pointer;
+}
+
+.loams-row:hover:not([data-disabled]),
+.loams-row[data-highlighted] {
+  background: var(--op-row-hover);
+}
+
+/* Selected: the light theme's white chip with a 1px shadow, a soft fill in dark. */
+.loams-row[data-selected],
+.loams-row[aria-current="page"],
+.loams-row[aria-selected="true"] {
+  background: var(--op-row-selected);
+  box-shadow: var(--op-shadow-chip);
+}
+
+/* Rows sit edge to edge in scrolling lists, so the ring is inset. */
+.loams-row:focus-visible {
+  outline: var(--op-focus-width) solid var(--op-focus);
+  outline-offset: calc(var(--op-focus-width) * -1);
+}
+
+.loams-row[data-disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.loams-row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loams-row-meta {
+  flex: none;
+  font-size: var(--op-text-small);
+  color: var(--op-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Stats ------------------------------------------------------------------------ */
@@ -496,7 +709,8 @@ textarea.loams-input {
   display: grid;
   gap: 4px;
   padding: 14px 16px;
-  border: 1px solid var(--op-rule-soft);
+  border: 1px solid var(--op-rule);
+  border-radius: var(--op-radius-lg);
   background: var(--op-surface);
 }
 
@@ -507,15 +721,15 @@ textarea.loams-input {
 }
 
 .loams-stat > strong {
-  font-size: 1.5rem;
-  font-weight: 520;
-  font-stretch: 112%;
+  font-size: var(--op-text-title);
+  font-weight: var(--op-weight-semibold);
+  line-height: 28px;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .loams-stat > small {
-  font-size: 0.78rem;
+  font-size: var(--op-text-small);
   color: var(--op-muted);
 }
 
@@ -523,17 +737,29 @@ textarea.loams-input {
 
 .loams-notice {
   display: flex;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--op-rule-soft);
-  border-left: 3px solid var(--op-info);
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--op-rule);
+  border-radius: var(--op-radius-md);
   background: var(--op-surface);
-  font-size: 0.86rem;
-  line-height: 1.55;
+  font-size: var(--op-text-body);
+  line-height: 20px;
+}
+
+/* The tone is a dot beside the title, and the title's colour; never the only signal (the
+   title says what happened). */
+.loams-notice::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: var(--op-radius-pill);
+  background: var(--op-info);
 }
 
 .loams-notice strong {
-  font-weight: 560;
+  font-weight: var(--op-weight-semibold);
 }
 
 .loams-notice-body {
@@ -546,29 +772,38 @@ textarea.loams-input {
 }
 
 .loams-notice-warn {
-  border-left-color: var(--op-warn);
+  border-color: color-mix(in oklab, var(--op-warn) 28%, transparent);
+  background: var(--op-warn-soft);
+}
+
+.loams-notice-warn::before {
+  background: var(--op-warn);
 }
 
 .loams-notice-danger {
-  border-left-color: var(--op-danger);
+  border-color: color-mix(in oklab, var(--op-danger) 28%, transparent);
+  background: var(--op-danger-soft);
 }
 
-.loams-notice-success {
-  border-left-color: var(--op-grow);
+.loams-notice-danger::before {
+  background: var(--op-danger);
+}
+
+.loams-notice-success::before {
+  background: var(--op-grow);
 }
 
 /* Sample data: the notice and badge on every page that renders fixtures ----------- */
 
 .loams-sample-data {
-  padding: 9px 14px;
-  border: 1px solid var(--op-warn-soft);
-  border-left: 3px solid var(--op-warn);
+  padding: 9px 12px;
+  border: 1px solid color-mix(in oklab, var(--op-warn) 28%, transparent);
   border-radius: var(--op-radius-md);
   background: var(--op-warn-soft);
   color: var(--op-ink);
   font-family: inherit;
-  font-size: 0.86rem;
-  line-height: 1.5;
+  font-size: var(--op-text-body);
+  line-height: 20px;
 }
 
 .loams-sample-data strong {
@@ -580,12 +815,13 @@ textarea.loams-input {
   display: inline-flex;
   align-items: center;
   padding: 1px 8px;
-  border: 1px solid var(--op-warn);
+  border: 1px solid color-mix(in oklab, var(--op-warn) 40%, transparent);
+  border-radius: var(--op-radius-xs);
   background: var(--op-warn-soft);
   color: var(--op-warn);
   font-family: inherit;
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: var(--op-text-micro);
+  font-weight: var(--op-weight-semibold);
   line-height: 1.5;
   white-space: nowrap;
 }
@@ -598,11 +834,12 @@ textarea.loams-input {
   align-items: flex-start;
   gap: 12px;
   margin: 0;
-  padding: 11px 12px 11px 14px;
-  border: 1px solid var(--op-rule-soft);
+  padding: 10px 12px;
+  border: 1px solid var(--op-rule);
+  border-radius: var(--op-radius-md);
   background: var(--op-bg);
   font-family: var(--loams-font-mono);
-  font-size: 0.78rem;
+  font-size: var(--op-text-small);
   line-height: 1.6;
 }
 
@@ -628,6 +865,7 @@ textarea.loams-input {
 
 .loams-meter {
   height: 6px;
+  border-radius: var(--op-radius-pill);
   background: var(--op-raised);
   overflow: hidden;
 }
@@ -637,7 +875,7 @@ textarea.loams-input {
   height: 100%;
   background: var(--op-ink);
   transform-origin: left;
-  animation: loams-grow 900ms var(--op-ease) both;
+  animation: loams-grow var(--op-duration-page) var(--op-ease-out) both;
 }
 
 .loams-meter[data-level="high"] > span[aria-hidden] {
@@ -660,27 +898,27 @@ textarea.loams-input {
   display: inline-grid;
   place-items: center;
   flex: none;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 600;
+  border-radius: var(--op-radius-pill);
+  font-size: var(--op-text-micro);
+  font-weight: var(--op-weight-semibold);
   color: var(--op-ink);
   background: var(--op-raised);
   border: 1px solid var(--op-rule-soft);
 }
 
 .loams-avatar[data-kind="agent"] {
-  border-radius: 4px;
+  border-radius: var(--op-radius-xs);
   color: var(--op-accent-fg);
   background: var(--op-accent-soft);
   border-color: transparent;
 }
 
 .loams-avatar[data-kind="team"] {
-  border-radius: 4px;
+  border-radius: var(--op-radius-xs);
 }
 
 .loams-avatar[data-kind="service_account"] {
-  border-radius: 4px;
+  border-radius: var(--op-radius-xs);
   color: var(--op-info);
   background: var(--op-info-soft);
   border-color: transparent;
@@ -690,7 +928,7 @@ textarea.loams-input {
 
 /* Dialog glass (D1073): 80% opacity over a 14px blur; dark adds a 4% white inset. */
 .loams-dialog-glass {
-  background: color-mix(in srgb, var(--op-surface) var(--op-glass), transparent);
+  background: color-mix(in srgb, var(--op-elevated) var(--op-glass), transparent);
   -webkit-backdrop-filter: blur(var(--op-blur)) saturate(1.1);
   backdrop-filter: blur(var(--op-blur)) saturate(1.1);
   border: 1px solid var(--op-rule);
@@ -726,7 +964,8 @@ textarea.loams-input {
 .loams-dialog-head h2 {
   margin: 0;
   font-size: var(--op-text-section);
-  font-weight: 600;
+  font-weight: var(--op-weight-semibold);
+  line-height: 24px;
 }
 
 .loams-dialog-body {
@@ -750,6 +989,25 @@ textarea.loams-input {
   from {
     opacity: 0;
     transform: translateY(8px);
+  }
+}
+
+/* The palette's opening rows rise in order, 25ms apart, capped at 8 (UI2; LIST_STAGGER's
+   numbers). Rows a query brings in later carry no data-enter and just appear. */
+@keyframes loams-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+[data-slot="command-item"][data-enter] {
+  animation: loams-row-in var(--op-duration-enter) var(--op-ease-out) both;
+  animation-delay: calc(min(var(--loams-i, 0), 8) * 25ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="command-item"][data-enter] {
+    animation: none;
   }
 }
 
@@ -783,6 +1041,16 @@ textarea.loams-input {
   :focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 2px;
+  }
+  .loams-row[data-selected],
+  .loams-row[aria-current="page"],
+  .loams-row[aria-selected="true"] {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+  [data-slot="selection-indicator"] {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
   }
   .loams-status::before {
     forced-color-adjust: none;
@@ -1127,6 +1395,7 @@ textarea.loams-input {
   font-size: var(--op-text-small);
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: a different table from .loams-table */
 .loams-results-table th {
   position: sticky;
   top: 0;
@@ -1157,7 +1426,6 @@ textarea.loams-input {
   color: var(--op-faint);
 }
 
-/* biome-ignore lint/style/noDescendingSpecificity: a different table from .loams-table */
 .loams-results-table td {
   max-width: 420px;
   padding: 0 10px;

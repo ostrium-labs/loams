@@ -1,0 +1,68 @@
+# Nightly pg_dump -> S3-compatible bucket (R2 or RustFS) with rclone. Same
+# policy as the Compose target: custom-format dumps, pruned after 30 days.
+# Stock images only: an init container dumps, the main container uploads.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: authentik-backup
+spec:
+  schedule: "15 3 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          volumes:
+            - name: scratch
+              emptyDir: {}
+          initContainers:
+            - name: dump
+              image: docker.io/library/postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  f=/scratch/authentik-$(date -u +%Y%m%dT%H%M%SZ).dump
+                  pg_dump --format=custom --no-owner --no-privileges --file="$f"
+                  pg_restore --list "$f" >/dev/null
+                  [ "$(wc -c <"$f")" -gt 10000 ]
+              env:
+                - {name: PGHOST, value: authentik-db-rw}
+                - {name: PGDATABASE, value: authentik}
+                - name: PGUSER
+                  valueFrom: {secretKeyRef: {name: authentik-db, key: username}}
+                - name: PGPASSWORD
+                  valueFrom: {secretKeyRef: {name: authentik-db, key: password}}
+              volumeMounts:
+                - {name: scratch, mountPath: /scratch}
+          containers:
+            - name: upload
+              image: docker.io/rclone/rclone:1.75.1@sha256:45401ad7410db1d67ffdb58e19059ad20b0d8e0285a60e38bbec55cc1019c7a5
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  dest="backup:${BUCKET}/authentik"
+                  rclone copy /scratch "$dest" --include "*.dump" --s3-no-check-bucket
+                  rclone delete "$dest" --min-age 30d --s3-no-check-bucket
+              env:
+                - {name: RCLONE_CONFIG_BACKUP_TYPE, value: s3}
+                - {name: RCLONE_CONFIG_BACKUP_REGION, value: auto}
+                - {name: RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET, value: "true"}
+                - name: RCLONE_CONFIG_BACKUP_PROVIDER
+                  valueFrom: {secretKeyRef: {name: authentik-backup, key: PROVIDER}}
+                - name: RCLONE_CONFIG_BACKUP_ENDPOINT
+                  valueFrom: {secretKeyRef: {name: authentik-backup, key: ENDPOINT}}
+                - name: RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID
+                  valueFrom: {secretKeyRef: {name: authentik-backup, key: ACCESS_KEY_ID}}
+                - name: RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY
+                  valueFrom: {secretKeyRef: {name: authentik-backup, key: SECRET_ACCESS_KEY}}
+                - name: BUCKET
+                  valueFrom: {secretKeyRef: {name: authentik-backup, key: BUCKET}}
+              volumeMounts:
+                - {name: scratch, mountPath: /scratch}

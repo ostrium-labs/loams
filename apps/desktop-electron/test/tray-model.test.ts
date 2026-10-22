@@ -178,7 +178,7 @@ describe("menu-model", () => {
 		for (const platform of ["linux", "darwin", "win32"]) {
 			const prod = ids(menuModel({ platform, dev: false }));
 			expect(prod).toContain('"id":"docs"');
-			expect(prod).toContain('"id":"logs"');
+			expect(prod).toContain('"id":"show-logs"');
 			expect(prod).toContain('"id":"about"');
 			expect(prod).not.toContain('"role":"reload"');
 			expect(ids(menuModel({ platform, dev: true }))).toContain(

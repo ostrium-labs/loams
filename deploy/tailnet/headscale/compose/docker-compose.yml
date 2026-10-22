@@ -1,0 +1,118 @@
+# Headscale for headscale.loams.dev: single-host target, beside Authentik.
+#
+#   headscale  control server + embedded DERP (SQLite, one writer)
+#   caddy      TLS for headscale.loams.dev; keeps /api and /metrics off the
+#              public name; management API on ${ADMIN_BIND}:8081
+#   backup     nightly SQLite .backup + keys + policy, age-encrypted, to S3
+#
+# Public ports: 80/tcp and 443/tcp (Caddy), 3478/udp (STUN). Nothing else.
+# The DNS record for ${HEADSCALE_HOST} is DNS-only: Headscale cannot sit behind
+# Cloudflare's proxy or Tunnel (docs/platform/deploy/headscale.md, section 0).
+#
+# Pinned 2026-10-02: Headscale v0.29.4 (2026-09-23), Caddy 2.11.4 (alpine),
+# Alpine 3.24, rclone 1.75.1. Bump with docs/platform/deploy/headscale.md, "Upgrades".
+
+x-headscale-image: &headscale-image
+  ghcr.io/juanfont/headscale:v0.29.4@sha256:8833f828b414c0907b7e5c71da76473216fe17cce0818a166b536ec552c0903f
+
+services:
+  headscale:
+    image: *headscale-image
+    command: serve
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/headscale
+    environment:
+      HEADSCALE_OIDC_CLIENT_SECRET: ${HEADSCALE_OIDC_CLIENT_SECRET:?set HEADSCALE_OIDC_CLIENT_SECRET}
+      HEADSCALE_DERP_SERVER_IPV4: ${PUBLIC_IPV4:?set PUBLIC_IPV4}
+      HEADSCALE_DERP_SERVER_IPV6: ${PUBLIC_IPV6:-}
+    volumes:
+      - ../config/config.yaml:/etc/headscale/config.yaml:ro
+      - ../../policy/policy.hujson:/etc/headscale/policy.hujson:ro
+      - lib:/var/lib/headscale
+    ports:
+      - "3478:3478/udp"
+    healthcheck:
+      test: ["CMD", "headscale", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      internal:
+        ipv4_address: 172.30.80.10
+
+  caddy:
+    image: docker.io/library/caddy:2.11.4-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
+    restart: unless-stopped
+    depends_on:
+      headscale:
+        condition: service_healthy
+    environment:
+      HEADSCALE_HOST: ${HEADSCALE_HOST:-headscale.loams.dev}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+      - "${ADMIN_BIND:-127.0.0.1}:8081:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      internal:
+        ipv4_address: 172.30.80.11
+
+  backup:
+    build:
+      context: ./backup
+    image: loams/headscale-backup:local
+    restart: unless-stopped
+    environment:
+      BACKUP_AT: ${BACKUP_AT:-03:40}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      BACKUP_BUCKET: ${BACKUP_S3_BUCKET:?set BACKUP_S3_BUCKET}
+      BACKUP_PREFIX: ${BACKUP_PREFIX:-headscale}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?set BACKUP_AGE_RECIPIENT}
+      BACKUP_HEARTBEAT_URL: ${BACKUP_HEARTBEAT_URL:-}
+      RCLONE_CONFIG_BACKUP_TYPE: s3
+      RCLONE_CONFIG_BACKUP_PROVIDER: ${BACKUP_S3_PROVIDER:-Cloudflare}
+      RCLONE_CONFIG_BACKUP_ENDPOINT: ${BACKUP_S3_ENDPOINT:?set BACKUP_S3_ENDPOINT}
+      RCLONE_CONFIG_BACKUP_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:?set BACKUP_S3_ACCESS_KEY_ID}
+      RCLONE_CONFIG_BACKUP_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:?set BACKUP_S3_SECRET_ACCESS_KEY}
+      RCLONE_CONFIG_BACKUP_REGION: ${BACKUP_S3_REGION:-auto}
+      RCLONE_CONFIG_BACKUP_NO_CHECK_BUCKET: "true"
+    volumes:
+      # Read-write: SQLite's .backup needs the -shm file of a WAL database.
+      - lib:/var/lib/headscale
+      - ../../policy:/policy:ro
+      - backup-scratch:/scratch
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /scratch/alive && [ $$(( $$(date +%s) - $$(date -r /scratch/alive +%s) )) -lt 300 ]"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      internal:
+        ipv4_address: 172.30.80.12
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: 172.30.80.0/24
+
+volumes:
+  lib:
+  caddy-data:
+  caddy-config:
+  backup-scratch:

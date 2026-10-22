@@ -345,9 +345,18 @@ pub async fn sweep_namespace(
 ) -> Result<Swept, HouseError> {
     let retention = lake.retention();
     let mut swept = Swept::default();
-    for database in lake.databases(namespace).await? {
-        for name in lake.table_names(namespace, &database.name).await? {
-            let Some(table) = lake.load(namespace, &database.name, &name).await? else {
+    // The House's own `_house` (the query log, HS1 Task 23) is swept too: it
+    // takes a snapshot every few seconds.
+    let mut databases: Vec<String> = lake
+        .databases(namespace)
+        .await?
+        .into_iter()
+        .map(|d| d.name)
+        .collect();
+    databases.push(crate::querylog::HOUSE_DATABASE.to_string());
+    for database in databases {
+        for name in lake.table_names(namespace, &database).await? {
+            let Some(table) = lake.load(namespace, &database, &name).await? else {
                 continue;
             };
             // One table's failure (an unreadable manifest, a store error) is
@@ -372,7 +381,7 @@ pub async fn sweep_namespace(
                     eprintln!(
                         "loams-house: the retention sweep of {}.{name} (namespace {namespace}) \
                          failed: {}",
-                        database.name,
+                        database,
                         err.message()
                     );
                 }
@@ -727,7 +736,8 @@ pub async fn reconcile(lake: &Lake, namespace: u64) -> Result<Reconciled, HouseE
         lake.databases(namespace)
             .await?
             .into_iter()
-            .map(|d| Lake::namespace(namespace, &d.name)),
+            .map(|d| Lake::namespace(namespace, &d.name))
+            .chain([Lake::namespace(namespace, crate::querylog::HOUSE_DATABASE)]),
     );
     for ns in &namespaces {
         let tables = match catalog.list_tables(ns).await {

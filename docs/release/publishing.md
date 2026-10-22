@@ -1,8 +1,12 @@
 # Publishing Loams: registries, secrets and the release path
 
-Status (2026-10-17): **container images publish on every tag. The SDK release
-workflow is ready for thirteen SDKs, and it publishes nothing until the owner
-turns on each registry.** Every SDK goes out under the name `loams`, or that
+Status (2026-10-19): **container images publish on every tag. `v0.1.0` is live
+on npm, PyPI, crates.io, NuGet, the Go proxy, RubyGems and Maven Central, and as
+the C++ tarball on the GitHub release.** The PHP split repository
+`ostrium-labs/loams-php` has `main` and `v0.1.0`, but the package is not on
+Packagist until the owner submits it (step 5 below). pub.dev and CocoaPods are
+not turned on. The SDK release workflow publishes nothing to a registry until
+the owner turns it on. Every SDK goes out under the name `loams`, or that
 registry's spelling of it. The `v0.1.0-preview.N` tags publish pre-release
 versions. `v0.1.0` is a normal release (owner, 2026-10-17), and the SDK READMEs
 still call the APIs a preview until 1.0.
@@ -211,7 +215,7 @@ The release images, the contract the compose stack in
 
 | Image | Containerfile | Contents |
 |---|---|---|
-| `ghcr.io/ostrium-labs/loams` | `deploy/release/Containerfile.loams` | The engine, built with the features `live,live-tikv,durable,graph,tikv,pgwire,mysql-wire,stream-grpc` |
+| `ghcr.io/ostrium-labs/loams` | `deploy/release/Containerfile.loams` | The engine, built with the features `live,live-tikv,durable,durable-tikv,graph,git,tikv,pgwire,mysql-wire,stream-grpc` |
 | `ghcr.io/ostrium-labs/loams-fabric` | `deploy/release/Containerfile.loams-fabric` | The House front, with `loams-house-worker` inside |
 | `ghcr.io/ostrium-labs/loams-agentd` | `deploy/release/Containerfile.loams-agentd` | The agent daemon (optional) |
 

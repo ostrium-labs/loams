@@ -12,6 +12,8 @@ import {
   Input,
   Notice,
   Select,
+  SelectionGroup,
+  SelectionIndicator,
   StatusTag,
   Table,
   Textarea,
@@ -58,11 +60,11 @@ function ErrorNotice({ title, message }: { title: string; message: string }) {
 }
 
 const Loading = ({ what }: { what: string }) => (
-  <p className="text-muted text-sm py-6">Loading {what}…</p>
+  <p className="text-muted text-body py-6">Loading {what}…</p>
 );
 
 const Mono = ({ children }: { children: ReactNode }) => (
-  <span className={/* mono-ok: id */ 'font-mono text-xs'}>{children}</span>
+  <span className={/* mono-ok: id */ 'font-mono text-small'}>{children}</span>
 );
 
 const when = (ms: number | undefined) => (ms ? new Date(ms).toLocaleString() : '—');
@@ -90,17 +92,17 @@ export function ValueView({ value, label }: { value: Value | undefined; label: s
   const d: Decoded = decodeValue(value);
   const [asText, setAsText] = useState(false);
   let body: ReactNode;
-  if (d.kind === 'empty') body = <span className="text-muted text-sm">empty</span>;
+  if (d.kind === 'empty') body = <span className="text-muted text-body">empty</span>;
   else if (d.kind === 'json')
     body = (
-      <pre className="font-mono text-xs overflow-auto max-h-60 m-0 whitespace-pre-wrap">
+      <pre className="font-mono text-small overflow-auto max-h-60 m-0 whitespace-pre-wrap">
         {d.text}
       </pre>
     );
   else
     body = (
       <>
-        <pre className="font-mono text-xs overflow-auto max-h-60 m-0 break-all whitespace-pre-wrap">
+        <pre className="font-mono text-small overflow-auto max-h-60 m-0 break-all whitespace-pre-wrap">
           {asText && d.text !== undefined ? d.text : d.raw}
         </pre>
         {d.text !== undefined && (
@@ -112,7 +114,7 @@ export function ValueView({ value, label }: { value: Value | undefined; label: s
     );
   return (
     <div className="flex flex-col gap-1" data-value={label}>
-      <div className="text-muted text-xs">
+      <div className="text-muted text-small">
         {label}
         {d.kind === 'base64' && !asText ? ' (base64)' : ''}
       </div>
@@ -123,7 +125,7 @@ export function ValueView({ value, label }: { value: Value | undefined; label: s
 
 function TagList({ tags }: { tags: Record<string, string> }) {
   const entries = Object.entries(tags);
-  if (entries.length === 0) return <span className="text-muted text-sm">no tags</span>;
+  if (entries.length === 0) return <span className="text-muted text-body">no tags</span>;
   return (
     <div className="flex flex-wrap gap-1">
       {entries.map(([k, v]) => (
@@ -169,7 +171,7 @@ function TagInput({
           Add tag
         </Button>
       </div>
-      {bad && <span className="text-danger text-xs">A tag looks like key=value.</span>}
+      {bad && <span className="text-danger text-small">A tag looks like key=value.</span>}
       {tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {tags.map(([k, v]) => (
@@ -223,11 +225,13 @@ export function PromiseDetail({
     <Dialog
       open
       onClose={onClose}
-      title={<span className={/* mono-ok: id */ 'font-mono text-sm break-all'}>{current.id}</span>}
+      title={
+        <span className={/* mono-ok: id */ 'font-mono text-body break-all'}>{current.id}</span>
+      }
       footer={
         confirming ? (
           <>
-            <span className="text-sm mr-auto">
+            <span className="text-body mr-auto">
               Cancel this promise? It will be rejected as canceled.
             </span>
             <Button variant="quiet" onClick={() => setConfirming(false)}>
@@ -252,23 +256,23 @@ export function PromiseDetail({
       }
     >
       <div className="flex flex-col gap-4">
-        <dl className="grid grid-cols-2 gap-2 m-0 text-sm">
+        <dl className="grid grid-cols-2 gap-2 m-0 text-body">
           <div>
-            <dt className="text-muted text-xs">State</dt>
+            <dt className="text-muted text-small">State</dt>
             <dd className="m-0">
               <PromiseState_ state={current.state} />
             </dd>
           </div>
           <div>
-            <dt className="text-muted text-xs">Created</dt>
+            <dt className="text-muted text-small">Created</dt>
             <dd className="m-0">{when(current.createdAt)}</dd>
           </div>
           <div>
-            <dt className="text-muted text-xs">Times out</dt>
+            <dt className="text-muted text-small">Times out</dt>
             <dd className="m-0">{when(current.timeoutAt)}</dd>
           </div>
           <div>
-            <dt className="text-muted text-xs">Settled</dt>
+            <dt className="text-muted text-small">Settled</dt>
             <dd className="m-0">{when(current.settledAt)}</dd>
           </div>
         </dl>
@@ -373,7 +377,7 @@ function NewPromise({
           )}
         </Field>
         <div>
-          <div className="text-sm mb-1">Tags</div>
+          <div className="text-body mb-1">Tags</div>
           <TagInput tags={tags} onChange={setTags} />
         </div>
         {error && <ErrorNotice title="Could not create the promise" message={error} />}
@@ -701,7 +705,7 @@ export function SchedulesTab({ api }: { api: DurableApi }) {
               cell: (s) => (
                 <span className="flex flex-col">
                   <Mono>{s.cron}</Mono>
-                  <span className="text-muted text-xs">{describeCron(s.cron) ?? ''}</span>
+                  <span className="text-muted text-small">{describeCron(s.cron) ?? ''}</span>
                 </span>
               ),
             },
@@ -830,7 +834,7 @@ export function TasksTab({ api }: { api: DurableApi }) {
           open
           onClose={() => setSelected(undefined)}
           title={
-            <span className={/* mono-ok: id */ 'font-mono text-sm break-all'}>{selected.id}</span>
+            <span className={/* mono-ok: id */ 'font-mono text-body break-all'}>{selected.id}</span>
           }
           footer={
             <Button variant="quiet" onClick={() => setSelected(undefined)}>
@@ -838,28 +842,28 @@ export function TasksTab({ api }: { api: DurableApi }) {
             </Button>
           }
         >
-          <dl className="grid grid-cols-2 gap-2 m-0 text-sm">
+          <dl className="grid grid-cols-2 gap-2 m-0 text-body">
             <div>
-              <dt className="text-muted text-xs">State</dt>
+              <dt className="text-muted text-small">State</dt>
               <dd className="m-0">
                 <StatusTag status={taskTone(selected.state)}>{selected.state}</StatusTag>
               </dd>
             </div>
             <div>
-              <dt className="text-muted text-xs">Version</dt>
+              <dt className="text-muted text-small">Version</dt>
               <dd className="m-0">{selected.version}</dd>
             </div>
             <div>
-              <dt className="text-muted text-xs">Worker</dt>
+              <dt className="text-muted text-small">Worker</dt>
               <dd className="m-0">{selected.pid ?? '—'}</dd>
             </div>
             <div>
-              <dt className="text-muted text-xs">TTL</dt>
+              <dt className="text-muted text-small">TTL</dt>
               <dd className="m-0">{selected.ttl === undefined ? '—' : `${selected.ttl} ms`}</dd>
             </div>
             <div className="col-span-2">
-              <dt className="text-muted text-xs">Resumes</dt>
-              <dd className={/* mono-ok: code */ 'm-0 font-mono text-xs break-all'}>
+              <dt className="text-muted text-small">Resumes</dt>
+              <dd className={/* mono-ok: code */ 'm-0 font-mono text-small break-all'}>
                 {JSON.stringify(selected.resumes)}
               </dd>
             </div>
@@ -893,7 +897,7 @@ function RunRow({ node, depth }: { node: RunNode; depth: number }) {
         )}
         <Mono>{p.id}</Mono>
         <PromiseState_ state={p.state} />
-        <span className="text-muted text-xs">{when(p.createdAt)}</span>
+        <span className="text-muted text-small">{when(p.createdAt)}</span>
       </div>
       {open && node.children.length > 0 && (
         <ul className="m-0 p-0">
@@ -931,7 +935,7 @@ export function RunsTab({ api }: { api: DurableApi }) {
                 <RunRow key={r.promise.id} node={r} depth={0} />
               ))}
             </ul>
-            <p className="text-muted text-xs m-0 mt-2">
+            <p className="text-muted text-small m-0 mt-2">
               {runs.data.reduce((n, r) => n + countNodes(r), 0)} promises in the latest 200.
             </p>
           </Card>
@@ -955,30 +959,31 @@ export function DurablePage({ api, graph }: { api: DurableApi; graph?: RunGraphS
   const [tab, setTab] = useState<TabId>('promises');
   const tabs = TABS.filter((t) => t.id !== 'graph' || graph);
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-6xl">
-      <header>
-        <h1 className="m-0">Durable execution</h1>
-        <p className="text-muted m-0">
+    <div className="lc-page">
+      <header className="lc-page-head">
+        <h1>Durable execution</h1>
+        <p>
           Promises, schedules and tasks of this engine's Resonate server, and the runs they form.
         </p>
       </header>
-      <div role="tablist" aria-label="Durable views" className="flex gap-4 border-b border-rule">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={t.id === tab}
-            className={
-              t.id === tab
-                ? 'bg-transparent border-0 border-b-2 border-accent text-ink px-1 py-2 cursor-pointer font-medium'
-                : 'bg-transparent border-0 border-b-2 border-transparent text-muted px-1 py-2 cursor-pointer'
-            }
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div role="tablist" aria-label="Durable views" className="ds-tabs">
+        <SelectionGroup>
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={t.id === tab}
+              className="ds-tab"
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+              {t.id === tab && (
+                <SelectionIndicator layoutId="durable-tab" className="ds-tab-indicator" />
+              )}
+            </button>
+          ))}
+        </SelectionGroup>
       </div>
       {tab === 'promises' && <PromisesTab api={api} />}
       {tab === 'schedules' && <SchedulesTab api={api} />}

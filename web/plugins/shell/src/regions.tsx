@@ -5,12 +5,13 @@
 
 import type { PanelService } from '@loams/console-host';
 import { SlotBoundary, type SlotEntry, useSlot } from '@loams/slots';
-import { ResizeHandle, Sheet, Tabs } from '@loams/ui';
+import { IconButton, motion, ResizeHandle, Sheet, Tabs } from '@loams/ui';
 import { PanelBottom, PanelRight } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { useNarrow } from './frame.js';
+import { ShortcutHint, useNarrow } from './frame.js';
 import { useLocation } from './nav.js';
 import { DRAWER, INSPECTOR } from './panel.js';
+import { usePanelToggle } from './panel-motion.js';
 import { compile, type HashRouter } from './router.js';
 
 type TabSlot = 'shell.inspector.tab' | 'shell.drawer.tab';
@@ -65,6 +66,7 @@ export function PanelRegion({
   const config = kind === 'inspector' ? INSPECTOR : DRAWER;
   const label = LABEL[kind];
   const state = usePanel(panel);
+  const toggle = usePanelToggle(state.open);
   const narrow = useNarrow();
   const { tabs, params } = useTabs(
     kind === 'inspector' ? 'shell.inspector.tab' : 'shell.drawer.tab',
@@ -147,35 +149,50 @@ export function PanelRegion({
       onResize={(n) => panel.resize(n)}
     />
   );
-  return kind === 'inspector' ? (
+  // The clip carries the panel's size, so with Motion on a toggle slides it on the panel
+  // curve (UI1-1, UI2); during that slide the panel holds its size and the clip cuts it.
+  const inspector = kind === 'inspector';
+  const open = state.open;
+  const sized = toggle.animating ? state.size : '100%';
+  return (
     <>
       {handle}
-      <aside
-        ref={region}
-        id={id}
-        className="lc-inspector"
-        aria-label={label}
-        tabIndex={-1}
-        hidden={!state.open}
-        style={{ width: state.size }}
+      <motion.div
+        className={inspector ? 'lc-panel-clip lc-inspector-clip' : 'lc-panel-clip lc-drawer-clip'}
+        // The first opening mounts the clip: with Motion on it starts shut, so it slides too.
+        initial={toggle.animating ? (inspector ? { width: 0 } : { height: 0 }) : false}
+        animate={inspector ? { width: open ? state.size : 0 } : { height: open ? state.size : 0 }}
+        transition={toggle.transition}
+        onAnimationComplete={toggle.done}
       >
-        {body}
-      </aside>
-    </>
-  ) : (
-    <>
-      {handle}
-      <section
-        ref={region}
-        id={id}
-        className="lc-drawer"
-        aria-label={label}
-        tabIndex={-1}
-        hidden={!state.open}
-        style={{ height: state.size }}
-      >
-        {body}
-      </section>
+        {inspector ? (
+          <aside
+            ref={region}
+            id={id}
+            className="lc-inspector"
+            aria-label={label}
+            tabIndex={-1}
+            hidden={!toggle.shown}
+            inert={toggle.closing || undefined}
+            style={{ width: sized }}
+          >
+            {body}
+          </aside>
+        ) : (
+          <section
+            ref={region}
+            id={id}
+            className="lc-drawer"
+            aria-label={label}
+            tabIndex={-1}
+            hidden={!toggle.shown}
+            inert={toggle.closing || undefined}
+            style={{ height: sized }}
+          >
+            {body}
+          </section>
+        )}
+      </motion.div>
     </>
   );
 }
@@ -194,44 +211,37 @@ export function PanelToggles({
   const d = usePanel(drawer);
   const inspectorTabs = useTabs('shell.inspector.tab', router).tabs.length;
   const drawerTabs = useTabs('shell.drawer.tab', router).tabs.length;
-  let mac = false;
-  try {
-    mac = /mac|iphone|ipad/i.test(navigator.platform);
-  } catch {
-    // No navigator (tests, workers): the Ctrl spelling.
-  }
-  const mod = mac ? '⌘' : 'Ctrl+';
   return (
     <>
       {drawerTabs > 0 && (
-        <button
-          type="button"
+        <IconButton
+          size="sm"
           className="lc-bar-btn"
           data-panel-toggle="drawer"
           aria-pressed={d.open}
           aria-controls="lc-drawer"
-          aria-label={d.open ? 'Hide drawer' : 'Show drawer'}
+          label={d.open ? 'Hide drawer' : 'Show drawer'}
+          tooltip={<ShortcutHint label={d.open ? 'Hide drawer' : 'Show drawer'} keys="J" />}
           aria-keyshortcuts="Control+J Meta+J"
-          title={`Drawer (${mod}J)`}
           onClick={() => drawer.toggle()}
         >
-          <PanelBottom size={16} strokeWidth={1.75} aria-hidden="true" />
-        </button>
+          <PanelBottom strokeWidth={1.75} aria-hidden="true" />
+        </IconButton>
       )}
       {inspectorTabs > 0 && (
-        <button
-          type="button"
+        <IconButton
+          size="sm"
           className="lc-bar-btn"
           data-panel-toggle="inspector"
           aria-pressed={i.open}
           aria-controls="lc-inspector"
-          aria-label={i.open ? 'Hide inspector' : 'Show inspector'}
+          label={i.open ? 'Hide inspector' : 'Show inspector'}
+          tooltip={<ShortcutHint label={i.open ? 'Hide inspector' : 'Show inspector'} keys="I" />}
           aria-keyshortcuts="Control+I Meta+I"
-          title={`Inspector (${mod}I)`}
           onClick={() => inspector.toggle()}
         >
-          <PanelRight size={16} strokeWidth={1.75} aria-hidden="true" />
-        </button>
+          <PanelRight strokeWidth={1.75} aria-hidden="true" />
+        </IconButton>
       )}
     </>
   );

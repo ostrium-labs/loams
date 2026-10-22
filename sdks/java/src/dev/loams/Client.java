@@ -53,6 +53,14 @@ public final class Client implements AutoCloseable {
     private final Modules.Live live;
     private final Modules.LiveAdmin liveAdmin;
     private final Modules.Tables tables;
+    private final AppModules.NamespacesModule namespaces;
+    private final AppModules.CollectionsModule collections;
+    private final AppModules.DocumentsModule documents;
+    private final AppModules.SearchModule search;
+    private final AppModules.VectorModule vector;
+    private final AppModules.GraphModule graph;
+    private final SqlModule sql;
+    private final StreamsModule streams;
     private final SystemModule system;
 
     /** Every module, by name: the catalogue a caller iterates when feature-detecting. */
@@ -66,7 +74,7 @@ public final class Client implements AutoCloseable {
         this.endpoint = endpoint;
         this.protocol = options.protocol();
         this.transport =
-                new ConnectTransport(endpoint, this.protocol, options.httpClient());
+                new ConnectTransport(endpoint, this.protocol, options.httpClient(), options.json());
         this.session = options.sessionConsistency() ? new ConsistencySession() : null;
         // An unset budget means the design's number, not none. Java's `Integer` null is what
         // makes that expressible; see Options.maxRetries().
@@ -78,17 +86,33 @@ public final class Client implements AutoCloseable {
             budget = 0;
         }
         this.maxRetries = budget;
-        this.invoker = new CallInvoker(transport, options.auth(), budget, session);
+        this.invoker = new CallInvoker(transport, options.auth(), budget, session, options.namespace(), options.timeout());
 
         this.instance = new Modules.Instance(invoker);
         this.live = new Modules.Live(invoker);
         this.liveAdmin = new Modules.LiveAdmin(invoker);
         this.tables = new Modules.Tables(invoker);
+        this.namespaces = new AppModules.NamespacesModule(invoker);
+        this.collections = new AppModules.CollectionsModule(invoker);
+        this.documents = new AppModules.DocumentsModule(invoker);
+        this.search = new AppModules.SearchModule(invoker);
+        this.vector = new AppModules.VectorModule(invoker);
+        this.graph = new AppModules.GraphModule(invoker);
+        this.sql = new SqlModule(invoker);
+        this.streams = new StreamsModule(invoker);
         this.system = new SystemModule(instance);
         modules.put("instance", instance);
         modules.put("live", live);
         modules.put("live.admin", liveAdmin);
         modules.put("tables", tables);
+        modules.put("namespaces", namespaces);
+        modules.put("collections", collections);
+        modules.put("documents", documents);
+        modules.put("search", search);
+        modules.put("vector", vector);
+        modules.put("graph", graph);
+        modules.put("sql", sql);
+        modules.put("streams", streams);
     }
 
     /** A builder for {@link Options}. */
@@ -142,6 +166,61 @@ public final class Client implements AutoCloseable {
     /** {@code loams.tables}: the table half of the same service (design §44 §7.2). */
     public Modules.Tables tables() {
         return tables;
+    }
+
+    /** {@code loams.namespaces} (SDKP §2.2). */
+    public AppModules.NamespacesModule namespaces() {
+        return namespaces;
+    }
+
+    /** {@code loams.collections} (SDKP §2.2). */
+    public AppModules.CollectionsModule collections() {
+        return collections;
+    }
+
+    /** {@code loams.documents} (SDKP §2.3). */
+    public AppModules.DocumentsModule documents() {
+        return documents;
+    }
+
+    /** {@code loams.search} (SDKP §2.4). */
+    public AppModules.SearchModule search() {
+        return search;
+    }
+
+    /** {@code loams.vector} (SDKP §2.4, Q613). */
+    public AppModules.VectorModule vector() {
+        return vector;
+    }
+
+    /** {@code loams.graph} (SDKP §2.5). Experimental. */
+    public AppModules.GraphModule graph() {
+        return graph;
+    }
+
+    /** {@code loams.sql} (SDKP §2.5). */
+    public SqlModule sql() {
+        return sql;
+    }
+
+    /** {@code loams.streams} (SDKP §2.5). */
+    public StreamsModule streams() {
+        return streams;
+    }
+
+    /** A handle on one collection in the client's default namespace (SDKP §2.8). */
+    public CollectionHandle collection(String name) {
+        return new CollectionHandle(this, name, null);
+    }
+
+    /** A handle on one collection in {@code namespace}. */
+    public CollectionHandle collection(String name, String namespace) {
+        return new CollectionHandle(this, name, namespace);
+    }
+
+    /** A client from {@link Options#fromEnv()}. */
+    public static Client fromEnv() {
+        return of(Options.fromEnv().build());
     }
 
     /** The module catalogue, feature detection and the version check. */

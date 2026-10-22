@@ -258,4 +258,19 @@ public sealed class WireEncodingTests
 
         Assert.Equal("not_implemented", WireReader.ErrorInfoFrom(parsed.Details)?.Reason);
     }
+
+    /// <summary>
+    /// A <c>float</c> field is written at float precision, as protojson writes it:
+    /// <c>0.7f</c> is <c>0.7</c>, not the widened double <c>0.699999988079071</c>
+    /// (app_search step 5 sends the weights of a weighted sum).
+    /// </summary>
+    [Fact]
+    public void Float_fields_are_written_at_float_precision()
+    {
+        var fusion = new Loams.Collection.V1.WeightedSum();
+        fusion.Weights.Add(0.7f);
+        fusion.Weights.Add(0.3f);
+
+        Assert.Equal("""{"weights":[0.7,0.3]}""", CompactJson.Format(fusion));
+    }
 }

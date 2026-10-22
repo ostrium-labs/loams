@@ -30,6 +30,17 @@ sdks/fixtures/
   faults.json            the injected faults (the only thing here not recorded)
   recorded/*.json        the thirteen `loams dev` cases, byte for byte
   recorded/apps-mock/*.json  the twenty app-mock scenarios, one file each
+  recorded/app/*.json    the SDKP app scenario (`app_collections`, `app_search`,
+                         `app_graph`; `app_sql` and `app_streams` with P0b/P0c),
+                         recorded from `loams dev`, replayed through each SDK's
+                         public facade
+  app-scenario.md        the same scenario in prose
+  builders/*.json        the builder corpus: what every SDK's `Schema`, `Filter`
+                         and `Search` builders write, case by case
+  tokens.json            the consistency-token corpus (parse, print, merge,
+                         malformed), shared with `loams-collection`'s
+                         `token_corpus_matches`
+  facade-index.json      every facade call, generated (`gen.sh index`)
   results/<lang>.json    what a suite says it ran; the input to the 100% bar.
                          **Generated, not committed** (D640) — gitignored, written
                          by the suite on every run, and CI generate-then-checks
@@ -145,6 +156,8 @@ sdks/conformance/run-all.sh                # CI: corpus, harness, every language
 sdks/conformance/run-all.sh --harness-only # the first two layers only
 sdks/conformance/run-test.sh typescript stream_resume_with_cursor   # one test
 node sdks/conformance/verify-corpus.mjs    # the gate, on its own
+node sdks/conformance/check-languages.mjs --check <lang> --suite app   # SDKP's app suite
+LOAMS_TEST_ENDPOINT=… node sdks/conformance/record-fixtures.mjs --source app  # re-record it
 node --test sdks/conformance/              # the Task 4 tests
 ```
 

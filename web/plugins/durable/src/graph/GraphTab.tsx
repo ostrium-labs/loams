@@ -178,14 +178,14 @@ export function GraphTab({ source }: { source: RunGraphSource }) {
         {run && (
           <div className="flex items-center gap-2 ml-auto" aria-live="polite">
             <StatusTag status={statusTone(run.status)}>{STATUS_LABEL[run.status]}</StatusTag>
-            <span className="text-muted text-sm">
+            <span className="text-muted text-body">
               {state === 'live' ? 'Live' : state === 'ended' ? 'Final' : ''}
             </span>
           </div>
         )}
       </div>
 
-      {runs.state === 'loading' && <p className="text-muted text-sm py-6">Loading runs…</p>}
+      {runs.state === 'loading' && <p className="text-muted text-body py-6">Loading runs…</p>}
       {runs.state === 'error' && (
         <Notice tone="danger" title="Could not load runs">
           {runs.message}
@@ -215,7 +215,7 @@ export function GraphTab({ source }: { source: RunGraphSource }) {
                 <span className="flex items-center gap-2">
                   {run.sample && <SampleDataBadge />}
                   {progress && (
-                    <span className="text-muted text-sm">
+                    <span className="text-muted text-body">
                       {progress.done} of {progress.total} steps settled
                     </span>
                   )}
@@ -250,7 +250,7 @@ export function GraphTab({ source }: { source: RunGraphSource }) {
               title="Run duration"
               actions={
                 mine.length > 0 && (
-                  <span className="flex items-center gap-2 text-sm text-muted">
+                  <span className="flex items-center gap-2 text-body text-muted">
                     <Sparkline
                       points={mine}
                       height={24}

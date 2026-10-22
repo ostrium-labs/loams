@@ -67,7 +67,7 @@ export function Switch({
           )}
         />
       </BaseSwitch.Root>
-      <span id={`${id}-label`} className={cx('text-[0.86rem] text-ink', hideLabel && 'sr-only')}>
+      <span id={`${id}-label`} className={cx('text-body text-ink', hideLabel && 'sr-only')}>
         {label}
       </span>
     </span>

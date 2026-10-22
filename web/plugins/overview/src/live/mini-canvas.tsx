@@ -52,7 +52,7 @@ function ServiceNodeView({ data }: NodeProps<ServiceFlowNode>) {
   const h = HEALTH[s.health];
   return (
     <div
-      className="flex items-center gap-2 px-2 py-1 text-xs"
+      className="flex items-center gap-2 px-2 py-1 text-small"
       style={{
         background: 'var(--op-raised)',
         color: 'var(--op-ink)',
@@ -221,7 +221,7 @@ export function MiniCanvas({ client }: { client: OverviewMetricsClient }) {
   return (
     <div data-panel="canvas">
       <Card title="Services" flush>
-        {load.state === 'loading' && <p className="text-sm text-muted m-3">Loading</p>}
+        {load.state === 'loading' && <p className="text-body text-muted m-3">Loading</p>}
         {load.state === 'error' && (
           <Notice tone="danger" title="Not reachable">
             {load.message}

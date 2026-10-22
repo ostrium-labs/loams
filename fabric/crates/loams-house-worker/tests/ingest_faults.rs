@@ -343,6 +343,9 @@ impl Bed {
             retention_interval: Duration::ZERO,
             pipe_interval: Duration::ZERO,
             view_interval: Duration::ZERO,
+            // The faults count catalog commits: the query log's own group
+            // commits (HS1 Task 23) would take some of them.
+            query_log_interval: Duration::ZERO,
             ..HouseConfig::default()
         };
         Self {

@@ -11,7 +11,7 @@
 import { cx } from '@loams/ui';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, ExternalLink, Factory } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   FACTORY_HOME,
   type FactoryApp,
@@ -104,6 +104,14 @@ export function FactoryGroup({ factory }: { factory: StudioFactory }) {
     queryKey: ['studio', 'factory', factory.kind, 'apps'],
     queryFn: () => factory.list(),
   });
+  // The group stays mounted while the factory's pages configure or remove an app, and
+  // the bridge has no change event: re-read the (local, cheap) list on every navigation.
+  const { refetch } = apps;
+  useEffect(() => {
+    const onNav = () => void refetch();
+    window.addEventListener('hashchange', onNav);
+    return () => window.removeEventListener('hashchange', onNav);
+  }, [refetch]);
   const [open, setOpen] = useState(readOpen);
   const listId = useId();
   const toggle = () => {

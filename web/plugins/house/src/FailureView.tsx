@@ -29,7 +29,7 @@ export function FailureView({
       <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[13px]">
         {failure.message}
       </pre>
-      <p className="m-0 text-sm text-muted">
+      <p className="m-0 text-body text-muted">
         {[
           Number.isFinite(code) && `Code ${code}`,
           name,
@@ -42,13 +42,13 @@ export function FailureView({
           .join(' · ')}
       </p>
       {failure.reason === 'house_disabled_function' && (
-        <p className="m-0 text-sm">
+        <p className="m-0 text-body">
           The House never reads or writes files on the server. Remove the clause and the results
           come back to this page.
         </p>
       )}
       {failure.reason === 'house_read_only' && !writesAllowed && (
-        <p className="m-0 text-sm">Turn on "Allow writes" to run statements that change data.</p>
+        <p className="m-0 text-body">Turn on "Allow writes" to run statements that change data.</p>
       )}
     </div>
   );

@@ -133,6 +133,18 @@ describe('embedded', () => {
     spy.mockRestore();
   });
 
+  it('open_in_browser_uses_the_app_url_when_there_is_one', async () => {
+    // ItsAPlan's UI is not at its API's URL: the configured App URL wins.
+    const { api, calls } = fakeDesktop({
+      apps: IDS.map((id) =>
+        id === 'plane' ? info(id, 'ok', true, { appUrl: 'https://plan.example.test/' }) : info(id),
+      ),
+    });
+    render(<EmbeddedApp desktop={api} app="plane" navigate={nav().navigate} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Open in browser/ }));
+    await waitFor(() => expect(calls).toContain('external:https://plan.example.test/'));
+  });
+
   it('unconfigured_app_does_not_show_a_view', async () => {
     const { api, shown } = fakeDesktop();
     render(<EmbeddedApp desktop={api} app="zulip" navigate={nav().navigate} />);
@@ -339,6 +351,45 @@ describe('panels', () => {
       expect(await screen.findByText(text)).toBeTruthy();
       cleanup();
     }
+  });
+
+  it('plane_stat_labels_are_words_not_keys', async () => {
+    // ItsAPlan's stats are camelCase keys (`inProgress`, `closedLast7d`).
+    const { api } = fakeDesktop({
+      apps: ok('plane'),
+      queries: {
+        'plane.stats': { open: 2, inProgress: 1, closedLast7d: 3, p95_latency: 4 },
+        'plane.issues': [],
+      },
+    });
+    render(<PanelsPage desktop={api} app="plane" navigate={nav().navigate} />);
+    expect(await screen.findByText('in progress')).toBeTruthy();
+    expect(screen.getByText('closed last7d')).toBeTruthy();
+    expect(screen.getByText('p95 latency')).toBeTruthy();
+    expect(screen.queryByText('inProgress')).toBeNull();
+  });
+
+  it('openpanel_series_shows_days_and_no_internal_columns', async () => {
+    const { api } = fakeDesktop({
+      apps: ok('openpanel'),
+      queries: {
+        'openpanel.insights': {
+          summary: { total_sessions: 1 },
+          series: [
+            {
+              date: '2026-10-18T00:00:00.000Z',
+              avg_session_duration: 2,
+              _avg_session_duration: 2,
+            },
+          ],
+          topPages: [],
+        },
+      },
+    });
+    render(<PanelsPage desktop={api} app="openpanel" navigate={nav().navigate} />);
+    expect(await screen.findByText('2026-10-18')).toBeTruthy();
+    expect(screen.queryByText('2026-10-18T00:00:00.000Z')).toBeNull();
+    expect(screen.getAllByText('avg session duration')).toHaveLength(1);
   });
 
   it('openobserve_is_full_ui_only', async () => {

@@ -67,12 +67,62 @@ describe("routeRequest", () => {
 		});
 	});
 
-	it("remote_server_has_no_durable", () => {
-		expect(routeRequest("/durable/", remote, ready())).toMatchObject({
-			kind: "reject",
-			status: 404,
-			body: { code: "not_available_remote" },
+	it("remote_durable_goes_to_the_servers_main_port_as_is", () => {
+		// B12 (PR #782): the engine serves `POST /durable/` on its main port, so the
+		// path is kept (no rewrite to the local listener's `/`).
+		expect(routeRequest("/durable/", remote, ready())).toEqual({
+			kind: "forward",
+			target: "https://loams.example",
 		});
+		// The local engine's state does not matter for another server.
+		expect(routeRequest("/durable/", remote, { phase: "stopped" })).toEqual({
+			kind: "forward",
+			target: "https://loams.example",
+		});
+		expect(
+			routeRequest("/durable/", remote, { phase: "starting", attempt: 1 }),
+		).toEqual({ kind: "forward", target: "https://loams.example" });
+	});
+
+	it("remote_durable_forward_carries_the_same_auth_as_other_engine_routes", async () => {
+		const seen: Request[] = [];
+		const fetchImpl = vi.fn(async (r: Request) => {
+			seen.push(r);
+			return new Response('{"kind":"promise.get"}', {
+				headers: { "content-type": "application/json" },
+			});
+		});
+		const send = async (path: string) => {
+			const route = routeRequest(path, remote, { phase: "stopped" });
+			if (route.kind !== "forward") throw new Error("expected forward");
+			await proxyRequest(
+				new Request(`loams-app://console${path}`, {
+					method: "POST",
+					body: "{}",
+					headers: {
+						cookie: "loams_session=s1",
+						authorization: "Bearer lk_remote",
+					},
+				}),
+				route.target,
+				fetchImpl as unknown as typeof fetch,
+				route.pathname,
+			);
+		};
+		await send("/durable/");
+		await send("/api/v1/whoami");
+		expect(seen.map((r) => r.url)).toEqual([
+			"https://loams.example/durable/",
+			"https://loams.example/api/v1/whoami",
+		]);
+		for (const r of seen) {
+			expect(r.headers.get("cookie")).toBe("loams_session=s1");
+			expect(r.headers.get("authorization")).toBe("Bearer lk_remote");
+			expect(r.headers.get("origin")).toBe("https://loams.example");
+		}
+	});
+
+	it("remote_server_routes_go_to_the_remote", () => {
 		expect(routeRequest("/api/v1/x", remote, ready())).toEqual({
 			kind: "forward",
 			target: "https://loams.example",

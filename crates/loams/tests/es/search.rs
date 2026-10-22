@@ -1339,3 +1339,250 @@ async fn a_field_after_a_score_sort_is_refused() {
     }
     es.server.shutdown().await.expect("shutdown");
 }
+
+// ----- sort on _seq_no (#949) -----
+
+/// The `_id`s of a search answer, in order.
+fn seq_ids(a: &Answer) -> Vec<String> {
+    a.body["hits"]["hits"]
+        .as_array()
+        .expect("hits")
+        .iter()
+        .map(|h| h["_id"].as_str().expect("_id").to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn sort_on_seq_no_orders_by_write() {
+    let es = Es::start().await;
+    Es::ok(
+        es.put(
+            "/meta",
+            // One partition: `_seq_no` orders writes within a partition only,
+            // as ES's does within a shard (ES's default is one shard).
+            Some(json!({"settings": {"number_of_shards": 1},
+                        "mappings": {"properties": {"collection_name": {"type": "keyword"}}}})),
+        )
+        .await,
+    );
+    // Written in the order a, b, c, then a again: a is now the newest.
+    for (id, c, v) in [
+        ("a", "c1", 1),
+        ("b", "c1", 2),
+        ("c", "c2", 3),
+        ("a", "c1", 4),
+    ] {
+        let a = es
+            .put(
+                &format!("/meta/_doc/{id}?refresh=true"),
+                Some(json!({"collection_name": c, "v": v})),
+            )
+            .await;
+        assert!(a.status.is_success(), "{}", a.text);
+    }
+    // The NVIDIA RAG Blueprint's "newest write" read.
+    let a = Es::ok(
+        es.post(
+            "/meta/_search",
+            json!({"query": {"term": {"collection_name": "c1"}},
+                   "sort": [{"_seq_no": {"order": "desc"}}], "size": 1}),
+        )
+        .await,
+    );
+    assert_eq!(seq_ids(&a), ["a"], "{}", a.text);
+    let hit = &a.body["hits"]["hits"][0];
+    assert_eq!(hit["_source"]["v"], 4);
+    assert!(hit["_score"].is_null());
+    assert!(hit["sort"][0].is_u64(), "{}", a.text);
+    assert!(hit.get("_seq_no").is_none());
+    assert_eq!(a.body["hits"]["total"]["value"], 2);
+    assert!(a.body["hits"]["max_score"].is_null());
+    // Ascending, every form of the key, paging.
+    for sort in [
+        json!("_seq_no"),
+        json!(["_seq_no"]),
+        json!({"_seq_no": "asc"}),
+    ] {
+        let a = Es::ok(es.post("/meta/_search", json!({"sort": sort})).await);
+        assert_eq!(seq_ids(&a), ["b", "c", "a"], "{sort}");
+    }
+    let a = Es::ok(
+        es.post(
+            "/meta/_search",
+            json!({"sort": [{"_seq_no": "desc"}], "from": 1, "size": 1, "seq_no_primary_term": true}),
+        )
+        .await,
+    );
+    assert_eq!(seq_ids(&a), ["c"]);
+    let hit = &a.body["hits"]["hits"][0];
+    assert_eq!(hit["_seq_no"], hit["sort"][0]);
+    // The URL form.
+    let a = Es::ok(es.get("/meta/_search?sort=_seq_no:desc&size=2").await);
+    assert_eq!(seq_ids(&a), ["a", "c"]);
+    // With another key it is refused.
+    es.post(
+        "/meta/_search",
+        json!({"sort": [{"_seq_no": "desc"}, {"collection_name": "asc"}]}),
+    )
+    .await
+    .assert_error(400, "illegal_argument_exception", None);
+}
+
+// ----- aggregations (#951) -----
+
+/// The NVIDIA RAG Blueprint's chunk index: `metadata.source.source_name`
+/// mapped dynamically (text with a `keyword` subfield).
+async fn blueprint_chunks(es: &Es) {
+    let docs: Vec<(&str, Value)> = vec![
+        (
+            "c1",
+            json!({"text": "one", "metadata": {"source": {"source_name": "a.pdf"}, "page": 1}}),
+        ),
+        (
+            "c2",
+            json!({"text": "two", "metadata": {"source": {"source_name": "a.pdf"}, "page": 2}}),
+        ),
+        (
+            "c3",
+            json!({"text": "three", "metadata": {"source": {"source_name": "b.pdf"}, "page": 1}}),
+        ),
+        (
+            "c4",
+            json!({"text": "four", "metadata": {"source": {"source_name": "c.pdf"}, "page": 1}}),
+        ),
+    ];
+    bulk_index(es, "chunks", &docs).await;
+}
+
+#[tokio::test]
+async fn composite_with_top_hits_pages_like_the_blueprint() {
+    let es = Es::start().await;
+    blueprint_chunks(&es).await;
+    let body = |after: Option<Value>| {
+        let mut composite = json!({"size": 2, "sources": [{"source_name": {"terms": {"field": "metadata.source.source_name.keyword"}}}]});
+        if let Some(after) = after {
+            composite["after"] = after;
+        }
+        json!({"size": 0, "aggs": {"unique_sources": {
+            "composite": composite,
+            "aggs": {"top_hit": {"top_hits": {"size": 1}}}}}})
+    };
+    let mut names = Vec::new();
+    let mut after = None;
+    for _ in 0..5 {
+        let a = Es::ok(es.post("/chunks/_search", body(after.clone())).await);
+        assert!(a.body["hits"]["hits"].as_array().expect("hits").is_empty());
+        let agg = &a.body["aggregations"]["unique_sources"];
+        let buckets = agg["buckets"].as_array().expect("buckets");
+        if buckets.is_empty() {
+            break;
+        }
+        for b in buckets {
+            let name = b["key"]["source_name"].as_str().expect("key").to_string();
+            let hits = &b["top_hit"]["hits"];
+            assert_eq!(hits["total"]["value"], b["doc_count"], "{}", a.text);
+            assert!(hits["max_score"].is_null());
+            let hit = &hits["hits"][0];
+            assert_eq!(hit["_index"], "chunks");
+            assert_eq!(
+                hit["_source"]["metadata"]["source"]["source_name"],
+                name.as_str()
+            );
+            names.push((name, b["doc_count"].as_u64().expect("doc_count")));
+        }
+        after = agg.get("after_key").cloned().filter(|v| !v.is_null());
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(
+        names,
+        [
+            ("a.pdf".to_string(), 2),
+            ("b.pdf".to_string(), 1),
+            ("c.pdf".to_string(), 1)
+        ]
+    );
+}
+
+#[tokio::test]
+async fn terms_and_metrics_with_a_query() {
+    let es = Es::start().await;
+    blueprint_chunks(&es).await;
+    let a = Es::ok(
+        es.post(
+            "/chunks/_search",
+            json!({"size": 1, "query": {"term": {"metadata.page": 1}},
+                   "aggs": {"names": {"terms": {"field": "metadata.source.source_name.keyword"}},
+                            "pages": {"max": {"field": "metadata.page"}}}}),
+        )
+        .await,
+    );
+    assert_eq!(a.body["hits"]["hits"].as_array().expect("hits").len(), 1);
+    let buckets: BTreeMap<String, u64> = a.body["aggregations"]["names"]["buckets"]
+        .as_array()
+        .expect("buckets")
+        .iter()
+        .map(|b| {
+            (
+                b["key"].as_str().expect("key").to_string(),
+                b["doc_count"].as_u64().expect("n"),
+            )
+        })
+        .collect();
+    assert_eq!(
+        buckets,
+        BTreeMap::from([
+            ("a.pdf".to_string(), 1),
+            ("b.pdf".to_string(), 1),
+            ("c.pdf".to_string(), 1)
+        ])
+    );
+    assert_eq!(a.body["aggregations"]["pages"]["value"], 1.0);
+}
+
+#[tokio::test]
+async fn aggregation_refusals_and_unmapped_fields() {
+    let es = Es::start().await;
+    blueprint_chunks(&es).await;
+    // An unmapped field answers ES's empty result.
+    let a = Es::ok(
+        es.post(
+            "/chunks/_search",
+            json!({"size": 0, "aggs": {
+                "t": {"terms": {"field": "nope"}},
+                "c": {"composite": {"sources": [{"x": {"terms": {"field": "nope"}}}]}},
+                "m": {"max": {"field": "nope"}}}}),
+        )
+        .await,
+    );
+    assert_eq!(
+        a.body["aggregations"]["t"]["buckets"],
+        json!([]),
+        "{}",
+        a.text
+    );
+    assert_eq!(a.body["aggregations"]["c"]["buckets"], json!([]));
+    assert!(a.body["aggregations"]["m"]["value"].is_null());
+    // A text field needs fielddata, as in ES.
+    es.post(
+        "/chunks/_search",
+        json!({"aggs": {"t": {"terms": {"field": "text"}}}}),
+    )
+    .await
+    .assert_error(400, "illegal_argument_exception", None);
+    // A type the engine does not serve, and several indices.
+    es.post(
+        "/chunks/_search",
+        json!({"aggs": {"t": {"significant_terms": {"field": "metadata.page"}}}}),
+    )
+    .await
+    .assert_error(400, "illegal_argument_exception", None);
+    bulk_index(&es, "other", &[("o", json!({"n": 1}))]).await;
+    es.post(
+        "/chunks,other/_search",
+        json!({"aggs": {"m": {"max": {"field": "n"}}}}),
+    )
+    .await
+    .assert_error(400, "illegal_argument_exception", None);
+}

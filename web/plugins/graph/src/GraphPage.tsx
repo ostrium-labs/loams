@@ -365,9 +365,9 @@ function Workspace({
         <div className="flex min-w-0 flex-col gap-4">
           {selected ? (
             <>
-              <h2 className="m-0 text-base">
+              <h2 className="m-0 text-emphasis">
                 <span className={/* mono-ok: id */ 'font-mono'}>{selected.name}</span>
-                <span className="ml-2 text-sm font-normal text-muted">in {ns}</span>
+                <span className="ml-2 text-body font-normal text-muted">in {ns}</span>
               </h2>
               <Editor
                 statement={statement}
@@ -390,7 +390,7 @@ function Workspace({
               />
               {status && <Notice title={status} />}
               {busy && !streaming && (
-                <p className="m-0 text-sm text-muted" role="status">
+                <p className="m-0 text-body text-muted" role="status">
                   Running…
                 </p>
               )}

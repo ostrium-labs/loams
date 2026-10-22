@@ -15,7 +15,7 @@ import {
   ThemeController,
   type ThemeService,
 } from '@loams/console-host';
-import { useSlot } from '@loams/slots';
+import { useSlot, useSlotRegistry } from '@loams/slots';
 import { Toaster, ToastProvider, TooltipProvider } from '@loams/ui';
 import {
   useCallback,
@@ -28,9 +28,18 @@ import {
 import { AppearanceMenu } from './appearance.js';
 import { EngineTooOld } from './engine.js';
 import { MainRegion, Outlet, TopBar, UserMenu, useNarrow, useSidebarState } from './frame.js';
+import { useShellKeys } from './keyboard.js';
+import { isMacPlatform, keyLabel } from './keys.js';
 import { MODE_LABEL, ModeSwitcher, useMode, useModeShortcut } from './mode-switcher.js';
 import { useLocation } from './nav.js';
-import { currentProject, isSettingsPage, pageEntries, readPinned, togglePinned } from './pages.js';
+import {
+  currentProject,
+  isSettingsPage,
+  pageEntries,
+  readPinned,
+  settingsHome,
+  togglePinned,
+} from './pages.js';
 import { type ScopedCommand, ShellPalette } from './palette.js';
 import { DRAWER, INSPECTOR, PanelController } from './panel.js';
 import { PanelRegion, PanelToggles } from './regions.js';
@@ -64,17 +73,6 @@ function useGate(router: HashRouter, session: SessionService) {
     router.navigate(here === '/' ? '/sign-in' : `/sign-in?next=${encodeURIComponent(here)}`);
   }, [pending, gate, location, router]);
   return pending;
-}
-
-/** Ctrl or Cmd, as the palette shows a shortcut's modifier. */
-function modKeys(...keys: string[]): string[] {
-  let mac = false;
-  try {
-    mac = /mac|iphone|ipad|ipod/i.test(navigator.platform);
-  } catch {
-    // No navigator (tests, workers): the Ctrl spelling.
-  }
-  return mac ? ['⌘', ...keys.map((k) => (k === 'Shift' ? '⇧' : k))] : ['Ctrl', ...keys];
 }
 
 /**
@@ -146,7 +144,7 @@ function Palette({
             title: `Switch to ${MODE_LABEL[other]}`,
             group: 'General',
             keywords: ['mode'],
-            shortcut: modKeys('Shift', 'M'),
+            shortcut: keyLabel('mod+shift+m', isMacPlatform()),
             mode: current,
             run: () => mode.set(other),
           },
@@ -234,36 +232,37 @@ export function Layout({
   // biome-ignore lint/correctness/useExhaustiveDependencies: close the sheet per route
   useEffect(() => setSheetOpen(false), [location.path]);
 
-  // Mod+B toggles the sidebar (D1078), except where the key is text editing's: a field,
-  // rich text (bold) or a terminal. Task 12 folds this into the shell's one keymap.
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-      if (e.key.toLowerCase() !== 'b' && e.code !== 'KeyB') return;
-      if (keepsKeys(e.target)) return;
-      e.preventDefault();
-      toggleSidebar();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [toggleSidebar]);
-
-  // Mod+I toggles the inspector and Mod+J the drawer (D1081), except in rich text (italic)
-  // and a terminal (the shell program's keys); a plain field does not use them, so the
-  // agent's composer can still close its panel. Task 12 folds this into the keymap.
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-      const k = e.key.toLowerCase();
-      if (k !== 'i' && k !== 'j') return;
-      if (keepsPanelKeys(e.target)) return;
-      e.preventDefault();
-      if (k === 'i') inspector.toggle();
-      else drawer.toggle();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [inspector, drawer]);
+  // The one keymap (D1081): every shell chord, with the focused editor or terminal keeping
+  // its own keys (Review Focus 1).
+  const slots = useSlotRegistry();
+  useShellKeys({
+    router,
+    inspector,
+    drawer,
+    toggleSidebar,
+    togglePalette: () => setPaletteOpen((v) => !v),
+    openSettings: () => {
+      const home = settingsHome(
+        pageEntries(
+          slots.entries('shell.nav.section'),
+          slots.entries('console.nav'),
+          currentProject(router.current().path),
+        ),
+      );
+      if (home) router.navigate(home.href);
+    },
+    closeOverlay: () => {
+      if (narrow && sheetOpen) {
+        setSheetOpen(false);
+        return true;
+      }
+      if (narrow && inspector.state().open) {
+        inspector.close();
+        return true;
+      }
+      return false;
+    },
+  });
 
   const gated = useGate(router, session);
   // An engine older than N−1, or without GetInstance, gets the upgrade page
@@ -340,20 +339,4 @@ export function Layout({
       </TooltipProvider>
     </ToastProvider>
   );
-}
-
-/** A field, rich text or a terminal keeps Mod+B (bold, or the shell program's key). */
-function keepsKeys(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return (
-    target.closest(
-      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .xterm',
-    ) !== null
-  );
-}
-
-/** Rich text keeps Mod+I (italic) and a terminal keeps Mod+I and Mod+J. */
-function keepsPanelKeys(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  return target.closest('[contenteditable]:not([contenteditable="false"]), .xterm') !== null;
 }

@@ -167,11 +167,33 @@ impl<'de> Deserialize<'de> for SortValue {
             fn visit_string<E: de::Error>(self, v: String) -> Result<SortValue, E> {
                 Ok(SortValue::Str(v))
             }
-            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<SortValue, A::Error> {
-                let text = single_string(map, "uuid")?;
-                parse_uuid(&text)
-                    .map(SortValue::Uuid)
-                    .ok_or_else(|| de::Error::custom(format!("invalid uuid {text:?}")))
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<SortValue, A::Error> {
+                // `{"uuid": "…"}`, or `{"uint": "…"}` / `{"int": "…"}`: an integer
+                // as a decimal string, which is how a Connect answer spells one
+                // a `google.protobuf.Value` double cannot hold exactly.
+                let Some(key) = map.next_key::<String>()? else {
+                    return Err(de::Error::custom("expected {\"uuid\": …}"));
+                };
+                let text = map.next_value::<String>()?;
+                if let Some(extra) = map.next_key::<String>()? {
+                    return Err(de::Error::custom(format!("unexpected key {extra:?}")));
+                }
+                match key.as_str() {
+                    "uuid" => parse_uuid(&text)
+                        .map(SortValue::Uuid)
+                        .ok_or_else(|| de::Error::custom(format!("invalid uuid {text:?}"))),
+                    "uint" => text
+                        .parse::<u64>()
+                        .map(|n| int_u64(n, SortValue::I64, SortValue::U64))
+                        .map_err(|_| de::Error::custom(format!("invalid uint {text:?}"))),
+                    "int" => text
+                        .parse::<i64>()
+                        .map(SortValue::I64)
+                        .map_err(|_| de::Error::custom(format!("invalid int {text:?}"))),
+                    other => Err(de::Error::custom(format!(
+                        "unexpected key {other:?}, expected \"uuid\", \"uint\" or \"int\""
+                    ))),
+                }
             }
         }
         d.deserialize_any(V)

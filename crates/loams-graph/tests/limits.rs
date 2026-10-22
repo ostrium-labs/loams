@@ -612,13 +612,13 @@ async fn batch_over_limit_rejected() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn namespace_concurrency_limit_resource_exhausted() {
     let fixture = Fixture::start().await;
-    let admin = Arc::new(fixture.admin().with_namespace_statements(1));
+    let admin = Arc::new(fixture.patient_admin().with_namespace_statements(1));
     graph_with_nodes(&admin, 100).await;
     create(&admin, "acme", "other", None).await;
     create(&admin, "beta", "kg", None).await;
     let running = {
         let admin = admin.clone();
-        tokio::spawn(async move { admin.execute(execute("acme", "kg", LONG)).await })
+        tokio::spawn(async move { admin.execute(long_to_its_end("acme", "kg")).await })
     };
     until("running", || admin.statements_in_flight() == 1).await;
     let err = admin
