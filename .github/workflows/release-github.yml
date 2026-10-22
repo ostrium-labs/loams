@@ -238,8 +238,10 @@ jobs:
             || { echo "release/config/setup-token.env is missing from the bundle"; exit 1; }
           grep -q '^LOAMS_SETUP_TOKEN=' "$stage/release/config/setup-token.env" \
             || { echo "release/config/setup-token.env does not set LOAMS_SETUP_TOKEN"; exit 1; }
-          jq -e --arg f "$stage/release/config/setup-token.env" \
-            '[.services.loams.env_file // [] | .[] | (.path? // .)] | index($f) != null' <<<"$cfg" >/dev/null \
+          # From the source file: Docker Compose 2.38 inlines env_file into
+          # `environment` and drops the key from `compose config`'s output.
+          yq -e '.services.loams.env_file[] | select((.path // .) == "./config/setup-token.env")' \
+            "$stage/release/compose.yaml" >/dev/null \
             || { echo "compose.yaml does not list config/setup-token.env in the loams service's env_file"; exit 1; }
           (cd "$stage/release" && LOAMS_SETUP_TOKEN=bundle-check docker compose --env-file .env.example \
             config --format json loams) \
