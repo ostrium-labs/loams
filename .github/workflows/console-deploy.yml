@@ -7,8 +7,10 @@
 # job builds and stages, then skips the deploy with a notice, and stays green.
 # Sign-in: LOAMS_AUTH_MODE (variable) is the console's default mode, tailscale
 # unless set; people can also pick oidc (a Loams account at auth.loams.dev) or an
-# API key. LOAMS_AUTH_CLIENT_ID (variable, loams-console) is required for the
-# deploy so oidc is offered; LOAMS_AUTH_ISSUER defaults to https://auth.loams.dev.
+# API key. LOAMS_AUTH_MODES (variable) narrows that to the modes the deploy has
+# tested; Ostrium's console sets `tailscale`, so oidc and apikey stay hidden.
+# LOAMS_AUTH_CLIENT_ID (variable, loams-console) is required for the deploy so
+# oidc is offered; LOAMS_AUTH_ISSUER defaults to https://auth.loams.dev.
 # Each person connects their own engine on first run (LOAMS_ENGINE_URL stays
 # unset here). Engine-hosted builds retain the same-origin empty config.
 name: Console deploy
@@ -73,6 +75,7 @@ jobs:
       - name: stage for Workers static assets
         env:
           LOAMS_AUTH_MODE: ${{ vars.LOAMS_AUTH_MODE || 'tailscale' }}
+          LOAMS_AUTH_MODES: ${{ vars.LOAMS_AUTH_MODES }}
           LOAMS_AUTH_ISSUER: ${{ vars.LOAMS_AUTH_ISSUER }}
           LOAMS_AUTH_CLIENT_ID: ${{ vars.LOAMS_AUTH_CLIENT_ID }}
           # The remote agentd hosts Studio may call and frame (SD1 Task 30).

@@ -107,6 +107,8 @@ The hosted console is the cordis console (`cordis.html`) served at `/`. On first
 
 `LOAMS_AUTH_MODE` sets the default. Any other value fails the deploy (`config.mjs`), and a `config.json` with an unknown mode, or `oidc` without a client, stops at a screen that says so; the console never falls back to another mode on its own.
 
+`LOAMS_AUTH_MODES` narrows what the connect screen offers: the modes this deploy has actually tested, separated by spaces or commas, for example `tailscale`. Unset, all of them are offered (`oidc` when the deploy has a client). It must be a subset of the three, must include the default `LOAMS_AUTH_MODE`, and `oidc` in it needs `LOAMS_AUTH_CLIENT_ID`; anything else fails the deploy. With one mode there is no picker: the connect screen asks only for the engine URL.
+
 **Coming soon** (shown as such on the connect screen, not linked): deploying this console to your own Vercel or Cloudflare account, self-service client registration at auth.loams.dev (`https://auth.loams.dev/register`, URL to confirm), and Headscale networks.
 
 Pages whose backend the engine serves (Live, Graph, Analytics/House, Status, Namespaces, Approvals) are on; pages that still run on built-in sample data (Deployments, Live deployments, SQL, Metrics, Pipelines, Git) appear only with the **Demo data** toggle in the header. Every page shows the **Preview** badge.
@@ -116,13 +118,14 @@ Runtime config is written at deploy time from the environment by `apps/console/d
 | Variable | Meaning |
 |---|---|
 | `LOAMS_AUTH_MODE` | the default mode: `tailscale` (default), `oidc` or `apikey`; anything else is an error. |
+| `LOAMS_AUTH_MODES` | optional: the modes the connect screen offers, separated by spaces or commas (`tailscale`). Unset offers all three (`oidc` with a client). Must include `LOAMS_AUTH_MODE`; `oidc` in it needs `LOAMS_AUTH_CLIENT_ID`. |
 | `LOAMS_AUTH_CLIENT_ID` | the console's public client id at the issuer (`loams-console`; redirect URI: the console's origin + `/`). With it, `oidc` is offered; required for `LOAMS_AUTH_MODE=oidc`. |
 | `LOAMS_AUTH_ISSUER` | the issuer, default `https://auth.loams.dev`. Your own IdP is accepted here but not offered in the UI yet (coming soon). |
 | `LOAMS_AUTH_SCOPE` | optional, default `openid profile email offline_access`. |
 | `LOAMS_ENGINE_URL` | optional: fixes the engine (skips the connect screen and adds its origin to the CSP). |
 | `LOAMS_AGENTD_ORIGINS` | optional: the origins of the remote agentd hosts Studio may use (`loams-agentd serve --remote`), separated by spaces or commas, each an exact `https://host[:port]`. They join the CSP's `connect-src` (the Connect calls) and `frame-src` (the previews). Each host must also list this console in its `--allow-origin`. Unset, Studio in the browser can reach no agentd host; the engine-embedded console never can (its CSP is the build's). |
 
-`config.json` keys: `hosted`, `engineUrl`, `authMode`, `authIssuer`, `authClientId`, `authScope`. The engine-embedded console keeps serving `{}` (same origin, cookie session).
+`config.json` keys: `hosted`, `engineUrl`, `authMode`, `authModes`, `authIssuer`, `authClientId`, `authScope`. The engine-embedded console keeps serving `{}` (same origin, cookie session).
 
 The stage step injects a Content-Security-Policy `<meta>`: no inline scripts in the cordis console, no eval, `connect-src` limited to the console itself, `https://*.ts.net` (port 443, where `tailscale serve` publishes the engine), the issuer and the fixed engine. Headscale networks are coming soon (Headscale issues no HTTPS certificates, so such an engine needs its own certificate and a console deployed with `LOAMS_ENGINE_URL` set to it).
 
@@ -134,16 +137,18 @@ Ostrium deploys console.loams.dev this way. Deploying to your own Cloudflare acc
 
 Workers static assets, configured in [`apps/console/wrangler.jsonc`](apps/console/wrangler.jsonc): assets only, SPA fallback, free plan.
 
+Ostrium's own console offers only Tailscale for now (`LOAMS_AUTH_MODES=tailscale`): the Loams account and API key ways in are not tested yet. Everything the stage step needs comes from the environment, so a deploy with no `LOAMS_AUTH_MODES` offers all three.
+
 ```bash
 pnpm build
-LOAMS_AUTH_CLIENT_ID=loams-console \
+LOAMS_AUTH_CLIENT_ID=loams-console LOAMS_AUTH_MODES=tailscale \
   node apps/console/deploy/stage.mjs     # dist/ -> dist-cloudflare/: /, ui/, config.json, _headers, _redirects
 cd apps/console && wrangler deploy        # console.loams.dev
 cd apps/console && wrangler deploy --env byoc   # your account, on workers.dev (coming soon)
 node deploy/smoke.mjs https://console.loams.dev
 ```
 
-`.github/workflows/console-deploy.yml` deploys on every push to `main` that touches `web/` (or the root workspace configuration, or the workflow), and on demand. It needs `LOAMS_AUTH_CLIENT_ID` (variable, `loams-console`; `LOAMS_AUTH_MODE` and `LOAMS_AUTH_ISSUER` default to `tailscale` and `https://auth.loams.dev`) plus `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the `production` environment; without the secrets it builds and stages, then skips the deploy.
+`.github/workflows/console-deploy.yml` deploys on every push to `main` that touches `web/` (or the root workspace configuration, or the workflow), and on demand. It needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the `production` environment, and reads `LOAMS_AUTH_MODE`, `LOAMS_AUTH_MODES`, `LOAMS_AUTH_ISSUER` and `LOAMS_AUTH_CLIENT_ID` from that environment's variables (`LOAMS_AUTH_MODES=tailscale` is what Ostrium's console sets; `LOAMS_AUTH_MODE` and `LOAMS_AUTH_ISSUER` default to `tailscale` and `https://auth.loams.dev`); without the secrets it builds and stages, then skips the deploy.
 
 ### Vercel (coming soon)
 
