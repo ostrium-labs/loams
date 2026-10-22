@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.10"
 
 [[package]]
@@ -272,6 +272,7 @@ source = { editable = "." }
 dependencies = [
     { name = "connectrpc" },
     { name = "protobuf" },
+    { name = "protobuf-py" },
 ]
 
 [package.optional-dependencies]
@@ -301,6 +302,7 @@ requires-dist = [
     { name = "connectrpc", specifier = "==0.12.1" },
     { name = "polars", marker = "extra == 'polars'", specifier = ">=1.0.0" },
     { name = "protobuf", specifier = "==7.36.2" },
+    { name = "protobuf-py", specifier = ">=0.6.0,<0.7" },
     { name = "pyarrow", marker = "extra == 'arrow'", specifier = ">=17.0.0" },
 ]
 provides-extras = ["flight", "arrow", "polars"]

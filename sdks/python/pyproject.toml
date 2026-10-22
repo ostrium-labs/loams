@@ -26,6 +26,10 @@ classifiers = [
 ]
 dependencies = [
   "connectrpc==0.12.1",
+  # connectrpc 0.12.1 asks for protobuf-py>=0.3.0, but protobuf-py 0.7.0
+  # (2026-10-22) drops protobuf.wkt.api_pb, which it imports: pin the line
+  # it was released against.
+  "protobuf-py>=0.6.0,<0.7",
   "protobuf==7.36.2",
 ]
 
