@@ -179,6 +179,32 @@ Read on 2026-10-23 at `origin/dev` `710f47078`.
 9. **Node for the `node` runtime** (Q1122). agentd already resolves `node` for npm harness adapters (`adapter_install.rs`, `executable::find_on_paths` with the node-version-manager scan). The `node` installer reuses that resolution and refuses a Node older than the listing's `runtime.version` (default `>=22.13`). Installing a pinned Node archive when none is found is left to Task 6's ruling.
 10. **The `agents/*` workspace** (FT0 Task 1) is not on `dev` yet. If it has not merged when Task 2 starts, Task 2 adds the one `agents/*` line to `pnpm-workspace.yaml` itself, so the FT1 work only has to rebase.
 
+### Task 1 (2026-10-23)
+
+1. **Kind-specific blocks.** A listing keeps the fields shared by every kind at the top level: identity, `artifact`, `provenance`, `runtime`, `entrypoint`, `tools`, `place` and `config`. Two nested blocks carry what only one kind has. `harness` holds `launch { protocol, command, args }`, `auth`, `models` and, for native harnesses, `native_adapter`, which is agentd's harness wire name. `mcp_server` holds the embedded `server.json`, `mode` (`local` or `remote`), `args`, `remote_url` and `transport`. The schema forbids the other kinds' blocks.
+2. **The MCP server's Loams block is the listing itself** (refines §73 §3.7). The embedded `server.json` is kept byte-for-byte; the tool risks, egress and Place template are the listing's own top-level `tools` and `place`. When the index is served as an MCP-Registry subregistry (MK2), the build writes them into `_meta."dev.loams/listing"`. This keeps one reader for every kind in agentd.
+3. **Rules the schema enforces:**
+   - an agent serves `acp` or `a2a`;
+   - each runtime takes one artifact type (`node`/`npm`, `python`/`pypi`, `oci`/`oci`, `binary`/`archive`);
+   - every artifact needs `provenance`;
+   - npm integrity is `sha512-…`, and pypi and oci integrity is `sha256:<hex>`;
+   - archives carry a SHA-256 per platform and no top-level integrity;
+   - a native harness is first-party only (`ostrium/` or `loams/`) and has no artifact, while an ACP harness has one;
+   - a remote MCP server has `remote_url`, speaks `streamable-http` and installs nothing;
+   - a secret config input has no `default`;
+   - only `enum` inputs list `values`;
+   - `pricing` is `free`.
+4. **Fields added beyond §73 §3.6:** `source.path` (a package inside a monorepo), `config[].env` (the variable the value is passed in), `conformance.report_sha256`, and a `bucket` data scope beside databases, collections and streams. Budgets are `cost.budget_usd_per_run` and `cost.budget_usd_per_day`.
+5. **Not in the listing:** `tier` and `yanked`. The index sets them (Task 2), because an author cannot claim them.
+6. **`pricing` is a one-value enum** (`"free"`), not a `const`, so the proto has an equal `Pricing` enum.
+7. **The proto–schema check is structural.** Each object schema names its message in `x-proto-message` and each enum names its proto enum in `x-proto-enum`. `proto_and_schema_agree` checks:
+   - field names in both directions;
+   - that arrays are `repeated`;
+   - the field types (message, enum, scalar, `Struct` for embedded documents, `Value` for `default`);
+   - the enum values (`"mcp-server"` is `KIND_MCP_SERVER`).
+8. **`github-attestation` provenance** is added beside §73 §6's types. Release archives attested with GitHub artifact attestations, such as `github/github-mcp-server` v2.0.3, are looked up by each file's SHA-256 at `https://api.github.com/repos/<owner>/<repo>/attestations/sha256:<digest>`, which needs no token. The lookup returns Sigstore bundles (v0.3) whose SLSA v1 predicate names `workflow.repository`, so they are checked exactly like npm provenance (Task 0 ruling 5). The GitHub MCP fixture carries v2.0.3's real checksums and commit.
+9. **Where the checks live.** The schema tests are in the new crate `crates/loams-agentd-marketplace`, which compiles the schema in (`listing::validate`), on the workspace's new `jsonschema` 0.58 dependency (MIT, the line `fabric/` already uses). CI's `rust` path filter gains `schemas/marketplace/**`. The invalid fixtures are one manifest, `testdata/invalid.json`: each case is a valid fixture plus a JSON-pointer patch that breaks one rule. The same manifest serves Task 2's lint tests.
+
 ### Owner approvals (2026-10-24)
 
 The owner approved the pending decisions below on 2026-10-24 ("approve all with your recommendations").
