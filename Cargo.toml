@@ -144,6 +144,11 @@ itertools = "0.15"
 # the wrong JSON type instead of skipping it (GHSA-h395-gr6q-cpjc). The
 # aws-lc-rs backend, as Resonate's resonate-auth and rustls use; never also
 # enable `rust_crypto` (with both, jsonwebtoken picks no provider and panics).
+# JSON Schema validation of marketplace listings (MK1 Task 1,
+# loams-agentd-marketplace). The 0.58 line fabric already uses (MIT); no
+# default features, so no HTTP or file resolver: the listing schema has no
+# external $ref.
+jsonschema = { version = "0.58", default-features = false }
 jsonwebtoken = { version = "=10.4.0", default-features = false, features = ["aws_lc_rs"] }
 # The Kubernetes client (PG2 Task 6's KubeSecretStore first). Task 0 ruling 5
 # asks for the newest release at least 14 days old, 4.2.0; it is held at
@@ -349,6 +354,7 @@ loams-agentd-doc = { path = "crates/loams-agentd-doc", version = "0.1.1" }
 loams-agentd-harness = { path = "crates/loams-agentd-harness", version = "0.1.1" }
 loams-agentd-link = { path = "crates/loams-agentd-link", version = "0.1.1" }
 loams-agentd-mcp = { path = "crates/loams-agentd-mcp", version = "0.1.1" }
+loams-agentd-marketplace = { path = "crates/loams-agentd-marketplace", version = "0.1.1" }
 loams-agentd-preview = { path = "crates/loams-agentd-preview", version = "0.1.1" }
 loams-agentd-proto = { path = "crates/loams-agentd-proto", version = "0.1.1" }
 loams-agentd-rpc = { path = "crates/loams-agentd-rpc", version = "0.1.1" }

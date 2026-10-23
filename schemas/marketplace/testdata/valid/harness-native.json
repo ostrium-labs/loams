@@ -1,0 +1,29 @@
+{
+  "id": "ostrium/claude-code",
+  "kind": "harness",
+  "version": "1.0.0",
+  "title": "Claude Code",
+  "summary": "Anthropic's coding agent, driven by agentd's native adapter.",
+  "licence": "Apache-2.0",
+  "source": {
+    "repository": "https://github.com/ostrium-labs/loams",
+    "commit": "0123456789abcdef0123456789abcdef01234567",
+    "path": "crates/loams-agentd-harness"
+  },
+  "publisher": {
+    "name": "Ostrium Labs",
+    "url": "https://ostriumlabs.org"
+  },
+  "harness": {
+    "launch": {
+      "protocol": "native",
+      "command": "claude"
+    },
+    "auth": [
+      "cli-login",
+      "api-key"
+    ],
+    "native_adapter": "claude-code"
+  },
+  "pricing": "free"
+}
