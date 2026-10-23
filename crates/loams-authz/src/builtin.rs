@@ -413,6 +413,18 @@ fn condition(
     Ok(session == allowed && ts(now)? < ts(expires)?)
 }
 
+/// Whether `s` is `type:id` with a non-empty type and id, no `#`, no whitespace, and no
+/// wildcard (model v1 declares no `type:*`).
+fn well_formed(s: &str) -> bool {
+    s.split_once(':').is_some_and(|(ty, id)| {
+        !ty.is_empty()
+            && !id.is_empty()
+            && id != "*"
+            && !s.contains('#')
+            && !s.chars().any(char::is_whitespace)
+    })
+}
+
 /// The model's type restrictions on a written tuple.
 fn validate(t: &Tuple) -> Result<()> {
     let ty = type_of(&t.object);
@@ -422,6 +434,14 @@ fn validate(t: &Tuple) -> Result<()> {
             t.object, t.relation, t.user
         ))
     };
+    let user_object = t
+        .user
+        .split_once('#')
+        .map_or(t.user.as_str(), |(set, _)| set);
+    if !well_formed(&t.object) || !well_formed(user_object) {
+        return Err(invalid("the object and user must be type:id".into()));
+    }
+    t.check_condition()?;
     let Some(rules) = rules_of(ty, &t.relation) else {
         return Err(invalid(format!(
             "type '{ty}' has no relation '{}'",
@@ -458,11 +478,7 @@ impl Authorizer for BuiltinAuthorizer {
             .store
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut ctx = req.context.clone();
-        if let Some(session) = &req.subject.session {
-            ctx.entry("session_id")
-                .or_insert_with(|| Value::String(session.clone()));
-        }
+        let ctx = req.effective_context();
         let allowed = if req.contextual_tuples.is_empty() {
             self.eval(
                 &store,
@@ -582,6 +598,72 @@ mod tests {
             b.write(&[Tuple::new("user:u", "editor", "environment:e")
                 .with_condition("agent_session", Map::new())])
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn builtin_refuses_malformed_and_wildcard_tuples() {
+        let b = BuiltinAuthorizer::new();
+        for t in [
+            Tuple::new("user:*", "viewer", "environment:e"),
+            Tuple::new("user:", "viewer", "environment:e"),
+            Tuple::new("user:u", "viewer", "environment"),
+            Tuple::new("user:u", "viewer", "environment:e#x"),
+            Tuple::new("user:u v", "viewer", "environment:e"),
+            Tuple::new("agent:a", "viewer", "environment:e").with_condition(
+                "agent_session",
+                serde_json::json!({"allowed_session": "s", "expires": "2030-01-01T00:00:00Z",
+                    "now": "2026-01-01T00:00:00Z"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+            Tuple::new("agent:a", "viewer", "environment:e").with_condition(
+                "agent_session",
+                serde_json::json!({"allowed_session": "s", "session_id": "s"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        ] {
+            assert!(b.write(std::slice::from_ref(&t)).is_err(), "{t:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn session_grant_uses_the_subjects_session_and_the_clock() {
+        let b = BuiltinAuthorizer::new();
+        let grant = |expires: &str| {
+            Tuple::new("agent:a", "viewer", "environment:e").with_condition(
+                "agent_session",
+                serde_json::json!({"allowed_session": "s1", "expires": expires})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        };
+        b.write(&[grant("2999-01-01T00:00:00Z")]).unwrap();
+        let ask = |s: Subject| CheckRequest::new(s, "viewer", "environment:e".parse().unwrap());
+        assert!(
+            b.check(ask(Subject::agent("a").with_session("s1")))
+                .await
+                .unwrap()
+                .allowed
+        );
+        assert!(
+            !b.check(ask(Subject::agent("a").with_session("s2")).context("session_id", "s1"))
+                .await
+                .unwrap()
+                .allowed,
+            "the caller cannot claim another session"
+        );
+        b.write(&[grant("2020-01-01T00:00:00Z")]).unwrap();
+        assert!(
+            !b.check(ask(Subject::agent("a").with_session("s1")))
+                .await
+                .unwrap()
+                .allowed,
+            "expired by the server's clock"
         );
     }
 

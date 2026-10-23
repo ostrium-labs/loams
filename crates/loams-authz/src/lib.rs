@@ -194,11 +194,33 @@ impl CheckRequest {
         self
     }
 
-    /// Whether a cached answer may serve this request: only a plain, low-latency check.
+    /// Whether a cached answer may serve this request: only a plain, low-latency check by a
+    /// subject without an agent session. The cache key does not carry the session or the
+    /// time, so a session's answer must never serve another session or outlive `expires`.
     pub fn cacheable(&self) -> bool {
         self.consistency == Consistency::MinimizeLatency
             && self.context.is_empty()
             && self.contextual_tuples.is_empty()
+            && self.subject.session.is_none()
+    }
+
+    /// The condition context every backend evaluates (the same for OpenFGA and the built-in
+    /// authorizer): the request's context, with `session_id` set to the authenticated
+    /// subject's session when it has one (overriding the caller's), and `now` set to the
+    /// server's clock when the caller gave none. `agent_session` grants (Q1204) then need no
+    /// help from the caller.
+    pub fn effective_context(&self) -> serde_json::Map<String, serde_json::Value> {
+        let mut ctx = self.context.clone();
+        if let Some(session) = &self.subject.session {
+            ctx.insert("session_id".into(), session.clone().into());
+        }
+        if !ctx.contains_key("now")
+            && let Ok(now) = time::OffsetDateTime::now_utc()
+                .format(&time::format_description::well_known::Rfc3339)
+        {
+            ctx.insert("now".into(), now.into());
+        }
+        ctx
     }
 }
 
@@ -324,6 +346,29 @@ mod tests {
                 .consistency(Consistency::HigherConsistency)
                 .cacheable()
         );
-        assert!(!base.context("session_id", "s").cacheable());
+        assert!(!base.clone().context("session_id", "s").cacheable());
+        let mut with_session = base;
+        with_session.subject = Subject::agent("a").with_session("s1");
+        assert!(
+            !with_session.cacheable(),
+            "a session's allow must not serve another session"
+        );
+    }
+
+    #[test]
+    fn effective_context_takes_the_session_from_the_subject() {
+        let req = CheckRequest::new(
+            Subject::agent("a").with_session("s-real"),
+            "can_view",
+            ObjectRef::new("deployment", "d"),
+        )
+        .context("session_id", "s-claimed");
+        let ctx = req.effective_context();
+        assert_eq!(ctx["session_id"], "s-real");
+        assert!(ctx["now"].as_str().unwrap().ends_with('Z'));
+        let fixed = CheckRequest::new(Subject::user("u"), "can_view", ObjectRef::new("d", "x"))
+            .context("now", "2026-10-21T12:00:00Z");
+        assert_eq!(fixed.effective_context()["now"], "2026-10-21T12:00:00Z");
+        assert!(!fixed.effective_context().contains_key("session_id"));
     }
 }
