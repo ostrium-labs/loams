@@ -367,6 +367,42 @@ jobs:
         if: failure()
         run: tail -n 200 conformance/clickhouse/apps/.out/openpanel-on-house/house.log || true
 
+  # HE1 owns this job (plan 2026-10-21-he1-loams-house-engine, Task 9,
+  # ruling R9.65): `langfuse_on_house_smoke`, native gate 2 (D1575). Stock
+  # Langfuse v4 on a House built from this tree: langfuse-web runs its own
+  # ClickHouse migrations at start (golang-migrate on clickhouse-go v1, over
+  # the House's native TLS listener), then the driver ingests over OTLP and
+  # the public API and reads every endpoint and page back through the House's
+  # HTTPS listener. No oracle replay for Langfuse yet (R9.65). Synthetic
+  # traffic only; nothing uploaded.
+  langfuse-on-house:
+    name: "House apps: Langfuse on the House"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.house-on-house == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          workspaces: fabric -> target
+          key: openpanel-on-house
+      - name: build the House
+        working-directory: fabric
+        run: cargo build --locked -p loams-fabric -p loams-house-worker
+      - name: allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: langfuse_on_house_smoke
+        env:
+          HE0_HOUSE_BIN: fabric/target/debug
+        run: scripts/house/app-on-house.sh langfuse-v4
+      - name: the House's log on failure
+        if: failure()
+        run: tail -n 200 conformance/clickhouse/apps/.out/langfuse-v4-on-house/house.log || true
+
   # CN2 owns this job (plan 2026-10-10-cn2-connectors, Task 4): the connector
   # SDK alone, the crate every native connector family builds on. It needs no
   # protoc and no services (the in-memory Fabric and the reference connector
