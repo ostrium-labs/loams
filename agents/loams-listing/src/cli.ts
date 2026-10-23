@@ -1,20 +1,25 @@
 // loams-listing: lint <listing.json>… | from-package <dir> | index build <dir> --out <dir>
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fromPackageDir, PackageError } from './from-package.js';
 import { buildIndex, canonical, IndexError, writeIndex } from './index-build.js';
 import { formatIssue, hasErrors, lint, RULES } from './lint.js';
+import type { Listing } from './types.js';
+import { httpFetcher, sigstoreVerifier, verifyListing, type VerifyOptions, type VerifyReport } from './verify.js';
 
 export interface Io {
   stdout: (line: string) => void;
   stderr: (line: string) => void;
   cwd: string;
+  /** For tests: replaces the network and Sigstore's public-good instance. */
+  verify?: VerifyOptions;
 }
 
 const USAGE = `usage:
   loams-listing lint [--first-party-only] <listing.json>…
   loams-listing from-package <dir> (--tarball <file> | --integrity <sha512-…>) [--commit <sha>] [--out <file>]
   loams-listing index build <listings-dir> --out <dir> [--first-party-only] [--source-commit <sha>]
+  loams-listing verify <listing.json>… [--save-provenance <dir>] [--report <file.json>]
   loams-listing rules`;
 
 interface Parsed {
@@ -22,7 +27,7 @@ interface Parsed {
   flags: Map<string, string | true>;
 }
 
-const VALUE_FLAGS = new Set(['--tarball', '--integrity', '--commit', '--out', '--source-commit']);
+const VALUE_FLAGS = new Set(['--tarball', '--integrity', '--commit', '--out', '--source-commit', '--save-provenance', '--report']);
 
 function parseArgs(args: string[]): Parsed {
   const positional: string[] = [];
@@ -103,6 +108,26 @@ export async function main(args: string[], io: Io): Promise<number> {
         for (const warning of result.warnings) io.stderr(warning);
         for (const file of writeIndex(result, at(out))) io.stdout(`wrote ${file}`);
         return 0;
+      }
+      case 'verify': {
+        if (positional.length === 0) throw new UsageError('verify needs at least one listing.json');
+        const options = io.verify ?? { fetcher: httpFetcher(), verifier: await sigstoreVerifier() };
+        const reports: (VerifyReport & { file: string })[] = [];
+        for (const file of positional) {
+          const listing = JSON.parse(readFileSync(at(file), 'utf8')) as Listing;
+          const report = { file, ...(await verifyListing(listing, options)) };
+          reports.push(report);
+          for (const check of report.checks) (check.ok ? io.stdout : io.stderr)(`${file}: ${check.ok ? 'ok' : 'FAILED'} [${check.check}] ${check.detail}`);
+          const save = str(flags, '--save-provenance');
+          if (save && report.ok) {
+            const dir = resolve(at(save), listing.id, listing.version);
+            mkdirSync(dir, { recursive: true });
+            report.bundles.forEach((b, i) => writeFileSync(resolve(dir, `provenance-${i}.sigstore.json`), canonical(b.bundle)));
+          }
+        }
+        const reportFile = str(flags, '--report');
+        if (reportFile) writeFileSync(at(reportFile), canonical(reports.map(({ bundles: _bundles, ...rest }) => rest)));
+        return reports.every((r) => r.ok) ? 0 : 1;
       }
       case 'rules': {
         for (const [rule, text] of Object.entries(RULES)) io.stdout(`${rule}\t${text}`);
