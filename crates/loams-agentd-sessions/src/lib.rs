@@ -21,6 +21,7 @@ pub mod checkpoints;
 pub mod content_search;
 pub mod diff_sync;
 pub mod doc_host;
+pub mod factory_loop;
 pub mod fuzz;
 pub mod git_write;
 pub mod groups;
