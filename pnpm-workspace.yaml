@@ -130,6 +130,15 @@ overrides:
   '@codemirror/view': 6.43.13
   '@codemirror/language': 6.12.4
   '@lezer/lr': 1.4.10
+  # The 14-day rule for vite 8.3.4's and electron-vite 6.0.0's own ranges (#935):
+  # rolldown 1.2.14 (2026-10-14), postcss 8.5.30 and 8.5.31 (2026-10-12 and
+  # 2026-10-18) and cac 7.1.0 (2026-10-11) are too new; keep rolldown 1.2.13
+  # (2026-10-07), postcss 8.5.29 (2026-10-05) and cac 7.0.1 (2026-10-08). Drop
+  # these with the next vite or electron-vite bump.
+  'vite@8.3.4>rolldown': 1.2.13
+  'electron-vite@6.0.0>rolldown': 1.2.13
+  'electron-vite@6.0.0>cac': 7.0.1
+  postcss: 8.5.29
 
 allowBuilds:
   esbuild: true

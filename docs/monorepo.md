@@ -17,7 +17,7 @@ plugins/                      Plugin runtime, adapters, dashboard, BI contracts
 tools/monorepo/                Migration provenance and structural checks
 ```
 
-Use Node 22 or newer and the pinned pnpm version:
+Use Node 22.12 or newer (vite and electron-vite require `^20.19.0 || >=22.12.0`) and the pinned pnpm version:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -68,7 +68,7 @@ Nx discovers the JS, mobile and native projects, including existing package scri
 - Signing, installation, services, generation/drift, releases, and most native tasks are noncacheable.
 - `nx.json` names the Nx Cloud workspace (`nxCloudId`) for the remote cache; CI connects only where [the Nx Cloud guide](guides/nx-cloud.md) says, and never for a release. Set `NX_NO_CLOUD=true` locally to run without it.
 
-Vite+ 1.0.0/Vitest 5.0.1 stay scoped to plugins, while the console retains ordinary Vite 8.3.1/Vitest 5.0.3. pnpm reports Vite peer-version warnings because the plugins' compatibility fork identifies as version 1.0.0; actual builds and tests pass. MSW's nonessential postinstall is explicitly disabled. Do not apply a global Vite override.
+Vite+ 1.0.0/Vitest 5.0.1 stay scoped to plugins, while the console and the desktop share ordinary Vite 8.3.4/Vitest 5.0.3 (the desktop builds with electron-vite 6). pnpm reports Vite peer-version warnings because the plugins' compatibility fork identifies as version 1.0.0; actual builds and tests pass. MSW's nonessential postinstall is explicitly disabled. Do not apply a global Vite override.
 
 > **Direction (owner, 2026-10-23, D1770):** Vite+ becomes the JavaScript toolchain workspace-wide. [Design 79](design/79-void-and-vite-plus.md) sets the mapping, approved by the owner on 2026-10-23 (D1772: one `vite-plus` catalog pin with `vite` aliased to `vite-plus-core`, `vp` in each package's targets, Nx kept as the orchestrator). Until VV1 lands, the rule above stands.
 

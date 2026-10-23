@@ -3,7 +3,7 @@
   "private": true,
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.27.1",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=22.12" },
   "scripts": {
     "nx": "nx",
     "projects": "nx show projects",
