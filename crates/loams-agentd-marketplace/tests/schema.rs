@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 //! MK1 Task 1: the listing schema accepts its valid fixtures, rejects each
 //! invalid one, and agrees with `loams.marketplace.v1.Listing`.
 
