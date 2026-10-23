@@ -44,6 +44,18 @@ pub enum MarketError {
     NoVersion { id: String, version: String },
     #[error("{0}: {1}")]
     Cache(String, String),
+    #[error("{id}@{version} was yanked: {reason}")]
+    Yanked {
+        id: String,
+        version: String,
+        reason: String,
+    },
+    #[error("{id}@{version} is revoked: {reason}")]
+    Revoked {
+        id: String,
+        version: String,
+        reason: String,
+    },
 }
 
 /// One source's verified state.
@@ -129,6 +141,16 @@ struct Files {
     index_sig: Vec<u8>,
     revocations: Vec<u8>,
     revocations_sig: Vec<u8>,
+}
+
+impl<F, V> std::fmt::Debug for Marketplace<F, V> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Marketplace")
+            .field("dir", &self.dir)
+            .field("sources", &self.sources)
+            .field("errors", &self.errors)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
@@ -530,6 +552,40 @@ impl<F: Fetcher, V: SignatureVerifier> Marketplace<F, V> {
             });
         }
         Err(MarketError::NoListing(id.into()))
+    }
+
+    /// The consent plan for an install (D1466) and its digest. Creates
+    /// nothing: no Place, role, key, file or process.
+    pub fn plan_install(
+        &self,
+        id: &str,
+        version: Option<&str>,
+        source: Option<&str>,
+        installed: &[crate::plan::InstalledVersion],
+    ) -> Result<(crate::plan::InstallPlan, String), MarketError> {
+        let view = self.get_listing(id, version, source)?;
+        if let Some(reason) = &view.version.yanked {
+            return Err(MarketError::Yanked {
+                id: id.into(),
+                version: view.version.version.clone(),
+                reason: reason.clone(),
+            });
+        }
+        if let Some((_, Some(revocation))) = view
+            .versions
+            .iter()
+            .find(|(v, _)| v.version == view.version.version)
+            && revocation.severity == crate::revocations::Severity::Disable
+        {
+            return Err(MarketError::Revoked {
+                id: id.into(),
+                version: view.version.version.clone(),
+                reason: revocation.reason.clone(),
+            });
+        }
+        let plan = crate::plan::plan(&view, installed);
+        let digest = crate::plan::digest(&plan);
+        Ok((plan, digest))
     }
 
     /// The revocation check (start, and every 6 hours after a refresh): every

@@ -44,6 +44,12 @@ pub struct SigstoreVerifier {
     root: TrustedRoot,
 }
 
+impl std::fmt::Debug for SigstoreVerifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SigstoreVerifier").finish_non_exhaustive()
+    }
+}
+
 impl SigstoreVerifier {
     pub fn production() -> Result<Self, SignatureError> {
         let root = TrustedRoot::from_json(SIGSTORE_PRODUCTION_TRUSTED_ROOT)
