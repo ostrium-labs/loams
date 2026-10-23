@@ -241,6 +241,9 @@ rustls = { version = "0.23", default-features = false }
 # Linux only.
 seccompiler = "0.5.0"
 serde = { version = "1", features = ["derive"] }
+# Version ranges in marketplace listings and revocations (MK1 Task 2 ruling 5:
+# Cargo's VersionReq syntax). MIT OR Apache-2.0.
+semver = "1"
 # `preserve_order`: qdrant-edge needs it, and Cargo unifies features, so the
 # whole workspace uses one insertion-ordered map type (M1.3 row E58).
 serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
@@ -250,6 +253,11 @@ serde_with = "3"
 # in the lockfile.
 schemars = "0.8"
 sha2 = "0.11"
+# Sigstore bundle verification for the marketplace's signed index and
+# provenance (MK1 Task 0 ruling 3; loams-agentd-marketplace). Apache-2.0.
+# 0.14.0 is the newest release at least 14 days old (2026-09-29). No default
+# features: the production trusted root is embedded, so no TUF client.
+sigstore-verify = { version = "=0.14.0", default-features = false }
 slatedb = { version = "0.17", default-features = false }
 # The MySQL driver resonate-server-mysql uses (0.8.6, rustls); loams-durable
 # checks a TiDB store's schema with it before serving (D1 Task 4).
