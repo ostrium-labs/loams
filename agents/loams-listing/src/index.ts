@@ -5,3 +5,4 @@ export { validateAgainst, readSchema } from './schema.js';
 export { compare, isRange } from './semver.js';
 export { main } from './cli.js';
 export type * from './types.js';
+export { verifyListing, httpFetcher, sigstoreVerifier, integrityHex, type VerifyReport, type Fetcher, type BundleVerifier } from './verify.js';

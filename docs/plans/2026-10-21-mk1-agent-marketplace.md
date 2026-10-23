@@ -235,3 +235,30 @@ Read on 2026-10-23 at `origin/dev` `710f47078`.
    - It sets `latest`: the highest version that is neither yanked nor a prerelease, else the highest that is not yanked.
    - The output is canonical (keys sorted at every level, ids and versions sorted, no timestamps), so the same tree always gives the same bytes. `--source-commit` records the index repository's commit.
 5. **Version ranges** in `mcp_servers[].version` and revocations use Cargo's `VersionReq` syntax (comma-separated comparators: `^2.0.0`, `>=0.1.0, <0.1.1`, `=2.0.3`, `*`), so agentd parses them with the `semver` crate unchanged.
+
+### Task 3 (2026-10-24)
+
+1. **Two repositories.** The checks that need code are `loams-listing verify`, here in `agents/loams-listing`. `ostrium-labs/loams-marketplace` holds:
+   - the layout, `revocations.json` and the README;
+   - `validate.yml`, `publish.yml` and `self-test.yml`;
+   - the scripts: `setup-cli.sh`, `changed-listings.sh`, `check-signed.sh` and `report.mjs`;
+   - `tests/self-test.sh` with its fixtures.
+
+   It builds `loams-listing` from this repository at the commit pinned in `.github/loams-ref`, a sparse, shallow fetch of `agents/loams-listing`, `schemas/marketplace` and the root lockfile, installed with `pnpm install --frozen-lockfile --filter @loams/listing --ignore-scripts`. A schema or tooling change reaches the index only when that pin moves. Nothing was cloned locally: the files went to `loams-marketplace` through the GitHub API.
+2. **`verify`** does the following:
+   - **npm:** it resolves `/<name>/<version>` on the registry, requires `dist.integrity` to equal the listing's, downloads the tarball and hashes it again, then reads the attestations.
+   - **Archives:** it downloads each platform file and checks its SHA-256. With `github-attestation` it looks the digest up in the repository's attestations API; with `sigstore-bundle` it reads the bundle URL.
+   - **Provenance:** a SLSA v1 bundle must cover the bytes (`sha512` for npm, `sha256` for archives) and name the listing's `source.repository` in `workflow.repository`. It must verify cryptographically through `sigstore` 5.0.0 (sigstore-js, Apache-2.0, the public-good trusted root through TUF). It must be signed by a GitHub Actions or GitLab issuer, with a certificate SAN that is a workflow of that same repository.
+   - **No artifact:** remote MCP servers and native harnesses pass.
+   - **Not yet verified:** `pypi` and `oci` fail until MK1 and MK2.
+
+   It was checked live on 2026-10-24: `sigstore@3.1.0` passes, and the same package listed under another source repository fails `provenance`. The network fetcher refuses non-https URLs and bodies over 512 MiB. The Node engine range follows `sigstore` 5: `^22.22.2 || ^24.15.0 || >=26`; the index workflows use Node 24.
+3. **Published versions are immutable.** `changed-listings.sh` passes only added `listing.json` files; a change or deletion fails, with a pointer to `yanked.json` or a new version.
+4. **Amends Task 0 ruling 5: no stored provenance copies in MK0.** The verified bundles are uploaded as the pull request's `listing-report` artifact, not committed, and agentd fetches provenance from the registry at install time (Task 6). Copies beside each listing, for installs without registry access, are deferred.
+5. **The report** is a Markdown table per added version, written to the job summary and posted as one updated pull-request comment. The comment is posted only for pull requests from this repository, which are all of them in MK0. **LAPC Core is not in `validate.yml` yet**; the report says so, and Task 8 adds the step.
+6. **Publishing.** `publish.yml` runs on `main` and does the following:
+   - builds with `--first-party-only --source-commit $GITHUB_SHA`;
+   - signs both files with `cosign sign-blob --bundle` (cosign v3.0.6, keyless);
+   - runs `check-signed.sh`, which verifies both bundles against the pinned identity and refuses a missing or wrong signature (`unsigned_publish_fails` and `wrongly_signed_publish_fails` in `self-test.sh`);
+   - uploads the `marketplace-index` artifact (90 days) for `loams-site`;
+   - deploys GitHub Pages. GitHub Pages must be enabled with the "GitHub Actions" source.
