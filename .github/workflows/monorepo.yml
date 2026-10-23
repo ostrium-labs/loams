@@ -85,6 +85,9 @@ jobs:
               - 'proto/**'
               - 'buf*.yaml'
               - 'scripts/studio/**'
+              # @loams/listing (MK1 Task 2) and its schemas.
+              - 'agents/**'
+              - 'schemas/marketplace/**'
             npm-licences:
               - '**/package.json'
               - 'pnpm-lock.yaml'

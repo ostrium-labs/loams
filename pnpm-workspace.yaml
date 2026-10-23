@@ -10,6 +10,8 @@ packages:
   - plugins/core/*
   - plugins/packages/*
   - apps/desktop-electron
+  # Loams' own agents and agent tooling (FT1 Task 1, MK1 Task 2).
+  - agents/*
 
 # One version of each shared UI dependency (docs/design/console-ui-stack.md).
 # Packages depend on these as `"name": "catalog:"`. Bump here, and only to a
