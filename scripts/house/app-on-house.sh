@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # HE0 Task 9 (plan HE1, ruling R9.6): one mined application on the chDB House,
-# checked against the pinned clickhouse-server. The CI job
-# `openpanel_on_house_smoke` runs `scripts/house/app-on-house.sh openpanel`.
+# checked against the pinned clickhouse-server. The CI jobs
+# `openpanel_on_house_smoke` and `langfuse_on_house_smoke` run
+# `scripts/house/app-on-house.sh openpanel` and `… langfuse-v4`.
 #
 #   1. The oracle: `apps.sh <app> up` and `drive` on clickhouse-server.
 #   2. A House on this machine (`loams-fabric house --single-node`), its TLS
@@ -13,6 +14,10 @@
 #      (`HE0_TARGET=house apps.sh <app> up` and `drive`, its own project), so
 #      its migrations, its ingest and its pages run on the House. A failed
 #      migration, a lost event or a page that errs fails the run.
+#      Langfuse v4 runs its own ClickHouse migrations at start, golang-migrate
+#      over the House's native TLS listener (native gate 2, D1575), and its
+#      steps 1 and 3 are skipped (REPLAY=0 below; HE1 R9.65): its gate is that
+#      it migrates itself, ingests and serves every read and page on the House.
 #   5. Everything stopped; the House's data and the dumps stay under $HE0_OUT.
 #
 # Environment:
@@ -22,6 +27,8 @@
 #                   (default conformance/clickhouse/apps/.out)
 #   HE0_HOUSE_SANDBOX  the workers' sandbox (default netns)
 #   HE0_KEEP=1      leave the stacks and the House running
+#   HE0_HOUSE_{HTTP,TLS,ADMIN,NATIVE,NATIVE_TLS}_PORT  the House's ports
+#                   (28124, 28443, 28125, 29000, 29440)
 set -euo pipefail
 
 APP=${1:?usage: app-on-house.sh <app>}
@@ -38,6 +45,12 @@ case "$APP" in
     DATABASE=openpanel
     ORACLE_HTTP_PORT=${HE0_OPENPANEL_CH_PORT:-28126}
     HOUSE_APP_PORT=3201
+    REPLAY=1
+    ;;
+  langfuse-v4)
+    DATABASE=default
+    HOUSE_APP_PORT=3202
+    REPLAY=0
     ;;
   *) echo "app-on-house.sh: no House recipe for '$APP'" >&2; exit 2 ;;
 esac
@@ -52,6 +65,7 @@ done
 
 HOUSE_HTTP=127.0.0.1:${HE0_HOUSE_HTTP_PORT:-28124}
 HOUSE_TLS_PORT=${HE0_HOUSE_TLS_PORT:-28443}
+HOUSE_NATIVE_TLS_PORT=${HE0_HOUSE_NATIVE_TLS_PORT:-29440}
 HOUSE_DATA="$WORK/house"
 HOUSE_USER=$APP
 HOUSE_PASSWORD=$(python3 -I -c 'import secrets; print(secrets.token_hex(16))')
@@ -66,8 +80,9 @@ house_start() {
     "$HOUSE_USER" "$hash" >"$WORK/house.toml"
   "$HE0_HOUSE_BIN/loams-fabric" house --single-node --config "$WORK/house.toml" \
     --data-dir "$HOUSE_DATA" --house-listen "$HOUSE_HTTP" \
-    --house-tls-listen "0.0.0.0:$HOUSE_TLS_PORT" --admin-listen 127.0.0.1:28125 \
-    --native-listen 127.0.0.1:29000 --worker-binary "$HE0_HOUSE_BIN/loams-house-worker" \
+    --house-tls-listen "0.0.0.0:$HOUSE_TLS_PORT" --admin-listen "127.0.0.1:${HE0_HOUSE_ADMIN_PORT:-28125}" \
+    --native-listen "127.0.0.1:${HE0_HOUSE_NATIVE_PORT:-29000}" --native-tls-listen "0.0.0.0:$HOUSE_NATIVE_TLS_PORT" \
+    --worker-binary "$HE0_HOUSE_BIN/loams-house-worker" \
     --sandbox "${HE0_HOUSE_SANDBOX:-netns}" >"$WORK/house.log" 2>&1 &
   HOUSE_PID=$!
   for _ in $(seq 1 120); do
@@ -89,7 +104,7 @@ house_stop() {
 
 house_app() {
   HE0_TARGET=house COMPOSE_PROJECT_NAME="he0-$APP-house" HE0_OPENPANEL_PORT=$HOUSE_APP_PORT \
-    HE0_HOUSE_USER=$HOUSE_USER HE0_HOUSE_PASSWORD=$HOUSE_PASSWORD \
+    HE0_LANGFUSE_PORT=$HOUSE_APP_PORT HE0_HOUSE_NATIVE_TLS_PORT=$HOUSE_NATIVE_TLS_PORT HE0_HOUSE_USER=$HOUSE_USER HE0_HOUSE_PASSWORD=$HOUSE_PASSWORD \
     HE0_HOUSE_TLS_PORT=$HOUSE_TLS_PORT HE0_HOUSE_TLS_DIR="$HOUSE_DATA/tls" \
     HE0_OUT="$WORK/app" "$ROOT/scripts/house/apps.sh" "$APP" "$1"
 }
@@ -103,21 +118,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "app-on-house: 1. the oracle"
-HE0_OUT="$WORK/oracle" "$ROOT/scripts/house/apps.sh" "$APP" up
-HE0_OUT="$WORK/oracle" "$ROOT/scripts/house/apps.sh" "$APP" drive
-
-echo "app-on-house: 2. the House"
-house_start
-
-echo "app-on-house: 3. the replay"
 status=0
-HE0_HOUSE_PASSWORD=$HOUSE_PASSWORD python3 -I "$ROOT/scripts/house/replay.py" \
-  --oracle "http://127.0.0.1:$ORACLE_HTTP_PORT" --house "http://$HOUSE_HTTP" \
-  --house-user "$HOUSE_USER" --database "$DATABASE" --out "$WORK/replay.json" || status=1
+if [ "$REPLAY" = 1 ]; then
+  echo "app-on-house: 1. the oracle"
+  HE0_OUT="$WORK/oracle" "$ROOT/scripts/house/apps.sh" "$APP" up
+  HE0_OUT="$WORK/oracle" "$ROOT/scripts/house/apps.sh" "$APP" drive
+
+  echo "app-on-house: 2. the House"
+  house_start
+
+  echo "app-on-house: 3. the replay"
+  HE0_HOUSE_PASSWORD=$HOUSE_PASSWORD python3 -I "$ROOT/scripts/house/replay.py" \
+    --oracle "http://127.0.0.1:$ORACLE_HTTP_PORT" --house "http://$HOUSE_HTTP" \
+    --house-user "$HOUSE_USER" --database "$DATABASE" --out "$WORK/replay.json" || status=1
+  house_stop
+else
+  echo "app-on-house: 1-3. no oracle and replay for $APP"
+fi
 
 echo "app-on-house: 4. $APP on the House"
-house_stop
 house_start
 if house_app up; then
   house_app drive || status=1
@@ -131,7 +150,11 @@ else
 fi
 
 if [ "$status" = 0 ]; then
-  echo "app-on-house: $APP runs on the House and answers as the oracle"
+  if [ "$REPLAY" = 1 ]; then
+    echo "app-on-house: $APP runs on the House and answers as the oracle"
+  else
+    echo "app-on-house: $APP migrates itself and runs on the House (no oracle replay)"
+  fi
 else
   echo "app-on-house: $APP on the House FAILED (see $WORK)" >&2
 fi
