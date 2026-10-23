@@ -2584,6 +2584,15 @@ impl Server {
         // The principal store (API2 Tasks 6 and 7): its sessions and API
         // keys authenticate through `auth` from here on.
         let principals = crate::auth::Principals::attach(&auth, meta_store.clone(), store.clone());
+        // The `can_*` checks (design 76 §9, IA2 Task 4): `LOAMS_AUTHZ`, built-in by default.
+        let principals = {
+            let authz = config
+                .auth
+                .authz
+                .build(&principals.directory)
+                .map_err(ServerError::Config)?;
+            principals.with_authz(authz)
+        };
         // LV1 plan Task 17: a revoked key or a removed member closes its
         // Live sessions.
         #[cfg(feature = "live")]
