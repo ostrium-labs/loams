@@ -68,6 +68,7 @@ pub fn validate(listing: &Value) -> Result<(), Vec<Issue>> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

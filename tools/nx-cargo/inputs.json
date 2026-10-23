@@ -18,6 +18,9 @@
         "loams-upgrade"
       ],
       "extra": {
+        "loams-agentd-marketplace": [
+          "schemas/marketplace/**"
+        ],
         "loams-agentd-sessions": [
           "crates/README.md"
         ],
