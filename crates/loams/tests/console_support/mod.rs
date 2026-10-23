@@ -263,6 +263,7 @@ impl Authenticator for TestAuthenticator {
         Some(Ok(Principal {
             subject: format!("test|{name}"),
             kind: PrincipalKind::User,
+            issuer: None,
             display_name: name.to_owned(),
             email: Some(format!("{name}@example.test")),
             grant: Default::default(),
