@@ -63,6 +63,7 @@ use tokio::sync::broadcast::error::RecvError;
 use super::connect::refuse;
 use super::connect_console::{MAX_SLUG, event, invalid, slugify, unavailable};
 use crate::auth::authorizer::{Actor, Denied};
+use crate::auth::authz::{self, Standing};
 use crate::auth::directory::{AuditRec, Doc, KeyRec, Role, new_id, now_ms, timestamp};
 use crate::auth::{Principal, Principals, api_key, reason};
 
@@ -204,8 +205,20 @@ struct Admin {
 }
 
 impl Admin {
-    /// The caller, if they hold at least `need`.
+    /// The caller, if they hold at least `need` and the RPC's declared `can_*` relation on the
+    /// org (IA2 Task 5, D1611). Deny by default: an RPC [`super::admin_rpcs`] does not declare
+    /// is refused before anything is read. Both answers must allow, so the model never widens
+    /// what the org roles give.
     async fn actor(&self, ctx: &RequestContext, need: Role) -> Result<Actor, ConnectError> {
+        let procedure = ctx.path().unwrap_or_default();
+        let Some(relation) = super::admin_rpcs::declared(procedure) else {
+            return Err(refuse(
+                ErrorCode::PermissionDenied,
+                "rpc_not_declared",
+                "no authorization is declared for this RPC",
+                &[],
+            ));
+        };
         let principal = ctx.extensions().get::<Principal>().ok_or_else(|| {
             refuse(
                 ErrorCode::Unauthenticated,
@@ -214,11 +227,47 @@ impl Admin {
                 &[],
             )
         })?;
-        self.principals
+        let actor = self
+            .principals
             .authorizer
             .authorize(principal, need)
             .await
-            .map_err(denied)
+            .map_err(denied)?;
+        let subject = match authz::standing(&self.principals, principal)
+            .await
+            .map_err(denied)?
+        {
+            Standing::Operator => return Ok(actor),
+            Standing::Outside => {
+                return Err(denied(Denied::RoleRequired { need, have: None }));
+            }
+            Standing::Subject(subject) => subject,
+        };
+        let doc = self.doc().await?;
+        let Some(org) = doc.org.as_ref() else {
+            return Err(denied(Denied::SetupRequired));
+        };
+        let mut check = loams_authz::CheckRequest::new(
+            subject,
+            relation,
+            loams_authz::ObjectRef::new("org", &org.id),
+        );
+        if relation == "can_admin" {
+            // Changes ask the freshest answer (D1611).
+            check = check.consistency(loams_authz::Consistency::HigherConsistency);
+        }
+        let decision = self.principals.authz.check(check).await.map_err(|err| {
+            tracing::warn!(error = %err, procedure, "the authorizer could not answer an admin RPC");
+            unavailable("authorization is unavailable; retry")
+        })?;
+        if decision.allowed {
+            Ok(actor)
+        } else {
+            Err(denied(Denied::RoleRequired {
+                need,
+                have: Some(actor.role),
+            }))
+        }
     }
 
     async fn doc(&self) -> Result<Arc<Doc>, ConnectError> {

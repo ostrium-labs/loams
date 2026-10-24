@@ -245,3 +245,27 @@ tests:
       - user: service_account:ci
         object: deployment:dev-web
         assertions: {can_view: false}
+
+  - name: admin_api_relations
+    check:
+      - user: user:olga
+        object: org:acme
+        assertions: {can_view: true, can_admin: true}
+      - user: user:adam
+        object: org:acme
+        assertions: {can_view: true, can_admin: true}
+      - user: user:mona
+        object: org:acme
+        assertions: {can_view: true, can_admin: false}
+      - user: user:tess
+        object: org:acme
+        assertions: {can_view: false, can_admin: false}
+      - user: service_account:ci
+        object: org:acme
+        assertions: {can_view: true, can_admin: false}
+      - user: agent:agent-1
+        object: org:acme
+        assertions: {can_view: false, can_admin: false}
+      - user: user:bill
+        object: org:acme
+        assertions: {can_view: false, can_admin: false}

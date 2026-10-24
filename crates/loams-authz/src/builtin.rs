@@ -93,6 +93,8 @@ const MODEL: &[(&str, &str, &[Rule])] = &[
         "namespace_editor",
         &[Direct(&[Type("service_account")]), Computed("member")],
     ),
+    ("org", "can_view", &[Computed("namespace_editor")]),
+    ("org", "can_admin", &[Computed("admin")]),
     ("team", "org", &[Direct(&[Type("org")])]),
     ("team", "member", &[Direct(PEOPLE_AND_TEAMS)]),
     ("agent", "owner", &[Direct(&[Type("user")])]),

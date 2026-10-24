@@ -343,6 +343,12 @@ Commit: `authz: BuiltinAuthorizer, with the differential test against OpenFGA (I
 
 **Tests:** `agent_jwt_reaches_only_granted_namespace`, `disabled_link_refuses_live_jwt`, `session_maps_to_user`, `lk_key_maps_to_service_account`, `builtin_is_the_default`, `authz_off_refused_off_loopback`, and the existing auth tests unchanged.
 
+### IA2 Task 5 — a `can_*` per admin RPC, deny by default
+
+**What to write** (D1611, §9.2): `crates/loams/src/api/admin_rpcs.rs`, a table of every `loams.admin.v1` RPC and the `can_*` relation it needs on `org:<id>`; model v1's `org` gains `can_view` (any member, and the org's service accounts) and `can_admin` (an admin or owner). `Admin::actor` refuses an RPC the table does not declare (`rpc_not_declared`), then requires both the org role the handler names and the declared relation, asked through `loams-authz` (`HigherConsistency` for `can_admin`), so the model never widens what the roles give.
+
+**Tests:** `every_admin_rpc_is_declared` (the table equals the RPCs in `proto/loams/admin/v1`), `admin_rpcs_match_their_handlers` (each handler's role maps to its row), `a_removed_admins_key_loses_admin_rpcs`, model tests `admin_api_relations`, and the existing admin tests unchanged.
+
 ### IA4 Task 1 — agents as Zitadel machine users
 
 **Clean room.** `loams-identity` is written by an agent that has not read Zitadel's source, from Zitadel's public documentation and its Apache-2.0 protos only (the owner's rule; the IA0 report's provenance note). The IA0 report, the spike and its worktree are not inputs.
@@ -418,3 +424,4 @@ Outlined; specified after IA4 Task 1 lands.
 | T4.R5 | `builtin` is not wrapped in `CachedAuthorizer`: it answers in process from the current principal store document, so a revoked grant is refused on the next request; `openfga` is, with the 5 s TTL (D1625), and connects lazily (`OpenFgaAuthorizer::connect_lazy`) so the engine starts before OpenFGA answers. In `openfga` mode the engine writes no tuples; the sync bridge (IA3) does | IA2 Task 4 |
 | T4.R6 | A JWT with no principal link is the member with its verified email (an invitation is accepted on the first call, as today); otherwise `user:<sub>` (D1628), except when `sub` equals a Loams member's id, which another issuer's subject must never stand for (then it is nobody). The issuer is compared byte for byte (T1.R6); `Principal` and the graph `Caller` carry it | IA2 Task 4 |
 | T4.R7 | Graph standings ask `can_read`/`can_write`/`can_admin` on `graph:<ns>/<name>` with the contextual tuple that hangs the graph off `environment:<ns>` (the engine writes no tuple per graph), and on `environment:<ns>` for `CreateGraph`; project admin is `can_admin` on the project | IA2 Task 4 |
+| T5.R1 | A `KeyService` key acting as a person keeps its stored role in `OrgRoleAuthorizer`, but the model check uses the person's live membership (T4.R3), so a removed admin's key, which `RemoveMember` does not revoke, can no longer read or change the org through `loams.admin.v1`. Owner-only steps inside a handler keep their own check; `/durable/` and Loams Git keep the org roles until their own tasks | IA2 Task 5 |
