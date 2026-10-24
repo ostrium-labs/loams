@@ -9376,6 +9376,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "loams-temporal-resonate"
+version = "0.1.1"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "futures",
+ "hex",
+ "percent-encoding",
+ "proptest",
+ "reqwest 0.13.5",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "loams-text"
 version = "0.1.1"
 dependencies = [
