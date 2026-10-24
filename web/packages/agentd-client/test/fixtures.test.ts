@@ -130,6 +130,8 @@ describe('the method table', () => {
       'RequestApproval',
       'GetApproval',
       'MergeChangeRequest',
+      'GetChecks',
+      'GetCheckLog',
     ]);
   });
 });

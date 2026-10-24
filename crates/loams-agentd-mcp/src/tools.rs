@@ -341,8 +341,8 @@ fn catalog() -> Vec<ToolDef> {
 pub fn risk_of(name: &str) -> &'static str {
     match name {
         "whoami" | "list_projects" | "list_harnesses" | "list_models" | "list_chats"
-        | "get_chat" | "read_chat" | "wait_for_turn" | "get_thread_diff" | "get_approval" | "get_checks"
-        | "get_check_log" => "read",
+        | "get_chat" | "read_chat" | "wait_for_turn" | "get_thread_diff" | "get_approval"
+        | "get_checks" | "get_check_log" => "read",
         "merge_change_request" => "destructive",
         _ => "write",
     }
@@ -1649,21 +1649,17 @@ mod tests {
         assert_eq!(risk("get_checks"), "read");
         assert_eq!(risk("get_check_log"), "read");
         for tool in &list {
-<<<<<<< HEAD
-            if matches!(tool.name, "get_checks" | "get_check_log" | "get_thread_diff" | "post_review_comment" | "open_change_request"
-                | "request_approval" | "get_approval" | "merge_change_request")
-            {
-=======
             if matches!(
                 tool.name,
-                "get_thread_diff"
+                "get_checks"
+                    | "get_check_log"
+                    | "get_thread_diff"
                     | "post_review_comment"
                     | "open_change_request"
                     | "request_approval"
                     | "get_approval"
                     | "merge_change_request"
             ) {
->>>>>>> origin/ft0-agentd-tools
                 let risk = tool.annotations["risk"].as_str().unwrap();
                 assert!(
                     tool.description.contains(&format!("Risk: {risk}.")),
