@@ -755,9 +755,7 @@ mod tests {
     #[tokio::test]
     async fn request_approval_cannot_be_settled_by_agent() {
         let run = mcp("main");
-        let ask = |chat: &str| {
-            json!({ "chatId": chat, "kind": "merge", "summary": "Merge #7", "payload": {} })
-        };
+        let ask = |chat: &str| json!({ "chatId": chat, "kind": "merge", "summary": "Merge #7", "payload": {} });
         assert!(allowed(&run, methods::REQUEST_APPROVAL, ask("main")).await);
         assert!(allowed(&run, methods::REQUEST_APPROVAL, ask("side")).await);
         assert!(!allowed(&run, methods::REQUEST_APPROVAL, ask("other")).await);
@@ -767,7 +765,14 @@ mod tests {
         ] {
             assert!(!allowed(&run, methods::RESOLVE_APPROVAL, settle).await);
         }
-        assert!(!allowed(&run, methods::SET_THREAD_APPROVAL_MODE, json!({ "chatId": "main", "mode": "full-access" })).await);
+        assert!(
+            !allowed(
+                &run,
+                methods::SET_THREAD_APPROVAL_MODE,
+                json!({ "chatId": "main", "mode": "full-access" })
+            )
+            .await
+        );
     }
 
     #[tokio::test]
@@ -781,9 +786,18 @@ mod tests {
             methods::GET_APPROVAL,
             methods::MERGE_CHANGE_REQUEST,
         ] {
-            assert!(allowed(&run, method, json!({ "chatId": "side" })).await, "{method}");
-            assert!(!allowed(&run, method, json!({ "chatId": "other" })).await, "{method}");
-            assert!(!allowed(&run, method, json!({ "chatId": "other-side" })).await, "{method}");
+            assert!(
+                allowed(&run, method, json!({ "chatId": "side" })).await,
+                "{method}"
+            );
+            assert!(
+                !allowed(&run, method, json!({ "chatId": "other" })).await,
+                "{method}"
+            );
+            assert!(
+                !allowed(&run, method, json!({ "chatId": "other-side" })).await,
+                "{method}"
+            );
         }
     }
 
@@ -791,9 +805,7 @@ mod tests {
     #[tokio::test]
     async fn new_chat_may_run_in_a_worktree() {
         let run = mcp("main");
-        let create = |cwd: &str| {
-            json!({ "op": "createChat", "chatId": "build", "parentChatId": "main", "cwd": cwd })
-        };
+        let create = |cwd: &str| json!({ "op": "createChat", "chatId": "build", "parentChatId": "main", "cwd": cwd });
         assert!(allowed(&run, methods::MUTATE, create("/worktrees/app/factory-r1-1")).await);
         assert!(!allowed(&run, methods::MUTATE, create("/worktrees/../etc")).await);
         assert!(!allowed(&run, methods::MUTATE, create("/worktreesx/app")).await);

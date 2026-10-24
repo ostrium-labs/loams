@@ -17,7 +17,9 @@ use loams_agentd_proto::git_write::{
 use loams_agentd_proto::{ChangeRequestState, Worktree};
 
 use crate::change_request_create::{ChangeRequestCreator, forgejo_api_url, not_configured};
-use crate::git_write::{GitWriteError, bad, failed, git_ok, git_try, redact, valid_branch, worktrees};
+use crate::git_write::{
+    GitWriteError, bad, failed, git_ok, git_try, redact, valid_branch, worktrees,
+};
 use crate::repos::Repos;
 use crate::source_control::GitRemote;
 
@@ -37,7 +39,13 @@ fn branch_worktree_path(root: &Path, repo: &Path, branch: &str) -> PathBuf {
         .unwrap_or_else(|| "repo".to_owned());
     let leaf: String = branch
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     root.join(repo_name).join(leaf.trim_matches('.'))
 }
@@ -74,7 +82,12 @@ pub async fn create_branch_worktree(
             }
             let has_branch = git_try(
                 repo,
-                &["rev-parse", "--verify", "--quiet", &format!("refs/heads/{branch}")],
+                &[
+                    "rev-parse",
+                    "--verify",
+                    "--quiet",
+                    &format!("refs/heads/{branch}"),
+                ],
             )
             .await
             .is_some();
@@ -180,7 +193,9 @@ impl ChangeRequestCreator {
         }
         let pulls: Vec<serde_json::Value> = response.json().await.unwrap_or_default();
         let found = pulls.into_iter().find(|pull| {
-            pull.pointer("/head/ref").and_then(serde_json::Value::as_str) == Some(head)
+            pull.pointer("/head/ref")
+                .and_then(serde_json::Value::as_str)
+                == Some(head)
         });
         Ok(found.and_then(|pull| {
             Some(CreateChangeRequestReply {
@@ -233,7 +248,10 @@ impl ChangeRequestCreator {
                 &[
                     "pr".into(),
                     "list".into(),
-                    format!("--repo={}/{}/{}", remote.host, remote.owner, remote.repository),
+                    format!(
+                        "--repo={}/{}/{}",
+                        remote.host, remote.owner, remote.repository
+                    ),
                     format!("--head={head}"),
                     "--state=open".into(),
                     "--json=number,url,state".into(),
@@ -330,7 +348,10 @@ impl ChangeRequestCreator {
                         "pr".into(),
                         "merge".into(),
                         number.to_string(),
-                        format!("--repo={}/{}/{}", remote.host, remote.owner, remote.repository),
+                        format!(
+                            "--repo={}/{}/{}",
+                            remote.host, remote.owner, remote.repository
+                        ),
                         flag.into(),
                         format!("--match-head-commit={head_sha}"),
                     ],
