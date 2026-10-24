@@ -364,7 +364,7 @@ loro = "1.13"
 mimalloc = { version = "0.1", features = ["v2"] }
 notify = "8"
 nucleo-matcher = "0.3"
-portable-pty = "0.8"
+portable-pty = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
 similar = "2"
 # Generates the TypeScript wire types of `@loams/agentd-client` (design §50 §8,
