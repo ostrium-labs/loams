@@ -21,6 +21,14 @@ pub fn find(name: &str) -> Option<Box<dyn Scenario>> {
 #[derive(Debug, Clone, Copy)]
 pub struct CasAndScan;
 
+/// One compare-and-set: its name, the key, the expected and the new value.
+type Step = (
+    &'static str,
+    &'static [u8],
+    Option<&'static [u8]>,
+    Option<&'static [u8]>,
+);
+
 /// Sets `key` to `new` (deletes it for `None`) when it holds `expected`, in
 /// one transaction: whether it matched.
 async fn cas(
