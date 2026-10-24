@@ -149,9 +149,15 @@ mod tests {
         store.put_typed_approval(&approval("a")).unwrap();
         store.put_typed_approval(&approval("b")).unwrap();
         assert_eq!(store.pending_typed_approvals().unwrap().len(), 2);
-        assert!(!store.use_typed_approval("a").unwrap(), "pending is not spendable");
+        assert!(
+            !store.use_typed_approval("a").unwrap(),
+            "pending is not spendable"
+        );
         assert!(store.decide_typed_approval("a", "approved", 5).unwrap());
-        assert!(!store.decide_typed_approval("a", "denied", 6).unwrap(), "decided once");
+        assert!(
+            !store.decide_typed_approval("a", "denied", 6).unwrap(),
+            "decided once"
+        );
         assert!(store.use_typed_approval("a").unwrap());
         assert!(!store.use_typed_approval("a").unwrap(), "used once");
         let a = store.typed_approval("a").unwrap().unwrap();

@@ -14,8 +14,8 @@ use loams_agentd_proto::{
     Chat, ChatConfig, HarnessId, ReasoningLevel, RunRequest, SandboxLevel, Session, SessionStatus,
     Space, UserInputAnswer,
 };
-use serde::{Deserialize, Serialize};
 use loams_agentd_rpc::methods;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::loams_desktop::{HarnessInfo, LoamsDesktop, TurnOutcome, session_for, short};
@@ -1587,14 +1587,27 @@ mod tests {
         assert_eq!(risk("create_chat"), "write");
         assert_eq!(risk("read_chat"), "read");
         for tool in &list {
-            if matches!(tool.name, "get_thread_diff" | "post_review_comment" | "open_change_request"
-                | "request_approval" | "get_approval" | "merge_change_request")
-            {
+            if matches!(
+                tool.name,
+                "get_thread_diff"
+                    | "post_review_comment"
+                    | "open_change_request"
+                    | "request_approval"
+                    | "get_approval"
+                    | "merge_change_request"
+            ) {
                 let risk = tool.annotations["risk"].as_str().unwrap();
-                assert!(tool.description.contains(&format!("Risk: {risk}.")), "{}", tool.name);
+                assert!(
+                    tool.description.contains(&format!("Risk: {risk}.")),
+                    "{}",
+                    tool.name
+                );
             }
         }
-        let merge = list.iter().find(|t| t.name == "merge_change_request").unwrap();
+        let merge = list
+            .iter()
+            .find(|t| t.name == "merge_change_request")
+            .unwrap();
         assert_eq!(merge.annotations["destructiveHint"], true);
         assert_eq!(merge.annotations["readOnlyHint"], false);
     }
@@ -1624,7 +1637,10 @@ mod tests {
             .await
             .unwrap();
         tools
-            .call("get_thread_diff", json!({ "chat": "alpha", "base": "main" }))
+            .call(
+                "get_thread_diff",
+                json!({ "chat": "alpha", "base": "main" }),
+            )
             .await
             .unwrap();
         let writes = world.writes.lock().unwrap();
@@ -1635,7 +1651,10 @@ mod tests {
         assert_eq!(writes[1].1["chatId"], "chat-beta-2");
         assert_eq!(writes[1].1["provider"], "forgejo");
         assert_eq!(writes[1].1["headSha"], "abcdef0");
-        assert_eq!(writes[2].1, json!({ "chatId": "chat-alpha-1", "baseRef": "main" }));
+        assert_eq!(
+            writes[2].1,
+            json!({ "chatId": "chat-alpha-1", "baseRef": "main" })
+        );
     }
 
     #[tokio::test]

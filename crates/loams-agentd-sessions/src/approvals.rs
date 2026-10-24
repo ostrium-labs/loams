@@ -777,7 +777,9 @@ impl Approvals {
             .put_typed_approval(&row)
             .map_err(EngineError::from)?;
         let token = self.inner.tokens.fetch_add(1, Ordering::Relaxed);
-        lock(&self.inner.state).pending.push(typed_entry(&row, token));
+        lock(&self.inner.state)
+            .pending
+            .push(typed_entry(&row, token));
         if let Some((notifications, titles)) = self.inner.notifications.get() {
             let title = titles(chat_id)
                 .map(|t| t.trim().to_owned())

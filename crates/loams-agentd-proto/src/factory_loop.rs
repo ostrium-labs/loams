@@ -26,8 +26,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::git_write::{ChangeRequestProvider, MergeStrategy};
 use crate::ChangeRequestState;
+use crate::git_write::{ChangeRequestProvider, MergeStrategy};
 
 /// `MergeChangeRequest` without a settled, approved approval.
 pub const APPROVAL_REQUIRED: &str = "approval_required";
