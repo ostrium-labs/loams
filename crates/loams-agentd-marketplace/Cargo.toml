@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 async-trait.workspace = true
+base64.workspace = true
 jsonschema.workspace = true
 semver.workspace = true
 serde.workspace = true

@@ -6,9 +6,11 @@
 
 pub mod contract;
 pub mod index;
+pub mod install;
 pub mod listing;
 pub mod market;
 pub mod plan;
+pub mod provenance;
 pub mod revocations;
 pub mod sources;
 pub mod verify;
