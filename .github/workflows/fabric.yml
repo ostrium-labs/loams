@@ -373,8 +373,9 @@ jobs:
   # ClickHouse migrations at start (golang-migrate on clickhouse-go v1, over
   # the House's native TLS listener), then the driver ingests over OTLP and
   # the public API and reads every endpoint and page back through the House's
-  # HTTPS listener. No oracle replay for Langfuse yet (R9.65). Synthetic
-  # traffic only; nothing uploaded.
+  # HTTPS listener. No oracle replay for Langfuse yet (R9.65). Part of
+  # `Connectors required`: it passed in 7m23s and 7m48s on its first two CI
+  # runs (R9.65). Synthetic traffic only; nothing uploaded.
   langfuse-on-house:
     name: "House apps: Langfuse on the House"
     needs: changes
@@ -1143,6 +1144,7 @@ jobs:
       - connectors-kind
       - house-apps-smoke
       - openpanel-on-house
+      - langfuse-on-house
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
