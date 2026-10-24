@@ -1469,6 +1469,9 @@ impl PipeRunner {
     }
 }
 
+/// Makes a view's batch from the worker's bucket endpoint.
+pub type MakeBatch<'a> = dyn Fn(&str) -> Result<PipeBatch, HouseError> + Sync + 'a;
+
 /// Writes a materialized view's `SELECT` over a batch as files of its target
 /// (HS1 Tasks 16 and 17): the pipes' runner and the views over lake tables
 /// share it.
@@ -1513,7 +1516,7 @@ impl ViewWriter {
         namespace: u64,
         view: &MaterializedView,
         target: &LakeTable,
-        batch: Option<&(dyn Fn(&str) -> Result<PipeBatch, HouseError> + Sync)>,
+        batch: Option<&MakeBatch<'_>>,
     ) -> Result<loams_house_lake::write::Written, HouseError> {
         let mut lease = self.pool.acquire(&namespace.to_string()).await?;
         let endpoint = lease.ready().and_then(|r| r.s3_endpoint.clone());
