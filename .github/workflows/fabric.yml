@@ -407,6 +407,47 @@ jobs:
         if: failure()
         run: tail -n 200 conformance/clickhouse/apps/.out/langfuse-v4-on-house/house.log || true
 
+  # HE1 owns this job (plan 2026-10-21-he1-loams-house-engine, Task 9,
+  # rulings R9.64, R9.70-R9.73): `signoz_on_house_smoke`. SigNoz 0.145.0, the MIT
+  # community build, with its AGPL collector and schema migrator run
+  # unmodified, on the pinned clickhouse-server; then its traffic replayed
+  # against a House built from this tree in all six of its databases; then
+  # SigNoz itself on that House over the native protocol (TLS, port 29440):
+  # its migrations, OTLP ingest through the collector, and every API read the
+  # driver makes, compared with the oracle's answers. Synthetic traffic only;
+  # nothing uploaded. Nightly only (the dispatch) and not in `Connectors
+  # required` until it passes end to end (R9.73): SigNoz's own run on the
+  # House is not green yet.
+  signoz-on-house:
+    name: "House apps: SigNoz on the House"
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: the Factory's SigNoz overlay matches the release House
+        run: python3 -I scripts/house/check_factory_signoz.py
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          workspaces: fabric -> target
+          key: openpanel-on-house
+      - name: build the House
+        working-directory: fabric
+        run: cargo build --locked -p loams-fabric -p loams-house-worker
+      - name: allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: signoz_on_house_smoke
+        env:
+          HE0_HOUSE_BIN: fabric/target/debug
+        run: scripts/house/app-on-house.sh signoz
+      - name: the House's log on failure
+        if: failure()
+        run: tail -n 200 conformance/clickhouse/apps/.out/signoz-on-house/house.log || true
+
   # CN2 owns this job (plan 2026-10-10-cn2-connectors, Task 4): the connector
   # SDK alone, the crate every native connector family builds on. It needs no
   # protoc and no services (the in-memory Fabric and the reference connector

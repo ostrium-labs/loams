@@ -1096,8 +1096,13 @@ pub struct CreateMaterializedView {
     pub inner_table: bool,
     /// `POPULATE` (refused).
     pub populate: bool,
-    /// `REFRESH` (refused).
+    /// `REFRESH …` (HE1 R9.64).
     pub refresh: bool,
+    /// The `REFRESH` clause read: its schedule, or the `48` message of a form
+    /// the House refuses.
+    pub schedule: Option<Result<crate::refresh::Schedule, String>>,
+    /// `EMPTY`: a refreshable view's first run waits for its schedule.
+    pub empty: bool,
     /// The `SELECT` after `AS`.
     pub select: String,
     /// The table the `SELECT` reads first: the view's source.
@@ -1128,15 +1133,27 @@ pub fn parse_create_mv(text: &str) -> Result<CreateMaterializedView, HouseError>
     loop {
         if c.eat("REFRESH") {
             out.refresh = true;
-            // The schedule runs to `TO` or `AS`.
-            while !c.done() && !c.is_word_at(c.at, "TO") && !c.is_word_at(c.at, "AS") {
+            // The schedule runs to `TO`, `EMPTY`, `AS`, a column list or an
+            // `ENGINE`.
+            let mut words = Vec::new();
+            while let Some(t) = c.peek() {
+                if ["TO", "AS", "EMPTY", "ENGINE"]
+                    .iter()
+                    .any(|w| c.is_word_at(c.at, w))
+                    || c.is_symbol(&t, b'(')
+                {
+                    break;
+                }
+                words.push(c.raw(&t).to_string());
                 c.at += 1;
             }
+            out.schedule = Some(crate::refresh::parse_clause(&words));
         } else if c.eat("TO") {
             out.to = Some(c.qualified()?);
         } else if c.eat("POPULATE") {
             out.populate = true;
         } else if c.eat("EMPTY") {
+            out.empty = true;
         } else if c.eat("AS") {
             break;
         } else if let Some(t) = c.peek() {

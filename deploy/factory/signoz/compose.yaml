@@ -55,6 +55,9 @@ x-collector-env: &collector-env
 x-collector-image: &collector-image docker.io/signoz/signoz-otel-collector:v0.144.12@sha256:deb566a7a3c0ba544ee58ccc92ee1f0e6da827bc40383e52f3c824705e100a3d
 
 services:
+  # The release House (../release/compose.yaml) with its native TLS listener
+  # on (LOAMS_HOUSE_NATIVE_TLS_LISTEN, HE1 R9.67); the command stays the
+  # release's. scripts/house/check_factory_signoz.py checks both (CI).
   house:
     networks: [house-signoz]
     environment:
@@ -79,7 +82,7 @@ services:
       SIGNOZ_HOUSE_NATIVE: ${SIGNOZ_HOUSE_NATIVE:-house:9440}
     networks: [house-signoz]
     depends_on:
-      house: { condition: service_started }
+      house: { condition: service_healthy }
 
   signoz-migrator-async:
     image: *collector-image
