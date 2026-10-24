@@ -737,14 +737,25 @@ impl Auth {
                     .api_keys_file
                     .as_ref()
                     .ok_or("apikey mode needs LOAMS_API_KEYS_FILE")?;
-                if config.api_keys_optional && !file.exists() {
-                    tracing::warn!(
-                        path = %file.display(),
-                        "LOAMS_API_KEYS_FILE does not exist: API keys are off; create keys \
-                         with `loams auth new-key --append <file>` and restart"
-                    );
-                } else {
-                    authenticators.push(Arc::new(api_key::ApiKeyAuthenticator::from_file(file)?));
+                match (config.api_keys_optional, file.try_exists()) {
+                    (true, Ok(false)) => {
+                        tracing::warn!(
+                            path = %file.display(),
+                            "LOAMS_API_KEYS_FILE does not exist: API keys are off; create keys \
+                             with `loams auth new-key --append <file>` and restart"
+                        );
+                    }
+                    // Not known to be missing (say its directory is not searchable): say so.
+                    (true, Err(err)) => {
+                        tracing::warn!(
+                            "{}; API keys are off until the engine can read it and restarts",
+                            api_key::read_error(file, &err)
+                        );
+                    }
+                    _ => {
+                        let keys = api_key::ApiKeyAuthenticator::from_file(file)?;
+                        authenticators.push(Arc::new(keys));
+                    }
                 }
             }
             if *oidc {

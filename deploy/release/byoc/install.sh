@@ -262,6 +262,8 @@ else
   say "writing $dir/release/.env"
   ssh_cmd "umask 077 && cat > $(printf '%q' "$dir")/release/.env" <"$envfile"
 fi
+# An empty key file, owner-only until the start step gives it to the engine's
+# group.
 ssh_cmd "umask 077 && touch $(printf '%q' "$dir")/release/secrets/api-keys"
 
 if [[ -n "$cloud" ]]; then
@@ -323,6 +325,20 @@ if [ -n "$headscale" ]; then
   fi
 fi
 $dc pull --quiet --ignore-pull-failures $services
+# The engine (uid and gid 10001) reads secrets/api-keys once LOAMS_AUTH_MODE
+# takes API keys: the file goes to its group, read-only (0640), and stays the
+# SSH user (who appends keys to it); README.md, API keys. chgrp runs as root
+# in the engine image, so that gid 10001 is the engine gid under rootless
+# Docker too.
+docker="docker"; docker info >/dev/null 2>&1 || docker="$sudo docker"
+image="$($dc config --images 2>/dev/null | grep -m1 "/loams:" || true)"
+if [ -z "$image" ] \
+  || ! $docker run --rm --user 0:0 --network none --cap-drop ALL --cap-add CHOWN \
+         --security-opt no-new-privileges:true --entrypoint chgrp \
+         -v "$PWD/secrets/api-keys:/run/api-keys" "$image" 10001 /run/api-keys \
+  || ! chmod 0640 secrets/api-keys; then
+  echo "warning: the engine (gid 10001) cannot read secrets/api-keys yet; see API keys in README.md before turning API keys on" >&2
+fi
 $dc up -d $services
 echo "waiting for the engine"
 for _ in $(seq 60); do
