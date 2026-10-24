@@ -4,7 +4,8 @@
 Cargo stays the source of truth: Cargo.toml and Cargo.lock decide every crate,
 version and feature, and this script writes what Buck2 needs from them.
 
-    scripts/buck/gen.py            regenerate everything
+    scripts/buck/gen.py            regenerate everything (installs the pinned
+                                   reindeer on first use)
     scripts/buck/gen.py --check    regenerate, then exit 1 if git sees any
                                    generated file change (CI)
 
@@ -333,9 +334,7 @@ class Workspace:
         write(tp / "lib.rs", "// Placeholder crate root for reindeer (scripts/buck/gen.py).\n")
         # Every transitive version comes from the workspace's lockfile.
         shutil.copyfile(self.ws_root / "Cargo.lock", tp / "Cargo.lock")
-        reindeer = REPO / ".tools/bin/reindeer"
-        if not reindeer.exists():
-            sys.exit("gen.py: run scripts/buck/bootstrap.sh first (no .tools/bin/reindeer)")
+        reindeer = ensure_reindeer()
         r = subprocess.run(
             [str(reindeer), "--config", str(tp / "reindeer.toml"), "buckify"], cwd=REPO, text=True, capture_output=True
         )
@@ -560,6 +559,17 @@ class Workspace:
         if own_clippy and member:
             out += "\n" + call("clippy_toml", {"name": "clippy-toml", "src": "clippy.toml"})
         return pdir, out
+
+
+def ensure_reindeer() -> Path:
+    """The pinned reindeer, installed by scripts/buck/bootstrap.sh on first use
+    (a download of buck2 and a one-off `cargo install` of reindeer)."""
+    reindeer = REPO / ".tools/bin/reindeer"
+    bootstrap = REPO / "scripts/buck/bootstrap.sh"
+    if subprocess.run([str(bootstrap), "--check"], cwd=REPO, capture_output=True).returncode != 0:
+        print("gen.py: installing the pinned buck2 and reindeer (scripts/buck/bootstrap.sh)", file=sys.stderr)
+        subprocess.run([str(bootstrap)], cwd=REPO, check=True, stdout=sys.stderr)
+    return reindeer
 
 
 def compat(version: str) -> str:

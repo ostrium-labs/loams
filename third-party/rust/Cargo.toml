@@ -145,7 +145,7 @@ sha2-0_11 = { package = "sha2", version = "=0.11.0", default-features = true, fe
 similar = { package = "similar", version = "=2.7.0", default-features = true, features = ["text"] }
 slatedb = { package = "slatedb", version = "=0.17.0", default-features = false }
 socket2 = { package = "socket2", version = "=0.6.5", default-features = false, features = ["all"] }
-sqlx = { package = "sqlx", version = "=0.9.0", default-features = false, features = ["_rt-tokio", "mysql", "runtime-tokio", "sqlx-mysql", "tls-rustls", "tls-rustls-ring", "tls-rustls-ring-webpki"] }
+sqlx = { package = "sqlx", version = "=0.9.0", default-features = false, features = ["_rt-tokio", "json", "mysql", "postgres", "runtime-tokio", "sqlx-mysql", "sqlx-postgres", "tls-rustls", "tls-rustls-ring", "tls-rustls-ring-webpki"] }
 subtle = { package = "subtle", version = "=2.6.1", default-features = true, features = ["i128", "std"] }
 sync_wrapper = { package = "sync_wrapper", version = "=1.0.2", default-features = false, features = ["futures", "futures-core"] }
 tantivy = { package = "tantivy", version = "=0.26.2", default-features = false, features = ["columnar-zstd-compression", "fs4", "futures-channel", "futures-util", "lz4-compression", "lz4_flex", "memmap2", "mmap", "quickwit", "rust-stemmers", "sstable", "stemmer", "stopwords", "tempfile", "zstd", "zstd-compression"] }
