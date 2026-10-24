@@ -42,6 +42,9 @@ pub const REASON_CODES: &[(&str, ErrorCode)] = &[
     ("checkpoint_missing", ErrorCode::NotFound),
     ("group_not_ready", ErrorCode::FailedPrecondition),
     ("approval_not_pending", ErrorCode::FailedPrecondition),
+    // The factory loop's merge gate (plan FT1, FT0 Task 4).
+    ("approval_required", ErrorCode::PermissionDenied),
+    ("approval_mismatch", ErrorCode::PermissionDenied),
     ("origin_not_allowed", ErrorCode::PermissionDenied),
 ];
 
