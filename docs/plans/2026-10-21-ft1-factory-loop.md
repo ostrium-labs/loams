@@ -217,3 +217,10 @@ The owner approved the pending decisions below on 2026-10-24 ("approve all with 
 
 - **FT0-1-1 is superseded: BlueOak-1.0.0 is allowed on the npm licence allow-list** (it is a permissive, OSI-approved licence; this overrides SD1 ruling T2-2 for this licence only). `@loams/factory` rejoins the npm licence gate's default projects. **Approved (owner, 2026-10-24).**
 - **Task 8, the Live deploy credential lives in agentd** and the deploy runs as an agentd tool, like the merge, never in the Mastra process (the plan's "No credential in the Mastra process" constraint). **Approved (owner, 2026-10-24).**
+
+### Status (2026-10-24)
+
+- **Merged:** Task 0 (#1127), Task 1 (#1132), Task 2 (`ostrium-labs/loams-mastra#53`), Task 6 (#1164); Task 4 is #1163.
+- **Open:** Task 5 is draft #1174, stacked on #1163; its TS bindings and request fixtures need regenerating and its tests running (see the PR).
+- **Waiting on the owner:** the `npm` environment approval for `loams-mastra`'s Release run (publishes `@loams/mastra-resonate` and `@loams/mastra-acp` 0.1.0; trusted publishing must be set up for `@loams/mastra-acp`), which gates Task 3 and Task 7; the BlueOak-1.0.0 decision of FT0-1-1, after which `@loams/factory` joins the npm licence gate.
+- **Not started:** Tasks 3, 7, 8 (needs a ruling on where Live's admin credential lives: in agentd as another `mcp` method, or in the factory host), 9, 10, 11.
