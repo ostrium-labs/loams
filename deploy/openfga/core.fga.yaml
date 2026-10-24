@@ -16,6 +16,9 @@ tuples:
   - {user: environment:dev, relation: environment, object: database:dev-db}
   - {user: environment:prod, relation: environment, object: database:prod-db}
   - {user: environment:dev, relation: environment, object: graph:dev/kg}
+  # `scratch` is a namespace that is no project's environment: it belongs to the org.
+  - {user: org:acme, relation: org, object: environment:scratch}
+  - {user: environment:scratch, relation: environment, object: graph:scratch/notes}
 
   - {user: user:olga, relation: owner, object: org:acme}
   - {user: user:adam, relation: admin, object: org:acme}
@@ -42,6 +45,7 @@ tuples:
       name: agent_session
       context: {allowed_session: s-42, expires: "2026-10-21T13:00:00Z"}
   - {user: service_account:ci, relation: viewer, object: environment:prod}
+  - {user: service_account:ci, relation: namespace_editor, object: org:acme}
 
 tests:
   - name: org_roles_flow_down
@@ -169,3 +173,75 @@ tests:
       - user: user:bill
         object: org:acme
         assertions: {billing_viewer: true, billing_admin: false, member: false}
+
+  - name: environment_can_relations
+    check:
+      - user: user:mona
+        object: environment:dev
+        assertions: {can_read: true, can_write: false, can_admin: false}
+      - user: user:tess
+        object: environment:dev
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: user:pia
+        object: environment:prod
+        assertions: {can_read: true, can_write: true, can_admin: true}
+      - user: user:dave
+        object: environment:dev
+        assertions: {can_read: true, can_write: true, can_admin: true}
+      - user: user:dave
+        object: environment:prod
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: agent:agent-1
+        object: environment:dev
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: agent:agent-1
+        object: environment:prod
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:stranger
+        object: environment:dev
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:pia
+        object: project:p1
+        assertions: {can_admin: true}
+      - user: user:adam
+        object: project:p1
+        assertions: {can_admin: true}
+      - user: user:tess
+        object: project:p1
+        assertions: {can_admin: false}
+      - user: agent:agent-1
+        object: project:p1
+        assertions: {can_admin: false}
+
+  - name: org_namespace_is_every_members
+    check:
+      - user: user:mona
+        object: environment:scratch
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: user:tess
+        object: environment:scratch
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:adam
+        object: environment:scratch
+        assertions: {can_read: true, can_write: true, can_admin: true}
+      - user: user:olga
+        object: graph:scratch/notes
+        assertions: {can_read: true, can_write: true, can_admin: true}
+      - user: user:mona
+        object: graph:scratch/notes
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: agent:agent-1
+        object: environment:scratch
+        assertions: {can_read: false, can_write: false, can_admin: false}
+      - user: user:bill
+        object: environment:scratch
+        assertions: {can_read: false}
+      - user: service_account:ci
+        object: environment:scratch
+        assertions: {can_read: true, can_write: true, can_admin: false}
+      - user: service_account:ci
+        object: org:acme
+        assertions: {member: false, namespace_editor: true}
+      - user: service_account:ci
+        object: deployment:dev-web
+        assertions: {can_view: false}

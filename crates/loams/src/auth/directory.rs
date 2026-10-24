@@ -248,6 +248,36 @@ pub struct SessionRec {
     pub expires_ms: i64,
 }
 
+/// What kind of Loams principal an identity provider's subject is (design 76 §5, D1628).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkKind {
+    /// A person: `principal` is their member's user id.
+    User,
+    /// An AI agent (a Zitadel machine user): `principal` is the agent's id.
+    Agent,
+    /// Any other machine: `principal` is the service account's id.
+    ServiceAccount,
+}
+
+/// A principal link (design 76 §5, D1605, D1624, D1628): the identity provider's `(issuer,
+/// subject)` and the Loams principal it is. A JWT does not say whether its subject is a person
+/// or a machine, so the link is the source of the kind; a subject with no link is a person.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrincipalLink {
+    /// The token's `iss`, byte for byte.
+    pub issuer: String,
+    /// The token's `sub`.
+    pub subject: String,
+    pub kind: LinkKind,
+    /// The Loams principal's id.
+    pub principal: String,
+    /// A disabled principal is refused on every request, whatever its token's signature and
+    /// expiry say (D1624).
+    #[serde(default)]
+    pub disabled: bool,
+}
+
 /// One audit event, numbered.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuditRec {
@@ -286,6 +316,8 @@ pub struct Doc {
     pub agents: Vec<AgentRec>,
     pub service_accounts: Vec<pb::ServiceAccount>,
     pub keys: Vec<KeyRec>,
+    /// The principal links, `(issuer, subject)` → principal (D1628).
+    pub links: Vec<PrincipalLink>,
     /// Revoked agent token ids (`jti`), oldest first.
     pub revoked_tokens: Vec<String>,
     pub sessions: Vec<SessionRec>,
@@ -334,6 +366,13 @@ impl Doc {
     }
 
     /// The key with id `id`.
+    /// The link of the identity provider's `(issuer, subject)`; the issuer must match exactly.
+    pub fn link(&self, issuer: &str, subject: &str) -> Option<&PrincipalLink> {
+        self.links
+            .iter()
+            .find(|l| l.issuer == issuer && l.subject == subject)
+    }
+
     pub fn key(&self, id: &str) -> Option<&KeyRec> {
         self.keys.iter().find(|k| k.key.id == id)
     }
@@ -780,6 +819,7 @@ impl Directory {
         Ok(Principal {
             subject: member.user.id.clone(),
             kind: PrincipalKind::Session,
+            issuer: None,
             display_name: member.user.name.clone(),
             email: Some(member.user.email.clone()),
             // A person in the org: every environment of it (LV1 plan Task
@@ -851,6 +891,7 @@ impl Directory {
         Ok(Principal {
             subject: format!("apikey:{id}"),
             kind: PrincipalKind::ApiKey,
+            issuer: None,
             display_name: record.key.name.clone(),
             email: None,
             grant: key_grant(record, org),

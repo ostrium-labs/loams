@@ -7912,6 +7912,7 @@ dependencies = [
  "hyper-util",
  "jsonwebtoken",
  "loams-apps-mock",
+ "loams-authz",
  "loams-cache",
  "loams-cloudevents",
  "loams-collection",
