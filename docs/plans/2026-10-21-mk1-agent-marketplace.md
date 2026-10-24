@@ -204,3 +204,18 @@ Read on 2026-10-23 at `origin/dev` `710f47078`.
    - the enum values (`"mcp-server"` is `KIND_MCP_SERVER`).
 8. **`github-attestation` provenance** is added beside §73 §6's types. Release archives attested with GitHub artifact attestations, such as `github/github-mcp-server` v2.0.3, are looked up by each file's SHA-256 at `https://api.github.com/repos/<owner>/<repo>/attestations/sha256:<digest>`, which needs no token. The lookup returns Sigstore bundles (v0.3) whose SLSA v1 predicate names `workflow.repository`, so they are checked exactly like npm provenance (Task 0 ruling 5). The GitHub MCP fixture carries v2.0.3's real checksums and commit.
 9. **Where the checks live.** The schema tests are in the new crate `crates/loams-agentd-marketplace`, which compiles the schema in (`listing::validate`), on the workspace's new `jsonschema` 0.58 dependency (MIT, the line `fabric/` already uses). CI's `rust` path filter gains `schemas/marketplace/**`. The invalid fixtures are one manifest, `testdata/invalid.json`: each case is a valid fixture plus a JSON-pointer patch that breaks one rule. The same manifest serves Task 2's lint tests.
+
+### Status (2026-10-24, paused by the owner)
+
+| Task | State | Where |
+|---|---|---|
+| 0 | Merged | #1126 |
+| 1 | This PR | `mk0-t1-listing-schema`. `loams.marketplace.v1` is a data-model package: added to design 44 §7.2 and to the facade generator's `NOT_SDK_PACKAGES`, so no SDK lists it |
+| 2 | Built and tested (23 vitest tests), unmerged | branch `mk0-t2-listing-cli`, stacked on Task 1 |
+| 3 | Built and tested, unmerged | branch `mk0-t3-index-ci` (`loams-listing verify`, 35 vitest tests, checked live against npm), and `ostrium-labs/loams-marketplace` PR #1 (workflows, scripts, self-tests; `self-test` green). Its `.github/loams-ref` must move to Task 3's merge commit before it merges. GitHub Pages is enabled (Actions source) |
+| 4 | Built and tested (`cargo test -p loams-agentd-marketplace`), unmerged | branch `mk0-t4-marketplace-service`: `marketplace.proto`; sources, signed index (real Sigstore verification, `sigstore-verify` 0.14.0), revocations, search. Daemon wiring is the follow-up Task 4b (ruling 7 of Task 4) |
+| 5 | Built and tested, unmerged | branch `mk0-t5-install-plan`: `plan.rs` (consent plan, digest, widening) and `contract.rs` (environment, token rotation, MCP config, Postgres role) |
+| 6 | Built and tested (53 crate tests in all, real npm provenance), unmerged | branch `mk0-t6-installers`: `provenance.rs` and `install.rs` (npm installs with scripts off, script and lockfile refusal, uninstall keeps data, harness and MCP registrations). Registering them in agentd's `HarnessRegistry` and MCP runs (`harness_descriptor_appears_in_list_harnesses`, `mcp_server_available_to_threads`) waits for Task 4b's daemon wiring |
+| 4b, 7–11 | Not started | Task 7 also waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2) |
+
+Each branch is stacked on the one before. To resume, merge Task 1, rebase each branch onto `dev` in order, and open one PR per task. Label Tasks 3, 4 and 6 `review:greptile`.
