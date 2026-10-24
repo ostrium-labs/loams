@@ -1,0 +1,9 @@
+{
+  "chatId": "chat_01",
+  "kind": "merge",
+  "payload": {
+    "base": "main",
+    "number": 7
+  },
+  "summary": "Merge #7 into main"
+}
