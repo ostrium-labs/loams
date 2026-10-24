@@ -56,7 +56,11 @@ async fn in_memory_stores_are_separate_by_name() {
         snap.get(b"k").await.expect("a read")
     };
     assert_eq!(read(two).await, None, "another name is another store");
-    assert_eq!(read(one_again).await, Some(b"one".to_vec()), "one name, one store");
+    assert_eq!(
+        read(one_again).await,
+        Some(b"one".to_vec()),
+        "one name, one store"
+    );
     // Another keyspace of the same name is separate too.
     let other_ks = Store::open(StoreConfig::Embedded(EmbeddedConfig::in_memory(
         "separate-one",
@@ -100,7 +104,11 @@ async fn in_memory_store_drops_with_last_handle() {
         .snapshot(fresh.now().await.expect("now"))
         .await
         .expect("a snapshot");
-    assert_eq!(snap.get(b"k").await.expect("a read"), None, "a new, empty store");
+    assert_eq!(
+        snap.get(b"k").await.expect("a read"),
+        None,
+        "a new, empty store"
+    );
 }
 
 fn kv(k: &str, v: &str) -> (Vec<u8>, Vec<u8>) {
