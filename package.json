@@ -21,7 +21,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "nx": "23.2.1",
+    "nx": "23.3.0",
     "typescript": "5.9.3"
   }
 }
