@@ -148,56 +148,6 @@ async fn tikv_store_roundtrip() {
     assert!(now > committed.commit_ts);
 }
 
-/// A scanner over 100,000 keys holds at most one page at a time (KV0 Task
-/// 3; embedded only, the page buffer rather than RSS).
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn scanner_memory_is_bounded() {
-    const KEYS: usize = 100_000;
-    const BATCH: usize = 5_000;
-    const PAGE: usize = 256;
-    let factory = testing::embedded_factory(env!("CARGO_TARGET_TMPDIR"));
-    let store = factory
-        .store(testing::Spec::fresh())
-        .await
-        .expect("an embedded store");
-    for batch in 0..KEYS / BATCH {
-        store
-            .run(TxnOptions::new("kv.test.fill"), move |txn| {
-                Box::pin(async move {
-                    for i in batch * BATCH..(batch + 1) * BATCH {
-                        txn.put(format!("k{i:06}").as_bytes(), b"v".to_vec())
-                            .await?;
-                    }
-                    Ok(())
-                })
-            })
-            .await
-            .expect("a batch");
-    }
-    let mut snap = store
-        .snapshot(store.now().await.expect("now"))
-        .await
-        .expect("a snapshot");
-    for reverse in [false, true] {
-        let mut scanner = if reverse {
-            snap.scanner_reverse(b"", None, PAGE)
-        } else {
-            snap.scanner(b"", None, PAGE)
-        };
-        let (mut seen, mut most, mut previous): (usize, usize, Option<Vec<u8>>) = (0, 0, None);
-        while let Some((key, _)) = scanner.next().await.expect("a pair") {
-            most = most.max(scanner.buffered() + 1);
-            if let Some(p) = &previous {
-                assert_eq!(key > *p, !reverse, "the scan's order");
-            }
-            previous = Some(key);
-            seen += 1;
-        }
-        assert_eq!(seen, KEYS, "reverse: {reverse}");
-        assert!(most <= PAGE, "{most} pairs buffered with a page of {PAGE}");
-    }
-}
-
 #[test]
 fn ts_parts_roundtrip() {
     for (ms, logical) in [

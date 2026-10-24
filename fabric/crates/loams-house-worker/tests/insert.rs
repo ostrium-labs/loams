@@ -1876,29 +1876,3 @@ async fn json_columns_match_the_oracle() {
     )
     .await;
 }
-
-/// HE1 R9.18: a column list with `--` and `/* */` comments between and after its
-/// entries and a comma after its last `INDEX`, the shape of Langfuse v4's
-/// migration 0022 (written here, not copied: no application source is
-/// vendored). The House makes the table ClickHouse 26.9.2.8 makes: `DESCRIBE`'s
-/// names, types and default kinds as the oracle answered them.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn comments_and_trailing_commas_in_create_table() {
-    let house = lakehouse("ddl-comments").await;
-    let addr = house.addr();
-    ok(addr, "CREATE TABLE runs (\n    -- identifiers\n    `id` String,\n    `run_id` String,\n\n    -- an error\n    `error` Nullable(String),\n     /* times */\n    `created_at` DateTime64(3) DEFAULT now(),\n    `input` Nullable(String) CODEC(ZSTD(3)), -- json\n    `meta` Map(LowCardinality(String), String),\n    `event_ts` DateTime64(3),\n    `is_deleted` UInt8,\n\n    -- lookups\n    INDEX idx_run run_id TYPE bloom_filter(0.001) GRANULARITY 1,\n) ENGINE = ReplacingMergeTree(event_ts, is_deleted)\nORDER BY (run_id, id)").await;
-    let described = ok(addr, "DESCRIBE runs FORMAT TSV").await;
-    let got: Vec<String> = described
-        .lines()
-        .map(|l| l.split('\t').take(3).collect::<Vec<_>>().join("\t"))
-        .collect();
-    assert_eq!(
-        got.join("|"),
-        "id\tString\t|run_id\tString\t|error\tNullable(String)\t|created_at\tDateTime64(3)\tDEFAULT|input\tNullable(String)\t|meta\tMap(LowCardinality(String), String)\t|event_ts\tDateTime64(3)\t|is_deleted\tUInt8\t"
-    );
-    assert!(
-        ok(addr, "SHOW CREATE TABLE runs FORMAT TSVRaw")
-            .await
-            .contains("INDEX idx_run")
-    );
-}

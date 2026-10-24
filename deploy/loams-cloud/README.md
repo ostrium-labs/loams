@@ -11,13 +11,6 @@ The Worker behind the free, invite-only Loams Cloud try-out (design [§78 §25](
 | `schema/0001_waitlist.sql` | The control-DB tables of §25.3 (LC2a Task 1) |
 | `src/sql.ts` | The control-DB port, and the write rule: every write is one statement safe to repeat (LC0 Task 3 found that aborted writes commit) |
 | `src/schema.ts` | The migrator |
-| `src/app.ts` | The `/cloud/v1` router and the public waitlist endpoints (LC2a Task 3) |
-| `src/waitlist.ts` | Join, confirm and remove, with double opt-in and enumeration-safe answers |
-| `src/crypto.ts` | Address normalisation, HMAC and AES-GCM storage, ids and tokens |
-| `src/domains.ts`, `policy/` | The domain lists (pins in `policy/PINS.md`) and the DNS-over-HTTPS MX check |
-| `src/turnstile.ts` | Turnstile Siteverify, single use, with an idempotency key |
-| `src/log.ts` | Log redaction: no token, address or bearer value is ever written |
-| `src/ports.ts` | The outside world as interfaces: Turnstile, rate limits, mail, the clock, logs |
 | `test/` | `node --test` suites; `test/harness/tidb.ts` reaches TiDB through the mysql client |
 
 There are no npm dependencies. The code uses only Web APIs that both Workers and Node 22 provide, so the suites run on plain Node with type stripping.

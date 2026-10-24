@@ -97,12 +97,16 @@ oc_compose() {
     "${files[@]}" "$@"
 }
 
-# oc_up <profile> [txn]: start the stack with one compute profile.
+# oc_up <profile> [txn]: start one compute profile's services and what they
+# depend on (Loams Postgres's stack), not the whole release stack: the
+# engine, the House and agentd are not needed to judge a product.
 oc_up() {
   local profile=${1:?oc_up <profile> [txn]} txn=()
   [ "${2:-}" = txn ] && txn=(--txn)
   mkdir -p "$OC_OUT"
-  oc_compose "${txn[@]}" --profile "$profile" up -d
+  local -a services
+  mapfile -t services < <(oc_profile_services "$profile" "${txn[@]}")
+  oc_compose "${txn[@]}" --profile "$profile" up -d "${services[@]}"
 }
 
 # oc_down <profile> [txn]: stop and remove that profile's services and their

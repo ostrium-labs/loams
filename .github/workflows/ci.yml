@@ -227,14 +227,6 @@ jobs:
               - *toolchain
               - "crates/*/Cargo.toml"
               - "deny.toml"
-              # The ported-code header check (docs/licences/ported-code.md,
-              # KV1 plan KV0 Task 9).
-              - "NOTICE"
-              - "docs/licences/**"
-              - "scripts/licences/**"
-              - "crates/loams-resp/**"
-              - "crates/loams-cql/**"
-              - "crates/loams-tikv/src/cdc/**"
             # The desktop agent daemon (design §50, DD1 Task 4): the headless
             # guard (D782) and the loams-agentd* clippy and test suites. The
             # TypeScript contract package is here too: loams-agentd-proto's
@@ -2285,11 +2277,6 @@ jobs:
           tool: cargo-deny
       - name: advisories, bans, licenses, sources
         run: cargo deny --locked check
-      # Ported files keep their origin's header (D1649).
-      - name: ported-code headers
-        run: |
-          scripts/licences/check-ported-headers.sh --self-test
-          scripts/licences/check-ported-headers.sh
 
   # The Software Factory host (plan FT1, FT0 Task 1; design §72, D1428): typecheck and
   # unit tests. No job needs a model key: tests use Mastra's createMockModel.

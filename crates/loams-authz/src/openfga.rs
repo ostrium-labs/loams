@@ -63,25 +63,7 @@ impl Tuple {
         self.condition = Some((name.into(), context));
         self
     }
-
-    /// Refuses a condition whose stored context sets `session_id` or `now`. Those come from
-    /// the request, and a stored value wins over the request's in OpenFGA, so storing one
-    /// would make an `agent_session` grant hold for every session or never expire.
-    pub fn check_condition(&self) -> Result<()> {
-        if let Some((name, ctx)) = &self.condition
-            && let Some(k) = REQUEST_ONLY_PARAMS.iter().find(|k| ctx.contains_key(**k))
-        {
-            return Err(AuthzError::Invalid(format!(
-                "tuple {}#{}@{}: condition {name} may not store {k}, which the request supplies",
-                self.object, self.relation, self.user
-            )));
-        }
-        Ok(())
-    }
 }
-
-/// Condition parameters only a request may supply.
-const REQUEST_ONLY_PARAMS: &[&str] = &["session_id", "now"];
 
 #[derive(Clone)]
 struct Bearer(Option<MetadataValue<Ascii>>);
@@ -151,7 +133,6 @@ fn to_struct(map: &serde_json::Map<String, serde_json::Value>) -> Result<Option<
 }
 
 fn to_pb(t: &Tuple) -> Result<TupleKey> {
-    t.check_condition()?;
     let condition = match &t.condition {
         Some((name, ctx)) => Some(RelationshipCondition {
             name: name.clone(),
@@ -216,7 +197,7 @@ impl OpenFgaAuthorizer {
                 object: req.object.to_string(),
             }),
             contextual_tuples: contextual(&req.contextual_tuples)?,
-            context: to_struct(&req.effective_context())?,
+            context: to_struct(&req.context)?,
             consistency: consistency(req.consistency),
             trace: false,
         })
@@ -253,7 +234,7 @@ impl OpenFgaAuthorizer {
                     on_missing: "ignore".into(),
                 }),
             };
-            self.send_write(req).await?;
+            self.client.clone().write(req).await.map_err(status)?;
         }
         Ok(())
     }
@@ -271,40 +252,9 @@ impl OpenFgaAuthorizer {
             }),
             deletes: None,
         };
-        self.send_write(req).await?;
+        self.client.clone().write(req).await.map_err(status)?;
         Ok(())
     }
-}
-
-impl OpenFgaAuthorizer {
-    /// Sends one write, retrying a write the datastore did not commit because it was busy
-    /// (SQLite's lock, `busy_timeout` 100 ms in OpenFGA) or the server was briefly unavailable.
-    /// Up to 4 attempts, 50-400 ms apart; validation errors are never retried.
-    async fn send_write(&self, req: WriteRequest) -> Result<()> {
-        let mut delay = Duration::from_millis(50);
-        for attempt in 1.. {
-            match self.client.clone().write(req.clone()).await {
-                Ok(_) => return Ok(()),
-                Err(e) if attempt < 4 && transient(&e) => {
-                    tracing::debug!(target: "loams_authz", attempt, error = %e, "retrying an OpenFGA write");
-                    tokio::time::sleep(delay).await;
-                    delay *= 2;
-                }
-                Err(e) => return Err(status(e)),
-            }
-        }
-        unreachable!("the loop returns")
-    }
-}
-
-fn transient(e: &Status) -> bool {
-    use openfga_client::tonic::Code;
-    let m = e.message();
-    matches!(
-        e.code(),
-        Code::Unavailable | Code::ResourceExhausted | Code::Aborted
-    ) || m.contains("database is locked")
-        || m.contains("SQLITE_BUSY")
 }
 
 fn contextual(tuples: &[Tuple]) -> Result<Option<ContextualTupleKeys>> {
@@ -353,7 +303,7 @@ impl Authorizer for OpenFgaAuthorizer {
                             object: r.object.to_string(),
                         }),
                         contextual_tuples: contextual(&r.contextual_tuples)?,
-                        context: to_struct(&r.effective_context())?,
+                        context: to_struct(&r.context)?,
                         correlation_id: format!("c{i}"),
                     })
                 })

@@ -462,54 +462,6 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// `text` with its `--` and `/* */` comments made spaces, byte for byte, so
-/// offsets into it are offsets into `text`; string literals and quoted names
-/// are left alone. ClickHouse reads a comment as whitespace, and the House's
-/// tokenizer does not know comments: a `,`, `(` or `'` inside one would split
-/// or open something (HE1 R9.18).
-pub(crate) fn strip_comments(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            quote @ (b'\'' | b'"' | b'`') => {
-                let start = i;
-                i += 1;
-                while i < bytes.len() && bytes[i] != quote {
-                    if bytes[i] == b'\\' {
-                        i += 1;
-                    }
-                    i += 1;
-                }
-                i = (i + 1).min(bytes.len());
-                out.extend_from_slice(&bytes[start..i]);
-            }
-            b'-' if bytes.get(i + 1) == Some(&b'-') => {
-                while i < bytes.len() && bytes[i] != b'\n' {
-                    out.push(b' ');
-                    i += 1;
-                }
-            }
-            b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                let end = (i + 2..bytes.len().saturating_sub(1))
-                    .find(|&j| bytes[j] == b'*' && bytes[j + 1] == b'/')
-                    .map_or(bytes.len(), |j| j + 2);
-                for &b in &bytes[i..end] {
-                    out.push(if b == b'\n' { b'\n' } else { b' ' });
-                }
-                i = end;
-            }
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    // Only whole comments (ASCII-delimited) became spaces, so this is UTF-8.
-    String::from_utf8(out).unwrap_or_else(|_| text.to_string())
-}
-
 /// `36` for a name the House keeps for itself or chDB's own databases.
 pub fn check_new_name(what: &str, name: &str) -> Result<(), HouseError> {
     let reserved = name.is_empty()
@@ -859,10 +811,6 @@ fn settings_clause(body: &str) -> Result<Vec<(String, String)>, HouseError> {
 
 /// Reads a `CREATE TABLE` (not `TEMPORARY`).
 pub fn parse_create_table(text: &str) -> Result<CreateTable, HouseError> {
-    // Comments are ClickHouse's whitespace (Langfuse v4's 0022 has them between
-    // and after column entries, HE1 R9.18); offsets stay those of `text`.
-    let stripped = strip_comments(text);
-    let text = stripped.as_str();
     let mut c = Cursor::new(text);
     let mut out = CreateTable::default();
     c.expect("CREATE")?;
@@ -3297,34 +3245,6 @@ mod tests {
             parse_create_mv("CREATE MATERIALIZED VIEW v TO t AS SELECT number FROM numbers(3)")
                 .expect("parses");
         assert!(mv.candidates.is_empty(), "a table function is no table");
-    }
-
-    /// HE1 R9.18: comments are whitespace; strings and names keep their text.
-    #[test]
-    fn comments_in_a_column_list_are_whitespace() {
-        assert_eq!(
-            strip_comments(
-                "`a` String CODEC(ZSTD(3)), -- json\n    `b` /* x, y */ UInt8 DEFAULT '--not' "
-            ),
-            "`a` String CODEC(ZSTD(3)),        \n    `b`            UInt8 DEFAULT '--not' "
-        );
-        // A comment's `,`, `(` and `'` are not the column list's (Langfuse's 0022
-        // has "fields (mutable, but snapshots are relevant)").
-        let create = parse_create_table(
-            "CREATE TABLE t (\n  -- don't (split, here\n  `id` String, /* a, ( */ `n` UInt8 -- last, one\n) ENGINE = MergeTree ORDER BY id -- the key",
-        )
-        .expect("parses");
-        assert_eq!(create.columns, vec!["`id` String", "`n` UInt8"]);
-        assert_eq!(create.order_by.as_deref(), Some("id"));
-        let create = parse_create_table(
-            "CREATE TABLE t (\n  -- ids\n  `id` String,\n  `x` Nullable(String) CODEC(ZSTD(3)), -- json\n  INDEX i id TYPE bloom_filter(0.001) GRANULARITY 1,\n) ENGINE = MergeTree ORDER BY id",
-        )
-        .expect("parses");
-        assert_eq!(
-            create.columns,
-            vec!["`id` String", "`x` Nullable(String) CODEC(ZSTD(3))"]
-        );
-        assert_eq!(create.indexes.len(), 1);
     }
 
     #[test]
