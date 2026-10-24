@@ -576,6 +576,14 @@ mod tests {
                 "Mutate",
                 "LocalDevice",
                 "EngineInfo",
+                // The factory loop's tools (plan FT1, FT0 Task 4).
+                "CreateRunWorktree",
+                "GetThreadDiff",
+                "PostReviewComment",
+                "OpenChangeRequest",
+                "RequestApproval",
+                "GetApproval",
+                "MergeChangeRequest",
             ]
         );
     }
