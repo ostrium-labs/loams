@@ -14,9 +14,14 @@ def run(args, timeout=1800):
 
 
 def main():
+    action = sys.argv[1]
+    if action == "core":
+        # AP3 Ruling 6: LoamsCore builds with swift-crypto off Apple platforms, so its
+        # golden-fixture tests also run on Linux.
+        run(["swift", "test", "--package-path", "Packages/LoamsCore"])
+        return
     if sys.platform != "darwin":
         raise SystemExit("Native iOS generation/build/test requires macOS, Xcode and XcodeGen")
-    action = sys.argv[1]
     run(["xcodegen", "generate"], 120)
     if action == "generate":
         return
