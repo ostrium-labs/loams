@@ -67,7 +67,7 @@ pub struct CreatePromise {
     pub timer: bool,
     /// `resonate:scope = global`: awaitable and armed without being a timer
     /// or a task, so it **rejects as timed out** at its deadline and takes a
-    /// listener. What a `to:` promise needs for §74 §5.3's `rejectedTimedout`.
+    /// listener. What a `to` promise needs for §74 §5.3's `rejectedTimedout`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub awaitable: bool,
     /// `resonate:delay`: do not dispatch the task before this time (Unix ms,
