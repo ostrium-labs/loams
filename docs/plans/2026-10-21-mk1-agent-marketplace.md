@@ -204,3 +204,21 @@ Read on 2026-10-23 at `origin/dev` `710f47078`.
    - the enum values (`"mcp-server"` is `KIND_MCP_SERVER`).
 8. **`github-attestation` provenance** is added beside §73 §6's types. Release archives attested with GitHub artifact attestations, such as `github/github-mcp-server` v2.0.3, are looked up by each file's SHA-256 at `https://api.github.com/repos/<owner>/<repo>/attestations/sha256:<digest>`, which needs no token. The lookup returns Sigstore bundles (v0.3) whose SLSA v1 predicate names `workflow.repository`, so they are checked exactly like npm provenance (Task 0 ruling 5). The GitHub MCP fixture carries v2.0.3's real checksums and commit.
 9. **Where the checks live.** The schema tests are in the new crate `crates/loams-agentd-marketplace`, which compiles the schema in (`listing::validate`), on the workspace's new `jsonschema` 0.58 dependency (MIT, the line `fabric/` already uses). CI's `rust` path filter gains `schemas/marketplace/**`. The invalid fixtures are one manifest, `testdata/invalid.json`: each case is a valid fixture plus a JSON-pointer patch that breaks one rule. The same manifest serves Task 2's lint tests.
+
+### Task 4 (2026-10-24)
+
+1. **The official source** is `https://ostrium-labs.github.io/loams-marketplace/index.json`, the GitHub Pages site of `loams-marketplace`, enabled on 2026-10-24 with the Actions source. It is pinned to `…/loams-marketplace/.github/workflows/publish.yml@refs/heads/main` with the GitHub Actions issuer. D1461's `https://loams.dev/marketplace/index.json` replaces the URL when `loams-site` serves the index. The identity does not change.
+2. **Files of a source.** `index.json`, `index.json.sigstore.json`, `revocations.json` and `revocations.json.sigstore.json` sit side by side. A missing signature is a refusal (`index_signature_required`), as is a bundle by any other identity or issuer (`index_identity_pinned`). Nothing is parsed before both bundles verify.
+3. **The cache** lives at `<agentd data>/marketplace/cache/<source>/`, with the sources in `<agentd data>/marketplace/sources.json`.
+   - The cache is verified again on every start, so a file edited on disk is refused.
+   - A failed refresh keeps the last verified index and reports the error on the source.
+   - The official source is always first and always carries its built-in pin, whatever `sources.json` says.
+   - A new source is kept only after its index verifies.
+4. **Verification in Rust** uses `sigstore-verify` `=0.14.0` with no default features, so there is no TUF client. It checks against the public-good trusted root embedded in `sigstore-trust-root`, offline, and matches the certificate SAN exactly, whatever its kind. Its tests use a real bundle: cosign v3.0.6's own release bundle for `cosign-linux-amd64`, checked by digest. That bundle verifies for its signer and fails for the marketplace's pinned identity, for the wrong issuer, and for other bytes.
+5. **Index parsing** validates every listing against schema v1, and checks each `listing_sha256` against the Rust canonical form, so Rust and `loams-listing` must agree byte for byte. The fixture `testdata/index` was built by `loams-listing index build`. Revocations accept Cargo `VersionReq` syntax. A range covers prereleases inside it (`>=0.1.0, <0.2.0` covers `0.2.0-rc.1`), and a version that is not semantic is treated as revoked (fail closed).
+6. **Search** matches every word of the query against the latest version's id, title, summary and tool names. It filters by kind, framework, language, minimum LAPC level, tier and source, and leaves out listings whose versions are all yanked.
+7. **Scope of this PR.** It adds:
+   - `proto/loams/agentd/v1/marketplace.proto`, with all eleven RPCs of the plan (the install-side messages are used by Tasks 5 and 6);
+   - the `loams-agentd-marketplace` core.
+
+   Wiring the service into the daemon is the follow-up, Task 4b. That means ndjson methods in `loams-agentd-proto`, handlers in `loams-agentd-sessions`, the Connect service, `twins.rs` rows and the renderer allowlist, plus an HTTPS `Fetcher` and the 6-hour refresh. Until then `marketplace.proto` is not in `loams-agentd-connect`'s `FILES`, so nothing serves it.
