@@ -66,12 +66,7 @@ impl Scenario for CasAndScan {
     fn run<'a>(&'a self, store: &'a Store) -> BoxFuture<'a, Report> {
         Box::pin(async move {
             let mut report = Report::new();
-            let steps: [(
-                &str,
-                &'static [u8],
-                Option<&'static [u8]>,
-                Option<&'static [u8]>,
-            ); 7] = [
+            let steps: [Step; 7] = [
                 ("create a", b"a", None, Some(b"1")),
                 ("create a again", b"a", None, Some(b"x")),
                 ("swap a", b"a", Some(b"1"), Some(b"2")),
