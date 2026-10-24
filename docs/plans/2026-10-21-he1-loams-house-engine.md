@@ -269,6 +269,14 @@ Tests: `bi_grafana_on_house_smoke` (both protocols) and `bi_metabase_on_house_sm
 
 ## HE1 — The read-only Rust engine (Tasks 20–47)
 
+> **Progress (2026-10-24; work stopped by the owner).**
+> - **Task 20** is merged (#1124): the six crates, DataFusion 55.2 and the iceberg-rust fork pin (R20.1–R20.3).
+> - **Task 21** is in PR #1156: `loams-house-types`, with 11 oracle-checked tests (R21.1–R21.5).
+> - **Task 22** is in its own PR, stacked on #1156: the front end's core, with 22 tests (R22.1–R22.4).
+> - **Tasks 23–47 are not started.** Task 23's design is in R22.5.
+>
+> HE0's loose ends listed in R20.3 are also not started. Once Task 23 merges, Tasks 24, 25, 26, 28, 30–33 and 36–38 can run in parallel.
+
 **Exit (§75 §16.1, D1579):** the Tier 0 query set passes against the oracle; at least 50 % of the filtered stateless tests pass on `house-rust`; OpenPanel's, Langfuse v4's and v3's and SigNoz's replays (R9.3) give identical answers on `engine = rust` with no fallback; OpenPanel runs end to end on a House with `engine = rust`; the performance budget of D1803 holds.
 
 **Order and parallelism.** Tasks 20–23 are the foundation and run in sequence (21 can start once 20 merges, 22 once 21's type parser exists). After Task 23, these are independent and can run in parallel, each with its own corpus: 24, 25, 26, 28, 30, 31, 32, 33, 36, 37 and 38. Task 27 needs 26. Task 29 needs 28. Tasks 34 and 35 need 24 and 25. Task 39 needs 26, 36 and 38. Tasks 41, 42 and 44 need 39, then take whatever gaps their replay shows. Task 43 can start after 26. Tasks 45 and 46 need 39.
