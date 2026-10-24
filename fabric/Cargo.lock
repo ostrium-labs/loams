@@ -6148,9 +6148,11 @@ name = "loams-house-types"
 version = "0.0.1"
 dependencies = [
  "arrow-array 59.3.0",
+ "arrow-buffer 59.3.0",
  "arrow-schema 59.3.0",
+ "chrono",
+ "chrono-tz",
  "serde_json",
- "thiserror",
 ]
 
 [[package]]
