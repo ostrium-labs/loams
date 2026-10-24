@@ -19,6 +19,7 @@
       ],
       "extra": {
         "loams-agentd-marketplace": [
+          "proto/loams/marketplace/**",
           "schemas/marketplace/**"
         ],
         "loams-agentd-sessions": [

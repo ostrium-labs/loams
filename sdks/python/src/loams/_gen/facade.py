@@ -499,6 +499,7 @@ PROTO_PACKAGES: Final[tuple[str, ...]] = (
     "loams.instance.v1",
     "loams.live.v1",
     "loams.live.worker.v1",
+    "loams.marketplace.v1",
     "loams.memory.v1",
     "loams.notifications.v1",
     "loams.operations.v1",

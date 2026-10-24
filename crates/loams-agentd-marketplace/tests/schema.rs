@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 use loams_agentd_marketplace::listing::{self, schema};
 use serde_json::Value;
 
-fn repo() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+fn testdata() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/marketplace/testdata")
 }
 
-fn testdata() -> PathBuf {
-    repo().join("schemas/marketplace/testdata")
+fn listing_proto() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../proto/loams/marketplace/v1/listing.proto")
 }
 
 fn read_json(path: &Path) -> Value {
@@ -270,8 +270,7 @@ fn upper_snake(name: &str) -> String {
 
 #[test]
 fn proto_and_schema_agree() {
-    let text =
-        std::fs::read_to_string(repo().join("proto/loams/marketplace/v1/listing.proto")).unwrap();
+    let text = std::fs::read_to_string(listing_proto()).unwrap();
     assert!(text.contains("package loams.marketplace.v1;"));
     let proto = parse_proto(&text);
     let root = schema();
