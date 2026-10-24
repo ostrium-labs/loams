@@ -18,7 +18,7 @@ authors = ["The Loams Authors"]
 # pg-control's single-node secret file (PG2 Task 6): x25519 recipients only.
 # 0.11.5 (2026-07-14), not 0.12: 0.12 adds the post-quantum hpke, ml-kem and
 # p256 trees, which the file store does not use.
-age = "=0.11.5"
+age = "=0.12.1"
 anyhow = "1"
 arrow = "58.4"
 arrow-array = "58.4"
