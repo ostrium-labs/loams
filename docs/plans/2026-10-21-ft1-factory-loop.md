@@ -191,6 +191,10 @@ Phones (runs, approvals, kill); an opt-in A2A edge for Loams Bot; non-Mastra mar
 - **FT0-1-2, Mastra telemetry is off.** `@mastra/core` 1.78.0 sends feature-telemetry events to PostHog unless `MASTRA_TELEMETRY_DISABLED` is set. The factory host sets it to `1` before Mastra is used (`src/no-telemetry.ts`, imported first; test `mastra_telemetry_is_off_by_default`), and Task 3's harness spec passes it too. A person can opt in with `MASTRA_TELEMETRY_DISABLED=0`.
 - **FT0-1-3, the shape of the skeleton.** `createFactoryMastra({ model, pgUrl | storage, workflows? })` (ruling FT0-0-1) and `readFactoryEnv`, which reads `LOAMS_PG_URL`, `LOAMS_DURABLE_URL` and `LOAMS_FACTORY_MODEL` (the default model as `provider/model`; no model is bundled, Q1114). Imports use `.js` specifiers under `NodeNext`, so Task 3 can run the compiled host with plain `node`. `zod` comes from the workspace catalog.
 
+### Task 2 (2026-10-23)
+
+- **FT0-2-1, merged as `ostrium-labs/loams-mastra#53`.** `@loams/mastra-acp` on `@agentclientprotocol/sdk` 1.8.0 (`serveAcp`, `connectAcp`). Its tests sit in `packages/acp/test` (they need no server), not `test/acp/`. An `error` chunk fails the prompt; a cancel while a permission is pending ends it `cancelled`; an agent without Mastra memory keeps the session's turns in the bridge. A changeset releases it as 0.1.0; the publish waits, with `@loams/mastra-resonate`'s, on the owner's approval of the `npm` environment (and trusted publishing for the new package name). Task 3 waits for it.
+
 ### Task 4 (2026-10-23)
 
 - **FT0-4-1, `mcp`-role methods, ndjson only.** The seven new methods (`CreateRunWorktree`, `GetThreadDiff`, `PostReviewComment`, `OpenChangeRequest`, `RequestApproval`, `GetApproval`, `MergeChangeRequest`; wire types in `loams-agentd-proto/src/factory_loop.rs`) are role `mcp`, `renderer: false`, and each names a `chatId`, so the daemon's policy limits them to the run's own session tree as it does `QueueCommand`. They are served over ndjson, which is what the MCP shim speaks; their `loams.agentd.v1` Connect twins wait until a browser client needs them (Studio sees the approvals through `WatchApprovals`, which it already has).
