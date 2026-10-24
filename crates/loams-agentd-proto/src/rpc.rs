@@ -25,6 +25,11 @@ use crate::checkpoints::{
     CheckpointList, ListCheckpointsParams, RestoreCheckpointParams, RestoreCheckpointReply,
 };
 use crate::daemon::DaemonMode;
+use crate::factory_loop::{
+    CreateRunWorktreeParams, GetApprovalParams, GetThreadDiffParams, MergeChangeRequestParams,
+    MergeChangeRequestReply, OpenChangeRequestParams, OpenChangeRequestReply,
+    PostReviewCommentParams, RequestApprovalParams, TypedApproval,
+};
 use crate::git_write::{
     CommitWorktreeParams, CommitWorktreeReply, CreateChangeRequestParams, CreateChangeRequestReply,
     DiscardPathsParams, MergeBranchParams, MergeBranchReply, PushBranchParams, PushBranchReply,
@@ -54,7 +59,7 @@ use crate::{
     SearchWorkspaceFilesRequest, SidebarPreferencesState, TerminalEvent, TerminalSession,
     TitleSettings, ToolOutputChunk, WatchPreviewsParams, WatchWorkspaceFilesRequest,
     WorkspaceDirectoryPage, WorkspaceFileChanges, WorkspaceFileText, WorkspaceGitStatusFrame,
-    WorkspaceImageChunk, WorkspaceMutationOutcome, WriteWorkspaceFileOutcome,
+    WorkspaceImageChunk, WorkspaceMutationOutcome, Worktree, WriteWorkspaceFileOutcome,
     WriteWorkspaceFileRequest,
 };
 
@@ -104,6 +109,8 @@ pub const ERROR_REASONS: &[&str] = &[
     crate::checkpoints::CHECKPOINT_MISSING,
     crate::groups::GROUP_NOT_READY,
     crate::approvals::APPROVAL_NOT_PENDING,
+    crate::factory_loop::APPROVAL_REQUIRED,
+    crate::factory_loop::APPROVAL_MISMATCH,
 ];
 
 /// The MCP shim's environment, set only by the daemon when it injects the
@@ -495,6 +502,25 @@ method_table! {
     APPLY_HARNESS_UPDATE = ApplyHarnessUpdate: Unary(HarnessParams -> ApplyHarnessUpdateReply), Owner, renderer: true;
     CANCEL_HARNESS_UPDATE = CancelHarnessUpdate: Unary(HarnessParams -> CancelledReply), Owner, renderer: true;
     DISMISS_HARNESS_UPDATE = DismissHarnessUpdate: Unary(DismissHarnessUpdateParams -> HarnessUpdateStatus), Owner, renderer: true;
+    // The Software Factory loop's tools (design §72 §5.2; plan FT1, FT0 Task 4):
+    // role `mcp`, each on a `chatId` in the run's own session tree. The daemon
+    // resolves checkouts, remotes and credentials; none reaches the caller.
+    /// A worktree on a named branch of the chat's repository (idempotent by
+    /// branch), for a build thread.
+    CREATE_RUN_WORKTREE = CreateRunWorktree: Unary(CreateRunWorktreeParams -> Worktree), Mcp, renderer: false;
+    /// A thread's diff with its checksum.
+    GET_THREAD_DIFF = GetThreadDiff: Unary(GetThreadDiffParams -> CheckoutDiff), Mcp, renderer: false;
+    /// An anchored review comment on a thread's checkout (D905).
+    POST_REVIEW_COMMENT = PostReviewComment: Unary(PostReviewCommentParams -> IdReply), Mcp, renderer: false;
+    /// Push the thread's branch and open its pull request, or answer the open
+    /// one (idempotent by branch).
+    OPEN_CHANGE_REQUEST = OpenChangeRequest: Unary(OpenChangeRequestParams -> OpenChangeRequestReply), Mcp, renderer: false;
+    /// A typed approval in Studio's queue; only a person settles it.
+    REQUEST_APPROVAL = RequestApproval: Unary(RequestApprovalParams -> TypedApproval), Mcp, renderer: false;
+    GET_APPROVAL = GetApproval: Unary(GetApprovalParams -> TypedApproval), Mcp, renderer: false;
+    /// Destructive: merge a pull request, only with a settled, approved merge
+    /// approval whose payload hash is this call's `{repo, pr, head_sha}`.
+    MERGE_CHANGE_REQUEST = MergeChangeRequest: Unary(MergeChangeRequestParams -> MergeChangeRequestReply), Mcp, renderer: false;
 }
 
 #[cfg(test)]
@@ -550,6 +576,14 @@ mod tests {
                 "Mutate",
                 "LocalDevice",
                 "EngineInfo",
+                // The factory loop's tools (plan FT1, FT0 Task 4).
+                "CreateRunWorktree",
+                "GetThreadDiff",
+                "PostReviewComment",
+                "OpenChangeRequest",
+                "RequestApproval",
+                "GetApproval",
+                "MergeChangeRequest",
             ]
         );
     }

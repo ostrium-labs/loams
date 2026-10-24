@@ -2183,6 +2183,118 @@ pub fn all() -> Vec<Fixture> {
         },
     ));
 
+    // The factory loop's `mcp` methods (FT0 Task 4).
+    add(Fixture::new(
+        "CreateRunWorktreeParams",
+        factory_loop::CreateRunWorktreeParams {
+            chat_id: s("chat_01"),
+            branch: s("factory/fix-linker"),
+            base: some("main"),
+        },
+    ));
+    add(Fixture::new(
+        "Worktree",
+        Worktree {
+            repo_path: s("/home/dev/project"),
+            path: s("/home/dev/.loams/worktrees/project/factory-fix-linker"),
+            branch: s("factory/fix-linker"),
+            name: s("factory-fix-linker"),
+            checkout_id: some("ck_01"),
+        },
+    ));
+    add(Fixture::new(
+        "GetThreadDiffParams",
+        factory_loop::GetThreadDiffParams {
+            chat_id: s("chat_01"),
+            base_ref: some("main"),
+        },
+    ));
+    add(Fixture::new(
+        "PostReviewCommentParams",
+        factory_loop::PostReviewCommentParams {
+            chat_id: s("chat_01"),
+            path: s("src/linker.rs"),
+            side: Some(DiffSide::New),
+            line: 12,
+            end_line: Some(14),
+            body: s("This drops the error."),
+            diff_checksum: s("sha256:0f1e"),
+        },
+    ));
+    add(Fixture::new(
+        "OpenChangeRequestParams",
+        factory_loop::OpenChangeRequestParams {
+            chat_id: s("chat_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            base: s("main"),
+            title: s("Fix the linker"),
+            body: s("Links again."),
+            draft: false,
+        },
+    ));
+    add(Fixture::new(
+        "OpenChangeRequestReply",
+        factory_loop::OpenChangeRequestReply {
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+            url: s("https://forgejo.example.com/dev/project/pulls/7"),
+            state: ChangeRequestState::Open,
+            repo: s("dev/project"),
+            head: s("factory/fix-linker"),
+            head_sha: s("0123456789abcdef0123456789abcdef01234567"),
+            existed: false,
+        },
+    ));
+    add(Fixture::new(
+        "RequestApprovalParams",
+        factory_loop::RequestApprovalParams {
+            chat_id: s("chat_01"),
+            kind: s("merge"),
+            summary: s("Merge #7 into main"),
+            payload: serde_json::json!({ "number": 7, "base": "main" }),
+        },
+    ));
+    add(Fixture::new(
+        "GetApprovalParams",
+        factory_loop::GetApprovalParams {
+            chat_id: s("chat_01"),
+            approval_id: s("appr_01"),
+        },
+    ));
+    add(Fixture::new(
+        "TypedApproval",
+        factory_loop::TypedApproval {
+            id: s("appr_01"),
+            chat_id: s("chat_01"),
+            kind: s("merge"),
+            summary: s("Merge #7 into main"),
+            payload_hash: s("sha256:9a8b"),
+            state: factory_loop::TypedApprovalState::Approved,
+            created_at_ms: MS,
+            decided_at_ms: Some(MS + 1_000),
+        },
+    ));
+    add(Fixture::new(
+        "MergeChangeRequestParams",
+        factory_loop::MergeChangeRequestParams {
+            chat_id: s("chat_01"),
+            approval_id: s("appr_01"),
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+            head_sha: s("0123456789abcdef0123456789abcdef01234567"),
+            strategy: Some(MergeStrategy::Squash),
+        },
+    ));
+    add(Fixture::new(
+        "MergeChangeRequestReply",
+        factory_loop::MergeChangeRequestReply {
+            provider: ChangeRequestProvider::Forgejo,
+            number: 7,
+            repo: s("dev/project"),
+            merged: true,
+        },
+    ));
+
     // Every variant of the unions a client switches on.
     for (name, call) in tool_calls() {
         add(Fixture::new(&format!("ToolCall.{name}"), call));

@@ -191,6 +191,18 @@ Phones (runs, approvals, kill); an opt-in A2A edge for Loams Bot; non-Mastra mar
 - **FT0-1-2, Mastra telemetry is off.** `@mastra/core` 1.78.0 sends feature-telemetry events to PostHog unless `MASTRA_TELEMETRY_DISABLED` is set. The factory host sets it to `1` before Mastra is used (`src/no-telemetry.ts`, imported first; test `mastra_telemetry_is_off_by_default`), and Task 3's harness spec passes it too. A person can opt in with `MASTRA_TELEMETRY_DISABLED=0`.
 - **FT0-1-3, the shape of the skeleton.** `createFactoryMastra({ model, pgUrl | storage, workflows? })` (ruling FT0-0-1) and `readFactoryEnv`, which reads `LOAMS_PG_URL`, `LOAMS_DURABLE_URL` and `LOAMS_FACTORY_MODEL` (the default model as `provider/model`; no model is bundled, Q1114). Imports use `.js` specifiers under `NodeNext`, so Task 3 can run the compiled host with plain `node`. `zod` comes from the workspace catalog.
 
+### Task 2 (2026-10-23)
+
+- **FT0-2-1, merged as `ostrium-labs/loams-mastra#53`.** `@loams/mastra-acp` on `@agentclientprotocol/sdk` 1.8.0 (`serveAcp`, `connectAcp`). Its tests sit in `packages/acp/test` (they need no server), not `test/acp/`. An `error` chunk fails the prompt; a cancel while a permission is pending ends it `cancelled`; an agent without Mastra memory keeps the session's turns in the bridge. A changeset releases it as 0.1.0; the publish waits, with `@loams/mastra-resonate`'s, on the owner's approval of the `npm` environment (and trusted publishing for the new package name). Task 3 waits for it.
+
+### Task 4 (2026-10-23)
+
+- **FT0-4-1, `mcp`-role methods, ndjson only.** The seven new methods (`CreateRunWorktree`, `GetThreadDiff`, `PostReviewComment`, `OpenChangeRequest`, `RequestApproval`, `GetApproval`, `MergeChangeRequest`; wire types in `loams-agentd-proto/src/factory_loop.rs`) are role `mcp`, `renderer: false`, and each names a `chatId`, so the daemon's policy limits them to the run's own session tree as it does `QueueCommand`. They are served over ndjson, which is what the MCP shim speaks; their `loams.agentd.v1` Connect twins wait until a browser client needs them (Studio sees the approvals through `WatchApprovals`, which it already has).
+- **FT0-4-2, typed approvals.** `RequestApproval` lists the approval in the same queue as harness approvals, under the tool name `factory.<kind>` with `{kind, summary, payloadHash}` as its arguments, so Studio needs no change to show it. Unlike a harness approval it has no run waiting, no 30-minute timeout and survives the end of its chat's turn and a daemon restart (table `typed_approvals`); "always" is treated as "once" and never remembered. The daemon computes the payload hash itself (SHA-256 of the canonical JSON, keys sorted), so the factory host never has to agree with it on a serialisation.
+- **FT0-4-3, `MergeChangeRequest` spends the approval before it calls the code host.** The payload is rebuilt from the call's own arguments and the chat's remote (`{repo, pr, head_sha}`), compared by hash, and the approval is marked `used` atomically; only then does Forgejo (`POST …/pulls/{n}/merge` with `head_commit_id`) or `gh pr merge --match-head-commit` run. A merge the code host then refuses (the head moved) needs a new approval: the safe side of "a crash never repeats a merge".
+- **FT0-4-4, build-thread worktrees.** `CreateRunWorktree` puts the worktree at `<worktrees root>/<repo>/<branch with / as ->` on the named branch (not `loams-desktop/<name>` as Studio's own `CreateWorktree` does) and answers an existing worktree of that branch, so a resumed step never makes a second. The policy now lets a run's new side chat have its `cwd` under the worktrees root as well as under a project folder.
+- **FT0-4-5, `create_chat`'s `worktree`.** The tool takes `worktree: { branch, base? }`, calls `CreateRunWorktree` on the parent chat (the caller's chat by default) and creates the chat there; `cwd` is then ignored. Tool risk is in each new tool's description ("Risk: …") and, for every tool, in `annotations.risk` next to MCP's `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`.
+
 ### Task 6 (2026-10-23)
 
 - **FT0-6-1, the policy file.** `.loams/factory.toml` has `[tools] deny = […]`, `[tools] approve = […]` and `[agents.<id>] tools = […]` (an agent's allow-list). It can only tighten the D1431 defaults: a destructive or egress tool asks whatever the file says. Parsed with `smol-toml` 1.9.0 (BSD-3-Clause, already in the tree). A tool whose risk agentd's table does not know is treated as destructive, so it always asks.
@@ -205,3 +217,10 @@ The owner approved the pending decisions below on 2026-10-24 ("approve all with 
 
 - **FT0-1-1 is superseded: BlueOak-1.0.0 is allowed on the npm licence allow-list** (it is a permissive, OSI-approved licence; this overrides SD1 ruling T2-2 for this licence only). `@loams/factory` rejoins the npm licence gate's default projects. **Approved (owner, 2026-10-24).**
 - **Task 8, the Live deploy credential lives in agentd** and the deploy runs as an agentd tool, like the merge, never in the Mastra process (the plan's "No credential in the Mastra process" constraint). **Approved (owner, 2026-10-24).**
+
+### Status (2026-10-24)
+
+- **Merged:** Task 0 (#1127), Task 1 (#1132), Task 2 (`ostrium-labs/loams-mastra#53`), Task 6 (#1164); Task 4 is #1163.
+- **Open:** Task 5 is draft #1174, stacked on #1163; its TS bindings and request fixtures need regenerating and its tests running (see the PR).
+- **Waiting on the owner:** the `npm` environment approval for `loams-mastra`'s Release run (publishes `@loams/mastra-resonate` and `@loams/mastra-acp` 0.1.0; trusted publishing must be set up for `@loams/mastra-acp`), which gates Task 3 and Task 7; the BlueOak-1.0.0 decision of FT0-1-1, after which `@loams/factory` joins the npm licence gate.
+- **Not started:** Tasks 3, 7, 8 (needs a ruling on where Live's admin credential lives: in agentd as another `mcp` method, or in the factory host), 9, 10, 11.
