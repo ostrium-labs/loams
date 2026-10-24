@@ -19,6 +19,9 @@
 # - `rustfs`: an S3 bucket (RustFS) for Loams Postgres's pageserver,
 #   safekeeper and endpoint storage instead of local folders. Also before
 #   the first start.
+# - `kafka` (preview): Kafka clients (kcat, Kafka Connect, Flink, librdkafka)
+#   on 127.0.0.1:9093, through the Kafka gateway of Ostrium's Iggy fork in
+#   front of its own Iggy server. Never part of the default stack.
 # - `house-tailnet`: the House's own tailnet node (https://loams-house.<tailnet>/).
 # - `postgres-control`: Loams Postgres's control plane.
 # - `console`, `headscale` (coming soon): as below.
@@ -622,6 +625,86 @@ services:
       - ./agentd/config.toml:/home/loams/agentd/config.toml:ro
       - ./agentd:/etc/loams-agentd:ro
 
+  # The Kafka profile (D1796-D1798, preview): one image of Ostrium's fork of
+  # Apache Iggy (ostrium-labs/iggy) holds both `iggy-server` and
+  # `iggy-gateway-kafka`, so the two always run as the one tested pair; it is
+  # pinned by digest in IGGY_KAFKA_IMAGE (.env.example). Off unless
+  # COMPOSE_PROFILES has `kafka`: the default stack stays light.
+  #
+  # `iggy` is the broker's own storage, on the compose network only (no
+  # published port), and no other service depends on it. Iggy's I/O is io_uring,
+  # which Docker's default seccomp profile refuses, hence the unconfined
+  # profile and SYS_NICE its own quick start uses.
+  iggy:
+    <<: *restart
+    profiles: [kafka]
+    image: ${IGGY_KAFKA_IMAGE:-ghcr.io/ostrium-labs/iggy@sha256:649c20714dcde257131be46e456ab32bf62d283a047c26b41b3c8c3132cea332}
+    command: ["/usr/local/bin/iggy-server"]
+    cap_add: [SYS_NICE]
+    security_opt: ["seccomp:unconfined"]
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    environment:
+      IGGY_NODE_ADVERTISED_ADDRESS: iggy
+      # The gateway signs in as this user. Change the password in .env before
+      # the first start: Iggy keeps it in its data volume.
+      IGGY_ROOT_USERNAME: ${KAFKA_IGGY_USER:-iggy}
+      IGGY_ROOT_PASSWORD: ${KAFKA_IGGY_PASSWORD:-loams-kafka-preview}
+      # The gateway reaches the server over the compose network.
+      IGGY_TCP_ADDRESS: 0.0.0.0:8090
+      IGGY_HTTP_ADDRESS: 0.0.0.0:3000
+      IGGY_QUIC_ADDRESS: 0.0.0.0:8080
+      IGGY_WEBSOCKET_ADDRESS: 0.0.0.0:8092
+    volumes:
+      - iggy-data:/app/local_data
+    # `ping` is unauthenticated and answers once the request loop is up.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/iggy", "ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 30
+
+  # The Kafka wire front end, on loopback by default (KAFKA_BIND). With SASL
+  # off (the default) anyone who reaches the port can create and delete
+  # topics, so keep it on loopback or turn KAFKA_SASL_ENABLED on and give
+  # clients an Iggy user's name and password (SASL/PLAIN: use it over the
+  # tailnet or a TLS listener, not in clear over a network you do not own).
+  # Transactions and exactly-once are not supported.
+  kafka-gateway:
+    <<: *restart
+    profiles: [kafka]
+    image: ${IGGY_KAFKA_IMAGE:-ghcr.io/ostrium-labs/iggy@sha256:649c20714dcde257131be46e456ab32bf62d283a047c26b41b3c8c3132cea332}
+    command: ["/usr/local/bin/iggy-gateway-kafka"]
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+      IGGY_KAFKA_BIND_ADDR: 0.0.0.0:9093
+      # What a client's Metadata response points it back at: the host and port
+      # the client reaches the published port on.
+      IGGY_KAFKA_ADVERTISED_HOST: ${KAFKA_ADVERTISED_HOST:-127.0.0.1}
+      IGGY_KAFKA_ADVERTISED_PORT: ${KAFKA_PORT:-9093}
+      IGGY_KAFKA_BRIDGE_ENABLED: "true"
+      IGGY_KAFKA_IGGY_ADDR: iggy:8090
+      IGGY_KAFKA_IGGY_USERNAME: ${KAFKA_IGGY_USER:-iggy}
+      IGGY_KAFKA_IGGY_PASSWORD: ${KAFKA_IGGY_PASSWORD:-loams-kafka-preview}
+      IGGY_KAFKA_SASL_ENABLED: ${KAFKA_SASL_ENABLED:-false}
+      IGGY_KAFKA_AUTO_CREATE_TOPICS_ENABLED: ${KAFKA_AUTO_CREATE_TOPICS:-false}
+    ports:
+      - ${KAFKA_BIND:-127.0.0.1}:${KAFKA_PORT:-9093}:9093
+    depends_on:
+      iggy:
+        condition: service_healthy
+    # The listener binds after the bridge has signed in to Iggy, so an
+    # answering port means a working bridge.
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9093"]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      retries: 5
+
 networks:
   # The House's own network (see `house`): no other service joins it.
   house: {}
@@ -645,6 +728,8 @@ volumes:
   tailscale-state:
   headscale-data:
   agentd-data:
+  # The `kafka` profile's Iggy data.
+  iggy-data:
   pg-control-data:
   pg-runner-data:
   pg-runner-token:

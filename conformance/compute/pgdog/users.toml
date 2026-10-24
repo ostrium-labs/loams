@@ -1,0 +1,16 @@
+# The roles durable-init.sh creates (DX0 Task 2), with the test stack's
+# default passwords from compose.compute.yaml. Test config only.
+[[users]]
+name = "temporal"
+databases = ["temporal", "temporal_visibility"]
+password = "temporal"
+
+[[users]]
+name = "airflow"
+database = "airflow"
+password = "airflow"
+
+[[users]]
+name = "postgres"
+databases = ["dbos_py", "dbos_ts", "dbos_go", "dbos_java"]
+password = "dbos"

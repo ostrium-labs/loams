@@ -12,10 +12,10 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
+use loams_agentd_proto::HarnessId;
 use loams_agentd_proto::approvals::ApprovalDecision;
 use loams_agentd_proto::factory_loop::{APPROVAL_MISMATCH, APPROVAL_REQUIRED};
 use loams_agentd_proto::rpc::{Role, method_spec};
-use loams_agentd_proto::HarnessId;
 use loams_agentd_rpc::{RpcClient, methods};
 use loams_agentd_sessions::approvals::{merge_payload, payload_hash};
 use loams_agentd_sessions::change_request_create::{
@@ -91,7 +91,13 @@ impl Factory {
         )
         .unwrap();
         core.workspace
-            .create_space(SPACE, &core.device_id, &repo.to_string_lossy(), Some("Repo".into()), true)
+            .create_space(
+                SPACE,
+                &core.device_id,
+                &repo.to_string_lossy(),
+                Some("Repo".into()),
+                true,
+            )
             .unwrap();
         let mut rpc = EngineRpc::new(
             core.sessions.clone(),
@@ -120,17 +126,28 @@ impl Factory {
             )
             .await
             .unwrap();
-        Self { tmp, core, client, repo }
+        Self {
+            tmp,
+            core,
+            client,
+            repo,
+        }
     }
 
     async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
-        self.client.call(method, params).await.map_err(|e| e.to_string())
+        self.client
+            .call(method, params)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     async fn worktree(&self, branch: &str) -> Value {
-        self.call(methods::CREATE_RUN_WORKTREE, json!({"chatId": CHAT, "branch": branch}))
-            .await
-            .unwrap()
+        self.call(
+            methods::CREATE_RUN_WORKTREE,
+            json!({"chatId": CHAT, "branch": branch}),
+        )
+        .await
+        .unwrap()
     }
 
     /// A build thread in a worktree on `branch`, with one committed change.
@@ -172,7 +189,10 @@ fn factory_tools_are_mcp_methods() {
         assert!(!spec.renderer, "{name} is not a renderer method");
     }
     // A person settles an approval, never a run.
-    assert_eq!(method_spec(methods::RESOLVE_APPROVAL).unwrap().role, Role::Owner);
+    assert_eq!(
+        method_spec(methods::RESOLVE_APPROVAL).unwrap().role,
+        Role::Owner
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -183,7 +203,10 @@ async fn create_chat_in_new_worktree() {
     let path = PathBuf::from(made["path"].as_str().unwrap());
     assert!(path.starts_with(environment().join("worktrees").canonicalize().unwrap()));
     assert_eq!(git(&path, &["branch", "--show-current"]), "factory/run-1/1");
-    assert_eq!(git(&path, &["rev-parse", "HEAD"]), git(&factory.repo, &["rev-parse", "main"]));
+    assert_eq!(
+        git(&path, &["rev-parse", "HEAD"]),
+        git(&factory.repo, &["rev-parse", "main"])
+    );
     // Idempotent by branch: a resumed run gets the same worktree.
     let again = factory.worktree("factory/run-1/1").await;
     assert_eq!(again["path"], made["path"]);
@@ -197,13 +220,19 @@ async fn create_chat_in_new_worktree() {
         .await
         .unwrap();
     let nested = factory
-        .call(methods::CREATE_RUN_WORKTREE, json!({"chatId": "inner", "branch": "factory/run-1/2"}))
+        .call(
+            methods::CREATE_RUN_WORKTREE,
+            json!({"chatId": "inner", "branch": "factory/run-1/2"}),
+        )
         .await
         .unwrap();
     assert_eq!(nested["repoPath"], json!(factory.repo.to_string_lossy()));
     // Not a branch name: refused.
     let bad = factory
-        .call(methods::CREATE_RUN_WORKTREE, json!({"chatId": CHAT, "branch": "-x"}))
+        .call(
+            methods::CREATE_RUN_WORKTREE,
+            json!({"chatId": CHAT, "branch": "-x"}),
+        )
         .await
         .unwrap_err();
     assert!(bad.contains("not a branch name"), "{bad}");
@@ -216,7 +245,10 @@ async fn get_thread_diff_matches_checksum() {
     let path = factory.build_thread("build-1", "factory/run-2/1").await;
     std::fs::write(path.join("extra.txt"), "uncommitted\n").unwrap();
     let thread = factory
-        .call(methods::GET_THREAD_DIFF, json!({"chatId": "build-1", "baseRef": "main"}))
+        .call(
+            methods::GET_THREAD_DIFF,
+            json!({"chatId": "build-1", "baseRef": "main"}),
+        )
         .await
         .unwrap();
     let checkout = factory
@@ -288,7 +320,10 @@ fn forgejo(method: &str, path: &str) -> (u16, Value) {
     }
 }
 
-async fn forgejo_factory() -> (Factory, Arc<std::sync::Mutex<Vec<support::forgejo::Recorded>>>) {
+async fn forgejo_factory() -> (
+    Factory,
+    Arc<std::sync::Mutex<Vec<support::forgejo::Recorded>>>,
+) {
     let (base, seen) = support::forgejo::fake_forgejo(forgejo).await;
     let factory = Factory::start(Some(ChangeRequestCreator::new(Arc::new(
         StaticForgeCredentials::new(Some(ForgejoCredential {
@@ -300,9 +335,23 @@ async fn forgejo_factory() -> (Factory, Arc<std::sync::Mutex<Vec<support::forgej
     // The remote's URL names the fake Forgejo (the credential's host); pushes
     // go to a local bare repository.
     let bare = factory.tmp.path().join("remote.git");
-    git(factory.tmp.path(), &["init", "-q", "--bare", &bare.to_string_lossy()]);
-    git(&factory.repo, &["remote", "add", "origin", &format!("{base}/dev/project.git")]);
-    git(&factory.repo, &["config", "remote.origin.pushurl", &bare.to_string_lossy()]);
+    git(
+        factory.tmp.path(),
+        &["init", "-q", "--bare", &bare.to_string_lossy()],
+    );
+    git(
+        &factory.repo,
+        &[
+            "remote",
+            "add",
+            "origin",
+            &format!("{base}/dev/project.git"),
+        ],
+    );
+    git(
+        &factory.repo,
+        &["config", "remote.origin.pushurl", &bare.to_string_lossy()],
+    );
     (factory, seen)
 }
 
@@ -316,15 +365,25 @@ async fn open_change_request_is_idempotent_and_merge_requires_settled_approval()
                       "title": "Rate limit signup", "body": "Plan: plan.md"});
 
     // open_change_request_is_idempotent
-    let first = factory.call(methods::OPEN_CHANGE_REQUEST, open.clone()).await.unwrap();
+    let first = factory
+        .call(methods::OPEN_CHANGE_REQUEST, open.clone())
+        .await
+        .unwrap();
     assert_eq!(first["number"], 7);
     assert_eq!(first["existed"], false);
     assert_eq!(first["repo"], "dev/project");
     assert_eq!(first["head"], "factory/run-3/1");
     assert_eq!(first["headSha"], json!(head_sha));
     let bare = factory.tmp.path().join("remote.git");
-    assert_eq!(git(&bare, &["rev-parse", "factory/run-3/1"]), head_sha, "pushed");
-    let second = factory.call(methods::OPEN_CHANGE_REQUEST, open).await.unwrap();
+    assert_eq!(
+        git(&bare, &["rev-parse", "factory/run-3/1"]),
+        head_sha,
+        "pushed"
+    );
+    let second = factory
+        .call(methods::OPEN_CHANGE_REQUEST, open)
+        .await
+        .unwrap();
     assert_eq!(second["number"], 7);
     assert_eq!(second["existed"], true);
     let posts = seen
@@ -341,53 +400,101 @@ async fn open_change_request_is_idempotent_and_merge_requires_settled_approval()
     };
 
     // merge_requires_settled_approval: unknown, then pending, then denied.
-    let error = factory.call(methods::MERGE_CHANGE_REQUEST, merge("fa-none", &head_sha)).await.unwrap_err();
+    let error = factory
+        .call(methods::MERGE_CHANGE_REQUEST, merge("fa-none", &head_sha))
+        .await
+        .unwrap_err();
     assert!(error.contains(APPROVAL_REQUIRED), "{error}");
     let payload = merge_payload("dev/project", 7, &head_sha);
-    let ask = |chat: &str| {
-        json!({"chatId": chat, "kind": "merge", "summary": "Merge #7 into main", "payload": payload})
-    };
-    let pending = factory.call(methods::REQUEST_APPROVAL, ask("build-3")).await.unwrap();
+    let ask = |chat: &str| json!({"chatId": chat, "kind": "merge", "summary": "Merge #7 into main", "payload": payload});
+    let pending = factory
+        .call(methods::REQUEST_APPROVAL, ask("build-3"))
+        .await
+        .unwrap();
     let id = pending["id"].as_str().unwrap().to_owned();
     assert_eq!(pending["state"], "pending");
     assert_eq!(pending["payloadHash"], json!(payload_hash(&payload)));
     // It is in Studio's queue, under the factory's tool name.
     let queue = factory.core.approvals.snapshot(None);
-    assert!(queue.pending.iter().any(|a| a.id == id && a.tool == "factory.merge"));
-    let error = factory.call(methods::MERGE_CHANGE_REQUEST, merge(&id, &head_sha)).await.unwrap_err();
-    assert!(error.contains(APPROVAL_REQUIRED) && error.contains("pending"), "{error}");
-    let denied = factory.call(methods::REQUEST_APPROVAL, ask("build-3")).await.unwrap();
-    let denied_id = denied["id"].as_str().unwrap();
-    factory.core.approvals.resolve(Some("build-3"), denied_id, ApprovalDecision::Deny).unwrap();
-    let error = factory.call(methods::MERGE_CHANGE_REQUEST, merge(denied_id, &head_sha)).await.unwrap_err();
-    assert!(error.contains(APPROVAL_REQUIRED) && error.contains("denied"), "{error}");
     assert!(
-        !seen.lock().unwrap().iter().any(|r| r.path.ends_with("/merge")),
+        queue
+            .pending
+            .iter()
+            .any(|a| a.id == id && a.tool == "factory.merge")
+    );
+    let error = factory
+        .call(methods::MERGE_CHANGE_REQUEST, merge(&id, &head_sha))
+        .await
+        .unwrap_err();
+    assert!(
+        error.contains(APPROVAL_REQUIRED) && error.contains("pending"),
+        "{error}"
+    );
+    let denied = factory
+        .call(methods::REQUEST_APPROVAL, ask("build-3"))
+        .await
+        .unwrap();
+    let denied_id = denied["id"].as_str().unwrap();
+    factory
+        .core
+        .approvals
+        .resolve(Some("build-3"), denied_id, ApprovalDecision::Deny)
+        .unwrap();
+    let error = factory
+        .call(methods::MERGE_CHANGE_REQUEST, merge(denied_id, &head_sha))
+        .await
+        .unwrap_err();
+    assert!(
+        error.contains(APPROVAL_REQUIRED) && error.contains("denied"),
+        "{error}"
+    );
+    assert!(
+        !seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| r.path.ends_with("/merge")),
         "nothing reached the code host without an approval"
     );
 
     // A person approves; the approval outlives the chat's turns.
     factory.core.approvals.deny_chat("build-3");
-    factory.core.approvals.resolve(Some("build-3"), &id, ApprovalDecision::Once).unwrap();
+    factory
+        .core
+        .approvals
+        .resolve(Some("build-3"), &id, ApprovalDecision::Once)
+        .unwrap();
     let got = factory
-        .call(methods::GET_APPROVAL, json!({"chatId": "build-3", "approvalId": id}))
+        .call(
+            methods::GET_APPROVAL,
+            json!({"chatId": "build-3", "approvalId": id}),
+        )
         .await
         .unwrap();
     assert_eq!(got["state"], "approved");
 
     // merge_refuses_hash_mismatch: another head, another chat.
     let error = factory
-        .call(methods::MERGE_CHANGE_REQUEST, merge(&id, "0123456789abcdef0123456789abcdef01234567"))
+        .call(
+            methods::MERGE_CHANGE_REQUEST,
+            merge(&id, "0123456789abcdef0123456789abcdef01234567"),
+        )
         .await
         .unwrap_err();
     assert!(error.contains(APPROVAL_MISMATCH), "{error}");
     let mut other_chat = merge(&id, &head_sha);
     other_chat["chatId"] = json!(CHAT);
-    let error = factory.call(methods::MERGE_CHANGE_REQUEST, other_chat).await.unwrap_err();
+    let error = factory
+        .call(methods::MERGE_CHANGE_REQUEST, other_chat)
+        .await
+        .unwrap_err();
     assert!(error.contains(APPROVAL_MISMATCH), "{error}");
 
     // The right call merges, with the approved head, once.
-    let merged = factory.call(methods::MERGE_CHANGE_REQUEST, merge(&id, &head_sha)).await.unwrap();
+    let merged = factory
+        .call(methods::MERGE_CHANGE_REQUEST, merge(&id, &head_sha))
+        .await
+        .unwrap();
     assert_eq!(merged["merged"], true);
     let calls: Vec<_> = seen
         .lock()
@@ -397,10 +504,19 @@ async fn open_change_request_is_idempotent_and_merge_requires_settled_approval()
         .cloned()
         .collect();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].body, json!({"Do": "merge", "head_commit_id": head_sha}));
+    assert_eq!(
+        calls[0].body,
+        json!({"Do": "merge", "head_commit_id": head_sha})
+    );
     assert_eq!(calls[0].authorization, "token forgejo-test-token");
-    let error = factory.call(methods::MERGE_CHANGE_REQUEST, merge(&id, &head_sha)).await.unwrap_err();
-    assert!(error.contains(APPROVAL_MISMATCH) && error.contains("already used"), "{error}");
+    let error = factory
+        .call(methods::MERGE_CHANGE_REQUEST, merge(&id, &head_sha))
+        .await
+        .unwrap_err();
+    assert!(
+        error.contains(APPROVAL_MISMATCH) && error.contains("already used"),
+        "{error}"
+    );
     factory.stop().await;
 }
 
@@ -428,12 +544,24 @@ async fn typed_approvals_survive_a_restart_and_need_a_word_kind() {
     factory.core.shutdown().await;
     drop(factory.client);
     drop(factory.core);
-    let core = EngineCore::assemble(&data, Arc::new(HarnessRegistry::new()), HarnessId::Mock).unwrap();
-    assert!(core.approvals.snapshot(None).pending.iter().any(|a| a.id == id));
-    core.approvals.resolve(None, &id, ApprovalDecision::Always).unwrap();
+    let core =
+        EngineCore::assemble(&data, Arc::new(HarnessRegistry::new()), HarnessId::Mock).unwrap();
+    assert!(
+        core.approvals
+            .snapshot(None)
+            .pending
+            .iter()
+            .any(|a| a.id == id)
+    );
+    core.approvals
+        .resolve(None, &id, ApprovalDecision::Always)
+        .unwrap();
     let decided = core.approvals.typed(CHAT, &id).unwrap();
     assert_eq!(decided.state.as_str(), "approved");
-    assert!(core.approvals.typed("someone-else", &id).is_err(), "another chat's approval is not found");
+    assert!(
+        core.approvals.typed("someone-else", &id).is_err(),
+        "another chat's approval is not found"
+    );
     core.shutdown().await;
     drop(tmp);
 }

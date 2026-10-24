@@ -11,10 +11,10 @@
 use std::path::{Path, PathBuf};
 
 use loams_agentd_proto::factory_loop::{
-    CreateRunWorktreeParams, GetApprovalParams, GetThreadDiffParams, MERGE_APPROVAL_KIND,
-    MergeChangeRequestParams, MergeChangeRequestReply, OpenChangeRequestParams,
-    OpenChangeRequestReply, PostReviewCommentParams, RequestApprovalParams, TypedApproval,
-    CheckLogReply, ChecksReply, GetCheckLogParams, GetChecksParams,
+    CheckLogReply, ChecksReply, CreateRunWorktreeParams, GetApprovalParams, GetCheckLogParams,
+    GetChecksParams, GetThreadDiffParams, MERGE_APPROVAL_KIND, MergeChangeRequestParams,
+    MergeChangeRequestReply, OpenChangeRequestParams, OpenChangeRequestReply,
+    PostReviewCommentParams, RequestApprovalParams, TypedApproval,
 };
 use loams_agentd_proto::git_write::{CreateChangeRequestParams, MergeStrategy, PushBranchParams};
 use loams_agentd_proto::review::{DiffSide, ReviewComment};
@@ -62,9 +62,15 @@ impl EngineRpc {
     /// folder. The chat must be hosted here.
     pub(super) async fn chat_checkout(&self, chat_id: &str) -> Result<ChatCheckout, RpcError> {
         let not_found = || RpcError::Failed(format!("not_found: chat {chat_id}"));
-        let chat = self.workspace.chat(chat_id).map_err(failed)?.ok_or_else(not_found)?;
+        let chat = self
+            .workspace
+            .chat(chat_id)
+            .map_err(failed)?
+            .ok_or_else(not_found)?;
         if chat.device_id != self.doc_host.device_id() {
-            return Err(RpcError::BadParams("the chat is hosted by another device".into()));
+            return Err(RpcError::BadParams(
+                "the chat is hosted by another device".into(),
+            ));
         }
         let cwd = match chat.cwd.clone() {
             Some(cwd) => cwd,
@@ -81,7 +87,9 @@ impl EngineRpc {
             .repos
             .checkout_identity(Path::new(&cwd))
             .await
-            .map_err(|e| RpcError::BadParams(format!("the chat's folder is not a git checkout: {e}")))?;
+            .map_err(|e| {
+                RpcError::BadParams(format!("the chat's folder is not a git checkout: {e}"))
+            })?;
         Ok(ChatCheckout { identity })
     }
 
@@ -113,7 +121,11 @@ impl EngineRpc {
                 .await
                 .map_err(failed)?,
         };
-        let base = if base.is_empty() { "HEAD".to_owned() } else { base };
+        let base = if base.is_empty() {
+            "HEAD".to_owned()
+        } else {
+            base
+        };
         let _write = self.git_writes.lock().await;
         create_branch_worktree(&self.repos, &repo, p.branch.trim(), &base)
             .await
@@ -121,12 +133,23 @@ impl EngineRpc {
     }
 
     /// `GetThreadDiff`: `GetCheckoutDiff` of the chat's checkout.
-    pub(super) async fn thread_diff(&self, p: GetThreadDiffParams) -> Result<CheckoutDiff, RpcError> {
+    pub(super) async fn thread_diff(
+        &self,
+        p: GetThreadDiffParams,
+    ) -> Result<CheckoutDiff, RpcError> {
         let checkout = self.chat_checkout(&p.chat_id).await?;
-        let base_ref = p.base_ref.map(|b| b.trim().to_owned()).filter(|b| !b.is_empty());
+        let base_ref = p
+            .base_ref
+            .map(|b| b.trim().to_owned())
+            .filter(|b| !b.is_empty());
         let params = GetCheckoutDiffParams {
             cwd: checkout.root().to_string_lossy().into_owned(),
-            mode: if base_ref.is_some() { "branch" } else { "working" }.to_owned(),
+            mode: if base_ref.is_some() {
+                "branch"
+            } else {
+                "working"
+            }
+            .to_owned(),
             base_ref,
             commit_sha: None,
             chat_id: None,
@@ -153,8 +176,9 @@ impl EngineRpc {
             resolved: false,
             outdated: false,
         };
-        let id: loams_agentd_proto::IdReply =
-            self.factory_arm::<calls::UpsertReviewComment>(&comment).await?;
+        let id: loams_agentd_proto::IdReply = self
+            .factory_arm::<calls::UpsertReviewComment>(&comment)
+            .await?;
         Ok(id.id)
     }
 
@@ -168,7 +192,9 @@ impl EngineRpc {
         let root = checkout.root().to_path_buf();
         let head = self.repos.current_branch(&root).await.map_err(failed)?;
         if head.is_empty() {
-            return Err(RpcError::BadParams("the chat's checkout is not on a branch".into()));
+            return Err(RpcError::BadParams(
+                "the chat's checkout is not on a branch".into(),
+            ));
         }
         let head_sha = crate::git_write::git_ok(&root, &["rev-parse", "HEAD"])
             .await
@@ -232,7 +258,10 @@ impl EngineRpc {
     }
 
     /// `GetApproval`.
-    pub(super) fn get_typed_approval(&self, p: GetApprovalParams) -> Result<TypedApproval, RpcError> {
+    pub(super) fn get_typed_approval(
+        &self,
+        p: GetApprovalParams,
+    ) -> Result<TypedApproval, RpcError> {
         self.approvals()?
             .typed(&p.chat_id, &p.approval_id)
             .map_err(typed_error)
@@ -304,7 +333,10 @@ impl EngineRpc {
     }
 
     /// `GetCheckLog` (FT0 Task 5).
-    pub(super) async fn get_check_log(&self, p: GetCheckLogParams) -> Result<CheckLogReply, RpcError> {
+    pub(super) async fn get_check_log(
+        &self,
+        p: GetCheckLogParams,
+    ) -> Result<CheckLogReply, RpcError> {
         let checkout = self.chat_checkout(&p.chat_id).await?;
         let root = checkout.root().to_path_buf();
         let remote = self.chat_remote(&root).await?;

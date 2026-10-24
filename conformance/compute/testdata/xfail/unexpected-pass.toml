@@ -1,0 +1,16 @@
+# Also lists a test that passed: xfail_strict_unexpected_pass.
+product = "fixture"
+
+[[xfail]]
+id = "needs-kafka"
+tests = ["tests.test_kafka::*"]
+reason = "needs Kafka (not part of Loams)"
+issue = "#1"
+since = 2026-10-23
+
+[[xfail]]
+id = "fixed-upstream"
+tests = ["test_fixed_upstream"]
+reason = "failed before the fix upstream"
+issue = "ostrium-labs/loams#2"
+since = 2026-10-23

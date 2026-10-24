@@ -297,6 +297,27 @@ deploy/release/byoc/upgrade.sh ubuntu@203.0.113.10 --to 0.1.1 --rollback
 package, checked against the release's `SHA256SUMS`) and runs `loams upgrade` in
 `~/loams/release`, streaming its output; its exit code is the CLI's.
 
+### On a cloud VM
+
+On an AWS, Google Cloud or Azure VM that has an identity (an instance role, a
+service account or a managed identity), `install.sh --cloud` takes the tailnet
+key and the setup token from the cloud's secret store and points the engine at
+a bucket in the same account, with no static key on the host:
+
+```sh
+deploy/release/byoc/install.sh --cloud aws --bucket s3://my-bucket/loams --region us-east-1 ubuntu@203.0.113.10
+deploy/release/byoc/install.sh --cloud gcp --bucket gs://my-bucket/loams ubuntu@203.0.113.10
+deploy/release/byoc/install.sh --cloud azure --bucket az://loams/loams --storage-account myacct --vault my-vault ubuntu@203.0.113.10
+deploy/release/byoc/install.sh --cloud aws ... --render-env-only       # print what it would write; connects to nothing
+```
+
+It installs `loams-byoc-secrets` and `loams-byoc.service` (which fetches the
+secrets and runs `docker compose up -d` at boot) from `deploy/byoc/lib/`, and
+fetches the secrets once before the first start. To create the VM with its
+identity, bucket and secrets in one go, use `deploy/byoc/<cloud>/` (cloud-init)
+or `deploy/tofu/` (OpenTofu modules). Status: tested against local mocks of the
+secret stores; not yet run on a real cloud account.
+
 ## Known gaps in 0.1.1
 
 - With `LOAMS_HOUSE_ENDPOINT` empty the engine does not reach the House, so

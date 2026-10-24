@@ -96,6 +96,7 @@ jobs:
       sdk-dart: ${{ steps.filter.outputs.sdk-dart }}
       sdk-objc: ${{ steps.filter.outputs.sdk-objc }}
       web: ${{ steps.filter.outputs.web }}
+      factory: ${{ steps.filter.outputs.factory }}
       dapr-edge: ${{ steps.filter.outputs.dapr-edge }}
       spec: ${{ steps.filter.outputs.spec }}
       router: ${{ steps.filter.outputs.router }}
@@ -390,6 +391,11 @@ jobs:
               - ".github/workflows/ci.yml"
               - "web/**"
               - "api/**"
+            # The factory host, @loams/factory (plan FT1, FT0 Task 1).
+            factory:
+              - *pnpm-workspace
+              - ".github/workflows/ci.yml"
+              - "agents/**"
             # deploy/dapr/edge is its own crate and lock, outside the
             # workspace; it compiles loams-stream-grpc's stream.proto.
             dapr-edge:
@@ -2264,6 +2270,34 @@ jobs:
       - name: advisories, bans, licenses, sources
         run: cargo deny --locked check
 
+  # The Software Factory host (plan FT1, FT0 Task 1; design §72, D1428): typecheck and
+  # unit tests. No job needs a model key: tests use Mastra's createMockModel.
+  factory:
+    name: "Factory: host"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || needs.changes.outputs.factory == 'true') }}
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: agents/factory
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --filter @loams/factory...
+        working-directory: .
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
   web:
     name: "Console: build and tests"
     needs: changes
@@ -2553,6 +2587,14 @@ jobs:
         run: |
           scripts/ci/pgdog-licence.sh --self-test
           scripts/ci/pgdog-licence.sh
+      # OC1 OC0 Task 1 and DX1 DX0 Task 1: the compute conformance harness
+      # (expected-failure and licence gates on fixtures, the pins' licences
+      # offline, and the shape of deploy/release/compose.compute.yaml through
+      # `compose config`). No product runs and no image is pulled here; the
+      # suites run nightly.
+      - if: ${{ !cancelled() }} # report every check, not only the first failure
+        name: the compute conformance harness self-test (OC0, DX0)
+        run: conformance/compute/selftest.sh
       - if: ${{ !cancelled() }} # report every check, not only the first failure
         name: PyYAML
         run: python3 -m pip install --quiet --disable-pip-version-check PyYAML
@@ -2649,6 +2691,7 @@ jobs:
       - agentd-connect-fuzz
       - deny
       - web
+      - factory
       - dapr-edge
       - upgrade-gate
     runs-on: ubuntu-24.04

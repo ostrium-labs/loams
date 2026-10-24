@@ -1,0 +1,21 @@
+[package]
+name = "loams-house-iceberg"
+description = "Lake-table reads (and from HE2, writes) for the Loams House Rust engine: a DataFusion TableProvider over pinned Iceberg v2 and v3 snapshots, the House's column encodings, pruning and deletes, on the ostrium-labs iceberg-rust fork (design §75 §9, plan HE1 Task 26, D1576)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+loams-house-types = { path = "../loams-house-types" }
+datafusion.workspace = true
+# Iceberg metadata, manifests and deletes from Loams' fork, pinned by commit on
+# `loams/row-delta` (D1576; R11.8, R11.9), on Arrow 59 like DataFusion 55.2.
+# Named `iceberg-engine` in the workspace so it can sit beside the 0.10.1 that
+# `loams-house-lake` keeps until HE2 Task 60. Apache-2.0.
+iceberg-engine.workspace = true
+
+[lints]
+workspace = true

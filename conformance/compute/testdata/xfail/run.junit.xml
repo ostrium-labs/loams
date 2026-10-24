@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="fixture" tests="5" failures="2" errors="0" skipped="1">
+    <testcase classname="tests.test_core" name="test_ok" />
+    <testcase classname="tests.test_kafka" name="test_produce"><failure message="no broker" /></testcase>
+    <testcase classname="tests.test_kafka" name="test_consume"><failure message="no broker" /></testcase>
+    <testcase classname="tests.test_core" name="test_fixed_upstream" />
+    <testcase classname="tests.test_core" name="test_skipped"><skipped /></testcase>
+  </testsuite>
+</testsuites>

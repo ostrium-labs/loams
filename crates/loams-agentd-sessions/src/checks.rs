@@ -158,7 +158,11 @@ impl ChangeRequestCreator {
         Ok(response)
     }
 
-    async fn forgejo_checks(&self, remote: &GitRemote, sha: &str) -> Result<Vec<CiCheck>, GitWriteError> {
+    async fn forgejo_checks(
+        &self,
+        remote: &GitRemote,
+        sha: &str,
+    ) -> Result<Vec<CiCheck>, GitWriteError> {
         let (base, token) = self.forgejo_credential_for(remote).await?;
         let url = forgejo_api_url(&base, remote, &["commits", sha, "status"])?;
         let reply: serde_json::Value = self
@@ -176,7 +180,9 @@ impl ChangeRequestCreator {
             .iter()
             .map(|status| {
                 let text = |key: &str| status.get(key).and_then(serde_json::Value::as_str);
-                let url = text("target_url").filter(|u| !u.is_empty()).map(str::to_owned);
+                let url = text("target_url")
+                    .filter(|u| !u.is_empty())
+                    .map(str::to_owned);
                 CiCheck {
                     name: text("context").unwrap_or("status").to_owned(),
                     state: forgejo_state(text("status").or(text("state")).unwrap_or_default()),
@@ -197,11 +203,16 @@ impl ChangeRequestCreator {
             vec![
                 "api".to_owned(),
                 format!("--hostname={}", remote.host),
-                format!("repos/{}/{}/commits/{sha}/{rest}", remote.owner, remote.repository),
+                format!(
+                    "repos/{}/{}/commits/{sha}/{rest}",
+                    remote.owner, remote.repository
+                ),
             ]
         };
         let runs: serde_json::Value = serde_json::from_str(
-            self.run_gh_text(root, &api("check-runs?per_page=100")).await?.trim(),
+            self.run_gh_text(root, &api("check-runs?per_page=100"))
+                .await?
+                .trim(),
         )
         .map_err(|_| failed("gh printed no check runs"))?;
         let statuses: serde_json::Value =
@@ -215,9 +226,7 @@ impl ChangeRequestCreator {
             .flatten()
         {
             let text = |key: &str| run.get(key).and_then(serde_json::Value::as_str);
-            let is_actions = run
-                .pointer("/app/slug")
-                .and_then(serde_json::Value::as_str)
+            let is_actions = run.pointer("/app/slug").and_then(serde_json::Value::as_str)
                 == Some("github-actions");
             checks.push(CiCheck {
                 name: text("name").unwrap_or("check").to_owned(),
@@ -261,7 +270,9 @@ impl ChangeRequestCreator {
                 let (run, job) = log_id
                     .split_once('/')
                     .filter(|(r, j)| {
-                        [r, j].iter().all(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
+                        [r, j]
+                            .iter()
+                            .all(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
                     })
                     .ok_or_else(|| bad(format!("not a Forgejo log id: {log_id:?}")))?;
                 let (base, token) = self.forgejo_credential_for(remote).await?;
@@ -318,19 +329,42 @@ mod tests {
             Some("12/0".into())
         );
         assert_eq!(forgejo_log_id("https://ci.example/build/7"), None);
-        assert_eq!(forgejo_log_id("https://f.example/x/actions/runs/../jobs/1"), None);
+        assert_eq!(
+            forgejo_log_id("https://f.example/x/actions/runs/../jobs/1"),
+            None
+        );
     }
 
     #[test]
     fn overall_state() {
-        let check = |state| CiCheck { name: "c".into(), state, url: None, log_id: None };
+        let check = |state| CiCheck {
+            name: "c".into(),
+            state,
+            url: None,
+            log_id: None,
+        };
         assert_eq!(overall(&[]), CiState::Pending);
-        assert_eq!(overall(&[check(CiState::Success), check(CiState::Neutral)]), CiState::Success);
-        assert_eq!(overall(&[check(CiState::Success), check(CiState::Pending)]), CiState::Pending);
-        assert_eq!(overall(&[check(CiState::Pending), check(CiState::Failure)]), CiState::Failure);
+        assert_eq!(
+            overall(&[check(CiState::Success), check(CiState::Neutral)]),
+            CiState::Success
+        );
+        assert_eq!(
+            overall(&[check(CiState::Success), check(CiState::Pending)]),
+            CiState::Pending
+        );
+        assert_eq!(
+            overall(&[check(CiState::Pending), check(CiState::Failure)]),
+            CiState::Failure
+        );
         assert_eq!(github_run_state("in_progress", None), CiState::Pending);
-        assert_eq!(github_run_state("completed", Some("timed_out")), CiState::Failure);
-        assert_eq!(github_run_state("completed", Some("skipped")), CiState::Neutral);
+        assert_eq!(
+            github_run_state("completed", Some("timed_out")),
+            CiState::Failure
+        );
+        assert_eq!(
+            github_run_state("completed", Some("skipped")),
+            CiState::Neutral
+        );
     }
 
     #[test]
@@ -354,7 +388,11 @@ mod tests {
     fn check_log_is_scrubbed() {
         let log = "step 1\nAuthorization: Bearer abc.def.ghi\nusing token ghp_0123456789abcdefghijklmnopqrstuvwxyzAB\nclone https://user:hunter2@git.example/x.git\nFAIL test_signup";
         let reply = tail(log, 10);
-        for secret in ["abc.def.ghi", "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB", "hunter2"] {
+        for secret in [
+            "abc.def.ghi",
+            "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB",
+            "hunter2",
+        ] {
             assert!(!reply.text.contains(secret), "{secret} in {}", reply.text);
         }
         assert!(reply.text.contains("FAIL test_signup"));

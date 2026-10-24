@@ -10,6 +10,8 @@ packages:
   - plugins/core/*
   - plugins/packages/*
   - apps/desktop-electron
+  # The factory host (plan FT1, FT0 Task 1; design §72 D1428).
+  - agents/*
 
 # One version of each shared UI dependency (docs/design/console-ui-stack.md).
 # Packages depend on these as `"name": "catalog:"`. Bump here, and only to a

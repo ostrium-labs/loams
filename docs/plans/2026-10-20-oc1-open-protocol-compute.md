@@ -161,4 +161,6 @@ Tests: `matrix_from_fixture` (a fixture JUnit set renders the expected Markdown)
 
 ## Rulings made during execution
 
-(none yet)
+| # | Ruling | Task |
+|---|---|---|
+| R0.1 | **Shared with DX0** (DX1 plan, rulings R0.1 and T1.R1–T1.R7). OC0 Task 1 (the harness) is landed in full by DX1's DX0 Task 1. OC0 Task 2 is landed for the `temporal` and `airflow` profiles (plus DX0's `dbos`); `risingwave`, `sail` and `lakekeeper`, their config under `deploy/release/compute/` and their databases and buckets stay with this plan's Task 2. The pins, licences and endpoint modes recorded there (DX1 R0.2–R0.14) answer Task 0's Temporal, Airflow and endpoint items; the Lakekeeper, RisingWave, Sail and queue items stay open | 0, 1, 2 |

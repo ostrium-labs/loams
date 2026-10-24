@@ -26,10 +26,10 @@ use crate::checkpoints::{
 };
 use crate::daemon::DaemonMode;
 use crate::factory_loop::{
-    CreateRunWorktreeParams, GetApprovalParams, GetThreadDiffParams, MergeChangeRequestParams,
-    MergeChangeRequestReply, OpenChangeRequestParams, OpenChangeRequestReply,
-    PostReviewCommentParams, RequestApprovalParams, TypedApproval, GetChecksParams, ChecksReply,
-    GetCheckLogParams, CheckLogReply,
+    CheckLogReply, ChecksReply, CreateRunWorktreeParams, GetApprovalParams, GetCheckLogParams,
+    GetChecksParams, GetThreadDiffParams, MergeChangeRequestParams, MergeChangeRequestReply,
+    OpenChangeRequestParams, OpenChangeRequestReply, PostReviewCommentParams,
+    RequestApprovalParams, TypedApproval,
 };
 use crate::git_write::{
     CommitWorktreeParams, CommitWorktreeReply, CreateChangeRequestParams, CreateChangeRequestReply,
