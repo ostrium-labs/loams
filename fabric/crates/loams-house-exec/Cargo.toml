@@ -1,0 +1,17 @@
+[package]
+name = "loams-house-exec"
+description = "Operators and functions of the Loams House Rust engine: ClickHouse scalar functions, aggregates and combinators, and the FINAL, totals, LIMIT BY, ARRAY JOIN and fill operators, on DataFusion (design §75 §6.3, plan HE1 Tasks 27-35)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+loams-house-types = { path = "../loams-house-types" }
+# UDF, UDAF and UDWF traits and the physical-plan operators. Apache-2.0.
+datafusion.workspace = true
+
+[lints]
+workspace = true

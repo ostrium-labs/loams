@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- **The `kafka` compose profile (preview; KW-L2, D1798).** `COMPOSE_PROFILES=kafka` runs Ostrium's
+  fork of Apache Iggy (`ghcr.io/ostrium-labs/iggy`, one image pinned by digest, built and attested
+  by the fork's CI) as `iggy` and `kafka-gateway`, with the Kafka wire on `127.0.0.1:9093`. Off in
+  the default stack. Every Kafka API except transactions and exactly-once. Not wired to the engine
+  yet. `release-compose` gains a smoke that starts the profile and runs kcat through it.
+
 ### Removed
 - **The console deploy workflow** (`.github/workflows/console-deploy.yml`; 0.1.2, owner,
   2026-10-23, D1705). It deployed `web/apps/console` to `console.loams.dev`, which is retired:

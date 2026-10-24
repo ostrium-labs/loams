@@ -84,6 +84,12 @@ ignore = [
     # webpki-roots 1.x, which is at 1.0.10 (emSign removed) in this lock. Reached
     # through sqlx-core 0.8 and tokio-tungstenite 0.24; remove when they move to 1.x.
     { id = "RUSTSEC-2026-0381", reason = "webpki-roots 0.26.11 re-exports webpki-roots 1.0.10, which drops the distrusted emSign roots; the 0.26 shim carries no certificates" },
+    # ctutils < 0.4.4: Choice's const-fn mask generation may compile to a branch,
+    # and u128 comparisons branch on 32-bit targets. Reached through digest 0.11
+    # and phc. The fix, 0.4.4, and 0.4.5 were both published 2026-10-23, under the
+    # 14-day rule. Loams ships only 64-bit targets. Remove with the bump to
+    # ctutils >= 0.4.4 on or after 2026-11-06.
+    { id = "RUSTSEC-2026-0385", reason = "ctutils constant-time mask and u128 comparison branches: the fixed 0.4.4 is from 2026-10-23, under the 14-day rule; Loams ships only 64-bit targets; bump on or after 2026-11-06" },
 ]
 
 [sources]

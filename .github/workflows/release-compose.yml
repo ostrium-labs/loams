@@ -37,7 +37,7 @@ jobs:
         working-directory: deploy/release
         run: |
           docker compose --env-file .env.example config -q
-          for profiles in tikv rustfs tikv,rustfs tikv,rustfs,house-tailnet,postgres-control,console,headscale; do
+          for profiles in tikv rustfs kafka tikv,rustfs tikv,rustfs,kafka,house-tailnet,postgres-control,console,headscale; do
             COMPOSE_PROFILES="$profiles" docker compose --env-file .env.example config -q
             COMPOSE_PROFILES="$profiles" LOAMS_POSTGRES_COMPOSE=./postgres-off.yaml \
               docker compose --env-file .env.example config -q
@@ -70,6 +70,27 @@ jobs:
           done
           # The engine reads the House's link certificate at start.
           jq -e '.services.loams.depends_on.house.condition == "service_healthy"' <<<"$cfg"
+      # The `kafka` profile (KW-L2, D1798): Iggy and its Kafka gateway, off in
+      # the default stack (the exact service list above), pinned by digest, on
+      # loopback, and not part of the engine's network namespace.
+      - name: the kafka profile is optional, pinned and on loopback
+        working-directory: deploy/release
+        run: |
+          services() { docker compose --env-file .env.example config --services | sort | tr '\n' ' '; }
+          [ "$(COMPOSE_PROFILES=kafka services)" = "agentd compute1 house house-init iggy kafka-gateway loams migrate pageserver pg-bootstrap safekeeper1 storage_broker tailscale " ] \
+            || { echo "kafka services: $(COMPOSE_PROFILES=kafka services)"; exit 1; }
+          cfg="$(COMPOSE_PROFILES=kafka docker compose --env-file .env.example config --format json)"
+          jq -e '[.services.iggy, .services["kafka-gateway"]]
+                 | all(.profiles == ["kafka"]
+                       and (.image | test("^ghcr\\.io/ostrium-labs/iggy@sha256:[0-9a-f]{64}$"))
+                       and (.healthcheck != null) and (.privileged != true)
+                       and (.network_mode == null))' <<<"$cfg"
+          # Iggy publishes nothing; the gateway publishes 9093 on loopback only.
+          jq -e '((.services.iggy.ports // []) == [])
+                 and ([.services["kafka-gateway"].ports[] | .host_ip] == ["127.0.0.1"])' <<<"$cfg"
+          # No other service depends on them, and the engine does not share a namespace with them.
+          jq -e '[.services | to_entries[] | select(.key != "kafka-gateway") | select((.value.depends_on // {}) | has("iggy") or has("kafka-gateway"))] | length == 0' <<<"$cfg"
+          jq -e '[.services[] | select((.network_mode // "") | test("iggy|kafka"))] | length == 0' <<<"$cfg"
       # 0.1.0 blocker: an apostrophe in endpoint-storage's `sh -c` script
       # ("pg-control's key") opened a quote that never closed, and the
       # service restart-looped. Every inline shell script must parse.
@@ -142,7 +163,21 @@ jobs:
                  | (index("--pageserver=http://pageserver:9898") != null)
                    and (index("--safekeeper=http://safekeeper1:7676") != null)' <<<"$cfg"
       - name: shellcheck
-        run: shellcheck deploy/release/build.sh deploy/release/config/stores.sh deploy/release/byoc/install.sh deploy/release/byoc/uninstall.sh deploy/release/byoc/upgrade.sh deploy/release/byoc/upgrade-test.sh deploy/loams-postgres-dev/bootstrap/pg-bootstrap.sh deploy/loams-postgres-dev/compute/start.sh
+        run: shellcheck deploy/release/ci/kafka-smoke.sh deploy/release/build.sh deploy/release/config/stores.sh deploy/release/byoc/install.sh deploy/release/byoc/uninstall.sh deploy/release/byoc/upgrade.sh deploy/release/byoc/upgrade-test.sh deploy/loams-postgres-dev/bootstrap/pg-bootstrap.sh deploy/loams-postgres-dev/compute/start.sh
       # UP1 Task 22: upgrade_sh_dry_run_prints_remote_commands.
       - name: byoc upgrade.sh
         run: deploy/release/byoc/upgrade-test.sh
+
+  # The `kafka` profile starts cleanly and kcat produces and consumes through
+  # it (KW-L2). Pulls the fork's image by the digest in .env.example and a
+  # pinned kcat image; starts neither the engine nor the Postgres stack.
+  kafka:
+    name: Kafka profile smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: kcat produce and consume through the gateway
+        run: deploy/release/ci/kafka-smoke.sh

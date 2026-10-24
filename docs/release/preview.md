@@ -55,7 +55,7 @@ deploy.
 - **A light default stack.** `docker compose up -d` runs the engine on its embedded stores
   with a local-folder bucket, the House, Git, Loams Postgres on local folders and agentd: about
   8 GB of images and 1 GB of RAM at idle. PD, TiKV and TiDB are the `tikv` profile and RustFS
-  the `rustfs` profile ([profiles](#profiles-tikv-and-rustfs)).
+  the `rustfs` profile ([profiles](#profiles-tikv-rustfs-and-kafka)).
 - **Mastra compatibility:** the Qdrant gateway serves `DELETE` of a payload index.
 - **Fixes:** agentd keeps an orphaned steer ahead of the queue, so queued messages no longer run
   out of order.
@@ -213,7 +213,8 @@ flowchart LR
 | Self-hosting with Docker Compose | The whole stack in `deploy/release/compose.yaml`, reachable only over your Tailscale tailnet, locally or on your VMs with `byoc/install.sh` over SSH | Available. Headscale is coming soon |
 | Graph expansion | GraphRAG expansion of 1 to 2 hops from a retrieval query's hits: the `expand` stage of a search (REST and Connect), and the SQL table functions `graph_expand`, `graph_neighbors`, `graph_degree` and `graph_shortest_path` | Experimental. Runs on a Loams Graph (cargo feature `graph`, in the release `loams` image); the caller needs `reader` on each graph it touches (GR1 R24.12). The SDKs and the MCP `search` tool do not expose it yet (GR1 Task 36), and a UUID-keyed collection's neighbors come back without their documents |
 | Iceberg analytics | Iceberg tables through a REST catalog, readable by DuckDB, Spark, Trino and ClickHouse | Planned |
-| Kafka wire and OTLP | Kafka clients and OpenTelemetry logs ingest into streams | Planned |
+| Kafka wire (`kafka` profile) | Kafka clients (kcat, librdkafka, the Java client, Kafka Connect, Flink) on `127.0.0.1:9093` through the Kafka gateway of Ostrium's fork of Apache Iggy, in front of its own Iggy server | Preview. Optional compose profile, never in the default stack; every Kafka API except transactions and exactly-once (planned, not built). Not wired to the engine yet ([guide](../guides/kafka.md)) |
+| OTLP | OpenTelemetry logs ingest into streams | Planned |
 | Authorization and tenancy | Roles, per-namespace authorization, tenant quotas and a namespace router | Planned |
 | Native SDKs | TypeScript, Python, Go, Rust, C#, Swift and C++ clients with generated API bindings and shared runtime conformance fixtures, published as `0.1.1` (see [SDKs](#sdks)) | Available. Java, Kotlin, Ruby, PHP, Dart and Objective-C are in progress |
 | MCP and analytics helpers | Agent tools and convenience integrations such as `to_arrow()` and `to_polars()` | Planned |
@@ -227,7 +228,7 @@ The compose file is [`deploy/release/compose.yaml`](../../deploy/release/compose
 its settings in `deploy/release/.env.example`.
 
 The default stack is the light one; profiles, set in `.env` as `COMPOSE_PROFILES`, add the
-rest (see [the profiles](#profiles-tikv-and-rustfs)).
+rest (see [the profiles](#profiles-tikv-rustfs-and-kafka)).
 
 | Service | Image | Role |
 |---|---|---|
@@ -240,6 +241,7 @@ rest (see [the profiles](#profiles-tikv-and-rustfs)).
 | `tikv` (profile `tikv`) | TiKV | The metastore and Live with the profile, and TiDB's storage |
 | `tidb` (profile `tikv`) | `ghcr.io/ostrium-labs/tidb:v8.5.8-loams.1` | Loams SQL (MySQL compatible) |
 | `rustfs`, `create-bucket` (profile `rustfs`) | RustFS | An S3 bucket for the Postgres stack's remote storage |
+| `iggy`, `kafka-gateway` (profile `kafka`, preview) | `ghcr.io/ostrium-labs/iggy@sha256:…` (one image, pinned by digest) | Kafka clients on `127.0.0.1:9093`: the Kafka gateway of Ostrium's Iggy fork, and its Iggy server. See [Kafka](../guides/kafka.md) |
 | `house-tailscale` (profile `house-tailnet`) | `tailscale/tailscale` | The House's own door: joins the tailnet as `loams-house` and serves its ClickHouse HTTP interface there |
 | `console` (profile `console`, optional) | static console | A local copy of the console, for local trials. In 0.1.1 the supported console is Loams Desktop; the engine serves its own from 0.1.2 |
 | `tailscale` | `tailscale/tailscale` | The stack's only door: joins the tailnet as `loams` and serves the engine there |
@@ -345,7 +347,7 @@ the providers' documentation and have not been tested against this stack.
 - **Docker Compose v2.24.0 or later** (see the quick start). Distribution packages are often
   older; install the Compose plugin from Docker's repository.
 
-### Profiles: tikv and rustfs
+### Profiles: tikv, rustfs and kafka
 
 Set profiles in `.env`, comma-separated, before the first start:
 
@@ -361,6 +363,12 @@ COMPOSE_PROFILES=tikv,rustfs
 - **`rustfs`**: RustFS, an S3 bucket (`neon`) for Loams Postgres's pageserver, safekeeper and
   endpoint storage, instead of local folders in their volumes. For the engine's own bucket,
   point `LOAMS_BUCKET` at any S3 store ([the bucket](#the-bucket-a-local-directory-or-s3)).
+
+- **`kafka`** (preview): Kafka clients on `127.0.0.1:9093`. It runs Ostrium's fork of Apache
+  Iggy (`ghcr.io/ostrium-labs/iggy`, pinned by digest in `IGGY_KAFKA_IMAGE`): `iggy` is the
+  broker's storage and `kafka-gateway` speaks the Kafka wire. Optional and off by default, so
+  the default stack stays light; add about 1 GB of image and some memory. Transactions and
+  exactly-once are not supported. See [Kafka](../guides/kafka.md).
 
 Use `COMPOSE_PROFILES` rather than `--profile` on the command line: a `--profile` flag
 replaces the list, and the engine, `migrate` and `loams upgrade` read the list from `.env`.
