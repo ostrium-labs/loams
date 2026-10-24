@@ -152,8 +152,8 @@ async fn plan_lists_every_declared_permission() {
     assert_eq!(
         scopes,
         [
-            ("notes".into(), "write".into()),
-            ("notes_vectors".into(), "read".into())
+            ("notes_vectors".into(), "read".into()),
+            ("notes".into(), "write".into())
         ]
     );
     assert_eq!(plan.egress, ["api.github.com"]);
@@ -229,7 +229,7 @@ async fn widening_updates_are_found() {
     let mut new = old.clone();
     new.egress.push("evil.example".into());
     new.tools[1].risk = Risk::Destructive;
-    new.data[1].access = "write".into();
+    new.data[0].access = "write".into();
     new.tools[0].always_asks = false;
     let reasons = plan::widens(&old, &new);
     assert_eq!(reasons.len(), 4, "{reasons:?}");
