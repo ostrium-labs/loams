@@ -387,6 +387,8 @@ const REQUESTS: Request[] = [
     number: 7,
     headSha: 'abcdef0',
   }),
+  request('GetChecks', { chatId: 'chat-1', provider: 'github', sha: 'abcdef0' }),
+  request('GetCheckLog', { chatId: 'chat-1', provider: 'github', logId: '901', lines: 200 }),
 ];
 
 const file = join(import.meta.dirname, 'requests.json');

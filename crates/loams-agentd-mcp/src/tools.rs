@@ -341,8 +341,8 @@ fn catalog() -> Vec<ToolDef> {
 pub fn risk_of(name: &str) -> &'static str {
     match name {
         "whoami" | "list_projects" | "list_harnesses" | "list_models" | "list_chats"
-        | "get_chat" | "read_chat" | "wait_for_turn" | "get_thread_diff" | "get_approval" | "get_checks"
-        | "get_check_log" => "read",
+        | "get_chat" | "read_chat" | "wait_for_turn" | "get_thread_diff" | "get_approval"
+        | "get_checks" | "get_check_log" => "read",
         "merge_change_request" => "destructive",
         _ => "write",
     }

@@ -589,6 +589,8 @@ mod tests {
                 "RequestApproval",
                 "GetApproval",
                 "MergeChangeRequest",
+                "GetChecks",
+                "GetCheckLog",
             ]
         );
     }
