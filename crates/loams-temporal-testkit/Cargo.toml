@@ -1,0 +1,25 @@
+[package]
+name = "loams-temporal-testkit"
+description = "Test kit for the Temporal gateway: the DX0 history corpus, a normaliser that matches the corpus's normalize.py, and a history differ (design 74 §13, plan DX1 Task 2)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+base64.workspace = true
+hex.workspace = true
+loams-temporal-proto = { path = "../loams-temporal-proto" }
+prost.workspace = true
+# Protobuf JSON (the shape `temporal workflow show -o json` writes) from the
+# vendored descriptors, so the normaliser can follow normalize.py key by key.
+prost-reflect = { version = "0.16", features = ["serde"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
