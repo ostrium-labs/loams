@@ -167,7 +167,7 @@ jobs:
                  | (index("--pageserver=http://pageserver:9898") != null)
                    and (index("--safekeeper=http://safekeeper1:7676") != null)' <<<"$cfg"
       - name: shellcheck
-        run: shellcheck deploy/release/ci/kafka-smoke.sh deploy/release/ci/kafka-guard-test.sh deploy/release/config/kafka-guard.sh deploy/release/build.sh deploy/release/config/stores.sh deploy/release/byoc/install.sh deploy/release/byoc/uninstall.sh deploy/release/byoc/upgrade.sh deploy/release/byoc/upgrade-test.sh deploy/loams-postgres-dev/bootstrap/pg-bootstrap.sh deploy/loams-postgres-dev/compute/start.sh
+        run: shellcheck deploy/release/ci/kafka-smoke.sh deploy/release/ci/kafka-guard-test.sh deploy/release/config/kafka-guard.sh deploy/release/ci/iggy-sink-it.sh deploy/release/build.sh deploy/release/config/stores.sh deploy/release/byoc/install.sh deploy/release/byoc/uninstall.sh deploy/release/byoc/upgrade.sh deploy/release/byoc/upgrade-test.sh deploy/loams-postgres-dev/bootstrap/pg-bootstrap.sh deploy/loams-postgres-dev/compute/start.sh
       # UP1 Task 22: upgrade_sh_dry_run_prints_remote_commands.
       - name: byoc upgrade.sh
         run: deploy/release/byoc/upgrade-test.sh
