@@ -1,0 +1,17 @@
+[package]
+name = "loams-gw-test"
+description = "The KV gateways' test harness (design §77 §12; KV1 plan KV0 Task 8): scenarios run on every loams-kv backend and compared, and the conformance runners KV2 and KV3 fill in."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+futures.workspace = true
+loams-kv = { workspace = true, features = ["tikv"] }
+tokio.workspace = true
+
+[lints]
+workspace = true
