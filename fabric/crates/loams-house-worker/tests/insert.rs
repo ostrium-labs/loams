@@ -1759,6 +1759,13 @@ async fn signoz_ddl_on_lake_tables() {
     .await;
     ok(addr, "ALTER TABLE keys ON CLUSTER cluster ADD COLUMN IF NOT EXISTS flags UInt32 DEFAULT 0 CODEC(ZSTD(1))").await;
     ok(addr, "ALTER TABLE dist_keys ON CLUSTER cluster ADD COLUMN IF NOT EXISTS flags UInt32 DEFAULT 0 CODEC(ZSTD(1))").await;
+    // HE1 R9.66: the Distributed table's columns are its local table's as
+    // altered, so a client that inserts through them (SigNoz's collector)
+    // finds `flags` and the extended Enum.
+    assert_eq!(
+        ok(addr, "SELECT name, type FROM system.columns WHERE table = 'dist_keys' AND name IN ('tagType', 'flags') ORDER BY name FORMAT TSV").await,
+        "flags\tUInt32\ntagType\tEnum8(\\'tag\\' = 1, \\'resource\\' = 2, \\'scope\\' = 3)\n"
+    );
     ok(
         addr,
         "ALTER TABLE keys ON CLUSTER cluster MATERIALIZE COLUMN flags",
