@@ -12,9 +12,11 @@
 # sha256 before it is unpacked; reindeer is built from its pinned commit with
 # the lockfile it ships.
 #
-# buck-out: Buck2 writes its output to buck-out/ at the repository root. Set
-# LOAMS_BUCK_OUT_DIR to put it on another disk: buck-out then becomes a
-# symlink to $LOAMS_BUCK_OUT_DIR/<checkout name>-<hash of its path>.
+# buck-out: Buck2 writes its output to buck-out/ at the repository root, and
+# it must be a real directory there: Buck2 links sources into buck-out with
+# relative symlinks (../../crates/...), which break when buck-out is itself a
+# symlink to another disk. To keep build output off a small disk, put the
+# checkout (or worktree) on the larger one.
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -103,16 +105,9 @@ fi
 ln -sfn "$buck2_dir/buck2" "$bin/buck2"
 ln -sfn "$reindeer_dir/bin/reindeer" "$bin/reindeer"
 
-if [[ -n "${LOAMS_BUCK_OUT_DIR:-}" ]]; then
-  if [[ -e "$repo/buck-out" && ! -L "$repo/buck-out" ]]; then
-    echo "bootstrap: $repo/buck-out is a directory; remove it to move buck-out to $LOAMS_BUCK_OUT_DIR" >&2
-  else
-    key=$(printf '%s' "$repo" | sha256 /dev/stdin | cut -c1-8)
-    out="$LOAMS_BUCK_OUT_DIR/$(basename "$repo")-$key"
-    mkdir -p "$out"
-    ln -sfn "$out" "$repo/buck-out"
-    echo "bootstrap: buck-out -> $out"
-  fi
+if [[ -L "$repo/buck-out" ]]; then
+  echo "bootstrap: $repo/buck-out is a symlink; Buck2 needs a real directory (remove it)" >&2
+  exit 1
 fi
 
 echo "bootstrap: $("$bin/buck2" --version), reindeer ${REINDEER_REV:0:12}"

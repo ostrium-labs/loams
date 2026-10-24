@@ -11,8 +11,13 @@
 # Options:
 #   --role primary|worker      default: primary
 #   --only LIST                comma-separated components (default: all):
-#                              nativelink,sccache,podman,runner
-#   --primary ADDR             worker role: the primary's Tailscale address
+#                              tailscale,toolchain,nativelink,sccache,podman,runner,monitor
+#   --primary ADDR             worker role: the primary's Tailscale address (default:
+#                              the one in the bundle)
+#   --bundle FILE              worker role: credentials from the primary (--issue-bundle)
+#   --issue-bundle NAME FILE   primary role: write a worker's credentials bundle, then exit
+#   --tailscale-authkey-file F join the tailnet with this auth key when not connected
+#   --tailscale-hostname NAME  default: loams-ci-a (primary) or loams-ci-b (worker)
 #   --data-root DIR            caches and work directories (default /mnt/Projects/ci)
 #   --nl-gb N                  NativeLink disk cap in GiB (default 30 primary, 80 worker)
 #   --sccache-gb N             sccache store cap in GiB (primary only; default 10)
@@ -47,6 +52,14 @@ cd /
 . "$HERE/lib/podman.sh"
 # shellcheck source=deploy/ci-hosts/lib/runner.sh
 . "$HERE/lib/runner.sh"
+# shellcheck source=deploy/ci-hosts/lib/toolchain.sh
+. "$HERE/lib/toolchain.sh"
+# shellcheck source=deploy/ci-hosts/lib/bundle.sh
+. "$HERE/lib/bundle.sh"
+# shellcheck source=deploy/ci-hosts/lib/tailscale.sh
+. "$HERE/lib/tailscale.sh"
+# shellcheck source=deploy/ci-hosts/lib/monitor.sh
+. "$HERE/lib/monitor.sh"
 
 ROLE=primary
 ONLY=all
@@ -60,7 +73,12 @@ REG_TOKENS=()
 GH_TOKEN_FILE=
 RUNNER_MEMORY=
 RUNNER_JOBS=
-RUNNER_MIN_FREE_GB=20
+RUNNER_MIN_FREE_GB=
+BUNDLE=
+ISSUE_NAME=
+ISSUE_OUT=
+TS_AUTHKEY_FILE=
+TS_HOSTNAME=
 OWNER_USER=${SUDO_USER:-}
 
 while (($#)); do
@@ -79,6 +97,10 @@ while (($#)); do
     --runner-jobs) RUNNER_JOBS=$2; shift 2 ;;
     --min-free-gb) RUNNER_MIN_FREE_GB=$2; shift 2 ;;
     --owner) OWNER_USER=$2; shift 2 ;;
+    --bundle) BUNDLE=$2; shift 2 ;;
+    --issue-bundle) ISSUE_NAME=$2; ISSUE_OUT=$3; shift 3 ;;
+    --tailscale-authkey-file) TS_AUTHKEY_FILE=$2; shift 2 ;;
+    --tailscale-hostname) TS_HOSTNAME=$2; shift 2 ;;
     -h | --help) sed -n '2,/^set -euo/p' "$0" | sed 's/^# \{0,1\}//;/^set -euo/d'; exit 0 ;;
     *) die "unknown option: $1 (see --help)" ;;
   esac
@@ -93,24 +115,42 @@ OWNER_HOME=$(getent passwd "$OWNER_USER" | cut -d: -f6)
 if [[ $ROLE == primary ]]; then
   : "${NL_GB:=30}" "${NL_JOBS:=4}"
   NL_MEMORY_HIGH=${NL_MEMORY_HIGH:-6G} NL_MEMORY_MAX=${NL_MEMORY_MAX:-8G}
-  : "${RUNNER_MEMORY:=10g}" "${RUNNER_JOBS:=6}"
+  : "${RUNNER_MEMORY:=10g}" "${RUNNER_JOBS:=6}" "${RUNNER_MIN_FREE_GB:=20}" "${TS_HOSTNAME:=loams-ci-a}"
   ((${#RUNNER_REPOS[@]})) || RUNNER_REPOS=(ostrium-labs/loams ostrium-labs/iggy)
 else
   : "${NL_GB:=80}" "${NL_JOBS:=8}"
   NL_MEMORY_HIGH=${NL_MEMORY_HIGH:-9G} NL_MEMORY_MAX=${NL_MEMORY_MAX:-11G}
-  : "${RUNNER_MEMORY:=12g}" "${RUNNER_JOBS:=10}"
+  : "${RUNNER_MEMORY:=12g}" "${RUNNER_JOBS:=10}" "${RUNNER_MIN_FREE_GB:=30}" "${TS_HOSTNAME:=loams-ci-b}"
   ((${#RUNNER_REPOS[@]})) || RUNNER_REPOS=(ostrium-labs/loams)
 fi
 
 want() { [[ $ONLY == all || ,$ONLY, == *",$1,"* ]]; }
 
-pkg_install curl jq openssl ca-certificates tar gzip
+if [[ -n $ISSUE_NAME ]]; then
+  issue_bundle "$ISSUE_NAME" "$ISSUE_OUT"
+  exit 0
+fi
+
+pkg_install curl jq openssl ca-certificates tar gzip sudo debian:xz-utils arch:xz
+want tailscale && setup_tailscale
 ensure_ci_user
 ensure_data_root
+if [[ $ROLE == worker ]]; then
+  [[ -n $BUNDLE ]] && install_bundle "$BUNDLE"
+  [[ -n $PRIMARY ]] || PRIMARY=$(cat /etc/loams-ci/primary 2>/dev/null || true)
+  [[ -n $PRIMARY ]] || die "worker role: pass --bundle FILE (or --primary ADDR)"
+  echo "$PRIMARY" >/etc/loams-ci/primary
+fi
 
+if want toolchain; then
+  setup_sysctl
+  setup_rust
+  setup_node
+fi
 want nativelink && setup_nativelink
 want sccache && setup_sccache
 if want podman || want runner; then setup_podman; fi
 want runner && setup_runners
+want monitor && setup_monitor
 
-log "done ($ROLE). Check with: deploy/ci-hosts/status.sh"
+log "done ($ROLE). Check with: /opt/loams-ci/bin/loams-ci-status"

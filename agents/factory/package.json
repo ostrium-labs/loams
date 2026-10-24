@@ -23,7 +23,7 @@
     "@mastra/core": "1.78.0",
     "@mastra/mcp": "2.4.1",
     "@mastra/pg": "1.31.2",
-    "smol-toml": "1.9.0",
+    "smol-toml": "1.9.1",
     "zod": "catalog:"
   },
   "devDependencies": {

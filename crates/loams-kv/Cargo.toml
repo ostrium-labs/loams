@@ -31,6 +31,8 @@ tracing.workspace = true
 
 [dev-dependencies]
 loams-kv = { path = ".", features = ["tikv", "faults"] }
+# The Wing–Gong–Lowe checker loams-sim re-exports (linearizable.rs).
+loams-meta-conformance.workspace = true
 loams-tikv.workspace = true
 proptest.workspace = true
 

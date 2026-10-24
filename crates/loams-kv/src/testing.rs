@@ -6,7 +6,8 @@
 //! TiKV-only tests take `tikv`, or `cluster` for a configuration (feature
 //! `tikv`).
 //! [`Factory`] opens stores of one backend for the conformance cases of
-//! [`kv_conformance!`](crate::kv_conformance).
+//! [`kv_conformance!`](crate::kv_conformance): [`embedded_factory`],
+//! [`memory_factory`] (in-memory embedded stores) and `tikv_factory`.
 //!
 //! Embedded stores live in a fresh directory under `LOAMS_TEST_TMPDIR`
 //! ([`TMPDIR_ENV`]), or the system temporary directory when it is unset,
@@ -183,6 +184,39 @@ pub fn embedded_factory(base: impl AsRef<Path>) -> Factory {
                     .await
                     .expect("an embedded store"),
             )
+        })
+    })
+}
+
+/// In-memory embedded stores ([`EmbeddedConfig::in_memory`]) under one
+/// fresh random name, on [`EMBEDDED_KEYSPACE`]. The factory keeps the
+/// first store it opens, so the database lives as long as the factory even
+/// when a case drops every store it asked for.
+///
+/// # Panics
+///
+/// When (as a case asks) a store cannot be opened.
+pub fn memory_factory() -> Factory {
+    let name = format!("test-{:016x}", rand::random::<u64>());
+    let keeper: Arc<std::sync::Mutex<Option<Store>>> = Arc::default();
+    Factory::new(Backend::Embedded, move |spec| {
+        let (name, keeper) = (name.clone(), keeper.clone());
+        Box::pin(async move {
+            let mut config = EmbeddedConfig {
+                root: spec.root,
+                ..EmbeddedConfig::in_memory(&name, EMBEDDED_KEYSPACE)
+            };
+            if let Some(life) = spec.gc_life_time {
+                config.gc_life_time = life;
+            }
+            let store = Store::open(StoreConfig::Embedded(config))
+                .await
+                .expect("an in-memory store");
+            keeper
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_or_insert_with(|| store.clone());
+            Some(store)
         })
     })
 }

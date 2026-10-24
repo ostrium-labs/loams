@@ -193,8 +193,8 @@ target and nothing else, and no container but the sidecar shares the engine's
 network namespace. `oidc` checks JWTs from
 `LOAMS_OIDC_ISSUER` (the default `https://auth.loams.dev` does not answer yet; set your own) against its JWKS with
 audience `LOAMS_OIDC_AUDIENCE`; `apikey` checks hashed keys in
-`LOAMS_API_KEYS_FILE`, which compose points at `secrets/api-keys`. See
-`.env.example`.
+`LOAMS_API_KEYS_FILE`, which compose points at `secrets/api-keys` (see [API
+keys](#api-keys)). See `.env.example`.
 
 With any mode but `off`, first-run setup (the console's setup page, which
 creates the org and its owner) needs `LOAMS_SETUP_TOKEN` in `.env` or in
@@ -206,6 +206,38 @@ commit, which `--profile console` serves. In a clone (and in older bundles) it
 holds a placeholder page: build the console for the root path
 (`cd web && LOAMS_UI_BASE=/ pnpm build`) and set `LOAMS_CONSOLE_DIR` to
 `web/apps/console/dist`.
+
+#### API keys
+
+`secrets/api-keys` holds the API keys' hashes, one per line: `apikey` mode
+needs it, and `oidc` mode also takes keys from it when it exists. The engine
+reads it as uid and gid 10001, through the read-only `./secrets` mount, and
+picks up appended keys without a restart. `loams auth new-key --append`
+creates the file as you, mode 0600, which the engine cannot read: give it to
+the engine's group, read-only, and keep it yours, so that you can still append
+keys and nobody else on the machine can read them.
+
+```sh
+loams auth new-key --label cli --append secrets/api-keys   # prints the key, once
+sudo chgrp 10001 secrets/api-keys               # rootful Docker, or
+podman unshare chgrp 10001 secrets/api-keys     # rootless Podman
+chmod 0640 secrets/api-keys
+```
+
+The group is the engine's gid as this machine sees it. Under rootful Docker
+that is 10001. Under rootless Podman your user is the containers' root and
+their gid 10001 is one of your subordinate gids, which `podman unshare` names
+for you. With Docker's `userns-remap` it is the first gid of the `dockremap`
+range in `/etc/subgid` plus 10001. Appending keys later keeps the file's group
+and mode. Keep `secrets/` searchable by the engine (it is 0755 in the bundle),
+and do not make the file world-readable.
+
+An engine that cannot read the file says so in its log, with the uid and gid
+it runs as and the file's owner and mode as it sees them, and refuses to start;
+in `oidc` mode, when it cannot see the file at all (missing, or `secrets/` not
+searchable), it starts with API keys off instead.
+`byoc/install.sh` creates an empty `secrets/api-keys` with group 10001 and
+mode 0640.
 
 ### Headscale (coming soon, unsupported in 0.1.1)
 
