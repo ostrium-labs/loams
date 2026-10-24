@@ -109,6 +109,7 @@ pub mod pipes;
 pub mod querylog;
 pub mod quota;
 pub mod read;
+pub mod refresh;
 pub mod request;
 pub mod retention;
 pub mod sample;
