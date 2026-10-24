@@ -14,6 +14,7 @@ use loams_agentd_proto::factory_loop::{
     CreateRunWorktreeParams, GetApprovalParams, GetThreadDiffParams, MERGE_APPROVAL_KIND,
     MergeChangeRequestParams, MergeChangeRequestReply, OpenChangeRequestParams,
     OpenChangeRequestReply, PostReviewCommentParams, RequestApprovalParams, TypedApproval,
+    CheckLogReply, ChecksReply, GetCheckLogParams, GetChecksParams,
 };
 use loams_agentd_proto::git_write::{CreateChangeRequestParams, MergeStrategy, PushBranchParams};
 use loams_agentd_proto::review::{DiffSide, ReviewComment};
@@ -303,5 +304,42 @@ impl EngineRpc {
             repo,
             merged: true,
         })
+    }
+
+    /// The chat's remote, for the checks of its branch.
+    async fn chat_remote(&self, root: &Path) -> Result<crate::source_control::GitRemote, RpcError> {
+        let head = self.repos.current_branch(root).await.map_err(failed)?;
+        self.change_request_creator
+            .remote_for(root, if head.is_empty() { "HEAD" } else { &head })
+            .await
+            .map_err(git_write_error)
+    }
+
+    /// `GetChecks` (FT0 Task 5).
+    pub(super) async fn get_checks(&self, p: GetChecksParams) -> Result<ChecksReply, RpcError> {
+        let checkout = self.chat_checkout(&p.chat_id).await?;
+        let root = checkout.root().to_path_buf();
+        let sha = match p.sha.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()) {
+            Some(sha) => sha,
+            None => crate::git_write::git_ok(&root, &["rev-parse", "HEAD"])
+                .await
+                .map_err(git_write_error)?,
+        };
+        let remote = self.chat_remote(&root).await?;
+        self.change_request_creator
+            .checks(&root, &remote, p.provider, &sha)
+            .await
+            .map_err(git_write_error)
+    }
+
+    /// `GetCheckLog` (FT0 Task 5).
+    pub(super) async fn get_check_log(&self, p: GetCheckLogParams) -> Result<CheckLogReply, RpcError> {
+        let checkout = self.chat_checkout(&p.chat_id).await?;
+        let root = checkout.root().to_path_buf();
+        let remote = self.chat_remote(&root).await?;
+        self.change_request_creator
+            .check_log_tail(&root, &remote, p.provider, p.log_id.trim(), p.lines)
+            .await
+            .map_err(git_write_error)
     }
 }

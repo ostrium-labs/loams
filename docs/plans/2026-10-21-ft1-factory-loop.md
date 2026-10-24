@@ -203,6 +203,13 @@ Phones (runs, approvals, kill); an opt-in A2A edge for Loams Bot; non-Mastra mar
 - **FT0-4-4, build-thread worktrees.** `CreateRunWorktree` puts the worktree at `<worktrees root>/<repo>/<branch with / as ->` on the named branch (not `loams-desktop/<name>` as Studio's own `CreateWorktree` does) and answers an existing worktree of that branch, so a resumed step never makes a second. The policy now lets a run's new side chat have its `cwd` under the worktrees root as well as under a project folder.
 - **FT0-4-5, `create_chat`'s `worktree`.** The tool takes `worktree: { branch, base? }`, calls `CreateRunWorktree` on the parent chat (the caller's chat by default) and creates the chat there; `cwd` is then ignored. Tool risk is in each new tool's description ("Risk: …") and, for every tool, in `annotations.risk` next to MCP's `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`.
 
+### Task 5 (2026-10-23)
+
+- **FT0-5-1, where the readers live.** As ruling FT0-0-2 says, `checks` and `check_log_tail` are in `loams-agentd-sessions/src/checks.rs` on `ChangeRequestCreator`'s credentials, behind the `mcp` methods `GetChecks` and `GetCheckLog` (tools `get_checks`, `get_check_log`, risk read). #844's `loams-agentd-factory` is untouched.
+- **FT0-5-2, Forgejo.** Status from the combined commit status API. A Forgejo Actions status's `target_url` (`…/actions/runs/{run}/jobs/{job}`) gives the log id `run/job`; the log is read from that job's web `…/logs` route with the same token, only on the credential's host. That route taking an API token is **(verify)** against a live Forgejo in Task 11's e2e job; the unit test uses the fake Forgejo.
+- **FT0-5-3, GitHub.** Check runs and commit statuses through `gh api`; an Actions check run's id is its job id, so `logId` is set only for check runs of the `github-actions` app, and the log is `repos/{owner}/{repo}/actions/jobs/{id}/logs`.
+- **FT0-5-4, bounded and scrubbed.** A tail is at most 1,000 lines and 64 KiB (200 lines by default, the run-group tail's size), and goes through the harness's `redact_output` (tokens, bearer values, URL credentials, long hex and base64 runs) before it leaves agentd. No checks yet reads as `pending`, not `success`.
+
 ### Task 6 (2026-10-23)
 
 - **FT0-6-1, the policy file.** `.loams/factory.toml` has `[tools] deny = […]`, `[tools] approve = […]` and `[agents.<id>] tools = […]` (an agent's allow-list). It can only tighten the D1431 defaults: a destructive or egress tool asks whatever the file says. Parsed with `smol-toml` 1.9.0 (BSD-3-Clause, already in the tree). A tool whose risk agentd's table does not know is treated as destructive, so it always asks.
