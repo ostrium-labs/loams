@@ -1,0 +1,108 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2026-10-24T12:38:56.500230663Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1048960",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "workflow_failed_application_error"
+        },
+        "taskQueue": {
+          "name": "corpus-go",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowExecutionTimeout": "0s",
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "01a16deb-dcf4-737f-a762-ced51c425142",
+        "identity": "2766@a008d768aa0b@",
+        "firstExecutionRunId": "01a16deb-dcf4-737f-a762-ced51c425142",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {},
+        "workflowId": "corpus-go-workflow_failed_application_error"
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2026-10-24T12:38:56.500312671Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1048961",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "corpus-go",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2026-10-24T12:38:56.504120785Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1048966",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "2766@a008d768aa0b@",
+        "requestId": "86c8b30e-380a-4a10-b931-73408d598f6c",
+        "historySizeBytes": "287",
+        "workerVersion": {
+          "buildId": "d4db2319b754feae05457e5f98bacbae"
+        }
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2026-10-24T12:38:56.513044248Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1048970",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "2766@a008d768aa0b@",
+        "workerVersion": {
+          "buildId": "d4db2319b754feae05457e5f98bacbae"
+        },
+        "sdkMetadata": {
+          "langUsedFlags": [
+            3
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.49.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2026-10-24T12:38:56.513142213Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_FAILED",
+      "taskId": "1048971",
+      "workflowExecutionFailedEventAttributes": {
+        "failure": {
+          "message": "boom",
+          "source": "GoSDK",
+          "applicationFailureInfo": {
+            "type": "CorpusBoom",
+            "nonRetryable": true,
+            "details": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "ImRldGFpbCI="
+                }
+              ]
+            }
+          }
+        },
+        "retryState": "RETRY_STATE_RETRY_POLICY_NOT_SET",
+        "workflowTaskCompletedEventId": "4"
+      }
+    }
+  ]
+}

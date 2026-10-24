@@ -145,6 +145,16 @@ pins_are_literal() {
   done <"$OC_PINS"
 }
 
+# --- The Temporal history corpus (DX0 Task 4; per PR, no server) ----------------
+
+corpus_manifest_complete() {
+  python3 "$HERE/temporal/corpus/manifest.py" check
+}
+
+normalize_selftest() {
+  python3 "$HERE/temporal/corpus/normalize.py" --self-test
+}
+
 # --- The compose override (OC0 Task 2's tests) -----------------------------------
 
 PROFILES=(temporal dbos airflow)
@@ -264,6 +274,7 @@ TESTS=(
   junit_case_roundtrip
   licence_gate_compute_pins licence_gate_refuses_bsl_fixture no_licence_key_in_compute_files
   no_loams_sql_in_dx0 pg_mode_urls pins_are_literal
+  corpus_manifest_complete normalize_selftest
 )
 COMPOSE_TESTS=(
   compose_compute_config_valid compose_compute_requires_profile

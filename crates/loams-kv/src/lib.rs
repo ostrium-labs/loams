@@ -8,7 +8,9 @@
 //! [`Snap`] are the transaction and the read-only view, every key relative
 //! to the store's root; a [`Scanner`] pages through a range of either. [`Ts`] is a timestamp in TSO layout on both backends
 //! (Ruling 3). [`TxnOptions`], [`TxnError`] and [`Committed`] are the
-//! runner's options, error classes and result; [`FaultPlan`] its fault hooks;
+//! runner's options, error classes and result; [`ops`] the one-shot
+//! operations ([`Store::get`], [`Store::put`], [`Store::insert`],
+//! [`Store::delete`], [`Store::compare_and_put`]); [`FaultPlan`] its fault hooks;
 //! [`GcBarrier`] holds GC below a timestamp. [`tuple`](mod@tuple) is the
 //! order-preserving tuple codec and [`key`](mod@key) its untagged
 //! sibling. [`testing`] yields the stores a test runs
@@ -20,6 +22,7 @@ pub mod conformance;
 pub mod embedded;
 mod faults;
 mod gc;
+pub mod ops;
 mod runner;
 mod scan;
 mod store;
@@ -34,9 +37,7 @@ pub use faults::{Fault, FaultPlan, FaultPoint};
 pub use gc::GcBarrier;
 pub use runner::{CommitMode, Committed, Mode, TxnError, TxnOptions};
 pub use scan::Scanner;
-pub use store::{
-    Backend, EmbeddedConfig, KeyspaceState, KvError, PESSIMISTIC_REFUSED, Store, StoreConfig,
-};
+pub use store::{Backend, EmbeddedConfig, KeyspaceState, KvError, Store, StoreConfig};
 pub use ts::Ts;
 pub use txn::{MAX_VALUE_BYTES, Pair, Snap, Txn};
 

@@ -6,8 +6,9 @@ Two laptops on the owner's tailnet run Loams CI; GitHub-hosted runners are kept 
 | File | What |
 |---|---|
 | `setup-host.sh` | One idempotent command that sets a host up (`sudo deploy/ci-hosts/setup-host.sh --help`) |
+| `provision-remote.sh` | From the primary: turns another laptop into a worker over SSH in one command |
 | `versions.env` | Pinned versions and SHA-256 digests of everything downloaded |
-| `lib/` | The pieces `setup-host.sh` sources: the `ci` user, the private CA, NativeLink, sccache |
+| `lib/` | The pieces `setup-host.sh` sources: Tailscale, the `ci` user, toolchains, the private CA and worker bundles, NativeLink, sccache, podman, runners |
 | `runner/` | The runner image (Ubuntu 24.04 `Containerfile`), its entrypoint and the job hooks |
 | `sccache-evict.sh` | Least-recently-used eviction for sccache's store (run by a timer) |
 
@@ -37,3 +38,23 @@ What `setup-host.sh --role primary` sets up today:
 
 Secrets are generated on the host, kept in files of mode 600 (or 640 for group `ci`), and never
 printed or committed.
+
+Also: Tailscale (installed and joined with `--tailscale-authkey-file` when missing), and the host
+toolchains for the `ci` user (Rust per `rust-toolchain.toml` and Node per `.nvmrc`, pnpm per
+`packageManager`, in the caches the runners share).
+
+## A second laptop (role worker)
+
+Once it is reachable over SSH (the owner's account there, with sudo), from the primary:
+
+```sh
+deploy/ci-hosts/provision-remote.sh USER@HOST --tailscale-authkey-file ~/tailscale.txt
+```
+
+It issues the worker's credentials bundle (a client certificate signed by the primary's CA and
+the sccache settings), mints a runner registration token, copies this directory there and runs
+`sudo setup-host.sh --role worker`: Tailscale (`loams-ci-b`), the `ci` user, Rust/Node/pnpm,
+NativeLink as a worker of the primary's scheduler over mutual TLS (80 GiB local cache), sccache
+pointed at the primary's store, rootless podman and a `loams-local` runner for `ostrium-labs/loams`
+(12 GiB, 10 cargo jobs, refuses jobs below 30 GiB free). The same paths (`/mnt/Projects/ci`) as on
+the primary, so sccache entries are shared.

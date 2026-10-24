@@ -90,6 +90,14 @@ All notable changes to this project are documented here. The format follows [Kee
   (connect-web's `"error"` is rejected there), and `transportOptions.fetch` accepts a custom `fetch`. README
   has a Cloudflare Workers section.
 
+### Fixed
+- **`secrets/api-keys` readable by the engine** (#881). `loams auth new-key --append` creates the key
+  file as its writer, mode 0600, which the engine (uid and gid 10001) cannot read through the release
+  stack's bind mount. The release README's new "API keys" section gives the file to the engine's group
+  with mode 0640 (`sudo chgrp 10001` under rootful Docker, `podman unshare chgrp 10001` under rootless
+  Podman), `byoc/install.sh` does the same for the empty file it creates, and an engine that cannot read
+  the file now names the uid and gid it runs as and the file's owner and mode.
+
 ## [0.1.1] - 2026-10-21
 
 Highlights:

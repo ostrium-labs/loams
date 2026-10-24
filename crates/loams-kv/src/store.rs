@@ -10,11 +10,7 @@ use futures::future::BoxFuture;
 
 #[cfg(feature = "faults")]
 use crate::FaultPlan;
-use crate::{Committed, GcBarrier, Mode, Snap, Ts, Txn, TxnError, TxnOptions, embedded};
-
-/// The refusal of a pessimistic [`Store::run`] (row T21-15).
-pub const PESSIMISTIC_REFUSED: &str = "pessimistic transactions are refused: a read-modify-write \
-     needs get_for_update, which the store seam does not have yet";
+use crate::{Committed, GcBarrier, Snap, Ts, Txn, TxnError, TxnOptions, embedded};
 
 /// Errors of opening a store, reading its clock, taking a snapshot or
 /// setting a GC barrier. A failed transaction is a [`TxnError`].
@@ -76,7 +72,14 @@ pub enum StoreConfig {
 /// key lives under, how long GC keeps old versions and how often it runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedConfig {
+    /// The redb file (unused by an in-memory store, whose
+    /// [`EmbeddedConfig::in_memory`] sets it to `mem:<name>` for messages).
     pub path: PathBuf,
+    /// `Some(name)`: an in-memory store on redb's `InMemoryBackend`, shared
+    /// in this process by every handle opened with the same name and gone
+    /// when the last of them is dropped (KV0 Task 4). `None`: the file at
+    /// `path`.
+    pub memory: Option<String>,
     pub keyspace: String,
     pub root: Vec<u8>,
     /// Reads stay possible for `gc_life_time − 1 min` (more than a minute;
@@ -92,10 +95,27 @@ impl EmbeddedConfig {
     pub fn new(path: impl Into<PathBuf>, keyspace: impl Into<String>) -> Self {
         EmbeddedConfig {
             path: path.into(),
+            memory: None,
             keyspace: keyspace.into(),
             root: Vec::new(),
             gc_life_time: embedded::DEFAULT_GC_LIFE_TIME,
             gc_interval: embedded::DEFAULT_GC_INTERVAL,
+        }
+    }
+}
+
+impl EmbeddedConfig {
+    /// An in-memory store named `name` on the keyspace `keyspace`, with an
+    /// empty root and the default GC life time and interval: redb's
+    /// `InMemoryBackend`, no file and no `fsync`. Every handle this process
+    /// opens with the same name shares one database, timestamp oracle,
+    /// committer and GC thread, as handles on one file do; the data is gone
+    /// when the last handle is dropped. Nothing survives the process.
+    pub fn in_memory(name: &str, keyspace: impl Into<String>) -> Self {
+        EmbeddedConfig {
+            path: PathBuf::from(format!("{}{name}", embedded::MEMORY_PREFIX)),
+            memory: Some(name.to_string()),
+            ..EmbeddedConfig::new(PathBuf::new(), keyspace)
         }
     }
 }
@@ -278,8 +298,9 @@ impl Store {
     /// `commit_token`, an undetermined commit is resolved through a token
     /// written in the transaction.
     ///
-    /// [`Mode::Pessimistic`] is refused with `Fatal(PESSIMISTIC_REFUSED)` on
-    /// both backends until the seam has `get_for_update` (row T21-15).
+    /// [`Mode::Pessimistic`](crate::Mode::Pessimistic) takes each key's lock as the body reads it
+    /// with [`Txn::get_for_update`] or writes it (D851; KV0 Task 5), so a
+    /// second holder waits rather than conflicting at commit.
     ///
     /// A body is rerun, so it must be free of side effects outside `txn`. It
     /// returns `Err(TxnError::Conflict)` to ask for a restart; to reject
@@ -289,9 +310,6 @@ impl Store {
     where
         F: for<'t> FnMut(&'t mut Txn) -> BoxFuture<'t, Result<T, TxnError>>,
     {
-        if opts.mode == Mode::Pessimistic {
-            return Err(TxnError::Fatal(PESSIMISTIC_REFUSED.to_string()));
-        }
         match self {
             Store::Embedded(h) => h.run(opts, body).await,
             #[cfg(feature = "tikv")]

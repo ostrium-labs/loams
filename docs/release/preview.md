@@ -324,7 +324,8 @@ as your engine. (`console.loams.dev` is retired. From 0.1.2 you can instead open
 `https://loams.<tailnet>.ts.net/ui/` in a browser on the tailnet.)
 
 From the CLI or an SDK, set `LOAMS_AUTH_MODE=apikey`, create a key with `loams auth new-key`
-and use the same tailnet URL.
+and use the same tailnet URL. The engine runs as uid and gid 10001, so give it read access to
+`secrets/api-keys` ([API keys](../../deploy/release/README.md#api-keys)).
 
 To stop, `docker compose down`. Your data stays in the compose volumes; `docker compose
 down -v` deletes it.

@@ -1,0 +1,34 @@
+// The Temporal gateway's own messages (design 74 §5.7, plan DX1). They are
+// not part of the Temporal API: no SDK sees them except as opaque bytes.
+// Apache-2.0, The Loams Authors.
+syntax = "proto3";
+
+package loams.temporal.internal.v1;
+
+// What a task token carries (plan DX1 ruling X1.R4). The token an SDK
+// receives is this message, encoded, followed by an HMAC-SHA256 over the
+// encoded bytes with the key named by `key_id`. The SDKs only echo it.
+message TaskToken {
+  // The token format; 1 for this message.
+  uint32 version = 1;
+  // The gateway's namespace ID (a UUID string), not the namespace's name.
+  string namespace_id = 2;
+  string workflow_id = 3;
+  string run_id = 4;
+  // The event ID of the task's `…Scheduled` event.
+  int64 scheduled_event_id = 5;
+  // The task's attempt, starting at 1.
+  int32 attempt = 6;
+  TaskKind kind = 7;
+  // Which key of the gateway's key ring signed the token.
+  string key_id = 8;
+  // The `…Started` event ID the poll answer recorded, for a workflow task.
+  int64 started_event_id = 9;
+}
+
+enum TaskKind {
+  TASK_KIND_UNSPECIFIED = 0;
+  TASK_KIND_WORKFLOW = 1;
+  TASK_KIND_ACTIVITY = 2;
+  TASK_KIND_QUERY = 3;
+}

@@ -8719,6 +8719,7 @@ version = "0.1.1"
 dependencies = [
  "futures",
  "loams-kv",
+ "loams-meta-conformance",
  "loams-tikv",
  "loams-tuple",
  "proptest",
@@ -9370,6 +9371,20 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-util",
+ "tonic 0.14.6",
+ "tonic-prost",
+ "tonic-prost-build",
+]
+
+[[package]]
+name = "loams-temporal-proto"
+version = "0.1.1"
+dependencies = [
+ "bytes",
+ "hex",
+ "prost 0.14.4",
+ "prost-types",
+ "sha2 0.11.0",
  "tonic 0.14.6",
  "tonic-prost",
  "tonic-prost-build",

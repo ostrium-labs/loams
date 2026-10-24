@@ -30,6 +30,15 @@ af0591a36e16831af9a2ad9484e12465f511ef84. Quickwit's NOTICE:
   Copyright 2021-Present Datadog, Inc.
   This product includes software developed at Datadog (<https://www.datadoghq.com/).>
 
+The Temporal API (https://github.com/temporalio/api), MIT License,
+Copyright (c) 2025 Temporal Technologies Inc. The protocol buffer files under
+crates/loams-temporal-proto/proto/temporal/, proto/google/api/ and
+proto/nexusannotations/ are copied unchanged from tag v1.63.5 (commit
+3ebdff42a9f07ac484b415fe8ff0b483b4ce3340); the licence text is
+crates/loams-temporal-proto/LICENSE-temporalio-api, and
+crates/loams-temporal-proto/VENDORED.md lists every file. No Temporal server
+code is included (design 74, D1536).
+
 The Porter stemming algorithm (https://tartarus.org/martin/PorterStemmer/),
 by Martin Porter. crates/loams-text/src/porter.rs is a port of his ANSI C
 reference implementation (release 3, 25 Mar 2014), and
