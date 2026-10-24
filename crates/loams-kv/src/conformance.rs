@@ -49,7 +49,10 @@ macro_rules! kv_conformance {
                 runner_stops_at_max_attempts,
                 runner_does_not_retry_fatal,
                 runner_deadline_passes,
-                pessimistic_mode_is_refused,
+                pessimistic_read_modify_write_loses_no_update,
+                pessimistic_second_holder_waits,
+                pessimistic_lock_wait_times_out_as_conflict,
+                pessimistic_and_optimistic_conflict,
                 fault_points_and_commit_tokens,
                 barrier_holds_old_snapshots_and_refuses_below_safe_point,
                 scanner_pages_forward,
@@ -757,26 +760,248 @@ pub async fn runner_deadline_passes(factory: Factory) {
     assert_eq!(err, TxnError::Deadline);
 }
 
-/// A pessimistic run is refused before its body runs, on every backend,
-/// until the seam has `get_for_update` (row T21-15).
-pub async fn pessimistic_mode_is_refused(factory: Factory) {
+/// 16 tasks each increment one counter 100 times in pessimistic
+/// transactions, reading it with `get_for_update`: the counter ends at
+/// exactly 1,600 (D851; KV0 Task 5). A read at the start timestamp would
+/// lose updates (row T21-15).
+pub async fn pessimistic_read_modify_write_loses_no_update(factory: Factory) {
+    const TASKS: u64 = 16;
+    const EACH: u64 = 100;
     let Some(store) = factory.store(Spec::fresh()).await else {
         return;
     };
-    let runs = Arc::new(AtomicU32::new(0));
-    let counted = runs.clone();
-    let err = store
-        .run(TxnOptions::pessimistic("kv.conformance.pess"), move |txn| {
-            let counted = counted.clone();
+    let mut tasks = Vec::new();
+    for _ in 0..TASKS {
+        let store = store.clone();
+        tasks.push(tokio::spawn(async move {
+            for _ in 0..EACH {
+                let mut opts = TxnOptions::pessimistic("kv.conformance.pess_rmw");
+                opts.max_attempts = 64;
+                opts.deadline = Duration::from_secs(60);
+                store
+                    .run(opts, |txn| {
+                        Box::pin(async move {
+                            let n = txn
+                                .get_for_update(b"counter")
+                                .await?
+                                .map_or(0, |v| u64::from_be_bytes(v.try_into().expect("8 bytes")));
+                            txn.put(b"counter", (n + 1).to_be_bytes().to_vec()).await
+                        })
+                    })
+                    .await
+                    .expect("an increment commits");
+            }
+        }));
+    }
+    for task in tasks {
+        task.await.expect("a task");
+    }
+    let mut snap = store
+        .snapshot(store.now().await.expect("now"))
+        .await
+        .expect("a snapshot");
+    let n = snap
+        .get(b"counter")
+        .await
+        .expect("get")
+        .map(|v| u64::from_be_bytes(v.try_into().expect("8 bytes")));
+    assert_eq!(n, Some(TASKS * EACH), "no update lost");
+}
+
+/// A second pessimistic holder of a key waits for the first to commit, then
+/// reads the first one's write, not the value at its own start.
+pub async fn pessimistic_second_holder_waits(factory: Factory) {
+    let Some(store) = factory.store(Spec::fresh()).await else {
+        return;
+    };
+    put(&store, b"k", b"before").await;
+    let (locked, wait_for_lock) = tokio::sync::oneshot::channel::<()>();
+    const HOLD: Duration = Duration::from_millis(400);
+    let first = tokio::spawn({
+        let store = store.clone();
+        async move {
+            let mut locked = Some(locked);
+            let mut opts = TxnOptions::pessimistic("kv.conformance.pess_first");
+            opts.max_attempts = 1;
+            store
+                .run(opts, move |txn| {
+                    let locked = locked.take();
+                    Box::pin(async move {
+                        assert_eq!(txn.get_for_update(b"k").await?, Some(b"before".to_vec()));
+                        if let Some(locked) = locked {
+                            let _ = locked.send(());
+                        }
+                        tokio::time::sleep(HOLD).await;
+                        txn.put(b"k", b"first".to_vec()).await
+                    })
+                })
+                .await
+                .expect("the first commits")
+                .commit_ts
+        }
+    });
+    wait_for_lock.await.expect("the first holds the lock");
+    let asked = Instant::now();
+    // TiKV may answer a woken lock wait with a write conflict, which the
+    // runner retries at a later start (on embedded the first attempt
+    // commits).
+    let opts = TxnOptions::pessimistic("kv.conformance.pess_second");
+    let second = store
+        .run(opts, |txn| {
             Box::pin(async move {
-                counted.fetch_add(1, Ordering::SeqCst);
-                txn.put(b"k", b"v".to_vec()).await
+                let seen = txn.get_for_update(b"k").await?;
+                let waited = asked.elapsed();
+                txn.put(b"k", b"second".to_vec()).await?;
+                Ok((seen, waited, txn.start_ts()))
             })
         })
         .await
-        .expect_err("refused");
-    assert_eq!(err, TxnError::Fatal(crate::PESSIMISTIC_REFUSED.to_string()));
-    assert_eq!(runs.load(Ordering::SeqCst), 0, "the body never ran");
+        .expect("the second commits after waiting");
+    let first_commit = first.await.expect("joined");
+    let (seen, waited, second_start) = second.value;
+    assert_eq!(
+        seen,
+        Some(b"first".to_vec()),
+        "the latest value, not the start's"
+    );
+    if second.attempts == 1 {
+        assert!(
+            second_start < first_commit,
+            "the second started before the first committed"
+        );
+    }
+    assert!(
+        waited >= HOLD / 2,
+        "the second waited for the lock: {waited:?}"
+    );
+    assert!(second.commit_ts > first_commit);
+    let mut snap = store
+        .snapshot(store.now().await.expect("now"))
+        .await
+        .expect("a snapshot");
+    assert_eq!(snap.get(b"k").await.expect("get"), Some(b"second".to_vec()));
+}
+
+/// A lock wait that outlasts the run's lock-wait limit fails with
+/// `Conflict` (with one attempt), and the holder still commits.
+pub async fn pessimistic_lock_wait_times_out_as_conflict(factory: Factory) {
+    let Some(store) = factory.store(Spec::fresh()).await else {
+        return;
+    };
+    put(&store, b"k", b"0").await;
+    let (locked, wait_for_lock) = tokio::sync::oneshot::channel::<()>();
+    let (done, release) = tokio::sync::oneshot::channel::<()>();
+    let holder = tokio::spawn({
+        let store = store.clone();
+        async move {
+            let mut signals = Some((locked, release));
+            let mut opts = TxnOptions::pessimistic("kv.conformance.pess_holder");
+            opts.max_attempts = 1;
+            opts.deadline = Duration::from_secs(30);
+            store
+                .run(opts, move |txn| {
+                    let signals = signals.take();
+                    Box::pin(async move {
+                        txn.get_for_update(b"k").await?;
+                        if let Some((locked, release)) = signals {
+                            let _ = locked.send(());
+                            let _ = release.await;
+                        }
+                        txn.put(b"k", b"holder".to_vec()).await
+                    })
+                })
+                .await
+        }
+    });
+    wait_for_lock.await.expect("the holder holds the lock");
+    let mut opts = TxnOptions::pessimistic("kv.conformance.pess_waiter");
+    opts.max_attempts = 1;
+    opts.deadline = Duration::from_millis(1_500);
+    let started = Instant::now();
+    let err = store
+        .run(opts, |txn| {
+            Box::pin(async move {
+                txn.get_for_update(b"k").await?;
+                txn.put(b"k", b"waiter".to_vec()).await
+            })
+        })
+        .await
+        .expect_err("the lock is held past the limit");
+    assert_eq!(err, TxnError::Conflict);
+    assert!(
+        started.elapsed() < Duration::from_millis(1_500),
+        "the wait gave up before the deadline: {:?}",
+        started.elapsed()
+    );
+    let _ = done.send(());
+    holder
+        .await
+        .expect("joined")
+        .expect("the holder commits after the waiter gave up");
+    let mut snap = store
+        .snapshot(store.now().await.expect("now"))
+        .await
+        .expect("a snapshot");
+    assert_eq!(snap.get(b"k").await.expect("get"), Some(b"holder".to_vec()));
+}
+
+/// An optimistic writer of a key a pessimistic transaction holds fails
+/// with `Conflict` (one attempt); the pessimistic one commits.
+pub async fn pessimistic_and_optimistic_conflict(factory: Factory) {
+    let Some(store) = factory.store(Spec::fresh()).await else {
+        return;
+    };
+    put(&store, b"k", b"0").await;
+    let (locked, wait_for_lock) = tokio::sync::oneshot::channel::<()>();
+    let (done, release) = tokio::sync::oneshot::channel::<()>();
+    let holder = tokio::spawn({
+        let store = store.clone();
+        async move {
+            let mut signals = Some((locked, release));
+            let mut opts = TxnOptions::pessimistic("kv.conformance.pess_holder");
+            opts.max_attempts = 1;
+            opts.deadline = Duration::from_secs(30);
+            store
+                .run(opts, move |txn| {
+                    let signals = signals.take();
+                    Box::pin(async move {
+                        let seen = txn.get_for_update(b"k").await?;
+                        if let Some((locked, release)) = signals {
+                            let _ = locked.send(());
+                            // Held until the optimistic writer finished, or
+                            // for a second at most (on TiKV it may wait for
+                            // the lock to go).
+                            let _ = tokio::time::timeout(Duration::from_secs(1), release).await;
+                        }
+                        txn.put(b"k", b"pessimistic".to_vec()).await?;
+                        Ok(seen)
+                    })
+                })
+                .await
+        }
+    });
+    wait_for_lock.await.expect("the holder holds the lock");
+    let mut opts = TxnOptions::new("kv.conformance.optimistic");
+    opts.max_attempts = 1;
+    opts.deadline = Duration::from_secs(20);
+    let err = store
+        .run(opts, |txn| {
+            Box::pin(async move { txn.put(b"k", b"optimistic".to_vec()).await })
+        })
+        .await
+        .expect_err("the key is locked");
+    assert_eq!(err, TxnError::Conflict);
+    let _ = done.send(());
+    let committed = holder.await.expect("joined").expect("the holder commits");
+    assert_eq!(committed.value, Some(b"0".to_vec()));
+    let mut snap = store
+        .snapshot(store.now().await.expect("now"))
+        .await
+        .expect("a snapshot");
+    assert_eq!(
+        snap.get(b"k").await.expect("get"),
+        Some(b"pessimistic".to_vec())
+    );
 }
 
 /// One fault at one point of the first attempt of `op`, then nothing.

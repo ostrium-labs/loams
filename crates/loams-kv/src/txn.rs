@@ -99,21 +99,66 @@ impl Txn {
         dispatch!(self, t => t.scan_reverse(start, end, limit).await)
     }
 
+    /// Reads `key` and locks it (D851). In a pessimistic transaction
+    /// ([`Mode::Pessimistic`](crate::Mode::Pessimistic)) the lock is taken
+    /// at once: a second holder waits, and the value returned is the latest
+    /// committed one (or this transaction's own write), not the start
+    /// timestamp's, so a read-modify-write cannot lose an update. A wait
+    /// past the run's lock-wait limit (nine tenths of its deadline, leaving
+    /// at most a second) or a deadlock is [`TxnError::Conflict`]. In an
+    /// optimistic transaction it reads at the start timestamp and locks the
+    /// key at commit, as [`get`](Self::get) then [`lock_keys`](Self::lock_keys).
+    pub async fn get_for_update(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>, TxnError> {
+        match self {
+            Txn::Embedded(t) => t.get_for_update(key).await,
+            #[cfg(feature = "tikv")]
+            Txn::Tikv(t) => crate::tikv::lock_wait(t.get_for_update(key)).await,
+        }
+    }
+
+    /// [`get_for_update`](Self::get_for_update) of `keys` at once; absent
+    /// keys are left out. The result is sorted by key.
+    pub async fn batch_get_for_update<K: AsRef<[u8]>>(
+        &mut self,
+        keys: impl IntoIterator<Item = K>,
+    ) -> Result<Vec<Pair>, TxnError> {
+        match self {
+            Txn::Embedded(t) => t.batch_get_for_update(keys).await,
+            #[cfg(feature = "tikv")]
+            Txn::Tikv(t) => crate::tikv::lock_wait(t.batch_get_for_update(keys)).await,
+        }
+    }
+
     /// Writes `value` at `key`. Refuses a value over 2 MiB
     /// ([`MAX_VALUE_BYTES`]) with `TxnError::Fatal("value over 2 MiB")`.
+    /// In a pessimistic transaction it takes the key's lock first.
     pub async fn put(&mut self, key: &[u8], value: impl Into<Vec<u8>>) -> Result<(), TxnError> {
-        dispatch!(self, t => t.put(key, value).await)
+        match self {
+            Txn::Embedded(t) => t.put(key, value).await,
+            #[cfg(feature = "tikv")]
+            Txn::Tikv(t) => crate::tikv::lock_wait(t.put(key, value)).await,
+        }
     }
 
     /// Writes `value` at `key` if the key is absent; the transaction fails
     /// with [`TxnError::AlreadyExists`] if it is not. The 2 MiB bound applies.
+    /// In a pessimistic transaction it takes the key's lock first.
     pub async fn insert(&mut self, key: &[u8], value: impl Into<Vec<u8>>) -> Result<(), TxnError> {
-        dispatch!(self, t => t.insert(key, value).await)
+        match self {
+            Txn::Embedded(t) => t.insert(key, value).await,
+            #[cfg(feature = "tikv")]
+            Txn::Tikv(t) => crate::tikv::lock_wait(t.insert(key, value)).await,
+        }
     }
 
-    /// Deletes `key`.
+    /// Deletes `key`. In a pessimistic transaction it takes the key's lock
+    /// first.
     pub async fn delete(&mut self, key: &[u8]) -> Result<(), TxnError> {
-        dispatch!(self, t => t.delete(key).await)
+        match self {
+            Txn::Embedded(t) => t.delete(key).await,
+            #[cfg(feature = "tikv")]
+            Txn::Tikv(t) => crate::tikv::lock_wait(t.delete(key)).await,
+        }
     }
 
     /// Locks `keys` without writing them: a concurrent write to one of them
@@ -125,12 +170,17 @@ impl Txn {
     /// embedded store's lock version), whether the key is present or not. A
     /// lock is no value: reads and inserts do not see it. Rolled back, it
     /// leaves no lock (TiKV's rollback record may still make a transaction
-    /// concurrent with it conflict).
+    /// concurrent with it conflict). In a pessimistic transaction the locks
+    /// are taken at once, as [`get_for_update`](Self::get_for_update)'s.
     pub async fn lock_keys<K: AsRef<[u8]>>(
         &mut self,
         keys: impl IntoIterator<Item = K>,
     ) -> Result<(), TxnError> {
-        dispatch!(self, t => t.lock_keys(keys).await)
+        match self {
+            Txn::Embedded(t) => t.lock_keys(keys).await,
+            #[cfg(feature = "tikv")]
+            Txn::Tikv(t) => crate::tikv::lock_wait(t.lock_keys(keys)).await,
+        }
     }
 }
 
