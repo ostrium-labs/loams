@@ -76,6 +76,7 @@ jobs:
       tikv: ${{ steps.filter.outputs.tikv }}
       live-embedded: ${{ steps.filter.outputs.live-embedded }}
       durable: ${{ steps.filter.outputs.durable }}
+      temporal-store: ${{ steps.filter.outputs.temporal-store }}
       deny: ${{ steps.filter.outputs.deny }}
       agentd: ${{ steps.filter.outputs.agentd }}
       graph: ${{ steps.filter.outputs.graph }}
@@ -214,6 +215,10 @@ jobs:
               # The bundle store of deployments (LV1 plan Task 6).
               - "crates/loams-store/**"
               - "proto/loams/live/**"
+            # The Temporal gateway's store on Postgres (DX1 Task 5).
+            temporal-store:
+              - *toolchain
+              - "crates/loams-temporal-store/**"
             durable:
               - *toolchain
               - "crates/loams-durable/**"
@@ -1279,6 +1284,38 @@ jobs:
   # `buf generate` writes from them. buf and protoc-gen-es are pinned in
   # sdks/typescript/packages/live/package.json. The Rust code is generated at build
   # time (loams-live-proto's build.rs), so the check job covers it.
+  # DX1 Task 5: loams-temporal-store's contract tests on stock Postgres 17
+  # (the PgStore leg; the MemStore leg runs in Rust: tests). Each test makes
+  # and drops its own database. Same image as conformance/compute's psql pin.
+  temporal-store:
+    name: "Temporal store: Postgres 17"
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result == 'skipped' || (needs.changes.outputs.full == 'true' && (needs.changes.outputs.temporal-store == 'true'))) }}
+    runs-on: ${{ (vars.CI_RUNNER == 'local' && ((github.event_name == 'push' && github.ref == 'refs/heads/dev') || (github.event_name == 'pull_request' && github.base_ref == 'dev' && (github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'OWNER')))) && fromJSON('["self-hosted","loams-local"]') || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: docker.io/library/postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
+        env:
+          POSTGRES_PASSWORD: pg
+        ports:
+          # A free host port, so a self-hosted runner never collides.
+          - 5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment == 'github-hosted'
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          key: temporal-store
+      - name: loams-temporal-store on Postgres 17
+        env:
+          LOAMS_TEMPORAL_TEST_PG_URL: postgres://postgres:pg@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/postgres
+        run: cargo test -p loams-temporal-store --locked
+
   live-protos:
     name: "Protos: Live"
     needs: changes
@@ -2782,6 +2819,7 @@ jobs:
       - live-embedded
       - durable
       - durable-tidb
+      - temporal-store
       - live-protos
       - app-protos
       - sdk-typescript
