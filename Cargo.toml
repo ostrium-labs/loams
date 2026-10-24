@@ -116,7 +116,7 @@ gix-object = { version = "=0.65.0", default-features = false, features = ["sha1"
 gix-pack = { version = "=0.75.0", default-features = false, features = ["sha1"] }
 gix-zlib = { version = "=0.2.0", default-features = false }
 # The commit-graph reader of `derived/graph/` layers (GT1 Task 20).
-gix-commitgraph = { version = "=0.40.0", default-features = false }
+gix-commitgraph = { version = "=0.41.0", default-features = false }
 # Blame (GT1 Task 21): `gix-blame` and the blob diff it runs on, same train.
 gix-blame = { version = "=0.18.0", default-features = false, features = ["sha1"] }
 gix-diff = { version = "=0.68.0", default-features = false, features = ["blob"] }
