@@ -210,3 +210,18 @@ Read on 2026-10-23 at `origin/dev` `710f47078`.
 The owner approved the pending decisions below on 2026-10-24 ("approve all with your recommendations").
 
 - **The official index stays on GitHub Pages for now.** D1461's move to `loams.dev/marketplace` comes later. **Approved (owner, 2026-10-24).**
+
+### Status (2026-10-24, paused by the owner)
+
+| Task | State | Where |
+|---|---|---|
+| 0 | Merged | #1126 |
+| 1 | This PR | `mk0-t1-listing-schema`. `loams.marketplace.v1` is a data-model package: added to design 44 §7.2 and to the facade generator's `NOT_SDK_PACKAGES`, so no SDK lists it |
+| 2 | Built and tested (23 vitest tests), unmerged | branch `mk0-t2-listing-cli`, stacked on Task 1 |
+| 3 | Built and tested, unmerged | branch `mk0-t3-index-ci` (`loams-listing verify`, 35 vitest tests, checked live against npm), and `ostrium-labs/loams-marketplace` PR #1 (workflows, scripts, self-tests; `self-test` green). Its `.github/loams-ref` must move to Task 3's merge commit before it merges. GitHub Pages is enabled (Actions source) |
+| 4 | Built and tested (`cargo test -p loams-agentd-marketplace`), unmerged | branch `mk0-t4-marketplace-service`: `marketplace.proto`; sources, signed index (real Sigstore verification, `sigstore-verify` 0.14.0), revocations, search. Daemon wiring is the follow-up Task 4b (ruling 7 of Task 4) |
+| 5 | Built and tested, unmerged | branch `mk0-t5-install-plan`: `plan.rs` (consent plan, digest, widening) and `contract.rs` (environment, token rotation, MCP config, Postgres role) |
+| 6 | Built and tested (53 crate tests in all, real npm provenance), unmerged | branch `mk0-t6-installers`: `provenance.rs` and `install.rs` (npm installs with scripts off, script and lockfile refusal, uninstall keeps data, harness and MCP registrations). Registering them in agentd's `HarnessRegistry` and MCP runs (`harness_descriptor_appears_in_list_harnesses`, `mcp_server_available_to_threads`) waits for Task 4b's daemon wiring |
+| 4b, 7–11 | Not started | Task 7 also waits for `@loams/mastra-resonate` on npm (Task 0 ruling 2) |
+
+Each branch is stacked on the one before. To resume, merge Task 1, rebase each branch onto `dev` in order, and open one PR per task. Label Tasks 3, 4 and 6 `review:greptile`.
