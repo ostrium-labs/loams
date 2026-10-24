@@ -25,6 +25,7 @@ mod commit;
 #[cfg(feature = "faults")]
 mod faulty;
 mod gc;
+pub(crate) mod locks;
 mod mvcc;
 mod oracle;
 
@@ -144,6 +145,8 @@ pub(crate) struct Core {
     gc: Mutex<GcState>,
     gc_tuning: gc::GcTuning,
     counters: Counters,
+    /// Pessimistic transactions' key locks (D851).
+    locks: locks::LockTable,
     #[cfg(feature = "faults")]
     io_faults: Arc<faulty::Switch>,
 }
@@ -425,6 +428,7 @@ impl Shared {
             gc: Mutex::new(GcState::new(Ts(safe_point))),
             gc_tuning: gc::GcTuning::default(),
             counters: Counters::default(),
+            locks: locks::LockTable::default(),
             #[cfg(feature = "faults")]
             io_faults,
         });
@@ -703,10 +707,16 @@ impl Handle {
     /// A new transaction at a fresh start timestamp, without the runner:
     /// the caller commits it with [`Txn::commit`] (or drops it).
     pub async fn begin(&self) -> Result<Txn, TxnError> {
-        self.begin_attempt(1).await
+        self.begin_attempt(1, None).await
     }
 
-    async fn begin_attempt(&self, attempt: u32) -> Result<Txn, TxnError> {
+    /// `pessimistic`: a pessimistic transaction whose lock waits give up at
+    /// that instant.
+    async fn begin_attempt(
+        &self,
+        attempt: u32,
+        pessimistic: Option<Instant>,
+    ) -> Result<Txn, TxnError> {
         let core = self.shared.core.clone();
         let start = self
             .now()
@@ -721,6 +731,7 @@ impl Handle {
             attempt,
             Instant::now() + self.safe_window(),
             open,
+            pessimistic,
         ))
     }
 

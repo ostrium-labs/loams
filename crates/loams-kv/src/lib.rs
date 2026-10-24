@@ -37,9 +37,7 @@ pub use faults::{Fault, FaultPlan, FaultPoint};
 pub use gc::GcBarrier;
 pub use runner::{CommitMode, Committed, Mode, TxnError, TxnOptions};
 pub use scan::Scanner;
-pub use store::{
-    Backend, EmbeddedConfig, KeyspaceState, KvError, PESSIMISTIC_REFUSED, Store, StoreConfig,
-};
+pub use store::{Backend, EmbeddedConfig, KeyspaceState, KvError, Store, StoreConfig};
 pub use ts::Ts;
 pub use txn::{MAX_VALUE_BYTES, Pair, Snap, Txn};
 
